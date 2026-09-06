@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung, keinTextGekuerzt } from './hilfen/design';
+import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
 import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
@@ -540,6 +540,292 @@ test.describe('Projekt-Seitenspalte "Projektdaten" und Kopf-Untertitel: lange, b
             `Kunde "${KUNDE_EIN_WORT}" ragt ${kopfUeberstand.toFixed(0)}px rechts aus dem Titelblock -- braucht min-w-0 am umschliessenden <span>`,
         ).toBeLessThanOrEqual(2);
 
+        // Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8): dieser Test rief
+        // bisher nur keinTextGekuerzt() -- anders als seine Anfrage-Schwester
+        // in anfrage-layout.spec.ts, die beide allgemeinen Pruefungen zusaetzlich
+        // fuehrt. Nachgezogen, damit dieselbe Route auch auf ueberlaufenden
+        // (statt nur gekuerzten) Text und main-Ueberstand geprueft wird.
         await keinTextGekuerzt(page);
+        await keinTextLaeuftUeber(page);
+        await keinHorizontalerUeberlauf(page);
+    });
+});
+
+/**
+ * Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8, "acht der 49 Aenderungen aus
+ * Task 12 sind Attrappen"): sieben `break-words`-Spans in dieser Datei waren
+ * Flex-Items OHNE eigenes `min-w-0` (die drei Zeiten-Zeilen, zwei Zeilen der
+ * Dokumentenketten-Metazeile, zwei der Eingangsrechnungs-Zuordnungen) -- ihre
+ * automatische Mindestbreite blieb die Breite ihres einzigen, unteilbaren
+ * Wortes, `break-words` kam nie zum Zug. Ein Flex-Item, das seine automatische
+ * Mindestbreite behaelt, ueberragt sich NICHT selbst (sein scrollWidth bleibt
+ * gleich seinem clientWidth) -- es sprengt nur die Zeile, in der es steckt.
+ * Deshalb wird hier konsequent die umschliessende Flex-Zeile gemessen, nicht
+ * der Span selbst (siehe kriterien.md, "min-w-0 muss auf jede Ebene").
+ *
+ * Keine dieser drei Stellen (Zeiten, Dokumentenketten-Metazeile,
+ * Eingangsrechnungs-Zuordnung) wurde bisher mit echten Daten gerendert (siehe
+ * Code-Review Abschnitt 8: "24 von 24 Aenderungen betreffen Bereiche, die
+ * projekt-detail-layout.spec.ts nie fuellt").
+ */
+function spacelosesWort(laenge: number, praefix = ''): string {
+    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
+    let ergebnis = praefix;
+    while (ergebnis.length < laenge) ergebnis += stamm;
+    return ergebnis.slice(0, laenge);
+}
+
+const KATEGORIE_LANG = spacelosesWort(140, 'Kategorie');
+const ARBEITSGANG_LANG = spacelosesWort(140, 'Arbeitsgang');
+const ZEITEN_MITARBEITER_VORNAME = 'Bernhardine';
+const ZEITEN_MITARBEITER_NACHNAME_LANG = spacelosesWort(140, 'Nachname');
+const DOK_KUNDENNAME_LANG = spacelosesWort(180, 'Kundenname');
+const DOK_ERSTELLT_VON_LANG = spacelosesWort(180, 'Ersteller');
+const ZUGEORDNET_VON_LANG = spacelosesWort(150, 'Zugeordnetvon');
+const WEITERE_ZUORDNUNG_VON_LANG = spacelosesWort(150, 'Weiterezuordnung');
+
+test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit Abschnitt 9)', () => {
+    test('Zeiten-Hierarchie, Dokumentenketten-Metazeile und Eingangsrechnungs-Zuordnung sprengen ihre Zeile nicht', async ({ page }) => {
+        const dokMitMetazeile = {
+            ...DUMMY_AUSGANGSDOKUMENT,
+            kundenName: DOK_KUNDENNAME_LANG,
+            erstelltVonName: DOK_ERSTELLT_VON_LANG,
+        };
+        const eingangsrechnungMitZuordnung = {
+            ...DUMMY_EINGANGSRECHNUNG,
+            zugeordnetVonName: ZUGEORDNET_VON_LANG,
+            zugeordnetAm: '2026-02-06T10:00:00Z',
+            alleZuordnungen: [
+                {
+                    projektId: PROJEKT_ID + 999, // ein ANDERES Projekt -> zaehlt als "andereZuordnung"
+                    kostenstelleId: 77,
+                    kostenstelleName: 'Zentrale Kostenstelle',
+                    prozent: 25,
+                    berechneterBetrag: 375,
+                    beschreibung: 'Anteil an Sammelbestellung',
+                    zugeordnetVonName: WEITERE_ZUORDNUNG_VON_LANG,
+                },
+            ],
+        };
+        await page.route('**/api/**', (route) => {
+            const request = route.request();
+            const pfad = new URL(request.url()).pathname;
+            const methode = request.method();
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (/^\/api\/last-accessed\/PROJEKT(\/\d+)?$/.test(pfad)) {
+                if (methode === 'POST') return route.fulfill({ status: 204, body: '' });
+                return json(route, {});
+            }
+            if (pfad === '/api/projekte' && methode === 'GET') return json(route, { projekte: [], gesamt: 0 });
+            if (pfad === '/api/projekte/jahre') return json(route, []);
+            if (pfad === '/api/projekte/freigabe-status') return json(route, {});
+            if (pfad === `/api/projekte/${PROJEKT_ID}`) {
+                return json(route, {
+                    ...DUMMY_PROJEKT,
+                    zeiten: [{
+                        produktkategorie: { bezeichnung: KATEGORIE_LANG },
+                        arbeitsgangBeschreibung: ARBEITSGANG_LANG,
+                        mitarbeiterVorname: ZEITEN_MITARBEITER_VORNAME,
+                        mitarbeiterNachname: ZEITEN_MITARBEITER_NACHNAME_LANG,
+                        anzahlInStunden: 3.5,
+                        stundensatz: 45,
+                    }],
+                });
+            }
+            if (pfad === `/api/projekte/${PROJEKT_ID}/notizen`) return json(route, []);
+            if (pfad === `/api/projekte/${PROJEKT_ID}/dokumente`) return json(route, []);
+            if (pfad === `/api/projekte/${PROJEKT_ID}/eingangsrechnungen`) return json(route, [eingangsrechnungMitZuordnung]);
+            if (pfad === `/api/ausgangs-dokumente/projekt/${PROJEKT_ID}`) return json(route, [dokMitMetazeile]);
+            if (pfad === '/api/ausgangs-dokumente/freigabe-status') return json(route, {});
+            return json(route, []);
+        });
+        await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=zeiten`);
+
+        /** Misst die unmittelbar umschliessende Flex-Zeile des Wert-Spans (xpath=..),
+         * nicht den Span selbst -- siehe Erklaerung im Beschreibungs-Kommentar oben. */
+        const pruefeZeileUeberragtNicht = async (locator: ReturnType<Page['getByText']>, feldname: string) => {
+            await expect(locator, `${feldname} fehlt`).toBeVisible();
+            const zeile = locator.locator('xpath=..');
+            const ueberstand = await zeile.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                ueberstand,
+                `${feldname}: umschliessende Zeile laeuft ${ueberstand}px ueber -- braucht min-w-0 am Span`,
+            ).toBeLessThanOrEqual(2);
+        };
+
+        await pruefeZeileUeberragtNicht(page.getByText(KATEGORIE_LANG, { exact: true }), 'Zeiten Ebene 1 (Kategorie)');
+        await pruefeZeileUeberragtNicht(page.getByText(ARBEITSGANG_LANG, { exact: true }), 'Zeiten Ebene 2 (Arbeitsgang)');
+        await pruefeZeileUeberragtNicht(
+            page.getByText(`${ZEITEN_MITARBEITER_VORNAME} ${ZEITEN_MITARBEITER_NACHNAME_LANG}`, { exact: true }),
+            'Zeiten Ebene 3 (Mitarbeiter)',
+        );
+
+        await page.getByRole('button', { name: /^Geschäftsdokumente/ }).click();
+        await expect(page.getByText(dokMitMetazeile.dokumentNummer, { exact: true })).toBeVisible();
+        await pruefeZeileUeberragtNicht(page.getByText(DOK_KUNDENNAME_LANG, { exact: true }), 'Dokumentenketten-Metazeile (Kunde)');
+        await pruefeZeileUeberragtNicht(page.getByText(DOK_ERSTELLT_VON_LANG, { exact: true }), 'Dokumentenketten-Metazeile (Erstellt von)');
+
+        await expect(page.getByText(eingangsrechnungMitZuordnung.dateiname)).toBeVisible();
+        await pruefeZeileUeberragtNicht(
+            page.getByText(ZUGEORDNET_VON_LANG, { exact: false }),
+            'Eingangsrechnung: "Zugeordnet von"',
+        );
+        await pruefeZeileUeberragtNicht(
+            page.getByText(WEITERE_ZUORDNUNG_VON_LANG, { exact: false }),
+            'Eingangsrechnung: "Weitere Zuordnungen" (von ...)',
+        );
+
+        await keinHorizontalerUeberlauf(page);
+    });
+});
+
+/**
+ * Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8, Befunde 4/5): zwei stille
+ * Kuerzungen in einem "DialogContent overflow-hidden", ohne
+ * `data-kuerzung-erlaubt` -- nach den Global Constraints regelwidrig. Beide
+ * Stellen haengen am selben Dialog ("Rechnung erstellen"): der Betreff steht
+ * im Dialogkopf, der Bauabschnitt in den Positionen, wenn die Basis ein
+ * SECTION_HEADER-Block enthaelt. Fix: beide Stellen umbrechen lassen statt
+ * markieren (Global Constraints: "umbrechen lassen, nicht markieren").
+ *
+ * Der Betreff-<p> ist ein normaler Block (kein Flex-Item) -- ohne break-words
+ * ueberlaeuft er unsichtbar (scrollWidth > clientWidth), ohne dass sich seine
+ * boundingBox() aendert. Der Bauabschnitt-<span> dagegen ist Flex-Item einer
+ * "flex items-center gap-2"-Zeile -- dieselbe Attrappen-Mechanik wie oben,
+ * deshalb wird hier die umschliessende Zeile gemessen.
+ */
+test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nacharbeit Abschnitt 9)', () => {
+    const BETREFF_EIN_WORT = spacelosesWort(180, 'Betreff');
+    const BAUABSCHNITT_LANG = spacelosesWort(140, 'Bauabschnitt');
+    const ANGEBOT_ID = 701;
+    const DOK_FUER_RECHNUNG = {
+        id: ANGEBOT_ID,
+        dokumentNummer: 'AN-2026-0701',
+        typ: 'ANGEBOT' as const,
+        datum: '2026-02-01',
+        betreff: BETREFF_EIN_WORT,
+        betragNetto: 1000,
+        betragBrutto: 1190,
+        gebucht: false,
+        storniert: false,
+        bearbeitbar: true,
+        projektId: PROJEKT_ID,
+    };
+    // Zwei SERVICE-Bloecke: "Teilrechnung" ist nur waehlbar ab mindestens zwei
+    // Leistungspositionen (hatGenugPositionen = getAllServiceBlocks(...).length >= 2) --
+    // erst dann rendert der Dialog ueberhaupt die Positionsliste mit dem
+    // SECTION_HEADER-Block, in dem der Bauabschnitt steckt.
+    const POSITIONEN_JSON = JSON.stringify({
+        blocks: [
+            {
+                id: 'sec-1',
+                type: 'SECTION_HEADER',
+                sectionLabel: BAUABSCHNITT_LANG,
+                children: [
+                    { id: 'svc-1', type: 'SERVICE', title: 'Position 1', quantity: 1, unit: 'Stk', price: 100 },
+                    { id: 'svc-2', type: 'SERVICE', title: 'Position 2', quantity: 1, unit: 'Stk', price: 50 },
+                ],
+            },
+        ],
+    });
+
+    test('Betreff und Bauabschnitt werden umgebrochen statt still abgeschnitten', async ({ page }) => {
+        await page.route('**/api/**', (route) => {
+            const request = route.request();
+            const pfad = new URL(request.url()).pathname;
+            const methode = request.method();
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (/^\/api\/last-accessed\/PROJEKT(\/\d+)?$/.test(pfad)) {
+                if (methode === 'POST') return route.fulfill({ status: 204, body: '' });
+                return json(route, {});
+            }
+            if (pfad === '/api/projekte' && methode === 'GET') return json(route, { projekte: [], gesamt: 0 });
+            if (pfad === '/api/projekte/jahre') return json(route, []);
+            if (pfad === '/api/projekte/freigabe-status') return json(route, {});
+            if (pfad === `/api/projekte/${PROJEKT_ID}`) return json(route, DUMMY_PROJEKT);
+            if (pfad === `/api/projekte/${PROJEKT_ID}/notizen`) return json(route, []);
+            if (pfad === `/api/projekte/${PROJEKT_ID}/dokumente`) return json(route, []);
+            if (pfad === `/api/projekte/${PROJEKT_ID}/eingangsrechnungen`) return json(route, []);
+            if (pfad === `/api/ausgangs-dokumente/projekt/${PROJEKT_ID}`) return json(route, [DOK_FUER_RECHNUNG]);
+            if (pfad === '/api/ausgangs-dokumente/freigabe-status') return json(route, {});
+            if (pfad === `/api/ausgangs-dokumente/${ANGEBOT_ID}/abrechnungsverlauf`) {
+                // restbetrag > 0 noetig, sonst blendet die Komponente den
+                // ganzen Abschnitt "Rechnungstyp waehlen" aus (Bedingung
+                // "!abrechnungsverlauf || abrechnungsverlauf.restbetrag > 0").
+                return json(route, {
+                    bereitsAbgerechneteBlockIds: [], positionen: [],
+                    restbetrag: 1000, basisdokumentBetragNetto: 1000,
+                });
+            }
+            if (pfad === `/api/ausgangs-dokumente/${ANGEBOT_ID}`) {
+                return json(route, { ...DOK_FUER_RECHNUNG, positionenJson: POSITIONEN_JSON });
+            }
+            return json(route, []);
+        });
+        await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
+
+        await expect(page.getByText(DOK_FUER_RECHNUNG.dokumentNummer)).toBeVisible();
+        // Aktionsmenue oeffnen (Klick auf die Dokumentkarte, siehe onClick der
+        // Karte: "Klick fuer Aktionen, Doppelklick zum Oeffnen") und "Rechnung
+        // erstellen" waehlen -- dieselbe Nutzeraktion, die rechnungBasisDok setzt.
+        await page.getByText(DOK_FUER_RECHNUNG.dokumentNummer).click();
+        await page.getByRole('button', { name: 'Rechnung erstellen' }).click();
+
+        const dialogTitel = page.getByRole('heading', { name: 'Rechnung erstellen' });
+        await expect(dialogTitel).toBeVisible();
+        // Scoped auf das Dialog-Panel: der Betreff steht ein zweites Mal in der
+        // (weiterhin sichtbaren) Dokumentenliste dahinter -- ein ungegrenztes
+        // getByText waere mehrdeutig (strict-mode violation).
+        const dialogPanel = dialogTitel.locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
+
+        // Der Bauabschnitt steckt in der Positionsliste, die nur bei
+        // rechnungTyp === 'TEILRECHNUNG' rendert -- "Teilrechnung" waehlen
+        // (mit zwei Leistungspositionen in der Fixture ist der Knopf aktiv).
+        await dialogPanel.getByRole('button', { name: /^Teilrechnung/ }).click();
+
+        // Betreff: getByText(exact:false) trifft das am engsten umschliessende
+        // Element -- das ist hier der innere <span>, ein INLINE-Element ohne
+        // eigene Layout-Box (clientWidth/scrollWidth sind fuer "display: inline"
+        // per Spec immer 0). Deshalb auf das umschliessende <p> hochlaufen --
+        // das ist der normale Block (kein Flex-Item), der ohne break-words
+        // unsichtbar ueberliefe (scrollWidth > clientWidth), ohne dass sich
+        // seine boundingBox() aendert.
+        const betreffSpan = dialogPanel.getByText(BETREFF_EIN_WORT, { exact: false });
+        await expect(betreffSpan, `Betreff "${BETREFF_EIN_WORT}" fehlt -- still abgeschnitten?`).toBeVisible();
+        const betreffElement = betreffSpan.locator('xpath=ancestor::p[1]');
+        const betreffUeberstand = await betreffElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(
+            betreffUeberstand,
+            `Betreff laeuft ${betreffUeberstand}px ueber seinen eigenen Kasten -- braucht break-words am <p>`,
+        ).toBeLessThanOrEqual(2);
+
+        // Bauabschnitt: Flex-Item ohne eigene Umbruch-Klasse -- dieselbe
+        // Attrappen-Mechanik wie im Test oben, deshalb die umschliessende
+        // Zeile pruefen statt den Span selbst.
+        const bauabschnittSpan = dialogPanel.getByText(BAUABSCHNITT_LANG, { exact: true });
+        await expect(bauabschnittSpan, `Bauabschnitt "${BAUABSCHNITT_LANG}" fehlt -- still abgeschnitten?`).toBeVisible();
+        const bauabschnittZeile = bauabschnittSpan.locator('xpath=..');
+        const bauabschnittUeberstand = await bauabschnittZeile.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(
+            bauabschnittUeberstand,
+            `Bauabschnitt-Zeile laeuft ${bauabschnittUeberstand}px ueber -- braucht min-w-0 + break-words am Span`,
+        ).toBeLessThanOrEqual(2);
+
+        // Keine der beiden Stellen darf als "gewollte Kuerzung" markiert sein --
+        // die Global Constraints verlangen hier "umbrechen lassen, nicht markieren".
+        await expect(betreffElement.locator('xpath=ancestor-or-self::*[@data-kuerzung-erlaubt]')).toHaveCount(0);
+        await expect(bauabschnittSpan.locator('xpath=ancestor-or-self::*[@data-kuerzung-erlaubt]')).toHaveCount(0);
     });
 });

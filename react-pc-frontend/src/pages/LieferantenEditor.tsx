@@ -121,10 +121,18 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                                 </span>
                             )}
                         </div>
+                        {/* min-w-0/break-words (Nacharbeit Abschnitt 9, Code-Review Abschnitt 8,
+                            Fundstelle 9): dasselbe Muster, das Task 12 bei Projekt, Anfrage und
+                            Kunde schon geschlossen hat, hier vom Agenten uebersehen. aliasName ist
+                            ein reiner Block-<p> (kein Flex-Item) -- braucht nur break-words.
+                            vertreter/Adresse sind nackte Textknoten in "<p className='flex ...'>"
+                            und damit anonyme Flex-Items, die kein className tragen koennen -- erst
+                            der umschliessende <span min-w-0 break-words> macht sie pruefbar UND
+                            umbrechbar. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {lieferant.aliasName && <p className="text-slate-600">auch: {lieferant.aliasName}</p>}
-                            {lieferant.vertreter && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {lieferant.vertreter}</p>}
-                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {lieferant.strasse}, {lieferant.plz} {lieferant.ort}</p>
+                            {lieferant.aliasName && <p className="text-slate-600 break-words">auch: {lieferant.aliasName}</p>}
+                            {lieferant.vertreter && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{lieferant.vertreter}</span></p>}
+                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{lieferant.strasse}, {lieferant.plz} {lieferant.ort}</span></p>
                         </div>
                     </div>
                 </div>
@@ -353,13 +361,18 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                         </p>
                     </div>
                 </div>
+                {/* shrink-0/min-w-0 flex-1/break-words (Nacharbeit Abschnitt 9, Code-Review
+                    Abschnitt 8, Fundstelle 10): einzige Kontaktdaten-Zeile ohne die Rezeptur --
+                    Task 12 hat sie nur gemeldet. Der Text selbst ist statisch (kein Nutzerwert),
+                    trotzdem dieselbe Bauweise wie die fuenf Zeilen darueber, fuer den Fall
+                    langer, individueller Zahlungsbedingungen. */}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Wallet className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Bezahlung</p>
-                        <p className="font-medium text-slate-900">
+                        <p className="font-medium text-slate-900 break-words">
                             {lieferant.vorauskasse
                                 ? "Im Voraus — Rechnungen sind beim Eintreffen schon bezahlt"
                                 : "Auf Rechnung — Rechnungen landen in den Offenen Posten"}

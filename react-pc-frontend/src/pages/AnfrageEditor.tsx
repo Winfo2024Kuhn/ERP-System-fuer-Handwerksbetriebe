@@ -1252,6 +1252,17 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         {notizen.length > 0 ? (
                             notizen.map((n) => (
                                 <div key={n.id} className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm relative group">
+                                    {/* Struktur (Nacharbeit Abschnitt 9, Design-/Code-Review Abschnitt 8):
+                                        Zeichen fuer Zeichen dem ProjektEditor.tsx angeglichen. Vorher steckten
+                                        Notiz-<p>, Bilder und Bild-Upload ALLE als weitere Flex-Items in dieser
+                                        "flex justify-between items-start mb-2"-Kopfzeile, und der Knopfblock
+                                        (Bearbeiten/Loeschen) war zusaetzlich im Autorenblock verschachtelt.
+                                        break-words am Notiz-<p> war dadurch wirkungslos (319px Zeilen- und
+                                        208px Karten-Ueberstand bei einem 120-Zeichen-Wort, auf den Pixel
+                                        identisch mit und ohne die Klasse) -- ein Flex-Item ohne min-w-0 behaelt
+                                        seine automatische Mindestbreite. Fix: die Kopfzeile schliesst jetzt
+                                        direkt nach dem Knopfblock, Notiz/Bilder/Upload sind Geschwister der
+                                        Kopfzeile und damit normale Bloecke, kein Flex-Item mehr. */}
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-xs uppercase">
@@ -1277,87 +1288,87 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
-                                                    onClick={() => openEditNotizModal(n)}
-                                                    title="Bearbeiten"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
-                                                    onClick={() => handleDeleteNotiz(n.id)}
-                                                    title="Löschen"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </div>
                                         </div>
-                                        <p className="text-slate-700 whitespace-pre-wrap text-sm break-words">{n.notiz}</p>
+                                        <div className="flex gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
+                                                onClick={() => openEditNotizModal(n)}
+                                                title="Bearbeiten"
+                                            >
+                                                <Edit2 className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
+                                                onClick={() => handleDeleteNotiz(n.id)}
+                                                title="Löschen"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <p className="text-slate-700 whitespace-pre-wrap text-sm break-words">{n.notiz}</p>
 
-                                        {/* Bilder */}
-                                        {n.bilder && n.bilder.length > 0 && (
-                                            <div className="mt-3 grid grid-cols-4 gap-2">
-                                                {n.bilder.map(bild => (
-                                                    <div key={bild.id} className="relative group/img">
-                                                        <button
-                                                            onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
-                                                            className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
-                                                        >
-                                                            <ThumbnailImage
-                                                                src={bild.thumbnailUrl || bild.url}
-                                                                fallbackSrc={bild.url}
-                                                                alt={bild.originalDateiname}
-                                                                className="object-cover"
-                                                            />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleNotizBildDelete(n.id, bild.id)}
-                                                            className="absolute top-1 right-1 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow opacity-0 group-hover/img:opacity-100 transition-opacity"
-                                                            title="Bild löschen"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                    {/* Bilder */}
+                                    {n.bilder && n.bilder.length > 0 && (
+                                        <div className="mt-3 grid grid-cols-4 gap-2">
+                                            {n.bilder.map(bild => (
+                                                <div key={bild.id} className="relative group/img">
+                                                    <button
+                                                        onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
+                                                        className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
+                                                    >
+                                                        <ThumbnailImage
+                                                            src={bild.thumbnailUrl || bild.url}
+                                                            fallbackSrc={bild.url}
+                                                            alt={bild.originalDateiname}
+                                                            className="object-cover"
+                                                        />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleNotizBildDelete(n.id, bild.id)}
+                                                        className="absolute top-1 right-1 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow opacity-0 group-hover/img:opacity-100 transition-opacity"
+                                                        title="Bild löschen"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
 
-                                        {/* Bild Upload */}
-                                        <div className="mt-3 flex items-center gap-2">
-                                            {uploadingNotizBildId === n.id ? (
-                                                <span className="text-rose-600 text-sm flex items-center gap-2">
-                                                    <RefreshCw className="w-4 h-4 animate-spin mr-1" />
-                                                    Wird hochgeladen...
-                                                </span>
-                                            ) : (
-                                                <label className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors">
-                                                    <Upload className="w-3.5 h-3.5" />
-                                                    Bild hinzufügen
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        multiple
-                                                        className="hidden"
-                                                        onChange={async (e) => {
-                                                            const files = e.target.files;
-                                                            if (files && files.length > 0) {
-                                                                const fileArray = Array.from(files);
-                                                                for (const file of fileArray) {
-                                                                    await handleNotizBildUpload(n.id, file);
-                                                                }
+                                    {/* Bild Upload */}
+                                    <div className="mt-3 flex items-center gap-2">
+                                        {uploadingNotizBildId === n.id ? (
+                                            <span className="text-rose-600 text-sm flex items-center gap-2">
+                                                <RefreshCw className="w-4 h-4 animate-spin mr-1" />
+                                                Wird hochgeladen...
+                                            </span>
+                                        ) : (
+                                            <label className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors">
+                                                <Upload className="w-3.5 h-3.5" />
+                                                Bild hinzufügen
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    multiple
+                                                    className="hidden"
+                                                    onChange={async (e) => {
+                                                        const files = e.target.files;
+                                                        if (files && files.length > 0) {
+                                                            const fileArray = Array.from(files);
+                                                            for (const file of fileArray) {
+                                                                await handleNotizBildUpload(n.id, file);
                                                             }
-                                                            e.target.value = '';
-                                                        }}
-                                                    />
-                                                </label>
-                                            )}
-                                        </div>
+                                                        }
+                                                        e.target.value = '';
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
                                     </div>
                                 </div>
                             ))

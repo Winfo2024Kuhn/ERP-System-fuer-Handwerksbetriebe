@@ -1546,7 +1546,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center gap-3">
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <FolderOpen className="w-4 h-4 text-slate-400 shrink-0" />
-                                                    <span className="font-semibold text-slate-900 break-words">{cat.name}</span>
+                                                    {/* min-w-0 (Nacharbeit Abschnitt 9, Attrappe aus Task 12):
+                                                        der Span ist selbst ein Flex-Item von "flex items-center
+                                                        gap-2 min-w-0" -- das min-w-0 am umschliessenden div
+                                                        wirkt nicht auf ihn. Ohne eigenes min-w-0 blieb break-words
+                                                        wirkungslos (Code-Review Abschnitt 8). */}
+                                                    <span className="font-semibold text-slate-900 break-words min-w-0">{cat.name}</span>
                                                 </div>
                                                 <div className="text-right text-sm shrink-0">
                                                     <span className="font-medium text-slate-900 mx-3">{cat.totalHours.toFixed(2)} h</span>
@@ -1561,7 +1566,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         <div className="flex justify-between items-center mb-2 gap-3">
                                                             <div className="flex items-center gap-2 min-w-0">
                                                                 <Hammer className="w-3_5 h-3_5 text-rose-500 shrink-0" /> {/* Using Hammer as icon for activity */}
-                                                                <span className="font-medium text-slate-800 break-words">{act.name}</span>
+                                                                {/* min-w-0: gleiche Attrappe wie bei Level 1 (siehe Kommentar oben). */}
+                                                                <span className="font-medium text-slate-800 break-words min-w-0">{act.name}</span>
                                                             </div>
                                                             <div className="text-right text-xs text-slate-500 shrink-0">
                                                                 <span className="font-medium mx-3">{act.totalHours.toFixed(2)} h</span>
@@ -1575,7 +1581,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                 <div key={empIdx} className="flex justify-between items-center text-sm py-0.5 gap-3">
                                                                     <div className="flex items-center gap-2 text-slate-600 min-w-0">
                                                                         <User className="w-3 h-3 text-slate-400 shrink-0" />
-                                                                        <span className="break-words">{emp.name}</span>
+                                                                        {/* min-w-0: gleiche Attrappe wie bei Level 1/2 (siehe Kommentar oben). */}
+                                                                        <span className="break-words min-w-0">{emp.name}</span>
                                                                     </div>
                                                                     <div className="text-right text-slate-600 shrink-0">
                                                                         <span className="font-medium mx-3">{emp.hours.toFixed(2)} h</span>
@@ -1879,14 +1886,19 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                 <Calendar className="w-3 h-3 inline-block mr-1" />
                                                                 {new Date(dok.datum).toLocaleDateString('de-DE')}
                                                             </span>
+                                                            {/* min-w-0 an beiden Spans (Nacharbeit Abschnitt 9,
+                                                                Attrappe aus Task 12): Flex-Items der umschliessenden
+                                                                "flex-wrap"-Zeile ohne eigenes min-w-0 behalten ihre
+                                                                automatische Mindestbreite -- break-words wirkte
+                                                                bisher nicht. */}
                                                             {dok.kundenName && (
-                                                                <span className="break-words">
+                                                                <span className="break-words min-w-0">
                                                                     <User className="w-3 h-3 inline-block mr-1" />
                                                                     {dok.kundenName}
                                                                 </span>
                                                             )}
                                                             {dok.erstelltVonName && (
-                                                                <span title="Erstellt von" className="break-words">
+                                                                <span title="Erstellt von" className="break-words min-w-0">
                                                                     <Edit2 className="w-3 h-3 inline-block mr-1" />
                                                                     {dok.erstelltVonName}
                                                                 </span>
@@ -2307,7 +2319,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         {er.zugeordnetVonName && (
                                                             <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2 flex-wrap">
                                                                 <User className="w-3 h-3 shrink-0" />
-                                                                <span className="break-words">Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
+                                                                {/* min-w-0 (Nacharbeit Abschnitt 9, Attrappe aus
+                                                                    Task 12): Flex-Item der Zeile ohne eigenes
+                                                                    min-w-0, break-words wirkte bisher nicht. */}
+                                                                <span className="break-words min-w-0">Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
                                                                 {er.zugeordnetAm && (
                                                                     <span className="text-slate-400">
                                                                         am {new Date(er.zugeordnetAm).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -2346,13 +2361,25 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                             {z.prozent != null && `${z.prozent}%`}
                                                                             {z.berechneterBetrag != null && ` · ${formatCurrency(z.berechneterBetrag)}`}
                                                                         </span>
+                                                                        {/* max-w-[200px] gestrichen (Nacharbeit
+                                                                            Abschnitt 9, Design-Review Abschnitt 8,
+                                                                            Hinweis 3): die Zeile ist ohnehin
+                                                                            flex-wrap -- ohne die Deckelung nimmt die
+                                                                            Beschreibung die Restbreite und rutscht
+                                                                            bei Bedarf als Ganzes in die naechste
+                                                                            Zeile, statt auf drei Zeilen in einer
+                                                                            schmalen Saeule zu stapeln. */}
                                                                         {z.beschreibung && (
-                                                                            <span className="text-slate-500 italic break-words max-w-[200px]">
+                                                                            <span className="text-slate-500 italic break-words">
                                                                                 „{z.beschreibung}"
                                                                             </span>
                                                                         )}
+                                                                        {/* min-w-0 (Nacharbeit Abschnitt 9,
+                                                                            Attrappe aus Task 12): Flex-Item der
+                                                                            "flex-wrap"-Zeile ohne eigenes min-w-0,
+                                                                            break-words wirkte bisher nicht. */}
                                                                         {z.zugeordnetVonName && (
-                                                                            <span className="text-slate-400 break-words">
+                                                                            <span className="text-slate-400 break-words min-w-0">
                                                                                 (von {z.zugeordnetVonName})
                                                                             </span>
                                                                         )}
@@ -2392,7 +2419,15 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             Rechnung erstellen
                         </DialogTitle>
                         {rechnungBasisDok && (
-                            <p className="text-sm text-slate-500">
+                            // break-words (Nacharbeit Abschnitt 9, stille Kuerzung):
+                            // dieses <p> steckt in einem "DialogContent overflow-hidden".
+                            // Als Block (kein Flex-Item) wird es zwar auf die Dialogbreite
+                            // gestreckt, aber ein langer, spaceloser Betreff wurde ohne
+                            // break-words nicht umgebrochen und dadurch vom Overflow-Hidden
+                            // der Ancestor-Karte still (ohne "…", ohne data-kuerzung-erlaubt)
+                            // abgeschnitten -- regelwidrig nach den Global Constraints.
+                            // Umbrechen lassen statt markieren, wie dort vorgesehen.
+                            <p className="text-sm text-slate-500 break-words">
                                 Basierend auf: <span className="font-medium text-slate-700">{rechnungBasisDok.dokumentNummer}</span>
                                 {rechnungBasisDok.betreff && <span> &ndash; {rechnungBasisDok.betreff}</span>}
                             </p>
@@ -2698,7 +2733,16 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                         )}>
                                                                             {(allSelected || someSelected || allSectionDisabled) && <Check className="w-3 h-3 text-white" />}
                                                                         </div>
-                                                                        <span className={cn("text-sm font-semibold", allSectionDisabled ? "text-slate-400" : "text-slate-700")}>
+                                                                        {/* min-w-0 + break-words (Nacharbeit
+                                                                            Abschnitt 9, stille Kuerzung): dieser Span
+                                                                            ist Flex-Item von "flex items-center
+                                                                            gap-2" ohne Umbruch-Klasse -- ein langer,
+                                                                            spaceloser Bauabschnitt wurde ohne
+                                                                            Umbruch von Overflow-Hidden im umgebenden
+                                                                            DialogContent still abgeschnitten, ohne
+                                                                            data-kuerzung-erlaubt (regelwidrig).
+                                                                            Umbrechen lassen statt markieren. */}
+                                                                        <span className={cn("text-sm font-semibold min-w-0 break-words", allSectionDisabled ? "text-slate-400" : "text-slate-700")}>
                                                                             {block.sectionLabel || 'Bauabschnitt'}
                                                                         </span>
                                                                     </div>

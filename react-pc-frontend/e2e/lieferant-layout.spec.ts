@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
+import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
 import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
@@ -130,10 +130,14 @@ const LIEFERANT_EINWORT_LANG = 'Baustahlgewindestangenspezialgroßhandelsvertrie
  * ins Netz geht -- blockiereFremdeNetzwerkzugriffe() muss deshalb VOR der
  * Navigation stehen, damit sie schon den allerersten Dokument-Request faengt.
  */
-async function stubLieferantDetailApi(page: Page, optionen: { name?: string } = {}) {
+async function stubLieferantDetailApi(page: Page, optionen: { name?: string; overrides?: Partial<typeof DUMMY_LIEFERANT> } = {}) {
     await blockiereFremdeNetzwerkzugriffe(page);
 
-    const lieferant = { ...DUMMY_LIEFERANT, lieferantenname: optionen.name ?? DUMMY_LIEFERANT.lieferantenname };
+    const lieferant = {
+        ...DUMMY_LIEFERANT,
+        lieferantenname: optionen.name ?? DUMMY_LIEFERANT.lieferantenname,
+        ...optionen.overrides,
+    };
 
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
@@ -311,6 +315,11 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
         const kontaktKarte = page.getByRole('heading', { name: 'Kontaktdaten' }).locator(
             'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
         );
+        // Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8, "Kasten-Zusicherungen
+        // doppelt messen"): der Wert-<p> ist ein Block IM Flex-Item ("min-w-0
+        // flex-1") -- seine eigene boundingBox() kann den Kasten nie ueberragen.
+        // min-w-0 entfernen macht die boundingBox-Messung unten rot, break-words
+        // entfernen NICHT -- das faengt erst scrollWidth/clientWidth am Wert ab.
         const pruefeWertBleibtImKontaktKasten = async (wert: string, feldname: string) => {
             const wertElement = kontaktKarte.getByText(wert, { exact: true });
             await expect(wertElement, `${feldname}-Wert "${wert}" fehlt`).toBeVisible();
@@ -325,6 +334,11 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
             expect(
                 ueberstand,
                 `${feldname}-Wert "${wert.slice(0, 30)}..." ragt ${ueberstand.toFixed(0)}px rechts aus seinem Kasten -- braucht min-w-0 flex-1 am umschliessenden div und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+            const eigenerUeberstand = await wertElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                eigenerUeberstand,
+                `${feldname}-Wert "${wert.slice(0, 30)}..." laeuft ${eigenerUeberstand}px ueber seinen eigenen Kasten -- braucht break-words am Wert`,
             ).toBeLessThanOrEqual(2);
         };
         await pruefeWertBleibtImKontaktKasten(TELEFON_LANG, 'Telefon');
@@ -432,5 +446,126 @@ test.describe('Lieferanten-Uebersicht: vier lange Lieferantennamen (Spec-Befund 
             strengePruefungen: true,
             primaerAktion: page.getByRole('button', { name: 'Neuer Lieferant' }),
         });
+    });
+});
+
+/**
+ * Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8, Fundstelle 9): der
+ * Kopf-Untertitel (Alias, Vertreter, Adresse) trug die Rezeptur nicht --
+ * dasselbe Muster, das Task 12 bei Projekt, Anfrage und Kunde schon
+ * geschlossen hat, hier vom Agenten uebersehen. Vertreter/Adresse waren
+ * zudem nackte Textknoten in einem "<p className='flex ...'>" -- anonyme
+ * Flex-Items, an die keine Klasse haengt und die kein elementbasierter Check
+ * (z.B. keinTextLaeuftUeber) je gesehen hat. Eigene, deutlich laengere Werte
+ * als VERTRETER_LANG: der Code-Review-Fund war ausdruecklich, dass die
+ * 46-Zeichen-Fixture im Kopf latent bleibt, weil der Titelblock dort breit
+ * genug ist ("nicht akut").
+ */
+function spacelosesWort(laenge: number, praefix = ''): string {
+    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
+    let ergebnis = praefix;
+    while (ergebnis.length < laenge) ergebnis += stamm;
+    return ergebnis.slice(0, laenge);
+}
+
+test.describe('Lieferanten-Kopf-Untertitel: Alias/Vertreter/Adresse (Nacharbeit Abschnitt 9)', () => {
+    const ALIAS_LANG = spacelosesWort(140, 'Alias');
+    const VERTRETER_KOPF_LANG = spacelosesWort(140, 'Vertreterkopf');
+    const STRASSE_KOPF_LANG = spacelosesWort(140, 'Strassekopf');
+
+    test('Alias, Vertreter und Adresse sprengen die Kopf-Untertitelzeile nicht', async ({ page }) => {
+        await stubLieferantDetailApi(page, {
+            overrides: {
+                aliasName: ALIAS_LANG,
+                vertreter: VERTRETER_KOPF_LANG,
+                strasse: STRASSE_KOPF_LANG,
+                plz: '99999',
+                ort: 'Musterstadt',
+            },
+        });
+        await page.goto(`/lieferanten?lieferantId=${LIEFERANT_ID}&tab=dokumente`);
+
+        const ueberschrift = page.getByRole('heading', { name: LIEFERANT_LANG });
+        await expect(ueberschrift).toBeVisible();
+        // Scoped auf die Kopf-Karte: "vertreter" steht ein zweites Mal in der
+        // Kontaktdaten-Karte -- ein ungegrenztes getByText waere mehrdeutig.
+        const kopfKarte = page.locator('main').getByRole('heading', { name: LIEFERANT_LANG }).locator('xpath=ancestor::div[contains(@class, "p-6")][1]');
+
+        // Alias: reiner Block-<p> (kein Flex-Item) -- ohne break-words liefe er
+        // unsichtbar ueber (scrollWidth > clientWidth), ohne dass sich seine
+        // boundingBox() aendert.
+        const aliasElement = kopfKarte.getByText(`auch: ${ALIAS_LANG}`, { exact: true });
+        await expect(aliasElement, `Alias "${ALIAS_LANG}" fehlt`).toBeVisible();
+        const aliasUeberstand = await aliasElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(
+            aliasUeberstand,
+            `Alias-Zeile laeuft ${aliasUeberstand}px ueber -- braucht break-words am <p>`,
+        ).toBeLessThanOrEqual(2);
+
+        // Vertreter/Adresse: nackte Textknoten in "<p class='flex ...'>" --
+        // anonyme Flex-Items. Playwright matcht bei exact:false das am
+        // engsten umschliessende Element (hier der neue <span>) -- von dort
+        // auf das umschliessende "<p class='flex'>" hochlaufen und DESSEN
+        // scrollWidth/clientWidth pruefen (derselbe Kniff wie die
+        // Abteilungs-Zeile in mitarbeiter-layout.spec.ts).
+        const pruefeUntertitelZeile = async (wert: string, feldname: string) => {
+            const wertSpan = kopfKarte.getByText(wert, { exact: false });
+            await expect(wertSpan, `${feldname} "${wert}" fehlt`).toBeVisible();
+            const zeile = wertSpan.locator(
+                'xpath=ancestor-or-self::p[contains(concat(" ", normalize-space(@class), " "), " flex ")][1]',
+            );
+            const ueberstand = await zeile.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                ueberstand,
+                `${feldname}-Zeile laeuft ${ueberstand}px ueber -- braucht min-w-0 am umschliessenden <span> und break-words`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeUntertitelZeile(VERTRETER_KOPF_LANG, 'Vertreter (Kopf-Untertitel)');
+        await pruefeUntertitelZeile(STRASSE_KOPF_LANG, 'Adresse (Kopf-Untertitel)');
+
+        await keinHorizontalerUeberlauf(page);
+    });
+});
+
+/**
+ * Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8, Fundstelle 10): die
+ * Bezahlung-Zeile trug die Rezeptur (shrink-0/min-w-0 flex-1/break-words)
+ * bisher nicht -- Task 12 hat sie nur gemeldet, nicht behoben. Der Zeilentext
+ * ist statisch (kein Nutzerwert), deshalb bleibt diese Zusicherung ein
+ * Regressionswaechter statt eines TDD-Beweises: mit dem heutigen, kurzen Satz
+ * ist kein Ueberlauf erzwingbar (dieselbe ehrliche Einordnung wie die
+ * Kopfzeilen-Zusicherung in mitarbeiter-layout.spec.ts).
+ */
+test.describe('Lieferanten-Kontaktdaten: Bezahlung-Zeile traegt die Rezeptur (Nacharbeit Abschnitt 9)', () => {
+    test('Bezahlung-Icon bleibt quadratisch, Text-Zeile laeuft nicht ueber ihren Kasten', async ({ page }) => {
+        await stubLieferantDetailApi(page);
+        await page.goto(`/lieferanten?lieferantId=${LIEFERANT_ID}&tab=dokumente`);
+
+        const bezahlungLabel = page.getByText('Bezahlung', { exact: true });
+        await expect(bezahlungLabel).toBeVisible();
+        const bezahlungWert = page.getByText('Auf Rechnung — Rechnungen landen in den Offenen Posten', { exact: true });
+        await expect(bezahlungWert).toBeVisible();
+
+        const eigenerUeberstand = await bezahlungWert.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(eigenerUeberstand, `Bezahlung-Wert laeuft ${eigenerUeberstand}px ueber seinen eigenen Kasten`).toBeLessThanOrEqual(2);
+
+        // Icon-Kasten bleibt so gross wie bei den Nachbarzeilen (Telefon) --
+        // shrink-0 verhindert, dass er beim Schrumpfen der Zeile mitgequetscht
+        // wird. Von der Beschriftung ("Bezahlung"/"Telefon") zur umschliessenden
+        // "bg-slate-50"-Zeile hoch, dann zu deren Icon-Geschwister-<div>.
+        const telefonIcon = page.getByText('Telefon', { exact: true }).locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " bg-slate-50 ")][1]/div[contains(@class,"shadow-sm")]',
+        );
+        const bezahlungIcon = bezahlungLabel.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " bg-slate-50 ")][1]/div[contains(@class,"shadow-sm")]',
+        );
+        const telefonIconBox = await telefonIcon.boundingBox();
+        const bezahlungIconBox = await bezahlungIcon.boundingBox();
+        expect(telefonIconBox, 'Telefon-Icon-Kasten muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(bezahlungIconBox, 'Bezahlung-Icon-Kasten muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(
+            bezahlungIconBox!.width,
+            `Bezahlung-Icon-Kasten ist ${bezahlungIconBox!.width.toFixed(0)}px breit, Telefon-Icon-Kasten ${telefonIconBox!.width.toFixed(0)}px -- braucht shrink-0`,
+        ).toBeCloseTo(telefonIconBox!.width, 0);
     });
 });
