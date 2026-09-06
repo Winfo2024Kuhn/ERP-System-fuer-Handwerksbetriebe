@@ -89,6 +89,11 @@ Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
   Flex-Zeile behält `min-width: auto` und wird so breit wie ihr längstes Wort —
   bei einem Komposita-Namen quer über die Nachbarspalte. Nur `min-w-0` **am
   Element selbst** senkt die Mindestbreite; am Elternteil wirkt es nicht.
+- **`min-w-0` muss auf **jede** Ebene, nicht nur auf die unterste.** Die Falle
+  gilt für Flex-**und** Grid-Items gleichermaßen. Ist die äußere Zeile selbst ein
+  Grid-Item (`grid gap-2`), nützt `min-w-0` an den inneren Flex-Ebenen nichts —
+  die äußere hält weiter ihre automatische Mindestbreite. In Task 11 real
+  passiert, zweiter Anlauf nötig.
 - **`space-y-*` schlägt `mt-auto`.** Tailwind erzeugt für `space-y-3` einen
   Selektor der Spezifität 0-3-0, `.mt-auto` hat 0-1-0. Wer den letzten Block einer
   Karte nach unten schieben will, braucht `flex flex-col` + `gap-*` statt
@@ -102,7 +107,11 @@ Bindestriche und Punkte sind selbst Umbruchpunkte — eine Adresse wie
 `info@beispiel-stahl.example` bricht ohnehin um und verdeckt den Fehler
 vollständig (bei 1440 gemessen: 0 px Überstand mit Bindestrich, 272 px ohne).
 Wer eine Umbruch-Zusicherung baut, nimmt eine bindestrichlose Zeichenkette,
-sonst ist der Test grün und hält nichts fest. Dasselbe gilt für Namen:
+sonst ist der Test grün und hält nichts fest. **Aber harte Testdaten allein
+reichen nicht:** Steht die überlaufende Stelle in einer breiten Hauptspalte,
+schluckt die den Überstand, bevor er `main` erreicht — dann schlägt der
+Seiten-Wächter nicht an und es braucht eine Zusicherung „Wert bleibt in seinem
+Kasten". Beides kombinieren. Dasselbe gilt für Namen:
 „Wohnungsbaugesellschaft Beispielstadt Nord" prüft etwas anderes als ein echtes
 Komposita-Wort ohne Leerzeichen.
 
