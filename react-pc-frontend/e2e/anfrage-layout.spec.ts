@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt } from './hilfen/design';
+import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
 import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
@@ -95,8 +95,9 @@ const DUMMY_ANFRAGE_DETAIL = {
  * ueber ?anfrageId=&tab=) bzw. der Anfragen-Uebersicht anfasst. Catch-all
  * zuerst, gezielte Overrides fuer die im Plan gelisteten Routen danach.
  */
-async function stubAnfrageApi(page: Page, optionen: { uebersicht?: Record<string, unknown>[] } = {}) {
+async function stubAnfrageApi(page: Page, optionen: { uebersicht?: Record<string, unknown>[]; notizen?: Record<string, unknown>[] } = {}) {
     const uebersicht = optionen.uebersicht ?? [];
+    const notizen = optionen.notizen ?? [];
     await page.route('**/api/**', (route) => {
         const request = route.request();
         const pfad = new URL(request.url()).pathname;
@@ -122,7 +123,7 @@ async function stubAnfrageApi(page: Page, optionen: { uebersicht?: Record<string
         if (pfad === '/api/anfragen/funnel-ids') return json(route, []);
         if (pfad === '/api/anfragen/freigabe-status') return json(route, {});
         if (pfad === `/api/anfragen/${ANFRAGE_ID}`) return json(route, DUMMY_ANFRAGE_DETAIL);
-        if (pfad === `/api/anfragen/${ANFRAGE_ID}/notizen`) return json(route, []);
+        if (pfad === `/api/anfragen/${ANFRAGE_ID}/notizen`) return json(route, notizen);
         if (pfad === `/api/anfragen/${ANFRAGE_ID}/dokumente`) return json(route, []);
         if (pfad === `/api/ausgangs-dokumente/anfrage/${ANFRAGE_ID}`) return json(route, []);
         if (pfad === `/api/emails/anfrage/${ANFRAGE_ID}`) return json(route, []);
@@ -497,5 +498,97 @@ test.describe('Anfrage-Seitenspalte "Anfragedaten": lange, bindestrichlose Werte
 
         await keinTextGekuerzt(page);
         await keinHorizontalerUeberlauf(page);
+    });
+});
+
+/**
+ * Nacharbeit Abschnitt 9 (Design-Review Abschnitt 8, bestaetigt vom
+ * Code-Review-Nachtrag): das Notiz-<p> im Tagebuch war zweites Flex-Item der
+ * Kopfzeile ("flex justify-between items-start mb-2") statt ihr Geschwister --
+ * break-words dort war wirkungslos (im Browser gemessen: 319px Zeilen- und
+ * 208px Karten-Ueberstand bei einem 120-Zeichen-Wort, auf den Pixel identisch
+ * MIT und OHNE die Klasse). Zusaetzlich steckte der Knopfblock im
+ * Autorenblock, statt Geschwister der Kopfzeile zu sein. Fix: die Kopfzeile
+ * schliesst jetzt direkt nach dem Knopfblock (Zeichen fuer Zeichen die
+ * Struktur des ProjektEditor.tsx) -- Notiz/Bilder/Upload sind danach normale
+ * Bloecke, keine Flex-Items mehr. Bisher rendert KEINE Spec das Tagebuch
+ * ueberhaupt (notizen: [] in DUMMY_ANFRAGE_DETAIL) -- diese Fixture schliesst
+ * die Luecke.
+ */
+function spacelosesWort(laenge: number, praefix = ''): string {
+    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
+    let ergebnis = praefix;
+    while (ergebnis.length < laenge) ergebnis += stamm;
+    return ergebnis.slice(0, laenge);
+}
+
+test.describe('Anfrage-Tagebuch: Notiz-Struktur (Nacharbeit Abschnitt 9)', () => {
+    const NOTIZ_TEXT_LANG = spacelosesWort(150, 'Baufortschrittsbeschreibung');
+    const NOTIZ = {
+        id: 501,
+        mitarbeiterVorname: 'Klaus',
+        mitarbeiterNachname: 'Mustermann',
+        mobileSichtbar: true,
+        nurFuerErsteller: false,
+        erstelltAm: '2026-02-10T09:00:00Z',
+        notiz: NOTIZ_TEXT_LANG,
+        bilder: [] as unknown[],
+    };
+
+    test('Notiz bleibt in der Tagebuchkarte und steht unter der Autorenzeile, Knopfblock bleibt rechts', async ({ page }) => {
+        await stubAnfrageApi(page, { notizen: [NOTIZ] });
+        await page.goto(`/anfragen?anfrageId=${ANFRAGE_ID}&tab=notizen`);
+
+        const notizElement = page.getByText(NOTIZ_TEXT_LANG, { exact: true });
+        await expect(notizElement, 'Notiz-Text fehlt').toBeVisible();
+
+        // Kein interner Ueberlauf am Notiz-<p> selbst (braucht break-words).
+        const eigenerUeberstand = await notizElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(eigenerUeberstand, `Notiz laeuft ${eigenerUeberstand}px ueber ihren eigenen Kasten`).toBeLessThanOrEqual(2);
+
+        // Notiz bleibt innerhalb der Tagebuchkarte (Design-Review: 208px
+        // Karten-Ueberstand vor dem Fix, auf den Pixel identisch mit/ohne
+        // break-words, weil das <p> Flex-Item der Kopfzeile war statt ihr
+        // Geschwister).
+        const karte = notizElement.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        const notizBox = await notizElement.boundingBox();
+        const karteBox = await karte.boundingBox();
+        expect(notizBox, 'Notiz muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(karteBox, 'Tagebuchkarte muss einen messbaren Rahmen haben').not.toBeNull();
+        const karteUeberstand = (notizBox!.x + notizBox!.width) - (karteBox!.x + karteBox!.width);
+        expect(
+            karteUeberstand,
+            `Notiz ragt ${karteUeberstand.toFixed(0)}px rechts aus der Tagebuchkarte -- braucht den Struktur-Fix (Notiz als Geschwister statt Flex-Item der Kopfzeile)`,
+        ).toBeLessThanOrEqual(2);
+
+        // Struktur: die Notiz steht UNTER der Autorenzeile, nicht daneben.
+        const autorenname = page.getByText('Klaus Mustermann', { exact: true });
+        await expect(autorenname).toBeVisible();
+        const autorenBox = await autorenname.boundingBox();
+        expect(autorenBox, 'Autorenname muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(
+            notizBox!.y,
+            `Notiz (y=${notizBox!.y.toFixed(0)}) steht nicht unterhalb der Autorenzeile (y=${autorenBox!.y.toFixed(0)}) -- soll darunter stehen, nicht daneben`,
+        ).toBeGreaterThan(autorenBox!.y);
+
+        // Knopfblock bleibt rechts in der Kopfzeile, klebt nicht am Namen
+        // (Code-Review-Nachtrag: der Umbau muss Knopfblock UND Notiz aus dem
+        // Autorenblock herausziehen -- sonst haette die Kopfzeile nur ein Kind
+        // und die Knoepfe ruecken an den Namen heran statt an den rechten Rand).
+        // .last(): die Seite hat noch ein "Bearbeiten" im Seitenkopf.
+        const bearbeitenKnopf = page.getByRole('button', { name: 'Bearbeiten' }).last();
+        await expect(bearbeitenKnopf).toBeVisible();
+        const knopfBox = await bearbeitenKnopf.boundingBox();
+        expect(knopfBox, 'Bearbeiten-Knopf im Tagebuch muss einen messbaren Rahmen haben').not.toBeNull();
+        const karteMitteX = karteBox!.x + karteBox!.width / 2;
+        expect(
+            knopfBox!.x,
+            `Bearbeiten-Knopf im Tagebuch (x=${knopfBox!.x.toFixed(0)}) steht nicht rechts (Kartenmitte bei ${karteMitteX.toFixed(0)}) -- Knopfblock muss Geschwister des Autorenblocks sein, nicht darin verschachtelt`,
+        ).toBeGreaterThan(karteMitteX);
+
+        await keinHorizontalerUeberlauf(page);
+        await keinTextLaeuftUeber(page);
     });
 });
