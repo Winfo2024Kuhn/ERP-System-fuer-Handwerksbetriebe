@@ -457,3 +457,88 @@ Bedenken / Abweichungen vom Plan:
 - **Kundenemail-Link in der Seitenspalte "Anfragedaten" (`truncate`, außerhalb der Kopf-/Reiter-/Kartentitel-Baustelle dieses Tasks) nicht angefasst:** in der eigenen Test-Fixture bewusst mit leerem `kundenEmails`-Array gehalten (sonst würde der Adress-/Kartenzweig auslösen, was hier nicht geprüft wird), daher nie exerciert und kein Befund vorhanden. Liegt außerhalb der im Auftrag genannten Schwerpunkte (Kopf, Reiter, Übersichtskarte) — nicht repariert, nur hier vermerkt.
 - Sitzung wurde zwischenzeitlich unterbrochen; Commit `69fb5c7f` stand bereits, dieser Kontext-Log-Block fehlte. Auf Nachfrage des Orchestrators alle vier Gates nochmal frisch nachgefahren (siehe oben) und die 1920-Reiterleisten-Frage gezielt nachgemessen, bevor dieser Block geschrieben wurde — keine Code-Änderung nötig, da bereits abgedeckt.
 - Sonst keine Abweichungen vom Plan-Block (Global Constraints + Task 4 vollständig gelesen und wie beschrieben umgesetzt).
+
+## Abschnitt 3 — Code-Review (Code-Reviewer)
+
+Zeit: 2026-09-06T11:02:13Z
+Branch: feature/layout-14-zoll, Prüfstand `7aabfe16` (Merges von `layout/task-3-projekt`, `layout/task-4-anfrage`, `layout/task-5-kunde`)
+Commit(s): 722ac371 (Task 3), 69fb5c7f (Task 4), f8e731b8 (Task 5), gemergt in 05b9542a, 94701d08, 7aabfe16
+Status: fertig
+Ampel: 🟡 (von Code-Seite abgenommen)
+
+Rollenteilung wie in Abschnitt 2: E2E, Screenshots, Design und UX liegen beim Design-Reviewer (eigener Worktree). **Kein Playwright-Lauf von meiner Seite.** Wo eine Aussage nur im Browser messbar ist, steht das ausdrücklich dabei und geht als Auftrag an den Design-Reviewer.
+
+### Gates
+
+- `npm run lint`: **0 Fehler, genau 1 Warnung** (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`) — identisch zur Baseline.
+- `npm run test`: **88/88 Dateien, 1082/1082 Tests grün**, Exit 0, im ersten Lauf, keine Worker-Timeouts.
+- `npm run build`: grün (`tsc -b` + `vite build`). Build-Output danach verworfen (`git checkout -- src/main/resources/static`, `git clean -f src/main/resources/static/assets`), `git status` sauber.
+- Kein `./mvnw` (Backend unberührt). `git diff --stat 094d35e6..HEAD`: genau 7 Dateien, alle unter `react-pc-frontend/` (3 × `src/pages/*.tsx`, 4 neue Specs). Nichts außerhalb des erlaubten Rahmens, **kein Build-Output in den Commits** (per `git show --stat` je Commit geprüft), keine Merge-Konflikt-Reste.
+- Merges sauber: `git diff <branch> HEAD -- react-pc-frontend` zeigt je Task-Branch nur die Dateien der beiden **anderen** Tasks. Es ist nichts verlorengegangen und nichts doppelt gelandet.
+- DSGVO: in allen vier neuen Specs nur Fantasienamen (Anna Büro / anna.buero, Erika Musterfrau, Wohnungsbaugesellschaft Beispielstadt Nord …, Stahlhandel Beispiel GmbH und Co. KG, `info@beispiel-bau.example` mit reservierter `.example`-TLD). `/api` in allen vier per Catch-all + gezielten Overrides vollständig gestubbt, kein Backend. GoogleMapsEmbed in allen drei Detail-Fixtures durch leere Adressfelder ausgeschaltet — kein externer Netzwerkzugriff aus den Tests. Kein `toHaveScreenshot`, kein `test.only`/`test.skip`, kein eigenes `setViewportSize` (beide Größen laufen also wirklich über die Playwright-Projekte).
+- Design-System auf Code-Ebene: nur rose/slate/emerald im Diff (die farbigen Kennzahl-Kästen bleiben wie sie waren, wie im Plan verlangt), Icons weiterhin nur Lucide, kein Emoji, `2xl` ist der Tailwind-Standard 1536 px (keine eigenen Breakpoints in `tailwind.config.js`) — die Rechnung „bei 1440 drei, ab 1536 vier Karten" geht auf.
+
+### Mutationsproben
+
+**Unit-Ebene (selbst gefahren).** Statt Einzelmutationen die maximale Probe: alle drei Produktivdateien per `git apply -R` vollständig auf den Stand vor Abschnitt 3 zurückgedreht (Kopfzeile wieder `flex flex-col xl:flex-row gap-8`, Reiterleisten wieder `overflow-x-auto`, Kartentitel wieder `truncate` ohne Marker, Raster wieder `xl:grid-cols-4`, die drei Projekt-Reiter zurückbenannt) und die **volle Unit-Suite** dagegen gefahren: **88/88 Dateien, 1082/1082 Tests grün**. Keine einzige Unit-Zusicherung greift. Der Befund aus Abschnitt 2 gilt unverändert: `ProjektEditor.test.tsx`, `AnfrageEditor.test.tsx` und `Kundeneditor.test.tsx` existieren zwar und rendern die Übersichtsseiten, prüfen aber ausschließlich Filter und Blättern — projektweit gibt es keine Testdatei, die eine Layout-Klasse, `data-kuerzung-erlaubt` oder einen Reiter-Text zusichert (per Grep bestätigt). Mutation restlos zurückgenommen, `git diff` und `git status` danach leer.
+
+**Playwright-Ebene (aus dem Spec-Code abgeleitet, vom Design-Reviewer zu bestätigen).**
+
+| Mutation | Was sie fängt |
+| --- | --- |
+| Kopfzeile zurück (Kunde) | `kunde-layout.spec.ts` doppelt: die direkte Kasten-Breite (`Gesamtumsatz ≥ 100px`, vorher 28,7 px) **und** `keinTextLaeuftUeber` in `designPruefung`. Schärfste Bremse des Abschnitts. |
+| Kopfzeile zurück (Projekt) | `projekt-detail-layout.spec.ts`: „mit Anfrage zusammenführen" liegt nicht mehr in der Kopf-Karte, und die `main`-Schleife über alle sieben Reiter (0 px gefordert, vorher 43 px). |
+| Kopfzeile zurück (Anfrage) | **Nichts.** Siehe Bedenken 2. |
+| Reiterleiste zurück auf `overflow-x-auto` (Projekt) | `projekt-detail-layout.spec.ts`: `scrollWidth ≤ clientWidth` der Leiste reißt bei 1440 (Bedarf ~975 px gegen 916 px), zusätzlich der Rechts-Kanten-Vergleich je Reiter. Bei 1920 grün — die 14-Zoll-Hälfte ist die Bremse. |
+| Reiterleiste zurück (Anfrage, Kunde) | **Nichts** — beide passen mit `overflow-x-auto` ohnehin in eine Zeile, alle y-Werte bleiben gleich. Siehe Hinweis 2. |
+| Kartentitel zurück auf `truncate` | Alle drei Übersichts-Specs, und zwar **auch mit beibehaltenem Marker**: `keinTextLaeuftUeber` fragt `data-kuerzung-erlaubt` bewusst nicht ab und sieht den waagerechten Überstand des gekürzten `h3`. Ohne Marker zusätzlich `keinTextGekuerzt`. Greift in beiden Größen. |
+| `2xl:grid-cols-4` zurück auf `xl:grid-cols-4` | Alle drei Übersichts-Specs mit der ausdrücklichen Spaltenzahl je Größe (3 bei 1440, 4 bei 1920). Präzise und beidseitig. |
+| Reiter zurückbenennen (Projekt) | `projekt-detail-layout.spec.ts` über die Namens-Locator (`/^Geschäftsdokumente/` und `/^Tagebuch/` finden die alten Texte nicht) und über die Zusicherung auf den Hinweistext `siehe Reiter "Geschäftsdokumente"`. Achtung: die Breiten-Zusicherung der Leiste fängt es **nicht** — mit `flex-wrap` bricht die Leiste bei den alten Namen einfach dreizeilig um, ohne Überlauf. |
+
+### Die vier gemeldeten Bedenken
+
+**1. Zweizeilige Reiterleiste im Projekt-Editor bei 1440 — technisch sauber, 🟡.** Es verschwindet nichts: die Spec zählt genau sieben Knöpfe, verlangt `toBeVisible()` für jeden, vergleicht jede rechte Kante mit dem Container und **klickt am Ende jeden der sieben an** — Playwrights Actionability-Prüfung beweist damit Sichtbarkeit, Stabilität und Klickbarkeit, nicht nur Anwesenheit. Verstecktes Scrollen ist weg: `overflow-x-auto` ist raus, der Container steht auf `visible`, und `keinHorizontalerUeberlauf` würde jeden neuen `overflow-x: hidden`-Kasten melden. Der Plan erlaubt den Umbruch ausdrücklich („dürfen in eine zweite Zeile rutschen"), der strengere Wortlaut aus meinem Abschnitt-2-Auftrag („≤ 916 px einzeilig") ist nicht erreicht. Aus Code-Sicht kein Mangel — die Optik entscheidet der Design-Reviewer.
+
+**2. Anfrage ohne roten Ausgangszustand — bestätigt, die Spec hält dort nichts. 🟡.** Die drei Zusicherungen der Detailseite (Reiter einzeilig, Bearbeiten/Löschen in der Kopf-Karte, `designPruefung` mit `strengePruefungen`) waren vor **und** nach der Änderung grün; die Messungen des Coding-Agenten decken sich mit der Statik: die Anfrage-Kopfzeile hat nur zwei kurze Kennzahlen statt fünf, und die alte `<h1>` bricht ohnehin an Leerzeichen um. Bewiesen rot ist allein die Übersicht (Kartenraster und Titel). Die Härtung ist damit richtig, aber ungesichert — ein Rückdreher fällt niemandem auf. **Zwei Vorschläge, wie sie scharf würde**, beide klein: (a) eine zweite Fixture mit einem sehr langen **Komposita**-Bauvorhaben ohne Leerzeichen (z. B. „Absturzsicherungsgeländerkonstruktion…"). Das ist der Fall, den die neue Bauweise wirklich löst: `min-w-[18rem]` ersetzt das automatische Mindestmaß des Flex-Elements, und erst `break-words` erlaubt den Bruch im Wort. Ohne beides läuft die Kopfzeile über — vor dem Fix rot, nach dem Fix grün. (b) Die Eigenschaft direkt zusichern, die der Fix liefert: `getComputedStyle(reiterleiste).overflowX !== 'auto'`. Das ist derselbe Griff, den ich in Abschnitt 2 für `<main>` vorgeschlagen habe.
+
+**3. `data-kuerzung-erlaubt` auf Dokumentnummer und Herkunftszeile — geteilte Entscheidung, 🟡.** Vorweg die Wirkung des Markers, damit die Abwägung nachvollziehbar ist: er schaltet `keinTextGekuerzt` und Zweig (a) von `keinHorizontalerUeberlauf` für das Element **und seinen Teilbaum** ab; `keinTextLaeuftUeber` fragt ihn nicht ab. Bei einem `line-clamp-2`-Element heißt das konkret: die senkrechte Kürzung (dritte Zeile fällt weg) meldet danach niemand mehr.
+- **Herkunftszeile („Projekt: <Bauvorhaben>") — behalten.** Sie trägt exakt denselben langen Bauvorhaben-Namen wie die Kartentitel daneben, steht in derselben schmalen Mini-Karte und hat den vollen Text im `title`. Das ist funktional die Titelzeile der Dokument-Karte, der Plan nennt sie ausdrücklich (Z. 204/209), und die Begründung steht im Code und im Log. Passt zur sanktionierten Kategorie.
+- **Dokumentnummer — Marker streichen.** Eine Belegnummer ist eine Kennung, keine Überschrift: halb abgeschnitten ist sie wertlos, und eine Nummer, die zwei Zeilen braucht, gibt es real nicht. Der Marker kauft hier also nichts und kostet einen blinden Fleck in einer Zeile, in der außerdem die Typ-Plakette und die „storniert"-Marke stehen. Vorschlag: `line-clamp-2` und Marker raus, `break-words` rein, `title` darf bleiben. Dann bleibt `keinTextGekuerzt` an dieser Zeile scharf und eine gequetschte Karte wird wieder als echter Befund gemeldet.
+- **Und ein Nachzug für den Orchestrator:** die Global Constraints sprechen von „genau zwei Fällen". Nach Abschnitt 3 tragen **acht** Elemente in vier Dateien den Marker (1 × Anzeigename, 5 × Kartentitel inklusive der Mini-Karten, 2 × die hier besprochenen Zeilen). Der Satz sollte auf den tatsächlichen Stand gezogen werden — sonst markieren die Tasks 6/7/9 mit demselben Recht weiter, und niemand weiß mehr, was sanktioniert ist. Passt als Doku-Schritt in Task 10.
+
+**4. Die übrigen `truncate`-Stellen in `ProjektEditor.tsx` — vier davon würden auf echten Daten etwas Wichtiges abschneiden, 🟡.** Durchgesehen:
+- Z. 3308 **Kunden-E-Mails** in der rechten Spalte (bei 1440 nur 322 px breit): eine normale Firmenadresse passt dort nicht, `title` fehlt — die Adresse ist dann weder lesbar noch kopierbar. Der wahrscheinlichste echte Schaden.
+- Z. 2192 **Lieferantenname** in der Eingangsrechnungs-Liste: genau der lange Name aus der Spec, kein `title`.
+- Z. 2201 **Dateiname** und Z. 1823 **E-Mail-Betreff**: beides realistisch lang, beides ohne `title`.
+- Unkritisch: Z. 2291 (Zeiten-Beschreibung, `max-w-[200px] truncate` **mit** `title`) und Z. 3526 (Prüfsumme im `<code>`, `title` vorhanden) sind gewollte Kürzungen mit Rückfallweg; Z. 4148/4176 (Auftragsnummer) ist kurz.
+Die vier ohne `title` sind heute nicht falsch markiert — sie tragen keinen Marker, `keinTextGekuerzt` **würde** sie melden. Nur schaut dort niemand hin: **weder Task 9 noch Task 10 decken das ab.** Task 9 öffnet ausschließlich die vier Übersichten, Task 10 dreht nur den Standard um und bringt keine neue Fixture mit. Vorschlag: Task 9 um einen fünften Ablauf erweitern (Projekt-Detailseite, Reiter „E-Mails" und „Material" mit langem Betreff, langem Lieferantennamen und einer echten Kunden-E-Mail-Adresse) — oder einen kleinen Task 3b. Ohne das bleibt die Stelle bis auf Weiteres ungeprüft.
+
+### 🛑 Kritisch (blockiert)
+
+Keine. Keine Korrektheitsfehler, alle drei Gates grün, keine Datei außerhalb `react-pc-frontend/`, kein Build-Output, keine Merge-Reste, keine echten Personendaten, kein neuer Netzwerkzugriff.
+
+### 💡 Hinweise (blockieren nicht)
+
+1. **Die Anfrage-Detail-Spec ist kein Wächter für die eigene Änderung** — siehe Bedenken 2, mit zwei konkreten Vorschlägen.
+2. **Ein Rückfall auf `overflow-x-auto` wird nur beim Projekt bei 1440 bemerkt**, und auch das nur, weil die Leiste dort zufällig noch um rund 60 px zu breit ist. Würde jemand die Reiter-Namen später um zwei Zeichen kürzen, verschwindet diese Bremse still. Bei Anfrage und Kunde fängt es von vornherein nichts. Vorschlag für Task 10 oder für die Specs selbst: `getComputedStyle(leiste).overflowX` in allen Reiterleisten-Specs zusichern.
+3. **Dieselbe Bauweise, drei Reifegrade.** Der Kern (`flex flex-wrap items-start gap-4`, Titelblock `flex-1 min-w-[18rem]`, `<h1>` mit `break-words`, Kennzahlen `shrink-0` + `min-w-[7rem]`, Knopfblock `shrink-0`, Reiter `flex-wrap min-w-0` + `px-3`, Kartentitel `line-clamp-2 min-h-[3rem]` + `title` + Marker, Raster `2xl:grid-cols-4`) sitzt in allen drei Dateien gleich. Zwei Härtungen fehlen aber jeweils woanders:
+   - `min-w-0` auf dem inneren Textblock (dem `div` um `<h1>` und die Untertitel-Zeilen) hat **nur Kunde** (`Kundeneditor.tsx` Z. 274). Bei Projekt (Z. ~1062) und Anfrage (Z. ~996) fehlt es. Das ist nicht bloß Kosmetik: `min-w-[18rem]` deckelt das äußere Flex-Element, der innere `div` behält aber `min-width: auto` — und `break-words` senkt die Mindest-Inhaltsbreite nicht. Ein langes Komposita-Bauvorhaben kann den inneren Block also weiterhin über die 18 rem hinausdrücken.
+   - `shrink-0` an den Untertitel-Icons (User/MapPin/Kalender bzw. FileText) hat **nur Anfrage**. Bei Projekt (Z. ~1074 ff.) und Kunde (Z. ~282 f.) können die Symbole bei engem Titelblock zu Strichen zusammenschrumpfen.
+   Vorschlag: beides in allen drei Dateien angleichen und die vollständige Rezeptur so in die Task-Blöcke 6 und 7 schreiben, bevor Lieferant und Mitarbeiter dasselbe Muster mit dem nächsten Abweichungsgrad kopieren.
+4. **Kunde-Mini-Karten: nach den drei Reiter-Klicks läuft nur `keinTextGekuerzt`**, nicht die volle `designPruefung`. Ein Rückdreher auf `truncate` **mit** beibehaltenem Marker bliebe dort unbemerkt (bei den Übersichtskarten fängt ihn `keinTextLaeuftUeber`, das hier nicht mitläuft). Eine Zeile mehr je Reiter-Wechsel würde reichen.
+5. **Irreführende Meldung in `kunde-layout.spec.ts`** (Übersicht): `expect(page.getByText(name)).toBeVisible()` mit dem Text „Kartentitel … fehlt oder ist gekuerzt". `getByText` sieht den vollständigen DOM-Text auch bei `truncate` — die Kürzung fängt allein die `designPruefung` danach. Nur die Meldung anpassen, die Zusicherung selbst ist in Ordnung.
+6. **Zwei Namen für dieselbe Sache.** Der Projekt-Reiter heißt jetzt „Tagebuch", der Anfrage-Reiter weiter „Bau Tagebuch" (`AnfrageEditor.tsx` Z. 1114). Plan-konform (nur Projekt sollte umbenannt werden), aber im laufenden Betrieb sieht der Nutzer zwei Bezeichnungen. Entscheidung für Orchestrator und Design-Reviewer, nicht für mich.
+7. **Kennzahlen-Trennstriche bei Umbruch** (`ProjektEditor.tsx`, `border-r … last:border-r-0`): bricht die Reihe um, trägt der letzte Kasten der ersten Zeile weiterhin einen Trennstrich am Zeilenende. Rein optisch, gehört dem Design-Reviewer.
+8. **Die Absicherung hängt weiterhin vollständig an Playwright.** Das ist in diesem Vorhaben Absicht und kein neuer Befund — es heißt aber, dass ein grüner Unit-Lauf über Abschnitt 3 nichts aussagt und der volle E2E-Lauf des Design-Reviewers das eigentliche Gate ist.
+
+### Auftrag an den Design-Reviewer
+
+1. **Bedenken 1 im Lauf bestätigen:** alle sieben Reiter bei 1440 sichtbar und klickbar, 6 + 1 auf zwei Zeilen, kein Seitwärtsscrollen — und die optische Beurteilung, ob die zweite Zeile so bleiben darf oder ob nachgeschärft werden soll (Icon-Abstand `mr-2` → `mr-1.5` läge außerhalb des Plan-Wortlauts).
+2. **Meine Kernbehauptung zu Bedenken 2 gegenprüfen:** `AnfrageEditor.tsx` auf den Stand vor `69fb5c7f` zurückdrehen und `e2e/anfrage-layout.spec.ts` fahren. Erwartung: der Detail-Testfall bleibt in **beiden** Größen grün, nur die Übersicht wird rot. Bestätigt sich das, ist die Härtung dort ungesichert und einer der beiden Vorschläge oben sollte in Task 6/7 gleich mitgehen.
+3. **Kopfzeile Projekt bei 1440 nachmessen:** ich rechne mit **drei** Zeilen (Titel / Kennzahlen / Knöpfe), weil Titelblock (288 px) + Kennzahlen (~750 px) + Knopfblock (~310 px) die rund 918 px Kartenbreite deutlich überschreiten. Falls das so ist: die Knöpfe stehen dann links unten statt oben rechts — eine sichtbare Änderung gegenüber 1920, die eine bewusste Entscheidung braucht.
+4. **`min-h-[3rem]` an den Kartentiteln** mit **kurzen** Namen ansehen (Übersicht mit „Carport"): die Karten bekommen dort jetzt eine feste Titelhöhe und damit Leerraum.
+5. Voller E2E-Lauf über alle 14 Specs in beiden Größen, wie gehabt.
+
+### Aufräumen
+
+Mutation vollständig zurückgenommen, Build-Output verworfen. `git diff` leer, `git status` sauber (bis auf diesen Log-Block), HEAD unverändert `7aabfe16`. Kein Produktivcode angefasst.
