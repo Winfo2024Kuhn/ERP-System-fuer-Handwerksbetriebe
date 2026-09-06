@@ -66,17 +66,29 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
 
     const header = (
         <Card className="p-6">
-            <div className="flex flex-col xl:flex-row gap-8 justify-between">
-                <div className="flex items-start gap-4">
+            {/* Gemeinsame Rezeptur fuer Kopfzeile/Reiterleiste (Abschnitt 4 im Plan,
+                Ergebnis aus dem Abschnitt-3-Review): aeusseres Flex-Element umbricht
+                (flex-wrap), Titelblock ist flex-1 mit Mindestbreite 18rem (der innere
+                Textblock zusaetzlich min-w-0, sonst schrumpft er trotz break-words
+                nicht unter seine Mindestinhaltsbreite), Kennzahlen ohne flex-1/max-w
+                mit min-w-[7rem] je Kasten, Knopfblock shrink-0 ml-auto -- das ml-auto
+                haelt "Bearbeiten" beim Umbruch rechts statt links (Design-Review
+                Abschnitt 3, Projekt-Editor: ohne ml-auto x=89 statt x=961). Vorher
+                liefen "Gesamtkosten" (34px) und "Bestellungen" (29px) aus ihren
+                Kaesten, weil die Kennzahlen-Reihe "flex-1 max-w-4xl" hatte und sich
+                den Platz nahm, den Titelblock und Knopfblock ebenfalls brauchten
+                (Spec-Befund 2, docs/superpowers/specs/2026-09-04-layout-14-zoll.md). */}
+            <div className="flex flex-wrap items-start gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
                     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                     <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
                         {initials}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900">{lieferant.lieferantenname}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words">{lieferant.lieferantenname}</h1>
                             {lieferant.rollen && lieferant.rollen.length > 0 ? (
                                 lieferant.rollen.map(rolle => (
                                     <span key={rolle} className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
@@ -100,33 +112,38 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                         </div>
                         <div className="mt-1 text-slate-500 space-y-0.5">
                             {lieferant.aliasName && <p className="text-slate-600">auch: {lieferant.aliasName}</p>}
-                            {lieferant.vertreter && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {lieferant.vertreter}</p>}
-                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {lieferant.strasse}, {lieferant.plz} {lieferant.ort}</p>
+                            {lieferant.vertreter && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {lieferant.vertreter}</p>}
+                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {lieferant.strasse}, {lieferant.plz} {lieferant.ort}</p>
                         </div>
                     </div>
                 </div>
 
-                {/* Bento Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1 max-w-4xl">
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                {/* Bento Stats Grid -- kein "flex-1 max-w-4xl" mehr (das zwang die
+                    Kaesten auf 34px/29px, siehe Kommentar oben); min-w-[7rem] je
+                    Kasten haelt die Beschriftung lesbar, flex-wrap laesst die Reihe
+                    umbrechen statt sich zu quetschen. Farben (slate/purple/blue/
+                    emerald) sind Bestand und bleiben unveraendert -- siehe Plan,
+                    "Bewusst nicht in diesem Vorhaben". */}
+                <div className="flex flex-wrap gap-4 shrink-0" data-testid="lieferant-kennzahlen">
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 min-w-[7rem]">
                         <p className="text-xs text-slate-500 uppercase tracking-wide">Gesamtkosten</p>
                         <p className="text-lg font-semibold text-slate-900">{formatCurrency(lieferant.statistik?.gesamtKosten)}</p>
                     </div>
-                    <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
+                    <div className="bg-purple-50 p-3 rounded-xl border border-purple-100 min-w-[7rem]">
                         <p className="text-xs text-purple-600 uppercase tracking-wide">Bestellungen</p>
                         <p className="text-lg font-semibold text-purple-900">{lieferant.statistik?.bestellungAnzahl || 0}</p>
                     </div>
-                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 min-w-[7rem]">
                         <p className="text-xs text-blue-600 uppercase tracking-wide">Artikel</p>
                         <p className="text-lg font-semibold text-blue-900">{lieferant.statistik?.artikelAnzahl || 0}</p>
                     </div>
-                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[7rem]">
                         <p className="text-xs text-emerald-600 uppercase tracking-wide">Lieferzeit Ø</p>
                         <p className="text-lg font-semibold text-emerald-900">{lieferant.statistik?.lieferzeit || lieferant.lieferzeit || 0} Tage</p>
                     </div>
                 </div>
 
-                <div className="flex items-start">
+                <div className="shrink-0 ml-auto flex flex-wrap items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -137,14 +154,16 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
 
     const mainContent = (
         <>
-            {/* Tab Navigation — der offene Reiter steht in der URL, nicht im lokalen State */}
-            <div role="tablist" aria-label="Bereiche des Lieferanten" className="flex items-center gap-1 mb-6 border-b border-slate-200">
+            {/* Tab Navigation — der offene Reiter steht in der URL, nicht im lokalen State.
+                flex-wrap + min-w-0 statt overflow-x-auto: eine versteckt scrollende
+                Reiterleiste ist keine Loesung, lieber umbrechen lassen. */}
+            <div role="tablist" aria-label="Bereiche des Lieferanten" className="flex items-center gap-1 mb-6 border-b border-slate-200 flex-wrap min-w-0">
                 <button
                     role="tab"
                     aria-selected={activeTab === 'emails'}
                     onClick={() => onTabChange('emails')}
                     className={cn(
-                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
+                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'emails'
                             ? "text-rose-600 border-b-2 border-rose-500"
                             : "text-slate-500 hover:text-slate-700"
@@ -161,7 +180,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     aria-selected={activeTab === 'dokumente'}
                     onClick={() => onTabChange('dokumente')}
                     className={cn(
-                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
+                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'dokumente'
                             ? "text-rose-600 border-b-2 border-rose-500"
                             : "text-slate-500 hover:text-slate-700"
@@ -178,7 +197,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     aria-selected={activeTab === 'notizen'}
                     onClick={() => onTabChange('notizen')}
                     className={cn(
-                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
+                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'notizen'
                             ? "text-rose-600 border-b-2 border-rose-500"
                             : "text-slate-500 hover:text-slate-700"
@@ -196,7 +215,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     aria-selected={activeTab === 'reklamationen'}
                     onClick={() => onTabChange('reklamationen')}
                     className={cn(
-                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px",
+                        "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
                         activeTab === 'reklamationen'
                             ? "text-rose-600 border-b-2 border-rose-500"
                             : "text-slate-500 hover:text-slate-700"
@@ -287,7 +306,11 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                         <div className="flex flex-col">
                             {lieferant.kundenEmails && lieferant.kundenEmails.length > 0 ? (
                                 lieferant.kundenEmails.map(email => (
-                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline truncate block">{email}</a>
+                                    // break-words statt truncate: eine Firmen-E-Mail-Adresse ist
+                                    // keine Ueberschrift, die man kuerzen darf -- lieber umbrechen
+                                    // lassen, als sie in der schmalen Kontaktdaten-Spalte abzuschneiden
+                                    // (keinTextLaeuftUeber() fand hier vor dem Fix 49px Ueberstand).
+                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline break-words block">{email}</a>
                                 ))
                             ) : (
                                 <span className="text-slate-400">-</span>
@@ -720,7 +743,7 @@ export default function LieferantenEditor() {
                     Keine Lieferanten gefunden.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                     {lieferanten.map((lieferant) => (
                         <LieferantCard
                             key={lieferant.id}
@@ -766,11 +789,16 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
 
     return (
         <Card
-            className="group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden"
+            className="group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col"
             onClick={onClick}
         >
-            <div className="p-4 space-y-3">
-                <div>
+            {/* Gemeinsame Rezeptur (Abschnitt 4 im Plan): line-clamp-2 statt truncate
+                haelt den vollen Namen im title-Attribut lesbar, kein min-h-[3rem] --
+                das riss bei kurzen Namen eine 24px-Luecke zum Meta-Block (Design-
+                Review Abschnitt 3). Gleich hohe Karten stattdessen ueber h-full
+                flex-col an der Karte und mt-auto am Meta-Block (Kontaktblock unten). */}
+            <div className="p-4 flex flex-col h-full gap-3">
+                <div className="min-w-0">
                     <div className="flex flex-wrap gap-1">
                         {lieferant.rollen && lieferant.rollen.length > 0 ? (
                             lieferant.rollen.map(rolle => (
@@ -793,7 +821,7 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
                             </span>
                         )}
                     </div>
-                    <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={lieferant.lieferantenname}>
+                    <h3 className="font-semibold text-slate-900 mt-2 line-clamp-2 text-base" title={lieferant.lieferantenname} data-kuerzung-erlaubt>
                         {lieferant.lieferantenname || "Unbenannt"}
                     </h3>
                     {lieferant.aliasName && (
@@ -804,7 +832,7 @@ function LieferantCard({ lieferant, onClick, onEdit }: { lieferant: Lieferant; o
                     <p className="text-sm text-slate-500 truncate">{lieferant.ort || "Kein Ort"}</p>
                 </div>
 
-                <div className="space-y-1 pt-2 border-t border-slate-50">
+                <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                     <div className="flex items-start gap-2 text-sm text-slate-600">
                         <MapPin className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />
                         <span className="line-clamp-2">{adresse || "-"}</span>
