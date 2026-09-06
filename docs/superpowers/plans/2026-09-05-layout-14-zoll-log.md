@@ -2682,3 +2682,25 @@ Bedenken / Abweichungen vom Plan:
   zu den Mutationsproben sind aus dem Spec-Code abgeleitet.
 - Die Abnahmeregel "1081 von 1082 mit einem bekannten Fehlschlag" hat sich im
   sauberen Lauf nicht bestaetigt — siehe Gates.
+
+## Korrektur zur Abnahmeregel für `npm run test` (Orchestrator)
+
+Zeit: 2026-09-06T19:40:00Z
+
+Der Code-Reviewer von Abschnitt 6 widerspricht meiner Abnahmeregel „1081 von
+1082" — bei ihm lief die volle Suite **1082/1082 grün**, inklusive
+`LieferantDokumentModal.test.tsx`. Nachgemessen, beide Aussagen stimmen:
+
+- **Einzellauf** `npx vitest run src/components/LieferantDokumentModal.test.tsx`:
+  rot, dreimal reproduziert, immer `expected [ …(3) ] to have a length of 2 but
+  got 3` — und auf dem Ausgangsstand `89ffc0d5` genauso.
+- **Voller Lauf** `npm run test`: grün.
+
+Der Fall hängt also am Lauf-Kontext, nicht an unseren Änderungen (der Beweis auf
+`89ffc0d5` steht). **Endgültige Abnahmeregel:** Maßstab ist der **volle** Lauf,
+dort 1082/1082. Ein Einzellauf dieser einen Datei darf rot sein; das ist
+vorbestehend und gehört zum Sperr-Vorhaben auf dem Ursprungszweig.
+
+Lehre für den Skill: Ein roter Test im Einzellauf und ein grüner in der Suite
+sind **kein** Widerspruch, den man wegdiskutieren darf — beides messen und die
+Abnahmeregel an den Lauf binden, der später auch im Gate gefahren wird.
