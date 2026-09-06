@@ -1090,11 +1090,20 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             </span>
                         </div>
                         {/* shrink-0 an den Untertitel-Icons: sonst quetscht ein
-                            langer Text (Kundenname, Adresse) sie platt (Rezeptur). */}
+                            langer Text (Kundenname, Adresse) sie platt (Rezeptur).
+                            Task 12 (zweiter Mechanismus): der Wert selbst stand
+                            bisher als nackter Text-Node im Flex-Row-<p> --
+                            "break-words" (overflow-wrap: break-word) senkt laut
+                            CSS-Spezifikation die automatische Mindestbreite eines
+                            Flex-Items NICHT (nur "overflow-wrap: anywhere" tut
+                            das), deshalb braucht der Wert einen eigenen <span>
+                            mit min-w-0, an dem break-words erst wirkt -- exakt
+                            dieselbe Regel wie bei der <h1> oben, nur ohne
+                            eigene Zusicherung bisher. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {projekt.kunde && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {projekt.kunde}</p>}
-                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {adresse}</p>}
-                            {projekt.auftragsnummer && <p className="flex items-center gap-2"><FileText className="w-4 h-4 shrink-0" /> {projekt.auftragsnummer}</p>}
+                            {projekt.kunde && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{projekt.kunde}</span></p>}
+                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{adresse}</span></p>}
+                            {projekt.auftragsnummer && <p className="flex items-center gap-2"><FileText className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{projekt.auftragsnummer}</span></p>}
                         </div>
                     </div>
                 </div>
@@ -1348,7 +1357,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             </Button>
                                         </div>
                                     </div>
-                                    <p className="text-slate-700 whitespace-pre-wrap text-sm">{n.notiz}</p>
+                                    <p className="text-slate-700 whitespace-pre-wrap text-sm break-words">{n.notiz}</p>
 
                                     {/* Bilder */}
                                     {n.bilder && n.bilder.length > 0 && (
@@ -1529,13 +1538,17 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 <div className="space-y-4">
                                     {categories.map((cat, catIdx) => (
                                         <div key={catIdx} className="border border-slate-200 rounded-lg overflow-hidden">
-                                            {/* Level 1: Product Category */}
-                                            <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
-                                                <div className="flex items-center gap-2">
-                                                    <FolderOpen className="w-4 h-4 text-slate-400" />
-                                                    <span className="font-semibold text-slate-900">{cat.name}</span>
+                                            {/* Level 1: Product Category -- min-w-0/shrink-0/break-words
+                                                (Task 12, Rezeptur): Produktkategorie- und Arbeitsgang-
+                                                Bezeichnungen sind Freitext und koennen lang sein; ohne
+                                                die Rezeptur waechst die linke flex-Haelfte ueber den
+                                                verfuegbaren Platz hinaus und die Zeile laeuft ueber. */}
+                                            <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center gap-3">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <FolderOpen className="w-4 h-4 text-slate-400 shrink-0" />
+                                                    <span className="font-semibold text-slate-900 break-words">{cat.name}</span>
                                                 </div>
-                                                <div className="text-right text-sm">
+                                                <div className="text-right text-sm shrink-0">
                                                     <span className="font-medium text-slate-900 mx-3">{cat.totalHours.toFixed(2)} h</span>
                                                     <span className="text-slate-500">{formatCurrency(cat.totalCost)}</span>
                                                 </div>
@@ -1545,12 +1558,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                 {cat.activities.map((act, actIdx) => (
                                                     <div key={actIdx} className="p-3 pl-8">
                                                         {/* Level 2: Activity */}
-                                                        <div className="flex justify-between items-center mb-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <Hammer className="w-3_5 h-3_5 text-rose-500" /> {/* Using Hammer as icon for activity */}
-                                                                <span className="font-medium text-slate-800">{act.name}</span>
+                                                        <div className="flex justify-between items-center mb-2 gap-3">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <Hammer className="w-3_5 h-3_5 text-rose-500 shrink-0" /> {/* Using Hammer as icon for activity */}
+                                                                <span className="font-medium text-slate-800 break-words">{act.name}</span>
                                                             </div>
-                                                            <div className="text-right text-xs text-slate-500">
+                                                            <div className="text-right text-xs text-slate-500 shrink-0">
                                                                 <span className="font-medium mx-3">{act.totalHours.toFixed(2)} h</span>
                                                                 <span>{formatCurrency(act.totalCost)}</span>
                                                             </div>
@@ -1559,12 +1572,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         {/* Level 3: Employees */}
                                                         <div className="space-y-1 pl-6 border-l-2 border-slate-100 ml-1.5">
                                                             {act.employees.map((emp, empIdx) => (
-                                                                <div key={empIdx} className="flex justify-between items-center text-sm py-0.5">
-                                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                                        <User className="w-3 h-3 text-slate-400" />
-                                                                        <span>{emp.name}</span>
+                                                                <div key={empIdx} className="flex justify-between items-center text-sm py-0.5 gap-3">
+                                                                    <div className="flex items-center gap-2 text-slate-600 min-w-0">
+                                                                        <User className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                        <span className="break-words">{emp.name}</span>
                                                                     </div>
-                                                                    <div className="text-right text-slate-600">
+                                                                    <div className="text-right text-slate-600 shrink-0">
                                                                         <span className="font-medium mx-3">{emp.hours.toFixed(2)} h</span>
                                                                         <span className="text-slate-400 text-xs">{formatCurrency(emp.cost)}</span>
                                                                     </div>
@@ -1608,12 +1621,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
                         {projekt.materialkosten && projekt.materialkosten.length > 0 ? (
                             projekt.materialkosten.map((m) => (
-                                <div key={m.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100">
-                                    <div>
-                                        <p className="font-medium text-slate-900">{m.beschreibung}</p>
-                                        {m.rechnungsnummer && <p className="text-xs text-slate-500">Rech-Nr: {m.rechnungsnummer}</p>}
+                                <div key={m.id} className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-100">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-medium text-slate-900 break-words">{m.beschreibung}</p>
+                                        {m.rechnungsnummer && <p className="text-xs text-slate-500 break-words">Rech-Nr: {m.rechnungsnummer}</p>}
                                     </div>
-                                    <p className="font-semibold text-slate-900">{formatCurrency(m.betrag)}</p>
+                                    <p className="font-semibold text-slate-900 shrink-0">{formatCurrency(m.betrag)}</p>
                                 </div>
                             ))
                         ) : (
@@ -1626,9 +1639,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         {projekt.artikel && projekt.artikel.length > 0 ? (
                             projekt.artikel.map((a) => (
                                 <div key={a.id} className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-100">
-                                    <div className="min-w-0">
-                                        <p className="font-medium text-slate-900">{a.produktname || a.beschreibung || 'Artikel'}</p>
-                                        <p className="text-xs text-slate-500 mt-0.5">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-medium text-slate-900 break-words">{a.produktname || a.beschreibung || 'Artikel'}</p>
+                                        <p className="text-xs text-slate-500 mt-0.5 break-words">
                                             {a.externeArtikelnummer ? `Nr. ${a.externeArtikelnummer} · ` : ''}
                                             {a.lieferantName ? `${a.lieferantName} · ` : ''}
                                             {a.stueckzahl ? `${a.stueckzahl} Stück` : a.meter ? `${a.meter} m` : a.kilogramm ? `${a.kilogramm} kg` : '-'}
@@ -1858,19 +1871,22 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             // schnitt sonst unlesbar ab, ohne title als Rueckfallweg.
                                                             <p className="text-sm text-slate-600 break-words mt-0.5">{dok.betreff}</p>
                                                         )}
-                                                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                                                            <span>
+                                                        {/* flex-wrap (Task 12, Rezeptur): dok.kundenName ist ein
+                                                            Firmenname, kann lang sein -- ohne Umbruch liefe diese
+                                                            Metazeile ueber die Karte hinaus. */}
+                                                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-400 flex-wrap">
+                                                            <span className="shrink-0">
                                                                 <Calendar className="w-3 h-3 inline-block mr-1" />
                                                                 {new Date(dok.datum).toLocaleDateString('de-DE')}
                                                             </span>
                                                             {dok.kundenName && (
-                                                                <span>
+                                                                <span className="break-words">
                                                                     <User className="w-3 h-3 inline-block mr-1" />
                                                                     {dok.kundenName}
                                                                 </span>
                                                             )}
                                                             {dok.erstelltVonName && (
-                                                                <span title="Erstellt von">
+                                                                <span title="Erstellt von" className="break-words">
                                                                     <Edit2 className="w-3 h-3 inline-block mr-1" />
                                                                     {dok.erstelltVonName}
                                                                 </span>
@@ -2243,7 +2259,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             ist ohne title nicht lesbar. */}
                                                         <p className="text-sm text-slate-500 break-words">{er.dateiname}</p>
                                                         {er.beschreibung && (
-                                                            <p className="text-sm text-slate-600 mt-1">{er.beschreibung}</p>
+                                                            <p className="text-sm text-slate-600 mt-1 break-words">{er.beschreibung}</p>
                                                         )}
                                                         <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
                                                             {er.dokumentDatum && (
@@ -2289,9 +2305,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                     <div className="mt-3 pt-3 border-t border-slate-100">
                                                         {/* Zugeordnet von */}
                                                         {er.zugeordnetVonName && (
-                                                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
-                                                                <User className="w-3 h-3" />
-                                                                <span>Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
+                                                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2 flex-wrap">
+                                                                <User className="w-3 h-3 shrink-0" />
+                                                                <span className="break-words">Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
                                                                 {er.zugeordnetAm && (
                                                                     <span className="text-slate-400">
                                                                         am {new Date(er.zugeordnetAm).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -2305,7 +2321,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             <div className="space-y-1">
                                                                 <p className="text-xs font-medium text-slate-500 mb-1">Weitere Zuordnungen:</p>
                                                                 {andereZuordnungen.map((z, idx) => (
-                                                                    <div key={idx} className="flex items-center gap-2 text-xs">
+                                                                    <div key={idx} className="flex items-center gap-2 text-xs flex-wrap">
                                                                         {z.projektId ? (
                                                                             <button
                                                                                 onClick={() => {
@@ -2331,12 +2347,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                             {z.berechneterBetrag != null && ` · ${formatCurrency(z.berechneterBetrag)}`}
                                                                         </span>
                                                                         {z.beschreibung && (
-                                                                            <span className="text-slate-500 italic truncate max-w-[200px]" title={z.beschreibung}>
+                                                                            <span className="text-slate-500 italic break-words max-w-[200px]">
                                                                                 „{z.beschreibung}"
                                                                             </span>
                                                                         )}
                                                                         {z.zugeordnetVonName && (
-                                                                            <span className="text-slate-400">
+                                                                            <span className="text-slate-400 break-words">
                                                                                 (von {z.zugeordnetVonName})
                                                                             </span>
                                                                         )}
@@ -3276,7 +3292,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
                     {selectedMergeAnfrage && (
                         <div className="my-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                            <p className="font-semibold">{selectedMergeAnfrage.bauvorhaben || 'Unbenannte Anfrage'}</p>
+                            <p className="font-semibold break-words">{selectedMergeAnfrage.bauvorhaben || 'Unbenannte Anfrage'}</p>
                             <p className="mt-1">
                                 {selectedMergeAnfrage.anfragesnummer
                                     ? `Anfrage ${selectedMergeAnfrage.anfragesnummer} wird nach erfolgreicher Übernahme dauerhaft gelöscht.`
@@ -3315,33 +3331,40 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <User className="w-5 h-5 text-rose-500" />
                 Projektdaten
             </h2>
+            {/* Task 12 (Abschnitt 8, "zweiter Mechanismus"): jedes dieser <p>
+                ist ein reiner Block ohne break-words -- der Kasten waechst
+                nicht mit, ein langes Wort malt rechts heraus und landet im
+                Scroll-Ueberlauf von main (DetailLayout hat kein
+                overflow-hidden). Bisher fiel das nicht auf, weil die Werte in
+                der Praxis kurz sind -- ein Komposita-Firmenname oder eine
+                lange Strasse genuegt aber schon. */}
             <div className="space-y-4">
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Kunde</p>
-                    <p className="font-medium text-slate-900">{projekt.kunde || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{projekt.kunde || '-'}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Kundennummer</p>
-                    <p className="font-medium text-slate-900">{projekt.kundennummer || kundeDto?.kundennummer || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{projekt.kundennummer || kundeDto?.kundennummer || '-'}</p>
                 </div>
                 {kundeDto?.ansprechspartner && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Ansprechpartner</p>
-                        <p className="font-medium text-slate-900">{kundeDto.ansprechspartner}</p>
+                        <p className="font-medium text-slate-900 break-words">{kundeDto.ansprechspartner}</p>
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Auftragsnummer</p>
-                    <p className="font-medium text-slate-900">{projekt.auftragsnummer || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{projekt.auftragsnummer || '-'}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Anlagedatum</p>
-                    <p className="font-medium text-slate-900">{formatDate(projekt.anlegedatum)}</p>
+                    <p className="font-medium text-slate-900 break-words">{formatDate(projekt.anlegedatum)}</p>
                 </div>
                 {projekt.abschlussdatum && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Abschlussdatum</p>
-                        <p className="font-medium text-slate-900">{formatDate(projekt.abschlussdatum)}</p>
+                        <p className="font-medium text-slate-900 break-words">{formatDate(projekt.abschlussdatum)}</p>
                     </div>
                 )}
                 {kundenEmails.length > 0 && (
@@ -3374,8 +3397,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 : kategorie?.verrechnungseinheit;
                             return (
                                 <div key={kategorie?.id || index} className="p-2 bg-rose-50 rounded-lg text-sm space-y-1">
-                                    <div className="text-slate-900">{kategorie?.pfad || kategorie?.bezeichnung || 'Kategorie'}</div>
-                                    <div className="text-rose-700 font-medium">{k.menge} {verrechnungseinheit || ''}</div>
+                                    <div className="text-slate-900 break-words">{kategorie?.pfad || kategorie?.bezeichnung || 'Kategorie'}</div>
+                                    <div className="text-rose-700 font-medium break-words">{k.menge} {verrechnungseinheit || ''}</div>
                                 </div>
                             );
                         })}
@@ -3391,8 +3414,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         Projektadresse
                     </h3>
                     <div className="p-3 bg-slate-50 rounded-lg mb-3">
-                        <p className="font-medium text-slate-900">{projekt.strasse || kundeDto?.strasse || '-'}</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="font-medium text-slate-900 break-words">{projekt.strasse || kundeDto?.strasse || '-'}</p>
+                        <p className="text-sm text-slate-600 break-words">
                             {projekt.plz || kundeDto?.plz} {projekt.ort || kundeDto?.ort}
                         </p>
                     </div>
@@ -4232,7 +4255,10 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
                     {projekt.auftragsnummer && (
                         <div className="flex items-center gap-2 text-sm text-slate-600">
                             <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                            <span className="truncate">{projekt.auftragsnummer}</span>
+                            {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit):
+                                dieselbe Rezeptur wie Kundenname zwei Zeilen darueber statt
+                                einer wirkungslosen truncate-Klasse ohne data-kuerzung-erlaubt. */}
+                            <span className="min-w-0 break-words">{projekt.auftragsnummer}</span>
                         </div>
                     )}
                     <div className="flex items-center gap-2 text-sm text-slate-600">

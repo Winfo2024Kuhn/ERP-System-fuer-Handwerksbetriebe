@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { designPruefung, keinTextGekuerzt } from './hilfen/design';
+import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
  * Task 3 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -338,6 +339,20 @@ test.describe('Projekt-Detailseite im schlimmsten Fall: Kopfzeile und Reiterleis
 // ist einfach zu breit).
 const KOMPOSITA_EIN_WORT = 'Absturzsicherungspodesttreppenanlagenmontagearbeitenüberwachungsdokumentation';
 
+// Task 12 (Abschnitt 8, "zweiter Mechanismus", Code-Review Abschnitt 7): die
+// Seitenspalte "Projektdaten" (Kunde, Kundennummer, Ansprechpartner,
+// Auftragsnummer, Projektadresse) und die Kopf-Untertitelzeilen (Kunde,
+// Adresse) rendern Werte als reinen Block-<p> bzw. als anonymes Flex-Item
+// ohne eigenes min-w-0 -- DUMMY_PROJEKT oben setzt weder kundeDto noch
+// strasse/plz/ort, deshalb wurden diese Stellen nie mit echt ueberlaufendem
+// Inhalt gerendert. Bindestrichlose Fantasieworte (DSGVO: kein echter
+// Personen-/Firmenbezug), Strasse absichtlich mit einem Leerzeichen
+// (schwaechste Haertung, siehe kriterien.md), aber immer noch ein
+// 37-Zeichen-Stueck ohne Trennstelle.
+const KUNDE_EIN_WORT = 'Beispielstadtverwaltungsimmobiliengesellschaftmbh';
+const ANSPRECHPARTNER_LANG = 'Ansprechpartnerkoordinationsverwaltungsbeauftragte';
+const STRASSE_LANG = 'Kreisverkehrsplatzrandbebauungsstraße 128a';
+
 // Nachbesserung 1, Messung ohne Fix (Auftrag des Koordinators): die
 // Projekt-Reiterleiste hat bei 1440 nur noch 17px Reserve (899px Bedarf bei
 // den einstelligen Spec-Zaehlern, 916px verfuegbar). Zweistellige Zaehler
@@ -448,5 +463,83 @@ test.describe('Projekt-Kopfzeile: <h1> bei einem einzigen langen Wort ohne Leerz
             ueberstand,
             `<h1> (Breite ${titelBox!.width.toFixed(0)}px) ragt ${ueberstand.toFixed(0)}px rechts aus dem Titelblock (Breite ${titelblockBox!.width.toFixed(0)}px) -- min-w-0 an der <h1> fehlt oder wirkt nicht`,
         ).toBeLessThanOrEqual(1);
+    });
+});
+
+// Task 12 (Abschnitt 8): systematischer Nachweis fuer die Seitenspalte
+// "Projektdaten" und die Kopf-Untertitelzeilen -- alle vier bisher NIE mit
+// echt ueberlaufendem Inhalt gerendert (siehe Konstanten oben).
+test.describe('Projekt-Seitenspalte "Projektdaten" und Kopf-Untertitel: lange, bindestrichlose Werte', () => {
+    test('Kunde, Ansprechpartner und Projektadresse laufen weder im Kasten noch im Titelblock ueber', async ({ page }) => {
+        // Muss vor der ersten Navigation stehen: mit gesetzter Adresse rendert
+        // GoogleMapsEmbed ein echtes <iframe src="https://www.google.com/maps?...">
+        // (siehe Kommentar bei DUMMY_PROJEKT oben) -- dieser Test setzt
+        // strasse/plz/ort bewusst, braucht den Riegel also anders als die
+        // uebrigen Tests dieser Datei.
+        await blockiereFremdeNetzwerkzugriffe(page);
+        await stubProjektApi(page);
+        await page.route(`**/api/projekte/${PROJEKT_ID}`, (route) => {
+            if (route.request().method() !== 'GET') return route.fallback();
+            return json(route, {
+                ...DUMMY_PROJEKT,
+                kunde: KUNDE_EIN_WORT,
+                kundeDto: { ansprechspartner: ANSPRECHPARTNER_LANG },
+                strasse: STRASSE_LANG,
+                plz: '99999',
+                ort: 'Musterstadt',
+            });
+        });
+        await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
+
+        await expect(page.getByRole('heading', { name: BAUVORHABEN })).toBeVisible();
+
+        // Seitenspalte: der Wert-<p> selbst ist ein normaler Block (kein
+        // Flex-Item) -- ohne break-words ueberlaeuft er unsichtbar (scrollWidth
+        // > clientWidth), OHNE dass sich seine eigene boundingBox() aendert
+        // (ein Block ohne explizite Breite bleibt bei "Breite = Elternbreite",
+        // der Text malt nur ueber den Rand hinaus). Deshalb direkt scrollWidth/
+        // clientWidth pruefen statt eine Positions-Geometrie zu vergleichen,
+        // die genau diesen Fall nicht sieht (siehe keinTextLaeuftUeber in
+        // e2e/hilfen/design.ts -- dieselbe Messmethode).
+        const seitenKarte = page.getByRole('heading', { name: 'Projektdaten' }).locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        const pruefeWertBleibtImKasten = async (wert: string, feldname: string, exact = true) => {
+            const wertElement = seitenKarte.getByText(wert, { exact });
+            await expect(wertElement, `${feldname}-Wert "${wert}" fehlt`).toBeVisible();
+            const ueberstand = await wertElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                ueberstand,
+                `${feldname}-Wert "${wert.slice(0, 30)}..." laeuft ${ueberstand}px ueber seinen eigenen Kasten -- braucht break-words am Wert-<p>`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeWertBleibtImKasten(KUNDE_EIN_WORT, 'Kunde (Seitenspalte)');
+        await pruefeWertBleibtImKasten(ANSPRECHPARTNER_LANG, 'Ansprechpartner');
+        // exact:false: Strasse und PLZ/Ort stehen in zwei <p>, "Kreisverkehr...
+        // 128a" ist der volle Text des ersten -- ein exakter Treffer reicht.
+        await pruefeWertBleibtImKasten(STRASSE_LANG, 'Projektadresse (Strasse)');
+
+        // Kopf-Untertitel: derselbe Kunde-Wert steht ein zweites Mal im
+        // Titelblock, dort als anonymes Flex-Item in einem eigenen <span
+        // min-w-0 break-words> (siehe Kommentar in ProjektEditor.tsx). Ohne
+        // min-w-0 auf dem Span waechst er ueber den Titelblock hinaus, auch
+        // wenn break-words gesetzt ist (overflow-wrap: break-word senkt die
+        // automatische Mindestbreite eines Flex-Items nicht).
+        const titelblock = page.getByRole('heading', { name: BAUVORHABEN }).locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " min-w-[18rem] ")][1]',
+        );
+        const kundeImKopf = titelblock.getByText(KUNDE_EIN_WORT, { exact: true });
+        await expect(kundeImKopf).toBeVisible();
+        const kundeImKopfBox = await kundeImKopf.boundingBox();
+        const titelblockBox = await titelblock.boundingBox();
+        expect(kundeImKopfBox, 'Kunde im Kopf-Untertitel muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(titelblockBox, 'Titelblock muss einen messbaren Rahmen haben').not.toBeNull();
+        const kopfUeberstand = (kundeImKopfBox!.x + kundeImKopfBox!.width) - (titelblockBox!.x + titelblockBox!.width);
+        expect(
+            kopfUeberstand,
+            `Kunde "${KUNDE_EIN_WORT}" ragt ${kopfUeberstand.toFixed(0)}px rechts aus dem Titelblock -- braucht min-w-0 am umschliessenden <span>`,
+        ).toBeLessThanOrEqual(2);
+
+        await keinTextGekuerzt(page);
     });
 });
