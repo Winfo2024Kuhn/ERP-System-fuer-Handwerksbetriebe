@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung, keinTextGekuerzt } from './hilfen/design';
+import { designPruefung, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
+import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
  * Task 6 (Abschnitt 4) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -42,6 +43,32 @@ import { designPruefung, keinTextGekuerzt } from './hilfen/design';
  * /api vollstaendig gestubbt (Catch-all + gezielte Overrides, Vorbild
  * stubbeLieferantApi in e2e/bearbeiten-leiste.spec.ts), kein Backend, nur
  * Fantasienamen (DSGVO).
+ *
+ * Nachbesserung 1 (Abschnitt-4-Review, zwei Befunde in dieser Datei/ihrer
+ * Produktivdatei):
+ *
+ * 1. 🔴 Blocker (Design-Review): Bei einem Lieferantennamen aus einem
+ *    einzigen langen Wort (kein Leerzeichen zum Umbrechen) lief die `<h1>`
+ *    quer ueber die Kennzahlen. Ursache: die `<h1>` ist Flex-Item in
+ *    `<div class="flex items-center gap-3 flex-wrap">` und hat deshalb
+ *    `min-width: auto` -- ihre Mindestinhaltsbreite bleibt ihre volle
+ *    Wortbreite, `break-words` (overflow-wrap: break-word) senkt diese
+ *    Mindestbreite nicht. Das vorhandene `min-w-0` sitzt am umschliessenden
+ *    Textblock, nicht an der `<h1>` selbst. Fix: `min-w-0` zusaetzlich auf
+ *    die `<h1>`. Neuer Testfall unten sichert zu: rechte Kante der `<h1>`
+ *    <= rechte Kante ihres Titelblocks (die bisherige Knopf-Zusicherung
+ *    haette das nicht gefangen, siehe Kommentar dort).
+ * 2. 🟡 (Code- und Design-Review bestaetigt): Diese Spec telefonierte ins
+ *    Internet. `DUMMY_LIEFERANT` fuellt strasse/plz/ort, dadurch rendert
+ *    `LieferantenEditor.tsx` ein echtes `GoogleMapsEmbed` mit `<iframe
+ *    src="https://www.google.com/maps?...">`; dazu laedt `index.html` in
+ *    jedem Fall `pdf.js` von cdnjs.cloudflare.com. `page.route('**\/api/**')`
+ *    faengt das nicht ab. Fix: `blockiereFremdeNetzwerkzugriffe()`
+ *    (`e2e/hilfen/api.ts`, neu) bricht jede Anfrage ab, die nicht an
+ *    localhost geht -- die Adressfelder duerfen dadurch gefuellt bleiben
+ *    (die Karte ist im Screenshot weiterhin sichtbar, es geht nur nichts
+ *    mehr wirklich raus). Am Ende der Detail-Tests ein Netzwerk-Mitschnitt,
+ *    der das belegt.
  */
 
 const LIEFERANT_ID = 21;
@@ -78,8 +105,25 @@ const DUMMY_LIEFERANT = {
     emails: [],
 };
 
-/** Stubbt alle /api-Routen der Lieferanten-Detailseite (Deep-Link ?lieferantId=). */
-async function stubLieferantDetailApi(page: Page) {
+// Fantasie-Firmenname aus einem einzigen, unteilbaren Wort -- genau der Fall,
+// den der Design-Reviewer am Projekt-Editor mit 999px Titelbreite und 411px
+// Ueberstand ueber den Titelblock nachgewiesen hat (kein Leerzeichen, an dem
+// die Zeile umbrechen koennte).
+const LIEFERANT_EINWORT_LANG = 'Baustahlgewindestangenspezialgroßhandelsvertriebsgesellschaft';
+
+/**
+ * Stubbt alle /api-Routen der Lieferanten-Detailseite (Deep-Link ?lieferantId=)
+ * UND riegelt jeden Zugriff auf ein fremdes Ziel ab (Nachbesserung 1, Befund 2):
+ * `strasse`/`plz`/`ort` bleiben absichtlich gefuellt (die Kopfzeile soll mit
+ * echter Adresse geprueft werden), ohne dass GoogleMapsEmbed dadurch wirklich
+ * ins Netz geht -- blockiereFremdeNetzwerkzugriffe() muss deshalb VOR der
+ * Navigation stehen, damit sie schon den allerersten Dokument-Request faengt.
+ */
+async function stubLieferantDetailApi(page: Page, optionen: { name?: string } = {}) {
+    await blockiereFremdeNetzwerkzugriffe(page);
+
+    const lieferant = { ...DUMMY_LIEFERANT, lieferantenname: optionen.name ?? DUMMY_LIEFERANT.lieferantenname };
+
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
         const methode = route.request().method();
@@ -96,7 +140,7 @@ async function stubLieferantDetailApi(page: Page) {
         if (pfad === '/api/lieferanten' && methode === 'GET') {
             return json(route, { lieferanten: [], gesamt: 0 });
         }
-        if (pfad === `/api/lieferanten/${LIEFERANT_ID}`) return json(route, DUMMY_LIEFERANT);
+        if (pfad === `/api/lieferanten/${LIEFERANT_ID}`) return json(route, lieferant);
 
         // Standardantwort fuer alles Weitere: leere Liste statt 404 -- fuer
         // diesen Ablauf irrelevante Endpunkte sollen die Seite nicht mit
@@ -112,8 +156,14 @@ const LIEFERANTEN_LANG = [
     'Aluminium- und Edelstahlhandel Nordmuster Handelsgesellschaft mbH',
 ];
 
-/** Stubbt /api fuer die Lieferanten-Uebersicht mit vier langen Namen. */
+/**
+ * Stubbt /api fuer die Lieferanten-Uebersicht mit vier langen Namen. Blockt
+ * ebenfalls fremde Ziele -- `index.html` laedt `pdf.js` von cdnjs unabhaengig
+ * von der Route (Nachbesserung 1, Befund 2).
+ */
 async function stubLieferantenUebersichtApi(page: Page) {
+    await blockiereFremdeNetzwerkzugriffe(page);
+
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
         const methode = route.request().method();
@@ -145,6 +195,26 @@ async function stubLieferantenUebersichtApi(page: Page) {
 
 test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (Spec-Befund 2)', () => {
     test('Kennzahlen-Kaesten bleiben lesbar, "Bearbeiten" bleibt rechts in der Kopf-Karte, Reiterleiste einzeilig ohne verstecktes Scrollen', async ({ page }, testInfo) => {
+        // Netzwerk-Mitschnitt (Nachbesserung 1, Befund 2): DUMMY_LIEFERANT hat
+        // strasse/plz/ort gefuellt, die Kopfzeile rendert also ein echtes
+        // GoogleMapsEmbed-<iframe>. Ohne blockiereFremdeNetzwerkzugriffe() (siehe
+        // stubLieferantDetailApi) ginge das tatsaechlich an google.com/maps,
+        // maps.gstatic.com und maps.googleapis.com raus, dazu index.html laedt
+        // pdf.js von cdnjs.cloudflare.com. Die Listener muessen VOR dem goto
+        // registriert sein, sonst verpassen sie den allerersten Dokument-Request.
+        const fremdeAnfragen: string[] = [];
+        const fremdeAntworten: string[] = [];
+        const istFremd = (url: string) => {
+            const host = new URL(url).hostname;
+            return host !== 'localhost' && host !== '127.0.0.1';
+        };
+        page.on('request', (request) => {
+            if (istFremd(request.url())) fremdeAnfragen.push(request.url());
+        });
+        page.on('response', (response) => {
+            if (istFremd(response.url())) fremdeAntworten.push(response.url());
+        });
+
         await stubLieferantDetailApi(page);
         await page.goto(`/lieferanten?lieferantId=${LIEFERANT_ID}&tab=dokumente`);
 
@@ -224,6 +294,59 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
         await designPruefung(page, testInfo, 'lieferant-detail-langer-name', {
             strengePruefungen: true,
             primaerAktion: bearbeiten,
+        });
+
+        // Auswertung des Netzwerk-Mitschnitts: die Seite MUSS versuchen, nach
+        // draussen zu greifen (GoogleMapsEmbed + pdf.js) -- sonst würde diese
+        // Zusicherung nichts beweisen. Aber keine dieser Anfragen darf jemals
+        // eine echte Antwort bekommen (der Design-Reviewer hat vor dem Riegel
+        // genau 5 Anfragen mitgeschnitten: 2x google.com/maps, je 1x
+        // maps.gstatic.com, maps.googleapis.com, cdnjs.cloudflare.com/pdf.js).
+        expect(
+            fremdeAnfragen.length,
+            'Diese Seite muss mindestens einen Griff nach aussen versuchen (GoogleMapsEmbed/pdf.js) -- sonst zeigt der Mitschnitt nichts',
+        ).toBeGreaterThan(0);
+        expect(
+            fremdeAntworten,
+            `Es darf keine echte Antwort von ausserhalb kommen (abgebrochen statt beantwortet): ${fremdeAntworten.join(', ')}`,
+        ).toEqual([]);
+    });
+
+    // Nachbesserung 1, Befund 1 (🔴 Blocker, Design-Review): ein Name aus einem
+    // einzigen langen Wort hat kein Leerzeichen, an dem die Zeile umbrechen
+    // koennte. Die bisherige Bauweise (min-w-0 am umschliessenden Textblock,
+    // break-words auf der <h1>) reicht dafuer nicht -- die <h1> ist selbst ein
+    // Flex-Item in "flex items-center gap-3 flex-wrap" und behaelt deshalb
+    // min-width: auto (ihre volle, unteilbare Wortbreite). Am Projekt-Editor
+    // gemessen: <h1> 999px breit, 411px davon ausserhalb des Titelblocks.
+    test('Titel aus einem einzigen langen Wort laeuft nicht ueber die Kennzahlen (kein Leerzeichen zum Umbrechen)', async ({ page }, testInfo) => {
+        await stubLieferantDetailApi(page, { name: LIEFERANT_EINWORT_LANG });
+        await page.goto(`/lieferanten?lieferantId=${LIEFERANT_ID}&tab=dokumente`);
+
+        const ueberschrift = page.getByRole('heading', { name: LIEFERANT_EINWORT_LANG });
+        await expect(ueberschrift).toBeVisible();
+
+        // Titelblock = das aeussere "flex-1 min-w-[18rem]"-div (Rezeptur), nicht
+        // der innere "min-w-0"-Textblock -- das ist der Kasten, ueber den die
+        // <h1> laut Design-Review tatsaechlich hinauslief.
+        const titelblock = ueberschrift.locator('xpath=ancestor::div[contains(@class, "min-w-[18rem]")][1]');
+        const titelBox = await titelblock.boundingBox();
+        const h1Box = await ueberschrift.boundingBox();
+        expect(titelBox, 'Titelblock muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(h1Box, '<h1> muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(
+            h1Box!.x + h1Box!.width,
+            `<h1> (rechte Kante ${(h1Box!.x + h1Box!.width).toFixed(0)}px) laeuft ueber ihren Titelblock (rechte Kante ${(titelBox!.x + titelBox!.width).toFixed(0)}px) hinaus -- die <h1> braucht selbst min-w-0, sonst behaelt sie als Flex-Item ihre volle Wortbreite (min-width: auto), unabhaengig von break-words`,
+        ).toBeLessThanOrEqual(titelBox!.x + titelBox!.width + 1);
+
+        // Der eigentliche Schaden aus dem Design-Review: die Kennzahlen werden
+        // durch den ueberlaufenden Titel unlesbar/ueberlagert. keinTextLaeuftUeber
+        // deckt genau das ab (Kennzahl-Kaesten enger als ihr Text).
+        await keinTextLaeuftUeber(page);
+
+        await designPruefung(page, testInfo, 'lieferant-detail-einwort-lang', {
+            strengePruefungen: true,
+            primaerAktion: page.getByRole('button', { name: 'Bearbeiten' }),
         });
     });
 });
