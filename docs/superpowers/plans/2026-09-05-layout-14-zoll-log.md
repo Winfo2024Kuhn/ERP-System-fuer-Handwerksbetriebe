@@ -1054,3 +1054,141 @@ Bedenken / Abweichungen vom Plan:
 - Projekt-Kartentitel-Lücke (Punkt 4) nicht dauerhaft testbar in meiner Files-Liste — mit Wegwerf-Spec verifiziert und gelöscht. Empfehlung an Task 9/10 oben.
 - Eigener Messfehler unterwegs korrigiert, nicht nur im Nachhinein erwähnt: Der erste Ansatz für Punkt 4 (Lücke zwischen Titel-Box und nächstem Geschwister) maß den falschen Abstand, weil min-h-[3rem] den Leerraum innerhalb der eigenen Box reserviert. Auf direkte Höhenmessung der Titel-Box umgestellt, an beiden betroffenen Specs (Anfrage, Kunde) sowie der Wegwerf-Spec (Projekt) korrigiert und erneut rot/grün verifiziert.
 - Sonst keine Abweichungen vom Plan-Block (Global Constraints, Gemeinsame Rezeptur und Task 3b vollständig gelesen und wie beschrieben umgesetzt).
+
+## Abschnitt 4 — Code-Review (Code-Reviewer)
+
+Zeit: 2026-09-06T14:25:00Z
+Branch: feature/layout-14-zoll, Prüfstand `1b5627de` (Merges von `layout/task-3b-nacharbeit`, `layout/task-6-lieferant`, `layout/task-7-mitarbeiter`)
+Commit(s): eaa7ed2b + 7c572241 (Task 6), 35bca3be (Task 7), 5ed821f8 + 19deaf3b + ea1d1d2d (Task 3b), gemergt in f3ad98e8, abb91f45, 1b5627de
+Status: fertig
+Ampel: 🟡 (von Code-Seite abgenommen)
+
+Rollenteilung wie in Abschnitt 2 und 3: E2E, Screenshots, Design und UX liegen beim Design-Reviewer im eigenen Worktree. **Kein Playwright-Lauf von meiner Seite.** Wo eine Aussage nur im Browser messbar ist, steht das ausdrücklich dabei und geht als Auftrag an den Design-Reviewer.
+
+### Gates
+
+- `npm run lint`: **0 Fehler, genau 1 Warnung** (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`) — identisch zur Baseline.
+- `npm run test`: **88/88 Dateien, 1082/1082 Tests grün**, Exit 0, im ersten Lauf, keine Worker-Timeouts.
+- `npm run build`: grün (`tsc -b` + `vite build`, Exit 0). Build-Output danach verworfen (`git checkout --` auf `src/main/resources/static/index.html`, die zwei neuen `assets/`-Dateien gelöscht), `git status` sauber.
+- Kein `./mvnw` (Backend unberührt). `git diff --stat fac91e90..HEAD`: **10 Dateien, alle unter `react-pc-frontend/`** (5 × `src/pages/*.tsx`, 3 geänderte + 2 neue Specs). **Kein Build-Output in den Commits** (per `git show --stat` je Commit geprüft), keine Merge-Konflikt-Reste, kein `test.only`/`test.skip`/`test.fixme`, kein `toHaveScreenshot`, kein eigenes `setViewportSize` — beide Größen laufen also wirklich über die Playwright-Projekte.
+- DSGVO: nur Fantasienamen. Task 7 baut den Mitarbeiter bewusst aus den etablierten Wortstämmen („Bernhardine Beispielmusterfrauenbergwaldschmidtstein", Abteilung „Sonderaufgabenkoordinationsstellenverwaltung"), alle Adressfelder `null`, `stundenlohn: null`, `qualifikation: null` — kein Personenbezug, kein echter Lohn. Task 6 nur `.example`-TLD. Screenshots landen unter `test-results/` (gitignored).
+
+### Mutationsproben
+
+**Unit-Ebene (selbst gefahren).** Alle fünf Produktivdateien per `git apply -R` auf den Stand vor Abschnitt 4 zurückgedreht (Kennzahlen wieder `flex-1 max-w-4xl`, Reiterleisten wieder `overflow-x-auto`/`px-4`, Kartentitel wieder `truncate`/`min-h-[3rem]`, die sechs `truncate`-Stellen wieder eingesetzt, `ml-auto`/`min-w-0`/`shrink-0` wieder entfernt, Raster wieder `xl:grid-cols-4`, „Tagebuch" wieder „Bau Tagebuch") und die betroffenen Unit-Dateien dagegen gefahren: **24/24 grün** (Projekt 6, Anfrage 4, Kunde 5, Lieferant 9). Keine einzige Unit-Zusicherung greift — unverändert zum Befund aus Abschnitt 2 und 3. Mutation restlos zurückgenommen, `git diff` und `git status` danach leer.
+
+**Playwright-Ebene (aus dem Spec-Code abgeleitet, vom Design-Reviewer zu bestätigen).**
+
+| Mutation | Was sie fängt |
+| --- | --- |
+| Kennzahlen zurück auf `flex-1 max-w-4xl` (Lieferant) | `lieferant-layout.spec.ts` doppelt: die vier direkten Kasten-Breiten (`>= 100px`, vorher 94,8 px) **und** `keinTextLaeuftUeber` in `designPruefung`. Schärfste Bremse des Abschnitts. |
+| Reiterleiste zurück auf `overflow-x-auto` | Jetzt in **allen fünf** Specs die direkte Stil-Zusicherung `overflowX === 'visible'`. Genau die Lücke aus Hinweis 2 meines Abschnitt-3-Reviews ist damit zu. |
+| `data-testid` entfernen (Mitarbeiter-Reiterleiste, Lieferant-Kennzahlen) | `toHaveCount(4)` bzw. der Kennzahlen-Scope reißt sofort, fixture-unabhängig. |
+| Kartentitel zurück auf `truncate` (Lieferant) | `keinTextGekuerzt` in der Übersichts-Spec plus `keinTextLaeuftUeber` in `designPruefung`. Greift in beiden Größen. |
+| `2xl:grid-cols-4` zurück auf `xl:grid-cols-4` (Lieferant) | Die ausdrückliche Spaltenzahl je Größe (3 bei 1440, 4 bei 1920). Präzise und beidseitig. |
+| `gap-1`/`px-2` zurück auf `gap-2`/`px-3` (Projekt-Reiter) | Neue y-Abweichungs-Zusicherung (2 px Toleranz über alle sieben Reiter) — vorher 593/593/593/593/593/593/639. |
+| `min-h-[3rem]` wieder einsetzen (Anfrage, Kunde) | Die zwei neuen Kurztitel-Testfälle (Titel-Boxhöhe unter 32 px, mit `min-h` 48 px). Beim **Projekt** fängt das niemand — dort fehlt der Testfall. |
+| Die sechs `break-words`-Stellen zurück auf `truncate` (Projekt) | `keinTextGekuerzt(page)` auf dem Reiter „Geschäftsdokumente": Betreff, Lieferantenname und Dateiname stehen dort gleichzeitig im DOM (alle drei im Block `activeTab === 'geschaeftsdokumente'`, Z. 1676–2943), die Kunden-E-Mail steht ohnehin dauerhaft in der rechten Spalte. Drei der vier Stellen sind mit den Fixture-Werten wirklich rot, der Lieferantenname nicht (siehe Bedenken 1). |
+| `ml-auto` entfernen | Nur beim **Projekt** rot (x=89 statt x=961). Bei Anfrage, Kunde und Lieferant läuft die Zusicherung mit, ohne etwas festzuhalten. |
+| `mt-auto` entfernen (alle fünf Karten von Task 3b) | **Nichts** — und zwar nicht wegen der Fixture, sondern weil `mt-auto` dort ohnehin wirkungslos ist. Siehe Hinweis 1. |
+| Reiter „Tagebuch" zurück auf „Bau Tagebuch" (Anfrage) | Der Locator `/^Tagebuch/` in `anfrage-layout.spec.ts` findet den Knopf nicht mehr. |
+
+### Die fünf gemeldeten Bedenken
+
+**1. Vierte `truncate`-Stelle im Projekt (Lieferantenname, Z. 2212) — Fix ist richtig, nicht unnötig. 🟡 nur an der Formulierung.** Die Zeile steht in einer Flex-Reihe zusammen mit der Plakette „EINGANGSRECHNUNG" und der Belegnummer; `truncate` **ohne `title`** war dort ein echter blinder Fleck, sobald ein Lieferantenname länger wird als die mandatierte Spec-Konstante (35 Zeichen in einer 779 px breiten Zeile). `break-words` kostet an dieser Stelle nichts und macht die Zusicherung nicht überflüssig, sondern gegenstandslos — nach dem Fix gibt es dort keine Kürzung mehr, die jemand prüfen müsste. Der Agent hat die Einschränkung im Spec-Kommentar offen hingeschrieben statt sie zu verschweigen; das ist der richtige Umgang. Kein Nachbessern nötig, nur der Spec-Kommentar sollte „drei von vier Stellen wirklich rot" sagen statt „alle vier".
+
+**2. `ml-auto` bei Anfrage und Kunde läuft nur mit — bestätigt, trotzdem stehen lassen. 🟡.** Anders als in Abschnitt 3 gibt es jetzt einen echten Rot-Beleg (Projekt: x=89 auf x=961, Kartenmitte 720). Bei Anfrage und Kunde bricht die Kopfzeile nicht um, weil dort **zwei** Kennzahlen stehen statt fünf — der Umbruch ließe sich nur erzwingen, indem man Kennzahlen erfindet, die es in der Anwendung nicht gibt. Eine solche Fixture wäre eine Attrappe, kein Test. Meine Empfehlung ist deshalb ausdrücklich **nicht**, hier nachzuschärfen: die Zusicherung ist billig, sie wird von selbst scharf, sobald eine dritte Kennzahl oder ein zweiter Knopf dazukommt, und sie dokumentiert die Absicht im Testcode. Das unterscheidet sie vom Fall aus Abschnitt 3, wo die *Härtung selbst* (`break-words`) ungesichert war — die ist mit dem neuen Komposita-Testfall jetzt belegt.
+
+**3. Kurztitel-Test für das Projekt fehlt — die Empfehlung an Task 9 reicht, muss aber schärfer gefasst werden. 🟡.** Anfrage und Kunde haben je einen dauerhaften Testfall; beim Projekt fehlt er nur, weil `projekt-uebersicht-layout.spec.ts` nicht in Task 3bs Files-Liste stand. Task 9 schreibt ohnehin eine neue Spec über alle vier Übersichten und fasst keine `src/`-Datei an — dort passt der Testfall exakt hin. **Aber:** so wie die zwei vorhandenen Testfälle gebaut sind (Titel-Boxhöhe unter 32 px), messen sie nur die *Abwesenheit* von `min-h-[3rem]`, nicht die neue Mechanik. Und die neue Mechanik funktioniert heute gar nicht (Hinweis 1). Task 9 sollte deshalb zusätzlich zwei Karten mit **unterschiedlich langen** Titeln in einer Reihe öffnen und vergleichen, ob der Meta-Block (die `border-t`-Zeile) auf derselben y-Position sitzt. Das ist die Zusicherung, die die Rezeptur wirklich festhält.
+
+**4. `gap-4` beim Lieferanten — richtig entschieden, kein Angleich nötig. 🟡 nur an der Plan-Formulierung.** Der Task-6-Block ist spezifischer als die allgemeine Rezeptur, und der Plan verbietet unter „Bewusst nicht in diesem Vorhaben" ausdrücklich, die zwei Kennzahlen-Bauweisen zu vereinheitlichen. Ergebnis im Code: Projekt und Anfrage tragen `gap-x-6 gap-y-2` (Trennerspalten), Kunde und Lieferant `gap-4` (Kacheln) — **innerhalb** jeder Bauweise ist es jetzt einheitlich. Der Rezeptur-Text im Plan sollte das nachziehen („`gap-x-6 gap-y-2` für die Trennerspalten-Bauweise, `gap-4` für die Kachel-Bauweise"), sonst liest der nächste Agent eine Abweichung, wo keine ist.
+Zum zweiten Teil: dass `ml-auto` beim Lieferanten heute wirkungslos ist, deckt sich mit den Messungen (Knopf-x vorher und nachher identisch, 1218,7 bzw. 1570,7). Vier Kennzahlen und ein Knopf brechen bei 1440 nicht um. Kein Mangel — die Klasse kostet nichts und ist genau die Absicherung für den fünften Kennzahl-Kasten, für den die Bauweise jetzt vorbereitet ist.
+
+**5. Task 7 mit `overflowX === 'visible'` als einziger echter Bremse — die Spec erfüllt ihren Zweck.** Sie prüft genau die Eigenschaft, die der Fix herstellt, war fixture-unabhängig rot (zusammen mit dem fehlenden `data-testid`) und fängt jeden Rückfall auf `overflow-x-auto` — unabhängig davon, ob die Reiter zufällig knapp passen. Das ist **besser** als eine Pixelmessung, die nur zufällig reißt; genau das war Hinweis 2 meines Abschnitt-3-Reviews. Dass sich bei vier statischen Reiter-Beschriftungen ohne Zähler kein datenabhängiger Überlauf erzwingen lässt, ist eine Eigenschaft der Seite, kein Versagen der Fixture-Suche. Dazu kommt eine volle `designPruefung(strengePruefungen)` mit einer bewusst pathologischen 41-Zeichen-Komposita-Fixture über die ganze Seite inklusive Seitenpanel und ein `main`-Überstandstest nach jedem der vier Reiter-Klicks. Kein Nachbessern nötig.
+
+### 🛑 Kritisch (blockiert)
+
+Keine. Keine Korrektheitsfehler, alle drei Gates grün, keine Datei außerhalb `react-pc-frontend/`, kein Build-Output in den Commits, keine Merge-Reste, keine echten Personendaten.
+
+### 💡 Hinweise (blockieren nicht)
+
+**1. `mt-auto` ist in fünf von sechs Karten wirkungslos — die neue Rezeptur greift heute nur beim Lieferanten. Wichtigster Befund des Abschnitts.**
+Tailwind 3.4.17 erzeugt für `space-y-3` den Selektor `.space-y-3>:not([hidden])~:not([hidden]){margin-top:.75rem}` (im gebauten CSS nachgesehen). Dessen Spezifität ist 0-3-0, die von `.mt-auto{margin-top:auto}` ist 0-1-0 — `space-y` gewinnt, unabhängig von der Reihenfolge. In `ProjektCard`, `AnfrageCard`, `KundenProjektKarte`, `KundenAnfrageKarte` und `KundenKarte` sitzt `mt-auto` genau auf dem letzten Kind eines `space-y-3`-Containers und wird überschrieben. Nur `LieferantCard` (Task 6) hat den Container von `space-y-3` auf `gap-3` umgestellt — dort funktioniert es.
+Folge: Gleich hohe Karten kommen weiterhin zustande (`h-full` plus Grid-Stretch; alle fünf Kartenraster sind echte Grids, geprüft), aber der Meta-Block wird **nicht** nach unten geschoben. Die Trennlinie sitzt je nach Titellänge unterschiedlich hoch. Der gemeldete 24-px-Fehler ist trotzdem behoben, weil `min-h-[3rem]` raus ist — die Ersatzmechanik ist es, die nicht greift.
+Fix, ein Wort je Karte: `space-y-3` auf `gap-3` (genau wie `LieferantCard` es macht). Betrifft `ProjektEditor.tsx:4153`, `AnfrageEditor.tsx:179`, `Kundeneditor.tsx:121`, `Kundeneditor.tsx:165`, `Kundeneditor.tsx:848`. Zur Kontrolle im Browser: zwei Karten einer Reihe mit unterschiedlich langem Titel, y-Position der `border-t`-Zeile vergleichen — heute unterschiedlich, nach dem Fix gleich.
+
+**2. Die Lieferant-Spec lädt ein echtes Google-Maps-`iframe`.**
+`DUMMY_LIEFERANT` in `e2e/lieferant-layout.spec.ts` hat `strasse`/`plz`/`ort` gefüllt, und `LieferantenEditor.tsx:361` rendert damit `GoogleMapsEmbed`, also ein `iframe` auf `https://www.google.com/maps?q=…&output=embed`. `page.route` fängt nur `**/api/**`, der Aufruf geht also wirklich raus. Die drei Specs aus Abschnitt 3 lassen die Adressfelder genau deshalb bewusst leer (Kommentar in `projekt-detail-layout.spec.ts:100`); Task 6 hat das übernommene Vorbild an dieser Stelle nicht mitgenommen. Folgen: externer Netzzugriff aus dem Test, nicht deterministische Screenshots, Fehlschlag ohne Internet — und ein plausibler Kandidat für die vom Task-6-Agenten beobachtete „komplett leere weiße Seite" bei vier Workern, die er der Maschinenlast zugeschrieben hat. **Kein DSGVO-Verstoß** (Fantasiefirma, keine Personendaten), aber gegen den in Abschnitt 3 etablierten Standard „kein Backend, kein externer Zugriff". Fix: `strasse`/`plz`/`ort` auf `null` wie in den anderen Fixtures, oder die Google-Route im Test abbrechen.
+
+**3. Dieselbe E-Mail-Kürzung wurde in Projekt und Lieferant behoben, in der Anfrage nicht.**
+`AnfrageEditor.tsx:1454` — Kunden-E-Mails im `sideContent`, `truncate` ohne `title`, wortgleich mit `ProjektEditor.tsx:3332` (in Task 3b behoben) und `LieferantenEditor.tsx:309` (in Task 6 behoben). `AnfrageEditor.tsx` stand in Task 3bs Files-Liste, der Fix wäre also erlaubt gewesen. Unentdeckt geblieben, weil die Anfrage-Fixture `kundenEmails: []` setzt (aus einem anderen Grund: um `GoogleMapsEmbed` stillzulegen). Zweite, schwächere Stelle derselben Art: `Kundeneditor.tsx:877`, E-Mail in der Übersichtskarte mit `truncate` ohne `title` — die Fixture hat dort keine E-Mail. Beide tragen **keinen** Marker, `keinTextGekuerzt` würde sie also melden; es schaut nur niemand hin. Vorschlag: die Anfrage-Stelle als Einzeiler nachziehen (`break-words`, wie die zwei Schwestern), die Kunden-Übersichtskarte in Task 9 mit einer langen E-Mail in der Fixture abdecken.
+
+**4. Knopfblock beim Kunden weicht von der Rezeptur ab.** `Kundeneditor.tsx:319` hat `flex items-start shrink-0 ml-auto`, die Rezeptur verlangt `shrink-0 ml-auto flex flex-wrap items-start gap-2`. Heute folgenlos, weil dort nur ein Knopf steht — ein zweiter würde aber nicht umbrechen und ohne `gap-2` kleben. Projekt, Anfrage und Lieferant tragen die volle Fassung. Einzeiler.
+
+**5. Zwei Bauweisen für dieselbe Karte.** `LieferantCard`: `p-4 flex flex-col h-full gap-3` (Z. 800). Die anderen vier: `p-4 space-y-3 flex-1 flex flex-col`. Nach Hinweis 1 ist die Lieferant-Variante die richtige; beim Angleichen fällt der Unterschied von selbst weg. (`h-full` auf dem inneren `div` gegen `flex-1` ist Geschmackssache und funktioniert beides.)
+
+**6. „Bau Tagebuch" lebt als Überschrift weiter.** Der Reiter heißt jetzt in beiden Editoren „Tagebuch", die Überschrift im Reiter-Inhalt sagt weiter „Bau Tagebuch" (`ProjektEditor.tsx:1285`, `AnfrageEditor.tsx:1221`). Plan-konform und in beiden Dateien gleich, aber der Nutzer sieht damit weiter zwei Namen für dieselbe Sache — nur eine Ebene tiefer als vorher. Entscheidung für Orchestrator und Design-Reviewer.
+
+**7. Die Mitarbeiter-Reiterleiste hat keine ARIA-Rollen.** Kein `role="tablist"`, kein `role="tab"`, kein `aria-selected` — vorbestehend, und der Plan sagt für Task 7 ausdrücklich „sonst nichts an dieser Datei". Lieferant und `SystemSetupConfigurator` haben die Rollen, Projekt, Anfrage, Kunde und Mitarbeiter nicht. Gehört als Notiz in Task 10, nicht in diesen Abschnitt.
+
+**8. Die Absicherung hängt weiterhin vollständig an Playwright.** Mit allen fünf zurückgedrehten Dateien bleiben 24/24 der betroffenen Unit-Tests und 1082/1082 der vollen Suite grün. Das ist in diesem Vorhaben Absicht, heißt aber: der volle E2E-Lauf des Design-Reviewers ist das eigentliche Gate.
+
+### Rezeptur-Treue der fünf Detailseiten
+
+Zeile für Zeile an Kopfzeile, Reiterleiste und Kartentitel verglichen.
+
+| Punkt | Projekt | Anfrage | Kunde | Lieferant | Mitarbeiter |
+| --- | --- | --- | --- | --- | --- |
+| äußeres `flex flex-wrap items-start gap-4` | ja | ja | ja | ja | entfällt (kein Card-Kopf, keine Kennzahlen-Reihe) |
+| Titelblock `flex-1 min-w-[18rem]` | ja | ja | ja | ja | entfällt |
+| innerer Textblock `min-w-0` | ja | ja | ja | ja | entfällt |
+| `<h1>` `break-words` | ja | ja | ja | ja | entfällt |
+| Untertitel-Icons `shrink-0` | ja | ja | ja | ja | entfällt |
+| Kennzahlen ohne `flex-1`/`max-w`, je `min-w-[7rem]` | ja | ja | ja | ja | entfällt |
+| Knopfblock `shrink-0 ml-auto flex flex-wrap items-start gap-2` | ja | ja | **`flex-wrap`/`gap-2` fehlen** | ja | entfällt |
+| Reiterleiste `flex-wrap min-w-0`, kein `overflow-x-auto` | ja | ja | ja | ja | ja |
+| Reiter-Knöpfe `px-3` | `px-2` (Plan-Vorgabe, für die eine Zeile) | ja | ja | ja | ja |
+| `overflowX === 'visible'` in der Spec | ja | ja | ja | ja | ja |
+| Kartentitel `line-clamp-2` + `title` + Marker, kein `min-h-[3rem]` | ja | ja | ja | ja | entfällt (kein `truncate`/`line-clamp` in der Datei) |
+| Karte `h-full flex flex-col` + `mt-auto` am Meta-Block | `mt-auto` wirkungslos | wirkungslos | wirkungslos (3 ×) | ja | entfällt |
+| Raster `2xl:grid-cols-4` | ja | ja | ja | ja | entfällt |
+
+Zwei verbleibende Abweichungen, beide 🟡 und beide Einzeiler: der Knopfblock beim Kunden (Hinweis 4) und `space-y-3` statt `gap-3` in den fünf Karten von Task 3b (Hinweis 1). Alles andere sitzt jetzt in allen fünf Dateien gleich — das war das Ziel dieses Abschnitts und ist bis auf diese zwei Stellen erreicht. Die zwei Kennzahlen-Bauweisen (Trennerspalten gegen Kacheln) und die zwei Reiterleisten-Optiken bleiben unterschiedlich, wie der Plan das unter „Bewusst nicht in diesem Vorhaben" festhält.
+
+### `data-kuerzung-erlaubt`-Inventar (Grundlage für Task 10)
+
+Acht Vorkommen in vier Dateien im gesamten `react-pc-frontend/src/` — unverändert acht wie nach Abschnitt 3, aber die Zusammensetzung hat sich verschoben: die Dokumentnummer ist raus (Task 3b), der Lieferanten-Kartentitel ist dazugekommen (Task 6). Jedes trägt ein `title` mit dem vollen Text.
+
+| # | Stelle | Bewertung |
+| --- | --- | --- |
+| 1 | `RibbonNav.tsx:322` — Anzeigename in der Menüleiste (`max-w-[10rem] line-clamp-1`) | **Gewollt.** Voller Name steht im Nutzermenü darunter, `title` vorhanden, Begründung steht im Code. Task 8b zieht `line-clamp-1` wieder auf `truncate` und ergänzt `2xl:max-w-none`. |
+| 2 | `ProjektEditor.tsx:4185` — `ProjektCard`-Titel (Bauvorhaben) | **Gewollt.** Kartentitel, `line-clamp-2`, `title` vorhanden. Sanktionierte Kategorie. |
+| 3 | `AnfrageEditor.tsx:217` — `AnfrageCard`-Titel | **Gewollt**, identisch zu 2. |
+| 4 | `Kundeneditor.tsx:866` — `KundenKarte`-Titel (Kundenname) | **Gewollt**, identisch zu 2. |
+| 5 | `Kundeneditor.tsx:140` — `KundenProjektKarte`-Titel (Mini-Karte) | **Gewollt**, identisch zu 2. |
+| 6 | `Kundeneditor.tsx:173` — `KundenAnfrageKarte`-Titel (Mini-Karte) | **Gewollt**, identisch zu 2. |
+| 7 | `Kundeneditor.tsx:226` — Herkunftszeile „Projekt: Bauvorhaben" der Dokument-Mini-Karte | **Gewollt, mit Vorbehalt.** Trägt denselben langen Bauvorhaben-Namen wie die Kartentitel daneben und ist faktisch die Titelzeile der Mini-Karte; `title` vorhanden, Plan nennt sie ausdrücklich. Der Vorbehalt aus Abschnitt 3 bleibt: der Marker schaltet `keinTextGekuerzt` für den ganzen Teilbaum ab — hier ist das nur ein `<p>` ohne Kinder, also unkritisch. |
+| 8 | `LieferantenEditor.tsx:824` — `LieferantCard`-Titel (Lieferantenname) | **Gewollt**, identisch zu 2. |
+
+**Kein blinder Fleck darunter.** Alle acht sind Überschriften oder Anzeigenamen mit vollem `title`, keiner steht auf einer Kennung, einem Betrag oder einer Adresse. Die eine Stelle, die aus der Reihe fiel — die Belegnummer in `KundenDokumentKarte` — hat Task 3b entfernt (`break-words` ohne Marker, `title` bleibt), genau wie in Abschnitt 3 empfohlen.
+**Nachzug für Task 10 (unverändert nötig):** die Global Constraints sprechen weiter von „genau zwei Fällen". Tatsächlich sind es acht in vier Dateien. Der Satz muss auf den Stand gezogen werden, sonst markieren künftige Tasks mit demselben Recht weiter und niemand weiß mehr, was sanktioniert ist. Der Marker selbst ist dabei nicht das Problem — dass er stillschweigend für den ganzen **Teilbaum** gilt, ist es: ein Marker auf einem Container schaltet jede Kürzung darunter ab. Task 10 sollte deshalb festschreiben, dass er nur auf dem kürzenden Element selbst stehen darf, nie auf einem Container.
+
+### Spec-Qualität der zwei neuen Specs
+
+- **Vollständig gestubbt:** beide über Catch-all `**/api/**` plus gezielte Overrides, Vorbild `stubbeLieferantApi`. Kein Backend. **Einzige Lücke:** das echte Google-Maps-`iframe` in der Lieferant-Detailspec (Hinweis 2) — das ist keine `/api`-Route und rutscht deshalb durch.
+- **Nur Fantasienamen:** ja, in beiden. Bei Task 7 besonders sorgfältig (erfundener Nachname aus den Wortstämmen „Beispiel"/„Muster", alle Adress-, Lohn- und Qualifikationsfelder `null`) — für eine Mitarbeiterseite genau das richtige Vorgehen.
+- **Beide Größen:** ja, in beiden. Kein eigenes `setViewportSize`, die Größe kommt aus den Playwright-Projekten; die Lieferant-Übersichtsspec verzweigt sogar bewusst über `testInfo.project.name` für die erwartete Spaltenzahl.
+- Kein `toHaveScreenshot`, kein `test.only`/`skip`. `designPruefung(..., { strengePruefungen: true, primaerAktion })` je Zustand. Beide Specs erklären im Kopfkommentar, welche Zusicherung wirklich rot war und welche nur mitläuft — genau die Ehrlichkeit, die in Abschnitt 3 gefehlt hat.
+
+### Auftrag an den Design-Reviewer
+
+1. **Hinweis 1 im Browser bestätigen (wichtigster Punkt).** `/projekte` mit zwei Karten in einer Reihe, eine mit kurzem und eine mit langem Bauvorhaben. `getComputedStyle` auf dem `border-t`-Meta-Block: erwarteter Wert `margin-top: 12px` statt `auto`, und die y-Positionen der zwei Trennlinien unterscheiden sich. Gegenprobe: dasselbe auf `/lieferanten` — dort sollte `mt-auto` greifen und die Trennlinien auf gleicher Höhe liegen. Bestätigt sich das, ist der Fix `space-y-3` auf `gap-3` in den fünf Karten.
+2. **Hinweis 2 bestätigen:** `npx playwright test e2e/lieferant-layout.spec.ts` mit mitlaufendem Netzwerk-Mitschnitt (`page.on('request')` oder das Trace). Erwartung: eine Anfrage an `www.google.com/maps`. Und ob das die „leere weiße Seite" bei vier Workern erklärt.
+3. **Optik der neuen Kartenhöhen** auf allen vier Übersichten in beiden Größen — das ist der Befund, wegen dem `min-h-[3rem]` rausgeflogen ist, und der Ersatz greift heute nur beim Lieferanten.
+4. **Projekt-Reiterleiste bei 1440 nachmessen:** der Bedarf liegt jetzt laut Task 3b bei 899 px gegen 916 px verfügbar — 17 px Luft, nachdem er vorher 62 px zu groß war. Bitte bestätigen, dass alle sieben Reiter wirklich einzeilig stehen und die Trennlinie sauber unter einer Zeile liegt, und ob 17 px Reserve als Rahmen reichen (jeder künftige zweistellige Zähler frisst davon).
+5. **Kunden-Kopfzeile mit dem langen Namen:** ein Knopf ohne `flex-wrap`/`gap-2` (Hinweis 4) — sieht das bei 1440 unauffällig aus?
+6. Voller E2E-Lauf über alle Specs in beiden Größen, wie gehabt.
+
+### Aufräumen
+
+Mutation vollständig zurückgenommen (fünf Patches per `git apply -R` gesetzt und per `git apply` wieder zurückgespielt), Build-Output verworfen. `git diff` leer, `git status` sauber (bis auf diesen Log-Block), HEAD unverändert `1b5627de`. Kein Produktivcode angefasst, kein Playwright gestartet.
