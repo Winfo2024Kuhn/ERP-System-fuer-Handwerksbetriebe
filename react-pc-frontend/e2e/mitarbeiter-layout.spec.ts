@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { designPruefung } from './hilfen/design';
+import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
  * Task 7 (Abschnitt 4) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -49,12 +50,31 @@ import { designPruefung } from './hilfen/design';
  * ausschliesslich ein erfundener Mitarbeiter, gebaut aus den im Vorhaben
  * etablierten Fantasie-Wortstaemmen "Beispiel"/"Muster" -- kein echter
  * Personenbezug, keine echte Adresse, kein echter Lohn (stundenlohn: null).
+ *
+ * Nachtrag Abschnitt 6 (Task 7b): Design-Review und Code-Review von Abschnitt 5
+ * haben unabhaengig voneinander dieselbe fuenfte Fundstelle gemeldet -- die
+ * Kontakt-Spalte (SideInfo, Z. 442-535) traegt dieselbe Luecke, die dieses
+ * Vorhaben bei Projekt/Anfrage/Kunde/Lieferant schon geschlossen hat: jede
+ * Zeile ist "flex items-center gap-3" ohne min-w-0 am umschliessenden <div>
+ * und ohne break-words am Wert. Unentdeckt, weil email/strasse/plz/ort bisher
+ * null waren -- die Zeilen wurden nie mit echtem Inhalt gerendert. Fix hier:
+ * Fixture um eine lange, bindestrichlose E-Mail-Adresse ergaenzt (Bindestriche
+ * sind selbst Umbruchpunkte und wuerden den Fehler verdecken, siehe
+ * .claude/skills/loese-problem/references/kriterien.md). Die Abteilung war
+ * schon vorher lang und bindestrichlos genug (44 Zeichen, ein Wort) -- genau
+ * die Zeichenkette, an der der Design-Reviewer 21px Ueberstand ueber die
+ * Kartenkante gemessen hat.
  */
 
 const MITARBEITER_ID = 42;
 const VORNAME = 'Bernhardine';
 const NACHNAME = 'Beispielmusterfrauenbergwaldschmidtstein';
 const ABTEILUNG = 'Sonderaufgabenkoordinationsstellenverwaltung';
+// Bindestrichlose Fantasie-E-Mail (Task 7b): ein Bindestrich waere selbst ein
+// Umbruchpunkt und wuerde den Fehler verdecken (kriterien.md, "Testdaten fuer
+// Umbruch-Fehler brauchen ein langes Wort ohne Trennstellen"). 102 Zeichen,
+// .example-Domain, keine echte Adresse (DSGVO).
+const EMAIL_LANG = 'personalaktenverwaltungspostfachfuermitarbeiterkommunikationsservice@musterstadtnordwestgebiet.example';
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -67,7 +87,7 @@ const DUMMY_MITARBEITER = {
     strasse: null,
     plz: null,
     ort: null,
-    email: null,
+    email: EMAIL_LANG,
     telefon: null,
     festnetz: null,
     qualifikation: null,
@@ -109,6 +129,9 @@ async function stubMitarbeiterApi(page: Page) {
 
 test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regressionswaechter)', () => {
     test('Reiterleiste ohne verstecktes Scrollen, Kopf-Knoepfe vollstaendig rechts in der Karte', async ({ page }, testInfo) => {
+        // Muss vor der ersten Navigation stehen (siehe playwright-design-pruefung
+        // SKILL.md): index.html laedt pdf.js von cdnjs bei jeder Navigation.
+        await blockiereFremdeNetzwerkzugriffe(page);
         await stubMitarbeiterApi(page);
         await page.goto('/mitarbeiter');
 
@@ -117,6 +140,45 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
 
         const ueberschrift = page.getByRole('heading', { name: `${NACHNAME}, ${VORNAME}` });
         await expect(ueberschrift).toBeVisible();
+
+        // Task 7b: Kontakt-Spalte (SideInfo). Zielwert Nr. 1 des gesamten
+        // Vorhabens -- main darf mit der langen E-Mail/Abteilung nicht
+        // ueberlaufen (Design-Review Abschnitt 5: 184px bei 1440, 192px bei
+        // 1920, vor dem Fix).
+        const mainUeberstandBeimOeffnen = await page.evaluate(() => {
+            const main = document.querySelector('main');
+            return main ? main.scrollWidth - main.clientWidth : 0;
+        });
+        expect(
+            mainUeberstandBeimOeffnen,
+            `main laeuft beim Oeffnen der Detailseite ueber (lange E-Mail/Abteilung in der Kontakt-Spalte): ${mainUeberstandBeimOeffnen}px`,
+        ).toBe(0);
+
+        // Wert innerhalb seines Kastens: die Kontakt-Spalte hat keine eigenen
+        // "bg-slate-50"-Kaesten je Zeile (anders als Lieferant/Kunde) -- der
+        // Kasten ist die Karte, die SideInfo umschliesst (DetailLayout.tsx,
+        // <Card className="p-6 h-full">). "shadow-sm" traegt laut card.tsx
+        // ausschliesslich die Karte selbst. Auf diese Karte eingegrenzt, weil
+        // die Kopfzeile (Z. 335) dieselbe Abteilungs-Zeichenkette im Untertitel
+        // wiederholt -- ein ungegrenztes getByText(exact) waere sonst mehrdeutig.
+        const seitenKarte = page.getByRole('heading', { name: 'Persönliche Daten' }).locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        const pruefeWertImKasten = async (wert: string) => {
+            const wertElement = seitenKarte.getByText(wert, { exact: true });
+            await expect(wertElement).toBeVisible();
+            const wertBox = await wertElement.boundingBox();
+            const karteBox = await seitenKarte.boundingBox();
+            expect(wertBox, `Wert "${wert.slice(0, 30)}..." muss einen messbaren Rahmen haben`).not.toBeNull();
+            expect(karteBox, 'Kontakt-Karte muss einen messbaren Rahmen haben').not.toBeNull();
+            const ueberstand = (wertBox!.x + wertBox!.width) - (karteBox!.x + karteBox!.width);
+            expect(
+                ueberstand,
+                `Wert "${wert.slice(0, 30)}..." ragt ${ueberstand.toFixed(0)}px rechts aus der Kontakt-Karte -- braucht min-w-0 flex-1 am umschliessenden div und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeWertImKasten(EMAIL_LANG);
+        await pruefeWertImKasten(ABTEILUNG);
 
         // Kopfzeile: die drei Knoepfe muessen vollstaendig sichtbar UND
         // rechts von der Bildschirmmitte liegen -- nicht nur "irgendwo in
