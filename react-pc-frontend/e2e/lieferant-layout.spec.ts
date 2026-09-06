@@ -106,9 +106,10 @@ const DUMMY_LIEFERANT = {
 };
 
 // Fantasie-Firmenname aus einem einzigen, unteilbaren Wort -- genau der Fall,
-// den der Design-Reviewer am Projekt-Editor mit 999px Titelbreite und 411px
+// den der Design-Reviewer am Projekt-Editor mit 999px Titelbreite und 583px
 // Ueberstand ueber den Titelblock nachgewiesen hat (kein Leerzeichen, an dem
-// die Zeile umbrechen koennte).
+// die Zeile umbrechen koennte). (Zahlendreher korrigiert, Nachtrag
+// Abschnitt 5/Task 9: hier stand zuvor der Anfrage-Wert 411px.)
 const LIEFERANT_EINWORT_LANG = 'Baustahlgewindestangenspezialgroßhandelsvertriebsgesellschaft';
 
 /**
@@ -318,7 +319,9 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
     // break-words auf der <h1>) reicht dafuer nicht -- die <h1> ist selbst ein
     // Flex-Item in "flex items-center gap-3 flex-wrap" und behaelt deshalb
     // min-width: auto (ihre volle, unteilbare Wortbreite). Am Projekt-Editor
-    // gemessen: <h1> 999px breit, 411px davon ausserhalb des Titelblocks.
+    // gemessen: <h1> 999px breit, 583px davon ausserhalb des Titelblocks
+    // (Zahlendreher korrigiert, Nachtrag Abschnitt 5/Task 9: hier stand zuvor
+    // der Anfrage-Wert 411px).
     test('Titel aus einem einzigen langen Wort laeuft nicht ueber die Kennzahlen (kein Leerzeichen zum Umbrechen)', async ({ page }, testInfo) => {
         await stubLieferantDetailApi(page, { name: LIEFERANT_EINWORT_LANG });
         await page.goto(`/lieferanten?lieferantId=${LIEFERANT_ID}&tab=dokumente`);
