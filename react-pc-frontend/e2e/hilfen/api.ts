@@ -45,6 +45,42 @@ function json(route: Route, body: unknown, status = 200) {
     });
 }
 
+/**
+ * Bricht jede Anfrage ab, die nicht an `localhost`/`127.0.0.1` geht (Befund
+ * aus dem Abschnitt-4-Review, Code- und Design-Reviewer: `e2e/lieferant-
+ * layout.spec.ts` fing nur `**\/api/**` ab, dadurch gingen echte Anfragen an
+ * `google.com/maps`, `maps.gstatic.com`, `maps.googleapis.com` (ausgeloest
+ * durch ein GoogleMapsEmbed-<iframe> mit gefuellter Adresse) und
+ * `cdnjs.cloudflare.com` (pdf.js, wird in jedem Seitenaufruf aus `index.html`
+ * geladen) tatsaechlich raus).
+ *
+ * Eine E2E-Spec ist gestubbt und darf nicht wirklich ins Internet: sonst haengt
+ * das Ergebnis von einer echten Verbindung ab (fremde Server langsam oder gar
+ * nicht erreichbar), Screenshots sind nicht mehr reproduzierbar, und es ist ein
+ * plausibler Grund fuer haengende/leere Seiten unter paralleler Last. Diese
+ * Funktion ersetzt darum NICHT das gezielte Stubben von `/api`-Routen (das
+ * bleibt noetig, damit die Seite echte Daten bekommt) -- sie ist der
+ * allgemeine Riegel danach, der jeden weiteren Weg nach draussen abschneidet,
+ * unabhaengig davon, ob die Spec ihn kennt (z.B. ein <iframe>-src oder ein
+ * <script src> aus einer fremden Domain).
+ *
+ * Muss VOR der ersten Navigation (`page.goto`) registriert werden, sonst
+ * verpasst sie fruehe Requests (z.B. den allerersten Dokument-Request eines
+ * <iframe>). Playwright ruft bei mehreren passenden Routen die zuletzt
+ * registrierte zuerst auf -- eine danach registrierte, spezifischere Route
+ * (z.B. `**\/api/**`) bekommt Anfragen an localhost also weiterhin zuerst zu
+ * sehen und beantwortet sie wie gewohnt; diese Funktion greift nur dort, wo
+ * keine speziellere Route zustaendig ist.
+ */
+export async function blockiereFremdeNetzwerkzugriffe(page: Page): Promise<void> {
+    await page.route('**/*', (route) => {
+        const ziel = new URL(route.request().url());
+        const istLokal = ziel.hostname === 'localhost' || ziel.hostname === '127.0.0.1';
+        if (istLokal) return route.continue();
+        return route.abort();
+    });
+}
+
 const BEISPIEL_BEITRAG: BeitragStand = {
     id: 7,
     slug: 'alte-dachrinne-erneuert',
