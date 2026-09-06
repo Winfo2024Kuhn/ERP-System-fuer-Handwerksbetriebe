@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
+import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt } from './hilfen/design';
+import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
  * Task 4 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -44,6 +45,18 @@ const KUNDE = 'Wohnungsbaugesellschaft Beispielstadt Nord mbH und Co. Verwaltung
 // den Knopfblock aus der Kopf-Karte bzw. erzeugt horizontalen Ueberlauf.
 const BAUVORHABEN_KOMPOSITA_OHNE_LEERZEICHEN =
     'Absturzsicherungspodesttreppenanlagenmontagearbeitenüberwachungsdokumentation';
+
+// Task 12 (Abschnitt 8, "zweiter Mechanismus", Code-Review Abschnitt 7): die
+// Seitenspalte "Anfragedaten" (Ansprechpartner, Telefon, Mobiltelefon,
+// Projektadresse) rendert Werte als reinen Block-<p> ohne break-words --
+// DUMMY_ANFRAGE_DETAIL unten setzt keinen dieser Werte, deshalb wurden sie nie
+// mit echt ueberlaufendem Inhalt gerendert. Bindestrichlose Fantasieworte
+// (DSGVO), Strasse mit einem Leerzeichen (schwaechste Haertung, siehe
+// kriterien.md), aber weiterhin ein 37-Zeichen-Stueck ohne Trennstelle.
+const ANSPRECHPARTNER_LANG = 'Ansprechpartnerkoordinationsverwaltungsbeauftragte';
+const TELEFON_LANG = '05119876543212345678901234567890';
+const MOBILTELEFON_LANG = '01711234567890123456789012345678901234';
+const STRASSE_LANG = 'Kreisverkehrsplatzrandbebauungsstraße 128a';
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -423,5 +436,66 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
         ).toBeLessThanOrEqual(2);
 
         await designPruefung(page, testInfo, 'anfragen-uebersicht-kurzer-titel', { strengePruefungen: true });
+    });
+});
+
+// Task 12 (Abschnitt 8): systematischer Nachweis fuer die Seitenspalte
+// "Anfragedaten" -- Ansprechpartner, Telefon, Mobiltelefon und Projektadresse
+// wurden bisher NIE mit echt ueberlaufendem Inhalt gerendert.
+test.describe('Anfrage-Seitenspalte "Anfragedaten": lange, bindestrichlose Werte', () => {
+    test('Ansprechpartner, Telefon, Mobiltelefon und Projektadresse laufen nicht ueber ihre Kaesten', async ({ page }) => {
+        // Muss vor der ersten Navigation stehen: mit gesetzter Adresse rendert
+        // GoogleMapsEmbed ein echtes <iframe src="https://www.google.com/maps?...">
+        // (siehe Kommentar bei DUMMY_ANFRAGE_DETAIL oben).
+        await blockiereFremdeNetzwerkzugriffe(page);
+        await stubAnfrageApi(page);
+        await page.route(`**/api/anfragen/${ANFRAGE_ID}`, (route) => {
+            if (route.request().method() !== 'GET') return route.fallback();
+            return json(route, {
+                ...DUMMY_ANFRAGE_DETAIL,
+                kundenAnsprechpartner: ANSPRECHPARTNER_LANG,
+                kundenTelefon: TELEFON_LANG,
+                kundenMobiltelefon: MOBILTELEFON_LANG,
+                projektStrasse: STRASSE_LANG,
+                projektPlz: '99999',
+                projektOrt: 'Musterstadt',
+            });
+        });
+        await page.goto(`/anfragen?anfrageId=${ANFRAGE_ID}&tab=geschaeftsdokumente`);
+
+        await expect(page.getByRole('heading', { name: BAUVORHABEN })).toBeVisible();
+
+        const seitenKarte = page.getByRole('heading', { name: 'Anfragedaten' }).locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        // Jeder Wert-<p>/<a> ist ein normaler Block (kein Flex-Item, das
+        // eigenmaechtigen "min-w-0"-Regeln unterliegt) -- ohne break-words
+        // ueberlaeuft er unsichtbar (scrollWidth > clientWidth), OHNE dass
+        // sich seine eigene boundingBox() aendert (ein Block ohne explizite
+        // Breite bleibt bei "Breite = Elternbreite", der Text malt nur ueber
+        // den Rand hinaus). Direkt scrollWidth/clientWidth pruefen statt eine
+        // Positions-Geometrie, die genau diesen Fall nicht sieht (dieselbe
+        // Messmethode wie keinTextLaeuftUeber in e2e/hilfen/design.ts) --
+        // empirisch verifiziert: eine boundingBox-Variante blieb hier auch
+        // OHNE break-words gruen (siehe Kontext-Log-Block dieses Tasks).
+        const pruefeWertBleibtImKasten = async (wert: string, feldname: string, exact = true) => {
+            const wertElement = seitenKarte.getByText(wert, { exact });
+            await expect(wertElement, `${feldname}-Wert "${wert}" fehlt`).toBeVisible();
+            const ueberstand = await wertElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                ueberstand,
+                `${feldname}-Wert "${wert.slice(0, 30)}..." laeuft ${ueberstand}px ueber seinen eigenen Kasten -- braucht break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeWertBleibtImKasten(ANSPRECHPARTNER_LANG, 'Ansprechpartner');
+        await pruefeWertBleibtImKasten(TELEFON_LANG, 'Telefon');
+        // exact:false: das <a> haengt " (Mobil)" an den Wert an
+        // (AnfrageEditor.tsx), ein exakter Treffer auf nur die Ziffernkette
+        // waere nie moeglich.
+        await pruefeWertBleibtImKasten(MOBILTELEFON_LANG, 'Mobiltelefon', false);
+        await pruefeWertBleibtImKasten(STRASSE_LANG, 'Projektadresse (Strasse)', false);
+
+        await keinTextGekuerzt(page);
+        await keinHorizontalerUeberlauf(page);
     });
 });

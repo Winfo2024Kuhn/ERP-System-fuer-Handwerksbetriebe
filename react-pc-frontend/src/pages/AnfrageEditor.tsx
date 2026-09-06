@@ -252,7 +252,9 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
                     {anfrage.anfragesnummer && (
                         <div className="flex items-center gap-2 text-sm text-slate-600">
                             <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                            <span className="truncate">{anfrage.anfragesnummer}</span>
+                            {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit):
+                                gleiche Rezeptur wie die Projekt-Uebersichtskarte. */}
+                            <span className="min-w-0 break-words">{anfrage.anfragesnummer}</span>
                         </div>
                     )}
                     <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -359,17 +361,17 @@ const KundenAuswahlView: React.FC<{
                             onClick={() => onSelect(kunde)}
                             className="p-3 border border-slate-200 rounded-lg hover:border-rose-300 hover:bg-rose-50 cursor-pointer transition-colors group"
                         >
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <p className="font-medium text-slate-900">{kunde.name}</p>
-                                    <p className="text-sm text-slate-500">{kunde.kundennummer}</p>
+                            <div className="flex justify-between items-center gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-medium text-slate-900 break-words">{kunde.name}</p>
+                                    <p className="text-sm text-slate-500 break-words">{kunde.kundennummer}</p>
                                     {(kunde.strasse || kunde.ort) && (
-                                        <p className="text-xs text-slate-400">
+                                        <p className="text-xs text-slate-400 break-words">
                                             {[kunde.strasse, [kunde.plz, kunde.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
                                         </p>
                                     )}
                                 </div>
-                                <Check className="w-5 h-5 text-rose-600 opacity-0 group-hover:opacity-100" />
+                                <Check className="w-5 h-5 text-rose-600 opacity-0 group-hover:opacity-100 shrink-0" />
                             </div>
                         </div>
                     ))
@@ -573,10 +575,10 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                                 </label>
                                 {selectedKunde ? (
                                     <div className="flex items-center gap-3 p-3 bg-rose-50 border border-rose-200 rounded-lg">
-                                        <Building2 className="w-5 h-5 text-rose-600" />
-                                        <div className="flex-1">
-                                            <p className="font-medium text-slate-900">{selectedKunde.name}</p>
-                                            <p className="text-sm text-slate-500">{selectedKunde.kundennummer}</p>
+                                        <Building2 className="w-5 h-5 text-rose-600 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-slate-900 break-words">{selectedKunde.name}</p>
+                                            <p className="text-sm text-slate-500 break-words">{selectedKunde.kundennummer}</p>
                                         </div>
                                         <Button
                                             size="sm"
@@ -1026,10 +1028,15 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                                 </span>
                             )}
                         </div>
+                        {/* Task 12 (zweiter Mechanismus): siehe ausfuehrlicher
+                            Kommentar in ProjektEditor.tsx -- "break-words" senkt
+                            die automatische Mindestbreite eines Flex-Items
+                            nicht (nur "overflow-wrap: anywhere" tut das), daher
+                            braucht der Wert einen eigenen <span> mit min-w-0. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {anfrage.kundenName && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {anfrage.kundenName}</p>}
-                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {adresse}</p>}
-                            {anfrage.anlegedatum && <p className="flex items-center gap-2"><Calendar className="w-4 h-4 shrink-0" /> {formatDate(anfrage.anlegedatum)}</p>}
+                            {anfrage.kundenName && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{anfrage.kundenName}</span></p>}
+                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{adresse}</span></p>}
+                            {anfrage.anlegedatum && <p className="flex items-center gap-2"><Calendar className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{formatDate(anfrage.anlegedatum)}</span></p>}
                         </div>
                     </div>
                 </div>
@@ -1291,7 +1298,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                                                 </Button>
                                             </div>
                                         </div>
-                                        <p className="text-slate-700 whitespace-pre-wrap text-sm">{n.notiz}</p>
+                                        <p className="text-slate-700 whitespace-pre-wrap text-sm break-words">{n.notiz}</p>
 
                                         {/* Bilder */}
                                         {n.bilder && n.bilder.length > 0 && (
@@ -1439,30 +1446,34 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <FileText className="w-5 h-5 text-rose-500" />
                 Anfragedaten
             </h2>
+            {/* Task 12 (Abschnitt 8, "zweiter Mechanismus"): jedes dieser <p>
+                war ein reiner Block ohne break-words -- identisch zum Befund
+                in ProjektEditor.tsx, unentdeckt weil hier nie ein langer
+                Komposita-Wert stand. */}
             <div className="space-y-4">
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Kunde</p>
-                    <p className="font-medium text-slate-900">{anfrage.kundenName || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{anfrage.kundenName || '-'}</p>
                 </div>
                 {anfrage.kundennummer && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Kundennummer</p>
-                        <p className="font-medium text-slate-900">{anfrage.kundennummer}</p>
+                        <p className="font-medium text-slate-900 break-words">{anfrage.kundennummer}</p>
                     </div>
                 )}
                 {anfrage.kundenAnsprechpartner && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Ansprechpartner</p>
-                        <p className="font-medium text-slate-900">{anfrage.kundenAnsprechpartner}</p>
+                        <p className="font-medium text-slate-900 break-words">{anfrage.kundenAnsprechpartner}</p>
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Anfragenummer</p>
-                    <p className="font-medium text-slate-900">{anfrage.anfragesnummer || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{anfrage.anfragesnummer || '-'}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Anlagedatum</p>
-                    <p className="font-medium text-slate-900">{formatDate(anfrage.anlegedatum)}</p>
+                    <p className="font-medium text-slate-900 break-words">{formatDate(anfrage.anlegedatum)}</p>
                 </div>
                 {kundenEmails.length > 0 && (
                     <div className="p-3 bg-slate-50 rounded-lg">
@@ -1485,13 +1496,17 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Telefon</p>
                         <div className="space-y-1">
+                            {/* break-words: eine trennstellenlose Ziffernkette
+                                (Task 11: 32-stellige Fixture bei Kunde/
+                                Lieferant) lief hier sonst ueber die schmale
+                                Spalte, genau wie im Projekt-Editor. */}
                             {anfrage.kundenTelefon && (
-                                <a href={`tel:${anfrage.kundenTelefon}`} className="block text-rose-600 hover:underline text-sm">
+                                <a href={`tel:${anfrage.kundenTelefon}`} className="block text-rose-600 hover:underline text-sm break-words">
                                     {anfrage.kundenTelefon}
                                 </a>
                             )}
                             {anfrage.kundenMobiltelefon && (
-                                <a href={`tel:${anfrage.kundenMobiltelefon}`} className="block text-rose-600 hover:underline text-sm">
+                                <a href={`tel:${anfrage.kundenMobiltelefon}`} className="block text-rose-600 hover:underline text-sm break-words">
                                     {anfrage.kundenMobiltelefon} (Mobil)
                                 </a>
                             )}
@@ -1509,8 +1524,8 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         Projektadresse
                     </h3>
                     <div className="p-3 bg-slate-50 rounded-lg mb-3">
-                        <p className="font-medium text-slate-900">{anfrage.projektStrasse || anfrage.kundenStrasse || '-'}</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="font-medium text-slate-900 break-words">{anfrage.projektStrasse || anfrage.kundenStrasse || '-'}</p>
+                        <p className="text-sm text-slate-600 break-words">
                             {anfrage.projektPlz || anfrage.kundenPlz} {anfrage.projektOrt || anfrage.kundenOrt}
                         </p>
                     </div>
