@@ -118,7 +118,11 @@ const KartenLeerzustand: React.FC<{ icon: React.ReactNode; text: string }> = ({ 
 
 const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => void }> = ({ projekt, onOpen }) => (
     <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
-        <div className="p-4 space-y-3 flex-1 flex flex-col">
+        {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+            ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard) --
+            space-y-3s "> * + *"-Selektor (Spezifitaet 0-3-0) schlaegt
+            mt-auto (0-1-0) am Meta-Block nieder, gap-3 nicht. */}
+        <div className="p-4 gap-3 flex-1 flex flex-col">
             <div className="flex items-center gap-2 flex-wrap">
                 <span className={cn(
                     'text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full',
@@ -162,7 +166,9 @@ const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => vo
 
 const KundenAnfrageKarte: React.FC<{ anfrage: KundeAnfrageKurz; onOpen: () => void }> = ({ anfrage, onOpen }) => (
     <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
-        <div className="p-4 space-y-3 flex-1 flex flex-col">
+        {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+            ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard). */}
+        <div className="p-4 gap-3 flex-1 flex flex-col">
             <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
                     Anfrage
@@ -283,8 +289,16 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                         {initials}
                     </div>
                     <div className="min-w-0">
+                        {/* Nachbesserung 1 (Design-Review, 🔴): min-w-0 auf dem
+                            umschliessenden div reicht bei EINEM einzigen langen
+                            Wort nicht -- die <h1> ist selbst Flex-Item in der
+                            Zeile darunter und behaelt ihr eigenes min-width:
+                            auto. break-words senkt die Mindestinhaltsbreite
+                            eines Flex-Items nicht, nur min-w-0 auf dem Element
+                            selbst tut das. Siehe ausfuehrlicher Kommentar in
+                            ProjektEditor.tsx. */}
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900 break-words">{kunde.name}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{kunde.name}</h1>
                             <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
                                 {kunde.kundennummer}
                             </span>
@@ -316,7 +330,11 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                 {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
                     linken Kartenrand statt nach rechts (Rezeptur, Nacharbeit
                     Abschnitt 4). */}
-                <div className="flex items-start shrink-0 ml-auto">
+                {/* Nachbesserung 1 (Design-Review, 🟡): flex-wrap + gap-2
+                    ergaenzt, um exakt der Rezeptur (Projekt/Anfrage) zu
+                    entsprechen -- heute unsichtbar, weil nur ein Knopf hier
+                    steht, faellt aber auf, sobald ein zweiter dazukommt. */}
+                <div className="flex flex-wrap items-start shrink-0 ml-auto gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -845,7 +863,9 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
 
     return (
         <Card className="p-4 cursor-pointer hover:border-rose-200 hover:shadow-md transition-all bg-white h-full flex flex-col" onClick={onSelect}>
-            <div className="space-y-3 flex-1 flex flex-col">
+            {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+                ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard). */}
+            <div className="gap-3 flex-1 flex flex-col">
                 <div>
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase text-slate-500 tracking-wide">{kunde.kundennummer || 'ohne Nr.'}</p>
@@ -874,7 +894,11 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                         <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-rose-400" />{kunde.telefon}</p>
                     )}
                     {kunde.kundenEmails?.[0] && (
-                        <p className="flex items-center gap-2 truncate"><Mail className="w-4 h-4 text-rose-400" />{kunde.kundenEmails[0]}</p>
+                        // break-words statt truncate (Nachbesserung 1,
+                        // Design-Review 🟡, schwaechere Zweitstelle derselben
+                        // Kuerzung wie in AnfrageEditor.tsx): kein title als
+                        // Rueckfallweg -- lieber umbrechen.
+                        <p className="flex items-center gap-2 break-words"><Mail className="w-4 h-4 text-rose-400 shrink-0" />{kunde.kundenEmails[0]}</p>
                     )}
                 </div>
             </div>

@@ -321,3 +321,132 @@ test.describe('Projekt-Detailseite im schlimmsten Fall: Kopfzeile und Reiterleis
         }
     });
 });
+
+// Nachbesserung 1 (Design-Review, 🔴): bei EINEM einzigen langen Wort (kein
+// Leerzeichen, an dem normal umgebrochen werden koennte) lief die <h1> quer
+// ueber die Kennzahlen-Reihe -- gemessen 999px breit, 411px (1440) bzw. 187px
+// (1920) Ueberstand ueber den Titelblock hinaus, "BRUTTO"/"NETTO" darunter
+// unlesbar, der Titel selbst am Knopf "Bearbeiten" abgeschnitten. Ursache: die
+// <h1> ist selbst Flex-Item (in "flex items-center gap-3 flex-wrap") und
+// behaelt ihr eigenes min-width: auto -- break-words senkt die
+// Mindestinhaltsbreite eines Flex-Items nicht, das min-w-0 am umschliessenden
+// div (Abschnitt 4) wirkt nur auf den Titelblock als Ganzes, nicht auf die
+// <h1> selbst. Keine bisherige Zusicherung (auch nicht designPruefung) hat das
+// gefangen: main.scrollWidth blieb 0 (die <h1> ueberlappt nur andere Elemente
+// derselben Karte, verursacht aber keinen Seiten-Ueberlauf), und
+// h1.scrollWidth == h1.clientWidth (die <h1> selbst ist nicht gekuerzt, sie
+// ist einfach zu breit).
+const KOMPOSITA_EIN_WORT = 'Absturzsicherungspodesttreppenanlagenmontagearbeitenüberwachungsdokumentation';
+
+// Nachbesserung 1, Messung ohne Fix (Auftrag des Koordinators): die
+// Projekt-Reiterleiste hat bei 1440 nur noch 17px Reserve (899px Bedarf bei
+// den einstelligen Spec-Zaehlern, 916px verfuegbar). Zweistellige Zaehler
+// ("Zeiten (34)" usw., wie sie ein Betrieb mit viel Historie tatsaechlich
+// hat) brauchen mehr Platz -- diese Fixture misst, ob und wie die Leiste
+// dann umbricht. Kein Fix, nur eine Messung fuers Kontext-Log.
+test.describe('Projekt-Reiterleiste: Messung mit zweistelligen Zaehlern (kein Fix)', () => {
+    test('misst, ob die Reiterleiste bei zweistelligen Zaehlern umbricht', async ({ page }, testInfo) => {
+        const N = 34;
+        const viele = <T,>(vorlage: T, anzahl: number): T[] =>
+            Array.from({ length: anzahl }, (_, i) => ({ ...vorlage, id: i + 1000 }));
+
+        await page.route('**/api/**', (route) => {
+            const request = route.request();
+            const pfad = new URL(request.url()).pathname;
+            const methode = request.method();
+
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (/^\/api\/last-accessed\/PROJEKT(\/\d+)?$/.test(pfad)) {
+                if (methode === 'POST') return route.fulfill({ status: 204, body: '' });
+                return json(route, {});
+            }
+            if (pfad === '/api/projekte' && methode === 'GET') return json(route, { projekte: [], gesamt: 0 });
+            if (pfad === '/api/projekte/jahre') return json(route, []);
+            if (pfad === '/api/projekte/freigabe-status') return json(route, {});
+            if (pfad === `/api/projekte/${PROJEKT_ID}`) {
+                return json(route, {
+                    ...DUMMY_PROJEKT,
+                    zeiten: viele({}, N),
+                    materialkosten: viele({}, N),
+                    emails: viele({}, N),
+                });
+            }
+            if (pfad === `/api/projekte/${PROJEKT_ID}/notizen`) return json(route, viele({ id: 0, kurzbeschreibung: 'x' }, N));
+            if (pfad === `/api/projekte/${PROJEKT_ID}/dokumente`) return json(route, viele({ id: 0, dateiname: 'x.pdf' }, N));
+            if (pfad === `/api/projekte/${PROJEKT_ID}/eingangsrechnungen`) return json(route, []);
+            if (pfad === `/api/ausgangs-dokumente/projekt/${PROJEKT_ID}`) return json(route, viele(DUMMY_AUSGANGSDOKUMENT, N));
+            if (pfad === '/api/ausgangs-dokumente/freigabe-status') return json(route, {});
+            return json(route, []);
+        });
+        await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
+
+        // Zaehler wirklich zweistellig? Sonst waere die Messung wertlos.
+        await expect(page.getByRole('button', { name: `Zeiten (${N})` })).toBeVisible();
+        await expect(page.getByRole('button', { name: `Material (${N})` })).toBeVisible();
+        await expect(page.getByRole('button', { name: `E-Mails (${N})` })).toBeVisible();
+        await expect(page.getByRole('button', { name: `Geschäftsdokumente (${N})` })).toBeVisible();
+        await expect(page.getByRole('button', { name: `Dateien (${N})` })).toBeVisible();
+        await expect(page.getByRole('button', { name: `Tagebuch (${N})` })).toBeVisible();
+
+        const container = reiterContainer(page);
+        const tabButtons = container.getByRole('button');
+        const tabBoxen = await Promise.all((await tabButtons.all()).map((b) => b.boundingBox()));
+        const containerBox = (await container.boundingBox())!;
+        const containerMasse = await container.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+        const yWerte = tabBoxen.map((b) => b!.y);
+        const zeilen = new Set(tabBoxen.map((b) => Math.round(b!.y))).size;
+        const proZeile = zeilen === 1
+            ? [tabBoxen.length]
+            : Array.from(new Set(yWerte)).sort((a, b) => a - b).map((y) => tabBoxen.filter((b) => Math.abs(b!.y - y) < 2).length);
+
+        console.log(
+            `[Messung zweistellige Zaehler, ${testInfo.project.name}] Container ${containerBox.width.toFixed(0)}px verfuegbar, Reiter brauchen ${containerMasse.scrollWidth}px insgesamt; ${zeilen} Zeile(n), Verteilung ${JSON.stringify(proZeile)}; y-Werte: ${yWerte.map((y) => y.toFixed(0)).join(', ')}.`,
+        );
+
+        // Kein Fix -- nur die Nicht-Regressions-Garantien bleiben Pflicht:
+        // kein Reiter verschwindet, kein seitliches Verstecken.
+        await expect(tabButtons, 'Erwartet weiterhin genau sieben Reiter-Knoepfe').toHaveCount(7);
+        for (const button of await tabButtons.all()) {
+            await expect(button).toBeVisible();
+        }
+        expect(
+            containerMasse.scrollWidth,
+            `Reiterleiste laeuft ueber: Container ${containerMasse.clientWidth}px breit, Inhalt braucht ${containerMasse.scrollWidth}px`,
+        ).toBeLessThanOrEqual(containerMasse.clientWidth + 2);
+    });
+});
+
+test.describe('Projekt-Kopfzeile: <h1> bei einem einzigen langen Wort ohne Leerzeichen', () => {
+    test('<h1> ragt nicht rechts aus dem Titelblock', async ({ page }) => {
+        await stubProjektApi(page);
+        await page.route(`**/api/projekte/${PROJEKT_ID}`, (route) => {
+            if (route.request().method() !== 'GET') return route.fallback();
+            return json(route, { ...DUMMY_PROJEKT, bauvorhaben: KOMPOSITA_EIN_WORT });
+        });
+        await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
+
+        const titel = page.getByRole('heading', { name: KOMPOSITA_EIN_WORT });
+        await expect(titel).toBeVisible();
+
+        // Titelblock: das aeussere "flex-1 min-w-[18rem]"-div (Zurueck-Pfeil,
+        // Symbol, Titel, Kunde, Adresse, Auftragsnummer).
+        const titelblock = titel.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " min-w-[18rem] ")][1]',
+        );
+        const titelBox = await titel.boundingBox();
+        const titelblockBox = await titelblock.boundingBox();
+        expect(titelBox, '<h1> muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(titelblockBox, 'Titelblock muss einen messbaren Rahmen haben').not.toBeNull();
+        const ueberstand = (titelBox!.x + titelBox!.width) - (titelblockBox!.x + titelblockBox!.width);
+        expect(
+            ueberstand,
+            `<h1> (Breite ${titelBox!.width.toFixed(0)}px) ragt ${ueberstand.toFixed(0)}px rechts aus dem Titelblock (Breite ${titelblockBox!.width.toFixed(0)}px) -- min-w-0 an der <h1> fehlt oder wirkt nicht`,
+        ).toBeLessThanOrEqual(1);
+    });
+});

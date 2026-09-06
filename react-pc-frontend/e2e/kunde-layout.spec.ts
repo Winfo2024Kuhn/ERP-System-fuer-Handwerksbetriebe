@@ -261,6 +261,53 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
     });
 });
 
+// Nachbesserung 1 (Design-Review, 🔴): bei EINEM einzigen langen Wort (kein
+// Leerzeichen) lief die <h1> quer ueber die Kennzahlen-Reihe -- gemessen 999px
+// breit, weit ueber den Titelblock hinaus, "GESAMTUMSATZ"/"GEWINN" darunter
+// unlesbar. Ursache: die <h1> ist selbst Flex-Item (in "flex items-center
+// gap-3 flex-wrap") und behielt ihr eigenes min-width: auto -- break-words +
+// min-w-0 am umschliessenden div reichten nicht, min-w-0 muss an der <h1>
+// selbst stehen. Keine bisherige Zusicherung hat das gefangen.
+const KOMPOSITA_EIN_WORT_KUNDE = 'Wohnungsbaugesellschaftsverwaltungsimmobilienbetriebsgenossenschaft';
+
+test.describe('Kunden-Detailseite: <h1> bei einem einzigen langen Wort ohne Leerzeichen', () => {
+    test('<h1> ragt nicht rechts aus dem Titelblock', async ({ page }) => {
+        await page.route('**/api/**', (route) => {
+            const pfad = new URL(route.request().url()).pathname;
+            const methode = route.request().method();
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (pfad === '/api/kunden' && methode === 'GET') return json(route, { kunden: [], gesamt: 0 });
+            if (pfad === `/api/kunden/${KUNDE_ID}`) return json(route, { ...DUMMY_KUNDE, name: KOMPOSITA_EIN_WORT_KUNDE });
+            return json(route, []);
+        });
+        await page.goto(`/kunden?kundeId=${KUNDE_ID}`);
+
+        const titel = page.getByRole('heading', { name: KOMPOSITA_EIN_WORT_KUNDE });
+        await expect(titel).toBeVisible();
+
+        // Titelblock: das aeussere "flex-1 min-w-[18rem]"-div (Zurueck-Pfeil,
+        // Initialen-Kreis, Titel, Ansprechpartner, Adresse).
+        const titelblock = titel.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " min-w-[18rem] ")][1]',
+        );
+        const titelBox = await titel.boundingBox();
+        const titelblockBox = await titelblock.boundingBox();
+        expect(titelBox, '<h1> muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(titelblockBox, 'Titelblock muss einen messbaren Rahmen haben').not.toBeNull();
+        const ueberstand = (titelBox!.x + titelBox!.width) - (titelblockBox!.x + titelblockBox!.width);
+        expect(
+            ueberstand,
+            `<h1> (Breite ${titelBox!.width.toFixed(0)}px) ragt ${ueberstand.toFixed(0)}px rechts aus dem Titelblock (Breite ${titelblockBox!.width.toFixed(0)}px) -- min-w-0 an der <h1> fehlt oder wirkt nicht`,
+        ).toBeLessThanOrEqual(1);
+    });
+});
+
 test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () => {
     test('kein Kartentitel einzeilig abgehackt, 3 Karten je Reihe bei 1440, 4 bei 1920', async ({ page }, testInfo) => {
         await stubKundenUebersichtApi(page);
@@ -318,8 +365,15 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
             if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
             if (pfad === '/api/kunden' && methode === 'GET') {
                 return json(route, {
-                    kunden: [{ id: 301, kundennummer: 'K-1301', name: 'Meier', plz: '30159', ort: 'Hannover', ansprechspartner: 'Erika Musterfrau', hatProjekte: true }],
-                    gesamt: 1,
+                    kunden: [
+                        { id: 301, kundennummer: 'K-1301', name: 'Meier', plz: '30159', ort: 'Hannover', ansprechspartner: 'Erika Musterfrau', hatProjekte: true },
+                        // Zweiter Kunde mit langem, zweizeiligem Titel in
+                        // DERSELBEN Reihe (bei 1440 stehen drei Karten
+                        // nebeneinander) -- fuer die Trennlinien-Ausrichtung
+                        // unten (Nachbesserung 1, 🟡).
+                        { id: 302, kundennummer: 'K-1302', name: KUNDE_LANG, plz: '30159', ort: 'Hannover', ansprechspartner: 'Erika Musterfrau', hatProjekte: true },
+                    ],
+                    gesamt: 2,
                 });
             }
             return json(route, []);
@@ -328,7 +382,7 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
 
         const titel = page.getByRole('heading', { level: 3, name: 'Meier' });
         await expect(titel).toBeVisible();
-        const ort = page.getByText('30159 Hannover', { exact: true });
+        const ort = page.getByText('30159 Hannover', { exact: true }).first();
         await expect(ort).toBeVisible();
 
         // min-h-[3rem] reserviert den Platz INNERHALB der eigenen Titel-Box
@@ -343,5 +397,28 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
             titelBox!.height,
             `Titel-Box ist ${titelBox!.height.toFixed(0)}px hoch fuer einzeiligen Text -- min-h-[3rem] (48px) reisst hier eine Luecke`,
         ).toBeLessThan(32);
+
+        // Nachbesserung 1 (Design-Review, 🟡): space-y-3 -> gap-3. Tailwinds
+        // space-y-3 erzeugt den Selektor "> * + *" (Spezifitaet 0-3-0), der
+        // mt-auto (0-1-0) am Meta-Block nieder-schlaegt -- der Titel-Boxhoehen-
+        // Check oben allein haette das NICHT gefangen (der misst nur den Titel
+        // selbst, nicht ob der Meta-Block wirklich unten sitzt). Belegt am
+        // gebauten CSS und im Bild: die Trennlinien einer Kartenreihe lagen
+        // 24px versetzt. Zusicherung: der Ansprechpartner-Text (erste Zeile
+        // des Meta-Blocks, den mt-auto nach unten schiebt) muss bei BEIDEN
+        // Karten derselben Reihe auf derselben y-Position stehen, unabhaengig
+        // davon, ob der Titel ein- oder zweizeilig ist.
+        const ansprechpartnerZeilen = await page.getByText('Erika Musterfrau', { exact: true }).all();
+        expect(ansprechpartnerZeilen.length, 'Erwartet zwei Ansprechpartner-Zeilen (eine je Kunde)').toBe(2);
+        const ansprechpartnerBoxen = await Promise.all(ansprechpartnerZeilen.map((el) => el.boundingBox()));
+        for (const box of ansprechpartnerBoxen) {
+            expect(box, 'Ansprechpartner-Zeile muss einen messbaren Rahmen haben').not.toBeNull();
+        }
+        const yWerte = ansprechpartnerBoxen.map((b) => b!.y);
+        const versatz = Math.max(...yWerte) - Math.min(...yWerte);
+        expect(
+            versatz,
+            `Meta-Block-Zeilen sind ${versatz.toFixed(0)}px versetzt (y-Werte: ${yWerte.map((y) => y.toFixed(0)).join(', ')}) -- mt-auto wirkt nicht (space-y-3-Spezifitaet?)`,
+        ).toBeLessThanOrEqual(2);
     });
 });
