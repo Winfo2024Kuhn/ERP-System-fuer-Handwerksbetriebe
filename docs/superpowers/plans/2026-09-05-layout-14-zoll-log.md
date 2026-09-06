@@ -5320,3 +5320,226 @@ Bedenken / Abweichungen vom Plan:
 - **Hinweis 8 (klein):** `typecheck:e2e` hängt an keinem anderen Gate — `tsconfig.e2e.json` steht nicht in den `references` von `tsconfig.json`, `npm run build` fährt es also nicht mit. Solange es im Log als Gate steht, in Ordnung; ein Eintrag in `references` wäre haltbarer.
 - **Restposten — Urteil:** Drei der vier offen dokumentierten Punkte sind als Nachtrag vertretbar (allgemeine „Wert bleibt im Kasten"-Prüfung, Reiter-Rollen auf vier Detailseiten, ersatzloses Streichen von Zweig (a)). **Der vierte gehört noch in dieses Vorhaben:** der „blinde Fleck" ist mit Abschnitt 10 größer geworden als dokumentiert (Hinweis 2) — er trifft jetzt auch `keinTextLaeuftUeber` und damit die Prüfung, die dieser Abschnitt gerade zum Standard erhoben hat. Zusammen mit Hinweis 1 sind das zwei Ein-Zeilen-Änderungen, die den Anspruch „drei Prüfungen, die alle Specs automatisch mitfahren" erst wirklich einlösen.
 - **Am Rande, nicht Baustelle dieses Abschnitts:** `npm run build` schreibt in das getrackte `src/main/resources/static/` (dort liegen bereits hunderte committete Build-Artefakte). Wer baut, muss danach von Hand aufräumen — der Task hat das sauber gemacht, die Falle bleibt aber für jeden nächsten bestehen.
+
+## Abschnitt 10 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-06T21:34:18Z
+Branch: feature/layout-14-zoll (Review-Worktree `wt/layout-review-design`, detached auf b722f20e)
+Commit(s): keine — read-only geprueft, am Ende nur die eigenen Review-Dateien
+(`playwright.review.config.ts`, `e2e-review/`) im Arbeitsbaum, beide vor dem
+Aufraeumen geloescht
+Status: fertig
+Ampel: 🟡
+
+### E2E-Lauf
+
+- `netstat -ano | findstr :5231` vor dem Lauf leer, Port durchgehend selbst genutzt.
+- `E2E_PORT=5231 npm run test:e2e`: **384/384 gruen** (8,7 Min), alle 17 Specs,
+  alle drei Groessen. Deckt sich mit der Meldung des Coding-Agenten.
+- **147 Screenshots sofort nach dem Lauf gesichert** (49 je Groesse — gegenueber
+  Abschnitt 9 also erstmals eine volle Serie fuer `pc-uebergang` statt nur vier
+  Bilder). Alle eigenen Laeufe danach ueber eine eigene Konfiguration
+  (`playwright.review.config.ts`, Port 5441, `outputDir` im Scratchpad).
+- **Der Stolperstein hat trotzdem noch einmal zugeschlagen**, diesmal an einer
+  Stelle, die ich nicht auf dem Zettel hatte: Playwright leert seinen
+  `outputDir` beim START des naechsten Laufs. Mein zweiter eigener Lauf lief
+  damit in mein laufendes `cp` hinein und hat 15 von 36 eigenen Bildern
+  mitgenommen. Die Suite-Bilder waren da laengst in Sicherheit; die eigenen
+  habe ich mit einem Lauf in ein FRISCHES Verzeichnis (`REVIEW_OUT`) neu
+  erzeugt. Lehre fuer den naechsten Durchgang: **je Lauf ein eigenes
+  Ausgabeverzeichnis**, nicht ein gemeinsames fuer alle eigenen Laeufe.
+- Eigene Laeufe insgesamt: 45 + 12 Faelle, am Ende alle gruen. Zwei rote
+  Zwischenstaende gingen auf eigene Fehler zurueck, nicht auf den Produktivcode
+  (siehe "Eigene Fehlgriffe" unten).
+
+### 1. Mein Befund "min-w-0 in Weitere Zuordnungen" — behoben, nachgemessen
+
+200-Zeichen-Beschreibung ohne Leerzeichen, Eingangsrechnung mit einer fremden
+Zuordnung, Reiter "Geschaeftsdokumente". Gegenprobe im selben Test: `min-w-0`
+per DOM entfernt, sofort neu gemessen, danach wieder gesetzt.
+
+| Groesse | heute (mit `min-w-0`) | Gegenprobe (ohne) |
+| --- | --- | --- |
+| 1440 | Zeile 0 px Ueberstand, Text endet **17 px innerhalb** der Kartenkante, Span 882 px, eine Zeile | **259 px** Zeilenueberstand, **242 px** ueber die Kartenkante |
+| 1536 | 0 px, −17 px, Span 954 px | 187 px / 170 px |
+| 1920 | 0 px, −17 px, Span 1050 px | 91 px / 74 px |
+
+Die 259/242 px bei 1440 sind derselbe Fehler, den ich in Abschnitt 9 mit
+254/237 px gemessen hatte (kleiner Unterschied durch eine etwas andere Fixture)
+— die Reparatur greift also genau dort, wo der Befund lag. Mit realistischem
+Freitext (46 Zeichen) steht die Beschreibung in **einer** Zeile, 272 px breit,
+539 px innerhalb der Kartenkante, mit und ohne `min-w-0` identisch — die
+Verbesserung aus Abschnitt 9 ist erhalten geblieben, der Rueckschritt ist weg.
+
+### 2. Mein Befund "haengendes Komma in der Mitarbeiterkarte" — behoben
+
+Harte Fixture, 39-Zeichen-Nachname, 1440: Nachname-Span **ein** Zeilenkasten
+(y=429, 371 px), Vorname-Span **ein** Zeilenkasten (y=457, 371 px). In
+Abschnitt 9 stand hier `[{y:431, breite:367}, {y:459, breite:5}]` — der 5 px
+breite zweite Kasten (das allein umgebrochene Komma) ist weg. Kein Komma mehr
+im Text, kein Zeilenkasten unter 12 px, in allen drei Groessen.
+
+Mit sechs realistischen Namen liest sich jede Karte als sauberes Namensschild
+("Mustermann" / "Klaus", "Büro" / "Anna") statt als abgebrochener Satz. Genau
+das war der Vorschlag; er sitzt.
+
+**Ein kleiner Nachklapp** (Hinweis 4): der `textContent` der Ueberschrift ist
+jetzt `"BüroAnna"` — zwei Textknoten ohne jedes Trennzeichen. Sichtbar ist das
+nicht (zwei `block`-Spans), beim Vorlesen und beim Kopieren schon.
+
+### 3. Mein Befund "`ui/dialog.tsx` ohne role=dialog" — behoben
+
+Rechnungs-Dialog in `ProjektEditor.tsx` (setzt auf dieser Komponente auf),
+zweimal geoeffnet: 180-Zeichen-Einwort-Betreff und realistischer 88-Zeichen-
+Betreff, je drei Groessen.
+
+- Genau **ein** `[role="dialog"]` im DOM, `aria-modal="true"`, sichtbares Panel
+  768 × 868 px (1440/1536) bzw. 768 × 899–939 px (1920).
+- **Volle `designPruefung` mit scharfen Pruefungen laeuft am offenen Dialog in
+  allen drei Groessen durch.** Mein erster Anlauf in Abschnitt 9 ist genau
+  hier gescheitert.
+- Gegenprobe: `role` per DOM entfernt → `keineUeberschneidungen` meldet bei
+  1440 und 1536 sofort wieder die Seite dahinter ("KI-Hilfe ueberlappt Close",
+  "Bearbeiten ueberlappt Einfache Rechnung"). Bei 1920 bleibt sie gruen: der
+  768 px breite Dialog liegt dort auf keinem Knopf der Seite. Kein Gegenbeweis,
+  sondern der Beleg, dass es an dieser Groesse ohnehin nichts zu verdecken gab.
+- **Blinder Fleck geprueft, der mir dabei durch den Kopf ging:**
+  `keineUeberschneidungen` schaltet bei einem gefundenen `[role="dialog"]` den
+  gesamten Hintergrund ab. Haette irgendeine Komponente ihr Dialog-Element auch
+  im geschlossenen Zustand im DOM stehen, waere die Ueberschneidungs-Pruefung
+  auf jeder Seite mit dieser Komponente still tot. Alle zehn Fundstellen
+  durchgesehen: jede rendert nur bei offenem Zustand (`if (!open) return null`
+  bzw. bedingt vom Elternteil). Kein solches Loch.
+- **Willkommener Nebeneffekt:** `toast.tsx` erkennt "irgendein Dialog offen"
+  ueber denselben Selektor. Der Toast weicht jetzt auch bei jedem Dialog auf
+  dieser Komponente nach oben links aus, nicht mehr nur bei den uebrigen
+  Modalen.
+
+### 4. Die dritte Groesse (1536) — in Ordnung, mit drei Beobachtungen
+
+Alle 49 `pc-uebergang`-Screenshots durchgesehen (Uebersichten, Detailseiten,
+Menueleiste, Dokument-Editor, Bearbeiten-Leiste, Lieferanten-Modal, Toast bei
+Dialog). **Nichts abgeschnitten, nichts ueberlagert, nichts verrutscht.** Vier
+Karten je Reihe, Kartenhoehen gleich, Trennlinien auf gleicher Hoehe, die
+sieben Reiter der Projekt-Detailseite passen bei 1536 erstmals in EINE Zeile
+(bei 1440 rutscht "Tagebuch" in die zweite).
+
+Drei Sachen sind mir aufgefallen, alle 🟡, keine davon neu aus Abschnitt 10:
+
+**a) Bei 1536 sind die Karten die schmalsten von allen drei Groessen.**
+Gemessen an derselben Uebersichtskarte: 1440 → **427 px**, 1536 → **340 px**,
+1920 → **372 px**. Der Grund ist Tailwinds `2xl:` (greift ab genau 1536): vier
+Karten teilen sich dieselbe Flaeche, die bei 1440 drei Karten haben. Folge im
+Bild: der Kartentitel der Projekt- und Anfragen-Uebersicht (`line-clamp-2`,
+`data-kuerzung-erlaubt`, voller Text im `title`) wird bei 1536 **frueher**
+abgeschnitten als bei 1440 — "Treppenanlage mit Podest und Absturzsicherung
+Bürogebäude…" bei 1440, "Treppenanlage mit Podest und Absturzsicherung…" bei
+1536. Regelkonform (markiert, voller Text im Tooltip), aber der groessere
+Bildschirm zeigt hier weniger. Wer das aendern will, muesste den Umbruchpunkt
+hochsetzen (z.B. `2xl` → eigener Breakpoint bei 1700) — bewusste
+Produktentscheidung, kein Fehler.
+
+**b) Die Mitarbeiter-Uebersicht macht als einzige nicht mit.**
+`MitarbeiterEditor.tsx:1306` hat `grid-cols-1 md:grid-cols-2 lg:grid-cols-3
+gap-6` — **ohne** `2xl:grid-cols-4`. Die vier anderen Uebersichten (Projekte,
+Anfragen, Kunden, Lieferanten) haben es alle. Bei 1536 stehen dort also drei
+statt vier Karten, mit deutlich breiteren Karten (452 px). Kaputt ist nichts,
+aber es ist die einzige Uebersicht, die sich an der neuen Groesse anders
+verhaelt als die anderen vier.
+
+**c) Der Titelblock der Projekt-Kopfzeile ist bei 1920 am schmalsten.**
+Gemessen an derselben Ueberschrift: 1440 → **416 px**, 1536 → **512 px**,
+1920 → **234 px**. Ursache: die Kopfzeile ist `flex flex-wrap`, der Titelblock
+`flex-1 min-w-[18rem]`. Bei 1440/1536 rutscht der Knopfblock in eine eigene
+Zeile und der Titel bekommt die volle Breite; bei 1920 passt alles in EINE
+Zeile und der Titelblock faellt auf seine 18-rem-Untergrenze zurueck. Im Bild:
+"Balkonanlage Musterstraße 12, 3. Obergeschoss" bricht bei 1920 auf drei
+Zeilen um, waehrend rechts daneben rund 700 px Kopf-Karte leer bleiben.
+Abgeschnitten ist nichts (`break-words` greift), und das stammt aus der
+Kopfzeilen-Rezeptur von Abschnitt 3, nicht aus Abschnitt 10.
+
+### 5. Letzte Gesamtabnahme — neun Seiten, drei Groessen, zweimal
+
+**Harte Fixtures:** die 147 Screenshots des vollen Laufs. Projekt- und
+Anfrage-Kopf mit Komposita-Bauvorhaben, Kunden-Kopf mit 68-Zeichen-Namen,
+Lieferanten-Kopf mit 60-Zeichen-Einwortnamen, Mitarbeiter-Detail mit
+41-Zeichen-Nachnamen, die vier Uebersichten, die Menueleiste mit
+55-Zeichen-Anzeigenamen, Dokument-Editor, Bearbeiten-Leiste,
+Lieferanten-Modal, Toast bei Dialog. Alles im Rahmen.
+
+**Realistische Werte:** eigener Durchgang ueber zehn Seitenzustaende
+(Projekte-Uebersicht, Projekt-Detail Zeiten und Material, Anfragen-Uebersicht,
+Anfrage-Detail, Kunden-Uebersicht, Kunde-Detail, Lieferanten-Uebersicht,
+Lieferant-Detail, Mitarbeiter-Uebersicht) in **allen drei** Groessen, jeder
+mit `designPruefung` und damit `keinHorizontalerUeberlauf`,
+`keineUeberschneidungen`, `keinTextLaeuftUeber` und `keinTextGekuerzt`
+**scharf**: **30/30 gruen**, dazu die Kartenraster-Probe 3/3 (drei Spalten bei
+1440, vier bei 1536 und 1920 — `erwarteteKartenspalten()` trifft zu).
+Werte wie "Mustermann Bau GmbH & Co. KG", "Balkonanlage Musterstraße 12,
+3. Obergeschoss", A-2026-0042, K-1042, AG-2026/09/00042, 0931 1234567,
+125.000,00 €, 15.1.2026.
+
+Mit normalen Werten ist auf keiner der neun Seiten in keiner der drei Groessen
+etwas abgeschnitten, ueberlagert oder verrutscht. Die Zeiten-Hierarchie liest
+sich als sauberes Datenblatt, die Mitarbeiter-Uebersicht als Reihe von
+Namensschildern, die Kontaktspalten tragen ueberall dasselbe Muster.
+
+**Abnahme: ja, vollstaendig.** Anders als in Abschnitt 9 bleibt diesmal keine
+Zeile Produktivcode offen. Alle drei Befunde aus Abschnitt 9 sind behoben und
+nachgemessen, die Testinfrastruktur haelt, was sie verspricht, und die dritte
+Groesse hat keinen neuen Schaden aufgedeckt.
+
+### Eigene Fehlgriffe (der Vollstaendigkeit halber)
+
+- Meine erste Abnahme-Spec ging auf `?tab=eingangsrechnungen` — den Reiter gibt
+  es nicht (`ProjektEditor.tsx:189`: die Eingangsrechnungen stehen unter
+  `geschaeftsdokumente`). Sechs eigene Faelle liefen deshalb ins Leere.
+  Korrigiert.
+- Meine Gegenprobe zum Dialog war bei 1920 zu streng (siehe Punkt 3).
+  Korrigiert.
+- Der `outputDir`-Stolperstein, siehe E2E-Lauf oben.
+
+Keiner der drei hat den Produktivcode betroffen.
+
+### Hinweise (alle 🟡)
+
+1. **Mitarbeiter-Uebersicht ohne `2xl:grid-cols-4`** (`MitarbeiterEditor.tsx`,
+   Z. 1306) — einzige der fuenf Uebersichten. Siehe Punkt 4b.
+2. **Bei 1536 sind die Karten schmaler als bei 1440** (340 px gegen 427 px),
+   dadurch mehr Titel-Kuerzung auf dem groesseren Bildschirm. Siehe Punkt 4a.
+3. **Titelblock der Projekt-Kopfzeile bei 1920 auf der 18-rem-Untergrenze**
+   (234 px gegen 416 px bei 1440), Titel bricht auf drei Zeilen bei leerer
+   Flaeche daneben. Siehe Punkt 4c.
+4. **`textContent` der Mitarbeiter-Namensueberschrift ist jetzt `"BüroAnna"`** —
+   zwei Zeilen ohne Trennzeichen. Sichtbar in Ordnung, beim Vorlesen und
+   Kopieren nicht. Ein `{' '}` zwischen den beiden Spans oder ein
+   `aria-label` mit "Nachname, Vorname" wuerde reichen.
+5. **Kommentar und Commit-Text zu `ui/dialog.tsx` sagen "an DialogContent
+   ergaenzt"** — tatsaechlich sitzen `role`/`aria-modal` am Panel-`div` der
+   `Dialog`-Komponente, nicht an `DialogContent`. Die Stelle ist richtig
+   gewaehlt (das Panel IST der Dialog); nur die Beschreibung stimmt nicht.
+6. **Zwei Schreibweisen desselben Namens:** die Uebersichtskarte zeigt seit
+   Abschnitt 10 "Nachname" / "Vorname" ohne Komma, die Detailseite darueber
+   weiterhin "NACHNAME, VORNAME" mit Komma. Beides fuer sich richtig, nebeneinander
+   uneinheitlich.
+7. Vorbestehend und unveraendert (alle schon frueher gemeldet): englischer
+   Dezimalpunkt bei Stunden ("12.50 h" neben "1.087,50 €"), einzelnes Komma in
+   der Adresszeile bei leerer Adresse, farbige Kennzahl-Kaesten im Lieferanten-
+   und Kundenkopf, unterschiedliche Autorenzeile in den beiden Tagebuechern.
+
+### Ampel
+
+🟡. Kein 🔴, weil kein einziger neuer, substanzieller Befund dazugekommen ist:
+384/384 gruen ueber drei Groessen, alle drei Befunde aus Abschnitt 9 mit Zahlen
+als behoben nachgewiesen, und die neue dritte Groesse hat keinen Schaden
+zutage gefoerdert. Kein 🟢, weil die drei Beobachtungen zur dritten Groesse
+(Punkt 4a–c) und die vier kleinen Hinweise real sind — nichts davon blockiert,
+nichts davon schneidet etwas ab, aber "gar nichts mehr" waere geflunkert.
+
+### Satz fuer den Nutzer
+
+Ja, das ist weg. Auf dem 14-Zoll-MacBook steht auf allen neun Seiten alles
+vollstaendig da — nichts wird mehr abgeschnitten oder verdeckt, weder mit
+normalen Kunden- und Projektnamen noch mit absichtlich extrem langen. Geprueft
+haben wir das auf drei Bildschirmgroessen, und alle 384 automatischen Tests
+laufen sauber durch.
