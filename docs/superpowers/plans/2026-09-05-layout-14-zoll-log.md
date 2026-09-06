@@ -3046,3 +3046,199 @@ Bedenken / Abweichungen vom Plan:
 - `LANGER_NUTZERNAME_GRENZFALL` ist ein fiktiver Name (keine reale Person,
   DSGVO-konform), an die Design-Review-Messwerte angelehnt, damit die
   Zahlen (119px bei 1536px) direkt nachvollziehbar bleiben.
+
+## Abschnitt 7 — Task 11 (Coding-Agent)
+
+Zeit: 2026-09-06T16:09:42Z
+Branch: layout/task-11-restliche-stellen
+Commit(s): ddba2a51 (test: Fixtures haerten), 4a8deba2 (fix: Flex-/Grid-Zeilen ohne min-w-0 abdichten)
+Status: fertig
+
+Reihenfolge wie vom Plan verlangt: erst alle vier Fixtures gehaertet und die
+neuen Kasten-Ueberstand-Zusicherungen geschrieben (Commit `ddba2a51`), dann
+per `git diff`/`git checkout --`/`git apply` (kein `git stash`) die drei
+Produktivdateien kurz auf den unreparierten Stand zurueckgesetzt, rot
+gemessen, Fix wiederhergestellt, gruen gemessen (Commit `4a8deba2`).
+
+### Gruppe 1 — Kundeneditor.tsx Uebersichtskarte (Ansprechpartner/Telefon, Z. 902-907 alt)
+
+Fixture: eigener Kunde (id 303) in der bestehenden "lange E-Mail"-Testzeile
+um `ANSPRECHPARTNER_OHNE_TRENNZEICHEN` (55 Zeichen) und
+`TELEFON_OHNE_TRENNZEICHEN` (33-stellige Ziffernkette) erweitert, dieselbe
+Karte wie die schon reparierte E-Mail-Zeile.
+
+| Messung | 1440 vorher | 1440 nachher | 1920 vorher | 1920 nachher |
+| --- | --- | --- | --- | --- |
+| Ansprechpartner-Zeile ueber eigenen Kasten | 0px (passte schon) | 0px | 44px | 0px |
+| Telefon-Zeile ueber eigenen Kasten | nicht erreicht* | 0px | nicht erreicht* | 0px |
+
+\* Der Testlauf bricht bei der ersten roten Zusicherung ab (Ansprechpartner
+bei 1920); Telefon wurde deshalb vor dem Fix nicht mehr gemessen. Nach dem
+Fix laufen alle drei Zeilen (E-Mail/Ansprechpartner/Telefon) inklusive
+`keinHorizontalerUeberlauf` gruen durch.
+
+### Gruppe 2 — Kundeneditor.tsx Detailseite, Kontaktspalte (Z. 464/474/483 alt)
+
+Fixture: `DUMMY_KUNDE.ansprechspartner`/`telefon`/`mobiltelefon` von
+"Erika Musterfrau"/"0511 123456"/"" auf `ANSPRECHPARTNER_LANG` (51 Zeichen),
+`TELEFON_LANG` (33 Ziffern) und `MOBILTELEFON_LANG` (40 Ziffern) gehaertet.
+
+| Messung | 1440 vorher | 1440 nachher | 1920 vorher | 1920 nachher |
+| --- | --- | --- | --- | --- |
+| Ansprechpartner-Wert ueber Kontakt-Kasten | 164px | 0px | 44px | 0px |
+| Telefon/Mobiltelefon | nicht erreicht* | 0px | nicht erreicht* | 0px |
+
+\* Gleicher Grund wie Gruppe 1 — Testlauf stoppt bei der ersten roten
+Zusicherung (Ansprechpartner). Nach dem Fix alle drei Zeilen gruen, `main`
+ohne Ueberstand.
+
+Zusaetzlich: `flex-1` an der (schon reparierten) E-Mail-Zeile derselben
+Spalte entfernt (Z. 498 alt) — der Design-Reviewer aus Abschnitt 6 hatte
+nachgemessen, dass es neben `min-w-0` wirkungslos ist (Geometrie mit/ohne auf
+den Pixel identisch: main 0/0, `<a>` 220/220px bei 1440, 340/340px bei 1920).
+Kein funktionaler Unterschied, nur Aufraeumen.
+
+### Gruppe 3 — LieferantenEditor.tsx Kontaktspalte (Telefon/Mobil-Fax/Vertreter/Standard-Kostenstelle, Z. 297/306/345/356 alt)
+
+Fixture: `telefon`/`mobiltelefon`/`vertreter`/`standardKostenstelleName` von
+"0511 9876543"/"0171 1234567"/"Hans Beispiel"/`undefined` auf
+`TELEFON_LANG` (33 Ziffern), `MOBIL_FAX_LANG` (40 Ziffern),
+`VERTRETER_LANG` (49 Zeichen), `STANDARD_KOSTENSTELLE_LANG` (63 Zeichen)
+gehaertet.
+
+| Messung | 1440 vorher | 1440 nachher | 1920 vorher | 1920 nachher |
+| --- | --- | --- | --- | --- |
+| Telefon-Wert ueber Kontakt-Kasten | 59px | 0px | 3px | 0px |
+| Mobil-Fax/Vertreter/Standard-Kostenstelle | nicht erreicht* | 0px | nicht erreicht* | 0px |
+| `main`-Ueberstand im zweiten Testfall ("Titel aus einem einzigen langen Wort") | 179px | 0px | 0px (passte schon) | 0px |
+
+\* Gleicher Grund wie oben. Die dritte Zeile (3px bei 1920) lag nur knapp
+ueber der 2px-Toleranz — ein Beleg, dass die Fixture nicht willkuerlich lang
+gewaehlt war, sondern genau an der Kante misst.
+
+**Allein durch die gehaertete Fixture rot, ohne eine neue Pruefzeile:** der
+zweite Lieferant-Testfall ("Titel aus einem einzigen langen Wort laeuft
+nicht ueber die Kennzahlen") wurde in dieser Runde **nicht** angefasst — er
+bezieht `DUMMY_LIEFERANT` unveraendert ueber `stubLieferantDetailApi()` und
+schlug rein durch die Fixture-Haertung an der **vorbestehenden**
+`keinHorizontalerUeberlauf()` (Teil von `designPruefung`) fehl: 179px
+`main`-Ueberstand bei 1440. Genau der im Plankasten beschriebene Fall —
+der Waechter war schon scharf, nur die Testdaten waren zu kurz.
+
+### Gruppe 4 — MitarbeiterEditor.tsx Dokumente (Z. 408-419 alt) und Lohnabrechnungen (Z. 685-696 alt)
+
+Fixture: `/api/mitarbeiter/{id}/dokumente` und
+`/api/lohnabrechnungen/mitarbeiter/{id}` lieferten bisher `[]`. Jetzt je ein
+Eintrag mit ~150 Zeichen langem, unterstrichgetrenntem Dateinamen
+(`DOKUMENT_DATEINAME_LANG`, `LOHNABRECHNUNG_DATEINAME_LANG`; Lohnabrechnung
+mit `bruttolohn`/`nettolohn: null`, damit Z. 704 den Dateinamen als
+Rueckfalltext zeigt).
+
+**Wichtiger Befund, der von der Kernannahme des Plans abweicht:** anders als
+bei Gruppe 1-3 propagiert der Ueberlauf hier **nicht** bis zu `main` — die
+Dokumentenliste steht in der BREITEN Hauptspalte (`minmax(0,3fr)`, ~916-966px
+bei 1440), nicht in der schmalen Seitenspalte. Nachgemessen mit einem
+eigenen Debug-Playwright-Skript (nicht committet): mit dem urspruenglich vom
+Code-Reviewer genannten Beispiel-Dateinamen (`Arbeitsvertrag_
+Beispielmusterfrauenbergwaldschmidtstein_2024.pdf`, 66 Zeichen) blieb die
+ganze Kette (`<p>` → Zeile → "grid gap-2" → Card → `main`) bei 1440
+ueberlaufsfrei — der Text ist mit ~496px schlicht zu kurz fuer die ~916px
+breite Spalte. Erst ab deutlich ueber 100 Zeichen und mit einer direkten
+Kasten-Ueberstand-Pruefung (Wert-`<p>` gegen die umschliessende Karte, analog
+zu Gruppe 1-3) wurde der Fehler sichtbar; `main.scrollWidth` blieb dabei
+selbst bei ~150 Zeichen mit `main.clientWidth` identisch (1440/1440). Die
+allgemeinen Pruefungen (`keinHorizontalerUeberlauf`, `keinTextLaeuftUeber`)
+haetten diese Stelle **nicht** gefunden — anders als vom Plankasten
+suggeriert, war hier eine neue, gezielte Zusicherung noetig, nicht nur eine
+haertere Fixture.
+
+Zweiter Befund beim Fixen: `min-w-0 flex-1` an den beiden inneren Ebenen
+(Icon-Zeile, Text-Container — analog zur SideInfo aus Task 7b) reichte
+**nicht**. Das aeussere `<div>` je Dokument-/Lohnabrechnungszeile ist selbst
+ein Grid-Item von `<div className="grid gap-2">` und traegt denselben
+`min-width: auto`-Fallstrick wie ein Flex-Item (kriterien.md, "Layout: zwei
+Fallen") — ohne eigenes `min-w-0` blieb der Ueberstand nach dem ersten
+Fix-Versuch unveraendert bei denselben Werten. Erst `min-w-0` zusaetzlich auf
+diesem aeusseren `<div>` behob es.
+
+| Messung | 1440 vorher | 1440 nachher (nur innere Ebenen) | 1440 nachher (+ min-w-0 aussen) | 1920 vorher | 1920 nachher |
+| --- | --- | --- | --- | --- | --- |
+| Dokument-Dateiname ueber Karte | 313px | 313px (unveraendert!) | 0px | 145px | 0px |
+| Lohnabrechnung-Dateiname ueber Karte (Rueckfalltext) | nicht separat gemessen* | — | 0px | nicht separat gemessen* | 0px |
+
+\* Der Testlauf pruefte den Dokument-Fall zuerst und brach dort ab, bevor
+der Lohnabrechnungen-Reiter angeklickt wurde. Nach dem Fix beide Faelle
+gruen.
+
+### Mutationsprobe Lieferanten-Trennlinien (`uebersichten-layout.spec.ts`)
+
+`pruefeGleicheKartenhoeheUndTrennlinie` verglich bisher `LIEFERANTEN_MIX[0]`
+(13 Zeichen, einzeilig) gegen `MIX[1]` (36 Zeichen, ebenfalls einzeilig bei
+beiden Groessen) — beide verschieben sich bei einer `mt-auto`-Regression
+gemeinsam, die Zusicherung blieb deshalb auch unter der vom Design-Reviewer
+in Abschnitt 6 gefahrenen Mutation (`gap-3` → `space-y-3`) gruen. Umgestellt
+auf `MIX[0]` gegen `MIX[2]` (51 Zeichen, in beiden Groessen zweizeilig, bei
+1440 in derselben Kartenreihe).
+
+Mutationsprobe wiederholt (`gap-3` → `space-y-3` in `LieferantenEditor.tsx`
+Z. 815, danach zurueckgenommen): **jetzt rot** bei beiden Groessen —
+Trennlinie "Stahlbau Nord" bei y=618 vs. "Baustoffhandel Beispielstadt Nord
+und Umgebung GmbH" bei y=642, Versatz 24px (Toleranz 2px). `git status` nach
+der Ruecknahme sauber, keine Mutationsreste im Commit.
+
+### Gate-Ergebnisse (aus `react-pc-frontend/`, Port 5223 vor jedem Lauf per `netstat -ano | findstr :5223` geprueft, keine LISTENING-Zeile)
+
+- `E2E_PORT=5223 npx playwright test e2e/kunde-layout.spec.ts e2e/lieferant-layout.spec.ts e2e/mitarbeiter-layout.spec.ts e2e/uebersichten-layout.spec.ts`:
+  **26/26 gruen** (beide Groessen, alle vier Dateien).
+- `npx vitest run src/pages/Kundeneditor.test.tsx src/pages/LieferantenEditor.test.tsx`:
+  **14/14 gruen** (2 Testdateien).
+- `npm run lint`: 0 Fehler, dieselbe eine vorbestehende Warnung
+  (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`) wie Baseline.
+- `npm run build`: gruen (`tsc -b` + `vite build`), nur die vorbestehende
+  Chunk-Groessen-Warnung. Build-Output verworfen
+  (`git checkout -- src/main/resources/static`,
+  `git clean -f src/main/resources/static/assets`), `git status` danach nur
+  die sieben freigegebenen Dateien.
+- `test-results/` nicht committet (`.gitignore` greift, per `git check-ignore`
+  bestaetigt).
+
+### Bedenken / Abweichungen vom Plan
+
+- **Gruppe 4 widerlegt die pauschale Aussage des Plankastens teilweise**
+  ("wer die Fixtures haertet, findet die ganze Fehlerklasse ohne eine Zeile
+  neuen Pruefcode"): das gilt fuer Gruppe 1-3 (Kunde/Lieferant, schmale
+  Seitenspalte) und ist fuer Gruppe 3 mit dem Lieferant-Einwort-Testfall
+  sauber belegt (179px `main`-Ueberstand, keine neue Pruefzeile noetig).
+  Fuer Gruppe 4 (Mitarbeiter, breite Hauptspalte) reicht die Fixture-Haertung
+  allein **nicht** — der Ueberlauf bleibt unterhalb von `main` stecken
+  (Grund: `minmax(0,3fr)`-Spalte ist mit ~916-966px deutlich breiter als die
+  Seitenspalten der anderen drei Gruppen), und es brauchte eine gezielte
+  Kasten-Ueberstand-Zusicherung, um es sichtbar zu machen. Fuer kuenftige
+  Aufgaben dieser Art: die Breite der umschliessenden Spalte mitdenken, bevor
+  man sich auf den generischen `main`-Check verlaesst.
+- **Zwei-Ebenen-Fix bei Gruppe 4**: `min-w-0 flex-1` an den inneren Ebenen
+  (wie in der SideInfo aus Task 7b) reichte nicht, weil das aeussere `<div>`
+  je Zeile selbst Grid-Item von `grid gap-2` ist und denselben
+  `min-width: auto`-Fallstrick traegt. Ohne die Gegenprobe (Fix angewandt,
+  Zahlen unveraendert bei 313px/145px) waere das nicht aufgefallen — als
+  Ergaenzung zu kriterien.md "Layout: zwei Fallen" vorgeschlagen: derselbe
+  Fallstrick gilt fuer Grid-Items, nicht nur Flex-Items.
+- **Dateiname-Laenge ueber dem Beispiel des Code-Reviewers**: das
+  urspruengliche Beispiel (`Arbeitsvertrag_Beispielmusterfrauenbergwald
+  schmidtstein_2024.pdf`, 66 Zeichen) ueberlaeuft die breite Hauptspalte
+  bei 1440 nicht (496px Textbreite gegen ~916px Spaltenbreite). Fixture
+  bewusst auf ~150 Zeichen verlaengert, um den strukturellen Fehler
+  nachweisbar zu machen — im Kontext-Log vermerkt, damit niemand die
+  kuerzere Zahl aus dem Review-Text als bereits ausreichend rot uebernimmt.
+- Keine sonstigen Abweichungen. `git stash` nicht verwendet (Vorgabe) —
+  stattdessen `git diff` in eine Patch-Datei gesichert, `git checkout --`
+  fuer die Rot-Messung, `git apply` zur Wiederherstellung.
+
+### Nicht angefasst / nicht Teil dieses Tasks
+
+`Kundeneditor.tsx` Z. 519-527 (Zahlungsziel-Zeile derselben Kontaktspalte)
+bewusst nicht angefasst — weder im Plan noch in den Code-Reviewer-Befunden
+aus Abschnitt 6 als betroffen genannt (reiner Zahlenwert + "Tage", kein
+Umbruchrisiko). `LieferantenEditor.tsx` "Bezahlung"-Zeile (Z. 357 ff.)
+ebenso unangetastet gelassen (statischer, schon langer Text ohne
+Feldbezug, nicht in der Befundliste).
