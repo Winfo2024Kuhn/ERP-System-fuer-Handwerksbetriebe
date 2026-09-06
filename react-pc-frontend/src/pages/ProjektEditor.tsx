@@ -1044,8 +1044,15 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     const header = (
         <Card className="p-6">
-            <div className="flex flex-col xl:flex-row gap-8 justify-between">
-                <div className="flex items-start gap-4">
+            {/* flex-wrap statt starrem xl:flex-row: bei wenig Platz (1440px,
+                langes Bauvorhaben) rutschen zuerst die Kennzahlen in eine
+                zweite Zeile unter den Titel, nie der Knopfblock aus der Karte
+                (siehe docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
+                Task 3 -- Spec-Befund 2: der Knopfblock wurde vorher unabhaengig
+                vom Namen aus der Kopf-Karte gedrueckt, weil die Kennzahlen
+                sich mit flex-1 max-w-4xl den ganzen Restplatz genommen haben). */}
+            <div className="flex flex-wrap items-start gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
                     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
@@ -1054,7 +1061,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </div>
                     <div>
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900">{projekt.bauvorhaben}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words">{projekt.bauvorhaben}</h1>
                             <span className={cn(
                                 "px-2.5 py-0.5 rounded-full text-xs font-medium border",
                                 projekt.bezahlt
@@ -1072,31 +1079,34 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </div>
                 </div>
 
-                {/* Stats Row */}
-                <div className="flex items-center gap-6 flex-1 max-w-4xl">
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                {/* Stats Row -- shrink-0 statt flex-1: die Kennzahlen nehmen
+                    sich keinen Platz mehr, der dem Titelblock oder den
+                    Knoepfen fehlt. flex-wrap laesst sie selbst umbrechen, wenn
+                    der Zeile nicht genug Platz bleibt. */}
+                <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Brutto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(projekt.bruttoPreis)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Netto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(nettoPreis)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Arbeitskosten</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(arbeitskosten)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Material</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(gesamtMaterialkosten)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2">
+                    <div className="flex flex-col items-center px-4 py-2 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Gewinn</p>
                         <p className={cn("text-base font-semibold", gewinn >= 0 ? 'text-green-600' : 'text-red-600')}>{formatCurrency(gewinn)}</p>
                     </div>
                 </div>
 
-                <div className="flex items-start gap-2">
+                <div className="shrink-0 flex flex-wrap items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -1158,12 +1168,17 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     const mainContent = (
         <>
-            {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
+            {/* Tab Navigation -- flex-wrap statt overflow-x-auto: eine versteckt
+                scrollende Reiterleiste ist keine Loesung, lieber umbrechen
+                lassen, wenn der Platz doch nicht reicht (siehe
+                docs/superpowers/plans/2026-09-05-layout-14-zoll.md, Task 3).
+                min-w-0 verhindert, dass diese Zeile die Mindestbreite der
+                linken DetailLayout-Spalte wieder hochzieht. */}
+            <div className="flex flex-wrap min-w-0 gap-2 mb-6 border-b border-slate-200 pb-2">
                 <button
                     onClick={() => setActiveTab('zeiten')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'zeiten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1175,19 +1190,19 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('materialkosten')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'materialkosten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
                     <Euro className="w-4 h-4 inline-block mr-2" />
-                    Materialkosten ({projekt.materialkosten?.length || 0})
+                    Material ({projekt.materialkosten?.length || 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('emails')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'emails'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1199,19 +1214,19 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'geschaeftsdokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
                     <FileText className="w-4 h-4 inline-block mr-2" />
-                    Ein-/ Ausgangsgeschäftsdokumente ({ausgangsDokumente.length + eingangsrechnungen.length})
+                    Geschäftsdokumente ({ausgangsDokumente.length + eingangsrechnungen.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('dokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'dokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1223,7 +1238,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('beschreibung')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'beschreibung'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1235,14 +1250,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('notizen')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'notizen'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
                     <StickyNote className="w-4 h-4 inline-block mr-2" />
-                    Bau Tagebuch ({notizen.length})
+                    Tagebuch ({notizen.length})
                 </button>
             </div>
 
@@ -1621,7 +1636,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     {/* Hinweis: Eingangsrechnungen-Summe fließt weiterhin in die Nachkalkulation ein (siehe gesamtMaterialkosten) */}
                     {eingangsrechnungen.length > 0 && (
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-                            <span className="font-medium">Hinweis:</span> {eingangsrechnungen.length} Eingangsrechnung{eingangsrechnungen.length !== 1 ? 'en' : ''} ({formatCurrency(eingangsrechnungenSum)}) — siehe Tab &quot;Ein-/ Ausgangsgeschäftsdokumente&quot;
+                            <span className="font-medium">Hinweis:</span> {eingangsrechnungen.length} Eingangsrechnung{eingangsrechnungen.length !== 1 ? 'en' : ''} ({formatCurrency(eingangsrechnungenSum)}) — siehe Reiter &quot;Geschäftsdokumente&quot;
                         </div>
                     )}
                 </div>
@@ -3922,7 +3937,10 @@ export default function ProjektEditor() {
                 <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Alle Filter gelten für die gesamte Liste, nicht nur für die angezeigte Seite.</p>
             </div>
 
-            {/* Grid Content */}
+            {/* Grid Content -- xl:grid-cols-4 -> 2xl:grid-cols-4: bei 1440px
+                (>=lg, <2xl) drei breitere Karten statt vier -- der lange
+                Bauvorhaben-Titel braucht mehr Platz je Karte (Spec-Befund 4,
+                Task 3). Ab 1536px (2xl) wieder vier Karten wie vorher. */}
             {loading ? (
                 <div className="text-center py-8 text-slate-500">Projekte werden geladen...</div>
             ) : projekte.length === 0 ? (
@@ -3931,7 +3949,7 @@ export default function ProjektEditor() {
                     Keine Projekte gefunden.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                     {projekte.map((projekt) => (
                         <ProjektCard
                             key={projekt.id}
@@ -4118,10 +4136,20 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
                             )}
                             {freigabe && <FreigabeBadge freigabe={freigabe} />}
                         </div>
-                        <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={projekt.bauvorhaben}>
+                        {/* line-clamp-2 statt truncate: bei einem langen Bauvorhaben
+                            (Spec-Befund 4) darf der Titel zwei Zeilen nutzen, statt
+                            fast vollstaendig zu verschwinden. data-kuerzung-erlaubt
+                            markiert den dokumentiert erlaubten Ausnahmefall -- der
+                            volle Name steht im title-Attribut. min-h-[3rem] haelt
+                            alle Karten einer Reihe gleich hoch. */}
+                        <h3
+                            className="font-semibold text-slate-900 mt-2 line-clamp-2 min-h-[3rem] text-base"
+                            title={projekt.bauvorhaben}
+                            data-kuerzung-erlaubt
+                        >
                             {projekt.bauvorhaben || "Unbenannt"}
                         </h3>
-                        <p className="text-sm text-slate-500 truncate">{projekt.kunde || "Kein Kunde"}</p>
+                        <p className="text-sm text-slate-500 break-words">{projekt.kunde || "Kein Kunde"}</p>
                     </div>
                     {/* Checkbox zum Beenden */}
                     <div
