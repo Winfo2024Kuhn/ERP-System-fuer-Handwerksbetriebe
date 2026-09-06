@@ -3735,3 +3735,173 @@ kippt. Das ist eine gezielte Suche wert, kein Aufraeumen ins Blaue.
 `react-pc-frontend/` ausser dem Orchestrator-eigenen `kriterien.md`, keine
 Sicherheits- oder DSGVO-Verstoesse. Die offenen Punkte sind ausnahmslos
 vorbestehend und liegen ausserhalb der Files von Abschnitt 7.
+
+## Abschnitt 8 — Task 12 (Coding-Agent)
+
+Zeit: 2026-09-06T17:30:13Z
+Branch: layout/task-12-wertfelder
+Commit(s): 97a909f8 (Projekt), 7e3d0481 (Anfrage), 8a7ef140 (Kunde), 19190443 (Mitarbeiter)
+Status: fertig
+
+### Systematik — die geforderte Zahl
+
+Alle vier Dateien vollständig gelesen (ProjektEditor.tsx 4252, AnfrageEditor.tsx
+2012, Kundeneditor.tsx 1264, MitarbeiterEditor.tsx 1356 Zeilen — 8884 Zeilen
+insgesamt), nicht nur die vom Code-Reviewer gelisteten Stellen. Jedes `<p>`,
+`<span>`, `<a>` und relevante `<div>` (zusammen 742 Tags: 340/128/122/152 je
+Datei) wurde gegen die Rezeptur geprüft: bounded/system-generierte Werte
+(Währungsbeträge, Datumsangaben, kurze Belegnummern) wurden bewusst
+ausgelassen (kein Bikeshedding), echte Freitext-/Namens-/Adress-/E-Mail-Felder
+wurden korrigiert, wo die Rezeptur fehlte.
+
+**Geändert: 49 Stellen.**
+- ProjektEditor.tsx: 24 (Seitenspalte Projektdaten inkl. Kategorien/Adresse,
+  Tagebuch-Notiz, Materialkosten-/Artikel-Zeilen, Eingangsrechnungs-Metadaten,
+  Zeiten-Hierarchie Kategorie/Arbeitsgang/Mitarbeiter, Dokumentenketten-
+  Metazeile, Merge-Dialog, Übersichtskarte-Auftragsnummer, Kopf-
+  Untertitelzeilen Kunde/Adresse/Auftragsnummer)
+- AnfrageEditor.tsx: 14 (Seitenspalte Anfragedaten, zwei Telefon-`<a>`,
+  Tagebuch-Notiz, Kunden-Auswahl-Dialog ×2, Übersichtskarte-Anfragenummer,
+  Kopf-Untertitelzeilen Kunde/Adresse/Anlegedatum)
+- Kundeneditor.tsx: 7 (E-Mail-Zeile `flex-1` wieder ergänzt, Zahlungsziel-
+  Zeile komplett nachgezogen, `{ortText}`, zwei Mini-Karten-Nummern, zwei
+  Kopf-Untertitelzeilen)
+- MitarbeiterEditor.tsx: 4 (Detail-Kopfzeile, NotizenList `{notiz.inhalt}`,
+  Übersichtskarte `<h3>` + Abteilungs-Zeile)
+
+Der zweite Mechanismus (Block-`<p>` ohne `break-words`, keine Flex-Zeile
+nötig) betraf den überwiegenden Teil der 49 Stellen — nur eine Minderheit
+war der bereits bekannte Flex-Item-Fall.
+
+### Gemessene Zahlen je Stelle (Mutationsproben, echter Playwright-Lauf)
+
+- **ProjektEditor Seitenspalte, Kunde** (`KUNDE_EIN_WORT`, 50 Zeichen ohne
+  Trennstelle): `break-words` entfernt → **134px Überstand** (scrollWidth −
+  clientWidth), gemessen bei pc-14zoll. Mit Fix: 0px. Fixture, Zusicherung
+  und Fund waren vor diesem Task nicht vorhanden (`kundeDto` fehlte
+  komplett in `DUMMY_PROJEKT`).
+- **AnfrageEditor Seitenspalte, Ansprechpartner** (`ANSPRECHPARTNER_LANG`,
+  50 Zeichen): `break-words` entfernt → **148px Überstand**, gemessen bei
+  pc-14zoll. Mit Fix: 0px. Ebenfalls vorher ungetestet (keine der drei
+  Felder Ansprechpartner/Telefon/Mobiltelefon/Adresse war in der Fixture
+  gesetzt).
+- **Kunde-Kontaktspalte / Kundenkarte**: keine neue Messung nötig — Fund war
+  strukturell (Zusicherung trifft falsches Element), nicht numerisch; Fix
+  in der Spec selbst (siehe Abdeckungslücken unten).
+- **Mitarbeiter-Übersichtskarte, `<h3>` (Name) und Abteilungs-Zeile**:
+  Mutationsprobe (`break-words`/`min-w-0` entfernt) blieb bei der
+  bestehenden Fixture (NACHNAME 41, ABTEILUNG 44 Zeichen) **grün** — bei
+  text-sm/text-lg-Schriftgröße und ~371px Karteninnenbreite (1440,
+  3-spaltiges Raster) passen beide Werte gerade noch hinein (306px bzw.
+  372px gemessen, teils dank Komma+Leerzeichen zwischen Nachname/Vorname
+  als zusätzlichem Umbruchpunkt). Deckt sich mit dem Code-Review-Befund
+  „passt bei 1440 heute noch knapp … latent, nicht akut". Beide
+  Zusicherungen bleiben deshalb **Regressionswächter, kein TDD-Beweis** —
+  dieselbe Einordnung, die die Datei für die Kopfzeile bereits selbst trägt.
+  NACHNAME/ABTEILUNG absichtlich nicht verlängert, weil beide Konstanten in
+  vielen anderen Zusicherungen dieser Datei wiederverwendet werden und eine
+  Änderung dort unkontrolliert weite Kreise gezogen hätte.
+
+**Wichtiger Methodik-Fund (bitte für `kriterien.md` prüfen, liegt außerhalb
+`react-pc-frontend/` und ist deshalb nicht von mir editiert):** Eine
+Zusicherung, die `boundingBox()` des Wert-Elements gegen `boundingBox()`
+eines Kastens vergleicht, sieht einen Überlauf **nur**, wenn das Wert-Element
+selbst ein Flex-/Grid-Item ist, das seine Box am eigenen Inhalt ausrichtet
+(„hugs content" statt „füllt Elternbreite"). Für einen normalen Block ohne
+explizite Breite (z. B. ein `<p>` in einem nicht-flexiblen `<div>`) bleibt die
+`boundingBox()`-Breite bei „= Elternbreite" — der überlaufende Text malt
+unsichtbar für diese Messmethode über den Rand hinaus, ohne dass sich
+`x`/`width` ändern. Ich habe genau das beim ersten Testlauf meiner eigenen
+neuen Zusicherung gesehen (Kunde-Seitenspalte blieb mit `boundingBox()`-Check
+**grün** trotz entferntem `break-words`) und auf `el.scrollWidth −
+el.clientWidth` umgestellt (dieselbe Messmethode wie `keinTextLaeuftUeber` in
+`design.ts`) — danach 134px/148px rot, wie oben belegt. Betrifft nur Block-
+Elemente außerhalb eines Flex-/Grid-Kontexts; die bestehenden `boundingBox()`-
+Zusicherungen für `<h1>`/Knopfblock/Flex-Zeilen in diesem Vorhaben sind davon
+nicht betroffen, weil dort die Elemente selbst Flex-Items sind.
+
+### Abdeckungslücken geschlossen
+
+1. **Kundenkarte, Zeilen-Zusicherung trifft `<span>` statt `<p>`**
+   (`kunde-layout.spec.ts`, `pruefeZeileLaeuftNichtUeber`): `getByText()`
+   wählt bei identischem Text das innerste Element — seit Task 11 ist das
+   der `<span className="min-w-0 break-words">`, nicht mehr das
+   `<p className="flex …">`. Der Span kann sich nie selbst überragen
+   (er wird immer exakt so breit wie sein eigener Inhalt), also blieb die
+   Zusicherung grün, egal ob `min-w-0` am Span wirkt. Fix: ausdrücklich per
+   `ancestor-or-self::p[…flex…]` auf die Zeile hochlaufen und **deren**
+   `scrollWidth`/`clientWidth` prüfen. Dieselbe Korrektur vorsorglich auch in
+   der neuen Mitarbeiter-Übersicht-Zusicherung angewandt (dort trat dasselbe
+   Muster auf).
+2. **Lohnabrechnungs-`<p>` von keiner Zusicherung gedeckt**
+   (`mitarbeiter-layout.spec.ts`): `designPruefung(strengePruefungen: true)`
+   lief bisher nur einmal, bevor auf den Lohnabrechnungen-Reiter gewechselt
+   wird. Fix: `keinTextLaeuftUeber(page)` läuft jetzt zusätzlich direkt nach
+   dem Wechsel auf diesen Reiter (kein neuer Screenshot nötig, reicht als
+   automatischer Check).
+
+### Vier weitere Punkte — Status
+
+1. **Mitarbeiter-Übersicht hatte keine Zusicherung** → jetzt vorhanden
+   (Name- und Abteilungs-Zeile gegen Kasten-Überlauf, volle `designPruefung`
+   inkl. `strengePruefungen`, vor dem Klick in die Detailansicht).
+2. **Fixtures gehärtet**: neue bindestrichlose Werte für Kunde/
+   Ansprechpartner/Straße in `projekt-detail-layout.spec.ts` und
+   `anfrage-layout.spec.ts` (bisher leere Felder, die diese Stellen nie
+   gerendert haben). `kunde-layout.spec.ts` und `mitarbeiter-layout.spec.ts`
+   waren aus Task 9/11 bereits ausreichend gehärtet — dort nur die
+   Zusicherungs-Logik korrigiert (siehe Abdeckungslücken).
+3. **Einheitlichkeit**: `flex-1` in der Kunden-Kontaktspalte an der E-Mail-
+   Zeile wieder ergänzt (war die einzige der fünf Zeilen ohne `flex-1`,
+   geometrisch wirkungslos laut Design-Review-Messung, aber jetzt ein
+   Muster pro Spalte). Zahlungsziel-Zeile (Kunde) trug die Rezeptur gar
+   nicht — jetzt vollständig nachgezogen (`shrink-0` Icon, `min-w-0 flex-1`
+   Wert-Container, `break-words` Wert).
+4. Die **Bezahlung-Zeile (`LieferantenEditor.tsx` Z. 356 ff.)** trägt
+   dieselbe Lücke (kein `shrink-0`/`min-w-0 flex-1`/`break-words`) —
+   verifiziert, aber **nicht angefasst**: die Datei steht nicht in der
+   `Files`-Liste von Task 12. Meldung hier statt stiller Mitreparatur, wie
+   von den Global Constraints verlangt.
+
+### Gates (aus `react-pc-frontend/`, synchron, Port 5226)
+
+- `netstat -ano | findstr :5226` vor dem ersten Lauf: leer (kein LISTENING-
+  Socket) — Port frei, kein Ausweichport nötig.
+- `E2E_PORT=5226 npx playwright test e2e/projekt-detail-layout.spec.ts
+  e2e/anfrage-layout.spec.ts e2e/kunde-layout.spec.ts
+  e2e/mitarbeiter-layout.spec.ts e2e/uebersichten-layout.spec.ts`:
+  **38/38 grün**, beide Größen (pc-14zoll + pc-monitor), zweimal komplett
+  durchgelaufen (vor und nach der finalen Korrektur der Zusicherungs-
+  Methodik) plus einmal auf dem exakt committeten Stand zur Abnahme.
+- `npx vitest run src/pages/ProjektEditor.test.tsx
+  src/pages/AnfrageEditor.test.tsx src/pages/Kundeneditor.test.tsx`:
+  **15/15 grün** (3 Dateien).
+- `npm run lint`: **0 Fehler, 1 Warnung** (`BelegeKasseEditor.tsx:1204`,
+  vorbestehend, identisch zur Baseline).
+- `npm run build`: grün (`tsc -b` + `vite build`, ~30s), nur die
+  vorbestehende Chunk-Größen-Warnung. Build-Output beide Male verworfen
+  (`git checkout -- src/main/resources/static` + `git clean -fd`),
+  `git status` danach leer.
+- `LieferantDokumentModal.test.tsx` nicht gefahren (nicht meine Baustelle,
+  laut Auftrag vorbestehend rot im Einzellauf).
+
+### Bedenken / Abweichungen vom Plan
+
+- Kein Backend, kein `react-zeiterfassung` angefasst. Alle Änderungen
+  ausschließlich in den vier `Files`-Dateien und ihren Specs.
+- `projekt-uebersicht-layout.spec.ts` ist nicht Teil der Task-12-Files/Gates
+  und wurde deshalb nicht gefahren — meine Änderungen an `ProjektCard`
+  (Auftragsnummer-Span) sollten sie nicht brechen (keine Text-/Struktur-
+  änderung, nur Klassen), aber ungeprüft geblieben.
+- `LieferantenEditor.tsx`/`lieferant-layout.spec.ts` bewusst nicht
+  angefasst (siehe Punkt 4 oben) — Zielkonflikt zwischen der freien
+  Auftragsformulierung („Bezahlung-Zeile (Lieferant)") und der verbindlichen
+  `Files`-Liste des Plans; nach den Global Constraints hat die `Files`-Liste
+  Vorrang, der Befund ist hiermit gemeldet.
+- Methodik-Fund zu `boundingBox()` vs. `scrollWidth`/`clientWidth` (siehe
+  oben) betrifft potenziell auch **bestehende** Zusicherungen in anderen,
+  nicht von mir angefassten Specs dieses Vorhabens, wo ein Wert-Element ein
+  normaler Block (kein Flex-/Grid-Item) ist — nicht systematisch
+  durchsucht, da außerhalb des Auftrags. Empfehlung: bei Gelegenheit prüfen
+  und ggf. in `kriterien.md` als fünfte Layout-Falle aufnehmen.
+- Ich bleibe im Worktree `wt/layout-task-12`, nichts gemergt.
