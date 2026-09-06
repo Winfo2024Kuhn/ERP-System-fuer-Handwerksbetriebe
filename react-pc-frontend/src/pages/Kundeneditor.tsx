@@ -117,8 +117,8 @@ const KartenLeerzustand: React.FC<{ icon: React.ReactNode; text: string }> = ({ 
 );
 
 const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => void }> = ({ projekt, onOpen }) => (
-    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden" onClick={onOpen}>
-        <div className="p-4 space-y-3">
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
+        <div className="p-4 space-y-3 flex-1 flex flex-col">
             <div className="flex items-center gap-2 flex-wrap">
                 <span className={cn(
                     'text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full',
@@ -134,11 +134,13 @@ const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => vo
             </div>
             {/* line-clamp-2 statt truncate: dieselbe lange Bauvorhaben-Kuerzung wie in
                 der Uebersicht (Spec E.3-Ausnahme, Kartentitel), title traegt den vollen
-                Namen. */}
-            <h3 className="font-semibold text-slate-900 line-clamp-2 min-h-[3rem] text-base" title={projekt.bauvorhaben} data-kuerzung-erlaubt>
+                Namen. Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4,
+                Design-Review-Befund) -- gleiche Kartenhoehe kommt ueber h-full
+                flex flex-col an der Karte und mt-auto am Meta-Block unten. */}
+            <h3 className="font-semibold text-slate-900 line-clamp-2 text-base" title={projekt.bauvorhaben} data-kuerzung-erlaubt>
                 {projekt.bauvorhaben || 'Unbenannt'}
             </h3>
-            <div className="space-y-1 pt-2 border-t border-slate-50">
+            <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                 {projekt.auftragsnummer && (
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <FileText className="w-4 h-4 text-slate-400 shrink-0" />
@@ -159,17 +161,19 @@ const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => vo
 );
 
 const KundenAnfrageKarte: React.FC<{ anfrage: KundeAnfrageKurz; onOpen: () => void }> = ({ anfrage, onOpen }) => (
-    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden" onClick={onOpen}>
-        <div className="p-4 space-y-3">
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
+        <div className="p-4 space-y-3 flex-1 flex flex-col">
             <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
                     Anfrage
                 </span>
             </div>
-            <h3 className="font-semibold text-slate-900 line-clamp-2 min-h-[3rem] text-base" title={anfrage.bauvorhaben} data-kuerzung-erlaubt>
+            {/* Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4, Design-Review-Befund) --
+                siehe Kommentar in KundenProjektKarte oben. */}
+            <h3 className="font-semibold text-slate-900 line-clamp-2 text-base" title={anfrage.bauvorhaben} data-kuerzung-erlaubt>
                 {anfrage.bauvorhaben || 'Unbenannt'}
             </h3>
-            <div className="space-y-1 pt-2 border-t border-slate-50">
+            <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                 {anfrage.anfragesnummer && (
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <FileText className="w-4 h-4 text-slate-400 shrink-0" />
@@ -204,10 +208,17 @@ const KundenDokumentKarte: React.FC<{ dok: AusgangsGeschaeftsDokument; onOpen: (
                         )}>
                             {DOK_TYP_LABELS[dok.typ] || dok.typ}
                         </span>
-                        {/* line-clamp-2 statt truncate: dieselbe Bauvorhaben-Kuerzung
-                            wie bei den anderen Mini-Karten -- Dokumentnummern sind zwar
-                            normalerweise kurz, aber das Feld traegt keine feste Laenge. */}
-                        <span className="text-sm font-medium text-slate-900 line-clamp-2" title={dok.dokumentNummer} data-kuerzung-erlaubt>{dok.dokumentNummer}</span>
+                        {/* break-words statt line-clamp-2 + Marker (Nacharbeit
+                            Abschnitt 4, Code-Review-Befund 3): eine Belegnummer ist
+                            eine Kennung, halb abgeschnitten ist sie wertlos, und es
+                            gibt real keine Nummer, die zwei Zeilen braucht. title
+                            bleibt als Rueckfallweg, aber ohne data-kuerzung-erlaubt
+                            bleibt keinTextGekuerzt() hier scharf -- eine gequetschte
+                            Karte ist wieder ein echter Befund. Die Herkunftszeile
+                            ("Projekt: ...") direkt darunter behaelt Marker + title,
+                            weil sie denselben langen Bauvorhaben-Namen traegt und
+                            faktisch die Titelzeile der Mini-Karte ist. */}
+                        <span className="text-sm font-medium text-slate-900 break-words" title={dok.dokumentNummer}>{dok.dokumentNummer}</span>
                         {dok.storniert && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-600">storniert</span>
                         )}
@@ -278,9 +289,11 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                                 {kunde.kundennummer}
                             </span>
                         </div>
+                        {/* shrink-0 an den Untertitel-Icons (Nacharbeit Abschnitt 4,
+                            Rezeptur): sonst quetscht ein langer Text sie platt. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {kunde.ansprechspartner}</p>}
-                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {kunde.strasse}, {kunde.plz} {kunde.ort}</p>
+                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {kunde.ansprechspartner}</p>}
+                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {kunde.strasse}, {kunde.plz} {kunde.ort}</p>
                         </div>
                     </div>
                 </div>
@@ -300,7 +313,10 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     </div>
                 </div>
 
-                <div className="flex items-start shrink-0">
+                {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
+                    linken Kartenrand statt nach rechts (Rezeptur, Nacharbeit
+                    Abschnitt 4). */}
+                <div className="flex items-start shrink-0 ml-auto">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -828,8 +844,8 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
     const ortText = [kunde.plz, kunde.ort].filter(Boolean).join(' ');
 
     return (
-        <Card className="p-4 cursor-pointer hover:border-rose-200 hover:shadow-md transition-all bg-white" onClick={onSelect}>
-            <div className="space-y-3">
+        <Card className="p-4 cursor-pointer hover:border-rose-200 hover:shadow-md transition-all bg-white h-full flex flex-col" onClick={onSelect}>
+            <div className="space-y-3 flex-1 flex flex-col">
                 <div>
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase text-slate-500 tracking-wide">{kunde.kundennummer || 'ohne Nr.'}</p>
@@ -843,11 +859,14 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                     </div>
                     {/* line-clamp-2 statt truncate (Spec E.3, Kartentitel-Ausnahme):
                         ein langer Kundenname (Spec-Befund 4) bricht auf zwei Zeilen um
-                        statt einzeilig abgehackt zu werden, title traegt den vollen Namen. */}
-                    <h3 className="font-semibold text-slate-900 line-clamp-2 min-h-[3rem]" title={kunde.name || '-'} data-kuerzung-erlaubt>{kunde.name || '-'}</h3>
+                        statt einzeilig abgehackt zu werden, title traegt den vollen Namen.
+                        Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4, Design-Review-Befund) --
+                        gleiche Kartenhoehe kommt ueber h-full flex flex-col an der Karte
+                        und mt-auto am Meta-Block unten. */}
+                    <h3 className="font-semibold text-slate-900 line-clamp-2" title={kunde.name || '-'} data-kuerzung-erlaubt>{kunde.name || '-'}</h3>
                     {ortText && <p className="text-sm text-slate-500">{ortText}</p>}
                 </div>
-                <div className="text-sm text-slate-600 space-y-1">
+                <div className="text-sm text-slate-600 space-y-1 mt-auto">
                     {kunde.ansprechspartner && (
                         <p className="flex items-center gap-2"><User className="w-4 h-4 text-rose-400" />{kunde.ansprechspartner}</p>
                     )}

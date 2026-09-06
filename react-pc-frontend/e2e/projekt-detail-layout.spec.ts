@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung } from './hilfen/design';
+import { designPruefung, keinTextGekuerzt } from './hilfen/design';
 
 /**
  * Task 3 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -56,11 +56,23 @@ function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
+// Nacharbeit Abschnitt 4, Punkt 1 (Code-Review-Befund 4 aus Abschnitt 3): drei
+// der vier truncate-Stellen ohne title brauchen realistisch LANGE Werte, um auf
+// den tatsaechlichen Spaltenbreiten wirklich zu ueberlaufen -- kurze Dummy-Werte
+// waeren faelschlich gruen gewesen, obwohl die Stelle im Code als "truncate"
+// markiert war. Lieferantenname bleibt exakt die Spec-Vorgabe (LIEFERANT-Konstante,
+// Global Constraints), Betreff und Dateiname sind frei waehlbar und deshalb bewusst
+// so lang gewaehlt, wie ein echter Handwerksbetrieb sie eintragen wuerde.
+const EMAIL_BETREFF_LANG = 'Rechnung RE-2026-0501 zur Treppenanlage mit Podest und Absturzsicherung Bürogebäude Beispielstraße — Zahlungsziel 14 Tage netto, Skonto entfällt';
+const EINGANGSRECHNUNG_DATEINAME_LANG = 'eingangsrechnung-stahlhandel-beispiel-gmbh-und-co-kg-fuer-treppenanlage-mit-podest-und-absturzsicherung-buerogebaeude-beispielstrasse-projekt-a-2026-0005-rechnung-er-2026-0601-gescannt-2026-02-05.pdf';
+const KUNDEN_EMAIL_LANG = 'verwaltung.rechnungswesen@wohnungsbaugesellschaft-beispielstadt-nord-immobilienverwaltung.example';
+
 const DUMMY_AUSGANGSDOKUMENT = {
     id: 501,
     dokumentNummer: 'RE-2026-0501',
     typ: 'RECHNUNG' as const,
     datum: '2026-02-01',
+    betreff: EMAIL_BETREFF_LANG,
     betragNetto: 4200,
     betragBrutto: 4998,
     gebucht: false,
@@ -74,7 +86,7 @@ const DUMMY_EINGANGSRECHNUNG = {
     dokumentId: 601,
     geschaeftsdokumentId: 601,
     dokumentNummer: 'ER-2026-0601',
-    dateiname: 'lieferantenrechnung-dummy.pdf',
+    dateiname: EINGANGSRECHNUNG_DATEINAME_LANG,
     dokumentDatum: '2026-02-05',
     gesamtbetrag: 1500,
     prozent: 100,
@@ -99,7 +111,7 @@ const DUMMY_PROJEKT = {
     bruttoPreis: 125000,
     bezahlt: false,
     abgeschlossen: false,
-    kundenEmails: [],
+    kundenEmails: [KUNDEN_EMAIL_LANG],
     materialkosten: [],
     artikel: [],
     produktkategorien: [],
@@ -182,16 +194,15 @@ test.describe('Projekt-Detailseite im schlimmsten Fall: Kopfzeile und Reiterleis
         await expect(mergeButton).toBeVisible();
 
         // (a) Reiterleiste: kein horizontaler Ueberlauf (scrollWidth <=
-        // clientWidth -- Auftrag Task 3, Punkt 3) und kein Reiter verschwindet
-        // (jeder der sieben Knoepfe bleibt sichtbar und liegt vollstaendig
-        // innerhalb des Containers). Bei 1440 reicht der Platz nach dem
-        // Umbenennen (Geschaeftsdokumente/Material/Tagebuch) und px-3 fast
-        // fuer eine Zeile -- gemessen fehlen nur noch rund 35-40px fuer den
-        // siebten Reiter ("Tagebuch"), heute waren es 283px. Genau fuer diesen
-        // Rest-Fall erlaubt der Plan (Abschnitt B / Kontext-Log-Auftrag an
-        // Task 3) ausdruecklich flex-wrap statt striktem Einzeiler: "nichts
-        // darf verschwinden" ist die Abnahme, nicht zwingend eine Zeile. Bei
-        // 1920 reicht der Platz bereits fuer eine Zeile (gemessen).
+        // clientWidth -- Auftrag Task 3, Punkt 3), kein Reiter verschwindet,
+        // und -- verschaerft in der Nacharbeit Abschnitt 4, Punkt 2 -- alle
+        // sieben Reiter stehen bei 1440 auf DERSELBEN y-Position. Bis
+        // Abschnitt 3 durfte "Tagebuch" allein in eine zweite Zeile rutschen
+        // (Design-Review Abschnitt 3: 916px verfuegbar, 978px Bedarf, 62px
+        // fehlten); die Trennlinie lag dadurch unter beiden Zeilen und der
+        // rose Unterstrich des aktiven Reiters schwebte mitten in der Karte.
+        // gap-2 -> gap-1 und px-3 -> px-2 (siehe ProjektEditor.tsx) senken den
+        // Bedarf auf 899px -- damit reicht eine Zeile.
         const container = reiterContainer(page);
         const tabButtons = container.getByRole('button');
         await expect(tabButtons, 'Erwartet genau sieben Reiter-Knoepfe').toHaveCount(7);
@@ -215,14 +226,28 @@ test.describe('Projekt-Detailseite im schlimmsten Fall: Kopfzeile und Reiterleis
                 `Reiter Nr. ${i + 1} (x=${box.x.toFixed(0)}, Breite=${box.width.toFixed(0)}) ragt rechts aus der Reiterleiste (Container-Breite ${containerBox.width.toFixed(0)}px)`,
             ).toBeLessThanOrEqual(containerBox.x + containerBox.width + 2);
         }
-        // Zur Dokumentation der gemessenen Zielwerte (Ziel 3 im Auftrag):
-        // benoetigte Breite der ersten Zeile gegen die verfuegbare Breite.
-        const ersteZeileY = Math.min(...tabBoxen.map((b) => b!.y));
-        const ersteZeile = tabBoxen.filter((b) => Math.abs(b!.y - ersteZeileY) < 2);
-        const benoetigteBreiteErsteZeile = Math.max(...ersteZeile.map((b) => b!.x + b!.width)) - Math.min(...ersteZeile.map((b) => b!.x));
+        // Verschaerfte Zusicherung (Nacharbeit Abschnitt 4, Punkt 2): alle
+        // sieben y-Werte muessen (bis auf Sub-Pixel-Rundung) gleich sein --
+        // vorher war "nichts verschwindet" die Abnahme, jetzt "eine Zeile".
+        const yWerte = tabBoxen.map((b) => b!.y);
+        const yAbweichung = Math.max(...yWerte) - Math.min(...yWerte);
         console.log(
-            `[Reiterleiste ${testInfo.project.name}] erste Zeile: ${ersteZeile.length}/7 Reiter, benoetigt ${benoetigteBreiteErsteZeile.toFixed(0)}px von ${containerBox.width.toFixed(0)}px verfuegbar; insgesamt ${tabBoxen.length} Reiter auf ${new Set(tabBoxen.map((b) => Math.round(b!.y))).size} Zeile(n).`,
+            `[Reiterleiste ${testInfo.project.name}] y-Werte: ${yWerte.map((y) => y.toFixed(1)).join(', ')}; Container ${containerBox.width.toFixed(0)}px breit, Inhalt braucht ${containerMasse.scrollWidth}px.`,
         );
+        expect(
+            yAbweichung,
+            `Reiterleiste ist nicht einzeilig -- y-Werte der sieben Reiter: ${yWerte.map((y) => y.toFixed(1)).join(', ')}`,
+        ).toBeLessThanOrEqual(2);
+
+        // Reiterleiste darf kein verstecktes Scrollen zurueckbekommen
+        // (Nacharbeit Abschnitt 4, Punkt 7 -- Code-Review-Hinweis 2: ein
+        // Rueckfall auf overflow-x-auto wurde bisher nur zufaellig bemerkt,
+        // weil die Leiste vorher knapp zu breit war).
+        const reiterleisteOverflowX = await container.evaluate((el) => getComputedStyle(el).overflowX);
+        expect(
+            reiterleisteOverflowX,
+            `Reiterleiste hat overflow-x: ${reiterleisteOverflowX} -- verstecktes Scrollen statt Umbruch waere ein Rueckfall`,
+        ).toBe('visible');
 
         // (b) "Bearbeiten" und "mit Anfrage zusammenfuehren" liegen vollstaendig
         // innerhalb der Kopf-Karte (Spec-Abnahme Punkt 2 / Auftrag Task 3).
@@ -242,6 +267,19 @@ test.describe('Projekt-Detailseite im schlimmsten Fall: Kopfzeile und Reiterleis
             `"mit Anfrage zusammenführen" (x=${mergeBox!.x.toFixed(0)}, rechts=${(mergeBox!.x + mergeBox!.width).toFixed(0)}) liegt nicht vollstaendig in der Kopf-Karte (x=${karteBox!.x.toFixed(0)}, rechts=${(karteBox!.x + karteBox!.width).toFixed(0)})`,
         ).toBe(true);
 
+        // Nacharbeit Abschnitt 4, Punkt 3: der Knopfblock muss RECHTS stehen
+        // (x-Position groesser als die Kartenmitte), nicht nur "irgendwo in
+        // der Karte" -- ohne ml-auto faellt er beim Umbruch an den linken
+        // Kartenrand (im Design-Review gemessen: x=89 statt x=961 bei 1440px).
+        const knopfblock = bearbeitenButton.locator('xpath=..');
+        const knopfblockBox = await knopfblock.boundingBox();
+        expect(knopfblockBox, 'Knopfblock muss einen messbaren Rahmen haben').not.toBeNull();
+        const karteMitteX = karteBox!.x + karteBox!.width / 2;
+        expect(
+            knopfblockBox!.x,
+            `Knopfblock (x=${knopfblockBox!.x.toFixed(0)}) steht nicht rechts von der Kartenmitte (${karteMitteX.toFixed(0)}) -- ml-auto fehlt oder wirkt nicht`,
+        ).toBeGreaterThan(karteMitteX);
+
         // Hinweistext (Zeile 1624) wird mit umbenannt -- sichtbar im Reiter
         // "Material" (vormals "Materialkosten"), weil dort die
         // Eingangsrechnungen-Summe steht. Nur pruefbar, wenn mindestens eine
@@ -253,6 +291,17 @@ test.describe('Projekt-Detailseite im schlimmsten Fall: Kopfzeile und Reiterleis
         // urspruenglich verlinkten Reiter "Geschaeftsdokumente".
         await container.getByRole('button', { name: /^Geschäftsdokumente/ }).click();
         await expect(page.getByRole('heading', { name: 'Ausgangsgeschäftsdokumente' })).toBeVisible();
+
+        // Nacharbeit Abschnitt 4, Punkt 1 (Code-Review-Befund 4): vier
+        // truncate-Stellen ohne title schnitten auf echten Daten Wichtiges ab
+        // -- Kunden-E-Mail in der schmalen rechten Spalte (~322px, schlimmster
+        // Fall), Lieferantenname und Dateiname der Eingangsrechnung,
+        // E-Mail-Betreff. keinTextGekuerzt() erwischt alle vier ueber ihre
+        // (damals) "truncate"-Klasse und listet sie mit vollstaendigem Text in
+        // der Fehlermeldung -- das lange Fixture-Material oben macht den
+        // Ueberlauf auf den echten Spaltenbreiten erst sichtbar.
+        await keinTextGekuerzt(page);
+
         await designPruefung(page, testInfo, 'projekt-detail-geschaeftsdokumente', {
             strengePruefungen: true,
             primaerAktion: bearbeitenButton,

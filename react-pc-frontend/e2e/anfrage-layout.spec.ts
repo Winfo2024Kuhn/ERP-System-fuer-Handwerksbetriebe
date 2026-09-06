@@ -34,6 +34,17 @@ const ANFRAGE_ID = 9;
 const BAUVORHABEN = 'Treppenanlage mit Podest und Absturzsicherung Bürogebäude Beispielstraße';
 const KUNDE = 'Wohnungsbaugesellschaft Beispielstadt Nord mbH und Co. Verwaltungs KG';
 
+// Nacharbeit Abschnitt 4, Punkt 8 (Code-Review-Bedenken 2, vom Design-Reviewer
+// bestaetigt): die Detail-Zusicherungen oben hielten mit dem BAUVORHABEN-Wert
+// (Woerter mit Leerzeichen) rot/gruen NICHT fest, weil ein normaler Zeilenumbruch
+// an Leerzeichen die Kopfzeile schon vorher rettete -- getestet war effektiv nur
+// die Uebersicht. Ein Komposita-Bauvorhaben OHNE Leerzeichen ist genau der Fall,
+// den min-w-[18rem] + break-words auf der <h1> loest: ohne break-words zwingt ein
+// unteilbares Wort den Titelblock ueber seine Mindestbreite hinaus und drueckt
+// den Knopfblock aus der Kopf-Karte bzw. erzeugt horizontalen Ueberlauf.
+const BAUVORHABEN_KOMPOSITA_OHNE_LEERZEICHEN =
+    'Absturzsicherungspodesttreppenanlagenmontagearbeitenüberwachungsdokumentation';
+
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
@@ -128,15 +139,17 @@ test.describe('Anfrage-Detailseite: Kopf und Reiterleiste im schlimmsten Fall', 
         await expect(loeschen).toBeVisible();
 
         // Reiterleiste: die fuenf Reiter (E-Mails, Geschaeftsdokumente, Dateien,
-        // Beschreibung, Bau Tagebuch) muessen dieselbe boundingBox().y haben --
+        // Beschreibung, Tagebuch) muessen dieselbe boundingBox().y haben --
         // sonst ist die Leiste zweizeilig bzw. laeuft ueber (overflow-x-auto
-        // versteckt das heute still).
+        // versteckt das heute still). "Tagebuch" statt "Bau Tagebuch" seit der
+        // Nacharbeit Abschnitt 4, Punkt 9 (Wortlaut mit dem Projekt-Editor
+        // vereinheitlicht, der seit Abschnitt 3 nur noch "Tagebuch" sagt).
         const reiter = [
             page.getByRole('button', { name: /^E-Mails/ }),
             page.getByRole('button', { name: /^Geschäftsdokumente/ }),
             page.getByRole('button', { name: /^Dateien/ }),
             page.getByRole('button', { name: 'Beschreibung', exact: true }),
-            page.getByRole('button', { name: /^Bau Tagebuch/ }),
+            page.getByRole('button', { name: /^Tagebuch/ }),
         ];
         const reiterBoxen = await Promise.all(reiter.map((r) => r.boundingBox()));
         for (const box of reiterBoxen) {
@@ -148,6 +161,16 @@ test.describe('Anfrage-Detailseite: Kopf und Reiterleiste im schlimmsten Fall', 
             abweichung,
             `Reiterleiste ist nicht einzeilig -- y-Werte der fuenf Reiter: ${yWerte.map((y) => y.toFixed(1)).join(', ')}`,
         ).toBeLessThanOrEqual(2);
+
+        // Nacharbeit Abschnitt 4, Punkt 7 (Code-Review-Hinweis 2): Reiterleiste
+        // darf kein verstecktes Scrollen zurueckbekommen. Bei Anfrage faengt das
+        // bisher NICHTS ab, weil die fuenf kurzen Reiter ohnehin in eine Zeile
+        // passen -- die y-Pruefung oben bliebe bei overflow-x-auto zufaellig gruen.
+        const reiterleisteOverflowX = await reiter[0]!.evaluate((el) => getComputedStyle(el.parentElement!).overflowX);
+        expect(
+            reiterleisteOverflowX,
+            `Reiterleiste hat overflow-x: ${reiterleisteOverflowX} -- verstecktes Scrollen statt Umbruch waere ein Rueckfall`,
+        ).toBe('visible');
 
         // Kopf-Karte: naechster Vorfahre von "Bearbeiten" mit Card-Klassen
         // (siehe src/components/ui/card.tsx: "rounded-lg shadow-sm").
@@ -176,6 +199,19 @@ test.describe('Anfrage-Detailseite: Kopf und Reiterleiste im schlimmsten Fall', 
             ).toBeGreaterThanOrEqual(karteBox!.y - 1);
         }
 
+        // Nacharbeit Abschnitt 4, Punkt 3: der Knopfblock muss RECHTS stehen
+        // (x-Position groesser als die Kartenmitte), nicht nur "irgendwo in
+        // der Karte" -- ohne ml-auto faellt er beim Umbruch an den linken
+        // Kartenrand (am Projekt-Editor gemessen: x=89 statt x=961 bei 1440px).
+        const knopfblock = bearbeiten.locator('xpath=..');
+        const knopfblockBox = await knopfblock.boundingBox();
+        expect(knopfblockBox, 'Knopfblock muss einen messbaren Rahmen haben').not.toBeNull();
+        const karteMitteX = karteBox!.x + karteBox!.width / 2;
+        expect(
+            knopfblockBox!.x,
+            `Knopfblock (x=${knopfblockBox!.x.toFixed(0)}) steht nicht rechts von der Kartenmitte (${karteMitteX.toFixed(0)}) -- ml-auto fehlt oder wirkt nicht`,
+        ).toBeGreaterThan(karteMitteX);
+
         // designPruefung deckt zusaetzlich ab: main ohne Ueberstand (Kern von
         // Spec A/Befund 1), keine ueberlappenden interaktiven Elemente,
         // Primaeraktion sichtbar, und -- ueber strengePruefungen -- dass kein
@@ -191,6 +227,67 @@ test.describe('Anfrage-Detailseite: Kopf und Reiterleiste im schlimmsten Fall', 
             await locator.click();
             await keinHorizontalerUeberlauf(page);
         }
+    });
+
+    // Nacharbeit Abschnitt 4, Punkt 8: der Test oben mit dem Spec-BAUVORHABEN
+    // (Woerter mit Leerzeichen) haelt die Kopf-/Reiterleisten-Haertung NICHT
+    // fest -- ein Zeilenumbruch an Leerzeichen rettet die Kopfzeile schon ohne
+    // break-words/min-w-[18rem] (bestaetigt vom Design-Reviewer: Rueckbau auf
+    // 69fb5c7f~1 liess genau diesen Testfall in beiden Groessen gruen). Ein
+    // Komposita-Bauvorhaben OHNE Leerzeichen ist der Fall, den die Bauweise
+    // wirklich loest.
+    test('Kopfzeile uebersteht ein langes Komposita-Bauvorhaben ohne Leerzeichen', async ({ page }, testInfo) => {
+        await page.route('**/api/**', (route) => {
+            const pfad = new URL(route.request().url()).pathname;
+            const methode = route.request().method();
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (/^\/api\/last-accessed\/ANFRAGE(\/\d+)?$/.test(pfad)) {
+                if (methode === 'POST') return route.fulfill({ status: 204, body: '' });
+                return json(route, {});
+            }
+            if (pfad === `/api/anfragen/${ANFRAGE_ID}`) {
+                return json(route, { ...DUMMY_ANFRAGE_DETAIL, bauvorhaben: BAUVORHABEN_KOMPOSITA_OHNE_LEERZEICHEN });
+            }
+            return json(route, []);
+        });
+        await page.goto(`/anfragen?anfrageId=${ANFRAGE_ID}&tab=geschaeftsdokumente`);
+
+        const bearbeiten = page.getByRole('button', { name: 'Bearbeiten' });
+        const loeschen = page.getByRole('button', { name: 'Löschen' });
+        await expect(page.getByRole('heading', { name: BAUVORHABEN_KOMPOSITA_OHNE_LEERZEICHEN })).toBeVisible();
+        await expect(bearbeiten).toBeVisible();
+        await expect(loeschen).toBeVisible();
+
+        // Dieselben Zusicherungen wie im Test oben: Knoepfe vollstaendig in der
+        // Kopf-Karte und kein horizontaler Ueberlauf -- OHNE break-words + die
+        // min-w-0/min-w-[18rem]-Kombination auf dem Titelblock zwingt das
+        // unteilbare Wort die Kopfzeile zum Ueberlaufen bzw. schiebt die
+        // Knoepfe aus der Karte.
+        const kopfKarte = bearbeiten.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        const karteBox = await kopfKarte.boundingBox();
+        expect(karteBox, 'Kopf-Karte muss einen messbaren Rahmen haben').not.toBeNull();
+        for (const [label, locator] of [['Bearbeiten', bearbeiten], ['Löschen', loeschen]] as const) {
+            const box = await locator.boundingBox();
+            expect(box, `"${label}"-Knopf muss einen messbaren Rahmen haben`).not.toBeNull();
+            const rechtsUeberstand = box!.x + box!.width - (karteBox!.x + karteBox!.width);
+            expect(
+                rechtsUeberstand,
+                `"${label}" ragt ${rechtsUeberstand.toFixed(0)}px rechts aus der Kopf-Karte (Komposita-Bauvorhaben)`,
+            ).toBeLessThanOrEqual(0);
+        }
+        await keinHorizontalerUeberlauf(page);
+        await designPruefung(page, testInfo, 'anfrage-detail-kopf-komposita', {
+            primaerAktion: bearbeiten,
+            strengePruefungen: true,
+        });
     });
 });
 
@@ -238,5 +335,38 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
         // echtem Ueberstand) -- eine Kuerzung ist hier nur mit
         // data-kuerzung-erlaubt (line-clamp-2 + title) zulaessig.
         await designPruefung(page, testInfo, 'anfragen-uebersicht-karten', { strengePruefungen: true });
+    });
+
+    // Nacharbeit Abschnitt 4, Punkt 4 (Design-Review-Befund): min-h-[3rem] auf
+    // dem Kartentitel riss bei einem KURZEN Bauvorhaben eine 24px-Luecke
+    // zwischen Titel und Kundenname (gemessen: 48px Titelhoehe fuer 24px Text).
+    // h-full flex flex-col an der Karte + mt-auto am Meta-Block darunter loesen
+    // das, ohne die gleiche Kartenhoehe in einer Reihe zu verlieren.
+    test('kurzes Bauvorhaben reisst keine Luecke zwischen Titel und Kundenname', async ({ page }, testInfo) => {
+        const KURZ = [
+            { id: 201, bauvorhaben: 'Carport', kundenName: 'Meier Bau GmbH', anfragesnummer: 'AG-2026/09/00201', betrag: 4200, anlegedatum: '2026-02-10', abgeschlossen: false },
+        ];
+        await stubAnfrageApi(page, { uebersicht: KURZ });
+        await page.goto('/anfragen');
+
+        const titel = page.getByRole('heading', { level: 3, name: 'Carport' });
+        await expect(titel).toBeVisible();
+        const kundenname = page.getByText('Meier Bau GmbH', { exact: true });
+        await expect(kundenname).toBeVisible();
+
+        // min-h-[3rem] reserviert den Platz INNERHALB der eigenen Titel-Box
+        // (48px Boxhoehe fuer 24px einzeiligen Text) -- eine Messung "Luecke
+        // zum naechsten Geschwister" saehe die Boxhoehe faelschlich als Teil
+        // des Titels an und bliebe deshalb unauffaellig. Die Boxhoehe selbst
+        // ist der richtige Messpunkt: mit min-h-[3rem] gemessen 48px, ohne
+        // (h-full flex flex-col + mt-auto am Meta-Block) 24px.
+        const titelBox = await titel.boundingBox();
+        expect(titelBox, 'Titel muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(
+            titelBox!.height,
+            `Titel-Box ist ${titelBox!.height.toFixed(0)}px hoch fuer einzeiligen Text -- min-h-[3rem] (48px) reisst hier eine Luecke`,
+        ).toBeLessThan(32);
+
+        await designPruefung(page, testInfo, 'anfragen-uebersicht-kurzer-titel', { strengePruefungen: true });
     });
 });

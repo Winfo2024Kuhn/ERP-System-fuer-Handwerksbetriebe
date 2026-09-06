@@ -171,12 +171,12 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
     return (
         <Card
             className={cn(
-                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden",
+                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col",
                 anfrage.abgeschlossen && "opacity-60 bg-slate-50"
             )}
             onClick={onClick}
         >
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 flex-1 flex flex-col">
                 <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -203,13 +203,16 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
                         {/*
                           truncate (einzeilig) -> line-clamp-2 (Plan Task 4,
                           Spec D): der volle Name bleibt lesbar statt nach
-                          wenigen Zeichen abzureissen. min-h-[3rem] haelt die
-                          Kartenreihe gleich hoch, data-kuerzung-erlaubt
+                          wenigen Zeichen abzureissen, data-kuerzung-erlaubt
                           markiert die (einzig hier gewollte) Kuerzung -- der
-                          volle Name steht weiterhin im title-Attribut.
+                          volle Name steht weiterhin im title-Attribut. Kein
+                          min-h-[3rem] mehr (Nacharbeit Abschnitt 4,
+                          Design-Review-Befund: 24px-Luecke bei kurzen Titeln) --
+                          gleiche Kartenhoehe kommt ueber h-full flex flex-col an
+                          der Karte und mt-auto am Meta-Block unten.
                         */}
                         <h3
-                            className="font-semibold text-slate-900 mt-2 line-clamp-2 min-h-[3rem] text-base"
+                            className="font-semibold text-slate-900 mt-2 line-clamp-2 text-base"
                             title={anfrage.bauvorhaben}
                             data-kuerzung-erlaubt
                         >
@@ -241,7 +244,7 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
                     </div>
                 </div>
 
-                <div className="space-y-1 pt-2 border-t border-slate-50">
+                <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                     {anfrage.anfragesnummer && (
                         <div className="flex items-center gap-2 text-sm text-slate-600">
                             <FileText className="w-4 h-4 text-slate-400 shrink-0" />
@@ -992,7 +995,12 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
                         <FileText className="w-8 h-8" />
                     </div>
-                    <div>
+                    {/* min-w-0: das aeussere flex-1 min-w-[18rem] deckelt nur den
+                        Titelblock als Ganzes -- dieser innere div behaelt sonst
+                        min-width: auto und wird trotz break-words auf der <h1>
+                        von einem langen Komposita-Bauvorhaben ueber die 18rem
+                        hinausgedrueckt (Nacharbeit Abschnitt 4, Rezeptur). */}
+                    <div className="min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
                             <h1 className="text-2xl font-bold text-slate-900 break-words">{anfrage.bauvorhaben}</h1>
                             {anfrage.anfragesnummer && (
@@ -1026,7 +1034,11 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     </div>
                 </div>
 
-                <div className="shrink-0 flex flex-wrap items-start gap-2">
+                {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
+                    linken Kartenrand statt nach rechts (Rezeptur, Nacharbeit
+                    Abschnitt 4 -- am Projekt-Editor gemessen: x=89 statt x=961
+                    bei 1440px). */}
+                <div className="shrink-0 ml-auto flex flex-wrap items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -1111,7 +1123,13 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     )}
                 >
                     <StickyNote className="w-4 h-4 inline-block mr-2" />
-                    Bau Tagebuch ({notizen.length})
+                    {/* "Bau Tagebuch" -> "Tagebuch" (Nacharbeit Abschnitt 4,
+                        Design-Review-Hinweis 6): der Projekt-Editor sagt seit
+                        Abschnitt 3 nur noch "Tagebuch" -- zwei Namen fuer
+                        dieselbe Sache. Die Anfrage hat genug Platz, der kuerzere
+                        Name ist trotzdem der bessere. Ueberschrift im Tab-Inhalt
+                        ("Bau Tagebuch") bleibt unangetastet, wie beim Projekt. */}
+                    Tagebuch ({notizen.length})
                 </button>
             </div>
 
