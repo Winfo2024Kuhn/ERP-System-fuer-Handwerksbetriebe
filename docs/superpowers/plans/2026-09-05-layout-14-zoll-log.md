@@ -2487,3 +2487,198 @@ Bedenken / Abweichungen vom Plan:
   meiner Files-Liste, daher keine Aenderung dort vorgenommen -- falls Task 10
   (Abschnitt 7) eine generische "Wert im Kasten"-Pruefung ergaenzen will, waere
   das der richtige Ort.
+
+---
+
+## Abschnitt 6 — Code-Review (Code-Reviewer)
+
+Zeit: 2026-09-06T15:17:41Z
+Branch: feature/layout-14-zoll (HEAD 56b0c2aa)
+Geprueft: Diff 9c94ec3d..HEAD
+Status: fertig
+Ampel: 🟡
+
+### Gates
+
+- `npm run lint`: 0 Fehler, genau die eine bekannte Warnung
+  (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`). Gruen.
+- `npm run test`: **1082 von 1082 gruen**, 88 von 88 Testdateien, Exit 0.
+  Der als vorbestehend angekuendigte Fehlschlag in
+  `src/components/LieferantDokumentModal.test.tsx` ("zeigt Hinweis im Modal
+  UND Toast") ist **nicht** aufgetreten. Der erste Lauf war unbrauchbar und
+  wurde verworfen: parallel lief die Playwright-Sitzung des Design-Reviewers,
+  dadurch konnten 7 vitest-Worker gar nicht erst starten
+  ("Failed to start forks worker ... Timeout waiting for worker to respond",
+  u.a. fuer `LieferantDokumentModal.test.tsx`) und zwei weitere Tests liefen
+  in den 5000-ms-Timeout. Der saubere Wiederholungslauf ist gruen.
+  Folgerung fuer die Abnahmeregel: Der "bekannte" Fehlschlag ist offenbar
+  **kein stabiler Vorzustand, sondern lastabhaengig** — die Regel
+  "1081 von 1082" sollte nicht als Sollwert festgeschrieben werden.
+- `npm run build`: Exit 0, nur die vorbestehende Chunk-Groessen-Warnung.
+  Build-Ausgabe (`src/main/resources/static/index.html` + zwei neue Assets)
+  wieder entfernt, Arbeitsbaum sauber.
+
+### Dateiumfang
+
+`0d930de0` fasst genau die zwei freigegebenen Dateien an
+(`MitarbeiterEditor.tsx`, `e2e/mitarbeiter-layout.spec.ts`, 105+/31-).
+`56b0c2aa` ist der Plan-Eintrag fuer Task 10 (vom Menschen selbst gesetzt).
+Nichts ausserhalb der Freigabe.
+
+### Was geprueft und bestaetigt wurde
+
+- **Alle zehn Zeilen der Seitenspalte** tragen jetzt `min-w-0 flex-1` am
+  umschliessenden `<div>`, `break-words` am Wert, `shrink-0` am Icon:
+  Voller Name, Geburtsdatum, Abteilung(en), E-Mail, Mobiltelefon, Festnetz,
+  Adresse, Stufe, Stundenlohn, Jahresurlaub. Keine ausgelassen.
+- "Ansprechpartner" und "Zahlungsziel" aus dem Task-Bericht gibt es im
+  `interface Mitarbeiter` (Z. 27-54) tatsaechlich nicht — reines
+  Vorlagen-Artefakt aus dem Kundeneditor, ohne Folgen fuer die Umsetzung.
+- **Keine Messreste im Commit**: kein `expect.soft`, kein `.only`, kein
+  `.skip(` in `src/` oder `e2e/`. Der einzige Treffer im Repo steht in dieser
+  Log-Datei (Z. 2450 f.) als Beschreibung der Messmethode — Dokumentation,
+  kein Code.
+- Testdaten stimmen mit dem Bericht ueberein: E-Mail 102 Zeichen (lokaler Teil
+  68), Abteilung 44 Zeichen, beide ohne Bindestrich, `.example`-Domain, kein
+  Personenbezug (DSGVO in Ordnung).
+- Der XPath-Anker auf `" shadow-sm "` trifft die richtige Karte und faellt
+  nicht auf `hover:shadow-sm` der Dokumentenzeilen herein (dort steht ein
+  Doppelpunkt statt eines Leerzeichens vor `shadow-sm`).
+
+### Hinweis 1 — die Fehlerklasse ist NICHT ueberall zu
+
+Die Seitenspalte der Mitarbeiterseite ist zu. Die Klasse steht aber noch an
+weiteren Stellen, alle **vorbestehend** und alle in Nachbarzeilen von bereits
+reparierten Zeilen — Abschnitt 4 und 5 haben jeweils nur die E-Mail-Zeile
+angefasst, die Geschwisterzeilen daneben nicht:
+
+1. `Kundeneditor.tsx` Z. 902-907, **Uebersichtskarte**, Zeilen
+   "Ansprechpartner" und "Telefon":
+   `<p className="flex items-center gap-2"><User .../>{kunde.ansprechspartner}</p>`
+   — der Text ist ein anonymes Flex-Item mit `min-width: auto`, das Icon hat
+   kein `shrink-0`. Exakt der Mechanismus, den Task 9 zwei Zeilen tiefer
+   (E-Mail, Z. 918-923) mit `<span className="min-w-0 break-words">`
+   repariert hat. Diese Karte ist zudem die einzige ohne `overflow-hidden`.
+2. `Kundeneditor.tsx` Z. 464, 474, 483, **Detailseite Kontaktdaten-Spalte**,
+   Zeilen "Ansprechpartner"/"Telefon"/"Mobiltelefon": nacktes `<div>` ohne
+   `min-w-0`, Wert-`<p>` ohne `break-words`. Die E-Mail-Zeile daneben
+   (Z. 497) ist repariert.
+3. `LieferantenEditor.tsx` Z. 297, 306, 345, 356, dieselbe Spalte, Zeilen
+   "Telefon"/"Mobil / Fax"/"Vertreter"/"Standard-Kostenstelle". E-Mail-Zeile
+   (Z. 315) repariert.
+4. `MitarbeiterEditor.tsx` Z. 408-419 (Dokumentenliste) und Z. 685-696
+   (Lohnabrechnungen): `flex items-center gap-3` -> nacktes `<div>` ->
+   `<p className="font-medium text-slate-900">{doc.originalDateiname}</p>`.
+   Dateinamen sind der realistischste Fall von allen: Unterstriche sind nach
+   UAX #14 **keine** Umbruchstelle, ein
+   `Arbeitsvertrag_Beispielmusterfrauenbergwaldschmidtstein_2024.pdf` ist ein
+   einziges unteilbares Wort. Der Knopfblock rechts hat ausserdem kein
+   `shrink-0`.
+
+Nach Realitaetsnaehe geordnet: Dateiname > Standard-Kostenstelle > Vertreter
+und Ansprechpartner > Telefonnummern (die enthalten meist Leerzeichen und
+sind eher latent als akut).
+
+**Sauber geprueft und in Ordnung**: Projekt- und Anfrage-Uebersichtskarte
+(`flex-1 min-w-0` + `truncate`/`line-clamp` + `shrink-0`), Lieferanten-
+Uebersichtskarte (`truncate`/`line-clamp-2` setzen `overflow: hidden` und
+nullen damit `min-width: auto`), Kopfzeilen und Kennzahlenreihen von Projekt
+und Anfrage, sowie die zehn Zeilen der Mitarbeiter-Seitenspalte selbst.
+
+Keine dieser Fundstellen ist durch Task 7b entstanden. Deshalb 🟡 und kein 🔴.
+
+### Hinweis 2 — die strukturelle Aussage im Plan-Eintrag zu Task 10 stimmt nur zur Haelfte
+
+Der Eintrag (Plan Z. 1104 ff.) sagt, weder `keinTextLaeuftUeber` noch
+`keinHorizontalerUeberlauf` koennten die Klasse finden. Geprueft:
+
+- `keinTextLaeuftUeber`: **stimmt.** Sie misst nur Blatt-Elemente gegen sich
+  selbst (`el.scrollWidth > el.clientWidth + 2`). Solange das Flex-Item
+  mitwaechst, ist das `<p>` exakt so breit wie sein Text — strukturell blind.
+- `keinHorizontalerUeberlauf`: **stimmt nicht.** Ihre zweite Ebene ist
+  `main.scrollWidth > main.clientWidth` — genau die Zahl, die Task 7b als
+  366 px (1440) und 182 px (1920) gemessen hat. Und
+  `designPruefung(..., { strengePruefungen: true })` stand in
+  `mitarbeiter-layout.spec.ts` **schon vor Task 7b** (Kontextzeile im Diff,
+  nicht hinzugefuegt). Der Waechter war also laengst scharf und haette den
+  Fehler am Tag seiner Einfuehrung rot gemeldet. Er hat ihn nur nie gesehen,
+  weil `DUMMY_MITARBEITER.email` auf `null` stand.
+- Gegenprobe bei Kunde und Lieferant: dieselben Specs rufen
+  `designPruefung(..., { strengePruefungen: true })` auf, und die Fixtures
+  tragen `ansprechspartner: 'Erika Musterfrau'`, `vertreter: 'Hans Beispiel'`,
+  `standardKostenstelleName: undefined`. Wieder: Waechter scharf, Testdaten
+  harmlos.
+
+**Die Luecke ist nicht die Pruefung, sondern die Fixture.** Wer eine neue
+allgemeine Pruefung baut, ohne die Testdaten zu haerten, findet wieder nichts.
+
+### Hinweis 3 — Praktikabilitaet von "Wert bleibt in seiner Karte"
+
+Machbar, aber eng geschnitten und **nicht als erste Massnahme**. Empfehlung
+fuer Task 10, in dieser Reihenfolge:
+
+1. **Zuerst die Fixtures haerten.** Ein langes, bindestrich- und
+   leerzeichenloses Fantasiewort in jedes freie Textfeld jeder Layout-Fixture
+   (Name, Ansprechpartner, Vertreter, Kostenstelle, Dateiname, E-Mail). Das
+   aktiviert die bereits scharfen Waechter und haette alle fuenf Fundstellen
+   ohne eine Zeile neuen Pruefcode gefunden. Billigste Massnahme, groesster
+   Ertrag.
+2. **Dann die neue Pruefung, eng geschnitten.** Nur Blatt-Elemente mit Text,
+   gegen den naechsten Vorfahren mit `position: static/relative`, der eine
+   `Card` ist — und die `Card` dafuer mit einem `data-kasten`-Attribut
+   markieren, statt den Anker aus geratenen Stilmerkmalen abzuleiten.
+   Uebersprungen: alles unter `position: absolute/fixed/sticky`, alles mit
+   scrollbarem Zwischencontainer, alles mit
+   `data-kuerzung-erlaubt`/`ellipsis`/`line-clamp` (dieselbe Arbeitsteilung
+   wie in `keinHorizontalerUeberlauf`), alles Unsichtbare. Toleranz 2 px,
+   `uebergaengeAusklingenLassen` davor.
+3. **Erst opt-in in den fuenf Detail-Specs**, dann gegen alle 16 Specs
+   gegenpruefen, und nur bei sauberem Lauf in `designPruefung` aufnehmen.
+
+Baut man sie breit ("jedes Blatt gegen den naechsten Vorfahren mit sichtbarem
+Rahmen"), erzeugt sie zwangslaeufig Fehlalarme:
+
+- Der Anker laesst sich nicht sauber automatisch bestimmen. Task 7b musste ihn
+  per XPath auf `shadow-sm` handverlesen **und** zusaetzlich gegen
+  Mehrdeutigkeit absichern (die Kopfzeile wiederholt denselben
+  Abteilungstext). Ein generisches "Vorfahre mit Rahmen oder eigenem
+  Hintergrund" trifft in diesem Projekt die `Card`, die
+  `bg-slate-50`-Zeilenkaesten und die `bg-rose-100`-Badges gleichermassen —
+  je nach Wahl ist derselbe Wert mal drin, mal draussen.
+- Absolut positionierte Kinder liegen absichtlich am Rand (z. B. der
+  Bearbeiten-Knopf `absolute top-3 right-3` auf der Lieferantenkarte).
+- In einem `overflow-auto`-Kasten darf Inhalt legitim ueber die Karte
+  hinausreichen.
+- Gewollte Kuerzungen und laufende Uebergaenge, dazu Subpixel-Rauschen.
+
+### Hinweis 4 — Mutationsproben (aus dem Spec-Code abgeleitet, kein Browserlauf)
+
+- **`min-w-0` raus**: drei Zusicherungen greifen —
+  `mainUeberstandBeimOeffnen` (Spec Z. 148-155) sowie beide
+  `pruefeWertImKasten`-Aufrufe (Z. 168-181), dazu
+  `keinHorizontalerUeberlauf` aus `designPruefung`. Stark abgedeckt.
+- **`break-words` raus** (bei erhaltenem `min-w-0`): die beiden neuen
+  `pruefeWertImKasten`-Zusicherungen sind **blind**. `boundingBox()` liefert
+  den Rahmen des `<p>`, und der bleibt mit `min-w-0` schmal innerhalb der
+  Karte; der Text malt darueber hinaus, ohne den Kasten zu verbreitern.
+  Greift stattdessen `keinTextLaeuftUeber` aus
+  `designPruefung(..., { strengePruefungen: true })`
+  (`p.scrollWidth > p.clientWidth`) und sehr wahrscheinlich auch
+  `mainUeberstandBeimOeffnen`, weil `Card` kein `overflow-hidden` hat
+  (`card.tsx`: `bg-white border border-slate-200 rounded-lg shadow-sm`).
+  Also abgedeckt — aber durch die alten Pruefungen, nicht durch die neuen.
+- **`shrink-0` raus**: **keine** Zusicherung greift. Das ist keine Deko: das
+  UA-Stylesheet setzt `svg:not(:root) { overflow: hidden }`, damit ist die
+  automatische Mindestgroesse des Icons 0 und es koennte unter Druck
+  zusammengequetscht werden. Ein gequetschtes Icon erzeugt aber keinen
+  Ueberstand — kein Test sieht es. Sauber vorgesorgt, aber ungetestet.
+
+Nebenbefund: `mainUeberstandBeimOeffnen` prueft dieselbe Zahl, die
+`keinHorizontalerUeberlauf` wenige Zeilen spaeter ohnehin prueft. Doppelt,
+aber mit deutlich besserer Fehlermeldung — kein Grund zur Aenderung.
+
+Bedenken / Abweichungen vom Plan:
+- Kein Playwright angefasst (Design-Reviewer laeuft parallel), alle Aussagen
+  zu den Mutationsproben sind aus dem Spec-Code abgeleitet.
+- Die Abnahmeregel "1081 von 1082 mit einem bekannten Fehlschlag" hat sich im
+  sauberen Lauf nicht bestaetigt — siehe Gates.
