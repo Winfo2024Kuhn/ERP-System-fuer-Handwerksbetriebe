@@ -211,21 +211,36 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         // weil beide Konstanten in vielen anderen Zusicherungen dieser Datei
         // wiederverwendet werden.
         //
-        // <h3> ist ein normaler Block (kein Flex-Item) -- ohne break-words
-        // ueberliefe er unsichtbar (scrollWidth > clientWidth), OHNE dass sich
-        // seine eigene boundingBox() aendert (ein Block ohne explizite Breite
-        // bleibt bei "Breite = Elternbreite", der Text malt nur ueber den Rand
-        // hinaus, sofern er ueberhaupt zu lang ist). Deshalb direkt
-        // scrollWidth/clientWidth pruefen statt eine Positions-Geometrie, die
-        // diesen Fall grundsaetzlich nicht sehen koennte -- dieselbe
-        // Messmethode wie keinTextLaeuftUeber in e2e/hilfen/design.ts.
-        const uebersichtsTitel = page.getByText(`${NACHNAME}, ${VORNAME}`, { exact: true });
-        await expect(uebersichtsTitel).toBeVisible();
-        const titelUeberstand = await uebersichtsTitel.evaluate((el) => el.scrollWidth - el.clientWidth);
+        // Zwei bewusste Zeilen statt "Nachname, Vorname" in einem umbrechenden
+        // Text (Nacharbeit Abschnitt 9, Design-Review Abschnitt 8, Hinweis 2):
+        // NACHNAME + "," auf der ersten <span class="block">, VORNAME auf der
+        // zweiten -- das Komma haengt dadurch immer am Nachnamen, unabhaengig
+        // von der Zeichenlaenge (vorher brach break-words bei einem
+        // 39-Zeichen-Nachnamen direkt vor dem Komma um, zweite Zeile begann
+        // mit ", Bernhardine"). getByText(exact) auf den KOMBINIERTEN String
+        // "NACHNAME, VORNAME" faende seit der Aufteilung nichts mehr (kein
+        // Element traegt den Text mehr als Ganzes) -- genau das beweist, dass
+        // es jetzt zwei eigene Textknoten sind, keine umbrechende Einheit.
+        // Jede Zeile ist ein normaler Block (kein Flex-Item) -- ohne
+        // break-words liefe sie unsichtbar ueber (scrollWidth > clientWidth),
+        // OHNE dass sich ihre eigene boundingBox() aendert.
+        const nachnameZeile = page.getByText(`${NACHNAME},`, { exact: true });
+        const vornameZeile = page.getByText(VORNAME, { exact: true });
+        await expect(nachnameZeile).toBeVisible();
+        await expect(vornameZeile).toBeVisible();
+        const nachnameUeberstand = await nachnameZeile.evaluate((el) => el.scrollWidth - el.clientWidth);
         expect(
-            titelUeberstand,
-            `Name "${NACHNAME}, ${VORNAME}" laeuft ${titelUeberstand}px ueber seinen eigenen Kasten -- braucht break-words an der <h3>`,
+            nachnameUeberstand,
+            `Nachname-Zeile "${NACHNAME}," laeuft ${nachnameUeberstand}px ueber ihren eigenen Kasten -- braucht break-words an der <h3>`,
         ).toBeLessThanOrEqual(2);
+        const nachnameBox = await nachnameZeile.boundingBox();
+        const vornameBox = await vornameZeile.boundingBox();
+        expect(nachnameBox, 'Nachname-Zeile muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(vornameBox, 'Vorname-Zeile muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(
+            vornameBox!.y,
+            `Vorname "${VORNAME}" (y=${vornameBox!.y.toFixed(0)}) steht nicht unterhalb von "${NACHNAME},"(y=${nachnameBox!.y.toFixed(0)}) -- soll zwei bewusste Zeilen sein, kein umbrechender Komma-Text`,
+        ).toBeGreaterThan(nachnameBox!.y);
 
         // Abteilungs-Zeile: getByText traefe hier (wie bei der Kundenkarte,
         // siehe kunde-layout.spec.ts) das innerste Element -- bei einem
@@ -250,7 +265,7 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
             primaerAktion: page.getByRole('button', { name: 'Neu' }),
         });
 
-        await uebersichtsTitel.click();
+        await nachnameZeile.click();
 
         const ueberschrift = page.getByRole('heading', { name: `${NACHNAME}, ${VORNAME}` });
         await expect(ueberschrift).toBeVisible();
@@ -273,6 +288,13 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         // als Ueberstand ueber die eigene Karte (Zeile 964px breit, Text
         // 1265px), nicht als Dokument-Ueberlauf. Deshalb direkt gegen die
         // Karte pruefen, nicht nur gegen main.
+        // Nacharbeit Abschnitt 9 (Code-Review Abschnitt 8, "Kasten-Zusicherungen
+        // doppelt messen"): der gemessene Wert ist ein Block-<p> INNERHALB des
+        // Flex-Items "<div class='min-w-0 flex-1'>" -- seine eigene boundingBox()
+        // kann die Karte nie ueberragen, sie bleibt bei "Breite = Elternbreite".
+        // min-w-0 entfernen macht die boundingBox-Messung unten rot (das Flex-Item
+        // waechst und der Block waechst mit), break-words entfernen NICHT -- das
+        // faengt erst die zusaetzliche scrollWidth/clientWidth-Messung ab.
         const pruefeDateinameBleibtInKarte = async (dateiname: string) => {
             const wertElement = page.getByText(dateiname, { exact: true });
             await expect(wertElement, `Dateiname "${dateiname}" fehlt`).toBeVisible();
@@ -287,6 +309,11 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
             expect(
                 ueberstand,
                 `Dateiname "${dateiname.slice(0, 40)}..." ragt ${ueberstand.toFixed(0)}px rechts aus der Karte -- braucht min-w-0 (flex-1) auf jeder Ebene der Zeile und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+            const eigenerUeberstand = await wertElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                eigenerUeberstand,
+                `Dateiname "${dateiname.slice(0, 40)}..." laeuft ${eigenerUeberstand}px ueber seinen eigenen Kasten -- braucht break-words am Wert-<p>`,
             ).toBeLessThanOrEqual(2);
         };
         await pruefeDateinameBleibtInKarte(DOKUMENT_DATEINAME_LANG);
@@ -320,6 +347,10 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         // exakter Treffer auf nur die Strasse waere nie moeglich. Playwright
         // matcht bei exact:false das am engsten umschliessende Element, hier
         // exakt das Werte-<p>.
+        // Nacharbeit Abschnitt 9 ("Kasten-Zusicherungen doppelt messen", siehe
+        // Kommentar bei pruefeDateinameBleibtInKarte oben): boundingBox() gegen
+        // die Karte UND scrollWidth/clientWidth am Wert selbst -- sonst waere
+        // break-words entfernen hier nicht rot zu bekommen.
         const pruefeWertImKasten = async (wert: string, exact = true) => {
             const wertElement = seitenKarte.getByText(wert, { exact });
             await expect(wertElement).toBeVisible();
@@ -331,6 +362,11 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
             expect(
                 ueberstand,
                 `Wert "${wert.slice(0, 30)}..." ragt ${ueberstand.toFixed(0)}px rechts aus der Kontakt-Karte -- braucht min-w-0 flex-1 am umschliessenden div und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+            const eigenerUeberstand = await wertElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                eigenerUeberstand,
+                `Wert "${wert.slice(0, 30)}..." laeuft ${eigenerUeberstand}px ueber seinen eigenen Kasten -- braucht break-words am Wert`,
             ).toBeLessThanOrEqual(2);
         };
         await pruefeWertImKasten(EMAIL_LANG);

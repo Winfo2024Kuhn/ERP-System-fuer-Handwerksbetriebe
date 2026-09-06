@@ -1327,8 +1327,16 @@ export default function MitarbeiterEditor() {
                                     darunter ein anonymes Flex-Item ohne min-w-0 und ein
                                     Icon ohne shrink-0. Die Mitarbeiter-Uebersicht hatte
                                     bislang ausserdem gar keine Zusicherung dafuer. */}
+                                {/* Zwei bewusste Zeilen statt "Nachname, Vorname" (Nacharbeit
+                                    Abschnitt 9, Design-Review Abschnitt 8, Hinweis 2): bei einem
+                                    39-Zeichen-Nachnamen passte "Nachname," gerade noch in eine
+                                    Zeile, das Komma aber nicht mehr -- break-words brach direkt
+                                    davor, die zweite Zeile begann mit ", Bernhardine". Mit zwei
+                                    festen Zeilen haengt das Komma immer am Nachnamen, unabhaengig
+                                    von der Laenge. */}
                                 <h3 className="text-lg font-bold text-slate-900 mb-1 break-words">
-                                    {m.nachname}, {m.vorname}
+                                    <span className="block">{m.nachname},</span>
+                                    <span className="block">{m.vorname}</span>
                                 </h3>
                                 {m.abteilungNames && (
                                     <p className="text-sm text-rose-600 font-medium mb-2 flex items-center gap-1">
