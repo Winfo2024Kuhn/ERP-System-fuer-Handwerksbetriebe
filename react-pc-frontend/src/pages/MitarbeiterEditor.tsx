@@ -725,10 +725,18 @@ export default function MitarbeiterEditor() {
     const MainContent = () => (
         <>
             {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
+            {/*
+              Gemeinsame Rezeptur aus Abschnitt 3/4 (siehe Plan-Datei,
+              "Gemeinsame Rezeptur fuer Kopfzeile und Reiterleiste"):
+              overflow-x-auto raus, flex-wrap + min-w-0 rein -- eine versteckt
+              scrollende Reiterleiste ist keine Loesung, lieber umbrechen.
+              data-testid fuer eine praezise Test-Auswahl (ein Selektor ueber
+              Klassen traf in anderen Specs auch fremde "border-b"-Knoepfe).
+            */}
+            <div data-testid="mitarbeiter-reiterleiste" className="flex flex-wrap min-w-0 gap-2 mb-6 border-b border-slate-200 pb-2">
                 <button
                     onClick={() => setActiveTab('dokumente')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'dokumente'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'dokumente'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -738,7 +746,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('notizen')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'notizen'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'notizen'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -748,7 +756,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('lohnabrechnungen')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'lohnabrechnungen'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'lohnabrechnungen'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -758,7 +766,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('stundenlohn')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'stundenlohn'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'stundenlohn'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
