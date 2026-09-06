@@ -88,7 +88,18 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     </div>
                     <div className="min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900 break-words">{lieferant.lieferantenname}</h1>
+                            {/* min-w-0 zusaetzlich zu break-words: die <h1> ist selbst ein
+                                Flex-Item in "flex items-center gap-3 flex-wrap" und behaelt
+                                ohne min-w-0 ihre volle Mindestinhaltsbreite (min-width: auto)
+                                -- bei einem einzigen langen Wort ohne Leerzeichen quetscht
+                                sich diese Breite dann quer ueber die Kennzahlen (Nachbesserung
+                                1, Befund 1 aus dem Abschnitt-4-Design-Review: 999px <h1>,
+                                davon 411px ausserhalb des Titelblocks beim Projekt-Editor).
+                                break-words (overflow-wrap: break-word) senkt die
+                                Mindestbreite eines Flex-Items nicht, das erledigt erst
+                                min-w-0. Das min-w-0 am umschliessenden Textblock (Zeile 89)
+                                reicht dafuer nicht, weil die <h1> ein eigenes Flex-Item ist. */}
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{lieferant.lieferantenname}</h1>
                             {lieferant.rollen && lieferant.rollen.length > 0 ? (
                                 lieferant.rollen.map(rolle => (
                                     <span key={rolle} className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
