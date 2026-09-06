@@ -78,6 +78,16 @@ const BAUVORHABEN_LANG = 'Treppenanlage mit Podest und Absturzsicherung Bürogeb
 // Leerzeichen zum Umbrechen, genau der Fall aus Design-Review Runde 2,
 // Befund 4.
 const KUNDEN_EMAIL_LANG = 'verwaltung.rechnungswesen@wohnungsbaugesellschaft-beispielstadt-nord-immobilienverwaltung.example';
+// Task 11 (Abschnitt 7): dieselbe Haertung wie bei der E-Mail-Adresse oben --
+// lange, bindestrichlose Fantasieworte statt "Erika Musterfrau"/"0511 123456".
+// Genau diese Kurzform hat den Code-Reviewer-Befund (Kundeneditor.tsx
+// Z. 464/474/483, Kontaktspalte der Detailseite) monatelang unentdeckt
+// gelassen -- die Zeilen wurden nie mit echt ueberlaufendem Inhalt gerendert
+// (siehe kriterien.md, "Testdaten fuer Umbruch-Fehler brauchen ein langes
+// Wort ohne Trennstellen").
+const ANSPRECHPARTNER_LANG = 'Ansprechpartnerkoordinationsverwaltungsbeauftragte';
+const TELEFON_LANG = '05119876543212345678901234567890';
+const MOBILTELEFON_LANG = '01711234567890123456789012345678901234';
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -88,17 +98,17 @@ function json(route: Route, body: unknown, status = 200) {
 // im Sidebar-Kontaktblock. GoogleMapsEmbed rendert ohnehin nur bei gesetzter
 // Adresse ein echtes <iframe src="https://www.google.com/maps?...">; die
 // bleibt hier bewusst leer, damit der gestubbte Test keinen echten
-// Netzwerkzugriff ausloest. Die E-Mail-Adresse ist dagegen bewusst LANG
-// (Nachtrag Abschnitt 5, siehe Kopfkommentar Befund 1) -- eine kurze Adresse
-// wie vorher (info@beispiel-bau.example) zeigt den Ueberlauf in der
-// Kontaktdaten-Spalte nie.
+// Netzwerkzugriff ausloest. Ansprechpartner, Telefon, Mobiltelefon und
+// E-Mail sind dagegen bewusst LANG und bindestrichlos (Nachtrag Abschnitt 5
+// fuer die E-Mail, Task 11/Abschnitt 7 fuer die drei anderen Felder) -- kurze
+// Werte wie vorher zeigen den Ueberlauf in der Kontaktdaten-Spalte nie.
 const DUMMY_KUNDE = {
     id: KUNDE_ID,
     kundennummer: 'K-1003',
     name: KUNDE_LANG,
-    ansprechspartner: 'Erika Musterfrau',
-    telefon: '0511 123456',
-    mobiltelefon: '',
+    ansprechspartner: ANSPRECHPARTNER_LANG,
+    telefon: TELEFON_LANG,
+    mobiltelefon: MOBILTELEFON_LANG,
     zahlungsziel: 8,
     kundenEmails: [KUNDEN_EMAIL_LANG],
     hatProjekte: true,
@@ -286,6 +296,38 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
             emailUeberstand,
             `E-Mail-Link ragt ${emailUeberstand.toFixed(0)}px rechts aus seinem Kasten (Design-Review Runde 2, Befund 4: 184px bei 1440) -- braucht break-words/block auf dem <a>`,
         ).toBeLessThanOrEqual(2);
+
+        // Task 11 (Abschnitt 7), Gruppe 2 (Code-Reviewer, Abschnitt 6, Hinweis 1
+        // Fundstelle 2): dieselbe Luecke wie bei der E-Mail-Zeile oben, an den
+        // Nachbarzeilen "Ansprechpartner"/"Telefon"/"Mobiltelefon"
+        // (Kundeneditor.tsx Z. 464/474/483) -- nacktes <div> ohne min-w-0,
+        // Wert-<p> ohne break-words. Vor dem Fix bindestrichlos ueberlaufend,
+        // dieselbe Kasten-Ueberstand-Zusicherung wie fuer die E-Mail. Gescoped
+        // auf die Kontaktdaten-Karte, weil die Kopfzeile (Z. 309) denselben
+        // Ansprechpartner-Text im Untertitel wiederholt -- ein ungegrenztes
+        // getByText(exact) waere sonst mehrdeutig (zwei Treffer).
+        const kontaktKarte = page.getByRole('heading', { name: 'Kontaktdaten' }).locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+        );
+        const pruefeWertBleibtImKontaktKasten = async (wert: string, feldname: string) => {
+            const wertElement = kontaktKarte.getByText(wert, { exact: true });
+            await expect(wertElement, `${feldname}-Wert "${wert}" fehlt`).toBeVisible();
+            const kasten = wertElement.locator(
+                'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " bg-slate-50 ")][1]',
+            );
+            const wertBox = await wertElement.boundingBox();
+            const kastenBox = await kasten.boundingBox();
+            expect(wertBox, `${feldname}-Wert muss einen messbaren Rahmen haben`).not.toBeNull();
+            expect(kastenBox, `${feldname}-Kasten muss einen messbaren Rahmen haben`).not.toBeNull();
+            const ueberstand = (wertBox!.x + wertBox!.width) - (kastenBox!.x + kastenBox!.width);
+            expect(
+                ueberstand,
+                `${feldname}-Wert "${wert.slice(0, 30)}..." ragt ${ueberstand.toFixed(0)}px rechts aus seinem Kasten -- braucht min-w-0 flex-1 am umschliessenden div und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeWertBleibtImKontaktKasten(ANSPRECHPARTNER_LANG, 'Ansprechpartner');
+        await pruefeWertBleibtImKontaktKasten(TELEFON_LANG, 'Telefon');
+        await pruefeWertBleibtImKontaktKasten(MOBILTELEFON_LANG, 'Mobiltelefon');
 
         // Zielwert Nr. 1 des gesamten Vorhabens: main darf nicht ueberlaufen.
         // Design-Review Runde 2 mass hier 127px bei 1440 (7px bei 1920) --
@@ -512,8 +554,15 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
     // Kartentypen ohne overflow-hidden. Ungetestet bisher, weil keine
     // Fixture der Uebersicht kundenEmails gesetzt hat.
     const EMAIL_OHNE_TRENNZEICHEN = 'buchhaltungsundverwaltungsabteilungfuerrechnungswesenundmahnwesen@beispielstadtnord.example';
+    // Task 11 (Abschnitt 7), Gruppe 1 (Code-Reviewer, Abschnitt 6, Fundstelle 1):
+    // dieselbe Luecke wie bei der E-Mail-Zeile oben, an den Nachbarzeilen
+    // "Ansprechpartner"/"Telefon" (Kundeneditor.tsx Z. 902-907) -- anonyme
+    // Flex-Items ohne min-w-0-Fassung, und diese Karte ist als einzige der
+    // sechs ohne overflow-hidden.
+    const ANSPRECHPARTNER_OHNE_TRENNZEICHEN = 'Empfangsundverwaltungsberatungsteamleitungsbeauftragte';
+    const TELEFON_OHNE_TRENNZEICHEN = '05119999888877776666555544443333';
 
-    test('lange E-Mail in der Kartenzeile laeuft nicht ueber die Karte', async ({ page }) => {
+    test('lange Werte in der Kartenzeile (E-Mail, Ansprechpartner, Telefon) laufen nicht ueber die Karte', async ({ page }) => {
         await page.route('**/api/**', (route) => {
             const pfad = new URL(route.request().url()).pathname;
             const methode = route.request().method();
@@ -529,7 +578,9 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
                     kunden: [
                         {
                             id: 303, kundennummer: 'K-1303', name: 'Meier', plz: '30159', ort: 'Hannover',
-                            ansprechspartner: 'Erika Musterfrau', hatProjekte: true,
+                            ansprechspartner: ANSPRECHPARTNER_OHNE_TRENNZEICHEN,
+                            telefon: TELEFON_OHNE_TRENNZEICHEN,
+                            hatProjekte: true,
                             kundenEmails: [EMAIL_OHNE_TRENNZEICHEN],
                         },
                     ],
@@ -540,14 +591,23 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
         });
         await page.goto('/kunden');
 
-        const emailZeile = page.getByText(EMAIL_OHNE_TRENNZEICHEN, { exact: true });
-        await expect(emailZeile).toBeVisible();
-
-        const zeileUeberstand = await emailZeile.evaluate((el) => el.scrollWidth - el.clientWidth);
-        expect(
-            zeileUeberstand,
-            `E-Mail-Zeile laeuft ${zeileUeberstand}px ueber ihren eigenen Kasten -- KundenKarte hat kein overflow-hidden, braucht <span className="min-w-0 break-words"> um den Text`,
-        ).toBeLessThanOrEqual(2);
+        // Jede der drei Zeilen ist "flex items-center gap-2" ohne
+        // overflow-hidden auf der Karte -- direkt scrollWidth/clientWidth der
+        // Zeile selbst pruefen statt eine Bounding-Box-Geometrie, die den
+        // unsichtbar ueberlaufenden Text-Node nicht saehe (siehe Kommentar
+        // oben zur E-Mail-Zeile).
+        const pruefeZeileLaeuftNichtUeber = async (wert: string, feldname: string) => {
+            const zeile = page.getByText(wert, { exact: true });
+            await expect(zeile, `${feldname}-Zeile "${wert}" fehlt`).toBeVisible();
+            const zeileUeberstand = await zeile.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                zeileUeberstand,
+                `${feldname}-Zeile laeuft ${zeileUeberstand}px ueber ihren eigenen Kasten -- KundenKarte hat kein overflow-hidden, braucht <span className="min-w-0 break-words"> um den Text`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeZeileLaeuftNichtUeber(EMAIL_OHNE_TRENNZEICHEN, 'E-Mail');
+        await pruefeZeileLaeuftNichtUeber(ANSPRECHPARTNER_OHNE_TRENNZEICHEN, 'Ansprechpartner');
+        await pruefeZeileLaeuftNichtUeber(TELEFON_OHNE_TRENNZEICHEN, 'Telefon');
 
         // Netz-Effekt: eine ueberlaufende Karte im Grid darf auch das
         // Dokument bzw. main nicht in die Breite treiben.

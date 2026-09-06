@@ -76,6 +76,31 @@ const ABTEILUNG = 'Sonderaufgabenkoordinationsstellenverwaltung';
 // .example-Domain, keine echte Adresse (DSGVO).
 const EMAIL_LANG = 'personalaktenverwaltungspostfachfuermitarbeiterkommunikationsservice@musterstadtnordwestgebiet.example';
 
+// Task 11 (Abschnitt 7): Mitarbeiter-Fixture vervollstaendigen. strasse, plz,
+// ort, qualifikation und stundenlohn blieben bisher null -- Adresse und
+// Qualifikation lagen vor Task 7b ebenfalls ueber der Kante (80px bzw. 132px
+// bei 1440, Design-Review Abschnitt 6), ungetestet, weil nie mit echtem
+// Inhalt gerendert. Strasse und Ort sind bindestrichlose Fantasie-Komposita
+// (kein echter Personenbezug, DSGVO).
+const STRASSE_LANG = 'Kreisverkehrsplatzrandbebauungsstraße 128a';
+const PLZ = '99999';
+const ORT_LANG = 'Musterstadtnordwestgebietsiedlung';
+const QUALIFIKATION_LANG = 'Sondermaschinenbautechnikmeisterqualifikation';
+const STUNDENLOHN = 45.5;
+
+// Task 11 (Abschnitt 7), Gruppe 4 (Code-Reviewer, Abschnitt 6, Fundstelle 4 --
+// "der realistischste Fall von allen"): {doc.originalDateiname} in der
+// Dokumentenliste und als Rueckfalltext in den Lohnabrechnungen. Unterstriche
+// sind nach UAX #14 KEINE Umbruchstelle -- ein Dateiname ist ein einziges
+// unteilbares Wort, kein Fantasiename mit Leerzeichen.
+// Bewusst deutlich laenger als das Kurzbeispiel aus dem Code-Review-Befund
+// (nur ~66 Zeichen) -- die Dokumentenliste steht in der BREITEN Hauptspalte
+// (rund 900px bei 1440, DetailLayout minmax(0,3fr)), nicht in der schmalen
+// Seitenspalte wie Gruppe 2/3. Rot verifiziert: ein 66-Zeichen-Dateiname
+// passt dort noch hinein, erst ab deutlich ueber 100 Zeichen ueberlaeuft main.
+const DOKUMENT_DATEINAME_LANG = 'Arbeitsvertragsdokumentationsverwaltungsablagesystembeispielmusterfrauenbergwaldschmidtsteinundpartnergesellschaftmbhundcokgverwaltungsstelle_2024.pdf';
+const LOHNABRECHNUNG_DATEINAME_LANG = 'Lohnabrechnungsimportverwaltungsdokumentationsablagebeispielmusterfrauenbergwaldschmidtsteinundpartnergesellschaftmbhundcokgverwaltungsstelle_2026.pdf';
+
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
@@ -84,14 +109,14 @@ const DUMMY_MITARBEITER = {
     id: MITARBEITER_ID,
     vorname: VORNAME,
     nachname: NACHNAME,
-    strasse: null,
-    plz: null,
-    ort: null,
+    strasse: STRASSE_LANG,
+    plz: PLZ,
+    ort: ORT_LANG,
     email: EMAIL_LANG,
     telefon: null,
     festnetz: null,
-    qualifikation: null,
-    stundenlohn: null,
+    qualifikation: QUALIFIKATION_LANG,
+    stundenlohn: STUNDENLOHN,
     geburtstag: null,
     eintrittsdatum: null,
     aktiv: true,
@@ -99,6 +124,34 @@ const DUMMY_MITARBEITER = {
     abteilungNames: ABTEILUNG,
     loginToken: null, // null -> Knopf "Token erstellen" wird gerendert (dritter Kopf-Knopf)
     jahresUrlaub: 30,
+};
+
+const DUMMY_DOKUMENT = {
+    id: 9001,
+    originalDateiname: DOKUMENT_DATEINAME_LANG,
+    dateityp: 'application/pdf',
+    dateigroesse: 245760,
+    uploadDatum: '2026-01-15T09:00:00Z',
+    dokumentGruppe: 'VERTRAG',
+};
+
+const DUMMY_LOHNABRECHNUNG = {
+    id: 9101,
+    mitarbeiterId: MITARBEITER_ID,
+    mitarbeiterName: `${NACHNAME}, ${VORNAME}`,
+    steuerberaterId: null,
+    steuerberaterName: null,
+    jahr: 2026,
+    monat: 1,
+    originalDateiname: LOHNABRECHNUNG_DATEINAME_LANG,
+    downloadUrl: '#',
+    // bruttolohn/nettolohn bewusst null: nur dann rendert die Zeile den
+    // Dateinamen als Rueckfalltext (MitarbeiterEditor.tsx Z. 704) statt
+    // "Brutto: ... / Netto: ...".
+    bruttolohn: null,
+    nettolohn: null,
+    importDatum: '2026-01-05T00:00:00Z',
+    status: 'IMPORTIERT',
 };
 
 /** Stubbt alle /api-Routen der Mitarbeiter-Uebersicht + Detailseite. */
@@ -117,9 +170,9 @@ async function stubMitarbeiterApi(page: Page) {
         }
         if (pfad === '/api/mitarbeiter') return json(route, [DUMMY_MITARBEITER]);
         if (pfad === '/api/abteilungen') return json(route, [{ id: 1, name: ABTEILUNG }]);
-        if (pfad === `/api/mitarbeiter/${MITARBEITER_ID}/dokumente`) return json(route, []);
+        if (pfad === `/api/mitarbeiter/${MITARBEITER_ID}/dokumente`) return json(route, [DUMMY_DOKUMENT]);
         if (pfad === `/api/mitarbeiter/${MITARBEITER_ID}/notizen`) return json(route, []);
-        if (pfad === `/api/lohnabrechnungen/mitarbeiter/${MITARBEITER_ID}`) return json(route, []);
+        if (pfad === `/api/lohnabrechnungen/mitarbeiter/${MITARBEITER_ID}`) return json(route, [DUMMY_LOHNABRECHNUNG]);
 
         // Standardantwort fuer alles Weitere (z.B. Stundenlohn-Historie):
         // leere Liste statt 404, damit kein Fehlerzustand die Seite fuellt.
@@ -140,6 +193,42 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
 
         const ueberschrift = page.getByRole('heading', { name: `${NACHNAME}, ${VORNAME}` });
         await expect(ueberschrift).toBeVisible();
+
+        // Task 11 (Abschnitt 7): "Dokumente" ist der default-aktive Reiter und
+        // wird beim Auswaehlen des Mitarbeiters sofort nachgeladen (loadDokumente
+        // in MitarbeiterEditor.tsx) -- vor der main-Ueberstand-Messung unten
+        // abwarten, sonst misst die erste Zusicherung moeglicherweise den Stand
+        // vor dem Nachladen (Race).
+        await expect(page.getByText(DOKUMENT_DATEINAME_LANG, { exact: true })).toBeVisible();
+
+        // Task 11 (Abschnitt 7), Gruppe 4 (Code-Reviewer, Abschnitt 6,
+        // Fundstelle 4 -- "der realistischste Fall von allen"): die
+        // Dokumentenliste steht in der BREITEN Hauptspalte (minmax(0,3fr),
+        // rund 916-966px bei 1440), nicht in der schmalen Seitenspalte wie
+        // Gruppe 2/3. Nachgemessen (Kontext-Log dieses Tasks): main selbst
+        // laeuft dabei NICHT ueber (main.scrollWidth == main.clientWidth ==
+        // 1440, weil die 1265px breite Zeile immer noch unter der
+        // Gesamtbreite des Fensters bleibt) -- der Fehler zeigt sich zuerst
+        // als Ueberstand ueber die eigene Karte (Zeile 964px breit, Text
+        // 1265px), nicht als Dokument-Ueberlauf. Deshalb direkt gegen die
+        // Karte pruefen, nicht nur gegen main.
+        const pruefeDateinameBleibtInKarte = async (dateiname: string) => {
+            const wertElement = page.getByText(dateiname, { exact: true });
+            await expect(wertElement, `Dateiname "${dateiname}" fehlt`).toBeVisible();
+            const karte = wertElement.locator(
+                'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
+            );
+            const wertBox = await wertElement.boundingBox();
+            const karteBox = await karte.boundingBox();
+            expect(wertBox, 'Dateiname-Wert muss einen messbaren Rahmen haben').not.toBeNull();
+            expect(karteBox, 'Karte muss einen messbaren Rahmen haben').not.toBeNull();
+            const ueberstand = (wertBox!.x + wertBox!.width) - (karteBox!.x + karteBox!.width);
+            expect(
+                ueberstand,
+                `Dateiname "${dateiname.slice(0, 40)}..." ragt ${ueberstand.toFixed(0)}px rechts aus der Karte -- braucht min-w-0 (flex-1) auf jeder Ebene der Zeile und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+        };
+        await pruefeDateinameBleibtInKarte(DOKUMENT_DATEINAME_LANG);
 
         // Task 7b: Kontakt-Spalte (SideInfo). Zielwert Nr. 1 des gesamten
         // Vorhabens -- main darf mit der langen E-Mail/Abteilung nicht
@@ -164,8 +253,14 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         const seitenKarte = page.getByRole('heading', { name: 'Persönliche Daten' }).locator(
             'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " shadow-sm ")][1]',
         );
-        const pruefeWertImKasten = async (wert: string) => {
-            const wertElement = seitenKarte.getByText(wert, { exact: true });
+        // exact=false fuer die Adresse (Task 11): {strasse}<br/>{plz} {ort}
+        // rendert als EIN <p>, dessen textContent Strasse und PLZ ohne
+        // Trennzeichen aneinanderhaengt (<br/> traegt keinen Text bei) -- ein
+        // exakter Treffer auf nur die Strasse waere nie moeglich. Playwright
+        // matcht bei exact:false das am engsten umschliessende Element, hier
+        // exakt das Werte-<p>.
+        const pruefeWertImKasten = async (wert: string, exact = true) => {
+            const wertElement = seitenKarte.getByText(wert, { exact });
             await expect(wertElement).toBeVisible();
             const wertBox = await wertElement.boundingBox();
             const karteBox = await seitenKarte.boundingBox();
@@ -179,6 +274,15 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         };
         await pruefeWertImKasten(EMAIL_LANG);
         await pruefeWertImKasten(ABTEILUNG);
+        // Task 11 (Abschnitt 7): Abdeckungsluecke aus dem Design-Review
+        // Abschnitt 6 -- Adresse und Qualifikation lagen vor Task 7b ebenfalls
+        // ueber der Kante (80px bzw. 132px bei 1440), wurden aber nie mit
+        // echtem Inhalt getestet (strasse/plz/ort/qualifikation waren null).
+        // Die Zeilen selbst sind seit Task 7b bereits gefixt (min-w-0 flex-1 +
+        // break-words auf der ganzen SideInfo) -- diese Zusicherungen schliessen
+        // nur die Testluecke.
+        await pruefeWertImKasten(STRASSE_LANG, false);
+        await pruefeWertImKasten(QUALIFIKATION_LANG);
 
         // Kopfzeile: die drei Knoepfe muessen vollstaendig sichtbar UND
         // rechts von der Bildschirmmitte liegen -- nicht nur "irgendwo in
@@ -221,11 +325,12 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         expect(reiterSpanne, `Reiter liegen auf unterschiedlichen Zeilen: ${JSON.stringify(reiterY)}`).toBeLessThanOrEqual(2);
 
         // Kern der Rezeptur (Befund des Code-Reviewers aus Abschnitt 3,
-        // Hinweis 2): kein verstecktes Scrollen mehr moeglich. Das ist die
-        // einzige Zusicherung dieser Spec, die auf dem heutigen Stand
-        // tatsaechlich rot ist -- unabhaengig von jeder Fixture, weil sie
-        // den Stil direkt prueft statt einen (hier datenunabhaengigen)
-        // Ueberlauf in Pixeln.
+        // Hinweis 2): kein verstecktes Scrollen mehr moeglich. Vor Task 11 war
+        // das die einzige Zusicherung dieser Spec, die unabhaengig von jeder
+        // Fixture rot war (sie prueft den Stil direkt statt einen
+        // datenabhaengigen Ueberlauf in Pixeln) -- seit Task 11 kommen die
+        // Kasten-Ueberstand-Zusicherungen oben/unten dazu, die aber von den
+        // gehaerteten Fixtures abhaengen.
         const overflowX = await reiterleiste.evaluate((el) => getComputedStyle(el).overflowX);
         expect(overflowX, 'Reiterleiste darf nicht mehr versteckt scrollen (overflow-x: auto)').toBe('visible');
 
@@ -235,9 +340,25 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         });
 
         // Jeden der vier Reiter anklicken und main auf Ueberstand pruefen --
-        // dieselbe Abnahme wie bei Projekt/Anfrage/Kunde/Lieferant.
+        // dieselbe Abnahme wie bei Projekt/Anfrage/Kunde/Lieferant. Fuer
+        // "Lohnabrechnungen" (Gruppe 4, Task 11) erst auf den Dateinamen warten
+        // -- die Lohnabrechnungen werden erst beim Aktivieren des Reiters
+        // nachgeladen (loadLohnabrechnungen), ohne Warten wuerde main
+        // moeglicherweise vor dem Nachladen gemessen (Race). "Dokumente" ist
+        // schon beim Oeffnen geladen (siehe Wartepunkt oben), ein erneutes
+        // Warten dort schadet aber nicht.
         for (const name of ['Notizen', 'Lohnabrechnungen', 'Stundenlohn-Verlauf', 'Dokumente']) {
             await reiterleiste.getByRole('button', { name: new RegExp(`^${name}`) }).click();
+            if (name === 'Lohnabrechnungen') {
+                await expect(page.getByText(LOHNABRECHNUNG_DATEINAME_LANG, { exact: true })).toBeVisible();
+                // Task 11 (Abschnitt 7), Gruppe 4: {la.originalDateiname} als
+                // Rueckfalltext (MitarbeiterEditor.tsx Z. 704, bruttolohn/
+                // nettolohn beide null) -- dieselbe Karten-Ueberstand-Pruefung
+                // wie bei den Dokumenten oben.
+                await pruefeDateinameBleibtInKarte(LOHNABRECHNUNG_DATEINAME_LANG);
+            } else if (name === 'Dokumente') {
+                await expect(page.getByText(DOKUMENT_DATEINAME_LANG, { exact: true })).toBeVisible();
+            }
             const mainUeberstand = await page.evaluate(() => {
                 const main = document.querySelector('main');
                 return main ? main.scrollWidth - main.clientWidth : 0;

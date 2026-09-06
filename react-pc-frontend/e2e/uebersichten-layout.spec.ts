@@ -333,10 +333,18 @@ test.describe('Uebersichten-Abnahme (Task 9): Projekte, Anfragen, Kunden, Liefer
             `Erste Kartenreihe bei ${testInfo.project.name} hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
         ).toBe(erwarteteSpalten);
 
+        // Task 11 (Abschnitt 7): MIX[1] (36 Zeichen) ist bei BEIDEN Groessen
+        // genauso einzeilig wie MIX[0] (13 Zeichen) und verschiebt sich mit ihm
+        // gemeinsam -- die Mutationsprobe des Design-Reviewers (gap-3 ->
+        // space-y-3) blieb deshalb gruen (Kontext-Log Abschnitt 6). MIX[2]
+        // (51 Zeichen) ist dagegen in beiden Groessen zweizeilig und liegt bei
+        // 1440 in derselben Reihe -- ein Vergleich MIX[0] gegen MIX[2] haelt die
+        // Mutation fest (siehe Kontext-Log-Block dieses Tasks fuer die
+        // wiederholte Mutationsprobe).
         await pruefeGleicheKartenhoeheUndTrennlinie(
             page,
             LIEFERANTEN_MIX[0].lieferantenname, LIEFERANTEN_MIX[0].vertreter,
-            LIEFERANTEN_MIX[1].lieferantenname, LIEFERANTEN_MIX[1].vertreter,
+            LIEFERANTEN_MIX[2].lieferantenname, LIEFERANTEN_MIX[2].vertreter,
         );
 
         await keinHorizontalerUeberlauf(page);
