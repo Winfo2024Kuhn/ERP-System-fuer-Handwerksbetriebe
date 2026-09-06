@@ -97,6 +97,15 @@ Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
 Beides gilt sinngemäß für jede künftige Layout-Arbeit: die Klasse im Quelltext
 ist kein Beweis, dass sie wirkt. Am gebauten CSS oder im Browser nachmessen.
 
+**Testdaten für Umbruch-Fehler brauchen ein langes Wort ohne Trennstellen.**
+Bindestriche und Punkte sind selbst Umbruchpunkte — eine Adresse wie
+`info@beispiel-stahl.example` bricht ohnehin um und verdeckt den Fehler
+vollständig (bei 1440 gemessen: 0 px Überstand mit Bindestrich, 272 px ohne).
+Wer eine Umbruch-Zusicherung baut, nimmt eine bindestrichlose Zeichenkette,
+sonst ist der Test grün und hält nichts fest. Dasselbe gilt für Namen:
+„Wohnungsbaugesellschaft Beispielstadt Nord" prüft etwas anderes als ein echtes
+Komposita-Wort ohne Leerzeichen.
+
 ## Was NICHT zu diesen Kriterien gehört (Anti-Bikeshedding)
 
 Formatierung, for- vs. while-Loop, Naming-Geschmack und ähnliche
