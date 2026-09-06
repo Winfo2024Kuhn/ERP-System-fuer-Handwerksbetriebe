@@ -1797,3 +1797,313 @@ Bedenken / Abweichungen vom Auftrag:
 - Für die 🟡-Punkte 3 (Knopfblock-Rezeptur) und 4 (Tagebuch-Überschrift) wurden keine neuen Zusicherungen gebaut, weil an diesen Stellen mit den heutigen Fixtures nichts automatisiert messbar rot werden kann (ein Knopf allein umbricht nie sichtbar; die Überschrift hing an keiner bestehenden Prüfung). Reine Textkorrektur bzw. Klassenangleichung, per Lesen verifiziert.
 - Kundeneditor.tsx-Kontaktdaten-E-Mail (🟡-Punkt 2, schwächere Zweitstelle) hat keinen eigenen roten Testfall bekommen — die bestehende Fixture-E-Mail ist zu kurz, um bei den heutigen Spaltenbreiten zu überlaufen. Fix trotzdem umgesetzt (break-words statt truncate), da korrekt und risikofrei.
 - Sonst keine Abweichungen — alle fünf im Auftrag genannten Punkte (Blocker + vier 🟡) sowie die Messung wurden an genau den genannten Stellen umgesetzt bzw. durchgeführt.
+
+## Abschnitt 4 — Code-Review Runde 2 (Code-Reviewer)
+
+Zeit: 2026-09-06T13:31:47Z
+Branch: feature/layout-14-zoll @ 56737c3a
+Commit(s) geprüft: Diff `9dd26f7e..HEAD` (Merges 41913b4a Task 3b, 56737c3a Task 6) — 9 Dateien, 502+/30−, alle unter `react-pc-frontend/`
+Status: fertig
+Ampel: 🟡
+
+Nur die Nachbesserung geprüft, der Rest von Abschnitt 4 war in Runde 1 abgenommen. Rollenteilung wie gehabt: **kein Playwright-Lauf von meiner Seite**, E2E und Screenshots liegen beim Design-Reviewer im Parallel-Worktree.
+
+### Meine sechs Hinweise aus Runde 1
+
+| # | Thema | Stand |
+| --- | --- | --- |
+| 1 | `space-y-3` schlägt `mt-auto` nieder | **erledigt** — am gebauten CSS belegt, siehe unten |
+| 2 | Lieferant-Spec telefoniert ins Internet | **teilerledigt** — Riegel gebaut und korrekt, deckt aber 1 von 16 Specs; zwei Löcher bleiben, siehe Hinweis B |
+| 3 | E-Mail-Kürzung in der Anfrage | **erledigt** — Anfrage-Stelle richtig gebaut; die zweite Stelle im Kunden trifft nicht, siehe Hinweis A |
+| 4 | Kunden-Knopfblock ohne `flex-wrap`/`gap-2` | **erledigt** |
+| 5 | Zwei Bauweisen für dieselbe Karte | **erledigt** — mit `gap-3` sind alle sechs Karten gleich gebaut; der Rest (`h-full` gegen `flex-1`) ist wie gesagt Geschmackssache |
+| 6 | „Bau Tagebuch" als Überschrift | **erledigt** — in beiden Editoren auf „Tagebuch" gezogen |
+
+Hinweis 7 (fehlende ARIA-Rollen in der Mitarbeiter-Reiterleiste) und 8 (Absicherung hängt vollständig an Playwright) waren schon in Runde 1 als Notiz für Task 10 bzw. als bewusste Eigenschaft des Vorhabens gekennzeichnet — unverändert.
+
+### Greift `mt-auto` jetzt? Ja, am gebauten CSS nachgesehen
+
+Frisch gebautes `src/main/resources/static/assets/index-DbBUBXVR.css`:
+
+```
+.mt-auto{margin-top:auto}                                              (Offset  9.743)
+.gap-3{gap:.75rem}                                                     (Offset 21.963)
+.space-y-3>:not([hidden])~:not([hidden]){…margin-top:calc(.75rem * …)}  (Offset 23.568)
+```
+
+Damit ist der Befund aus Runde 1 doppelt belegt: `.space-y-3>…` hat Spezifität 0-3-0 gegen 0-1-0 **und** steht zusätzlich später in der Datei — `mt-auto` verlor auf beiden Wegen. `.gap-3` setzt überhaupt keine Margin, also ist `.mt-auto` am Meta-Block jetzt unangefochten. Der Fix ist mechanisch richtig, nicht nur zufällig wirksam.
+
+Gegenprobe am Quelltext: alle fünf Container tragen `gap-3` **und** `flex flex-col` (`ProjektEditor.tsx:4172`, `AnfrageEditor.tsx:183`, `Kundeneditor.tsx:125/171/868`), und der `mt-auto`-Block ist in jedem der fünf ein **direktes** Kind (Einrückung geprüft, nicht nur gegrept) — ohne das würde `gap` nichts nützen. Kein `space-y-3` mehr in einem Karten-Container. Der einzige andere `space-y-3`-Container mit `flex flex-col` im Abschnitt (`ProjektEditor.tsx:2617`) hat kein `mt-auto`-Kind, ist also nicht betroffen.
+
+### `min-w-0` an den vier `<h1>`: bricht nichts
+
+Die vier `<h1>` tragen `text-2xl font-bold text-slate-900 break-words min-w-0` — kein `truncate`, kein `whitespace-nowrap`, nichts, das mit `min-width: 0` in Konflikt geriete. Einziger Nebeneffekt: wird es eng, bricht künftig der Titel mitten im Wort um, statt die Plakette daneben in die nächste Zeile zu drücken. Das ist die gewollte Wirkung und in allen vier Dateien gleich. Keine Zeile gefunden, die vorher bewusst nicht umbrach.
+
+### Mutationsproben auf die Nachbesserung
+
+Neun Stellen mutiert (4 × `min-w-0` raus, 5 × `gap-3` zurück auf `space-y-3`). `git diff --stat` danach: genau 4 Dateien, 9 Zeilen — die Klassen-Zeichenketten sind eindeutig, kein Kollateraltreffer. Anschließend `git checkout --`, `git diff` und `git status` leer, HEAD unverändert `56737c3a`.
+
+**Unit-Ebene:** kein Unit-Test prüft `min-w-0`, `gap-3` oder `space-y-3` (per Grep über alle `*.test.tsx` bestätigt). Wie in Runde 1: die Absicherung liegt vollständig bei Playwright.
+
+**Playwright-Ebene, aus dem Spec-Code abgeleitet:**
+
+| Mutation | Was greift |
+| --- | --- |
+| `min-w-0` raus (Projekt) | `projekt-detail-layout.spec.ts`, neuer Testfall „`<h1>` ragt nicht rechts aus dem Titelblock" |
+| `min-w-0` raus (Anfrage) | `anfrage-layout.spec.ts`, Überstands-Prüfung im bestehenden Komposita-Testfall |
+| `min-w-0` raus (Kunde) | `kunde-layout.spec.ts`, neues `describe` — **aber laut Messung des Coding-Agenten nur bei 1440** (dort 77 px Überstand); für 1920 ist keine Zahl protokolliert, das 67-Zeichen-Wort passt dort in den breiteren Titelblock |
+| `min-w-0` raus (Lieferant) | `lieferant-layout.spec.ts`, neuer Testfall + `keinTextLaeuftUeber` |
+| `gap-3` → `space-y-3` (KundenKarte) | `kunde-layout.spec.ts`, neue y-Versatz-Prüfung der zwei Ansprechpartner-Zeilen (Toleranz 2 px, gemessen wären 24 px) |
+| `gap-3` → `space-y-3` (ProjektCard, AnfrageCard, KundenProjektKarte, KundenAnfrageKarte) | **nichts** — siehe Hinweis E |
+
+Je Datei greift genau eine Zusicherung, sauber getrennt, kein Übersprechen zwischen den vier Editoren.
+
+### 🛑 Kritisch (blockiert)
+
+Keine. Keine Korrektheitsfehler, Lint und Build grün, kein Assertion-Fehler in den Unit-Tests, keine Datei außerhalb `react-pc-frontend/`, kein Build-Output in den Commits, keine echten Personendaten (Fantasienamen, `.example`-TLD).
+
+### 💡 Hinweise (blockieren nicht)
+
+**A. Die E-Mail-Kürzung in `KundenKarte` trifft nicht — derselbe Mechanismus wie der 🔴, eine Ebene tiefer. Wichtigster neuer Befund.**
+`Kundeneditor.tsx:901` heißt jetzt `<p className="flex items-center gap-2 break-words">` mit dem Mail-Symbol und dem E-Mail-Text darin. Der Text ist damit ein **anonymes Flex-Item** und behält `min-width: auto`. Und `overflow-wrap: break-word` senkt die min-content-Breite ausdrücklich **nicht** — das tun nur `overflow-wrap: anywhere` und `word-break: break-all`. Genau die Regel, mit der der Design-Reviewer den 🔴 an der `<h1>` begründet hat. Eine lange E-Mail-Adresse (ein Wort ohne Leerzeichen) wird also weiterhin nicht umbrochen, sondern schiebt das `<p>` über die Kartenbreite hinaus.
+Vorher hielt `truncate` (`overflow: hidden` am `<p>`) sie wenigstens innerhalb der Karte — ohne Auslassungspunkte, aber ohne Überlauf. Verschärfend: `KundenKarte` ist die **einzige** der sechs Karten, deren `Card` kein `overflow-hidden` trägt (`Kundeneditor.tsx:865`), der Überstand landet also sichtbar im Raster daneben.
+Ungetestet: keine Fixture in `kunde-layout.spec.ts` setzt `kundenEmails`, die Stelle rendert in keinem Testfall. Der Coding-Agent schreibt selbst, er habe hier keine rote Probe gebaut.
+Fix, ein Einzeiler: den Text in ein `<span className="min-w-0 break-words">` fassen (dann greift `min-w-0` auf einem echten Flex-Item), oder `break-all` statt `break-words`. Dazu eine lange E-Mail in die Übersichts-Fixture, wie schon in Runde 1 für Task 9 vorgeschlagen.
+Die Schwesterstelle in `AnfrageEditor.tsx:1478` ist dagegen **richtig**: das `<a class="block … break-words">` steht in einem normalen Block-Container (`space-y-4`), dort wirkt `break-words` wie erwartet. Wortgleich mit der Projekt-Fassung, Rezeptur-treu.
+
+**B. Der Netz-Riegel ist korrekt gebaut, deckt aber nur eine von 16 Specs — und zwei Löcher kann er prinzipiell nicht schließen.**
+Zur Implementierung selbst: `page.route('**/*')` fängt alles, was durch den Netzwerk-Stack geht, inklusive `<iframe>`-Dokumenten und Unterframes. `data:`, `blob:` und `about:blank` laufen an der Interception vorbei (keine Netzwerk-Requests) — der Riegel bricht sie also **nicht** ab, was gut ist. Der Vite-Dev-Server auf einem anderen Port ist unkritisch: geprüft wird der Hostname, nicht der Port, und `baseURL` ist `http://localhost:${port}`. Die Registrierungsreihenfolge stimmt: der Riegel wird zuerst registriert, die spezifischere `**/api/**`-Route danach — Playwright ruft die zuletzt registrierte zuerst, `/api` bleibt also gestubbt. Und `pdf.js` abzubrechen ist harmlos: `index.html` prüft `if (window.pdfjsLib)`, `PdfCanvasViewer.tsx` und `LivePreviewPanel.tsx` fallen sauber auf den iframe-Weg zurück.
+**Loch 1 — `e2e/hilfen/aufwaermen.ts` (globalSetup).** Öffnet vor jedem E2E-Lauf `/`, `/dokument-editor` und `/lieferanten` mit einem rohen Browser **ganz ohne Routing** und wartet auf `networkidle` mit 90 s Timeout. Drei cdnjs-Zugriffe pro Lauf, und die Wartezeit auf ein fremdes CDN zählt gegen genau den Timeout, den das Aufwärmen entschärfen soll. Von allen Stellen ist das die mit der größten Flake-Wirkung.
+**Loch 2 — der Vite-Proxy.** `vite.config.ts` leitet `/api` serverseitig auf `https://localhost:8080`. Das läuft in Node, nicht im Browser; `page.route` kann es nie sehen. Was am `**/api/**`-Stub einer Spec vorbeirutscht, geht an ein echtes Backend. Kein Internet-Leck, aber ein Loch in „vollständig gestubbt".
+Dritte Zieladresse, die noch niemand auf dem Zettel hat: `AddressAutocomplete.tsx` ruft `nominatim.openstreetmap.org` und `photon.komoot.io` — jede Spec, die ein Adressfeld öffnet, tippt dorthin.
+**Empfehlung für Task 10:** den Riegel nicht in jede Spec kopieren, sondern als **Auto-Fixture** in eine gemeinsame `e2e/hilfen/test.ts` (`base.extend`), die jede Spec statt `@playwright/test` importiert — dann kann niemand ihn vergessen. Dabei `context.route` statt `page.route` verwenden, das deckt zusätzlich Popups und neue Seiten. Und denselben Aufruf in `aufwaermen.ts`.
+
+**C. Kosten des Catch-alls im Blick behalten.** `page.route('**/*')` schickt **jede** Anfrage durch den Node-Handler, auch die vielen hundert ES-Modul-Anfragen, die Vite pro Seitenaufruf ausliefert. Vorher wurden nicht passende Anfragen ohne Umweg über Node weitergereicht. Wenn die E2E-Laufzeit nach dem Ausrollen spürbar steigt, hilft ein URL-Prädikat als Matcher, das nur auf Nicht-localhost passt, statt eines Glob-Catch-alls. Vor dem Ausrollen auf alle Specs einmal messen — der Riegel soll Flakiness senken, nicht neue einbauen.
+
+**D. Eine Kommentar-Aussage stimmt nicht.** In `lieferant-layout.spec.ts` steht, die Karte sei „im Screenshot weiterhin sichtbar, es geht nur nichts mehr wirklich raus". `route.abort()` auf das `<iframe>`-Dokument heißt aber: die Karte rendert **nicht**, übrig bleibt der graue `bg-slate-100`-Rahmen. Folgenlos für die Tests (keine Hilfsfunktion prüft Konsolenfehler), aber der nächste Leser wird in die Irre geführt. Der Design-Reviewer sollte bestätigen, dass der Screenshot `lieferant-detail-einwort-lang` so gewollt ist.
+
+**E. `gap-3` ist nur an einer der fünf Karten abgesichert.** Nur `kunde-layout.spec.ts` fängt einen Rückfall auf `space-y-3` — und nur für `KundenKarte`. Für `ProjektCard`, `AnfrageCard`, `KundenProjektKarte` und `KundenAnfrageKarte` gibt es keine Zusicherung; ein Rückfall bliebe unbemerkt. Die neue Prüfung ist gut gebaut (zwei Karten einer Reihe, y-Position der ersten Meta-Zeile, 2 px Toleranz) und lässt sich eins zu eins in die Projekt- und Anfrage-Übersichtsspec kopieren. Für Task 9/10.
+
+**F. Die vier Einwort-Fixtures sind unterschiedlich lang.** Projekt 77 Zeichen, Kunde 67, Lieferant 61. Nach den Messungen des Coding-Agenten reicht das beim Kunden nur bei 1440 zum roten Ausschlag. Kein Mangel — 1440 ist die Größe, um die es in diesem Vorhaben geht —, aber die Kunden-Wache wird still, sobald jemand die Kopfzeile verbreitert. Einheitlich mindestens so lang wie das Projekt-Wort, dann greifen alle vier in beiden Größen.
+
+**G. `e2e/` wird von keinem Gate typgeprüft.** `tsc -b` deckt über `tsconfig.app.json`/`tsconfig.node.json` nur `src` und `vite.config.ts` ab; die Specs und `e2e/hilfen/` fallen durch. Ich habe `tsc --noEmit` von Hand über `e2e/*.ts` und `e2e/hilfen/*.ts` laufen lassen: **sauber, Exit 0**. Für Task 10: ein `tsconfig.e2e.json` als drittes Projekt-Reference, dann fängt der Build auch Spec-Fehler.
+
+### Rezeptur-Treue final
+
+Kopfzeile, Reiterleiste und Karten von Projekt, Anfrage, Kunde und Lieferant Zeile für Zeile verglichen. **Der äußere Kopf-Aufbau ist jetzt in allen vier identisch** — `flex flex-wrap items-start gap-4`, Titelblock `flex-1 min-w-[18rem]`, innerer `min-w-0`, `<h1>` mit `break-words min-w-0`, Kennzahlen je `min-w-[7rem]` ohne `flex-1`/`max-w`, Knopfblock `shrink-0 ml-auto flex flex-wrap items-start gap-2`. Auch die zwei letzten Abweichungen aus Runde 1 (Kunden-Knopfblock, `space-y-3` in den fünf Karten) sind zu.
+
+Was bleibt — alles in `KundenKarte` (`Kundeneditor.tsx:865`), der einzigen Karte, die nie nach der gemeinsamen Rezeptur gebaut wurde:
+
+| Abweichung | Bewertung |
+| --- | --- |
+| `Card` ohne `overflow-hidden` (die anderen fünf haben es) | **Der einzige mit Substanz** — er ist der Grund, warum Hinweis A sichtbar wird statt still geklippt zu werden |
+| `h3` ohne `text-base` (die anderen fünf: `… line-clamp-2 text-base`) | kosmetisch |
+| `p-4` sitzt an der `Card` statt am inneren Container | kosmetisch, gleiche Wirkung |
+| Klassenreihenfolge im Kunden-Knopfblock (`flex flex-wrap items-start shrink-0 ml-auto gap-2`) | rein optisch im Quelltext, identisches CSS |
+
+Die zwei Kennzahlen-Bauweisen (Trennerspalten bei Projekt/Anfrage, Kacheln bei Kunde/Lieferant) bleiben unterschiedlich, wie der Plan das unter „Bewusst nicht in diesem Vorhaben" festhält.
+
+### Gates
+
+- `npm run lint`: **0 Fehler, genau die 1 vorbestehende Warnung** (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`) — identisch zur Baseline.
+- `npm run test`: **1081/1082 grün**. Ein Ausschlag in `src/components/LieferantDokumentModal.test.tsx:309` (`getAllByText('Sperre konnte nicht geholt werden …')` erwartet 2, bekommt 3). Datei liegt **nicht** im Diff. Isoliert nachgefahren: **19/19 grün**. Reiner Last-Effekt durch parallel laufende Agenten, wie in der Baseline beschrieben — kein Assertion-Fehler an der Nachbesserung.
+- `npm run build`: grün (`tsc -b` + `vite build`). Output danach verworfen (`git checkout --` auf `src/main/resources/static/index.html`, die zwei neuen `assets/`-Dateien gelöscht), `git status` sauber.
+- Kein `./mvnw`. `git diff --stat 9dd26f7e..HEAD`: 9 Dateien, **alle unter `react-pc-frontend/`** (4 × `src/pages/*.tsx`, 4 Specs, 1 Hilfsdatei). Kein `test.only`/`skip`/`fixme`, kein `toHaveScreenshot`, kein eigenes `setViewportSize`.
+- DSGVO: unauffällig. Neue Fixtures sind erfundene Komposita, die neue E-Mail-Adresse nutzt `.example`.
+
+### Auftrag an den Design-Reviewer
+
+1. **Hinweis A im Browser prüfen:** `/kunden` mit einem Kunden, dessen `kundenEmails[0]` lang ist (60+ Zeichen ohne Leerzeichen). Erwartung nach meiner Lesart des CSS: die Zeile läuft aus der Karte heraus, statt umzubrechen. Bestätigt sich das, ist der Fix `<span className="min-w-0 break-words">` um den Text.
+2. **Hinweis D:** ist der Screenshot `lieferant-detail-einwort-lang` mit grauem Kartenrahmen statt Karte so gewollt?
+3. Voller E2E-Lauf über alle Specs in beiden Größen, wie gehabt.
+
+### Aufräumen
+
+Mutation vollständig zurückgenommen, Build-Output verworfen. `git diff` leer, `git status` sauber (bis auf diesen Log-Block), HEAD unverändert `56737c3a`. Kein Produktivcode angefasst, kein Playwright gestartet.
+
+## Abschnitt 4 — Design-Review Runde 2 (Design-Reviewer)
+
+Zeit: 2026-09-06T15:35:00Z
+Branch: feature/layout-14-zoll @ 56737c3a (Merge Task 3b-Nacharbeit + Task 6-Nachbesserung), eigener Worktree `wt/layout-review-design`, detached HEAD
+Diff geprüft: 9dd26f7e..HEAD (9 Dateien, 502 Zeilen)
+Status: fertig
+Ampel: 🟡 (mein 🔴 aus Runde 1 ist behoben und nachgemessen; ein neuer, vorbestehender Befund gleicher Bauart bleibt offen — nicht durch diese Nachbesserung entstanden)
+
+### E2E — komplett, beide Größen, Standard-Worker
+
+- Port-Check vorher: `netstat -ano | findstr :5219` leer, Port 5219 wie vorgegeben.
+- `E2E_PORT=5219 npm run test:e2e`: **206 grün, 0 rot**, 2,9 min, "Running 206 tests using 4 workers"
+  (Standard-Worker, kein `--workers=1`). Keine Flakes, kein Nachfahren nötig.
+  Rechnung: 198 (Runde 1) + 8 neue (4 Testfälle × 2 Größen: Projekt-`<h1>`-Einwort,
+  Projekt-Reiterleiste-Messung, Kunde-`<h1>`-Einwort, Lieferant-`<h1>`-Einwort) = 206.
+- **Leere weiße Seite unter parallelen Workern: nicht mehr aufgetreten.** Weder im Volllauf
+  noch in den Nachläufen dieser Sitzung (insgesamt 6 Playwright-Läufe mit Standard- bzw.
+  2-Worker-Parallelität). Deckt sich mit der Vermutung aus Runde 1, dass die parallel ladenden
+  Maps-Einbettungen der Auslöser waren — bewiesen ist es damit nicht, aber der Riegel hält.
+- Die `[WebServer] http proxy error ECONNREFUSED`-Zeilen sind wie in allen Vorabschnitten der
+  Vite-Proxy ohne Backend, kein Testfehler.
+- Warnung aus Runde 1 hat sich sofort gerächt: mein erster Wegwerf-Messlauf ohne `--output`
+  hat `test-results/` samt aller Design-Screenshots gelöscht. Danach die fünf Layout-Specs neu
+  gefahren (30/30 grün) und alle weiteren Wegwerf-Läufe mit `--output=test-results-zz`.
+
+### Befund 1 (mein 🔴 aus Runde 1) — behoben, selbst nachgemessen
+
+Nicht den Berichten geglaubt, sondern eigene Wegwerf-Spec: pro Seite den Ist-Zustand gemessen
+**und** zur Laufzeit `min-w-0` per `classList.remove` von der `<h1>` genommen und nochmal
+gemessen. Damit ist belegt, dass genau diese eine Klasse trägt — nicht irgendein Nebeneffekt.
+Überstand = rechte Kante `<h1>` minus rechte Kante Titelblock (`div.min-w-[18rem]`), zusätzlich
+geprüft, welche Kennzahl-Beschriftungen die `<h1>` geometrisch überlappt.
+
+| Seite | 1440 ohne `min-w-0` | 1440 mit | 1920 ohne `min-w-0` | 1920 mit |
+| --- | --- | --- | --- | --- |
+| Projekt | **583 px** über, verdeckt BRUTTO + NETTO | **0 px** | **765 px** über, verdeckt BRUTTO + NETTO + GEWINN | **0 px** |
+| Anfrage | **411 px** über, verdeckt BRUTTO + NETTO | **0 px** | **187 px** über, verdeckt BRUTTO | **0 px** |
+| Kunde | **60 px** über, verdeckt GESAMTUMSATZ | **0 px** | kein Überstand (Titelblock 1393 px breit) | 0 px |
+| Lieferant | **272 px** über, verdeckt BESTELLUNGEN | **0 px** | **48 px** über, keine Überlappung | **0 px** |
+
+Die `<h1>` ist ohne Fix in Projekt und Anfrage konstant 999 px breit — derselbe Wert wie in
+Runde 1, unabhängig von der Fenstergröße. Mit `min-w-0` schrumpft sie exakt auf die verfügbare
+Blockbreite (Projekt 1440: 416 px, 1920: 234 px). Meine Zahlen decken sich mit der gemeldeten
+Tabelle; die kleinen Abweichungen bei Kunde (60 statt 77) und Lieferant (272/48 statt 280/56)
+kommen aus meinen eigenen Fixture-Werten, nicht aus einem anderen Verhalten.
+
+Im Bild geprüft (jeder Screenshot einzeln geöffnet, beide Größen): Titel bricht innerhalb seines
+Blocks um (Projekt 1440 drei Zeilen, 1920 fünf Zeilen; Anfrage/Kunde/Lieferant zwei Zeilen), alle
+Kennzahl-Kästen vollständig lesbar, Knöpfe rechts in der Kopf-Karte, Reiterleiste unberührt.
+
+### Befund 2 (mein 🟡 Nr. 1, Trennlinien) — behoben, selbst nachgemessen
+
+Kartenreihe mit **gemischt** langen und kurzen Titeln (Carport / langer Titel / Zaun), also genau
+die Konstellation aus Runde 1. Gemessen: y der Trennlinie (`border-t`-Block mit `mt-auto`) je Karte,
+plus Gegenprobe mit zur Laufzeit wieder aufgespieltem `space-y-3`.
+
+| | jetzt (`gap-3`) | Gegenprobe (`space-y-3`) |
+| --- | --- | --- |
+| ProjektCard, 1440 | **642 / 642 / 642**, `margin-top` 24px / 0px / 24px | **618 / 642 / 618**, `margin-top` überall 12px |
+| ProjektCard, 1920 | 642 / 642 / 642 / 642 | 618 / 642 / 618 / 642 |
+| AnfrageCard, 1440 und 1920 | 642 / 642 / 642 | 618 / 642 / 618 |
+| KundenKarte, 1440 und 1920 | Meta-Block 635 / 635 / 635 / 635 | — |
+
+Die Gegenprobe reproduziert exakt die 618/642/618 aus Runde 1. `mt-auto` löst jetzt sauber auf
+(24 px bei kurzem Titel, 0 px bei langem). Im Bild: die drei Auftragsnummern, Datumszeilen und
+Beträge einer Reihe liegen auf einer Linie, das Auge muss nicht mehr zickzack laufen. Kartenhöhen
+unverändert gleich (219 px bzw. 155 px). Ich hatte das in Runde 1 als „sieht man" beschrieben —
+man sieht jetzt auch, dass es weg ist.
+
+### Meine übrigen 🟡 aus Runde 1
+
+2. **E-Mail-Kürzung Anfrage-Seitenbereich** — erledigt und scharf abgesichert: die Fixture trägt
+   jetzt die lange Adresse, und der Komposita-Testfall läuft mit `keinHorizontalerUeberlauf` +
+   `designPruefung(strengePruefungen: true)` darüber. Grün. Die zweite Stelle, die ich in Runde 1
+   genannt hatte (`Kundeneditor.tsx`, E-Mail in der **Übersichtskarte**), ist ebenfalls auf
+   `break-words` umgestellt. **Achtung:** Die Task-Blöcke im Log beschreiben diese Stelle als
+   „Kontaktdaten der Detailseite" — das ist sie nicht, geändert wurde `KundenKarte` in der
+   Übersicht (Z. 896–901). Die Kontaktdaten-Spalte der Kunden-Detailseite ist unangetastet
+   geblieben, siehe Befund 4. Sachlich ist der Fix am richtigen Ort, nur die Beschreibung stimmt
+   nicht.
+3. **Kunden-Knopfblock** `flex flex-wrap items-start shrink-0 ml-auto gap-2` — erledigt, entspricht
+   jetzt der Rezeptur. Heute unsichtbar (nur ein Knopf), als Zukunftssicherung richtig.
+4. **„Bau Tagebuch" → „Tagebuch"** in beiden Reiterinhalten (`ProjektEditor.tsx`,
+   `AnfrageEditor.tsx`) — erledigt. Damit heißt die Sache in Reiter und Überschrift überall gleich.
+5. **Netz-Riegel** — erledigt und wirksam. `blockiereFremdeNetzwerkzugriffe(page)` steht in beiden
+   Stub-Funktionen der Lieferanten-Spec **vor** dem `page.route('**/api/**')`; da Playwright die
+   zuletzt registrierte Route zuerst fragt, sieht der spezifischere `/api`-Handler localhost-
+   Anfragen weiterhin zuerst — die Reihenfolge ist richtig herum, das habe ich am Code geprüft,
+   und die 206 grünen Tests belegen, dass die Stubs weiter greifen. Der Mitschnitt im Testfall
+   verlangt aktiv mindestens einen Griff nach draußen und dass keine einzige fremde Antwort
+   ankommt — eine Zusicherung, die nicht still grün werden kann.
+
+### Befund 4 (NEU, vorbestehend — sollte vor Abschluss des Abschnitts weg) 🛑
+
+**Die E-Mail-Adresse in der Kontaktdaten-Spalte der Kunden-Detailseite läuft aus dem Bild.**
+`react-pc-frontend/src/pages/Kundeneditor.tsx:497` — der Link trägt nur
+`className="font-medium text-rose-600 hover:underline"`: kein `break-words`, kein `block`,
+kein `title`. Gemessen mit genau der E-Mail-Adresse, die das Projekt selbst als realistische
+Fixture führt (`verwaltung.rechnungswesen@wohnungsbaugesellschaft-beispielstadt-nord-immobilienverwaltung.example`,
+99 Zeichen, steht so in `projekt-detail-layout.spec.ts` und `anfrage-layout.spec.ts`):
+
+| | 1440 | 1920 |
+| --- | --- | --- |
+| Überstand über den eigenen Kasten | **184 px** | **64 px** |
+| `main.scrollWidth − main.clientWidth` | **127 px** | **7 px** |
+
+Das ist der Zielwert Nr. 1 dieses ganzen Vorhabens (`main.scrollWidth − main.clientWidth === 0`
+bei pc-14zoll) — verletzt. Auf dem Screenshot laufen beide Zeilen der Adresse sichtbar über den
+rechten Fensterrand hinaus. Mit einer normalen Firmenadresse mittlerer Länge (48 Zeichen) passt
+es; ab rund 60 Zeichen kippt es.
+
+Warum das keiner gesehen hat: `keinHorizontalerUeberlauf` prüft `<main>` und **würde** das melden —
+die Fixture `DUMMY_KUNDE` trägt aber `info@beispiel-bau.example` (25 Zeichen). Genau dasselbe
+Muster wie der Anfrage-Befund aus Runde 1 (dort `kundenEmails: []`): der Wächter steht, es füttert
+ihn nur niemand.
+
+Einordnung, offen gelegt: **Das ist kein Rückschritt dieser Nachbesserung.** Die Zeile steht seit
+dem Initial-Commit unverändert da (`git log -L 490,500 ...` zeigt nur `bee06ecd`). Ich habe sie in
+Runde 1 nicht genannt — mein damaliger Punkt war die Übersichtskarte, und die ist gefixt. Deshalb
+🟡 und nicht 🔴. Trotzdem gehört sie weg, bevor der Abschnitt zumacht, denn sie ist die letzte von
+vier identischen Stellen: Projekt (Abschnitt 4 gefixt), Anfrage (Nachbesserung 1 gefixt),
+Lieferant (Task 6 gefixt) — nur Kunde fehlt. Der Lieferant hat exakt dasselbe Markup und heißt
+dort `className="font-medium text-rose-600 hover:underline break-words block"`. Ein
+Ein-Klassen-Fix, plus eine lange E-Mail in `DUMMY_KUNDE`, damit
+`designPruefung(strengePruefungen: true)` es künftig festhält.
+
+### Dokumentierte Grenze: Projekt-Reiterleiste mit zweistelligen Zählern
+
+Gemessen bestätigt (aus dem Volllauf): 1440 → Container 916 px, zwei Zeilen, Verteilung [6,1],
+y-Werte 593 (sechsmal) und 635; 1920 → 1084 px, eine Zeile, alle sieben auf 627.
+Selbst angeschaut (eigener Screenshot mit 34er Zählern, 1440): „Tagebuch (34)" steht allein in
+Zeile zwei, alle sieben Reiter vollständig beschriftet, nichts abgeschnitten, kein stilles
+Scrollen, der aktive Reiter bleibt klar markiert.
+
+**Urteil: als dokumentierte Grenze reicht das, ich will es nicht anders.** Der Plan erlaubt den
+zweizeiligen Umbruch bei 1440 ausdrücklich als Alternative zum strikten Einzeiler („flex-wrap …
+aber nichts darf verschwinden"), und genau das passiert hier. Zweizeilig ist immer noch besser
+als abgeschnitten. Kein Fix nötig.
+
+### Hinweise (kein Blocker, für Task 9/10 oder später)
+
+1. **Projekt-Kopfzeile bei 1920 schlechter als bei 1440.** Gemessen: der Titelblock ist bei 1440
+   548 px breit, bei 1920 nur **366 px** — auf dem größeren Bildschirm bekommt der Titel weniger
+   Platz und bricht in fünf statt drei Zeilen um, während rechts daneben Leerraum steht. Grund:
+   bei 1920 passen die fünf Kennzahlen und beide Knöpfe in eine Flex-Zeile und nehmen die Breite
+   weg; bei 1440 rutschen die Knöpfe in eine zweite Zeile und geben sie frei. Nichts wird verdeckt
+   oder unlesbar, aber es liest sich verkehrt herum. Betrifft nur die Projekt-Kopfzeile (fünf
+   Kennzahlen + zwei Knöpfe); Anfrage (944 px), Kunde (1393 px) und Lieferant (819 px) sind bei
+   1920 unauffällig. Vorbestehend aus der Rezeptur, nicht durch `min-w-0` entstanden — die
+   Blockbreite ist mit und ohne Fix identisch.
+2. **Einsames Komma in der Kunden-Kopfzeile.** `Kundeneditor.tsx:310` rendert
+   `<MapPin/> {strasse}, {plz} {ort}` ohne Bedingung — ohne Adresse steht dort nur ein Pin-Symbol
+   und ein Komma. Auf `kunde-detail-langer-name--*.png` und in jedem Kunden-Screenshot zu sehen.
+   Vorbestehend, kosmetisch.
+3. **Zahlendreher in Code-Kommentaren.** `ProjektEditor.tsx` (Kommentar über der `<h1>`) und der
+   Kopfkommentar von `lieferant-layout.spec.ts` schreiben „411px (1440) bzw. 187px (1920)
+   Überstand beim Projekt-Editor". Das sind die Anfrage-Werte; der Projekt-Editor lief 583 px
+   (1440) bzw. 765 px (1920) über. Nur Dokumentation, aber wer später danach sucht, misst nach
+   und findet etwas anderes.
+4. **Kein dauerhafter Testfall für die Trennlinien von ProjektCard und AnfrageCard.** Die neue
+   Zusicherung („Meta-Block-Zeilen einer Reihe höchstens 2 px versetzt") steht nur in
+   `kunde-layout.spec.ts`. Für ProjektCard und AnfrageCard habe ich den Fix per Wegwerf-Spec
+   nachgemessen (Zahlen oben), festgehalten ist er dort nicht — ein Rückdreh auf `space-y-3`
+   bliebe in diesen beiden Dateien grün. Vorschlag für Task 9/10: denselben Zwei-Karten-Vergleich
+   in `projekt-uebersicht-layout.spec.ts` und `anfrage-layout.spec.ts` ergänzen.
+
+### Angeschaute Screenshots
+
+Alle einzeln mit dem Read-Tool geöffnet, jeweils in beiden Größen, mit den sechs Fragen je Bild.
+
+Aus `test-results/design/` (neu bzw. verändert): `lieferant-detail-einwort-lang--pc-14zoll/-pc-monitor`
+(neu), `anfrage-detail-kopf-komposita--*` (Fixture jetzt mit langer E-Mail),
+`kunde-uebersicht-lange-namen--*`, `kunde-detail-langer-name--*`, `kunde-mini-karten-projekte--*`,
+`projekt-uebersicht-lange-titel--*`, `anfragen-uebersicht-karten--*`.
+
+Eigene Wegwerf-Screenshots (danach gelöscht): Kopfzeile mit Einwort-Titel für Projekt, Anfrage und
+Kunde in beiden Größen (die vier Kopfzeilen aus dem Auftrag, für Lieferant reicht der Spec-Shot);
+Kartenreihe mit gemischt langen/kurzen Titeln für Projekt, Anfrage und Kunde in beiden Größen;
+Kunden-Kontaktdaten mit langer und mittlerer E-Mail (Befund 4); Projekt-Reiterleiste mit
+zweistelligen Zählern.
+
+### Aufräumen
+
+Drei Wegwerf-Specs (`e2e/zz-review-messung.spec.ts`, `zz-review-email.spec.ts`,
+`zz-review-reiter.spec.ts`), der Ordner `review-messung/` und `test-results-zz/` wieder gelöscht.
+`git status` im Review-Worktree sauber, keine Produktivdatei angefasst.
