@@ -312,10 +312,35 @@ export function RibbonNavigation() {
                                 als gewollte Ausnahme fuer keinTextGekuerzt (siehe
                                 e2e/hilfen/design.ts) -- ohne das Attribut waere ein
                                 abgeschnittener Name ein Fehler.
-                                2xl:max-w-none: ab 1536px (grosser Monitor) ist genug
-                                Platz frei, dort muss der Name nicht mehr gekuerzt werden. */}
+
+                                Task 10b (Abschnitt 7, Design-Review Abschnitt 6 Befund c):
+                                "2xl:max-w-none" (ab 1536px unbegrenzt breit) griff zu frueh --
+                                bei 1536px ist noch nicht genug Platz frei, ein rund 55 Zeichen
+                                langer Name sprengte die Kategorie-Leiste dort um 119px (bei
+                                1650px noch um 5px), weil dieser Block und die Kategorie-Leiste
+                                sich dieselbe Zeile teilen und ein breiterer Name der
+                                Kategorie-Leiste Platz wegnimmt. Zwei Stellschrauben standen zur
+                                Wahl: die Grenze spaeter greifen lassen (z.B. "min-[1780px]:
+                                max-w-none") oder eine feste Obergrenze statt "none" setzen (z.B.
+                                "2xl:max-w-[18rem]"). Gewaehlt: die Grenze verschieben.
+                                Nachgerechnet mit den Design-Review-Messwerten (119px Ueberstand
+                                bei 369px Namensbreite, 247px bei 497px Namensbreite -- linear,
+                                Differenz und Ursache identisch): der Ueberstand waechst 1:1 mit
+                                der Namensbreite, die Kategorie-Leiste vertraegt bei 1536px nur
+                                rund 250px Namensbreite verlustfrei. Eine feste Obergrenze muesste
+                                also klein genug sein (< 15rem), und genau diese Grenze gilt schon
+                                heute unveraendert bei 1440px (max-w-[10rem] = 160px) und
+                                verursacht dort nachweislich 0px Ueberstand, auch bei sehr langen
+                                Namen. Die Grenze auf 1780px zu verschieben nutzt also einfach die
+                                bereits bewaehrte 160px-Kuerzung eine Stufe weiter, statt eine neue
+                                Zahl zu erfinden -- deshalb kein "2xl:max-w-[18rem]": 18rem (288px)
+                                liegt ueber der 250px-Schwelle und haette die Luecke nicht
+                                geschlossen, wie die Nachrechnung zeigt. Ab 1780px ist der
+                                Platzgewinn gegenueber 1536px so gross, dass "max-w-none" laut
+                                denselben Messwerten wieder 0px Ueberstand ergibt (1780px: 0px bzw.
+                                3px je nach Namenslaenge). */}
                             <p
-                                className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 max-w-[10rem] 2xl:max-w-none truncate"
+                                className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 max-w-[10rem] min-[1780px]:max-w-none truncate"
                                 title={currentUser ? currentUser.displayName : undefined}
                                 data-kuerzung-erlaubt
                             >

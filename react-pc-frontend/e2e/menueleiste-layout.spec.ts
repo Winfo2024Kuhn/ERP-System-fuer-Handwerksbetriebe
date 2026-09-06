@@ -37,14 +37,38 @@ import { designPruefung, keinTextGekuerzt } from './hilfen/design';
  * Text-Kuerzung (text-overflow: ellipsis) und keine fuer data-kuerzung-erlaubt.
  * Jedes tatsaechlich gekuerzte "truncate"-Element hat zwangslaeufig
  * scrollWidth > clientWidth auf sich selbst -- keinTextLaeuftUeber meldet das
- * immer, auch wenn die Kuerzung ausdruecklich erlaubt ist. Deshalb rufen die
- * folgenden Tests designPruefung() ohne "strengePruefungen" auf und pruefen
- * keinTextGekuerzt() (das die Ausnahme korrekt kennt) stattdessen einzeln --
- * identische Abdeckung fuer den hier relevanten Fall, ohne den fremden
- * Fehlalarm auszuloesen.
+ * immer, auch wenn die Kuerzung ausdruecklich erlaubt ist.
+ *
+ * Task 10b (Abschnitt 7, Design-Review Abschnitt 6 Befund c): der
+ * Design-Reviewer hat "strengePruefungen" testweise auf
+ * "testInfo.project.name === 'pc-monitor'" gestellt und einen vollstaendig
+ * gruenen Lauf gemessen (8/8) -- fuer pc-monitor ist das also sicher scharf zu
+ * stellen. Fuer pc-14zoll (und das neue pc-uebergang, siehe unten) bleibt es
+ * aus derselben Grunde aus wie bisher: keinTextLaeuftUeber kennt noch keine
+ * Ausnahme fuer die gewollte "max-w-[10rem] truncate"-Kuerzung des
+ * Anzeigenamens (nur keinTextGekuerzt kennt data-kuerzung-erlaubt). Das ist
+ * die im Plan (Task 10) angekuendigte Nacharbeit an design.ts -- hier nicht
+ * anfassen (fremde Datei). Deshalb rufen die folgenden Tests designPruefung()
+ * mit "strengePruefungen: testInfo.project.name === 'pc-monitor'" auf und
+ * pruefen keinTextGekuerzt() (das die Ausnahme korrekt kennt) zusaetzlich
+ * einzeln fuer alle Groessen -- identische Abdeckung fuer den hier relevanten
+ * Fall, ohne den fremden Fehlalarm bei pc-14zoll/pc-uebergang auszuloesen.
  */
 
 const LANGER_NUTZERNAME = 'Friederike Beispiel-Musterfrau';
+
+/**
+ * Task 10b, roter Ausgangsbefund (Design-Review Abschnitt 6, Befund c):
+ * Fiktiver, ca. 55 Zeichen langer Anzeigename (kein echter Nutzer, DSGVO) --
+ * exakt die Laenge, mit der der Design-Reviewer bei 1536px 119px Ueberstand
+ * der Kategorie-Leiste gemessen hat (heutiger Code: "2xl:max-w-none" macht
+ * den Anzeigenamen ab 1536px unbegrenzt breit, obwohl dort noch nicht genug
+ * Platz frei ist). Bei 1440px (max-w-[10rem] greift) und bei 1920px (genug
+ * Platz frei) bleibt die Kategorie-Leiste auch mit diesem Namen bei 0px
+ * Ueberstand -- nur das neue pc-uebergang-Projekt (1536px) deckt die Luecke
+ * dazwischen ab.
+ */
+const LANGER_NUTZERNAME_GRENZFALL = 'Friederike Charlotte Beispiel-Musterfrau-Bergwaldschmidt';
 
 const KATEGORIEN = [
     'Vorlagen & Stammdaten',
@@ -65,12 +89,12 @@ function json(route: Route, body: unknown, status = 200) {
  * ueberschreiben also den Default (Vorbild: stubbeLieferantApi in
  * e2e/bearbeiten-leiste.spec.ts).
  */
-async function stubbeMenueleisteApi(page: Page) {
+async function stubbeMenueleisteApi(page: Page, displayName: string = LANGER_NUTZERNAME) {
     await page.route('**/api/**', route => json(route, {}));
 
     await page.route('**/api/auth/me', route => json(route, {
         id: 1,
-        displayName: LANGER_NUTZERNAME,
+        displayName,
         username: 'friederike.beispiel',
         active: true,
         roles: ['ADMIN'],
@@ -101,8 +125,8 @@ async function stubbeMenueleisteApi(page: Page) {
     });
 }
 
-async function oeffneProjekteMitMenueleiste(page: Page) {
-    await stubbeMenueleisteApi(page);
+async function oeffneProjekteMitMenueleiste(page: Page, displayName: string = LANGER_NUTZERNAME) {
+    await stubbeMenueleisteApi(page, displayName);
     await page.goto('/projekte');
     await expect(page.getByRole('heading', { name: 'Projektübersicht' })).toBeVisible();
 }
@@ -193,10 +217,12 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
             `Menuepunkt-Zeile laeuft ueber: ${zeile!.clientWidth}px breit, Inhalt braucht ${zeile!.scrollWidth}px`,
         ).toBeLessThanOrEqual(zeile!.clientWidth);
 
-        // keinTextGekuerzt() statt designPruefung({ strengePruefungen: true }) --
-        // siehe Kommentar bei den Imports zu keinTextLaeuftUeber.
+        // keinTextGekuerzt() zusaetzlich zu designPruefung() -- siehe Kommentar
+        // bei den Imports zu keinTextLaeuftUeber/strengePruefungen.
         await keinTextGekuerzt(page);
-        await designPruefung(page, testInfo, 'menueleiste-kategorien');
+        await designPruefung(page, testInfo, 'menueleiste-kategorien', {
+            strengePruefungen: testInfo.project.name === 'pc-monitor',
+        });
     });
 
     test('Kategorie "Vorlagen & Stammdaten": "Dokumentenrechte" steht vollstaendig da', async ({ page }, testInfo) => {
@@ -207,7 +233,9 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(dokumentenrechte).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-dokumentenrechte');
+        await designPruefung(page, testInfo, 'menueleiste-dokumentenrechte', {
+            strengePruefungen: testInfo.project.name === 'pc-monitor',
+        });
     });
 
     test('Kategorie "Finanzen & Controlling": "Mietabrechnung" steht vollstaendig da', async ({ page }, testInfo) => {
@@ -218,7 +246,9 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(mietabrechnung).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-mietabrechnung');
+        await designPruefung(page, testInfo, 'menueleiste-mietabrechnung', {
+            strengePruefungen: testInfo.project.name === 'pc-monitor',
+        });
     });
 
     /**
@@ -239,6 +269,40 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(nutzermenuePanel).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-nutzermenue-offen');
+        await designPruefung(page, testInfo, 'menueleiste-nutzermenue-offen', {
+            strengePruefungen: testInfo.project.name === 'pc-monitor',
+        });
+    });
+
+    /**
+     * Task 10b (Abschnitt 7): die Luecke zwischen den beiden Pflichtgroessen.
+     * "2xl:max-w-none" (Zeile 318 vor dem Fix) greift technisch schon ab
+     * 1536px -- dort ist aber noch nicht genug Platz frei. Mit einem rund
+     * 55 Zeichen langen Anzeigenamen sprengt der dadurch unbegrenzt breite
+     * Anzeigename die Kategorie-Leiste bei 1536px um 119px (Design-Review
+     * Abschnitt 6, Befund c, exakt nachgemessen). Kein bestehender Check sah
+     * das: "html" und "main" bleiben 0, weil die Kategorie-Leiste selbst
+     * "overflow-x: auto" hat, und fuer 1536-1919px gab es bisher gar kein
+     * Playwright-Projekt (siehe pc-uebergang in playwright.config.ts).
+     *
+     * Vor dem Fix rot NUR bei pc-uebergang (1536px) -- bei pc-14zoll greift
+     * "max-w-[10rem]" (Kuerzung), bei pc-monitor (1920px) ist genug Platz frei
+     * (siehe Tabelle im Kontext-Log: 0px Ueberstand bei 1440 und 1920, 119px
+     * bei 1536, mit demselben Namen).
+     */
+    test('Anzeigename an der 1536-Grenze: Kategorie-Leiste laeuft nicht ueber, alle Kategorien lesbar', async ({ page }) => {
+        await oeffneProjekteMitMenueleiste(page, LANGER_NUTZERNAME_GRENZFALL);
+
+        for (const name of KATEGORIEN) {
+            await expect(page.getByRole('button', { name, exact: true }), `Kategorie "${name}" fehlt oder ist nicht exakt lesbar`)
+                .toHaveText(name);
+        }
+
+        const masse = await kategorieLeisteMasse(page);
+        expect(masse, 'Kategorie-Leiste (Container der Kategorie-Knoepfe) nicht gefunden').not.toBeNull();
+        expect(
+            masse!.scrollWidth,
+            `Kategorie-Leiste laeuft ueber: Container ${masse!.clientWidth}px breit, Inhalt braucht ${masse!.scrollWidth}px (${masse!.scrollWidth - masse!.clientWidth}px zu wenig Platz)`,
+        ).toBeLessThanOrEqual(masse!.clientWidth);
     });
 });
