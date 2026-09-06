@@ -1065,8 +1065,18 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         von einem langen Komposita-Bauvorhaben ueber die 18rem
                         hinausgedrueckt (Nacharbeit Abschnitt 4, Rezeptur). */}
                     <div className="min-w-0">
+                        {/* Nachbesserung 1 (Design-Review, 🔴): min-w-0 hier am
+                            div reicht bei EINEM einzigen langen Wort nicht --
+                            die <h1> ist selbst Flex-Item in der Zeile darunter
+                            (flex items-center gap-3 flex-wrap) und behaelt ihr
+                            eigenes min-width: auto. break-words senkt die
+                            Mindestinhaltsbreite eines Flex-Items nicht, nur
+                            min-w-0 auf dem Element selbst tut das. Gemessen ohne
+                            diesen Fix: <h1> 999px breit, ragt 411px (1440) bzw.
+                            187px (1920) aus dem Titelblock, "BRUTTO"/"NETTO"
+                            werden unlesbar ueberdeckt. */}
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900 break-words">{projekt.bauvorhaben}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{projekt.bauvorhaben}</h1>
                             <span className={cn(
                                 "px-2.5 py-0.5 rounded-full text-xs font-medium border",
                                 projekt.bezahlt
@@ -1282,7 +1292,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             {activeTab === 'notizen' && (
                 <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-medium text-slate-900">Bau Tagebuch</h3>
+                        {/* "Bau Tagebuch" -> "Tagebuch" (Nachbesserung 1,
+                            Design-Review 🟡): passend zum Reiter, der seit
+                            Abschnitt 3 nur noch "Tagebuch" heisst. */}
+                        <h3 className="text-lg font-medium text-slate-900">Tagebuch</h3>
                         <Button onClick={openCreateNotizModal} className="bg-rose-600 text-white hover:bg-rose-700">
                             <Plus className="w-4 h-4 mr-2" /> Neuer Eintrag
                         </Button>
@@ -4150,7 +4163,13 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
             )}
             onClick={onClick}
         >
-            <div className="p-4 space-y-3 flex-1 flex flex-col">
+            {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3. Tailwinds
+                space-y-3 erzeugt den Selektor "> * + *" (Spezifitaet 0-3-0),
+                der die Margin auf JEDES direkte Kind ausser dem ersten setzt --
+                das schlaegt mt-auto (Spezifitaet 0-1-0) am Meta-Block unten
+                nieder und macht ihn wirkungslos. gap-3 auf dem flex-col-
+                Container umgeht das Spezifitaets-Problem vollstaendig. */}
+            <div className="p-4 gap-3 flex-1 flex flex-col">
                 <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
