@@ -176,7 +176,11 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
             )}
             onClick={onClick}
         >
-            <div className="p-4 space-y-3 flex-1 flex flex-col">
+            {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+                ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard) --
+                space-y-3s "> * + *"-Selektor (Spezifitaet 0-3-0) schlaegt
+                mt-auto (0-1-0) am Meta-Block nieder, gap-3 nicht. */}
+            <div className="p-4 gap-3 flex-1 flex flex-col">
                 <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1001,8 +1005,16 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         von einem langen Komposita-Bauvorhaben ueber die 18rem
                         hinausgedrueckt (Nacharbeit Abschnitt 4, Rezeptur). */}
                     <div className="min-w-0">
+                        {/* Nachbesserung 1 (Design-Review, 🔴): min-w-0 auf dem
+                            umschliessenden div reicht bei EINEM einzigen langen
+                            Wort nicht -- die <h1> ist selbst Flex-Item in der
+                            Zeile darunter und behaelt ihr eigenes min-width:
+                            auto. break-words senkt die Mindestinhaltsbreite
+                            eines Flex-Items nicht, nur min-w-0 auf dem Element
+                            selbst tut das. Siehe ausfuehrlicher Kommentar in
+                            ProjektEditor.tsx. */}
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900 break-words">{anfrage.bauvorhaben}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{anfrage.bauvorhaben}</h1>
                             {anfrage.anfragesnummer && (
                                 <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-rose-50 text-rose-700 border-rose-200">
                                     Anfrage {anfrage.anfragesnummer}
@@ -1127,8 +1139,10 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         Design-Review-Hinweis 6): der Projekt-Editor sagt seit
                         Abschnitt 3 nur noch "Tagebuch" -- zwei Namen fuer
                         dieselbe Sache. Die Anfrage hat genug Platz, der kuerzere
-                        Name ist trotzdem der bessere. Ueberschrift im Tab-Inhalt
-                        ("Bau Tagebuch") bleibt unangetastet, wie beim Projekt. */}
+                        Name ist trotzdem der bessere. Die Ueberschrift im
+                        Tab-Inhalt ("Bau Tagebuch") wurde in Nachbesserung 1
+                        ebenfalls auf "Tagebuch" gezogen (Design-Review 🟡,
+                        Projekt-Editor gleich mit). */}
                     Tagebuch ({notizen.length})
                 </button>
             </div>
@@ -1218,7 +1232,10 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
             {activeTab === 'notizen' && (
                 <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-medium text-slate-900">Bau Tagebuch</h3>
+                        {/* "Bau Tagebuch" -> "Tagebuch" (Nachbesserung 1,
+                            Design-Review 🟡): passend zum Reiter, der seit
+                            dieser Nacharbeit nur noch "Tagebuch" heisst. */}
+                        <h3 className="text-lg font-medium text-slate-900">Tagebuch</h3>
                         <Button onClick={openCreateNotizModal} className="bg-rose-600 text-white hover:bg-rose-700">
                             <Plus className="w-4 h-4 mr-2" /> Neuer Eintrag
                         </Button>
@@ -1451,7 +1468,14 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Kunden-E-Mails</p>
                         {kundenEmails.map((email) => (
-                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm truncate">
+                            // break-words statt truncate (Nachbesserung 1,
+                            // Design-Review 🟡): dieselbe Kuerzung wie im
+                            // Projekt-Editor (dort in Abschnitt 4 behoben) stand
+                            // hier noch, unentdeckt, weil die eigene Fixture
+                            // kundenEmails: [] setzt und die Stelle nie
+                            // rendert. Schmale rechte Spalte, kein title als
+                            // Rueckfallweg -- lieber umbrechen.
+                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm break-words">
                                 {email}
                             </a>
                         ))}

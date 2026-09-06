@@ -49,6 +49,14 @@ function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
+// Nachbesserung 1 (Design-Review, 🟡): eine lange E-Mail-Adresse, damit die
+// "Kunden-E-Mails"-Zeile im Seitenbereich (AnfrageEditor.tsx, vormals
+// "truncate" ohne title) tatsaechlich auf die Probe gestellt wird. Genau
+// dieselbe Kuerzung wurde im Projekt-Editor in Abschnitt 4 behoben, blieb hier
+// aber unentdeckt, weil kundenEmails: [] gesetzt war -- die Stelle wurde nie
+// gerendert.
+const KUNDEN_EMAIL_LANG = 'verwaltung.rechnungswesen@wohnungsbaugesellschaft-beispielstadt-nord-immobilienverwaltung.example';
+
 const DUMMY_ANFRAGE_DETAIL = {
     id: ANFRAGE_ID,
     kundenId: 3,
@@ -57,11 +65,12 @@ const DUMMY_ANFRAGE_DETAIL = {
     kundennummer: 'K-1003',
     anfragesnummer: 'AG-2026/09/00009',
     betrag: 84500,
-    // Bewusst OHNE kundenEmails/Telefon/Adresse: sonst rendert GoogleMapsEmbed
-    // ein echtes <iframe src="https://www.google.com/maps?..."> -- ein
-    // Netzwerkzugriff, den dieser rein gestubbte Test nicht braucht (siehe
-    // gleicher Kommentar in e2e/rahmen-detailseite.spec.ts).
-    kundenEmails: [] as string[],
+    // Adresse bleibt bewusst leer: sonst rendert GoogleMapsEmbed ein echtes
+    // <iframe src="https://www.google.com/maps?..."> -- ein Netzwerkzugriff,
+    // den dieser rein gestubbte Test nicht braucht (siehe gleicher Kommentar
+    // in e2e/rahmen-detailseite.spec.ts). GoogleMapsEmbed haengt nur an
+    // Strasse/PLZ/Ort, nicht an kundenEmails -- die duerfen gefuellt sein.
+    kundenEmails: [KUNDEN_EMAIL_LANG] as string[],
     anlegedatum: '2026-02-01',
     abgeschlossen: false,
     emails: [] as unknown[],
@@ -260,9 +269,29 @@ test.describe('Anfrage-Detailseite: Kopf und Reiterleiste im schlimmsten Fall', 
 
         const bearbeiten = page.getByRole('button', { name: 'Bearbeiten' });
         const loeschen = page.getByRole('button', { name: 'Löschen' });
-        await expect(page.getByRole('heading', { name: BAUVORHABEN_KOMPOSITA_OHNE_LEERZEICHEN })).toBeVisible();
+        const titel = page.getByRole('heading', { name: BAUVORHABEN_KOMPOSITA_OHNE_LEERZEICHEN });
+        await expect(titel).toBeVisible();
         await expect(bearbeiten).toBeVisible();
         await expect(loeschen).toBeVisible();
+
+        // Nachbesserung 1 (Design-Review, 🔴): die <h1> selbst ist Flex-Item
+        // (in "flex items-center gap-3 flex-wrap") und behielt ihr eigenes
+        // min-width: auto -- break-words + min-w-0 am umschliessenden div
+        // reichten bei EINEM einzigen langen Wort nicht, die <h1> lief 999px
+        // breit quer ueber die Kennzahlen. Diese Zusicherung fehlte bisher
+        // hier komplett (nur Knopfposition + keinHorizontalerUeberlauf).
+        const titelblock = titel.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " min-w-[18rem] ")][1]',
+        );
+        const titelBox = await titel.boundingBox();
+        const titelblockBox = await titelblock.boundingBox();
+        expect(titelBox, '<h1> muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(titelblockBox, 'Titelblock muss einen messbaren Rahmen haben').not.toBeNull();
+        const titelUeberstand = (titelBox!.x + titelBox!.width) - (titelblockBox!.x + titelblockBox!.width);
+        expect(
+            titelUeberstand,
+            `<h1> (Breite ${titelBox!.width.toFixed(0)}px) ragt ${titelUeberstand.toFixed(0)}px rechts aus dem Titelblock (Breite ${titelblockBox!.width.toFixed(0)}px) -- min-w-0 an der <h1> fehlt oder wirkt nicht`,
+        ).toBeLessThanOrEqual(1);
 
         // Dieselben Zusicherungen wie im Test oben: Knoepfe vollstaendig in der
         // Kopf-Karte und kein horizontaler Ueberlauf -- OHNE break-words + die
