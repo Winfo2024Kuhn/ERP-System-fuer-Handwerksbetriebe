@@ -2383,3 +2383,107 @@ werden. **Neue Abnahmeregel für den Rest des Vorhabens:** grün = 1081/1082, un
 der eine bekannte Fehlschlag ist genau dieser. Ein zweiter ist neu. Lehre für
 künftige Läufe: einen roten Test der Baseline **einzeln** nachfahren, bevor man
 ihn als Last abtut.
+
+## Abschnitt 6 — Task 7b (Coding-Agent)
+
+Zeit: 2026-09-06T15:04:01Z
+Branch: layout/task-7b-mitarbeiter-kontakt
+Commit(s): 0d930de0
+Status: fertig
+
+Hinweis zur Quellenlage: `docs/superpowers/plans/2026-09-05-layout-14-zoll.md`
+enthaelt in meinem Worktree (`wt/layout-task-7b`, abgezweigt vom abgenommenen
+Stand der Abschnitte 1-5) **keinen** eigenen Abschnitt "Task 7b" -- die
+Plan-Datei wurde erst mit Commit `f00ce836` ("docs(plan): Task 7b
+(Mitarbeiter-Kontaktspalte) als Abschnitt 6, Task 10 rutscht in Abschnitt 7")
+um diesen Abschnitt ergaenzt, und dieser Commit ist kein Vorfahre meines
+Branches. Per `git show f00ce836` geprueft: der dortige Task-7b-Text deckt
+sich inhaltlich mit dem Auftrag, den ich direkt vom Orchestrator erhalten
+habe (Befund, Dateien, Testgetrieben-Vorgabe, Gates identisch). Umgesetzt nach
+dem direkten Auftrag; keine inhaltliche Abweichung festgestellt. Einzige
+Ungenauigkeit in beiden Fassungen des Auftrags: "Ansprechpartner" und
+"Zahlungsziel" werden als betroffene Felder genannt, existieren im
+Mitarbeiter-Datenmodell aber nicht (das sind Kunden-/Lieferanten-Felder) --
+vermutlich aus der Kundeneditor-Vorlage kopiert. Wirkungslos fuer die Umsetzung,
+da ich ohnehin ausnahmslos alle zehn Zeilen der Spalte repariert habe.
+
+Was gemacht wurde:
+- Rote Spec zuerst (TDD, `superpowers:test-driven-development` befolgt):
+  `e2e/mitarbeiter-layout.spec.ts` um eine lange, bindestrichlose Fantasie-
+  E-Mail (`EMAIL_LANG`, 102 Zeichen, `.example`-Domain) in der Fixture
+  ergaenzt -- ein Bindestrich waere selbst ein Umbruchpunkt und wuerde den
+  Fehler verdecken (kriterien.md, "Testdaten fuer Umbruch-Fehler brauchen ein
+  langes Wort ohne Trennstellen"). Die vorhandene 44-stellige Abteilung
+  (`Sonderaufgabenkoordinationsstellenverwaltung`) war schon bindestrichlos
+  lang genug und blieb unveraendert. `blockiereFremdeNetzwerkzugriffe`
+  verdrahtet (fehlte bisher in dieser Spec).
+- Drei neue Zusicherungen direkt beim Oeffnen der Detailseite (vor den
+  bestehenden Kopf-/Reiter-Checks): `main` ohne Ueberstand, E-Mail-Wert
+  innerhalb der Kontakt-Karte, Abteilung-Wert innerhalb der Kontakt-Karte.
+  Die Karte wird ueber die Ueberschrift "Persoenliche Daten" + Vorfahre mit
+  `shadow-sm` identifiziert (`card.tsx`), eingegrenzt auf diese Karte, weil
+  die Kopfzeile (Z. 335) dieselbe Abteilungs-Zeichenkette im Untertitel
+  wiederholt und ein ungegrenztes `getByText(exact)` sonst mehrdeutig waere.
+- Rot verifiziert (siehe Zahlen unten), dann `MitarbeiterEditor.tsx`
+  `SideInfo` (Z. 437 ff.) gefixt: an allen zehn Zeilen der Spalte (Persoenliche
+  Daten: Voller Name, Geburtsdatum, Abteilung(en); Kontakt: E-Mail,
+  Mobiltelefon, Festnetz, Adresse; Qualifikation: Stufe; Konditionen:
+  Stundenlohn, Jahresurlaub) das umschliessende `<div>` auf `min-w-0 flex-1`,
+  den Wert-`<p>` auf zusaetzlich `break-words`, das Icon auf zusaetzlich
+  `shrink-0` -- Muster uebernommen aus `LieferantenEditor.tsx` Z. 315/324 und
+  `Kundeneditor.tsx` Z. 497/509, nicht neu erfunden. Nicht nur E-Mail und
+  Abteilung (die einzigen mit rotem Testnachweis), sondern die ganze Spalte
+  einheitlich behandelt, wie im Auftrag verlangt.
+- Gruen verifiziert (siehe Gates unten).
+
+Gemessene Zahlen vorher/nachher (Fixture: `EMAIL_LANG`
+`personalaktenverwaltungspostfachfuermitarbeiterkommunikationsservice@musterstadtnordwestgebiet.example`,
+102 Zeichen; `ABTEILUNG` `Sonderaufgabenkoordinationsstellenverwaltung`,
+44 Zeichen; beide bindestrichlos):
+
+| Messung | 1440 (pc-14zoll) vorher | 1440 nachher | 1920 (pc-monitor) vorher | 1920 nachher |
+| --- | --- | --- | --- | --- |
+| `main.scrollWidth - main.clientWidth` | 366px | 0px | 182px | 0px |
+| E-Mail-Wert ueber rechte Kartenkante | 430px | 0px (≤2px-Toleranz) | 374px | 0px |
+| Abteilung-Wert ueber rechte Kartenkante | 21px | 0px | 0px (passte schon) | 0px |
+
+Vorher-Zahlen per `expect.soft` einmalig am unveraenderten Code gemessen (Fix
+kurz zurueckgenommen, Zusicherungen auf `expect.soft` gestellt, Lauf gemacht,
+danach Fix und harte Zusicherungen wiederhergestellt -- kein Zwischenstand
+committet). Die 430px/374px E-Mail-Werte sind hoeher als die vom Design-
+Reviewer in Abschnitt 5 mit einer 91-Zeichen-Adresse gemessenen 248px/192px
+(Kastenrand-Methode statt Bild-Augenmass) -- konsistent, meine Fixture ist mit
+102 Zeichen laenger. Die Abteilung-Zahlen (21px bei 1440, passt bei 1920)
+decken sich exakt mit dem Befund des Design-Reviewers.
+
+Gate-Ergebnisse (aus `react-pc-frontend/`, Port 5221 frei vor dem Lauf
+geprueft):
+- `netstat -ano | findstr :5221`: leer.
+- `E2E_PORT=5221 npx playwright test e2e/mitarbeiter-layout.spec.ts`: 2/2
+  gruen (pc-14zoll, pc-monitor), inklusive `designPruefung(...,
+  { strengePruefungen: true })`.
+- `npm run lint`: 0 Fehler, dieselbe 1 vorbestehende Warnung
+  (`BelegeKasseEditor.tsx:1204`) wie Baseline.
+- `npm run build`: gruen (`tsc -b` + `vite build`). Build-Output verworfen
+  (`git checkout -- src/main/resources/static`,
+  `git clean -f src/main/resources/static/assets`), `git status` danach nur
+  die zwei erlaubten Dateien.
+- `test-results/` nicht committet (`.gitignore` greift).
+
+Bedenken / Abweichungen vom Plan:
+- Quellenlage-Hinweis siehe oben (Plan-Datei in meinem Worktree ohne
+  Task-7b-Abschnitt) -- kein inhaltlicher Konflikt, nur zur Nachvollziehbarkeit
+  vermerkt.
+- Die im Auftrag genannten Felder "Ansprechpartner" und "Zahlungsziel"
+  existieren im Mitarbeiter-Datenmodell nicht (Kopierfehler aus der
+  Kundeneditor-Vorlage) -- ohne Auswirkung, da alle zehn tatsaechlichen Zeilen
+  der Spalte repariert wurden.
+- `keinTextLaeuftUeber`/`keinHorizontalerUeberlauf` aus `design.ts` haetten
+  den urspruenglichen Fehler an dieser Stelle strukturell NICHT gefunden (das
+  `<p>` selbst hat `scrollWidth == clientWidth`, der Ueberlauf entsteht erst
+  auf Ebene der Karte) -- deshalb die drei manuellen Kasten-Zusicherungen in
+  der Spec, wie in `playwright-design-pruefung` SKILL.md unter "Was die
+  automatischen Checks nicht sehen" beschrieben. `design.ts` liegt nicht in
+  meiner Files-Liste, daher keine Aenderung dort vorgenommen -- falls Task 10
+  (Abschnitt 7) eine generische "Wert im Kasten"-Pruefung ergaenzen will, waere
+  das der richtige Ort.
