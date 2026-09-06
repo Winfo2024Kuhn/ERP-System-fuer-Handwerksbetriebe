@@ -596,9 +596,26 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
         // Zeile selbst pruefen statt eine Bounding-Box-Geometrie, die den
         // unsichtbar ueberlaufenden Text-Node nicht saehe (siehe Kommentar
         // oben zur E-Mail-Zeile).
+        //
+        // Abdeckungsluecke (Task 12, Code-Review Abschnitt 7): getByText()
+        // trifft seit Task 11 den <span className="min-w-0 break-words">, der
+        // den Wert umschliesst, NICHT mehr das <p className="flex ..."> der
+        // ganzen Zeile -- Playwright waehlt bei mehreren Treffern mit
+        // identischem Text das innerste Element, und Icon + Span haben
+        // zusammen denselben normalisierten Text wie das <p> allein. Der Span
+        // selbst kann aber nie "ueber sich selbst" laufen (er wird immer genau
+        // so breit wie sein eigener Inhalt) -- egal ob min-w-0 am Span wirkt
+        // oder nicht. Wird min-w-0 entfernt, zwingt der jetzt wieder volle
+        // min-content-Boden des Spans die FLEX-ZEILE (<p>) zum Ueberlaufen,
+        // nicht den Span selbst. Deshalb hier ausdruecklich auf die Zeile
+        // hochlaufen (ancestor-or-self, falls getByText doch das <p> selbst
+        // traefe) statt den Treffer von getByText ungeprueft zu verwenden.
         const pruefeZeileLaeuftNichtUeber = async (wert: string, feldname: string) => {
-            const zeile = page.getByText(wert, { exact: true });
-            await expect(zeile, `${feldname}-Zeile "${wert}" fehlt`).toBeVisible();
+            const wertElement = page.getByText(wert, { exact: true });
+            await expect(wertElement, `${feldname}-Zeile "${wert}" fehlt`).toBeVisible();
+            const zeile = wertElement.locator(
+                'xpath=ancestor-or-self::p[contains(concat(" ", normalize-space(@class), " "), " flex ")][1]',
+            );
             const zeileUeberstand = await zeile.evaluate((el) => el.scrollWidth - el.clientWidth);
             expect(
                 zeileUeberstand,

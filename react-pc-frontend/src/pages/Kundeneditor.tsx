@@ -148,7 +148,8 @@ const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => vo
                 {projekt.auftragsnummer && (
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="truncate">{projekt.auftragsnummer}</span>
+                        {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit). */}
+                        <span className="min-w-0 break-words">{projekt.auftragsnummer}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -183,7 +184,8 @@ const KundenAnfrageKarte: React.FC<{ anfrage: KundeAnfrageKurz; onOpen: () => vo
                 {anfrage.anfragesnummer && (
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="truncate">{anfrage.anfragesnummer}</span>
+                        {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit). */}
+                        <span className="min-w-0 break-words">{anfrage.anfragesnummer}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -304,10 +306,15 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                             </span>
                         </div>
                         {/* shrink-0 an den Untertitel-Icons (Nacharbeit Abschnitt 4,
-                            Rezeptur): sonst quetscht ein langer Text sie platt. */}
+                            Rezeptur): sonst quetscht ein langer Text sie platt.
+                            Task 12 (zweiter Mechanismus): der Wert braucht einen
+                            eigenen <span> mit min-w-0 -- "break-words" allein
+                            senkt die automatische Mindestbreite eines Flex-Items
+                            nicht (nur "overflow-wrap: anywhere" tut das), siehe
+                            ausfuehrlicher Kommentar in ProjektEditor.tsx. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {kunde.ansprechspartner}</p>}
-                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {kunde.strasse}, {kunde.plz} {kunde.ort}</p>
+                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{kunde.ansprechspartner}</span></p>}
+                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{kunde.strasse}, {kunde.plz} {kunde.ort}</span></p>
                         </div>
                     </div>
                 </div>
@@ -495,18 +502,19 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />
                     </div>
-                    {/* min-w-0 (Nachtrag Abschnitt 5, Task 9): dieses div ist
-                        Flex-Item der Reihe und behaelt sonst min-width: auto --
-                        eine lange E-Mail-Adresse schiebt es dann ueber seinen
-                        Kasten hinaus (Design-Review Runde 2, Befund 4: 184px
-                        Ueberstand bei 1440, main.scrollWidth-clientWidth 127px).
-                        Gleiches Muster wie LieferantenEditor.tsx Z. 315.
-                        "flex-1" entfernt (Task 11, Abschnitt 7): der Design-
-                        Reviewer hat nachgemessen, dass es hier wirkungslos ist --
-                        Geometrie mit und ohne "flex-1" ist auf den Pixel
-                        identisch (main 0/0, <a> 220/220px bei 1440, 340/340px
-                        bei 1920). min-w-0 traegt die Zeile allein. */}
-                    <div className="min-w-0">
+                    {/* min-w-0 flex-1 (Task 12, Einheitlichkeit): "flex-1" war
+                        hier bis Task 11 entfernt, weil der Design-Reviewer
+                        gemessen hat, dass es fuer den Ueberlauf wirkungslos ist
+                        (Geometrie mit/ohne "flex-1" auf den Pixel identisch).
+                        Das stimmt, macht die Zeile aber zur einzigen
+                        Abweichung von den vier Geschwistern (Ansprechpartner,
+                        Telefon, Mobiltelefon, Zahlungsziel) -- zwei Muster
+                        nebeneinander in derselben Spalte. "flex-1" schadet
+                        nicht (es aendert nichts an der Breite, siehe Messung
+                        oben), deshalb hier wieder rein: ein Muster pro Spalte
+                        ist wichtiger als die zwei nutzlosen Zeichen zu sparen.
+                        min-w-0 bleibt der Teil, der tatsaechlich traegt. */}
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">E-Mail</p>
                         <div className="flex flex-col">
                             {kunde.kundenEmails && kunde.kundenEmails.length > 0 ? (
@@ -526,14 +534,19 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     </div>
                 </div>
 
-                {/* Zahlungsziel */}
+                {/* Zahlungsziel -- trug die Rezeptur bisher gar nicht (Task 12,
+                    Einheitlichkeit): shrink-0 am Icon, min-w-0 flex-1 am
+                    Wert-Container, break-words am Wert, wie die vier
+                    Geschwister-Zeilen oben. Der Wert ist zwar heute nur eine
+                    kurze Zahl, aber dieselbe Spalte soll durchgehend ein
+                    Muster tragen statt zwei nebeneinander. */}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <CreditCard className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Zahlungsziel</p>
-                        <p className="font-medium text-slate-900">{kunde.zahlungsziel ?? 8} Tage</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.zahlungsziel ?? 8} Tage</p>
                     </div>
                 </div>
             </div>
@@ -907,7 +920,10 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                         gleiche Kartenhoehe kommt ueber h-full flex flex-col an der Karte
                         und mt-auto am Meta-Block unten. */}
                     <h3 className="font-semibold text-slate-900 line-clamp-2" title={kunde.name || '-'} data-kuerzung-erlaubt>{kunde.name || '-'}</h3>
-                    {ortText && <p className="text-sm text-slate-500">{ortText}</p>}
+                    {/* break-words (Task 12, zweiter Mechanismus): reiner
+                        Block-<p> ohne break-words -- ein langer Ortsname malt
+                        sonst rechts heraus statt mit dem Kasten mitzuwachsen. */}
+                    {ortText && <p className="text-sm text-slate-500 break-words">{ortText}</p>}
                 </div>
                 <div className="text-sm text-slate-600 space-y-1 mt-auto">
                     {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
