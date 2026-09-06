@@ -81,7 +81,7 @@ deaktivieren — nur die Abnahmeregel einhalten.
   Bedenken im Kontext-Log zu vermerken (dann entscheidet der Nutzer, nicht
   der Agent selbst).
 
-## Layout: zwei Fallen, die kein Test von selbst findet
+## Layout: fünf Fallen, die kein Test von selbst findet
 
 Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
 
@@ -94,6 +94,14 @@ Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
   Grid-Item (`grid gap-2`), nützt `min-w-0` an den inneren Flex-Ebenen nichts —
   die äußere hält weiter ihre automatische Mindestbreite. In Task 11 real
   passiert, zweiter Anlauf nötig.
+- **`boundingBox()` ist kein Überlauf-Maß.** Ein Element, das seine Elternbreite
+  füllt (normaler Block), behält seine Rechteckbreite, auch wenn der Text
+  sichtbar darüber hinausmalt — nur Elemente, die sich am Inhalt ausrichten
+  (Flex-/Grid-Item, inline-block, float, `w-fit`), werden selbst breiter. Wer
+  einen Überlauf messen will, vergleicht `scrollWidth` gegen `clientWidth`,
+  nicht zwei Rechtecke. Real passiert: drei Zusicherungen aus diesem Vorhaben
+  wurden rot, wenn man `min-w-0` entfernte, blieben aber grün, wenn man
+  `break-words` entfernte — sie prüften also nur die halbe Rezeptur.
 - **`space-y-*` schlägt `mt-auto`.** Tailwind erzeugt für `space-y-3` einen
   Selektor der Spezifität 0-3-0, `.mt-auto` hat 0-1-0. Wer den letzten Block einer
   Karte nach unten schieben will, braucht `flex flex-col` + `gap-*` statt
@@ -102,7 +110,7 @@ Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
 Beides gilt sinngemäß für jede künftige Layout-Arbeit: die Klasse im Quelltext
 ist kein Beweis, dass sie wirkt. Am gebauten CSS oder im Browser nachmessen.
 
-**Testdaten für Umbruch-Fehler brauchen ein langes Wort ohne Trennstellen.**
+- **Testdaten für Umbruch-Fehler brauchen ein langes Wort ohne Trennstellen.**
 Bindestriche und Punkte sind selbst Umbruchpunkte — eine Adresse wie
 `info@beispiel-stahl.example` bricht ohnehin um und verdeckt den Fehler
 vollständig (bei 1440 gemessen: 0 px Überstand mit Bindestrich, 272 px ohne).
