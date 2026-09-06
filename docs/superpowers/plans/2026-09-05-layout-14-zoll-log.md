@@ -5066,3 +5066,220 @@ eine Rueckschritt (Hinweis 1) eine 200-Zeichen-Beschreibung ohne Leerzeichen
 braucht, mit realistischen Werten eine Verbesserung ist, vom Code-Reviewer
 parallel gefunden wurde und mit einer Klasse behoben ist. Kein 🟢, weil er
 existiert und weil der zweite Optik-Punkt sein Ziel verfehlt hat.
+
+## Abschnitt 10 — Task 10 (Coding-Agent)
+
+Zeit: 2026-09-06T21:08:35Z
+Branch: layout/task-10-pruefstandard
+Commits:
+- 03c28228 fix(e2e-design): vier Reparaturen an den Design-Pruefungen (Block 1)
+- 17120654 fix(ui): drei Reste aus dem Review beheben (Block 2)
+- 7f25084e feat(e2e): strengePruefungen als Standard, Netz-Riegel fuer alle Specs (Block 3)
+- 808bfc93 test(e2e): Abdeckung schaerfen und Aufraeumen (Block 4)
+Status: fertig
+
+### Block 1 — Vier Reparaturen an den Pruefungen selbst
+
+1. **keinTextLaeuftUeber kennt jetzt dieselbe Ausnahme wie keinHorizontalerUeberlauf**
+   (Element/Vorfahre traegt data-kuerzung-erlaubt, oder reine Text-Kuerzung per
+   text-overflow/-webkit-line-clamp). Rot-dann-gruen in design-hilfen.spec.ts
+   (vier neue Faelle: Marker am Element, Marker am Vorfahren, unmarkiertes
+   truncate faellt trotzdem durch -- keinTextGekuerzt ahndet es separat --,
+   echter Text-Ueberstand ohne Marker/Kuerzungsstil loest weiterhin aus).
+2. **keineUeberschneidungen schneidet jetzt mit den Rechtecken aller scrollenden/
+   klippenden Vorfahren**, bevor sie auf Ueberlappung verglichen werden --
+   Ursache der 18 roten Faelle bei 1536x960 (Task 10b): aus einem scrollenden
+   Bereich herausgescrollte Felder hatten weiter ihr volles Rechteck. Belegt
+   mit einer Miniseite (Formularbereich 100px hoch, Knopf 300px tiefer,
+   gescrollt) -- laeuft jetzt durch statt faelschlich zu melden.
+3. **keineUeberschneidungen erkennt Sticky-Leisten** (position: sticky) und
+   ignoriert erwartete Ueberdeckungen mit normalem Seiteninhalt darunter --
+   zwei sticky/fixed Chrome-Elemente uebereinander bleiben weiterhin scharf
+   (eigener Testfall: zwei stapelnde sticky Leisten loesen weiterhin aus,
+   ein fest positionierter Toast ueber einem Dialog-Knopf ebenfalls).
+4. **boundingBox()-Falle**: kunde-layout.spec.ts maß bisher nur boundingBox
+   gegen den Kasten (faengt nur min-w-0-Regressionen, nicht break-words) --
+   scrollWidth/clientWidth am Wert selbst ergaenzt (E-Mail-Link, Ansprechpartner,
+   Telefon, Mobiltelefon). "Zugeordnet von" in projekt-detail-layout.spec.ts:
+   getByText(exact:false) traf den inneren, bereits reparierten Span statt der
+   Flex-Zeile -- auf xpath=ancestor::div[contains(@class,"flex-wrap")][1]
+   umgestellt. Rot verifiziert (min-w-0 testweise entfernt: 259px Ueberstand,
+   von der VORHERGEHENDEN "Weitere Zuordnungen"-Zusicherung auf derselben Zeile
+   erwischt -- bestaetigt, dass die Reparatur noetig war).
+
+Gates Block 1: design-hilfen.spec.ts 74/74 gruen (beide Groessen), plus
+Rauchprobe (kunde-layout, projekt-detail-layout, bearbeiten-leiste,
+lieferant-dokument-modal) 40/40 gruen, lint 0 Fehler/1 Warnung (Baseline),
+build gruen.
+
+### Block 2 — Drei Reste im Produktivcode
+
+5. **ProjektEditor.tsx Z. 2373 ("Weitere Zuordnungen")**: min-w-0 am
+   Beschreibungs-Span ergaenzt (die gestrichene max-w-[200px] hatte break-words
+   dort erst wirksam gemacht -- eine definite max-width deckelt die
+   automatische Mindestbreite eines Flex-Items). Neue Zusicherung in
+   projekt-detail-layout.spec.ts (200-Zeichen-Beschreibung ohne Leerzeichen).
+   Rot verifiziert: ohne min-w-0 259px Ueberstand auf der Zeile.
+6. **Komma in der Mitarbeiter-Uebersichtskarte ersatzlos gestrichen**
+   ("Nachname" / "Vorname" als zwei Spans ohne Trennzeichen statt
+   "Nachname," + "Vorname" -- Letzteres liess das Komma bei einem die Zeile
+   exakt ausfuellenden Nachnamen weiterhin allein in eine dritte Zeile
+   rutschen). mitarbeiter-layout.spec.ts nachgezogen: getByText(NACHNAME,
+   {exact:true}) plus explizite Zusicherung "keine Komma im Text". Rot
+   verifiziert: mit Komma zurueckgesetzt findet exact:true den Text nicht mehr.
+7. **ui/dialog.tsx**: role="dialog" + aria-modal="true" an DialogContent
+   ergaenzt (Muster aus den anderen Modalen im Projekt uebernommen). Ohne das
+   Attribut hielt keineUeberschneidungen jeden Dialog auf dieser Komponente
+   (u.a. den Rechnungs-Dialog in ProjektEditor.tsx) nicht fuer ein Modal.
+   Fokus-Fang bewusst NICHT ergaenzt: kein anderer Dialog im Projekt hat einen
+   (confirm-dialog.tsx setzt nur autoFocus auf einen Knopf) -- ein echter
+   Tab-Kreislauf waere eine eigene, projektweite Barrierefreiheits-Initiative,
+   kein Teil dieses Vorhabens.
+
+Gates Block 2: dialog.test.tsx + toast.test.tsx 15/15 gruen,
+ProjektEditor.test.tsx 6/6 gruen, Rechnungs-Dialog-Spec 2/2 gruen, lint/build
+gruen.
+
+### Block 3 — Strenger Standard und Netz-Riegel
+
+8. **strengePruefungen: Standard auf true gedreht** (design.ts). Danach
+   **kompletter E2E-Lauf ueber alle 17 Specs, pc-14zoll + pc-monitor:
+   261/261 gruen** -- kein einziger echter Befund, keine Nachbesserung an
+   Produktivcode noetig. Block 1 war tatsaechlich die Voraussetzung: ohne die
+   keinTextLaeuftUeber-Ausnahme waere insbesondere die Menueleisten-Spec
+   sofort umgefallen.
+9. **Netz-Riegel als Auto-Fixture**: e2e/hilfen/test.ts (neu) ueberschreibt
+   die context-Fixture und registriert blockiereFremdeNetzwerkzugriffe auf
+   jedem context (nicht page) vor jeder Navigation -- erfasst damit auch
+   Popups. Alle 17 Specs importieren test/expect jetzt von dort statt von
+   '@playwright/test'. Die 5 Specs, die den Riegel bisher per Hand auf page
+   registriert hatten, wurden bereinigt (Doppel-Riegel entfernt, Kommentare
+   nachgezogen). Drei bekannte Loecher geschlossen:
+   - globalSetup (aufwaermen.ts) riegelt jetzt ebenfalls ab (lief vorher ganz
+     ohne Routing, wartete auf networkidle -- laut Code-Review die groesste
+     Flake-Quelle).
+   - Vite-Proxy /api -> :8080 laeuft serverseitig, fuer page.route/context.route
+     unsichtbar -- Kommentar in e2e/hilfen/test.ts ergaenzt.
+   - AddressAutocomplete (nominatim.openstreetmap.org, photon.komoot.io) ist
+     durch die Auto-Fixture automatisch mit erfasst, keine Spec muss das mehr
+     selbst wissen.
+   - Kommentar in lieferant-layout.spec.ts korrigiert: route.abort() laesst
+     NICHT die Karte im Screenshot sichtbar, nur den grauen iframe-Rahmen.
+10. **spacelosesWort() zusammengezogen** nach e2e/hilfen/testdaten.ts (lag
+    identisch in drei Specs).
+
+**Laufzeit-Messung Netz-Riegel** (Auftrag: "miss, was route('**\/*') kostet"):
+kompletter `npm run test:e2e` mit Riegel 261/261 gruen in 4,0 Min; derselbe
+Lauf mit dem Riegel testweise deaktiviert (env-Flag, danach entfernt) 259
+gruen / **2 rot** in 3,1 Min -- die zwei roten Faelle sind kein Timing-Problem,
+sondern lieferant-layout.spec.ts' eigene Zusicherung "keine echte fremde
+Antwort" schlaegt an: OHNE Riegel kamen tatsaechlich Antworten von
+cdnjs.cloudflare.com und maps.google.com/googleapis.com zurueck. **Wichtige
+Einschraenkung der Zahl:** diese Umgebung hat also echten Internetzugriff auf
+diese Hosts, und Aborts sind hier fast verzoegerungsfrei -- der gemessene
+~54s-Unterschied (ca. 20%) ist eher Lauf-zu-Lauf-Streuung als ein sauber
+isolierter "Riegel-Preis". In einer Umgebung ohne (oder mit langsamem)
+Zugriff auf diese Hosts waere der Nutzen des Riegels deutlich groesser (siehe
+urspruengliche Begruendung: haengende/leere Seiten unter paralleler Last).
+
+Gates Block 3: design-hilfen.spec.ts 76/76 gruen, bearbeiten-leiste +
+lieferant-dokument-modal 94/94 gruen (inkl. der Mitschnitt-Zusicherung "keine
+fremde Antwort"), lint mit einem Zwischenfall (siehe Bedenken), build gruen.
+
+### Block 4 — Abdeckung und Aufraeumen
+
+11. **e2e/ typgeprueft**: tsconfig.e2e.json (neu, eigenstaendig) + npm-Skript
+    `typecheck:e2e`. Bewusst NICHT in die Build-tsconfig (tsconfig.app.json)
+    aufgenommen -- eigenes Skript haelt Test-Infrastruktur-Typen vom
+    Produktiv-Build getrennt, der Build bleibt schnell und ungekoppelt.
+12. **testMatch bei pc-uebergang ersatzlos gestrichen.** Vorher
+    erwarteteKartenspalten() in e2e/hilfen/testdaten.ts ergaenzt (leitet die
+    Spaltenzahl aus der Fensterbreite ab, Tailwind-Breakpoints, statt aus
+    testInfo.project.name) und in allen fuenf betroffenen Zusicherungen
+    (anfrage-/kunde-/lieferant-layout, projekt-uebersicht-layout,
+    uebersichten-layout x4) nachgezogen. Kompletter Lauf auf pc-uebergang
+    ueber ALLE Specs danach: **128/128 gruen** -- auch die zweite, 2026-09-06
+    noch offene Fundstelle aus Task 10b (bearbeiten-leiste/
+    lieferant-dokument-modal: Ueberlappung bei 960px Hoehe) reproduziert
+    nicht mehr. Naheliegendste Erklaerung: die keineUeberschneidungen-Korrektur
+    aus Block 1 (sichtbarer Anteil statt roher boundingBox) hat diese
+    Fehlalarme mitbehoben -- nicht zweifelsfrei nachgewiesen, aber die
+    zeitliche/inhaltliche Naehe ist auffaellig.
+13. **rahmen-detailseite.spec.ts geschaerft**: main-Ueberstand jetzt auf
+    `=== 0` geprueft (lief vorher ueberhaupt nicht, weil der urspruengliche
+    Kopfzeilen-Befund aus Task 3 zum Zeitpunkt von Task 2 noch offen war --
+    ist seit Abschnitt 3 behoben). Obergrenze auf das Spaltenverhaeltnis bei
+    pc-monitor ergaenzt (`< 3,5`) -- heute exakt 3,0 gemessen
+    (1134px/378px), das alte, ungeminmax'te Raster lag bei rund 4,7 und waere
+    von der bisherigen reinen Untergrenze (`> 2`) unbemerkt durchgelassen
+    worden.
+14. **Global Constraints (Plan-Dokument) nachgezogen**: "genau zwei Faelle"
+    fuer data-kuerzung-erlaubt war veraltet. Am Code gezaehlt: **acht Elemente
+    in fuenf Dateien** (RibbonNav.tsx, ProjektEditor.tsx, AnfrageEditor.tsx,
+    LieferantenEditor.tsx je einmal, Kundeneditor.tsx viermal -- Kartentitel
+    plus drei Mini-Karten der Kunden-Detailseite). Liste in den Plan
+    aufgenommen, dazu die Regel festgeschrieben: der Marker gehoert nur auf
+    das kuerzende Element selbst, nie auf einen Container (gilt sonst
+    faelschlich fuer den ganzen Teilbaum darunter).
+
+Gates Block 4: typecheck:e2e sauber, kompletter E2E-Lauf (alle 17 Specs, alle
+drei Groessen) **384/384 gruen**, lint 0 Fehler/1 Warnung (Baseline), build
+gruen.
+
+### Stellen, die nicht gruen wurden
+
+Keine. Jede Reparatur, jede neue Zusicherung und der komplette E2E-Lauf
+(mehrfach wiederholt nach jedem Block) sind gruen -- es gibt keinen
+verbleibenden roten Punkt, den dieser Task verstecken oder offen lassen
+musste.
+
+### Gate-Zahlen (Zusammenfassung, finaler Stand)
+
+- `netstat -ano | findstr :5210`: vor dem ersten Lauf leer, Port durchgehend
+  selbst genutzt.
+- `E2E_PORT=5210 npm run test:e2e` (alle 17 Specs, alle drei Groessen,
+  finaler Stand nach Block 4): **384/384 gruen** (5,3 Min).
+- `npm run lint`: 0 Fehler, 1 Warnung (BelegeKasseEditor.tsx:1204,
+  react-hooks/exhaustive-deps) -- identisch zur bekannten Baseline.
+- `npm run build`: gruen (tsc -b + vite build), nur die vorbestehende
+  Chunk-Groessen-Warnung. Build-Output vor jedem Commit verworfen
+  (`git checkout -- src/main/resources/static/index.html` + neue,
+  ungetrackte Asset-Dateien geloescht), `git status` vor jedem Commit
+  kontrolliert.
+- `npm run typecheck:e2e` (neu, Block 4): sauber, keine Fehler.
+- `npm run test` (voller Vitest-Lauf, am Ende): erster Versuch **1081/1082**
+  (ein Fehlschlag in LieferantDokumentModal.test.tsx, derselbe Wartemuster-
+  Test, der in Abschnitt 8/9 schon als flockig bekannt war -- `waitFor` auf
+  eine Textzahl, 2 erwartet/3 erhalten), sofort wiederholt: **1082/1082
+  gruen**. Kein Zusammenhang mit diesem Task erkennbar (keine der vier
+  Commits fasst LieferantDokumentModal.tsx oder seinen Test an); als
+  vorbestehende Flake behandelt, Massstab 1082/1082 haelt.
+
+### Bedenken / Abweichungen vom Plan
+
+- **Playwright-Fixture-Parameter umbenannt** (e2e/hilfen/test.ts): Playwrights
+  ueblicher Parametername `use` im zweiten Argument einer Fixture kollidiert
+  mit eslint-plugin-react-hooks (haelt jeden `use(...)`-Aufruf fuer den
+  React-18-Hook). Umbenannt auf `benutzeFixture` statt die Regel
+  abzuschalten -- rein lokaler Bezeichner, Playwright ist der Name egal.
+- **Aus der "Zusaetzlich in Task 10"-Liste des Plans bewusst NICHT
+  umgesetzt**, weil sie nicht Teil der vier vom Orchestrator vorgegebenen
+  Bloecke waren: Zweig (a) der data-kuerzung-erlaubt-Ausnahme in
+  keinHorizontalerUeberlauf ersatzlos streichen (der Vorfahren-Durchlauf
+  schaltet heute den Kasten-Ueberlauf-Check fuer einen ganzen Teilbaum ab);
+  der dazugehoerige "blinde Fleck" (ein truncate-Kasten, der ein zu breites
+  Kind abschneidet, wird von nichts gemeldet); eine neue, allgemeine Pruefung
+  "Wert bleibt in seinem Kasten/seiner Karte"; ob die vier Detailseiten ohne
+  role="tablist"/"tab" das nachbekommen sollen. Alle vier sind im Plan
+  dokumentiert und koennen als eigener Nachtrag aufgegriffen werden, falls
+  gewuenscht -- hier nur benannt, damit sie nicht stillschweigend verloren
+  gehen.
+- **Fundstelle 2 aus Task 10b** (960px-Ueberlappung bearbeiten-leiste/
+  lieferant-dokument-modal) reproduziert nicht mehr, siehe Block 4, Punkt 12
+  -- vermutlicher Nebeneffekt von Block 1, nicht zweifelsfrei auf eine
+  einzelne Ursache zurueckgefuehrt.
+- **Netz-Riegel-Laufzeitmessung** ist durch echten Internetzugriff dieser
+  Umgebung nur eingeschraenkt aussagekraeftig (siehe Block 3) -- Zahl trotzdem
+  wie verlangt gemessen und hier dokumentiert.
+- Kein `git stash` verwendet, keine fremden Dateien ausserhalb der in den
+  vier Blöcken genannten angefasst.
