@@ -32,28 +32,31 @@ import { designPruefung, keinTextGekuerzt } from './hilfen/design';
  * Task 1b weggefallen), zusaetzlich "2xl:max-w-none" fuer pc-monitor (dort
  * sind rund 300px frei) und "no-scrollbar" in der Menuepunkt-Zeile entfernt.
  *
- * Fremder Befund dabei (design.ts, nicht in dieser Files-Liste, siehe
- * Kontext-Log): keinTextLaeuftUeber() hat -- anders als keinHorizontalerUeberlauf,
- * das Task 1b genau dafuer angepasst hat -- keine Ausnahme fuer reine
+ * Ehemaliger fremder Befund, seit Abschnitt 10 behoben (design.ts):
+ * keinTextLaeuftUeber() hatte -- anders als keinHorizontalerUeberlauf, das
+ * Task 1b genau dafuer angepasst hat -- keine Ausnahme fuer reine
  * Text-Kuerzung (text-overflow: ellipsis) und keine fuer data-kuerzung-erlaubt.
- * Jedes tatsaechlich gekuerzte "truncate"-Element hat zwangslaeufig
- * scrollWidth > clientWidth auf sich selbst -- keinTextLaeuftUeber meldet das
- * immer, auch wenn die Kuerzung ausdruecklich erlaubt ist.
+ * Jedes tatsaechlich gekuerzte "truncate"-Element hatte zwangslaeufig
+ * scrollWidth > clientWidth auf sich selbst -- keinTextLaeuftUeber meldete das
+ * immer, auch wenn die Kuerzung ausdruecklich erlaubt war.
  *
  * Task 10b (Abschnitt 7, Design-Review Abschnitt 6 Befund c): der
- * Design-Reviewer hat "strengePruefungen" testweise auf
+ * Design-Reviewer hatte "strengePruefungen" testweise auf
  * "testInfo.project.name === 'pc-monitor'" gestellt und einen vollstaendig
- * gruenen Lauf gemessen (8/8) -- fuer pc-monitor ist das also sicher scharf zu
- * stellen. Fuer pc-14zoll (und das neue pc-uebergang, siehe unten) bleibt es
- * aus derselben Grunde aus wie bisher: keinTextLaeuftUeber kennt noch keine
- * Ausnahme fuer die gewollte "max-w-[10rem] truncate"-Kuerzung des
- * Anzeigenamens (nur keinTextGekuerzt kennt data-kuerzung-erlaubt). Das ist
- * die im Plan (Task 10) angekuendigte Nacharbeit an design.ts -- hier nicht
- * anfassen (fremde Datei). Deshalb rufen die folgenden Tests designPruefung()
- * mit "strengePruefungen: testInfo.project.name === 'pc-monitor'" auf und
- * pruefen keinTextGekuerzt() (das die Ausnahme korrekt kennt) zusaetzlich
- * einzeln fuer alle Groessen -- identische Abdeckung fuer den hier relevanten
- * Fall, ohne den fremden Fehlalarm bei pc-14zoll/pc-uebergang auszuloesen.
+ * gruenen Lauf gemessen (8/8). Fuer pc-14zoll (und pc-uebergang) blieb es
+ * damals aus, weil keinTextLaeuftUeber die gewollte "max-w-[10rem]
+ * truncate"-Kuerzung des Anzeigenamens noch nicht kannte.
+ *
+ * Nachbesserung 1 zu Abschnitt 10: design.ts hat genau diese Ausnahme jetzt
+ * (Element/Vorfahre traegt data-kuerzung-erlaubt, oder reine Text-Kuerzung) --
+ * der Reviewer hat mit "strengePruefungen: true" ueber alle drei Groessen
+ * nachgemessen: 15/15 gruen. Die vier designPruefung()-Aufrufe unten rufen
+ * strengePruefungen deshalb gar nicht mehr explizit auf (Standard seit
+ * Abschnitt 10 ist ohnehin true) -- der alte Ausweich-Ausdruck
+ * "testInfo.project.name === 'pc-monitor'" liess die Menueleiste, die auf
+ * jeder Seite sichtbar ist, ausgerechnet bei 1440 und 1536 ohne die scharfen
+ * Text-Pruefungen laufen. keinTextGekuerzt() bleibt zusaetzlich einzeln
+ * stehen -- redundant, aber als eigene, sprechende Zusicherung harmlos.
  */
 
 const LANGER_NUTZERNAME = 'Friederike Beispiel-Musterfrau';
@@ -218,12 +221,11 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
             `Menuepunkt-Zeile laeuft ueber: ${zeile!.clientWidth}px breit, Inhalt braucht ${zeile!.scrollWidth}px`,
         ).toBeLessThanOrEqual(zeile!.clientWidth);
 
-        // keinTextGekuerzt() zusaetzlich zu designPruefung() -- siehe Kommentar
-        // bei den Imports zu keinTextLaeuftUeber/strengePruefungen.
+        // keinTextGekuerzt() zusaetzlich zu designPruefung() -- redundant seit
+        // Abschnitt 10 (designPruefung faehrt strengePruefungen jetzt selbst
+        // immer mit), bleibt aber als eigene, sprechende Zusicherung stehen.
         await keinTextGekuerzt(page);
-        await designPruefung(page, testInfo, 'menueleiste-kategorien', {
-            strengePruefungen: testInfo.project.name === 'pc-monitor',
-        });
+        await designPruefung(page, testInfo, 'menueleiste-kategorien');
     });
 
     test('Kategorie "Vorlagen & Stammdaten": "Dokumentenrechte" steht vollstaendig da', async ({ page }, testInfo) => {
@@ -234,9 +236,7 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(dokumentenrechte).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-dokumentenrechte', {
-            strengePruefungen: testInfo.project.name === 'pc-monitor',
-        });
+        await designPruefung(page, testInfo, 'menueleiste-dokumentenrechte');
     });
 
     test('Kategorie "Finanzen & Controlling": "Mietabrechnung" steht vollstaendig da', async ({ page }, testInfo) => {
@@ -247,9 +247,7 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(mietabrechnung).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-mietabrechnung', {
-            strengePruefungen: testInfo.project.name === 'pc-monitor',
-        });
+        await designPruefung(page, testInfo, 'menueleiste-mietabrechnung');
     });
 
     /**
@@ -270,9 +268,7 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(nutzermenuePanel).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-nutzermenue-offen', {
-            strengePruefungen: testInfo.project.name === 'pc-monitor',
-        });
+        await designPruefung(page, testInfo, 'menueleiste-nutzermenue-offen');
     });
 
     /**

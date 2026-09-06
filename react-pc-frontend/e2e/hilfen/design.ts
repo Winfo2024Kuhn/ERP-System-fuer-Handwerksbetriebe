@@ -306,12 +306,19 @@ export async function keinTextLaeuftUeber(page: Page): Promise<void> {
  *   (a) text-overflow: ellipsis (Tailwind "truncate") mit echtem Ueberstand
  *       (scrollWidth > clientWidth + 1),
  *   (b) -webkit-line-clamp gesetzt (Projekt-Klasse ".line-clamp-2", OHNE
- *       text-overflow: ellipsis) mit echtem Ueberstand
- *       (scrollHeight > clientHeight + 1).
+ *       text-overflow: ellipsis) mit echtem Ueberstand -- Nachtrag
+ *       Nachbesserung 1 (Abschnitt 10): geprueft wird HOEHE **und** BREITE
+ *       (scrollHeight > clientHeight + 1 ODER scrollWidth > clientWidth + 1).
+ *       Vorher wurde bei line-clamp nur die Hoehe gemessen -- ein Kasten, der
+ *       vertikal genug Zeilen hoch ist, aber ein einzelnes, nicht umbrechbares
+ *       Wort enthaelt, das breiter als der Kasten ist, lief dadurch UNBEMERKT
+ *       still ueber (gemessen: 80px Kasten, 462px Textbreite, 382px still
+ *       abgeschnitten, von keiner der drei Pruefungen gemeldet -- vor Block 1
+ *       dieses Abschnitts hatte keinTextLaeuftUeber das noch gefangen, bis
+ *       line-clamp dort zur Ausnahme wurde, siehe istReineTextKuerzung).
  * Ausnahme: das Element selbst oder ein Vorfahre traegt
- * data-kuerzung-erlaubt (heute genau zwei Faelle: Nutzername in der
- * Menueleiste -- voller Name im Menue darunter -- und Kartentitel mit
- * line-clamp-2 -- voller Name im title-Attribut).
+ * data-kuerzung-erlaubt (siehe Global Constraints im Plan fuer die
+ * vollstaendige, aktuelle Liste der Faelle).
  */
 export async function keinTextGekuerzt(page: Page): Promise<void> {
     const treffer = await page.evaluate(() => {
@@ -343,7 +350,12 @@ export async function keinTextGekuerzt(page: Page): Promise<void> {
             const lineClampWert = stil.getPropertyValue('-webkit-line-clamp');
 
             const perEllipsis = stil.textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1;
-            const perLineClamp = lineClampWert !== '' && lineClampWert !== 'none' && el.scrollHeight > el.clientHeight + 1;
+            // Nachbesserung 1 (Abschnitt 10): line-clamp klippt nicht nur bei
+            // zu vielen Zeilen (Hoehe), sondern auch, wenn eine einzelne,
+            // nicht umbrechbare Zeile breiter als der Kasten ist (Breite) --
+            // beides ist dieselbe Kuerzung aus Nutzersicht.
+            const perLineClamp = lineClampWert !== '' && lineClampWert !== 'none'
+                && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
             if (!perEllipsis && !perLineClamp) continue;
             if (hatAusnahme(el)) continue;
             if (istUnsichtbarVersteckt(el)) continue;

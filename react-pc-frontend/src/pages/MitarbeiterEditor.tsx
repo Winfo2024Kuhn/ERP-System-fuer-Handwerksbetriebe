@@ -1303,7 +1303,12 @@ export default function MitarbeiterEditor() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* 2xl:grid-cols-4 nachgezogen (Design-Review-Nachbesserung 1,
+                        Abschnitt 10): die Mitarbeiter-Uebersicht war die einzige der
+                        fuenf Uebersichten, die bei 1536/1920 bei drei Karten blieb,
+                        waehrend Projekt/Anfrage/Kunde/Lieferant auf vier gehen --
+                        dieselbe Rezeptur wie dort. */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
                         {mitarbeiter.map((m) => (
                             <Card
                                 key={m.id}
@@ -1339,9 +1344,15 @@ export default function MitarbeiterEditor() {
                                     einem die Zeile exakt ausfuellenden Nachnamen immer noch allein in
                                     eine eigene Zeile rutschen (gemessen: zweiter Zeilenkasten 5px
                                     breit, 28px tiefer) -- der Fix hatte das Problem nur verschoben.
-                                    Zwei bewusste Zeilen ohne Trennzeichen brauchen kein Komma. */}
+                                    Zwei bewusste Zeilen ohne Trennzeichen brauchen kein Komma.
+                                    Leerzeichen-Trennzeichen (JSX-Ausdruck) zwischen den Spans
+                                    ergaenzt (Design-Review-Nachbesserung 1, Abschnitt 10): sichtbar
+                                    aendert sich nichts (der Leerraum zwischen zwei block-Elementen
+                                    erzeugt keine eigene Zeile), aber textContent liest sich jetzt
+                                    als "Nachname Vorname" statt "NachnameVorname" -- wichtig fuers
+                                    Vorlesen per Screenreader und fuers Kopieren des Namens. */}
                                 <h3 className="text-lg font-bold text-slate-900 mb-1 break-words">
-                                    <span className="block">{m.nachname}</span>
+                                    <span className="block">{m.nachname}</span>{' '}
                                     <span className="block">{m.vorname}</span>
                                 </h3>
                                 {m.abteilungNames && (
