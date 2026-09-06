@@ -106,4 +106,71 @@ test.describe('Projektuebersicht: lange Bauvorhaben-Titel nicht abgehackt, Karte
         // andere Kuerzung (insbesondere die heutige einzeilige "truncate").
         await designPruefung(page, testInfo, 'projekt-uebersicht-lange-titel', { strengePruefungen: true });
     });
+
+    // Nachtrag Abschnitt 5 (Task 9), Bedenken aus dem Code-Review von
+    // Abschnitt 4 (Hinweis 4 der Runde 2): die Trennlinien-Zusicherung
+    // (space-y-3 -> gap-3, damit mt-auto am Meta-Block wirklich greift)
+    // stand bisher nur in kunde-layout.spec.ts. Fuer ProjektCard gab es
+    // ueberhaupt keinen "kurzer Titel"-Testfall -- ein Rueckfall auf
+    // space-y-3 waere hier unbemerkt geblieben. Zwei Projekte in derselben
+    // Reihe (kurzer und langer Titel): beide muessen dieselbe Kartenhoehe
+    // UND dieselbe y-Position der Trennlinie (Meta-Block mit mt-auto) haben.
+    test('kurzes Bauvorhaben reisst keine Luecke, Trennlinie bleibt auf Hoehe der Nachbarkarte', async ({ page }) => {
+        const KURZ = { id: 201, bauvorhaben: 'Carport', kunde: 'Meier Bau GmbH', auftragsnummer: 'A-2026-9201', anlegedatum: '2026-02-10', bruttoPreis: 4200, bezahlt: false, abgeschlossen: false };
+        const LANG = { id: 202, bauvorhaben: 'Treppenanlage mit Podest und Absturzsicherung Bürogebäude Beispielstraße', kunde: 'Beispielbau Nord GmbH', auftragsnummer: 'A-2026-9202', anlegedatum: '2026-02-10', bruttoPreis: 125000, bezahlt: false, abgeschlossen: false };
+
+        await page.route('**/api/**', (route) => {
+            const pfad = new URL(route.request().url()).pathname;
+            const methode = route.request().method();
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (/^\/api\/last-accessed\/PROJEKT(\/\d+)?$/.test(pfad)) {
+                if (methode === 'POST') return route.fulfill({ status: 204, body: '' });
+                return json(route, {});
+            }
+            if (pfad === '/api/projekte' && methode === 'GET') return json(route, { projekte: [KURZ, LANG], gesamt: 2 });
+            if (pfad === '/api/projekte/jahre') return json(route, [2026]);
+            if (pfad === '/api/projekte/freigabe-status') return json(route, {});
+            return json(route, []);
+        });
+        await page.goto('/projekte');
+
+        const titelKurz = page.getByRole('heading', { level: 3, name: KURZ.bauvorhaben, exact: true });
+        await expect(titelKurz).toBeVisible();
+
+        // min-h-[3rem] reserviert den Platz INNERHALB der eigenen Titel-Box
+        // (48px Boxhoehe fuer 24px einzeiligen Text) -- die Boxhoehe selbst
+        // ist der richtige Messpunkt (siehe kunde-layout.spec.ts / Design-
+        // Review-Befund aus Abschnitt 4): mit min-h-[3rem] 48px, ohne
+        // (h-full flex flex-col + mt-auto am Meta-Block) 24px.
+        const titelBox = await titelKurz.boundingBox();
+        expect(titelBox, 'Titel muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(
+            titelBox!.height,
+            `Titel-Box ist ${titelBox!.height.toFixed(0)}px hoch fuer einzeiligen Text -- min-h-[3rem] (48px) reisst hier eine Luecke`,
+        ).toBeLessThan(32);
+
+        // Trennlinie: die Auftragsnummer ist die erste Zeile des mt-auto-
+        // Meta-Blocks. space-y-3 (Spezifitaet 0-3-0) schlaegt mt-auto
+        // (0-1-0) nieder -- ohne gap-3 waere die Trennlinie beim kurzen
+        // Titel 24px hoeher als beim langen (Design-Review Abschnitt 4).
+        const nummerKurz = page.getByText(KURZ.auftragsnummer, { exact: true });
+        const nummerLang = page.getByText(LANG.auftragsnummer, { exact: true });
+        await expect(nummerKurz).toBeVisible();
+        await expect(nummerLang).toBeVisible();
+        const boxKurz = await nummerKurz.boundingBox();
+        const boxLang = await nummerLang.boundingBox();
+        expect(boxKurz, 'Auftragsnummer der kurzen Karte muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(boxLang, 'Auftragsnummer der langen Karte muss einen messbaren Rahmen haben').not.toBeNull();
+        const versatz = Math.abs(boxKurz!.y - boxLang!.y);
+        expect(
+            versatz,
+            `Trennlinien-Meta-Zeilen sind ${versatz.toFixed(0)}px versetzt (y-Werte: ${boxKurz!.y.toFixed(0)}, ${boxLang!.y.toFixed(0)}) -- mt-auto wirkt nicht (space-y-3-Spezifitaet?)`,
+        ).toBeLessThanOrEqual(2);
+    });
 });

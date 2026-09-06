@@ -371,9 +371,17 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
     // zwischen Titel und Kundenname (gemessen: 48px Titelhoehe fuer 24px Text).
     // h-full flex flex-col an der Karte + mt-auto am Meta-Block darunter loesen
     // das, ohne die gleiche Kartenhoehe in einer Reihe zu verlieren.
-    test('kurzes Bauvorhaben reisst keine Luecke zwischen Titel und Kundenname', async ({ page }, testInfo) => {
+    //
+    // Nachtrag Abschnitt 5 (Task 9), Code-Review Runde 2 Hinweis 4: die
+    // Trennlinien-Zusicherung (space-y-3 -> gap-3, damit mt-auto am
+    // Meta-Block wirklich greift) stand bisher nur in kunde-layout.spec.ts --
+    // ein Rueckfall auf space-y-3 waere hier unbemerkt geblieben. Zweite
+    // Anfrage mit langem Bauvorhaben in DERSELBEN Reihe ergaenzt.
+    test('kurzes Bauvorhaben reisst keine Luecke, Trennlinie bleibt auf Hoehe der Nachbarkarte', async ({ page }, testInfo) => {
+        const LANGE_ANFRAGE = { id: 202, bauvorhaben: BAUVORHABEN, kundenName: KUNDE, anfragesnummer: 'AG-2026/09/00202', betrag: 45000, anlegedatum: '2026-02-11', abgeschlossen: false };
         const KURZ = [
             { id: 201, bauvorhaben: 'Carport', kundenName: 'Meier Bau GmbH', anfragesnummer: 'AG-2026/09/00201', betrag: 4200, anlegedatum: '2026-02-10', abgeschlossen: false },
+            LANGE_ANFRAGE,
         ];
         await stubAnfrageApi(page, { uebersicht: KURZ });
         await page.goto('/anfragen');
@@ -395,6 +403,24 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
             titelBox!.height,
             `Titel-Box ist ${titelBox!.height.toFixed(0)}px hoch fuer einzeiligen Text -- min-h-[3rem] (48px) reisst hier eine Luecke`,
         ).toBeLessThan(32);
+
+        // Trennlinie: die Anfragenummer ist die erste Zeile des mt-auto-
+        // Meta-Blocks. space-y-3 (Spezifitaet 0-3-0) schlaegt mt-auto
+        // (0-1-0) nieder -- ohne gap-3 waere die Trennlinie bei "Carport"
+        // 24px hoeher als bei der langen Anfrage (Design-Review Abschnitt 4).
+        const nummerKurz = page.getByText('AG-2026/09/00201', { exact: true });
+        const nummerLang = page.getByText(LANGE_ANFRAGE.anfragesnummer, { exact: true });
+        await expect(nummerKurz).toBeVisible();
+        await expect(nummerLang).toBeVisible();
+        const boxKurz = await nummerKurz.boundingBox();
+        const boxLang = await nummerLang.boundingBox();
+        expect(boxKurz, 'Anfragenummer der kurzen Karte muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(boxLang, 'Anfragenummer der langen Karte muss einen messbaren Rahmen haben').not.toBeNull();
+        const versatz = Math.abs(boxKurz!.y - boxLang!.y);
+        expect(
+            versatz,
+            `Trennlinien-Meta-Zeilen sind ${versatz.toFixed(0)}px versetzt (y-Werte: ${boxKurz!.y.toFixed(0)}, ${boxLang!.y.toFixed(0)}) -- mt-auto wirkt nicht (space-y-3-Spezifitaet?)`,
+        ).toBeLessThanOrEqual(2);
 
         await designPruefung(page, testInfo, 'anfragen-uebersicht-kurzer-titel', { strengePruefungen: true });
     });
