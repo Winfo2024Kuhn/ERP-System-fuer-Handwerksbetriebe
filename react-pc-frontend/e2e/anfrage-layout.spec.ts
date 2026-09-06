@@ -1,6 +1,7 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { spacelosesWort } from './hilfen/testdaten';
 
 /**
  * Task 4 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -445,10 +446,11 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
 // wurden bisher NIE mit echt ueberlaufendem Inhalt gerendert.
 test.describe('Anfrage-Seitenspalte "Anfragedaten": lange, bindestrichlose Werte', () => {
     test('Ansprechpartner, Telefon, Mobiltelefon und Projektadresse laufen nicht ueber ihre Kaesten', async ({ page }) => {
-        // Muss vor der ersten Navigation stehen: mit gesetzter Adresse rendert
-        // GoogleMapsEmbed ein echtes <iframe src="https://www.google.com/maps?...">
-        // (siehe Kommentar bei DUMMY_ANFRAGE_DETAIL oben).
-        await blockiereFremdeNetzwerkzugriffe(page);
+        // Mit gesetzter Adresse rendert GoogleMapsEmbed ein echtes <iframe
+        // src="https://www.google.com/maps?..."> (siehe Kommentar bei
+        // DUMMY_ANFRAGE_DETAIL oben) -- seit Abschnitt 10 automatisch
+        // abgeriegelt (e2e/hilfen/test.ts, auf dem context vor der ersten
+        // Navigation registriert).
         await stubAnfrageApi(page);
         await page.route(`**/api/anfragen/${ANFRAGE_ID}`, (route) => {
             if (route.request().method() !== 'GET') return route.fallback();
@@ -515,13 +517,6 @@ test.describe('Anfrage-Seitenspalte "Anfragedaten": lange, bindestrichlose Werte
  * ueberhaupt (notizen: [] in DUMMY_ANFRAGE_DETAIL) -- diese Fixture schliesst
  * die Luecke.
  */
-function spacelosesWort(laenge: number, praefix = ''): string {
-    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
-    let ergebnis = praefix;
-    while (ergebnis.length < laenge) ergebnis += stamm;
-    return ergebnis.slice(0, laenge);
-}
-
 test.describe('Anfrage-Tagebuch: Notiz-Struktur (Nacharbeit Abschnitt 9)', () => {
     const NOTIZ_TEXT_LANG = spacelosesWort(150, 'Baufortschrittsbeschreibung');
     const NOTIZ = {

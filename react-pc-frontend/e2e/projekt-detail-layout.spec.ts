@@ -1,6 +1,7 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { spacelosesWort } from './hilfen/testdaten';
 
 /**
  * Task 3 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -471,12 +472,11 @@ test.describe('Projekt-Kopfzeile: <h1> bei einem einzigen langen Wort ohne Leerz
 // echt ueberlaufendem Inhalt gerendert (siehe Konstanten oben).
 test.describe('Projekt-Seitenspalte "Projektdaten" und Kopf-Untertitel: lange, bindestrichlose Werte', () => {
     test('Kunde, Ansprechpartner und Projektadresse laufen weder im Kasten noch im Titelblock ueber', async ({ page }) => {
-        // Muss vor der ersten Navigation stehen: mit gesetzter Adresse rendert
-        // GoogleMapsEmbed ein echtes <iframe src="https://www.google.com/maps?...">
-        // (siehe Kommentar bei DUMMY_PROJEKT oben) -- dieser Test setzt
-        // strasse/plz/ort bewusst, braucht den Riegel also anders als die
-        // uebrigen Tests dieser Datei.
-        await blockiereFremdeNetzwerkzugriffe(page);
+        // Mit gesetzter Adresse rendert GoogleMapsEmbed ein echtes <iframe
+        // src="https://www.google.com/maps?..."> (siehe Kommentar bei
+        // DUMMY_PROJEKT oben) -- dieser Test setzt strasse/plz/ort bewusst,
+        // seit Abschnitt 10 automatisch abgeriegelt (e2e/hilfen/test.ts, auf
+        // dem context vor der ersten Navigation).
         await stubProjektApi(page);
         await page.route(`**/api/projekte/${PROJEKT_ID}`, (route) => {
             if (route.request().method() !== 'GET') return route.fallback();
@@ -568,13 +568,6 @@ test.describe('Projekt-Seitenspalte "Projektdaten" und Kopf-Untertitel: lange, b
  * Code-Review Abschnitt 8: "24 von 24 Aenderungen betreffen Bereiche, die
  * projekt-detail-layout.spec.ts nie fuellt").
  */
-function spacelosesWort(laenge: number, praefix = ''): string {
-    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
-    let ergebnis = praefix;
-    while (ergebnis.length < laenge) ergebnis += stamm;
-    return ergebnis.slice(0, laenge);
-}
-
 const KATEGORIE_LANG = spacelosesWort(140, 'Kategorie');
 const ARBEITSGANG_LANG = spacelosesWort(140, 'Arbeitsgang');
 const ZEITEN_MITARBEITER_VORNAME = 'Bernhardine';

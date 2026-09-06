@@ -1,6 +1,6 @@
-import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
  * Task 9 (Abschnitt 5) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -124,7 +124,6 @@ const PROJEKTE_MIX = [
 }));
 
 async function stubProjekteUebersicht(page: Page): Promise<void> {
-    await blockiereFremdeNetzwerkzugriffe(page);
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
         const methode = route.request().method();
@@ -151,7 +150,6 @@ const ANFRAGEN_MIX = [
 ];
 
 async function stubAnfragenUebersicht(page: Page): Promise<void> {
-    await blockiereFremdeNetzwerkzugriffe(page);
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
         const methode = route.request().method();
@@ -179,7 +177,6 @@ const KUNDEN_MIX = [
 ];
 
 async function stubKundenUebersicht(page: Page): Promise<void> {
-    await blockiereFremdeNetzwerkzugriffe(page);
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
         const methode = route.request().method();
@@ -200,7 +197,6 @@ const LIEFERANTEN_MIX = [
 ];
 
 async function stubLieferantenUebersicht(page: Page): Promise<void> {
-    await blockiereFremdeNetzwerkzugriffe(page);
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
         const methode = route.request().method();

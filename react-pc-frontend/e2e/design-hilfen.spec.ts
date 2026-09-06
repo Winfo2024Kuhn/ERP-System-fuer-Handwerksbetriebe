@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf, keineUeberschneidungen, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
 
 /**
@@ -221,17 +221,27 @@ const SEITE_MIT_NUR_TEXTUEBERLAUF = `
     <div class="wrapper"><div class="kasten">Wohnungsbaugesellschaft Beispielstadt Nord mbH</div></div>
 `;
 
+// Abschnitt 10: Standard von strengePruefungen auf true gedreht -- Spec E ist
+// damit abgeschlossen. Die Option bleibt als begruendeter Einzelfall-Ausstieg
+// bestehen.
 test.describe('designPruefung -- Option strengePruefungen', () => {
-    test('Standard false: ueberlaufender Text faellt nicht auf', async ({ page }, testInfo) => {
-        await page.setContent(SEITE_MIT_NUR_TEXTUEBERLAUF);
-        await designPruefung(page, testInfo, 'strenge-pruefungen-standard-aus');
-    });
-
-    test('strengePruefungen: true deckt ueberlaufenden Text auf', async ({ page }, testInfo) => {
+    test('Standard (kein Wert gesetzt) deckt ueberlaufenden Text auf', async ({ page }, testInfo) => {
         await page.setContent(SEITE_MIT_NUR_TEXTUEBERLAUF);
         await expect(
-            designPruefung(page, testInfo, 'strenge-pruefungen-standard-an', { strengePruefungen: true }),
+            designPruefung(page, testInfo, 'strenge-pruefungen-standard'),
         ).rejects.toThrow();
+    });
+
+    test('strengePruefungen: true deckt ueberlaufenden Text auf (explizit, redundant zum Standard)', async ({ page }, testInfo) => {
+        await page.setContent(SEITE_MIT_NUR_TEXTUEBERLAUF);
+        await expect(
+            designPruefung(page, testInfo, 'strenge-pruefungen-explizit-an', { strengePruefungen: true }),
+        ).rejects.toThrow();
+    });
+
+    test('strengePruefungen: false bleibt als Ausstieg nutzbar (begruendeter Einzelfall)', async ({ page }, testInfo) => {
+        await page.setContent(SEITE_MIT_NUR_TEXTUEBERLAUF);
+        await designPruefung(page, testInfo, 'strenge-pruefungen-explizit-aus', { strengePruefungen: false });
     });
 });
 

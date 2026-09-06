@@ -1,6 +1,6 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinTextLaeuftUeber } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
  * Task 7 (Abschnitt 4) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -182,9 +182,10 @@ async function stubMitarbeiterApi(page: Page) {
 
 test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regressionswaechter)', () => {
     test('Reiterleiste ohne verstecktes Scrollen, Kopf-Knoepfe vollstaendig rechts in der Karte', async ({ page }, testInfo) => {
-        // Muss vor der ersten Navigation stehen (siehe playwright-design-pruefung
-        // SKILL.md): index.html laedt pdf.js von cdnjs bei jeder Navigation.
-        await blockiereFremdeNetzwerkzugriffe(page);
+        // index.html laedt pdf.js von cdnjs bei jeder Navigation (siehe
+        // playwright-design-pruefung SKILL.md) -- seit Abschnitt 10 automatisch
+        // abgeriegelt (e2e/hilfen/test.ts, auf dem context vor jeder
+        // Navigation registriert).
         await stubMitarbeiterApi(page);
         await page.goto('/mitarbeiter');
 

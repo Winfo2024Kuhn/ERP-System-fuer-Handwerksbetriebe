@@ -1,6 +1,7 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { spacelosesWort } from './hilfen/testdaten';
 
 /**
  * Task 6 (Abschnitt 4) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -64,10 +65,14 @@ import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
  *    src="https://www.google.com/maps?...">`; dazu laedt `index.html` in
  *    jedem Fall `pdf.js` von cdnjs.cloudflare.com. `page.route('**\/api/**')`
  *    faengt das nicht ab. Fix: `blockiereFremdeNetzwerkzugriffe()`
- *    (`e2e/hilfen/api.ts`, neu) bricht jede Anfrage ab, die nicht an
- *    localhost geht -- die Adressfelder duerfen dadurch gefuellt bleiben
- *    (die Karte ist im Screenshot weiterhin sichtbar, es geht nur nichts
- *    mehr wirklich raus). Am Ende der Detail-Tests ein Netzwerk-Mitschnitt,
+ *    (`e2e/hilfen/api.ts`, seit Abschnitt 10 automatisch ueber
+ *    `e2e/hilfen/test.ts` auf jedem `context`) bricht jede Anfrage ab, die
+ *    nicht an localhost geht. Korrektur (Abschnitt 10, Code-Review
+ *    Abschnitt 4): Die Karte bleibt im Screenshot dadurch NICHT sichtbar --
+ *    `route.abort()` laesst nur den grauen Rahmen des `<iframe>` uebrig, kein
+ *    Kartenbild. Die Adressfelder duerfen trotzdem gefuellt bleiben (die
+ *    Kopfzeile soll mit echter Adresse geprueft werden), es geht nur nichts
+ *    mehr wirklich ins Netz. Am Ende der Detail-Tests ein Netzwerk-Mitschnitt,
  *    der das belegt.
  */
 
@@ -123,15 +128,14 @@ const DUMMY_LIEFERANT = {
 const LIEFERANT_EINWORT_LANG = 'Baustahlgewindestangenspezialgroßhandelsvertriebsgesellschaft';
 
 /**
- * Stubbt alle /api-Routen der Lieferanten-Detailseite (Deep-Link ?lieferantId=)
- * UND riegelt jeden Zugriff auf ein fremdes Ziel ab (Nachbesserung 1, Befund 2):
+ * Stubbt alle /api-Routen der Lieferanten-Detailseite (Deep-Link ?lieferantId=).
  * `strasse`/`plz`/`ort` bleiben absichtlich gefuellt (die Kopfzeile soll mit
  * echter Adresse geprueft werden), ohne dass GoogleMapsEmbed dadurch wirklich
- * ins Netz geht -- blockiereFremdeNetzwerkzugriffe() muss deshalb VOR der
- * Navigation stehen, damit sie schon den allerersten Dokument-Request faengt.
+ * ins Netz geht -- der Netz-Riegel (Nachbesserung 1, Befund 2) laeuft seit
+ * Abschnitt 10 automatisch auf dem `context` jeder Spec (e2e/hilfen/test.ts),
+ * schon vor der ersten Navigation.
  */
 async function stubLieferantDetailApi(page: Page, optionen: { name?: string; overrides?: Partial<typeof DUMMY_LIEFERANT> } = {}) {
-    await blockiereFremdeNetzwerkzugriffe(page);
 
     const lieferant = {
         ...DUMMY_LIEFERANT,
@@ -172,13 +176,12 @@ const LIEFERANTEN_LANG = [
 ];
 
 /**
- * Stubbt /api fuer die Lieferanten-Uebersicht mit vier langen Namen. Blockt
- * ebenfalls fremde Ziele -- `index.html` laedt `pdf.js` von cdnjs unabhaengig
- * von der Route (Nachbesserung 1, Befund 2).
+ * Stubbt /api fuer die Lieferanten-Uebersicht mit vier langen Namen. Fremde
+ * Ziele sind seit Abschnitt 10 automatisch geblockt (e2e/hilfen/test.ts) --
+ * `index.html` laedt `pdf.js` von cdnjs unabhaengig von der Route
+ * (Nachbesserung 1, Befund 2).
  */
 async function stubLieferantenUebersichtApi(page: Page) {
-    await blockiereFremdeNetzwerkzugriffe(page);
-
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
         const methode = route.request().method();
@@ -212,11 +215,12 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
     test('Kennzahlen-Kaesten bleiben lesbar, "Bearbeiten" bleibt rechts in der Kopf-Karte, Reiterleiste einzeilig ohne verstecktes Scrollen', async ({ page }, testInfo) => {
         // Netzwerk-Mitschnitt (Nachbesserung 1, Befund 2): DUMMY_LIEFERANT hat
         // strasse/plz/ort gefuellt, die Kopfzeile rendert also ein echtes
-        // GoogleMapsEmbed-<iframe>. Ohne blockiereFremdeNetzwerkzugriffe() (siehe
-        // stubLieferantDetailApi) ginge das tatsaechlich an google.com/maps,
-        // maps.gstatic.com und maps.googleapis.com raus, dazu index.html laedt
-        // pdf.js von cdnjs.cloudflare.com. Die Listener muessen VOR dem goto
-        // registriert sein, sonst verpassen sie den allerersten Dokument-Request.
+        // GoogleMapsEmbed-<iframe>. Ohne den Netz-Riegel (e2e/hilfen/test.ts,
+        // seit Abschnitt 10 automatisch auf dem context jeder Spec) ginge das
+        // tatsaechlich an google.com/maps, maps.gstatic.com und
+        // maps.googleapis.com raus, dazu index.html laedt pdf.js von
+        // cdnjs.cloudflare.com. Der Riegel sitzt auf dem context noch VOR dem
+        // ersten goto, sonst verpasst er den allerersten Dokument-Request.
         const fremdeAnfragen: string[] = [];
         const fremdeAntworten: string[] = [];
         const istFremd = (url: string) => {
@@ -461,13 +465,6 @@ test.describe('Lieferanten-Uebersicht: vier lange Lieferantennamen (Spec-Befund 
  * 46-Zeichen-Fixture im Kopf latent bleibt, weil der Titelblock dort breit
  * genug ist ("nicht akut").
  */
-function spacelosesWort(laenge: number, praefix = ''): string {
-    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
-    let ergebnis = praefix;
-    while (ergebnis.length < laenge) ergebnis += stamm;
-    return ergebnis.slice(0, laenge);
-}
-
 test.describe('Lieferanten-Kopf-Untertitel: Alias/Vertreter/Adresse (Nacharbeit Abschnitt 9)', () => {
     const ALIAS_LANG = spacelosesWort(140, 'Alias');
     const VERTRETER_KOPF_LANG = spacelosesWort(140, 'Vertreterkopf');

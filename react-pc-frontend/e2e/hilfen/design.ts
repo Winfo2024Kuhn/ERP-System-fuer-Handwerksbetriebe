@@ -26,14 +26,21 @@ interface DesignPruefungOptionen {
     /** Ganze Seite statt nur Viewport aufnehmen (Standard: nur Viewport, denn der ist, was der Nutzer sieht). */
     ganzeSeite?: boolean;
     /**
-     * Schaltet keinTextLaeuftUeber und keinTextGekuerzt scharf. Standard
-     * vorerst false: mehrere bestehende Specs (u.a. e2e/bearbeiten-leiste.spec.ts,
-     * e2e/lieferant-dokument-modal.spec.ts) laufen ueber den Lieferanten-Kopf,
-     * dessen Kennzahl-Beschriftungen heute noch ueberlaufen -- ein scharfer
-     * Standard wuerde diese unveraenderten Specs sofort rot drehen, bevor die
-     * betroffenen Seiten repariert sind (siehe Plan-Tasks 2-9 in
-     * docs/superpowers/plans/2026-09-05-layout-14-zoll.md). Sobald alle
-     * betroffenen Seiten repariert sind, dreht Task 10 den Standard auf true.
+     * Schaltet keinTextLaeuftUeber und keinTextGekuerzt scharf. Standard seit
+     * Abschnitt 10: TRUE -- Spec E ist damit abgeschlossen ("drei Pruefungen,
+     * die alle Specs automatisch mitfahren"). Bis dahin war der Standard
+     * `false`: mehrere bestehende Specs (u.a. e2e/bearbeiten-leiste.spec.ts,
+     * e2e/lieferant-dokument-modal.spec.ts) liefen ueber den Lieferanten-Kopf,
+     * dessen Kennzahl-Beschriftungen noch ueberliefen -- ein scharfer Standard
+     * haette diese unveraenderten Specs sofort rot gedreht, bevor die
+     * betroffenen Seiten repariert waren (siehe Plan-Tasks 2-9). Voraussetzung
+     * fuer den Wechsel war ausserdem, dass keinTextLaeuftUeber dieselbe
+     * data-kuerzung-erlaubt-Ausnahme kennt wie keinHorizontalerUeberlauf
+     * (Abschnitt 10, Block 1) -- ohne sie fielen alle gewollten `truncate`-
+     * Kuerzungen durch (Task 8b: alle acht Tests der Menueleisten-Spec).
+     * Die Option bleibt bestehen, damit eine Spec sie in einem begruendeten
+     * Einzelfall abschalten kann -- Abschalten ist die Ausnahme und gehoert
+     * mit Begruendung ins Kontext-Log, nicht stillschweigend in den Code.
      */
     strengePruefungen?: boolean;
 }
@@ -73,7 +80,7 @@ export async function designPruefung(
     if (optionen.primaerAktion) {
         await expect(optionen.primaerAktion, 'Primaeraktion muss ohne Scrollen sichtbar sein').toBeInViewport();
     }
-    if (optionen.strengePruefungen) {
+    if (optionen.strengePruefungen ?? true) {
         await keinTextLaeuftUeber(page);
         await keinTextGekuerzt(page);
     }
