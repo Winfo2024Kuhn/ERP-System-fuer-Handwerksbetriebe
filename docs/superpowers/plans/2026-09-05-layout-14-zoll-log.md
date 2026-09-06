@@ -2349,3 +2349,37 @@ Die Grenze selbst ist schwaecher begruendet, als sie aussieht: `2xl` greift ab *
 4. `Kundeneditor.tsx:509`: nur `break-words` entfernen (`min-w-0 flex-1` stehen lassen) — muss ueber `keinTextLaeuftUeber` rot werden, nicht ueber die Geometrie-Zusicherung.
 5. `Kundeneditor.tsx:497`: nur `flex-1` entfernen — Erwartung: bleibt gruen (bestaetigt, dass es wirkungslos ist).
 6. `MitarbeiterEditor.tsx:474-476` mit einer langen, bindestrichlosen E-Mail bei 1440 im Browser messen: Ueberstand ueber den eigenen Kasten und `main.scrollWidth - main.clientWidth`. Belegt die fuenfte Stelle mit Zahlen fuer den Folge-Task.
+
+## Abschnitt 5 — Abnahme und Befund zum roten Unit-Test (Orchestrator)
+
+Zeit: 2026-09-06T18:20:00Z
+
+**Abschnitt 5 abgenommen.** Code-Review 🟡, Design-Review 🔴 — der rote Befund
+betrifft aber `MitarbeiterEditor.tsx`, eine Datei, die dieser Abschnitt nicht
+angefasst hat, und der Design-Reviewer selbst schreibt, der Fix gehöre in einen
+eigenen Task. Beide Reviewer haben ihn unabhängig gefunden (Code-Review Hinweis 1,
+Design-Review 🛑). Entscheidung des Orchestrators: Abschnitt 5 ist auf seine
+eigene Arbeit hin abgenommen; der Befund wird **Task 7b in Abschnitt 6** und muss
+dort vom Design-Reviewer nachgeprüft werden. Beleg für die Abnahme: alle Befunde,
+die dieser Abschnitt beheben sollte, sind mit Zahlen belegt behoben (E-Mail
+Kunden-Detailseite 127 px `main`-Überlauf → 0; Übersichtskarte 272 px → 0;
+Anzeigename bei 1920 nicht mehr gekürzt), 218 E2E-Tests grün.
+
+**Roter Unit-Test ist vorbestehend — nachgemessen, nicht vermutet.**
+`src/components/LieferantDokumentModal.test.tsx`, Fall „zeigt Hinweis im Modal UND
+Toast; Bearbeiten und Speichern bleiben deaktiviert": `AssertionError: expected
+[ …(3) ] to have a length of 2 but got 3`. Kein Timeout, im Einzellauf
+reproduzierbar.
+
+Gegenprobe des Orchestrators auf **`89ffc0d5`** — dem Stand, von dem dieses
+Vorhaben abzweigt, also vor jeder unserer Änderungen: **identischer Fehlschlag,
+1 failed / 18 passed.** Damit ist belegt, dass er nicht von uns stammt; er gehört
+zum Sperr-Vorhaben auf `claude/eloquent-ramanujan-gz0w2t`.
+
+Korrektur an der Baseline oben: Dort steht „kein Assertion-Fehler in der
+Baseline". Das war zu optimistisch gemessen — der Fall lief damals unter Last in
+einen Timeout und wurde als Last-Flake eingeordnet, statt einzeln nachgefahren zu
+werden. **Neue Abnahmeregel für den Rest des Vorhabens:** grün = 1081/1082, und
+der eine bekannte Fehlschlag ist genau dieser. Ein zweiter ist neu. Lehre für
+künftige Läufe: einen roten Test der Baseline **einzeln** nachfahren, bevor man
+ihn als Last abtut.
