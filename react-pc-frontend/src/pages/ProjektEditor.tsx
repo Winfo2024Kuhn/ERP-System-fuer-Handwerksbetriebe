@@ -1059,7 +1059,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
                         <Briefcase className="w-8 h-8" />
                     </div>
-                    <div>
+                    {/* min-w-0: das aeussere flex-1 min-w-[18rem] deckelt nur den
+                        Titelblock als Ganzes -- dieser innere div behaelt sonst
+                        min-width: auto und wird trotz break-words auf der <h1>
+                        von einem langen Komposita-Bauvorhaben ueber die 18rem
+                        hinausgedrueckt (Nacharbeit Abschnitt 4, Rezeptur). */}
+                    <div className="min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
                             <h1 className="text-2xl font-bold text-slate-900 break-words">{projekt.bauvorhaben}</h1>
                             <span className={cn(
@@ -1071,10 +1076,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 {projekt.bezahlt ? 'Bezahlt' : 'Offen'}
                             </span>
                         </div>
+                        {/* shrink-0 an den Untertitel-Icons: sonst quetscht ein
+                            langer Text (Kundenname, Adresse) sie platt (Rezeptur). */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {projekt.kunde && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {projekt.kunde}</p>}
-                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {adresse}</p>}
-                            {projekt.auftragsnummer && <p className="flex items-center gap-2"><FileText className="w-4 h-4" /> {projekt.auftragsnummer}</p>}
+                            {projekt.kunde && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> {projekt.kunde}</p>}
+                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> {adresse}</p>}
+                            {projekt.auftragsnummer && <p className="flex items-center gap-2"><FileText className="w-4 h-4 shrink-0" /> {projekt.auftragsnummer}</p>}
                         </div>
                     </div>
                 </div>
@@ -1106,7 +1113,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </div>
                 </div>
 
-                <div className="shrink-0 flex flex-wrap items-start gap-2">
+                {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
+                    linken Kartenrand statt nach rechts (Nacharbeit Abschnitt 4 --
+                    im Design-Review gemessen: x=89 statt x=961 bei 1440px). */}
+                <div className="shrink-0 ml-auto flex flex-wrap items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -1174,11 +1184,18 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 docs/superpowers/plans/2026-09-05-layout-14-zoll.md, Task 3).
                 min-w-0 verhindert, dass diese Zeile die Mindestbreite der
                 linken DetailLayout-Spalte wieder hochzieht. */}
-            <div className="flex flex-wrap min-w-0 gap-2 mb-6 border-b border-slate-200 pb-2">
+            {/* Nacharbeit Abschnitt 4 (Design-Review Abschnitt 3): gap-2 -> gap-1
+                und px-3 -> px-2 an den Knoepfen (unten) senken den Platzbedarf
+                aller sieben Reiter von 978px auf 899px bei 916px verfuegbarem
+                Platz (1440px) -- damit passen alle sieben in eine Zeile, statt
+                dass "Tagebuch" allein zweizeilig umbricht und die Trennlinie
+                mitten in der Karte schwebt (gemessener Vorschlag des
+                Design-Reviewers). */}
+            <div className="flex flex-wrap min-w-0 gap-1 mb-6 border-b border-slate-200 pb-2">
                 <button
                     onClick={() => setActiveTab('zeiten')}
                     className={cn(
-                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'zeiten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1190,7 +1207,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('materialkosten')}
                     className={cn(
-                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'materialkosten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1202,7 +1219,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('emails')}
                     className={cn(
-                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'emails'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1214,7 +1231,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
                     className={cn(
-                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'geschaeftsdokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1226,7 +1243,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('dokumente')}
                     className={cn(
-                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'dokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1238,7 +1255,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('beschreibung')}
                     className={cn(
-                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'beschreibung'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1250,7 +1267,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <button
                     onClick={() => setActiveTab('notizen')}
                     className={cn(
-                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'notizen'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1820,7 +1837,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             {dok.dokumentNummer}
                                                         </p>
                                                         {dok.betreff && (
-                                                            <p className="text-sm text-slate-600 truncate mt-0.5">{dok.betreff}</p>
+                                                            // break-words statt truncate (Nacharbeit Abschnitt 4,
+                                                            // Code-Review-Befund 4): ein realistisch langer Betreff
+                                                            // schnitt sonst unlesbar ab, ohne title als Rueckfallweg.
+                                                            <p className="text-sm text-slate-600 break-words mt-0.5">{dok.betreff}</p>
                                                         )}
                                                         <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
                                                             <span>
@@ -2189,7 +2209,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
                                                                 EINGANGSRECHNUNG
                                                             </span>
-                                                            <span className="font-semibold text-slate-900 truncate">
+                                                            {/* break-words statt truncate (Nacharbeit Abschnitt 4,
+                                                                Code-Review-Befund 4): der Lieferantenname aus der Spec
+                                                                ("Stahlhandel Beispiel GmbH und Co. KG") schnitt sonst ab,
+                                                                ohne title als Rueckfallweg. */}
+                                                            <span className="font-semibold text-slate-900 break-words">
                                                                 {er.lieferantName || 'Unbekannter Lieferant'}
                                                             </span>
                                                             {er.dokumentNummer && (
@@ -2198,7 +2222,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <p className="text-sm text-slate-500 truncate">{er.dateiname}</p>
+                                                        {/* break-words statt truncate: derselbe Befund, ein
+                                                            realistischer Dateiname (z.B. "lieferantenrechnung-dummy.pdf")
+                                                            ist ohne title nicht lesbar. */}
+                                                        <p className="text-sm text-slate-500 break-words">{er.dateiname}</p>
                                                         {er.beschreibung && (
                                                             <p className="text-sm text-slate-600 mt-1">{er.beschreibung}</p>
                                                         )}
@@ -3305,7 +3332,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Kunden-E-Mails</p>
                         {kundenEmails.map((email) => (
-                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm truncate">
+                            // break-words statt truncate (Nacharbeit Abschnitt 4,
+                            // Code-Review-Befund 4, schlimmster Fall: rechte Spalte
+                            // nur rund 322px breit): eine normale Firmen-E-Mail-
+                            // Adresse passte dort nicht und hatte kein title als
+                            // Rueckfallweg -- ohne title war sie weder lesbar noch
+                            // kopierbar.
+                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm break-words">
                                 {email}
                             </a>
                         ))}
@@ -4112,12 +4145,12 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
     return (
         <Card
             className={cn(
-                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden",
+                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col",
                 projekt.abgeschlossen && "opacity-60 bg-slate-50"
             )}
             onClick={onClick}
         >
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 flex-1 flex flex-col">
                 <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -4140,10 +4173,14 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
                             (Spec-Befund 4) darf der Titel zwei Zeilen nutzen, statt
                             fast vollstaendig zu verschwinden. data-kuerzung-erlaubt
                             markiert den dokumentiert erlaubten Ausnahmefall -- der
-                            volle Name steht im title-Attribut. min-h-[3rem] haelt
-                            alle Karten einer Reihe gleich hoch. */}
+                            volle Name steht im title-Attribut. Kein min-h-[3rem]
+                            mehr (Nacharbeit Abschnitt 4, Design-Review-Befund): das
+                            riss bei kurzen Bauvorhaben eine 24px-Luecke zwischen
+                            Titel und Kundenname. Gleich hohe Karten kommen
+                            stattdessen ueber h-full flex flex-col an der Karte und
+                            mt-auto am Meta-Block unten. */}
                         <h3
-                            className="font-semibold text-slate-900 mt-2 line-clamp-2 min-h-[3rem] text-base"
+                            className="font-semibold text-slate-900 mt-2 line-clamp-2 text-base"
                             title={projekt.bauvorhaben}
                             data-kuerzung-erlaubt
                         >
@@ -4169,7 +4206,7 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
                     </div>
                 </div>
 
-                <div className="space-y-1 pt-2 border-t border-slate-50">
+                <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                     {projekt.auftragsnummer && (
                         <div className="flex items-center gap-2 text-sm text-slate-600">
                             <FileText className="w-4 h-4 text-slate-400 shrink-0" />
