@@ -583,6 +583,13 @@ const DOK_KUNDENNAME_LANG = spacelosesWort(180, 'Kundenname');
 const DOK_ERSTELLT_VON_LANG = spacelosesWort(180, 'Ersteller');
 const ZUGEORDNET_VON_LANG = spacelosesWort(150, 'Zugeordnetvon');
 const WEITERE_ZUORDNUNG_VON_LANG = spacelosesWort(150, 'Weiterezuordnung');
+// Nachtrag Abschnitt 10 (Code-Review Abschnitt 9, Hinweis 1; Design-Review
+// Abschnitt 9, Punkt 2): "Weitere Zuordnungen" -- max-w-[200px] ist weg
+// (Task 13), aber ohne min-w-0 faellt der Beschreibungs-Span auf min-content
+// zurueck und break-words wirkt nicht mehr. 200 Zeichen, damit der Effekt bei
+// 1440 deutlich rot wird (Design-Review mass 254px Zeilen-/237px
+// Karten-Ueberstand mit derselben Laenge).
+const BESCHREIBUNG_LANG = spacelosesWort(200, 'Beschreibung');
 
 test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit Abschnitt 9)', () => {
     test('Zeiten-Hierarchie, Dokumentenketten-Metazeile und Eingangsrechnungs-Zuordnung sprengen ihre Zeile nicht', async ({ page }) => {
@@ -602,7 +609,7 @@ test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit A
                     kostenstelleName: 'Zentrale Kostenstelle',
                     prozent: 25,
                     berechneterBetrag: 375,
-                    beschreibung: 'Anteil an Sammelbestellung',
+                    beschreibung: BESCHREIBUNG_LANG,
                     zugeordnetVonName: WEITERE_ZUORDNUNG_VON_LANG,
                 },
             ],
@@ -698,6 +705,14 @@ test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit A
         await pruefeZeileUeberragtNicht(
             page.getByText(WEITERE_ZUORDNUNG_VON_LANG, { exact: false }),
             'Eingangsrechnung: "Weitere Zuordnungen" (von ...)',
+        );
+        // Nachtrag Abschnitt 10 (Code-Review Abschnitt 9, Hinweis 1; von
+        // Task 13 selbst eingebaute Attrappe): die Beschreibung ist ein
+        // eigener Span ohne verschachteltes Kind, "xpath=.." trifft hier also
+        // korrekt die umschliessende flex-wrap-Zeile.
+        await pruefeZeileUeberragtNicht(
+            page.getByText(BESCHREIBUNG_LANG, { exact: false }),
+            'Eingangsrechnung: "Weitere Zuordnungen" (Beschreibung)',
         );
 
         await keinHorizontalerUeberlauf(page);

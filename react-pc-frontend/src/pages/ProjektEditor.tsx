@@ -2368,9 +2368,18 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                             Beschreibung die Restbreite und rutscht
                                                                             bei Bedarf als Ganzes in die naechste
                                                                             Zeile, statt auf drei Zeilen in einer
-                                                                            schmalen Saeule zu stapeln. */}
+                                                                            schmalen Saeule zu stapeln.
+                                                                            min-w-0 nachgezogen (Abschnitt 10,
+                                                                            Code-Review Abschnitt 9, Hinweis 1): eine
+                                                                            definite max-width deckelte bisher die
+                                                                            automatische Mindestbreite dieses
+                                                                            Flex-Items und machte break-words damit
+                                                                            wirksam -- ohne Deckelung UND ohne
+                                                                            min-w-0 faellt der Span auf min-content
+                                                                            zurueck, break-words greift dann nicht
+                                                                            mehr (kriterien.md, sechste Falle). */}
                                                                         {z.beschreibung && (
-                                                                            <span className="text-slate-500 italic break-words">
+                                                                            <span className="text-slate-500 italic break-words min-w-0">
                                                                                 „{z.beschreibung}"
                                                                             </span>
                                                                         )}
