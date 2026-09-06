@@ -1711,3 +1711,44 @@ Wegwerf-Specs `e2e/zz-messung-komposita.spec.ts`, `e2e/zz-messung-review.spec.ts
 `page.addStyleTag` bzw. `page.evaluate`, kein `git stash`, kein `git checkout` auf eine Quelldatei.
 `git status` im Review-Worktree sauber. Die 84 Abnahme-Screenshots unter `test-results/design/`
 stammen aus dem zweiten vollständigen Lauf und sind vollzählig.
+
+## Abschnitt 4 — Task 6, Nachbesserung 1 (Coding-Agent)
+
+Zeit: 2026-09-06T13:06:29Z
+Branch: layout/task-6-lieferant
+Commit(s): 7d507da0 (test), 70a3acd0 (fix)
+Status: fertig
+
+Was gemacht wurde:
+
+**1. 🔴 Blocker — `<h1>` ohne `min-w-0`, Titel lief bei einem Einwort-Namen ueber die Kennzahlen.**
+Testgetrieben (Skill `superpowers:test-driven-development` befolgt): in `e2e/lieferant-layout.spec.ts` neue Fixture `LIEFERANT_EINWORT_LANG = 'Baustahlgewindestangenspezialgroßhandelsvertriebsgesellschaft'` (ein Wort, kein Leerzeichen) plus neuer Testfall, der die rechte Kante der `<h1>` gegen die rechte Kante ihres Titelblocks (`ancestor::div[contains(@class,"min-w-[18rem]")]`) prueft. Rot verifiziert (siehe Zahlen unten), dann `LieferantenEditor.tsx` Z. 91 gefixt: `min-w-0` zusaetzlich auf die `<h1>` (neben dem bereits vorhandenen `break-words`). Ursache wie vom Design-Reviewer diagnostiziert: die `<h1>` ist selbst ein Flex-Item in `flex items-center gap-3 flex-wrap` und behaelt ohne eigenes `min-w-0` ihre volle Mindestinhaltsbreite (`min-width: auto`) — `break-words` senkt diese Mindestbreite bei einem Flex-Item nicht, das erledigt erst `min-w-0`. Das schon vorhandene `min-w-0` am umschliessenden Textblock (Z. 89) reicht nicht, weil die `<h1>` ein eigenes, davon unabhaengiges Flex-Item ist.
+
+**2. 🟡 — Spec telefonierte ins Internet.** Neue allgemeine Hilfsfunktion `blockiereFremdeNetzwerkzugriffe(page)` in `react-pc-frontend/e2e/hilfen/api.ts`: registriert `page.route('**/*', ...)` und bricht (`route.abort()`) jede Anfrage ab, deren Hostname nicht `localhost`/`127.0.0.1` ist; localhost-Anfragen laufen mit `route.continue()` normal weiter (spezifischere, spaeter registrierte Routen wie `**/api/**` bekommen sie ohnehin zuerst zu sehen). In `lieferant-layout.spec.ts` in beiden Stub-Funktionen (`stubLieferantDetailApi`, `stubLieferantenUebersichtApi`) **vor** der ersten Navigation aufgerufen. Die Adressfelder (`strasse`/`plz`/`ort`) in `DUMMY_LIEFERANT` bleiben bewusst gefuellt (wie vom Auftrag gefordert) — die Kopfzeile wird also weiterhin mit echter Adresse und sichtbarer Kartenvorschau geprueft, ohne dass real etwas nach draussen geht. Netzwerk-Mitschnitt (`page.on('request')`/`page.on('response')`) am Ende des Detail-Testfalls: sichert zu, dass (a) mindestens eine fremde Anfrage tatsaechlich ausgeloest wird (sonst waere die Zusicherung wirkungslos) und (b) keine einzige davon je eine echte Antwort bekommt.
+
+Gemessene Zahlen:
+
+| Messung | vorher (1440) | nachher (1440) | vorher (1920) | nachher (1920) |
+| --- | --- | --- | --- | --- |
+| `<h1>` rechte Kante (Einwort-Fixture) | 955px | 675px | 1083px | 1027px |
+| Titelblock rechte Kante | 675px | 675px | 1027px | 1027px |
+| Ueberstand `<h1>` ueber Titelblock | **280px** | 0px | **56px** | 0px |
+| `<h1>` Breite | (voller Wortblock, nicht separat gemessen) | 454px | (voller Wortblock) | 678px |
+
+Netzwerk-Mitschnitt (Detailseite, Standard-Fixture mit gefuellter Adresse, `pc-14zoll`, eigener Wegwerf-Lauf zur Dokumentation):
+- Initiierte fremde Anfragen (dann abgebrochen): `script https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js`, `document https://www.google.com/maps?q=Industriestra%C3%9Fe%2044%2C%2030179%2C%20Hannover&output=embed&z=14`.
+- Beide `requestfailed` mit `net::ERR_FAILED`, **keine** einzige `response` von einem fremden Host (leeres Array).
+- Nur 2 statt der vom Design-Reviewer vor dem Fix mitgeschnittenen 5 Anfragen (2× `google.com/maps`, `maps.gstatic.com`, `maps.googleapis.com`, `cdnjs.cloudflare.com`) — plausibel, weil `route.abort()` schon die allererste `document`-Anfrage an `google.com/maps` unterbindet, bevor der Browser die davon abhaengigen Folge-Ressourcen (das eingebettete `/maps/embed`-Dokument, `maps.gstatic.com`, `maps.googleapis.com`) ueberhaupt anfragen kann. Der Riegel schneidet also nicht nur eine einzelne Anfrage ab, sondern die ganze Kaskade.
+- In der eigentlichen Spec (`lieferant-layout.spec.ts`) selbst wird das ueber `expect(fremdeAnfragen.length).toBeGreaterThan(0)` und `expect(fremdeAntworten).toEqual([])` zugesichert, nicht ueber die Wegwerf-Messung — die diente nur der genauen URL-Liste fuer dieses Log.
+
+Ergebnis der Gates:
+- Port-Check: `netstat -ano | findstr :5206 | findstr LISTENING` leer (vor jedem Lauf geprueft; nicht-listende `WARTEND`/TIME_WAIT-Reste von vorherigen eigenen Laeufen wurden nicht als belegt gewertet).
+- `E2E_PORT=5206 npx playwright test e2e/lieferant-layout.spec.ts`: **6/6 gruen** (3 Testfaelle × 2 Groessen), reproduziert mit `--workers=1` und mit den Standard-4-Workern (mehrfach). Keine leere weisse Seite mehr unter Standard-Parallelitaet beobachtet, seit der Netzwerk-Riegel steht — deckt sich mit der Vermutung des Design-Reviewers, dass die vier parallel ladenden Maps-Einbettungen ein plausibler (nicht bewiesener) Ausloeser fuer die frueher beobachtete leere Seite waren.
+- `npx vitest run src/pages/LieferantenEditor.test.tsx`: **9/9 gruen**, unveraendert.
+- `npm run lint`: 0 Fehler, 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`), identisch zur Baseline.
+- `npm run build`: gruen. Build-Output vor dem Commit verworfen (`git checkout -- src/main/resources/static` + `git clean -fd src/main/resources/static/assets`), `git status` danach sauber bis auf die drei eigenen Dateien.
+
+Bedenken / Abweichungen vom Plan:
+- Keine inhaltliche Abweichung vom Auftrag der Nachbesserung. Kleine Ergaenzung: `blockiereFremdeNetzwerkzugriffe()` wurde zusaetzlich auch in `stubLieferantenUebersichtApi` verdrahtet (nicht nur im Detail-Stub) — die Uebersicht rendert zwar kein `GoogleMapsEmbed`, laedt aber ueber `index.html` ebenfalls `pdf.js` von cdnjs bei jeder Navigation; der Riegel greift dort also ebenfalls, ohne dass es der Auftrag ausdruecklich verlangt hat ("riegel allgemein" gelesen als: ueberall in dieser Datei anwenden, nicht nur im einen Testfall, der ihn ausgeloest hat).
+- `min-w-0` wurde ausschliesslich in `LieferantenEditor.tsx` gesetzt (Projekt/Anfrage/Kunde macht laut Auftrag ein anderer Agent) — diese drei Dateien wurden nicht angefasst.
+- Sonst keine Abweichungen: beide Befunde wie im Auftrag beschrieben behoben, testgetrieben fuer Befund 1 (rot vor dem Fix verifiziert, danach gruen), Befund 2 durch Netzwerk-Mitschnitt nach dem Fix belegt.
