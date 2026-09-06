@@ -2131,3 +2131,45 @@ Ergebnis der Gates:
 - `npm run lint`: 0 Fehler, 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`, identisch zur Baseline).
 - `npm run build`: gruen (inkl. `tsc -b`). Build-Output (`src/main/resources/static/index.html`, `assets/*`) vor dem Commit verworfen (`git checkout -- src/main/resources/static` + `git clean -f src/main/resources/static/assets`), `git status` danach sauber bis auf die zwei eigenen Dateien. Wegwerf-Messspec (`e2e/zz-messung-8b.spec.ts`, nur fuer die Vorher/Nachher-Zahlen oben) vor dem Commit geloescht.
 
+
+## Abschnitt 5 — Task 9 (Coding-Agent)
+
+Zeit: 2026-09-06T14:18:29Z
+Branch: layout/task-9-uebersichten
+Commit(s): 091968c8 (fix Kunde E-Mail), ba3ef414 (Trennlinien-Zusicherung Projekt/Anfrage), ed7d12b1 (neue Spec uebersichten-layout.spec.ts), 292ccbdf (Zahlendreher-Kommentare)
+Status: fertig
+
+### Teil A — zwei Fehler in Kundeneditor.tsx behoben
+
+**1. Kontaktdaten-Spalte der Detailseite (Z. 497).** Rote Zusicherung zuerst: `DUMMY_KUNDE.kundenEmails` in `kunde-layout.spec.ts` auf dieselbe 97-Zeichen-Adresse umgestellt, die Projekt/Anfrage schon als `KUNDEN_EMAIL_LANG` fuehren (`verwaltung.rechnungswesen@wohnungsbaugesellschaft-beispielstadt-nord-immobilienverwaltung.example`), dazu zwei direkte Zusicherungen (E-Mail-Link-Ueberstand ueber seinen Kasten, `main`-Ueberstand). Beide liefen vor dem Fix rot mit exakt den vom Design-Reviewer gemessenen Werten:
+   - Ueberstand E-Mail-Link ueber Kasten: **184px gemessen** (Review: 184px) bei 1440.
+   - `main.scrollWidth - main.clientWidth`: nicht separat nachgemessen ueber die direkte Assertion (die schlug schon beim Kasten-Ueberstand fehl) -- Review nennt 127px bei 1440, 7px bei 1920.
+   Fix (Muster wie beim Lieferanten, `LieferantenEditor.tsx:315`): das umschliessende `<div>` bekommt `min-w-0 flex-1`, der `<a>`-Link bekommt `break-words block`. Nach dem Fix: 0px Ueberstand, `main`-Ueberstand 0, beide Groessen gruen.
+
+**2. Kunden-Uebersichtskarte (Z. 901).** Wichtiger Befund beim testgetriebenen Vorgehen: Die im Plan/Task-Text genannte lange E-Mail (`KUNDEN_EMAIL_LANG`, mit Bindestrichen im Domainteil) zeigt den Fehler an dieser Stelle **nicht** -- Bindestriche sind nach der Unicode-Zeilenumbruch-Regel ohnehin erlaubte Umbruchstellen, unabhaengig von `break-words`, und die Zeile bricht dort schon vorher um (im Browser nachgemessen: `<p>`.scrollWidth == clientWidth == 393px, kein Ueberstand -- mit einer scrollWidth/clientWidth-Debug-Sonde verifiziert, danach geloescht). Mit einer echten **bindestrichlosen** 90-Zeichen-Adresse (`buchhaltungsundverwaltungsabteilungfuerrechnungswesenundmahnwesen@beispielstadtnord.example`) reproduziert sich der beschriebene Fehler zuverlaessig:
+   - Vorher: `<p>`.scrollWidth 665px gegen clientWidth 393px = **272px Ueberstand** (pc-14zoll).
+   - Nachher (Text in `<span className="min-w-0 break-words">` gefasst): 0px Ueberstand.
+   Wichtig fuer die Zusicherung selbst: `getByText(...).boundingBox()` findet nur die `<p>` (hat ein Element-Kind, das Mail-Icon -- kein "Blatt-Element" fuer `keinTextLaeuftUeber`), und deren eigene BoundingBox waechst NICHT mit dem ueberlaufenden Text-Node (der ist eine anonyme Flex-Box ohne eigenes DOM-Element). Eine Geometrie-Zusicherung "Zeile vs. Kartenrand" waere deshalb **falsch gruen** geblieben -- die Zusicherung misst stattdessen `scrollWidth - clientWidth` der Zeile selbst.
+
+### Teil B — Übersichten-Abnahme
+
+- **Neue Spec `e2e/uebersichten-layout.spec.ts`**: alle vier Übersichten (`/projekte`, `/anfragen`, `/kunden`, `/lieferanten`) in einem Durchlauf, je eine Fixture mit vier Eintraegen (ein kurzer Titel, zwei lange, ein mittlerer) in derselben Reihe bei 1440. Je Seite: (a) drei Karten je Reihe bei 1440 / vier bei 1920 (gemessen, gruen), (b) Karte mit kurzem und Karte mit langem Titel derselben Reihe haben gleiche Kartenhoehe UND ihre Trennlinie (`mt-auto`-Meta-Block) auf gleicher y-Position, (c) `keinHorizontalerUeberlauf` explizit, (d) `designPruefung(..., { strengePruefungen: true, primaerAktion })`. Alle acht Faelle (4 Seiten × 2 Groessen) gruen -- erwartet, da Abschnitt 3/4 alle vier Uebersichten schon umgebaut haben; per Mutationsprobe gegengeprueft (siehe unten).
+- **Trennlinien-Zusicherung nachgezogen** in `projekt-uebersicht-layout.spec.ts` (neuer Testfall, gab es dort noch gar nicht) und `anfrage-layout.spec.ts` (zweite Anfrage im bestehenden Kurztitel-Testfall ergaenzt). Beide gruen.
+- **Mutationsprobe:** `ProjektCard`s `gap-3` probeweise auf `space-y-3` zurueckgedreht (`ProjektEditor.tsx:4175`) -- sowohl die neue Zusicherung in `uebersichten-layout.spec.ts` als auch die nachgezogene in `projekt-uebersicht-layout.spec.ts` wurden korrekt rot (gemessener Versatz 44px bzw. Trennlinien y=618/662). Mutation vollstaendig zurueckgenommen, `git diff` auf die Datei zeigt danach nur noch den beabsichtigten Kommentar-Fix.
+- **Zwei Zahlendreher korrigiert**: `ProjektEditor.tsx` (Kommentar ueber der `<h1>`) und der Kopf von `lieferant-layout.spec.ts` nannten 411px/187px fuer den Projekt-Editor-Ueberstand -- das sind die Anfrage-Werte. Auf die tatsaechlichen Projekt-Werte (583px/765px, Design-Review Runde 2) korrigiert.
+- Kein `src/`-Code ausserhalb `Kundeneditor.tsx`/`ProjektEditor.tsx` (nur Kommentar) angefasst. Keine weiteren Befunde in `src/` gefunden, die ins Log muessten.
+
+### Gate-Ergebnisse
+
+- Port-Check: `netstat -ano | findstr :5209` vor dem Lauf leer, Port 5209 verwendet.
+- `E2E_PORT=5209 npx playwright test e2e/uebersichten-layout.spec.ts e2e/kunde-layout.spec.ts e2e/projekt-uebersicht-layout.spec.ts e2e/anfrage-layout.spec.ts e2e/lieferant-layout.spec.ts`: **36/36 gruen** (18 Testfaelle × 2 Groessen).
+- `npx vitest run src/pages/Kundeneditor.test.tsx src/pages/ProjektEditor.test.tsx`: **11/11 gruen**.
+- `npm run lint`: 0 Fehler, 1 vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`), identisch zur Baseline.
+- `npm run build`: gruen (`tsc -b` + `vite build`). Build-Output verworfen (`git checkout -- src/main/resources/static/index.html`, `git clean -f src/main/resources/static/assets`), `git status` danach sauber.
+- Kein `npm run test`, kein `npm run test:e2e` gefahren (Vorgabe: Coding-Agent faehrt nur die eigene Aenderung).
+
+### Bedenken / Abweichungen vom Plan
+
+- **Wichtigste Abweichung, offen fuer den Design-Reviewer:** Die im Task-Text vorgeschlagene Wiederverwendung der projektweiten `KUNDEN_EMAIL_LANG`-Adresse fuer den Uebersichtskarten-Testfall (Befund 2) reproduziert den beschriebenen Fehler an dieser Stelle **nicht** (siehe Teil A, Punkt 2) -- Bindestriche im Domainteil sind natuerliche Umbruchstellen unabhaengig von `break-words`/`min-w-0`. Der Testfall in `kunde-layout.spec.ts` nutzt deshalb eine eigene, bindestrichlose 90-Zeichen-Adresse (`EMAIL_OHNE_TRENNZEICHEN`), die den Fehler zuverlaessig zeigt. Die Fixture fuer Fix 1 (Kontaktdaten-Spalte, `DUMMY_KUNDE`) bleibt bei der projektweiten `KUNDEN_EMAIL_LANG` (reproduziert dort korrekt, siehe Zahlen oben) -- nur der Uebersichtskarten-Testfall weicht ab. Bitte im Design-Review gegenpruefen, ob diese Einordnung stimmt.
+- `blockiereFremdeNetzwerkzugriffe()` in `uebersichten-layout.spec.ts` verwendet (Pflichtlektuere wies explizit darauf hin), obwohl keine der vier Uebersichtsseiten ein GoogleMapsEmbed rendert -- `index.html` laedt laut Abschnitt-4-Review trotzdem bei jeder Navigation `pdf.js` von cdnjs. Bewusst **nicht** in die beiden bestehenden Specs (`projekt-uebersicht-layout.spec.ts`, `anfrage-layout.spec.ts`) nachgezogen, da das flaechendeckende Ausrollen explizit Task 10 (Abschnitt 6) zugewiesen ist -- nur an der eigenen, neuen Datei angewendet.
+- Keine weiteren Abweichungen. Beide Teile testgetrieben (rot vor dem Fix, gruen danach, mit Wegwerf-Debug-Sonden zur Ursachenklaerung bei Fix 2, alle vor dem Commit geloescht).
