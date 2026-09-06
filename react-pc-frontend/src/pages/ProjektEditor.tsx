@@ -1072,9 +1072,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             eigenes min-width: auto. break-words senkt die
                             Mindestinhaltsbreite eines Flex-Items nicht, nur
                             min-w-0 auf dem Element selbst tut das. Gemessen ohne
-                            diesen Fix: <h1> 999px breit, ragt 411px (1440) bzw.
-                            187px (1920) aus dem Titelblock, "BRUTTO"/"NETTO"
-                            werden unlesbar ueberdeckt. */}
+                            diesen Fix: <h1> 999px breit, ragt 583px (1440) bzw.
+                            765px (1920) aus dem Titelblock, "BRUTTO"/"NETTO"
+                            werden unlesbar ueberdeckt. (Zahlendreher korrigiert,
+                            Nachtrag Abschnitt 5/Task 9: hier standen zuvor die
+                            Anfrage-Werte 411px/187px, siehe Design-Review
+                            Runde 2.) */}
                         <div className="flex items-center gap-3 flex-wrap">
                             <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{projekt.bauvorhaben}</h1>
                             <span className={cn(
