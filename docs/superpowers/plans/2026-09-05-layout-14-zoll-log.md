@@ -2235,3 +2235,117 @@ Beide Groessen komplett durchgegangen, gemessen und angesehen.
 - **Mitarbeiter (Detail)**: der einzige Ausreisser, siehe Befund oben.
 
 Nichts ist ueberlagert, nichts verrutscht. Abgeschnitten ist genau eine Stelle: die Kontakt-Spalte der Mitarbeiterseite.
+
+## Abschnitt 5 — Code-Review (Code-Reviewer)
+
+Zeit: 2026-09-06T14:41:00Z
+Branch: feature/layout-14-zoll (HEAD dd7b70d9, Diff 81ca1c59..HEAD)
+Commit(s): geprueft, nichts committet (read-only Review)
+Status: fertig
+Ampel: 🟡
+
+### Gates
+
+- `npm run lint`: 0 Fehler, genau 1 bekannte Warnung (`BelegeKasseEditor.tsx:1204`, `react-hooks/exhaustive-deps`). Wie Baseline.
+- `npm run test` (vitest, volle Suite): 1081/1082 gruen, 87/88 Dateien. **1 Fehlschlag, vorbestehend und nicht aus diesem Diff:** `src/components/LieferantDokumentModal.test.tsx:309` — `getAllByText('Sperre konnte nicht geholt ...')` erwartet 2, bekommt 3. Reproduzierbar auch beim Einzellauf der Datei (kein Last-Timeout). Die Datei importiert ausschliesslich `LieferantDokumentModal`, `ToastProvider`, `ConfirmProvider`, `types` — keine der drei in Abschnitt 5 geaenderten `src/`-Dateien (`RibbonNav.tsx`, `Kundeneditor.tsx`, `ProjektEditor.tsx`) liegt in diesem Abhaengigkeitsbaum. Daher nicht als 🔴 gewertet, aber als eigener Befund fuer einen kuenftigen Task vermerkt.
+- `npm run build`: gruen (`tsc -b` + `vite build`, 1m01s). Build-Output nach `src/main/resources/static/` verworfen (`git checkout -- index.html`, erzeugte `assets/index-*.css|js` geloescht), `git status` danach sauber.
+- `git diff --stat 81ca1c59..HEAD`: 9 Dateien, 714 Zeilen, **alle unterhalb `react-pc-frontend/`**. Nichts ausserhalb geaendert.
+
+### Bindestrich-Befund — bestaetigt
+
+Die Einordnung des Task-9-Agenten stimmt und ist rechnerisch konsistent mit seinen eigenen Browser-Messungen.
+
+- `KUNDEN_EMAIL_LANG` = `verwaltung.rechnungswesen@wohnungsbaugesellschaft-beispielstadt-nord-immobilienverwaltung.example`. Nach UAX #14 sind `.` (Klasse IS, Regel LB29: IS × AL) und `@` (Klasse AL) **keine** Umbruchstellen, `-` (Klasse HY) dagegen schon. Laengstes unteilbares Stueck ist damit `verwaltung.rechnungswesen@wohnungsbaugesellschaft-` = 50 Zeichen, nicht die vollen 97. Daraus folgt eine Mindestinhaltsbreite von rund 390px.
+- **Uebersichtskarte:** `<p>` clientWidth 393px (vom Task-9-Agenten gemessen). 390px < 393px, kein Ueberlauf. Der Fehler ist dort mit dieser Adresse tatsaechlich nicht reproduzierbar; die eigene bindestrichlose `EMAIL_OHNE_TRENNZEICHEN` (91 Zeichen, ein einziges unteilbares Stueck) ist die richtige Wahl. **Achtung: Messerschneide.** 390 gegen 393px sind 3px Reserve — bei anderer Schriftmetrik oder anderem Kartenraster kippt das. Die Entscheidung ist richtig, die Begruendung "Bindestriche brechen ohnehin" traegt aber nur, weil die Karte breit genug ist, nicht grundsaetzlich.
+- **Kontaktdaten-Spalte der Detailseite:** rechnerisch rund 226px verfuegbar (Sidebar `minmax(0,1fr)` aus `grid-cols-[minmax(0,3fr)_minmax(0,1fr)]` bei 1440, also ~342px, minus `p-6` der Card, minus `p-3` der Reihe, minus Icon-Block und `gap-3`). 390px Mindestbreite gegen 226px Kasten = rund 164px plus 12px Padding — die gemeldeten **184px** passen. Die Fixture haelt den Fehler dort also wirklich fest.
+- **Weitere Stellen, an denen Bindestriche etwas verdecken koennten — gepruefte Antwort: nein, aber zwei Abdeckungsluecken.**
+  - `ProjektEditor.tsx:3357` und `AnfrageEditor.tsx:1478`: der `<a>` liegt dort in einem schlichten `<div className="p-3 bg-slate-50 rounded-lg">`, **keinem** Flex-Container. `min-width: auto` gilt nur fuer Flex-/Grid-Items — `break-words` allein reicht dort tatsaechlich. Kein verdeckter Fehler.
+  - `LieferantenEditor.tsx:315/324`: hat `min-w-0 flex-1` + `break-words block` bereits, Code ist korrekt. Aber `lieferant-layout.spec.ts:94` setzt `kundenEmails: ['bestellung@beispiel-stahl.example']` (33 Zeichen) — der lange Fall wird dort nie gefahren. Reine Abdeckungsluecke, kein Fehler.
+  - `e2e/mitarbeiter-layout.spec.ts:70` setzt `email: null` — siehe naechster Abschnitt.
+
+### Alle E-Mail-Stellen umbruchfaehig? — vier von fuenf Detailseiten, alle vier Uebersichtskarten; **die fuenfte fehlt**
+
+Vier `mailto:`-Stellen im gesamten `src/`:
+
+1. `ProjektEditor.tsx:3357` — `block ... break-words`, Block-Kontext, in Ordnung.
+2. `AnfrageEditor.tsx:1478` — `block ... break-words`, Block-Kontext, in Ordnung.
+3. `LieferantenEditor.tsx:324` — `break-words block`, Elterndiv `min-w-0 flex-1` (Z. 315), in Ordnung.
+4. `Kundeneditor.tsx:509` — jetzt `break-words block`, Elterndiv `min-w-0 flex-1`, mit Task 9 in Ordnung.
+
+Uebersichtskarten: nur die **Kundenkarte** zeigt ueberhaupt eine E-Mail (`Kundeneditor.tsx:921`, jetzt `<span className="min-w-0 break-words">`, in Ordnung). `ProjektCard`, `AnfrageCard` und `LieferantenKarte` rendern **keine** E-Mail — die `<Mail>`-Icons dort gehoeren zu `FreigabeBadge` bzw. zum Bearbeiten-Modal. Die vier Uebersichtskarten sind damit vollstaendig.
+
+**Die gesuchte fuenfte Stelle: `src/pages/MitarbeiterEditor.tsx:474-476`.** Der Plan nennt fuenf Detailseiten (Projekt, Anfrage, Kunde, Lieferant, **Mitarbeiter**, Plan Z. 245). Die Mitarbeiter-Detailseite zeigt die E-Mail im Kontaktblock in einer `flex items-center gap-3`-Reihe, deren Kind-`<div>` **kein** `min-w-0` traegt und deren `<p className="text-sm font-medium">{email}</p>` **kein** `break-words` hat. Das ist exakt das Muster, das Task 9 in `Kundeneditor.tsx:497` gerade repariert hat. Unentdeckt aus demselben Grund wie beim Kunden: `e2e/mitarbeiter-layout.spec.ts:70` setzt `email: null`, die Zeile rendert nur `-`. Damit ist es viermal derselbe Fehler an einer neuen Stelle plus ein fuenfter, noch offener. Gleiches gilt in derselben Spalte fuer `abteilungNames`, `strasse`/`ort` und die Telefonfelder. **Empfehlung: eigener Task in Abschnitt 6, nicht als Nachbesserung an Task 9 anhaengen** (fremde Datei, eigene Spec noetig).
+
+Nebenbefund gleicher Art, geringere Prioritaet: In `Kundeneditor.tsx` haben die vier Nachbarreihen der reparierten E-Mail-Reihe (Ansprechpartner, Telefon, Mobiltelefon, Zahlungsziel) weiterhin ein `<div>` ohne `min-w-0`. Sie stehen aber jeweils in einem **eigenen** Flex-Container, `min-w-0 flex-1` an der E-Mail-Reihe wirkt sich also nicht auf sie aus — die Frage "bricht das etwas anderes in derselben Spalte?" ist mit **nein** zu beantworten. Der Ansprechpartner ist Freitext und kann denselben Ueberlauf ausloesen; heute ohne Fixture, die das zeigt.
+
+### Die neue Spec `uebersichten-layout.spec.ts` — haelt sie, was sie verspricht? Teilweise
+
+Struktur, Stubs, Selektoren und Rasterzusicherungen sind sauber:
+
+- Alle vier Uebersichten nutzen `grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4`, also 3 Spalten bei 1440 und 4 bei 1920 — `erwarteteSpalten` stimmt fuer alle vier.
+- `kartenBox()` (`ancestor::div[... " shadow-sm " ...][1]`) trifft in allen vier Faellen die `<Card>` (`Card.tsx` setzt `shadow-sm` in der Basisklasse; `hover:shadow-md` matcht den Ausdruck korrekt nicht). Kein verschachteltes `shadow-sm` innerhalb der Karten oberhalb der gesuchten Elemente.
+- `metaZeile()` (`ancestor::div[... " mt-auto " ...][1]`) trifft in allen vier Karten den Meta-Block. Ueberschriften (`h3`), Seitentitel und Primaeraktionen existieren alle so im Code.
+- MIX[0] und MIX[1] liegen bei 3 wie bei 4 Spalten immer in derselben Reihe.
+
+Zwei Einschraenkungen:
+
+1. **Die Kartenhoehen-Zusicherung ist ohne Aussagekraft.** Die `<Card>`s sind Grid-Items; ein CSS-Grid streckt Items einer Reihe per `align-items: stretch` ohnehin auf gleiche Hoehe. `Math.abs(hoeheA - hoeheB) <= 2` ist damit strukturell immer gruen, egal was `mt-auto` macht. Tragend ist allein die y-Position der Trennlinie.
+2. **Die Trennlinien-Zusicherung greift nur in drei der vier Uebersichten.** Sie vergleicht MIX[0] gegen MIX[1] und schlaegt nur an, wenn die beiden Karten unterschiedlich hohe Kopfbloecke haben — praktisch: unterschiedliche Titel-Zeilenzahl. Kartenbreite bei 1440: `main` hat `px-8`, also 1376px, drei Spalten mit `gap-4` ergibt 448px je Karte, minus `p-4` gleich **416px** Inhaltsbreite (deckt sich mit den 393px, die der Task-9-Agent fuer die `<p>`-Zeile inklusive Icon gemessen hat).
+   - Projekte: `Carport` (7 Z.) gegen 88 Zeichen, 1 gegen 2 Zeilen, greift.
+   - Anfragen: `Zaun` (4 Z.) gegen 88 Zeichen, 1 gegen 2 Zeilen, greift.
+   - Kunden: `Meier` (5 Z.) gegen 69 Zeichen, 1 gegen 2 Zeilen, greift.
+   - **Lieferanten: `Stahlbau Nord` (13 Z.) gegen `Stahlhandel Beispiel GmbH und Co. KG` (36 Z.).** 36 Zeichen bei `text-base font-semibold` sind rund 300px — passen locker in 416px, also **beide Titel einzeilig**. Beide Kopfbloecke gleich hoch, beide Trennlinien auf gleicher y-Position, mit `mt-auto` genauso wie ohne. Die Mutation `gap-3` zu `space-y-3` an `LieferantenKarte` wuerde diesen Testfall **nicht** rot drehen.
+   Verschaerfend: auch MIX[2] (51 Z.) und MIX[3] (50 Z.) liegen mit rund 400-425px hart an der 416px-Grenze — die Lieferanten-Fixture erfuellt ihre eigene Praemisse "gemischt lange und kurze Titel" nicht und ist zusaetzlich anfaellig fuer Wackler zwischen den beiden Groessen. `lieferant-layout.spec.ts` hat **gar keinen** Kurztitel-/Trennlinien-Testfall, die Luecke wird also nirgends aufgefangen. Empfehlung: `LIEFERANTEN_MIX[1].lieferantenname` auf 70+ Zeichen anheben, wie bei den anderen drei Fixtures.
+
+Die vom Task-9-Agenten gemeldete Mutationsprobe (`ProjektCard` `gap-3` zu `space-y-3`, 44px Versatz) ist plausibel und deckt Projekte ab — sie sagt aber nichts ueber die anderen drei Karten aus, weil jede Karte ihre eigene Klassenzeile hat.
+
+Weiterer Punkt: `tsconfig.app.json` hat `"include": ["src"]` — `npm run build` (`tsc -b`) typprueft `e2e/` **nicht**. Die 348 Zeilen neue Spec sind damit nur durch den Playwright-Lauf des Autors abgesichert, nicht durch ein Gate. Beim Durchlesen keine Typ- oder Selektorfehler gefunden.
+
+### Mutationsproben je Aenderung (aus dem Spec-Code abgeleitet, kein Browserlauf)
+
+| Aenderung | greifende Zusicherung |
+|---|---|
+| `Kundeneditor.tsx:497` `min-w-0` entfernt | `kunde-layout.spec.ts`, Kopfzeilen-Testfall: `emailUeberstand <= 2` (184px vorher) und `mainUeberstand <= 0` |
+| `Kundeneditor.tsx:497` `flex-1` entfernt | **keine** — `flex-1` ist neben `min-w-0` fuer das Ergebnis wirkungslos (das div ist letztes Item der Reihe, ohne `flex-1` schrumpft es genauso auf die verfuegbare Breite). Ungetestet, harmlos, im Kommentar nicht erwaehnt |
+| `Kundeneditor.tsx:509` `break-words` entfernt | `keinTextLaeuftUeber` in `designPruefung({ strengePruefungen: true })` desselben Testfalls (`<a>` ist Blatt-Element). **Nicht** die Geometrie-Zusicherung: der `<a>`-Kasten bleibt bei Elternbreite stehen, der Text laeuft unsichtbar drueber |
+| `Kundeneditor.tsx:509` `block` entfernt | **keine** — der `<a>` ist Flex-Item von `div.flex.flex-col` und damit ohnehin blockifiziert. Redundant |
+| `Kundeneditor.tsx:921` `<span>` aufgeloest, `min-w-0` oder `break-words` entfernt | `kunde-layout.spec.ts`, "lange E-Mail in der Kartenzeile": `scrollWidth - clientWidth <= 2` (272px vorher). Alle drei Varianten greifen |
+| `ProjektCard` `gap-3` zu `space-y-3` | `uebersichten-layout.spec.ts` (Projekte) und `projekt-uebersicht-layout.spec.ts` (neuer Testfall) — vom Autor real nachgewiesen |
+| `AnfrageCard` `gap-3` zu `space-y-3` | `uebersichten-layout.spec.ts` (Anfragen) und `anfrage-layout.spec.ts` (erweiterter Testfall) |
+| `KundenKarte` `gap-3` zu `space-y-3` | `uebersichten-layout.spec.ts` (Kunden) und der bestehende Testfall in `kunde-layout.spec.ts` |
+| `LieferantenKarte` `gap-3` zu `space-y-3` | **keine** — siehe Abschnitt oben |
+| `RibbonNav` `2xl:max-w-none` entfernt | `menueleiste-layout.spec.ts`, `pc-monitor`-Zweig: `anzeigenameMasse` 191px Inhalt gegen 160px Kasten — vom Autor real nachgewiesen |
+| `RibbonNav` `truncate` zurueck auf `line-clamp-1` | **keine** — bei 1920 ist der Name in beiden Varianten ungekuerzt (191/191), bei 1440 greift `data-kuerzung-erlaubt` in beiden Faellen. Kein Test unterscheidet die Kuerzungsarten |
+| `RibbonNav` `no-scrollbar` wieder eingesetzt | **keine** — der Autor hat selbst gemessen, dass sich die Werte nicht aendern. `menuepunktZeileMasse` ist Waechter fuer kuenftigen Ueberlauf, nicht fuer diese Aenderung |
+
+### Task 8b — Ausweg tragfaehig, aber teurer als noetig
+
+Die Analyse stimmt in der Sache. Nachgelesen in `e2e/hilfen/design.ts`:
+
+- `keinHorizontalerUeberlauf` (Z. 163-172) nimmt `truncate` **zweifach** aus: `hatKuerzungsMarker` (Vorfahren-Suche nach `data-kuerzung-erlaubt`) und `istReineTextKuerzung` (`text-overflow: ellipsis` oder `-webkit-line-clamp`). Task 1b hat das korrekt ergaenzt. `truncate` laeuft dort sauber durch — Frage 6 des Auftrags: **ja**.
+- `keinTextGekuerzt` (Z. 282) kennt `data-kuerzung-erlaubt` ebenfalls. Kein Problem.
+- `keinTextLaeuftUeber` (Z. 213-261) kennt **weder** den Marker **noch** die Text-Kuerzungs-Ausnahme und prueft blind `scrollWidth > clientWidth + 2` auf jedem Blatt-Element mit Text. Ein tatsaechlich gekuerztes `truncate`-Element erfuellt das per Definition. Der Konflikt ist real, der Ausweg funktioniert.
+
+**Die Luecke, die dabei entsteht:** `strengePruefungen` schaltet **zwei** Pruefungen scharf. Nachgezogen wurde nur `keinTextGekuerzt`. `keinTextLaeuftUeber` faellt damit in allen acht Menueleisten-Laeufen komplett weg — auch fuer jeden anderen ueberlaufenden Text auf der Seite. Das ist mehr als noetig: die Log-Aussage "mit `truncate` schlugen alle 8 Testfaelle fehl" wurde am Zwischenstand **ohne** `2xl:max-w-none` gemessen. Mit dem endgueltigen Code ist der Anzeigename bei 1920 ungekuerzt (191/191, vom Autor selbst gemessen) — dort haette `keinTextLaeuftUeber` nicht angeschlagen. Der Konflikt betrifft nur die vier `pc-14zoll`-Faelle; `strengePruefungen: testInfo.project.name === 'pc-monitor'` haette die Abdeckung bei 1920 erhalten. Kein Blocker, aber vermeidbarer Verlust. Der Eintrag als Voraussetzung fuer Task 10 ist richtig und die vorgeschlagene Reparatur ist die saubere Loesung.
+
+### `2xl:max-w-none` — richtige Grenze? Ungetestetes Band 1536-1919px
+
+Bei 1440 bleibt der Name auf `max-w-[10rem]` gekuerzt — richtig, denn die Kategorie-Leiste ist dort bereits knapp (Task 8 musste `gap-8` zu `gap-4` und `px-4` zu `px-3` opfern). Bei 1440 kuerzt es also **nicht** unnoetig.
+
+Die Grenze selbst ist schwaecher begruendet, als sie aussieht: `2xl` greift ab **1536px**, die Rechtfertigung ("rund 300px frei") wurde bei **1920px** gemessen. Zwischen 1536 und 1919 gibt es kein Playwright-Projekt. Bei 1536 sind gegenueber 1920 rund 384px weniger da — der ungekuerzte Anzeigename (im Test 191px, im Echtbetrieb ein unbegrenztes Freitextfeld) frisst dort Platz, den die `flex-1`-Kategorie-Leiste braucht. Weil diese Leiste `overflow-x: auto` (nicht `hidden`) hat, sieht `keinHorizontalerUeberlauf` sie gar nicht — nur `kategorieLeisteMasse` wuerde es merken, und die laeuft nur bei 1440 und 1920. Ein Ueberlauf bei 1536-1700 bliebe unbemerkt. Kein Fehler-Nachweis, aber ein ungedecktes Risiko.
+
+### Weitere Hinweise (alle 🟡)
+
+- **Neue Tests ohne `blockiereFremdeNetzwerkzugriffe`.** Der neue Testfall in `kunde-layout.spec.ts` ("lange E-Mail in der Kartenzeile") und der neue in `projekt-uebersicht-layout.spec.ts` stubben nur `**/api/**`. `index.html` laedt bei jeder Navigation `pdf.js` von cdnjs — diese beiden **neu geschriebenen** Testfaelle machen also echte Netzzugriffe nach draussen. Die neue Spec `uebersichten-layout.spec.ts` macht es richtig. Das flaechendeckende Nachziehen gehoert zu Task 10, aber neu geschriebene Tests sollten es von Anfang an mitbringen.
+- **`LieferantenKarte` hat `truncate`/`line-clamp-2` ohne `data-kuerzung-erlaubt`** an mehreren Stellen (`aliasName`, `ort`, `adresse`, `kontakt`, `vertreter`, Z. 838-858). Mit den kurzen Werten der neuen Fixture kuerzt heute nichts, `keinTextGekuerzt` bleibt gruen. Sobald Task 10 den scharfen Standard setzt oder jemand realistischere Fixtures nutzt, wird das rot. Vorbestehend, ausserhalb des Diffs.
+- **Kommentar und Code weichen leicht ab:** der Kommentar ueber `Kundeneditor.tsx:497` begruendet nur `min-w-0`, hinzugefuegt wurde `min-w-0 flex-1`. Kleinigkeit, aber die Rezeptur wird von kuenftigen Tasks abgeschrieben.
+- **DSGVO/Sicherheit:** unauffaellig. Alle Fixtures sind Fantasienamen mit `.example`-Domains, keine echten Personen- oder Firmendaten, keine Zugangsdaten, keine neuen Netzwerkziele ausser dem oben genannten cdnjs-Nebeneffekt. Die Zahlendreher-Korrekturen (583px/765px statt 411px/187px) decken sich mit den Werten aus dem Design-Review Runde 2.
+
+### Auftrag an den Design-Reviewer
+
+1. `LieferantenKarte`: `gap-3` zu `space-y-3` mutieren und `uebersichten-layout.spec.ts -g Lieferanten` fahren. Erwartung laut Analyse: **bleibt gruen** = Luecke bestaetigt. Dann Titel-Zeilenzahl von `LIEFERANTEN_MIX[1..3]` bei 1440 und 1920 nachmessen.
+2. `menueleiste-layout.spec.ts` einmal mit `strengePruefungen: testInfo.project.name === 'pc-monitor'` fahren: bleibt `pc-monitor` gruen? Dann war der Abdeckungsverlust bei 1920 vermeidbar.
+3. Viewport 1536 und 1650 von Hand: Anzeigename ungekuerzt (`2xl:max-w-none`) — passt die Kategorie-Leiste noch (`scrollWidth <= clientWidth`)? Zusaetzlich mit einem deutlich laengeren Anzeigenamen als `Friederike Beispiel-Musterfrau`.
+4. `Kundeneditor.tsx:509`: nur `break-words` entfernen (`min-w-0 flex-1` stehen lassen) — muss ueber `keinTextLaeuftUeber` rot werden, nicht ueber die Geometrie-Zusicherung.
+5. `Kundeneditor.tsx:497`: nur `flex-1` entfernen — Erwartung: bleibt gruen (bestaetigt, dass es wirkungslos ist).
+6. `MitarbeiterEditor.tsx:474-476` mit einer langen, bindestrichlosen E-Mail bei 1440 im Browser messen: Ueberstand ueber den eigenen Kasten und `main.scrollWidth - main.clientWidth`. Belegt die fuenfte Stelle mit Zahlen fuer den Folge-Task.
