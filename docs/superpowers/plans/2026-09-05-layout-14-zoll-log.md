@@ -1752,3 +1752,48 @@ Bedenken / Abweichungen vom Plan:
 - Keine inhaltliche Abweichung vom Auftrag der Nachbesserung. Kleine Ergaenzung: `blockiereFremdeNetzwerkzugriffe()` wurde zusaetzlich auch in `stubLieferantenUebersichtApi` verdrahtet (nicht nur im Detail-Stub) — die Uebersicht rendert zwar kein `GoogleMapsEmbed`, laedt aber ueber `index.html` ebenfalls `pdf.js` von cdnjs bei jeder Navigation; der Riegel greift dort also ebenfalls, ohne dass es der Auftrag ausdruecklich verlangt hat ("riegel allgemein" gelesen als: ueberall in dieser Datei anwenden, nicht nur im einen Testfall, der ihn ausgeloest hat).
 - `min-w-0` wurde ausschliesslich in `LieferantenEditor.tsx` gesetzt (Projekt/Anfrage/Kunde macht laut Auftrag ein anderer Agent) — diese drei Dateien wurden nicht angefasst.
 - Sonst keine Abweichungen: beide Befunde wie im Auftrag beschrieben behoben, testgetrieben fuer Befund 1 (rot vor dem Fix verifiziert, danach gruen), Befund 2 durch Netzwerk-Mitschnitt nach dem Fix belegt.
+
+## Abschnitt 4 — Task 3b, Nachbesserung 1 (Coding-Agent)
+
+Zeit: 2026-09-06T13:10:54Z
+Branch: layout/task-3b-nacharbeit (Worktree wt/layout-task-3b, unverändert weiterverwendet)
+Commit(s): 769a74fc (Projekt), 7e739424 (Anfrage), 167e2d28 (Kunde)
+Status: fertig
+
+Anlass: Design-Reviewer meldete einen 🔴 (h1 überläuft bei einem einzigen langen Wort) plus vier 🟡 zu Nacharbeit Abschnitt 4.
+
+Was gemacht wurde (testgetrieben — rot verifiziert per Patch aus git diff, git checkout -- auf die Produktivdatei(en), Spec/Probe rot gefahren, Patch zurückgespielt, grün gefahren; kein git stash verwendet):
+
+**Der Blocker (🔴): min-w-0 an die h1 selbst.** Bestätigt: die h1 ist eigenes Flex-Item in "flex items-center gap-3 flex-wrap" und behält ihr eigenes min-width: auto — break-words senkt die Mindestinhaltsbreite eines Flex-Items nicht, das min-w-0 aus der letzten Nacharbeit saß nur am umschließenden div, nicht an der h1. Fix in allen drei Dateien: min-w-0 zusätzlich auf der h1-Klasse (ProjektEditor.tsx, AnfrageEditor.tsx, Kundeneditor.tsx).
+
+Rot verifiziert mit einem Wort ohne Leerzeichen (Absturzsicherungspodesttreppenanlagenmontagearbeitenüberwachungsdokumentation, 79 Zeichen, bzw. ein 67-Zeichen-Pendant für Kunde), gemessen h1-Breite konstant 999px (841px bei Kunde) über alle drei Seiten und beide Größen:
+- Projekt: 1440 → Titelblock 548px, Überstand 583px. 1920 → Titelblock 366px, Überstand 765px.
+- Anfrage: 1440 → Titelblock 720px, Überstand 411px. 1920 → Titelblock 944px, Überstand 187px (deckt sich exakt mit den vom Koordinator genannten Zahlen 411px/187px — offenbar dieselbe Seite/derselbe Wortlänge wie in der ursprünglichen Messung).
+- Kunde: 1440 → Titelblock 896px, Überstand 77px.
+
+Nach dem Fix: Überstand ≤ 1px in allen sechs Kombinationen (grün verifiziert).
+
+Zusicherung: neue Testfälle in allen drei Specs ("Projekt-Kopfzeile: h1 bei einem einzigen langen Wort ohne Leerzeichen", der bestehende Anfrage-Komposita-Test um dieselbe Prüfung erweitert, "Kunden-Detailseite: h1 bei einem einzigen langen Wort ohne Leerzeichen" neu) — jeweils rechte Kante der h1 gegen rechte Kante des Titelblocks (xpath-Ancestor mit min-w-[18rem]-Klasse), Toleranz 1px.
+
+**Vier 🟡, gleiche Dateien:**
+
+1. **space-y-3 → gap-3** an ProjektCard, AnfrageCard, KundenKarte, KundenProjektKarte, KundenAnfrageKarte. Ursache bestätigt: Tailwinds space-y-3 erzeugt den Selektor "> * + *" (Spezifität 0-3-0), der die Margin auf jedes Kind außer dem ersten setzt und damit höhere Spezifität hat als .mt-auto (0-1-0) — mt-auto am Meta-Block wurde dadurch nie wirksam. Rot verifiziert an KundenKarte mit zwei Kunden derselben Kartenreihe (ein kurzer, ein langer Name): Ansprechpartner-Zeilen 24px versetzt (y=611/635) — exakt die vom Koordinator genannte Größenordnung. Nach dem Fix: 0px Versatz. Test dauerhaft in kunde-layout.spec.ts ergänzt (zweiter Kunde in derselben Zeile, Zusicherung auf gleiche y-Position der Meta-Block-Zeilen).
+2. **E-Mail-Kürzung ohne title**: AnfrageEditor.tsx (Kunden-E-Mail im Seitenbereich, Z. 1454 im Ausgangszustand) auf break-words umgestellt — dieselbe Kürzung, die im Projekt-Editor bereits behoben war, blieb hier unentdeckt, weil die Fixture kundenEmails: [] setzte. Fixture um eine lange E-Mail-Adresse ergänzt, rot verifiziert (keinTextLaeuftUeber, 416px Überstand), Fix danach grün. Kundeneditor.tsx (schwächere Zweitstelle, Kontaktdaten der Detailseite) ebenfalls auf break-words umgestellt, ohne eigenen neuen Testfall (bestehende Fixture-E-Mail dort ist kurz genug, dass sie mit oder ohne Fix nicht überläuft — der Umstellung auf break-words schadet das nicht, sie ist trotzdem korrekt).
+3. **Kundeneditor.tsx Knopfblock**: flex-wrap + gap-2 ergänzt, um exakt der Rezeptur zu entsprechen. Heute mit nur einem Knopf ("Bearbeiten") visuell wirkungslos, keine neue Zusicherung dafür gebaut (nichts, das mit einem einzelnen Knopf messbar rot werden könnte).
+4. **"Bau Tagebuch" im Tab-Inhalt → "Tagebuch"**: ProjektEditor.tsx und AnfrageEditor.tsx, passend zu den bereits umbenannten Reitern. Keine bestehende Zusicherung hing daran (per Grep bestätigt), keine neue nötig.
+
+**Messung ohne Fix (Auftrag des Koordinators): Projekt-Reiterleiste mit zweistelligen Zählern.** Fixture mit 34 Einträgen je Kategorie (Zeiten, Material, E-Mails, Geschäftsdokumente, Dateien, Tagebuch — alle als "(34)" sichtbar). Gemessen:
+- 1440: Reiterleiste bricht wieder auf 6+1 Zeilen um (y-Werte 593×6, 635×1) — derselbe Umbruch wie vor der gap-1/px-2-Korrektur aus der ersten Nacharbeits-Runde, diesmal durch die breiteren Zähler statt durch den Namen "Tagebuch" ausgelöst.
+- 1920: alle sieben Reiter bleiben einzeilig (y=627 durchgehend).
+Kein Fix vorgenommen — die Testfall-Zusicherungen sind bewusst nur auf "kein Reiter verschwindet, kein seitliches Verstecken" begrenzt (7 Knöpfe, alle sichtbar, kein overflow), beide erfüllt. Die 17px-Reserve bei 1440 ist damit als reale, aber nicht blockierende Grenze dokumentiert: schon zweistellige Zähler kippen die Leiste zurück in den Umbruch.
+
+Ergebnis der Gates (aus react-pc-frontend/, Port 5217 frei, netstat -ano | findstr :5217 leer):
+- E2E_PORT=5217 npx playwright test e2e/projekt-detail-layout.spec.ts e2e/anfrage-layout.spec.ts e2e/kunde-layout.spec.ts: 22/22 grün (11 Testfälle × pc-14zoll + pc-monitor), gegen den finalen committeten Stand nachgefahren.
+- npx vitest run src/pages/ProjektEditor.test.tsx src/pages/AnfrageEditor.test.tsx src/pages/Kundeneditor.test.tsx: 15/15 grün.
+- npm run lint: 0 Fehler, genau die 1 vorbestehende Warnung (BelegeKasseEditor.tsx:1204) — identisch zur Baseline.
+- npm run build: grün (tsc -b + vite build). Build-Output vor jedem Commit verworfen (git checkout -- src/main/resources/static + git clean -f src/main/resources/static/assets), git status danach sauber.
+
+Bedenken / Abweichungen vom Auftrag:
+- Für die 🟡-Punkte 3 (Knopfblock-Rezeptur) und 4 (Tagebuch-Überschrift) wurden keine neuen Zusicherungen gebaut, weil an diesen Stellen mit den heutigen Fixtures nichts automatisiert messbar rot werden kann (ein Knopf allein umbricht nie sichtbar; die Überschrift hing an keiner bestehenden Prüfung). Reine Textkorrektur bzw. Klassenangleichung, per Lesen verifiziert.
+- Kundeneditor.tsx-Kontaktdaten-E-Mail (🟡-Punkt 2, schwächere Zweitstelle) hat keinen eigenen roten Testfall bekommen — die bestehende Fixture-E-Mail ist zu kurz, um bei den heutigen Spaltenbreiten zu überlaufen. Fix trotzdem umgesetzt (break-words statt truncate), da korrekt und risikofrei.
+- Sonst keine Abweichungen — alle fünf im Auftrag genannten Punkte (Blocker + vier 🟡) sowie die Messung wurden an genau den genannten Stellen umgesetzt bzw. durchgeführt.
