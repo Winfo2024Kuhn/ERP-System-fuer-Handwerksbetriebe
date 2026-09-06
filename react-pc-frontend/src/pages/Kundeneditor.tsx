@@ -489,12 +489,24 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
                         <Mail className="w-4 h-4" />
                     </div>
-                    <div>
+                    {/* min-w-0 (Nachtrag Abschnitt 5, Task 9): dieses div ist
+                        Flex-Item der Reihe und behaelt sonst min-width: auto --
+                        eine lange E-Mail-Adresse schiebt es dann ueber seinen
+                        Kasten hinaus (Design-Review Runde 2, Befund 4: 184px
+                        Ueberstand bei 1440, main.scrollWidth-clientWidth 127px).
+                        Gleiches Muster wie LieferantenEditor.tsx Z. 315. */}
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">E-Mail</p>
                         <div className="flex flex-col">
                             {kunde.kundenEmails && kunde.kundenEmails.length > 0 ? (
                                 kunde.kundenEmails.map(email => (
-                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline">{email}</a>
+                                    // break-words statt truncate: eine E-Mail-Adresse ist
+                                    // keine Ueberschrift, die man kuerzen darf -- lieber
+                                    // umbrechen lassen als in der schmalen
+                                    // Kontaktdaten-Spalte abzuschneiden. Projekt, Anfrage
+                                    // und Lieferant sind an der gleichen Stelle laengst so
+                                    // gebaut -- das ist die letzte der vier.
+                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline break-words block">{email}</a>
                                 ))
                             ) : (
                                 <span className="text-slate-400">-</span>
@@ -894,11 +906,21 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                         <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-rose-400" />{kunde.telefon}</p>
                     )}
                     {kunde.kundenEmails?.[0] && (
-                        // break-words statt truncate (Nachbesserung 1,
-                        // Design-Review 🟡, schwaechere Zweitstelle derselben
-                        // Kuerzung wie in AnfrageEditor.tsx): kein title als
+                        // Nachtrag Abschnitt 5 (Task 9, Design-Review Runde 2,
+                        // Befund 2): break-words allein (Nachbesserung 1) reichte
+                        // nicht -- der Text war ein ANONYMES Flex-Item (direkter
+                        // Text-Node in "flex items-center gap-2") mit
+                        // min-width: auto, und overflow-wrap: break-word senkt
+                        // diese Mindestbreite nicht (nur break-all/anywhere tun
+                        // das, siehe .claude/skills/loese-problem/references/
+                        // kriterien.md). Fix: Text in ein eigenes <span> mit
+                        // min-w-0 fassen, dann greift break-words wie beim
+                        // <h1>-Fix aus Abschnitt 4. Kein title als
                         // Rueckfallweg -- lieber umbrechen.
-                        <p className="flex items-center gap-2 break-words"><Mail className="w-4 h-4 text-rose-400 shrink-0" />{kunde.kundenEmails[0]}</p>
+                        <p className="flex items-center gap-2">
+                            <Mail className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.kundenEmails[0]}</span>
+                        </p>
                     )}
                 </div>
             </div>

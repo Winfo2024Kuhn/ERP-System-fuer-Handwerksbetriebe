@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { designPruefung } from './hilfen/design';
+import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
 
 /**
  * Task 5 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -42,21 +42,56 @@ import { designPruefung } from './hilfen/design';
  * "Treppenanlage mit Podest und Absturzsicherung Buerogebaeude
  * Beispielstrasse" (Spec-Vorgabe) fuer die Mini-Karten Projekt/Anfrage/
  * Dokument.
+ *
+ * Nachtrag Abschnitt 5 (Task 9, zwei Befunde aus den Reviews von Abschnitt 4,
+ * beide vorbestehend, beide ungetestet, beide dieselbe Sorte Fehler wie der
+ * 🔴-Blocker aus Abschnitt 4 -- ein Flex-Item mit min-width: auto, das
+ * overflow-wrap: break-word nicht senkt):
+ *
+ * 1. Kontaktdaten-Spalte der Detailseite (Kundeneditor.tsx Z. 497): der
+ *    E-Mail-Link hatte weder break-words noch block noch title. Design-Review
+ *    Runde 2 (Befund 4) mass mit einer realistischen 99-Zeichen-Adresse
+ *    184px Ueberstand ueber den eigenen Kasten bei 1440 und
+ *    main.scrollWidth - main.clientWidth = 127px -- Zielwert Nr. 1 des
+ *    Vorhabens, verletzt. DUMMY_KUNDE trug bisher nur eine 25-Zeichen-Adresse
+ *    (info@beispiel-bau.example), die den Fehler nie zeigte -- deshalb jetzt
+ *    dieselbe lange Adresse wie in projekt-detail-layout.spec.ts und
+ *    anfrage-layout.spec.ts (KUNDEN_EMAIL_LANG). Projekt, Anfrage und
+ *    Lieferant sind an der gleichen Stelle laengst auf break-words -- das ist
+ *    die letzte der vier.
+ * 2. Kunden-Uebersichtskarte (Kundeneditor.tsx Z. 901): die E-Mail-Zeile ist
+ *    "flex items-center gap-2 break-words" -- der Text ist damit ein
+ *    anonymes Flex-Item mit min-width: auto, und overflow-wrap: break-word
+ *    senkt die Mindestinhaltsbreite NICHT (das tun nur break-all/anywhere).
+ *    Vorher hat truncate wenigstens geklippt, jetzt schiebt der Text ueber
+ *    die Karte -- verschaerfend: diese Karte ist als einzige der sechs ohne
+ *    overflow-hidden. Fix: den Text in ein <span
+ *    className="min-w-0 break-words"> fassen. Eigener Testfall unten
+ *    ("lange E-Mail in der Kartenzeile").
  */
 
 const KUNDE_ID = 3;
 const KUNDE_LANG = 'Wohnungsbaugesellschaft Beispielstadt Nord mbH und Co. Verwaltungs KG';
 const BAUVORHABEN_LANG = 'Treppenanlage mit Podest und Absturzsicherung Bürogebäude Beispielstraße';
+// Dieselbe Adresse wie in projekt-detail-layout.spec.ts und
+// anfrage-layout.spec.ts (KUNDEN_EMAIL_LANG dort) -- 97 Zeichen, kein
+// Leerzeichen zum Umbrechen, genau der Fall aus Design-Review Runde 2,
+// Befund 4.
+const KUNDEN_EMAIL_LANG = 'verwaltung.rechnungswesen@wohnungsbaugesellschaft-beispielstadt-nord-immobilienverwaltung.example';
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-// Bewusst kurze Adress-/Kontaktfelder: Ziel dieser Spec ist die Kopfzeile und
-// die Karten-Titel, nicht jede denkbare Kuerzung im Sidebar-Kontaktblock.
-// GoogleMapsEmbed rendert ohnehin nur bei gesetzter Adresse ein echtes
-// <iframe src="https://www.google.com/maps?...">; die bleibt hier bewusst
-// leer, damit der gestubbte Test keinen echten Netzwerkzugriff ausloest.
+// Bewusst kurze Adressfelder (strasse/plz/ort bleiben leer): Ziel dieser
+// Spec ist die Kopfzeile und die Karten-Titel, nicht jede denkbare Kuerzung
+// im Sidebar-Kontaktblock. GoogleMapsEmbed rendert ohnehin nur bei gesetzter
+// Adresse ein echtes <iframe src="https://www.google.com/maps?...">; die
+// bleibt hier bewusst leer, damit der gestubbte Test keinen echten
+// Netzwerkzugriff ausloest. Die E-Mail-Adresse ist dagegen bewusst LANG
+// (Nachtrag Abschnitt 5, siehe Kopfkommentar Befund 1) -- eine kurze Adresse
+// wie vorher (info@beispiel-bau.example) zeigt den Ueberlauf in der
+// Kontaktdaten-Spalte nie.
 const DUMMY_KUNDE = {
     id: KUNDE_ID,
     kundennummer: 'K-1003',
@@ -65,7 +100,7 @@ const DUMMY_KUNDE = {
     telefon: '0511 123456',
     mobiltelefon: '',
     zahlungsziel: 8,
-    kundenEmails: ['info@beispiel-bau.example'],
+    kundenEmails: [KUNDEN_EMAIL_LANG],
     hatProjekte: true,
     statistik: {
         projektAnzahl: 1,
@@ -230,6 +265,39 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
             knopfblockBox!.x,
             `Knopfblock (x=${knopfblockBox!.x.toFixed(0)}) steht nicht rechts von der Kartenmitte (${karteMitteX.toFixed(0)}) -- ml-auto fehlt oder wirkt nicht`,
         ).toBeGreaterThan(karteMitteX);
+
+        // Nachtrag Abschnitt 5 (Task 9), Befund 1: die E-Mail in der
+        // Kontaktdaten-Spalte hatte weder break-words noch block noch title
+        // und lief bei einer langen Adresse 184px ueber ihren eigenen Kasten
+        // (Design-Review Runde 2). Zwei Zusicherungen, die das direkt
+        // festhalten -- nicht nur ueber den generischen main-Check von
+        // designPruefung weiter unten:
+        const emailLink = page.getByRole('link', { name: KUNDEN_EMAIL_LANG, exact: true });
+        await expect(emailLink).toBeVisible();
+        const emailKasten = emailLink.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " bg-slate-50 ")][1]',
+        );
+        const emailLinkBox = await emailLink.boundingBox();
+        const emailKastenBox = await emailKasten.boundingBox();
+        expect(emailLinkBox, 'E-Mail-Link muss einen messbaren Rahmen haben').not.toBeNull();
+        expect(emailKastenBox, 'Kontaktdaten-Kasten der E-Mail muss einen messbaren Rahmen haben').not.toBeNull();
+        const emailUeberstand = (emailLinkBox!.x + emailLinkBox!.width) - (emailKastenBox!.x + emailKastenBox!.width);
+        expect(
+            emailUeberstand,
+            `E-Mail-Link ragt ${emailUeberstand.toFixed(0)}px rechts aus seinem Kasten (Design-Review Runde 2, Befund 4: 184px bei 1440) -- braucht break-words/block auf dem <a>`,
+        ).toBeLessThanOrEqual(2);
+
+        // Zielwert Nr. 1 des gesamten Vorhabens: main darf nicht ueberlaufen.
+        // Design-Review Runde 2 mass hier 127px bei 1440 (7px bei 1920) --
+        // genau der Fehler, den der Fix beheben muss.
+        const mainUeberstand = await page.evaluate(() => {
+            const main = document.querySelector('main');
+            return main ? main.scrollWidth - main.clientWidth : 0;
+        });
+        expect(
+            mainUeberstand,
+            `main laeuft ${mainUeberstand}px ueber (Design-Review Runde 2, Befund 4: 127px bei 1440, 7px bei 1920)`,
+        ).toBeLessThanOrEqual(0);
 
         // Ebene 2: Screenshot + designPruefung inkl. strengePruefungen, muss
         // vor dem Fix an keinTextLaeuftUeber() scheitern (Kasten enger als der
@@ -420,5 +488,69 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
             versatz,
             `Meta-Block-Zeilen sind ${versatz.toFixed(0)}px versetzt (y-Werte: ${yWerte.map((y) => y.toFixed(0)).join(', ')}) -- mt-auto wirkt nicht (space-y-3-Spezifitaet?)`,
         ).toBeLessThanOrEqual(2);
+    });
+
+    // Nachtrag Abschnitt 5 (Task 9), Befund 2 aus den Reviews von Abschnitt 4:
+    // die E-Mail-Zeile der Kartenuebersicht ist "flex items-center gap-2
+    // break-words" -- der Text ist ein ANONYMES Flex-Item (direkter Text-Node
+    // in einem Flex-Container) mit min-width: auto. Wichtig fuer die
+    // Zusicherung (im Browser nachgemessen, siehe Bedenken im Kontext-Log):
+    // KUNDEN_EMAIL_LANG (mit Bindestrichen im Domainteil) zeigt den Fehler
+    // HIER NICHT -- Bindestriche sind nach der Unicode-Zeilenumbruch-Regel
+    // ohnehin erlaubte Umbruchstellen, unabhaengig von break-words, und genau
+    // dort bricht die Zeile schon um. Der Fehler zeigt sich erst mit einem
+    // wirklich zusammenhaengenden (bindestrichlosen) langen Wort -- exakt der
+    // Fall, den keinTextLaeuftUeber() an anderer Stelle mit "Kasten 26px,
+    // Textbreite 95px" beschreibt. <p> selbst hat ein Element-Kind (das
+    // Mail-Icon) und ist deshalb kein "Blatt-Element" -- keinTextLaeuftUeber()
+    // ueberspringt es, keinHorizontalerUeberlauf() ebenso (kein
+    // overflow-x: hidden gesetzt). Deshalb direkt scrollWidth/clientWidth der
+    // Zeile selbst pruefen statt eine Bounding-Box-Geometrie zu vergleichen,
+    // die den unsichtbar ueberlaufenden Text-Node gar nicht sehen wuerde.
+    // Vorher hat truncate wenigstens geklippt; jetzt schiebt der Text ueber
+    // die Karte -- verschaerfend: KundenKarte ist als einzige der sechs
+    // Kartentypen ohne overflow-hidden. Ungetestet bisher, weil keine
+    // Fixture der Uebersicht kundenEmails gesetzt hat.
+    const EMAIL_OHNE_TRENNZEICHEN = 'buchhaltungsundverwaltungsabteilungfuerrechnungswesenundmahnwesen@beispielstadtnord.example';
+
+    test('lange E-Mail in der Kartenzeile laeuft nicht ueber die Karte', async ({ page }) => {
+        await page.route('**/api/**', (route) => {
+            const pfad = new URL(route.request().url()).pathname;
+            const methode = route.request().method();
+            if (pfad === '/api/auth/me') {
+                return json(route, {
+                    id: 1, username: 'anna.buero', displayName: 'Anna Büro',
+                    active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                });
+            }
+            if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+            if (pfad === '/api/kunden' && methode === 'GET') {
+                return json(route, {
+                    kunden: [
+                        {
+                            id: 303, kundennummer: 'K-1303', name: 'Meier', plz: '30159', ort: 'Hannover',
+                            ansprechspartner: 'Erika Musterfrau', hatProjekte: true,
+                            kundenEmails: [EMAIL_OHNE_TRENNZEICHEN],
+                        },
+                    ],
+                    gesamt: 1,
+                });
+            }
+            return json(route, []);
+        });
+        await page.goto('/kunden');
+
+        const emailZeile = page.getByText(EMAIL_OHNE_TRENNZEICHEN, { exact: true });
+        await expect(emailZeile).toBeVisible();
+
+        const zeileUeberstand = await emailZeile.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(
+            zeileUeberstand,
+            `E-Mail-Zeile laeuft ${zeileUeberstand}px ueber ihren eigenen Kasten -- KundenKarte hat kein overflow-hidden, braucht <span className="min-w-0 break-words"> um den Text`,
+        ).toBeLessThanOrEqual(2);
+
+        // Netz-Effekt: eine ueberlaufende Karte im Grid darf auch das
+        // Dokument bzw. main nicht in die Breite treiben.
+        await keinHorizontalerUeberlauf(page);
     });
 });
