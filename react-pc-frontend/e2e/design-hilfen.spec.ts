@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
+import { designPruefung, keinHorizontalerUeberlauf, keineUeberschneidungen, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
 
 /**
  * Rote-dann-gruene Specs fuer die drei Design-Pruefungen aus Spec E
@@ -398,5 +398,205 @@ test.describe('unsichtbar versteckt -- Abgrenzung zu echten Befunden', () => {
             <div class="kasten"><p>Wohnungsbaugesellschaft Beispielstadt Nord mbH</p></div>
         `);
         await expect(keinTextLaeuftUeber(page)).rejects.toThrow();
+    });
+});
+
+// Abschnitt 10, Block 1, Punkt 1: Voraussetzung dafuer, dass strengePruefungen
+// auf true als Standard gehen darf (siehe designPruefung-Kommentar). Ohne
+// diese Ausnahme meldete keinTextLaeuftUeber JEDES echt gekuerzte
+// truncate-Element -- Task 8b belegt: mit strengePruefungen: true fielen alle
+// acht Tests der Menueleisten-Spec um, sobald der Anzeigename wieder auf
+// truncate stand. Dieselbe Arbeitsteilung wie bei keinHorizontalerUeberlauf
+// (Task 1b, siehe oben): zwei unabhaengige Ausnahmen.
+test.describe('keinTextLaeuftUeber ignoriert gewollte Kuerzungen (Abschnitt 10, Voraussetzung fuer strengePruefungen: true)', () => {
+    // Ein truncate-Blatt-Element (overflow:hidden + text-overflow:ellipsis +
+    // white-space:nowrap) mit echt gekuerztem Text laeuft per Definition
+    // ueber seinen eigenen Kasten (scrollWidth > clientWidth) -- genau das
+    // Muster, das ohne die neue Ausnahme jeden truncate-Einsatz verbieten wuerde.
+    const TRUNCATE_MIT_MARKER = `
+        <style>
+            html, body { margin: 0; padding: 0; }
+            .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        </style>
+        <div class="titel" data-kuerzung-erlaubt>Treppenanlage mit Podest und Absturzsicherung</div>
+    `;
+
+    test('truncate mit data-kuerzung-erlaubt am Element selbst laeuft durch', async ({ page }) => {
+        await page.setContent(TRUNCATE_MIT_MARKER);
+        await keinTextLaeuftUeber(page);
+    });
+
+    test('truncate mit data-kuerzung-erlaubt an einem Vorfahren laeuft durch', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            </style>
+            <div data-kuerzung-erlaubt><div class="titel">Treppenanlage mit Podest und Absturzsicherung</div></div>
+        `);
+        await keinTextLaeuftUeber(page);
+    });
+
+    // Ohne Marker ist die Kuerzung nach den Global Constraints regelwidrig --
+    // aber das ist keinTextGekuerzt's Job, nicht dieser Pruefung (Arbeitsteilung,
+    // siehe Kommentar in design.ts). keinTextLaeuftUeber darf hier nicht
+    // zusaetzlich anschlagen.
+    test('truncate ohne Marker laeuft trotzdem durch (nicht seine Zustaendigkeit -- keinTextGekuerzt ahndet das)', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .titel { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            </style>
+            <div class="titel">Treppenanlage mit Podest und Absturzsicherung</div>
+        `);
+        await keinTextLaeuftUeber(page);
+        await expect(keinTextGekuerzt(page)).rejects.toThrow();
+    });
+
+    // line-clamp ist die zweite Kuerzungsart des Projekts (index.css
+    // ".line-clamp-2", ohne text-overflow: ellipsis) -- muss ebenfalls
+    // ausgenommen sein, das <p> darin ist ein Blatt-Element mit
+    // scrollHeight > clientHeight, nicht scrollWidth > clientWidth, bleibt
+    // also ohnehin unberuehrt; der Titel-<div> selbst hat aber ebenfalls
+    // keinen Breiten-Ueberstand -- relevant ist hier die Kombination mit
+    // einem echten Breiten-Ueberstand am selben Element wie beim
+    // Ellipsis-Fall oben. Kein separater Test noetig: istReineTextKuerzung()
+    // greift unabhaengig von der Kuerzungsart, siehe design.ts.
+
+    // Die Ausnahme darf NICHT zu breit geschnitten sein: ein Kasten mit
+    // overflow:hidden, der ein zu breites Kind abschneidet, aber selbst KEIN
+    // Blatt-Element mit eigenem Text ist, wird von keinTextLaeuftUeber ohnehin
+    // nicht erfasst (das ist keinHorizontalerUeberlauf's Job). Hier die
+    // Abgrenzung fuer den Fall, der tatsaechlich in den Zustaendigkeitsbereich
+    // faellt: ein Blatt-Element mit echtem Text-Ueberstand, das WEDER Marker
+    // NOCH text-overflow/line-clamp traegt, muss weiterhin ausloesen.
+    test('Blatt-Element mit echtem Text-Ueberstand ohne Marker und ohne Kuerzungsstil loest weiterhin aus', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .kasten { width: 50px; overflow: visible; white-space: nowrap; font-size: 16px; }
+            </style>
+            <div class="kasten">Ein viel zu langer Text fuer diesen Kasten</div>
+        `);
+        await expect(keinTextLaeuftUeber(page)).rejects.toThrow();
+    });
+});
+
+// Abschnitt 10, Block 1, Punkte 2+3: keineUeberschneidungen schnitt bisher
+// nicht mit scrollenden Vorfahren und kannte keine Sticky-Leisten. Ursache
+// der 18 roten Faelle bei 1536 x 960 (Task 10b): aus einem scrollenden
+// Formularbereich herausgescrollte Felder hatten weiterhin ihr volles
+// Rechteck, ihr sichtbarer Anteil war 0px.
+test.describe('keineUeberschneidungen (Abschnitt 10)', () => {
+    test('zwei echt ueberlappende Knoepfe loesen weiterhin aus', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                button { position: absolute; width: 100px; height: 40px; }
+                .a { left: 0; top: 0; }
+                .b { left: 50px; top: 0; }
+            </style>
+            <button class="a">Speichern</button>
+            <button class="b">Abbrechen</button>
+        `);
+        await expect(keineUeberschneidungen(page)).rejects.toThrow();
+    });
+
+    test('zwei nicht ueberlappende Knoepfe bleiben unauffaellig', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                button { position: absolute; width: 100px; height: 40px; }
+                .a { left: 0; top: 0; }
+                .b { left: 200px; top: 0; }
+            </style>
+            <button class="a">Speichern</button>
+            <button class="b">Abbrechen</button>
+        `);
+        await keineUeberschneidungen(page);
+    });
+
+    test('ein aus einem scrollenden Formularbereich herausgescrollter Knopf zaehlt nicht mehr mit (Task 10b, 18 rote Faelle)', async ({ page }) => {
+        // Der Formularbereich ist 100px hoch und scrollt; der zweite Knopf
+        // steht 300px tiefer im Formular und ist nach dem Scrollen weit
+        // ausserhalb des sichtbaren Bereichs -- seine rohe boundingBox()
+        // wuerde trotzdem ueber der Fussleiste darunter liegen.
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .formular { position: relative; width: 300px; height: 100px; overflow-y: auto; }
+                .formular button { position: absolute; width: 100px; height: 40px; left: 0; }
+                .oben { top: 0; }
+                .unten { top: 300px; }
+                .fussleiste { position: relative; width: 300px; height: 40px; }
+                .fussleiste button { position: absolute; left: 0; top: 0; width: 100px; height: 40px; }
+            </style>
+            <div class="formular">
+                <button class="oben">Oben</button>
+                <button class="unten">Herausgescrollt</button>
+            </div>
+            <div class="fussleiste"><button>Speichern</button></div>
+        `);
+        // Formularbereich soweit scrollen, dass "Herausgescrollt" komplett
+        // aus dem 100px hohen Sichtfenster heraus ist.
+        await page.locator('.formular').evaluate((el) => { el.scrollTop = 300; });
+        await keineUeberschneidungen(page);
+    });
+
+    test('eine sticky Leiste ueber gescrolltem Inhalt darunter wird nicht gemeldet (Design-Review Abschnitt 9, Hinweis 5)', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .leiste { position: sticky; top: 0; height: 60px; background: white; }
+                .leiste button { position: absolute; left: 0; top: 0; width: 100px; height: 40px; }
+                .inhalt { height: 800px; }
+                .inhalt button { position: absolute; top: 40px; left: 0; width: 100px; height: 40px; }
+            </style>
+            <div class="leiste"><button>Menue</button></div>
+            <div class="inhalt"><button>Inhalt-Knopf</button></div>
+        `);
+        // Nach unten scrollen, bis der Inhalt-Knopf (der im Dokumentfluss bei
+        // y=40 startet) unter die 60px hohe sticky Leiste rutscht.
+        await page.evaluate(() => window.scrollTo(0, 40));
+        await keineUeberschneidungen(page);
+    });
+
+    test('zwei echte, uebereinanderliegende sticky Leisten loesen weiterhin aus', async ({ page }) => {
+        // Fuellung VOR und NACH leiste-b: ohne die Fuellung danach liesse
+        // sich nie so weit scrollen, dass leiste-b (die sonst am Dokumentende
+        // steht) ihren "top: 20px"-Versatz ueberhaupt erreicht -- ihre
+        // statische Position waere schon der maximale Scroll-Endpunkt.
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .leiste-a { position: sticky; top: 0; height: 60px; }
+                .leiste-b { position: sticky; top: 20px; height: 60px; }
+                .leiste-a button, .leiste-b button { position: absolute; left: 0; top: 0; width: 100px; height: 40px; }
+                .fuellung { height: 3000px; }
+                .fuellung-danach { height: 3000px; }
+            </style>
+            <div class="leiste-a"><button>Erste Leiste</button></div>
+            <div class="fuellung"></div>
+            <div class="leiste-b"><button>Zweite Leiste</button></div>
+            <div class="fuellung-danach"></div>
+        `);
+        // Bis kurz hinter den Punkt scrollen, an dem leiste-b zu stecken
+        // beginnt (statische Position y=3060, Versatz 20px -> ab scrollY=3040).
+        await page.evaluate(() => window.scrollTo(0, 3200));
+        await expect(keineUeberschneidungen(page)).rejects.toThrow();
+    });
+
+    test('ein fest positionierter Toast ueber einem Dialog-Knopf loest weiterhin aus (bestehendes Verhalten)', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                [role="dialog"] { position: fixed; left: 0; top: 0; width: 300px; height: 200px; }
+                [role="dialog"] button { position: absolute; left: 20px; top: 20px; width: 100px; height: 40px; }
+                .toast { position: fixed; left: 0; top: 0; width: 300px; height: 200px; }
+            </style>
+            <div role="dialog"><button>Loeschen</button></div>
+            <div class="toast" role="status">Ein Fehler ist aufgetreten</div>
+        `);
+        await expect(keineUeberschneidungen(page)).rejects.toThrow();
     });
 });

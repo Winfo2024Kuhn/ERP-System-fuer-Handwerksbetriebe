@@ -647,11 +647,18 @@ test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit A
         });
         await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=zeiten`);
 
-        /** Misst die unmittelbar umschliessende Flex-Zeile des Wert-Spans (xpath=..),
-         * nicht den Span selbst -- siehe Erklaerung im Beschreibungs-Kommentar oben. */
-        const pruefeZeileUeberragtNicht = async (locator: ReturnType<Page['getByText']>, feldname: string) => {
+        /** Misst die unmittelbar umschliessende Flex-Zeile des Wert-Spans (xpath=..
+         * per Standard), nicht den Span selbst -- siehe Erklaerung im
+         * Beschreibungs-Kommentar oben. `xpathZurZeile` erlaubt einen anderen
+         * Aufstieg fuer Faelle, in denen der Wert-Span selbst verschachtelt ist
+         * (siehe "Zugeordnet von" unten). */
+        const pruefeZeileUeberragtNicht = async (
+            locator: ReturnType<Page['getByText']>,
+            feldname: string,
+            xpathZurZeile: string = '..',
+        ) => {
             await expect(locator, `${feldname} fehlt`).toBeVisible();
-            const zeile = locator.locator('xpath=..');
+            const zeile = locator.locator(`xpath=${xpathZurZeile}`);
             const ueberstand = await zeile.evaluate((el) => el.scrollWidth - el.clientWidth);
             expect(
                 ueberstand,
@@ -672,9 +679,21 @@ test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit A
         await pruefeZeileUeberragtNicht(page.getByText(DOK_ERSTELLT_VON_LANG, { exact: true }), 'Dokumentenketten-Metazeile (Erstellt von)');
 
         await expect(page.getByText(eingangsrechnungMitZuordnung.dateiname)).toBeVisible();
+        // Nachtrag Abschnitt 10 (Code-Review Abschnitt 9, Hinweis 2): der
+        // Wert steckt hier in einem VERSCHACHTELTEN Span
+        // (<span class="break-words min-w-0">Zugeordnet von <span
+        // class="font-medium ...">{name}</span></span>) -- getByText(exact:
+        // false) liefert das am engsten umschliessende Element, das ist der
+        // INNERE Span. "xpath=.." traf damit den reparierten break-words/
+        // min-w-0-Span selbst statt der Flex-Zeile: dessen eigener scrollWidth
+        // bleibt bei fehlendem min-w-0 gleich clientWidth (ein Flex-Item ohne
+        // min-w-0 wird als Ganzes breiter, nicht ueber sich selbst hinaus),
+        // die Zusicherung bliebe also faelschlich gruen. Deshalb bis zur
+        // umschliessenden "flex-wrap"-Zeile hochlaufen.
         await pruefeZeileUeberragtNicht(
             page.getByText(ZUGEORDNET_VON_LANG, { exact: false }),
             'Eingangsrechnung: "Zugeordnet von"',
+            'ancestor::div[contains(@class,"flex-wrap")][1]',
         );
         await pruefeZeileUeberragtNicht(
             page.getByText(WEITERE_ZUORDNUNG_VON_LANG, { exact: false }),
