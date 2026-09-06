@@ -1192,3 +1192,522 @@ Acht Vorkommen in vier Dateien im gesamten `react-pc-frontend/src/` — unverän
 ### Aufräumen
 
 Mutation vollständig zurückgenommen (fünf Patches per `git apply -R` gesetzt und per `git apply` wieder zurückgespielt), Build-Output verworfen. `git diff` leer, `git status` sauber (bis auf diesen Log-Block), HEAD unverändert `1b5627de`. Kein Produktivcode angefasst, kein Playwright gestartet.
+
+## Abschnitt 4 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-06T13:05:00Z
+Branch: feature/layout-14-zoll @ 1b5627de (Merge von Task 6, Task 7, Task 3b), eigener Worktree `wt/layout-review-design`, detached HEAD
+Commit(s): eaa7ed2b + 7c572241 (Task 6), 35bca3be (Task 7), 5ed821f8 / 19deaf3b / ea1d1d2d (Task 3b), gemergt in 1b5627de
+Status: fertig
+Ampel: 🔴 (ein blockierender Befund: der Titel der Kopfzeile läuft bei einem Komposita-Bauvorhaben über die Kennzahlen — belegt, mit gemessener Ein-Klassen-Lösung)
+
+### E2E — komplett, beide Größen
+
+- Port-Check vorher: `netstat -ano | findstr :5218` leer, Port 5218 wie vorgegeben verwendet.
+- `E2E_PORT=5218 npm run test:e2e` (alle Specs, `pc-14zoll` + `pc-monitor`): **198 grün, 0 rot**,
+  zweimal vollständig gefahren (4,0 min und 2,6 min), beide Male identisches Ergebnis, keine
+  Flakes, kein Nachfahren einzelner Specs nötig, Standard-Worker ohne `--workers=1`.
+  Rechnung zur Zwischenbilanz nach Abschnitt 3: 186 + 4 (Task 6, zwei Testfälle × zwei Größen)
+  + 2 (Task 7) + 6 (Task 3b: Anfrage-Komposita, Anfrage-kurzer-Titel, Kunde-kurzer-Name) = 198.
+- Die `[WebServer] http proxy error ECONNREFUSED`-Zeilen sind wie in den Vorabschnitten der
+  Vite-Proxy ohne Backend, kein Testfehler.
+- **Warnung für Nachfolger:** Ein Playwright-Lauf ohne `--output` löscht `test-results/` komplett,
+  also auch alle Design-Screenshots. Wegwerf-Messspecs deshalb immer mit
+  `--output=test-results-zz` fahren (mir ist es einmal passiert, danach die volle Suite neu gefahren).
+
+### Angeschaute Screenshots
+
+Alle unter
+`C:\Users\MarvinKuhn\dev\ERP-für-Handwerker\wt\layout-review-design\react-pc-frontend\test-results\design\`,
+jeder mit dem Read-Tool geöffnet.
+
+**Neu aus Abschnitt 4 (16):**
+`lieferant-detail-langer-name--pc-14zoll.png` / `--pc-monitor.png`,
+`lieferant-uebersicht-lange-namen--pc-14zoll.png` / `--pc-monitor.png`,
+`mitarbeiter-detail-reiterleiste--pc-14zoll.png` / `--pc-monitor.png`,
+`anfrage-detail-kopf-komposita--pc-14zoll.png` / `--pc-monitor.png`,
+`anfragen-uebersicht-kurzer-titel--pc-14zoll.png` / `--pc-monitor.png`,
+`kunde-mini-karten-projekte--pc-14zoll.png` / `--pc-monitor.png`,
+`kunde-mini-karten-anfragen--pc-14zoll.png` / `--pc-monitor.png`,
+`kunde-mini-karten-dokumente--pc-14zoll.png` / `--pc-monitor.png`
+
+**Durch Abschnitt 4 verändert (14):**
+`projekt-detail-geschaeftsdokumente--pc-14zoll.png` / `--pc-monitor.png`,
+`rahmen-projekt-detail--pc-14zoll.png` / `--pc-monitor.png` (nicht mehr byte-identisch zu den
+beiden davor — Task 3b hat die Fixtures der Projekt-Spec verlängert),
+`projekt-uebersicht-lange-titel--pc-14zoll.png` / `--pc-monitor.png`,
+`anfrage-detail-kopf--pc-14zoll.png` / `--pc-monitor.png`,
+`anfragen-uebersicht-karten--pc-14zoll.png` / `--pc-monitor.png`,
+`kunde-detail-langer-name--pc-14zoll.png` / `--pc-monitor.png`,
+`kunde-uebersicht-lange-namen--pc-14zoll.png` / `--pc-monitor.png`
+
+**Mittelbar verändert, weil Task 6 die Lieferanten-Detailseite umgebaut hat (22):**
+`leiste-lesen`, `leiste-bearbeiten`, `leiste-countdown`, `leiste-deaktiviert`,
+`leiste-verbindung-weg`, `lieferant-modal-lesen-hinweis`, `lieferant-modal-bearbeiten`,
+`lieferant-modal-fehler`, `lieferant-modal-fehler-tooltip`, `lieferant-modal-fremdes-lock`,
+`lieferant-modal-speicherfehler-toast`, `toast-bei-dialog-versionskonflikt`,
+`toast-bei-dialog-zweizeilig` — beide Größen. Befund vorweg: In **allen** diesen Bildern liegt
+der Vollbild-Dialog „Dokument bearbeiten" über der Seite, die umgebaute Lieferanten-Kopfzeile
+steckt hinter dem Scrim. Die Task-6-Änderung ist dort also gar nicht sichtbar.
+
+**Auf Veränderung geprüft, unverändert (1):** `menueleiste-kategorien--pc-14zoll.png` — die einzige
+Alt-Spec, die eine geänderte Seite öffnet (`/projekte`), dort aber mit **leerer** Liste
+(„Keine Projekte gefunden."), also ohne Kartenraster. Bestätigt nebenbei Spec-Befund 3:
+„Finanzen & Controlling" steht vollständig da, der lange Nutzername „Friederike Beispiel-…"
+ist der eine gewollte Kürzungsfall.
+
+**Nicht erneut angeschaut (mit Begründung):** `dokument-editor-*`, `editor-seite-*`,
+`strenge-pruefungen-*` und die übrigen `menueleiste-*`. Diese Specs gehen ausschließlich nach
+`/dokument-editor` bzw. auf `setContent`-Fixtures (nachgeprüft per `grep` über alle
+`goto(...)`-Aufrufe) und berühren keine der fünf in Abschnitt 4 geänderten Dateien
+(`git diff --stat 7aabfe16..1b5627de`). In Abschnitt 2 vollständig beurteilt.
+
+**Eigene Wegwerf-Bilder (nach der Auswertung samt Messspecs gelöscht):**
+`zz-komposita-fix--pc-14zoll/-monitor.png` (Probe des Ein-Klassen-Vorschlags für den 🔴),
+`zz-nachtrag-projekte--*` und `zz-nachtrag-lieferanten--*` (Karten-Gegenprobe für den
+Code-Reviewer), `zz-probe-projekt-komposita--*` (Beleg, dass der 🔴 nicht anfragespezifisch ist).
+
+**Beweisbild der Ausgangsprüfung:**
+`docs/superpowers/specs/bilder/2026-09-04-layout-14-zoll/lieferant-detail-1440.png` — angeschaut.
+
+### Die sechs Fragen — je Screenshot und Größe
+
+**A) Lieferanten-Detailseite mit langem Namen (Kern von Task 6)** —
+`lieferant-detail-langer-name--pc-14zoll.png` / `--pc-monitor.png`
+
+1. *Farben:* Vier Kennzahl-Kacheln in slate / purple / blue / emerald, darunter die
+   Dokument-Kacheln in slate / blue / purple / rose. Zustände trennen sich, Kontraste tragen.
+   Genau **eine** gefüllte rose-Aktion im Inhalt („Dokument importieren"); „Bearbeiten" ist
+   Outline. Die purple- und blue-Kacheln sind eine Abweichung vom rose/slate-Schema —
+   **vorbestehend**, vom Plan ausdrücklich ausgeklammert („Bewusst nicht in diesem Vorhaben"),
+   Task 6 hat keine Farbe angefasst. 🟡.
+2. *Design-System:* Lucide-Icons, `rounded-lg`/`rounded-xl`, `shadow-sm`, Systemschrift, kein
+   Emoji, keine handgemalte SVG, kein Webfont. PageHeader-Muster (Eyebrow „STAMMDATEN" +
+   Großtitel „LIEFERANTENDETAILS" + Untertitel + Aktion rechts) eingehalten.
+3. *Look-and-Feel:* In beiden Größen ruhig. Bei 1440 sitzt der Rollen-Chip „STAHL" unter dem
+   Titel, bei 1920 daneben — sauberer Umbruch, kein Unfall. Kopfzeile bleibt in beiden Größen
+   **einzeilig**.
+4. *UX:* Eine Primäraktion, Reiter mit Zählern, Kontaktdaten-Spalte rechts, Leerzustand als
+   erklärender Kasten („Keine Dokumente vorhanden. Dokumente werden automatisch aus
+   E-Mail-Anhängen erstellt") statt leerem Loch.
+5. *Auffindbarkeit:* „Bearbeiten" ohne Scrollen rechts oben, in **beiden** Größen an derselben
+   Stelle. Alle vier Reiter einzeilig sichtbar, der rose Unterstrich des aktiven Reiters sitzt
+   sauber auf der Trennlinie.
+6. *Überschneidungen:* **Spec-Befund 2 (Lieferant) ist weg** — siehe eigener Abschnitt unten.
+   Kein horizontaler Scroll, keine Überlappung. Die E-Mail im Kontaktfeld bricht bei 1440 um
+   („bestellung@beispiel-" / „stahl.example") statt überzulaufen, bei 1920 passt sie einzeilig.
+
+**B) Lieferanten-Übersicht mit vier langen Namen** —
+`lieferant-uebersicht-lange-namen--pc-14zoll.png` / `--pc-monitor.png`
+
+1./2. rose/slate, „STAHL"-Chip rose, PageHeader-Muster, genau eine gefüllte Aktion
+   („Neuer Lieferant"). Sauber.
+3. *Look-and-Feel:* **Die beste der vier Übersichten.** Drei Karten bei 1440, vier bei 1920, und —
+   anders als bei Projekt/Anfrage/Kunde — liegen **alle Trennlinien einer Reihe exakt auf einer
+   Höhe**, obwohl Karte 1 einen einzeiligen und Karte 2/3 zweizeilige Titel haben. Nachgemessen
+   (siehe „Auftrag des Code-Reviewers", Punkt 1): Trennlinie in allen drei Karten bei y=642.
+4. *UX:* Karten klickbar, Filterzeile darüber, Hinweis auf die 12er-Ladegrenze.
+5. *Auffindbarkeit:* Alles ohne Scrollen, Aktion oben rechts.
+6. *Überschneidungen:* Keine. **Alle vier langen Lieferantennamen stehen in beiden Größen
+   vollständig da, kein einziges „…".**
+
+**C) Mitarbeiter-Detailseite, Reiterleiste (Task 7)** —
+`mitarbeiter-detail-reiterleiste--pc-14zoll.png` / `--pc-monitor.png`
+
+1. *Farben:* Aktiver Reiter rose-50 mit rose-Unterstrich, inaktive slate — trennbar. Der Knopf
+   „Bearbeiten" ist hier als **gefüllte** rose-600-Primäraktion gebaut, auf den anderen vier
+   Detailseiten ist derselbe Knopf Outline. 🟡, siehe Einheitlichkeit.
+2. *Design-System:* Lucide, kein Emoji, Systemschrift, `rounded-lg`. Eingehalten.
+3. *Look-and-Feel:* Bei 1920 aufgeräumt. Bei 1440 wirkt der Knopf „Token erstellen" gedrängt,
+   weil seine Beschriftung zweizeilig umbricht — kein Fehler, aber unruhig. 🟡.
+4. *UX:* Drei Kopf-Aktionen, Reiter klar, Leerzustand erklärt sich.
+5. *Auffindbarkeit:* Alle drei Knöpfe und alle vier Reiter ohne Scrollen sichtbar, rechts oben.
+6. *Überschneidungen:* **Reiterleiste in beiden Größen einzeilig, `overflow-x` jetzt `visible`
+   statt `auto`** — das versteckte Scrollen ist weg, Ziel von Task 7 erreicht.
+   **Ein Befund im rechten Seitenpanel, nachgemessen:** Bei 1440 ragen das Feld „Abteilung(en)"
+   und sein Wert „Sonderaufgabenkoordinationsstellenverwaltung" **21 px über die rechte
+   Kartenkante hinaus** (Element endet bei x=1397, Karte bei x=1376). Bei 1920 nicht.
+   **Vorbestehend und außerhalb von Abschnitt 4:** Task 7 hat laut Plan-Wortlaut nur die
+   Reiterleiste angefasst, das Seitenpanel ist unverändert; sichtbar wird es erst durch die neue
+   43-Zeichen-Fantasie-Abteilung. Gleiche Ursache wie der 🔴 unten (unteilbares langes Wort in
+   einem Kasten ohne `min-w-0`). Deshalb 🟡, nicht 🔴 — gehört in denselben Nacharbeits-Task.
+   `keinTextLaeuftUeber` sieht es nicht, weil das Element selbst nicht überläuft
+   (scrollWidth = clientWidth = 306), sondern seinen Kasten sprengt.
+
+**D) Anfrage-Detailseite, Komposita-Bauvorhaben (neu aus Task 3b)** —
+`anfrage-detail-kopf-komposita--pc-14zoll.png` / `--pc-monitor.png`
+
+6. *Überschneidungen:* **🔴 — hier liegt der blockierende Befund.** Siehe eigener Abschnitt unten.
+1.–5. Farben, Design-System, UX und Auffindbarkeit sind unverändert in Ordnung (Reiterleiste
+   einzeilig, „Bearbeiten"/„Löschen" rechts oben, Leerzustand erklärend); die Kopfzeile selbst ist
+   durch den überlaufenden Titel aber in **beiden** Größen unleserlich.
+
+**E) Anfrage-Detailseite, normaler Name** —
+`anfrage-detail-kopf--pc-14zoll.png` / `--pc-monitor.png`
+
+1.–5. Weiterhin die sauberste der fünf Kopfzeilen: Titel zwei- bzw. einzeilig, zwei Kennzahlen,
+   Knöpfe rechts oben, in beiden Größen an derselben Stelle. Reiter jetzt „Tagebuch (0)" statt
+   „Bau Tagebuch" — die Umbenennung ist durchgezogen und passt zum Projekt-Editor.
+6. Kein horizontaler Scroll, keine Überlappung, kein „…".
+
+**F) Projekt-Detailseite (Nacharbeit Task 3b)** —
+`projekt-detail-geschaeftsdokumente--pc-14zoll.png` / `--pc-monitor.png`,
+`rahmen-projekt-detail--pc-14zoll.png` / `--pc-monitor.png`
+
+1. *Farben:* Kennzahlen slate, „Gewinn" grün, Status-Chip gelb, Dokumenttyp-Chips rose/gelb,
+   „Dokument erstellen" als einzige gefüllte rose-Aktion. Trennbar.
+2. *Design-System:* eingehalten, keine neue Farbe im Diff dieses Abschnitts.
+3. *Look-and-Feel:* Bei 1440 deutlich ruhiger als in Abschnitt 3 — die Reiterleiste ist jetzt
+   einzeilig, die Karte dadurch flacher, eine Zeile Inhalt mehr ohne Scrollen sichtbar.
+   Bei 1920 unverändert luftig (fünfzeiliger Titel in schmaler Spalte, rechts viel Weißraum) —
+   in Abschnitt 3 per Alt-Simulation als **vorbestehend** nachgewiesen. 🟡.
+4. *UX:* Eine Primäraktion, Reiter mit Zählern, Hinweistext passt zum Reiternamen.
+5. *Auffindbarkeit:* Alle sieben Reiter, beide Kopf-Knöpfe, die vollständige Karte „Projektdaten"
+   und alle fünf Menü-Kategorien ohne Scrollen sichtbar.
+6. *Überschneidungen:* Kein horizontaler Scroll, `main`-Überstand 0 px. **Die vier
+   `truncate`-Stellen brechen jetzt um:** der Rechnungs-Beschreibungstext läuft bei 1440 über zwei
+   Zeilen ohne „…", der lange Dateiname der Eingangsrechnung und die Kunden-E-Mails in der rechten
+   Spalte brechen mitten im Wort um (`break-words`) statt gekürzt zu werden. Lesbar, kein „…".
+
+**G) Projekt-Übersicht mit vier langen Bauvorhaben** —
+`projekt-uebersicht-lange-titel--pc-14zoll.png` / `--pc-monitor.png`
+
+1.–5. Wie in Abschnitt 3 beurteilt, unverändert gut: drei Karten bei 1440, vier bei 1920,
+   PageHeader-Muster, eine gefüllte Aktion.
+6. Kein horizontaler Scroll, keine Überlappung. Titel zweizeilig, „…" nur als markierter
+   `line-clamp-2`-Fall (1 von 4 bei 1440, 3 von 4 bei 1920).
+   **Die 24-px-Lücke unter kurzen Titeln ist weg** (siehe H) — dafür liegen die Trennlinien einer
+   Reihe jetzt nicht exakt auf einer Höhe, wenn die Titel unterschiedlich hoch sind. 🟡, siehe
+   „Auftrag des Code-Reviewers", Punkt 1.
+
+**H) Kartentitel mit KURZEN Namen (mein Befund 3 aus Abschnitt 3)** —
+`anfragen-uebersicht-kurzer-titel--pc-14zoll.png` / `--pc-monitor.png`
+
+1.–5. Unauffällig sauber.
+6. **Die Lücke ist weg.** „Carport" und „Meier Bau GmbH" stehen in beiden Größen direkt
+   untereinander, der Kundenname klebt wieder am Titel. Genau das war der Befund. Erledigt.
+
+**I) Anfragen-Übersicht mit vier langen Titeln** —
+`anfragen-uebersicht-karten--pc-14zoll.png` / `--pc-monitor.png`
+
+1.–5. Wie G.
+6. Keine Überlappung, kein horizontaler Scroll. Sichtbar: In Karte 1 bricht der Kundenname um,
+   ihre Trennlinie und die drei Meta-Zeilen liegen dadurch rund 24 px tiefer als bei den
+   Nachbarkarten — die Beträge einer Reihe stehen nicht auf einer Linie. 🟡, Ursache nachgemessen
+   (Code-Reviewer Punkt 1).
+
+**J) Kunden-Detailseite mit langem Namen** —
+`kunde-detail-langer-name--pc-14zoll.png` / `--pc-monitor.png`
+
+1. *Farben:* „GESAMTUMSATZ" slate-50, „GEWINN" emerald-50 — vorbestehend, 🟡.
+2.–5. Design-System eingehalten, eine Aktion („Bearbeiten") rechts oben in beiden Größen,
+   fünf Reiter einzeilig.
+6. Kein Überlauf, keine Überlappung. Das einsame Komma hinter dem Standort-Symbol (Kunde ohne
+   Adresse) steht unverändert da — 🟡, vorbestehend, schon in Abschnitt 3 vermerkt.
+
+**K) Kunden-Übersicht mit vier langen Namen** —
+`kunde-uebersicht-lange-namen--pc-14zoll.png` / `--pc-monitor.png`
+
+1.–5. Chips „KUNDE" grün / „ANFRAGER" amber (vorbestehend, 🟡), sonst sauber.
+6. **Alle vier langen Kundennamen vollständig, kein „…"**, in beiden Größen. Karten gleich hoch.
+
+**L) Mini-Karten der Kunden-Detailseite (neu aus Task 3b)** —
+`kunde-mini-karten-projekte`, `-anfragen`, `-dokumente`, je `--pc-14zoll.png` / `--pc-monitor.png`
+
+1. *Farben:* Projekt-Chip amber, Anfrage-Chip **purple** (vorbestehend, purple ist laut
+   Design-System für KI-Momente reserviert — 🟡), Dokument-Chip rose.
+2.–5. Design-System eingehalten, Karten klickbar, Reiterwechsel klar.
+6. **Die Dokumentnummer „RE-2026-0501" steht jetzt vollständig und einzeilig neben dem
+   „Rechnung"-Chip**, sauber auf einer Linie, ohne Kürzungsmarker — genau die Absicht von Task 3b
+   („eine Belegnummer ist eine Kennung, halb abgeschnitten wertlos"). Die Herkunftszeile
+   „Projekt: Treppenanlage …" darunter steht in beiden Größen vollständig da. Keine Überlappung,
+   kein Überlauf.
+
+**M) Die 22 mittelbar veränderten Dialog-Bilder** (`leiste-*`, `lieferant-modal-*`,
+`toast-bei-dialog-*`)
+
+1.–5. Der Vollbild-Dialog „Dokument bearbeiten" liegt über der Seite. Fehlerzustände sind
+   durchgehend rose (Banner + Toast), der Countdown amber, der Sperr-Hinweis mit Schloss-Icon —
+   Zustände auf einen Blick trennbar, Toast-Pflicht erfüllt, deaktivierte Knöpfe erklären sich
+   über den Banner darüber. Genau eine Primäraktion je Zustand.
+6. Zwei **vorbestehende** Überlappungen, nicht von Abschnitt 4 verursacht (das Modal wurde in
+   diesem Abschnitt nicht angefasst): (a) der Inline-Fehlerkasten „Speichern fehlgeschlagen" legt
+   sich bei 1440 über die Überschrift „Zahlungsbedingungen" und bei 1920 über die Eingabezeile
+   „Skonto % / Skonto Tage / Netto Tage"; (b) ein zweizeiliger Toast überdeckt oben links den
+   Modaltitel „Dokument bearbeiten". Beides 🟡, für eine spätere Aufräum-Runde.
+   Ebenfalls unverändert: das sky-blaue Icon im Bestätigungsdialog „Nicht gespeichert"
+   (`confirm-dialog.tsx`, `sky-100`/`sky-600`) — schon in Abschnitt 3 für Task 10 vermerkt.
+
+### 🔴 Kritisch (blockiert)
+
+**Der Titel der Kopfzeile läuft bei einem Komposita-Bauvorhaben quer über die Kennzahlen —
+in beiden Größen, in allen vier Detail-Editoren.**
+
+Bild: `anfrage-detail-kopf-komposita--pc-14zoll.png` und `--pc-monitor.png`. Auf dem
+14-Zoll-Bild liest man „Absturzsicherungspodesttreppenanlagenmontagearbeitenüberwachungsdoku",
+dann verschwindet der Text hinter dem Knopf „Bearbeiten"; die Beschriftungen „BRUTTO" und „NETTO"
+liegen unter dem Titeltext und sind nicht mehr lesbar.
+
+Nachgemessen im Browser (Wegwerf-Spec, danach gelöscht):
+
+| Messung | Anfrage 1440 | Anfrage 1920 | Projekt 1440 | Projekt 1920 |
+| --- | --- | --- | --- | --- |
+| Breite der `<h1>` | 999 px | 999 px | 999 px | 999 px |
+| rechte Kante ihres eigenen Titelblocks | 809 px | 1161 px | 668 px | 614 px |
+| **Überstand über den eigenen Block** | **411 px** | **187 px** | **552 px** | **734 px** |
+| Lage des Kastens „BRUTTO" | x 860–905 | x 1212–1257 | x 717–762 | x 663–708 |
+| `main`-Überlauf | 0 px | 0 px | 0 px | 0 px |
+
+Die `<h1>` überlappt die Kennzahl-Beschriftungen also nicht knapp, sondern deutlich, und zwar auf
+**beiden** Prüfgrößen. Damit ist Frage 6 verletzt (überlappende Elemente, verdeckter und
+abgeschnittener Text auf 14 Zoll) und Frage 5 gleich mit (der Titel des Datensatzes ist nicht mehr
+lesbar).
+
+**Warum keine Zusicherung anschlägt.** `keinHorizontalerUeberlauf` misst `main` — das ist 0.
+`keinTextLaeuftUeber` vergleicht `scrollWidth` mit `clientWidth` **desselben** Elements — bei der
+`<h1>` sind beide 999 px, sie läuft nicht über sich selbst, sondern über ihren Kasten hinaus.
+`keineUeberlappungen` prüft nur interaktive Elemente, eine `<h1>` ist keins. Der neue Testfall
+„Kopfzeile uebersteht ein langes Komposita-Bauvorhaben ohne Leerzeichen" sichert ausschließlich
+zu, dass die beiden Knöpfe in der Kopf-Karte bleiben und `main` nicht überläuft — beides stimmt.
+Die Spec ist also grün und das Bild trotzdem kaputt.
+
+**Ursache, im Code nachgesehen.** Die `<h1 class="… break-words">` steht in allen vier Editoren
+(`ProjektEditor.tsx` Z. 1069, `AnfrageEditor.tsx` Z. 1005, `Kundeneditor.tsx` Z. 287,
+`LieferantenEditor.tsx` Z. 91) als **Flex-Item** in einer `<div class="flex items-center gap-3
+flex-wrap">`. Ein Flex-Item hat `min-width: auto`, also mindestens seine Mindestinhaltsbreite.
+`break-words` (`overflow-wrap: break-word`) senkt diese Mindestbreite **nicht** — anders als
+`word-break: break-all` bzw. `overflow-wrap: anywhere`. Bei einem unteilbaren 77-Zeichen-Wort ist
+die Mindestbreite 999 px, die `<h1>` wird so breit und ragt aus dem Titelblock heraus. Das
+`min-w-0`, das Task 3b nachgezogen hat, sitzt auf dem **umschließenden** Textblock, nicht auf der
+`<h1>`. Damit trifft die Annahme des Plans („genau der Fall, den `min-w-[18rem]` + `break-words`
+lösen") nicht zu.
+
+**Nachweisbar sein muss:** Der Titel bleibt in seinem Titelblock und bricht um; die
+Kennzahl-Beschriftungen bleiben in beiden Größen vollständig lesbar. Gemessene
+Ein-Klassen-Lösung, im Browser per `addStyleTag` gegengeprüft (ohne Quellcode anzufassen):
+**`min-w-0` auf die `<h1>`**. Wirkung bei der Anfrage: Breite fällt von 999 auf 588 px (1440)
+bzw. 812 px (1920), der Titel wird zweizeilig, kein Überstand mehr, Kopf-Karte 32 px höher, sonst
+nichts verändert. Bild dazu: `zz-komposita-fix--pc-14zoll.png` (gelöscht; Inhalt: Titel
+zweizeilig, „BRUTTO 84.500,00 €" und „NETTO 71.008,40 €" vollständig sichtbar, Knöpfe unverändert
+rechts). Gehört in alle vier Dateien, weil die Bauweise identisch ist — beim Projekt-Editor mit
+derselben Fixture gegengeprüft (Tabelle oben). Dazu eine Zusicherung, die den Fall wirklich
+festhält: rechte Kante der `<h1>` ≤ rechte Kante ihres Titelblocks (die heutige
+Knopf-Zusicherung reicht nicht).
+
+### 💡 Hinweise (blockieren nicht)
+
+1. **Projekt-Reiterleiste einzeilig, aber mit 17 px Reserve.** Nachgemessen bei 1440: sieben
+   Reiter brauchen 899 px bei 916 px Platz, `overflow-x: visible`, alle sieben auf y=543. Bei 1920
+   bleiben 185 px übrig. Eine Ziffer ist in dieser Schrift 7,78 px breit — es passen also noch
+   **zwei zusätzliche Ziffern** über alle sieben Zähler zusammen. Details siehe „Auftrag des
+   Code-Reviewers", Punkt 4.
+2. **Trennlinien der Kartenreihen liegen nicht auf einer Höhe** (Projekt, Anfrage, Kunde), weil
+   `mt-auto` dort wirkungslos ist. Nachgemessen, Ursache und Gegenprobe siehe „Auftrag des
+   Code-Reviewers", Punkt 1. Die eigentliche 24-px-Lücke unter kurzen Titeln ist behoben.
+3. **Mitarbeiter-Seitenpanel:** „Abteilung(en)" ragt bei 1440 mit einem langen Einzelwort 21 px
+   aus der Karte (siehe C). Vorbestehend, gleiche Ursache wie der 🔴.
+4. **Die Mitarbeiter-Seite tanzt aus der Reihe** (siehe eigener Abschnitt „Einheitlichkeit").
+5. **Kunden-Knopfblock ohne `flex-wrap`/`gap-2`** — Abweichung von der Rezeptur, heute unsichtbar,
+   siehe „Auftrag des Code-Reviewers", Punkt 5.
+6. **Reiterleisten sind vier verschiedene Bauweisen** (siehe Einheitlichkeit). Nur der Lieferant
+   hat `role="tablist"`; Kunde und Mitarbeiter haben ein `data-testid`, Projekt und Anfrage keins
+   von beidem.
+7. **Zwei vorbestehende Überlappungen im Dokument-Dialog** (Fehlerkasten über
+   „Zahlungsbedingungen" bzw. über der Skonto-Zeile; zweizeiliger Toast über dem Modaltitel).
+8. **Lieferant-Spec geht ins Internet** — siehe „Auftrag des Code-Reviewers", Punkt 2. Dabei
+   nebenbei aufgefallen: die Lieferanten-Detailseite lädt `pdf.js` zur Laufzeit von
+   `cdnjs.cloudflare.com`. Vorbestehend, aber ein zweiter Weg nach draußen; gehört mit auf die
+   Aufräumliste.
+9. **Vorbestehende Farbabweichungen, unverändert:** Kennzahl-Kacheln des Lieferanten in
+   purple/blue/emerald; „Gewinn" emerald beim Kunden; Chips „KUNDE" grün / „ANFRAGER" purple;
+   `sky-100`/`sky-600` in `confirm-dialog.tsx`. Alles für Task 10.
+10. **Einsames Komma in der Kunden-Kopfzeile** ohne Adresse — unverändert, für die Aufräum-Runde.
+11. **Knopf „Token erstellen"** bricht bei 1440 zweizeilig um und wirkt gedrängt (Mitarbeiter).
+
+### Meine drei Befunde aus Abschnitt 3 — gegengeprüft
+
+| Befund | Status | Nachweis |
+| --- | --- | --- |
+| **1 — Reiterleiste des Projekt-Editors bei 1440 zweizeilig** | **erledigt** | `projekt-detail-geschaeftsdokumente--pc-14zoll.png`: alle sieben Reiter auf **einer** Zeile (nachgemessen: y=543 für alle sieben; vorher 593/593/593/593/593/593/639). Die Trennlinie liegt jetzt unter **einer** Zeile, und der rose Unterstrich des aktiven Reiters „Geschäftsdokumente (2)" sitzt genau darauf statt mitten in der Karte. **Wirkt sie mit `gap-1`/`px-2` gedrängt? Nein.** Die Reiter stehen dicht, aber jeder ist als eigene Fläche erkennbar, Icon und Zähler haben Luft, und die Karte wurde flacher — eine Zeile Inhalt mehr ist ohne Scrollen sichtbar. Das ist die bessere Lösung, nicht die knappere. **Aber:** nur 17 px Reserve, siehe Hinweis 1. |
+| **2 — Knopfblock der Projekt-Kopfzeile fällt bei 1440 nach unten links** | **erledigt** | `projekt-detail-geschaeftsdokumente--pc-14zoll.png`: „Bearbeiten" und „mit Anfrage zusammenführen" stehen nach dem Umbruch **rechtsbündig** in der zweiten Zeile, bündig mit der rechten Kartenkante und mit der Kennzahlen-Reihe darüber. **Sieht das aufgeräumt aus? Ja** — die Aktionen liegen jetzt in beiden Größen rechts, der Umbruch wirkt gewollt statt wie ein Unfall. Bei 1920 bleibt alles einzeilig, unverändert. |
+| **3 — 24-px-Lücke unter kurzen Kartentiteln** | **erledigt, mit Rest** | `anfragen-uebersicht-kurzer-titel--pc-14zoll.png` / `--pc-monitor.png`: „Carport" und „Meier Bau GmbH" stehen direkt untereinander, keine Lücke mehr. **Stehen die Karten einer Reihe trotzdem gleich hoch? Die Karten ja, die Trennlinien nein.** Alle Karten einer Reihe sind exakt gleich hoch (gemessen 219 px, gleiche Ober- und Unterkante), aber die Trennlinie sitzt in Karten mit kurzem Titel 24 px höher als in der Nachbarkarte mit zweizeiligem Titel, weil `mt-auto` bei Projekt/Anfrage/Kunde wirkungslos ist. Nur die Lieferanten-Karte macht es richtig. 🟡, Details und Gegenprobe im nächsten Abschnitt. |
+
+### Lieferant, Spec-Befund 2 — weg?
+
+**Ja, eindeutig.**
+
+Beweisbild vorher `docs/superpowers/specs/bilder/2026-09-04-layout-14-zoll/lieferant-detail-1440.png`:
+Die Beschriftungen „GESAMTKOSTEN" und „BESTELLUNGEN" ragen sichtbar aus ihren Kästen heraus und
+laufen in den Nachbarkasten; die vier Kästen sind gleich breit gerastert und zu schmal für ihre
+eigene Beschriftung.
+
+Nachher `lieferant-detail-langer-name--pc-14zoll.png`: Alle vier Beschriftungen — „GESAMTKOSTEN",
+„BESTELLUNGEN", „ARTIKEL", „LIEFERZEIT Ø" — stehen vollständig in ihren Kästen, mit dem Wert
+darunter. Kein Text berührt eine Kastenkante. Der Coding-Agent hat die Zahlen mitgeliefert
+(Kasten „Gesamtkosten" 94,8 px vorher → 126,9 px nachher, „Bestellungen" 94,8 → 112,9 px), die
+Spec sicherte 34 px bzw. 29 px Fehlbetrag zu — das deckt sich mit dem Bild. Bei 1920 dasselbe,
+zusätzlich passt dort der Rollen-Chip „STAHL" wieder neben den Titel.
+
+**Damit sind alle vier Ausgangsfehler der Spec erledigt:**
+
+| Befund der Spec | Status | Nachweis |
+| --- | --- | --- |
+| **1 — Projekt-Editor, rechte Spalte abgeschnitten** | erledigt (Abschnitt 2) | `main`-Überstand 0 px, Karte „Projektdaten" vollständig im Fenster, auf allen sieben Reitern. |
+| **2 — Kopfzeilen: Kennzahlen und Knöpfe gequetscht** | erledigt (Projekt/Anfrage/Kunde in Abschnitt 3, **Lieferant jetzt**) | Siehe oben; alle vier Kennzahl-Kästen des Lieferanten lesbar, „Bearbeiten" rechts in der Karte. |
+| **3 — Menüleiste abgeschnitten** | erledigt (Abschnitt 2) | „Finanzen & Controlling" steht in jedem Bild dieses Laufs vollständig da, „Dokumentenrechte" und „Mietabrechnung" ohne „…". |
+| **4 — Kartentitel abgehackt** | erledigt (Abschnitt 3, hier bestätigt) | Drei Karten je Reihe bei 1440, Titel zweizeilig; Kunden- und Lieferanten-Übersicht zeigen alle vier langen Namen ohne „…". |
+
+Einschränkung, damit die Bilanz ehrlich bleibt: Befund 2 ist für die **in der Spec genannten**
+Namen gelöst. Der 🔴 oben ist ein **anderer** Fall derselben Kopfzeile (unteilbares Einzelwort),
+den erst Abschnitt 4 sichtbar gemacht hat — er stand nicht in der Ausgangs-Spec.
+
+### Einheitlichkeit der fünf Detailseiten
+
+Nebeneinander gelegt (Projekt, Anfrage, Kunde, Lieferant, Mitarbeiter, je 1440 und 1920):
+
+**Was jetzt zusammenpasst.** Vier der fünf Seiten (Projekt, Anfrage, Kunde, Lieferant) haben
+dieselbe Kopf-Karte: Zurück-Pfeil, runde Icon-Kachel, Titel mit Chip, Untertitel-Zeilen mit
+Lucide-Icons, Kennzahlen rechts daneben, Knopfblock ganz rechts — in beiden Größen an derselben
+Stelle. Das ist eine echte Familie und deutlich besser als vor Abschnitt 3.
+
+**Wer aus der Reihe tanzt.**
+
+1. **Mitarbeiter, und zwar deutlich.** Die Seite hat **gar keine Kopf-Karte**: Der Name steht als
+   PageHeader-Großtitel („BEISPIELMUSTERFRAUENBERGWALDSCHMIDTSTEIN, BERNHARDINE" in Versalien),
+   die Knöpfe liegen daneben auf dem Seitenhintergrund, es gibt keine Kennzahlen. Die anderen vier
+   zeigen einen generischen PageHeader („LIEFERANTENDETAILS") und den Datensatznamen in der
+   Kopf-Karte darunter. Dazu ist „Bearbeiten" hier eine gefüllte rose-600-Primäraktion, auf den
+   anderen vier ein Outline-Knopf. Ein Handwerker, der von der Lieferanten- auf die
+   Mitarbeiter-Seite wechselt, sieht zwei verschiedene Programme. **Das ist der eine Punkt, den ich
+   an dieser Stelle billig korrigieren würde** — der Plan hat Task 7 ausdrücklich auf die
+   Reiterleiste beschränkt, es ist also kein Vorwurf an den Coding-Agenten, aber es ist die letzte
+   Gelegenheit, es günstig zu machen.
+2. **Drei Kennzahl-Stile nebeneinander.** Projekt und Anfrage: Spalten mit `border-r`-Trennern auf
+   weißem Grund. Kunde: zwei gefüllte Kacheln (slate-50 / emerald-50). Lieferant: vier gefüllte
+   Kacheln in slate / purple / blue / emerald. Mitarbeiter: keine. Jedes für sich stimmig,
+   nebeneinander wirkt es wie drei Entwürfe. Vorbestehend, schon in Abschnitt 3 gemeldet, in
+   Abschnitt 4 planmäßig nicht angefasst.
+3. **Vier Reiterleisten-Bauweisen.** Projekt: `gap-1`, `px-2`, Zähler in Klammern, aktiver Reiter
+   mit rose-50-Fläche. Anfrage: `gap-2`, `px-3`, Klammern, Fläche. Kunde: `gap-1`, Zähler als
+   graue Pillen, aktiver Reiter nur Unterstrich ohne Fläche. Lieferant: Pillen, Unterstrich ohne
+   Fläche, als einziger mit `role="tablist"`. Mitarbeiter: keine Zähler, Fläche. Funktional alle
+   in Ordnung und alle einzeilig — aber es ist nicht eine Leiste, sondern vier.
+4. **Kartenraster:** hier ist die Familie vollständig — Projekt, Anfrage, Kunde und Lieferant
+   zeigen bei 1440 drei und bei 1920 vier Karten, gleiche Kartenhöhe, gleicher Titelumbruch. Nur
+   die Trennlinien-Ausrichtung fällt beim Lieferanten besser aus als bei den drei anderen
+   (Hinweis 2).
+
+Vorschlag für die Nacharbeit, nach Nutzen sortiert: erst Punkt 1 (Mitarbeiter-Kopfzeile auf die
+Rezeptur ziehen), dann Punkt 3 (eine Reiterleiste als Ziel festlegen, `role="tablist"` überall),
+Punkt 2 zuletzt — der kostet eine Gestaltungsentscheidung, keine Klasse.
+
+### Auftrag des Code-Reviewers — alle sechs Punkte abgearbeitet
+
+**1. `mt-auto` in fünf von sechs Karten wirkungslos — bestätigt, und man sieht es.**
+
+Im Browser gemessen, `/projekte` mit „Carport", einem langen Titel und „Zaun" in einer Reihe:
+
+| Karte | `margin-top` des Meta-Blocks | y der Trennlinie | Kartenhöhe |
+| --- | --- | --- | --- |
+| Carport (kurz) | **12px** | 618 | 219 |
+| Terrassenüberdachung … (lang) | **12px** | 642 | 219 |
+| Zaun (kurz) | **12px** | 618 | 219 |
+
+Gegenprobe `/lieferanten`, gleiche Konstellation:
+
+| Karte | `margin-top` | y der Trennlinie | Kartenhöhe |
+| --- | --- | --- | --- |
+| Stahl (kurz) | **24px** (aus `auto`) | 642 | 219 |
+| Beschichtungs… (lang) | **0px** (aus `auto`) | 642 | 219 |
+| Zaunbau (kurz) | **24px** (aus `auto`) | 642 | 219 |
+
+Seine Diagnose stimmt exakt: Bei Projekt liegt der `mt-auto`-Block in einem
+`p-4 space-y-3 flex-1 flex flex-col`, und Tailwinds `space-y-3`-Selektor
+(`.space-y-3 > :not([hidden]) ~ :not([hidden])`, Spezifität 0-3-0) schlägt `.mt-auto` (0-1-0) —
+`margin-top` bleibt bei 12 px. Die Lieferanten-Karte nutzt `p-4 flex flex-col h-full gap-3`, dort
+löst `auto` sauber auf.
+
+**Sieht man es? Ja.** Auf `zz-nachtrag-projekte--pc-14zoll.png` stehen die Trennlinie und die
+darunter liegenden drei Meta-Zeilen der mittleren Karte 24 px tiefer als bei den Nachbarn; die
+drei Beträge einer Reihe liegen nicht auf einer Linie, das Auge muss zickzack laufen. Auf
+`zz-nachtrag-lieferanten--pc-14zoll.png` liegt alles exakt auf einer Höhe — der Unterschied
+springt im direkten Vergleich sofort ins Auge. Es steht also **nicht nur auf dem Papier.**
+
+Trotzdem **🟡, kein 🔴**: Nichts wird verdeckt, abgeschnitten oder unerreichbar, und der
+eigentliche Befund aus Abschnitt 3 (Kundenname wird vom Titel losgerissen) ist behoben — der Rest
+ist Ausrichtung. Die Lösung ist eine Klasse und im selben Repo schon vorgemacht:
+`space-y-3` → `gap-3` am Kartenkörper von `ProjektCard`, `AnfrageCard`, `KundenKarte`,
+`KundenProjektKarte`, `KundenAnfrageKarte`, so wie es `LieferantCard` macht. Zusicherung dazu:
+gleiche y-Position der Trennlinie über alle Karten einer Reihe, mit gemischt langen und kurzen
+Titeln in der Fixture.
+
+**2. Netzwerkzugriff in `lieferant-layout.spec.ts` — bestätigt, mit Mitschnitt.**
+
+Alle Anfragen der Lieferanten-Detailseite mitgeschnitten, die nicht an `localhost` gehen:
+
+```
+document  https://www.google.com/maps?q=Industriestra%C3%9Fe%2044%2C%2030179%2C%20Hannover&output=embed&z=14
+document  https://www.google.com/maps/embed?origin=mfe&pb=!1m3!2m1!1sIndustriestra%C3%9Fe+44,+30179,+Hannover!6i14
+script    https://maps.gstatic.com/maps-api-v3/embed/js/66/3d/intl/de_ALL/init_embed.js
+script    https://maps.googleapis.com/maps/api/js?key=…&paint_origin=&libraries=ge
+script    https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
+```
+
+Er hat recht: Die Fixture setzt `strasse`/`plz`/`ort`, `GoogleMapsEmbed` rendert daraufhin ein
+`<iframe src="https://www.google.com/maps?q=…">` (`GoogleMapsEmbed.tsx` Z. 26), und `page.route`
+fängt nur `**/api/**`. Die Spec ist damit vom Internet und von Googles Servern abhängig — genau
+das, was „kein Backend, keine echten Personendaten" verhindern soll. Die drei Specs aus
+Abschnitt 3 lassen die Adressfelder ausdrücklich deshalb leer. Nebenbei: der API-Key in der
+letzten Zeile stammt von Googles eigener Embed-Seite, nicht aus unserem Code — **kein Key-Leck**.
+Die Adresse selbst geht aber sehr wohl an Google, im Test eine Fantasieadresse, im Produkt die
+echte Lieferantenanschrift. Der `pdf.js`-Aufruf an cloudflare ist ein zweiter Weg nach draußen und
+unabhängig von der Adresse.
+
+**Erklärt das die leere weiße Seite bei parallelen Workern?** Plausibel, aber nicht bewiesen.
+Vier Worker, die gleichzeitig eine Maps-Einbettung samt Maps-JS-API laden, sind ein glaubwürdiger
+Auslöser für eine hängende Seite; ich konnte die leere Seite in meinen beiden vollen Läufen mit
+Standard-Workern jedoch **nicht reproduzieren** (198 grün, zweimal). Ich würde die Adressfelder
+trotzdem leeren oder `**/*google*` und `**/*gstatic*` abfangen — nicht wegen der Flakiness,
+sondern weil eine E2E-Spec nicht ins Internet telefonieren darf. Empfehlung: in `hilfen/api.ts`
+einen Riegel für alles Nicht-`localhost` einbauen, dann fällt so etwas künftig sofort auf.
+
+**3. Optik der neuen Kartenhöhen, vier Übersichten, beide Größen.** Angeschaut:
+`projekt-uebersicht-lange-titel`, `anfragen-uebersicht-karten`, `anfragen-uebersicht-kurzer-titel`,
+`kunde-uebersicht-lange-namen`, `lieferant-uebersicht-lange-namen`, je beide Größen. Ergebnis:
+Karten sind überall gleich hoch, drei je Reihe bei 1440 und vier bei 1920, die Lücke unter kurzen
+Titeln ist weg. Der einzige Rest ist die Trennlinien-Ausrichtung aus Punkt 1 — beim Lieferanten
+richtig, bei den drei anderen um 24 px versetzt. Insgesamt eine klare Verbesserung gegenüber
+Abschnitt 3.
+
+**4. Projekt-Reiterleiste: 17 px Reserve — reicht das?** Knapp, aber ja für heute. Gemessen bei
+1440: Leiste 916 px breit (x 89–1005), letzter Reiter endet bei 988, alle sieben auf y=543,
+`overflow-x: visible`, `gap: 4px`. Reserve **17,4 px**. Eine Ziffer ist in dieser Schrift 7,78 px
+breit — es passen also **zwei zusätzliche Ziffern** über alle sieben Zähler zusammen, dann bricht
+die Leiste wieder um. Mit echten Daten ist das schnell erreicht: „Zeiten (34)" plus
+„Geschäftsdokumente (12)" sind schon drei Ziffern mehr. Bei 1920 sind es 185 px Reserve, also kein
+Thema. **Meine Einschätzung:** Für die Abnahme reicht es, die Zusicherung „alle sieben auf
+derselben y-Position" hält den Zustand fest, und ein Umbruch wäre kein Datenverlust. Aber die
+Aussage „bei 1440 einzeilig" gilt strenggenommen nur für ein fast leeres Projekt. Wer das dauerhaft
+will, braucht mehr als Abstände — etwa den Zähler als kleine Pille statt in Klammern (spart
+Zeichen) oder zwei Reiter zusammenlegen. Kein Grund, Abschnitt 4 aufzuhalten; gehört in die
+Nacharbeit, zusammen mit einer Zusicherung, die zweistellige Zähler in der Fixture verwendet.
+
+**5. Kunden-Knopfblock ohne `flex-wrap`/`gap-2` — er hat recht, sichtbar ist es heute nicht.**
+`Kundeneditor.tsx` Z. 319 hat `flex items-start shrink-0 ml-auto`, die anderen drei haben
+`shrink-0 ml-auto flex flex-wrap items-start gap-2`. **Fällt es auf? Nein** — die Kunden-Kopfzeile
+hat genau **einen** Knopf („Bearbeiten"), da haben `flex-wrap` und `gap-2` nichts zu tun. Auf
+`kunde-detail-langer-name--pc-14zoll.png` und `--pc-monitor.png` sitzt er in beiden Größen korrekt
+rechts oben. Es fällt in dem Moment auf, in dem ein zweiter Knopf dazukommt: dann kleben die
+beiden ohne Abstand aneinander und können nicht umbrechen. Zwei Klassen, die man jetzt mitnehmen
+sollte, solange die Rezeptur frisch ist. 🟡.
+
+**6. Voller E2E-Lauf in beiden Größen:** 198 grün, 0 rot, zweimal gefahren (siehe oben).
+
+### Aufräumen
+
+Wegwerf-Specs `e2e/zz-messung-komposita.spec.ts`, `e2e/zz-messung-review.spec.ts` und
+`e2e/zz-review-nachtrag.spec.ts` gelöscht, Ordner `test-results-zz/` entfernt, alle
+`zz-*`-Screenshots gelöscht. Kein Produktivcode angefasst — sämtliche Proben liefen über
+`page.addStyleTag` bzw. `page.evaluate`, kein `git stash`, kein `git checkout` auf eine Quelldatei.
+`git status` im Review-Worktree sauber. Die 84 Abnahme-Screenshots unter `test-results/design/`
+stammen aus dem zweiten vollständigen Lauf und sind vollzählig.
