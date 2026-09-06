@@ -4424,3 +4424,88 @@ das Bild eher ruhiger als unruhiger.
 Klasse, die dort nichts bewirkt, und der dahinterliegende Ueberlauf ist mit
 208px kein Randfall. Kein Rueckschritt gegenueber Abschnitt 7, aber auch
 nicht das, was der Task-Bericht behauptet.
+
+## Abschnitt 8 — Code-Review, Nachtrag (Code-Reviewer)
+
+Zeit: 2026-09-06T18:12:00Z
+Branch: feature/layout-14-zoll (HEAD 8c6256b3)
+Status: fertig
+Ampel: unveraendert 🟡
+
+Nachtrag nach Lektuere des parallel angehaengten Design-Reviews. Sein Befund 1
+(Anfrage-Tagebuch, `break-words` wirkungslos, 208px Ueberstand im Browser
+gemessen) ist **bestaetigt — und er ist kein Einzelfall.** Ich habe deshalb
+einen dritten Scan nachgeschoben, den mein erster Durchgang nicht hatte:
+nicht "wo fehlt die Umbruch-Klasse", sondern **"wo steht sie, ohne zu
+wirken"** — Element traegt `break-words`/`whitespace-pre-wrap`, ist Flex-Item
+einer Zeile, und traegt selbst **kein** `min-w-0` (und keine max-Breite, die
+die automatische Mindestgroesse deckelt).
+
+Mein erster Scan hat genau diese Klasse uebersehen, weil er jedes Element mit
+einer Umbruch-Klasse als "versorgt" abgehakt hat. Das ist die Lehre fuer
+`kriterien.md` und fuer Task 10: **eine Umbruch-Klasse allein ist kein
+Nachweis. Am Flex-Item zaehlt `min-w-0`, nicht `break-words`** — das steht in
+den Kommentaren dieses Tasks dreimal richtig erklaert und ist an acht Stellen
+desselben Tasks trotzdem nicht angewandt.
+
+### Acht der 49 Aenderungen sind wirkungslos, wie sie geschrieben sind
+
+Alle acht sind **neu aus Task 12** (per Diff geprueft), alle acht sind
+Flex-Items ohne `min-w-0`, damit bleibt ihre Mindestbreite die Breite des
+laengsten Wortes und `overflow-wrap: break-word` kommt nie zum Zug:
+
+| Datei | Stelle | Wert |
+| --- | --- | --- |
+| ProjektEditor | Zeiten, Ebene 1 | `<span class="font-semibold … break-words">{cat.name}` |
+| ProjektEditor | Zeiten, Ebene 2 | `<span class="font-medium … break-words">{act.name}` |
+| ProjektEditor | Zeiten, Ebene 3 | `<span class="break-words">{emp.name}` |
+| ProjektEditor | Dokumentenketten-Metazeile | `<span class="break-words">{dok.kundenName}` |
+| ProjektEditor | Dokumentenketten-Metazeile | `<span title="Erstellt von" class="break-words">` |
+| ProjektEditor | Eingangsrechnung, Zuordnung | `<span class="break-words">Zugeordnet von …` |
+| ProjektEditor | Eingangsrechnung, Zuordnung | `<span class="text-slate-400 break-words">(von …)` |
+| AnfrageEditor | Tagebuch-Notiz | `<p class="… whitespace-pre-wrap … break-words">{n.notiz}` |
+
+Die drei Zeiten-Zeilen sind der aergerlichste Fall: das umschliessende
+`<div class="flex items-center gap-2 min-w-0">` hat Task 12 richtig gesetzt,
+aber der `<span>` darin ist selbst ein Flex-Item und braucht `min-w-0`
+genauso. Fuenf Zeilen weiter oben in derselben Datei macht derselbe Task es
+richtig (`<span className="min-w-0 break-words">` in den
+Kopf-Untertitelzeilen).
+
+**Richtig geloest, zur Abgrenzung:** `<span class="text-slate-500 italic
+break-words max-w-[200px]">` bei den Zuordnungen — dort deckelt `max-w`
+die automatische Mindestgroesse, `break-words` greift also wirklich. Und die
+fuenf `<span class="min-w-0 break-words">` der Kopf-Untertitel sind exakt das
+richtige Muster.
+
+### Zum Design-Review-Befund 1: der Vorschlag greift zu kurz
+
+Der Design-Reviewer schlaegt vor, das schliessende `</div>` der Zeile
+`flex justify-between items-start mb-2` **vor** das Notiz-`<p>` zu ziehen.
+Richtig, aber allein reicht es nicht: in `AnfrageEditor.tsx` steckt
+zusaetzlich der **Knopfblock** (Bearbeiten/Loeschen) innerhalb des
+Autorenblocks `<div class="flex items-center gap-2">`, waehrend er in
+`ProjektEditor.tsx` direkter Kind der `justify-between`-Zeile ist. Zieht man
+nur das `</div>` vor, hat die `justify-between`-Zeile nur noch **ein** Kind
+und die Knoepfe kleben am Namen statt am rechten Rand. Der Umbau muss beides
+machen: Knopfblock **und** Notiz-`<p>` aus dem Autorenblock heraus, dann ist
+die Struktur Zeichen fuer Zeichen die des Projekt-Editors.
+
+Nebenbefund an derselben Stelle, vorbestehend und nicht Teil dieses
+Abschnitts: `AnfrageEditor.tsx` verschachtelt dort ein `<p>` in ein `<span>`
+(Datum/Uhrzeit der Notiz). Ein Block in einem Inline-Element ist ungueltiges
+HTML; React setzt es trotzdem so in den DOM. Gehoert in denselben Umbau.
+
+### Folgerung
+
+Das aendert die Ampel nicht (🟡): kein Korrektheitsfehler im Verhalten, kein
+Rueckschritt, alle drei Gates gruen, die dahinterliegenden Ueberlaeufe sind
+vorbestehend und bleiben latent. Es aendert aber die Antwort auf "sind die 49
+Aenderungen alle richtig?" — **nein, acht davon sind Attrappen.**
+
+**Empfehlung: das ist die billigste Nachbesserung des ganzen Vorhabens** —
+siebenmal `min-w-0` in eine bestehende `className` ergaenzen, plus der eine
+Struktur-Umbau im Anfrage-Tagebuch. Eher ein kurzer Nachschlag zu Abschnitt 8
+als ein Punkt fuer Abschnitt 9; sonst steht in vier Dateien eine Klasse, die
+laut Kommentar etwas tut, was sie nachweislich nicht tut — und genau daran
+ist dieses Vorhaben schon zweimal vorbeigelaufen.
