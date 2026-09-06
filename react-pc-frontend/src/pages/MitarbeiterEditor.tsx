@@ -404,19 +404,31 @@ export default function MitarbeiterEditor() {
             ) : (
                 <div className="grid gap-2">
                     {dokumente.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors">
+                        // Task 11 (Abschnitt 7): {doc.originalDateiname} ist der
+                        // realistischste Fall der ganzen Fehlerklasse -- Unterstriche
+                        // sind nach UAX #14 KEINE Umbruchstelle, ein Dateiname ist ein
+                        // einziges unteilbares Wort. Gleiches Muster wie die ganze
+                        // SideInfo oben: min-w-0 (flex-1) auf jeder Ebene, die sonst
+                        // min-width: auto behaelt, break-words am Wert, shrink-0 auf
+                        // Icon und Knopfblock. min-w-0 auch auf DIESEM aeusseren <div>
+                        // noetig -- es ist selbst ein Grid-Item von "grid gap-2" zwei
+                        // Zeilen weiter oben, und Grid-Items behalten denselben
+                        // min-width:auto-Fallstrick wie Flex-Items (nachgemessen: ohne
+                        // dieses min-w-0 blieb der Ueberstand trotz min-w-0/break-words
+                        // an den inneren Ebenen unveraendert bei 313px/145px).
+                        <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group min-w-0">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors shrink-0">
                                     <File className="w-5 h-5" />
                                 </div>
-                                <div>
-                                    <p className="font-medium text-slate-900">{doc.originalDateiname}</p>
+                                <div className="min-w-0 flex-1">
+                                    <p className="font-medium text-slate-900 break-words">{doc.originalDateiname}</p>
                                     <p className="text-xs text-slate-500">
                                         {new Date(doc.uploadDatum).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} • {(doc.dateigroesse / 1024).toFixed(0)} KB
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 shrink-0">
                                 {doc.url && (
                                     <button
                                         onClick={() => setPreviewDoc(doc)}
@@ -681,16 +693,23 @@ export default function MitarbeiterEditor() {
                                 </h4>
                                 <div className="grid gap-2">
                                     {byYear[jahr].sort((a, b) => b.monat - a.monat).map(la => (
-                                        <div key={la.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors">
+                                        // Task 11 (Abschnitt 7): dieselbe Luecke wie bei
+                                        // den Dokumenten oben -- {la.originalDateiname}
+                                        // erscheint hier als Rueckfalltext, wenn weder
+                                        // Brutto- noch Nettolohn bekannt sind, und ist
+                                        // genauso ein unteilbares Wort. min-w-0 auch auf
+                                        // diesem aeusseren <div> noetig -- Grid-Item von
+                                        // "grid gap-2", siehe Kommentar bei den Dokumenten.
+                                        <div key={la.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group min-w-0">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors shrink-0">
                                                     <File className="w-5 h-5" />
                                                 </div>
-                                                <div>
-                                                    <p className="font-medium text-slate-900">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="font-medium text-slate-900 break-words">
                                                         {MONATSNAMEN[la.monat - 1]} {la.jahr}
                                                     </p>
-                                                    <p className="text-xs text-slate-500">
+                                                    <p className="text-xs text-slate-500 break-words">
                                                         {la.bruttolohn != null && (
                                                             <span className="font-medium text-slate-700">
                                                                 Brutto: {formatEuro(la.bruttolohn)}
@@ -705,7 +724,7 @@ export default function MitarbeiterEditor() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 shrink-0">
                                                 <button
                                                     onClick={() => setPreviewLohnabrechnung(la)}
                                                     className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"

@@ -290,26 +290,30 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                 Kontaktdaten
             </h2>
             <div className="space-y-4">
+                {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
+                    unten -- nacktes <div> ohne min-w-0, Wert-<p> ohne break-words,
+                    Icon ohne shrink-0. Gleiches Muster wie Z. 315/324 hier in
+                    dieser Datei bzw. die ganze SideInfo von MitarbeiterEditor.tsx. */}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Phone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Telefon</p>
-                        <p className="font-medium text-slate-900">{lieferant.telefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{lieferant.telefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Building2 className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Mobil / Fax</p>
-                        <p className="font-medium text-slate-900">{lieferant.mobiltelefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{lieferant.mobiltelefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -330,21 +334,21 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <User className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Vertreter</p>
-                        <p className="font-medium text-slate-900">{lieferant.vertreter || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{lieferant.vertreter || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Package className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Standard-Kostenstelle</p>
-                        <p className="font-medium text-slate-900">
+                        <p className="font-medium text-slate-900 break-words">
                             {lieferant.standardKostenstelleName || <span className="text-slate-400">Keine zugewiesen</span>}
                         </p>
                     </div>
