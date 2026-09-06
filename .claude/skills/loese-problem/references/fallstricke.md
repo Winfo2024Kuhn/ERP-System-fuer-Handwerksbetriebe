@@ -156,6 +156,17 @@ Plan als **maßgebliche Quelle** verweisen und dazusagen, dass der Auftragstext
 nur eine Zusammenfassung mit Schwerpunkten ist. Weicht der Plan vom Auftrag
 ab, gilt der Plan — und der Agent soll die Abweichung melden.
 
+### `handwerkerprogramm-design` ist kein aufrufbarer Skill
+
+Der Design-Skill des Projekts liegt zwar unter `.claude/skills/`, ist im
+Skill-Tool aber **nicht registriert** — ein Aufruf endet mit „Unknown skill",
+obwohl der Hook `check-doc-read.ps1` vor jedem Frontend-Edit einen Design-Skill
+verlangt. Im Auftrag deshalb immer beides vorgeben: den Inhalt von
+`handwerkerprogramm-design/SKILL.md` + `README.md` **als Datei lesen** (das ist
+der inhaltliche Maßstab), und für den Hook `ui-ux-pro-max` aufrufen (steht in
+der Hook-Liste als gültige Alternative). Sonst verliert jeder Frontend-Agent
+Zeit mit dem Fehlschlag.
+
 ### Skill-Namen ohne Namespace-Präfix aufrufen
 
 `ui-ux-pro-max:ui-ux-pro-max` schlägt fehl (`Unknown skill`), `ui-ux-pro-max`
