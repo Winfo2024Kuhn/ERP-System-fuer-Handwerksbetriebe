@@ -81,9 +81,10 @@ deaktivieren — nur die Abnahmeregel einhalten.
   Bedenken im Kontext-Log zu vermerken (dann entscheidet der Nutzer, nicht
   der Agent selbst).
 
-## Layout: fünf Fallen, die kein Test von selbst findet
+## Layout: sechs Fallen, die kein Test von selbst findet
 
-Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
+Aus dem 14-Zoll-Vorhaben (September 2026). Jede einzelne ist erst im Browser
+oder am gebauten CSS aufgefallen, keine im Quelltext:
 
 - **`break-words` reicht bei Flex-Items nicht.** Eine Überschrift in einer
   Flex-Zeile behält `min-width: auto` und wird so breit wie ihr längstes Wort —
@@ -107,8 +108,18 @@ Aus dem 14-Zoll-Vorhaben (September 2026), beide erst im Browser aufgefallen:
   Karte nach unten schieben will, braucht `flex flex-col` + `gap-*` statt
   `space-y-*`. Sonst steht die Klasse da und tut nichts.
 
-Beides gilt sinngemäß für jede künftige Layout-Arbeit: die Klasse im Quelltext
-ist kein Beweis, dass sie wirkt. Am gebauten CSS oder im Browser nachmessen.
+Alle fünf gelten sinngemäß für jede künftige Layout-Arbeit: **die Klasse im
+Quelltext ist kein Beweis, dass sie wirkt.** Am gebauten CSS oder im Browser
+nachmessen — und die Zusicherung so bauen, dass sie beim Entfernen **jeder**
+beteiligten Klasse rot wird, nicht nur bei einer. In diesem Vorhaben sind
+dreimal hintereinander „Attrappen" entstanden: Klassen, die im Diff richtig
+aussahen und nichts taten, weil die Nachbarklasse fehlte.
+
+Sechste Falle, aus derselben Familie: **eine definite `max-width` deckelt die
+automatische Mindestbreite eines Flex-Items.** Wer eine solche Deckelung
+entfernt, weil sie optisch stört, macht damit ein vorhandenes `break-words`
+wirkungslos — dann muss `min-w-0` nachrücken. Real passiert beim Streichen von
+`max-w-[200px]`.
 
 - **Testdaten für Umbruch-Fehler brauchen ein langes Wort ohne Trennstellen.**
 Bindestriche und Punkte sind selbst Umbruchpunkte — eine Adresse wie
