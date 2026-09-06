@@ -4720,3 +4720,349 @@ Aus `react-pc-frontend/`, synchron:
 - Keine der acht Punkte hat eine der 8 bewusst offen gelassenen Stellen
   (Punkt 8) beruehrt — per Diff gegengeprueft (`grep` auf die genauen
   Codezeilen vor dem letzten Commit).
+
+## Abschnitt 9 — Code-Review (Code-Reviewer)
+
+Zeit: 2026-09-06T19:26:02Z
+Branch: feature/layout-14-zoll
+Commit(s) geprueft: 6949396a..dfad7b1b (26028484, 07d7d82a, 54e98983, 2c0072ab,
+0a6fa906, dfad7b1b)
+Status: fertig
+Ampel: 🟡
+
+### Gates (aus `react-pc-frontend/`, synchron)
+
+- `npm run lint`: **0 Fehler, 1 Warnung** (`BelegeKasseEditor.tsx:1204`,
+  `react-hooks/exhaustive-deps`) — genau die bekannte Baseline.
+- `npm run test`: **1080/1082 gruen**, 2 Timeout-Flakes
+  (`LieferantenEditor.test.tsx` > "springt bei neuem Suchbegriff zurueck auf
+  die erste Seite", `components/document-editor/index.test.tsx` > "bricht bei
+  fehlgeschlagenem Speichern ab"). Beide isoliert nachgelaufen:
+  `npx vitest run` auf genau diese zwei Dateien → **34/34 gruen** in 12.8s.
+  Kein Zusammenhang mit dem Diff (die geaenderte Lieferanten-Stelle sitzt in
+  der Detail-Kopfzeile, der Test in der Listen-Pagination).
+  Ein erster Vollauf verlor zusaetzlich vier Dateien an
+  "Failed to start forks worker / Timeout waiting for worker to respond" —
+  die Maschine traegt einen vollen vitest-Lauf und den parallelen
+  Playwright-Lauf des Design-Reviewers nicht gleichzeitig. Fuer Abschnitt 10
+  einplanen: die Gates der beiden Reviewer nicht zeitgleich starten.
+- `npm run build`: gruen (`tsc -b` + `vite build`, 12.0s), nur die
+  vorbestehende Chunk-Groessen-Warnung. Output verworfen
+  (`git checkout -- src/main/resources/static/index.html` plus die zwei neuen
+  Asset-Dateien geloescht), `git status` danach leer.
+- Kein `./mvnw`, kein Playwright (gehoert dem Design-Reviewer).
+
+### Mutationsproben (statisch hergeleitet, ohne Playwright)
+
+Playwright liegt beim Design-Reviewer, deshalb je Stelle am gebauten DOM
+hergeleitet: WELCHES Element misst die Zusicherung, und aendert sich dessen
+`scrollWidth`/`clientWidth` bzw. `boundingBox`, wenn man `min-w-0` bzw.
+`break-words` entfernt. Grundlage: ein Flex-Item ohne `min-w-0` behaelt seine
+automatische Mindestbreite (= min-content; `overflow-wrap: break-word` senkt
+min-content NICHT) und ueberragt deshalb **seine Zeile**, nicht sich selbst —
+ein Flex-Item MIT `min-w-0` und ohne `break-words` ueberragt umgekehrt **sich
+selbst**. Eine Zusicherung faengt also nur dann beide Mutationen, wenn sie die
+umschliessende Flex-Zeile misst (oder Karte und Element doppelt).
+
+| # | Stelle | gemessenes Element | min-w-0 entfernt | break-words entfernt |
+|---|--------|--------------------|------------------|----------------------|
+| 1 | Zeiten Ebene 1 (`cat.name`) | `div.flex.items-center.gap-2.min-w-0` (Elternzeile) | rot | rot |
+| 2 | Zeiten Ebene 2 (`act.name`) | dito | rot | rot |
+| 3 | Zeiten Ebene 3 (`emp.name`) | dito | rot | rot |
+| 4 | Metazeile Kunde | `div.flex…flex-wrap` (Elternzeile) | rot | rot |
+| 5 | Metazeile Erstellt von | dito | rot | rot |
+| 6 | ER "Zugeordnet von" | **der reparierte Span selbst** | **gruen** — nur `keinHorizontalerUeberlauf` faengt es | rot |
+| 7 | "Weitere Zuordnungen (von …)" | `div.flex…flex-wrap` (Elternzeile) | rot | rot |
+| 8 | Bauabschnitt (Dialog) | `div.flex.items-center.gap-2` (Elternzeile) | rot | rot |
+| + | Betreff (Dialog) | das `<p>` selbst | entfaellt (Block im Spalten-Flex, `min-w-0` nicht noetig) | rot |
+| + | Anfrage-Notiz | `<p>` selbst plus Karten-Ueberstand | struktureller Fix, beide Messungen vorhanden | rot |
+| + | Lieferant Alias | das `<p>` selbst | entfaellt (Block) | rot |
+| + | Lieferant Vertreter/Adresse | `<p class="flex …">` (Elternzeile) | rot | rot |
+| + | Lieferant Bezahlung | Icon-Breite plus Wert-`scrollWidth` | Regressionswaechter (statischer Text, kein Beweis erzwingbar) — offen dokumentiert, in Ordnung | — |
+| + | Mitarbeiter Nachname/Vorname | Nachname-Zeile selbst plus y-Reihenfolge | entfaellt (`<h3>` ist Block) | rot |
+
+Ergebnis: **sieben von acht Attrappen sind sauber zugenagelt**, Fundstelle 6
+nur halb (Hinweis 2).
+
+### Doppelte Messung (Kasten-Zusicherungen)
+
+Richtig umgesetzt in `lieferant-layout.spec.ts`
+(`pruefeWertBleibtImKontaktKasten`) und `mitarbeiter-layout.spec.ts`
+(`pruefeDateinameBleibtInKarte`, `pruefeWertImKasten`): `boundingBox` gegen die
+Karte faengt das Entfernen von `min-w-0` (das Flex-Item waechst, der Block
+darin waechst mit), `scrollWidth`/`clientWidth` am Wert faengt das Entfernen
+von `break-words` (Rechteck bleibt gleich, Text laeuft ueber). Beide Mutationen
+greifen jetzt.
+
+### Anfrage-Tagebuch: Umbau vollstaendig
+
+Maschinell gegengeprueft statt per Auge: Notiz-Block aus `6949396a` und aus
+`HEAD` geholt, JSX-Kommentare entfernt, Whitespace normalisiert, Token-Diff
+gefahren. Ergebnis: **3699 Zeichen vorher, 3699 Zeichen nachher**, ein
+einziges `</div>` an anderer Stelle — genau die beabsichtigte Umhaengung.
+Nichts verloren: Knopfblock (Bearbeiten/Loeschen samt `onClick`), Bilder-Grid
+mit Viewer- und Loeschen-Knopf, Bild-Upload samt `input`-Handler,
+Autorenzeile, Avatar, Badges "Mobile ausgeblendet"/"Privat", Datum und
+Uhrzeit. Reihenfolge jetzt Kopfzeile → Notiz → Bilder → Upload. Klickbarkeit
+unveraendert, die Knoepfe bleiben Nachfahren von `.group`, also greift
+`group-hover:opacity-100` weiter. Struktur deckt sich mit `ProjektEditor.tsx`
+Z. 1318 ff.
+
+### git-stash-Spuren
+
+Keine. `git stash list` leer, `git reflog show stash` meldet gar keine
+stash-Ref ("fatal: unknown revision") — der Stack wurde restlos abgebaut.
+Arbeitsbaum sauber, keine Konfliktmarker, keine `.orig`/`.rej` im Diff, alle
+vier Task-Commits fassen ausschliesslich `react-pc-frontend/` an (je zwei
+Dateien). Der Token-Diff des Tagebuch-Blocks haette einen verunglueckten
+`stash pop` sofort gezeigt.
+
+### Hinweise (alle 🟡)
+
+1. **Neue Attrappe, eingebaut durch diesen Task**: `ProjektEditor.tsx` Z. 2367,
+   `<span className="text-slate-500 italic break-words">` (Beschreibung in
+   "Weitere Zuordnungen"). Das gestrichene `max-w-[200px]` war das Einzige,
+   was `break-words` dort wirksam gemacht hat: eine definite `max-width`
+   deckelt laut CSS-Flexbox 4.5 die automatische Mindestbreite eines
+   Flex-Items. Ohne Deckelung und ohne `min-w-0` faellt der Span auf
+   min-content zurueck — bei einer spacelosen Beschreibung sprengt er die
+   `flex-wrap`-Zeile, `break-words` ist wieder wirkungslos. Der Task hat den
+   Punkt als "rein optisch, kein TDD-Beweis" eingeordnet; er ist es nicht.
+   Fix: `min-w-0` ergaenzen, Deckelung bleibt gestrichen. Keine Zusicherung
+   deckt die Stelle, die Fixture nutzt "Anteil an Sammelbestellung" (kurz,
+   mit Leerzeichen).
+2. **Fundstelle 6 greift nur halb**:
+   `pruefeZeileUeberragtNicht(page.getByText(ZUGEORDNET_VON_LANG, { exact: false }), …)`.
+   Playwrights Text-Engine liefert das am engsten umschliessende Element, hier
+   den inneren `<span className="font-medium text-slate-700">` — `xpath=..`
+   trifft damit den reparierten `break-words min-w-0`-Span, nicht die
+   Flex-Zeile. Entfernt man `min-w-0`, behaelt der Span seine
+   min-content-Breite, sein eigener `scrollWidth` bleibt gleich `clientWidth`,
+   die Zusicherung bleibt gruen; nur das abschliessende
+   `keinHorizontalerUeberlauf(page)` dreht rot, mit generischer Meldung.
+   Fix: fuer diesen einen Aufruf
+   `xpath=ancestor::div[contains(@class,"flex-wrap")][1]` statt `xpath=..`.
+   Die uebrigen sechs Aufrufe des Helfers treffen die Zeile korrekt.
+3. `spacelosesWort()` liegt jetzt dreimal identisch im Baum
+   (`anfrage-layout.spec.ts`, `lieferant-layout.spec.ts`,
+   `projekt-detail-layout.spec.ts`). Gehoert nach `e2e/hilfen/` — Abschnitt 10.
+4. `kunde-layout.spec.ts`: melden statt still reparieren war richtig (Datei
+   ausserhalb der Files-Liste), und Abschnitt 10 traegt die Aufgabe bereits
+   ("Pruef die Kasten-Zusicherungen aus Task 7b, 9 und 11 auf dieselbe
+   Schwaeche") — Task 11 ist der Kunde. Fuer Abschnitt 10 reicht das.
+   Sauberer waere, den Punkt auf `kunde-layout.spec.ts` (und ggf. 7b) zu
+   verengen und Lieferant/Mitarbeiter dort als erledigt abzuhaken.
+5. `kriterien.md` (Commit dfad7b1b): die Ueberschrift sagt jetzt "fuenf
+   Fallen", der Satz darunter noch "beide erst im Browser aufgefallen" und der
+   Absatz darunter "Beides gilt sinngemaess". Wortlaut nachziehen.
+6. Kosmetik: der Knopfblock in der Tagebuch-Kopfzeile hat kein `shrink-0`
+   (der im `ProjektEditor.tsx` auch nicht). Praktisch unkritisch, weil der
+   Block als Flex-Container seine eigene automatische Mindestbreite haelt —
+   nur als Symmetrie-Notiz.
+
+### Kein 🔴
+
+Keine Korrektheitsfehler, Tests und Build gruen, im Tagebuch-Umbau nichts
+verloren (Token-Diff), keine Sicherheits- oder DSGVO-Beruehrung, keine
+Aenderung ausserhalb `react-pc-frontend/` ausser dem `kriterien.md`-Commit
+des Nutzers.
+
+## Abschnitt 9 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-06T19:52:00Z
+Branch: feature/layout-14-zoll (Review-Worktree `wt/layout-review-design`, detached auf dfad7b1b)
+Commit(s): keine — read-only geprueft, `git status` am Ende leer
+Status: fertig
+Ampel: 🟡
+
+### E2E-Lauf
+
+- `netstat -ano | findstr :5229` vor dem Lauf leer.
+- `E2E_PORT=5229 npm run test:e2e`: **239/239 gruen** (4,5 min), beide
+  Standardgroessen plus `pc-uebergang`. Gegenueber Abschnitt 8 (229) also
+  +10 Faelle — die fuenf neuen Task-13-Tests in je zwei Groessen.
+- 100 Screenshots (48 `pc-14zoll`, 48 `pc-monitor`, 4 `pc-uebergang`) sofort
+  nach dem Lauf ausserhalb des Worktrees gesichert. Alle eigenen Laeufe danach
+  ueber eine eigene Konfiguration (`playwright.review.config.ts`, Port 5420,
+  `outputDir` im Scratchpad) — der Stolperstein hat sich prompt bestaetigt:
+  ein zweiter Lauf ohne eigenes Ausgabeverzeichnis hat meine erste eigene
+  Screenshot-Serie geloescht, die Suite-Bilder waren da schon in Sicherheit.
+- Eigene Laeufe: 24 Tagebuch-Faelle, 16 Optik-/Dialog-Faelle, 20 Abnahme-Faelle
+  plus Nachmessungen — alle gruen. Konfiguration und Spec-Ordner am Ende
+  geloescht, Arbeitsbaum sauber.
+
+### 1. Der Tagebuch-Umbau — stimmt, in beiden Editoren, in beiden Groessen
+
+Zwoelf Zustaende je Editor gemessen und angeschaut: kurze Notiz, lange Notiz
+(drei Saetze), 105- und 200-Zeichen-Einwortnotiz, jeweils ohne und mit drei
+Bildern, jeweils 1440 und 1920.
+
+| Frage | Projekt | Anfrage |
+| --- | --- | --- |
+| Notiz unter der Autorenzeile? | ja (Autor y=613, Datum y=633, Notiz y=657) | ja (Autor y=565, Datum y=567, Notiz y=599) |
+| Notiz auf voller Kartenbreite? | ja (882 von 916 px, 17 px Innenabstand links wie rechts) | identisch |
+| Ueberstand ueber die Karte? | −17 px in allen zwoelf Zustaenden | identisch |
+| Eigener Ueberlauf (`scrollWidth−clientWidth`)? | 0 in allen Zustaenden | identisch |
+| Knopfblock rechts statt am Namen? | ja: Knopf x=920, Kartenrand 1005, Kartenmitte 547, Name endet bei 264 | **auf den Pixel dieselben Werte** |
+| Reihenfolge Autor → Datum → Text → Bilder → Upload? | ja | ja |
+
+Der 208-px-Ueberstand aus Abschnitt 8 ist weg. Beim 200-Zeichen-Wort bricht
+die Notiz jetzt sauber auf zwei Zeilen um (vorher: quer ueber die
+Seitenspalte "Anfragedaten"). Die beiden Tagebuchkarten sind nach dem Umbau
+optisch nicht mehr auseinanderzuhalten — bis auf einen alten Unterschied, der
+nicht Teil des Umbaus war (Hinweis 3).
+
+**Nichts kaputtgemacht.** Bilder-Raster, Loesch-Knopf am Bild, Upload-Zeile
+und die Hover-Knoepfe verhalten sich wie vorher; die Knoepfe bleiben Nachfahren
+von `.group`, `group-hover:opacity-100` greift weiter (im Hover-Screenshot
+beider Editoren geprueft).
+
+### 2. Die zwei Optik-Punkte — einer besser, einer nicht
+
+**"Weitere Zuordnungen" (`max-w-[200px]` gestrichen): mit realistischen Werten
+klar besser.** Der 46-Zeichen-Freitext steht jetzt in **einer** Zeile (272 px
+breit) statt in einer 200-px-Saeule mit drei Zeilen und "eil" am Schluss. Die
+ganze Zeile liest sich als ein Satz: Projekt / 25% / 375,00 € / "Anteil an der
+Sammelbestellung vom Februar 2026" / (von Anna Büro).
+
+**Aber der Code-Reviewer hat recht (sein Hinweis 1), und ich habe es
+nachgemessen:** ohne Deckelung **und** ohne `min-w-0` faellt der Span auf
+min-content zurueck. Mit einer 200-Zeichen-Beschreibung ohne Leerzeichen laeuft
+die Zeile bei 1440 um **254 px** ueber und der Text steht **237 px** ueber der
+Kartenkante — wo ihn das `overflow-hidden` der Karte **still abschneidet**,
+ohne Ellipse, ohne `data-kuerzung-erlaubt`. Genau die Sorte Fehler, gegen die
+dieses Vorhaben angetreten ist. Bei 1920 sind es 86 px bzw. 69 px.
+Der Span selbst meldet dabei 0 (`scrollWidth == clientWidth`) — `break-words`
+ist dort wieder wirkungslos.
+
+Vorher (mit Deckelung) war derselbe Wert haesslich gestapelt, aber vollstaendig
+lesbar. **Das ist die einzige Stelle in Abschnitt 9, an der etwas schlechter
+geworden ist — und sie geht auf meinen eigenen Hinweis 3 aus Abschnitt 8
+zurueck, der zu kurz gedacht war.** Fix wie vom Code-Reviewer vorgeschlagen:
+`min-w-0` am Span ergaenzen, Deckelung bleibt gestrichen. Eine Klasse.
+
+**Mitarbeiterkarte (Nachname/Vorname als zwei Zeilen): nicht besser.**
+Das Komma haengt jetzt am Nachnamen — aber im selben `<span class="block">`.
+Bei 1440 fuellt der 39-Zeichen-Fixture-Nachname die Zeile exakt aus, und das
+Komma rutscht **allein** in eine eigene Zeile. Gemessen (Zeilenkaesten des
+Nachname-Spans): `[{y:431, breite:367}, {y:459, breite:5}]` — der zweite Kasten
+ist 5 px breit, das ist das Komma. Im Bild stehen dann untereinander:
+"Beispielmusterfrauenbergwaldschmidtstein", darunter ein einzelnes ",",
+darunter "Bernhardine".
+
+Vorher begann die zweite Zeile mit ", Bernhardine". Jetzt steht eine ganze
+Zeile mit nichts als einem Komma darin — das ist nicht besser, sondern
+schlechter. Bei 1920 tritt es nicht auf (beide Kaesten bei y=431).
+
+Dazu kommt der Normalfall: die Karte braucht jetzt **immer** zwei Zeilen, auch
+bei "Mustermann, Klaus". Auf der Uebersicht mit sechs realistischen Namen
+liest sich jede Karte als "Büro," / "Anna" — das haengende Komma wirkt wie ein
+abgebrochener Satz.
+
+Vorschlag: das Komma ersatzlos streichen. Zwei bewusste Zeilen brauchen kein
+Trennzeichen. Dann kann nichts mehr allein umbrechen, und die Karte liest sich
+wie ein Namensschild. Kosmetik, nicht blockierend.
+
+### 3. Die zwei stillen Kuerzungen im Rechnungs-Dialog — Umbruch ist richtig
+
+Dialog dreimal geoeffnet (realistischer 100-Zeichen-Betreff, sehr langer
+220-Zeichen-Betreff, 180-Zeichen-Einwort-Betreff), beide Groessen.
+
+| Fall | Betreff-Hoehe | Bauabschnitt | Dialog |
+| --- | --- | --- | --- |
+| realistisch (100 Zeichen) | 40 px = 2 Zeilen | 1 Zeile | 768 × 868 |
+| sehr lang (220 Zeichen) | 60 px = 3 Zeilen | 1 Zeile | 768 × 868 |
+| Einwort (180 Zeichen) | 60 px = 3 Zeilen | 2 Zeilen | 768 × 868 |
+
+**Ja, drei Zeilen sind hier besser als ein Schnitt.** Begruendung, nicht
+Geschmack: der Betreff steht in der Zeile "Basierend auf: AN-2026-0701 – ..."
+und ist das Einzige, woran der Nutzer erkennt, **welches** Dokument er gerade
+in eine Rechnung verwandelt. Direkt darunter faellt er eine nicht triviale
+Entscheidung (Teil-, Abschlags-, Schluss- oder einfache Rechnung). Ein
+Betreff, der ohne Ellipse und ohne Tooltip abbricht, laesst genau an dieser
+Stelle offen, ob man das richtige Dokument erwischt hat.
+
+Der Preis ist klein: der Dialog ist 768 px breit und scrollt innen ohnehin,
+die dritte Zeile kostet 20 px Inhaltsflaeche. Die Fusszeile mit "Abbrechen"
+und "Erstellen & im Editor bearbeiten" bleibt in beiden Groessen sichtbar,
+die vier Rechnungstyp-Kacheln bleiben vollstaendig im Bild, nichts
+ueberlagert sich. Auch der zweizeilige Bauabschnitt sitzt sauber neben seinem
+Haekchen.
+
+Waere der Betreff sehr viel laenger, waere ein `line-clamp-3` mit
+`data-kuerzung-erlaubt` und `title` die bessere Loesung. Bei den Laengen, die
+in diesem Feld realistisch vorkommen, ist der Umbruch die richtige Wahl.
+
+### 4. Letzte Gesamtabnahme — neun Seiten, beide Groessen, zweimal
+
+**Harte Fixtures:** die 100 Screenshots des vollen Laufs. Projekt- und
+Anfrage-Kopf mit Komposita-Bauvorhaben, Kunden-Kopf mit 68-Zeichen-Namen,
+Lieferanten-Kopf mit 60-Zeichen-Einwortnamen, Mitarbeiter-Detail, die vier
+Uebersichten, die Menueleiste bei 1536. Alles im Rahmen, drei Karten je Reihe
+bei 1440, vier ab 1536, Kennzahlen und Knopfbloecke bleiben rechts.
+
+**Realistische Werte:** eigener Durchgang ueber zehn Seitenzustaende
+(Projekte-Uebersicht, Projekt-Detail Zeiten und Material, Anfragen-Uebersicht,
+Anfrage-Detail, Kunden-Uebersicht, Kunde-Detail, Lieferanten-Uebersicht,
+Lieferant-Detail, Mitarbeiter-Uebersicht) in beiden Groessen, jeder mit
+`keinHorizontalerUeberlauf`, `keineUeberschneidungen`, `keinTextLaeuftUeber`
+und `keinTextGekuerzt` **scharf**: **20/20 gruen**. Werte wie "Mustermann Bau
+GmbH & Co. KG", "Balkonanlage Musterstraße 12, 3. Obergeschoss",
+A-2026-0042, K-1042, AG-2026/09/00042, 0931 1234567, 125.000,00 €, 15.1.2026.
+
+Mit normalen Werten ist auf keiner der neun Seiten in keiner der beiden
+Groessen etwas abgeschnitten, ueberlagert oder verrutscht. Die Zeiten-Hierarchie
+liest sich als sauberes Datenblatt (Kategorie / Arbeitsgang / Mitarbeiter,
+Stunden und Betraege rechtsbuendig), die Lieferanten-Kontaktspalte traegt in
+allen sechs Zeilen dasselbe Muster — die Bezahlung-Zeile faellt nicht mehr aus
+der Reihe.
+
+**Abnahme: ja, bis auf eine Zeile.** Der `min-w-0`-Nachtrag an der
+Beschreibung in "Weitere Zuordnungen" (`ProjektEditor.tsx`, Z. 2373) muss noch
+in den Produktivcode. Das kollidiert mit der Ansage "ab jetzt nur noch
+Testinfrastruktur" — deshalb hier ausdruecklich benannt, damit der Nutzer
+entscheidet und es nicht stillschweigend liegen bleibt. Alles Uebrige ist
+abgenommen.
+
+### Hinweise (alle 🟡)
+
+1. **`min-w-0` an der Beschreibung in "Weitere Zuordnungen"** — siehe oben.
+   Deckt sich mit Hinweis 1 des Code-Reviews, von mir im Browser
+   nachgemessen (254 px Zeilen-, 237 px Kartenueberstand bei 1440).
+   Der einzige echte Rueckschritt dieses Abschnitts.
+2. **Komma in der Mitarbeiterkarte streichen** — siehe oben. Nachfolger meines
+   eigenen Hinweises 2 aus Abschnitt 8; der Fix hat das Problem verschoben,
+   nicht geloest.
+3. **Autorenzeile der beiden Tagebuecher unterscheidet sich weiterhin.**
+   Anfrage setzt Name, Chips und Datum in **eine** Zeile (das Datum steckt
+   dort in einem `<span>` um ein `<p>` — ein Block in einem Inline-Element),
+   Projekt setzt das Datum in eine zweite Zeile darunter. Nicht Teil des
+   Umbaus, faellt jetzt aber auf, wo alles andere identisch ist. Kosmetik.
+4. **`ui/dialog.tsx` setzt kein `role="dialog"`.** Folge fuer die Pruefung:
+   `keineUeberschneidungen` erkennt den Rechnungs-Dialog nicht als Modal und
+   meldet den kompletten Seiteninhalt dahinter als Ueberschneidung — mein
+   erster Anlauf ist genau daran gescheitert. Damit ist `designPruefung` fuer
+   **jeden** Dialog, der auf dieser Komponente aufsetzt, unbrauchbar; andere
+   Modale (`LieferantDokumentModal`, `Modals.tsx`, `ArtikelAuswahlDialog` u.a.)
+   setzen das Attribut. Nebenbei ein Zugaenglichkeits-Loch (kein
+   `aria-modal`, kein Fokus-Fang). Fuer Abschnitt 10 vormerken — entweder
+   `role="dialog"` an der Komponente oder eine Modal-Erkennung in `design.ts`,
+   die auch fixed-positionierte Overlays ohne Rolle erkennt.
+5. **`keineUeberschneidungen` kennt keine Sticky-Leisten.** Sobald die Seite
+   gescrollt ist, meldet die Pruefung die Menueleiste gegen den Inhalt
+   darunter. Kein Layoutfehler, aber Rauschen, sobald eine Spec scrollt.
+6. Vorbestehend und unveraendert: englischer Dezimalpunkt bei Stunden
+   ("12.50 h" neben "1.087,50 €"), einzelnes Komma in der Adresszeile bei
+   leerer Adresse, farbige Kennzahl-Kaesten (violet/blue/emerald) im
+   Lieferanten- und Kundenkopf. Alle drei schon frueher gemeldet.
+
+### Ampel
+
+🟡. Der Tagebuch-Umbau — der wichtigste Pruefpunkt — sitzt: in beiden Editoren
+identisch, in allen zwoelf geprueften Zustaenden ohne Ueberstand, ohne
+Ueberlappung, mit richtiger Reihenfolge und rechts stehendem Knopfblock. Die
+stillen Kuerzungen im Rechnungs-Dialog sind richtig geloest. Kein 🔴, weil der
+eine Rueckschritt (Hinweis 1) eine 200-Zeichen-Beschreibung ohne Leerzeichen
+braucht, mit realistischen Werten eine Verbesserung ist, vom Code-Reviewer
+parallel gefunden wurde und mit einer Klasse behoben ist. Kein 🟢, weil er
+existiert und weil der zweite Optik-Punkt sein Ziel verfehlt hat.
