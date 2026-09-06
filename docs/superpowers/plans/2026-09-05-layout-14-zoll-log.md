@@ -2173,3 +2173,65 @@ Status: fertig
 - **Wichtigste Abweichung, offen fuer den Design-Reviewer:** Die im Task-Text vorgeschlagene Wiederverwendung der projektweiten `KUNDEN_EMAIL_LANG`-Adresse fuer den Uebersichtskarten-Testfall (Befund 2) reproduziert den beschriebenen Fehler an dieser Stelle **nicht** (siehe Teil A, Punkt 2) -- Bindestriche im Domainteil sind natuerliche Umbruchstellen unabhaengig von `break-words`/`min-w-0`. Der Testfall in `kunde-layout.spec.ts` nutzt deshalb eine eigene, bindestrichlose 90-Zeichen-Adresse (`EMAIL_OHNE_TRENNZEICHEN`), die den Fehler zuverlaessig zeigt. Die Fixture fuer Fix 1 (Kontaktdaten-Spalte, `DUMMY_KUNDE`) bleibt bei der projektweiten `KUNDEN_EMAIL_LANG` (reproduziert dort korrekt, siehe Zahlen oben) -- nur der Uebersichtskarten-Testfall weicht ab. Bitte im Design-Review gegenpruefen, ob diese Einordnung stimmt.
 - `blockiereFremdeNetzwerkzugriffe()` in `uebersichten-layout.spec.ts` verwendet (Pflichtlektuere wies explizit darauf hin), obwohl keine der vier Uebersichtsseiten ein GoogleMapsEmbed rendert -- `index.html` laedt laut Abschnitt-4-Review trotzdem bei jeder Navigation `pdf.js` von cdnjs. Bewusst **nicht** in die beiden bestehenden Specs (`projekt-uebersicht-layout.spec.ts`, `anfrage-layout.spec.ts`) nachgezogen, da das flaechendeckende Ausrollen explizit Task 10 (Abschnitt 6) zugewiesen ist -- nur an der eigenen, neuen Datei angewendet.
 - Keine weiteren Abweichungen. Beide Teile testgetrieben (rot vor dem Fix, gruen danach, mit Wegwerf-Debug-Sonden zur Ursachenklaerung bei Fix 2, alle vor dem Commit geloescht).
+
+
+## Abschnitt 5 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-06T14:35:24Z
+Branch: feature/layout-14-zoll (Review-Worktree `wt/layout-review-design`, detached auf dd7b70d9)
+Commit(s): keine — read-only geprueft
+Status: fertig
+Ampel: 🔴
+
+### Was geprueft wurde
+
+- Voller E2E-Lauf, beide Groessen, Standard-Worker: `netstat -ano | findstr :5220` vor dem Lauf leer, `E2E_PORT=5220 npm run test:e2e` → **218/218 gruen** (4,0 min). Nach Abschnitt 4 waren es 206; die 12 neuen sind uebersichten-layout (4×2), der neue Kartenzeilen-Testfall in kunde-layout (1×2) und der neue Trennlinien-Testfall in projekt-uebersicht-layout (1×2).
+- Alle 94 Screenshots aus `test-results/design/` liegen nach dem Lauf vor; die neuen und geaenderten mit dem Read-Tool angesehen (vier `uebersichten-*-gemischt`, `kunde-detail-langer-name`, vier `menueleiste-*`, `kunde-uebersicht-lange-namen`), je Bild und Groesse.
+- Eigene Nachmessung unabhaengig von den Specs: separater Dev-Server auf Port 5331, eigenes Playwright-Skript ausserhalb des Worktrees (kein Quellcode angefasst), beide Groessen, alle fuenf Detailseiten und alle vier Uebersichten.
+
+### Meine zwei offenen Befunde — beide behoben, selbst nachgemessen
+
+1. **E-Mail auf der Kunden-Detailseite (mein Blocker aus Runde 2, Abschnitt 4).** Mit derselben 97-Zeichen-Adresse wie im Review gemessen, bei 1440: `main.scrollWidth − main.clientWidth = 0` (Zielwert erreicht, vorher 127px). Der E-Mail-Link ist 220px breit in einem 288px-Kasten und bleibt 12px innerhalb der Kastenkante (vorher 184px darueber hinaus); er bricht auf fuenf Zeilen um und bleibt vollstaendig lesbar. Gegenprobe mit einer bindestrichlosen 96-Zeichen-Adresse: ebenfalls `main = 0`, Link 220px im 288px-Kasten, vier Zeilen. Bei 1920 beide Varianten `main = 0`, drei Zeilen. Optisch im Screenshot bestaetigt.
+2. **Anzeigename in der Menueleiste bei 1920 (mein Befund aus Abschnitt 2).** Gemessen: `scrollWidth 191px == clientWidth 191px`, `max-width: none` → nicht mehr gekuerzt; im Screenshot steht "Friederike Beispiel-Musterfrau" vollstaendig da. Bei 1440 weiterhin gewollt gekuerzt (Kasten 160px gegen 191px Inhalt, `data-kuerzung-erlaubt`), der volle Name steht im aufgeklappten Nutzermenue darunter — im Screenshot `menueleiste-nutzermenue-offen--pc-14zoll` verifiziert. Menuepunkt-Zeile ohne Ueberlauf in beiden Groessen (1440/1440 bzw. 1920/1920).
+
+### Bindestrich-Befund des Coding-Agenten — bestaetigt, mit einer Praezisierung
+
+Im Browser gegengeprueft, indem `min-w-0` an der Kartenzeile zur Laufzeit wieder entfernt wurde (Zustand vor dem Fix), ohne den Quellcode anzufassen:
+
+- Bei 1440 verdeckt die Adresse **mit** Bindestrichen den Fehler tatsaechlich vollstaendig: 0px Ueberstand ohne `min-w-0`. Die bindestrichlose Adresse zeigt ihn: `scrollWidth − clientWidth = 272px`, Text 256px ueber die Kartenkante hinaus. Genau die vom Agenten genannte Zahl. Mit `min-w-0` (heutiger Stand): 0px, 17px innerhalb der Karte.
+- **Praezisierung:** Bei 1920 verdeckt die Bindestrich-Adresse den Fehler nur teilweise — dort blieben ohne `min-w-0` immerhin 39px Ueberstand (bindestrichlos: 327px). Die Aussage "Bindestriche verdecken den Fehler" gilt fuer 1440 uneingeschraenkt, fuer 1920 nur abgeschwaecht. An der Einordnung und am Fix aendert das nichts.
+
+**Stichprobe an den schon abgenommenen Stellen** (Auftragspunkt 4), jeweils mit einer bindestrichlosen 96-Zeichen-Adresse, beide Groessen: Projekt-Detailseite, Anfrage-Detailseite und Lieferanten-Detailseite laufen nicht ueber — `html = 0`, `main = 0`, E-Mail-Link innerhalb seines Kastens (Projekt/Anfrage 248px im 272px-Kasten, Lieferant 204px im 272px-Kasten, jeweils 12px Rand). Dort greift `break-words` auf einem Block-Element in einer `min-w-0`-Spalte auch ohne Bindestriche. **Kein neuer Befund an diesen drei Stellen.**
+
+### Neuer Befund (blockierend): Mitarbeiter-Detailseite, Kontakt-Spalte
+
+Beim Durchgang durch die fuenf Detailseiten gefunden — dieselbe Fehlerklasse, die dieses Vorhaben ueberall sonst beseitigt hat, an der einzigen der fuenf Detailseiten, deren Seitenspalte nie angefasst wurde.
+
+`react-pc-frontend/src/pages/MitarbeiterEditor.tsx`, `SideInfo` (Z. 442-535): jede Zeile ist `<div className="flex items-center gap-3">` mit Icon plus einem nackten `<div>` — kein `min-w-0`, kein `flex-1`, kein `shrink-0` am Icon, und der Wert selbst (`<p className="text-sm font-medium">`) hat kein `break-words` und kein `title`. Betroffen sind u.a. die E-Mail-Zeile (Z. 471-476) und die Abteilungs-Zeile (Z. 458-463).
+
+Gemessen bei 1440 mit einer realistischen 91-Zeichen-Mitarbeiter-E-Mail:
+
+- `main.scrollWidth − main.clientWidth = 184px` — Zielwert Nr. 1 des Vorhabens, verletzt. (`html = 0`, der Ueberstand versteckt sich also still in `main` — genau das Muster aus Befund 1 der Ausgangs-Spec.)
+- Die E-Mail ragt 248px ueber ihren Kasten hinaus und laeuft rechts aus dem Bildschirm; auf dem Screenshot ist sie mitten im Wort abgeschnitten und nicht mehr lesbar. Bei 1920 dieselbe Zeile 192px ueber den Kasten (`main` dort 0).
+- Schon ohne E-Mail sichtbar: `Sonderaufgabenkoordinationsstellenverwaltung` in der Abteilungs-Zeile steht bei 1440 21px ueber der Kartenkante (bei 1920 passt es).
+
+Warum das bisher niemand gesehen hat: `DUMMY_MITARBEITER` in `e2e/mitarbeiter-layout.spec.ts` setzt `email: null` und `strasse/plz/ort: null` — die Zeilen werden im Test nie mit echtem Inhalt gerendert. Und die automatischen Pruefungen greifen hier strukturell nicht: das `<p>` ist genauso breit wie sein Text (`scrollWidth == clientWidth`), also meldet `keinTextLaeuftUeber` nichts, und die Karte hat kein `overflow-x: hidden`, also meldet auch die generische Schleife von `keinHorizontalerUeberlauf` nichts. Nur der `main`-Zweig von `keinHorizontalerUeberlauf` wuerde anschlagen — aber erst, wenn eine Fixture eine lange Adresse setzt.
+
+Einordnung: **vorbestehend, nicht von Abschnitt 5 verursacht.** Task 7 hatte die Seitenspalte ausdruecklich ausgeklammert ("Sonst nichts an dieser Datei — Kopf und Karten der Mitarbeiterseite sind nicht Teil der Spec"). Der Fix gehoert deshalb nicht in Abschnitt 5, sondern in einen eigenen kleinen Nachtrags-Task auf `MitarbeiterEditor.tsx` + `mitarbeiter-layout.spec.ts` — das Muster steht fertig in `LieferantenEditor.tsx:315` und jetzt `Kundeneditor.tsx:497`: umschliessendes `<div>` auf `min-w-0 flex-1`, Wert auf `break-words`, Icon auf `shrink-0`, und die Fixture um eine lange E-Mail plus eine Adresse erweitern.
+
+### Hinweise (nicht blockierend)
+
+- **Landmine fuer Abschnitt 6 / Task 10.** Der Coding-Agent von Task 8b hat den Fehlalarm in `keinTextLaeuftUeber` korrekt beschrieben; ich habe ihn nachgestellt: mein Nachbau der Pruefung meldet den gekuerzten Anzeigenamen bei 1440 auf jeder Seite mit 31px. Task 8b weicht dem aus, indem alle vier `designPruefung()`-Aufrufe in `menueleiste-layout.spec.ts` jetzt ohne `strengePruefungen` laufen. Dreht Task 10 den Standard wie geplant auf `true`, laufen genau diese vier Faelle bei pc-14zoll wieder rot — strukturell unbehebbar, weil die Kuerzung dort gewollt ist. Task 10 muss `keinTextLaeuftUeber` also zwingend um dieselbe Ausnahme erweitern wie `keinHorizontalerUeberlauf` (Marker `data-kuerzung-erlaubt` ODER `text-overflow: ellipsis`/`-webkit-line-clamp`), bevor der Standard umgestellt wird. `design.ts` steht in Task 10s Files-Liste, das passt zusammen.
+- Der Abdeckungsverlust in `menueleiste-layout.spec.ts` (vier mal `strengePruefungen` weg) ist vertretbar: `keinTextGekuerzt` wird stattdessen einzeln aufgerufen, `keinHorizontalerUeberlauf` und `keineUeberschneidungen` laufen unveraendert mit, und zwei neue Zusicherungen sind dazugekommen. Netto ist die Menueleiste besser abgesichert als vorher, nicht schlechter.
+- Kartentitel in den Uebersichten werden bei 1920 haeufiger per `line-clamp-2` gekuerzt als bei 1440 (vier statt drei Spalten, also schmalere Karten): auf `uebersichten-projekte-gemischt--pc-monitor` sind zwei von vier Titeln mit "…" abgeschnitten, bei 1440 nur einer. Das ist die bewusste, markierte Ausnahme (`data-kuerzung-erlaubt`, voller Text im `title`), der Kundenname darunter bleibt vollstaendig — kein Befund, nur der Vollstaendigkeit halber notiert.
+- Ausserhalb dieses Vorhabens gesehen, nur zur Kenntnis: `FirmaEditor.tsx:995` rendert eine E-Mail als nacktes `<p className="text-sm text-slate-500">{sb.email}</p>` ohne `break-words`. Nicht geprueft, nicht Teil der fuenf Detailseiten.
+
+### Gesamteindruck: fuenf Detailseiten und vier Uebersichten
+
+Beide Groessen komplett durchgegangen, gemessen und angesehen.
+
+- **Vier Uebersichten** (Projekte, Anfragen, Kunden, Lieferanten): sauber. Drei Karten je Reihe bei 1440, vier bei 1920 (gemessen: `[3,1]` bzw. `[4]`). Karten einer Reihe gleich hoch, Trennlinien auf gleicher Hoehe — `mt-auto` greift jetzt ueberall, im Screenshot deutlich zu sehen. Kein Ueberlauf, keine ungewollte Kuerzung, Primaeraktion ("Neues Projekt" usw.) ohne Scrollen sichtbar.
+- **Projekt, Anfrage, Kunde, Lieferant (Detail)**: sauber in beiden Groessen. Titel brechen um statt zu ueberdecken, Kennzahlen (BRUTTO/NETTO/GEWINN) bleiben frei, Reiterleisten einzeilig, Seitenspalte bricht sauber. `html = 0`, `main = 0` ueberall, auch mit bindestrichlosen Langadressen.
+- **Mitarbeiter (Detail)**: der einzige Ausreisser, siehe Befund oben.
+
+Nichts ist ueberlagert, nichts verrutscht. Abgeschnitten ist genau eine Stelle: die Kontakt-Spalte der Mitarbeiterseite.
