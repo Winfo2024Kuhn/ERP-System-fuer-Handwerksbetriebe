@@ -1,6 +1,7 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { erwarteteKartenspalten, spacelosesWort } from './hilfen/testdaten';
 
 /**
  * Task 4 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -348,8 +349,12 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
 
         await expect(page.getByRole('heading', { level: 3 })).toHaveCount(4);
 
-        // Kartenraster: bei pc-14zoll (1440) drei Karten je Reihe, bei
-        // pc-monitor (1920) vier -- Spec D / Plan-Vorgabe "2xl:grid-cols-4".
+        // Kartenraster: Spaltenzahl haengt von der Fensterbreite ab (Tailwinds
+        // "2xl:grid-cols-4"-Breakpoint greift ab 1536px), nicht vom Namen des
+        // Playwright-Projekts -- sonst erwartet z.B. "pc-uebergang" (1536px)
+        // faelschlich drei Spalten statt der dort schon aktiven vier
+        // (Nachtrag Abschnitt 10, Task 10b: 18 rote Faelle durch genau diese
+        // Verwechslung).
         const karten = page.locator('div.group.relative.cursor-pointer');
         await expect(karten).toHaveCount(4);
         const boxen = await karten.evaluateAll((elemente) =>
@@ -361,17 +366,13 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
         const zeilen = nachZeileGruppieren(boxen);
         const zeilenGroessen = zeilen.map((z) => z.length);
 
-        if (testInfo.project.name === 'pc-monitor') {
-            expect(
-                zeilenGroessen,
-                `Bei 1920px sollten alle vier Karten in einer Reihe stehen, gemessene Zeilen: ${JSON.stringify(zeilenGroessen)}`,
-            ).toEqual([4]);
-        } else {
-            expect(
-                zeilenGroessen,
-                `Bei 1440px sollten drei Karten in der ersten und eine in der zweiten Reihe stehen, gemessene Zeilen: ${JSON.stringify(zeilenGroessen)}`,
-            ).toEqual([3, 1]);
-        }
+        const fensterbreite = page.viewportSize()!.width;
+        const spalten = erwarteteKartenspalten(fensterbreite);
+        const erwarteteZeilen = spalten >= 4 ? [4] : [spalten, 4 - spalten];
+        expect(
+            zeilenGroessen,
+            `Bei ${fensterbreite}px (${spalten} Spalten) sollten die vier Karten sich auf die Zeilen ${JSON.stringify(erwarteteZeilen)} verteilen, gemessen: ${JSON.stringify(zeilenGroessen)}`,
+        ).toEqual(erwarteteZeilen);
 
         // designPruefung mit strengePruefungen deckt "kein Titel einzeilig
         // abgehackt" ab (keinTextGekuerzt erkennt text-overflow: ellipsis mit
@@ -445,10 +446,11 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
 // wurden bisher NIE mit echt ueberlaufendem Inhalt gerendert.
 test.describe('Anfrage-Seitenspalte "Anfragedaten": lange, bindestrichlose Werte', () => {
     test('Ansprechpartner, Telefon, Mobiltelefon und Projektadresse laufen nicht ueber ihre Kaesten', async ({ page }) => {
-        // Muss vor der ersten Navigation stehen: mit gesetzter Adresse rendert
-        // GoogleMapsEmbed ein echtes <iframe src="https://www.google.com/maps?...">
-        // (siehe Kommentar bei DUMMY_ANFRAGE_DETAIL oben).
-        await blockiereFremdeNetzwerkzugriffe(page);
+        // Mit gesetzter Adresse rendert GoogleMapsEmbed ein echtes <iframe
+        // src="https://www.google.com/maps?..."> (siehe Kommentar bei
+        // DUMMY_ANFRAGE_DETAIL oben) -- seit Abschnitt 10 automatisch
+        // abgeriegelt (e2e/hilfen/test.ts, auf dem context vor der ersten
+        // Navigation registriert).
         await stubAnfrageApi(page);
         await page.route(`**/api/anfragen/${ANFRAGE_ID}`, (route) => {
             if (route.request().method() !== 'GET') return route.fallback();
@@ -515,13 +517,6 @@ test.describe('Anfrage-Seitenspalte "Anfragedaten": lange, bindestrichlose Werte
  * ueberhaupt (notizen: [] in DUMMY_ANFRAGE_DETAIL) -- diese Fixture schliesst
  * die Luecke.
  */
-function spacelosesWort(laenge: number, praefix = ''): string {
-    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
-    let ergebnis = praefix;
-    while (ergebnis.length < laenge) ergebnis += stamm;
-    return ergebnis.slice(0, laenge);
-}
-
 test.describe('Anfrage-Tagebuch: Notiz-Struktur (Nacharbeit Abschnitt 9)', () => {
     const NOTIZ_TEXT_LANG = spacelosesWort(150, 'Baufortschrittsbeschreibung');
     const NOTIZ = {

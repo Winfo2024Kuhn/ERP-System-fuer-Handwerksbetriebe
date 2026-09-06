@@ -1333,9 +1333,15 @@ export default function MitarbeiterEditor() {
                                     Zeile, das Komma aber nicht mehr -- break-words brach direkt
                                     davor, die zweite Zeile begann mit ", Bernhardine". Mit zwei
                                     festen Zeilen haengt das Komma immer am Nachnamen, unabhaengig
-                                    von der Laenge. */}
+                                    von der Laenge.
+                                    Komma ganz gestrichen (Abschnitt 10, Design-Review Abschnitt 9,
+                                    Hinweis 2): blieb es im selben Span wie der Nachname, konnte es bei
+                                    einem die Zeile exakt ausfuellenden Nachnamen immer noch allein in
+                                    eine eigene Zeile rutschen (gemessen: zweiter Zeilenkasten 5px
+                                    breit, 28px tiefer) -- der Fix hatte das Problem nur verschoben.
+                                    Zwei bewusste Zeilen ohne Trennzeichen brauchen kein Komma. */}
                                 <h3 className="text-lg font-bold text-slate-900 mb-1 break-words">
-                                    <span className="block">{m.nachname},</span>
+                                    <span className="block">{m.nachname}</span>
                                     <span className="block">{m.vorname}</span>
                                 </h3>
                                 {m.abteilungNames && (

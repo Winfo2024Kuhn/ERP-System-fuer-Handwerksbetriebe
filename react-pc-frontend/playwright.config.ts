@@ -21,30 +21,24 @@ import { defineConfig, devices } from '@playwright/test';
  *                                Anzeigename sprengte die Menueleisten-Kategorie-Leiste
  *                                dort um 119px, ohne dass irgendein bestehender Check
  *                                anschlug.
- *                                Absichtlich per "testMatch" (siehe unten) auf die
- *                                Menueleisten-Spec begrenzt: ein Probelauf ueber alle
- *                                Specs ("npx playwright test --project=pc-uebergang",
- *                                vor der Begrenzung ausgefuehrt) ergab 18 rote Faelle in
- *                                7 fremden Spec-Dateien -- zwei echte, unabhaengige
- *                                Fundstellen, keine davon in den Files dieses Tasks:
- *                                (1) Kartenraster-Specs (anfrage-/kunde-/lieferant-layout,
- *                                uebersichten-layout) nehmen "3 Karten bei 1440, 4 bei
- *                                1920" an -- Tailwinds "2xl:"-Breakpoint (min-width:
- *                                1536px) greift bei genau 1536px aber schon, die Karten
- *                                springen dort also bereits auf 4 um, was keine dieser
- *                                Specs erwartet.
- *                                (2) bearbeiten-leiste.spec.ts und
- *                                lieferant-dokument-modal.spec.ts: bei 960px Hoehe (weder
- *                                900 noch 1080, beides bisher ungeprueft) ueberlappt ein
- *                                Eingabefeld die Knoepfe "Abbrechen"/"Speichern" der
- *                                Bearbeiten-Leiste -- ein bislang unentdeckter, von der
- *                                Fensterbreite unabhaengiger Layoutfehler.
- *                                Beides bleibt bewusst fremde Baustelle (siehe Kontext-Log
- *                                Abschnitt 7) -- nicht Teil der Task-10b-Files.
+ *                                War zunaechst per "testMatch" auf die Menueleisten-Spec
+ *                                begrenzt: ein Probelauf ueber alle Specs ergab 18 rote
+ *                                Faelle in 7 fremden Spec-Dateien -- zwei unabhaengige
+ *                                Fundstellen. Fundstelle 1 (Kartenraster-Specs nahmen
+ *                                "3 Karten bei 1440, 4 bei 1920" an, feststehend statt
+ *                                aus der Fensterbreite abgeleitet) ist mit Abschnitt 10
+ *                                behoben (siehe erwarteteKartenspalten() in
+ *                                e2e/hilfen/testdaten.ts) -- die Begrenzung ist seither
+ *                                ersatzlos gestrichen, pc-uebergang laeuft jetzt fuer
+ *                                jede Spec mit. Fundstelle 2 (bearbeiten-leiste.spec.ts,
+ *                                lieferant-dokument-modal.spec.ts: bei 960px Hoehe
+ *                                ueberlappt ein Eingabefeld die Knoepfe "Abbrechen"/
+ *                                "Speichern" der Bearbeiten-Leiste) ist vorbestehend und
+ *                                ausserhalb dieses Vorhabens -- siehe Kontext-Log
+ *                                Abschnitt 10 fuer den aktuellen Stand dieser Faelle.
  *   pc-monitor   1920 x 1080  -- grosser Monitor am Arbeitsplatz
- * pc-14zoll und pc-monitor laufen fuer jede Spec, pc-uebergang nur fuer die
- * Menueleisten-Spec (siehe testMatch). Handy und Tablet sind fuer die PC-App
- * nicht vorgesehen und werden hier nicht geprueft.
+ * Alle drei Groessen laufen fuer jede Spec. Handy und Tablet sind fuer die
+ * PC-App nicht vorgesehen und werden hier nicht geprueft.
  */
 const port = Number(process.env.E2E_PORT ?? 5173);
 const baseURL = `http://localhost:${port}`;
@@ -75,9 +69,6 @@ export default defineConfig({
         {
             name: 'pc-uebergang',
             use: { ...devices['Desktop Chrome'], viewport: { width: 1536, height: 960 } },
-            // Begrenzt auf die Menueleisten-Spec -- siehe Kommentar oben zum
-            // Vollstaendigkeits-Lauf, der 18 rote Faelle in 7 fremden Specs ergab.
-            testMatch: 'menueleiste-layout.spec.ts',
         },
         {
             name: 'pc-monitor',

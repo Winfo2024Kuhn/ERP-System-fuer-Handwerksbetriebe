@@ -1,4 +1,5 @@
-import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
 
 /**

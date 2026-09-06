@@ -1,6 +1,7 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { spacelosesWort } from './hilfen/testdaten';
 
 /**
  * Task 3 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -471,12 +472,11 @@ test.describe('Projekt-Kopfzeile: <h1> bei einem einzigen langen Wort ohne Leerz
 // echt ueberlaufendem Inhalt gerendert (siehe Konstanten oben).
 test.describe('Projekt-Seitenspalte "Projektdaten" und Kopf-Untertitel: lange, bindestrichlose Werte', () => {
     test('Kunde, Ansprechpartner und Projektadresse laufen weder im Kasten noch im Titelblock ueber', async ({ page }) => {
-        // Muss vor der ersten Navigation stehen: mit gesetzter Adresse rendert
-        // GoogleMapsEmbed ein echtes <iframe src="https://www.google.com/maps?...">
-        // (siehe Kommentar bei DUMMY_PROJEKT oben) -- dieser Test setzt
-        // strasse/plz/ort bewusst, braucht den Riegel also anders als die
-        // uebrigen Tests dieser Datei.
-        await blockiereFremdeNetzwerkzugriffe(page);
+        // Mit gesetzter Adresse rendert GoogleMapsEmbed ein echtes <iframe
+        // src="https://www.google.com/maps?..."> (siehe Kommentar bei
+        // DUMMY_PROJEKT oben) -- dieser Test setzt strasse/plz/ort bewusst,
+        // seit Abschnitt 10 automatisch abgeriegelt (e2e/hilfen/test.ts, auf
+        // dem context vor der ersten Navigation).
         await stubProjektApi(page);
         await page.route(`**/api/projekte/${PROJEKT_ID}`, (route) => {
             if (route.request().method() !== 'GET') return route.fallback();
@@ -568,13 +568,6 @@ test.describe('Projekt-Seitenspalte "Projektdaten" und Kopf-Untertitel: lange, b
  * Code-Review Abschnitt 8: "24 von 24 Aenderungen betreffen Bereiche, die
  * projekt-detail-layout.spec.ts nie fuellt").
  */
-function spacelosesWort(laenge: number, praefix = ''): string {
-    const stamm = 'Verwaltungskoordinationsbeschaffungsdokumentationsprozessabteilung';
-    let ergebnis = praefix;
-    while (ergebnis.length < laenge) ergebnis += stamm;
-    return ergebnis.slice(0, laenge);
-}
-
 const KATEGORIE_LANG = spacelosesWort(140, 'Kategorie');
 const ARBEITSGANG_LANG = spacelosesWort(140, 'Arbeitsgang');
 const ZEITEN_MITARBEITER_VORNAME = 'Bernhardine';
@@ -583,6 +576,13 @@ const DOK_KUNDENNAME_LANG = spacelosesWort(180, 'Kundenname');
 const DOK_ERSTELLT_VON_LANG = spacelosesWort(180, 'Ersteller');
 const ZUGEORDNET_VON_LANG = spacelosesWort(150, 'Zugeordnetvon');
 const WEITERE_ZUORDNUNG_VON_LANG = spacelosesWort(150, 'Weiterezuordnung');
+// Nachtrag Abschnitt 10 (Code-Review Abschnitt 9, Hinweis 1; Design-Review
+// Abschnitt 9, Punkt 2): "Weitere Zuordnungen" -- max-w-[200px] ist weg
+// (Task 13), aber ohne min-w-0 faellt der Beschreibungs-Span auf min-content
+// zurueck und break-words wirkt nicht mehr. 200 Zeichen, damit der Effekt bei
+// 1440 deutlich rot wird (Design-Review mass 254px Zeilen-/237px
+// Karten-Ueberstand mit derselben Laenge).
+const BESCHREIBUNG_LANG = spacelosesWort(200, 'Beschreibung');
 
 test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit Abschnitt 9)', () => {
     test('Zeiten-Hierarchie, Dokumentenketten-Metazeile und Eingangsrechnungs-Zuordnung sprengen ihre Zeile nicht', async ({ page }) => {
@@ -602,7 +602,7 @@ test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit A
                     kostenstelleName: 'Zentrale Kostenstelle',
                     prozent: 25,
                     berechneterBetrag: 375,
-                    beschreibung: 'Anteil an Sammelbestellung',
+                    beschreibung: BESCHREIBUNG_LANG,
                     zugeordnetVonName: WEITERE_ZUORDNUNG_VON_LANG,
                 },
             ],
@@ -647,11 +647,18 @@ test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit A
         });
         await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=zeiten`);
 
-        /** Misst die unmittelbar umschliessende Flex-Zeile des Wert-Spans (xpath=..),
-         * nicht den Span selbst -- siehe Erklaerung im Beschreibungs-Kommentar oben. */
-        const pruefeZeileUeberragtNicht = async (locator: ReturnType<Page['getByText']>, feldname: string) => {
+        /** Misst die unmittelbar umschliessende Flex-Zeile des Wert-Spans (xpath=..
+         * per Standard), nicht den Span selbst -- siehe Erklaerung im
+         * Beschreibungs-Kommentar oben. `xpathZurZeile` erlaubt einen anderen
+         * Aufstieg fuer Faelle, in denen der Wert-Span selbst verschachtelt ist
+         * (siehe "Zugeordnet von" unten). */
+        const pruefeZeileUeberragtNicht = async (
+            locator: ReturnType<Page['getByText']>,
+            feldname: string,
+            xpathZurZeile: string = '..',
+        ) => {
             await expect(locator, `${feldname} fehlt`).toBeVisible();
-            const zeile = locator.locator('xpath=..');
+            const zeile = locator.locator(`xpath=${xpathZurZeile}`);
             const ueberstand = await zeile.evaluate((el) => el.scrollWidth - el.clientWidth);
             expect(
                 ueberstand,
@@ -672,13 +679,33 @@ test.describe('ProjektEditor: sieben min-w-0-Attrappen aus Task 12 (Nacharbeit A
         await pruefeZeileUeberragtNicht(page.getByText(DOK_ERSTELLT_VON_LANG, { exact: true }), 'Dokumentenketten-Metazeile (Erstellt von)');
 
         await expect(page.getByText(eingangsrechnungMitZuordnung.dateiname)).toBeVisible();
+        // Nachtrag Abschnitt 10 (Code-Review Abschnitt 9, Hinweis 2): der
+        // Wert steckt hier in einem VERSCHACHTELTEN Span
+        // (<span class="break-words min-w-0">Zugeordnet von <span
+        // class="font-medium ...">{name}</span></span>) -- getByText(exact:
+        // false) liefert das am engsten umschliessende Element, das ist der
+        // INNERE Span. "xpath=.." traf damit den reparierten break-words/
+        // min-w-0-Span selbst statt der Flex-Zeile: dessen eigener scrollWidth
+        // bleibt bei fehlendem min-w-0 gleich clientWidth (ein Flex-Item ohne
+        // min-w-0 wird als Ganzes breiter, nicht ueber sich selbst hinaus),
+        // die Zusicherung bliebe also faelschlich gruen. Deshalb bis zur
+        // umschliessenden "flex-wrap"-Zeile hochlaufen.
         await pruefeZeileUeberragtNicht(
             page.getByText(ZUGEORDNET_VON_LANG, { exact: false }),
             'Eingangsrechnung: "Zugeordnet von"',
+            'ancestor::div[contains(@class,"flex-wrap")][1]',
         );
         await pruefeZeileUeberragtNicht(
             page.getByText(WEITERE_ZUORDNUNG_VON_LANG, { exact: false }),
             'Eingangsrechnung: "Weitere Zuordnungen" (von ...)',
+        );
+        // Nachtrag Abschnitt 10 (Code-Review Abschnitt 9, Hinweis 1; von
+        // Task 13 selbst eingebaute Attrappe): die Beschreibung ist ein
+        // eigener Span ohne verschachteltes Kind, "xpath=.." trifft hier also
+        // korrekt die umschliessende flex-wrap-Zeile.
+        await pruefeZeileUeberragtNicht(
+            page.getByText(BESCHREIBUNG_LANG, { exact: false }),
+            'Eingangsrechnung: "Weitere Zuordnungen" (Beschreibung)',
         );
 
         await keinHorizontalerUeberlauf(page);

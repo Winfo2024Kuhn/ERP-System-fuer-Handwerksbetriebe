@@ -1,5 +1,7 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
+import { erwarteteKartenspalten } from './hilfen/testdaten';
 
 /**
  * Task 3 (Abschnitt 3), Baustelle D (Uebersichtskarte) aus
@@ -93,11 +95,17 @@ test.describe('Projektuebersicht: lange Bauvorhaben-Titel nicht abgehackt, Karte
             titelBoxen.push(box!);
         }
 
-        const erwarteteSpalten = testInfo.project.name === 'pc-14zoll' ? 3 : 4;
+        // Spaltenzahl aus der Fensterbreite ableiten, nicht aus dem Namen des
+        // Playwright-Projekts (Nachtrag Abschnitt 10, Task 10b): Tailwinds
+        // "2xl:grid-cols-4"-Breakpoint (min-width: 1536px) greift auch bei
+        // "pc-uebergang" (1536px) schon, dort waeren also faelschlich 3 statt
+        // der tatsaechlich aktiven 4 Spalten erwartet worden.
+        const fensterbreite = page.viewportSize()!.width;
+        const erwarteteSpalten = erwarteteKartenspalten(fensterbreite);
         const zeilen = zeilenGroessen(titelBoxen);
         expect(
             zeilen[0],
-            `Erste Kartenreihe bei ${testInfo.project.name} (${page.viewportSize()!.width}px) hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen insgesamt: ${zeilen.join(', ')})`,
+            `Erste Kartenreihe bei ${fensterbreite}px hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen insgesamt: ${zeilen.join(', ')})`,
         ).toBe(erwarteteSpalten);
 
         // "kein Titel einzeilig abgehackt": mit strengePruefungen greift

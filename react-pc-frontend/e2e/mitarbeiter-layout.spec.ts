@@ -1,6 +1,6 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinTextLaeuftUeber } from './hilfen/design';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 
 /**
  * Task 7 (Abschnitt 4) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -182,9 +182,10 @@ async function stubMitarbeiterApi(page: Page) {
 
 test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regressionswaechter)', () => {
     test('Reiterleiste ohne verstecktes Scrollen, Kopf-Knoepfe vollstaendig rechts in der Karte', async ({ page }, testInfo) => {
-        // Muss vor der ersten Navigation stehen (siehe playwright-design-pruefung
-        // SKILL.md): index.html laedt pdf.js von cdnjs bei jeder Navigation.
-        await blockiereFremdeNetzwerkzugriffe(page);
+        // index.html laedt pdf.js von cdnjs bei jeder Navigation (siehe
+        // playwright-design-pruefung SKILL.md) -- seit Abschnitt 10 automatisch
+        // abgeriegelt (e2e/hilfen/test.ts, auf dem context vor jeder
+        // Navigation registriert).
         await stubMitarbeiterApi(page);
         await page.goto('/mitarbeiter');
 
@@ -212,34 +213,41 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         // wiederverwendet werden.
         //
         // Zwei bewusste Zeilen statt "Nachname, Vorname" in einem umbrechenden
-        // Text (Nacharbeit Abschnitt 9, Design-Review Abschnitt 8, Hinweis 2):
-        // NACHNAME + "," auf der ersten <span class="block">, VORNAME auf der
-        // zweiten -- das Komma haengt dadurch immer am Nachnamen, unabhaengig
-        // von der Zeichenlaenge (vorher brach break-words bei einem
-        // 39-Zeichen-Nachnamen direkt vor dem Komma um, zweite Zeile begann
-        // mit ", Bernhardine"). getByText(exact) auf den KOMBINIERTEN String
-        // "NACHNAME, VORNAME" faende seit der Aufteilung nichts mehr (kein
-        // Element traegt den Text mehr als Ganzes) -- genau das beweist, dass
-        // es jetzt zwei eigene Textknoten sind, keine umbrechende Einheit.
-        // Jede Zeile ist ein normaler Block (kein Flex-Item) -- ohne
-        // break-words liefe sie unsichtbar ueber (scrollWidth > clientWidth),
-        // OHNE dass sich ihre eigene boundingBox() aendert.
-        const nachnameZeile = page.getByText(`${NACHNAME},`, { exact: true });
+        // Text (Nacharbeit Abschnitt 9, Design-Review Abschnitt 8, Hinweis 2).
+        // Abschnitt 10 (Design-Review Abschnitt 9, Hinweis 2): das Komma wurde
+        // dort zunaechst nur mit auf die erste Zeile genommen ("NACHNAME,") --
+        // bei einem die Zeile exakt ausfuellenden Nachnamen rutschte das Komma
+        // dadurch trotzdem allein in eine dritte, winzige Zeile (5px breiter
+        // Kasten). Komma jetzt ganz gestrichen: NACHNAME auf der ersten
+        // <span class="block">, VORNAME auf der zweiten, ohne Trennzeichen.
+        // getByText(exact) auf den KOMBINIERTEN String "NACHNAME, VORNAME"
+        // faende seit der Aufteilung nichts mehr (kein Element traegt den Text
+        // mehr als Ganzes) -- genau das beweist, dass es jetzt zwei eigene
+        // Textknoten sind, keine umbrechende Einheit. Jede Zeile ist ein
+        // normaler Block (kein Flex-Item) -- ohne break-words liefe sie
+        // unsichtbar ueber (scrollWidth > clientWidth), OHNE dass sich ihre
+        // eigene boundingBox() aendert.
+        const nachnameZeile = page.getByText(NACHNAME, { exact: true });
         const vornameZeile = page.getByText(VORNAME, { exact: true });
         await expect(nachnameZeile).toBeVisible();
         await expect(vornameZeile).toBeVisible();
         const nachnameUeberstand = await nachnameZeile.evaluate((el) => el.scrollWidth - el.clientWidth);
         expect(
             nachnameUeberstand,
-            `Nachname-Zeile "${NACHNAME}," laeuft ${nachnameUeberstand}px ueber ihren eigenen Kasten -- braucht break-words an der <h3>`,
+            `Nachname-Zeile "${NACHNAME}" laeuft ${nachnameUeberstand}px ueber ihren eigenen Kasten -- braucht break-words an der <h3>`,
         ).toBeLessThanOrEqual(2);
+        // Kein Komma mehr im Nachname-Span (Regressionswaechter fuer den
+        // Design-Review-Befund: das Komma darf nicht wieder auftauchen und
+        // allein in eine eigene Zeile rutschen).
+        const nachnameText = (await nachnameZeile.textContent())?.trim();
+        expect(nachnameText, 'Nachname-Zeile darf kein Komma mehr enthalten').toBe(NACHNAME);
         const nachnameBox = await nachnameZeile.boundingBox();
         const vornameBox = await vornameZeile.boundingBox();
         expect(nachnameBox, 'Nachname-Zeile muss einen messbaren Rahmen haben').not.toBeNull();
         expect(vornameBox, 'Vorname-Zeile muss einen messbaren Rahmen haben').not.toBeNull();
         expect(
             vornameBox!.y,
-            `Vorname "${VORNAME}" (y=${vornameBox!.y.toFixed(0)}) steht nicht unterhalb von "${NACHNAME},"(y=${nachnameBox!.y.toFixed(0)}) -- soll zwei bewusste Zeilen sein, kein umbrechender Komma-Text`,
+            `Vorname "${VORNAME}" (y=${vornameBox!.y.toFixed(0)}) steht nicht unterhalb von "${NACHNAME}" (y=${nachnameBox!.y.toFixed(0)}) -- soll zwei bewusste Zeilen sein, kein umbrechender Komma-Text`,
         ).toBeGreaterThan(nachnameBox!.y);
 
         // Abteilungs-Zeile: getByText traefe hier (wie bei der Kundenkarte,

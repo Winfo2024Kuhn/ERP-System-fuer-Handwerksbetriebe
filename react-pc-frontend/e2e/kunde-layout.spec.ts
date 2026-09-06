@@ -1,5 +1,7 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
+import { erwarteteKartenspalten } from './hilfen/testdaten';
 
 /**
  * Task 5 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -296,6 +298,17 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
             emailUeberstand,
             `E-Mail-Link ragt ${emailUeberstand.toFixed(0)}px rechts aus seinem Kasten (Design-Review Runde 2, Befund 4: 184px bei 1440) -- braucht break-words/block auf dem <a>`,
         ).toBeLessThanOrEqual(2);
+        // Nachtrag Abschnitt 10 ("boundingBox() taugt nicht als Ueberlauf-Mass",
+        // siehe kriterien.md, fuenfte Falle): der Link ist ein Block im
+        // Flex-Item -- seine eigene boundingBox() kann den Kasten NIE
+        // ueberragen (min-w-0 entfernen macht die Messung oben rot,
+        // break-words entfernen NICHT). Das faengt erst scrollWidth/clientWidth
+        // am Link selbst ab.
+        const emailEigenerUeberstand = await emailLink.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(
+            emailEigenerUeberstand,
+            `E-Mail-Link laeuft ${emailEigenerUeberstand}px ueber seinen eigenen Kasten -- braucht break-words auf dem <a>`,
+        ).toBeLessThanOrEqual(2);
 
         // Task 11 (Abschnitt 7), Gruppe 2 (Code-Reviewer, Abschnitt 6, Hinweis 1
         // Fundstelle 2): dieselbe Luecke wie bei der E-Mail-Zeile oben, an den
@@ -323,6 +336,17 @@ test.describe('Kunden-Detailseite: Kopfzeile mit langem Kundennamen (Spec-Befund
             expect(
                 ueberstand,
                 `${feldname}-Wert "${wert.slice(0, 30)}..." ragt ${ueberstand.toFixed(0)}px rechts aus seinem Kasten -- braucht min-w-0 flex-1 am umschliessenden div und break-words am Wert`,
+            ).toBeLessThanOrEqual(2);
+            // Nachtrag Abschnitt 10 ("Kasten-Zusicherungen doppelt messen",
+            // Code-Review Abschnitt 8, kriterien.md fuenfte Falle): der
+            // gemessene Wert ist ein Block-<p> IM Flex-Item -- seine eigene
+            // boundingBox() kann den Kasten oben nie ueberragen. min-w-0
+            // entfernen macht die Messung oben rot, break-words entfernen
+            // NICHT -- das faengt erst scrollWidth/clientWidth am Wert selbst ab.
+            const eigenerUeberstand = await wertElement.evaluate((el) => el.scrollWidth - el.clientWidth);
+            expect(
+                eigenerUeberstand,
+                `${feldname}-Wert "${wert.slice(0, 30)}..." laeuft ${eigenerUeberstand}px ueber seinen eigenen Kasten -- braucht break-words am Wert`,
             ).toBeLessThanOrEqual(2);
         };
         await pruefeWertBleibtImKontaktKasten(ANSPRECHPARTNER_LANG, 'Ansprechpartner');
@@ -445,10 +469,11 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
             }), KUNDEN_LANG);
 
         const ersteReiheAnzahl = kartenY.filter((y) => y !== null && Math.abs(y - (kartenY[0] ?? 0)) < 5).length;
-        const erwartet = Math.min(testInfo.project.name === 'pc-monitor' ? 4 : 3, KUNDEN_LANG.length);
+        const fensterbreite = page.viewportSize()!.width;
+        const erwartet = Math.min(erwarteteKartenspalten(fensterbreite), KUNDEN_LANG.length);
         expect(
             ersteReiheAnzahl,
-            `Erwartet ${erwartet} Karten in der ersten Reihe bei ${testInfo.project.name} (${testInfo.project.name === 'pc-monitor' ? 1920 : 1440}px), gemessen: ${JSON.stringify(kartenY)}`,
+            `Erwartet ${erwartet} Karten in der ersten Reihe bei ${fensterbreite}px, gemessen: ${JSON.stringify(kartenY)}`,
         ).toBe(erwartet);
 
         await designPruefung(page, testInfo, 'kunde-uebersicht-lange-namen', {

@@ -26,14 +26,21 @@ interface DesignPruefungOptionen {
     /** Ganze Seite statt nur Viewport aufnehmen (Standard: nur Viewport, denn der ist, was der Nutzer sieht). */
     ganzeSeite?: boolean;
     /**
-     * Schaltet keinTextLaeuftUeber und keinTextGekuerzt scharf. Standard
-     * vorerst false: mehrere bestehende Specs (u.a. e2e/bearbeiten-leiste.spec.ts,
-     * e2e/lieferant-dokument-modal.spec.ts) laufen ueber den Lieferanten-Kopf,
-     * dessen Kennzahl-Beschriftungen heute noch ueberlaufen -- ein scharfer
-     * Standard wuerde diese unveraenderten Specs sofort rot drehen, bevor die
-     * betroffenen Seiten repariert sind (siehe Plan-Tasks 2-9 in
-     * docs/superpowers/plans/2026-09-05-layout-14-zoll.md). Sobald alle
-     * betroffenen Seiten repariert sind, dreht Task 10 den Standard auf true.
+     * Schaltet keinTextLaeuftUeber und keinTextGekuerzt scharf. Standard seit
+     * Abschnitt 10: TRUE -- Spec E ist damit abgeschlossen ("drei Pruefungen,
+     * die alle Specs automatisch mitfahren"). Bis dahin war der Standard
+     * `false`: mehrere bestehende Specs (u.a. e2e/bearbeiten-leiste.spec.ts,
+     * e2e/lieferant-dokument-modal.spec.ts) liefen ueber den Lieferanten-Kopf,
+     * dessen Kennzahl-Beschriftungen noch ueberliefen -- ein scharfer Standard
+     * haette diese unveraenderten Specs sofort rot gedreht, bevor die
+     * betroffenen Seiten repariert waren (siehe Plan-Tasks 2-9). Voraussetzung
+     * fuer den Wechsel war ausserdem, dass keinTextLaeuftUeber dieselbe
+     * data-kuerzung-erlaubt-Ausnahme kennt wie keinHorizontalerUeberlauf
+     * (Abschnitt 10, Block 1) -- ohne sie fielen alle gewollten `truncate`-
+     * Kuerzungen durch (Task 8b: alle acht Tests der Menueleisten-Spec).
+     * Die Option bleibt bestehen, damit eine Spec sie in einem begruendeten
+     * Einzelfall abschalten kann -- Abschalten ist die Ausnahme und gehoert
+     * mit Begruendung ins Kontext-Log, nicht stillschweigend in den Code.
      */
     strengePruefungen?: boolean;
 }
@@ -45,6 +52,8 @@ interface Rahmen {
     breite: number;
     hoehe: number;
     fest: boolean;
+    /** Hat einen Vorfahren mit position: sticky (z.B. RibbonNav) -- siehe keineUeberschneidungen. */
+    sticky: boolean;
 }
 
 /** Screenshot + automatische Checks fuer den aktuellen Zustand der Seite. */
@@ -71,7 +80,7 @@ export async function designPruefung(
     if (optionen.primaerAktion) {
         await expect(optionen.primaerAktion, 'Primaeraktion muss ohne Scrollen sichtbar sein').toBeInViewport();
     }
-    if (optionen.strengePruefungen) {
+    if (optionen.strengePruefungen ?? true) {
         await keinTextLaeuftUeber(page);
         await keinTextGekuerzt(page);
     }
@@ -209,6 +218,19 @@ export async function keinHorizontalerUeberlauf(page: Page): Promise<void> {
  * mit langem Namen: Kasten 26px, Textbreite 95px, siehe Spec Befund 2).
  * Unsichtbares (display: none, visibility: hidden, opacity: 0) bleibt
  * draussen -- das ist kein Layoutfehler, sondern absichtlich verborgen.
+ *
+ * Nachtrag Abschnitt 10 (Voraussetzung fuer strengePruefungen: true als
+ * Standard): dieselbe Arbeitsteilung wie in keinHorizontalerUeberlauf (siehe
+ * Kommentar dort, Nachtrag Task 1b) -- ohne sie meldete diese Pruefung JEDES
+ * echt gekuerzte truncate-Element, auch wenn die Kuerzung ausdruecklich
+ * gewollt und mit data-kuerzung-erlaubt markiert ist (Task 8b: mit
+ * strengePruefungen: true fielen alle acht Tests der Menueleisten-Spec um).
+ * Zwei unabhaengige Ausnahmen, jede fuer sich ausreichend:
+ *   (a) das Element selbst oder ein Vorfahre traegt data-kuerzung-erlaubt --
+ *       der gewollte Kuerzungsfall,
+ *   (b) das Element ist ohnehin eine reine Text-Kuerzung (text-overflow:
+ *       ellipsis gesetzt ODER -webkit-line-clamp != none) -- ob die Kuerzung
+ *       zulaessig ist, entscheidet keinTextGekuerzt, nicht diese Pruefung.
  */
 export async function keinTextLaeuftUeber(page: Page): Promise<void> {
     const treffer = await page.evaluate(() => {
@@ -230,6 +252,21 @@ export async function keinTextLaeuftUeber(page: Page): Promise<void> {
             return false;
         };
 
+        // Arbeitsteilung mit keinTextGekuerzt (siehe Funktions-Kommentar oben
+        // und keinHorizontalerUeberlauf): gewollte oder von keinTextGekuerzt
+        // ohnehin geahndete Text-Kuerzungen faellt nicht zusaetzlich hier.
+        const hatKuerzungsMarker = (el: Element): boolean => {
+            for (let k: Element | null = el; k != null; k = k.parentElement) {
+                if (k.hasAttribute('data-kuerzung-erlaubt')) return true;
+            }
+            return false;
+        };
+        const istReineTextKuerzung = (el: Element): boolean => {
+            const stil = getComputedStyle(el);
+            const lineClampWert = stil.getPropertyValue('-webkit-line-clamp');
+            return stil.textOverflow === 'ellipsis' || (lineClampWert !== '' && lineClampWert !== 'none');
+        };
+
         for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
             if (el.children.length > 0) continue; // nur Blatt-Elemente
             const text = (el.textContent ?? '').trim();
@@ -238,6 +275,7 @@ export async function keinTextLaeuftUeber(page: Page): Promise<void> {
             const stil = getComputedStyle(el);
             if (stil.display === 'none' || stil.visibility === 'hidden' || Number(stil.opacity) === 0) continue;
             if (istUnsichtbarVersteckt(el)) continue;
+            if (hatKuerzungsMarker(el) || istReineTextKuerzung(el)) continue;
 
             if (el.scrollWidth > el.clientWidth + 2) {
                 const klassen = el.classList.length > 0 ? `.${Array.from(el.classList).join('.')}` : '';
@@ -333,10 +371,20 @@ export async function keinTextGekuerzt(page: Page): Promise<void> {
  * Keine zwei sichtbaren interaktiven Elemente ueberlappen sich.
  *
  * Bei offenem Dialog zaehlt der verdeckte Hintergrund nicht -- der ist
- * absichtlich weg. Fest positionierte Elemente (Toasts, Sticky-Leisten)
- * zaehlen dagegen IMMER, weil sie ueber dem Dialog liegen und dessen Knoepfe
- * verdecken koennen. Verschachtelte Elemente (Knopf im Link) gelten nicht
- * als Ueberschneidung.
+ * absichtlich weg. Fest positionierte Elemente (Toasts) zaehlen dagegen
+ * IMMER, weil sie ueber dem Dialog liegen und dessen Knoepfe verdecken
+ * koennen. Verschachtelte Elemente (Knopf im Link) gelten nicht als
+ * Ueberschneidung.
+ *
+ * Nachtrag Abschnitt 10 (Design-Review Abschnitt 9/10b, 18 rote Faelle bei
+ * 1536 x 960): die Pruefung nahm bisher getBoundingClientRect() roh. Ein
+ * Element, das komplett aus einem scrollenden Vorfahren (Formularbereich,
+ * <main>) herausgescrollt ist, behaelt trotzdem sein volles Rechteck, obwohl
+ * sein SICHTBARER Anteil 0px ist -- die angeblich ueberlappenden Felder waren
+ * gar nicht mehr im Bild. Fix: erst das tatsaechlich sichtbare Rechteck
+ * bilden (Schnittmenge mit jedem scrollenden/klippenden Vorfahren), und nur
+ * das fuer den Ueberlappungs-Vergleich benutzen. Ein Element ohne sichtbare
+ * Restflaeche zaehlt gar nicht erst mit.
  */
 export async function keineUeberschneidungen(page: Page): Promise<void> {
     const rahmen: Rahmen[] = await page.evaluate(() => {
@@ -351,11 +399,53 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             return false;
         };
 
+        // Sticky-Leisten (z.B. RibbonNav, "sticky top-0") ueberdecken beim
+        // Scrollen ABSICHTLICH Inhalt, der im normalen Dokumentfluss
+        // darunter liegt -- das ist der Zweck von position: sticky, kein
+        // Layoutfehler. Ohne diese Erkennung meldet die Pruefung in jeder
+        // Spec, die scrollt, die Menueleiste gegen den Inhalt darunter
+        // (Design-Review Abschnitt 9, Hinweis 5).
+        const istSticky = (el: HTMLElement): boolean => {
+            for (let k: HTMLElement | null = el; k != null && k !== document.body; k = k.parentElement) {
+                if (getComputedStyle(k).position === 'sticky') return true;
+            }
+            return false;
+        };
+
+        /**
+         * Schneidet das Rechteck von el mit dem Rechteck jedes Vorfahren, der
+         * seinen Inhalt tatsaechlich klippen kann (overflow hidden/auto/
+         * scroll/clip auf der jeweiligen Achse). Ergebnis null, wenn nichts
+         * Sichtbares uebrig bleibt. Bei einem fest positionierten Vorfahren
+         * bricht der Aufstieg ab -- position: fixed haengt am Viewport, nicht
+         * an seinen eigenen Vorfahren, ihr overflow betrifft es nicht mehr.
+         */
+        const sichtbaresRechteck = (el: HTMLElement): { x: number; y: number; breite: number; hoehe: number } | null => {
+            let links = el.getBoundingClientRect().left;
+            let oben = el.getBoundingClientRect().top;
+            let rechts = links + el.getBoundingClientRect().width;
+            let unten = oben + el.getBoundingClientRect().height;
+
+            for (let k: HTMLElement | null = el.parentElement; k != null; k = k.parentElement) {
+                const stil = getComputedStyle(k);
+                const klipptX = stil.overflowX === 'hidden' || stil.overflowX === 'auto' || stil.overflowX === 'scroll' || stil.overflowX === 'clip';
+                const klipptY = stil.overflowY === 'hidden' || stil.overflowY === 'auto' || stil.overflowY === 'scroll' || stil.overflowY === 'clip';
+                if (klipptX || klipptY) {
+                    const kr = k.getBoundingClientRect();
+                    if (klipptX) { links = Math.max(links, kr.left); rechts = Math.min(rechts, kr.right); }
+                    if (klipptY) { oben = Math.max(oben, kr.top); unten = Math.min(unten, kr.bottom); }
+                    if (rechts <= links || unten <= oben) return null; // komplett herausgeschnitten
+                }
+                if (stil.position === 'fixed') break; // ab hier zaehlt nur noch der Viewport
+            }
+            return { x: links, y: oben, breite: rechts - links, hoehe: unten - oben };
+        };
+
         for (const el of Array.from(document.querySelectorAll<HTMLElement>(selektor))) {
-            const r = el.getBoundingClientRect();
-            if (r.width === 0 || r.height === 0) continue;
             const stil = getComputedStyle(el);
             if (stil.visibility === 'hidden' || stil.display === 'none' || Number(stil.opacity) === 0) continue;
+            const sichtbar = sichtbaresRechteck(el);
+            if (!sichtbar || sichtbar.breite <= 0 || sichtbar.hoehe <= 0) continue; // ausserhalb jeder scrollenden Sicht
             const fest = istFestPositioniert(el);
             // Hintergrund hinter einem Dialog ist absichtlich verdeckt -- ausser er ist fest positioniert.
             if (dialog && !dialog.contains(el) && !fest) continue;
@@ -363,7 +453,8 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             const rolle = el.getAttribute('role');
             ergebnis.push({
                 beschreibung: `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${rolle ? '[' + rolle + ']' : ''} "${(el.textContent ?? '').trim().slice(0, 30)}"`,
-                x: r.left, y: r.top, breite: r.width, hoehe: r.height, fest,
+                x: sichtbar.x, y: sichtbar.y, breite: sichtbar.breite, hoehe: sichtbar.hoehe, fest,
+                sticky: istSticky(el),
             });
         }
         return ergebnis;
@@ -378,6 +469,11 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
                 a.x < b.x + b.breite && a.x + a.breite > b.x &&
                 a.y < b.y + b.hoehe && a.y + a.hoehe > b.y;
             if (!ueberlappt) continue;
+            // Sticky-Chrome gegen normalen (nicht fest/sticky) Seiteninhalt
+            // ist immer beabsichtigt -- siehe Funktions-Kommentar. Zwei
+            // sticky Leisten uebereinander oder eine sticky Leiste gegen ein
+            // fest positioniertes Element (Toast) bleiben dagegen scharf.
+            if (a.sticky !== b.sticky && !a.fest && !b.fest) continue;
             const enthalten =
                 (a.x >= b.x && a.y >= b.y && a.x + a.breite <= b.x + b.breite && a.y + a.hoehe <= b.y + b.hoehe) ||
                 (b.x >= a.x && b.y >= a.y && b.x + b.breite <= a.x + a.breite && b.y + b.hoehe <= a.y + a.hoehe);
