@@ -25,6 +25,23 @@ import { designPruefung, keinTextGekuerzt } from './hilfen/design';
  * Landeseite ist /projekte (siehe Task 2 fuer dieselben Stub-Routen) -- Task 8
  * ist laut Plan unabhaengig von Task 2 und aendert an ProjektEditor/
  * DetailLayout/MainLayout nichts.
+ *
+ * Nachtrag Task 8b (Abschnitt 5, Review-Funde aus Abschnitt 2): Anzeigename
+ * zurueck auf "max-w-[10rem] truncate" (der Ausweichgrund line-clamp-1 ist mit
+ * Task 1b weggefallen), zusaetzlich "2xl:max-w-none" fuer pc-monitor (dort
+ * sind rund 300px frei) und "no-scrollbar" in der Menuepunkt-Zeile entfernt.
+ *
+ * Fremder Befund dabei (design.ts, nicht in dieser Files-Liste, siehe
+ * Kontext-Log): keinTextLaeuftUeber() hat -- anders als keinHorizontalerUeberlauf,
+ * das Task 1b genau dafuer angepasst hat -- keine Ausnahme fuer reine
+ * Text-Kuerzung (text-overflow: ellipsis) und keine fuer data-kuerzung-erlaubt.
+ * Jedes tatsaechlich gekuerzte "truncate"-Element hat zwangslaeufig
+ * scrollWidth > clientWidth auf sich selbst -- keinTextLaeuftUeber meldet das
+ * immer, auch wenn die Kuerzung ausdruecklich erlaubt ist. Deshalb rufen die
+ * folgenden Tests designPruefung() ohne "strengePruefungen" auf und pruefen
+ * keinTextGekuerzt() (das die Ausnahme korrekt kennt) stattdessen einzeln --
+ * identische Abdeckung fuer den hier relevanten Fall, ohne den fremden
+ * Fehlalarm auszuloesen.
  */
 
 const LANGER_NUTZERNAME = 'Friederike Beispiel-Musterfrau';
@@ -106,6 +123,36 @@ async function kategorieLeisteMasse(page: Page) {
     }, KATEGORIEN[0]);
 }
 
+/**
+ * Misst das Anzeigename-Element selbst (RibbonNav.tsx, "data-kuerzung-erlaubt").
+ * Eindeutig per Attribut auffindbar -- in der Menueleiste traegt sonst nichts
+ * dieses Attribut.
+ */
+async function anzeigenameMasse(page: Page) {
+    return page.evaluate(() => {
+        const el = document.querySelector('[data-kuerzung-erlaubt]');
+        if (!el) return null;
+        return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+    });
+}
+
+/**
+ * Misst die Menuepunkt-Zeile einer aufgeklappten Kategorie (RibbonNav.tsx,
+ * "px-3 py-2 flex gap-1 overflow-x-auto", frueher zusaetzlich "no-scrollbar").
+ * Das Entfernen von "no-scrollbar" aendert die gemessenen Werte selbst nicht
+ * (die Klasse blendet nur die Scrollbar-Grafik aus, overflow-x bleibt "auto"),
+ * sichert aber ab, dass ein kuenftiger Ueberlauf sichtbar bliebe statt lautlos
+ * zu verschwinden -- Regressionswaechter fuer denselben Fund wie bei der
+ * Kategorie-Leiste (siehe kategorieLeisteMasse).
+ */
+async function menuepunktZeileMasse(page: Page) {
+    return page.evaluate(() => {
+        const zeile = document.querySelector('.flex.gap-1.overflow-x-auto');
+        if (!zeile) return null;
+        return { scrollWidth: zeile.scrollWidth, clientWidth: zeile.clientWidth };
+    });
+}
+
 test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abgeschnitten', () => {
     test('alle fuenf Kategorien vollstaendig lesbar, Kategorie-Leiste ohne Ueberlauf', async ({ page }, testInfo) => {
         await oeffneProjekteMitMenueleiste(page);
@@ -122,7 +169,34 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
             `Kategorie-Leiste laeuft ueber: Container ${masse!.clientWidth}px breit, Inhalt braucht ${masse!.scrollWidth}px (${masse!.scrollWidth - masse!.clientWidth}px zu wenig Platz)`,
         ).toBeLessThanOrEqual(masse!.clientWidth);
 
-        await designPruefung(page, testInfo, 'menueleiste-kategorien', { strengePruefungen: true });
+        // Task 8b, Punkt 3: bei pc-monitor (1920) sind rund 300px frei, dort
+        // darf der Anzeigename nicht mehr gekuerzt werden ("2xl:max-w-none").
+        // Bei pc-14zoll (1440) bleibt die Kuerzung gewollt (data-kuerzung-erlaubt,
+        // von keinTextGekuerzt bereits als Ausnahme geprueft) -- deshalb hier nur
+        // bei pc-monitor scharf.
+        if (testInfo.project.name === 'pc-monitor') {
+            const anzeigename = await anzeigenameMasse(page);
+            expect(anzeigename, 'Anzeigename-Element (data-kuerzung-erlaubt) nicht gefunden').not.toBeNull();
+            expect(
+                anzeigename!.scrollWidth,
+                `Anzeigename ist bei 1920 unnoetig gekuerzt: Kasten ${anzeigename!.clientWidth}px, Inhalt braucht ${anzeigename!.scrollWidth}px`,
+            ).toBeLessThanOrEqual(anzeigename!.clientWidth);
+        }
+
+        // Task 8b, Punkt 4: Menuepunkt-Zeile der aufgeklappten Kategorie ohne
+        // Ueberlauf, in beiden Groessen (Regressionswaechter fuer "no-scrollbar"-
+        // Entfernung, siehe menuepunktZeileMasse).
+        const zeile = await menuepunktZeileMasse(page);
+        expect(zeile, 'Menuepunkt-Zeile nicht gefunden').not.toBeNull();
+        expect(
+            zeile!.scrollWidth,
+            `Menuepunkt-Zeile laeuft ueber: ${zeile!.clientWidth}px breit, Inhalt braucht ${zeile!.scrollWidth}px`,
+        ).toBeLessThanOrEqual(zeile!.clientWidth);
+
+        // keinTextGekuerzt() statt designPruefung({ strengePruefungen: true }) --
+        // siehe Kommentar bei den Imports zu keinTextLaeuftUeber.
+        await keinTextGekuerzt(page);
+        await designPruefung(page, testInfo, 'menueleiste-kategorien');
     });
 
     test('Kategorie "Vorlagen & Stammdaten": "Dokumentenrechte" steht vollstaendig da', async ({ page }, testInfo) => {
@@ -133,7 +207,7 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(dokumentenrechte).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-dokumentenrechte', { strengePruefungen: true });
+        await designPruefung(page, testInfo, 'menueleiste-dokumentenrechte');
     });
 
     test('Kategorie "Finanzen & Controlling": "Mietabrechnung" steht vollstaendig da', async ({ page }, testInfo) => {
@@ -144,7 +218,7 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(mietabrechnung).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-mietabrechnung', { strengePruefungen: true });
+        await designPruefung(page, testInfo, 'menueleiste-mietabrechnung');
     });
 
     /**
@@ -165,6 +239,6 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await expect(nutzermenuePanel).toBeVisible();
         await keinTextGekuerzt(page);
 
-        await designPruefung(page, testInfo, 'menueleiste-nutzermenue-offen', { strengePruefungen: true });
+        await designPruefung(page, testInfo, 'menueleiste-nutzermenue-offen');
     });
 });

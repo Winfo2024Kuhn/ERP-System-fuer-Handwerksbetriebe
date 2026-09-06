@@ -305,19 +305,17 @@ export function RibbonNavigation() {
                             <User className="w-4 h-4" />
                         </div>
                         <div className="text-left hidden md:block">
-                            {/* max-w-[10rem] mit line-clamp-1 (nicht "truncate"): einzige
-                                gewollte Kuerzung in der Menueleiste, weil der volle Name im
-                                Nutzermenue darunter steht (title deckt den Rest ab).
-                                Abweichung vom Plan-Wortlaut ("truncate"), siehe Kontext-Log:
-                                "truncate" (text-overflow: ellipsis + overflow-x: hidden)
-                                loest bei echter Kuerzung IMMER auch den fremden, immer
-                                aktiven Check keinHorizontalerUeberlauf aus (design.ts kennt
-                                data-kuerzung-erlaubt dort nicht, nur in keinTextGekuerzt).
-                                line-clamp-1 kuerzt vertikal (scrollHeight), nicht horizontal
-                                (scrollWidth), umgeht den Konflikt und wird von
-                                keinTextGekuerzt weiterhin korrekt geprueft/ausgenommen. */}
+                            {/* Kuerzung hier ist erlaubt, weil der volle Name im
+                                aufgeklappten Nutzermenue direkt darunter steht (siehe
+                                "showUserMenu"-Panel weiter unten) und zusaetzlich im
+                                title-Attribut steht. data-kuerzung-erlaubt markiert das
+                                als gewollte Ausnahme fuer keinTextGekuerzt (siehe
+                                e2e/hilfen/design.ts) -- ohne das Attribut waere ein
+                                abgeschnittener Name ein Fehler.
+                                2xl:max-w-none: ab 1536px (grosser Monitor) ist genug
+                                Platz frei, dort muss der Name nicht mehr gekuerzt werden. */}
                             <p
-                                className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 max-w-[10rem] line-clamp-1"
+                                className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 max-w-[10rem] 2xl:max-w-none truncate"
                                 title={currentUser ? currentUser.displayName : undefined}
                                 data-kuerzung-erlaubt
                             >
@@ -386,7 +384,11 @@ export function RibbonNavigation() {
                     isExpanded ? "max-h-40 opacity-100 border-b border-slate-200" : "max-h-0 opacity-0"
                 )}
             >
-                <div className="px-3 py-2 flex gap-1 overflow-x-auto no-scrollbar">
+                {/* "no-scrollbar" entfernt (Task 8b, Nachtrag aus dem Review von
+                    Abschnitt 2): dasselbe Muster wie bei der Kategorie-Leiste oben --
+                    laeuft hier heute nichts ueber, soll ein kuenftiger Ueberlauf aber
+                    als Scrollbalken sichtbar sein statt lautlos abgeschnitten zu werden. */}
+                <div className="px-3 py-2 flex gap-1 overflow-x-auto">
                     {visibleNavigation.find(g => g.category === activeCategory)?.subgroups.map((subgroup, sgIndex) => (
                         <div key={subgroup.label} className="flex items-center">
                             {/* Subgroup Container */}
