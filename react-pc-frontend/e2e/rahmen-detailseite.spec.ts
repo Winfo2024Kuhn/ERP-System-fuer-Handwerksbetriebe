@@ -26,26 +26,22 @@ import { keineUeberschneidungen, uebergaengeAusklingenLassen } from './hilfen/de
  * bewusst ohne `git stash`, weil der Stash-Bereich sitzungsuebergreifend
  * geteilt ist).
  *
- * WICHTIGER BEFUND ausserhalb dieses Tasks (siehe Kontext-Log): Die Kopfzeile
- * in ProjektEditor.tsx (Zeile ~1045 ff., "Files" dieses Tasks umfassen diese
- * Datei NICHT) hat unabhaengig von jedem Bauvorhaben-Namen -- selbst mit
- * einem einzigen kurzen Wort wie "Carport" -- bei 1440px zu wenig Platz fuer
+ * WICHTIGER BEFUND ausserhalb dieses Tasks, zum Zeitpunkt von Task 2 noch
+ * offen (siehe Kontext-Log): Die Kopfzeile in ProjektEditor.tsx hatte
+ * unabhaengig von jedem Bauvorhaben-Namen -- selbst mit einem einzigen
+ * kurzen Wort wie "Carport" -- bei 1440px zu wenig Platz fuer
  * Kennzahlen-Reihe + Knopfblock ("Bearbeiten" / "mit Anfrage zusammenfuehren");
- * der Knopfblock wird dadurch ca. 40-60px nach rechts aus der Kopf-Karte
- * geschoben (Spec-Befund 2). Das ist ein vorbestehender, von diesem Task
- * unabhaengiger Fehler (verifiziert per Vorher/Nachher-Messung: der Effekt
- * ist exakt gleich gross vor und nach dem DetailLayout/MainLayout-Fix) und
- * gehoert zu
- * Task 3 (Kopfzeile umbauen). Er sorgt dafuer, dass <main> auf DIESER Route
- * bei pc-14zoll auch nach diesem Fix noch einen kleinen, nicht von diesem
- * Task verursachten Ueberstand zeigt -- deshalb prueft diese Spec gezielt das
- * Raster selbst (DetailLayout.tsx) statt pauschal <main>, und ruft
- * designPruefung() aus e2e/hilfen/design.ts hier bewusst NICHT als Ganzes
- * auf: deren keinHorizontalerUeberlauf() misst <main> ohne Toleranz und
- * wuerde wegen Spec-Befund 2 (Task 3) immer rot bleiben, unabhaengig von der
- * Korrektheit dieses Tasks. Die uebrigen, hier ehrlich pruefbaren Teile von
- * designPruefung (Screenshot, keineUeberschneidungen, Sichtbarkeit der
- * Primaeraktion) laufen unten trotzdem mit.
+ * der Knopfblock wurde dadurch ca. 40-60px nach rechts aus der Kopf-Karte
+ * geschoben (Spec-Befund 2). Das war ein von Task 2 unabhaengiger Fehler und
+ * gehoerte zu Task 3 (Kopfzeile umbauen) -- inzwischen (Abschnitt 3) behoben.
+ * Deshalb prueft diese Spec das Raster selbst (DetailLayout.tsx) weiterhin
+ * gezielt statt nur pauschal <main>, ruft designPruefung() aus
+ * e2e/hilfen/design.ts aber weiterhin nicht als Ganzes auf (historisch
+ * gewachsen, siehe unten) -- seit Task 3 behoben, deshalb hat Abschnitt 10
+ * eine eigene, ungedeckelte <main>-Zusicherung nachgezogen (main darf hier
+ * jetzt wirklich nicht mehr ueberlaufen). Die uebrigen, hier ehrlich
+ * pruefbaren Teile von designPruefung (Screenshot, keineUeberschneidungen,
+ * Sichtbarkeit der Primaeraktion) laufen unten mit.
  *
  * /api vollstaendig gestubbt (Catch-all + gezielte Overrides, Vorbild:
  * stubbeLieferantApi in e2e/bearbeiten-leiste.spec.ts), kein Backend, nur die
@@ -243,11 +239,37 @@ test.describe('Rahmen und Zwei-Spalten-Raster: Projekt-Detailseite im schlimmste
             expect(spalten, `unerwartetes grid-template-columns: "${gridTemplateColumns}"`).toHaveLength(2);
             expect(spalten[0], `linke Spalte unerwartet schmal: "${gridTemplateColumns}"`).toBeGreaterThan(800);
             expect(spalten[1], `rechte Spalte unerwartet schmal: "${gridTemplateColumns}"`).toBeGreaterThan(250);
+            const verhaeltnis = spalten[0] / spalten[1];
             expect(
-                spalten[0] / spalten[1],
+                verhaeltnis,
                 `Spaltenverhaeltnis ausserhalb des plausiblen Rahmens (2:1 bis 4:1) fuer ein 3fr/1fr-Raster: "${gridTemplateColumns}"`,
             ).toBeGreaterThan(2);
+            // Nachtrag Abschnitt 10 (Zusicherung schaerfen): nach dem Fix ist
+            // das Verhaeltnis exakt 3,0 (echtes 3fr/1fr) -- eine Obergrenze
+            // fehlte bisher komplett. Ohne sie liesse sich das ALTE Raster
+            // (vor dem Fix gemessenes Verhaeltnis 1249/265 = 4,7) unbemerkt
+            // wieder einschleichen, denn die einzige bisherige Schranke
+            // (toBeGreaterThan(2)) haelt fuer 4,7 genauso wie fuer 3,0.
+            expect(
+                verhaeltnis,
+                `Spaltenverhaeltnis ${verhaeltnis.toFixed(2)} zu hoch fuer ein 3fr/1fr-Raster (erwartet nahe 3,0) -- das waere wieder das alte, ungeminmax'te Verhaeltnis von rund 4,7: "${gridTemplateColumns}"`,
+            ).toBeLessThan(3.5);
         }
+
+        // Nachtrag Abschnitt 10 ("gedeckelte main-Zusicherung"): der
+        // vorbestehende Kopfzeilen-Befund (Spec-Befund 2, siehe Kommentar am
+        // Dateianfang) ist seit Task 3 (Abschnitt 3) behoben -- main darf auf
+        // dieser Route jetzt tatsaechlich nicht mehr ueberlaufen. Bisher lief
+        // hier gar keine main-Zusicherung, aus genau dem historischen Grund,
+        // der inzwischen entfallen ist.
+        const mainUeberstand = await page.evaluate(() => {
+            const main = document.querySelector('main');
+            return main ? main.scrollWidth - main.clientWidth : 0;
+        });
+        expect(
+            mainUeberstand,
+            `main laeuft ${mainUeberstand}px ueber -- der vorbestehende Kopfzeilen-Befund (Task 3) ist behoben, main sollte hier nicht mehr ueberlaufen`,
+        ).toBe(0);
 
         // Die Teile von designPruefung() (e2e/hilfen/design.ts), die auf
         // dieser Route ehrlich pruefbar sind: Screenshot fuer die

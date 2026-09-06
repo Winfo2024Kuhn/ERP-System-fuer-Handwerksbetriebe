@@ -1,6 +1,7 @@
 import type { Locator, Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
+import { erwarteteKartenspalten } from './hilfen/testdaten';
 
 /**
  * Task 9 (Abschnitt 5) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -223,11 +224,15 @@ test.describe('Uebersichten-Abnahme (Task 9): Projekte, Anfragen, Kunden, Liefer
             expect(box, `Titel "${p.bauvorhaben}" muss einen messbaren Rahmen haben`).not.toBeNull();
             titelBoxen.push(box!);
         }
-        const erwarteteSpalten = testInfo.project.name === 'pc-monitor' ? 4 : 3;
+        // Spaltenzahl aus der Fensterbreite ableiten, nicht aus dem Projekt-
+        // Namen (Nachtrag Abschnitt 10, Task 10b): bei "pc-uebergang" (1536px)
+        // greift Tailwinds "2xl:grid-cols-4"-Breakpoint bereits.
+        const fensterbreite = page.viewportSize()!.width;
+        const erwarteteSpalten = erwarteteKartenspalten(fensterbreite);
         const zeilen = zeilenGroessen(titelBoxen);
         expect(
             zeilen[0],
-            `Erste Kartenreihe bei ${testInfo.project.name} hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
+            `Erste Kartenreihe bei ${fensterbreite}px hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
         ).toBe(erwarteteSpalten);
 
         await pruefeGleicheKartenhoeheUndTrennlinie(
@@ -256,11 +261,15 @@ test.describe('Uebersichten-Abnahme (Task 9): Projekte, Anfragen, Kunden, Liefer
             expect(box, `Titel "${a.bauvorhaben}" muss einen messbaren Rahmen haben`).not.toBeNull();
             titelBoxen.push(box!);
         }
-        const erwarteteSpalten = testInfo.project.name === 'pc-monitor' ? 4 : 3;
+        // Spaltenzahl aus der Fensterbreite ableiten, nicht aus dem Projekt-
+        // Namen (Nachtrag Abschnitt 10, Task 10b): bei "pc-uebergang" (1536px)
+        // greift Tailwinds "2xl:grid-cols-4"-Breakpoint bereits.
+        const fensterbreite = page.viewportSize()!.width;
+        const erwarteteSpalten = erwarteteKartenspalten(fensterbreite);
         const zeilen = zeilenGroessen(titelBoxen);
         expect(
             zeilen[0],
-            `Erste Kartenreihe bei ${testInfo.project.name} hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
+            `Erste Kartenreihe bei ${fensterbreite}px hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
         ).toBe(erwarteteSpalten);
 
         await pruefeGleicheKartenhoeheUndTrennlinie(
@@ -289,11 +298,15 @@ test.describe('Uebersichten-Abnahme (Task 9): Projekte, Anfragen, Kunden, Liefer
             expect(box, `Titel "${k.name}" muss einen messbaren Rahmen haben`).not.toBeNull();
             titelBoxen.push(box!);
         }
-        const erwarteteSpalten = testInfo.project.name === 'pc-monitor' ? 4 : 3;
+        // Spaltenzahl aus der Fensterbreite ableiten, nicht aus dem Projekt-
+        // Namen (Nachtrag Abschnitt 10, Task 10b): bei "pc-uebergang" (1536px)
+        // greift Tailwinds "2xl:grid-cols-4"-Breakpoint bereits.
+        const fensterbreite = page.viewportSize()!.width;
+        const erwarteteSpalten = erwarteteKartenspalten(fensterbreite);
         const zeilen = zeilenGroessen(titelBoxen);
         expect(
             zeilen[0],
-            `Erste Kartenreihe bei ${testInfo.project.name} hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
+            `Erste Kartenreihe bei ${fensterbreite}px hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
         ).toBe(erwarteteSpalten);
 
         await pruefeGleicheKartenhoeheUndTrennlinie(
@@ -322,11 +335,15 @@ test.describe('Uebersichten-Abnahme (Task 9): Projekte, Anfragen, Kunden, Liefer
             expect(box, `Titel "${l.lieferantenname}" muss einen messbaren Rahmen haben`).not.toBeNull();
             titelBoxen.push(box!);
         }
-        const erwarteteSpalten = testInfo.project.name === 'pc-monitor' ? 4 : 3;
+        // Spaltenzahl aus der Fensterbreite ableiten, nicht aus dem Projekt-
+        // Namen (Nachtrag Abschnitt 10, Task 10b): bei "pc-uebergang" (1536px)
+        // greift Tailwinds "2xl:grid-cols-4"-Breakpoint bereits.
+        const fensterbreite = page.viewportSize()!.width;
+        const erwarteteSpalten = erwarteteKartenspalten(fensterbreite);
         const zeilen = zeilenGroessen(titelBoxen);
         expect(
             zeilen[0],
-            `Erste Kartenreihe bei ${testInfo.project.name} hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
+            `Erste Kartenreihe bei ${fensterbreite}px hat ${zeilen[0]} Karte(n), erwartet ${erwarteteSpalten} (Zeilen: ${zeilen.join(', ')})`,
         ).toBe(erwarteteSpalten);
 
         // Task 11 (Abschnitt 7): MIX[1] (36 Zeichen) ist bei BEIDEN Groessen

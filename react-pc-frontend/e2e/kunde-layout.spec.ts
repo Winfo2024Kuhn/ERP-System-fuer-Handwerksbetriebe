@@ -1,6 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
+import { erwarteteKartenspalten } from './hilfen/testdaten';
 
 /**
  * Task 5 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
@@ -468,10 +469,11 @@ test.describe('Kunden-Uebersicht: vier lange Kundennamen (Spec-Befund 4)', () =>
             }), KUNDEN_LANG);
 
         const ersteReiheAnzahl = kartenY.filter((y) => y !== null && Math.abs(y - (kartenY[0] ?? 0)) < 5).length;
-        const erwartet = Math.min(testInfo.project.name === 'pc-monitor' ? 4 : 3, KUNDEN_LANG.length);
+        const fensterbreite = page.viewportSize()!.width;
+        const erwartet = Math.min(erwarteteKartenspalten(fensterbreite), KUNDEN_LANG.length);
         expect(
             ersteReiheAnzahl,
-            `Erwartet ${erwartet} Karten in der ersten Reihe bei ${testInfo.project.name} (${testInfo.project.name === 'pc-monitor' ? 1920 : 1440}px), gemessen: ${JSON.stringify(kartenY)}`,
+            `Erwartet ${erwartet} Karten in der ersten Reihe bei ${fensterbreite}px, gemessen: ${JSON.stringify(kartenY)}`,
         ).toBe(erwartet);
 
         await designPruefung(page, testInfo, 'kunde-uebersicht-lange-namen', {

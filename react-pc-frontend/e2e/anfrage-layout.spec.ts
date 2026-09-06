@@ -1,7 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
-import { spacelosesWort } from './hilfen/testdaten';
+import { erwarteteKartenspalten, spacelosesWort } from './hilfen/testdaten';
 
 /**
  * Task 4 (Abschnitt 3) aus docs/superpowers/plans/2026-09-05-layout-14-zoll.md:
@@ -349,8 +349,12 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
 
         await expect(page.getByRole('heading', { level: 3 })).toHaveCount(4);
 
-        // Kartenraster: bei pc-14zoll (1440) drei Karten je Reihe, bei
-        // pc-monitor (1920) vier -- Spec D / Plan-Vorgabe "2xl:grid-cols-4".
+        // Kartenraster: Spaltenzahl haengt von der Fensterbreite ab (Tailwinds
+        // "2xl:grid-cols-4"-Breakpoint greift ab 1536px), nicht vom Namen des
+        // Playwright-Projekts -- sonst erwartet z.B. "pc-uebergang" (1536px)
+        // faelschlich drei Spalten statt der dort schon aktiven vier
+        // (Nachtrag Abschnitt 10, Task 10b: 18 rote Faelle durch genau diese
+        // Verwechslung).
         const karten = page.locator('div.group.relative.cursor-pointer');
         await expect(karten).toHaveCount(4);
         const boxen = await karten.evaluateAll((elemente) =>
@@ -362,17 +366,13 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
         const zeilen = nachZeileGruppieren(boxen);
         const zeilenGroessen = zeilen.map((z) => z.length);
 
-        if (testInfo.project.name === 'pc-monitor') {
-            expect(
-                zeilenGroessen,
-                `Bei 1920px sollten alle vier Karten in einer Reihe stehen, gemessene Zeilen: ${JSON.stringify(zeilenGroessen)}`,
-            ).toEqual([4]);
-        } else {
-            expect(
-                zeilenGroessen,
-                `Bei 1440px sollten drei Karten in der ersten und eine in der zweiten Reihe stehen, gemessene Zeilen: ${JSON.stringify(zeilenGroessen)}`,
-            ).toEqual([3, 1]);
-        }
+        const fensterbreite = page.viewportSize()!.width;
+        const spalten = erwarteteKartenspalten(fensterbreite);
+        const erwarteteZeilen = spalten >= 4 ? [4] : [spalten, 4 - spalten];
+        expect(
+            zeilenGroessen,
+            `Bei ${fensterbreite}px (${spalten} Spalten) sollten die vier Karten sich auf die Zeilen ${JSON.stringify(erwarteteZeilen)} verteilen, gemessen: ${JSON.stringify(zeilenGroessen)}`,
+        ).toEqual(erwarteteZeilen);
 
         // designPruefung mit strengePruefungen deckt "kein Titel einzeilig
         // abgehackt" ab (keinTextGekuerzt erkennt text-overflow: ellipsis mit
