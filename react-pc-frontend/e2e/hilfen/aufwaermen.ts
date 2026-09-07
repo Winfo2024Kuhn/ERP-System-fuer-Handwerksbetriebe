@@ -1,4 +1,5 @@
 import { chromium, type FullConfig } from '@playwright/test';
+import { blockiereFremdeNetzwerkzugriffe } from './api';
 
 /**
  * globalSetup: waermt den Vite-Dev-Server einmal auf, bevor der erste Test laeuft.
@@ -17,6 +18,17 @@ import { chromium, type FullConfig } from '@playwright/test';
  *
  * Ohne Backend liefern die /api-Routen Fehler; das ist hier egal, es geht nur
  * um die Kompilierung der Frontend-Module.
+ *
+ * Nachtrag Abschnitt 10 (Code-Reviewer, Abschnitt 4: "die groesste
+ * verbleibende Flake-Quelle"): Dieses globalSetup lief bisher OHNE jedes
+ * Routing -- anders als jede Spec (die seit diesem Abschnitt automatisch ueber
+ * e2e/hilfen/test.ts abgeriegelt ist) hat es gar keinen eigenen Context mit
+ * einer Spec-Fixture, sondern startet Browser/Page von Hand. `waitUntil:
+ * 'networkidle'` wartet auf Netzruhe -- haengt oder trödelt eine ECHTE externe
+ * Anfrage (z.B. AddressAutocomplete gegen nominatim.openstreetmap.org/
+ * photon.komoot.io, falls eine der drei aufgewaermten Seiten sowas laedt, oder
+ * Google Maps/cdnjs), verzoegert das jeden Lauf, abhaengig von einer echten
+ * Internetverbindung. Denselben Riegel wie in den Specs davorschalten.
  */
 export default async function aufwaermen(config: FullConfig): Promise<void> {
     const baseURL = config.projects[0]?.use?.baseURL;
@@ -25,6 +37,7 @@ export default async function aufwaermen(config: FullConfig): Promise<void> {
     const browser = await chromium.launch();
     try {
         const page = await browser.newPage();
+        await blockiereFremdeNetzwerkzugriffe(page);
         for (const pfad of ['/', '/dokument-editor', '/lieferanten']) {
             try {
                 await page.goto(`${baseURL}${pfad}`, { waitUntil: 'networkidle', timeout: 90_000 });

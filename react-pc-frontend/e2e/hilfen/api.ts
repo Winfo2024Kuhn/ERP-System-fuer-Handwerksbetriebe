@@ -1,4 +1,4 @@
-import type { Page, Route } from '@playwright/test';
+import type { BrowserContext, Page, Route } from '@playwright/test';
 
 /**
  * Stubbt alle /api-Routen, die der Bereich "Website - Neuigkeiten" anfasst.
@@ -42,6 +42,58 @@ function json(route: Route, body: unknown, status = 200) {
         status,
         contentType: 'application/json',
         body: JSON.stringify(body),
+    });
+}
+
+/**
+ * Bricht jede Anfrage ab, die nicht an `localhost`/`127.0.0.1` geht (Befund
+ * aus dem Abschnitt-4-Review, Code- und Design-Reviewer: `e2e/lieferant-
+ * layout.spec.ts` fing nur `**\/api/**` ab, dadurch gingen echte Anfragen an
+ * `google.com/maps`, `maps.gstatic.com`, `maps.googleapis.com` (ausgeloest
+ * durch ein GoogleMapsEmbed-<iframe> mit gefuellter Adresse) und
+ * `cdnjs.cloudflare.com` (pdf.js, wird in jedem Seitenaufruf aus `index.html`
+ * geladen) tatsaechlich raus).
+ *
+ * Eine E2E-Spec ist gestubbt und darf nicht wirklich ins Internet: sonst haengt
+ * das Ergebnis von einer echten Verbindung ab (fremde Server langsam oder gar
+ * nicht erreichbar), Screenshots sind nicht mehr reproduzierbar, und es ist ein
+ * plausibler Grund fuer haengende/leere Seiten unter paralleler Last. Diese
+ * Funktion ersetzt darum NICHT das gezielte Stubben von `/api`-Routen (das
+ * bleibt noetig, damit die Seite echte Daten bekommt) -- sie ist der
+ * allgemeine Riegel danach, der jeden weiteren Weg nach draussen abschneidet,
+ * unabhaengig davon, ob die Spec ihn kennt (z.B. ein <iframe>-src oder ein
+ * <script src> aus einer fremden Domain).
+ *
+ * Muss VOR der ersten Navigation (`page.goto`) registriert werden, sonst
+ * verpasst sie fruehe Requests (z.B. den allerersten Dokument-Request eines
+ * <iframe>). Playwright ruft bei mehreren passenden Routen die zuletzt
+ * registrierte zuerst auf -- eine danach registrierte, spezifischere Route
+ * (z.B. `**\/api/**`) bekommt Anfragen an localhost also weiterhin zuerst zu
+ * sehen und beantwortet sie wie gewohnt; diese Funktion greift nur dort, wo
+ * keine speziellere Route zustaendig ist.
+ *
+ * Nachtrag Abschnitt 10: haengt nicht mehr per Hand in einzelnen Specs --
+ * `e2e/hilfen/test.ts` registriert das automatisch auf dem `context` jeder
+ * Spec (siehe dort), noch vor der ersten Navigation. Damit ist auch das
+ * dritte bekannte Loch geschlossen, das bisher niemand gestubbt hatte:
+ * `AddressAutocomplete.tsx` ruft `nominatim.openstreetmap.org` und
+ * `photon.komoot.io` fuer die Adressvorschlaege -- jede Spec, die dieses
+ * Formularfeld rendert und einen Vorschlag ausloest, ist davon jetzt
+ * automatisch erfasst, ohne dass die Spec das selbst wissen muss.
+ * Diese Funktion bleibt exportiert, falls ein Test einmal
+ * gezielt einen ZWEITEN, eigens konfigurierten Page/Context abriegeln muss,
+ * der nicht ueber die Auto-Fixture laeuft. Nimmt bewusst Page ODER
+ * BrowserContext (beide haben dieselbe `.route()`-Signatur) -- Popups laufen
+ * ueber denselben BrowserContext wie ihre oeffnende Page und erben damit eine
+ * auf dem Context registrierte Route automatisch, eine auf der Page allein
+ * registrierte dagegen nicht.
+ */
+export async function blockiereFremdeNetzwerkzugriffe(seiteOderKontext: Page | BrowserContext): Promise<void> {
+    await seiteOderKontext.route('**/*', (route) => {
+        const ziel = new URL(route.request().url());
+        const istLokal = ziel.hostname === 'localhost' || ziel.hostname === '127.0.0.1';
+        if (istLokal) return route.continue();
+        return route.abort();
     });
 }
 

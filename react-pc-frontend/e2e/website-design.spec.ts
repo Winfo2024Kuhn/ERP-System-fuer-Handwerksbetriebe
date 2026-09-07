@@ -1,4 +1,5 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import { test, expect } from './hilfen/test';
 import { stubbeWebsiteApi, oeffneNeuigkeiten } from './hilfen/api';
 import { inhalt, warteAufProjektsuche } from './hilfen/seite';
 

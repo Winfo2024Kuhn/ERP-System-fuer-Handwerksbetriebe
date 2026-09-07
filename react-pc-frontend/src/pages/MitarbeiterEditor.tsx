@@ -325,18 +325,23 @@ export default function MitarbeiterEditor() {
     // Sub-components
     const DetailHeader = () => (
         <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">
-            <div>
+            {/* min-w-0 + break-words (Task 12, zweiter Mechanismus): dieses div
+                ist ab md: Flex-Item der Reihe daneben (Knopfblock) und behaelt
+                sonst min-width: auto -- ein langer Nachname/Abteilungsname
+                wuerde die <h1> ueber den Knopfblock hinausschieben, exakt wie
+                beim Projekt-/Anfrage-/Kunde-Kopf. */}
+            <div className="min-w-0">
                 <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide">
                     Stammdaten
                 </p>
-                <h1 className="text-3xl font-bold text-slate-900 uppercase">
+                <h1 className="text-3xl font-bold text-slate-900 uppercase break-words">
                     {selectedMitarbeiter?.nachname}, {selectedMitarbeiter?.vorname}
                 </h1>
-                <p className="text-slate-500 mt-1">
+                <p className="text-slate-500 mt-1 break-words">
                     {selectedMitarbeiter?.abteilungNames || 'Keine Abteilung zugewiesen'}
                 </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 shrink-0">
                 {selectedMitarbeiter?.loginToken && (
                     <Button
                         variant="outline"
@@ -404,19 +409,31 @@ export default function MitarbeiterEditor() {
             ) : (
                 <div className="grid gap-2">
                     {dokumente.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors">
+                        // Task 11 (Abschnitt 7): {doc.originalDateiname} ist der
+                        // realistischste Fall der ganzen Fehlerklasse -- Unterstriche
+                        // sind nach UAX #14 KEINE Umbruchstelle, ein Dateiname ist ein
+                        // einziges unteilbares Wort. Gleiches Muster wie die ganze
+                        // SideInfo oben: min-w-0 (flex-1) auf jeder Ebene, die sonst
+                        // min-width: auto behaelt, break-words am Wert, shrink-0 auf
+                        // Icon und Knopfblock. min-w-0 auch auf DIESEM aeusseren <div>
+                        // noetig -- es ist selbst ein Grid-Item von "grid gap-2" zwei
+                        // Zeilen weiter oben, und Grid-Items behalten denselben
+                        // min-width:auto-Fallstrick wie Flex-Items (nachgemessen: ohne
+                        // dieses min-w-0 blieb der Ueberstand trotz min-w-0/break-words
+                        // an den inneren Ebenen unveraendert bei 313px/145px).
+                        <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group min-w-0">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors shrink-0">
                                     <File className="w-5 h-5" />
                                 </div>
-                                <div>
-                                    <p className="font-medium text-slate-900">{doc.originalDateiname}</p>
+                                <div className="min-w-0 flex-1">
+                                    <p className="font-medium text-slate-900 break-words">{doc.originalDateiname}</p>
                                     <p className="text-xs text-slate-500">
                                         {new Date(doc.uploadDatum).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} • {(doc.dateigroesse / 1024).toFixed(0)} KB
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 shrink-0">
                                 {doc.url && (
                                     <button
                                         onClick={() => setPreviewDoc(doc)}
@@ -434,32 +451,44 @@ export default function MitarbeiterEditor() {
         </div>
     );
 
+    // Nachtrag Abschnitt 6 (Task 7b): jede Zeile hier ist Flex-Item einer
+    // "flex items-center gap-3"-Reihe. Ohne min-w-0 behaelt das umschliessende
+    // <div> min-width: auto und wird nie schmaler als sein laengstes
+    // unteilbares Wort (E-Mail, Abteilungsname) -- die Reihe sprengt dann die
+    // Karte, OBWOHL der Wert selbst gar nicht ueberzulaufen scheint
+    // (scrollWidth == clientWidth des <p>, siehe kriterien.md "Layout: zwei
+    // Fallen, die kein Test von selbst findet"). Gleiches Muster wie
+    // LieferantenEditor.tsx Z. 315/324 und Kundeneditor.tsx Z. 497/509:
+    // min-w-0 flex-1 am umschliessenden <div>, break-words am Wert. Auf ALLE
+    // Zeilen der Spalte angewandt, nicht nur auf E-Mail (Befund von Design- und
+    // Code-Reviewer aus Abschnitt 5: Abteilung war schon vorher betroffen,
+    // Telefon/Festnetz/Adresse tragen dieselbe latente Luecke).
     const SideInfo = () => (
         <div className="space-y-6">
             <div>
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Persönliche Daten</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Voller Name</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.vorname} {selectedMitarbeiter?.nachname}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.vorname} {selectedMitarbeiter?.nachname}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Geburtsdatum</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.geburtstag ? new Date(selectedMitarbeiter.geburtstag).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Building2 className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Abteilung(en)</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.abteilungNames || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.abteilungNames || '-'}</p>
                         </div>
                     </div>
                 </div>
@@ -469,31 +498,31 @@ export default function MitarbeiterEditor() {
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Kontakt</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">E-Mail</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.email || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.email || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Mobiltelefon</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.telefon || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.telefon || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Festnetz</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.festnetz || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.festnetz || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Adresse</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.strasse || ''}<br />
                                 {selectedMitarbeiter?.plz || ''} {selectedMitarbeiter?.ort || ''}
                             </p>
@@ -505,10 +534,10 @@ export default function MitarbeiterEditor() {
             <div className="pt-6 border-t border-slate-100">
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Qualifikation</h3>
                 <div className="flex items-center gap-3">
-                    <GraduationCap className="w-4 h-4 text-slate-400" />
-                    <div>
+                    <GraduationCap className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Stufe</p>
-                        <p className="text-sm font-medium">{selectedMitarbeiter?.qualifikation || '-'}</p>
+                        <p className="text-sm font-medium break-words">{selectedMitarbeiter?.qualifikation || '-'}</p>
                     </div>
                 </div>
             </div>
@@ -517,10 +546,10 @@ export default function MitarbeiterEditor() {
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Konditionen</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <Euro className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Euro className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Stundenlohn</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.stundenlohn ?
                                     new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(selectedMitarbeiter.stundenlohn)
                                     : '-'}
@@ -528,10 +557,10 @@ export default function MitarbeiterEditor() {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Jahresurlaub</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.jahresUrlaub ? `${selectedMitarbeiter.jahresUrlaub} Tage` : '-'}
                             </p>
                         </div>
@@ -583,7 +612,7 @@ export default function MitarbeiterEditor() {
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             </div>
-                            <p className="text-slate-800 whitespace-pre-wrap text-sm">{notiz.inhalt}</p>
+                            <p className="text-slate-800 whitespace-pre-wrap text-sm break-words">{notiz.inhalt}</p>
                         </div>
                     ))}
                 </div>
@@ -669,16 +698,23 @@ export default function MitarbeiterEditor() {
                                 </h4>
                                 <div className="grid gap-2">
                                     {byYear[jahr].sort((a, b) => b.monat - a.monat).map(la => (
-                                        <div key={la.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors">
+                                        // Task 11 (Abschnitt 7): dieselbe Luecke wie bei
+                                        // den Dokumenten oben -- {la.originalDateiname}
+                                        // erscheint hier als Rueckfalltext, wenn weder
+                                        // Brutto- noch Nettolohn bekannt sind, und ist
+                                        // genauso ein unteilbares Wort. min-w-0 auch auf
+                                        // diesem aeusseren <div> noetig -- Grid-Item von
+                                        // "grid gap-2", siehe Kommentar bei den Dokumenten.
+                                        <div key={la.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group min-w-0">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors shrink-0">
                                                     <File className="w-5 h-5" />
                                                 </div>
-                                                <div>
-                                                    <p className="font-medium text-slate-900">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="font-medium text-slate-900 break-words">
                                                         {MONATSNAMEN[la.monat - 1]} {la.jahr}
                                                     </p>
-                                                    <p className="text-xs text-slate-500">
+                                                    <p className="text-xs text-slate-500 break-words">
                                                         {la.bruttolohn != null && (
                                                             <span className="font-medium text-slate-700">
                                                                 Brutto: {formatEuro(la.bruttolohn)}
@@ -693,7 +729,7 @@ export default function MitarbeiterEditor() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 shrink-0">
                                                 <button
                                                     onClick={() => setPreviewLohnabrechnung(la)}
                                                     className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
@@ -725,10 +761,18 @@ export default function MitarbeiterEditor() {
     const MainContent = () => (
         <>
             {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
+            {/*
+              Gemeinsame Rezeptur aus Abschnitt 3/4 (siehe Plan-Datei,
+              "Gemeinsame Rezeptur fuer Kopfzeile und Reiterleiste"):
+              overflow-x-auto raus, flex-wrap + min-w-0 rein -- eine versteckt
+              scrollende Reiterleiste ist keine Loesung, lieber umbrechen.
+              data-testid fuer eine praezise Test-Auswahl (ein Selektor ueber
+              Klassen traf in anderen Specs auch fremde "border-b"-Knoepfe).
+            */}
+            <div data-testid="mitarbeiter-reiterleiste" className="flex flex-wrap min-w-0 gap-2 mb-6 border-b border-slate-200 pb-2">
                 <button
                     onClick={() => setActiveTab('dokumente')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'dokumente'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'dokumente'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -738,7 +782,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('notizen')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'notizen'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'notizen'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -748,7 +792,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('lohnabrechnungen')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'lohnabrechnungen'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'lohnabrechnungen'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -758,7 +802,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('stundenlohn')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'stundenlohn'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'stundenlohn'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -1259,7 +1303,12 @@ export default function MitarbeiterEditor() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* 2xl:grid-cols-4 nachgezogen (Design-Review-Nachbesserung 1,
+                        Abschnitt 10): die Mitarbeiter-Uebersicht war die einzige der
+                        fuenf Uebersichten, die bei 1536/1920 bei drei Karten blieb,
+                        waehrend Projekt/Anfrage/Kunde/Lieferant auf vier gehen --
+                        dieselbe Rezeptur wie dort. */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
                         {mitarbeiter.map((m) => (
                             <Card
                                 key={m.id}
@@ -1277,13 +1326,39 @@ export default function MitarbeiterEditor() {
                                         <User className="w-5 h-5" />
                                     </div>
                                 </div>
-                                <h3 className="text-lg font-bold text-slate-900 mb-1">
-                                    {m.nachname}, {m.vorname}
+                                {/* Task 12 (Bekannte Stelle, Code-Review Abschnitt 7):
+                                    Zeichen fuer Zeichen das Muster, das Task 11 in der
+                                    Kundenkarte repariert hat -- <h3> ohne break-words,
+                                    darunter ein anonymes Flex-Item ohne min-w-0 und ein
+                                    Icon ohne shrink-0. Die Mitarbeiter-Uebersicht hatte
+                                    bislang ausserdem gar keine Zusicherung dafuer. */}
+                                {/* Zwei bewusste Zeilen statt "Nachname, Vorname" (Nacharbeit
+                                    Abschnitt 9, Design-Review Abschnitt 8, Hinweis 2): bei einem
+                                    39-Zeichen-Nachnamen passte "Nachname," gerade noch in eine
+                                    Zeile, das Komma aber nicht mehr -- break-words brach direkt
+                                    davor, die zweite Zeile begann mit ", Bernhardine". Mit zwei
+                                    festen Zeilen haengt das Komma immer am Nachnamen, unabhaengig
+                                    von der Laenge.
+                                    Komma ganz gestrichen (Abschnitt 10, Design-Review Abschnitt 9,
+                                    Hinweis 2): blieb es im selben Span wie der Nachname, konnte es bei
+                                    einem die Zeile exakt ausfuellenden Nachnamen immer noch allein in
+                                    eine eigene Zeile rutschen (gemessen: zweiter Zeilenkasten 5px
+                                    breit, 28px tiefer) -- der Fix hatte das Problem nur verschoben.
+                                    Zwei bewusste Zeilen ohne Trennzeichen brauchen kein Komma.
+                                    Leerzeichen-Trennzeichen (JSX-Ausdruck) zwischen den Spans
+                                    ergaenzt (Design-Review-Nachbesserung 1, Abschnitt 10): sichtbar
+                                    aendert sich nichts (der Leerraum zwischen zwei block-Elementen
+                                    erzeugt keine eigene Zeile), aber textContent liest sich jetzt
+                                    als "Nachname Vorname" statt "NachnameVorname" -- wichtig fuers
+                                    Vorlesen per Screenreader und fuers Kopieren des Namens. */}
+                                <h3 className="text-lg font-bold text-slate-900 mb-1 break-words">
+                                    <span className="block">{m.nachname}</span>{' '}
+                                    <span className="block">{m.vorname}</span>
                                 </h3>
                                 {m.abteilungNames && (
                                     <p className="text-sm text-rose-600 font-medium mb-2 flex items-center gap-1">
-                                        <Building2 className="w-3 h-3" />
-                                        {m.abteilungNames}
+                                        <Building2 className="w-3 h-3 shrink-0" />
+                                        <span className="min-w-0 break-words">{m.abteilungNames}</span>
                                     </p>
                                 )}
                                 <div className="flex items-center gap-4 text-sm text-slate-600">

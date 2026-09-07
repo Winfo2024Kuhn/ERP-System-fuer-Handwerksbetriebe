@@ -81,6 +81,59 @@ deaktivieren — nur die Abnahmeregel einhalten.
   Bedenken im Kontext-Log zu vermerken (dann entscheidet der Nutzer, nicht
   der Agent selbst).
 
+## Layout: sechs Fallen, die kein Test von selbst findet
+
+Aus dem 14-Zoll-Vorhaben (September 2026). Jede einzelne ist erst im Browser
+oder am gebauten CSS aufgefallen, keine im Quelltext:
+
+- **`break-words` reicht bei Flex-Items nicht.** Eine Überschrift in einer
+  Flex-Zeile behält `min-width: auto` und wird so breit wie ihr längstes Wort —
+  bei einem Komposita-Namen quer über die Nachbarspalte. Nur `min-w-0` **am
+  Element selbst** senkt die Mindestbreite; am Elternteil wirkt es nicht.
+- **`min-w-0` muss auf **jede** Ebene, nicht nur auf die unterste.** Die Falle
+  gilt für Flex-**und** Grid-Items gleichermaßen. Ist die äußere Zeile selbst ein
+  Grid-Item (`grid gap-2`), nützt `min-w-0` an den inneren Flex-Ebenen nichts —
+  die äußere hält weiter ihre automatische Mindestbreite. In Task 11 real
+  passiert, zweiter Anlauf nötig.
+- **`boundingBox()` ist kein Überlauf-Maß.** Ein Element, das seine Elternbreite
+  füllt (normaler Block), behält seine Rechteckbreite, auch wenn der Text
+  sichtbar darüber hinausmalt — nur Elemente, die sich am Inhalt ausrichten
+  (Flex-/Grid-Item, inline-block, float, `w-fit`), werden selbst breiter. Wer
+  einen Überlauf messen will, vergleicht `scrollWidth` gegen `clientWidth`,
+  nicht zwei Rechtecke. Real passiert: drei Zusicherungen aus diesem Vorhaben
+  wurden rot, wenn man `min-w-0` entfernte, blieben aber grün, wenn man
+  `break-words` entfernte — sie prüften also nur die halbe Rezeptur.
+- **`space-y-*` schlägt `mt-auto`.** Tailwind erzeugt für `space-y-3` einen
+  Selektor der Spezifität 0-3-0, `.mt-auto` hat 0-1-0. Wer den letzten Block einer
+  Karte nach unten schieben will, braucht `flex flex-col` + `gap-*` statt
+  `space-y-*`. Sonst steht die Klasse da und tut nichts.
+
+Alle fünf gelten sinngemäß für jede künftige Layout-Arbeit: **die Klasse im
+Quelltext ist kein Beweis, dass sie wirkt.** Am gebauten CSS oder im Browser
+nachmessen — und die Zusicherung so bauen, dass sie beim Entfernen **jeder**
+beteiligten Klasse rot wird, nicht nur bei einer. In diesem Vorhaben sind
+dreimal hintereinander „Attrappen" entstanden: Klassen, die im Diff richtig
+aussahen und nichts taten, weil die Nachbarklasse fehlte.
+
+Sechste Falle, aus derselben Familie: **eine definite `max-width` deckelt die
+automatische Mindestbreite eines Flex-Items.** Wer eine solche Deckelung
+entfernt, weil sie optisch stört, macht damit ein vorhandenes `break-words`
+wirkungslos — dann muss `min-w-0` nachrücken. Real passiert beim Streichen von
+`max-w-[200px]`.
+
+- **Testdaten für Umbruch-Fehler brauchen ein langes Wort ohne Trennstellen.**
+Bindestriche und Punkte sind selbst Umbruchpunkte — eine Adresse wie
+`info@beispiel-stahl.example` bricht ohnehin um und verdeckt den Fehler
+vollständig (bei 1440 gemessen: 0 px Überstand mit Bindestrich, 272 px ohne).
+Wer eine Umbruch-Zusicherung baut, nimmt eine bindestrichlose Zeichenkette,
+sonst ist der Test grün und hält nichts fest. **Aber harte Testdaten allein
+reichen nicht:** Steht die überlaufende Stelle in einer breiten Hauptspalte,
+schluckt die den Überstand, bevor er `main` erreicht — dann schlägt der
+Seiten-Wächter nicht an und es braucht eine Zusicherung „Wert bleibt in seinem
+Kasten". Beides kombinieren. Dasselbe gilt für Namen:
+„Wohnungsbaugesellschaft Beispielstadt Nord" prüft etwas anderes als ein echtes
+Komposita-Wort ohne Leerzeichen.
+
 ## Was NICHT zu diesen Kriterien gehört (Anti-Bikeshedding)
 
 Formatierung, for- vs. while-Loop, Naming-Geschmack und ähnliche

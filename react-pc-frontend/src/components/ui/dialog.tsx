@@ -21,6 +21,29 @@ const Dialog = React.forwardRef<
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <div
                     ref={ref}
+                    // Abschnitt 10 (Design-Review Abschnitt 9, Hinweis 4): ohne
+                    // role="dialog" hielt keineUeberschneidungen (design.ts)
+                    // jeden Dialog auf dieser Komponente nicht fuer ein Modal
+                    // und meldete die ganze Seite dahinter als Ueberschneidung
+                    // -- designPruefung war damit fuer jeden Dialog, der auf
+                    // dieser Dialog-Komponente aufsetzt, unbrauchbar. Die
+                    // Attribute sitzen bewusst HIER, am Panel-<div> der
+                    // Dialog-Komponente selbst (Korrektur Design-Review-
+                    // Nachbesserung 1: ein frueherer Kommentar sprach
+                    // faelschlich von "DialogContent" -- das ist die separate,
+                    // schlichte Layout-Komponente weiter unten in dieser Datei,
+                    // die als Kind HIER hineingereicht wird und selbst kein
+                    // eigenes Wurzelelement fuer den Dialog stellt). Andere
+                    // Modale im Projekt (LieferantDokumentModal, Modals.tsx,
+                    // confirm-dialog.tsx u.a.) setzen role="dialog"/aria-modal
+                    // bereits so.
+                    // Fokus-Fang bewusst nicht ergaenzt: kein anderer Dialog im
+                    // Projekt implementiert einen (confirm-dialog.tsx setzt nur
+                    // autoFocus auf einen Knopf) -- ein echter Tab-Kreislauf
+                    // waere eine uebergreifende Barrierefreiheits-Aenderung fuer
+                    // alle Dialoge, kein Teil dieses Vorhabens.
+                    role="dialog"
+                    aria-modal="true"
                     className={cn(
                         "relative z-50 bg-white p-6 shadow-2xl rounded-2xl border border-slate-200",
                         "transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]",
