@@ -70,6 +70,16 @@ Abgenommenen Abschnitt sofort in den Feature-Branch mergen und **pushen**. Der
 Container kann eingesammelt werden, und ein Kontolimit kann die Pipeline
 jederzeit mitten in der Arbeit abreißen. Was nicht auf `origin` liegt, ist weg.
 
+### Review-Agent meldet „läuft noch" statt einer Ampel
+
+Ein Reviewer startete `npm run test` im Hintergrund und beendete seine Runde
+mit „ich melde mich, wenn die Suite fertig ist". Als Subagent bekommt er die
+Benachrichtigung nie — die Ampel wäre ausgeblieben. Das ist keine
+Fertigmeldung: per Nachricht an denselben Agenten weitermachen lassen
+(synchron im Vordergrund, hohes Timeout), nicht neu starten und nicht als
+abgenommen werten. Der Satz „Testläufe synchron im Vordergrund" gehört
+trotzdem in jeden Reviewer-Auftrag, nicht nur in die Agenten-Definition.
+
 ### Nach jedem Agenten-Abbruch: Halbzustand prüfen
 
 Stirbt ein Agent mitten in der Arbeit (Kontolimit, Timeout), ist der Worktree
@@ -84,6 +94,16 @@ git -C <worktree> status --short
 Realer Fall: Die `@Version`-Felder waren committet, die zugehörige
 Spaltenmigration lag nur unversioniert daneben — ein Stand, mit dem die
 Anwendung wegen `ddl-auto=validate` nicht mehr gestartet wäre.
+
+Zweiter realer Fall (05.09.2026, Kontolimit mitten in Abschnitt 2): Fix an
+zwei Komponenten schon im Worktree, aber keine Spec, kein Commit, sechs
+`debug_probe*.mjs` daneben. Nicht neu starten — einen abgebrochenen Agenten
+per Nachricht (SendMessage an dieselbe Agent-ID) **wieder aufnehmen**: er
+kennt seinen Stand, das spart das komplette Neu-Einlesen. Im Auftrag zur
+Wiederaufnahme den vorgefundenen Stand benennen und sagen, wie er
+testgetrieben nachholt (Fix als Patch sichern, Dateien zurücksetzen, rote
+Spec, Patch wieder anwenden) — und ausdrücklich **kein `git stash`**, der
+Stash ist mit anderen Sitzungen geteilt.
 
 ---
 
@@ -135,6 +155,17 @@ Deshalb **immer** den Agenten ausdrücklich auf seinen `### Task N`-Block im
 Plan als **maßgebliche Quelle** verweisen und dazusagen, dass der Auftragstext
 nur eine Zusammenfassung mit Schwerpunkten ist. Weicht der Plan vom Auftrag
 ab, gilt der Plan — und der Agent soll die Abweichung melden.
+
+### `handwerkerprogramm-design` ist kein aufrufbarer Skill
+
+Der Design-Skill des Projekts liegt zwar unter `.claude/skills/`, ist im
+Skill-Tool aber **nicht registriert** — ein Aufruf endet mit „Unknown skill",
+obwohl der Hook `check-doc-read.ps1` vor jedem Frontend-Edit einen Design-Skill
+verlangt. Im Auftrag deshalb immer beides vorgeben: den Inhalt von
+`handwerkerprogramm-design/SKILL.md` + `README.md` **als Datei lesen** (das ist
+der inhaltliche Maßstab), und für den Hook `ui-ux-pro-max` aufrufen (steht in
+der Hook-Liste als gültige Alternative). Sonst verliert jeder Frontend-Agent
+Zeit mit dem Fehlschlag.
 
 ### Skill-Namen ohne Namespace-Präfix aufrufen
 

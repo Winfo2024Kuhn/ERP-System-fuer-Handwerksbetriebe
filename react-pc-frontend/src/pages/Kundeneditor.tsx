@@ -117,8 +117,12 @@ const KartenLeerzustand: React.FC<{ icon: React.ReactNode; text: string }> = ({ 
 );
 
 const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => void }> = ({ projekt, onOpen }) => (
-    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden" onClick={onOpen}>
-        <div className="p-4 space-y-3">
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
+        {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+            ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard) --
+            space-y-3s "> * + *"-Selektor (Spezifitaet 0-3-0) schlaegt
+            mt-auto (0-1-0) am Meta-Block nieder, gap-3 nicht. */}
+        <div className="p-4 gap-3 flex-1 flex flex-col">
             <div className="flex items-center gap-2 flex-wrap">
                 <span className={cn(
                     'text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full',
@@ -132,14 +136,20 @@ const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => vo
                     </span>
                 )}
             </div>
-            <h3 className="font-semibold text-slate-900 truncate text-base" title={projekt.bauvorhaben}>
+            {/* line-clamp-2 statt truncate: dieselbe lange Bauvorhaben-Kuerzung wie in
+                der Uebersicht (Spec E.3-Ausnahme, Kartentitel), title traegt den vollen
+                Namen. Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4,
+                Design-Review-Befund) -- gleiche Kartenhoehe kommt ueber h-full
+                flex flex-col an der Karte und mt-auto am Meta-Block unten. */}
+            <h3 className="font-semibold text-slate-900 line-clamp-2 text-base" title={projekt.bauvorhaben} data-kuerzung-erlaubt>
                 {projekt.bauvorhaben || 'Unbenannt'}
             </h3>
-            <div className="space-y-1 pt-2 border-t border-slate-50">
+            <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                 {projekt.auftragsnummer && (
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="truncate">{projekt.auftragsnummer}</span>
+                        {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit). */}
+                        <span className="min-w-0 break-words">{projekt.auftragsnummer}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -156,21 +166,26 @@ const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => vo
 );
 
 const KundenAnfrageKarte: React.FC<{ anfrage: KundeAnfrageKurz; onOpen: () => void }> = ({ anfrage, onOpen }) => (
-    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden" onClick={onOpen}>
-        <div className="p-4 space-y-3">
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
+        {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+            ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard). */}
+        <div className="p-4 gap-3 flex-1 flex flex-col">
             <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
                     Anfrage
                 </span>
             </div>
-            <h3 className="font-semibold text-slate-900 truncate text-base" title={anfrage.bauvorhaben}>
+            {/* Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4, Design-Review-Befund) --
+                siehe Kommentar in KundenProjektKarte oben. */}
+            <h3 className="font-semibold text-slate-900 line-clamp-2 text-base" title={anfrage.bauvorhaben} data-kuerzung-erlaubt>
                 {anfrage.bauvorhaben || 'Unbenannt'}
             </h3>
-            <div className="space-y-1 pt-2 border-t border-slate-50">
+            <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                 {anfrage.anfragesnummer && (
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="truncate">{anfrage.anfragesnummer}</span>
+                        {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit). */}
+                        <span className="min-w-0 break-words">{anfrage.anfragesnummer}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -201,12 +216,22 @@ const KundenDokumentKarte: React.FC<{ dok: AusgangsGeschaeftsDokument; onOpen: (
                         )}>
                             {DOK_TYP_LABELS[dok.typ] || dok.typ}
                         </span>
-                        <span className="text-sm font-medium text-slate-900 truncate">{dok.dokumentNummer}</span>
+                        {/* break-words statt line-clamp-2 + Marker (Nacharbeit
+                            Abschnitt 4, Code-Review-Befund 3): eine Belegnummer ist
+                            eine Kennung, halb abgeschnitten ist sie wertlos, und es
+                            gibt real keine Nummer, die zwei Zeilen braucht. title
+                            bleibt als Rueckfallweg, aber ohne data-kuerzung-erlaubt
+                            bleibt keinTextGekuerzt() hier scharf -- eine gequetschte
+                            Karte ist wieder ein echter Befund. Die Herkunftszeile
+                            ("Projekt: ...") direkt darunter behaelt Marker + title,
+                            weil sie denselben langen Bauvorhaben-Namen traegt und
+                            faktisch die Titelzeile der Mini-Karte ist. */}
+                        <span className="text-sm font-medium text-slate-900 break-words" title={dok.dokumentNummer}>{dok.dokumentNummer}</span>
                         {dok.storniert && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-600">storniert</span>
                         )}
                     </div>
-                    {herkunft && <p className="text-xs text-slate-500 truncate">{herkunft}</p>}
+                    {herkunft && <p className="text-xs text-slate-500 line-clamp-2" title={herkunft} data-kuerzung-erlaubt>{herkunft}</p>}
                     <div className="flex items-center gap-1 text-xs text-slate-500">
                         <Calendar className="w-3.5 h-3.5" />
                         <span>{formatDateDE(dok.datum)}</span>
@@ -249,41 +274,74 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const header = (
         <Card className="p-6">
-            <div className="flex flex-col xl:flex-row gap-8 justify-between">
-                <div className="flex items-start gap-4">
+            {/* Spec-Befund 2 (Kunde, docs/superpowers/specs/2026-09-04-layout-14-zoll.md):
+                Bei einem langen Kundennamen nahm sich die Kennzahlen-Reihe ("flex-1
+                max-w-md") den Platz, den der Titelblock eigentlich brauchte -- die
+                Kaesten "Gesamtumsatz"/"Gewinn" schrumpften auf rund 26px, Beschriftung
+                und Betrag lagen uebereinander und ueber dem Knopf "Bearbeiten". Jetzt
+                duerfen alle drei Bloecke (Titelblock, Kennzahlen, Knopf) unabhaengig
+                voneinander umbrechen: reicht der Platz nicht, rutscht zuerst die
+                Kennzahlen-Reihe unter den Titel -- nie die Knoepfe aus der Karte. */}
+            <div className="flex flex-wrap items-start gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
                     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                     <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
                         {initials}
                     </div>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-2xl font-bold text-slate-900">{kunde.name}</h1>
+                    <div className="min-w-0">
+                        {/* Nachbesserung 1 (Design-Review, 🔴): min-w-0 auf dem
+                            umschliessenden div reicht bei EINEM einzigen langen
+                            Wort nicht -- die <h1> ist selbst Flex-Item in der
+                            Zeile darunter und behaelt ihr eigenes min-width:
+                            auto. break-words senkt die Mindestinhaltsbreite
+                            eines Flex-Items nicht, nur min-w-0 auf dem Element
+                            selbst tut das. Siehe ausfuehrlicher Kommentar in
+                            ProjektEditor.tsx. */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{kunde.name}</h1>
                             <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
                                 {kunde.kundennummer}
                             </span>
                         </div>
+                        {/* shrink-0 an den Untertitel-Icons (Nacharbeit Abschnitt 4,
+                            Rezeptur): sonst quetscht ein langer Text sie platt.
+                            Task 12 (zweiter Mechanismus): der Wert braucht einen
+                            eigenen <span> mit min-w-0 -- "break-words" allein
+                            senkt die automatische Mindestbreite eines Flex-Items
+                            nicht (nur "overflow-wrap: anywhere" tut das), siehe
+                            ausfuehrlicher Kommentar in ProjektEditor.tsx. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {kunde.ansprechspartner}</p>}
-                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {kunde.strasse}, {kunde.plz} {kunde.ort}</p>
+                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{kunde.ansprechspartner}</span></p>}
+                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{kunde.strasse}, {kunde.plz} {kunde.ort}</span></p>
                         </div>
                     </div>
                 </div>
 
-                {/* Bento Stats Grid */}
-                <div className="grid grid-cols-2 gap-4 flex-1 max-w-md">
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                {/* Bento Stats Grid -- kein "flex-1 max-w-md" mehr (das zwang die
+                    Kaesten bei wenig Platz auf 26px, siehe Kommentar oben); shrink-0
+                    + min-w je Kasten haelt "Gesamtumsatz"/"Gewinn" lesbar, flex-wrap
+                    laesst die Reihe umbrechen statt sich zu quetschen. */}
+                <div className="flex flex-wrap gap-4 shrink-0">
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 min-w-[7rem]">
                         <p className="text-xs text-slate-500 uppercase tracking-wide">Gesamtumsatz</p>
                         <p className="text-lg font-semibold text-slate-900">{formatCurrency(kunde.statistik?.gesamtUmsatz)}</p>
                     </div>
-                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[7rem]">
                         <p className="text-xs text-emerald-600 uppercase tracking-wide">Gewinn</p>
                         <p className="text-lg font-semibold text-emerald-900">{formatCurrency(kunde.statistik?.gesamtGewinn)}</p>
                     </div>
                 </div>
 
-                <div className="flex items-start">
+                {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
+                    linken Kartenrand statt nach rechts (Rezeptur, Nacharbeit
+                    Abschnitt 4). */}
+                {/* Nachbesserung 1 (Design-Review, 🟡): flex-wrap + gap-2
+                    ergaenzt, um exakt der Rezeptur (Projekt/Anfrage) zu
+                    entsprechen -- heute unsichtbar, weil nur ein Knopf hier
+                    steht, faellt aber auf, sobald ein zweiter dazukommt. */}
+                <div className="flex flex-wrap items-start shrink-0 ml-auto gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -294,14 +352,16 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const mainContent = (
         <>
-            {/* Tab-Leiste */}
-            <div className="flex items-center gap-1 border-b border-slate-200 mb-4 shrink-0 overflow-x-auto">
+            {/* Tab-Leiste: overflow-x-auto raus (eine versteckt scrollende Leiste ist
+                keine Loesung), flex-wrap + min-w-0 rein -- reicht der Platz nicht,
+                rutschen die Reiter in eine zweite Zeile statt seitlich zu verschwinden. */}
+            <div className="flex items-center gap-1 border-b border-slate-200 mb-4 shrink-0 flex-wrap min-w-0" data-testid="kunde-reiterleiste">
                 {tabs.map(tab => (
                     <button
                         key={tab.key}
                         onClick={() => setActiveTab(tab.key)}
                         className={cn(
-                            'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors -mb-px whitespace-nowrap',
+                            'flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px whitespace-nowrap',
                             activeTab === tab.key
                                 ? 'text-rose-600 border-b-2 border-rose-500'
                                 : 'text-slate-500 hover:text-slate-700'
@@ -403,45 +463,69 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                 Kontaktdaten
             </h2>
             <div className="space-y-4">
+                {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
+                    unten (Nachtrag Abschnitt 5) -- nacktes <div> ohne min-w-0,
+                    Wert-<p> ohne break-words, Icon ohne shrink-0. Gleiches Muster
+                    wie LieferantenEditor.tsx Z. 315/324 und die ganze SideInfo von
+                    MitarbeiterEditor.tsx: min-w-0 flex-1 am umschliessenden <div>,
+                    break-words am Wert, shrink-0 am Icon. */}
                 {kunde.ansprechspartner && (
                     <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                        <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                        <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                             <User className="w-4 h-4" />
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Ansprechpartner</p>
-                            <p className="font-medium text-slate-900">{kunde.ansprechspartner}</p>
+                            <p className="font-medium text-slate-900 break-words">{kunde.ansprechspartner}</p>
                         </div>
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Phone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Telefon</p>
-                        <p className="font-medium text-slate-900">{kunde.telefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.telefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Smartphone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Mobiltelefon</p>
-                        <p className="font-medium text-slate-900">{kunde.mobiltelefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.mobiltelefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />
                     </div>
-                    <div>
+                    {/* min-w-0 flex-1 (Task 12, Einheitlichkeit): "flex-1" war
+                        hier bis Task 11 entfernt, weil der Design-Reviewer
+                        gemessen hat, dass es fuer den Ueberlauf wirkungslos ist
+                        (Geometrie mit/ohne "flex-1" auf den Pixel identisch).
+                        Das stimmt, macht die Zeile aber zur einzigen
+                        Abweichung von den vier Geschwistern (Ansprechpartner,
+                        Telefon, Mobiltelefon, Zahlungsziel) -- zwei Muster
+                        nebeneinander in derselben Spalte. "flex-1" schadet
+                        nicht (es aendert nichts an der Breite, siehe Messung
+                        oben), deshalb hier wieder rein: ein Muster pro Spalte
+                        ist wichtiger als die zwei nutzlosen Zeichen zu sparen.
+                        min-w-0 bleibt der Teil, der tatsaechlich traegt. */}
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">E-Mail</p>
                         <div className="flex flex-col">
                             {kunde.kundenEmails && kunde.kundenEmails.length > 0 ? (
                                 kunde.kundenEmails.map(email => (
-                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline">{email}</a>
+                                    // break-words statt truncate: eine E-Mail-Adresse ist
+                                    // keine Ueberschrift, die man kuerzen darf -- lieber
+                                    // umbrechen lassen als in der schmalen
+                                    // Kontaktdaten-Spalte abzuschneiden. Projekt, Anfrage
+                                    // und Lieferant sind an der gleichen Stelle laengst so
+                                    // gebaut -- das ist die letzte der vier.
+                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline break-words block">{email}</a>
                                 ))
                             ) : (
                                 <span className="text-slate-400">-</span>
@@ -450,14 +534,19 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     </div>
                 </div>
 
-                {/* Zahlungsziel */}
+                {/* Zahlungsziel -- trug die Rezeptur bisher gar nicht (Task 12,
+                    Einheitlichkeit): shrink-0 am Icon, min-w-0 flex-1 am
+                    Wert-Container, break-words am Wert, wie die vier
+                    Geschwister-Zeilen oben. Der Wert ist zwar heute nur eine
+                    kurze Zahl, aber dieselbe Spalte soll durchgehend ein
+                    Muster tragen statt zwei nebeneinander. */}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <CreditCard className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Zahlungsziel</p>
-                        <p className="font-medium text-slate-900">{kunde.zahlungsziel ?? 8} Tage</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.zahlungsziel ?? 8} Tage</p>
                     </div>
                 </div>
             </div>
@@ -809,8 +898,10 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
     const ortText = [kunde.plz, kunde.ort].filter(Boolean).join(' ');
 
     return (
-        <Card className="p-4 cursor-pointer hover:border-rose-200 hover:shadow-md transition-all bg-white" onClick={onSelect}>
-            <div className="space-y-3">
+        <Card className="p-4 cursor-pointer hover:border-rose-200 hover:shadow-md transition-all bg-white h-full flex flex-col" onClick={onSelect}>
+            {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+                ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard). */}
+            <div className="gap-3 flex-1 flex flex-col">
                 <div>
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase text-slate-500 tracking-wide">{kunde.kundennummer || 'ohne Nr.'}</p>
@@ -822,18 +913,55 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                             {kunde.hatProjekte ? 'Kunde' : 'Anfrager'}
                         </span>
                     </div>
-                    <h3 className="font-semibold text-slate-900 truncate">{kunde.name || '-'}</h3>
-                    {ortText && <p className="text-sm text-slate-500">{ortText}</p>}
+                    {/* line-clamp-2 statt truncate (Spec E.3, Kartentitel-Ausnahme):
+                        ein langer Kundenname (Spec-Befund 4) bricht auf zwei Zeilen um
+                        statt einzeilig abgehackt zu werden, title traegt den vollen Namen.
+                        Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4, Design-Review-Befund) --
+                        gleiche Kartenhoehe kommt ueber h-full flex flex-col an der Karte
+                        und mt-auto am Meta-Block unten. */}
+                    <h3 className="font-semibold text-slate-900 line-clamp-2" title={kunde.name || '-'} data-kuerzung-erlaubt>{kunde.name || '-'}</h3>
+                    {/* break-words (Task 12, zweiter Mechanismus): reiner
+                        Block-<p> ohne break-words -- ein langer Ortsname malt
+                        sonst rechts heraus statt mit dem Kasten mitzuwachsen. */}
+                    {ortText && <p className="text-sm text-slate-500 break-words">{ortText}</p>}
                 </div>
-                <div className="text-sm text-slate-600 space-y-1">
+                <div className="text-sm text-slate-600 space-y-1 mt-auto">
+                    {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
+                        zwei Zeilen weiter unten -- ein anonymes Flex-Item mit
+                        min-width: auto, das overflow-wrap: break-word nicht senkt.
+                        Diese Karte ist ausserdem die einzige der sechs ohne
+                        overflow-hidden, ein ueberlaufender Wert schiebt also nicht
+                        nur sich selbst, sondern die ganze Karte und main auf.
+                        Gleiches Muster wie bei der E-Mail-Zeile: Text in ein
+                        <span className="min-w-0 break-words"> fassen, Icon shrink-0. */}
                     {kunde.ansprechspartner && (
-                        <p className="flex items-center gap-2"><User className="w-4 h-4 text-rose-400" />{kunde.ansprechspartner}</p>
+                        <p className="flex items-center gap-2">
+                            <User className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.ansprechspartner}</span>
+                        </p>
                     )}
                     {kunde.telefon && (
-                        <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-rose-400" />{kunde.telefon}</p>
+                        <p className="flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.telefon}</span>
+                        </p>
                     )}
                     {kunde.kundenEmails?.[0] && (
-                        <p className="flex items-center gap-2 truncate"><Mail className="w-4 h-4 text-rose-400" />{kunde.kundenEmails[0]}</p>
+                        // Nachtrag Abschnitt 5 (Task 9, Design-Review Runde 2,
+                        // Befund 2): break-words allein (Nachbesserung 1) reichte
+                        // nicht -- der Text war ein ANONYMES Flex-Item (direkter
+                        // Text-Node in "flex items-center gap-2") mit
+                        // min-width: auto, und overflow-wrap: break-word senkt
+                        // diese Mindestbreite nicht (nur break-all/anywhere tun
+                        // das, siehe .claude/skills/loese-problem/references/
+                        // kriterien.md). Fix: Text in ein eigenes <span> mit
+                        // min-w-0 fassen, dann greift break-words wie beim
+                        // <h1>-Fix aus Abschnitt 4. Kein title als
+                        // Rueckfallweg -- lieber umbrechen.
+                        <p className="flex items-center gap-2">
+                            <Mail className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.kundenEmails[0]}</span>
+                        </p>
                     )}
                 </div>
             </div>
@@ -1118,7 +1246,10 @@ export const Kundeneditor: React.FC = () => {
                     Keine Kunden gefunden.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                // xl:grid-cols-4 -> 2xl:grid-cols-4 (Spec-Befund 4): bei 1440 drei
+                // breitere Karten (Platz fuer den zweizeiligen Titel), ab 1536 wieder
+                // vier -- 1920 sieht dadurch unveraendert aus.
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                     {kunden.map(kunde => (
                         <KundenKarte key={kunde.id} kunde={kunde} onSelect={() => handleOpenDetail(kunde)} />
                     ))}

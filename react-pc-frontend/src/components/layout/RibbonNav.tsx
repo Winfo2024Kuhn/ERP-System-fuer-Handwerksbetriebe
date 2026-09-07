@@ -239,14 +239,21 @@ export function RibbonNavigation() {
     return (
         <div className="flex flex-col bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40 transition-all">
             {/* Top Bar: Logo & Tabs */}
-            <div className="flex items-center px-4 h-16 border-b border-rose-100 bg-white shadow-sm gap-8">
+            {/* gap-4 statt gap-8 (vorher): gibt der Kategorie-Leiste bei 1440px
+                die paar Pixel, die ihr sonst durch die Aussenabstaende der
+                Nachbar-Elemente fehlen (siehe Spec C, Befund 3). */}
+            <div className="flex items-center px-4 h-16 border-b border-rose-100 bg-white shadow-sm gap-4">
                 {/* Company Logo */}
                 <div className="flex items-center shrink-0">
                     <img src="/firmenlogo_icon.png" alt="Company Logo" className="h-14 w-auto object-contain" />
                 </div>
 
                 {/* Category Tabs */}
-                <div className="flex-1 flex overflow-x-auto overflow-y-hidden no-scrollbar gap-2 h-full items-end">
+                {/* "no-scrollbar" entfernt (vorher): eine still scrollende
+                    Kategorie-Leiste ist keine Loesung -- wenn hier noch etwas
+                    ueberlaeuft, soll es als Scrollbalken sichtbar sein statt
+                    unsichtbar abgeschnitten (Spec C, Befund 3). */}
+                <div className="flex-1 flex overflow-x-auto overflow-y-hidden gap-2 h-full items-end">
                     {visibleNavigation.map((group) => (
                         <button
                             key={group.category}
@@ -260,7 +267,9 @@ export function RibbonNavigation() {
                                 }
                             }}
                             className={cn(
-                                "px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
+                                // px-3 statt px-4 unterhalb 2xl (1536px): spart bei 1440px
+                                // genug Breite, damit alle fuenf Kategorien nebeneinander passen.
+                                "px-3 2xl:px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
                                 activeCategory === group.category
                                     ? "text-rose-700 bg-rose-50 border-t-2 border-x border-rose-200 border-b-transparent shadow-sm z-10"
                                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-transparent border-b-2 border-b-transparent mb-[1px]"
@@ -296,7 +305,45 @@ export function RibbonNavigation() {
                             <User className="w-4 h-4" />
                         </div>
                         <div className="text-left hidden md:block">
-                            <p className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 line-clamp-1">
+                            {/* Kuerzung hier ist erlaubt, weil der volle Name im
+                                aufgeklappten Nutzermenue direkt darunter steht (siehe
+                                "showUserMenu"-Panel weiter unten) und zusaetzlich im
+                                title-Attribut steht. data-kuerzung-erlaubt markiert das
+                                als gewollte Ausnahme fuer keinTextGekuerzt (siehe
+                                e2e/hilfen/design.ts) -- ohne das Attribut waere ein
+                                abgeschnittener Name ein Fehler.
+
+                                Task 10b (Abschnitt 7, Design-Review Abschnitt 6 Befund c):
+                                "2xl:max-w-none" (ab 1536px unbegrenzt breit) griff zu frueh --
+                                bei 1536px ist noch nicht genug Platz frei, ein rund 55 Zeichen
+                                langer Name sprengte die Kategorie-Leiste dort um 119px (bei
+                                1650px noch um 5px), weil dieser Block und die Kategorie-Leiste
+                                sich dieselbe Zeile teilen und ein breiterer Name der
+                                Kategorie-Leiste Platz wegnimmt. Zwei Stellschrauben standen zur
+                                Wahl: die Grenze spaeter greifen lassen (z.B. "min-[1780px]:
+                                max-w-none") oder eine feste Obergrenze statt "none" setzen (z.B.
+                                "2xl:max-w-[18rem]"). Gewaehlt: die Grenze verschieben.
+                                Nachgerechnet mit den Design-Review-Messwerten (119px Ueberstand
+                                bei 369px Namensbreite, 247px bei 497px Namensbreite -- linear,
+                                Differenz und Ursache identisch): der Ueberstand waechst 1:1 mit
+                                der Namensbreite, die Kategorie-Leiste vertraegt bei 1536px nur
+                                rund 250px Namensbreite verlustfrei. Eine feste Obergrenze muesste
+                                also klein genug sein (< 15rem), und genau diese Grenze gilt schon
+                                heute unveraendert bei 1440px (max-w-[10rem] = 160px) und
+                                verursacht dort nachweislich 0px Ueberstand, auch bei sehr langen
+                                Namen. Die Grenze auf 1780px zu verschieben nutzt also einfach die
+                                bereits bewaehrte 160px-Kuerzung eine Stufe weiter, statt eine neue
+                                Zahl zu erfinden -- deshalb kein "2xl:max-w-[18rem]": 18rem (288px)
+                                liegt ueber der 250px-Schwelle und haette die Luecke nicht
+                                geschlossen, wie die Nachrechnung zeigt. Ab 1780px ist der
+                                Platzgewinn gegenueber 1536px so gross, dass "max-w-none" laut
+                                denselben Messwerten wieder 0px Ueberstand ergibt (1780px: 0px bzw.
+                                3px je nach Namenslaenge). */}
+                            <p
+                                className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 max-w-[10rem] min-[1780px]:max-w-none truncate"
+                                title={currentUser ? currentUser.displayName : undefined}
+                                data-kuerzung-erlaubt
+                            >
                                 {currentUser ? currentUser.displayName : "Lade..."}
                             </p>
                             <p className="text-xs text-slate-500">{isAdmin ? 'Administrator' : 'Angemeldet'}</p>
@@ -309,7 +356,11 @@ export function RibbonNavigation() {
                             <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
                             <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
                                 <div className="px-4 py-2 border-b border-slate-50 mb-2">
-                                    <p className="text-sm font-semibold text-slate-700 line-clamp-1">{currentUser?.displayName || 'Benutzer'}</p>
+                                    {/* Hier steht der VOLLE Name -- das ist die Begruendung
+                                        dafuer, dass der kompakte Anzeigename oben gekuerzt
+                                        werden darf. Deshalb kein truncate/line-clamp: lieber
+                                        umbrechen als kuerzen. */}
+                                    <p className="text-sm font-semibold text-slate-700 break-words">{currentUser?.displayName || 'Benutzer'}</p>
                                     <p className="text-xs text-slate-500">{currentUser?.username || 'Kein Username'}</p>
                                 </div>
                                 <div className="border-t border-slate-100 mt-2 pt-2 pb-1">
@@ -358,7 +409,11 @@ export function RibbonNavigation() {
                     isExpanded ? "max-h-40 opacity-100 border-b border-slate-200" : "max-h-0 opacity-0"
                 )}
             >
-                <div className="px-3 py-2 flex gap-1 overflow-x-auto no-scrollbar">
+                {/* "no-scrollbar" entfernt (Task 8b, Nachtrag aus dem Review von
+                    Abschnitt 2): dasselbe Muster wie bei der Kategorie-Leiste oben --
+                    laeuft hier heute nichts ueber, soll ein kuenftiger Ueberlauf aber
+                    als Scrollbalken sichtbar sein statt lautlos abgeschnitten zu werden. */}
+                <div className="px-3 py-2 flex gap-1 overflow-x-auto">
                     {visibleNavigation.find(g => g.category === activeCategory)?.subgroups.map((subgroup, sgIndex) => (
                         <div key={subgroup.label} className="flex items-center">
                             {/* Subgroup Container */}
@@ -396,8 +451,14 @@ export function RibbonNavigation() {
                                                 )}>
                                                     <item.icon className="w-5 h-5" />
                                                 </div>
+                                                {/* max-w-[5.5rem] + break-words statt truncate:
+                                                    zweizeilig statt gekuerzt -- "Dokumentenrechte"
+                                                    und "Mietabrechnung" stehen sonst als "..." da,
+                                                    unabhaengig von der Fenstergroesse (Spec C,
+                                                    Befund 3). Macht die Menuezeile hoechstens
+                                                    12px hoeher. */}
                                                 <span className={cn(
-                                                    "text-[10px] font-medium text-center leading-tight max-w-[4.5rem] truncate",
+                                                    "text-[10px] font-medium text-center leading-tight max-w-[5.5rem] break-words",
                                                     isActive ? "text-rose-700" : "text-slate-600"
                                                 )}>
                                                     {item.name}
