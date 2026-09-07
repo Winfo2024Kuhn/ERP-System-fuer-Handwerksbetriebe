@@ -221,6 +221,9 @@ public class EmailImportService {
                         // importMessage greift (eigene Tx pro Mail).
                         if (self.importMessage(msg, folder, direction)) {
                             imported++;
+                            // Erst NACH dem Commit der Import-Transaktion,
+                            // sonst sperren sich beide gegenseitig.
+                            pruefeRuecklaeufer(msg, direction);
                         }
                     } catch (Exception e) {
                         // Versuche Kontext-Infos aus dem Envelope zu extrahieren (bereits vorgeladen)
@@ -253,6 +256,46 @@ public class EmailImportService {
         } catch (MessagingException e) {
             log.warn("[EmailImport] Ordner '{}' nicht verfügbar: {}", folderName, e.getMessage());
             return 0;
+        }
+    }
+
+    /**
+     * Wertet eine gerade importierte Eingangsmail als moegliche
+     * Unzustellbarkeits-Meldung aus und markiert die betroffene Ausgangsmail.
+     * Ohne diesen Schritt bliebe im ERP "versendet" stehen, obwohl beim
+     * Empfaenger nie etwas ankam — der Rueckläufer selbst landet nur als
+     * weitere Mail im Posteingang und faellt im Alltag durch.
+     *
+     * <p><strong>Warum erst hier und nicht in {@link #importMessage}:</strong>
+     * Der Bounce-Service laeuft in {@code REQUIRES_NEW}, also in einer eigenen
+     * Datenbank-Transaktion. Aus der noch offenen Import-Transaktion heraus
+     * aufgerufen, blockieren sich beide gegenseitig: Der Rueckläufer ist ueber
+     * {@code parent_email_id} mit genau der Ausgangsmail verknuepft, die er als
+     * unzustellbar markieren soll. Deren noch nicht committeter INSERT haelt
+     * wegen des Fremdschluessels eine Lesesperre auf der Ausgangsmail, waehrend
+     * das UPDATE der inneren Transaktion darauf eine Schreibsperre braucht.
+     * InnoDB erkennt darin keinen Deadlock — die aeussere Transaktion wartet
+     * nicht auf eine Sperre, sondern auf diesen Anwendungscode — und laeuft
+     * stattdessen nach {@code innodb_lock_wait_timeout} (Standard: 50 s) in
+     * "Lock wait timeout exceeded". Der Import scheitert, wird zurueckgerollt
+     * und beim naechsten Lauf erneut versucht: eine Endlosschleife, in der der
+     * Rueckläufer nie ankommt und jeder Durchlauf 50 Sekunden blockiert. Nach
+     * dem Commit sind die Sperren frei.
+     *
+     * <p>Fehler werden hier geschluckt: Der Service faengt seine eigenen
+     * Ausnahmen zwar ab, der Commit seiner Transaktion passiert aber erst
+     * hinter der Methode am Spring-Proxy — ein Fehler von dort wuerde sonst
+     * den Import der uebrigen Mails abbrechen.
+     */
+    private void pruefeRuecklaeufer(Message msg, EmailDirection direction) {
+        if (direction != EmailDirection.IN) {
+            return;
+        }
+        try {
+            bounceErkennungService.verarbeiteRuecklaeufer(msg);
+        } catch (Exception e) {
+            log.warn("[EmailImport] Rueckläufer-Pruefung fehlgeschlagen: {} – {}",
+                    e.getClass().getSimpleName(), e.getMessage());
         }
     }
 
@@ -507,15 +550,8 @@ public class EmailImportService {
             }
         }
 
-        // Unzustellbarkeits-Meldung? Dann die betroffene Ausgangsmail als
-        // unzustellbar markieren. Ohne diesen Schritt bliebe im ERP "versendet"
-        // stehen, obwohl beim Empfaenger nie etwas ankam — der Rueckläufer
-        // selbst landet nur als weitere Mail im Posteingang und faellt im
-        // Alltag durch. Der Service schluckt eigene Fehler, damit ein
-        // unlesbarer Rueckläufer den Import nicht abbricht.
-        if (direction == EmailDirection.IN) {
-            bounceErkennungService.verarbeiteRuecklaeufer(msg);
-        }
+        // Die Auswertung als Unzustellbarkeits-Meldung passiert bewusst erst
+        // NACH dem Commit dieser Transaktion — siehe pruefeRuecklaeufer(..).
 
         return true;
     }
