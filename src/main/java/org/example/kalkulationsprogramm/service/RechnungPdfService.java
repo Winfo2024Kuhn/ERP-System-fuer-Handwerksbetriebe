@@ -149,7 +149,30 @@ public class RechnungPdfService {
             String basisdokumentTyp,
             java.time.LocalDate basisdokumentDatum,
             BigDecimal basisdokumentBetragNetto,
-            List<AbrechnungspositionPdfDto> positionen) {
+            List<AbrechnungspositionPdfDto> positionen,
+            /**
+             * Fortschrittsbalken und Prozentangabe im Abrechnungsstand zeigen.
+             * Pro Rechnung im Editor abschaltbar; die Betragszeilen darunter bleiben
+             * immer stehen, weil §14 Abs. 5 UStG den Ausweis der bereits
+             * abgerechneten Betraege verlangt.
+             */
+            boolean balkenAnzeigen,
+            /**
+             * Namen der Leistungen hinter der Differenzzeile der Schlussrechnung,
+             * z.B. "Geruststellung, Bauendreinigung". Leer, wenn sich der Vergleich
+             * zur Auftragsbestaetigung nicht eindeutig aufloesen laesst — dann steht
+             * dort nur der Betrag.
+             */
+            String differenzHinweis) {
+
+        // Backwards-compatible constructor ohne Anzeigeoptionen: Balken an, kein Hinweis.
+        public AbrechnungsverlaufPdfDto(String basisdokumentNummer, String basisdokumentTyp,
+                                        java.time.LocalDate basisdokumentDatum,
+                                        BigDecimal basisdokumentBetragNetto,
+                                        List<AbrechnungspositionPdfDto> positionen) {
+            this(basisdokumentNummer, basisdokumentTyp, basisdokumentDatum,
+                 basisdokumentBetragNetto, positionen, true, null);
+        }
     }
 
     public record AbrechnungspositionPdfDto(
@@ -1525,9 +1548,17 @@ public class RechnungPdfService {
                 }
             }
 
-            // Die Schlussrechnung rechnet genau den noch offenen Rest ab.
+            // Die Schlussrechnung rechnet die Positionen ab, die tatsaechlich in ihr
+            // stehen — abzueglich dessen, was bereits in Rechnung gestellt wurde.
+            //
+            // Bis 2026-09 stand hier "gesamtAuftragssumme minus bereitsAbgerechnet".
+            // Damit landete jede aus der Schlussrechnung geloeschte Position (etwa
+            // eine nicht benoetigte Geruststellung) trotzdem im Rechnungsbetrag, und
+            // unvorhergesehene Zusatzpositionen fielen umgekehrt unter den Tisch. Die
+            // Differenz zur Auftragsbestaetigung wird stattdessen unten als eigene
+            // Zeile ausgewiesen.
             if (isSchlussrechnung) {
-                nettoNachRabatt = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto);
+                nettoNachRabatt = nettoNachRabatt.subtract(bereitsAbgerechnetNetto);
                 mwst = nettoNachRabatt.multiply(mwstSatz).setScale(2, java.math.RoundingMode.HALF_UP);
                 brutto = nettoNachRabatt.add(mwst);
             }
@@ -1537,11 +1568,20 @@ public class RechnungPdfService {
             // === Abschnitt 1: Abrechnungsstand ===
             addAbschnittsUeberschrift(sumTable, "Abrechnungsstand", 0f, lineColor);
 
-            if (gesamtAuftragssumme.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal abgerechnetNetto = bereitsAbgerechnetNetto.add(nettoNachRabatt);
-                double prozent = abgerechnetNetto.multiply(new BigDecimal("100"))
-                        .divide(gesamtAuftragssumme, 1, java.math.RoundingMode.HALF_UP)
-                        .doubleValue();
+            if (abrechnungsverlauf.balkenAnzeigen() && gesamtAuftragssumme.compareTo(BigDecimal.ZERO) > 0) {
+                // Eine Schlussrechnung schliesst den Auftrag ab — danach ist er per
+                // Definition zu 100 % abgerechnet, auch wenn weniger berechnet wurde
+                // als die Auftragsbestaetigung vorsah. Der nicht berechnete Teil steht
+                // als eigene Differenzzeile darunter, nicht als offener Rest.
+                double prozent;
+                if (isSchlussrechnung) {
+                    prozent = 100d;
+                } else {
+                    BigDecimal abgerechnetNetto = bereitsAbgerechnetNetto.add(nettoNachRabatt);
+                    prozent = abgerechnetNetto.multiply(new BigDecimal("100"))
+                            .divide(gesamtAuftragssumme, 1, java.math.RoundingMode.HALF_UP)
+                            .doubleValue();
+                }
                 addFortschrittsBalken(sumTable, prozent, firmenfarbe);
             }
 
@@ -1620,8 +1660,41 @@ public class RechnungPdfService {
                     "- " + nf.format(brutto) + " €",
                     "netto " + nf.format(nettoNachRabatt) + " €", false, firmenfarbe);
 
+            // --- Differenz zur Auftragsbestaetigung (nur Schlussrechnung) ---
+            // Als Ausgleichsgroesse gerechnet, nicht aus einem Positionsvergleich:
+            // damit geht die Spalte immer auf, egal ob Positionen geloescht, ergaenzt
+            // oder in der Menge geaendert wurden oder ein Rabatt dazukam.
+            //   > 0  Auftrag war hoeher als abgerechnet -> Leistungen sind entfallen
+            //   < 0  mehr abgerechnet als beauftragt    -> Zusatzleistungen
+            BigDecimal differenzNetto = BigDecimal.ZERO;
+            if (isSchlussrechnung) {
+                differenzNetto = gesamtAuftragssumme
+                        .subtract(bereitsAbgerechnetNetto)
+                        .subtract(nettoNachRabatt);
+            }
+            if (differenzNetto.abs().compareTo(new BigDecimal("0.01")) >= 0) {
+                boolean entfallen = differenzNetto.compareTo(BigDecimal.ZERO) > 0;
+                BigDecimal differenzBrutto = bruttoMitSteuer(differenzNetto.abs(), mwstSatz);
+                String differenzLabel = entfallen ? "Nicht angefallen" : "Zusätzliche Leistungen";
+                String differenzVorzeichen = entfallen ? "- " : "+ ";
+                // Ohne aufloesbaren Positionsvergleich bleibt die Zeile trotzdem erklaert —
+                // gleicher Text wie in der Editor-Vorschau (ClosureBlock.tsx), damit
+                // Vorschau und Druck nicht auseinanderlaufen.
+                String differenzUnterzeile = abrechnungsverlauf.differenzHinweis() != null
+                        && !abrechnungsverlauf.differenzHinweis().isBlank()
+                        ? abrechnungsverlauf.differenzHinweis()
+                        : "Unterschied zur Auftragsbestätigung";
+
+                addUebersichtsZeile(sumTable, differenzLabel, differenzUnterzeile,
+                        differenzVorzeichen + nf.format(differenzBrutto) + " €",
+                        "netto " + nf.format(differenzNetto.abs()) + " €", false, firmenfarbe);
+            }
+
             // --- Noch offen ---
-            BigDecimal restNetto = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto).subtract(nettoNachRabatt);
+            // Nach Abzug der Differenzzeile steht bei der Schlussrechnung hier 0,00 € —
+            // der Auftrag ist abgeschlossen, es bleibt nichts nachzufordern.
+            BigDecimal restNetto = gesamtAuftragssumme.subtract(bereitsAbgerechnetNetto)
+                    .subtract(nettoNachRabatt).subtract(differenzNetto);
             // Bewusst aus dem Nettorest gerechnet und nicht als Differenz der Bruttozeilen:
             // sonst bleiben bei krummen Betraegen Rundungsreste stehen und eine restlos
             // abgerechnete Schlussrechnung meldet "Noch offen 0,01 €".

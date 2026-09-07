@@ -132,7 +132,7 @@ describe('Toast-Container - Positionierung bei offenem Dialog', () => {
         expect(container.className).not.toContain('left-6');
     });
 
-    it('wandert nach oben LINKS, solange ein Dialog offen ist (Task 8a: rechts kollidierte mit Schliessen-X/Kopf-Knoepfen)', async () => {
+    it('wandert nach unten LINKS, solange ein Dialog offen ist (Task 8c: oben links schnitt auf 14 Zoll die Modal-Ueberschrift an)', async () => {
         render(
             <ToastProvider>
                 <TestKomponenteMitDialog dialogOffen={true} />
@@ -143,9 +143,9 @@ describe('Toast-Container - Positionierung bei offenem Dialog', () => {
         });
 
         const container = screen.getByTestId('toast-container');
-        expect(container.className).toContain('top-6');
+        expect(container.className).toContain('bottom-6');
         expect(container.className).toContain('left-6');
-        expect(container.className).not.toContain('bottom-6');
+        expect(container.className).not.toContain('top-6');
         expect(container.className).not.toContain('right-6');
     });
 });
@@ -171,7 +171,7 @@ function UmschaltbarerDialogTest() {
 }
 
 describe('Toast-Container - MutationObserver (Task 8a)', () => {
-    it('wandert per MutationObserver von unten nach oben und zurueck, wenn der Dialog ERST NACH dem Mount geoeffnet/geschlossen wird', async () => {
+    it('wandert per MutationObserver von rechts nach links und zurueck, wenn der Dialog ERST NACH dem Mount geoeffnet/geschlossen wird (Task 8c: beide Positionen bleiben unten, "bottom-6" aendert sich nicht)', async () => {
         render(
             <ToastProvider>
                 <UmschaltbarerDialogTest />
@@ -181,6 +181,7 @@ describe('Toast-Container - MutationObserver (Task 8a)', () => {
             screen.getByText('Fehler ausloesen').click();
         });
         expect(screen.getByTestId('toast-container').className).toContain('bottom-6');
+        expect(screen.getByTestId('toast-container').className).toContain('right-6');
 
         // Dialog jetzt erst oeffnen -- der useState-Initializer traf schon
         // beim ersten Render zu (Dialog war da noch zu), diesen Wechsel kann
@@ -188,15 +189,18 @@ describe('Toast-Container - MutationObserver (Task 8a)', () => {
         await act(async () => {
             screen.getByText('Dialog umschalten').click();
         });
-        await waitFor(() => expect(screen.getByTestId('toast-container').className).toContain('top-6'));
-        expect(screen.getByTestId('toast-container').className).not.toContain('bottom-6');
+        await waitFor(() => expect(screen.getByTestId('toast-container').className).toContain('left-6'));
+        expect(screen.getByTestId('toast-container').className).toContain('bottom-6');
+        expect(screen.getByTestId('toast-container').className).not.toContain('right-6');
+        expect(screen.getByTestId('toast-container').className).not.toContain('top-6');
 
-        // Und wieder schliessen -- der Container wandert zurueck nach unten.
+        // Und wieder schliessen -- der Container wandert zurueck nach rechts.
         await act(async () => {
             screen.getByText('Dialog umschalten').click();
         });
-        await waitFor(() => expect(screen.getByTestId('toast-container').className).toContain('bottom-6'));
-        expect(screen.getByTestId('toast-container').className).not.toContain('top-6');
+        await waitFor(() => expect(screen.getByTestId('toast-container').className).toContain('right-6'));
+        expect(screen.getByTestId('toast-container').className).toContain('bottom-6');
+        expect(screen.getByTestId('toast-container').className).not.toContain('left-6');
     });
 
     it('trennt den MutationObserver beim Unmount des ToastProvider (kein Speicherleck/Zombie-Listener)', () => {

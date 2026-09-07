@@ -44,6 +44,16 @@ public class AbrechnungsverlaufDto {
     private Set<String> bereitsAbgerechneteBlockIds;
 
     /**
+     * positionenJson des Basisdokuments (Angebot/AB).
+     *
+     * <p>Der Dokument-Editor vergleicht damit die Positionen der Schlussrechnung mit
+     * denen der Auftragsbestaetigung und benennt in der Differenzzeile, welche
+     * Leistungen entfallen bzw. zusaetzlich angefallen sind. Ohne diesen Rohwert
+     * kaeme dort nur ein Betrag ohne Erklaerung an.
+     */
+    private String basisdokumentPositionenJson;
+
+    /**
      * Einzelposition im Abrechnungsverlauf (eine erstellte Rechnung).
      */
     @Data

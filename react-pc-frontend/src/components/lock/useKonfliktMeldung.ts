@@ -48,14 +48,22 @@ export function useKonfliktMeldung(bezeichnung: string = 'Dokument'): UseKonflik
                 message: meldungstext,
                 confirmLabel: 'Neu laden',
                 cancelLabel: 'Abbrechen',
-                // 'info' statt 'warning' (Task 8a): gefuellte Primaeraktionen
-                // sind im Design-System rose, nicht amber -- amber ist
-                // Warn-Icons/Badges vorbehalten (siehe UnsavedChangesModal:
-                // amber-Icon, aber rose-Knopf). confirm-dialog.tsx bietet
-                // dafuer keinen eigenen "amber-Icon + rose-Knopf"-Verbund an;
-                // 'info' liefert den geforderten rose-Knopf, ohne die anderen
-                // 53 confirm()-Aufrufe im Projekt anzufassen.
-                variant: 'info',
+                // 'fehlschlag' (Task 8c, vorher 'info' seit Task 8a): gefuellte
+                // Primaeraktionen sind im Design-System rose, nicht amber --
+                // amber ist Warn-Icons/Badges vorbehalten (siehe
+                // "Ungespeicherte Aenderungen" in Modals.tsx: amber-Icon, aber
+                // rose-Knopf). 'info' lieferte zwar den rose-Knopf, aber auch
+                // ein freundliches blaues Fragezeichen (HelpCircle in
+                // sky-100/sky-600) -- fuer eine Meldung, die einen bereits
+                // eingetretenen Fehlschlag benennt ("Ihre Aenderungen wurden
+                // nicht uebernommen"), die falsche Semantik (Design-Review
+                // Abschnitt 7-2/8-1). 'fehlschlag' liefert genau den
+                // amber-Icon+rose-Knopf-Verbund, den der Review vorgeschlagen
+                // hat, ohne die anderen 5 'info'-Aufrufer im Projekt
+                // anzufassen (Urlaubsantraege, ProjektEditor,
+                // BestellungEditor, KostenpositionenView,
+                // LieferantReklamationenTab).
+                variant: 'fehlschlag',
             });
 
             if (neuLaden) {

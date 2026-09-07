@@ -1759,6 +1759,176 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(verlauf.getBasisdokumentBetragNetto()).isEqualByComparingTo(new BigDecimal("1600.00"));
             assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(new BigDecimal("1600.00"));
         }
+
+        @Test
+        void liefertPositionenDesBasisdokumentsFuerDenLeistungsvergleich() {
+            // Der Editor benennt daraus, welche Leistungen in einer Schlussrechnung
+            // entfallen bzw. dazugekommen sind.
+            String positionen = "[{\"type\":\"SERVICE\",\"id\":\"a\",\"title\":\"Gerüststellung\",\"quantity\":1,\"price\":2000}]";
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setDokumentNummer("2026/05/00011");
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            basis.setBetragNetto(new BigDecimal("2000.00"));
+            basis.setPositionenJson(positionen);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L)).thenReturn(List.of());
+
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getBasisdokumentPositionenJson()).isEqualTo(positionen);
+        }
+    }
+
+    /**
+     * Der Betrag einer Schlussrechnung folgt ihren eigenen Positionen.
+     *
+     * <p>Bis 2026-09 wurde er beim Ausliefern durch "Auftragssumme minus andere
+     * Rechnungen" ersetzt. Damit landete jede aus der Schlussrechnung gelöschte
+     * Position (z.B. eine nicht benötigte Gerüststellung) trotzdem wieder im
+     * Rechnungsbetrag, und unvorhergesehene Zusatzpositionen fielen unter den Tisch.
+     */
+    @Nested
+    class SchlussrechnungBetrag {
+
+        /**
+         * Baut den kompletten Vorgang auf: Auftragsbestätigung über 10.000 € netto,
+         * eine bereits gestellte Teilrechnung über 4.000 € und die Schlussrechnung.
+         *
+         * <p>Die Schlussrechnung hängt als Nachfolger an der AB — genau wie in der
+         * Datenbank. Ohne sie in der Liste zöge der Abrechnungsverlauf ihren eigenen
+         * Betrag nicht ab, und der Rückfallweg käme auf einen zu hohen Wert.
+         */
+        private void vorgangMitSchlussrechnung(BigDecimal srBetragNetto, String srPositionenJson) {
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setDokumentNummer("2026/01/00007");
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            basis.setBetragNetto(new BigDecimal("10000.00"));
+
+            AusgangsGeschaeftsDokument teilrechnung = new AusgangsGeschaeftsDokument();
+            teilrechnung.setId(2L);
+            teilrechnung.setDokumentNummer("2026/03/00011");
+            teilrechnung.setTyp(AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG);
+            teilrechnung.setBetragNetto(new BigDecimal("4000.00"));
+
+            AusgangsGeschaeftsDokument sr = new AusgangsGeschaeftsDokument();
+            sr.setId(3L);
+            sr.setDokumentNummer("2026/06/00030");
+            sr.setTyp(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG);
+            sr.setVorgaenger(basis);
+            sr.setBetragNetto(srBetragNetto);
+            sr.setPositionenJson(srPositionenJson);
+            sr.setMwstSatz(new BigDecimal("0.19"));
+
+            lenient().when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+            lenient().when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L))
+                    .thenReturn(List.of(teilrechnung, sr));
+            when(dokumentRepository.findById(3L)).thenReturn(Optional.of(sr));
+        }
+
+        @Test
+        void behaeltDenGespeichertenBetragWennPositionenEntfallenSind() {
+            // Nur 8.000 € der 10.000 € sind angefallen, 4.000 € sind gestellt
+            // -> die Schlussrechnung fordert 4.000 €, nicht 6.000 €.
+            vorgangMitSchlussrechnung(new BigDecimal("4000.00"),
+                    "{\"blocks\":[{\"type\":\"SERVICE\",\"id\":\"a\",\"quantity\":1,\"price\":8000}]}");
+
+            var dto = service.findById(3L);
+
+            assertThat(dto.getBetragNetto()).isEqualByComparingTo(new BigDecimal("4000.00"));
+        }
+
+        @Test
+        void behaeltDenGespeichertenBetragBeiZusaetzlichenLeistungen() {
+            // 11.000 € geleistet bei 10.000 € Auftrag, 4.000 € gestellt -> 7.000 € offen.
+            vorgangMitSchlussrechnung(new BigDecimal("7000.00"),
+                    "{\"blocks\":[{\"type\":\"SERVICE\",\"id\":\"a\",\"quantity\":1,\"price\":11000}]}");
+
+            var dto = service.findById(3L);
+
+            assertThat(dto.getBetragNetto()).isEqualByComparingTo(new BigDecimal("7000.00"));
+        }
+
+        @Test
+        void zieht_nachtraeglich_stornierte_teilrechnung_nach() {
+            // Die Schlussrechnung wurde mit 4.000 € angelegt (8.000 € Positionen minus
+            // 4.000 € Teilrechnung). Wird die Teilrechnung DANACH storniert, sind die
+            // vollen 8.000 € zu fordern — der Entwurf darf nicht auf dem alten Wert
+            // stehenbleiben, bis ihn jemand im Editor oeffnet.
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setDokumentNummer("2026/01/00007");
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            basis.setBetragNetto(new BigDecimal("10000.00"));
+
+            AusgangsGeschaeftsDokument stornierteTeilrechnung = new AusgangsGeschaeftsDokument();
+            stornierteTeilrechnung.setId(2L);
+            stornierteTeilrechnung.setDokumentNummer("2026/03/00011");
+            stornierteTeilrechnung.setTyp(AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG);
+            stornierteTeilrechnung.setBetragNetto(new BigDecimal("4000.00"));
+            stornierteTeilrechnung.setStorniert(true);
+
+            AusgangsGeschaeftsDokument sr = new AusgangsGeschaeftsDokument();
+            sr.setId(3L);
+            sr.setDokumentNummer("2026/06/00030");
+            sr.setTyp(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG);
+            sr.setVorgaenger(basis);
+            sr.setBetragNetto(new BigDecimal("4000.00"));
+            sr.setPositionenJson("{\"blocks\":[{\"type\":\"SERVICE\",\"id\":\"a\",\"quantity\":1,\"price\":8000}]}");
+            sr.setMwstSatz(new BigDecimal("0.19"));
+
+            lenient().when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+            lenient().when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L))
+                    .thenReturn(List.of(stornierteTeilrechnung, sr));
+            when(dokumentRepository.findById(3L)).thenReturn(Optional.of(sr));
+
+            var dto = service.findById(3L);
+
+            assertThat(dto.getBetragNetto()).isEqualByComparingTo(new BigDecimal("8000.00"));
+        }
+
+        @Test
+        void friert_den_betrag_einer_gebuchten_schlussrechnung_ein() {
+            // Gebucht = festgeschriebener Beleg (GoBD, §147 AO). Was danach im Vorgang
+            // passiert, darf den ausgewiesenen Betrag nicht mehr veraendern.
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setDokumentNummer("2026/01/00007");
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            basis.setBetragNetto(new BigDecimal("10000.00"));
+
+            AusgangsGeschaeftsDokument sr = new AusgangsGeschaeftsDokument();
+            sr.setId(3L);
+            sr.setDokumentNummer("2026/06/00030");
+            sr.setTyp(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG);
+            sr.setVorgaenger(basis);
+            sr.setBetragNetto(new BigDecimal("4000.00"));
+            sr.setPositionenJson("{\"blocks\":[{\"type\":\"SERVICE\",\"id\":\"a\",\"quantity\":1,\"price\":8000}]}");
+            sr.setMwstSatz(new BigDecimal("0.19"));
+            sr.setGebucht(true);
+
+            lenient().when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+            lenient().when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L))
+                    .thenReturn(List.of(sr));
+            when(dokumentRepository.findById(3L)).thenReturn(Optional.of(sr));
+
+            var dto = service.findById(3L);
+
+            // Ohne Einfrieren waeren es 8.000 € (Positionen, keine Vorrechnungen mehr).
+            assertThat(dto.getBetragNetto()).isEqualByComparingTo(new BigDecimal("4000.00"));
+        }
+
+        @Test
+        void leitetDenBetragNurBeiAltdokumentenOhnePositionenAusDemVerlaufAb() {
+            // Ohne positionenJson gibt es keine Positionen, aus denen sich der Betrag
+            // ableiten liesse — nur dort greift der alte Rechenweg noch.
+            vorgangMitSchlussrechnung(new BigDecimal("1234.00"), null);
+
+            var dto = service.findById(3L);
+
+            assertThat(dto.getBetragNetto()).isEqualByComparingTo(new BigDecimal("6000.00"));
+        }
     }
 
     @Nested

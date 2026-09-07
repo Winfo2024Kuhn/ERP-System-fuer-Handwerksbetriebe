@@ -194,6 +194,25 @@ describe('useKonfliktMeldung', () => {
         await waitFor(() => expect(screen.getByTestId('ergebnis')).toHaveTextContent('true'));
     });
 
+    it('zeigt ein amber-AlertTriangle-Icon statt des blauen Fragezeichens -- die Meldung benennt einen Fehlschlag, keine harmlose Frage (Task 8c, Design-Review Abschnitt 7-2/8-1)', async () => {
+        const user = userEvent.setup();
+        const response = new Response(null, { status: 409 });
+        renderMitProvider(response, 'Dokument');
+
+        await user.click(screen.getByText('Pruefen'));
+        const dialog = await screen.findByRole('dialog', { name: 'Nicht gespeichert' });
+
+        const icon = dialog.querySelector('svg');
+        expect(icon).not.toBeNull();
+        expect(icon?.getAttribute('class')).toContain('text-amber-600');
+        expect(icon?.parentElement?.className).toContain('bg-amber-100');
+        expect(dialog.innerHTML).not.toContain('sky-100');
+        expect(dialog.innerHTML).not.toContain('sky-600');
+
+        await user.click(screen.getByText('Abbrechen'));
+        await waitFor(() => expect(screen.getByTestId('ergebnis')).toHaveTextContent('true'));
+    });
+
     it('enthaelt keinen englischen Fachbegriff im gerenderten Dialog', async () => {
         const user = userEvent.setup();
         const response = new Response(null, { status: 409 });

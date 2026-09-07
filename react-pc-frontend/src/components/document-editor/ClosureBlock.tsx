@@ -1,4 +1,5 @@
-import { FolderOpen, Layers, Receipt, FileText, Percent } from 'lucide-react';
+import { useId } from 'react';
+import { FolderOpen, Layers, Receipt, FileText, Percent, MinusCircle, PlusCircle } from 'lucide-react';
 import { formatCurrency, normalisiereRabattProzent, rabattBetrag as berechneRabattBetrag } from './helpers';
 import type { ClosureSummary } from './helpers';
 
@@ -46,9 +47,24 @@ interface ClosureBlockProps {
     globalRabatt?: number | null;
     /** Hausfarbe aus den Firmeninformationen als Hex. Leer = Standardfarbe. */
     firmenfarbe?: string | null;
+    /**
+     * Namen der entfallenen bzw. zusaetzlichen Leistungen als Unterzeile der
+     * Differenzzeile. Leer = nur der Betrag.
+     */
+    differenzHinweis?: string | null;
+    /** Fortschrittsbalken und Prozentangabe zeigen. Standard: ja. */
+    balkenAnzeigen?: boolean;
+    /**
+     * Umschalter fuer den Fortschrittsbalken. Nur gesetzt, wenn das Dokument
+     * bearbeitbar ist — bei gesperrten Rechnungen erscheint kein Bedienelement.
+     */
+    onBalkenAnzeigenChange?: (anzeigen: boolean) => void;
 }
 
-export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereitsAbgerechnetDurchAndere, abrechnungsPositionen, basisdokumentBetragNetto, globalRabatt, firmenfarbe }: ClosureBlockProps) {
+export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereitsAbgerechnetDurchAndere, abrechnungsPositionen, basisdokumentBetragNetto, globalRabatt, firmenfarbe, differenzHinweis, balkenAnzeigen = true, onBalkenAnzeigenChange }: ClosureBlockProps) {
+    // Eigene ID pro Instanz: zwei gleichzeitig gerenderte Abschluesse duerfen sich
+    // die label/for-Verknuepfung nicht gegenseitig kapern.
+    const balkenCheckboxId = useId();
     const FIRMENFARBE = /^#[0-9a-fA-F]{6}$/.test(firmenfarbe || '') ? firmenfarbe as string : FIRMENFARBE_STANDARD;
     const FIRMENFARBE_HELL = aufhellen(FIRMENFARBE, 0.88);
     // Pauschalrabatt: `summary.gesamtNetto` enthaelt nur die Positions-Rabatte.
@@ -87,14 +103,19 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
     // Der eingegebene Abschlagsbetrag ist bereits der Endbetrag — deshalb schickt der
     // Editor bei einer Abschlagsrechnung gar keinen globalRabattProzent ans PDF
     // (s. buildPdfPayload). Hier also ebenfalls kein Rabatt, sonst zeigt die Vorschau
-    // weniger an als das fertige Dokument. Bei der Schlussrechnung ergibt sich der
-    // Betrag aus dem offenen Rest, dort bleibt der Rabatt ebenfalls aussen vor.
+    // weniger an als das fertige Dokument.
+    //
+    // Die Schlussrechnung rechnet die Leistungen ab, die tatsaechlich in ihr stehen,
+    // abzueglich der schon gestellten Rechnungen — NICHT den rechnerischen Rest zur
+    // Auftragssumme. Sonst landet eine geloeschte Position (z.B. eine nicht
+    // benoetigte Geruststellung) trotzdem wieder im Betrag. Die Differenz zur
+    // Auftragsbestaetigung steht unten als eigene Zeile.
     // Nicht auf 0 begrenzen: ist ein Auftrag ueberzahlt, soll die Vorschau dasselbe
     // Minus zeigen wie das fertige Dokument.
     const dieseNetto = isAbschlag
         ? (abschlagBetragNetto ?? 0)
         : isSchlussrechnung
-            ? auftragNetto - bereitsAbgerechnet
+            ? gesamtNettoEffektiv - bereitsAbgerechnet
             : gesamtNettoEffektiv;
     const dieseSteuer = steuerBetrag(dieseNetto);
     const dieseBrutto = dieseNetto + dieseSteuer;
@@ -105,15 +126,34 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
             ? 'Diese Schlussrechnung'
             : 'Diese Teilrechnung';
 
+    // Differenz zur Auftragsbestaetigung — als Ausgleichsgroesse gerechnet, damit die
+    // Spalte immer aufgeht, egal ob Positionen geloescht, ergaenzt, in der Menge
+    // geaendert oder rabattiert wurden.
+    //   > 0  Auftrag war hoeher als abgerechnet -> Leistungen sind entfallen
+    //   < 0  mehr abgerechnet als beauftragt    -> Zusatzleistungen
+    // Nur bei bekannter Auftragssumme: ist sie 0 (kein Basisdokument hinterlegt),
+    // druckt das PDF gar keinen Abrechnungsstand — die Vorschau meldete sonst die
+    // komplette Rechnung als "Zusaetzliche Leistungen".
+    const differenzNetto = isSchlussrechnung && auftragNetto > 0
+        ? auftragNetto - bereitsAbgerechnet - dieseNetto
+        : 0;
+    const zeigeDifferenz = Math.abs(differenzNetto) >= 0.01;
+    const differenzEntfallen = differenzNetto > 0;
+    const differenzBrutto = mitSteuer(Math.abs(differenzNetto));
+
     // Brutto aus dem Nettorest, nicht als Differenz der Bruttozeilen: sonst bleiben bei
     // krummen Betraegen Rundungsreste stehen und eine restlos abgerechnete
     // Schlussrechnung meldet "Noch offen 0,01 €".
-    const restNetto = auftragNetto - bereitsAbgerechnet - dieseNetto;
+    const restNetto = auftragNetto - bereitsAbgerechnet - dieseNetto - differenzNetto;
     const restBrutto = mitSteuer(restNetto);
 
-    const abgerechnetProzent = auftragNetto > 0
-        ? Math.min(100, Math.max(0, ((bereitsAbgerechnet + dieseNetto) / auftragNetto) * 100))
-        : 0;
+    // Eine Schlussrechnung schliesst den Auftrag ab — danach ist er per Definition zu
+    // 100 % abgerechnet, auch wenn weniger berechnet wurde als beauftragt war.
+    const abgerechnetProzent = isSchlussrechnung
+        ? 100
+        : auftragNetto > 0
+            ? Math.min(100, Math.max(0, ((bereitsAbgerechnet + dieseNetto) / auftragNetto) * 100))
+            : 0;
 
     return (
         <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
@@ -265,17 +305,36 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
             {showAbschlagInfo && summary.gesamtNetto > 0 && (
                 <div className="px-4 pb-4">
                     <div className="border-t border-slate-200 pt-3 space-y-1.5">
-                        {/* Fortschrittsbalken */}
+                        {/* Fortschrittsbalken — pro Rechnung abschaltbar */}
                         <div className="px-1 pb-1">
-                            <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: FIRMENFARBE_HELL }}>
-                                <div
-                                    className="h-full rounded-full"
-                                    style={{ width: `${abgerechnetProzent}%`, backgroundColor: FIRMENFARBE }}
-                                />
-                            </div>
-                            <p className="text-[10px] text-slate-500 mt-1.5">
-                                Mit dieser Rechnung sind {abgerechnetProzent.toFixed(0)} % des Auftrags abgerechnet
-                            </p>
+                            {balkenAnzeigen && (
+                                <>
+                                    <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: FIRMENFARBE_HELL }}>
+                                        <div
+                                            className="h-full rounded-full"
+                                            style={{ width: `${abgerechnetProzent}%`, backgroundColor: FIRMENFARBE }}
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-1.5">
+                                        Mit dieser Rechnung sind {abgerechnetProzent.toFixed(0)} % des Auftrags abgerechnet
+                                    </p>
+                                </>
+                            )}
+                            {onBalkenAnzeigenChange && (
+                                <label
+                                    htmlFor={balkenCheckboxId}
+                                    className="mt-1 flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded py-2 text-xs text-slate-500 transition-colors hover:text-slate-700"
+                                >
+                                    <input
+                                        id={balkenCheckboxId}
+                                        type="checkbox"
+                                        checked={balkenAnzeigen}
+                                        onChange={(e) => onBalkenAnzeigenChange(e.target.checked)}
+                                        className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1"
+                                    />
+                                    Fortschrittsbalken auf die Rechnung drucken
+                                </label>
+                            )}
                         </div>
 
                         {/* Auftragssumme */}
@@ -365,6 +424,33 @@ export function ClosureBlock({ summary, dokumentTyp, abschlagBetragNetto, bereit
                                 </span>
                             </span>
                         </div>
+
+                        {/* Differenz zur Auftragsbestaetigung */}
+                        {zeigeDifferenz && (
+                            <div className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-slate-100">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${differenzEntfallen ? 'bg-slate-200' : 'bg-rose-100'}`}>
+                                        {differenzEntfallen
+                                            ? <MinusCircle className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
+                                            : <PlusCircle className="w-3.5 h-3.5 text-rose-600" aria-hidden="true" />}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <span className="text-xs font-medium text-slate-600">
+                                            {differenzEntfallen ? 'Nicht angefallen' : 'Zusätzliche Leistungen'}
+                                        </span>
+                                        <p className="text-[10px] text-slate-400 truncate">
+                                            {differenzHinweis || 'Unterschied zur Auftragsbestätigung'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className={`text-sm font-bold flex-shrink-0 ml-3 text-right ${differenzEntfallen ? 'text-slate-600' : 'text-rose-700'}`}>
+                                    {differenzEntfallen ? '−' : '+'} {formatCurrency(differenzBrutto)} €
+                                    <span className="block text-[10px] font-medium" style={{ color: FIRMENFARBE }}>
+                                        netto {formatCurrency(Math.abs(differenzNetto))} €
+                                    </span>
+                                </span>
+                            </div>
+                        )}
 
                         {/* Noch offen */}
                         <div className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-slate-200">

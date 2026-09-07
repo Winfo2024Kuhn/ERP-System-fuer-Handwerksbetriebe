@@ -150,6 +150,26 @@ um Byte-Gleichheit.
 
 ## Beobachtungen aus echten Läufen
 
+**04.09.2026, Layout-Prüfung 14 Zoll:** Die automatischen Checks in
+`e2e/hilfen/design.ts` haben drei echte Abschneide-Fehler nicht gesehen, die
+im Browser sofort ins Auge fielen:
+
+- Der Inhaltsbereich `<main>` hat `overflow-x-hidden`. Was rechts übersteht,
+  ist weg, ohne dass `document.documentElement.scrollWidth` wächst. Immer
+  auch `main.scrollWidth <= main.clientWidth` messen — und jedes Element mit
+  `overflow-x: hidden`, dessen `scrollWidth` größer ist als es selbst.
+- Zusammengequetschte Kennzahl-Kästen: Text läuft sichtbar über seinen Kasten
+  (`scrollWidth > clientWidth` auf einem Blatt-Element mit Text). Elemente mit
+  Breite 0 dabei nicht überspringen, genau die sind der Fall.
+- `truncate`-Titel mit tatsächlich gekürztem Text („…") sind auf 14 Zoll ein
+  Fehler, außer die Kürzung ist ausdrücklich gewollt.
+
+Ein Screenshot allein reicht nicht: Die abgeschnittene rechte Spalte im
+Projekt-Editor sah auf 1920 perfekt aus und war bei 1440 zu 170 px außerhalb
+des Fensters. Beide Größen sind Pflicht, und die Zahl zählt, nicht der
+Eindruck. Spec dazu: `docs/superpowers/specs/2026-09-04-layout-14-zoll.md`
+(im Haupt-Checkout).
+
 **E2E-Specs telefonieren ins Internet (06.09.2026).** `page.route('**/api/**')`
 stubbt nur die eigene Schnittstelle. Alles andere geht **echt** raus: eine
 Lieferanten-Detailseite mit gefüllter Adresse lädt eine Google-Maps-Einbettung

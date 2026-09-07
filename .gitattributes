@@ -1,2 +1,7 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+
+# Vom Vite-Build erzeugt: der Build schreibt LF, Windows-Checkouts machen CRLF
+# daraus. Ohne diese Regel zeigt der Diff die Datei bei jedem Build komplett als
+# geaendert, statt nur der ausgetauschten Bundle-Namen.
+src/main/resources/static/index.html text eol=lf

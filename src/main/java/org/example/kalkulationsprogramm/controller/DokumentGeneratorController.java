@@ -67,12 +67,35 @@ public class DokumentGeneratorController {
             Double eingabeWert) { // Originalwert der Eingabe (z.B. 30 bei 30%)
     }
 
+    /**
+     * Zeichenlimit fuer die Unterzeile der Differenzzeile. Darueber zerlegt ein
+     * ueberlanger Wert das Layout des Summenblocks im PDF.
+     */
+    private static final int DIFFERENZ_HINWEIS_MAX_LAENGE = 200;
+
+    /** Kuerzt den Client-Text auf eine Laenge, die der Summenblock verkraftet. */
+    private static String kuerzeDifferenzHinweis(String hinweis) {
+        if (hinweis == null || hinweis.length() <= DIFFERENZ_HINWEIS_MAX_LAENGE) {
+            return hinweis;
+        }
+        return hinweis.substring(0, DIFFERENZ_HINWEIS_MAX_LAENGE - 1) + "…";
+    }
+
     public record AbrechnungsverlaufRequest(
             String basisdokumentNummer,
             String basisdokumentTyp,
             String basisdokumentDatum,
             Double basisdokumentBetragNetto,
-            List<AbrechnungspositionRequest> positionen) {
+            List<AbrechnungspositionRequest> positionen,
+            /** Fortschrittsbalken im Abrechnungsstand zeigen. Fehlt der Wert: ja. */
+            Boolean balkenAnzeigen,
+            /**
+             * Leistungen hinter der Differenzzeile der Schlussrechnung, kommasepariert.
+             * Client-Text, der ungeprueft ins PDF gedruckt wird — deshalb serverseitig
+             * auf {@link #DIFFERENZ_HINWEIS_MAX_LAENGE} gekuerzt. Das Frontend begrenzt
+             * die Liste zwar auf vier Namen, das ist aber keine Zusicherung.
+             */
+            String differenzHinweis) {
     }
 
     public record AbrechnungspositionRequest(
@@ -196,7 +219,13 @@ public class DokumentGeneratorController {
                 } else if ("SERVICE".equals(b.type())) {
                     BigDecimal menge = b.quantity() != null ? BigDecimal.valueOf(b.quantity()) : BigDecimal.ONE;
                     BigDecimal einzelpreis = b.price() != null ? BigDecimal.valueOf(b.price()) : BigDecimal.ZERO;
-                    BigDecimal gesamt = menge.multiply(einzelpreis);
+                    // Verbindliche Zeilenregel, identisch in helpers.ts#serviceLineTotal und
+                    // AusgangsGeschaeftsDokumentService#summeServiceBlock:
+                    //     round2( round2(menge × preis) × (1 − rabatt/100) )
+                    // Ohne das erste round2 weicht der gedruckte Betrag bei krummen Mengen
+                    // (12,5 h × 47,55 €) um Cent vom gespeicherten betragNetto ab — und der
+                    // landet in Offenen Posten, Mahnwesen und Rechnungs-E-Mail.
+                    BigDecimal gesamt = menge.multiply(einzelpreis).setScale(2, java.math.RoundingMode.HALF_UP);
 
                     String titel = b.title() != null ? b.title() : "";
                     String beschreibungHtml = b.description(); // HTML mit Formatierung behalten
@@ -275,7 +304,11 @@ public class DokumentGeneratorController {
                         avReq.basisdokumentTyp(),
                         avReq.basisdokumentDatum() != null && !avReq.basisdokumentDatum().isBlank() ? LocalDate.parse(avReq.basisdokumentDatum()) : null,
                         avReq.basisdokumentBetragNetto() != null ? BigDecimal.valueOf(avReq.basisdokumentBetragNetto()) : BigDecimal.ZERO,
-                        posList
+                        posList,
+                        // Fehlendes Flag = Balken an: Bestandsdokumente und aeltere
+                        // Clients sollen aussehen wie bisher.
+                        avReq.balkenAnzeigen() == null || avReq.balkenAnzeigen(),
+                        kuerzeDifferenzHinweis(avReq.differenzHinweis())
                 );
             }
 
@@ -381,7 +414,9 @@ public class DokumentGeneratorController {
                     if ("SERVICE".equals(block.type()) && !Boolean.TRUE.equals(block.optional())) {
                         BigDecimal menge = block.quantity() != null ? BigDecimal.valueOf(block.quantity()) : BigDecimal.ONE;
                         BigDecimal preis = block.price() != null ? BigDecimal.valueOf(block.price()) : BigDecimal.ZERO;
-                        BigDecimal pos = menge.multiply(preis);
+                        // Gleiche Zeilenregel wie oben — die eingebettete XRechnung muss auf
+                        // den Cent dasselbe sagen wie das sichtbare PDF.
+                        BigDecimal pos = menge.multiply(preis).setScale(2, java.math.RoundingMode.HALF_UP);
                         if (block.discount() != null && block.discount() > 0) {
                             BigDecimal rabattFaktor = BigDecimal.ONE.subtract(
                                     BigDecimal.valueOf(block.discount()).divide(new BigDecimal("100"), 4, java.math.RoundingMode.HALF_UP));
@@ -398,6 +433,20 @@ public class DokumentGeneratorController {
                 betrag = RabattRechner.nettoNachRabatt(
                         betrag.setScale(2, java.math.RoundingMode.HALF_UP),
                         BigDecimal.valueOf(request.globalRabattProzent()));
+            }
+            // Schlussrechnung: Sie fordert ihre Positionen MINUS der bereits gestellten
+            // Rechnungen — genau wie der sichtbare Summenblock (RechnungPdfService
+            // #addSummenBlock). Ohne diesen Abzug weist die eingebettete XRechnung den
+            // vollen Auftragswert aus, waehrend auf dem Papier der Rest steht.
+            if ("SCHLUSSRECHNUNG".equalsIgnoreCase(request.dokumentTyp())
+                    && request.betragNetto() == null
+                    && request.abrechnungsverlauf() != null
+                    && request.abrechnungsverlauf().positionen() != null) {
+                for (var vorRechnung : request.abrechnungsverlauf().positionen()) {
+                    if (vorRechnung.betragNetto() != null) {
+                        betrag = betrag.subtract(BigDecimal.valueOf(vorRechnung.betragNetto()));
+                    }
+                }
             }
             // MwSt. 19% für Brutto
             BigDecimal brutto = betrag.multiply(new BigDecimal("1.19")).setScale(2, java.math.RoundingMode.HALF_UP);

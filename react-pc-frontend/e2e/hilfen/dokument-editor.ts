@@ -7,11 +7,10 @@ import type { Page, Route } from '@playwright/test';
  * Bewusst ohne echtes Backend, wie in e2e/hilfen/api.ts fuer "Website -
  * Neuigkeiten". Alle Namen und Texte sind Dummy-Daten (DSGVO).
  *
- * Die Seite (DocumentEditorPage.tsx) haelt ihr eigenes, aelteres Soft-Lock
- * noch selbst (useDocumentLock, /api/dokument-locks/AUSGANG/...) -- das ist
- * NICHT Teil dieses Tasks (Editor-Komponente) und wird erst in einem
- * spaeteren Abschnitt auf das neue Fundament (useDatensatzLock) umgestellt.
- * Diese Stubs bedienen es trotzdem, damit die Seite ueberhaupt laedt.
+ * Die Seite (DocumentEditorPage.tsx) haelt das Soft-Lock ueber useDatensatzLock
+ * (/api/datensatz-locks/AUSGANG/...). Diese Stubs bedienen es, damit die Seite
+ * ueberhaupt laedt; der Editor selbst schickt seit Abschnitt 6 keinen einzigen
+ * Lock-Request mehr.
  */
 
 function json(route: Route, body: unknown, status = 200) {
@@ -64,7 +63,7 @@ export const BEISPIEL_DOKUMENT: AusgangsDokumentStand = {
 
 /** Was der Stub waehrend eines Tests mitgeschrieben hat. */
 export interface DokumentEditorMitschrift {
-    /** Jeder POST an einen dokument-locks-Heartbeat-Pfad, mit Zeitstempel (ms seit Testbeginn). */
+    /** Jeder POST an einen datensatz-locks-Heartbeat-Pfad, mit Zeitstempel (ms seit Testbeginn). */
     heartbeatAufrufe: number[];
     /** Jeder PUT an /api/ausgangs-dokumente/{id}. */
     speicherAufrufe: Record<string, unknown>[];
@@ -96,20 +95,20 @@ export async function stubbeDokumentEditorApi(
 
     await page.route('**/api/firma', route => json(route, {}));
 
-    // Altes Seiten-Lock (useDocumentLock, nicht Teil dieses Tasks) -- muss
-    // trotzdem bedient werden, sonst haengt die Seite auf "wird geoeffnet".
-    await page.route('**/api/dokument-locks/**/acquire', route => json(route, {
+    // Seiten-Lock (useDatensatzLock) -- muss bedient werden, sonst haengt die
+    // Seite auf "wird geoeffnet".
+    await page.route('**/api/datensatz-locks/**/acquire', route => json(route, {
         status: 'ACQUIRED', holderUserId: 1, holderDisplayName: 'Max Mustermann',
         acquiredAt: new Date().toISOString(), lastHeartbeatAt: new Date().toISOString(),
     }));
-    await page.route('**/api/dokument-locks/**/heartbeat', route => {
+    await page.route('**/api/datensatz-locks/**/heartbeat', route => {
         mitschrift.heartbeatAufrufe.push(Date.now() - start);
         return json(route, {
             status: 'ACQUIRED', holderUserId: 1, holderDisplayName: 'Max Mustermann',
             acquiredAt: new Date().toISOString(), lastHeartbeatAt: new Date().toISOString(),
         });
     });
-    await page.route(/\/api\/dokument-locks\/[^/]+\/\d+$/, route => route.fulfill({ status: 204, body: '' }));
+    await page.route(/\/api\/datensatz-locks\/[^/]+\/\d+$/, route => route.fulfill({ status: 204, body: '' }));
 
     await page.route('**/api/formulare/templates/selection**', route => route.fulfill({ status: 404, body: '' }));
 

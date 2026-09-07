@@ -1,0 +1,17 @@
+-- Alte Soft-Lock-Tabelle fuer Geschaeftsdokumente (V292) entfernen.
+--
+-- Ersetzt durch datensatz_lock (V363), die fuer alle sperrbaren Datensatz-Typen
+-- gilt (SperrbarerTyp). Seit Abschnitt 7 des Vorhabens "Datensatz-Sperren
+-- Fundament" (Issue #82) zeigt kein Code mehr auf dokument_lock: Entity,
+-- Repository, Service, Controller und DTO (DokumentLock*) sind in derselben
+-- Auslieferung geloescht wie diese Migration -- absichtlich zusammen, weil ein
+-- Zwischenstand mit Entity ohne Tabelle (oder Tabelle ohne Entity bei
+-- ddl-auto=validate) nicht startet. Der frueher in V363 enthaltene DROP wurde
+-- genau deshalb wieder herausgenommen (d744871b).
+--
+-- Kein Datenverlust: Lock-Eintraege sind reine Laufzeit-Zustaende ohne
+-- fachlichen Wert. Schlimmstenfalls muss beim Deploy einmal neu auf
+-- "Bearbeiten" geklickt werden.
+--
+-- Idempotent: IF EXISTS.
+DROP TABLE IF EXISTS dokument_lock;

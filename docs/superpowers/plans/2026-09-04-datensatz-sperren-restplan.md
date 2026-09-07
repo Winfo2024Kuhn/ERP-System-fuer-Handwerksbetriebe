@@ -474,7 +474,46 @@ Abschnitt wäre per Konstruktion rot gewesen. Deshalb: **erst der Editor, dann d
      (`LieferantDokumentModal.tsx:~119`) daran angleichen. Roter Test zuerst.
   Jeder Punkt roter Test zuerst; e2e-Spec mit `designPruefung` bei stehendem Toast.
 
-## Abschnitt 8-2 (Aufräumen — macht der Orchestrator selbst, nach 8a)
+#### Task 8c — letzte Politur aus Design-Review 7-2/8-1 (Runde 8-2, parallel zum Aufräumen)
+- Files: `react-pc-frontend/src/components/ui/toast.tsx`, `toast.test.tsx`,
+  `react-pc-frontend/src/components/ui/confirm-dialog.tsx` (+ Test),
+  `react-pc-frontend/src/components/lock/useKonfliktMeldung.ts`, `useKonfliktMeldung.test.tsx`,
+  `react-pc-frontend/e2e/toast-bei-dialog.spec.ts`, `e2e/dokument-editor-seite.spec.ts`
+- Disjunkt vom Aufräumen (das löscht nur alte Dateien und schreibt eine Migration).
+- Steps, je roter Test zuerst:
+  1. **Toast bei offenem Dialog nach unten links.** Oben links überlappt ein zweizeiliger
+     Toast auf 14 Zoll den Modal-Titel um 12 px (Toast bis y 90, Titel ab y 78;
+     `elementFromPoint` auf Titel und Eyebrow trifft den Toast). Nach oben ausweichen geht
+     nicht, das Modal beginnt bei y 57. Unten links trägt weder das Lieferant-Modal noch
+     der Confirm-Dialog eine Aktion, und die Ecke bleibt frei, egal wie lang der Text wird.
+     Nachweisbar: zweizeiliger Toast bei offenem Dialog ⇒ `elementFromPoint` auf Titel,
+     Eyebrow, Schließen-X, Abbrechen und Speichern trifft jeweils das Element — beide Größen.
+  2. **Vierte Confirm-Variante für Fehlschläge.** `variant: 'info'` bringt ein
+     `HelpCircle` in sky-100/sky-600 mit — „Ihre Änderungen wurden nicht übernommen"
+     trägt ein freundliches blaues Fragezeichen. Neue Variante in `confirm-dialog.tsx`
+     (amber-`AlertTriangle` + rose-600-Knopf, wie `UnsavedChangesModal`), von
+     `useKonfliktMeldung` benutzt. Die fünf bestehenden `'info'`-Aufrufer bleiben unberührt.
+  3. **E2E-Fall mit `gebucht: true`** in `dokument-editor-seite.spec.ts`: das Badge hängt
+     bisher nur an Unit-Tests; ein Stub ist eine Zeile, plus `designPruefung`.
+- Nicht hier: das inline „Speichern fehlgeschlagen"-Band, das im Modal Felder verdeckt —
+  vorbestehend, in die Restpunkte-Liste für ein Folge-Vorhaben.
+
+## Abschluss (nach Runde 8-2)
+
+1. **Letzter Review-Durchgang** über den kompletten Feature-Branch: Code-Reviewer (volle
+   Suiten, Grep auf Reste des alten Systems, Migration V365 gegen die Flyway-Regeln,
+   Startfähigkeit: Entity weg **und** Tabelle weg) und Design-Reviewer (volle E2E mit der
+   strengeren Hilfe, 8c-Screens: Toast unten links, Fehlschlag-Variante, Gebucht-Fall).
+2. Orchestrator: `./graphify update .` einmal am Ende; Worktrees weg.
+3. **Zielprüfung (Schritt 7 des Skills, Orchestrator selbst):** kompletten PR-Diff gegen die
+   Spec aus Issue #82 lesen — nur Absicht, keine Stildetails. Löst er das X-Button-Problem
+   vollständig? Idle-Timer 5 Min / 60 s Vorwarnung? `SperrbarerTyp` als einziger Hebel für
+   neue Typen? `@Version` + 409 auf allen Speicherwegen? Fünf Bausteine? Beide Verbraucher
+   umgestellt, altes System weg? Nichts Themenfremdes?
+4. PR gegen `main`, verlinkt mit #82. Kein Merge ohne Marvins Blick — der PR ist groß.
+
+## Abschnitt 8-2 (Aufräumen — macht der Orchestrator selbst, parallel zu 8c) — ERLEDIGT
+`37c4ea61` + `de7a9c5e`, gemerged als `90b769d7`. Siehe Kontext-Log „Abschnitt 8-2 — Aufräumen".
 
 Zusätzlich nimmt der Orchestrator dabei den Halbsatz aus Code-Review 6 mit: in
 `document-editor/index.tsx`, `handleSave`, Create-Zweig — `setDokument(created)` muss vor

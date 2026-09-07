@@ -1094,4 +1094,9 @@ export interface AbrechnungsverlaufDto {
   bereitsAbgerechnet: number;
   restbetrag: number;
   bereitsAbgerechneteBlockIds?: string[];
+  /**
+   * Rohes positionenJson des Basisdokuments. Der Dokument-Editor benennt daraus,
+   * welche Leistungen in einer Schlussrechnung entfallen bzw. dazugekommen sind.
+   */
+  basisdokumentPositionenJson?: string | null;
 }

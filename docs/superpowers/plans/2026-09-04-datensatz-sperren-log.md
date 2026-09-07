@@ -2882,3 +2882,978 @@ Nur noch die beiden alten Dateien selbst (`DocumentLockedModal.tsx`, `useDocumen
 2. **Layout-Fix ist umfangreicher als eine reine CSS-Zeile geworden** (Callback-Ref + `getBoundingClientRect()` statt `contentRect`) — beide Zusatzpunkte waren nicht im Auftrag genannt, aber ohne sie hätte der vorgeschlagene Weg selbst nicht funktioniert (siehe die zwei "unterwegs gefundenen" Bugs oben). Ausführlich im Code kommentiert, damit ein künftiger Leser nicht denselben Fehler wiederholt (insbesondere `contentRect` vs. `getBoundingClientRect()` ist eine leicht wiederholbare Falle).
 3. **Ein einzelner flakiger Testausreißer** unter Systemlast (siehe Gates) — kein Befund, mehrfach reproduzierbar grün, gehört zur bekannten Charakteristik dieser Testdatei (echte Timer, `userEvent`, viele schwere `DocumentEditor`-Mounts) und nicht zu dieser Nachbesserung.
 4. Sonst keine Abweichungen — alle fünf Punkte wie im Auftrag beschrieben umgesetzt.
+
+## Abschnitt 7-2/8-1 — Design-Review 2 (Design-Reviewer)
+
+**Ampel: 🟡** — beide 🔴 aus Durchgang 1 sind behoben, im Browser nachgemessen, nicht
+geglaubt. Was bleibt, sind Hinweise: der Toast oben links schneidet auf 14 Zoll die
+Modal-Überschrift an, und die Konfliktmeldung trägt jetzt ein himmelblaues Fragezeichen.
+Beides blockiert nicht.
+
+Worktree `wt/review-design`, Stand `89ffc0d5`. `E2E_PORT=5190 npm run test:e2e`:
+**110 Tests, alle grün**, beide Größen `pc-14zoll` (1440×900) und `pc-monitor` (1920×1080).
+Sechs mehr als in 7-2 (104): der neue Warn-Dialog-Fall plus die vier aus
+`toast-bei-dialog.spec.ts`. Kein Flattern, keine Wiederholung nötig, auch `website-*`
+lief in einem Rutsch durch.
+
+### 🔴 1 aus Durchgang 1 — „Gebucht" auf nicht gebuchtem Dokument: **behoben**
+
+Eigene Wegwerf-Spec, `document.querySelectorAll` über den ganzen Baum nach dem Blatttext
+`Gebucht`, in jedem Zustand, beide Größen:
+
+| Zustand | Treffer „Gebucht" |
+| --- | --- |
+| `bearbeiten` | **0** |
+| `lesen` (nach eigenem „Fertig") | **0** |
+| `gesperrt` (Fremdsperre 409) | **0** |
+| `fehler` (Acquire 500) | **0** |
+| bei offenem Warn-Dialog | **0** |
+
+Gegenprobe mit `gebucht: true` auf demselben Stub (Typ `RECHNUNG`) — das Badge ist da und
+sieht aus wie vorher, nur mit richtigem Icon:
+
+| | Wert (identisch 14 Zoll / 1920) |
+| --- | --- |
+| Rahmen | x 188, y 66, 70 × 21 |
+| Hintergrund / Text / Rand | `rgb(255,251,235)` amber-50 / `rgb(180,83,9)` amber-700 / `rgb(253,230,138)` amber-200 |
+| Icon | `class="lucide lucide-lock w-2.5 h-2.5"` |
+
+Damit ist zugleich der 🟡 aus Durchgang 1 erledigt: das handgemalte inline-`<svg>` im Kopf
+ist weg, es ist ein echtes Lucide-`Lock`. Regel 3 des Design-Systems wieder eingehalten.
+
+### 🔴 2 aus Durchgang 1 — Warn-Dialog blockiert die Leiste nicht: **behoben**
+
+Bei offenem „Ungespeicherte Änderungen", eigene Messung:
+
+| | pc-14zoll | pc-monitor |
+| --- | --- | --- |
+| `Fertig` in der Leiste | [1339, 10, 85, 34] | [1819, 10, 85, 34] |
+| `elementFromPoint` in dessen Mitte | `DIV.fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm` | dasselbe |
+| `…closest('button')` | **null** | **null** |
+| echter Mausklick auf denselben Punkt ⇒ DELETE auf die Sperre | **0** | **0** |
+| Dialog danach | steht weiter offen | steht weiter offen |
+
+Der Scrim liegt jetzt über der Leiste, nicht mehr darunter. Der Weg „zwei Klicks bis zu
+zwei sich widersprechenden Aussagen" ist zu.
+
+Und die Leiste sitzt weiterhin bündig über dem Editor — der `transform`-Container ist durch
+die gemessene CSS-Variable ersetzt, ohne dass sich das Layout verschoben hat:
+
+| Zustand | Leiste | `--lock-leiste-hoehe` | Editor beginnt bei |
+| --- | --- | --- | --- |
+| bearbeiten / lesen / Warn-Dialog | [0, 0, B, **55**] | `55px` | y **55** |
+| gesperrt / fehler (Band ist höher) | [0, 0, B, **59**] | `59px` | y **59** |
+
+Identisch auf 1440 und 1920 (B = Viewport-Breite). Kein Überlappen, kein Spalt, keine
+Lücke — dieselben Zahlen wie in Durchgang 1, nur ohne die Nebenwirkung auf die Modale.
+Der X-Knopf trägt jetzt `aria-label="Editor schließen"`, die Spec greift ihn darüber.
+
+### Die sechs Fragen je Screenshot und Größe
+
+**`editor-seite-bearbeiten` (14 Zoll + 1920)**
+1. *Farben?* Leiste weiß, `Fertig` weißer Outline-Knopf mit rose-Rand, `PDF` im Editor-Kopf
+   die einzige gefüllte rosa Fläche. Genau eine Primäraktion. Kein Badge.
+2. *Design-System?* rose/slate, Lucide, kein Emoji, Systemschrift
+   (`system-ui, -apple-system, sans-serif`, kein `@font-face`, kein Google-Fonts-Import).
+3. *Look-and-Feel?* Ruhig. Links ist die Leiste weiterhin leer — auf 1920 ein 1920 px
+   breiter Streifen für einen Knopf. Bekannter 🟡, unverändert.
+4. *UX?* Editor voll bedienbar, `Fertig` klar sekundär, Zahlungsziel als Eingabefeld.
+5. *Auffindbar?* Ja, [1339, 10] bzw. [1819, 10], ohne Scrollen, `elementFromPoint` trifft
+   den Knopf selbst.
+6. *Überschneidung?* Nein. 55/55, kein horizontaler Überlauf.
+
+**`editor-seite-lesen` (14 Zoll + 1920)**
+1. *Farben?* „Sie lesen nur mit." slate-500 neben rose-600 `Bearbeiten`. **Zwei gefüllte
+   rosa Flächen** auf dem Screen (`Bearbeiten` und `PDF`) — bekannter Restpunkt, unverändert.
+   Kein „Gebucht" mehr.
+2. *Design-System?* Ja, jetzt auch beim Icon (siehe oben).
+3. *Look-and-Feel?* Ruhig, Werkzeugleiste des Editors korrekt reduziert.
+4. *UX?* Zustand benannt, Weg zurück sichtbar. Ehrlich, seit das falsche Badge weg ist.
+5. *Auffindbar?* Ja, [1190, 10] bzw. [1670, 10] (Hinweis + Knopf als Block).
+6. *Überschneidung?* Nein. 55/55.
+
+**`editor-seite-gesperrt` (14 Zoll + 1920)**
+1. *Farben?* Volles rose-50-Band mit Lucide `Lock`: „Anna Beispiel bearbeitet das gerade —
+   Sie sehen den aktuellen Stand. Seit 5 Min.", daneben rose-600 `Bearbeiten`. Klar getrennt
+   vom roten Fehlerband und vom leeren Bearbeiten-Zustand.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Das Band füllt die Leiste auch auf 1920 sinnvoll.
+4. *UX?* Klartext mit Namen und Dauer, `Bearbeiten` bleibt aktiv (Übernahmeversuch),
+   Zahlungsziel als Text statt Eingabefeld.
+5. *Auffindbar?* Ja, am Kopf, ohne Scrollen.
+6. *Überschneidung?* Nein. Leiste 59, Editor ab 59.
+
+**`editor-seite-fehler` (14 Zoll + 1920)**
+1. *Farben?* Rotes Band mit `AlertTriangle`, `Bearbeiten` deaktiviert (rose bei 50 %).
+   Störung und Hinweis sind auf einen Blick verschieden.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Ruhig.
+4. *UX?* Meldung dreifach: Band (`role=alert`), Toast, Tooltip am deaktivierten Knopf
+   (`title="Sperre konnte nicht geholt werden — bitte neu laden."`, von der Spec zugesichert).
+5. *Auffindbar?* Ja.
+6. *Überschneidung?* Nein. **Wichtig für 8a:** ohne offenen Dialog bleibt der Toast unten
+   rechts — Container-Klasse `bottom-6 right-6`, gemessen [978, 830, 438, 46] auf 14 Zoll
+   und [1458, 1010, 438, 46] auf 1920. `elementFromPoint` auf **Netto**, **MwSt** und
+   **Brutto** trifft jeweils das eigene SPAN, nie den Toast. Der Umzug nach oben links
+   greift also wirklich nur bei offenem Dialog.
+   *(Auf den Screenshots dieses Laufs ist der Toast nicht zu sehen — er läuft nach 5 s aus,
+   und die Zusicherungen davor haben unter Systemlast länger gedauert. Nachgemessen ist er
+   da, siehe Zahlen oben.)*
+
+**`editor-seite-warn-dialog-blockiert-leiste` (14 Zoll + 1920, neu)**
+1. *Farben?* Amber-Warn-Icon, `Speichern & Schließen` als einzige gefüllte rose-Fläche im
+   Dialog, `Abbrechen` slate-Outline, `Nicht speichern` rose-Outline.
+2. *Design-System?* `rounded-2xl`, `shadow-2xl`, Lucide `AlertTriangle`, kein Emoji.
+3. *Look-and-Feel?* Der abgedunkelte, weichgezeichnete Hintergrund liegt sichtbar über der
+   **gesamten** Leiste inklusive `Fertig` — genau das, was in Durchgang 1 gefehlt hat.
+4. *UX?* Drei Wege, einer davon offensichtlich der Hauptweg.
+5. *Auffindbar?* Ja, mittig, ohne Scrollen.
+6. *Überschneidung?* Nein — und der Klick geht nachweislich nicht mehr durch (Messwerte oben).
+
+**`editor-seite-tab-schliessen` (14 Zoll + 1920)**
+1. *Farben?* rose-100-Kreis mit rose-600 `CheckCircle2` auf slate-50, Text slate-700.
+2. *Design-System?* Ja.
+3. *Look-and-Feel?* Aufgeräumte Vollbild-Bestätigung.
+4. *UX?* Warnung ⇒ Speichern ⇒ Hinweisseite, über die echte Route.
+5. *Auffindbar?* Mittig, nichts zu suchen.
+6. *Überschneidung?* Nein, und die Leiste ist weg (`schliesstGerade` sitzt).
+
+**`toast-bei-dialog-zweizeilig` (14 Zoll + 1920, neu)**
+1. *Farben?* red-50/red-200-Toast mit `XCircle`, klar als Störung lesbar, klar getrennt vom
+   roten Band im Modal.
+2. *Design-System?* Ja, `rounded-xl`, `shadow-lg`, Lucide.
+3. *Look-and-Feel?* Der Toast steht halb auf dem Ribbon, halb auf dem Modal — etwas
+   beliebig, aber der Ribbon ist hinter dem Scrim ohnehin nicht bedienbar.
+4. *UX?* Der Fehler steht doppelt (Band im Modal, Toast) — das ist gewollt.
+5. *Auffindbar?* Ja, der Blick geht beim Öffnen ohnehin nach oben; unten rechts bleibt
+   `Speichern` frei. Frage beantwortet: ein Fehler-Toast oben links **ist** im Blick,
+   während man unten rechts auf `Speichern` schaut — der Weg dorthin führt am Toast vorbei.
+6. *Überschneidung?* **Nur teilweise gut.** Gemessen, zweizeiliger Toast [24, 24, 480, 66]:
+   - 1920: Modal [160, 66, 1600, 972], Titel „Dokument bearbeiten" [185, 87, 179, 28],
+     Eyebrow „PDF-Vorschau" [380, 91, 86, 20]. `elementFromPoint` in der Mitte des Titels
+     trifft **H2 „Dokument bearbeiten"**, beim Eyebrow **SPAN „PDF-Vorschau"**. Sauber.
+   - 14 Zoll: Modal [36, 57, 1368, 810], Titel [61, **78**, 179, 28], Eyebrow [256, 82, 86, 20],
+     Toast endet bei y **90** ⇒ **12 px Überlappung**; `elementFromPoint` in der Mitte von
+     Titel **und** Eyebrow trifft den **Toast**. Siehe Hinweise.
+   Von der App dahinter verdeckt er Logo und die ersten zwei Ribbon-Reiter — beides liegt
+   hinter dem Scrim und ist in diesem Moment nicht bedienbar. Kein horizontaler Überlauf.
+
+**`toast-bei-dialog-versionskonflikt` (14 Zoll + 1920, neu)**
+1. *Farben?* `Neu laden` ist jetzt **rose-600 gefüllt** statt amber-500 — der 🟡 aus
+   Abschnitt 6 ist damit erledigt. **Aber** das Icon ist ein `HelpCircle` in
+   sky-100/sky-600. Siehe Hinweise.
+2. *Design-System?* `rounded-2xl`, Lucide, kein Emoji, Systemschrift — bis auf das
+   Sky-Blau, das im Farbschema nicht vorgesehen ist.
+3. *Look-and-Feel?* Kompakter, mittiger Dialog, `Abbrechen` links, `Neu laden` rechts.
+4. *UX?* „Nicht gespeichert. Jemand anders hat dieses Dokument gerade gespeichert. Ihre
+   Änderungen wurden nicht übernommen — bitte neu laden." Handwerker-Sprache, Sie-Form,
+   zwei klare Wege. Kein Toast in diesem Ablauf (es gibt keinen).
+5. *Auffindbar?* Ja, mittig.
+6. *Überschneidung?* Nein, auf beiden Größen. Der Toast-Container steht `top-6 left-6`
+   (von der Spec zugesichert), ist hier aber leer.
+
+**`leiste-bearbeiten` / `-lesen` / `-countdown` / `-verbindung-weg` / `-deaktiviert` (je beide Größen)**
+1.–6. Unverändert gut: amber-Countdown mit `Timer` („Wird in 57 Sekunden freigegeben —
+bewegen Sie die Maus, um weiterzuarbeiten."), rotes `WifiOff`-Band, Umschalter an fester
+Stelle, kein Sprung. `leiste-lesen` zeigt „Sie lesen nur mit." — dort stehen weiterhin zwei
+rosa Flächen (`Bearbeiten` und das deaktivierte `Speichern`), bekannter Restpunkt.
+`leiste-deaktiviert` zeigt den Toast jetzt **oben links** [24, 24, 437, 46]: 22 px Luft zur
+Modal-Überschrift bei y 92, kein Kontakt — einzeilig ist die neue Position sauber.
+
+**`lieferant-modal-lesen-hinweis` (beide Größen)**
+1.–6. „Sie lesen nur mit." füllt die linke Bandhälfte, `Bearbeiten` rose-600 daneben.
+Keine Überschneidung, `Speichern` unten rechts deaktiviert und sichtbar ausgegraut.
+
+**`lieferant-modal-fehler-tooltip` und `-fehler` (beide Größen)**
+1.–6. **Der 🟡 aus Durchgang 1 ist erledigt:** „Sie lesen nur mit." steht nicht mehr neben
+dem roten Band, das Band hat wieder die volle Breite (x 61 → 1250 auf 14 Zoll statt
+1132). Die dringende Meldung weicht der beiläufigen nicht mehr. Sonst unverändert.
+
+**`lieferant-modal-bearbeiten` / `-fremdes-lock` (beide Größen)**
+1.–6. Unverändert gegenüber 7-2. Fremdsperre mit Namen und Dauer, Eingaben gesperrt.
+
+**`lieferant-modal-speicherfehler-toast` (beide Größen)**
+1.–5. Toast jetzt oben links, `Speichern` unten rechts frei und klickbar — das war der
+Zweck von 8a und er ist erreicht.
+6. Neu aufgefallen (nicht von diesem Abschnitt verursacht): das **inline** rote Band
+„Speichern fehlgeschlagen" am Fuß der Formularspalte legt sich auf 14 Zoll über die
+Überschrift „Zahlungsbedingungen" und auf 1920 über die Eingabezeile
+Skonto % / Skonto Tage / Netto Tage. Siehe Hinweise.
+
+**`dokument-editor-vor-schliessen` / `-ungespeichert-warnung` (beide Größen)**
+1.–6. Unverändert. `vor-schliessen` zeigt die Leiste am Kopf, bündig. In
+`-ungespeichert-warnung` deckt der Scrim jetzt auch hier die ganze Leiste ab.
+
+### 💡 Hinweise (blockieren nicht)
+
+- **Der zweizeilige Toast schneidet auf 14 Zoll die Modal-Überschrift an** (12 px, Messwerte
+  oben; `elementFromPoint` auf Titel und Eyebrow trifft den Toast). Kein Knopf ist betroffen,
+  keine Aktion blockiert, nach 5 s ist es vorbei — deshalb 🟡 und nicht 🔴: das Verdecken
+  des Schließen-X, das diesen Umzug ausgelöst hat, war in Abschnitt 6 selbst als 🟡 geführt,
+  und ein Titel wiegt weniger als ein Knopf. Sauber wird es erst **unten links**: dort ist in
+  `LieferantDokumentModal` (Fußleiste rechts) und im Confirm-Dialog (Knöpfe mittig/rechts)
+  nichts, und die Ecke ist unabhängig von der Textlänge frei. Nach oben ausweichen geht auf
+  14 Zoll nicht — das Modal beginnt bei y 57, ein 66 px hoher Toast reicht selbst bei
+  `top-2` bis y 74.
+- **Die Konfliktmeldung trägt jetzt ein himmelblaues Fragezeichen.** `variant: 'info'` liefert
+  den geforderten rose-Knopf, aber eben auch `HelpCircle` in `sky-100`/`sky-600` — und
+  „Nicht gespeichert, Ihre Änderungen wurden nicht übernommen" ist keine freundliche Frage,
+  sondern ein Fehlschlag. Vorher war es ein amber `AlertTriangle`, also die richtige
+  Semantik mit dem falschen Knopf; jetzt ist es der richtige Knopf mit dem falschen Icon.
+  Kein 🔴, weil (a) genau dieser Weg im Review von Abschnitt 6 vorgeschlagen wurde, (b)
+  `variant: 'info'` mit demselben blauen Icon schon in fünf anderen Dialogen des Produkts
+  läuft (Urlaubsanträge, ProjektEditor, BestellungEditor, Kostenpositionen,
+  Reklamationen) — es ist keine neu erfundene Fremdfarbe. Sauber wäre eine vierte Variante
+  in `confirm-dialog.tsx`: amber-Icon **und** rose-Knopf, genau wie es `UnsavedChangesModal`
+  im selben Editor schon macht. Dann stimmt beides.
+- **Kein E2E-Screenshot eines tatsächlich gebuchten Dokuments.** Die Abwesenheit des Badges
+  ist in fünf Zuständen belegt, die Anwesenheit nur per Unit-Test
+  (`document-editor/index.test.tsx`) und per meiner Wegwerf-Messung. Ein Stub mit
+  `gebucht: true` in `dokument-editor-seite.spec.ts` wäre eine Zeile und würde den positiven
+  Fall dauerhaft sichtbar halten.
+- **Inline-Fehlerband im Lieferanten-Modal überlappt Formularinhalt** (siehe oben). Das Band
+  ist ein einfaches `div` ohne `role`, deshalb sieht es die automatische
+  Überschneidungsprüfung nicht. **Vorbestehend** — der Diff dieses Abschnitts fasst an
+  `LieferantDokumentModal.tsx` nur die Hinweis-Regel an. Gehört auf die Restpunkte-Liste,
+  nicht in diese Runde.
+- Aus früheren Abschnitten offen und **unverändert**: leere 55-px-Leiste im
+  Bearbeiten-Zustand (auf 1920 hohl), zwei rosa Knöpfe im Lesen-Modus des Modals,
+  `Nicht speichern` zweizeilig, PDF-Spalte frisst auf 14 Zoll zwei Drittel des Modals.
+  **Nichts davon hat sich verschlechtert.**
+
+### Angeschaute Screenshots
+
+Alle 42 aus `react-pc-frontend/test-results/design/`, jeweils `--pc-14zoll` **und**
+`--pc-monitor`:
+
+1. `editor-seite-bearbeiten` · 2. `editor-seite-lesen` · 3. `editor-seite-gesperrt` ·
+4. `editor-seite-fehler` · 5. `editor-seite-tab-schliessen` ·
+6. `editor-seite-warn-dialog-blockiert-leiste` (neu) ·
+7. `toast-bei-dialog-zweizeilig` (neu) · 8. `toast-bei-dialog-versionskonflikt` (neu) ·
+9. `leiste-bearbeiten` · 10. `leiste-lesen` · 11. `leiste-countdown` ·
+12. `leiste-verbindung-weg` · 13. `leiste-deaktiviert` ·
+14. `lieferant-modal-bearbeiten` · 15. `lieferant-modal-lesen-hinweis` ·
+16. `lieferant-modal-fremdes-lock` · 17. `lieferant-modal-fehler` ·
+18. `lieferant-modal-fehler-tooltip` · 19. `lieferant-modal-speicherfehler-toast` ·
+20. `dokument-editor-vor-schliessen` · 21. `dokument-editor-ungespeichert-warnung`
+
+Dazu eine eigene Wegwerf-Spec (`e2e/zz-review-messung.spec.ts`, 6 Fälle × beide Größen,
+12/12 grün) für die Zahlen oben: Badge-Zählung in fünf Zuständen, gebuchte Gegenprobe,
+`elementFromPoint` + echter Mausklick gegen den Warn-Dialog, Toast-Rahmen und
+Container-Klasse in beiden Lagen, Rahmen von Toast/Titel/Eyebrow/Modal. **Danach gelöscht,
+`git status` im Worktree ist leer.**
+
+## Abschnitt 7-2/8-1 — Code-Review 2 (Code-Reviewer)
+
+**Zeit:** 05.09.2026, ca. 13:20–15:10 Uhr (lokale Sessionzeit)
+**Branch:** `claude/eloquent-ramanujan-gz0w2t`, geprüfter Stand `89ffc0d5` (HEAD stand am Ende auf `70fd301a` — nur Doku, kein Quellcode dazwischen)
+**Status:** fertig
+**Ampel: 🟡** — kein blockierender Befund. Von meiner Seite abgenommen.
+
+### Selbst gemessene Zahlen
+
+| | Baseline (nach 7-2, 1. Durchgang) | jetzt |
+|---|---|---|
+| Backend | 2462 / 0 Failures / 4 Errors | **2462 / 1 Failure\* / 4 Errors** |
+| Frontend Testdateien | 88 | **88** |
+| Frontend Tests | 1071 | **1082** (+11) |
+| Lint | 0 Fehler, 1 Warnung | **0 Fehler, 1 Warnung** (`BelegeKasseEditor.tsx:1204`) |
+| `npm run build` | grün | **grün**, `src/main/resources/static/` danach zurückgesetzt |
+
+\* `UnifiedEmailControllerExtractEmailTest.adversarialInputWithoutAt_isLinear` („execution timed out
+after 500 ms") — Test mit harter Zeitschranke in einer in dieser Runde **nicht angefassten** Datei
+(die Runde ändert keine einzige `.java`-Datei, geprüft per `git diff --name-only`). Einzeln
+nachgefahren: **12/12 grün in 0,383 s**. Kein Befund, Last-Effekt (der Design-Reviewer fuhr parallel
+Dev-Server und Browser). Die 4 Errors sind namentlich die bekannten umgebungsbedingten
+(`AuditChainRepairIntegrationTest` 2×, `AuditHashRoundtripDiagnoseTest` 2×, `CannotCreateTransaction`).
+
+Frontend-Volllauf lief zweimal, beide Male mit **reinen 5000-ms-Timeouts** in
+`document-editor/index.test.tsx`, `ArtikelEditor.test.tsx` und (im ersten Lauf)
+`useDatensatzLock.test.tsx`. Einzeln nachgefahren: **35/35 grün in 32 s**. Kein Befund, aber die
+Suite ist unter paralleler Last spürbar zeitfragil geworden — siehe Hinweis 6.
+
+### Die fünf 7-2-Befunde: Stand
+
+| Befund | Stand | Nachweis |
+|---|---|---|
+| 🔴 Design 1 — „Gebucht" bei Fremdsperre | **behoben** | Badge hängt an neuem Prop `istGebucht` (= `istGebuchteRechnung` aus `index.tsx:431`), nicht mehr an `isLocked`; drei Tests (Fremdsperre / echte gebuchte Rechnung / storniert). Mutationsprobe unten. |
+| 🔴 Design 2 — Dialog deckt die Leiste nicht ab | **behoben** | Kein `transform` mehr; Seite misst per Callback-Ref + `ResizeObserver`/`getBoundingClientRect()` und reicht `--lock-leiste-hoehe` durch, Editor-Wurzeln auf `top-[var(--lock-leiste-hoehe,0px)]`. Mutationsprobe unten. |
+| 🟡 Code 3 — `setSchliesstGerade` vor `await` | **behoben** (Code war schon richtig, jetzt abgesichert) | Neuer synchroner Test in `DocumentEditorPage.test.tsx` (`fireEvent` in `act()`, Assertion ohne `waitFor`). Mutationsprobe unten. |
+| 🟡 Code 4 — X-Knopf ohne `aria-label` | **behoben** | `aria-label="Editor schließen"`; `xKnopf()` in `index.test.tsx` **und** `e2e/dokument-editor-seite.spec.ts` auf `getByRole('button', { name: 'Editor schließen' })` — die testid-Eingrenzung ist damit entbehrlich geworden. |
+| 🟡 Code 5 — `index.test.tsx` an `useDocumentLock` | **behoben** | Grep unten. |
+
+### Verbraucher-Greps (Voraussetzung für Runde 8-2)
+
+**Frontend `src/`** (`useDocumentLock|DocumentLockedModal|dokument-locks`, `*.ts`/`*.tsx`): **sauber**.
+Übrig sind nur die beiden alten Dateien selbst (`useDocumentLock.ts`, `DocumentLockedModal.tsx`)
+plus drei reine Prosa-Kommentare (`LieferantDokumentModal.test.tsx:13`, `lock/GesperrtHinweis.tsx:26`,
+`lock/useDatensatzLock.ts:7`). **Kein Test hängt mehr am alten Hook** — die Voraussetzung fürs
+Löschen in 8-2 ist erfüllt.
+
+**Frontend `e2e/`** (vom Auftrag nicht verlangt, aber für 8-2 relevant): **nicht** sauber.
+`e2e/hilfen/dokument-editor.ts:101/105/112` stubbt weiterhin **aktiv** (`page.route`)
+`/api/dokument-locks/**/acquire`, `/heartbeat` und den DELETE-Pfad. Das sind echte Aufrufe, keine
+Kommentare — tote Test-Kulisse für einen Endpunkt, den 8-2 entfernt. Blockiert das Löschen nicht
+(nicht bediente Routen laufen ins Leere), sollte aber mitgehen. Siehe Hinweis 5.
+
+**Backend** (`DokumentLockService|DokumentLockDto|DokumentLockRepository|DokumentLockController`
+über `src/main/java` + `src/test/java`): **sauber**. Nur die alten Klassen untereinander
+(`DokumentLockController`, `DokumentLockService`, `DokumentLockDto`, `DokumentLockRepository`,
+`DokumentLockServiceTest`) plus drei Prosa-Kommentare in `SperrbarerTyp.java`,
+`DatensatzLockService.java` und `DatensatzLockServiceTest.java`.
+
+### Mutationsproben (Quellstand danach byte-identisch, `git status` nur die zwei Nutzer-Dateien)
+
+1. **A1 — Badge zurück auf `isLocked`** (`DocumentEditorHeader.tsx:84`) ⇒ **2 von 25 rot**:
+   „zeigt 'Gebucht' NICHT bei Fremdsperre (readOnly=true)…" und „…NICHT für ein storniertes
+   Dokument". Der Positiv-Test („weiterhin für eine tatsächlich gebuchte Rechnung") blieb grün —
+   die Probe trifft also genau die Fehlkopplung.
+2. **A2 — `[transform:translateZ(0)]` wieder auf den Editor-Container** (`DocumentEditorPage.tsx`)
+   ⇒ Playwright-Spec `e2e/dokument-editor-seite.spec.ts -g "Warn-Dialog blockiert"` auf **beiden**
+   Größen rot:
+   `Error: Der Warn-Dialog muss die Bearbeiten-Leiste ueberdecken (elementFromPoint darf NICHT den
+   Knopf treffen), solange er offen ist / Expected: false / Received: true`.
+   Vorher als Baseline die volle Spec grün gefahren: **12/12 in 1,5 min** (eigener Port
+   `E2E_PORT=5199`, `npm run test:e2e` habe ich nicht angefasst).
+3. **A3 — Reihenfolge `setSchliesstGerade`/`await` getauscht** ⇒ **1 von 12 rot**
+   („blendet die Leiste SYNCHRON aus…").
+4. **B — kompletter `MutationObserver`-Effekt aus `toast.tsx` entfernt** ⇒ **3 von 10 rot**:
+   `expected 'fixed z-[9999] flex flex-col gap-2 po…' to contain 'top-6'` (2×) und
+   `expected "disconnect" to be called at least once`. Deckt sich mit dem Bericht des Agenten,
+   inklusive des überraschenden dritten Treffers beim Mount-Test.
+5. **B — die vier `setState`-Zeilen aus `releaseKeepalive` entfernt** ⇒ **2 von 37 rot**, beide mit
+   `AssertionError: expected 'bearbeiten' to be 'lesen'` — genau die zwei neuen `pagehide`/
+   `pageshow`-Tests.
+6. **Zusatzprobe (Sanity, Behauptung des Agenten nachgestellt): `setModus('lesen')` im
+   Heartbeat-409-Zweig entfernt** ⇒ **22 von 37 rot**. Die globale `afterEach`-Invariante greift
+   also tatsächlich weit über die eigene Nachbesserung hinaus. Dabei ist mir Hinweis 1 aufgefallen.
+
+### Selbst nachgeprüft, ohne Befund
+
+- **Containing-Block-Kette über dem Editor ist frei.** Weder `#root`/`body` (kein `transform`,
+  `filter`, `will-change`, `contain`, `isolation` in `index.css`) noch `RequireAuth` (gibt `children`
+  direkt zurück, kein Wrapper-Element) noch `ErrorBoundary` (dito im Gutfall) noch die Seite selbst
+  erzeugen einen. Grep über `document-editor/` + `DocumentEditorPage.tsx` nach
+  `translateZ|will-change|backdrop-filter|[filter:|[contain:|perspective|[transform:` — **keine
+  Treffer**. Der Editor bleibt `position:fixed` zum echten Viewport, seine `z-[70]`-Dialoge liegen
+  wieder über der Leiste (E2E-Nachweis oben).
+- **`ResizeObserver` läuft beim Unmount aus** — `return () => beobachter.disconnect()` im selben
+  Effekt; feuert auch beim Wechsel `leisteElement → null` (dann zusätzlich `setLeisteHoehe(0)`).
+- **Variable ohne Leiste** (neues Dokument ohne Id, oder `schliesstGerade`): `leisteElement` ist
+  `null` ⇒ `--lock-leiste-hoehe: 0px` ⇒ der Editor fällt exakt auf das alte `inset-0`-Verhalten
+  zurück. `DocumentEditor` hat genau **einen** Verwender (`DocumentEditorPage`), sonst setzt niemand
+  die Variable — der Fallback greift überall.
+- **Tailwind erzeugt die Klasse**: im gebauten CSS steht `top:var(--lock-leiste-hoehe,0px)`
+  (nachgesehen, danach `static/` zurückgesetzt).
+- **`releaseKeepalive` und React-Warnungen:** React 19 — `setState` nach dem Unmount ist ein
+  stiller No-op, die Warnung gibt es seit React 18 nicht mehr. Kein Befund. Auf dem
+  Unmount-Cleanup-Pfad setzt der Effekt-Cleanup dieselben vier Werte direkt danach nochmal;
+  redundant, aber folgenlos.
+- **Bearbeiten nach bfcache holt wirklich neu:** nach `pagehide` steht `heldRef=false`,
+  `status='idle'`, `modus='lesen'` ⇒ `onBearbeiten()` fällt in den `void acquire(lockUrl)`-Zweig
+  (nicht in den `heldRef`-Kurzschluss, nicht in die `loading`/`error`-Sperre). Durch den neuen
+  `pageshow`-Test und Mutationsprobe 5 belegt.
+- **`role="dialog"` im Confirm kippt nichts anderes:** voller Frontend-Lauf zweimal ohne einen
+  einzigen `getByRole('dialog')`-Fehlschlag; die einzigen Ausfälle waren Zeitüberschreitungen
+  (siehe oben).
+- **Server-Meldung im Konflikt-Fall wirklich entbehrlich:** `useKonfliktMeldung` ist der einzige
+  Leser der 409-Antwort, `eigeneMeldung` war ein Template-String mit `bezeichnung` und damit nie
+  leer — die entfernten Fallbacks konnten tatsächlich nie greifen. `variant: 'info'` folgt einem
+  im Projekt bereits fünfmal genutzten Muster und liefert laut `confirmBtnMap` den rose-Knopf.
+- **`zeigeNurLesenHinweis` im Lieferant-Modal:** `status === 'idle'` deckt genau „frisch
+  freigegeben" und „noch nie geholt" ab; `acquired` ohne `bearbeiten` ist seit 7b nicht mehr
+  erreichbar, `locked-by-other` erklärt `GesperrtHinweis`, `loading`/`error` haben ihre eigenen
+  Bänder. Deckungsgleich mit der Regel auf der Editor-Seite.
+- **`istGebucht` als Pflicht-Prop:** `DocumentEditorHeader` hat genau einen Verwender, TS-Build grün.
+- **Datenschutz/Secrets:** keine E-Mail-Adressen, keine echten Namen in den neuen Dateien (nur
+  „Musterbedarf/Musterweg/Musterstadt", „Erika Musterfrau"), keine Secrets, kein Build-Output und
+  kein `test-results/` im Diff, keine Java-/Endpoint-Änderung, also keine neue Angriffsfläche.
+- **Performance:** kein neues Polling, kein zweiter Timer; ein `ResizeObserver` auf genau einem
+  Element.
+
+### 💡 Hinweise (blockieren nicht)
+
+1. **`useDatensatzLock.test.tsx:78-97` — die neue `afterEach`-Invariante macht aus einem Fehler 22.**
+   Die Schleife mit `expect(...)` steht **vor** dem Aufräumen. Schlägt sie an, werden
+   `beobachteteZustaende.length = 0`, `vi.restoreAllMocks()` und `vi.useRealTimers()` nie erreicht —
+   der Zustandspuffer bleibt gefüllt und **jeder** nachfolgende Test in der Datei fällt über dieselben
+   alten Aufzeichnungen. In Mutationsprobe 6 war genau **ein** Test echt kaputt
+   („Heartbeat 409 …", `expected 'bearbeiten' to be 'lesen'`); die anderen 21 meldeten
+   `expected 'bearbeiten' not to be 'bearbeiten'` oder — wegen der hängengebliebenen Fake-Timer —
+   `Test timed out in 5000ms`, darunter völlig unbeteiligte wie „gibt das Lock beim Unmount per
+   DELETE frei" und „status wird nach einem Acquire-Fehler (500) zu 'error'". Ironie: der Kommentar
+   an `vi.useRealTimers()` nennt es ausdrücklich ein „Sicherheitsnetz" gegen genau dieses Symptom —
+   die Assertion darüber reißt das Netz weg. **Nachweisbar wäre:** Aufräumen in ein `finally`
+   (oder erst zurücksetzen, dann auf einer Kopie prüfen), danach dieselbe Mutationsprobe ⇒ genau
+   **ein** roter Test mit der echten Ursache.
+
+2. **`LieferantDokumentModal.test.tsx:308-310` — der bekannte Wackler ist kein Wackler, sondern eine
+   falsche Zusicherung; und er ist in dieser Runde häufiger geworden.** Der Test wartet darauf, dass
+   der Text „Sperre konnte nicht geholt werden — bitte neu laden." **genau zweimal** im Dokument
+   steht (rotes Band + Toast). Im eingeschwungenen Zustand steht er aber **dreimal**: dazu kommt der
+   `sr-only`-Span, den `BearbeitenLeiste.tsx:143-147` für `aria-describedby` rendert, sobald
+   `bearbeitenGesperrtGrund` gesetzt ist (seit Task 7d). Der Test geht also nur durch, wenn
+   `waitFor` zufällig **vor** dem Commit des Toasts abtastet — er prüft das Gegenteil dessen, was
+   sein Kommentar behauptet. Gemessen, isoliert je 6 Läufe: auf dem Basisstand `256b3e1d`
+   **1 von 6 rot**, auf dem jetzigen Stand **3 von 6 rot** (plus 3 von 4 in einem früheren Block).
+   Im Volllauf blieb er beide Male grün — das Zeitfenster ist dort ein anderes. Die Vermutung des
+   Agenten („doppelt ausgelöster Toast durch einen React-Effekt-Randfall") trifft nicht zu, es
+   feuert genau ein Toast. **Nachweisbar wäre:** `toHaveLength(3)` mit benannter Herkunft der drei
+   Vorkommen, oder gezielter je Rolle prüfen (`getByRole('alert')`, Toast-Container, `sr-only`-Span)
+   statt über einen nackten Textzähler.
+
+3. **Toast liegt bei offenem Confirm-Dialog *hinter* dessen Backdrop.** `toast.tsx:188` ist
+   `z-[9999]`, `confirm-dialog.tsx:106` ist `z-[10000]` (Panel `z-[10001]`) — beide `position:fixed`
+   im selben Stacking-Kontext (weder `ToastProvider` noch `ConfirmProvider` erzeugen ein
+   DOM-Element). Damit liegt der Toast unter `bg-black/40 backdrop-blur-sm`: abgedunkelt und
+   unscharf, und ein Klick darauf trifft den Backdrop, dessen `onClick` `handleCancel()` ist —
+   wer den Toast wegklicken will, bricht den Dialog ab. Betrifft genau die Kombination, die diese
+   Runde neu verdrahtet hat (Punkt 3 lässt den Toast wegen des Confirm-Dialogs umziehen; für
+   Modale mit `z-50` wie `LieferantDokumentModal` funktioniert der Umzug dagegen wie gedacht).
+   Die neue E2E-Zusicherung prüft nur die Klassen, nicht die Stapelung. Z-Reihenfolge ist
+   vorbestehend, durch Punkt 3 aber erstmals im Spiel. **Nachweisbar wäre:** `elementFromPoint` in
+   der Mitte des Toasts trifft den Toast, nicht den Backdrop — dafür müsste der Toast-Container
+   über `10001` liegen.
+
+4. **Das ganze `--lock-leiste-hoehe`-Messwerk ist direkt ungetestet.** Weder
+   `DocumentEditorPage.test.tsx` noch die E2E-Spec erwähnen die Variable oder den `ResizeObserver`;
+   abgesichert ist nur die *Wirkung* (Backdrop deckt „Fertig", `designPruefung`-Überlappungsprüfung).
+   Genau die zwei Fehler, die der Agent unterwegs selbst gebaut hat (Variable bleibt bei `0px`;
+   `contentRect` 34 px statt `getBoundingClientRect()` 55 px), hängen damit an einer
+   Browser-Messung. Ein Unit-Test wäre billig: `setupTests.ts` mockt `ResizeObserver` bereits, und
+   `vi.spyOn(MockResizeObserver.prototype, 'disconnect')` funktioniert genauso wie der neue
+   `MutationObserver`-Test in `toast.test.tsx`. **Nachweisbar wäre:** Style-Attribut trägt eine
+   Höhe > 0 mit Leiste und `0px` ohne, und `disconnect()` läuft beim Unmount.
+
+5. **`e2e/hilfen/dokument-editor.ts:101/105/112` stubbt weiter den alten Sperr-Endpunkt.** Aktive
+   `page.route()`-Aufrufe auf `/api/dokument-locks/**`, kein Kommentar. Tote Kulisse, seit die
+   Seite auf `/api/datensatz-locks/` liegt. Gehört in Runde 8-2 mit weg, sonst bleibt eine Test-Hilfe
+   stehen, die einen nicht mehr existierenden Endpunkt bedient.
+
+6. **Zeitfragilität der Frontend-Suite.** Zwei Vollläufe, beide mit reinen 5000-ms-Timeouts
+   (Lauf 1: 5 Tests in `useDatensatzLock.test.tsx` + `index.test.tsx`; Lauf 2: 4 Tests in
+   `index.test.tsx` + `ArtikelEditor.test.tsx`), alle beim Einzellauf grün. Dazu backendseitig
+   `UnifiedEmailControllerExtractEmailTest` mit seiner 500-ms-Schranke. Nichts davon ist ein
+   Regressionsbefund, aber die Zahlen oben gelten nur mit Nachfahren — ein Volllauf allein ist auf
+   diesem Rechner unter paralleler Browser-Last nicht mehr aussagekräftig.
+
+7. **`releaseKeepalive` erhöht `generationRef` nicht** (anders als `aktivFreigeben`), und der
+   Heartbeat-`fetch` hängt an keinem `AbortSignal`. Ein Heartbeat, der nach `pagehide` noch
+   eintrifft, kann daher `verbindungWeg` setzen, nachdem der Reset es gerade auf `false` gezogen
+   hat. Die Invariante bricht das nicht (`modus`/`status` fasst der Heartbeat in dem Zweig nicht
+   an), also rein kosmetisch — eine Zeile `generationRef.current += 1` würde es schließen.
+
+8. **`confirm-dialog.tsx:94` — feste ID `'confirm-dialog-titel'`.** Mit dem einen `ConfirmProvider`
+   in `App.tsx` unkritisch, aber `useId()` wäre gegen doppelte IDs robust (in Tests werden schon
+   heute mehrere Provider gleichzeitig gerendert).
+
+9. **`variant: 'info'` bringt einen himmelblauen Icon-Kreis** (`bg-sky-100`/`text-sky-600`,
+   `HelpCircle`) in einen Sperr-Konflikt — `CLAUDE.md` verbietet Blau ausdrücklich. Die Variante ist
+   vorbestehend und wird von fünf weiteren `confirm()`-Aufrufen genutzt, der rose-Knopf war das
+   erklärte Ziel und ist erreicht. Gehört formal dem Design-Reviewer; hier nur als Notiz, damit es
+   nicht untergeht.
+
+
+## Abschnitt 8-2 — Task 8c (Coding-Agent)
+
+**Zeit:** 2026-09-05, ca. 14:20
+**Branch:** `lock/task-8c-politur` (Worktree `wt/task-8c`, Basis `claude/eloquent-ramanujan-gz0w2t` @ `89ffc0d5`)
+**Commits:**
+- `907985c5` — fix(toast): Container bei offenem Dialog nach unten links statt oben links
+- `427c51a8` — fix(confirm-dialog): neue Variante 'fehlschlag' fuer die Konfliktmeldung
+- `58ec9588` — test(e2e): Fall mit gebucht:true fuer das "Gebucht"-Badge
+
+**Status:** 🟢 alle drei Punkte umgesetzt, testgetrieben, Mutationsproben rot→grün belegt.
+
+### Was gemacht wurde
+
+**Punkt 1 — Toast bei offenem Dialog nach unten links.** `toast.tsx`: Container-Klasse
+bei offenem Dialog von `top-6 left-6` auf `bottom-6 left-6` geaendert (sonst-Fall bleibt
+`bottom-6 right-6` unveraendert). Kommentare an Funktion und Container um die Herleitung
+aus dem Kontext-Log ergaenzt (12px-Ueberlappung auf 14 Zoll, warum nach oben nicht
+ausweichbar, warum unten links frei bleibt).
+
+Roter Test zuerst: `toast.test.tsx` — beide betroffenen Tests ("wandert nach unten LINKS
+...", MutationObserver-Test) auf die neuen Klassen umgeschrieben; vor der Quelltext-
+Aenderung waeren sie mit den alten `top-6`-Erwartungen ohnehin rot gewesen (TDD-Reihenfolge
+hier: Quelltext und Test in einem Schritt, da die Aenderung eine reine Ein-Wort-Klassen-
+Vertauschung ist). Mutationsprobe (Klassen zurueck auf `top-6 left-6`) ⇒ 2 von 10 Tests in
+`toast.test.tsx` rot (`AssertionError: expected ... to contain 'bottom-6'`), danach wieder
+grün.
+
+E2E (`toast-bei-dialog.spec.ts`): Klassen-Zusicherungen auf `bottom-6`/`left-6` umgestellt.
+Zusaetzlich neue Zusicherungen fuer Modal-Titel, Eyebrow, "Abbrechen" und "Speichern" (bisher
+deckte die Spec nur Schliessen-X und "Vorschau" ab). Für Titel/Eyebrow **kein**
+`elementFromPoint`-Klicktest, sondern ein Bounding-Box-Vergleich
+(`erwarteKeineUeberlappungMitToast`): beim Schreiben des ersten Entwurfs mit
+`elementFromPoint` am Box-Mittelpunkt fiel auf, dass die vom Design-Reviewer gemessene
+12px-Ueberlappung [Toast endet y=90, Titel beginnt y=78] nur den oberen Rand des 28px hohen
+Titel-Elements trifft — dessen geometrische Mitte (y=92) liegt bereits unterhalb des
+Toast-Endes. Mutationsprobe bestaetigte das: mit `top-6` reproduziert, `elementFromPoint`
+an der Box-Mitte des Titels blieb **grün** (falsch-negativ). Umgestellt auf einen
+Rechteck-Ueberlappungstest (dieselbe Methode wie die manuelle Messung im Review) — damit
+wurde dieselbe Mutation zuverlaessig rot: `Toast [24,24,480,66] ueberlappt "Dokument
+bearbeiten (Modal-Titel)" [61,78,179,28]`. Für Schliessen-X/Vorschau/Abbrechen/Speichern
+blieb der bestehende `elementFromPoint`-Klicktest (dort sinnvoll, weil es echte Knoepfe
+sind). `E2E_PORT=5182 npx playwright test e2e/toast-bei-dialog.spec.ts`: 2 Tests × 2
+Groessen = 4 grün.
+
+**Punkt 2 — Vierte Confirm-Variante 'fehlschlag'.** `confirm-dialog.tsx`: neue Variante
+`'fehlschlag'` (amber-100/amber-600 `AlertTriangle`-Icon wie bei "Ungespeicherte
+Aenderungen", rose-600-Knopf wie `'info'`). `useKonfliktMeldung.ts` nutzt sie jetzt statt
+`'info'`. Grep bestaetigt: die fünf bestehenden `'info'`-Aufrufer
+(Urlaubsantraege.tsx, ProjektEditor.tsx, BestellungEditor.tsx,
+KostenpositionenView.tsx, LieferantReklamationenTab.tsx) sind unveraendert.
+
+Roter Test zuerst: neuer Test in `confirm-dialog.test.tsx` ("Variante 'fehlschlag' zeigt
+ein amber-AlertTriangle-Icon und einen rose-Bestaetigungsknopf") und in
+`useKonfliktMeldung.test.tsx` ("zeigt ein amber-AlertTriangle-Icon statt des blauen
+Fragezeichens"). Mutationsprobe (`useKonfliktMeldung.ts` zurueck auf `variant: 'info'`) ⇒
+neuer Test in `useKonfliktMeldung.test.tsx` rot: `expected 'lucide lucide-circle-question-
+mark h-6 w-6 text-sky-600' to contain 'text-amber-600'`. Danach wieder grün. Sichtbar auch
+im Screenshot `toast-bei-dialog-versionskonflikt--pc-14zoll.png`: amber-Warndreieck statt
+blauem Fragezeichen, "Neu laden" weiterhin rose-600 gefüllt.
+
+**Punkt 3 — E2E-Fall mit `gebucht: true`.** `dokument-editor-seite.spec.ts`: neuer Test
+"gebuchte Rechnung zeigt das 'Gebucht'-Badge", Stub ueberschreibt NACH
+`stubbeDokumentEditorApi` die GET-Antwort auf `/api/ausgangs-dokumente/1` mit
+`{ ...BEISPIEL_DOKUMENT, gebucht: true }` (Route-Ueberschreibung, gemeinsame Hilfsdatei
+unveraendert). Zusicherung auf Badge-Text "Gebucht", Klassen `bg-amber-50`/`text-amber-700`,
+Lucide `svg.lucide-lock`. Lock bleibt `'frei'` — "gebucht" ist eine Dokument-Eigenschaft,
+unabhaengig vom Datensatz-Lock der Seite; die Seiten-Leiste zeigt darum weiterhin "Fertig"
+(nicht "Bearbeiten", wie ein erster Entwurf faelschlich annahm, bevor der Blick in
+`DocumentEditorPage.tsx` zeigte, dass `readOnly` dort ausschliesslich vom Lock-Modus
+abhaengt, nicht von `dokument.gebucht`).
+
+Gegenprobe: die drei bestehenden Tests (`-lesen`, `-gesperrt`, `-fehler`) sichern jetzt
+explizit `getByText('Gebucht', { exact: true })` → `toHaveCount(0)` zu, statt die
+Abwesenheit nur implizit über den Stub (`gebucht: false`) anzunehmen.
+
+Mutationsprobe: `istGebuchteRechnung` in `document-editor/index.tsx` testweise auf `false`
+gesetzt ⇒ neuer Test in beiden Groessen rot (`element(s) not found` für
+`getByText('Gebucht', { exact: true })`), danach exakt zurueckgesetzt — `git diff`/`git
+status` bestaetigen `document-editor/index.tsx` danach byte-identisch (keine Datei
+ausserhalb der erlaubten Liste angefasst).
+
+**Tests je Größe:** `E2E_PORT=5182 npx playwright test e2e/toast-bei-dialog.spec.ts
+e2e/dokument-editor-seite.spec.ts` — 18 Tests × (`pc-14zoll` + `pc-monitor`) = 18 grün
+(9 Testfaelle je Groesse). Unit: `npx vitest run toast.test.tsx confirm-dialog.test.tsx
+useKonfliktMeldung.test.tsx` — 32 grün. `npm run lint`: 0 Fehler, genau die eine
+vorbestehende Warnung (`BelegeKasseEditor.tsx:1204`). `npm run build`: grün,
+`src/main/resources/static/` danach zurueckgesetzt (`git status` dort leer).
+
+**Screenshots** (`react-pc-frontend/test-results/design/`):
+- `toast-bei-dialog-zweizeilig--pc-14zoll.png` / `--pc-monitor.png`
+- `toast-bei-dialog-versionskonflikt--pc-14zoll.png` / `--pc-monitor.png`
+- `editor-seite-gebucht--pc-14zoll.png` / `--pc-monitor.png`
+- unveraendert erneut erzeugt: `editor-seite-bearbeiten/-lesen/-gesperrt/-fehler/
+  -tab-schliessen/-warn-dialog-blockiert-leiste--{pc-14zoll,pc-monitor}.png`
+
+Kurzer eigener Blick (keine formale Design-Abnahme, die bleibt beim Design-Reviewer):
+`toast-bei-dialog-zweizeilig` zeigt den Toast jetzt unten links, ohne Beruehrung von
+Modal-Titel/Eyebrow oben oder "Abbrechen"/"Speichern" unten rechts.
+`toast-bei-dialog-versionskonflikt` zeigt das amber-Warndreieck statt des blauen
+Fragezeichens. `editor-seite-gebucht` zeigt das Badge korrekt neben der Dokumentnummer.
+
+### Bedenken / Abweichungen vom Plan
+
+Keine. Alle drei Punkte wie geplant in den genannten Dateien umgesetzt, keine Datei
+ausserhalb der Liste angefasst. Einzige Praezisierung gegenüber dem Wortlaut des Plans:
+Punkt 1 verlangte für Titel/Eyebrow "elementFromPoint ... trifft jeweils das Element
+selbst" — das haette den Ausgangsbefund nicht zuverlaessig erkannt (siehe oben), daher
+stattdessen ein Bounding-Box-Ueberlappungstest, der nachweislich denselben Fall faengt und
+inhaltlich dasselbe zusichert ("der Toast liegt nicht auf dem Titel/der Eyebrow").
+
+## Abschnitt 8-2 — Aufräumen (Orchestrator)
+
+Zeit: 2026-09-05T13:05:00Z
+Branch: lock/task-8b-aufraeumen (Worktree ../wt/task-8b)
+Commit(s): 37c4ea61 (altes Sperr-System + V365), Folgecommit (design.ts)
+Status: fertig
+
+Was gemacht wurde:
+- Acht alte Dateien gelöscht: DokumentLock (Entity), DokumentLockDto,
+  DokumentLockRepository, DokumentLockService, DokumentLockController,
+  DokumentLockServiceTest, useDocumentLock.ts, DocumentLockedModal.tsx — in
+  derselben Auslieferung wie Migration V365 (DROP TABLE IF EXISTS dokument_lock),
+  weil ein Zwischenstand mit Entity ohne Tabelle nicht startet.
+- e2e/hilfen/dokument-editor.ts stubbt /api/datensatz-locks/ statt der toten alten
+  Route; useDatensatzLock.test.tsx: Invariante und Aufräumen per try/finally
+  getrennt; LieferantDokumentModal.test.tsx: Zusicherung auf die tatsächlichen drei
+  Vorkommen (Band, Toast, sr-only-Span); index.tsx: Reihenfolge-Kommentar im
+  Create-Zweig; Javadoc-@link auf gelöschte Klasse zu @code; Kommentare ohne Pfade
+  auf gelöschte Dateien.
+- e2e/hilfen/design.ts: keinAbschneiden() neu, keinHorizontalerUeberlauf() misst
+  Container gegen eigenen scrollWidth (Beobachtung des Nutzers, 14-Zoll-Lauf).
+  Wegwerf-Probe mit den drei Fällen: alle erkannt; volle E2E-Suite danach 110/110.
+- Geprüft: mvn test-compile grün; lint 0 Fehler / 1 bekannte Warnung; 93 gezielte
+  Unit-Tests grün; Editor-Specs 18/18; volle E2E 110/110.
+
+Bedenken / Abweichungen vom Plan:
+- Verbleibende Erwähnungen der alten Namen sind reine Historie in Kommentaren
+  (GesperrtHinweis, SperrbarerTyp, DatensatzLockService, zwei Spec-Köpfe) — bewusst
+  gelassen, sie erklären, was ersetzt wurde.
+- Gebaute Bundles unter src/main/resources/static/assets enthalten noch
+  /api/dokument-locks — historischer Build-Output, wird beim nächsten
+  Produktions-Update neu erzeugt; nicht angefasst.
+
+
+## Abschnitt 8-2 — Task 8c Nachtrag (Coding-Agent)
+
+**Zeit:** 2026-09-05, ca. 14:45
+**Branch:** `lock/task-8c-politur` (Worktree `wt/task-8c`)
+**Commits:**
+- `4aa50d11` — fix(toast): Toast liegt jetzt ueber dem Confirm-Backdrop
+- `3d8b18f7` — fix(confirm-dialog): useId() statt fester ID fuer aria-labelledby
+
+**Status:** 🟢 beide Nachtrags-Punkte umgesetzt, testgetrieben, Mutationsproben rot→grün belegt.
+
+### Was gemacht wurde
+
+**Punkt 4 — Toast über dem Confirm-Backdrop.** `toast.tsx`: Container-z-Index von `z-[9999]`
+auf `z-[10010]` angehoben — damit über dem bisher höchsten Wert im Projekt (`confirm-dialog.tsx`
+Backdrop `z-[10000]`, Dialog-Wrapper `z-[10001]`; per Grep über `z-[` in `src/` bestätigt, dass
+10001 vorher das Maximum war). Kommentar am Container um die Herleitung ergänzt.
+
+Roter Test zuerst: neuer Test in `toast-bei-dialog.spec.ts` ("Toast liegt ueber dem
+Confirm-Backdrop, statt abgedunkelt darunter zu verschwinden"). Reproduziert den Fall mit
+zwei echten, nacheinander ausgelösten Speicherversuchen auf `LieferantDokumentModal` (erster
+PUT liefert 500 ⇒ echter Fehler-Toast "Speichern fehlgeschlagen" mit 5s Anzeigedauer, zweiter
+PUT — noch während der Toast sichtbar ist — liefert 409 ⇒ Confirm-Dialog "Nicht gespeichert"
+öffnet sich darüber). Neue Hilfsfunktion `erwarteToastLiegtUeberAllem`: `elementFromPoint` in
+der Toast-Mitte muss ein Element innerhalb des Toast-Containers treffen. Vor dem Fix schlug das
+fehl: `elementFromPoint ... trifft nicht den Toast, sondern <DIV class="fixed inset-0
+z-[10001] flex items-center justify-center p-4">`. Mutationsprobe (z-Index zurück auf `9999`)
+reproduzierte exakt denselben Fehler auf `pc-14zoll`, danach wieder grün auf beiden Größen.
+Screenshot: `toast-ueber-confirm-backdrop--{pc-14zoll,pc-monitor}.png` — Toast jetzt sichtbar
+hell (nicht abgedunkelt) unten links, Confirm-Dialog "Nicht gespeichert" mittig darüber.
+
+**Punkt 5 — useId() statt fester ID.** `confirm-dialog.tsx`: `titelId` von der festen
+String-Literal-ID `'confirm-dialog-titel'` auf `` `confirm-dialog-titel-${useId()}` ``
+umgestellt (Import von `useId` aus `react` ergänzt). Kommentar an der bestehenden Task-8a-Erklärung
+ergänzt, warum das nötig ist.
+
+Roter Test zuerst: neuer Test in `confirm-dialog.test.tsx` ("vergibt pro Dialog eine eigene ID
+für aria-labelledby ... sonst kollidieren zwei gleichzeitig offene Dialoge im DOM auf dieselbe
+ID") — rendert zwei unabhängige `ConfirmProvider`-Bäume, öffnet in beiden einen Dialog mit
+Titel, prüft, dass die beiden `aria-labelledby`-Werte sich unterscheiden und keine doppelte
+ID im Dokument steht. Vor dem Fix: `AssertionError: expected 'confirm-dialog-titel' not to be
+'confirm-dialog-titel'`. Mutationsprobe (`titelId` zurück auf die feste Literal-ID) reproduzierte
+denselben Fehler, danach wieder grün.
+
+**Tests je Größe:** `E2E_PORT=5182 npx playwright test e2e/toast-bei-dialog.spec.ts
+e2e/dokument-editor-seite.spec.ts` — 20 Tests × (`pc-14zoll` + `pc-monitor`) = 20 grün (10
+Testfälle je Größe, inkl. der beiden Nachtrags-Punkte). Unit: `npx vitest run toast.test.tsx
+confirm-dialog.test.tsx useKonfliktMeldung.test.tsx` — 33 grün (war 32, +1 durch den neuen
+`useId()`-Test). `npm run lint`: 0 Fehler, weiterhin genau die eine vorbestehende Warnung
+(`BelegeKasseEditor.tsx:1204`). `npm run build`: grün, `src/main/resources/static/` danach
+zurückgesetzt.
+
+### Bedenken / Abweichungen vom Plan
+
+Keine. Beide Nachtrags-Punkte in den bereits erlaubten Dateien (`toast.tsx`,
+`toast-bei-dialog.spec.ts`, `confirm-dialog.tsx`, `confirm-dialog.test.tsx`) umgesetzt, keine
+zusätzliche Datei angefasst.
+
+## Abschluss — Design-Review (Design-Reviewer)
+
+**Ampel: 🟢** — nichts blockiert den Pull Request. Alle vier Punkte, die der
+Vorgänger-Durchgang als 🟡 hinterlassen hat, sind umgesetzt und im Browser
+nachgemessen, nicht geglaubt. Was übrig bleibt, sind Hinweise, die alle schon
+vor diesem Vorhaben da waren und sich nicht verschlechtert haben.
+
+Worktree `wt/review-design`, Stand `73f381f3`. `E2E_PORT=5190 npm run test:e2e`:
+**114 Tests, alle grün**, beide Größen `pc-14zoll` (1440×900) und `pc-monitor`
+(1920×1080), 3,9 Minuten, ein Durchlauf, kein Flattern, keine Wiederholung.
+Vier mehr als in 8-1 (110): `editor-seite-gebucht` und `toast-ueber-confirm-backdrop`,
+je zwei Größen. Die verschärfte `e2e/hilfen/design.ts` (`keinAbschneiden()`,
+`keinHorizontalerUeberlauf()` gegen den eigenen `scrollWidth` jedes Containers)
+lief mit — kein neuer roter Befund.
+
+### Die vier offenen Punkte aus Durchgang 8-1
+
+**1. Zweizeiliger Toast schnitt auf 14 Zoll die Modal-Überschrift an: behoben.**
+Eigene Wegwerf-Messung, Toast-Rechteck gegen jedes sichtbare Blattelement des
+Modals:
+
+| | pc-14zoll | pc-monitor |
+| --- | --- | --- |
+| Toast | [24, **830**, 438, 46] | [24, **1010**, 438, 46] |
+| Modal | [36, 57, 1368, 810] | [160, 66, 1600, 972] |
+| Vom Toast überdeckte Modal-Blattelemente | **nur `iframe` (PDF-Vorschau)** | **nur `iframe` (PDF-Vorschau)** |
+
+Titel, Eyebrow, Schließen-X, „Vorschau aktiv", „Abbrechen" und „Speichern" sind
+in beiden Größen frei — die 12-px-Überlappung von oben links ist weg, und unten
+links entsteht keine neue. Die Spec sichert das dauerhaft zu (Rechteck-Vergleich
+für Titel/Eyebrow, `elementFromPoint`-Klicktest für die vier Knöpfe).
+Screenshot `toast-bei-dialog-zweizeilig`, beide Größen angeschaut.
+
+**2. Konfliktmeldung mit himmelblauem Fragezeichen: behoben.**
+Die neue Variante `'fehlschlag'` liefert gemessen:
+
+| | Wert (identisch 14 Zoll / 1920) |
+| --- | --- |
+| Icon | `lucide lucide-triangle-alert h-6 w-6 text-amber-600` |
+| Icon-Farbe / Kachel | `rgb(217,119,6)` amber-600 / `rgb(254,243,199)` amber-100 |
+| „Neu laden" | `rgb(225,29,72)` rose-600, Text weiß |
+
+Also amber-Warndreieck **und** rose-Knopf — genau der Vorschlag aus Durchgang 8-1,
+und genau das, was `UnsavedChangesModal` im selben Editor schon macht. Die fünf
+bestehenden `'info'`-Dialoge im Produkt sind unverändert geblieben (per Grep
+belegt im Task-8c-Block). Screenshot `toast-bei-dialog-versionskonflikt`.
+
+**3. Kein E2E-Screenshot eines tatsächlich gebuchten Dokuments: behoben.**
+`editor-seite-gebucht`, beide Größen. Gemessen:
+
+| | Wert (identisch 14 Zoll / 1920) |
+| --- | --- |
+| Badge Hintergrund / Text / Rand | `rgb(255,251,235)` amber-50 / `rgb(180,83,9)` amber-700 / `rgb(253,230,138)` amber-200 |
+| Icon | `lucide lucide-lock w-2.5 h-2.5` |
+| Kontrast Text auf Fläche | 4,8 : 1 — reicht für Fließtext |
+| `contenteditable`-Elemente auf der Seite | **0** (Dokument wirklich nur lesbar) |
+| Werkzeuge im Kopf | nur `Drucken`, `Entwurf`, `E-Mail`, `PDF` — kein `Textbaustein`/`Leistung`/`Stundensätze` |
+
+Die Gegenprobe aus Durchgang 8-1 (0 Treffer „Gebucht" in `-bearbeiten`,
+`-lesen`, `-gesperrt`, `-fehler`) sichert die Spec jetzt selbst explizit zu
+(`toHaveCount(0)` statt implizit über den Stub).
+
+**4. Toast lag abgedunkelt unter dem Confirm-Backdrop: behoben.**
+`toast-ueber-confirm-backdrop`, beide Größen: der Toast „Speichern
+fehlgeschlagen" steht unten links in voller Helligkeit vor dem abgedunkelten
+Hintergrund, der Confirm-Dialog „Nicht gespeichert" mittig darüber. Kein
+Kontakt zwischen beiden (Dialog auf 14 Zoll [496,324,448,252], Toast bei y 830).
+Die Spec prüft es über `elementFromPoint` in der Toast-Mitte.
+
+### Die Spec-Abläufe, als Nutzer durchgegangen
+
+Ohne Backend schickt die App jeden Aufruf auf `/login` (`/api/auth/me` → 500),
+die Sperr-Abläufe sind live also nicht erreichbar — wie im Auftrag vermutet.
+Nachweis daher über die Spec-Screenshots plus eigene Messungen im laufenden
+Browser mit gestubbtem `/api`.
+
+1. **Kollege hält die Sperre.** `editor-seite-gesperrt`, `lieferant-modal-fremdes-lock`.
+   Gemessen: `document.querySelectorAll('[role="dialog"]').length` = **0** — das alte
+   blockierende Modal ist wirklich weg. Band rose-50 (`rgb(255,241,242)`), Rand
+   rose-100, Text slate-700 (Kontrast 9,4 : 1), Lucide `Lock`, Klartext mit Namen
+   und Dauer: „Anna Beispiel bearbeitet das gerade — Sie sehen den aktuellen Stand.
+   Seit 5 Min." `Bearbeiten` daneben aktiv (`disabled: false`, `rgb(225,29,72)`),
+   `elementFromPoint` in der Knopfmitte trifft den Knopf selbst. **ok**
+2. **Bearbeiten ⇒ Fertig ⇒ „Sie lesen nur mit." ⇒ Bearbeiten holt neu.**
+   `editor-seite-bearbeiten` → `editor-seite-lesen`, `leiste-bearbeiten` → `leiste-lesen`,
+   dazu die Specs „Fertig gibt frei … Bearbeiten erwirbt danach neu" (Seite und
+   Modal). Der Umschalter sitzt in beiden Zuständen an derselben Stelle, kein Sprung. **ok**
+3. **X-Button: Warnung ⇒ Speichern ⇒ Hinweisseite.** `dokument-editor-ungespeichert-warnung`
+   → `editor-seite-tab-schliessen`, über die echte Route. Die Hinweisseite sagt
+   „Dokument gespeichert und freigegeben — Sie können diesen Tab jetzt schließen.",
+   rose-100-Kreis mit rose-600 `CheckCircle2`, sonst nichts. Die Bearbeiten-Leiste
+   ist dort weg — kein widersprüchlicher zweiter Kopf. **ok**
+4. **Die drei Bänder.** Countdown amber (`bg-amber-50`, `border-amber-300`,
+   `text-amber-800` = 6,8 : 1, Lucide `Timer`), Verbindung weg rot (`bg-red-50`,
+   `border-red-300`, `text-red-700` = 5,9 : 1, Lucide `WifiOff`), Fehlerband rot
+   mit `AlertTriangle`. Countdown und Verbindung-weg sind auf einen Blick
+   auseinanderzuhalten. **ok, mit einem Hinweis:** Fremdsperre (rose-50, Lucide `Lock`,
+   slate-Text) und Fehlerband (red-50, `AlertTriangle`, roter Fettdruck) liegen
+   farblich nah beieinander — siehe Hinweise. Unverändert gegenüber 7-2/8-1.
+5. **Lieferant-Modal.** `lieferant-modal-bearbeiten`, `-lesen-hinweis`,
+   `-fremdes-lock`, `-fehler`, `-fehler-tooltip`, `-speicherfehler-toast`. Dieselben
+   Zustände, dieselben Farben, dieselbe Reihenfolge. Der deaktivierte
+   `Bearbeiten`-Knopf trägt seinen Grund als `title` **und** als `aria-describedby`.
+   **ok**
+
+Frage bei jedem Ablauf: Würde ein Handwerker, der das zum ersten Mal sieht,
+verstehen, was los ist? Ja. Jeder Zustand steht als deutscher Satz da, mit Namen
+und Dauer statt Fehlercode, und daneben immer genau ein Knopf, der weiterhilft.
+
+### Die sechs Fragen je Screenshot und Größe
+
+Sofern nicht anders vermerkt, gilt die Antwort für **beide** Größen.
+
+**`editor-seite-bearbeiten`**
+1. Leiste weiß, `Fertig` weißer Outline-Knopf mit rose-Rand, `PDF` die einzige
+   gefüllte rose-Fläche. Genau eine Primäraktion. 2. rose/slate, Lucide, kein
+   Emoji, Systemschrift (`system-ui, -apple-system, sans-serif`, kein `@font-face`,
+   kein Fonts-Link — maschinell geprüft). 3. Ruhig; die Leiste bleibt links leer,
+   auf 1920 ein voller Streifen für einen Knopf — bekannter 🟡, unverändert.
+   4. Werkzeugleiste vollständig, Zahlungsziel als Eingabefeld. 5. `Fertig` oben
+   rechts ohne Scrollen. 6. Nein.
+
+**`editor-seite-lesen`**
+1. „Sie lesen nur mit." slate-500 neben rose-600 `Bearbeiten`; **zwei** gefüllte
+   rose-Flächen (`Bearbeiten` und `PDF`) — bekannter 🟡, unverändert. 2. Ja.
+   3. Ruhig, Werkzeugleiste korrekt auf `Drucken`/`Entwurf`/`E-Mail`/`PDF` reduziert.
+   4. Zustand benannt, Rückweg sichtbar. 5. Ja. 6. Nein.
+
+**`editor-seite-gesperrt`**
+1. Volles rose-50-Band mit `Lock`, daneben rose-600 `Bearbeiten` — klar getrennt
+   vom leeren Bearbeiten-Zustand. 2. Ja. 3. Das Band füllt die Leiste auch auf
+   1920 sinnvoll. 4. Name und Dauer im Klartext, `Bearbeiten` bleibt aktiv
+   (Übernahmeversuch), Zahlungsziel als Text statt Eingabefeld. 5. Ja, Band
+   [16,10,1280,38] bzw. [16,10,1760,38], Knopf [1308,12] bzw. [1788,12]. 6. Nein.
+
+**`editor-seite-fehler`**
+1. Rotes Band mit `AlertTriangle`, `Bearbeiten` deaktiviert (rose bei 50 %).
+   2. Ja. 3. Ruhig. 4. Meldung dreifach: Band (`role="alert"`), Toast, Tooltip am
+   deaktivierten Knopf. 5. Ja. 6. Nein.
+
+**`editor-seite-gebucht` (neu)**
+1. Amber-Badge „Gebucht" neben der Dokumentnummer, `PDF` die einzige gefüllte
+   rose-Fläche — amber steht im Produkt für „Achtung, aber kein Fehler", passt.
+   2. Ja, echtes Lucide `Lock` (das handgemalte `<svg>` aus 7-2 ist weg).
+   3. Ruhig, identisch zum Lesen-Zustand plus Badge. 4. Ehrlich: Badge sagt warum,
+   Werkzeuge sind weg, nichts ist editierbar (0 `contenteditable`). 5. Badge direkt
+   an der Nummer, wo man es sucht. 6. Nein.
+   *Anmerkung:* Die Leiste zeigt hier „Fertig", weil das Datensatz-Lock gehalten
+   wird, obwohl der Inhalt gebucht und damit unveränderlich ist. Fachlich korrekt
+   (zwei verschiedene Dinge), auf den ersten Blick aber erklärungsbedürftig —
+   siehe Hinweise.
+
+**`editor-seite-tab-schliessen`**
+1. rose-100-Kreis mit rose-600 `CheckCircle2` auf slate-50, Text slate-700.
+   2. Ja. 3. Aufgeräumte, mittige Vollbild-Bestätigung. 4. Der letzte Schritt des
+   X-Ablaufs, ohne weitere Aktion — richtig, es gibt nichts mehr zu tun.
+   5. Mittig, nichts zu suchen. 6. Nein; die Leiste ist weg.
+
+**`editor-seite-warn-dialog-blockiert-leiste`**
+1. Amber-Warnicon, `Speichern & Schließen` als einzige gefüllte rose-Fläche im
+   Dialog. 2. `rounded-2xl`, `shadow-2xl`, Lucide `AlertTriangle`. 3. Der
+   abgedunkelte, weichgezeichnete Hintergrund liegt über der **gesamten** Leiste
+   inklusive `Fertig`. 4. Drei Wege, einer davon offensichtlich der Hauptweg.
+   5. Mittig, ohne Scrollen. 6. Nein — `Nicht speichern` bricht weiterhin auf zwei
+   Zeilen um, bekannter 🟡, unverändert.
+
+**`toast-bei-dialog-zweizeilig` (Position neu)**
+1. red-50/red-200-Toast mit `XCircle`, klar als Störung lesbar. 2. Ja,
+   `rounded-xl`, `shadow-lg`, Lucide. 3. Unten links ist die ruhigere Ecke als
+   vorher oben — der Blick zum Modal-Kopf ist frei. 4. Fehler steht doppelt (Band
+   im Modal, Toast) — gewollt. 5. Ja; `Speichern` unten rechts bleibt frei und
+   klickbar. 6. **Nein.** Messwerte oben: nur die PDF-Vorschau (`iframe`) liegt
+   unter dem Toast, kein Text, kein Knopf. Kein horizontaler Überlauf.
+
+**`toast-bei-dialog-versionskonflikt` (Icon neu)**
+1. Amber-Warndreieck in amber-100-Kachel, `Abbrechen` slate-Outline links,
+   `Neu laden` rose-600 rechts — die eine gefüllte Fläche im Dialog. 2. Ja, keine
+   Fremdfarbe mehr. 3. Kompakter, mittiger Dialog [496,324,448,252] bzw.
+   [736,414,448,252]. 4. „Nicht gespeichert. Jemand anders hat dieses Dokument
+   gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."
+   Handwerker-Sprache, Sie-Form, zwei klare Wege. 5. Mittig. 6. Nein.
+
+**`toast-ueber-confirm-backdrop` (neu)**
+1. Der Toast steht hell auf dem abgedunkelten Hintergrund, der Dialog weiß
+   darüber — drei Ebenen, sofort lesbar. 2. Ja. 3. Zwei Meldungen gleichzeitig
+   sind viel, aber sie erzählen zwei verschiedene Dinge (erster Versuch
+   fehlgeschlagen, zweiter abgelehnt) und stören sich räumlich nicht.
+   4. Beide Nachrichten bleiben lesbar, statt dass eine abgedunkelt verschwindet.
+   5. Beide im Blick. 6. Nein — Toast unten links, Dialog mittig, kein Kontakt.
+
+**`leiste-bearbeiten` / `-lesen` / `-countdown` / `-verbindung-weg` / `-deaktiviert`**
+1. Countdown amber, Verbindung-weg rot, Fehler rot — auf einen Blick
+   unterscheidbar; im Lesen-Modus stehen weiterhin zwei rose-Flächen
+   (`Bearbeiten` und das deaktivierte `Speichern`), bekannter 🟡. 2. Ja, `Timer`
+   und `WifiOff` sind echte Lucide-Icons. 3. Der Umschalter bleibt an fester
+   Stelle, egal wie viele Bänder erscheinen — kein Springen. 4. Der Countdown sagt
+   nicht nur was passiert, sondern auch was dagegen hilft („bewegen Sie die Maus").
+   5. Ja. 6. Nein. `leiste-deaktiviert` zeigt den Toast jetzt unten links
+   [24,830,437,46] bzw. [24,1010,437,46] — `Abbrechen`/`Speichern` frei.
+
+**`lieferant-modal-bearbeiten` / `-lesen-hinweis` / `-fremdes-lock`**
+1.–6. Unverändert gut. Fremdsperre mit Namen und Dauer, Eingaben gesperrt,
+`Speichern` sichtbar ausgegraut statt verschwunden.
+
+**`lieferant-modal-fehler` / `-fehler-tooltip`**
+1.–6. Rotes Band über die volle Breite, „Sie lesen nur mit." steht nicht mehr
+daneben (in 8-1 behoben, hier unverändert). Tooltip am deaktivierten Knopf ist da.
+
+**`lieferant-modal-speicherfehler-toast`**
+1.–5. Toast unten links, `Speichern` unten rechts frei und klickbar.
+6. Das **inline** rote Band „Speichern fehlgeschlagen" am Fuß der Formularspalte
+legt sich auf 14 Zoll über „Zahlungsbedingungen" und auf 1920 über die Zeile
+Skonto % / Skonto Tage / Netto Tage. **Vorbestehend und unverändert** (Band ohne
+`role`, deshalb für die automatische Prüfung unsichtbar) — siehe Hinweise.
+
+**`dokument-editor-vor-schliessen` / `-ungespeichert-warnung`**
+1.–6. Unverändert. Leiste bündig am Kopf, Scrim deckt sie im Warn-Zustand
+vollständig ab.
+
+### 💡 Hinweise (blockieren nicht)
+
+- **Der Toast unten links liegt auf der PDF-Vorschau.** Gemessen ist das
+  einzige überdeckte Element im Modal das `iframe` der Vorschau, in beiden
+  Größen. Kein Text, kein Knopf, kein Formularfeld — und nach 5 s ist es vorbei.
+  Trotzdem: wer den Fehler liest, verdeckt sich dabei die untere linke Ecke des
+  Dokuments, das er gerade prüft. Wenn das je stört, wäre die saubere Lösung, den
+  Toast bei offenem Modal innerhalb der Formularspalte statt über dem Vorschaufeld
+  zu zeigen. Kein Punkt für dieses Vorhaben.
+- **„Nutzen Sie die Buttons oben um Textbausteine, Leistungen oder Stundensätze
+  hinzuzufügen" steht auch dann da, wenn es diese Buttons nicht gibt.** Gemessen
+  im gebuchten Zustand: die Werkzeugleiste enthält nur `Drucken`, `Entwurf`,
+  `E-Mail`, `PDF` — der Leerzustand verweist auf Knöpfe, die im Nur-Lesen-Modus
+  ausgeblendet sind. Betrifft `editor-seite-gebucht`, `-lesen`, `-gesperrt`,
+  `-fehler` gleichermaßen, ist also nicht neu (in 7-2 und 8-1 schon auf
+  `editor-seite-lesen` zu sehen und dort durchgegangen), und tritt nur bei einem
+  **leeren** Dokument auf — eine gebuchte Rechnung mit 0 Blöcken gibt es in der
+  Praxis nicht, das ist Testdatenlage. Sauber wäre ein zweiter Leertext für den
+  Nur-Lesen-Fall („Dieses Dokument enthält noch keine Positionen.").
+- **Im gebuchten Zustand sagt die Leiste „Fertig", obwohl nichts zu bearbeiten
+  ist.** Fachlich stimmt beides — das Datensatz-Lock ist gehalten, der Inhalt ist
+  gebucht und damit unveränderlich —, aber der Knopf legt nahe, man sei gerade am
+  Arbeiten. Ein Handwerker klickt einmal ins Dokument, merkt dass nichts geht, und
+  sucht den Grund. Das Badge liefert ihn, steht aber am anderen Ende der Zeile.
+  Vorschlag für später: bei gebuchten Dokumenten die Leiste gar nicht erst in den
+  Bearbeiten-Modus gehen lassen.
+- **Der Countdown verspricht in beiden Verwendern denselben Satz, das Ergebnis
+  unterscheidet sich.** „Wird in X Sekunden freigegeben" — auf der Editor-Seite
+  wird vorher gespeichert (`speichernFuerFreigabe()`, dann `freigeben()`), im
+  Lieferant-Modal bewusst **nicht** (unvollständige Skonto-/Zahlungsdaten sollen
+  nicht still übernommen werden, im Code begründet). Der Satz lügt nicht — er
+  verspricht nur die Freigabe —, aber wer im Modal tippt und weggeht, findet sein
+  Formular danach gesperrt und muss erst wieder „Bearbeiten" klicken. Vorbestehend
+  aus 7-2, hier nur festgehalten.
+- **Fremdsperre und Sperrfehler sind farblich nah beieinander.** rose-50 mit
+  slate-Text und Lucide `Lock` gegen red-50 mit rotem Fettdruck und
+  `AlertTriangle`. Auf dem Screenshot trennt sie vor allem der Text und die
+  Schriftfarbe, nicht die Fläche. Unverändert seit 7-2, dort schon durchgegangen.
+- **Vorbestehende Design-System-Brüche außerhalb dieses Vorhabens**, maschinell
+  gefunden, als Restpunkte notiert — **kein** Teil dieses Diffs (per
+  `git diff origin/main...HEAD` gegengeprüft: keine einzige fremde Farbklasse und
+  kein Emoji kommt aus diesem Branch):
+  - `LieferantDokumenteTab.tsx`: Emoji in der Produkt-UI („📄 Dokumentnummer",
+    „🔗 Referenznummer", „💰 Betrag", „📅 Datum", plus vier als Sortier-Icons) und
+    `bg-blue-50` / `bg-purple-50` / `bg-emerald-50` samt Rändern und Textfarben.
+  - `DocumentEditorHeader.tsx` Zeile 221: ein handgemaltes `<svg>`-Häkchen im
+    Zustand „Gespeichert" des Speichern-Knopfes (Lucide `Check` wäre es).
+  - `toast.tsx` (`bg-emerald-50` Erfolg, `bg-sky-50` Info) und `confirm-dialog.tsx`
+    (`bg-sky-100`/`text-sky-600` für `'info'`) — beide unverändert übernommen.
+- Aus früheren Abschnitten offen und **unverändert**: leere 55-px-Leiste im
+  Bearbeiten-Zustand (auf 1920 hohl), zwei rose-Knöpfe im Lesen-Modus,
+  `Nicht speichern` zweizeilig, PDF-Spalte frisst auf 14 Zoll zwei Drittel des
+  Modals, inline Fehlerband im Lieferanten-Modal über den Feldern.
+  **Nichts davon hat sich verschlechtert.**
+
+### Angeschaute Screenshots
+
+Alle 46 aus `react-pc-frontend/test-results/design/` — 23 Namen, jeweils
+`--pc-14zoll` **und** `--pc-monitor`:
+
+1. `editor-seite-bearbeiten` · 2. `editor-seite-lesen` · 3. `editor-seite-gesperrt` ·
+4. `editor-seite-fehler` · 5. `editor-seite-gebucht` (neu) ·
+6. `editor-seite-tab-schliessen` · 7. `editor-seite-warn-dialog-blockiert-leiste` ·
+8. `toast-bei-dialog-zweizeilig` · 9. `toast-bei-dialog-versionskonflikt` ·
+10. `toast-ueber-confirm-backdrop` (neu) · 11. `leiste-bearbeiten` ·
+12. `leiste-lesen` · 13. `leiste-countdown` · 14. `leiste-verbindung-weg` ·
+15. `leiste-deaktiviert` · 16. `lieferant-modal-bearbeiten` ·
+17. `lieferant-modal-lesen-hinweis` · 18. `lieferant-modal-fremdes-lock` ·
+19. `lieferant-modal-fehler` · 20. `lieferant-modal-fehler-tooltip` ·
+21. `lieferant-modal-speicherfehler-toast` · 22. `dokument-editor-vor-schliessen` ·
+23. `dokument-editor-ungespeichert-warnung`
+
+Dazu eine eigene Wegwerf-Spec (`e2e/zz-review-messung.spec.ts`, 4 Fälle × beide
+Größen, 8/8 grün) für die Zahlen oben: Toast-Rechteck gegen jedes Blattelement
+des Modals, Werkzeuge/Leertext/Schreibschutz/Badge-Farben im gebuchten Zustand,
+Icon- und Knopffarben der Konfliktmeldung, Bandfarben und Klickbarkeit bei
+Fremdsperre, sowie ein maschineller Design-System-Scan (fremde Farbfamilien,
+Emoji, nicht-Lucide-SVG, Webfonts, Body-Schriftstack) in vier Zuständen.
+**Danach gelöscht, `git status` im Worktree ist leer.** Zusätzlich ein Blick in
+die laufende App über den Playwright-MCP (Dev-Server auf 5192): ohne Backend
+leitet `/api/auth/me` → 500 die App auf `/login`, die Sperr-Zustände sind live
+nicht erreichbar; die Anmeldeseite selbst rendert sauber, kein horizontaler
+Überlauf auf 1440.

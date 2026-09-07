@@ -44,10 +44,19 @@ Starte den Agenten `loese-problem-spec` (Sonnet) mit dem Brainstorming-Ergebnis
 ## Schritt 2: Issue anlegen
 
 **Voraussetzung prüfen:** Ist der GitHub-MCP-Connector verfügbar (per
-`ToolSearch` nach einem GitHub-Tool suchen, z.B. `create_issue`)? Falls nicht
-autorisiert: **stoppen**, dem Nutzer sagen, dass er den Connector über die
-claude.ai-Einstellungen bzw. `/mcp` autorisieren muss, dort weitermachen wo
-aufgehört wurde. Nicht raten oder mit `gh` improvisieren.
+`ToolSearch` nach einem GitHub-Tool suchen, z.B. `create_issue`)? Wenn ja: den
+nehmen. Wenn nein, in dieser Reihenfolge weiter, statt abzubrechen:
+
+1. `gh auth status` — angemeldet? Dann `gh issue create` bzw. `gh pr create`.
+2. Sonst den Nutzer um ein Token bitten. Genauer Ablauf in
+   `references/github-ohne-mcp.md`: leere Datei im Scratchpad anlegen, er
+   schreibt das Token hinein, du liest es nur und gibst es nie aus, danach
+   löschen. **Niemals** das Token im Chat abfragen — es stünde für immer im
+   Transkript.
+3. Erst wenn auch das nicht geht: stoppen und dem Nutzer sagen, wo er
+   weitermachen soll.
+
+Nicht raten, nicht heimlich Zugangsdaten aus dem Credential Manager ziehen.
 
 Wenn verfügbar: Starte `loese-problem-issue` (Sonnet) mit der fertigen Spec.
 Er legt das Issue an und trägt die Issue-Nummer in die Spec ein.
@@ -132,7 +141,15 @@ starten.
 ## Schritt 6: Pull Request
 
 Einmal Gesamt-Build/Tests über den fertigen Feature-Branch (wie
-`review-and-ship.md`). Dann PR erstellen (GitHub-MCP), verlinkt mit dem Issue.
+`review-and-ship.md`). Dann PR erstellen — GitHub-MCP, sonst `gh`, sonst Token
+(siehe Schritt 2 und `references/github-ohne-mcp.md`). Verlinkt mit dem Issue:
+`Schließt #<nummer>` in den Body, dann schließt GitHub es beim Merge selbst.
+
+Den PR-Text vorher als Datei unter `docs/superpowers/plans/<datum>-pr-<thema>.md`
+schreiben, nicht inline zusammenbauen: er ist lang, er gehört zur
+Nachvollziehbarkeit, und beim Weg über die API zerlegen Umlaute und Backticks
+sonst das JSON. In den Text gehört auch, was **nicht** drin ist — Restpunkte,
+bewusste Nicht-Ziele, Deploy-Hinweise.
 
 ## Schritt 7: Zielprüfung (du selbst, kein neuer Agent)
 
@@ -206,6 +223,8 @@ Pipeline stoppt und legt dem Nutzer die verbleibenden Befunde vor.
   Läufen.** Orchestrator liest sie vor Schritt 4, der Review-Agent bekommt sie
   im Auftrag. Die dort für Coding-Agenten markierten Punkte gehören in deren
   Auftragstext.
+- `references/github-ohne-mcp.md` — Issue und PR anlegen, wenn der
+  GitHub-Connector fehlt: Token-Datei im Scratchpad, REST-API, aufräumen.
 - `references/kriterien.md` — Performance-/Observability-/API-Design-Kriterien,
   gemeinsame Quelle für Coding- und Review-Agent (Coding-Agent liest sie
   vorher, damit der Review-Agent möglichst wenig findet).
