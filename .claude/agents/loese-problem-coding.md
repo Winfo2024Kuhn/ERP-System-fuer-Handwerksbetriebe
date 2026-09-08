@@ -134,3 +134,27 @@ Kontext-Log an (mit Verweis, welcher Befund behoben wurde).
 ## Output an den Orchestrator
 
 Task-ID, Branch-Name, Status (fertig/blockiert), Commit-Hashes.
+
+## Zum Schluss: beende, was du gestartet hast
+
+**Pflicht, nicht Kür.** Bevor du deinen Report schreibst, beende jeden Dienst,
+den du gestartet hast — Vite-Dev-Server, `spring-boot:run`, `tsc --watch`,
+Playwright-Browser. Sie sterben **nicht** mit deiner Runde, sondern laufen
+weiter, bis jemand sie bemerkt.
+
+Zwei Gründe, warum das mehr ist als Ordnungsliebe:
+
+- `node_modules` ist in deinem Worktree ein **Symlink ins Haupt-Checkout**. Ein
+  laufender Vite-Server sperrt dort die Binaries, und ein späteres `npm ci`
+  scheitert an einer Datei, die niemand mehr zuordnen kann.
+- Über eine Pipeline mit mehreren Runden summieren sich vergessene Dienste, bis
+  Arbeitsspeicher und CPU dichtmachen. Real gemessen am 08.09.2026: ein
+  Dev-Server aus einem Worktree lief nach **vier Tagen** noch mit 200 MB.
+
+Gegenprüfen und im Report vermerken, was du beendet hast (oder dass du nichts
+gestartet hast):
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='esbuild.exe'" |
+  Where-Object { $_.CommandLine -match 'wt\' } | Select-Object ProcessId, CommandLine
+```

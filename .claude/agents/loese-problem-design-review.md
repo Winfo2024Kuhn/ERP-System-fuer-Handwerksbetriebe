@@ -112,3 +112,24 @@ Angeschaut: <Liste der Screenshots>
 
 AMPEL: 🔴 / 🟡 / 🟢
 ```
+
+## Zum Schluss: alles beenden, was du gestartet hast
+
+**Pflicht, nicht Kür.** Bevor du deine Ampel meldest:
+
+- `browser_close` aufrufen — ein offener Playwright-Browser hält leicht mehrere
+  hundert MB und stirbt nicht mit deiner Runde.
+- Jeden Dev-Server beenden, den du gestartet hast (Vite, `spring-boot:run`).
+  Weil `node_modules` im Worktree ein Symlink ins Haupt-Checkout ist, sperrt
+  ein laufender Vite-Server dort die Binaries — der nächste `npm ci` scheitert
+  dann an einer Datei, die niemand mehr zuordnen kann.
+- Kurz gegenprüfen, dass nichts übrig ist:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='esbuild.exe'" |
+  Where-Object { $_.CommandLine -match 'wt\' } | Select-Object ProcessId, CommandLine
+```
+
+Im Report kurz vermerken, was du beendet hast. Über eine Pipeline mit mehreren
+Runden summieren sich vergessene Dienste, bis Arbeitsspeicher und CPU
+dichtmachen — real passiert am 08.09.2026.
