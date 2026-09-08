@@ -144,3 +144,80 @@ Charakterisierungs-Tests aus Task 2 da — sie nageln das heutige Verhalten alle
 sechs Aufrufstellen fest, bevor umgestellt wird. Wer sie anfassen muss, hat
 vermutlich einen Fehler gemacht; die einzige erlaubte Ausnahme ist die
 Zusicherung zum halben Feiertag in Task 11.
+
+## Abschnitt 1 — Task 1 (Coding-Agent)
+
+Zeit: 2026-09-08T15:40:00Z
+Branch: lzk/task-1-datenmodell
+Commit(s): f5a78f90
+Status: fertig
+
+Was gemacht wurde:
+- Neue Domain-Dateien: Langzeitkrankmeldung (Aggregate Root, @Version), LangzeitkrankmeldungPhase (Kind-Entitaet, bewusst ohne @Version), LangzeitkrankmeldungStatus, LangzeitkrankmeldungPhaseTyp.
+- Abwesenheit um die zwei @ManyToOne-Felder langzeitkrankmeldung/langzeitkrankmeldungPhase ergaenzt (direkt unter dem urlaubsantrag-Feld), AbwesenheitsTyp unveraendert gelassen.
+- Neue Repositories LangzeitkrankmeldungRepository und LangzeitkrankmeldungPhaseRepository mit den im Plan vorgegebenen Queries (findMitPhasen, findMitPhasenById, findUeberlappende, findImZeitraum).
+- AbwesenheitRepository um findByMitarbeiterIdAndTypAndDatumBetween und sumStundenOhnePhasenTypen erweitert (8er-Einrueckung der Datei beibehalten).
+- Migration V367__langzeitkrankmeldung.sql: CREATE TABLE IF NOT EXISTS fuer langzeitkrankmeldung und langzeitkrankmeldung_phase (status/typ als natives ENUM), idempotente ALTER-TABLE-Bloecke fuer die zwei neuen abwesenheit-Spalten inkl. idempotenter FK-Constraints (information_schema-Muster aus V364/V339).
+- V367SchemaTest zuerst geschrieben und rot gesehen (Migration fehlte), danach durch Migration gruen gemacht. LangzeitkrankmeldungRepositoryTest (@DataJpaTest, Dummy-Daten "Max Mustermann") deckt Speichern/Laden mit zwei Phasen, findUeberlappende (offene Meldung gefunden, ABGEBROCHEN ausgeschlossen) und findImZeitraum (nur beruehrte Phase) ab.
+- Gates gruen: `./mvnw -B test -Dtest=LangzeitkrankmeldungRepositoryTest,V367SchemaTest` -> Tests run: 6, Failures: 0, Errors: 0.
+
+Bedenken / Abweichungen vom Plan:
+- Der im Plan (Zeile 428) und im Auftragstext vorgegebene Gate-Befehl `-Dtest=LangzeitkrankmeldungRepositoryTest+V367SchemaTest` funktioniert nicht: Maven Surefire trennt mehrere Testklassen mit Komma, nicht mit Plus (Plus ist nur fuer Methodenfilter innerhalb einer Klasse). Mit Komma (`-Dtest=LangzeitkrankmeldungRepositoryTest,V367SchemaTest`) laeuft das Gate wie erwartet gruen. Reine Kommando-Syntax-Korrektur, kein inhaltlicher Unterschied.
+- Fuer die zwei neuen FK-Spalten an abwesenheit (langzeitkrankmeldung_id, langzeitkrankmeldung_phase_id) macht der Plan keine Vorgabe zum ON-DELETE-Verhalten. Analog zum Vorbild V339 (Preisstand-Bezug) ON DELETE SET NULL gewaehlt, damit eine geloeschte Langzeitkrankmeldung bereits gebuchte Abwesenheitstage nicht mit sich reisst.
+- Ausserhalb meiner Task-1-Dateien lag im Worktree bereits eine unstaged Aenderung an src/main/resources/static/index.html (vermutlich Build-Artefakt aus vorheriger Nutzung). Nicht angefasst, nicht committet -- nur zur Transparenz vermerkt.
+
+## Abschnitt 1 — Task 2 (Coding-Agent)
+
+Zeit: 2026-09-08T15:50:00Z
+Branch: lzk/task-2-charakterisierung
+Commit(s): 2d86b623
+Status: fertig
+
+Was gemacht wurde:
+- Sechs Charakterisierungstestklassen angelegt (keine Produktionsdatei
+  angefasst): TagesSollCharakterisierungZeitkontoTest,
+  TagesSollCharakterisierungMonatsSaldoTest,
+  TagesSollCharakterisierungAbwesenheitTest,
+  TagesSollCharakterisierungZeiterfassungApiTest,
+  TagesSollCharakterisierungUrlaubsantragTest,
+  TagesSollCharakterisierungKalenderTest.
+- Alle sechs zusammen: 19 Tests, gruen gegen den unveraenderten Bestand
+  (`./mvnw -B test -Dtest='TagesSollCharakterisierung*'`).
+- Fixture wie im Plan vorgegeben: Zeitkonto Mo-Fr 8,00 h / Sa-So 0,00 h,
+  Mitarbeiter Max Mustermann (ID 1), Testdaten Mo 2026-06-01, Sa 2026-06-06,
+  Do 2026-01-01 (voller Feiertag), Do 2026-12-24 (halber Feiertag),
+  Sa 2026-12-26 (Feiertag am Wochenende).
+- KalenderTest haelt den bestehenden Bug (volle statt halbierte Ist-Stunden
+  am halben Feiertag, tage[23].istStunden == 8) mit explizitem Kommentar
+  "heutiger Stand, aendert sich in Task 11" fest - einzige Zusicherung, die
+  ein spaeterer Task aendern darf.
+
+Bedenken / Abweichungen vom Plan:
+- ZeiterfassungApiTest: der Plan nennt als Zugriffsweg auf die private
+  Methode `berechneFeiertagsStunden` die Methode "getGesamtSaldo(token)".
+  Diese Methode existiert nicht - die tatsaechliche oeffentliche Methode
+  heisst `getSaldo(String, Integer, Integer, Boolean)`. Deren
+  "Randmonat"-Zweig (istErsterMonat || istLetzterMonat) haengt zusaetzlich
+  unkontrollierbar am echten `LocalDate.now()`: das Enddatum wird je nach
+  angefragtem Jahr entweder "heute" oder der 31.12. des angefragten Jahres -
+  beides laesst sich nicht so parametrisieren, dass exakt unsere
+  Fixture-Feiertage (01.01. und 24./26.12.2026) deterministisch in einem
+  Randmonat-Zeitraum landen, ohne die Testzusicherung an das tatsaechliche
+  Testdatum zu koppeln (Risiko: Test wird abhaengig vom Kalendertag, an dem
+  er laeuft, gruen oder rot). Stattdessen habe ich die private Methode direkt
+  per `ReflectionTestUtils.invokeMethod` aufgerufen - pruefbar identische
+  Berechnung, aber zeitunabhaengig. Im Testklassen-Javadoc dokumentiert.
+- MonatsSaldoTest: analoges Problem in kleinerem Rahmen - "Januar 2026" liegt
+  zum Testzeitpunkt (08.09.2026) in der Vergangenheit (Cache-Pfad von
+  getOrBerechne), "Dezember 2026" noch in der Zukunft (Live-Pfad). Damit die
+  drei Tests nicht irgendwann kippen, sobald der Kalender ueber Dezember 2026
+  hinauslaeuft, stubbt die gemeinsame Hilfsmethode IMMER zusaetzlich einen
+  (ungueltigen) Cache-Eintrag samt Save-Pfad, mit `lenient()` - unabhaengig
+  davon, ob der jeweilige Zweig ihn zum Testzeitpunkt tatsaechlich braucht.
+  Keine Abweichung von den erwarteten Zahlen, nur von der im Plan knapp
+  skizzierten Stubbing-Technik.
+- Alle von der Spec erwarteten Zahlen (8 / 0 / 8 / 4,00 / 0 / 40 fuer
+  ZeitkontoTest; 8,00 / 4,00 / 0 fuer MonatsSaldoTest und ZeiterfassungApiTest;
+  5 bzw. 4 Abwesenheiten fuer UrlaubsantragTest; die vier Kalender-Werte)
+  wurden 1:1 bestaetigt - keine Abweichung des tatsaechlichen Bestandsverhaltens
+  vom im Plan vorgegebenen erwarteten Wert.

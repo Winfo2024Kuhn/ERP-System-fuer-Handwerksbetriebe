@@ -425,7 +425,7 @@ Frontend betroffen: nein.
         offene Meldung (`ende == null`), findet **keine** `ABGEBROCHEN`-Meldung,
         `findImZeitraum` liefert nur die berührten Phasen. Dummy-Daten:
         `Max Mustermann`.
-  - [ ] `./mvnw -B test -Dtest=LangzeitkrankmeldungRepositoryTest+V367SchemaTest`
+  - [ ] `./mvnw -B test -Dtest=LangzeitkrankmeldungRepositoryTest,V367SchemaTest`
 
 ---
 
@@ -908,7 +908,7 @@ sonst würde dieser Task dieselbe Datei anfassen wie Task 10.
         `TagesSollServiceTest` (Task 3).
   - [ ] `TagesSollCharakterisierungZeitkontoTest` **unverändert** grün halten.
         Wird sie rot, ist die Umstellung falsch.
-  - [ ] `./mvnw -B test -Dtest=ZeitkontoServiceTest+TagesSollCharakterisierungZeitkontoTest`
+  - [ ] `./mvnw -B test -Dtest=ZeitkontoServiceTest,TagesSollCharakterisierungZeitkontoTest`
 
 ---
 
@@ -948,7 +948,7 @@ Frontend betroffen: nein.
         Die erwarteten Saldo-Zahlen bleiben unverändert — ändert sich eine,
         ist es eine Regression.
   - [ ] `TagesSollCharakterisierungMonatsSaldoTest` unverändert grün halten.
-  - [ ] `./mvnw -B test -Dtest=MonatsSaldoServiceTest+TagesSollCharakterisierungMonatsSaldoTest`
+  - [ ] `./mvnw -B test -Dtest=MonatsSaldoServiceTest,TagesSollCharakterisierungMonatsSaldoTest`
 
 ---
 
@@ -986,7 +986,7 @@ Frontend betroffen: nein.
         Ein neuer Test: läuft eine Wiedereingliederung mit 2 h, bucht eine
         Krankmeldung `2.00` statt `8.00`.
   - [ ] `TagesSollCharakterisierungAbwesenheitTest` unverändert grün halten.
-  - [ ] `./mvnw -B test -Dtest=AbwesenheitServiceTest+TagesSollCharakterisierungAbwesenheitTest`
+  - [ ] `./mvnw -B test -Dtest=AbwesenheitServiceTest,TagesSollCharakterisierungAbwesenheitTest`
 
 ---
 
@@ -1089,7 +1089,7 @@ Frontend betroffen: nein.
   - [ ] Zusätzlicher Test in `ZeitverwaltungControllerTest`: Bei laufender
         Wiedereingliederung mit 2 h liefert `tage[].sollStunden` an einem
         normalen Arbeitstag `2.00`.
-  - [ ] `./mvnw -B test -Dtest=ZeitverwaltungControllerTest+TagesSollCharakterisierungKalenderTest`
+  - [ ] `./mvnw -B test -Dtest=ZeitverwaltungControllerTest,TagesSollCharakterisierungKalenderTest`
 
 ---
 
@@ -1146,7 +1146,7 @@ Frontend betroffen: nein.
         wird genau **einmal** gerufen (`verify(..., times(1))`) — das sichert
         die N+1-Behebung ab.
   - [ ] `TagesSollCharakterisierungUrlaubsantragTest` unverändert grün halten.
-  - [ ] `./mvnw -B test -Dtest=UrlaubsantragServiceTest+TagesSollCharakterisierungUrlaubsantragTest`
+  - [ ] `./mvnw -B test -Dtest=UrlaubsantragServiceTest,TagesSollCharakterisierungUrlaubsantragTest`
 
 ---
 

@@ -287,3 +287,30 @@ einer laufenden Session hilft nicht mehr.
 
 Trotzdem vor Schritt 1 prüfen, ob die `loese-problem-*`-Agenten in der Liste der
 verfügbaren Agenten stehen — der Symlink kann fehlen.
+
+### `-Dtest=A+B` läuft nicht — mehrere Testklassen trennt ein Komma
+
+Fehlerbild: Der Gate-Befehl aus dem Plan findet keine oder nur die halben
+Tests. Bei Maven Surefire trennt `+` **Methoden innerhalb einer Klasse**,
+mehrere Klassen trennt man mit **Komma**:
+
+```
+./mvnw -B test -Dtest=ErsteKlasseTest,ZweiteKlasseTest
+```
+
+Gehört in den Grobplan-Auftrag: Gate-Befehle mit Komma schreiben. Sonst
+stolpert jeder Coding-Agent einzeln darüber (real: in einem Plan sechsmal
+falsch vorgegeben).
+
+### `static/index.html` zeigt in jedem frischen Worktree einen Phantom-Diff
+
+Fehlerbild: `git status` im frisch angelegten Worktree meldet
+`M src/main/resources/static/index.html`, obwohl niemand sie angefasst hat —
+und das in **jedem** Worktree gleichzeitig.
+
+Ursache: reine Zeilenende-Normalisierung (CRLF im Working Copy, LF im Repo,
+keine `.gitattributes`-Regel für die Datei). Der Inhalt ist identisch.
+
+Regel: Das ist **kein** Build-Artefakt und kein Befund. Nicht committen, nicht
+"reparieren", nicht im Report als Abweichung führen. Ein Satz im Auftragstext
+spart dem Agenten die Irritation.
