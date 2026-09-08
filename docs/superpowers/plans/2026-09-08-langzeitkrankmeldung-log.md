@@ -1733,3 +1733,52 @@ Bedenken / Abweichungen vom Plan:
 - Frontend geprueft (react-pc-frontend/src, react-zeiterfassung/src): keine
   Referenz auf den alten Pfad /api/urlaub/antraege/hinweise gefunden - der
   Endpoint wird dort noch nicht konsumiert (folgt vermutlich in Abschnitt 5).
+
+## Abschnitt 4 — Review (Nachprüfung 1)
+
+Zeit: 2026-09-08T19:53:07Z
+Branch: feature/langzeitkrankmeldung (gemergt, c41aa18c)
+Commit(s): 38af2157, 64a2b398, 8caf39b6, a04c19c7 + Merges 263e80ba, ba498c6a, d732119a
+Status: fertig
+Ampel: 🟡
+
+Beide blockierenden Befunde sind behoben und von mir nachgemessen.
+
+Testlauf (voll, `./mvnw -B test`): 2611 Tests, 0 Failures, 4 Errors — exakt die
+vier vorbestehenden (AuditChainRepairIntegrationTest x2,
+AuditHashRoundtripDiagnoseTest x2, alle CannotCreateTransaction). Kein fuenfter.
+
+Nachpruefungen:
+- Sicherheitsfix: per RequestMappingHandlerMapping alle registrierten Pfade
+  gegen ZEITERFASSUNG_PATHS geprueft. /api/langzeitkrankmeldungen/urlaubs-hinweise
+  ohneLogin=false. Alle sieben Bestandspfade des UrlaubsantragController
+  unveraendert und weiterhin ohneLogin=true, alle zehn Desktop-Endpunkte
+  weiterhin ohneLogin=false. Kein Endpunkt versehentlich verschoben.
+- Kein Routing-Konflikt durch das Auflösen des Klassen-Mappings:
+  /api/langzeitkrankmeldungen/urlaubs-hinweise -> UrlaubsantragController.getHinweise,
+  /api/langzeitkrankmeldungen/42 -> LangzeitkrankmeldungController.detail.
+  Das literale Muster gewinnt gegen /{id}.
+- NPE-Fall: mein urspruengliches Szenario plus vier Nachbarfaelle durchgespielt,
+  alle sauber, null-Werte=0. Kartenbereich deckt die Schleifengrenzen jetzt in
+  jedem Fall ab.
+- Kalender-Stub: meine Mutation aus dem ersten Durchgang (Zeitraum um sechs
+  Monate verschoben) ist jetzt rot. Sensitivitaetsluecke geschlossen.
+- approveAntrag: Rueckbau auf Einzeltag-Aufruf wird von vier Tests rot gefangen.
+- 409-Abdeckung: Versionspruefung aus PUT /{id}/beenden entfernt -> genau ein
+  Parametersatz rot, die uebrigen gruen.
+
+Bedenken / Abweichungen vom Plan:
+- Der neue Regressionstest zum Stufenplan haelt den eigentlichen Fix nicht fest.
+  Mutationsprobe: nur die bis-Berechnung zurueckgebaut (getOrDefault-Netz bleibt)
+  -> Suite bleibt GRUEN. Nur das Netz entfernt (bis-Fix bleibt) -> gruen, der Fix
+  allein traegt also. Beides entfernt -> rot mit der Original-NPE. Der Test prueft
+  nur die Tagesanzahl (14); mit zurueckgebautem bis-Fix wuerden alle geplanten
+  Tage still 0,00 h statt 4,00 h zeigen, ohne dass ein Test faellt. Empfehlung
+  (nicht blockierend): zusaetzlich geplanteStunden je Tag zusichern.
+- Eigener Methodikfehler in diesem Durchgang: ein erster Vollauf lief parallel zu
+  Sonden-Laeufen im selben Worktree, zwei Maven-Prozesse auf demselben target/.
+  Ergebnis waren 485 Scheinfehler (FileNotFoundException auf .class-Dateien).
+  Lauf verworfen, Sonden entfernt, Vollauf allein wiederholt — daher die Zahlen
+  oben. Fuer kuenftige Runden: nie parallel zum Vollauf mutieren.
+- Mutationen und Sonden restlos zurueckgenommen, Arbeitsbaum sauber
+  (`git status --short` leer, kein index.html-Diff in diesem Worktree).
