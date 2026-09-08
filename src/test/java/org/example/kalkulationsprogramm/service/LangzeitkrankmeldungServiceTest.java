@@ -182,6 +182,27 @@ class LangzeitkrankmeldungServiceTest {
     }
 
     @Test
+    void anlegen_UebergibtOffenesEndeInnerhalbDesMysqlDateBereichsAnUeberlappungspruefung() {
+        // Befund 1 (Abschnitt-4-Review, Issue #91): bisher ging LocalDate.MAX
+        // (Jahr 999999999) als "bis"-Parameter an findUeberlappende. MySQL
+        // kennt DATE nur bis 9999-12-31 - je nach Servermodus ein Fehler oder,
+        // schlimmer, still keine Treffer, wodurch die Ueberlappungspruefung
+        // nichts mehr prueft. Mutationsprobe: baut man die Konstante zurueck
+        // auf LocalDate.MAX, ist der hier abgefangene Wert nicht mehr
+        // LocalDate.of(9999, 12, 31) und der Test wird rot.
+        stubAnlegenGrunddaten();
+
+        service.anlegen(MITARBEITER_ID, LocalDate.of(2020, 3, 1), null, null);
+
+        ArgumentCaptor<LocalDate> bisCaptor = ArgumentCaptor.forClass(LocalDate.class);
+        org.mockito.Mockito.verify(repository).findUeberlappende(eq(MITARBEITER_ID), any(), bisCaptor.capture());
+        LocalDate uebergebenesBis = bisCaptor.getValue();
+
+        assertEquals(LocalDate.of(9999, 12, 31), uebergebenesBis);
+        assertTrue(uebergebenesBis.getYear() <= 9999, "MySQL DATE erlaubt hoechstens das Jahr 9999");
+    }
+
+    @Test
     void anlegen_NotizUeber500ZeichenWirdAbgelehnt() {
         when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(mitarbeiter));
         when(repository.findUeberlappende(eq(MITARBEITER_ID), any(), any())).thenReturn(List.of());
