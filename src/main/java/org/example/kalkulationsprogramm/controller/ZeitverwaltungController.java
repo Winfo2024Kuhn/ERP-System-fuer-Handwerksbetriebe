@@ -26,6 +26,7 @@ import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.FeiertagService;
+import org.example.kalkulationsprogramm.service.TagesSollService;
 import org.example.kalkulationsprogramm.service.ZeitbuchungAuditService;
 import org.example.kalkulationsprogramm.service.ZeitkontoService;
 import org.springframework.http.ResponseEntity;
@@ -55,6 +56,7 @@ public class ZeitverwaltungController {
     private final MitarbeiterRepository mitarbeiterRepository;
     private final FeiertagService feiertagService;
     private final ZeitkontoService zeitkontoService;
+    private final TagesSollService tagesSollService;
     private final org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
     private final org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
     private final org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
@@ -498,20 +500,26 @@ public class ZeitverwaltungController {
                     .findFirst()
                     .map(Feiertag::getBezeichnung)
                     .orElse(null));
-            tagData.put("sollStunden", feiertagDaten.contains(currentTag) ? BigDecimal.ZERO
-                    : zeitkonto.getSollstundenFuerTag(currentTag.getDayOfWeek().getValue()));
+            // TagesSollService (Task 3) kapselt die Sollstunden-Ermittlung inkl.
+            // Feiertagsbehandlung und laufender Wiedereingliederung; arbeitsSoll
+            // liefert an Feiertagen (voll wie halb) von sich aus 0.
+            tagData.put("sollStunden", tagesSollService.arbeitsSoll(mitarbeiterId, zeitkonto, currentTag));
             tagData.put("buchungen", buchungenProTag.getOrDefault(currentTag, Collections.emptyList()));
 
             // Ist-Stunden berechnen (inkl. Feiertage als Arbeitszeit)
             BigDecimal istStunden = BigDecimal.ZERO;
 
-            // Feiertage: Wenn der Mitarbeiter an dem Wochentag normalerweise arbeiten
-            // würde,
-            // zählen die Sollstunden automatisch als Iststunden
-            if (feiertagDaten.contains(currentTag)) {
-                BigDecimal feiertagsStunden = zeitkonto.getSollstundenFuerTag(currentTag.getDayOfWeek().getValue());
-                istStunden = istStunden.add(feiertagsStunden);
-            }
+            // Bugfix (Task 11, siehe Plan "Bewusste Verhaltensaenderungen" Punkt 1):
+            // bisher wurden an JEDEM Feiertag die vollen Sollstunden als
+            // Ist-Stunden gutgeschrieben, auch an einem halben Feiertag wie
+            // Heiligabend - waehrend sollStundenMonat (berechneSollstundenFuerMonat,
+            // unten) den halben Feiertag schon immer korrekt halbierte. Das ergab
+            // +4h Phantom-Ueberstunden pro halbem Feiertag und einen Widerspruch
+            // zur Monatsuebersicht (MonatsSaldoService: Soll 4 / Gutschrift 4 ->
+            // netto 0). feiertagsGutschrift() liefert jetzt an halben Feiertagen
+            // korrekt die halbe Stundenzahl (und 0 an Nicht-Feiertagen).
+            istStunden = istStunden.add(
+                    tagesSollService.feiertagsGutschrift(mitarbeiterId, zeitkonto, currentTag));
 
             // Normale Buchungen dazuzählen (PAUSE ausschließen)
             for (Map<String, Object> buchung : buchungenProTag.getOrDefault(currentTag, Collections.emptyList())) {

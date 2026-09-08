@@ -28,14 +28,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * stellt die Sollstunden-/Ist-Stunden-Ermittlung auf {@code TagesSollService}
  * um (siehe "Bewusste Verhaltensaenderungen" im Plan, Punkt 1).
  *
- * <p><b>Bewusster Bestandsbug, der HIER stehen bleibt:</b> der Controller
- * liefert an jedem Feiertag - auch einem halben wie Heiligabend - die vollen
- * Sollstunden als Ist-Stunden (Zeile 511-514 rechnet nicht halbiert), waehrend
- * die Monatsuebersicht ({@link org.example.kalkulationsprogramm.service.MonatsSaldoService})
- * korrekt halbiert. Ergebnis heute: +4h Phantom-Ueberstunden am halben
- * Feiertag. Die Zusicherung {@code tage[23].istStunden == 8} haelt genau
- * diesen Bug fest und ist die EINZIGE Zusicherung in diesem Task, die Task 11
- * bewusst aendern darf - alle anderen sind Regressionsschutz.
+ * <p><b>Task 11 hat den einzigen bewusst geaenderten Wert in dieser Klasse
+ * gefixt:</b> der Controller lieferte bis Task 11 an jedem Feiertag - auch
+ * einem halben wie Heiligabend - die vollen Sollstunden als Ist-Stunden,
+ * waehrend die Monatsuebersicht
+ * ({@link org.example.kalkulationsprogramm.service.MonatsSaldoService})
+ * korrekt halbiert. Ergebnis: +4h Phantom-Ueberstunden am halben Feiertag,
+ * und der Kalender widersprach der Monatsuebersicht. Die Zusicherung
+ * {@code tage[23].istStunden} ist deshalb (und AUSSCHLIESSLICH deshalb) von
+ * {@code 8} auf {@code 4.00} geaendert - siehe Kommentar direkt an der
+ * Zusicherung unten. Alle anderen Zusicherungen sind unveraendert und bleiben
+ * Regressionsschutz.
  *
  * Dummy-Daten (DSGVO): Max Mustermann, ID 1.
  */
@@ -72,6 +75,8 @@ class TagesSollCharakterisierungKalenderTest {
     private org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
     @MockBean
     private org.example.kalkulationsprogramm.service.MonatsSaldoWarmupService monatsSaldoWarmupService;
+    @MockBean
+    private org.example.kalkulationsprogramm.service.TagesSollService tagesSollService;
 
     @Test
     void dezember2026_liefertHeutigenStandFuerSollUndIstStunden() throws Exception {
@@ -102,6 +107,31 @@ class TagesSollCharakterisierungKalenderTest {
                 .willReturn(List.of());
         given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
                 .willReturn(new BigDecimal("168.00"));
+        // arbeitsSoll/feiertagsGutschrift bilden nach, was TagesSollService (Task 3)
+        // fuer einen Monat ohne laufende Wiedereingliederung liefert: an
+        // Werktagen die volle Tagesbasis als arbeitsSoll, am vollen Feiertag
+        // (25.12.) 0 arbeitsSoll/volle Gutschrift, am halben Feiertag (24.12.)
+        // 0 arbeitsSoll/halbe Gutschrift.
+        given(tagesSollService.arbeitsSoll(anyLong(), any(), any()))
+                .willAnswer(inv -> {
+                    LocalDate tag = inv.getArgument(2);
+                    if (tag.equals(LocalDate.of(2026, 12, 24)) || tag.equals(LocalDate.of(2026, 12, 25))) {
+                        return BigDecimal.ZERO;
+                    }
+                    int wochentag = tag.getDayOfWeek().getValue();
+                    return wochentag <= 5 ? new BigDecimal("8.00") : BigDecimal.ZERO;
+                });
+        given(tagesSollService.feiertagsGutschrift(anyLong(), any(), any()))
+                .willAnswer(inv -> {
+                    LocalDate tag = inv.getArgument(2);
+                    if (tag.equals(LocalDate.of(2026, 12, 24))) {
+                        return new BigDecimal("4.00");
+                    }
+                    if (tag.equals(LocalDate.of(2026, 12, 25))) {
+                        return new BigDecimal("8.00");
+                    }
+                    return BigDecimal.ZERO;
+                });
 
         // 1.12.2026 ist ein Dienstag -> tage[0].
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
@@ -115,12 +145,14 @@ class TagesSollCharakterisierungKalenderTest {
                 .andExpect(jsonPath("$.tage[23].sollStunden").value(0))
                 .andExpect(jsonPath("$.tage[24].datum").value("2026-12-25"))
                 .andExpect(jsonPath("$.tage[24].sollStunden").value(0))
-                // Heutiger Stand, aendert sich in Task 11: der Controller rechnet die
+                // Bugfix (Task 11, siehe Plan "Bewusste Verhaltensaenderungen" Punkt 1):
+                // der alte Wert 8.00 war der Bug - der Controller rechnete die
                 // Ist-Stunden am Feiertag NICHT halbiert, obwohl der 24.12. laut
-                // feiertagService.halbTag=true nur ein halber Feiertag ist. Die
-                // Monatsuebersicht (MonatsSaldoService) halbiert korrekt - hier liegt
-                // der +4h-Phantom-Ueberstunden-Bug aus den "Bewussten
-                // Verhaltensaenderungen" des Plans.
-                .andExpect(jsonPath("$.tage[23].istStunden").value(8.00));
+                // feiertagService.halbTag=true nur ein halber Feiertag ist, und
+                // schrieb dadurch +4h Phantom-Ueberstunden gut. Der neue Wert 4.00
+                // kommt aus TagesSollService.feiertagsGutschrift und stimmt jetzt mit
+                // der Monatsuebersicht (MonatsSaldoService: Soll 4 / Gutschrift 4 ->
+                // netto 0) ueberein.
+                .andExpect(jsonPath("$.tage[23].istStunden").value(4.00));
     }
 }
