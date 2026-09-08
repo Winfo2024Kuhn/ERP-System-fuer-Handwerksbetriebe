@@ -137,6 +137,38 @@ testgetrieben nachholt (Fix als Patch sichern, Dateien zurücksetzen, rote
 Spec, Patch wieder anwenden) — und ausdrücklich **kein `git stash`**, der
 Stash ist mit anderen Sitzungen geteilt.
 
+### Frisches Worktree: `node_modules` verlinken, aber richtig
+
+Ein neues Worktree hat keine `node_modules`. Der Weg ist ein Verweis aufs
+Haupt-Checkout, kein `npm install` — sonst liegen dieselben Pakete fünfmal auf
+der Platte, und parallele Installationen sperren sich gegenseitig aus.
+
+**Nicht mit `ln -s` aus der Git-Bash.** Ohne Symlink-Privileg legt Windows
+dabei einen Pseudo-Symlink an, der wie ein Verzeichnis aussieht und keins ist.
+Der Fehler zeigt sich nicht beim Anlegen, sondern viel später: Vitest-Worker
+laufen ohne Meldung in einen Timeout. Am 09.09.2026 hat das einen Agenten
+Minuten gekostet, bis er die Ursache fand.
+
+Richtig ist eine NTFS-Junction:
+
+```cmd
+mklink /J "<worktree>\node_modules" "<haupt-checkout>\node_modules"
+```
+
+Zwei von vier Agenten fanden am 09.09.2026 gar keine Verlinkung vor und mussten
+sie selbst anlegen. Das gehört in die Worktree-Einrichtung des Orchestrators,
+nicht in jeden einzelnen Auftrag.
+
+### `./graphify update .` läuft in einem Worktree nicht
+
+Weder der Wrapper noch `.graphify-venv/` sind git-getrackt — in einem frisch
+angelegten Worktree existieren sie schlicht nicht. Ein Agent, den man dort zum
+Graph-Update auffordert, scheitert an etwas, das er nicht beheben kann.
+
+Der Graph-Lauf gehört ans Ende der Gesamtaufgabe, **im Haupt-Checkout**, vom
+Orchestrator ausgeführt — einmal, nicht je Agent. Genau so steht es auch in
+`CLAUDE.md`.
+
 ---
 
 ## Für die Aufträge an Coding-Agenten
@@ -234,6 +266,25 @@ eine passende Farbe". Wo die Rolle nicht klar ist, den Agenten ausdruecklich
 auf ein **Vorbild im Bestand** verweisen ("wie die Nachbarkarten in derselben
 Datei") und eine Gegenpruefung verlangen, die eine erfundene Farbe auffliegen
 laesst — `grep -rn "teal-" <verzeichnis>` muss leer sein.
+
+
+### Änderst du einen sichtbaren Text, gehören die Specs dazu, die ihn zusichern
+
+Am 09.09.2026: Ein Agent korrigierte „Bei 1 Mitarbeitern" zu „Bei 1
+Mitarbeiter" — richtig, getestet, gemergt. Danach fielen drei Playwright-Läufe
+um, einer je Bildschirmgröße. Eine E2E-Spec prüfte den alten Wortlaut
+**wörtlich**, stand aber nicht in seiner Dateiliste. Der Agent hatte keine
+Chance, das zu sehen.
+
+Das geht auf den **Auftragstext**, nicht auf den Agenten. Wer eine
+Textänderung beauftragt, sucht vorher nach dem alten Wortlaut über `e2e/` und
+`src/` und nimmt jede Datei mit in die Liste, die ihn zusichert. E2E-Specs
+prüfen Anzeigetexte gern buchstabengenau und liegen selten neben der
+Komponente, die den Text erzeugt.
+
+Und in den Auftragstext selbst gehört der Satz: *Änderst du einen sichtbaren
+Text, `grep` nach dem alten Wortlaut über `e2e/` und `src/`, bevor du
+abschließt.*
 
 ---
 
