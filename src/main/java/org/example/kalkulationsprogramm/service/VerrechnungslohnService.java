@@ -261,6 +261,11 @@ public class VerrechnungslohnService {
                 zeile.setBgBeitrag(bg);
                 gesamt = gesamt.add(agSv).add(bg);
             }
+            // Anders als im regulaeren Zweig gibt es hier keine Quelle
+            // LOHNABRECHNUNG: der GF-Lohn ist immer KALKULATORISCH (Jahreswert
+            // aus Monatsbetrag x 12) und kennt den Krankheitsausfall nicht --
+            // der Faktor muss deshalb hier immer greifen (Nachbesserung
+            // Abschnitt 2, Befund 2).
             gesamt = gesamt.multiply(anwesenheitsFaktor);
             zeile.setGesamtkosten(gesamt.setScale(2, RoundingMode.HALF_UP));
             return zeile;
@@ -272,7 +277,18 @@ public class VerrechnungslohnService {
         BigDecimal bg = berechneBg(brutto, bgSatz);
         zeile.setAgAnteilSv(agSv);
         zeile.setBgBeitrag(bg);
-        BigDecimal gesamtkosten = brutto.add(agSv).add(bg).multiply(anwesenheitsFaktor);
+        BigDecimal summeVorFaktor = brutto.add(agSv).add(bg);
+        // Bei Quelle LOHNABRECHNUNG stammt das Brutto aus echten
+        // Lohnabrechnungen -- der Betrieb hat waehrend des Krankengeldbezugs
+        // tatsaechlich weniger gezahlt, der Ausfall steckt also schon in der
+        // Zahl. Der anwesenheitsFaktor wuerde ein zweites Mal kuerzen (zu
+        // niedrige Lohnkosten, zu niedriger Verrechnungslohn -- Nachbesserung
+        // Abschnitt 2, Befund 1). Bei den anderen drei Quellen (hochgerechnete
+        // oder kalkulatorische Jahreswerte, die den Ausfall nicht kennen)
+        // bleibt der Faktor noetig.
+        BigDecimal gesamtkosten = zeile.getQuelle() == LohnQuelle.LOHNABRECHNUNG
+                ? summeVorFaktor
+                : summeVorFaktor.multiply(anwesenheitsFaktor);
         zeile.setGesamtkosten(gesamtkosten.setScale(2, RoundingMode.HALF_UP));
         return zeile;
     }
@@ -436,6 +452,12 @@ public class VerrechnungslohnService {
         }
 
         zeile.setSollstunden(jahresSoll);
+        // Zaehlt weiterhin ALLE Feiertage des Jahres, auch wenn sie in eine
+        // ausgeklammerte Krankengeld-/Wiedereingliederungsphase fallen --
+        // waehrend sollstunden fuer diese Phase bereits gekuerzt ist. Reine
+        // Anzeigegroesse ohne Rechenwirkung (fliesst in keine weitere Formel
+        // ein), in einer Langzeitfall-Zeile aber inkonsistent zu sollstunden
+        // (Nachbesserung Abschnitt 2, Befund 5 -- bewusst nicht veraendert).
         zeile.setFeiertagsstunden(feiertagsSoll);
         zeile.setAusgeklammerteTage(ausgeklammert.size());
 
@@ -450,6 +472,13 @@ public class VerrechnungslohnService {
                 List.of(LangzeitkrankmeldungPhaseTyp.KRANKENGELD, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG)));
 
         if (urlaub.compareTo(BigDecimal.ZERO) == 0 && ma.getJahresUrlaub() != null) {
+            // Bewusst OHNE den ausgeklammert.isEmpty()-Schutz, den der
+            // Krankheits-Default unten bekommt: der Urlaubsanspruch laeuft
+            // waehrend einer Langzeitkrankheit unveraendert weiter, ein
+            // Krankengeldbezug "verbraucht" also keinen Urlaub. Der volle
+            // Jahresurlaub als Default ist hier fachlich richtig, auch wenn
+            // ausgeklammert nicht leer ist (Nachbesserung Abschnitt 2,
+            // Befund 5 -- bewusst nicht veraendert).
             urlaub = BigDecimal.valueOf(ma.getJahresUrlaub()).multiply(stundenProTag(zeitkontoOpt));
             zeile.setUrlaubIstDefault(true);
         }

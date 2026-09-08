@@ -50,9 +50,14 @@ export function StufenplanTabelle({ phasen, onHinzufuegen, onLoeschen, maxStunde
             return;
         }
 
+        // Bewusst KEINE Ganzzahl-Pflicht: halbe Stunden sind bei einer
+        // Wiedereingliederung durchaus üblich (z.B. 2,5 Std. als Zwischenschritt
+        // im Stufenplan). Die Prüfung erlaubt deshalb jeden Wert > 0 bis zum
+        // Tageslimit -- der Fehlertext muss das widerspiegeln, nicht "zwischen
+        // 1 und N" suggerieren (Nachbesserung Abschnitt 2, Befund 4).
         const stundenZahl = Number(stunden.replace(',', '.'));
         if (!Number.isFinite(stundenZahl) || stundenZahl <= 0 || stundenZahl > maxStundenProTag) {
-            const meldung = `Stunden pro Tag müssen zwischen 1 und ${maxStundenProTag} liegen.`;
+            const meldung = `Stunden pro Tag müssen größer als 0 und höchstens ${maxStundenProTag} sein.`;
             setFehler(meldung);
             toast.error(meldung);
             return;
@@ -141,8 +146,16 @@ export function StufenplanTabelle({ phasen, onHinzufuegen, onLoeschen, maxStunde
 
             <div className="flex flex-col gap-3 rounded-lg border border-dashed border-slate-300 p-3 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
-                    <Label>ab</Label>
-                    <DatePicker value={vonDatum} onChange={setVonDatum} placeholder="Startdatum" disabled={disabled} />
+                    <Label id="stufenplan-von-label">ab</Label>
+                    {/* DatePicker rendert kein natives Formularfeld (kein <input>,
+                        keine id-Weiterreichung) -- ein klassisches htmlFor wie beim
+                        Stundenfeld daneben greift hier ins Leere. role="group" +
+                        aria-labelledby ist die dafuer vorgesehene ARIA-Alternative
+                        fuer zusammengesetzte, nicht-native Eingabe-Widgets
+                        (Nachbesserung Abschnitt 2, Befund 4). */}
+                    <div role="group" aria-labelledby="stufenplan-von-label">
+                        <DatePicker value={vonDatum} onChange={setVonDatum} placeholder="Startdatum" disabled={disabled} />
+                    </div>
                 </div>
                 <div className="min-w-0 sm:w-40">
                     <Label htmlFor="stufenplan-stunden">Stunden pro Tag</Label>
