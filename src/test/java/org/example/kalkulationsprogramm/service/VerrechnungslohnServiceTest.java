@@ -848,11 +848,88 @@ class VerrechnungslohnServiceTest {
 
         VerrechnungslohnErgebnisDto.MitarbeiterLohnZeile lohnZeile = dto.getLohnzeilen().get(0);
         assertThat(lohnZeile.getAusgeklammerteTage()).isEqualTo(122);
-        // (366 - 122) / 366 = 2/3, HALF_UP auf 4 Nachkommastellen.
+        // (366 - 122) / 366 = 2/3, HALF_UP auf 4 Nachkommastellen. Der Faktor
+        // wird trotzdem berechnet und gemeldet (fuer die UI) -- er fliesst nur
+        // bei dieser Quelle (LOHNABRECHNUNG) nicht in die Gesamtkosten ein,
+        // siehe naechster Test.
         assertThat(lohnZeile.getAnwesenheitsFaktor()).isEqualByComparingTo("0.6667");
-        assertThat(lohnZeile.getGesamtkosten()).isEqualByComparingTo(
-                new BigDecimal("48000.00").multiply(new BigDecimal("0.6667"))
-                        .setScale(2, java.math.RoundingMode.HALF_UP));
+        // Nachbesserung Abschnitt 2, Befund 1: das Brutto stammt hier aus
+        // echten Lohnabrechnungen (Quelle LOHNABRECHNUNG) -- der Betrieb hat
+        // waehrend des Krankengeldbezugs tatsaechlich weniger gezahlt, der
+        // Ausfall steckt also schon in den 48000. Der anwesenheitsFaktor darf
+        // hier NICHT zusaetzlich kuerzen (das waere eine doppelte Kuerzung).
+        // Roter Testlauf vor dem Fix hat 32001.60 geliefert (48000 x 0.6667).
+        assertThat(lohnZeile.getQuelle()).isEqualTo(VerrechnungslohnErgebnisDto.LohnQuelle.LOHNABRECHNUNG);
+        assertThat(lohnZeile.getGesamtkosten()).isEqualByComparingTo("48000.00");
+    }
+
+    @Test
+    void hochgerechnetesBruttoWirdBeiKrankengeldWeiterhinUeberDenAnwesenheitsfaktorGekuerzt() {
+        // Gegenstueck zum vorigen Test: bei einer hochgerechneten Quelle (hier
+        // STAMMSTUNDENLOHN, mangels Lohnabrechnungen) kennt das Brutto den
+        // Krankheitsausfall NICHT -- der anwesenheitsFaktor muss hier weiter
+        // greifen. Ohne diesen Test wuerde eine zu grosse Korrektur von
+        // Befund 1 (Faktor ueberall abschalten) unbemerkt durchrutschen.
+        Mitarbeiter ma = mitarbeiter(22L, "Sven", "Mustermann");
+        ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
+        ma.setStundenlohn(new BigDecimal("20.00"));
+        Zeitkonto zk = zeitkontoFuer(ma);
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoRepository.findByMitarbeiterId(22L)).thenReturn(Optional.of(zk));
+        when(lohnabrechnungRepository.sumBruttolohnByMitarbeiterIdAndJahr(22L, 2024)).thenReturn(BigDecimal.ZERO);
+        when(lohnabrechnungRepository.countByMitarbeiterIdAndJahr(22L, 2024)).thenReturn(0L);
+        when(stundenlohnRepository.findFirstByMitarbeiterIdAndGueltigAbLessThanEqualOrderByGueltigAbDesc(eq(22L), any(LocalDate.class)))
+                .thenReturn(Optional.empty());
+
+        LangzeitkrankmeldungPhase krankengeld = new LangzeitkrankmeldungPhase();
+        krankengeld.setTyp(LangzeitkrankmeldungPhaseTyp.KRANKENGELD);
+        krankengeld.setVonDatum(LocalDate.of(2024, 3, 1));
+        krankengeld.setBisDatum(LocalDate.of(2024, 6, 30));
+        when(phaseRepository.findImZeitraum(eq(22L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(List.of(krankengeld));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        VerrechnungslohnErgebnisDto.MitarbeiterLohnZeile lohnZeile = dto.getLohnzeilen().get(0);
+        assertThat(lohnZeile.getQuelle()).isEqualTo(VerrechnungslohnErgebnisDto.LohnQuelle.STAMMSTUNDENLOHN);
+        // Brutto = 20 EUR x 2080 h (40h-Woche x 52) = 41600.00, unabhaengig von
+        // der Krankengeldphase -- die Kuerzung passiert erst ueber den Faktor.
+        assertThat(lohnZeile.getBruttoJahr()).isEqualByComparingTo("41600.00");
+        // 41600 x 0.6667 = 27734.72
+        assertThat(lohnZeile.getAnwesenheitsFaktor()).isEqualByComparingTo("0.6667");
+        assertThat(lohnZeile.getGesamtkosten()).isEqualByComparingTo("27734.72");
+    }
+
+    @Test
+    void geschaeftsfuehrerKalkulatorischerLohnWirdBeiKrankengeldUeberDenAnwesenheitsfaktorGekuerzt() {
+        // Nachbesserung Abschnitt 2, Befund 2: berechneStundenZeile kuerzt das
+        // Jahressoll fuer JEDEN aktiven Mitarbeiter, auch den Geschaeftsfuehrer.
+        // Bliebe seine Lohnseite ungekuerzt, sink en die Stunden waehrend die
+        // Kosten stehen bleiben -- der Stundensatz schoesse nach oben. Dieser
+        // Test war zuvor nicht vorhanden: der Reviewer konnte den Faktor im
+        // GF-Zweig entfernen, ohne dass ein Test rot wurde.
+        Mitarbeiter gf = mitarbeiter(23L, "Peter", "Mustermann");
+        gf.setIstGeschaeftsfuehrer(true);
+        gf.setBeschaeftigungsart(Beschaeftigungsart.GF_SV_FREI);
+        gf.setKalkulatorischerLohnMonat(new BigDecimal("5000.00"));
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(gf));
+
+        LangzeitkrankmeldungPhase krankengeld = new LangzeitkrankmeldungPhase();
+        krankengeld.setTyp(LangzeitkrankmeldungPhaseTyp.KRANKENGELD);
+        krankengeld.setVonDatum(LocalDate.of(2024, 3, 1));
+        krankengeld.setBisDatum(LocalDate.of(2024, 6, 30));
+        when(phaseRepository.findImZeitraum(eq(23L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(List.of(krankengeld));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        VerrechnungslohnErgebnisDto.MitarbeiterLohnZeile lohnZeile = dto.getLohnzeilen().get(0);
+        assertThat(lohnZeile.getQuelle()).isEqualTo(VerrechnungslohnErgebnisDto.LohnQuelle.KALKULATORISCH);
+        assertThat(lohnZeile.getAusgeklammerteTage()).isEqualTo(122);
+        assertThat(lohnZeile.getAnwesenheitsFaktor()).isEqualByComparingTo("0.6667");
+        // 5000 x 12 = 60000, x 0.6667 = 40002.00
+        assertThat(lohnZeile.getBruttoJahr()).isEqualByComparingTo("60000");
+        assertThat(lohnZeile.getGesamtkosten()).isEqualByComparingTo("40002.00");
     }
 
     @Test

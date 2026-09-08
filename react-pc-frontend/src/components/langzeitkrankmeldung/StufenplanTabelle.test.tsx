@@ -88,7 +88,35 @@ describe('StufenplanTabelle', () => {
         expect(onHinzufuegen).not.toHaveBeenCalled();
         // Inline-Fehlertext (role="alert") UND Toast zeigen dieselbe Meldung -
         // gezielt auf den Inline-Text pruefen, statt auf beide Treffer zu stossen.
-        expect(screen.getByRole('alert')).toHaveTextContent(/zwischen 1 und 4/);
+        expect(screen.getByRole('alert')).toHaveTextContent(/größer als 0 und höchstens 4/);
+    });
+
+    it('erlaubt halbe Stunden, weil die Pruefung selbst keine Ganzzahl verlangt', async () => {
+        // Regression Nachbesserung Abschnitt 2, Befund 4: der Fehlertext sagte
+        // vorher "zwischen 1 und N", die Pruefung liess aber schon immer jeden
+        // Wert > 0 durch. 0,5 Std. sind bei einer Wiedereingliederung ueblich
+        // und muessen weiterhin funktionieren.
+        const user = userEvent.setup();
+        const { onHinzufuegen } = renderTabelle({ maxStundenProTag: 4 });
+
+        await user.click(screen.getByText('Startdatum'));
+        await user.click(screen.getByText('Heute'));
+        await user.type(screen.getByLabelText('Stunden pro Tag'), '0.5');
+        await user.click(screen.getByRole('button', { name: /Zeile hinzufügen/ }));
+
+        await waitFor(() =>
+            expect(onHinzufuegen).toHaveBeenCalledWith(
+                expect.objectContaining({ bisDatum: null, stundenProTag: 0.5 }),
+            ),
+        );
+    });
+
+    it('verknuepft das Startdatum-Feld ueber eine ARIA-Gruppe mit seinem Label', () => {
+        // Regression Nachbesserung Abschnitt 2, Befund 4: das Stundenfeld hatte
+        // schon ein htmlFor, das Startdatum-Feld (DatePicker, kein natives
+        // Formularfeld) nicht -- jetzt per role="group" + aria-labelledby.
+        renderTabelle();
+        expect(screen.getByRole('group', { name: 'ab' })).toBeInTheDocument();
     });
 
     it('legt eine neue Zeile an, wenn Datum und Stunden gueltig sind', async () => {

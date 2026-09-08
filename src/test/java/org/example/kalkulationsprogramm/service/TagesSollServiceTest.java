@@ -227,6 +227,42 @@ class TagesSollServiceTest {
         assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
     }
 
+    @Test
+    void krankengeldPhaseMitGesetztemStundenProTag_wirdIgnoriert_zeitkontoWertGilt() {
+        // Nachbesserung Abschnitt 2, Befund 3: stunden_pro_tag ist in der
+        // Datenbank nur nullable, NICHT auf den Typ WIEDEREINGLIEDERUNG
+        // eingeschraenkt. Die bisherigen Tests fuer LOHNFORTZAHLUNG/KRANKENGELD
+        // setzen stundenProTag nie, weshalb in Wahrheit nur die Null-Pruefung
+        // in tagesBasis() trug -- der Typfilter selbst war ungetestet. Dieser
+        // Test setzt stundenProTag bewusst auf einer KRANKENGELD-Phase, um genau
+        // den Typfilter scharf zu stellen.
+        LangzeitkrankmeldungPhase phase = new LangzeitkrankmeldungPhase();
+        phase.setTyp(LangzeitkrankmeldungPhaseTyp.KRANKENGELD);
+        phase.setVonDatum(MONTAG_NORMAL.minusDays(10));
+        phase.setBisDatum(null);
+        phase.setStundenProTag(new BigDecimal("2.00"));
+        stubMitPhase(MONTAG_NORMAL, phase);
+        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+
+        // Erwartung: der Stufenplan-Wert (2.00) wird ignoriert, es zaehlt der
+        // Zeitkonto-Wert (8.00) -- eine Krankengeld-Phase ist kein Stufenplan.
+        assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
+    }
+
+    @Test
+    void wiedereingliederung_stundenProTagNull_phaseWirdIgnoriertZeitkontoWertGilt() {
+        // Nachbesserung Abschnitt 2, Befund 3: Plan-Vorgabe fuer eine
+        // WIEDEREINGLIEDERUNG-Phase ohne gesetzten Stufenplan-Wert -- die Phase
+        // wird ignoriert, es wird mit dem Zeitkonto-Wert weitergerechnet. War
+        // bisher ebenfalls ungetestet.
+        stubMitPhase(MONTAG_NORMAL, wiedereingliederungsPhase(null, MONTAG_NORMAL));
+        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+
+        assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
+    }
+
     // ---- (h) Invariante ----
 
     @Test
