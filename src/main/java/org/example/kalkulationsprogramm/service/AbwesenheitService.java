@@ -25,6 +25,7 @@ public class AbwesenheitService {
     private final FeiertagService feiertagService;
     private final MonatsSaldoService monatsSaldoService;
     private final ZeitbuchungRepository zeitbuchungRepository;
+    private final TagesSollService tagesSollService;
 
     /**
      * Bucht eine Abwesenheit für einen Mitarbeiter an einem bestimmten Tag.
@@ -54,16 +55,17 @@ public class AbwesenheitService {
                     feiertagService.getFeiertagInfo(datum).map(Feiertag::getBezeichnung).orElse(datum.toString()));
         }
 
-        // Hole Sollstunden für diesen Tag aus dem Zeitkonto
+        // Hole Sollstunden für diesen Tag aus dem Zeitkonto (berücksichtigt eine
+        // laufende Wiedereingliederung: dann zählt deren reduziertes Stufenplan-Soll).
         Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
-        int wochentag = datum.getDayOfWeek().getValue(); // 1=Montag, 7=Sonntag
-        BigDecimal sollStunden = zeitkonto.getSollstundenFuerTag(wochentag);
+        BigDecimal sollStunden = tagesSollService.arbeitsSoll(mitarbeiterId, zeitkonto, datum);
 
-        // Prüfe ob Arbeitstag (Sollstunden > 0)
+        // Prüfe ob Arbeitstag (Sollstunden > 0). Greift auch, wenn eine
+        // Wiedereingliederung an diesem Tag 0 Stunden vorsieht.
         if (sollStunden.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Kein Arbeitstag: Am " +
                     datum.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.GERMAN) +
-                    " hat dieser Mitarbeiter keine Sollstunden");
+                    " hat dieser Mitarbeiter keine Sollstunden (auch nicht während einer Wiedereingliederung)");
         }
 
         // Bei halbem Tag nur 50% der Stunden
