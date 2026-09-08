@@ -2666,3 +2666,26 @@ Bedenken / Abweichungen vom Plan:
 - phasen.ts, StufenplanTabelle.tsx (Logik) und PhasenZeitleiste.tsx (Logik)
   waren laut Plan nicht meine Datei bzw. nur fuer die Zahlenformatierung
   angefasst -- inhaltlich sonst unveraendert gelassen.
+
+## Abschnitt 5 — Nachbesserung Verrechnungslohn-Dialog (Nachtrag)
+
+Zeit: 2026-09-09T00:40:00Z
+Branch: lzk/nb5-vl
+Commit(s): c0120ca5
+Status: fertig
+
+Was gemacht wurde:
+- Vom Orchestrator gemeldet: der Singular-Fix (pluralWort) hat
+  e2e/verrechnungslohn-langzeitfall.spec.ts:131 brechen lassen — die Spec
+  stand nicht in der ursprünglichen Dateiliste und prüfte den alten
+  Wortlaut "Bei 1 Mitarbeitern" wörtlich. Zusicherung auf "Bei 1
+  Mitarbeiter" nachgezogen ("122 Tage" blieb unverändert, war schon
+  korrekter Plural). Kurzer grep nach weiteren woertlichen Treffern über
+  e2e/ und src/ ergab nur Kommentare, Testnamen und den bereits korrekten
+  Plural-Test (2 Mitarbeiter).
+- Playwright-Lauf (--workers=1, Vordergrund, Timeout 600000ms): 6/6 grün
+  über pc-14zoll/pc-uebergang/pc-monitor (vorher 3 Fehlschläge, je einer
+  pro Größe, an genau dieser Zusicherung).
+
+Bedenken / Abweichungen vom Plan:
+- keine
