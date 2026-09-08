@@ -368,3 +368,24 @@ plant sie gegen die **künftige** Konstruktor-Signatur, oder schreibt in den
 Task, dass die Verkabelung später angepasst werden darf. Sonst kollidiert die
 Vorgabe „diese Datei ist unantastbar" zwangsläufig mit jeder Umstellung, die
 sie absichern soll.
+
+### Zwei Maven-Prozesse auf demselben `target/` erfinden Fehler
+
+Fehlerbild: Ein Vollauf meldet plötzlich Hunderte Errors, typischerweise
+`class path resource [.../XyzTest.class] cannot be opened because it does not
+exist` und massenhaft `Failed to load ApplicationContext`. Es sieht aus wie ein
+katastrophaler Regress, ist aber keiner.
+
+Ursache: Ein zweiter Maven-Lauf (Sonde, Mutationsprobe, Gate) lief **gleichzeitig**
+im selben Worktree. Beide schreiben in dasselbe `target/`, einer räumt dem
+anderen die gerade geladenen Klassen weg.
+
+Regel: Im selben Worktree immer nur **ein** Maven-Prozess. Wer eine Sonde neben
+einem Vollauf braucht, wartet den Vollauf ab. Und wer solche Zahlen sieht:
+**erst an einen Selbstverschulden denken, bevor der Befund gemeldet wird** —
+an der Fehlerart erkennbar (fehlende `.class`-Dateien statt fachlicher
+Assertions).
+
+Real passiert am 08.09.2026: 485 gemeldete Errors, nach sauberer Wiederholung
+exakt die vier bekannten. Der Reviewer hat es selbst erkannt und offengelegt —
+genau richtig, aber es kostet einen kompletten Suite-Lauf.

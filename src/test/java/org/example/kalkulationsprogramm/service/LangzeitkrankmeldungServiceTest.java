@@ -670,6 +670,17 @@ class LangzeitkrankmeldungServiceTest {
         // Die geschlossene Phase (14 Tage) muss vollstaendig auftauchen; die
         // offene Phase liegt komplett nach "heute" und traegt hier nichts bei.
         assertEquals(14, dto.getStufenplanTage().size());
+
+        // Und die Tage muessen echte Sollstunden tragen, nicht nur da sein.
+        // Ohne diese Zusicherung haelt der Test nur das getOrDefault-Netz fest:
+        // Baut man die bis-Berechnung zurueck, bleiben es 14 Tage, aber alle
+        // zeigen still 0,00 h statt 4,00 h - falsche Zahlen im Buero, und kein
+        // Test faellt. Im Review von Abschnitt 4 gemessen.
+        dto.getStufenplanTage().forEach(tag -> assertEquals(
+                0,
+                new BigDecimal("4.00").compareTo(tag.getGeplanteStunden()),
+                "Tag " + tag.getDatum() + " sollte 4,00 h geplant haben, hatte "
+                        + tag.getGeplanteStunden()));
     }
 
     // ==================== getMobileStand ====================
