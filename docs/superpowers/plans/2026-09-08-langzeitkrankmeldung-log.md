@@ -1253,3 +1253,254 @@ Bedenken / Abweichungen vom Plan (alle gelb, blockieren nicht):
   die Seite baut - dort laeuft ohnehin die volle Design-Pruefung.
 
 Blockierende Befunde: keine.
+
+## Abschnitt 4 — Task 6 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-6-mobile-controller
+Commit(s): 12d768e7
+Status: fertig
+
+Was gemacht wurde:
+- Neuer `LangzeitkrankmeldungMobileController` mit genau einem Endpoint
+  `GET /api/zeiterfassung/langzeitkrankmeldung/{token}`, delegiert
+  komplett an `LangzeitkrankmeldungService.getMobileStand(token,
+  LocalDate.now())`. Bewusst kein POST/PUT/PATCH/DELETE.
+- Klassen-Javadoc haelt fest: Pfad liegt unter `/api/zeiterfassung/**`,
+  ist schon in der Mobile-Whitelist (`SecurityConfig.ZEITERFASSUNG_PATHS`)
+  — keine SecurityConfig-Aenderung noetig/gewuenscht.
+- MockMvc-Tests (`LangzeitkrankmeldungMobileControllerTest`, 7 Tests):
+  unbekanntes Token -> `{}` ohne Fehler; laufende Wiedereingliederung
+  -> genau die 5 erwarteten Felder; Antwort enthaelt nie Name/Notiz
+  (DSGVO, explizite Zusicherung `$.name`/`$.mitarbeiterName`/`$.notiz`
+  `doesNotExist()`); Path-Traversal- und SQL-Injection-Muster im Token
+  -> `{}`, keine Exception; unterschiedliche Tokens liefern jeweils nur
+  ihren eigenen Stand (kein Vermischen ueber Requests hinweg); Service
+  wird mit dem heutigen Datum aufgerufen.
+- Gates: `./mvnw -B test -Dtest=LangzeitkrankmeldungMobileControllerTest`
+  -> Tests run: 7, Failures: 0, Errors: 0, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Zwei Sicherheits-Testfaelle mussten an reale Servlet-URL-Semantik
+  angepasst werden (Details, kein Befund am Produktivcode):
+  (1) Ein rohes ".." im Token wird schon von der URL-Normalisierung
+  (RFC-3986-Dot-Segment-Entfernung) aufgeloest und erreicht den
+  Controller nie als Wert — der Test nutzt deshalb den kodierten Wert
+  (`..%2F..%2Fetc%2Fpasswd`) fuer einen Token, der nach dem Dekodieren
+  "../../etc/passwd" ergibt.
+  (2) Ein Semikolon im Pfadsegment wird von Spring als
+  Matrix-Parameter-Trenner behandelt und vor dem Routing abgeschnitten
+  (`UrlPathHelper#removeSemicolonContent`) — das SQL-Injection-Testmuster
+  wurde deshalb semikolonfrei gewaehlt (`' OR '1'='1' --`), um wirklich
+  den vollen String bis zum Service zu pruefen statt ein URL-Parsing-
+  Detail zu testen.
+
+## Abschnitt 4 — Task 12 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-12-urlaubsantrag
+Commit(s): bf3af510
+Status: fertig
+
+Was gemacht wurde:
+- UrlaubsantragService.approveAntrag ermittelt die Urlaubsstunden je Tag jetzt
+  über TagesSollService.arbeitsSoll(mitarbeiterId, zeitkonto, tag) statt
+  direkt über zeitkonto.getSollstundenFuerTag(...) (E1 im Plan). arbeitsSoll
+  gewählt (nicht periodenSoll/feiertagsGutschrift einzeln), weil es exakt die
+  Gegenbuchung zum Tagessoll liefert: periodenSoll − feiertagsGutschrift,
+  inkl. korrekter Behandlung von halben Feiertagen und laufender
+  Wiedereingliederung (Stufenplan-Stunden, gedeckelt aufs Zeitkonto-Soll).
+- getOrCreateZeitkonto wird jetzt einmal vor der Tagesschleife geladen statt
+  je Tag (N+1-Fix laut Steps).
+- Neue Methode UrlaubsantragService.pruefeHinweise(mitarbeiterId, von, bis)
+  delegiert an LangzeitkrankmeldungService.pruefeUrlaubsHinweise (Task 4).
+- Neuer Endpoint GET /api/urlaub/antraege/hinweise, Response-Format
+  200 { "warnungen": [ "..." ] } — exakt wie im Plan spezifiziert. POST
+  /api/urlaub/antraege (Handy-App) unverändert, keine Verschärfung.
+- UrlaubsantragServiceTest.java neu angelegt (7 Tests, Vorbild
+  AbwesenheitServiceTest): 5x8,00h ohne Feiertag/Wiedereingliederung,
+  5x2,00h während Wiedereingliederung, Feiertag übersprungen (inkl. verify
+  never() auf arbeitsSoll für den Feiertag), Wochenende übersprungen (inkl.
+  verify never() auf arbeitsSoll für Sa/So), getOrCreateZeitkonto genau
+  einmal aufgerufen, pruefeHinweise delegiert korrekt (mit und ohne Treffer).
+- TagesSollCharakterisierungUrlaubsantragTest: @Mock TagesSollService und
+  @Mock LangzeitkrankmeldungService ergänzt (Verkabelungsfalle durch neue
+  Konstruktor-Parameter). Pro Fixture-Tag einzeln mit konkretem Datum und
+  Wert 8.00 gestubbt, kein pauschales any(). Erwartete Zahlen (5 bzw. 4
+  Abwesenheiten à 8,00) unverändert. Gegenprobe: Stub für 2026-06-01 auf
+  3.00 verfälscht → Test wurde rot (AssertionFailedError erwartet 0/war 1),
+  danach zurückgenommen → wieder grün.
+- Gates: ./mvnw -B test -Dtest='UrlaubsantragServiceTest,TagesSollCharakterisierungUrlaubsantragTest'
+  → Tests run: 9, Failures: 0, Errors: 0, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Line-Referenzen im Plan-Block ("Zeile 249–280" fürs Vorbild approveAntrag,
+  "Zeile 250" für getOrCreateZeitkonto) stimmten nicht exakt mit der Datei im
+  Branch überein (approveAntrag lag bei 84–137) — reine Zeilennummer-Drift,
+  inhaltlich stand die richtige Stelle eindeutig fest, kein Blocker.
+- Performance-Hinweis für den Plan-Owner/Review: TagesSollService.arbeitsSoll
+  lädt intern pro Aufruf einmal LangzeitkrankmeldungPhaseRepository.findImZeitraum
+  (Einzeltag-Variante). Da approveAntrag es jetzt pro Arbeitstag aufruft,
+  verursacht die Genehmigung eines N-Tage-Antrags N Phasen-Abfragen statt
+  vorher 0 (getSollstundenFuerTag war reiner In-Memory-Zugriff aufs
+  Zeitkonto). Eine "JeTag"-Zeitraum-Variante auf TagesSollService (analog zu
+  periodenSollSumme/feiertagsGutschriftSumme, die Phasen+Feiertage schon
+  einmal für den ganzen Zeitraum laden) würde das auf eine Abfrage senken.
+  Diese Methode existiert im Branch noch nicht (wird laut Auftrag von einem
+  Parallel-Agenten gebaut) — deshalb hier nur vermerkt, nicht selbst gebaut.
+  Bei typischen Urlaubsanträgen (wenige Tage bis wenige Wochen) ist die
+  Query-Last klein, aber bei langen Anträgen relevant.
+- UrlaubsantragControllerTest.java (nicht in meinen Files, nicht angefasst)
+  bleibt grün: nutzt @MockBean für UrlaubsantragService, daher von der
+  Konstruktoränderung nicht betroffen — zur Sicherheit gegengeprüft.
+
+## Abschnitt 4 — Task 5 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-5-controller
+Commit(s): 9ed7ac26
+Status: fertig
+
+Was gemacht wurde:
+- LangzeitkrankmeldungController neu angelegt unter
+  src/main/java/org/example/kalkulationsprogramm/controller/, alle Endpunkte
+  unter /api/langzeitkrankmeldungen (Desktop-App): GET Liste (Statusfilter,
+  Default LAUFEND), GET Detail (mit Stufenplan-Tagen), POST Anlegen, PUT
+  Aendern, PUT .../beenden, PUT .../oeffnen, PUT .../abbrechen, POST
+  .../phasen, PUT .../phasen/{phasenId}, DELETE .../phasen/{phasenId}.
+- Keine Endpunkte unter /api/zeiterfassung/** angelegt (Mobile bleibt
+  Task 6 vorbehalten, dort nur lesend).
+- Fachliche Ablehnungen des Service (IllegalStateException/
+  IllegalArgumentException) werden zu 400 bzw. 404 (bei "nicht gefunden" in
+  der Meldung) mit {"error": "<Klartext>"} uebersetzt, nie 500.
+- Optimistisches Sperren: alle aendernden Endpunkte nehmen zusaetzlich
+  einen Pflicht-Query-Parameter `version` entgegen. Der Controller laedt
+  vorab per service.findeMitPhasen(id) die aktuelle DB-Version und wirft
+  bei Abweichung eine ObjectOptimisticLockingFailureException, die der
+  bestehende globale RestExceptionHandler bereits sauber in 409 mit der
+  Handwerker-Meldung uebersetzt (kein eigener Handler noetig, per Test
+  verifiziert).
+- LangzeitkrankmeldungControllerTest (MockMvc, @WebMvcTest +
+  addFilters=false + @MockBean Service) mit 25 Tests: Happy-Path und
+  Fehlerfall je Endpunkt, Versionskonflikt (409), Sicherheits-Checkliste
+  (id=-1/0/Long.MAX_VALUE, XSS-Notiz, Notiz > 10.000 Zeichen, SQL-
+  Injection-String), Dummy-Daten (Max Mustermann). Alle 25 gruen, TDD
+  Schritt fuer Schritt (rot -> gruen) durchlaufen.
+
+Bedenken / Abweichungen vom Plan:
+- Die Task-4-Request-DTOs (LangzeitkrankmeldungAnlegenRequest,
+  LangzeitkrankmeldungPhaseRequest) haben KEIN version-Feld, und die
+  Service-Methoden (aendern/beenden/wiederEroeffnen/abbrechen/
+  phaseHinzufuegen/phaseAendern/phaseLoeschen) nehmen keinen
+  Versions-Parameter entgegen - sie laden die Meldung innerhalb ihrer
+  eigenen Transaktion immer frisch aus der DB. Ein echter DB-Level-
+  Optimistic-Lock-Konflikt ueber @Version wuerde damit nur bei
+  ueberlappenden Transaktionen entstehen, nicht im ueblichen Buero-Fall
+  zweier zeitlich getrennter HTTP-Requests (genau der Fall, den die
+  Aufgabe adressiert: "damit zwei Bueromitarbeiter sich nicht gegenseitig
+  ueberschreiben"). Da ich weder die DTO-Dateien noch den Service
+  aendern darf (Task 4, laeuft parallel), habe ich die Version stattdessen
+  als eigenen @RequestParam ergaenzt und eine Vorab-Pruefung im Controller
+  eingebaut (siehe pruefeVersion()). Das deckt den Hauptfall ab, hat aber
+  zwei Nebenwirkungen, die ich transparent machen will: (1) ein
+  zusaetzlicher Read pro aendernder Anfrage (service.findeMitPhasen vor
+  dem eigentlichen Schreib-Call), (2) eine restliche TOCTOU-Luecke bei
+  exakt zeitgleichen Requests, weil die Pruefung nicht im selben
+  DB-Write-Statement wie das Speichern steckt. Sollte die Versionslogik
+  spaeter in die Service-Schicht wandern (Task 4 oder ein Folge-Task),
+  kann pruefeVersion() im Controller ersatzlos entfallen.
+- Sonst keine Abweichungen: Pfade, HTTP-Codes und DTO-Nutzung entsprechen
+  dem Plan; Request-DTOs aus Task 4 passten ansonsten unveraendert zu den
+  Endpunkten (LangzeitkrankmeldungAnlegenRequest fuer Anlegen/Aendern,
+  LangzeitkrankmeldungPhaseRequest fuer Phasen-Anlegen/-Aendern). Fuer
+  "beenden" gibt es kein eigenes Task-4-DTO (nur ein Datum) - dafuer
+  @RequestParam LocalDate ende genutzt, kein Map<String,Object>.
+
+## Abschnitt 4 — Fix Performance und Datumsgrenze
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/fix-perf-und-maxdate
+Commit(s): e976b34e, 3811aae1, 4255db7c, b9cfaa3b
+Status: fertig
+
+Was gemacht wurde:
+- **Befund 1 (LocalDate.MAX, blockierte Abschnitt 4):** `LangzeitkrankmeldungService`
+  bekommt eine neue benannte Konstante `OFFENES_ENDE = LocalDate.of(9999, 12, 31)`
+  mit Javadoc-Begruendung (MySQL DATE endet bei 9999-12-31, LocalDate.MAX =
+  Jahr 999999999 sprengt das und liefert je nach Servermodus einen Fehler oder
+  still keine Treffer). Ersetzt an den drei Stellen `anlegen`, `aendern`,
+  `wiederEroeffnen` (vorher Zeilen ~96/~133/~175). TDD: neuer Test
+  `anlegen_UebergibtOffenesEndeInnerhalbDesMysqlDateBereichsAnUeberlappungspruefung`
+  faengt per `ArgumentCaptor<LocalDate>` den an `findUeberlappende` uebergebenen
+  Wert ab, zuerst rot (`expected: <9999-12-31> but was: <+999999999-12-31>`),
+  nach dem Fix gruen. Mutationsprobe (Konstante testweise zurueck auf
+  `LocalDate.MAX`) macht den Test zuverlaessig rot — er misst wirklich die
+  richtige Sache, nicht nur einen Wert, der zufaellig durchgeht.
+- **Befund 2 (N+1, gemessen):** `TagesSollService` bekommt drei neue
+  Zeitraum-Varianten `periodenSollJeTag`/`feiertagsGutschriftJeTag`/
+  `arbeitsSollJeTag` (Signatur: `Map<LocalDate, BigDecimal> xJeTag(Long
+  mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis)`), die Phasen
+  und Feiertage EINMAL pro Zeitraum laden statt einmal pro Tag — Grundlage ist
+  eine neue private `jeTag`-Methode, auf die auch die bestehende `summiere`
+  (also `periodenSollSumme`/`feiertagsGutschriftSumme`) jetzt intern
+  aufsetzt. Die bestehenden Einzeltag- und Summenmethoden sind unveraendert in
+  Signatur und Rueckgabewert. Zusaetzlich: `berechneEinzeltag` fragt Feiertage
+  jetzt per `FeiertagService.getFeiertagInfo` (existierte bereits, liefert
+  Optional<Feiertag> mit `isHalbTag()`) in EINEM Zugriff ab statt getrennt per
+  `istFeiertag`+`istHalberFeiertag` — die Methode gab es schon, musste nicht
+  neu gebaut werden.
+  `ZeitverwaltungController.getKalender` laedt `sollStundenJeTag` und
+  `feiertagsGutschriftJeTag` jetzt einmal vor der Tagesschleife statt beide
+  Werte einzeln pro Tag. `LangzeitkrankmeldungService.baueStufenplanTage` laedt
+  `geplantJeTag` einmal fuer den Gesamtzeitraum der Wiedereingliederungsphasen
+  statt einmal pro Schleifentag.
+  TDD je Schritt: neue Tests fuer die drei JeTag-Methoden (Ladezaehler per
+  Mockito-`verify(times(1))`, Korrektheit gegen die Einzeltag-Werte inkl.
+  Invariante, Merge-Nachweis fuer `getFeiertagInfo`), Controller- und
+  Stufenplan-Tests erst rot (NullPointerException, weil die alten Einzeltag-
+  Mocks nach dem Umbau nicht mehr griffen), nach dem produktiven Fix gruen.
+- **Gemessen mit einer Wegwerf-Sonde** (`NPlusOneSondeTest`, echte
+  `FeiertagService`+gemocktes `FeiertagRepository` per `ReflectionTestUtils`
+  auf das `self`-Feld verdrahtet, plus gemocktes
+  `LangzeitkrankmeldungPhaseRepository`): Kalenderabruf Dezember 2026 (31
+  Tage) vorher **249** Repository-Aufrufe (62 `findImZeitraum` + 187 gegen
+  `FeiertagRepository`) — deckt sich exakt mit der Reviewer-Zahl. Nachher
+  **9** (2 `findImZeitraum` + 7 gegen `FeiertagRepository`) — trifft die vom
+  Reviewer genannte Zielzahl exakt. Stufenplan 42 Tage Wiedereingliederung
+  vorher **162** (42 + 120; Reviewer nannte 165, minimale Abweichung
+  vermutlich durch einen anderen konkreten 42-Tage-Zeitraum in der Sonde),
+  nachher **3** (1 + 2). Sonde nach der Messung restlos geloescht, `git
+  status --short` zeigt danach nur noch die fremde
+  `src/main/resources/static/index.html` (nicht angefasst, nicht committet,
+  wie in allen Worktrees dieses Vorhabens).
+
+Neue Methodensignaturen in TagesSollService (fuer kuenftige Aufrufer):
+```java
+public Map<LocalDate, BigDecimal> periodenSollJeTag(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis);
+public Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis);
+public Map<LocalDate, BigDecimal> arbeitsSollJeTag(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis);
+```
+
+Gate: `./mvnw -B test -Dtest='TagesSollServiceTest,LangzeitkrankmeldungServiceTest,ZeitverwaltungControllerTest,TagesSollCharakterisierung*'`
+→ Tests run: 87, Failures: 0, Errors: 0, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Um `ZeitverwaltungControllerTest` und `LangzeitkrankmeldungServiceTest` (beide
+  in meiner Dateiliste) auf die neuen Batch-Aufrufe umzustellen, musste ich
+  zusaetzlich `TagesSollCharakterisierungKalenderTest.java`
+  (`src/test/java/.../controller/`) anfassen — sie mockt denselben Controller-
+  Endpunkt mit den alten Einzeltag-Methoden und wurde durch meine autorisierte
+  Controller-Aenderung rot (NullPointerException). Diese Datei stand nicht in
+  meiner Task-Dateiliste. Ich habe **nur** die Mocks auf die neuen
+  Zeitraum-Methoden umgestellt (arbeitsSollJeTag/feiertagsGutschriftJeTag statt
+  arbeitsSoll/feiertagsGutschrift) — keine einzige erwartete Zahl/Zusicherung
+  geaendert, reine mechanische Folge des autorisierten Refactors. Bitte im
+  Review gegenpruefen, dass hier wirklich nichts inhaltlich verschoben wurde.
+- `graphify` (Wrapper-Skript/`.graphify-venv`) existiert in diesem Worktree
+  nicht (vermutlich gitignored, nicht Teil des Worktree-Checkouts) — `graphify
+  update .` konnte deshalb nicht laufen. Kein Blocker fuer die Aufgabe selbst,
+  nur zur Transparenz vermerkt.
+- Sonst keine Abweichungen. `feiertagsGutschriftJeTag`/`periodenSollJeTag`
+  wurden zusaetzlich zur explizit vorgegebenen `arbeitsSollJeTag` gebaut (im
+  Auftrag als "passende Geschwister" gefordert) und decken denselben
+  Zeitraum-Lade-Mechanismus ab.
