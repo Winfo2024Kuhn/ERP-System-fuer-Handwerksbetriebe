@@ -223,6 +223,34 @@ export default function Langzeitkrankmeldungen() {
         }
     };
 
+    // Befund 3 (Nachbesserung Abschnitt 5, BLOCKER-nah): sobald status !==
+    // 'LAUFEND' zeigte die Karte gar keinen Knopf mehr -- ein Fehlklick auf
+    // "Wieder voll im Einsatz" ließ sich dann nur noch ueber eine neue
+    // Meldung mit spaeterem Beginn umgehen, was den 42-Tage-Zaehler der
+    // Lohnfortzahlung verfaelscht. "Doch noch krank" ruft den bereits
+    // getesteten, bisher ungenutzten Endpunkt PUT .../{id}/oeffnen (siehe
+    // LangzeitkrankmeldungController.oeffnen). Bewusst OHNE Rueckfrage-Dialog
+    // -- wie handleUmstellenAufKrankengeld -- weil der Knopf selbst die
+    // schnelle Korrektur eines Fehlklicks sein soll, nicht ein zweiter
+    // Bestaetigungsschritt. Das Backend verweigert die Aktion ohnehin fuer
+    // ABGEBROCHEN-Meldungen (IllegalStateException "Bitte neu anlegen") und
+    // bei einer inzwischen ueberlappenden neuen Meldung -- beides landet ganz
+    // regulaer als Server-Meldung im Fehler-Toast statt eines stillen Fails.
+    const handleWiederOeffnen = async (meldung: Meldung) => {
+        setAktionLaeuftId(meldung.id);
+        try {
+            const res = await fetch(`/api/langzeitkrankmeldungen/${meldung.id}/oeffnen?version=${meldung.version}`, { method: 'PUT' });
+            if (await pruefeAntwort(res)) return;
+            if (!res.ok) throw new Error(await fehlertextAus(res, 'Die Krankmeldung konnte nicht wieder geöffnet werden.'));
+            toast.success('Krankmeldung wieder geöffnet.');
+            await loadMeldungen();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Die Krankmeldung konnte nicht wieder geöffnet werden.');
+        } finally {
+            setAktionLaeuftId(null);
+        }
+    };
+
     const handleAbbrechen = async (meldung: Meldung) => {
         const bestaetigt = await confirm({
             title: 'Krankmeldung zurücknehmen',
@@ -521,6 +549,23 @@ export default function Langzeitkrankmeldungen() {
                                                                     <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                                                                 )}
                                                                 Wieder voll im Einsatz
+                                                            </Button>
+                                                        </div>
+                                                    )}
+
+                                                    {m.status === 'BEENDET' && (
+                                                        <div className="mt-4 flex gap-2 flex-wrap">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                                                onClick={() => handleWiederOeffnen(m)}
+                                                                disabled={aktionLaeuftId === m.id}
+                                                            >
+                                                                {aktionLaeuftId === m.id && (
+                                                                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                                                                )}
+                                                                Doch noch krank
                                                             </Button>
                                                         </div>
                                                     )}
