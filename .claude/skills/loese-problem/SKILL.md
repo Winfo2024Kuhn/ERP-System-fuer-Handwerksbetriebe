@@ -213,6 +213,36 @@ statt in die Sammeldatei.
 Wird eine feste Grenze erreicht, wird **nicht weitergelooped** — die
 Pipeline stoppt und legt dem Nutzer die verbleibenden Befunde vor.
 
+## Unterbrechung: so anhalten, dass jede Session weitermachen kann
+
+Die Pipeline läuft über Stunden und wird unterbrochen — Nutzungslimit, Pause,
+geschlossenes Fenster. Ein Weckruf per `CronCreate` lebt **nur in der
+laufenden Session** und ist weg, sobald Claude Code beendet wird. Verlass dich
+also nie darauf allein.
+
+**Beim Anhalten, in dieser Reihenfolge:**
+
+1. Laufende Coding-Agenten mit `TaskStop` beenden.
+2. **Halbzustand prüfen**, bei jedem gestoppten Agenten:
+   `git -C <worktree> status --short` und
+   `git -C <worktree> log --oneline <feature-branch>..HEAD`.
+   Wurde nichts geschrieben, ist der Auftrag unverändert gültig und der
+   Agent wird später einfach neu gestartet. Liegt Halbfertiges da, gehört das
+   ausdrücklich ins Log — sonst rät die nächste Session.
+3. Alles Abgenommene committen und **pushen**. Was nicht auf `origin` liegt,
+   existiert nicht.
+4. Einen Block **`# ⏸ HIER GEHT ES WEITER`** ans Kontext-Log anhängen. Das ist
+   der eigentliche Wiederaufnahme-Punkt und muss ohne den Gesprächsverlauf
+   lesbar sein: aktueller Commit, welcher Abschnitt abgenommen ist, welche
+   Worktrees und Branches **schon existieren** (also nicht neu angelegt werden
+   dürfen), was als Nächstes zu starten ist, und die Besonderheiten der
+   nächsten Aufträge (Symlinks, Skill-Namen, Reihenfolge-Zwänge).
+5. Optional zusätzlich `CronCreate` für die automatische Wiederaufnahme —
+   als Komfort, nicht als Absicherung.
+
+**Beim Wiederaufnehmen:** Kontext-Log lesen, dort steht alles. Eine neue
+Session braucht den alten Gesprächsverlauf dann nicht.
+
 ## Referenzen
 
 - `references/plan-format.md` — erwartetes Format für Plan-Datei inkl.
