@@ -239,6 +239,17 @@ mit Exit 2):
 - Wording in der Oberfläche: „Lohnfortzahlung durch den Betrieb", „Krankengeld
   der Krankenkasse", „Wiedereingliederung", „Wieder voll im Einsatz". Kein
   „Entgeltfortzahlungszeitraum", kein „AU-Zeitraum".
+- **Langzeitkrankmeldungen werden ausschließlich am PC gepflegt.** Bestätigt
+  vom Projektinhaber am 08.09.2026: Ein Mitarbeiter kann eine Wiedereingliederung
+  weder anlegen noch ändern — das ist Sache des Büros. Die Handy-App
+  (`react-zeiterfassung`) bekommt deshalb **genau einen** Endpunkt, und der ist
+  lesend: `GET /api/zeiterfassung/langzeitkrankmeldung/{token}`. **Kein POST,
+  kein PUT, kein PATCH, kein DELETE** unter `/api/zeiterfassung/**` für dieses
+  Feature — auch nicht „für später schon mal vorbereitet".
+  Die App **zeigt** die laufende Phase (Dashboard-Karte, Abwesenheiten-Verlauf),
+  damit der Mitarbeiter weiß, wogegen er stempelt, wenn sein Tagessoll auf
+  z.B. 2 Stunden reduziert ist. Mehr nicht.
+  Der Abschnitts-Reviewer prüft das ausdrücklich mit.
 
 **Gates je Coding-Agent** (nie die volle Suite — das machen die Reviewer):
 
