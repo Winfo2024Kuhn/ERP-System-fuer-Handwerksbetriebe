@@ -7,14 +7,19 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.Langzeitkrankmeldung.LangzeitkrankmeldungDto;
 import org.example.kalkulationsprogramm.service.LangzeitkrankmeldungService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
 
 import java.time.LocalDate;
+import java.util.stream.Stream;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -154,6 +159,55 @@ class LangzeitkrankmeldungControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
                         "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."));
+    }
+
+    /**
+     * Nachbesserung (Abschnitt-4-Review): der 409-Fall war bisher nur fuer
+     * PUT /{id} getestet, obwohl alle sieben aendernden Endpunkte dieselbe
+     * private pruefeVersion()-Vorabpruefung nutzen. Deckt die uebrigen sechs
+     * ab, damit ein spaeter versehentlich entferntes oder falsch verdrahtetes
+     * pruefeVersion() an jedem einzelnen Endpunkt aussfaellt.
+     */
+    @ParameterizedTest(name = "{0} liefert 409 bei veralteter Version")
+    @MethodSource("aendierendeEndpunkteOhneAendernPut")
+    void versionskonflikt_LiefertAnJedemAendierendenEndpunkt409(String bezeichnung, RequestBuilder requestBuilder)
+            throws Exception {
+        Langzeitkrankmeldung aktuell = meldungMitId(42L);
+        aktuell.setVersion(5L);
+        given(service.findeMitPhasen(42L)).willReturn(aktuell);
+
+        mockMvc.perform(requestBuilder)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."));
+    }
+
+    static Stream<Arguments> aendierendeEndpunkteOhneAendernPut() {
+        String phasenBody = """
+                {
+                  "typ": "KRANKENGELD",
+                  "vonDatum": "2026-02-16",
+                  "bisDatum": "2026-03-01"
+                }
+                """;
+        return Stream.of(
+                Arguments.of("PUT /{id}/beenden", put("/api/langzeitkrankmeldungen/42/beenden")
+                        .param("ende", "2026-03-01")
+                        .param("version", "3")),
+                Arguments.of("PUT /{id}/oeffnen", put("/api/langzeitkrankmeldungen/42/oeffnen")
+                        .param("version", "3")),
+                Arguments.of("PUT /{id}/abbrechen", put("/api/langzeitkrankmeldungen/42/abbrechen")
+                        .param("version", "3")),
+                Arguments.of("POST /{id}/phasen", post("/api/langzeitkrankmeldungen/42/phasen")
+                        .param("version", "3")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(phasenBody)),
+                Arguments.of("PUT /{id}/phasen/{phasenId}", put("/api/langzeitkrankmeldungen/42/phasen/7")
+                        .param("version", "3")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(phasenBody)),
+                Arguments.of("DELETE /{id}/phasen/{phasenId}", delete("/api/langzeitkrankmeldungen/42/phasen/7")
+                        .param("version", "3")));
     }
 
     @Test
