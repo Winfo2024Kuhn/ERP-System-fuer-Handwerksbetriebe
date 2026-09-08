@@ -7,7 +7,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,6 +33,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code VARCHAR} -- sonst scheitert dieselbe Schema-Validierung mit
  * "wrong column type" (siehe BACKEND_ARCH.md, Vorbild
  * V366__datensatz_lock_entitaet_typ_enum.sql).
+ *
+ * <p><b>Wichtig:</b> Alle Zusicherungen laufen gegen den
+ * <em>kommentarbereinigten</em> SQL-Text ({@link #ohneKommentare(String)}).
+ * Der Kopfkommentar dieser Migration nennt aus gutem Grund dieselben
+ * Spaltennamen wie die eigentlichen Anweisungen (Dokumentation) -- ein Test,
+ * der direkt gegen den Rohtext prueft, wuerde also selbst dann gruen bleiben,
+ * wenn eine Anweisung komplett fehlt, solange nur der Kommentar sie noch
+ * erwaehnt. Das war frueher der Fall (still bestandener Test trotz
+ * geloeschter ALTER-TABLE-Bloecke) und ist genau die Luecke, die dieser Test
+ * eigentlich schliessen soll.
  */
 class V367SchemaTest {
 
@@ -39,7 +51,7 @@ class V367SchemaTest {
     @Test
     @DisplayName("V367 enthaelt alle Spalten, die die Langzeitkrankmeldung-Entities brauchen")
     void enthaeltAlleErwartetenSpalten() {
-        String sql = ladeMigration();
+        String sql = ohneKommentare(ladeMigration());
 
         assertThat(sql)
                 .contains("langzeitkrankmeldung")
@@ -54,15 +66,29 @@ class V367SchemaTest {
                 .contains("typ")
                 .contains("von_datum")
                 .contains("bis_datum")
-                .contains("stunden_pro_tag")
-                .contains("langzeitkrankmeldung_id")
-                .contains("langzeitkrankmeldung_phase_id");
+                .contains("stunden_pro_tag");
+    }
+
+    @Test
+    @DisplayName("abwesenheit bekommt die zwei neuen Spalten wirklich per ALTER TABLE, nicht nur im Kommentar erwaehnt")
+    void abwesenheitBekommtDieNeuenSpaltenPerAlterTable() {
+        String sql = ohneKommentare(ladeMigration());
+
+        // Bewusst NICHT nur sql.contains("langzeitkrankmeldung_id"): dieser
+        // Spaltenname taucht legitim auch als Fremdschluessel-Spalte INNERHALB
+        // von langzeitkrankmeldung_phase auf (Verweis auf die Meldung). Ein
+        // simpler contains-Check auf den bloßen Namen wuerde also gruen
+        // bleiben, selbst wenn beide ALTER-TABLE-Bloecke an abwesenheit
+        // komplett fehlten -- genau das hat der Review gemessen. Deshalb wird
+        // hier die tatsaechliche ALTER-Anweisung geprueft.
+        assertThat(sql).contains("ADD COLUMN langzeitkrankmeldung_id");
+        assertThat(sql).contains("ADD COLUMN langzeitkrankmeldung_phase_id");
     }
 
     @Test
     @DisplayName("status und typ sind native ENUM-Spalten, keine VARCHAR-Spalten")
     void enumSpaltenSindNativeEnums() {
-        String sql = ladeMigration();
+        String sql = ohneKommentare(ladeMigration());
 
         // Spaltendefinitionen sind wie im restlichen Bestand ueblich
         // ausgerichtet (mehrere Leerzeichen vor dem Typ) -- deshalb \s+ statt
@@ -84,5 +110,15 @@ class V367SchemaTest {
         } catch (IOException e) {
             throw new UncheckedIOException("Konnte " + MIGRATION_RESOURCE + " nicht lesen", e);
         }
+    }
+
+    /**
+     * Entfernt jede Zeile, die (nach Trim) mit "--" beginnt -- SQL-Kommentare
+     * duerfen die folgenden Zusicherungen nicht mehr "gratis" erfuellen.
+     */
+    private String ohneKommentare(String sql) {
+        return Arrays.stream(sql.split("\n"))
+                .filter(zeile -> !zeile.trim().startsWith("--"))
+                .collect(Collectors.joining("\n"));
     }
 }

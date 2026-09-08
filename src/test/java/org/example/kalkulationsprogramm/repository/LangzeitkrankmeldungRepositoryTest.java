@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.repository;
 
+import org.example.kalkulationsprogramm.domain.Abwesenheit;
+import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
 import org.example.kalkulationsprogramm.domain.Langzeitkrankmeldung;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhase;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
@@ -38,6 +40,9 @@ class LangzeitkrankmeldungRepositoryTest {
 
     @Autowired
     private MitarbeiterRepository mitarbeiterRepository;
+
+    @Autowired
+    private AbwesenheitRepository abwesenheitRepository;
 
     @Test
     @DisplayName("Meldung mit zwei Phasen wird gespeichert und mit Phasen wieder geladen")
@@ -106,6 +111,34 @@ class LangzeitkrankmeldungRepositoryTest {
         assertThat(gefunden.get(0).getTyp()).isEqualTo(LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG);
     }
 
+    @Test
+    @DisplayName("sumStundenOhnePhasenTypen zaehlt Abwesenheiten OHNE Phasenbezug mit (Regression: impliziter Pfad wurde zum INNER JOIN)")
+    void sumStundenOhnePhasenTypen_zaehltTageOhnePhasenbezugMit() {
+        Mitarbeiter mitarbeiter = neuerMitarbeiter();
+
+        // Normalfall: Krankheitstag ohne jeden Bezug zu einer Langzeitkrankmeldung.
+        abwesenheitRepository.saveAndFlush(
+                neueAbwesenheit(mitarbeiter, LocalDate.of(2026, 5, 4), new BigDecimal("8.00"), null));
+
+        // Krankheitstag WAEHREND einer KRANKENGELD-Phase - muss ausgeschlossen bleiben.
+        Langzeitkrankmeldung meldung = neueMeldung(mitarbeiter, LocalDate.of(2026, 5, 5), null);
+        meldung.getPhasen().add(neuePhase(meldung, LangzeitkrankmeldungPhaseTyp.KRANKENGELD,
+                LocalDate.of(2026, 5, 5), null, null));
+        Langzeitkrankmeldung gespeicherteMeldung = repository.saveAndFlush(meldung);
+        abwesenheitRepository.saveAndFlush(neueAbwesenheit(mitarbeiter, LocalDate.of(2026, 5, 5),
+                new BigDecimal("6.00"), gespeicherteMeldung.getPhasen().get(0)));
+
+        BigDecimal summe = abwesenheitRepository.sumStundenOhnePhasenTypen(mitarbeiter.getId(),
+                AbwesenheitsTyp.KRANKHEIT, LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31),
+                List.of(LangzeitkrankmeldungPhaseTyp.KRANKENGELD));
+
+        // Erwartet: nur der Tag ohne Phasenbezug (8h). Der Bug lieferte hier 0,
+        // weil der implizite Pfad a.langzeitkrankmeldungPhase.typ zu einem
+        // INNER JOIN wird und dabei Zeilen ohne Phasenbezug komplett rauswirft,
+        // bevor "p IS NULL" ueberhaupt greifen kann.
+        assertThat(summe).isEqualByComparingTo("8.00");
+    }
+
     private Mitarbeiter neuerMitarbeiter() {
         Mitarbeiter mitarbeiter = new Mitarbeiter();
         mitarbeiter.setVorname("Max");
@@ -131,5 +164,16 @@ class LangzeitkrankmeldungRepositoryTest {
         phase.setBisDatum(bis);
         phase.setStundenProTag(stundenProTag);
         return phase;
+    }
+
+    private Abwesenheit neueAbwesenheit(Mitarbeiter mitarbeiter, LocalDate datum, BigDecimal stunden,
+            LangzeitkrankmeldungPhase phase) {
+        Abwesenheit abwesenheit = new Abwesenheit();
+        abwesenheit.setMitarbeiter(mitarbeiter);
+        abwesenheit.setTyp(AbwesenheitsTyp.KRANKHEIT);
+        abwesenheit.setDatum(datum);
+        abwesenheit.setStunden(stunden);
+        abwesenheit.setLangzeitkrankmeldungPhase(phase);
+        return abwesenheit;
     }
 }
