@@ -266,14 +266,40 @@ mit Exit 2):
 
 ---
 
-## Abschnitt 1 — Task 1, 2 (max. 3 Tasks, disjunkte Dateien)
+## Abschnitts-Einteilung (Runden)
 
-Basis: `feature/langzeitkrankmeldung` (aktueller Stand vor diesem Vorhaben).
-Frontend betroffen: nein.
+Geschnitten nach der **topologischen Ebene der Consumes-Ketten**, nicht nach der
+Reihenfolge im Dokument: Alles, was keine offene Abhaengigkeit mehr hat, laeuft
+in derselben Runde. Vorgabe des Nutzers vom 08.09.2026: **so wenig Runden wie
+moeglich.** Die Obergrenze von 3 Tasks pro Abschnitt gilt nicht mehr — sind die
+Dateien disjunkt und die Abhaengigkeiten erfuellt, duerfen es auch sechs sein.
+Jede zusaetzliche Runde kostet einen vollen Reviewer-Lauf (~165k Tokens) und
+einen kompletten Testsuite-Durchlauf, ohne inhaltlichen Gewinn.
 
-### Task 1 — Datenmodell, Migration V367, Repositories
+Programmatisch geprueft: Innerhalb keines Abschnitts teilen sich zwei Tasks
+eine Datei.
+
+| Abschnitt | Tasks | Frontend? | wartet auf |
+| --- | --- | --- | --- |
+| 1 | 1, 2 | nein | — |
+| 2 | 3, 13, 14 | Task 14 (nur Bausteine, kein Playwright moeglich) | Abschnitt 1 |
+| 3 | 4, 7, 8, 9, 10, 11 | nein | Task 2, 3 |
+| 4 | 5, 6, 12 | nein | Task 4 |
+| 5 | 15, 16, 17, 18, 19 | ja — volle Design-Pruefung mit Playwright | Task 5, 6, 12, 13, 14 |
+
+Design-Reviewer zusaetzlich zum Code-Reviewer: in Abschnitt 5 (volle Pruefung).
+In Abschnitt 2 reicht fuer Task 14 Vitest — die Bausteine sind ohne die Seite
+aus Task 15 nicht sinnvoll im Browser zu beurteilen.
+
+Basis jedes Abschnitts: der Stand von `feature/langzeitkrankmeldung` **nach**
+Abnahme des vorherigen Abschnitts.
+
+---
+
+## Task 1 — Datenmodell, Migration V367, Repositories
 - Branch: `lzk/task-1-datenmodell`
 - Worktree: `../wt/lzk-task-1`
+- Abschnitt: 1
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/domain/Langzeitkrankmeldung.java` (neu)
@@ -441,6 +467,7 @@ Frontend betroffen: nein.
 ### Task 2 — Charakterisierungs-Tests: das heutige Verhalten festnageln
 - Branch: `lzk/task-2-charakterisierung`
 - Worktree: `../wt/lzk-task-2`
+- Abschnitt: 1
 
 Dieser Task ändert **keine** Produktionsdatei. Er sichert vor jeder Umstellung
 zahlengenau, was der Bestand heute liefert. Die Tasks 7–12 dürfen diese Tests
@@ -519,14 +546,10 @@ nur dort anfassen, wo im Abschnitt „Bewusste Verhaltensänderungen" oben eine
 
 ---
 
-## Abschnitt 2 — Task 3 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 1.
-Frontend betroffen: nein.
-
 ### Task 3 — `TagesSollService`
 - Branch: `lzk/task-3-tagessoll`
 - Worktree: `../wt/lzk-task-3`
+- Abschnitt: 2
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/TagesSollService.java` (neu)
@@ -607,14 +630,10 @@ Frontend betroffen: nein.
 
 ---
 
-## Abschnitt 3 — Task 4 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 2.
-Frontend betroffen: nein.
-
 ### Task 4 — `LangzeitkrankmeldungService` + DTOs
 - Branch: `lzk/task-4-service`
 - Worktree: `../wt/lzk-task-4`
+- Abschnitt: 3
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/LangzeitkrankmeldungService.java` (neu)
@@ -770,14 +789,10 @@ Frontend betroffen: nein.
 
 ---
 
-## Abschnitt 4 — Task 5, 6, 7 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 3.
-Frontend betroffen: nein.
-
 ### Task 5 — Desktop-API: `LangzeitkrankmeldungController`
 - Branch: `lzk/task-5-controller`
 - Worktree: `../wt/lzk-task-5`
+- Abschnitt: 4
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/controller/LangzeitkrankmeldungController.java` (neu)
@@ -836,6 +851,7 @@ Frontend betroffen: nein.
 ### Task 6 — Mobile-API: `LangzeitkrankmeldungMobileController`
 - Branch: `lzk/task-6-mobile-controller`
 - Worktree: `../wt/lzk-task-6`
+- Abschnitt: 4
 
 Eigener Controller statt einer Erweiterung von `ZeiterfassungApiService` —
 sonst würde dieser Task dieselbe Datei anfassen wie Task 10.
@@ -880,6 +896,7 @@ sonst würde dieser Task dieselbe Datei anfassen wie Task 10.
 ### Task 7 — Umstellung `ZeitkontoService`
 - Branch: `lzk/task-7-zeitkonto`
 - Worktree: `../wt/lzk-task-7`
+- Abschnitt: 3
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/ZeitkontoService.java`
@@ -921,14 +938,10 @@ sonst würde dieser Task dieselbe Datei anfassen wie Task 10.
 
 ---
 
-## Abschnitt 5 — Task 8, 9, 10 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 4.
-Frontend betroffen: nein.
-
 ### Task 8 — Umstellung `MonatsSaldoService`
 - Branch: `lzk/task-8-monatssaldo`
 - Worktree: `../wt/lzk-task-8`
+- Abschnitt: 3
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/MonatsSaldoService.java`
@@ -964,6 +977,7 @@ Frontend betroffen: nein.
 ### Task 9 — Umstellung `AbwesenheitService`
 - Branch: `lzk/task-9-abwesenheit`
 - Worktree: `../wt/lzk-task-9`
+- Abschnitt: 3
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/AbwesenheitService.java`
@@ -1002,6 +1016,7 @@ Frontend betroffen: nein.
 ### Task 10 — Umstellung `ZeiterfassungApiService`
 - Branch: `lzk/task-10-zeiterfassung-api`
 - Worktree: `../wt/lzk-task-10`
+- Abschnitt: 3
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/ZeiterfassungApiService.java`
@@ -1039,14 +1054,10 @@ Frontend betroffen: nein.
 
 ---
 
-## Abschnitt 6 — Task 11, 12, 13 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 5.
-Frontend betroffen: nein.
-
 ### Task 11 — Umstellung `ZeitverwaltungController` (mit benannter Verhaltensänderung)
 - Branch: `lzk/task-11-zeitverwaltung`
 - Worktree: `../wt/lzk-task-11`
+- Abschnitt: 3
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/controller/ZeitverwaltungController.java`
@@ -1105,6 +1116,7 @@ Frontend betroffen: nein.
 ### Task 12 — Umstellung `UrlaubsantragService` + Hinweis-Endpoint
 - Branch: `lzk/task-12-urlaubsantrag`
 - Worktree: `../wt/lzk-task-12`
+- Abschnitt: 4
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/UrlaubsantragService.java`
@@ -1162,6 +1174,7 @@ Frontend betroffen: nein.
 ### Task 13 — Verrechnungslohn: Krankheitsphasen trennen
 - Branch: `lzk/task-13-verrechnungslohn`
 - Worktree: `../wt/lzk-task-13`
+- Abschnitt: 2
 
 - Files:
   - `src/main/java/org/example/kalkulationsprogramm/service/VerrechnungslohnService.java`
@@ -1239,10 +1252,6 @@ Frontend betroffen: nein.
 
 ---
 
-## Abschnitt 7 — Task 14 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 6.
-Frontend betroffen: ja (`react-pc-frontend/`) — reine Bausteine ohne eigene
 Seite/Route, noch nichts zum Anklicken, deshalb noch kein Playwright. Design-
 Review hier nur visuell über die Vitest-Tests; die volle Playwright-Prüfung
 folgt in Abschnitt 8, sobald die Seite existiert.
@@ -1250,6 +1259,7 @@ folgt in Abschnitt 8, sobald die Seite existiert.
 ### Task 14 — Desktop-Bausteine: Phasen-Zeitleiste und Stufenplan-Tabelle
 - Branch: `lzk/task-14-bausteine`
 - Worktree: `../wt/lzk-task-14`
+- Abschnitt: 2
 
 - Files:
   - `react-pc-frontend/src/components/langzeitkrankmeldung/phasen.ts` (neu)
@@ -1331,16 +1341,13 @@ folgt in Abschnitt 8, sobald die Seite existiert.
 
 ---
 
-## Abschnitt 8 — Task 15, 16, 17 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 7.
-Frontend betroffen: ja (`react-pc-frontend/`) — alle drei Tasks bringen eine
 eigene Playwright-Spec auf eigenem Port mit; Design-Reviewer läuft hier mit
 voller E2E-Prüfung.
 
 ### Task 15 — Desktop-Seite „Lange Krankheit" + Route + Menü
 - Branch: `lzk/task-15-seite`
 - Worktree: `../wt/lzk-task-15`
+- Abschnitt: 5
 
 - Files:
   - `react-pc-frontend/src/pages/Langzeitkrankmeldungen.tsx` (neu)
@@ -1440,6 +1447,7 @@ voller E2E-Prüfung.
 ### Task 16 — Verrechnungslohn-Dialog: ausgeklammerte Tage sichtbar machen
 - Branch: `lzk/task-16-verrechnungslohn-dialog`
 - Worktree: `../wt/lzk-task-16`
+- Abschnitt: 5
 
 - Files:
   - `react-pc-frontend/src/components/VerrechnungslohnRechnerDialog.tsx` (geändert)
@@ -1482,6 +1490,7 @@ voller E2E-Prüfung.
 ### Task 17 — Urlaubsanträge-Seite: Hinweis bei laufender Krankmeldung
 - Branch: `lzk/task-17-urlaubsantraege-hinweis`
 - Worktree: `../wt/lzk-task-17`
+- Abschnitt: 5
 
 - Files:
   - `react-pc-frontend/src/pages/Urlaubsantraege.tsx` (geändert)
@@ -1513,10 +1522,6 @@ voller E2E-Prüfung.
 
 ---
 
-## Abschnitt 9 — Task 18, 19 (max. 3 Tasks, disjunkte Dateien)
-
-Basis: `feature/langzeitkrankmeldung` nach Merge von Abschnitt 8.
-Frontend betroffen: ja (`react-zeiterfassung/`) — dort gibt es kein
 Playwright (weder Dependency noch Config, siehe Global Constraints); Gate ist
 lint + vitest + build. Design-Review sinnvoll für UX/Konsistenz, ohne
 E2E-Teil.
@@ -1524,6 +1529,7 @@ E2E-Teil.
 ### Task 18 — Handy-App: Dashboard-Karte bei laufender Meldung
 - Branch: `lzk/task-18-dashboard`
 - Worktree: `../wt/lzk-task-18`
+- Abschnitt: 5
 
 - Files:
   - `react-zeiterfassung/src/pages/DashboardPage.tsx` (geändert)
@@ -1577,6 +1583,7 @@ E2E-Teil.
 ### Task 19 — Handy-App: Phase im Abwesenheiten-Verlauf (nur lesen)
 - Branch: `lzk/task-19-abwesenheiten-verlauf`
 - Worktree: `../wt/lzk-task-19`
+- Abschnitt: 5
 
 - Files:
   - `react-zeiterfassung/src/pages/AbwesenheitenPage.tsx` (geändert)

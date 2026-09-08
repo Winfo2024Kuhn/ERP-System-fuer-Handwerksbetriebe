@@ -326,3 +326,71 @@ Was gemacht wurde:
 
 Bedenken / Abweichungen vom Plan:
 - keine
+
+## Abschnitt 1 — Review (Nachprüfung 1)
+
+Zeit: 2026-09-08T15:20:00Z
+Branch: feature/langzeitkrankmeldung (cdc67d2d, vorher geprueft 4b3b4744)
+Commit(s): ad31b81d (Nachbesserung), c2fbec54 (Doku), cdc67d2d (Merge)
+Status: fertig
+Ampel: 🟢
+
+Was gemacht wurde:
+- Geprueft wurde nur der Diff 4b3b4744..cdc67d2d (3 Code-Dateien). Alles aus
+  dem ersten Durchgang (V367 gegen Hibernate-DDL, ENUM-Werte, Idempotenz,
+  ON DELETE SET NULL, findMitPhasen, die sechs Charakterisierungs-Mutationen,
+  Zeitbomben, DSGVO) wurde nicht neu aufgerollt und ist unveraendert.
+- Volle Suite: `mvn -B clean test` -> **Tests run: 2488, Failures: 0,
+  Errors: 4**. Die vier sind exakt die bekannten Baseline-Errors
+  (AuditChainRepairIntegrationTest 2, AuditHashRoundtripDiagnoseTest 2).
+  Anmerkung zur Erwartung "2487": es sind zwei neue Tests dazugekommen, nicht
+  einer - der Repository-Regressionstest UND die neue Methode
+  abwesenheitBekommtDieNeuenSpaltenPerAlterTable in V367SchemaTest.
+  V367SchemaTest 2 -> 3, LangzeitkrankmeldungRepositoryTest 4 -> 5.
+  2486 + 2 = 2488, passt.
+- Nachpruefung 1 (erzeugtes SQL selbst angesehen): Lauf mit
+  -Dspring.jpa.show-sql=true. Das SQL lautet jetzt
+  `select coalesce(sum(a1_0.stunden),0) from abwesenheit a1_0
+   **left join** langzeitkrankmeldung_phase lp1_0 on
+   lp1_0.id=a1_0.langzeitkrankmeldung_phase_id where ... and
+   (a1_0.langzeitkrankmeldung_phase_id is null or lp1_0.typ not in (?))`.
+   Aus dem INNER JOIN ist ein LEFT JOIN geworden, die Abwesenheit ohne
+   Phasenbezug zaehlt mit - der Test steht auf 8,00 und ist gruen.
+- Nachpruefung 2 (Mutationsprobe auf den neuen Regressionstest): Query
+  testweise wieder auf den impliziten Pfad
+  `a.langzeitkrankmeldungPhase.typ` zurueckgebaut ->
+  `sumStundenOhnePhasenTypen_zaehltTageOhnePhasenbezugMit` faellt um mit
+  **expected: 8.00 but was: 0**. Exakt der Wert, den die Review-Sonde im
+  ersten Durchgang gemessen hatte. Der Test schliesst die Luecke wirklich.
+  Er ist auch in die Gegenrichtung scharf: die Fixture enthaelt zusaetzlich
+  einen KRANKENGELD-Tag mit 6,00 h, ein Wegfall der Ausschluss-Bedingung
+  ergaebe 14,00 statt 8,00.
+- Nachpruefung 3 (Mutationsprobe auf V367SchemaTest), zwei Mutationen:
+  (a) `ALTER TABLE abwesenheit ADD COLUMN langzeitkrankmeldung_id`-Block
+      geloescht -> `abwesenheitBekommtDieNeuenSpaltenPerAlterTable` rot
+      ("to contain: ADD COLUMN langzeitkrankmeldung_id"). Genau die Luecke,
+      die im ersten Durchgang gruen geblieben war, ist zu.
+  (b) Spalte `version BIGINT NOT NULL DEFAULT 0` aus dem CREATE TABLE
+      geloescht, waehrend der Kopfkommentar das Wort "version" weiterhin
+      nennt -> `enthaeltAlleErwartetenSpalten` rot ("to contain: version").
+      Das ist der direkte Beweis, dass die Kommentarbereinigung greift: ohne
+      sie waere diese Mutation gruen durchgelaufen.
+  Beide Mutationen zurueckgenommen.
+- Gegenprobe "hat die Umstellung etwas entschaerft?": nein. Die zwei
+  Zusicherungen langzeitkrankmeldung_id / langzeitkrankmeldung_phase_id sind
+  aus der schwachen contains-Liste in den strikteren
+  ADD-COLUMN-Test gewandert - das ist strikt staerker, keine ist
+  weggefallen. `ohneKommentare` entfernt nur ganze Zeilen, die nach Trim mit
+  "--" beginnen; in V367 steht auf keiner Zeile SQL vor einem Kommentar
+  (geprueft), es geht also kein pruefbarer Text verloren.
+- Alle Mutationen restlos zurueckgenommen: `git status --porcelain
+  --untracked-files=all` leer, `git diff` leer, HEAD unveraendert cdc67d2d.
+
+Bedenken / Abweichungen vom Plan:
+- Keine. Beide 🔴-Befunde aus dem ersten Durchgang sind sachlich behoben und
+  jeweils durch eine eigene Mutationsprobe als wirksam nachgewiesen. Die
+  🟡-Hinweise aus dem ersten Durchgang (ON DELETE SET NULL im
+  Persistence-Context beim spaeteren Loeschpfad, Reflection-Aufruf im
+  ZeiterfassungApi-Charakterisierungstest, findMitPhasen ohne DISTINCT)
+  bleiben als Hinweise stehen und blockieren nicht.
+- Abschnitt 1 ist aus Sicht des Code-Reviews abgenommen.
