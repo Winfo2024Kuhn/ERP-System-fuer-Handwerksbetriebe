@@ -37,7 +37,8 @@ export default function Urlaubsantraege() {
         return v ? Number(v) : null;
     });
     // Krankmeldungs-Hinweis je Antrag-ID (Task 17, Abschnitt 5). Reine
-    // Warnung fürs Büro, keine Sperre -- siehe getHinweisWarnungen() unten.
+    // Warnung fürs Büro, keine Sperre -- siehe der Effect weiter unten,
+    // der diesen State über /api/langzeitkrankmeldungen/urlaubs-hinweise füllt.
     const [hinweise, setHinweise] = useState<Record<number, string[]>>({});
 
     // Deep-link: read status + optionalen fokusId aus URL.
