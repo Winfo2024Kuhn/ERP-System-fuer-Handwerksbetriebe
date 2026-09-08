@@ -104,6 +104,10 @@ der Urlaubshinweis nennen jemals eine Ursache.
   Oberfläche. Ändern geht über die API, nicht über einen Knopf.
 - Der Verrechnungslohn-Dialog erklärt, warum das **Jahressoll** kleiner ist. Warum
   die **Lohnsumme** kleiner ist, steht nur in einem Tooltip.
+- Wer über seine Stufenplan-Stunden hinaus stempelt, wird wie geplant **nicht
+  blockiert** — die im Design vorgesehene **Markierung** für den Chef fehlt aber
+  noch. Die Mehrstunden tauchen nur als Plus im Saldo auf, ohne Hinweis auf den
+  Stufenplan.
 - Ein Urlaubsantrag löst einen Request pro offenem Antrag aus (parallel, kein
   Wasserfall). Bei zwölf Anträgen sind das zwölf Aufrufe.
 
