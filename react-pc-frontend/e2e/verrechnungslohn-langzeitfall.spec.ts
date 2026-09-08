@@ -128,7 +128,7 @@ test.describe('Verrechnungslohn-Dialog: ausgeklammerte Tage einer Langzeitkrankm
 
         await expect(
             dialog.getByText(
-                'Bei 1 Mitarbeitern sind Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt 122 Tage.'
+                'Bei 1 Mitarbeiter sind Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt 122 Tage.'
             )
         ).toBeVisible();
 
