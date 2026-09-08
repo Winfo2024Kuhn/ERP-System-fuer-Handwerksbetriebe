@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -179,6 +180,27 @@ class LangzeitkrankmeldungServiceTest {
         Langzeitkrankmeldung ergebnis = service.anlegen(MITARBEITER_ID, LocalDate.of(2020, 3, 1), null, null);
 
         assertEquals(LangzeitkrankmeldungStatus.LAUFEND, ergebnis.getStatus());
+    }
+
+    @Test
+    void anlegen_UebergibtOffenesEndeInnerhalbDesMysqlDateBereichsAnUeberlappungspruefung() {
+        // Befund 1 (Abschnitt-4-Review, Issue #91): bisher ging LocalDate.MAX
+        // (Jahr 999999999) als "bis"-Parameter an findUeberlappende. MySQL
+        // kennt DATE nur bis 9999-12-31 - je nach Servermodus ein Fehler oder,
+        // schlimmer, still keine Treffer, wodurch die Ueberlappungspruefung
+        // nichts mehr prueft. Mutationsprobe: baut man die Konstante zurueck
+        // auf LocalDate.MAX, ist der hier abgefangene Wert nicht mehr
+        // LocalDate.of(9999, 12, 31) und der Test wird rot.
+        stubAnlegenGrunddaten();
+
+        service.anlegen(MITARBEITER_ID, LocalDate.of(2020, 3, 1), null, null);
+
+        ArgumentCaptor<LocalDate> bisCaptor = ArgumentCaptor.forClass(LocalDate.class);
+        org.mockito.Mockito.verify(repository).findUeberlappende(eq(MITARBEITER_ID), any(), bisCaptor.capture());
+        LocalDate uebergebenesBis = bisCaptor.getValue();
+
+        assertEquals(LocalDate.of(9999, 12, 31), uebergebenesBis);
+        assertTrue(uebergebenesBis.getYear() <= 9999, "MySQL DATE erlaubt hoechstens das Jahr 9999");
     }
 
     @Test
@@ -574,7 +596,16 @@ class LangzeitkrankmeldungServiceTest {
                 LocalDate.of(2020, 4, 13), LocalDate.of(2020, 4, 17), new BigDecimal("4.00")));
 
         when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
-        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), eq(zeitkonto), any())).thenReturn(new BigDecimal("4.00"));
+        // baueStufenplanTage laedt die geplanten Stunden seit Abschnitt 4
+        // (Befund 2) einmal fuer den Gesamtzeitraum statt einmal pro Tag -
+        // arbeitsSollJeTag ersetzt hier den frueheren Einzeltag-Mock.
+        Map<LocalDate, BigDecimal> geplantJeTag = new LinkedHashMap<>();
+        for (LocalDate tag = LocalDate.of(2020, 4, 13); !tag.isAfter(LocalDate.of(2020, 4, 17)); tag = tag
+                .plusDays(1)) {
+            geplantJeTag.put(tag, new BigDecimal("4.00"));
+        }
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), eq(zeitkonto), any(), any()))
+                .thenReturn(geplantJeTag);
 
         Zeitbuchung buchungMontag = new Zeitbuchung();
         buchungMontag.setStartZeit(LocalDate.of(2020, 4, 13).atTime(8, 0));

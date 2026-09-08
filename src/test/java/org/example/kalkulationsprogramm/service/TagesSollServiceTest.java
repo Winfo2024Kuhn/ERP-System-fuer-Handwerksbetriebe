@@ -17,6 +17,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -96,6 +98,18 @@ class TagesSollServiceTest {
         when(phaseRepository.findImZeitraum(MITARBEITER_ID, tag, tag)).thenReturn(List.of(phase));
     }
 
+    /**
+     * Stubt {@code getFeiertagInfo} statt der beiden getrennten Methoden
+     * {@code istFeiertag}/{@code istHalberFeiertag} - seit Befund 2 (Abschnitt 4)
+     * fragt {@code berechneEinzeltag} beides in EINEM Zugriff ab.
+     */
+    private void stubFeiertag(LocalDate tag, boolean istFeiertag, boolean istHalberFeiertag) {
+        Optional<Feiertag> ergebnis = istFeiertag
+                ? Optional.of(new Feiertag(tag, "Test-Feiertag", "BY", istHalberFeiertag))
+                : Optional.empty();
+        when(feiertagService.getFeiertagInfo(tag)).thenReturn(ergebnis);
+    }
+
     private void assertWerte(LocalDate tag, String erwartetPeriodenSoll, String erwartetFeiertagsGutschrift,
             String erwartetArbeitsSoll) {
         assertEquals(0, new BigDecimal(erwartetPeriodenSoll)
@@ -112,8 +126,7 @@ class TagesSollServiceTest {
     @Test
     void montag_ohnePhase_normalerArbeitstag() {
         stubOhnePhase(MONTAG_NORMAL);
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
     }
@@ -128,8 +141,7 @@ class TagesSollServiceTest {
     @Test
     void vollerFeiertag_ohnePhase_zaehltAlsBezahlterArbeitstagMitVollerGutschrift() {
         stubOhnePhase(VOLLER_FEIERTAG);
-        when(feiertagService.istFeiertag(VOLLER_FEIERTAG)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(VOLLER_FEIERTAG)).thenReturn(false);
+        stubFeiertag(VOLLER_FEIERTAG, true, false);
 
         assertWerte(VOLLER_FEIERTAG, "8.00", "8.00", "0.00");
     }
@@ -137,8 +149,7 @@ class TagesSollServiceTest {
     @Test
     void halberFeiertag_ohnePhase_periodenSollUndGutschriftHalbiert() {
         stubOhnePhase(HALBER_FEIERTAG);
-        when(feiertagService.istFeiertag(HALBER_FEIERTAG)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(HALBER_FEIERTAG)).thenReturn(true);
+        stubFeiertag(HALBER_FEIERTAG, true, true);
 
         assertWerte(HALBER_FEIERTAG, "4.00", "4.00", "0.00");
     }
@@ -155,8 +166,7 @@ class TagesSollServiceTest {
     @Test
     void wiedereingliederung_zweiStunden_amNormalenMontag() {
         stubMitPhase(MONTAG_NORMAL, wiedereingliederungsPhase(new BigDecimal("2.00"), MONTAG_NORMAL));
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         assertWerte(MONTAG_NORMAL, "2.00", "0", "2.00");
     }
@@ -166,8 +176,7 @@ class TagesSollServiceTest {
         // E3 im Plan: der Stufenplan-Wert ist die Basis, der Feiertag reduziert
         // ihn zusaetzlich - kein fester Override.
         stubMitPhase(VOLLER_FEIERTAG, wiedereingliederungsPhase(new BigDecimal("2.00"), VOLLER_FEIERTAG));
-        when(feiertagService.istFeiertag(VOLLER_FEIERTAG)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(VOLLER_FEIERTAG)).thenReturn(false);
+        stubFeiertag(VOLLER_FEIERTAG, true, false);
 
         assertWerte(VOLLER_FEIERTAG, "2.00", "2.00", "0");
     }
@@ -175,8 +184,7 @@ class TagesSollServiceTest {
     @Test
     void wiedereingliederung_zweiStunden_amHalbenFeiertag() {
         stubMitPhase(HALBER_FEIERTAG, wiedereingliederungsPhase(new BigDecimal("2.00"), HALBER_FEIERTAG));
-        when(feiertagService.istFeiertag(HALBER_FEIERTAG)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(HALBER_FEIERTAG)).thenReturn(true);
+        stubFeiertag(HALBER_FEIERTAG, true, true);
 
         assertWerte(HALBER_FEIERTAG, "1.00", "1.00", "0");
     }
@@ -193,8 +201,7 @@ class TagesSollServiceTest {
     @Test
     void wiedereingliederung_stundenProTagUeberSchreitetZeitkonto_wirdAufZeitkontoGedeckelt() {
         stubMitPhase(MONTAG_NORMAL, wiedereingliederungsPhase(new BigDecimal("10.00"), MONTAG_NORMAL));
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
     }
@@ -208,8 +215,7 @@ class TagesSollServiceTest {
         phase.setVonDatum(MONTAG_NORMAL.minusDays(10));
         phase.setBisDatum(null);
         stubMitPhase(MONTAG_NORMAL, phase);
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
     }
@@ -221,8 +227,7 @@ class TagesSollServiceTest {
         phase.setVonDatum(MONTAG_NORMAL.minusDays(10));
         phase.setBisDatum(null);
         stubMitPhase(MONTAG_NORMAL, phase);
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
     }
@@ -242,8 +247,7 @@ class TagesSollServiceTest {
         phase.setBisDatum(null);
         phase.setStundenProTag(new BigDecimal("2.00"));
         stubMitPhase(MONTAG_NORMAL, phase);
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         // Erwartung: der Stufenplan-Wert (2.00) wird ignoriert, es zaehlt der
         // Zeitkonto-Wert (8.00) -- eine Krankengeld-Phase ist kein Stufenplan.
@@ -257,8 +261,7 @@ class TagesSollServiceTest {
         // wird ignoriert, es wird mit dem Zeitkonto-Wert weitergerechnet. War
         // bisher ebenfalls ungetestet.
         stubMitPhase(MONTAG_NORMAL, wiedereingliederungsPhase(null, MONTAG_NORMAL));
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         assertWerte(MONTAG_NORMAL, "8.00", "0", "8.00");
     }
@@ -268,16 +271,13 @@ class TagesSollServiceTest {
     @Test
     void arbeitsSoll_istImmerPeriodenSollMinusFeiertagsGutschrift() {
         stubOhnePhase(MONTAG_NORMAL);
-        when(feiertagService.istFeiertag(MONTAG_NORMAL)).thenReturn(false);
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        stubFeiertag(MONTAG_NORMAL, false, false);
 
         stubMitPhase(VOLLER_FEIERTAG, wiedereingliederungsPhase(new BigDecimal("2.00"), VOLLER_FEIERTAG));
-        when(feiertagService.istFeiertag(VOLLER_FEIERTAG)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(VOLLER_FEIERTAG)).thenReturn(false);
+        stubFeiertag(VOLLER_FEIERTAG, true, false);
 
         stubMitPhase(HALBER_FEIERTAG, wiedereingliederungsPhase(new BigDecimal("2.00"), HALBER_FEIERTAG));
-        when(feiertagService.istFeiertag(HALBER_FEIERTAG)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(HALBER_FEIERTAG)).thenReturn(true);
+        stubFeiertag(HALBER_FEIERTAG, true, true);
 
         stubOhnePhase(SAMSTAG_WOCHENENDE);
 
@@ -374,5 +374,92 @@ class TagesSollServiceTest {
         assertEquals(0, new BigDecimal("8.00").compareTo(periodenSoll),
                 "Feiertag aus einem anderen Bundesland darf die Sollstunden nicht halbieren");
         assertEquals(0, BigDecimal.ZERO.compareTo(feiertagsGutschrift));
+    }
+
+    // ---- (j) Einzeltag: istFeiertag/istHalberFeiertag zusammengelegt ----
+
+    @Test
+    void arbeitsSoll_einzeltag_fragtFeiertagsdatenNurEinmalAb() {
+        // Befund 2 (Abschnitt 4): berechneEinzeltag fragte istFeiertag UND
+        // istHalberFeiertag getrennt ab - zwei FeiertagService-Aufrufe (und
+        // darunter vier FeiertagRepository-Abfragen) fuer eine Information,
+        // die getFeiertagInfo in einem Zugriff liefert.
+        stubOhnePhase(VOLLER_FEIERTAG);
+        stubFeiertag(VOLLER_FEIERTAG, true, false);
+
+        tagesSollService.arbeitsSoll(MITARBEITER_ID, zeitkonto, VOLLER_FEIERTAG);
+
+        verify(feiertagService, times(1)).getFeiertagInfo(VOLLER_FEIERTAG);
+        verify(feiertagService, never()).istFeiertag(any());
+        verify(feiertagService, never()).istHalberFeiertag(any());
+    }
+
+    // ---- (k) Zeitraum-Variante je Tag: eine Ladung, Werte pro Tag ----
+
+    @Test
+    void arbeitsSollJeTag_ladeElementeGenauEinmal_undFragtNieEinzeltagFeiertagsdatenAb() {
+        LocalDate von = LocalDate.of(2026, 1, 1);
+        LocalDate bis = LocalDate.of(2026, 1, 31);
+        when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
+        when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(Collections.emptyList());
+
+        tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, zeitkonto, von, bis);
+
+        verify(phaseRepository, times(1)).findImZeitraum(MITARBEITER_ID, von, bis);
+        verify(feiertagService, times(1)).getFeiertageZwischen(von, bis);
+        verify(feiertagService, never()).istFeiertag(any());
+        verify(feiertagService, never()).istHalberFeiertag(any());
+        verify(feiertagService, never()).getFeiertagInfo(any());
+    }
+
+    @Test
+    void periodenSollJeTagUndFeiertagsGutschriftJeTag_ladenElementeGenauEinmal() {
+        LocalDate von = LocalDate.of(2026, 1, 1);
+        LocalDate bis = LocalDate.of(2026, 1, 31);
+        when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
+        when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(Collections.emptyList());
+
+        tagesSollService.periodenSollJeTag(MITARBEITER_ID, zeitkonto, von, bis);
+        tagesSollService.feiertagsGutschriftJeTag(MITARBEITER_ID, zeitkonto, von, bis);
+
+        // Zwei Aufrufe (einer je Methode), aber jeweils genau EINE Ladung pro
+        // Aufruf - keine Ladung pro Tag.
+        verify(phaseRepository, times(2)).findImZeitraum(MITARBEITER_ID, von, bis);
+        verify(feiertagService, times(2)).getFeiertageZwischen(von, bis);
+    }
+
+    @Test
+    void arbeitsSollJeTag_stimmtMitEinzeltagWertenUeberein_vollerUndHalberFeiertagPlusWochenende() {
+        LocalDate von = LocalDate.of(2026, 12, 28); // Montag
+        LocalDate bis = LocalDate.of(2027, 1, 3); // Sonntag
+        LocalDate neujahr = LocalDate.of(2027, 1, 1); // Freitag, voller Feiertag
+        when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
+        when(feiertagService.getFeiertageZwischen(von, bis))
+                .thenReturn(List.of(new Feiertag(neujahr, "Neujahr", "BY")));
+
+        Map<LocalDate, BigDecimal> periodenSollJeTag = tagesSollService.periodenSollJeTag(MITARBEITER_ID, zeitkonto,
+                von, bis);
+        Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = tagesSollService.feiertagsGutschriftJeTag(
+                MITARBEITER_ID, zeitkonto, von, bis);
+        Map<LocalDate, BigDecimal> arbeitsSollJeTag = tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, zeitkonto,
+                von, bis);
+
+        assertEquals(7, periodenSollJeTag.size(), "ein Karteneintrag pro Tag im Zeitraum");
+        assertEquals(0, new BigDecimal("8.00").compareTo(periodenSollJeTag.get(neujahr)));
+        assertEquals(0, new BigDecimal("8.00").compareTo(feiertagsGutschriftJeTag.get(neujahr)));
+        assertEquals(0, BigDecimal.ZERO.compareTo(arbeitsSollJeTag.get(neujahr)));
+
+        LocalDate samstag = LocalDate.of(2027, 1, 2);
+        assertEquals(0, BigDecimal.ZERO.compareTo(periodenSollJeTag.get(samstag)));
+
+        LocalDate normalerMontag = LocalDate.of(2026, 12, 28);
+        assertEquals(0, new BigDecimal("8.00").compareTo(periodenSollJeTag.get(normalerMontag)));
+        assertEquals(0, BigDecimal.ZERO.compareTo(feiertagsGutschriftJeTag.get(normalerMontag)));
+        assertEquals(0, new BigDecimal("8.00").compareTo(arbeitsSollJeTag.get(normalerMontag)));
+
+        for (LocalDate tag : periodenSollJeTag.keySet()) {
+            assertEquals(0, periodenSollJeTag.get(tag).subtract(feiertagsGutschriftJeTag.get(tag))
+                    .compareTo(arbeitsSollJeTag.get(tag)), "Invariante verletzt fuer " + tag);
+        }
     }
 }

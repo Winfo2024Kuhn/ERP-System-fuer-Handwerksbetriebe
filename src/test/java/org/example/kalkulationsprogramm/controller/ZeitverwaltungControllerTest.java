@@ -3,7 +3,9 @@ package org.example.kalkulationsprogramm.controller;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
@@ -71,6 +73,15 @@ class ZeitverwaltungControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.TagesSollService tagesSollService;
 
+    /** Baut eine Je-Tag-Map mit einem konstanten Wert fuer jeden Tag im Zeitraum (inklusive). */
+    private static Map<LocalDate, BigDecimal> konstanteJeTag(LocalDate von, LocalDate bis, BigDecimal wert) {
+        Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
+        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+            ergebnis.put(tag, wert);
+        }
+        return ergebnis;
+    }
+
     @Test
     void getKalender_LiefertEchteAbwesenheitIdFuerKrankheit() throws Exception {
         Mitarbeiter mitarbeiter = new Mitarbeiter();
@@ -103,8 +114,10 @@ class ZeitverwaltungControllerTest {
                 .willReturn(List.of(krankheit));
         given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
                 .willReturn(new BigDecimal("160.00"));
-        given(tagesSollService.arbeitsSoll(anyLong(), any(), any())).willReturn(new BigDecimal("8.00"));
-        given(tagesSollService.feiertagsGutschrift(anyLong(), any(), any())).willReturn(BigDecimal.ZERO);
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(
+                konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), new BigDecimal("8.00")));
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any())).willReturn(
+                konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), BigDecimal.ZERO));
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -183,14 +196,14 @@ class ZeitverwaltungControllerTest {
                 .willReturn(List.of());
         given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
                 .willReturn(new BigDecimal("120.00"));
-        given(tagesSollService.feiertagsGutschrift(anyLong(), any(), any())).willReturn(BigDecimal.ZERO);
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any())).willReturn(
+                konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), BigDecimal.ZERO));
         // 2.6.2025 (Montag, tage[1]) liegt in einer Wiedereingliederung mit 2h/Tag -
         // alle anderen Tage bleiben beim vollen Zeitkonto-Soll.
-        given(tagesSollService.arbeitsSoll(anyLong(), any(), any()))
-                .willAnswer(inv -> {
-                    LocalDate tag = inv.getArgument(2);
-                    return tag.equals(LocalDate.of(2025, 6, 2)) ? new BigDecimal("2.00") : new BigDecimal("8.00");
-                });
+        Map<LocalDate, BigDecimal> sollJeTag = konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30),
+                new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2025, 6, 2), new BigDecimal("2.00"));
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(sollJeTag);
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -241,12 +254,13 @@ class ZeitverwaltungControllerTest {
         // (unveraendert, ausserhalb dieses Tasks) halbiert ihn schon immer korrekt auf 4.00.
         given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
                 .willReturn(new BigDecimal("4.00"));
-        given(tagesSollService.arbeitsSoll(anyLong(), any(), any())).willReturn(BigDecimal.ZERO);
-        given(tagesSollService.feiertagsGutschrift(anyLong(), any(), any()))
-                .willAnswer(inv -> {
-                    LocalDate tag = inv.getArgument(2);
-                    return tag.equals(LocalDate.of(2026, 12, 24)) ? new BigDecimal("4.00") : BigDecimal.ZERO;
-                });
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(
+                konstanteJeTag(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31), BigDecimal.ZERO));
+        Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = konstanteJeTag(LocalDate.of(2026, 12, 1),
+                LocalDate.of(2026, 12, 31), BigDecimal.ZERO);
+        feiertagsGutschriftJeTag.put(LocalDate.of(2026, 12, 24), new BigDecimal("4.00"));
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any()))
+                .willReturn(feiertagsGutschriftJeTag);
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")

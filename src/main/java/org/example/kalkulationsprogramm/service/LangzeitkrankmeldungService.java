@@ -67,6 +67,18 @@ public class LangzeitkrankmeldungService {
             LangzeitkrankmeldungStatus.BEENDET, "Wieder voll im Einsatz",
             LangzeitkrankmeldungStatus.ABGEBROCHEN, "Zurückgenommen");
 
+    /**
+     * Steht fuer "kein Enddatum bekannt" in der Ueberlappungspruefung
+     * ({@link #pruefeKeineUeberlappung}). Bewusst NICHT {@code LocalDate.MAX}
+     * (Jahr 999999999) - das sprengt den MySQL-DATE-Bereich (hoechstens
+     * 9999-12-31). Je nach Servermodus wirft das einen Fehler oder liefert,
+     * schlimmer, still KEINE Treffer, wodurch die Ueberlappungspruefung
+     * nichts mehr prueft und zwei sich ueberschneidende Krankmeldungen
+     * fuer denselben Mitarbeiter durchkaemen (Befund 1, Abschnitt-4-Review,
+     * Issue #91). NICHT auf {@code LocalDate.MAX} zurueckbauen.
+     */
+    private static final LocalDate OFFENES_ENDE = LocalDate.of(9999, 12, 31);
+
     private final LangzeitkrankmeldungRepository repository;
     private final LangzeitkrankmeldungPhaseRepository phaseRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
@@ -93,7 +105,7 @@ public class LangzeitkrankmeldungService {
             throw new IllegalArgumentException("Das Ende der Lohnfortzahlung darf nicht vor dem Beginn liegen.");
         }
 
-        pruefeKeineUeberlappung(mitarbeiterId, beginn, LocalDate.MAX, null);
+        pruefeKeineUeberlappung(mitarbeiterId, beginn, OFFENES_ENDE, null);
 
         Langzeitkrankmeldung meldung = new Langzeitkrankmeldung();
         meldung.setMitarbeiter(mitarbeiter);
@@ -130,7 +142,7 @@ public class LangzeitkrankmeldungService {
         meldung.setNotiz(pruefeNotiz(notiz));
 
         pruefeKeineUeberlappung(meldung.getMitarbeiter().getId(), meldung.getBeginn(),
-                meldung.getEnde() != null ? meldung.getEnde() : LocalDate.MAX, id);
+                meldung.getEnde() != null ? meldung.getEnde() : OFFENES_ENDE, id);
 
         Langzeitkrankmeldung gespeichert = speichernUndFolgeaktionen(meldung);
         log.info("Langzeitkrankmeldung {} geändert für Mitarbeiter {}", id, gespeichert.getMitarbeiter().getId());
@@ -172,7 +184,7 @@ public class LangzeitkrankmeldungService {
         }
 
         meldung.setEnde(null);
-        pruefeKeineUeberlappung(meldung.getMitarbeiter().getId(), meldung.getBeginn(), LocalDate.MAX, id);
+        pruefeKeineUeberlappung(meldung.getMitarbeiter().getId(), meldung.getBeginn(), OFFENES_ENDE, id);
 
         List<LangzeitkrankmeldungPhase> sortiert = sortierePhasen(meldung);
         if (!sortiert.isEmpty()) {
@@ -611,11 +623,16 @@ public class LangzeitkrankmeldungService {
                                 BigDecimal::add)));
 
         Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
+        // Geplante Stunden EINMAL fuer den Gesamtzeitraum laden statt einmal
+        // pro Tag (Befund 2, Abschnitt 4) - vorher ein TagesSollService-Aufruf
+        // mit eigener Phasen-/Feiertagsabfrage je Schleifendurchlauf, gemessen
+        // 165 statt 9 Repository-Aufrufe fuer 42 Tage Wiedereingliederung.
+        Map<LocalDate, BigDecimal> geplantJeTag = tagesSollService.arbeitsSollJeTag(mitarbeiterId, konto, von, bis);
         List<StufenplanTagDto> tage = new ArrayList<>();
         for (LangzeitkrankmeldungPhase phase : wiedereingliederungsPhasen) {
             LocalDate phasenEnde = phase.getBisDatum() != null ? phase.getBisDatum() : LocalDate.now();
             for (LocalDate tag = phase.getVonDatum(); !tag.isAfter(phasenEnde); tag = tag.plusDays(1)) {
-                BigDecimal geplant = tagesSollService.arbeitsSoll(mitarbeiterId, konto, tag);
+                BigDecimal geplant = geplantJeTag.get(tag);
                 BigDecimal gestempelt = gestempeltProTag.getOrDefault(tag, BigDecimal.ZERO);
 
                 StufenplanTagDto tagDto = new StufenplanTagDto();

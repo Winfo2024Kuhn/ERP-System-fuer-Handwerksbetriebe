@@ -12,7 +12,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -107,31 +109,32 @@ class TagesSollCharakterisierungKalenderTest {
                 .willReturn(List.of());
         given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
                 .willReturn(new BigDecimal("168.00"));
-        // arbeitsSoll/feiertagsGutschrift bilden nach, was TagesSollService (Task 3)
-        // fuer einen Monat ohne laufende Wiedereingliederung liefert: an
-        // Werktagen die volle Tagesbasis als arbeitsSoll, am vollen Feiertag
-        // (25.12.) 0 arbeitsSoll/volle Gutschrift, am halben Feiertag (24.12.)
-        // 0 arbeitsSoll/halbe Gutschrift.
-        given(tagesSollService.arbeitsSoll(anyLong(), any(), any()))
-                .willAnswer(inv -> {
-                    LocalDate tag = inv.getArgument(2);
-                    if (tag.equals(LocalDate.of(2026, 12, 24)) || tag.equals(LocalDate.of(2026, 12, 25))) {
-                        return BigDecimal.ZERO;
-                    }
-                    int wochentag = tag.getDayOfWeek().getValue();
-                    return wochentag <= 5 ? new BigDecimal("8.00") : BigDecimal.ZERO;
-                });
-        given(tagesSollService.feiertagsGutschrift(anyLong(), any(), any()))
-                .willAnswer(inv -> {
-                    LocalDate tag = inv.getArgument(2);
-                    if (tag.equals(LocalDate.of(2026, 12, 24))) {
-                        return new BigDecimal("4.00");
-                    }
-                    if (tag.equals(LocalDate.of(2026, 12, 25))) {
-                        return new BigDecimal("8.00");
-                    }
-                    return BigDecimal.ZERO;
-                });
+        // arbeitsSollJeTag/feiertagsGutschriftJeTag bilden nach, was
+        // TagesSollService (Task 3, seit Abschnitt 4 als Zeitraum-Variante -
+        // siehe Kontext-Log) fuer einen Monat ohne laufende Wiedereingliederung
+        // liefert: an Werktagen die volle Tagesbasis als arbeitsSoll, am vollen
+        // Feiertag (25.12.) 0 arbeitsSoll/volle Gutschrift, am halben Feiertag
+        // (24.12.) 0 arbeitsSoll/halbe Gutschrift.
+        LocalDate von = LocalDate.of(2026, 12, 1);
+        LocalDate bis = LocalDate.of(2026, 12, 31);
+        Map<LocalDate, BigDecimal> arbeitsSollJeTag = new LinkedHashMap<>();
+        Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = new LinkedHashMap<>();
+        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+            if (tag.equals(LocalDate.of(2026, 12, 24))) {
+                arbeitsSollJeTag.put(tag, BigDecimal.ZERO);
+                feiertagsGutschriftJeTag.put(tag, new BigDecimal("4.00"));
+            } else if (tag.equals(LocalDate.of(2026, 12, 25))) {
+                arbeitsSollJeTag.put(tag, BigDecimal.ZERO);
+                feiertagsGutschriftJeTag.put(tag, new BigDecimal("8.00"));
+            } else {
+                int wochentag = tag.getDayOfWeek().getValue();
+                arbeitsSollJeTag.put(tag, wochentag <= 5 ? new BigDecimal("8.00") : BigDecimal.ZERO);
+                feiertagsGutschriftJeTag.put(tag, BigDecimal.ZERO);
+            }
+        }
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(arbeitsSollJeTag);
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any()))
+                .willReturn(feiertagsGutschriftJeTag);
 
         // 1.12.2026 ist ein Dienstag -> tage[0].
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
