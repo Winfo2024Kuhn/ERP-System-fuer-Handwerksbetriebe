@@ -12,7 +12,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,10 +25,12 @@ import static org.mockito.Mockito.*;
  * Unit-Tests für UrlaubsantragService.
  *
  * Schwerpunkt: {@code approveAntrag} bucht Urlaubsstunden über
- * {@code TagesSollService.arbeitsSoll} statt direkt über das Zeitkonto-Soll
- * (E1 im Plan "Langzeitkrankmeldung") — damit folgen Urlaubsstunden während
- * einer laufenden Wiedereingliederung dem Stufenplan, statt Phantom-
- * Überstunden zu erzeugen. {@code pruefeHinweise} delegiert an
+ * {@code TagesSollService.arbeitsSollJeTag} (Zeitraum-Variante, Abschnitt 4
+ * Nachbesserung Befund 2) statt direkt über das Zeitkonto-Soll (E1 im Plan
+ * "Langzeitkrankmeldung") — damit folgen Urlaubsstunden während einer
+ * laufenden Wiedereingliederung dem Stufenplan, statt Phantom-Überstunden zu
+ * erzeugen, und die Phasen/Feiertage werden einmal für den ganzen Zeitraum
+ * geladen statt einmal je Tag. {@code pruefeHinweise} delegiert an
  * {@code LangzeitkrankmeldungService.pruefeUrlaubsHinweise}.
  *
  * Dummy-Daten (DSGVO): Max Mustermann, ID 1.
@@ -98,6 +102,15 @@ class UrlaubsantragServiceTest {
         when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
+    /** Baut die Map, die {@code arbeitsSollJeTag} für einen durchgehenden Zeitraum liefert. */
+    private Map<LocalDate, BigDecimal> jeTag(LocalDate von, LocalDate bis, BigDecimal wert) {
+        Map<LocalDate, BigDecimal> map = new LinkedHashMap<>();
+        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
+            map.put(d, wert);
+        }
+        return map;
+    }
+
     @Test
     void approveAntrag_montagBisFreitag_bucht8StundenJeTagUeberTagesSollService() {
         LocalDate von = LocalDate.of(2026, 6, 1);
@@ -105,9 +118,8 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
-            when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, d)).thenReturn(new BigDecimal("8.00"));
-        }
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+                .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
@@ -126,9 +138,8 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
-            when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, d)).thenReturn(new BigDecimal("2.00"));
-        }
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+                .thenReturn(jeTag(von, bis, new BigDecimal("2.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
@@ -141,44 +152,66 @@ class UrlaubsantragServiceTest {
     }
 
     @Test
-    void approveAntrag_feiertagWirdUebersprungenUndNichtBeiTagesSollServiceAbgefragt() {
+    void approveAntrag_feiertagWirdUebersprungenTrotzWertInDerMap() {
         // Mo 2026-06-01 bis Fr 2026-06-05, Mittwoch (2026-06-03) ist Feiertag.
+        // Die Map liefert fuer JEDEN Tag inkl. Feiertag einen Wert > 0 - die
+        // Sperre muss also wirklich am feiertagService.istFeiertag()-Check in
+        // approveAntrag haengen, nicht zufaellig an einer leeren Map.
         LocalDate von = LocalDate.of(2026, 6, 1);
         LocalDate bis = LocalDate.of(2026, 6, 5);
         LocalDate feiertag = LocalDate.of(2026, 6, 3);
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenAnswer(inv -> inv.getArgument(0).equals(feiertag));
-        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
-            if (!d.equals(feiertag)) {
-                when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, d)).thenReturn(new BigDecimal("8.00"));
-            }
-        }
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+                .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
-        verify(abwesenheitRepository, times(4)).save(any(Abwesenheit.class));
-        verify(tagesSollService, never()).arbeitsSoll(eq(MITARBEITER_ID), eq(testZeitkonto), eq(feiertag));
+        ArgumentCaptor<Abwesenheit> captor = ArgumentCaptor.forClass(Abwesenheit.class);
+        verify(abwesenheitRepository, times(4)).save(captor.capture());
+        assertFalse(captor.getAllValues().stream().anyMatch(a -> a.getDatum().equals(feiertag)),
+                "Der Feiertag selbst darf keine Abwesenheit erzeugen");
     }
 
     @Test
-    void approveAntrag_wochenendeWirdUebersprungenUndNichtBeiTagesSollServiceAbgefragt() {
+    void approveAntrag_wochenendeWirdUebersprungenTrotzWertInDerMap() {
         // Fr 2026-06-05 bis Mo 2026-06-08: dazwischen liegt ein ganzes Wochenende.
         LocalDate von = LocalDate.of(2026, 6, 5);
         LocalDate bis = LocalDate.of(2026, 6, 8);
-        LocalDate samstag = LocalDate.of(2026, 6, 6);
-        LocalDate sonntag = LocalDate.of(2026, 6, 7);
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), eq(testZeitkonto), any(LocalDate.class)))
-                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+                .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
         verify(abwesenheitRepository, times(2)).save(any(Abwesenheit.class));
-        verify(tagesSollService, never()).arbeitsSoll(eq(MITARBEITER_ID), eq(testZeitkonto), eq(samstag));
-        verify(tagesSollService, never()).arbeitsSoll(eq(MITARBEITER_ID), eq(testZeitkonto), eq(sonntag));
+    }
+
+    @Test
+    void approveAntrag_tagFehltInDerMap_erzeugtKeineNPEUndKeineAbwesenheit() {
+        // Sicherheitsnetz aus der Nachbesserung (Befund 2): liefert die Map fuer
+        // einen Werktag keinen Eintrag (z.B. weil TagesSollService ihn als 0
+        // behandelt und gar nicht erst einfuegt), darf approveAntrag NICHT mit
+        // NPE abbrechen, sondern muss den Tag wie "kein Soll" behandeln.
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        LocalDate bis = LocalDate.of(2026, 6, 5);
+        LocalDate luecke = LocalDate.of(2026, 6, 3);
+        stubApproveGrunddaten();
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
+        when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
+        Map<LocalDate, BigDecimal> map = jeTag(von, bis, new BigDecimal("8.00"));
+        map.remove(luecke);
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis)).thenReturn(map);
+
+        assertDoesNotThrow(() -> urlaubsantragService.approveAntrag(ANTRAG_ID));
+
+        ArgumentCaptor<Abwesenheit> captor = ArgumentCaptor.forClass(Abwesenheit.class);
+        verify(abwesenheitRepository, times(4)).save(captor.capture());
+        assertFalse(captor.getAllValues().stream().anyMatch(a -> a.getDatum().equals(luecke)),
+                "Fuer den Tag ohne Map-Eintrag darf keine Abwesenheit entstehen");
     }
 
     @Test
@@ -188,12 +221,31 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), eq(testZeitkonto), any(LocalDate.class)))
-                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+                .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
         verify(zeitkontoService, times(1)).getOrCreateZeitkonto(MITARBEITER_ID);
+    }
+
+    @Test
+    void approveAntrag_ruftArbeitsSollJeTagGenauEinmalFuerDenGesamtenZeitraumAuf_keinN1ProTag() {
+        // Befund 2 (Abschnitt 4, Nachbesserung): vorher ein arbeitsSoll-Aufruf
+        // je Werktag (hier 5), jetzt genau ein arbeitsSollJeTag-Aufruf fuer den
+        // kompletten Zeitraum - arbeitsSoll darf gar nicht mehr aufgerufen werden.
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        LocalDate bis = LocalDate.of(2026, 6, 5);
+        stubApproveGrunddaten();
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
+        when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+                .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
+
+        urlaubsantragService.approveAntrag(ANTRAG_ID);
+
+        verify(tagesSollService, times(1)).arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis);
+        verify(tagesSollService, never()).arbeitsSoll(any(), any(), any());
     }
 
     @Test

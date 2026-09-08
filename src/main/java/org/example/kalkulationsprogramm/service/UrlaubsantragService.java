@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -106,6 +107,15 @@ public class UrlaubsantragService {
         // Zeitkonto einmal vor der Schleife laden, nicht je Tag (N+1).
         Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(antrag.getMitarbeiter().getId());
 
+        // Soll-Stunden für den GESAMTEN Zeitraum auf einmal laden (Zeitraum-
+        // Variante statt Einzeltag-Aufruf je Schleifendurchlauf, Abschnitt 4
+        // Nachbesserung Befund 2): Phasen und Feiertage werden dafür intern nur
+        // einmal geladen statt einmal pro Tag. Der übergebene Zeitraum MUSS die
+        // Schleife unten vollständig abdecken, sonst liefert die Map für einen
+        // Tag nichts zurück; getOrDefault(..., ZERO) fängt das zusätzlich ab.
+        Map<LocalDate, BigDecimal> sollStundenJeTag = tagesSollService.arbeitsSollJeTag(
+                antrag.getMitarbeiter().getId(), zeitkonto, antrag.getVonDatum(), antrag.getBisDatum());
+
         // Zeitraum iterieren und Abwesenheiten erstellen
         for (LocalDate date = antrag.getVonDatum(); !date.isAfter(antrag.getBisDatum()); date = date.plusDays(1)) {
             // Wochenenden überspringen
@@ -119,8 +129,7 @@ public class UrlaubsantragService {
             }
 
             // Soll-Stunden ermitteln (Gegenbuchung zum Tagessoll, siehe Javadoc oben)
-            BigDecimal sollStunden = tagesSollService.arbeitsSoll(
-                    antrag.getMitarbeiter().getId(), zeitkonto, date);
+            BigDecimal sollStunden = sollStundenJeTag.getOrDefault(date, BigDecimal.ZERO);
 
             if (sollStunden.compareTo(BigDecimal.ZERO) > 0) {
                 // Prüfen ob bereits Abwesenheit für diesen Tag existiert

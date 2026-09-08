@@ -11,13 +11,12 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/urlaub")
 @RequiredArgsConstructor
 public class UrlaubsantragController {
 
     private final UrlaubsantragService service;
 
-    @PostMapping("/antraege")
+    @PostMapping("/api/urlaub/antraege")
     public ResponseEntity<?> createAntrag(@RequestBody Map<String, Object> body) {
         try {
             Long mitarbeiterId = ((Number) body.get("mitarbeiterId")).longValue();
@@ -34,7 +33,7 @@ public class UrlaubsantragController {
         }
     }
 
-    @GetMapping("/antraege")
+    @GetMapping("/api/urlaub/antraege")
     public ResponseEntity<List<Urlaubsantrag>> getAntraege(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long mitarbeiterId,
@@ -74,17 +73,17 @@ public class UrlaubsantragController {
         return ResponseEntity.ok(service.getOffeneAntraege());
     }
 
-    @PutMapping("/antraege/{id}/approve")
+    @PutMapping("/api/urlaub/antraege/{id}/approve")
     public ResponseEntity<Urlaubsantrag> approveAntrag(@PathVariable Long id) {
         return ResponseEntity.ok(service.approveAntrag(id));
     }
 
-    @PutMapping("/antraege/{id}/reject")
+    @PutMapping("/api/urlaub/antraege/{id}/reject")
     public ResponseEntity<Urlaubsantrag> rejectAntrag(@PathVariable Long id) {
         return ResponseEntity.ok(service.rejectAntrag(id));
     }
 
-    @PutMapping("/antraege/{id}/storno")
+    @PutMapping("/api/urlaub/antraege/{id}/storno")
     public ResponseEntity<Urlaubsantrag> stornoAntrag(@PathVariable Long id) {
         return ResponseEntity.ok(service.stornoAntrag(id));
     }
@@ -92,7 +91,7 @@ public class UrlaubsantragController {
     /**
      * Gibt die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr zurück.
      */
-    @GetMapping("/resturlaub")
+    @GetMapping("/api/urlaub/resturlaub")
     public ResponseEntity<?> getResturlaub(
             @RequestParam Long mitarbeiterId,
             @RequestParam(required = false) Integer jahr) {
@@ -108,10 +107,21 @@ public class UrlaubsantragController {
     /**
      * Liefert einen Hinweis, wenn der angefragte Urlaubszeitraum in eine
      * laufende Krankmeldung fällt. Reine Warnung fürs Büro, keine Sperre —
-     * der Antrag selbst (POST /antraege, auch von der Handy-App genutzt)
-     * bleibt davon unberührt.
+     * der Antrag selbst (POST /api/urlaub/antraege, auch von der Handy-App
+     * genutzt) bleibt davon unberührt.
+     *
+     * <p><b>Bewusst NICHT unter {@code /api/urlaub/**}:</b> Dieses Präfix
+     * steht auf der {@code permitAll}-Kette der Mobile-App
+     * ({@link org.example.kalkulationsprogramm.config.SecurityConfig#ZEITERFASSUNG_PATHS}).
+     * Die Antwort verrät Existenz und Beginndatum einer Langzeitkrankmeldung —
+     * Gesundheitsdaten nach Art. 9 DSGVO — und muss deshalb hinter dem Login
+     * liegen. {@code /api/langzeitkrankmeldungen/**} ist bereits
+     * {@code authenticated()} (siehe {@code apiFilterChain}), ohne dass diese
+     * SecurityConfig dafür angefasst werden musste (Abschnitt 4 Nachbesserung,
+     * Befund 1; abgesichert durch {@code UrlaubsHinweiseSicherheitTest} im
+     * {@code config}-Testpackage).
      */
-    @GetMapping("/antraege/hinweise")
+    @GetMapping("/api/langzeitkrankmeldungen/urlaubs-hinweise")
     public ResponseEntity<Map<String, List<String>>> getHinweise(
             @RequestParam Long mitarbeiterId,
             @RequestParam LocalDate von,
@@ -122,7 +132,7 @@ public class UrlaubsantragController {
     /**
      * Gibt alle verfügbaren Abwesenheitstypen zurück.
      */
-    @GetMapping("/typen")
+    @GetMapping("/api/urlaub/typen")
     public ResponseEntity<List<Map<String, String>>> getAbwesenheitsTypen() {
         List<Map<String, String>> typen = List.of(
                 Map.of("value", "URLAUB", "label", "Urlaub"),

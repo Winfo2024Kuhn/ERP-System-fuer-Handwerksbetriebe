@@ -17,7 +17,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,7 +34,8 @@ import static org.mockito.Mockito.when;
  *
  * Friert {@link UrlaubsantragService#approveAntrag} zahlengenau ein - Task 4
  * stellt die Sollstunden-Ermittlung auf {@code TagesSollService.arbeitsSoll}
- * um (siehe E1 im Plan, "sechster Aufrufer").
+ * um (siehe E1 im Plan, "sechster Aufrufer"), Abschnitt 4 Nachbesserung
+ * (Befund 2) danach auf die Zeitraum-Variante {@code arbeitsSollJeTag}.
  *
  * Dummy-Daten (DSGVO): Max Mustermann, ID 1.
  */
@@ -107,16 +110,13 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
         // Pro Fixture-Tag der konkrete Wert, nicht pauschal any() -> sonst blind.
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 1)))
-                .thenReturn(new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 2)))
-                .thenReturn(new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 3)))
-                .thenReturn(new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 4)))
-                .thenReturn(new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 5)))
-                .thenReturn(new BigDecimal("8.00"));
+        Map<LocalDate, BigDecimal> sollJeTag = new LinkedHashMap<>();
+        sollJeTag.put(LocalDate.of(2026, 6, 1), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 2), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 3), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 4), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 5), new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSollJeTag(1L, testZeitkonto, von, bis)).thenReturn(sollJeTag);
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
@@ -142,16 +142,16 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         when(feiertagService.istFeiertag(any(LocalDate.class)))
                 .thenAnswer(inv -> inv.getArgument(0).equals(feiertag));
         // Pro Fixture-Tag der konkrete Wert, nicht pauschal any() -> sonst blind.
-        // Der Feiertag (06-03) selbst bekommt bewusst KEINEN Stub: approveAntrag
-        // ueberspringt ihn vor dem TagesSollService-Aufruf (siehe Gegenprobe im Report).
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 1)))
-                .thenReturn(new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 2)))
-                .thenReturn(new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 4)))
-                .thenReturn(new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 5)))
-                .thenReturn(new BigDecimal("8.00"));
+        // Der Feiertag (06-03) bekommt bewusst TROTZDEM einen Wert > 0: approveAntrag
+        // muss ihn ueber den feiertagService-Check ueberspringen, nicht weil die Map
+        // zufaellig keinen Eintrag haette (siehe Gegenprobe im Report).
+        Map<LocalDate, BigDecimal> sollJeTag = new LinkedHashMap<>();
+        sollJeTag.put(LocalDate.of(2026, 6, 1), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 2), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 3), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 4), new BigDecimal("8.00"));
+        sollJeTag.put(LocalDate.of(2026, 6, 5), new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSollJeTag(1L, testZeitkonto, von, bis)).thenReturn(sollJeTag);
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
