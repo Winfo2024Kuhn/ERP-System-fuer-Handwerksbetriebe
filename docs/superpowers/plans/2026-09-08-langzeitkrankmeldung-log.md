@@ -2513,3 +2513,43 @@ Eintrag ohnehin weiterhin "Urlaub", das ist heute uneinheitlich.
 - Handy-App bleibt rein lesend: kein Knopf, kein Formular, kein Schreibaufruf.
 - Kein Querscrollen, keine Überschneidung, kein abgeschnittener Text — in
   keiner der drei Größen, in keinem der 29 angeschauten Bilder.
+
+## Abschnitt 5 — Nachbesserung Datumsformat
+
+Zeit: 2026-09-09T00:05:00Z
+Branch: lzk/nb5-datum
+Commit(s): 23c44050
+Status: fertig
+
+Was gemacht wurde:
+- Befund behoben: `LangzeitkrankmeldungService` zeigte das Beginndatum in zwei fertigen Anzeigetexten roh als ISO-String (`java.time.LocalDate` via `%s`).
+- Neue private Konstante `ANZEIGE_DATUM` (`DateTimeFormatter.ofPattern("dd.MM.yyyy")`) angelegt, weil das Muster an zwei Stellen vorkam.
+- `pruefeUrlaubsHinweise` (Hinweistext "seit ...") und `pruefeKeineUeberlappung` (Fehlertext "läuft bereits eine Krankmeldung seit ...") formatieren das Datum jetzt darüber.
+- Geprüft, ob es weitere Textstellen mit Datum gibt: nein, das waren die einzigen zwei `String.format`-Aufrufe mit einem Datum als Anzeigetext. `getMobileStand` legt `LocalDate`-Werte roh in eine `Map<String,Object>` (Datenwerte über die Mobile-API, kein fertiger Text) — bewusst unverändert gelassen, ebenso alle DTO-Felder.
+- DSGVO-Prüfung: Hinweistext nennt weiterhin nur "seit <Datum>", keine Krankheitsursache/Diagnose — unverändert, nur das Datumsformat geändert.
+- TDD: Bestehenden Test `pruefeUrlaubsHinweise_LiefertHinweisBeiUeberlappenderKrankmeldung` von `assertTrue(contains("2020-03-01"))` auf `assertTrue(contains("01.03.2020"))` + `assertFalse(contains("2020-03-01"))` umgestellt (roter Test bestätigt, scheiterte exakt an dieser Assertion). Zusätzlich in `anlegen_LehntUeberlappendeMeldungAb` dieselbe Prüfung ergänzt (deckt `pruefeKeineUeberlappung` ab), ebenfalls vorher rot.
+- Nachweis: `./mvnw -B test -Dtest=LangzeitkrankmeldungServiceTest` vorher 42 Tests / 2 Failures (genau die beiden neuen Assertions, sonst nichts), nachher 42 Tests / 0 Failures, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Ein erster Testlauf geriet durch das 2-Minuten-Tool-Timeout automatisch in den Hintergrund; als Subagent erreicht mich keine Hintergrund-Fertigmeldung. Den betroffenen Maven-Prozess (PID im selben Worktree/target) beendet und den Nachweislauf danach sauber synchron im Vordergrund wiederholt (rot und grün je einmal). Kein Doppel-Lauf auf demselben target/ gleichzeitig.
+
+## Abschnitt 5 — Nachbesserung Handy-Farben
+
+Zeit: 2026-09-09T00:10:00Z
+Branch: lzk/nb5-handy
+Commit(s): 8dc209ca
+Status: fertig
+
+Was gemacht wurde:
+- Befund 1 (BLOCKER) behoben: alle `teal-`Klassen aus `react-zeiterfassung/src` entfernt.
+  - `DashboardPage.tsx` (Langzeitkrankmeldung-Karte, war Zeile ~1258): von `bg-teal-50/border-teal-200/bg-teal-100/text-teal-600/text-teal-800` auf das Muster der Nachbarkarten (Kalender, Abwesenheit beantragen, Saldenauswertung) umgestellt — weiße Karte (`bg-white border border-slate-200 rounded-xl`) mit getönter Icon-Kachel (`bg-indigo-50 rounded-lg`, Icon `text-indigo-600`), Text in `text-slate-900` statt farbig.
+  - `AbwesenheitenPage.tsx` (Info-Banner, war Zeile ~163): Banner-Struktur beibehalten (getönter Container, nicht weiß — das ist hier explizit ein Banner, keine Kachel-Karte), aber teal durch indigo ersetzt: `bg-indigo-50 border-indigo-200`, Icon-Kachel `bg-indigo-100`, Icon/Text `text-indigo-600`/`text-indigo-800`.
+  - Begründung für indigo: laut `handwerkerprogramm-design`-Skill (`colors_and_type.css`) ist `--info: #6366f1` (indigo-500) die vorgesehene Rolle für neutrale Information, dokumentiert u.a. als Farbe für Platzhalter-Chips. Passt exakt auf den Anwendungsfall ("Information, keine Warnung").
+  - Gegenprüfung: `grep -rn "teal-" react-zeiterfassung/src` liefert keinen Treffer (exit 1, leer).
+- Befund 2 (Hinweis) behoben: `AbwesenheitenPage.tsx` bekam eine eigene `formatStundenDe`-Helper-Funktion (gleiche Regel wie `DashboardPage.tsx`: `stunden.toLocaleString('de-DE', { maximumFractionDigits: 2 })`), die jetzt statt der rohen Zahl im Banner verwendet wird. `2.5` wird jetzt wie im Dashboard als `2,5` angezeigt.
+- TDD: je einen neuen Test pro Datei für die Klassen (Karte/Banner ohne `teal`, mit den erwarteten weißen/indigo-Klassen) plus einen Test für die deutsche Stundenschreibweise (`2,5` statt `2.5`) in `AbwesenheitenPage.test.tsx`. Alle drei liefen vor dem Fix rot, danach grün. Bestehende Tests unverändert grün geblieben.
+- Nachweis: `npx vitest run src/pages/DashboardPage.test.tsx src/pages/AbwesenheitenPage.test.tsx` → 19/19 grün (`--pool=threads` genutzt, weil `--pool=forks` unter Last mehrerer paralleler Agenten mit Worker-Timeout scheiterte). `npm run lint` sauber. `npm run build` erfolgreich (bestehende Chunk-Size-Warnung, nicht durch diese Änderung verursacht); Build-Output in `src/main/resources/static/` danach per `git checkout --`/`git clean -fd` wieder entfernt, nicht committet.
+
+Bedenken / Abweichungen vom Plan:
+- node_modules war in diesem Worktree entgegen der Erwartung ("ist ein Symlink") noch gar nicht angelegt — ich habe den Symlink selbst auf `react-zeiterfassung/node_modules` im Haupt-Checkout gesetzt (kein `npm install`), analog zum bereits vorhandenen Symlink im Nachbar-Worktree `wt/layout-14zoll/react-pc-frontend`.
+- Beim ersten `npm run build` erschien zusätzlich eine unstaged Änderung an `src/main/resources/static/index.html` (reines Zeilenende-/Whitespace-Artefakt, eine Zeile). Datei liegt außerhalb meiner Task-Dateien (react-pc-frontend-Bereich) — per `git checkout --` zurückgesetzt, nicht angefasst/committet.
