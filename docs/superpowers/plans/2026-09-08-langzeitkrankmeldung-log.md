@@ -2115,3 +2115,401 @@ Bedenken / Abweichungen vom Plan:
   vorhanden, aber im Task-15-Text nicht gefordert und nicht verdrahtet —
   `StufenplanTabelle` (Task 14) bietet ohnehin keine Bearbeiten-Aktion, nur
   Hinzufuegen/Loeschen.
+
+## Abschnitt 5 — Code-Review
+
+Zeit: 2026-09-08T21:28:12Z
+Branch: feature/langzeitkrankmeldung (gemergt, HEAD 46969936)
+Commit(s): bf6731d8, 8f952c4d, 3697bfe1, 60bde06f, 55c7afd8 (Merges Task 15-19)
+Status: fertig
+Ampel: 🟡 (abgenommen, keine Nachbesserung noetig)
+
+Geprueft: Diff ceb217a9..HEAD, 17 Dateien, +2243/-26, ausschliesslich Frontend.
+Merge-Commits vorhanden, Arbeitsbaum sauber, keine Build-Artefakte im Diff.
+
+Testlaeufe (selbst gefahren, synchron, Output in Dateien):
+- Backend `./mvnw -B test`: 2611 Tests, 4 Errors (die bekannten:
+  AuditChainRepairIntegrationTest x2, AuditHashRoundtripDiagnoseTest x2)
+  + 2 Failures in UnifiedEmailControllerExtractEmailTest. Letztere sind
+  Wanduhr-Asserts (assertTimeoutPreemptively 500 ms) und laufen isoliert
+  gruen (12/12) — Lastartefakt, kein Backend-Code in diesem Abschnitt.
+  Baseline gehalten.
+- react-pc-frontend lint: 0 Errors, 1 bekannte Warning
+  (BelegeKasseEditor.tsx:1204). Baseline gehalten.
+- react-pc-frontend test: 92 Test-Dateien, alle gruen. Im vollen
+  Parallellauf 14 Dateien mit "Failed to start forks worker" und
+  anschliessend 6 "Test timed out in 5000ms" in unbeteiligten Dateien
+  (EmailCenter, document-editor, BeitraegeTab); wechselnde Fehlermenge je
+  Lauf, isoliert alle gruen. Maschinenlast, keine Regression.
+- react-zeiterfassung lint: 0 Errors. test: 11 Dateien / 143 Tests gruen.
+
+Eigene Fehlerfall-Sonden (9 pc + 6 mobil, danach restlos entfernt):
+- Dashboard (Handy) bei 401 / 500 / haengendem Endpunkt / kaputtem JSON:
+  bleibt vollstaendig bedienbar, Karte faellt weg. Kein await im Effect,
+  das Promise.all ist fire-and-forget — ein haengender Endpunkt blockiert
+  nichts.
+- Abwesenheiten (Handy) bei 401 / haengendem Endpunkt: Liste erscheint,
+  Ladezustand endet, kein Banner.
+- Urlaubsantraege bei 401 / Netzabbruch / haengendem Endpunkt: Liste
+  bedienbar, "Genehmigen" aktiv, kein Kasten.
+- Lange Krankheit: 400 mit {"error": ...} UND 400 mit {"message": ...}
+  landen beide sichtbar beim Nutzer; 409 oeffnet den Konfliktdialog und
+  schickt die Version aus dem DTO mit (version=7 verifiziert).
+
+Befunde: keine 🔴. Hinweise (blockieren nicht) im Review-Report an den
+Orchestrator, Kernpunkte:
+- "Wieder voll im Einsatz" hat keinen Rueckweg in der Oberflaeche, obwohl
+  PUT /{id}/oeffnen existiert. Einziger Pfad ohne saubere Korrektur.
+- Drei Backend-Endpunkte ohne Aufrufer: PUT /{id}, PUT /{id}/phasen/{phasenId},
+  PUT /{id}/oeffnen.
+- Verrechnungslohn-Dialog erklaert das Jahressoll, nicht die gekuerzte
+  Lohnsumme (anwesenheitsFaktor / MitarbeiterLohnZeile.ausgeklammerteTage
+  ungenutzt) — Befund gegen den Plan-Block, nicht gegen den Agenten.
+- Urlaubsantraege feuert einen Request pro offenem Antrag (parallel, kein
+  Wasserfall, aber N Requests) — Sammelendpunkt waere die saubere Loesung.
+
+Bedenken / Abweichungen vom Plan:
+- Schwerpunkt 5 (Nur-Lesen Handy) vollstaendig bestaetigt: im ganzen Diff
+  unter react-zeiterfassung/ kein POST/PUT/PATCH/DELETE, kein Formular,
+  kein Bearbeiten-Knopf, nichts auskommentiert vorbereitet. localStorage
+  wird nur fuer den bestehenden Auth-Token gelesen, keine Krankheitsdaten
+  zwischengespeichert.
+- Schwerpunkt 6 (DSGVO) sauber: Notizfeld heisst woertlich "Interne Notiz —
+  bitte keine Diagnosen eintragen", Notiz erscheint nur im Detailbereich der
+  Buero-Seite, in keinem Tooltip, keinem title, keinem console-Aufruf. Weder
+  Handy-Banner noch Urlaubshinweis nennen eine Ursache.
+
+---
+
+## Abschnitt 5 — Design-Review
+
+Zeit: 2026-09-08T21:35:00Z
+Branch: feature/langzeitkrankmeldung (Worktree wt/lzk-design-5, Stand 46969936)
+Status: fertig
+Ampel: 🔴
+
+### E2E-Lauf
+
+- Voller Lauf (E2E_PORT=5190 npm run test:e2e), 21 Specs x 3 Projekte = 411
+  Tests: 187 grün, 224 rot. **Die roten sind Umgebungsrauschen, kein
+  Codefehler.** Beleg: parallel lief der Code-Reviewer mit zwei Maven-Prozessen
+  auf einer 8-Kern-Maschine, Playwright fuhr mit 4 Workern dagegen. Nachlauf
+  derselben Specs mit --workers=1 (langzeitkrankmeldungen,
+  urlaubsantrag-krankmeldung-hinweis, verrechnungslohn-langzeitfall,
+  menueleiste-layout, alle drei Größen): **30/30 grün**. Empfehlung an den
+  Orchestrator: die volle E2E-Suite nie gleichzeitig mit den Backend-Suiten
+  fahren.
+- Zusätzlich 29 eigene Aufnahmen (PC 1440 und 1920, Handy 393x852) über eine
+  Wegwerf-Konfiguration; alle designPruefung-Zusicherungen (kein Überlauf,
+  keine Überschneidung, kein überlaufender oder gekürzter Text, Primäraktion
+  sichtbar) grün. Die Wegwerf-Dateien sind wieder gelöscht, git status sauber.
+
+### Lücke in der Nachweisführung (Ebene 2 der Playwright-Pflicht)
+
+e2e/langzeitkrankmeldungen.spec.ts (Task 15) und
+e2e/urlaubsantrag-krankmeldung-hinweis.spec.ts (Task 17) rufen **kein
+designPruefung** auf — sie erzeugen keinen Screenshot und fahren die
+automatischen Layout-Zusicherungen nicht mit. Nur
+verrechnungslohn-langzeitfall.spec.ts tut es. Für die beiden sichtbarsten
+Oberflächen des Abschnitts gab es damit keinen Design-Nachweis; ich habe ihn
+für dieses Review von Hand nachgeholt.
+
+### Angeschaute Screenshots
+
+Aus dem Suite-Lauf (react-pc-frontend/test-results/design/):
+- verrechnungslohn-langzeitfall-stunden--pc-14zoll.png
+- verrechnungslohn-langzeitfall-stunden--pc-monitor.png
+
+Selbst erzeugt (react-pc-frontend/test-results/design-review/):
+- rev-lzk-liste--pc-14zoll.png, rev-lzk-liste--pc-monitor.png
+- rev-lzk-leer--pc-14zoll.png, rev-lzk-leer--pc-monitor.png
+- rev-lzk-laedt--pc-14zoll.png, rev-lzk-laedt--pc-monitor.png
+- rev-lzk-dialog--pc-14zoll.png, rev-lzk-dialog--pc-monitor.png
+- rev-lzk-detail--pc-14zoll.png, rev-lzk-detail--pc-monitor.png
+- rev-lzk-detail-ganz--pc-14zoll.png, rev-lzk-detail-ganz--pc-monitor.png
+- rev-lzk-detail-viele--pc-14zoll.png, rev-lzk-detail-viele--pc-monitor.png
+- rev-lzk-detail-eine--pc-14zoll.png, rev-lzk-detail-eine--pc-monitor.png
+- rev-lzk-detail-keine--pc-14zoll.png, rev-lzk-detail-keine--pc-monitor.png
+- rev-lzk-detail-gesperrt--pc-14zoll.png, rev-lzk-detail-gesperrt--pc-monitor.png
+- rev-urlaub-warnkasten--pc-14zoll.png, rev-urlaub-warnkasten--pc-monitor.png
+- rev-handy-abwesenheiten--handy.png, rev-handy-abwesenheiten-ganz--handy.png
+- rev-handy-abw-lfz--handy.png
+- rev-handy-karte-we--handy.png, rev-handy-karte-lfz--handy.png
+- rev-handy-dashboard-krankengeld--handy.png
+- rev-handy-dashboard-ohne-fall--handy.png
+
+### Die sechs Fragen, je Oberfläche und Größe
+
+#### Task 15 — Seite "Lange Krankheit", Liste (rev-lzk-liste, 1440 und 1920)
+
+1. Farben: Zustände trennen sich (amber-Badge Lohnfortzahlung, teal-Badge
+   Wiedereingliederung, grauer Status-Chip bei abgeschlossen), Kontraste passen.
+   Zwei Probleme: die Stethoskop-Kachel jeder Karte ist rose-100/rose-600, also
+   Markenfarbe als Dekoration in jeder Zeile (die Schwesterseite Urlaubsanträge
+   nimmt slate-100/slate-600); und der Überfällig-Hinweis ist rose-700 und liest
+   sich dadurch wie ein Fehler statt wie eine Frage.
+2. Design-System: PageHeader-Muster wörtlich eingehalten, Karten
+   bg-white/border-slate-200/rounded-lg/shadow-sm, Icons durchgehend Lucide,
+   kein Emoji, Systemschrift, genau eine gefüllte rose-Primäraktion.
+3. Look-and-Feel: ruhig und ausgerichtet, auf 1920 nichts verwaist.
+4. UX: "Krankmeldung anlegen" oben rechts, Umstell-Knopf direkt neben dem Grund.
+   Lücke bei der Rückmeldung, siehe H2.
+5. Auffindbar: ja. Ribbon Zeiterfassung, Untergruppe ABWESENHEITEN,
+   "Lange Krankheit" mit Stethoskop, ohne Scrollen, an erwarteter Stelle.
+6. Überschneidungen: keine, in beiden Größen, kein Querscrollen.
+
+#### Task 15 — Leerer Zustand (rev-lzk-leer, 1440 und 1920)
+
+1. Nur ein grauer Satz, keine Farbe im Spiel.
+2. Der Kasten ist bg-slate-50 auf slate-50-Grund, also unsichtbar; der Skill
+   sieht für leere Zustände ein Icon (w-6 h-6) vor.
+3. Auf 1920 schwebt der Satz allein in einer sehr großen Leere — genau das, was
+   Frage 3 ausschließen will. Für die meisten Betriebe ist das der Normalzustand
+   dieser Seite.
+4. Kein Hinweis, was als Nächstes zu tun ist, und keiner, dass der Filter auf
+   "Läuft noch" steht.
+5. n/a. 6. Keine Überschneidung.
+
+#### Task 15 — Ladezustand (rev-lzk-laedt)
+
+Drei weiße Karten mit Rand und motion-safe:animate-pulse, ohne
+Platzhalter-Balken. Formal ein Skeleton, optisch drei leere Kästen; der Skill
+verlangt bg-slate-200-Blöcke (Vorbild ThumbnailImage.tsx). Fragen 1, 3 und 4
+nur teilweise erfüllt, 2 verfehlt, 6 sauber.
+
+#### Task 15 — Anlegen-Dialog (rev-lzk-dialog)
+
+1. Ruhig, eine rose-Primäraktion, "Abbrechen" als Outline. 2. rounded-2xl,
+Scrim mit Blur, Pflicht-Komponenten Select/DatePicker/Label benutzt. 3. Gut.
+4. Gut, bis auf: "Speichern" ist immer aktiv, die Pflichtfeldprüfung kommt erst
+als Toast. 5. und 6. sauber. Wording geprüft: das Notizfeld heißt wörtlich
+"Interne Notiz — bitte keine Diagnosen eintragen".
+
+#### Prüfschwerpunkt 4 — Zeitleiste und Stufenplan, erster Auftritt
+(rev-lzk-detail-viele / -eine / -keine / -gesperrt, beide Größen)
+
+1. Farben: die laufende Phase trägt ring-2 ring-rose-400 plus "Läuft gerade" in
+   rose — auf einen Blick erkennbar, gut gelöst. Der rose-600-Punkt vor jeder
+   Zeile ist dagegen reine Dekoration und konkurriert mit dem Ring.
+   Badge-Familie amber (Lohnfortzahlung), blau (Krankengeld), teal
+   (Wiedereingliederung).
+2. Design-System: Tabelle, Ränder, Radien, Lucide-Icons stimmen. Zwei
+   Abweichungen: bg-blue-100 für Krankengeld (FRONTEND_UI.md sagt "kein
+   indigo/blue", es gibt aber Vorbild im Bestand), und zwei gefüllte
+   rose-Knöpfe gleichzeitig ("Zeile hinzufügen", "Wieder voll im Einsatz") —
+   mit dem Kopfbereich sind es drei.
+3. Look-and-Feel: zwei Spalten, bei sieben Phasen ausgewogen; bei einer
+   einzigen Phase ist die linke Spalte fast leer und wirkt schief. Die
+   Stufenplan-Tabelle verrutscht bei fünf Zeilen nicht, Spaltenbreiten bleiben
+   stabil.
+4. UX: gesperrter Fall sauber — Formular und Papierkörbe ausgegraut, Tooltip
+   "Nur möglich, solange die Krankmeldung läuft.", Aktionsknöpfe verschwinden.
+   Leere Tabelle sagt "Noch kein Stufenplan hinterlegt.", leere Zeitleiste "Für
+   diese Krankmeldung sind noch keine Phasen hinterlegt." Beides gut. Eine
+   offene Phase ohne Enddatum wird als "ab 01.11.2026" gezeigt, korrekt.
+5. Auffindbar: nach dem Klick auf "Details" beginnt der Inhalt bei 1440x900
+   exakt an der Fensterunterkante, die Seite scrollt nicht mit.
+6. Überschneidungen: keine, in beiden Größen, auch nicht bei sieben Phasen.
+
+#### Task 16 — Verrechnungslohn-Dialog (verrechnungslohn-langzeitfall-stunden)
+
+1. Zurückhaltend, keine neue Farbe. 2. Passt. 3. Die Kopfzeile
+"KRANKENGELD/WIEDEREINGLIEDERUNG" ist rund viermal so breit wie ihr Inhalt und
+reißt zwischen "KRANK" und der neuen Spalte ein großes Loch — bei 1920 rund
+350 px Leere mitten in der Zeile. 4. Der Erklärsatz unter der Tabelle ist
+verständlich, der Tooltip an Kopfzeile und Zelle erklärt die Herkunft.
+5. Die Tabelle sitzt in der aufgeklappten Sektion, "übernehmen" bleibt sichtbar.
+6. Kein Querscrollen, auch nicht bei 1440 — die achte Spalte passt.
+
+#### Task 17 — Warnkasten Urlaubsanträge (rev-urlaub-warnkasten)
+
+1. Amber-Kasten mit AlertTriangle, klar vom Rest getrennt — aber der
+   Status-Chip "Offen" daneben ist bg-yellow-100/text-yellow-700, dieselbe
+   Farbfamilie mit anderer Bedeutung, direkt daneben.
+2. Amber ist die im Design-System hinterlegte Warnfarbe, korrekt gewählt.
+3. max-w-sm hält den Kasten kompakt. Der Status-Chip steht bei der gewarnten
+   Karte auf anderer Höhe als bei der ungewarnten.
+4. Genau richtig: über den Knöpfen, vor jedem Klick, und "Genehmigen" bleibt
+   aktiv — Warnung, keine Sperre. Vorbildlich.
+5. Ohne Scrollen sichtbar, direkt an der Entscheidung.
+6. Keine Überschneidung, auch bei 1920 nicht.
+
+#### Task 18 — Handy-Dashboard-Karte (rev-handy-karte-we, rev-handy-karte-lfz)
+
+1. Teal hebt sich ab, Kontrast reicht. Auf demselben Bildschirm stehen aber
+   schon rose, blau, lila, grün und amber; teal ist die sechste Familie.
+2. Verfehlt: teal kommt im Design-System nirgends vor, und die Karte ist
+   flächig getönt, während jede andere Karte dieses Dashboards weiß ist mit
+   getönter Icon-Kachel.
+3. Ordentlich gebaut, rounded-2xl, shadow-sm, passt in die Kartenspalte.
+4. Rein lesend, kein Knopf — genau wie vorgegeben.
+5. Die Karte steht ganz unten, nach sechs anderen Karten, weit unter dem Rand.
+6. Keine Überschneidung, kein Querscrollen. Der Umbruch setzt den
+   Gedankenstrich an den Anfang der zweiten Zeile.
+
+#### Task 19 — Handy-Abwesenheiten-Banner (rev-handy-abwesenheiten, rev-handy-abw-lfz)
+
+1. Teal-Banner steht direkt über einem grünen "Genehmigt"-Chip; teal und grün
+   liegen zu dicht beieinander, um sie flüchtig zu trennen.
+2. Dieselbe Teal-Frage wie Task 18.
+3. Sauber, rounded-xl wie die Nachbarkarten, zweizeilig ohne Gedrängel.
+4. Gut: nennt Phase und Datum, bei Wiedereingliederung zusätzlich das Tagessoll.
+5. Vorbildlich platziert, ganz oben unter der Kopfzeile, ohne Scrollen.
+6. Keine Überschneidung, kein Abschneiden. Das Stethoskop erscheint zweimal auf
+   dem Schirm (teal im Banner, rot beim Krankheits-Antrag) mit zwei Bedeutungen.
+
+### Antwort auf die Farbfrage: teal und amber
+
+**amber (Task 17): behalten.** colors_and_type.css führt --warn: #f59e0b
+(amber-500) mit Tint #fef3c7, das UI-Kit der Handy-App benutzt genau diesen
+Tint. bg-amber-50 / border-amber-200 / text-amber-800 ist die weiche Variante
+derselben Familie und deckt sich mit den vorhandenen Warnbändern in beiden
+Frontends. Kein Befund. Einziger Feinschliff: der gelbe "Offen"-Chip daneben
+sollte auf slate wechseln, damit Status und Warnung nicht dieselbe Farbe
+sprechen.
+
+**teal (Tasks 18 und 19): umstellen.** Teal steht in keiner einzigen Datei des
+Design-Systems — nicht in den Tokens, nicht in den beiden UI-Kits, nicht in den
+Musterkarten unter preview/. Die dokumentierte Semantikpalette hat genau fünf
+Familien: grün (Erfolg), amber (Warnung), rot (Gefahr), indigo (Info), lila
+(KI). Für eine neutrale Information ist indigo vorgesehen (--info: #6366f1,
+Tint #e0e7ff). In react-zeiterfassung kommt teal bisher nirgends vor; die
+beiden Tasks führen es neu ein. Dass beide Agenten dieselbe Wahl getroffen
+haben, macht sie nicht richtig — es macht sie nur zweimal.
+
+Empfehlung in dieser Reihenfolge:
+1. Handy-Dashboard-Karte (Task 18) auf das Muster der Nachbarkarten umbauen:
+   weiße Karte, getönte Icon-Kachel. Dann ist die Farbfrage fast erledigt und
+   die Karte reiht sich ein, statt herauszustechen.
+2. Wo eine Fläche getönt bleiben soll (Banner Task 19): indigo statt teal, oder
+   schlicht slate.
+3. Das Badge WIEDEREINGLIEDERUNG: bg-teal-100 text-teal-800 in phasen.ts darf
+   bleiben — bg-teal-100/text-teal-800 gibt es dort schon auf main
+   (Urlaubsanträge, Typ "Zeitausgleich"), dieselbe Badge-Familie am selben Ort.
+   Es bleibt nur der Bedeutungskonflikt: teal heißt einmal "Zeitausgleich" und
+   einmal "Wiedereingliederung", blau einmal "Urlaub" und einmal "Krankengeld".
+
+### Antwort auf die Auffindbarkeit der neuen Seite
+
+Gut auffindbar. Ribbon "Zeiterfassung", Untergruppe ABWESENHEITEN,
+"Lange Krankheit" mit Stethoskop-Icon, in beiden Größen vollständig lesbar,
+ohne Umbruch, ohne Kürzung, ohne Scrollen. Die Menüleisten-Spec bleibt in allen
+drei Größen grün, die Umbenennung bricht dort nichts.
+
+Ein Nebeneffekt für Bestandsnutzer: das Wort "Urlaub" kommt im Ribbon jetzt
+nirgends mehr vor. Wer es gewohnt ist, sucht unter "ABWESENHEITEN > Anträge",
+und "Anträge" allein sagt nicht, wovon. Vorschlag ohne Blocker-Charakter:
+"Anträge" in "Urlaubsanträge" umbenennen — dann trägt die Untergruppe den
+Oberbegriff und der Eintrag das gewohnte Wort. In MobileBottomNav heißt der
+Eintrag ohnehin weiterhin "Urlaub", das ist heute uneinheitlich.
+
+### Antwort zum 42-Tage-Countdown
+
+- "Noch 12 Tage Lohnfortzahlung" steht klein, in slate-700, rechts oben in der
+  Karte, ohne Icon, ohne Farbe, ohne Gewicht. Es liest sich wie eine
+  Bildunterschrift, nicht wie ein Countdown, und geht beim Überfliegen einer
+  Liste unter. Wenn das das fachliche Herzstück ist, muss es aussehen wie eines.
+- "Lohnfortzahlung endete am 14.03.2026" in rose-700 mit dem Knopf "Auf
+  Krankengeld umstellen" sticht heraus — aber in der Markenfarbe, und damit wie
+  ein Fehler, nicht wie eine Frage. Abgenommen war die Formulierung
+  "... — auf Krankengeld umstellen?", also eine Frage, die man verneinen kann.
+- Dass nichts automatisch passiert, steht nirgends. Der Knopf ist der einzige
+  Hinweis. Ein Halbsatz würde reichen.
+- Kern des Problems, siehe H2: sobald umgestellt ist, bleibt der rote Satz
+  trotzdem stehen — für den Rest des Falls, ohne Knopf, ohne Erklärung.
+
+### Befunde — blockierend (rot)
+
+- **B1 — teal ist keine Farbe dieses Produkts.**
+  react-zeiterfassung/src/pages/DashboardPage.tsx:1258 und
+  react-zeiterfassung/src/pages/AbwesenheitenPage.tsx:163 (bg-teal-50,
+  border-teal-200, bg-teal-100, text-teal-600, text-teal-800).
+  Nachweis: rev-handy-karte-we--handy.png, rev-handy-abwesenheiten--handy.png.
+  Nachweisbar sein muss: keine teal-Klasse mehr in react-zeiterfassung/src —
+  Dashboard als weiße Karte mit getönter Icon-Kachel, Banner in indigo oder
+  slate.
+
+- **B2 — englische Dezimalpunkte in einer deutschen Oberfläche.**
+  StufenplanTabelle.tsx:125 ("5.5 Std."), PhasenZeitleiste.tsx:65
+  ("5.5 Std. pro Tag"), Langzeitkrankmeldungen.tsx:481 ("4.5 h gestempelt,
+  2 h geplant"). Nachweis: rev-lzk-detail-viele--pc-14zoll.png. Die Handy-App
+  macht es an derselben Stelle richtig (formatStundenDe mit
+  toLocaleString('de-DE')). Nachweisbar sein muss: "5,5 Std." und "4,5 h" auf
+  dem Bildschirm.
+
+- **B3 — "Bei 1 Mitarbeitern".** VerrechnungslohnRechnerDialog.tsx:982.
+  Nachweis: verrechnungslohn-langzeitfall-stunden--pc-14zoll.png.
+  Nachweisbar sein muss: Singular bei 1, Plural sonst.
+
+- **B4 — kein Design-Nachweis für Task 15 und Task 17.**
+  e2e/langzeitkrankmeldungen.spec.ts und
+  e2e/urlaubsantrag-krankmeldung-hinweis.spec.ts rufen kein designPruefung auf.
+  Nachweisbar sein muss: je ein designPruefung(page, testInfo, '<name>',
+  { primaerAktion: ... }) und die zugehörigen PNG unter test-results/design/.
+
+### Befunde — Hinweise (gelb, blockieren nicht)
+
+- H1 Leerer Zustand (Langzeitkrankmeldungen.tsx:364-368): grauer Satz in einem
+  unsichtbaren bg-slate-50-Kasten auf slate-50-Grund, auf 1920 verloren. Icon,
+  Handlungssatz und Hinweis auf den Statusfilter ergänzen.
+  (rev-lzk-leer--pc-monitor.png)
+- H2 Der Überfällig-Satz verschwindet nie (Langzeitkrankmeldungen.tsx:416-420):
+  er hängt an restTage <= 0, der Knopf dagegen an aktuellePhaseTyp ===
+  'LOHNFORTZAHLUNG'. Jede laufende Meldung in Krankengeld oder
+  Wiedereingliederung zeigt dauerhaft "Lohnfortzahlung endete am ..." in rose,
+  ohne Aktion. (rev-lzk-liste--pc-14zoll.png, dritte Karte)
+- H3 "Läuft gerade" bei abgeschlossener Meldung (PhasenZeitleiste.tsx:9-11):
+  rechnet nur mit Datum, nicht mit dem Status.
+  (rev-lzk-detail-gesperrt--pc-14zoll.png)
+- H4 Ladezustand ohne Platzhalter (Langzeitkrankmeldungen.tsx:350): weiße
+  Karten mit Rand statt bg-slate-200-Balken. (rev-lzk-laedt--pc-14zoll.png)
+- H5 Drei gefüllte rose-Knöpfe gleichzeitig, wenn eine Karte offen ist.
+  "Zeile hinzufügen" ist eine Unterformular-Aktion und gehört auf sekundär
+  (border-rose-300 text-rose-700). (rev-lzk-detail-viele--pc-14zoll.png)
+- H6 Rose als Dekoration: die Stethoskop-Kachel jeder Listenkarte ist
+  rose-100/rose-600, Urlaubsanträge nimmt an derselben Stelle slate.
+  (rev-lzk-liste--pc-monitor.png)
+- H7 Der Countdown "Noch 12 Tage Lohnfortzahlung" hat kein visuelles Gewicht.
+  (rev-lzk-liste--pc-14zoll.png, erste Karte)
+- H8 Nirgends steht, dass die Umstellung auf Krankengeld nicht von selbst
+  passiert.
+- H9 Nach dem Klick auf "Details" bleibt die Seite stehen; der Inhalt beginnt
+  bei 1440x900 an der Fensterunterkante. scrollIntoView auf die geöffnete Karte.
+  (rev-lzk-detail--pc-14zoll.png)
+- H10 Handy-Dashboard: die Karte steht ganz unten; über "Heute gearbeitet" wäre
+  sie da, wo sie hilft. (rev-handy-karte-we--handy.png)
+- H11 Umbruch auf dem Handy setzt den Gedankenstrich an den Zeilenanfang;
+  besser Titel plus Untertitel wie bei den Nachbarkarten.
+- H12 Spaltenkopf "KRANKENGELD/WIEDEREINGLIEDERUNG" reißt ein Loch in die
+  Tabelle; zweizeilig setzen oder kürzen.
+  (verrechnungslohn-langzeitfall-stunden--pc-monitor.png)
+- H13 Gelber "Offen"-Chip neben dem amber Warnkasten, gleiche Farbfamilie,
+  andere Bedeutung (Urlaubsantraege.tsx:162).
+  (rev-urlaub-warnkasten--pc-14zoll.png)
+- H14 Farbbedeutungen kollidieren zwischen den Schwesterseiten: teal einmal
+  Zeitausgleich und einmal Wiedereingliederung, blau einmal Urlaub und einmal
+  Krankengeld.
+- H15 Wording-Kleinigkeiten: "Fortsetzungserkrankung"
+  (Langzeitkrankmeldungen.tsx:574) ist Kassendeutsch; "Gestempelt gegen
+  geplant" (Zeile 474) klingt nach Duell; Formularlabel "ab" klein neben
+  "Stunden pro Tag" groß (StufenplanTabelle.tsx:149); "keine Phasen hinterlegt"
+  (PhasenZeitleiste.tsx:30) ist mild fachsprachlich.
+- H16 Der rose-600-Punkt vor jeder Zeitleisten-Zeile trägt keine Information
+  und konkurriert mit dem Ring der laufenden Phase.
+- H17 "Speichern" im Anlegen-Dialog ist immer aktiv, Pflichtfelder melden sich
+  erst per Toast. (rev-lzk-dialog--pc-14zoll.png)
+
+### Was ausdrücklich in Ordnung ist
+
+- Verbindliches Wording vollständig eingehalten: "Lohnfortzahlung durch den
+  Betrieb", "Krankengeld der Krankenkasse", "Wiedereingliederung", "Wieder voll
+  im Einsatz". Kein "Entgeltfortzahlungszeitraum", kein "AU-Zeitraum", kein
+  "Phase 1/2/3", kein roher Enum-Wert auf dem Bildschirm — Status und Phase
+  kommen als statusLabel und aktuellePhaseLabel vom Server, der Filter zeigt
+  "Läuft noch / Abgeschlossen / Zurückgenommen".
+- Notizfeld wörtlich "Interne Notiz — bitte keine Diagnosen eintragen".
+- Task 17 ist Warnung und keine Sperre, richtig platziert über den Knöpfen.
+- Gesperrter Zustand im Stufenplan erklärt per Tooltip, warum.
+- Handy-App bleibt rein lesend: kein Knopf, kein Formular, kein Schreibaufruf.
+- Kein Querscrollen, keine Überschneidung, kein abgeschnittener Text — in
+  keiner der drei Größen, in keinem der 29 angeschauten Bilder.
