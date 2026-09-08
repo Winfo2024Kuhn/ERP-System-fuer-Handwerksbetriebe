@@ -336,3 +336,35 @@ keine `.gitattributes`-Regel für die Datei). Der Inhalt ist identisch.
 Regel: Das ist **kein** Build-Artefakt und kein Befund. Nicht committen, nicht
 "reparieren", nicht im Report als Abweichung führen. Ein Satz im Auftragstext
 spart dem Agenten die Irritation.
+
+### Charakterisierungstests brechen an der neuen Abhängigkeit, nicht am Verhalten
+
+Fehlerbild: Ein Task stellt einen Service auf eine **neue** Abhängigkeit um
+(Constructor Injection). Der Charakterisierungstest, der sein Verhalten
+festnageln soll, wird rot — mit `NullPointerException`, nicht mit einer
+falschen Zahl. Ursache: Der Test kennt den neuen Konstruktor-Parameter nicht,
+Mockito injiziert `null`. Bei `@WebMvcTest` fehlt analog ein `@MockBean`.
+
+Das ist **kein** Verhaltensfehler und **keine** Regression, sondern eine
+Verkabelungslücke — der Test ist schlicht nicht mehr lauffähig.
+
+Regel, die in den Auftrag gehört (real gebraucht am 08.09.2026, sonst wären
+sechs Tasks einzeln daran gescheitert):
+
+> An deiner Charakterisierungsdatei darfst du die **Verkabelung** anpassen —
+> Mock/`@MockBean` ergänzen, Stubs setzen, Konstruktoraufruf nachziehen.
+> **Unverändert bleiben:** jede erwartete Zahl, jede erwartete Exception samt
+> Meldung, und die Menge der geprüften Fälle.
+
+Zwei Dinge dazusagen, sonst wird das Netz still entschärft:
+
+- **Pro Fixture-Fall den konkreten Wert stubben**, nicht pauschal `any()` auf
+  einen festen Rückgabewert. Sonst ist der Test grün, egal was der Code tut.
+- **Gegenprobe verlangen:** einen Stub testweise auf einen falschen Wert
+  setzen und nachsehen, ob der Test wirklich rot wird.
+
+**Besser noch — beim Planen vermeiden:** Wer Charakterisierungstests plant,
+plant sie gegen die **künftige** Konstruktor-Signatur, oder schreibt in den
+Task, dass die Verkabelung später angepasst werden darf. Sonst kollidiert die
+Vorgabe „diese Datei ist unantastbar" zwangsläufig mit jeder Umstellung, die
+sie absichern soll.
