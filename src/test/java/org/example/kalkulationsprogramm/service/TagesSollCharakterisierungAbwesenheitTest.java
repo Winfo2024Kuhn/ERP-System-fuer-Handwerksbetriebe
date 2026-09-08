@@ -49,6 +49,8 @@ class TagesSollCharakterisierungAbwesenheitTest {
     private MonatsSaldoService monatsSaldoService;
     @Mock
     private ZeitbuchungRepository zeitbuchungRepository;
+    @Mock
+    private TagesSollService tagesSollService;
 
     @InjectMocks
     private AbwesenheitService abwesenheitService;
@@ -86,6 +88,11 @@ class TagesSollCharakterisierungAbwesenheitTest {
         when(feiertagService.istFeiertag(any())).thenReturn(false);
         when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
         when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
+        // Verkabelung fuer TagesSollService: pro Fixture-Tag exakt der Wert, den vorher
+        // der rohe Zeitkonto-Wert lieferte (Montag = 8.00h) - kein pauschales any()->Wert,
+        // damit ein falscher Stub-Wert die Zusicherungen unten tatsaechlich zum Kippen bringt.
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG_NORMAL))
+                .thenReturn(new BigDecimal("8.00"));
     }
 
     @Test
@@ -118,6 +125,9 @@ class TagesSollCharakterisierungAbwesenheitTest {
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(feiertagService.istFeiertag(SAMSTAG_WOCHENENDE)).thenReturn(false);
         when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        // Samstag: Zeitkonto liefert roh 0.00h - derselbe Wert wie vorher direkt aus dem Zeitkonto.
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, SAMSTAG_WOCHENENDE))
+                .thenReturn(new BigDecimal("0.00"));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> abwesenheitService.bucheAbwesenheit(
