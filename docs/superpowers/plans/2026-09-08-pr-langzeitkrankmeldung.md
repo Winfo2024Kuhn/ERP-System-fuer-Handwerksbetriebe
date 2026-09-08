@@ -26,12 +26,21 @@ sieht eine Karte auf dem Dashboard und die Phase im Abwesenheiten-Verlauf.
 Anlegen oder ändern kann er nichts, das ist bewusst so: Ein Mitarbeiter legt
 seine eigene Wiedereingliederung nicht an.
 
+**Ein Fehlklick lässt sich zurücknehmen.** Wer versehentlich auf "Wieder voll im
+Einsatz" klickt, bekommt einen Knopf "Doch noch krank" und macht es rückgängig.
+Ohne den wäre der einzige Ausweg eine neue Meldung mit späterem Beginn gewesen —
+und das hätte den 42-Tage-Zähler verfälscht.
+
 **Urlaubsanträge.** Kommt ein Antrag herein, während eine Krankmeldung läuft,
 steht das jetzt als Hinweis beim Antrag. Vorher hat man das übersehen.
 
 **Verrechnungslohn.** Tage, an denen die Kasse zahlt, zählen nicht mehr als
 Arbeitszeit ins Jahressoll und nicht mehr in die Lohnkosten. Die Spalte
 "ausgeklammerte Tage" zeigt, wie viele Tage herausgerechnet wurden.
+
+Im Menü heißt der Eintrag jetzt "Urlaubsanträge" statt "Anträge": Die Gruppe
+darüber wurde zu "Abwesenheiten", damit "Lange Krankheit" hineinpasst — sonst
+hätte das Wort "Urlaub" nirgends mehr gestanden.
 
 ## Aufgeräumt: die Feiertagslogik lag dreimal im Code
 
@@ -85,15 +94,14 @@ der Urlaubshinweis nennen jemals eine Ursache.
   `abwesenheit`. Native ENUM-Spalten, weil Hibernate 6 sonst beim
   `ddl-auto=validate` aussteigt. Der Aggregatsbaum trägt eine `version` an der
   Wurzel, optimistisches Sperren mit HTTP 409.
-- **21 neue Java-Testklassen**, dazu erweiterte Bestandstests.
+- **14 neue Java-Testklassen**, dazu erweiterte Bestandstests.
 - **Drei Playwright-Specs** für die neuen Abläufe im Büro.
-- **80 Dateien, +13.152/−271.**
+- **82 Dateien, +14.534/−274.** Der Wissensgraph wurde separat aktualisiert.
 
 ## Was nicht drin ist
 
-- `PUT /{id}`, `PUT /{id}/phasen/{phasenId}` und `PUT /{id}/oeffnen` sind
-  getestet, aber ohne Oberfläche. Wer eine abgeschlossene Meldung wieder öffnen
-  will, kann das über die API, nicht über einen Knopf.
+- `PUT /{id}` und `PUT /{id}/phasen/{phasenId}` sind getestet, aber ohne
+  Oberfläche. Ändern geht über die API, nicht über einen Knopf.
 - Der Verrechnungslohn-Dialog erklärt, warum das **Jahressoll** kleiner ist. Warum
   die **Lohnsumme** kleiner ist, steht nur in einem Tooltip.
 - Ein Urlaubsantrag löst einen Request pro offenem Antrag aus (parallel, kein
@@ -104,4 +112,5 @@ der Urlaubshinweis nennen jemals eine Ursache.
 Backend 2611 Tests. Vier Fehler sind vorbestehend und hängen an der
 Datenbankverbindung, nicht an dieser Änderung — sie waren vor dem ersten Commit
 schon da und sind so dokumentiert. Beide Frontends: Lint sauber, alle
-Test-Dateien grün, Build durch.
+Test-Dateien grün, Build durch. Die vier Playwright-Specs rund um das Feature
+laufen in allen drei Bildschirmgrößen: 33 Prüfungen, alle grün.
