@@ -53,6 +53,10 @@ class TagesSollCharakterisierungUrlaubsantragTest {
     private MonatsSaldoService monatsSaldoService;
     @Mock
     private ZeitkontoKorrekturService zeitkontoKorrekturService;
+    @Mock
+    private TagesSollService tagesSollService;
+    @Mock
+    private LangzeitkrankmeldungService langzeitkrankmeldungService;
 
     @InjectMocks
     private UrlaubsantragService urlaubsantragService;
@@ -102,6 +106,17 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         LocalDate bis = LocalDate.of(2026, 6, 5);
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
+        // Pro Fixture-Tag der konkrete Wert, nicht pauschal any() -> sonst blind.
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 1)))
+                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 2)))
+                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 3)))
+                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 4)))
+                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 5)))
+                .thenReturn(new BigDecimal("8.00"));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
@@ -126,6 +141,17 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class)))
                 .thenAnswer(inv -> inv.getArgument(0).equals(feiertag));
+        // Pro Fixture-Tag der konkrete Wert, nicht pauschal any() -> sonst blind.
+        // Der Feiertag (06-03) selbst bekommt bewusst KEINEN Stub: approveAntrag
+        // ueberspringt ihn vor dem TagesSollService-Aufruf (siehe Gegenprobe im Report).
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 1)))
+                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 2)))
+                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 4)))
+                .thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(1L, testZeitkonto, LocalDate.of(2026, 6, 5)))
+                .thenReturn(new BigDecimal("8.00"));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 

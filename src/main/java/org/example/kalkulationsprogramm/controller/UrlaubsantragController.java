@@ -106,6 +106,20 @@ public class UrlaubsantragController {
     }
 
     /**
+     * Liefert einen Hinweis, wenn der angefragte Urlaubszeitraum in eine
+     * laufende Krankmeldung fällt. Reine Warnung fürs Büro, keine Sperre —
+     * der Antrag selbst (POST /antraege, auch von der Handy-App genutzt)
+     * bleibt davon unberührt.
+     */
+    @GetMapping("/antraege/hinweise")
+    public ResponseEntity<Map<String, List<String>>> getHinweise(
+            @RequestParam Long mitarbeiterId,
+            @RequestParam LocalDate von,
+            @RequestParam LocalDate bis) {
+        return ResponseEntity.ok(Map.of("warnungen", service.pruefeHinweise(mitarbeiterId, von, bis)));
+    }
+
+    /**
      * Gibt alle verfügbaren Abwesenheitstypen zurück.
      */
     @GetMapping("/typen")

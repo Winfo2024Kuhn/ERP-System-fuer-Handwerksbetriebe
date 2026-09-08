@@ -22,6 +22,8 @@ public class UrlaubsantragService {
     private final ZeitkontoService zeitkontoService;
     private final MonatsSaldoService monatsSaldoService;
     private final ZeitkontoKorrekturService zeitkontoKorrekturService;
+    private final TagesSollService tagesSollService;
+    private final LangzeitkrankmeldungService langzeitkrankmeldungService;
 
     /**
      * Erstellt einen neuen Urlaubsantrag.
@@ -80,6 +82,12 @@ public class UrlaubsantragService {
     /**
      * Genehmigt einen Urlaubsantrag und erstellt entsprechende
      * Abwesenheits-Einträge.
+     *
+     * Die Urlaubsstunden je Tag sind die Gegenbuchung zum Tagessoll (siehe
+     * {@link TagesSollService}) und folgen deshalb während einer laufenden
+     * Wiedereingliederung dem Stufenplan statt der vollen Sollstunden — sonst
+     * entstünden Phantom-Überstunden. Das Urlaubs<b>kontingent</b> zählt
+     * davon unberührt weiterhin volle Tage, nicht Stunden ({@link #getResturlaub}).
      */
     @Transactional
     public Urlaubsantrag approveAntrag(Long antragId) {
@@ -95,6 +103,9 @@ public class UrlaubsantragService {
         // AbwesenheitsTyp ermitteln
         AbwesenheitsTyp abwesenheitsTyp = toAbwesenheitsTyp(antrag.getTyp());
 
+        // Zeitkonto einmal vor der Schleife laden, nicht je Tag (N+1).
+        Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(antrag.getMitarbeiter().getId());
+
         // Zeitraum iterieren und Abwesenheiten erstellen
         for (LocalDate date = antrag.getVonDatum(); !date.isAfter(antrag.getBisDatum()); date = date.plusDays(1)) {
             // Wochenenden überspringen
@@ -107,9 +118,9 @@ public class UrlaubsantragService {
                 continue;
             }
 
-            // Soll-Stunden ermitteln
-            BigDecimal sollStunden = zeitkontoService.getOrCreateZeitkonto(antrag.getMitarbeiter().getId())
-                    .getSollstundenFuerTag(date.getDayOfWeek().getValue());
+            // Soll-Stunden ermitteln (Gegenbuchung zum Tagessoll, siehe Javadoc oben)
+            BigDecimal sollStunden = tagesSollService.arbeitsSoll(
+                    antrag.getMitarbeiter().getId(), zeitkonto, date);
 
             if (sollStunden.compareTo(BigDecimal.ZERO) > 0) {
                 // Prüfen ob bereits Abwesenheit für diesen Tag existiert
@@ -234,6 +245,17 @@ public class UrlaubsantragService {
         int korrektur = korrekturBD != null ? korrekturBD.intValue() : 0;
 
         return Math.max(0, jahresUrlaub - (int) genommen + korrektur);
+    }
+
+    /**
+     * Prüft, ob der angefragte Urlaubszeitraum in eine laufende Krankmeldung
+     * fällt, und liefert dazu Hinweistexte fürs Büro. Das ist eine Warnung,
+     * keine Sperre — der Antrag wird dadurch nicht blockiert, das Büro
+     * entscheidet.
+     */
+    @Transactional(readOnly = true)
+    public List<String> pruefeHinweise(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        return langzeitkrankmeldungService.pruefeUrlaubsHinweise(mitarbeiterId, von, bis);
     }
 
     /**
