@@ -196,6 +196,25 @@ Datei-Weg (`SKILL.md` + `README.md` lesen, `ui-ux-pro-max` für den Hook) nur
 als Fallback. Der Skill-Aufruf liefert mehr als die Datei — unter anderem die
 beiden pixelgenauen UI-Kits (Desktop und Mobile), die man sonst nicht sieht.
 
+### Farben vorgeben, sonst erfinden zwei Agenten dieselbe falsche
+
+Am 08.09.2026 haben **zwei unabhaengige Coding-Agenten** fuer denselben
+Sachverhalt (neutrale Information zu einer laufenden Krankmeldung) beide `teal`
+gewaehlt — eine Farbe, die in keiner einzigen Datei des Design-Systems steht,
+weder in den Tokens noch in den UI-Kits noch in den Musterkarten, und die in
+`react-zeiterfassung` vorher nirgends vorkam.
+
+Dass beide dieselbe Wahl trafen, macht sie nicht richtig. Es zeigt nur, dass
+das Modell bei einer Luecke im Auftrag verlaesslich denselben Griff daneben
+macht. Der Design-Reviewer hat beide Stellen als Blocker zurueckgeschickt.
+
+Deshalb im Auftragstext: **die Farbrolle benennen**, nicht nur "halt dich ans
+Design-System". Also "neutrale Information -> indigo (`--info`)" statt "waehle
+eine passende Farbe". Wo die Rolle nicht klar ist, den Agenten ausdruecklich
+auf ein **Vorbild im Bestand** verweisen ("wie die Nachbarkarten in derselben
+Datei") und eine Gegenpruefung verlangen, die eine erfundene Farbe auffliegen
+laesst — `grep -rn "teal-" <verzeichnis>` muss leer sein.
+
 ---
 
 ## Für den Review-Agenten
@@ -227,6 +246,25 @@ Bei Verdacht auf eine Regression: kleine Wegwerf-Sonde gegen den Stand **vor**
 der Änderung und gegen den danach, und die Werte vergleichen. Ein Messwert
 („vorher `null`, nachher `12`, zwei Minuten später immer noch `12`") beendet
 die Diskussion, eine Vermutung nicht.
+
+### E2E-Suiten nie parallel zu einer Maven-Suite fahren
+
+Am 08.09.2026 gemessen: Der Design-Reviewer fuhr 411 Playwright-Tests (21 Specs
+x 3 Bildschirmgroessen), waehrend der Code-Reviewer parallel die Maven-Suite
+laufen hatte. Ergebnis: **187 gruen, 224 rot.** Nachlauf derselben Specs mit
+`--workers=1`, nachdem Maven durch war: **30/30 gruen.** Kein einziger echter
+Befund darunter.
+
+Playwright-Tests haben Zeitschranken (Selektor-Timeouts, Netzwerk-Wartezeiten).
+Unter CPU-Konkurrenz reissen die, und der Report sieht aus wie ein kaputtes
+Feature. Das kostet den Reviewer eine halbe Stunde Nachlauf und den
+Orchestrator eine Runde Misstrauen gegen einen gesunden Abschnitt.
+
+Deshalb: Laufen Code-Reviewer und Design-Reviewer parallel, faehrt der
+Design-Reviewer seine Specs **mit `--workers=1`** und wartet mit dem grossen
+Gesamtlauf, bis die Maven-Suite des anderen durch ist. Und: Eine rote
+E2E-Bilanz mit dreistelliger Fehlerzahl ist erst dann ein Befund, wenn sie
+einen Nachlauf ohne Konkurrenz ueberlebt hat.
 
 ---
 
