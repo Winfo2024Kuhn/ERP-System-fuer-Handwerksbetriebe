@@ -120,6 +120,14 @@ interface VerrechnungslohnErgebnis {
 // Die reinen Rechen- und Formatierregeln liegen in verrechnungslohnFormat.ts,
 // damit sie einzeln getestet werden koennen (Projekt-Konvention: x.ts + x.test.ts).
 
+/**
+ * Deutsche Singular/Plural-Form für eine Zahl direkt vor einem Substantiv
+ * ("1 Tag" / "3 Tage", "Bei 1 Mitarbeiter" / "Bei 3 Mitarbeitern"). Nur bei
+ * genau 1 die Singularform, sonst (auch bei 0) die Pluralform.
+ */
+const pluralWort = (anzahl: number, singular: string, plural: string): string =>
+    anzahl === 1 ? singular : plural;
+
 // ==================== Props ====================
 
 interface VerrechnungslohnRechnerDialogProps {
@@ -937,7 +945,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                         }
                                                     >
                                                         {z.ausgeklammerteTage > 0
-                                                            ? `${z.ausgeklammerteTage} Tage`
+                                                            ? `${z.ausgeklammerteTage} ${pluralWort(z.ausgeklammerteTage, 'Tag', 'Tage')}`
                                                             : '–'}
                                                     </td>
                                                     <td
@@ -980,9 +988,11 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                             </div>
                             {ausgeklammerteHinweis && (
                                 <p className="mt-3 text-sm text-slate-500">
-                                    Bei {ausgeklammerteHinweis.anzahl} Mitarbeitern sind Krankengeld- und
-                                    Wiedereingliederungszeiten herausgerechnet — insgesamt{' '}
-                                    {ausgeklammerteHinweis.tage} Tage.
+                                    Bei {ausgeklammerteHinweis.anzahl}{' '}
+                                    {pluralWort(ausgeklammerteHinweis.anzahl, 'Mitarbeiter', 'Mitarbeitern')} sind
+                                    Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt{' '}
+                                    {ausgeklammerteHinweis.tage}{' '}
+                                    {pluralWort(ausgeklammerteHinweis.tage, 'Tag', 'Tage')}.
                                 </p>
                             )}
                         </Section>

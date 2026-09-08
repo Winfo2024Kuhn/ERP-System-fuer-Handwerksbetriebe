@@ -124,7 +124,7 @@ const NAVIGATION: NavCategory[] = [
             {
                 label: 'Abwesenheiten',
                 items: [
-                    { name: 'Anträge', href: '/urlaubsantraege', icon: Plane },
+                    { name: 'Urlaubsanträge', href: '/urlaubsantraege', icon: Plane },
                     { name: 'Lange Krankheit', href: '/langzeitkrankmeldungen', icon: Stethoscope },
                 ]
             }

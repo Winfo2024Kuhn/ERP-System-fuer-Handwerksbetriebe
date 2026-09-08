@@ -279,9 +279,63 @@ describe('VerrechnungslohnRechnerDialog', () => {
             'Diese Tage sind aus Jahressoll und Lohnkosten herausgerechnet.'
         );
 
+        // Ein Mitarbeiter ist betroffen -- "Mitarbeiter" bleibt Singular, auch
+        // wenn die Tagesanzahl (122) selbst im Plural steht.
         expect(
             screen.getByText(
-                'Bei 1 Mitarbeitern sind Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt 122 Tage.'
+                'Bei 1 Mitarbeiter sind Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt 122 Tage.'
+            )
+        ).toBeTruthy();
+    });
+
+    it('zeigt bei genau einem ausgeklammerten Tag den Singular, nicht "1 Tage"', async () => {
+        // Regression: Zahl direkt vor dem Substantiv wurde immer im Plural
+        // ausgegeben ("1 Tage", "Bei 1 Mitarbeitern") -- auch bei genau 1.
+        const mitEinemTag = antwort();
+        mitEinemTag.stundenzeilen = [
+            { ...mitEinemTag.stundenzeilen[0], ausgeklammerteTage: 1 },
+        ];
+        mockFetch.mockResolvedValue(antwortOk(mitEinemTag));
+
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
+
+        oeffneStundenSektion();
+        const zeile = (await screen.findByText('Max Mustermann')).closest('tr') as HTMLElement;
+        expect(within(zeile).getByText('1 Tag')).toBeTruthy();
+        expect(within(zeile).queryByText('1 Tage')).toBeNull();
+
+        expect(
+            screen.getByText(
+                'Bei 1 Mitarbeiter sind Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt 1 Tag.'
+            )
+        ).toBeTruthy();
+    });
+
+    it('zeigt den Plural, wenn mehrere Mitarbeiter ausgeklammerte Tage haben', async () => {
+        // Gegenstueck zu den Singular-Tests: die Pluralform darf durch die neue
+        // Hilfsfunktion nicht verloren gehen.
+        const mitZweiMitarbeitern = antwort();
+        mitZweiMitarbeitern.stundenzeilen = [
+            { ...mitZweiMitarbeitern.stundenzeilen[0], ausgeklammerteTage: 30 },
+            {
+                ...mitZweiMitarbeitern.stundenzeilen[0],
+                mitarbeiterId: 2,
+                name: 'Erika Musterfrau',
+                ausgeklammerteTage: 10,
+            },
+        ];
+        mockFetch.mockResolvedValue(antwortOk(mitZweiMitarbeitern));
+
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
+
+        oeffneStundenSektion();
+        await screen.findByText('Erika Musterfrau');
+
+        expect(
+            screen.getByText(
+                'Bei 2 Mitarbeitern sind Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt 40 Tage.'
             )
         ).toBeTruthy();
     });
