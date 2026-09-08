@@ -15,21 +15,28 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
  * Charakterisierungstest (Langzeitkrankmeldung, Abschnitt 1 / Task 2).
  *
  * Friert zahlengenau ein, was {@link ZeitkontoService#berechneSollstundenFuerZeitraum}
- * heute liefert - BEVOR Task 3 den Aufrufer auf {@code TagesSollService.periodenSoll}
- * umstellt (siehe E2 im Plan). Wird eine dieser Zusicherungen rot, ist die
- * Zusicherung falsch, nicht der Bestand.
+ * vor der Umstellung auf {@link TagesSollService} lieferte (siehe E2 im Plan).
+ * Wird eine dieser Zusicherungen rot, ist die Zusicherung falsch, nicht der
+ * Bestand.
  *
- * Wichtiger Befund: die Methode fragt beim Feiertag NUR
- * {@link FeiertagService#istHalberFeiertag} ab, niemals {@code istFeiertag}. Ein
- * voller Feiertag zaehlt deshalb unveraendert als bezahlter Arbeitstag mit den
- * vollen Sollstunden - das ist E2's "periodenSoll" wortwoertlich.
+ * Wichtiger Befund (weiterhin gueltig): die alte Schleife fragte beim
+ * Feiertag NUR {@code FeiertagService#istHalberFeiertag} ab, niemals
+ * {@code istFeiertag}. Ein voller Feiertag zaehlte deshalb als bezahlter
+ * Arbeitstag mit den vollen Sollstunden - das ist E2's "periodenSoll"
+ * wortwoertlich.
+ *
+ * Seit Task 7 delegiert {@code berechneSollstundenFuerZeitraum} an
+ * {@link TagesSollService#periodenSollSumme}. Diese Klasse mockt deshalb
+ * {@code TagesSollService} statt {@code FeiertagService} und stubt pro Test
+ * genau den Wert, den die alte Schleife fuer den jeweiligen Fixture-Tag
+ * geliefert hat - reine Verkabelung, die Zusicherungen (Zahlen, Faelle)
+ * sind unveraendert.
  *
  * Dummy-Daten (DSGVO): Max Mustermann, ID 1.
  */
@@ -43,7 +50,7 @@ class TagesSollCharakterisierungZeitkontoTest {
     private MitarbeiterRepository mitarbeiterRepository;
 
     @Mock
-    private FeiertagService feiertagService;
+    private TagesSollService tagesSollService;
 
     @InjectMocks
     private ZeitkontoService zeitkontoService;
@@ -76,7 +83,8 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void montag_normalerArbeitstag_gibtVolleSollstunden() {
-        when(feiertagService.istHalberFeiertag(MONTAG_NORMAL)).thenReturn(false);
+        when(tagesSollService.periodenSollSumme(1L, zeitkonto, MONTAG_NORMAL, MONTAG_NORMAL))
+                .thenReturn(new BigDecimal("8"));
 
         BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, MONTAG_NORMAL, MONTAG_NORMAL);
 
@@ -85,7 +93,8 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void samstag_wochenende_gibtNull() {
-        when(feiertagService.istHalberFeiertag(SAMSTAG_WOCHENENDE)).thenReturn(false);
+        when(tagesSollService.periodenSollSumme(1L, zeitkonto, SAMSTAG_WOCHENENDE, SAMSTAG_WOCHENENDE))
+                .thenReturn(BigDecimal.ZERO);
 
         BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, SAMSTAG_WOCHENENDE,
                 SAMSTAG_WOCHENENDE);
@@ -95,7 +104,8 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void vollerFeiertag_zaehltAlsBezahlterArbeitstag_gibtVolleSollstunden() {
-        when(feiertagService.istHalberFeiertag(VOLLER_FEIERTAG)).thenReturn(false);
+        when(tagesSollService.periodenSollSumme(1L, zeitkonto, VOLLER_FEIERTAG, VOLLER_FEIERTAG))
+                .thenReturn(new BigDecimal("8"));
 
         BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, VOLLER_FEIERTAG,
                 VOLLER_FEIERTAG);
@@ -105,7 +115,8 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void halberFeiertag_gibtHalbeSollstunden() {
-        when(feiertagService.istHalberFeiertag(HALBER_FEIERTAG)).thenReturn(true);
+        when(tagesSollService.periodenSollSumme(1L, zeitkonto, HALBER_FEIERTAG, HALBER_FEIERTAG))
+                .thenReturn(new BigDecimal("4.00"));
 
         BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, HALBER_FEIERTAG,
                 HALBER_FEIERTAG);
@@ -115,7 +126,8 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void feiertagAmWochenende_gibtNull() {
-        when(feiertagService.istHalberFeiertag(FEIERTAG_AM_WOCHENENDE)).thenReturn(false);
+        when(tagesSollService.periodenSollSumme(1L, zeitkonto, FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE))
+                .thenReturn(BigDecimal.ZERO);
 
         BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, FEIERTAG_AM_WOCHENENDE,
                 FEIERTAG_AM_WOCHENENDE);
@@ -130,7 +142,8 @@ class TagesSollCharakterisierungZeitkontoTest {
         // voller Feiertag als bezahlter Arbeitstag zaehlt (siehe Klassen-Javadoc).
         LocalDate wochenStart = LocalDate.of(2026, 6, 1);
         LocalDate wochenEnde = LocalDate.of(2026, 6, 7);
-        when(feiertagService.istHalberFeiertag(any(LocalDate.class))).thenReturn(false);
+        when(tagesSollService.periodenSollSumme(1L, zeitkonto, wochenStart, wochenEnde))
+                .thenReturn(new BigDecimal("40"));
 
         BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, wochenStart, wochenEnde);
 

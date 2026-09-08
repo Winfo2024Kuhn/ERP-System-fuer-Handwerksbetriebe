@@ -22,7 +22,7 @@ public class ZeitkontoService {
 
     private final ZeitkontoRepository zeitkontoRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
-    private final FeiertagService feiertagService;
+    private final TagesSollService tagesSollService;
 
     /**
      * Gibt das Zeitkonto für einen Mitarbeiter zurück.
@@ -107,25 +107,15 @@ public class ZeitkontoService {
 
     /**
      * Berechnung: Sollstunden für einen Zeitraum.
-     * Feiertage werden als normale Arbeitstage gezählt (bezahlte Feiertage).
-     * Halbe Feiertage (z.B. Heiligabend): 50% der normalen Sollstunden.
+     * Feiertage zählen weiter als bezahlte Arbeitstage mit den vollen
+     * Sollstunden, halbe Feiertage (z.B. Heiligabend, Silvester) mit 50%.
+     * Zusätzlich richtet sich das Soll jetzt nach einer laufenden
+     * Wiedereingliederung, falls für den Mitarbeiter eine läuft.
+     * Die eigentliche Rechenregel steckt in {@link TagesSollService#periodenSollSumme}.
      */
     public BigDecimal berechneSollstundenFuerZeitraum(Zeitkonto konto, LocalDate von, LocalDate bis) {
-        BigDecimal summe = BigDecimal.ZERO;
-
-        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
-            int wochentag = tag.getDayOfWeek().getValue();
-            BigDecimal tagesSoll = konto.getSollstundenFuerTag(wochentag);
-
-            // Halbe Feiertage: 50% der Sollstunden (z.B. Heiligabend, Silvester)
-            // Volle Feiertage: normale Sollstunden (bezahlte Feiertage)
-            if (feiertagService.istHalberFeiertag(tag)) {
-                tagesSoll = tagesSoll.divide(BigDecimal.valueOf(2), 2, java.math.RoundingMode.HALF_UP);
-            }
-
-            summe = summe.add(tagesSoll);
-        }
-
-        return summe;
+        Mitarbeiter mitarbeiter = konto.getMitarbeiter();
+        Long mitarbeiterId = mitarbeiter != null ? mitarbeiter.getId() : null;
+        return tagesSollService.periodenSollSumme(mitarbeiterId, konto, von, bis);
     }
 }
