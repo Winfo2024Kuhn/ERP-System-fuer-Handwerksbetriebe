@@ -167,6 +167,10 @@ class LangzeitkrankmeldungServiceTest {
                 () -> service.anlegen(MITARBEITER_ID, LocalDate.of(2020, 3, 15), null, null));
 
         assertTrue(ex.getMessage().contains("bereits eine Krankmeldung"));
+        // Deutsches Datumsformat fuer die Buero-Oberflaeche, kein ISO-Datum
+        // (Nachbesserung Abschnitt 5, Befund 5).
+        assertTrue(ex.getMessage().contains("01.03.2020"));
+        assertFalse(ex.getMessage().contains("2020-03-01"));
     }
 
     @Test
@@ -762,7 +766,10 @@ class LangzeitkrankmeldungServiceTest {
                 LocalDate.of(2020, 3, 15));
 
         assertEquals(1, hinweise.size());
-        assertTrue(hinweise.get(0).contains("2020-03-01"));
+        // Deutsches Datumsformat fuer die Buero-Oberflaeche, kein ISO-Datum
+        // (Nachbesserung Abschnitt 5, Befund 5).
+        assertTrue(hinweise.get(0).contains("01.03.2020"));
+        assertFalse(hinweise.get(0).contains("2020-03-01"));
     }
 
     @Test
