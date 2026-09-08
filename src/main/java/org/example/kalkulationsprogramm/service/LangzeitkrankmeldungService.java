@@ -321,9 +321,17 @@ public class LangzeitkrankmeldungService {
      * SecurityConfig-Aenderung noetig. Analog zu
      * {@code ZeiterfassungApiService.getUrlaubsverfallWarnung}: unbekanntes
      * Token oder keine laufende Phase liefert ein leeres Objekt.
+     *
+     * <p><b>Nachbesserung Abschnitt 4, Befund 3:</b> nutzt bewusst
+     * {@code findByLoginTokenAndAktivTrue} statt {@code findByLoginToken} -
+     * das Login-Token wird beim Deaktivieren eines Mitarbeiters nirgends
+     * geloescht, ein ausgeschiedener Mitarbeiter wuerde sonst weiter
+     * Lesezugriff auf seinen Krankenstand behalten. Jeder andere
+     * unauthentifizierte Mobile-Lesepfad im Projekt (siehe
+     * {@code BelegService}) haelt sich an dieselbe Regel.
      */
     public Map<String, Object> getMobileStand(String loginToken, LocalDate stichtag) {
-        Optional<Mitarbeiter> mitarbeiter = mitarbeiterRepository.findByLoginToken(loginToken);
+        Optional<Mitarbeiter> mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(loginToken);
         if (mitarbeiter.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -603,12 +611,22 @@ public class LangzeitkrankmeldungService {
 
         LocalDate von = wiedereingliederungsPhasen.get(0).getVonDatum();
         boolean offen = wiedereingliederungsPhasen.stream().anyMatch(p -> p.getBisDatum() == null);
-        LocalDate bis = offen ? LocalDate.now()
-                : wiedereingliederungsPhasen.stream()
-                        .map(LangzeitkrankmeldungPhase::getBisDatum)
-                        .filter(Objects::nonNull)
-                        .max(LocalDate::compareTo)
-                        .orElse(von);
+        LocalDate spaetestesGeschlossenesBisDatum = wiedereingliederungsPhasen.stream()
+                .map(LangzeitkrankmeldungPhase::getBisDatum)
+                .filter(Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .orElse(von);
+        // Nachbesserung Abschnitt 4, Befund 1: bei einer offenen letzten Phase
+        // NICHT blind auf LocalDate.now() springen - eine DAVOR liegende,
+        // geschlossene Phase mit Enddatum in der Zukunft (im Voraus geplanter
+        // Stufenplan) wuerde dann komplett hinter dem Kartenende liegen (von >
+        // bis), arbeitsSollJeTag bekaeme einen rueckwaerts laufenden Zeitraum
+        // und liefert eine leere Map - NullPointerException in der
+        // Tagesschleife unten. bis ist deshalb immer mindestens so gross wie
+        // das spaeteste bekannte Enddatum.
+        LocalDate bis = offen && spaetestesGeschlossenesBisDatum.isBefore(LocalDate.now())
+                ? LocalDate.now()
+                : spaetestesGeschlossenesBisDatum;
 
         Long mitarbeiterId = meldung.getMitarbeiter().getId();
         List<Zeitbuchung> buchungen = zeitbuchungRepository.findByMitarbeiterIdAndStartZeitBetween(
@@ -632,7 +650,10 @@ public class LangzeitkrankmeldungService {
         for (LangzeitkrankmeldungPhase phase : wiedereingliederungsPhasen) {
             LocalDate phasenEnde = phase.getBisDatum() != null ? phase.getBisDatum() : LocalDate.now();
             for (LocalDate tag = phase.getVonDatum(); !tag.isAfter(phasenEnde); tag = tag.plusDays(1)) {
-                BigDecimal geplant = geplantJeTag.get(tag);
+                // getOrDefault als Netz (Befund 1, Abschnitt 4): sollten Kartenbereich
+                // und Schleifengrenzen trotz obigem Fix je wieder auseinanderlaufen,
+                // gibt es eine 0 statt einer NullPointerException / HTTP 500.
+                BigDecimal geplant = geplantJeTag.getOrDefault(tag, BigDecimal.ZERO);
                 BigDecimal gestempelt = gestempeltProTag.getOrDefault(tag, BigDecimal.ZERO);
 
                 StufenplanTagDto tagDto = new StufenplanTagDto();

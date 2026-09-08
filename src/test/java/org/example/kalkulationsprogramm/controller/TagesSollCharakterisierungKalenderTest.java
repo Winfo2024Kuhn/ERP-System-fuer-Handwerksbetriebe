@@ -115,26 +115,22 @@ class TagesSollCharakterisierungKalenderTest {
         // liefert: an Werktagen die volle Tagesbasis als arbeitsSoll, am vollen
         // Feiertag (25.12.) 0 arbeitsSoll/volle Gutschrift, am halben Feiertag
         // (24.12.) 0 arbeitsSoll/halbe Gutschrift.
-        LocalDate von = LocalDate.of(2026, 12, 1);
-        LocalDate bis = LocalDate.of(2026, 12, 31);
-        Map<LocalDate, BigDecimal> arbeitsSollJeTag = new LinkedHashMap<>();
-        Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = new LinkedHashMap<>();
-        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
-            if (tag.equals(LocalDate.of(2026, 12, 24))) {
-                arbeitsSollJeTag.put(tag, BigDecimal.ZERO);
-                feiertagsGutschriftJeTag.put(tag, new BigDecimal("4.00"));
-            } else if (tag.equals(LocalDate.of(2026, 12, 25))) {
-                arbeitsSollJeTag.put(tag, BigDecimal.ZERO);
-                feiertagsGutschriftJeTag.put(tag, new BigDecimal("8.00"));
-            } else {
-                int wochentag = tag.getDayOfWeek().getValue();
-                arbeitsSollJeTag.put(tag, wochentag <= 5 ? new BigDecimal("8.00") : BigDecimal.ZERO);
-                feiertagsGutschriftJeTag.put(tag, BigDecimal.ZERO);
-            }
-        }
-        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(arbeitsSollJeTag);
+        //
+        // Nachbesserung Abschnitt 4, Befund 2: der Stub wertet den
+        // tatsaechlich uebergebenen Zeitraum (von/bis-Argumente der
+        // Invocation) aus, statt eine feste Dezember-2026-Map unabhaengig
+        // davon zurueckzugeben. Mit `any(), any()` fuer von/bis UND einer
+        // festen Rueckgabe wuerde der Test blind fuer einen falschen
+        // Zeitraum, den der Controller an TagesSollService uebergibt - die
+        // Tage im Kalender kaemen trotzdem aus der (zufaellig passenden)
+        // festen Map. Mutationsprobe (siehe Report): Zeitraum in
+        // ZeitverwaltungController.getKalender testweise um sechs Monate
+        // verschoben - mit der alten festen Rueckgabe blieb der Test gruen,
+        // mit dieser Auswertung wird er rot.
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any()))
+                .willAnswer(inv -> arbeitsSollJeTagFuer(inv.getArgument(2), inv.getArgument(3)));
         given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any()))
-                .willReturn(feiertagsGutschriftJeTag);
+                .willAnswer(inv -> feiertagsGutschriftJeTagFuer(inv.getArgument(2), inv.getArgument(3)));
 
         // 1.12.2026 ist ein Dienstag -> tage[0].
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
@@ -157,5 +153,34 @@ class TagesSollCharakterisierungKalenderTest {
                 // der Monatsuebersicht (MonatsSaldoService: Soll 4 / Gutschrift 4 ->
                 // netto 0) ueberein.
                 .andExpect(jsonPath("$.tage[23].istStunden").value(4.00));
+    }
+
+    /** Siehe Kommentar am Stub oben (Nachbesserung Abschnitt 4, Befund 2). */
+    private static Map<LocalDate, BigDecimal> arbeitsSollJeTagFuer(LocalDate von, LocalDate bis) {
+        Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
+        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+            if (tag.equals(LocalDate.of(2026, 12, 24)) || tag.equals(LocalDate.of(2026, 12, 25))) {
+                ergebnis.put(tag, BigDecimal.ZERO);
+            } else {
+                int wochentag = tag.getDayOfWeek().getValue();
+                ergebnis.put(tag, wochentag <= 5 ? new BigDecimal("8.00") : BigDecimal.ZERO);
+            }
+        }
+        return ergebnis;
+    }
+
+    /** Siehe Kommentar am Stub oben (Nachbesserung Abschnitt 4, Befund 2). */
+    private static Map<LocalDate, BigDecimal> feiertagsGutschriftJeTagFuer(LocalDate von, LocalDate bis) {
+        Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
+        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+            if (tag.equals(LocalDate.of(2026, 12, 24))) {
+                ergebnis.put(tag, new BigDecimal("4.00"));
+            } else if (tag.equals(LocalDate.of(2026, 12, 25))) {
+                ergebnis.put(tag, new BigDecimal("8.00"));
+            } else {
+                ergebnis.put(tag, BigDecimal.ZERO);
+            }
+        }
+        return ergebnis;
     }
 }
