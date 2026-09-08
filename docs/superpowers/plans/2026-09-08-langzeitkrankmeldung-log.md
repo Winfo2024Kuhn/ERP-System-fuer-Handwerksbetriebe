@@ -1782,3 +1782,336 @@ Bedenken / Abweichungen vom Plan:
   oben. Fuer kuenftige Runden: nie parallel zum Vollauf mutieren.
 - Mutationen und Sonden restlos zurueckgenommen, Arbeitsbaum sauber
   (`git status --short` leer, kein index.html-Diff in diesem Worktree).
+
+## Abschnitt 5 — Task 18 (Coding-Agent)
+
+Zeit: 2026-09-08T22:15:00Z
+Branch: lzk/task-18-dashboard
+Commit(s): 709440ea
+Status: fertig
+
+Was gemacht wurde:
+- Interface `LangzeitFall` (phase/phaseLabel/heuteGeplanteStunden/seit/bisDatum)
+  und State `langzeitFall` neben `UrlaubsVerfallWarnung` in DashboardPage.tsx.
+- Neue Ladefunktion `loadLangzeitkrankmeldung()` (Vorbild `loadUrlaubsVerfallWarnung`),
+  Fetch auf GET /api/zeiterfassung/langzeitkrankmeldung/{token} im selben
+  useEffect, per `Promise.all` parallel zur Urlaubsverfall-Abfrage (kein
+  Wasserfall). Leeres {} vom Server -> langzeitFall bleibt/wird null, keine
+  Karte. Fehler im catch -> nur console.log, Karte bleibt einfach weg, Rest
+  des Dashboards bleibt voll funktionsfaehig.
+- Karte oberhalb der Urlaubsverfall-Warnung: Icon-Kachel `Stethoscope`,
+  `bg-teal-50 border-teal-200` / `bg-teal-100` (bewusst teal statt amber/rot,
+  ist Information keine Warnung). Text bei WIEDEREINGLIEDERUNG:
+  "{phaseLabel} — heute {Stunden} Stunden geplant" (deutsches Zahlenformat,
+  4.00 -> "4"); sonst "{phaseLabel} — seit {DD.MM.YYYY}".
+- Rein lesend: kein Button, kein Formular, kein Schreib-Request - Kommentar
+  im Code verweist auf die PC-only-Pflege.
+- DashboardPage.test.tsx (neues describe "Langzeitkrankmeldung-Karte", 3
+  Tests): Karte erscheint mit Stundentext bei laufender Wiedereingliederung
+  (+ Check: kein Klarname auf der Karte); Karte fehlt bei {}; ein Fehler der
+  neuen Abfrage laesst das Dashboard voll nutzbar (Start-Button weiter da).
+  Dummy-Daten ("Max Mustermann").
+- Gates: `npx vitest run src/pages/DashboardPage.test.tsx` -> 12/12 gruen
+  (9 bestehend + 3 neu); `npm run lint` -> sauber, keine Findings; `npm run
+  build` -> exit 0 (tsc -b && vite build + PWA-SW-Build). Build-Output
+  ausserhalb von react-zeiterfassung (src/main/resources/static/zeiterfassung/)
+  danach per `git checkout --`/`git clean -fd` wieder entfernt (Vorgabe:
+  Build-Output gehoert nicht ins Repo).
+- Kein Dev-Server gestartet, daher auch keiner zu beenden.
+
+Bedenken / Abweichungen vom Plan:
+- keine
+
+## Abschnitt 5 — Task 19 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-19-abwesenheiten
+Commit(s): d168c668
+Status: fertig
+
+Was gemacht wurde:
+- `react-zeiterfassung/src/pages/AbwesenheitenPage.tsx`: beim Laden zusätzlich
+  `GET /api/zeiterfassung/langzeitkrankmeldung/{token}` abgefragt (Token aus
+  `localStorage.getItem('zeiterfassung_token')`, wie im Dashboard), parallel
+  zur bestehenden Antragsabfrage über `Promise.all` im vorhandenen `useEffect`.
+- Bei laufender Meldung erscheint ein Info-Banner unter dem Header, über den
+  Stat-Kacheln: `{phaseLabel} seit {Datum}` plus optional
+  ` — heute X Stunden geplant` (nur wenn `heuteGeplanteStunden` nicht null
+  ist). Styling `bg-teal-50 border-teal-200 rounded-xl p-3`, Icon-Kachel
+  `bg-teal-100`, Icon `Stethoscope` — wie in Task 18 (Dashboard-Karte)
+  spezifiziert, damit beide Ansichten zusammenpassen.
+- Liefert der Endpunkt `{}` (nichts anliegend), erscheint kein Banner — die
+  restliche Seite (Stat-Kacheln, Filter, Antragsliste, Plus-FAB) bleibt
+  unverändert.
+- Ausdrücklich nur lesend: kein Bearbeiten-Button, kein Formular, kein
+  Schreib-Request. Zwei Kommentarblöcke im Code (bei der Fetch-Funktion und
+  am Render-Ort) erklären das explizit, damit es niemand später "hilfreich"
+  ergänzt.
+- Schlägt die neue Abfrage fehl (Netzwerkfehler, non-2xx), bricht das nichts:
+  eigener `try/catch` um `loadLangzeitFall`, Fehler geht nur nach
+  `console.error`, State bleibt `null`, Antragsliste lädt unabhängig davon
+  weiter.
+- Plus-FAB unverändert – legt weiterhin nur das Büro eine neue Abwesenheit an.
+- Neuer Vitest `AbwesenheitenPage.test.tsx` (4 Tests, alle grün): Banner
+  erscheint bei laufender Wiedereingliederung inkl. Stundentext; Banner fehlt
+  bei `{}`; Antragsliste rendert unabhängig vom Banner-Inhalt (auch bei
+  `heuteGeplanteStunden: null`); ein Fehler der Langzeit-Abfrage lässt die
+  Seite (Antragsliste) unverändert funktionieren. Dummy-Daten ("Max
+  Mustermann", keine echten Personendaten).
+- Gates: `npx vitest run src/pages/AbwesenheitenPage.test.tsx` → 4/4 grün;
+  `npm run lint` → sauber, keine Fehler/Warnungen; `npm run build` → exit 0
+  (`tsc -b && vite build`, PWA-Precache erzeugt). Gebauter Output unter
+  `src/main/resources/static/zeiterfassung/` danach wieder auf den
+  Commit-Stand zurückgesetzt (`git checkout` + `git clean`), nicht
+  committet — Vorgabe zu Build-Output.
+- Kein Playwright eingerichtet — `react-zeiterfassung` hat keins (verifiziert:
+  keine Dependency, keine `playwright.config.ts`), Vorgabe aus Plan/Auftrag.
+
+Bedenken / Abweichungen vom Plan:
+- Branch-Name laut Plan wäre `lzk/task-19-abwesenheiten-verlauf`, das
+  zugewiesene Worktree/Branch war jedoch bereits als
+  `lzk/task-19-abwesenheiten` ausgecheckt. Rein kosmetisch, keine
+  inhaltliche Abweichung — hier nur zur Nachvollziehbarkeit vermerkt.
+- Sonst keine Abweichungen: `DashboardPage.tsx` nicht angefasst, kein
+  Schreibpfad unter `/api/zeiterfassung/**` ergänzt, Datei-Scope exakt wie
+  im Task-Block (`AbwesenheitenPage.tsx` + neuer Test).
+
+## Abschnitt 5 — Task 17 (Coding-Agent)
+
+Zeit: 2026-09-08T20:23:36Z
+Branch: lzk/task-17-urlaub-hinweis
+Commit(s): e293eb98, 14255248
+Status: fertig
+
+Was gemacht wurde:
+- Urlaubsantraege.tsx: neuer Effect lädt beim Laden der Liste für jeden
+  offenen Antrag (status === 'OFFEN') gebündelt über EIN Promise.all
+  GET /api/langzeitkrankmeldungen/urlaubs-hinweise?mitarbeiterId=&von=&bis=
+  (von/bis = antrag.vonDatum/bisDatum, bereits ISO-Datumsstrings vom
+  Backend, LocalDate + write-dates-as-timestamps=false).
+- Trifft ein Hinweis zu: amber-Kasten (bg-amber-50/border-amber-200/
+  text-amber-800, Muster aus ArtikelImportModal.tsx/
+  AusgangsrechnungUploadModal.tsx übernommen) mit AlertTriangle w-4 h-4,
+  direkt über den Aktionsknöpfen "Ablehnen"/"Genehmigen" derselben Karte.
+  Ist die Warnungsliste leer, erscheint gar nichts (kein leerer Kasten).
+  "Genehmigen" bleibt in jedem Fall anklickbar -- reine Warnung, keine
+  Sperre.
+- Ein Fehler/Reject der Hinweis-Abfrage wird abgefangen (catch -> leere
+  Warnungsliste für den betroffenen Antrag) und loggt nur
+  console.error -- die Antragsliste bleibt unangetastet, kein Toast,
+  kein Crash.
+- Urlaubsantraege.test.tsx (neu, 4 Vitest-Fälle): Kasten nur beim
+  betroffenen Antrag; gar kein Kasten, wenn alle Warnungslisten leer
+  sind; "Genehmigen" bleibt bedienbar trotz Hinweis; ein Fehler der
+  Hinweis-Abfrage lässt Liste + Knöpfe unangetastet. Bündelung
+  zusätzlich per Aufruf-Zählung geprüft (2 offene Anträge -> genau 2
+  Hinweis-Aufrufe, kein Wasserfall).
+- e2e/urlaubsantrag-krankmeldung-hinweis.spec.ts (neu, 2 Fälle x 3
+  Bildschirmgrößen = 6 Tests): Kasten erscheint nur beim betroffenen
+  Antrag und ein echter Genehmigen-Klick (inkl. Bestätigungsdialog)
+  geht trotz Hinweis durch, Antrag verschwindet danach aus der
+  OFFEN-Liste; zweiter Test prüft den Fehlerfall der Hinweis-Abfrage
+  (500) -- Liste bleibt vollständig, kein Kasten, beide
+  Genehmigen-Knöpfe bleiben aktiv. Alle /api-Routen gestubbt, kein
+  Backend, nur Dummy-Mitarbeiter (Max Mustermann, Erika Musterfrau).
+
+Gates:
+- npx vitest run src/pages/Urlaubsantraege.test.tsx: 4/4 grün
+- npm run lint: 0 Errors, 1 bekannte Warning (BelegeKasseEditor.tsx:1204)
+- npm run build: erfolgreich, Build-Output danach verworfen
+  (git checkout -- src/main/resources/static/ + zwei neue,
+  unversionierte Asset-Dateien manuell gelöscht)
+- E2E_PORT=5197 npx playwright test
+  e2e/urlaubsantrag-krankmeldung-hinweis.spec.ts: 6/6 grün
+  (pc-14zoll, pc-uebergang, pc-monitor)
+
+Bedenken / Abweichungen vom Plan:
+- Endpunkt weicht vom Plan-Text ab: Plan (Zeile ~1514) nennt noch
+  GET /api/urlaub/antraege/hinweise (Consumes: Task 12). Tatsächlich
+  implementiert (UrlaubsantragController.java, Task 12 dieser Runde)
+  ist GET /api/langzeitkrankmeldungen/urlaubs-hinweise?mitarbeiterId=&
+  von=&bis= -- laut Doc-Kommentar am Controller bewusst verschoben,
+  weil /api/urlaub/** auf der permitAll-Kette der Zeiterfassungs-App
+  liegt und Gesundheitsdaten (Art. 9 DSGVO) sonst ohne Login
+  herausgegeben hätte. Umgesetzt wurde der NEUE Pfad (per Orchestrator-
+  Auftrag bestätigt und im Backend-Code so vorgefunden), nicht der
+  Plan-Wortlaut. Meldung wie gewünscht, keine eigene Recherche über den
+  Controller-Kommentar hinaus.
+- Branch-Name im Auftrag (lzk/task-17-urlaub-hinweis) weicht vom
+  Plan-Namen (lzk/task-17-urlaubsantraege-hinweis) ab -- Worktree war
+  bereits unter erstgenanntem Namen ausgecheckt, unverändert
+  übernommen.
+- handwerkerprogramm-design ist im Skill-Tool dieser Session nicht
+  registriert ("Unknown skill") -- SKILL.md + README.md wurden direkt
+  per Read gelesen, der Hook wurde stattdessen mit dem unscoped Skill
+  ui-ux-pro-max erfüllt (Auftrag des Orchestrators).
+
+## Abschnitt 5 — Task 16 (Coding-Agent)
+
+Zeit: 2026-09-08T22:35:00Z
+Branch: lzk/task-16-vl-dialog
+Commit(s): b14ab353
+Status: fertig
+
+Was gemacht wurde:
+- `MitarbeiterStundenZeile`-Interface um `ausgeklammerteTage: number` erweitert.
+- Neue Tabellenspalte "Krankengeld/Wiedereingliederung" in der Stundentabelle
+  von `VerrechnungslohnRechnerDialog.tsx`, direkt hinter "Krank": zeigt
+  `"<N> Tage"` mit `title="Diese Tage sind aus Jahressoll und Lohnkosten
+  herausgerechnet."`, bei 0 stattdessen "–" ohne Title (kein "0 Tage" für den
+  Normalfall). `colSpan` der Tabellenfußzeile von 5 auf 6 angepasst.
+- Erklärender Satz unter der Tabelle, nur wenn mindestens ein Mitarbeiter
+  betroffen ist: "Bei X Mitarbeitern sind Krankengeld- und
+  Wiedereingliederungszeiten herausgerechnet — insgesamt N Tage."
+  (`useMemo` `ausgeklammerteHinweis`, `null` wenn niemand betroffen).
+- Bestehenden Vitest-Test erweitert (Fixture um `ausgeklammerteTage: 0`
+  ergänzt) und zwei neue Fälle ergänzt: 0 → "–" + kein Satz; 122 → "122 Tage"
+  + Satz mit korrektem Titel-Attribut. Kein bestehender Test verändert.
+- Neue Playwright-Spec `e2e/verrechnungslohn-langzeitfall.spec.ts`: öffnet
+  `/arbeitsgaenge` → Dialog → Sektion "Wie viele Stunden kann ich
+  verkaufen?" → prüft Spalte + Satz für den 122-Tage-Fall und separat den
+  Fall ohne Langzeitfall (nur "–", kein Satz). `designPruefung` inkl.
+  `keinHorizontalerUeberlauf` lief für alle drei Bildschirmgrößen grün — die
+  siebte Spalte bleibt im eigenen `overflow-x-auto`-Container der Tabelle,
+  kein Dokument-/Dialog-Überlauf.
+
+Gates:
+- `npx vitest run src/components/VerrechnungslohnRechnerDialog.test.tsx`:
+  10/10 grün (8 bestehende + 2 neue).
+- `npm run lint`: 0 Errors, 1 bekannte Warning (BelegeKasseEditor.tsx:1204).
+- `npm run build`: erfolgreich (`✓ built in 51.52s`); Build-Output
+  (`src/main/resources/static/assets/...`) danach per
+  `git checkout -- src/main/resources/static/` + `git clean -fd` verworfen,
+  nicht committet.
+- `E2E_PORT=5416 npx playwright test e2e/verrechnungslohn-langzeitfall.spec.ts`:
+  6/6 grün (2 Tests × 3 Bildschirmgrößen), Dev-Server danach beendet.
+
+Bedenken / Abweichungen vom Plan:
+- Branch-Name weicht vom Plan ab: Auftrag/Worktree nutzten
+  `lzk/task-16-vl-dialog` (bereits ausgecheckt), der Plan nennt
+  `lzk/task-16-verrechnungslohn-dialog`. Auf dem vorgegebenen Branch
+  gearbeitet, da er schon existierte — nur zur Kenntnisnahme.
+- Die äußere Auftragsbeschreibung erwähnte zusätzlich
+  `MitarbeiterStundenZeile.ausgeklammerteStunden`,
+  `MitarbeiterLohnZeile.ausgeklammerteTage` und
+  `MitarbeiterLohnZeile.anwesenheitsFaktor`. Der maßgebliche Task-16-Block
+  im Plan verlangt nur `MitarbeiterStundenZeile.ausgeklammerteTage` und
+  genau eine neue Spalte in der Stundentabelle — dem Plan folgend wurden
+  die drei anderen Felder/Anzeigen nicht angefasst.
+- `src/main/resources/static/index.html` zeigt nach jedem `npm run build`
+  und `git checkout` einen Rest-Diff (CRLF/Zeilenende, `core.autocrlf=true`
+  im Repo). Inhaltlich identisch, nur Zeilenumbruch-Normalisierung — nicht
+  durch diesen Task verursacht, nicht committet, `.claude`-Vorgabe
+  "niemals die Git-Config ändern" respektiert (nicht angefasst).
+
+## Abschnitt 5 — Task 15 (Coding-Agent)
+
+Zeit: 2026-09-08T22:35:00Z
+Branch: lzk/task-15-seite
+Commit(s): 166e465d
+Status: fertig
+
+Was gemacht wurde:
+- Neue Seite `react-pc-frontend/src/pages/Langzeitkrankmeldungen.tsx`: Liste
+  laufender (Default-Filter LAUFEND, Select bietet zusaetzlich BEENDET/
+  ABGEBROCHEN) Krankmeldungen als Karten (Avatar-Kreis + `Stethoscope`, Name,
+  „krank seit ...", Phasen-Badge aus `phasen.ts`, geplante Rueckkehr). Drei
+  klar unterscheidbare Zustaende (Ladeskelett `motion-safe:animate-pulse`,
+  Leerzustand, Fehlerzustand mit „Erneut versuchen"), jeder Fehler ueber
+  `toast.error`, kein stiller `console.error`.
+- 42-Tage-Hinweis pro Karte: `restTageLohnfortzahlung > 0` -> „Noch N Tage
+  Lohnfortzahlung"; `<= 0` **und** `aktuellePhaseTyp === 'LOHNFORTZAHLUNG'`
+  -> „Lohnfortzahlung endete am ..." + Sekundaerbutton „Auf Krankengeld
+  umstellen" (`POST /phasen` mit `typ: KRANKENGELD`, `vonDatum: heute`). Das
+  System stellt nichts von selbst um.
+- Aufklappbares Detail in derselben Karte (kein eigener Screen): laedt
+  `GET /{id}` bei erstem Aufklappen (Cache ueber `stufenplanTage` als
+  Marker), zeigt `<PhasenZeitleiste>` + `<StufenplanTabelle>` (Task 14),
+  Stufenplan-Tage mit `ueberPlan`-Markierung als Information (amber-Text,
+  kein Fehler), die Interne Notiz (falls vorhanden) und bei laufendem Status
+  „Zuruecknehmen" (abbrechen, `useConfirm` danger) / „Wieder voll im
+  Einsatz" (beenden mit `ende=heute`, `useConfirm` warning).
+- Stufenplan-Aenderungen (`onHinzufuegen`/`onLoeschen` aus Task 14) rufen
+  `POST`/`DELETE /phasen[...]` und laden danach nur die eine betroffene
+  Meldung neu (`GET /{id}`), damit das aufgeklappte Detail nicht kollabiert.
+  Beenden/Abbrechen/Anlegen laden dagegen die ganze gefilterte Liste neu,
+  weil sich die Status-Filterzugehoerigkeit aendern kann.
+- Anlegen-Dialog (`ui/dialog.tsx`): Mitarbeiter-`Select` (aus
+  `GET /api/mitarbeiter`, nur `aktiv !== false`), Beginn-`DatePicker`,
+  `lohnfortzahlungBis`-`DatePicker` vorbelegt mit Beginn + 41 Tage
+  (automatisch nachgezogen, bis der Nutzer das Feld selbst anfasst),
+  Hinweistext „42 Tage ab Beginn — bei einer Fortsetzungserkrankung frueher
+  setzen", Notiz-Textarea mit dem woertlichen Pflicht-Label „Interne Notiz —
+  bitte keine Diagnosen eintragen". Speichern-Button `disabled` + Spinner
+  gegen Doppelklick.
+- 409-Versionskonflikt: **kein** eigener Umgang, sondern der bestehende
+  Hook `src/components/lock/useKonfliktMeldung.ts` (`pruefeAntwort(res)`),
+  denselben Musters wie in `LieferantDokumentModal.tsx`. Der Hook prueft nur
+  auf `res.status === 409`, zeigt per `useConfirm` „Jemand anders hat dieses
+  Krankmeldung ... — bitte neu laden." und laedt bei Bestaetigung
+  `window.location.reload()`. Verwendet bei allen aendernden Requests
+  (Phase hinzufuegen/loeschen, Umstellen, Beenden, Abbrechen). `POST /` (Anlegen)
+  hat keinen `version`-Parameter im Controller, daher kein 409 dort.
+- `App.tsx`: Import + Route `/langzeitkrankmeldungen` direkt unter/nach
+  Urlaubsantraege.
+- `RibbonNav.tsx`: `Stethoscope` importiert, Untergruppe „Urlaub" ->
+  „Abwesenheiten" umbenannt, Eintrag „Lange Krankheit" hinter „Antraege".
+- `MobileBottomNav.tsx`: `Stethoscope` importiert, derselbe Eintrag in
+  `SUBMENU_ITEMS['/zeitbuchungen']` hinter „Urlaub".
+- Tests (TDD, roter Lauf vor der Implementierung verifiziert — Fehlermeldung
+  „Failed to resolve import ./Langzeitkrankmeldungen"): 7 Vitest-Faelle
+  (Karten rendern, Default-Fetch mit `status=LAUFEND`, Filterwechsel loest
+  `status=BEENDET` aus, API-Fehler zeigt Toast, beide 42-Tage-Varianten,
+  Notiz-Label woertlich). Playwright-Spec `e2e/langzeitkrankmeldungen.spec.ts`:
+  Seite ueber Menuepunkt „Lange Krankheit" erreichen, Karte aufklappen,
+  Zeitleiste sichtbar, `keinHorizontalerUeberlauf`, langer Nachname ohne
+  Bindestrich mit `scrollWidth`/`clientWidth`-Zusicherung („Wert bleibt in
+  seinem Kasten"). Alle drei Projektgroessen (1440/1536/1920) gruen.
+
+Gate-Ergebnisse:
+- `npx vitest run src/pages/Langzeitkrankmeldungen.test.tsx`: 7/7 bestanden.
+- `npm run lint`: 0 Errors, genau 1 bekannte Warnung
+  (`BelegeKasseEditor.tsx:1204`).
+- `npm run build`: erfolgreich (`tsc -b && vite build`), Build-Output danach
+  wieder verworfen (`git checkout -- src/main/resources/static/index.html`
+  + neue Asset-Dateien geloescht) — nicht committet.
+- `E2E_PORT=5195 npx playwright test e2e/langzeitkrankmeldungen.spec.ts`:
+  3/3 bestanden (pc-14zoll, pc-uebergang, pc-monitor).
+
+Bedenken / Abweichungen vom Plan:
+- **`maxStundenProTag` fuer `<StufenplanTabelle>`:** Der Plan (Task 14/15)
+  legt fest, dass die Komponente diesen Wert als Prop braucht, sagt aber
+  nicht, woher er kommt. E2 im Plan zeigt, dass das fachliche Tagesmaximum
+  aus dem Zeitkonto des Mitarbeiters kommt (`konto.getSollstundenFuerTag`).
+  Da die Desktop-API dafuer keinen eigenen Endpunkt fuer Task 15 vorsieht,
+  laedt die Seite einmalig `GET /api/zeitverwaltung/zeitkonten` (bestehender,
+  stabiler Endpunkt aus einem anderen Feature) und bildet je Mitarbeiter das
+  Maximum der Wochentags-Sollstunden Mo–Fr als weiche UI-Obergrenze; Fallback
+  8 Std., falls kein Zeitkonto gefunden wird. Das Backend validiert das
+  eigentliche Tagesmaximum ohnehin serverseitig (Task 4) — dieser Wert ist
+  nur eine fruehe Nutzerhinweis-Grenze, keine Sicherheitsgrenze. Nicht in
+  „Consumes" (nur Task 5 + Task 14) gelistet — bewusste, dokumentierte
+  Erweiterung um einen zusaetzlichen, bereits existierenden GET-Endpunkt,
+  keine neue Datei angefasst.
+- **Aufgaben-Text vs. tatsaechliche 409-Antwort:** Der Task-Text behauptet,
+  der Server liefere bei 409 `{"error": "..."}`. Tatsaechlich liefert
+  `RestExceptionHandler.handleOptimisticLockingFailure` ein `ApiError` mit
+  Feld `message` (nicht `error`) — `{"error": ...}` gilt nur fuer die 400er
+  aus dem Controller selbst (`IllegalArgumentException`/
+  `IllegalStateException`). Wirkt sich auf die Implementierung nicht aus,
+  weil fuer 409 ausschliesslich der bestehende `useKonfliktMeldung`-Hook
+  greift, der den Antwort-Body bewusst ignoriert und eine eigene, feste
+  Meldung zeigt (siehe Kommentar dort). Fuer 400/404-Fehlertexte liest die
+  Seite defensiv `body?.error ?? body?.message ?? Standardtext`.
+- **Kein UI fuer `PUT /{id}/oeffnen` (Wiedereroeffnen):** Der Endpunkt
+  existiert (Task 5), der Task-15-Schritt-Text nennt aber nur „Zuruecknehmen/
+  Beenden". Kein „Wieder oeffnen"-Knopf gebaut — ausserhalb des in Task 15
+  beschriebenen Umfangs. Folgeaufgabe, falls gewuenscht.
+- Deep-Linking wie in `Urlaubsantraege.tsx` (`useSearchParams` fuer
+  Status+Fokus-ID) wurde bewusst NICHT uebernommen — im Task-15-Text nicht
+  gefordert, haette die Seite ohne Mehrwert vergroessert.
+- `PUT /{id}` (allgemeines Aendern von Beginn/Notiz/lohnfortzahlungBis nach
+  dem Anlegen) und `PUT /{id}/phasen/{phasenId}` (Phase bearbeiten) sind
+  vorhanden, aber im Task-15-Text nicht gefordert und nicht verdrahtet —
+  `StufenplanTabelle` (Task 14) bietet ohnehin keine Bearbeiten-Aktion, nur
+  Hinzufuegen/Loeschen.
