@@ -232,3 +232,24 @@ per `PUT /api/settings/...` mit Dummy-Werten gesetzt sind (CSRF-Header
 `X-XSRF-TOKEN` aus dem Cookie). H2 kennt kein `DATE_SUB`: Kunden nur mit
 manueller Kundennummer anlegen; `mwstSatz` ist ein Bruch (0.19). Details in
 der Memory-Datei `erp-lokal-starten-h2`.
+
+### Session muss im Repo-Ordner starten, sonst fehlen die Pipeline-Agenten
+
+Fehlerbild: `Agent type 'loese-problem-spec' not found. Available agents:
+claude, general-purpose, Explore, ...` — die Liste enthält nur die
+eingebauten Agenten, keinen einzigen `loese-problem-*`.
+
+Ursache: Claude Code liest `.claude/agents/`, `.claude/skills/` und
+`.claude/commands/` **einmal beim Session-Start** aus dem Arbeitsordner. Wurde
+die Session eine Ebene über dem Repo gestartet (z.B. in
+`dev/ERP-für-Handwerker` statt in `dev/ERP-für-Handwerker/ERP-System-fuer-Handwerksbetriebe`),
+sind die Projekt-Agenten nicht registriert. Ein Junction/Symlink auf `.claude`
+nachträglich anzulegen hilft **nicht mehr für die laufende Session** — die
+Registrierung ist schon gelaufen.
+
+Regel: Vor Schritt 1 prüfen, ob die Pipeline-Agenten überhaupt aufrufbar sind.
+Sind sie es nicht, **nicht** auf `general-purpose` mit hineinkopierter
+Rollenbeschreibung ausweichen — der Nutzer will die Pipeline so, wie sie
+definiert ist. Stattdessen stoppen und die Session im Repo-Ordner neu starten
+lassen. Zwischenergebnisse vorher aus dem Scratchpad in den Repo-Ordner
+retten, denn die neue Session bekommt ein anderes Scratchpad-Verzeichnis.
