@@ -60,6 +60,23 @@ alle E2E-Specs, Design-Prüfung — fahren die Review-Agenten nach dem Merge.
 Testläufe immer **im Vordergrund** mit hohem Timeout, nie im Hintergrund:
 Hintergrund-Benachrichtigungen erreichen dich als Subagent nicht.
 
+**Mehrere Testklassen trennt ein Komma**, nicht `+` — bei Surefire trennt `+`
+nur Methoden innerhalb einer Klasse: `-Dtest=ErsteTest,ZweiteTest`.
+
+**Den Output in eine Datei lenken, nicht in deinen Kontext.** Ein Maven-Lauf
+sind tausende Zeilen; fährst du ihn fünfmal, liegt der Verlauf fünfmal in
+deinem Kontext — das ist der größte vermeidbare Kostenposten der Pipeline.
+Und **niemals durch eine Pipe**: `./mvnw test | tail` liefert den Exit-Code
+von `tail`, nicht von Maven, und ein kaputter Build sieht aus wie ein grüner.
+
+```bash
+LOG=$(mktemp -d)/test.log
+./mvnw -B test -Dtest=DeineTestklasse > "$LOG" 2>&1; RC=$?
+echo "exit=$RC"
+grep -E "Tests run:|BUILD" "$LOG" | tail -5
+grep -E "^\[ERROR\]" "$LOG" | head -20     # nur wenn rot
+```
+
 **Zusätzlich lesen:** `.claude/skills/loese-problem/references/kriterien.md`
 (Performance, Observability, API-Design). Der Abschnitts-Reviewer prüft
 genau danach — hältst du dich schon beim Schreiben daran, sparst du dir und
