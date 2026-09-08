@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.Abteilung;
+import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
 import org.example.kalkulationsprogramm.domain.Arbeitsgang;
 import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
 import org.example.kalkulationsprogramm.domain.Beleg;
@@ -11,6 +12,8 @@ import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Gewerk;
 import org.example.kalkulationsprogramm.domain.Krankenkasse;
+import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhase;
+import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.SvSatz;
 import org.example.kalkulationsprogramm.domain.SvSatzTyp;
@@ -25,6 +28,7 @@ import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepos
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.example.kalkulationsprogramm.repository.FeiertagRepository;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
+import org.example.kalkulationsprogramm.repository.LangzeitkrankmeldungPhaseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LohnabrechnungRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
@@ -47,6 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -80,6 +85,7 @@ class VerrechnungslohnServiceTest {
     private ArbeitsgangStundensatzRepository stundensatzRepository;
     private BelegRepository belegRepository;
     private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    private LangzeitkrankmeldungPhaseRepository phaseRepository;
 
     private VerrechnungslohnService service;
 
@@ -103,6 +109,7 @@ class VerrechnungslohnServiceTest {
                 .thenReturn(Collections.emptyList());
         belegKostenstellenAnteilRepository = mock(BelegKostenstellenAnteilRepository.class);
         when(belegKostenstellenAnteilRepository.findAll()).thenReturn(Collections.emptyList());
+        phaseRepository = mock(LangzeitkrankmeldungPhaseRepository.class);
 
         service = new VerrechnungslohnService(
                 mitarbeiterRepository,
@@ -119,7 +126,8 @@ class VerrechnungslohnServiceTest {
                 arbeitsgangRepository,
                 stundensatzRepository,
                 belegRepository,
-                belegKostenstellenAnteilRepository
+                belegKostenstellenAnteilRepository,
+                phaseRepository
         );
 
         // Defaults: keine Personen, keine Anteile, keine Feiertage, kein BG-Satz.
@@ -131,6 +139,9 @@ class VerrechnungslohnServiceTest {
         when(firmeninformationRepository.findById(1L)).thenReturn(Optional.empty());
         when(svSatzRepository.findFirstBySatzTypAndGueltigAbLessThanEqualOrderByGueltigAbDesc(any(SvSatzTyp.class), any(LocalDate.class)))
                 .thenReturn(Optional.empty());
+        // Ohne Langzeitkrankmeldung keine Phasen -- damit bleiben alle vorhandenen
+        // Zahlen unveraendert (Task 13, Verhaltensaenderung 3 aus dem Plan).
+        when(phaseRepository.findImZeitraum(any(), any(), any())).thenReturn(Collections.emptyList());
     }
 
     // ==================== berechne(): Modus-Logik ====================
@@ -792,6 +803,85 @@ class VerrechnungslohnServiceTest {
         assertThatThrownBy(() -> service.uebernehmen(req))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("basisSatz");
+    }
+
+    // ==================== Task 13: Krankheitsphasen im Verrechnungslohn ====================
+
+    @Test
+    void krankengeldPhaseKlammertKalendertageUndAnteiligeLohnkostenAus() {
+        // Langzeitfall: Krankengeld 01.03.2024-30.06.2024 (122 Kalendertage,
+        // davon 86 Werktage). Das Jahressoll sinkt um genau die Werktagsstunden
+        // dieses Zeitraums, die Lohnkosten werden anteilig gekuerzt, und die
+        // Krankheitsstunden zeigen nur noch die Lohnfortzahlungs-Tage.
+        Mitarbeiter ma = mitarbeiter(20L, "Klaus", "Mustermann");
+        ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
+        Zeitkonto zk = zeitkontoFuer(ma);
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoRepository.findByMitarbeiterId(20L)).thenReturn(Optional.of(zk));
+        when(lohnabrechnungRepository.sumBruttolohnByMitarbeiterIdAndJahr(20L, 2024))
+                .thenReturn(new BigDecimal("48000.00"));
+        when(lohnabrechnungRepository.countByMitarbeiterIdAndJahr(20L, 2024)).thenReturn(12L);
+
+        LangzeitkrankmeldungPhase krankengeld = new LangzeitkrankmeldungPhase();
+        krankengeld.setTyp(LangzeitkrankmeldungPhaseTyp.KRANKENGELD);
+        krankengeld.setVonDatum(LocalDate.of(2024, 3, 1));
+        krankengeld.setBisDatum(LocalDate.of(2024, 6, 30));
+        when(phaseRepository.findImZeitraum(eq(20L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(List.of(krankengeld));
+
+        // Vorausgegangene Lohnfortzahlungs-Wochen bleiben im Abzug -- 48 h,
+        // klar unterscheidbar vom KRANKHEITSTAGE_DEFAULT-Fallback (64 h).
+        when(abwesenheitRepository.sumStundenOhnePhasenTypen(
+                eq(20L), eq(AbwesenheitsTyp.KRANKHEIT), eq(LocalDate.of(2024, 1, 1)), eq(LocalDate.of(2024, 12, 31)),
+                eq(List.of(LangzeitkrankmeldungPhaseTyp.KRANKENGELD, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG))))
+                .thenReturn(new BigDecimal("48.00"));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        VerrechnungslohnErgebnisDto.MitarbeiterStundenZeile stdZeile = dto.getStundenzeilen().get(0);
+        assertThat(stdZeile.getAusgeklammerteTage()).isEqualTo(122);
+        assertThat(stdZeile.getAusgeklammerteStunden()).isEqualByComparingTo("688.00");
+        // Jahressoll ohne Ausklammerung waere 2096.00 h (262 Werktage x 8h in 2024).
+        assertThat(stdZeile.getSollstunden()).isEqualByComparingTo("1408.00");
+        assertThat(stdZeile.getKrankheitsstunden()).isEqualByComparingTo("48.00");
+        assertThat(stdZeile.isKrankheitIstDefault()).isFalse();
+
+        VerrechnungslohnErgebnisDto.MitarbeiterLohnZeile lohnZeile = dto.getLohnzeilen().get(0);
+        assertThat(lohnZeile.getAusgeklammerteTage()).isEqualTo(122);
+        // (366 - 122) / 366 = 2/3, HALF_UP auf 4 Nachkommastellen.
+        assertThat(lohnZeile.getAnwesenheitsFaktor()).isEqualByComparingTo("0.6667");
+        assertThat(lohnZeile.getGesamtkosten()).isEqualByComparingTo(
+                new BigDecimal("48000.00").multiply(new BigDecimal("0.6667"))
+                        .setScale(2, java.math.RoundingMode.HALF_UP));
+    }
+
+    @Test
+    void normalerKrankheitstagOhneLangzeitkrankmeldungWirdWeiterhinVollGezaehlt() {
+        // Der Normalfall (kein Langzeitkrankmeldung-Bezug ueberhaupt): die neue
+        // Query sumStundenOhnePhasenTypen ersetzt die alte Summierung. Ein
+        // impliziter Pfad ueber die nullable Phase haette solche Tage per
+        // INNER JOIN stillschweigend rausgeworfen (siehe kriterien.md) -- hier
+        // wird sichergestellt, dass ein ganz normaler Krankheitstag ohne jeden
+        // Phasenbezug trotzdem voll durchgereicht wird, nicht durch den
+        // KRANKHEITSTAGE_DEFAULT-Fallback ersetzt.
+        Mitarbeiter ma = mitarbeiter(21L, "Petra", "Mustermann");
+        ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
+        Zeitkonto zk = zeitkontoFuer(ma);
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoRepository.findByMitarbeiterId(21L)).thenReturn(Optional.of(zk));
+        // Kein Bezug zu einer Langzeitkrankmeldung -- phaseRepository liefert
+        // ueber den Default-Stub aus @BeforeEach eine leere Liste.
+        when(abwesenheitRepository.sumStundenOhnePhasenTypen(
+                eq(21L), eq(AbwesenheitsTyp.KRANKHEIT), any(LocalDate.class), any(LocalDate.class), anyList()))
+                .thenReturn(new BigDecimal("8.00"));
+
+        VerrechnungslohnErgebnisDto dto = service.berechne(2024);
+
+        VerrechnungslohnErgebnisDto.MitarbeiterStundenZeile zeile = dto.getStundenzeilen().get(0);
+        assertThat(zeile.getAusgeklammerteTage()).isEqualTo(0);
+        assertThat(zeile.getAusgeklammerteStunden()).isEqualByComparingTo("0.00");
+        assertThat(zeile.getKrankheitsstunden()).isEqualByComparingTo("8.00");
+        assertThat(zeile.isKrankheitIstDefault()).isFalse();
     }
 
     // ==================== Helpers ====================
