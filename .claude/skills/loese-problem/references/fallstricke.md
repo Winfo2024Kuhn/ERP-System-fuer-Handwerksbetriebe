@@ -253,3 +253,37 @@ Rollenbeschreibung ausweichen — der Nutzer will die Pipeline so, wie sie
 definiert ist. Stattdessen stoppen und die Session im Repo-Ordner neu starten
 lassen. Zwischenergebnisse vorher aus dem Scratchpad in den Repo-Ordner
 retten, denn die neue Session bekommt ein anderes Scratchpad-Verzeichnis.
+
+### Verwaiste Dev-Server sperren `node_modules` im Haupt-Checkout
+
+Fehlerbild: `npm run lint` / `npm run test` im Haupt-Checkout bricht ab mit
+„Der Befehl 'eslint' ist entweder falsch geschrieben oder konnte nicht gefunden
+werden", obwohl `node_modules/eslint` da ist — `node_modules/.bin` ist **leer**.
+Und die naheliegende Reparatur `npm ci` scheitert mit
+`EPERM: operation not permitted, unlink … @esbuild\win32-x64\esbuild.exe`.
+
+Ursache: Aus einem **früheren Lauf** liefen noch Vite-Dev-Server in einem
+Worktree (`wt/review-design/…`). Weil Worktrees ihr `node_modules` per
+Symlink/Junction auf das Haupt-Checkout zeigen (siehe oben), sperrt ein
+Dev-Server **im Worktree** die Binaries **im Haupt-Checkout**. Der Zusammenhang
+ist von außen nicht zu sehen.
+
+Regeln:
+
+- `npm install` kommt durch, wo `npm ci` scheitert — es löscht die gesperrte
+  Datei nicht. (`npm rebuild` läuft zwar durch, lässt `.bin` aber leer.)
+- Wer einen Dev-Server startet, beendet ihn am Ende seines Tasks. Das gilt
+  besonders für den Design-Reviewer.
+- Prozesse zu beenden kann der Permission-Classifier blockieren. Dann nicht
+  dagegen anrennen: `npm install` reicht, und der Befund gehört ins Kontext-Log.
+
+### Symlink auf `.claude` hilft — aber nur vor dem Session-Start
+
+Präzisierung zum Punkt „Session muss im Repo-Ordner starten": Ein Symlink
+`dev/<projekt>/.claude` → `dev/<projekt>/<repo>/.claude`, der **vor** dem
+Session-Start existiert, registriert die Projekt-Agenten korrekt, auch wenn die
+Session eine Ebene über dem Repo läuft. Nur das **nachträgliche** Anlegen in
+einer laufenden Session hilft nicht mehr.
+
+Trotzdem vor Schritt 1 prüfen, ob die `loese-problem-*`-Agenten in der Liste der
+verfügbaren Agenten stehen — der Symlink kann fehlen.

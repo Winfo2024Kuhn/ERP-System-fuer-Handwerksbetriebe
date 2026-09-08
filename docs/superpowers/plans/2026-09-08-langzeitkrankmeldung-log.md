@@ -117,3 +117,30 @@ Bedenken / Abweichungen vom Plan:
   Feiertagsgutschrift. Die Bündelung bleibt gewollt, darf aber kein Verhalten
   still ändern. Beides ist zur Entscheidung an den Grobplan gegangen.
 - Statt 8 Aufrufstellen (Design) sind es real 11.
+
+## Bewusste Verhaltensänderungen (Orchestrator, aus dem Grobplan)
+
+Zeit: 2026-09-08
+Status: zur Kenntnis für alle Coding- und Review-Agenten
+
+Die Bündelung der Feiertagslogik darf nichts still ändern. Drei Stellen ändern
+sich trotzdem — jede ist im Plan benannt und bekommt einen eigenen Test:
+
+1. **`ZeitverwaltungController` /kalender, halbe Feiertage — Bugfix.**
+   Heute liefert Zeile 512 an *jedem* Feiertag die **vollen** Sollstunden als
+   Ist-Stunden, auch am Heiligabend, während `sollStundenMonat` (Zeile 543) den
+   halben Feiertag korrekt halbiert. Das sind heute **+4 h Phantom-Überstunden
+   pro halbem Feiertag**, und der Kalender widerspricht der Monatsübersicht.
+   Nach der Umstellung liefert `feiertagsGutschrift` auch hier 4 h.
+   Das ist ein **Bugfix, kein Rückschritt** — festgehalten in Task 11.
+2. **Urlaubsstunden während einer Wiedereingliederung** folgen dem Stufenplan.
+   Ohne Langzeitkrankmeldung ändert sich nichts.
+3. **Krankheitsstunden im Verrechnungslohn**: Krankengeld- und
+   Wiedereingliederungstage fallen aus Jahressoll und Lohnkosten heraus
+   (Task 13). Ohne Langzeitkrankmeldung ändert sich nichts.
+
+**Alles andere muss zahlengleich bleiben.** Dafür sind die
+Charakterisierungs-Tests aus Task 2 da — sie nageln das heutige Verhalten aller
+sechs Aufrufstellen fest, bevor umgestellt wird. Wer sie anfassen muss, hat
+vermutlich einen Fehler gemacht; die einzige erlaubte Ausnahme ist die
+Zusicherung zum halben Feiertag in Task 11.
