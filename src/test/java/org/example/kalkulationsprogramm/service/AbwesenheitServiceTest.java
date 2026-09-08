@@ -205,6 +205,28 @@ class AbwesenheitServiceTest {
     }
 
     @Test
+    void krankheit_WiedereingliederungMitNullStunden_MeldungUnterscheidetSichVonWochenende() {
+        // Fachlich zwei verschiedene Dinge: ein Wochenende ist "kein Arbeitstag", ein
+        // Wiedereingliederungstag mit 0 Stunden ist ein Arbeitstag, an dem der Stufenplan
+        // gerade 0 Stunden vorsieht. Das Büro braucht zwei unterscheidbare Meldungen.
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
+        when(feiertagService.istFeiertag(any())).thenReturn(false);
+        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG)).thenReturn(BigDecimal.ZERO);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.KRANKHEIT, false));
+
+        assertFalse(ex.getMessage().contains("Kein Arbeitstag"),
+                "Ein Wiedereingliederungstag mit 0 Stunden darf nicht dieselbe Meldung bekommen wie ein "
+                        + "Wochenende. Meldung war: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("Wiedereingliederung"),
+                "Meldung muss erkennen lassen, dass die Wiedereingliederung greift. Meldung war: "
+                        + ex.getMessage());
+    }
+
+    @Test
     void urlaub_IgnoriertGearbeiteteStunden_BleibtVollesSoll() {
         // Regression: Nur KRANKHEIT füllt die Lücke; URLAUB bleibt unverändert volle Sollstunden
         stubGrunddaten();
