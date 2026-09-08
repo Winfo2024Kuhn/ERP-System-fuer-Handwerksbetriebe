@@ -2553,3 +2553,55 @@ Was gemacht wurde:
 Bedenken / Abweichungen vom Plan:
 - node_modules war in diesem Worktree entgegen der Erwartung ("ist ein Symlink") noch gar nicht angelegt — ich habe den Symlink selbst auf `react-zeiterfassung/node_modules` im Haupt-Checkout gesetzt (kein `npm install`), analog zum bereits vorhandenen Symlink im Nachbar-Worktree `wt/layout-14zoll/react-pc-frontend`.
 - Beim ersten `npm run build` erschien zusätzlich eine unstaged Änderung an `src/main/resources/static/index.html` (reines Zeilenende-/Whitespace-Artefakt, eine Zeile). Datei liegt außerhalb meiner Task-Dateien (react-pc-frontend-Bereich) — per `git checkout --` zurückgesetzt, nicht angefasst/committet.
+
+## Abschnitt 5 — Nachbesserung Verrechnungslohn-Dialog
+
+Zeit: 2026-09-09T00:25:00Z
+Branch: lzk/nb5-vl
+Commit(s): 34cd00b8
+Status: fertig
+
+Was gemacht wurde:
+- Befund B3 (Singular/Plural): VerrechnungslohnRechnerDialog.tsx nach allen
+  Stellen durchsucht, an denen eine Zahl direkt vor einem Substantiv steht —
+  drei gefunden (nicht nur die zwei genannten Zeilen): Tage-Anzahl je
+  Mitarbeiter-Zeile ("1 Tage" statt "1 Tag"), Mitarbeiter-Anzahl im
+  Sammelsatz ("Bei 1 Mitarbeitern" statt "Bei 1 Mitarbeiter") und
+  Tage-Summe im selben Satz. Alle drei über eine neue kleine Hilfsfunktion
+  pluralWort(anzahl, singular, plural) gelöst statt dreimal per Hand.
+  TDD: bestehenden Test mit der bisherigen (falschen) Erwartung "Bei 1
+  Mitarbeitern" korrigiert und zwei neue Tests ergänzt (genau 1 Tag/1
+  Mitarbeiter -> Singular; 2 Mitarbeiter -> Plural bleibt erhalten). Rot
+  bestätigt vor dem Fix (2 von 12 Tests fehlgeschlagen, aus dem erwarteten
+  Grund), danach grün (12/12).
+- Befund B4 (fehlende Design-Prüfung): e2e/urlaubsantrag-krankmeldung-
+  hinweis.spec.ts um einen designPruefung(...)-Aufruf ergänzt (Zustand: eine
+  Karte mit sichtbarem Warnhinweis neben einer Karte ohne, primaerAktion =
+  Genehmigen-Knopf der betroffenen Karte). Deutsches Datumsformat im Stub
+  ("seit 01.03.2026") war beim Öffnen der Datei schon vorhanden, nicht
+  geändert. Playwright-Lauf (--workers=1, foreground, Timeout 600000ms):
+  6/6 grün über pc-14zoll/pc-uebergang/pc-monitor, PNGs unter
+  test-results/design/urlaubsantrag-krankmeldung-hinweis--<projekt>.png
+  liegen vor.
+- Zusatzauftrag vom Orchestrator (nach den beiden Befunden erledigt):
+  RibbonNav.tsx:127 "Anträge" -> "Urlaubsanträge", weil "Urlaub" seit der
+  Umbenennung der Gruppe auf "Abwesenheiten" sonst nirgends mehr im Menü
+  vorkommt. Vorher/nachher mit e2e/menueleiste-layout.spec.ts geprüft
+  (--workers=1, foreground, Timeout 600000ms): 15/15 grün über alle drei
+  Größen, kein Überlauf, keine Kürzung durch den längeren Text.
+- npm run lint: 0 Fehler (1 Vorbestands-Warnung in BelegeKasseEditor.tsx,
+  nicht meine Datei). npm run build: erfolgreich; Build-Output danach
+  wieder verworfen (git checkout auf src/main/resources/static/index.html,
+  neue Asset-Dateien gelöscht) — nicht committet.
+
+Bedenken / Abweichungen vom Plan:
+- Im zugewiesenen Worktree gab es kein node_modules (weder echtes
+  Verzeichnis noch Symlink, anders als in der Aufgabenbeschreibung
+  angenommen) — per PowerShell-Junction auf
+  ERP-System-fuer-Handwerksbetriebe/react-pc-frontend/node_modules verlinkt,
+  nicht neu installiert.
+- Erster Testlauf ist als Hintergrundprozess gelandet, obwohl die Aufgabe
+  Vordergrund mit hohem Timeout vorschreibt (Standard-Timeout des Bash-Tools
+  greift nach 2 Minuten automatisch). Auf Hinweis des Orchestrators alle
+  verwaisten Playwright-/Vite-Prozesse beendet und beide Spec-Läufe sauber
+  im Vordergrund mit explizitem Timeout=600000ms wiederholt.
