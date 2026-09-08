@@ -105,10 +105,17 @@ public interface AbwesenheitRepository extends JpaRepository<Abwesenheit, Long> 
          * Summe wie sumStundenByMitarbeiterIdAndTypAndDatumBetween, aber ohne die
          * Tage, die an einer Phase der genannten Typen haengen (Verrechnungslohn,
          * Task 13).
+         *
+         * <p>Bewusst expliziter LEFT JOIN statt des impliziten Pfads
+         * "a.langzeitkrankmeldungPhase.typ": Hibernate 6 uebersetzt einen
+         * impliziten Pfad in einen INNER JOIN. Das wuerde jede Abwesenheit
+         * OHNE Phasenbezug (der Normalfall) schon vor der "p IS NULL"-Bedingung
+         * herausfiltern und still 0 statt der tatsaechlichen Summe liefern.
          */
-        @Query("SELECT COALESCE(SUM(a.stunden), 0) FROM Abwesenheit a WHERE a.mitarbeiter.id = :mitarbeiterId "
+        @Query("SELECT COALESCE(SUM(a.stunden), 0) FROM Abwesenheit a LEFT JOIN a.langzeitkrankmeldungPhase p "
+                        + "WHERE a.mitarbeiter.id = :mitarbeiterId "
                         + "AND a.typ = :typ AND a.datum >= :von AND a.datum <= :bis "
-                        + "AND (a.langzeitkrankmeldungPhase IS NULL OR a.langzeitkrankmeldungPhase.typ NOT IN :ausgeschlossen)")
+                        + "AND (p IS NULL OR p.typ NOT IN :ausgeschlossen)")
         java.math.BigDecimal sumStundenOhnePhasenTypen(
                         @Param("mitarbeiterId") Long mitarbeiterId,
                         @Param("typ") AbwesenheitsTyp typ,
