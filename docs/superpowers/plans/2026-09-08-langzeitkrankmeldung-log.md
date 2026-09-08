@@ -1557,3 +1557,179 @@ Bewertete Schwerpunkte:
 Bedenken / Abweichungen vom Plan:
 - Mutationen und Sonden restlos zurueckgenommen; Arbeitsbaum sauber bis auf den
   bekannten index.html-Zeilenende-Phantomdiff.
+
+## Abschnitt 4 — Nachbesserung 409-Tests
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/nb4-409-tests
+Commit(s): 64a2b398
+Status: fertig
+
+Was gemacht wurde:
+- LangzeitkrankmeldungControllerTest ergaenzt um einen
+  @ParameterizedTest (versionskonflikt_LiefertAnJedemAendierendenEndpunkt409,
+  @MethodSource aendierendeEndpunkteOhneAendernPut) ueber die sechs bisher
+  ungetesteten aendernden Endpunkte: PUT /{id}/beenden, PUT /{id}/oeffnen,
+  PUT /{id}/abbrechen, POST /{id}/phasen, PUT /{id}/phasen/{phasenId},
+  DELETE /{id}/phasen/{phasenId}. Jeder Fall stubbt service.findeMitPhasen
+  mit einer abweichenden Version und erwartet 409 mit der Handwerker-
+  Meldung. PUT /{id} war bereits abgedeckt (aendern_VeralteteVersion...),
+  daher nicht erneut aufgenommen.
+- Gegenprobe wie gefordert: pruefeVersion(id, version) testweise aus dem
+  beenden-Endpunkt entfernt (auskommentiert), vollen Testlauf gefahren ->
+  von 31 Tests genau 1 rot: der parametrisierte Fall [1] "PUT /{id}/beenden
+  liefert 409 bei veralteter Version" (Status erwartet 409, war 200), alle
+  uebrigen 30 (inkl. der 5 anderen Parametersaetze) blieben gruen. Danach
+  zurueckgenommen; Controller hat laut `git diff` keine Restaenderung.
+- Gates: `./mvnw -B test -Dtest=LangzeitkrankmeldungControllerTest` ->
+  Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- keine. Nur die Testdatei angefasst, Controller unveraendert (git diff
+  bestaetigt leer). Die vom Reviewer erwaehnte sauberere Loesung
+  (erwartete Version in die Service-Signatur, atomare Pruefung durch JPA)
+  bleibt bewusst ausserhalb dieser Nachbesserung, da sie DTOs und Service
+  aendern wuerde (parallele Arbeit eines anderen Agenten).
+
+## Abschnitt 4 — Nachbesserung Stufenplan
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/nb4-stufenplan
+Commit(s): 38af2157, 8caf39b6
+Status: fertig
+
+Was gemacht wurde:
+- **Befund 1 (blockierend, NPE im Stufenplan):** `baueStufenplanTage` setzte
+  den Kartenbereich bei einer offenen letzten Wiedereingliederungsphase blind
+  auf `LocalDate.now()`. Eine DAVOR liegende, geschlossene Phase mit
+  Enddatum in der Zukunft (im Voraus geplanter Stufenplan) lag dann
+  vollstaendig hinter dem Kartenende — `von > bis`, `arbeitsSollJeTag` bekam
+  einen rueckwaerts laufenden Zeitraum und lieferte eine leere Map,
+  `geplantJeTag.get(tag)` war fuer jeden Tag der geschlossenen Phase `null`.
+  TDD: neuer Test reproduziert exakt den Reviewer-Fall (geschlossene Phase
+  mit Enddatum in der Zukunft, gefolgt von einer offenen), erst rot mit
+  **derselben Fehlermeldung wie im Befund**: `NullPointer Cannot read field
+  "scale" because "val" is null`. Fix in zwei Teilen wie gefordert: (1)
+  `bis` ist jetzt immer mindestens so gross wie das spaeteste bekannte
+  (geschlossene) Enddatum unter den Wiedereingliederungsphasen, nicht mehr
+  blind `LocalDate.now()`; (2) zusaetzlich `geplantJeTag.getOrDefault(tag,
+  BigDecimal.ZERO)` als Netz, falls Kartenbereich und Schleifengrenzen je
+  wieder auseinanderlaufen — dann eine 0 statt eines HTTP 500. Nach dem Fix
+  gruen (41 dann 42 Tests in `LangzeitkrankmeldungServiceTest`).
+- **Befund 3 (eigene Daten, kein 🔴):** `getMobileStand` nutzte
+  `findByLoginToken` statt `findByLoginTokenAndAktivTrue` — ein
+  deaktivierter Mitarbeiter mit altem Token behielt Lesezugriff auf seinen
+  Krankenstand. TDD: neuer Test `getMobileStand_NutztDieAktivTrueVariante_
+  DeaktivierterMitarbeiterVerliertZugriffAufAltesToken` verifiziert per
+  `Mockito.verify`, dass die Aktiv-Variante aufgerufen wird (ein reiner
+  Wertevergleich waere hier blind gewesen, weil Mockito fuer eine unstubbte
+  Optional-Methode ohnehin `Optional.empty()` liefert) — vor dem Fix rot
+  (`UnnecessaryStubbing`/Wanted-but-not-invoked bzw. falsche Werte in den
+  drei bestehenden `getMobileStand`-Tests, die ebenfalls auf die neue
+  Repository-Methode umgestellt wurden), danach gruen. Auf
+  `findByLoginTokenAndAktivTrue` umgestellt — dieselbe Methode, die jeder
+  andere unauthentifizierte Mobile-Lesepfad im Projekt nutzt.
+- **Befund 2 (blinder Stub):** `TagesSollCharakterisierungKalenderTest`
+  stubbte `arbeitsSollJeTag`/`feiertagsGutschriftJeTag` mit `any()` fuer
+  von/bis, gab aber immer dieselbe feste Dezember-2026-Map zurueck — ein
+  falscher, vom Controller uebergebener Zeitraum waere nicht aufgefallen.
+  Stub wertet jetzt den tatsaechlich uebergebenen Zeitraum aus
+  (`willAnswer` + zwei Hilfsmethoden `arbeitsSollJeTagFuer`/
+  `feiertagsGutschriftJeTagFuer`, die die Map fuer den echten `von`/`bis`
+  bauen). Gegenprobe wie gefordert: `ZeitverwaltungController.getKalender`
+  testweise um sechs Monate verschoben (`ersterTag.plusMonths(6)` /
+  `letzterTag.plusMonths(6)` an beiden `tagesSollService`-Aufrufen) — Test
+  wurde mit dem reparierten Stub zuverlaessig rot (`NullPointer Cannot read
+  field "intCompact" because "augend" is null`, an derselben Bugklasse wie
+  Befund 1). Mutation danach vollstaendig zurueckgenommen (`git checkout --
+  ZeitverwaltungController.java`), `git diff`/`grep MUTATIONSPROBE` leer,
+  Test mit dem unveraenderten Controller wieder gruen.
+- Gate: `./mvnw -B test -Dtest='LangzeitkrankmeldungServiceTest,
+  TagesSollServiceTest,ZeitverwaltungControllerTest,
+  TagesSollCharakterisierung*'` → Tests run: 89, Failures: 0, Errors: 0,
+  BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Fuer die Gegenprobe zu Befund 2 musste `ZeitverwaltungController.java`
+  kurzzeitig mutiert werden (nicht in meiner Dateiliste fuer diese
+  Nachbesserung) — rein als Wegwerf-Verifikation, sofort per `git checkout
+  --` zurueckgenommen, `git diff` an der Datei danach leer. Keine
+  Produktivaenderung an dieser Datei verblieben.
+- Sonst keine Abweichungen. Alle drei Befunde 1:1 wie im Auftrag beschrieben
+  behoben (Fix in zwei Teilen bei Befund 1, Verify-basierter statt
+  wertbasierter Test bei Befund 3, willAnswer-basierter statt fester Stub
+  bei Befund 2).
+
+## Abschnitt 4 — Nachbesserung Urlaubs-Hinweis
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/nb4-urlaub-auth
+Commit(s): a04c19c7
+Status: fertig
+
+Was gemacht wurde:
+- Befund 1 (blockierend, Gesundheitsdaten ohne Login): GET
+  /api/urlaub/antraege/hinweise lag unter /api/urlaub/** (permitAll-Kette
+  der Mobile-App, SecurityConfig.ZEITERFASSUNG_PATHS) und war damit ohne
+  Login mit frei waehlbarer mitarbeiterId erreichbar. Endpoint verschoben
+  nach GET /api/langzeitkrankmeldungen/urlaubs-hinweise (Praefix bereits
+  authenticated()). SecurityConfig.java nicht angefasst.
+- Technischer Weg dahin: eine einzelne Methode kann ihren Klassen-Level-
+  @RequestMapping-Praefix in Spring MVC nicht auf einen fremden Pfad
+  ueberschreiben (AntPathMatcher.combine() konkateniert nur, ausser das
+  Klassen-Pattern matcht das Methoden-Pattern selbst - das trifft hier nicht
+  zu). Deshalb @RequestMapping("/api/urlaub") von der Klasse entfernt und
+  jede der sieben Methoden traegt jetzt ihren vollen, literalen Pfad. Die
+  sechs unveraenderten Endpoints (POST/GET /antraege, approve/reject/storno,
+  /resturlaub, /typen) loesen sich dadurch auf exakt dieselben URLs wie
+  vorher auf - gegengeprueft mit UrlaubsantragControllerTest (unveraendert
+  gruen, 3/3).
+- Neuer Test UrlaubsHinweiseSicherheitTest (Package config, weil
+  SecurityConfig.ZEITERFASSUNG_PATHS package-private ist und ein Test in
+  controller/service nicht drankommt, ohne die Sichtbarkeit zu aendern -
+  das war ausdruecklich nicht erlaubt): liest den tatsaechlich gemappten
+  Pfad von UrlaubsantragController.getHinweise per Reflection (Klassen- +
+  Methoden-Annotation) und prueft ihn mit AntPathMatcher gegen
+  SecurityConfig.ZEITERFASSUNG_PATHS - dieselbe Methode, mit der der
+  Reviewer die Luecke gemessen hat. Echter TDD-Rotzustand bestaetigt: vor
+  dem Controller-Fix loeste sich der Pfad auf /api/urlaub/antraege/hinweise
+  auf und die Assertion (nicht permitAll) schlug fehl; nach dem Fix gruen.
+  Gegenprobe/Dokumentation im selben Test: der alte Pfad waere weiterhin
+  permitAll (assertTrue), die echten Mobile-Endpoints (/antraege,
+  /resturlaub) bleiben unveraendert permitAll.
+- Befund 2 (Performance): approveAntrag nutzt jetzt
+  TagesSollService.arbeitsSollJeTag(mitarbeiterId, zeitkonto, von, bis) statt
+  einem arbeitsSoll-Aufruf je Werktag in der Schleife - Phasen und Feiertage
+  werden fuer den ganzen Antragszeitraum einmal geladen statt einmal pro Tag.
+  sollStundenJeTag.getOrDefault(date, BigDecimal.ZERO) als Sicherheitsnetz
+  gegen NPE, falls die Map fuer einen Tag keinen Eintrag liefert (Warnung aus
+  dem Auftrag beherzigt). Eigener Regressionstest
+  approveAntrag_ruftArbeitsSollJeTagGenauEinmalFuerDenGesamtenZeitraumAuf_keinN1ProTag
+  verifiziert genau einen arbeitsSollJeTag-Aufruf fuer den kompletten
+  Zeitraum und verify(never()) auf arbeitsSoll. Zusaetzlicher Test
+  approveAntrag_tagFehltInDerMap_erzeugtKeineNPEUndKeineAbwesenheit deckt
+  das getOrDefault-Netz direkt ab (genau die Falle, vor der der Auftrag
+  warnte).
+- UrlaubsantragServiceTest und TagesSollCharakterisierungUrlaubsantragTest
+  auf die neue Stubbing-Form (Map statt Einzeltag-Stub je Datum) umgestellt;
+  in beiden Feiertags-/Wochenende-Tests bekommt jetzt sogar der
+  uebersprungene Tag einen Wert > 0 in der Map, um zu beweisen, dass der
+  Skip wirklich am feiertagService-/Wochenend-Check haengt und nicht an
+  einer zufaellig leeren Map. Gegenproben gefahren (Stub verfaelscht -> rot,
+  zurueckgenommen -> gruen) fuer beide Charakterisierungstests.
+- Gates: ./mvnw -B test -Dtest='UrlaubsantragServiceTest,TagesSollCharakterisierungUrlaubsantragTest,UrlaubsantragControllerTest,UrlaubsHinweiseSicherheitTest'
+  -> Tests run: 17, Failures: 0, Errors: 0, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Dateiliste um eine Datei erweitert: src/test/java/.../config/UrlaubsHinweiseSicherheitTest.java
+  (neu), obwohl "Deine Dateien" im Nachbesserungs-Auftrag nur 4 Dateien
+  nannte. Grund: SecurityConfig.ZEITERFASSUNG_PATHS ist package-private -
+  ein Test, der das Array gegen AntPathMatcher prueft (explizit als "am
+  besten" gewuenscht), muss im config-Package stehen. SecurityConfig.java
+  selbst wurde nicht veraendert, LangzeitkrankmeldungController.java nicht
+  angefasst, keine Kollision mit den zwei anderen Agenten dieser Runde
+  erkennbar (deren Dateien liegen in service/LangzeitkrankmeldungService.java
+  bzw. controller/LangzeitkrankmeldungControllerTest.java).
+- Frontend geprueft (react-pc-frontend/src, react-zeiterfassung/src): keine
+  Referenz auf den alten Pfad /api/urlaub/antraege/hinweise gefunden - der
+  Endpoint wird dort noch nicht konsumiert (folgt vermutlich in Abschnitt 5).
