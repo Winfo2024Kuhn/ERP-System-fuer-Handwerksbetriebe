@@ -209,6 +209,16 @@ die Diskussion, eine Vermutung nicht.
 
 ## Bekannte Testlücken-Muster
 
+- **Text-Zusicherung gegen eine Datei mit Kopfkommentar:** Ein Test, der mit
+  `datei.contains("spaltenname")` prüft, ob eine Migration eine Spalte anlegt,
+  ist grün, sobald der Name **irgendwo** vorkommt — auch nur im Kommentarkopf,
+  der ohnehin beschreibt, was die Datei tut. Real gemessen: beide
+  `ALTER TABLE`-Blöcke gelöscht, Test blieb grün, obwohl sein Javadoc ihn als
+  „einziges Sicherheitsnetz" auswies. Entweder die Kommentarzeilen vor dem
+  Assert wegschneiden oder auf die tatsächliche Anweisung prüfen
+  (`ADD COLUMN spaltenname`). Und immer gegenprobieren: die Anweisung testweise
+  löschen und sehen, ob der Test **wirklich** rot wird.
+
 - **Hooks mit veränderlichen Optionen:** Tests, die Optionen nur als
   Startwert setzen und nie per `rerender` ändern, übersehen genau die Fehler
   beim Neu-Armieren. Mindestens ein `rerender`-Test nach einer

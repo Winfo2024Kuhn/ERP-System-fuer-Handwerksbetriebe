@@ -63,6 +63,33 @@ deaktivieren — nur die Abnahmeregel einhalten.
 - Mobile (`react-zeiterfassung`): Bundle-Größe im Blick behalten — Handwerker
   nutzen die App unterwegs oft mit schlechtem Netz.
 
+### JPQL: impliziter Pfad über eine nullable Beziehung = INNER JOIN
+
+Ein Pfadausdruck wie `a.phase.typ` im `WHERE` wird von Hibernate 6 zu einem
+**INNER JOIN**. Bei einer **nullable** Beziehung wirft der jede Zeile ohne
+Bezug raus, **bevor** eine `IS NULL`-Bedingung im selben `WHERE` überhaupt
+greifen kann. Das sieht harmlos aus und liefert still falsche Zahlen:
+
+```java
+// FALSCH — zaehlt Zeilen ohne Phasenbezug nicht mit, also den Normalfall
+"... AND (a.phase IS NULL OR a.phase.typ NOT IN :ausgeschlossen)"
+
+// RICHTIG — expliziter LEFT JOIN
+"... LEFT JOIN a.phase p WHERE ... AND (p IS NULL OR p.typ NOT IN :ausgeschlossen)"
+```
+
+Real gemessen (Abschnitt 1, `AbwesenheitRepository.sumStundenOhnePhasenTypen`):
+ein Krankheitstag ohne Phase (8,00 h) plus ein ausgeschlossener Tag ergab
+**0 statt 8,00** — ohne Exception, ohne Warnung.
+
+**Regel für den Coding-Agenten:** Sobald eine Query eine nullable Beziehung
+prüft, expliziter `LEFT JOIN` statt implizitem Pfad — und ein Test, der eine
+Zeile **ohne** Bezug mitzählt. Ohne diesen Fall ist die Query ungeprüft.
+
+**Regel für den Review-Agenten:** Bei jeder `@Query` mit `IS NULL` über eine
+Beziehung das erzeugte SQL wirklich ansehen (`spring.jpa.show-sql` oder eine
+Sonde), nicht das JPQL lesen und für richtig halten.
+
 ## Observability
 
 - Kritische Aktionen (Rechnung erstellt, Zeitbuchung, Löschung) strukturiert

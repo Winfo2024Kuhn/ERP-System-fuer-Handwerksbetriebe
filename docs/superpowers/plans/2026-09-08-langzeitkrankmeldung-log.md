@@ -221,3 +221,108 @@ Bedenken / Abweichungen vom Plan:
   5 bzw. 4 Abwesenheiten fuer UrlaubsantragTest; die vier Kalender-Werte)
   wurden 1:1 bestaetigt - keine Abweichung des tatsaechlichen Bestandsverhaltens
   vom im Plan vorgegebenen erwarteten Wert.
+
+## Abschnitt 1 — Review (Code-Reviewer)
+
+Zeit: 2026-09-08T14:35:00Z
+Branch: feature/langzeitkrankmeldung (4b3b4744, gemergte Task-Branches ae6a6f9b + 73242dfe)
+Commit(s): f5a78f90 (Task 1), 2d86b623 (Task 2)
+Status: fertig
+Ampel: 🔴
+
+Was gemacht wurde:
+- Volle Backend-Suite gefahren: `mvn -B clean test` -> Tests run: 2486,
+  Failures: 0, Errors: 4. Die 4 Errors sind exakt die vier vorbestehenden aus
+  der Baseline (AuditChainRepairIntegrationTest 2, AuditHashRoundtripDiagnoseTest 2,
+  alle CannotCreateTransaction). 2461 + 25 neue = 2486, wie erwartet.
+  Kompilat inklusive Testkompilat sauber. Frontend in diesem Abschnitt nicht
+  betroffen, deshalb nicht geprueft.
+- Mutationsprobe an allen sechs Aufrufstellen gleichzeitig (je eine Mutation
+  pro Produktionsdatei): ZeitkontoService (halber Feiertag nicht mehr halbiert),
+  MonatsSaldoService.berechneFeiertagsStunden (dito), ZeiterfassungApiService.
+  berechneFeiertagsStunden (dito), AbwesenheitService (halberTag ignoriert),
+  UrlaubsantragService (Feiertag nicht mehr uebersprungen),
+  ZeitverwaltungController /kalender (Ist-Stunden am Feiertag halbiert).
+  Ergebnis: `-Dtest='TagesSollCharakterisierung*'` -> 19 Tests, 6 Failures,
+  1 Error - **alle sechs Testklassen sind umgefallen**, jede genau an ihrer
+  eigenen Mutation. Das Sicherheitsnetz fuer die Tasks 7-12 traegt.
+  Mutationen restlos zurueckgenommen, `git status` und `git diff` wieder leer,
+  HEAD unveraendert 4b3b4744.
+- V367 gegen MySQL 8.0 hart geprueft: Hibernate selbst das erwartete MySQL-DDL
+  erzeugen lassen (SchemaExport mit MySQLDialect) und Spalte fuer Spalte gegen
+  die Migration gehalten. Ergebnis: **alle Spalten und Typen stimmen** -
+  langzeitkrankmeldung (8 Spalten), langzeitkrankmeldung_phase (6 Spalten),
+  abwesenheit +2 Spalten, beide ENUM-Listen wertgleich und in gleicher
+  Reihenfolge. `ddl-auto=validate` wird beim Produktionsstart durchgehen.
+  Idempotenz: CREATE TABLE IF NOT EXISTS, beide CREATE INDEX und alle vier
+  ALTER/ADD-CONSTRAINT-Bloecke ueber information_schema + PREPARE/EXECUTE/
+  DEALLOCATE gefuehrt - zweiter Lauf ist ein No-Op. Kein `IF NOT EXISTS` an
+  einer Stelle, an der MySQL es nicht kennt.
+- Zeitbomben-Pruefung: keine der 25 neuen Zusicherungen haengt an
+  `LocalDate.now()`. berechneSollstundenFuerZeitraum und
+  MonatsSaldoService.berechneMonatsSaldo rechnen datumsunabhaengig; der
+  lenient()-Cache-Stub im MonatsSaldo-Test deckt beide Zweige von
+  getOrBerechne ab und ist genau richtig gesetzt; der Kalender-Endpoint hat
+  im Tage-Aufbau kein now().
+
+Bedenken / Abweichungen vom Plan:
+- 🔴 BLOCKIEREND: `AbwesenheitRepository.sumStundenOhnePhasenTypen`
+  (AbwesenheitRepository.java:109-118) liefert falsche Zahlen. Der implizite
+  Pfad `a.langzeitkrankmeldungPhase.typ` im WHERE erzeugt bei Hibernate 6
+  einen INNER JOIN; das gemessene SQL lautet
+  `... from abwesenheit a1_0 join langzeitkrankmeldung_phase lp1_0 on
+  lp1_0.id=a1_0.langzeitkrankmeldung_phase_id where ... and
+  (a1_0.langzeitkrankmeldung_phase_id is null or lp1_0.typ not in (?,?))`.
+  Der Join wirft alle Abwesenheiten ohne Phasenbezug raus, bevor das
+  `IS NULL` greifen kann - also den Normalfall. Gemessen mit einer
+  Wegwerf-Sonde: ein Krankheitstag ohne Phase (8,00 h) plus ein
+  KRANKENGELD-Tag ergibt **0** statt 8,00. Fix (ebenfalls gemessen, liefert
+  8,00): explizites `LEFT JOIN a.langzeitkrankmeldungPhase p` und im WHERE
+  `(p IS NULL OR p.typ NOT IN :ausgeschlossen)`. Die Query hat heute keinen
+  Aufrufer, Task 13 wuerde sie aber uebernehmen und still falsche
+  Verrechnungsloehne rechnen. Dazu ein Test in
+  LangzeitkrankmeldungRepositoryTest, der genau den Tag ohne Phasenbezug
+  mitzaehlt. Die Query stand so im Plan (Zeile ~390) - der Plan-Block gehoert
+  mitkorrigiert, sonst baut Task 13 sie erneut so.
+- 🟡 `V367SchemaTest` haelt nicht, was sein Javadoc verspricht ("das einzige
+  Sicherheitsnetz" gegen eine vergessene Spalte). Der Test prueft nur
+  `sql.contains("<spaltenname>")` gegen die gesamte Datei inklusive
+  Kopfkommentar - und der Kopfkommentar nennt langzeitkrankmeldung_id,
+  langzeitkrankmeldung_phase_id, status, typ und version woertlich. Gemessen:
+  beide `ALTER TABLE abwesenheit ADD COLUMN`-Bloecke geloescht -> der Test
+  bleibt **gruen** (Tests run: 2, Failures: 0). Vorschlag: vor dem Assert die
+  Kommentarzeilen wegschneiden, oder auf die wirksame Anweisung pruefen
+  (`ADD COLUMN langzeitkrankmeldung_id`) statt auf den blossen Namen.
+- 🟡 ON DELETE SET NULL an den zwei neuen FKs ist fachlich richtig gewaehlt
+  (gebuchte Abwesenheitstage duerfen beim Loeschen einer Meldung nicht
+  mitgerissen werden). Nur ein Hinweis fuer den Task, der das Loeschen baut:
+  MySQL setzt die Spalte auf DB-Ebene, der Persistence-Context sieht das
+  nicht - dort muss die Referenz explizit geleert oder das Entity refreshed
+  werden.
+- 🟡 Der ZeiterfassungApi-Charakterisierungstest ruft die private
+  berechneFeiertagsStunden per ReflectionTestUtils auf. Die Begruendung des
+  Task-2-Agenten stimmt und ist nachgeprueft: getGesamtSaldo existiert nicht,
+  das reale getSaldo koppelt das Enddatum ueber LocalDate.now() und braucht
+  drei nicht gesetzte Field-Injection-Abhaengigkeiten. Reflection ist hier
+  der richtige Kompromiss. Nur bewusst sein: Task 3 loescht diese private
+  Methode, dann muss die Klasse mit umgezogen werden - der Aufruf faellt dabei
+  laut auf die Nase, nicht still.
+- 🟡 findMitPhasen hat kein DISTINCT. Nachgemessen: Hibernate 6 dedupliziert
+  Wurzel-Entitaeten beim JOIN FETCH von selbst (1 Meldung mit 1 Phase -> 1
+  Ergebnis). Kein Handlungsbedarf, nur damit es niemand spaeter "repariert".
+
+## Abschnitt 1 — Task 1 (Nachbesserung 1)
+
+Zeit: 2026-09-08T16:20:00Z
+Branch: lzk/task-1-datenmodell
+Commit(s): ad31b81d
+Status: fertig
+
+Was gemacht wurde:
+- Befund 1 (blockierend) behoben: `AbwesenheitRepository.sumStundenOhnePhasenTypen` nutzte den impliziten Pfad `a.langzeitkrankmeldungPhase.typ`, den Hibernate 6 zu einem INNER JOIN uebersetzt und damit Abwesenheiten ohne Phasenbezug (Normalfall) stumm ausschloss. Reproduziert mit neuem Test in `LangzeitkrankmeldungRepositoryTest` (rot: 0 statt 8,00 h), dann auf expliziten `LEFT JOIN a.langzeitkrankmeldungPhase p` umgestellt (gruen).
+- Befund 2 behoben: `V367SchemaTest` prüfte gegen den Rohtext inkl. Kopfkommentar, der dieselben Spaltennamen nennt wie die Migration selbst — ein Test, der trotz geloeschter ALTER-TABLE-Bloecke gruen bleibt. Fix: alle Zusicherungen laufen jetzt gegen kommentarbereinigten Text, zusaetzlich eine eigene Pruefung auf die tatsaechliche `ADD COLUMN langzeitkrankmeldung_id` / `ADD COLUMN langzeitkrankmeldung_phase_id`-Anweisung (reiner Namens-Check reicht nicht, der Name taucht legitim auch als FK-Spalte in langzeitkrankmeldung_phase auf).
+- Beide Luecken vor dem Fix von Hand reproduziert: Migration testweise um die zwei ALTER-TABLE-Bloecke gekuerzt -> alter Test blieb gruen (Luecke bestaetigt) -> neuer Test wurde rot (Luecke geschlossen) -> Migration wiederhergestellt (git diff leer).
+- Gate: `./mvnw -B test -Dtest=LangzeitkrankmeldungRepositoryTest,V367SchemaTest` -> Tests run: 8, Failures: 0, Errors: 0.
+
+Bedenken / Abweichungen vom Plan:
+- keine

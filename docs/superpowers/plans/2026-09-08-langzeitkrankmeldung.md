@@ -368,10 +368,19 @@ Frontend betroffen: nein.
                                                                  @Param("bis") LocalDate bis);
 
       /** Summe wie sumStundenByMitarbeiterIdAndTypAndDatumBetween, aber ohne die Tage,
-       *  die an einer Phase der genannten Typen haengen (Verrechnungslohn, Task 13). */
-      @Query("SELECT COALESCE(SUM(a.stunden), 0) FROM Abwesenheit a WHERE a.mitarbeiter.id = :mitarbeiterId "
+       *  die an einer Phase der genannten Typen haengen (Verrechnungslohn, Task 13).
+       *
+       *  ACHTUNG, im Review von Abschnitt 1 gemessen: Der implizite Pfad
+       *  a.langzeitkrankmeldungPhase.typ im WHERE wird von Hibernate 6 zu einem
+       *  INNER JOIN. Der wirft jede Abwesenheit OHNE Phasenbezug raus, bevor das
+       *  IS NULL greift - also den Normalfall. Sonde: Krankheitstag ohne Phase
+       *  (8,00 h) + KRANKENGELD-Tag ergab 0 statt 8,00, still und ohne Exception.
+       *  Deshalb expliziter LEFT JOIN. Nicht auf den impliziten Pfad zurueckbauen. */
+      @Query("SELECT COALESCE(SUM(a.stunden), 0) FROM Abwesenheit a "
+           + "LEFT JOIN a.langzeitkrankmeldungPhase p "
+           + "WHERE a.mitarbeiter.id = :mitarbeiterId "
            + "AND a.typ = :typ AND a.datum >= :von AND a.datum <= :bis "
-           + "AND (a.langzeitkrankmeldungPhase IS NULL OR a.langzeitkrankmeldungPhase.typ NOT IN :ausgeschlossen)")
+           + "AND (p IS NULL OR p.typ NOT IN :ausgeschlossen)")
       BigDecimal sumStundenOhnePhasenTypen(@Param("mitarbeiterId") Long mitarbeiterId,
                                            @Param("typ") AbwesenheitsTyp typ,
                                            @Param("von") LocalDate von,
