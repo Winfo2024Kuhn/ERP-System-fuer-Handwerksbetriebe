@@ -445,3 +445,134 @@ dann Abschnitt 3 mit den Tasks 4, 7, 8, 9, 10, 11 zusammen.
 Abschnitt 3 (Tasks 4, 7–11) → Abschnitt 4 (Tasks 5, 6, 12) →
 Abschnitt 5 (Tasks 15–19, Frontend, mit Design-Reviewer) → PR → Merge.
 Die Einteilung steht im Plan unter „## Abschnitts-Einteilung (Runden)".
+
+## Abschnitt 2 — Task 3 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-3-tagessoll
+Commit(s): ef32b9ad
+Status: fertig
+
+Was gemacht wurde:
+- `TagesSollService` neu angelegt (`src/main/java/org/example/kalkulationsprogramm/service/TagesSollService.java`), buendelt die bisher an drei Stellen duplizierte Feiertags-/Sollstunden-Logik (`ZeitkontoService.berechneSollstundenFuerZeitraum`, `MonatsSaldoService.berechneFeiertagsStunden`, `ZeiterfassungApiService.berechneFeiertagsStunden`).
+- Drei benannte Groessen exakt nach E2/Task-3-Interface: `periodenSoll`, `feiertagsGutschrift`, `arbeitsSoll = periodenSoll - feiertagsGutschrift`, jeweils Einzeltag- und Zeitraum-Variante (`periodenSollSumme`, `feiertagsGutschriftSumme`).
+- Gemeinsame `tagesBasis(phasen, konto, tag)`: Zeitkonto-Soll, bei laufender Wiedereingliederungsphase ersetzt durch `stundenProTag`, gedeckelt auf das Zeitkonto-Soll (Sicherheitsnetz). Feiertagsbehandlung laeuft danach unveraendert weiter (E3 — kein fester Override, 2h/Tag am vollen Feiertag ergibt 2.00/2.00/0).
+- Zeitraum-Methoden laden `phaseRepository.findImZeitraum` und `feiertagService.getFeiertageZwischen` je genau einmal (kein N+1), Feiertags-Liste wird auf `"BY".equals(bundesland)` gefiltert (Kommentar im Code, eigener Test dafuer) — sonst wuerde die Summenmethode anders rechnen als die Einzeltag-Methode, weil `getFeiertageZwischen` anders als `istFeiertag`/`istHalberFeiertag` nicht selbst nach Bundesland filtert.
+- `TagesSollServiceTest` (18 Tests, TDD: erst rot wegen fehlender Klasse, dann gruen) deckt alle neun Pflichtfaelle aus dem Plan ab (a–i) plus N+1-Nachweis fuer beide Summenmethoden, Korrektheits- und Bundesland-Filter-Tests.
+- Alle sechs `TagesSollCharakterisierung*`-Testklassen aus Task 2 (19 Tests) liefen unveraendert mit und blieben gruen — nichts an ihnen angefasst.
+- Gate: `./mvnw -B test -Dtest='TagesSollServiceTest,TagesSollCharakterisierung*'` → Tests run: 37, Failures: 0, Errors: 0, BUILD SUCCESS.
+
+Finale Methodensignaturen (fuer die sechs Folge-Tasks in Abschnitt 3):
+```java
+package org.example.kalkulationsprogramm.service;
+
+@Service
+@RequiredArgsConstructor
+public class TagesSollService {
+    public BigDecimal periodenSoll(Long mitarbeiterId, Zeitkonto konto, LocalDate tag);
+    public BigDecimal feiertagsGutschrift(Long mitarbeiterId, Zeitkonto konto, LocalDate tag);
+    public BigDecimal arbeitsSoll(Long mitarbeiterId, Zeitkonto konto, LocalDate tag);
+    public BigDecimal periodenSollSumme(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis);
+    public BigDecimal feiertagsGutschriftSumme(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis);
+}
+```
+Es gibt bewusst kein `arbeitsSollSumme` — Aufrufer, die das Zeitraumsoll brauchen, bilden `periodenSollSumme(...) - feiertagsGutschriftSumme(...)` selbst (so auch im Plan-Interface vorgesehen).
+
+Bedenken / Abweichungen vom Plan:
+- keine. Interface, Rechenregel (E2/E3) und Steps 1:1 wie im Plan-Block "Task 3" umgesetzt. `src/main/resources/static/index.html` zeigt wie in allen Worktrees eine reine Zeilenenden-Normalisierung — nicht angefasst, nicht committet.
+
+## Abschnitt 2 — Task 13 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-13-verrechnungslohn
+Commit(s): 4a7ae021
+Status: fertig
+
+Was gemacht wurde:
+- VerrechnungslohnService: neue private Methode `ausgeklammerteTage(mitarbeiterId, von, bis)` liest einmal je Mitarbeiter ueber `LangzeitkrankmeldungPhaseRepository.findImZeitraum` die Krankengeld-/Wiedereingliederungs-Kalendertage; das Ergebnis wird in der `berechne()`-Schleife einmal ermittelt und an `berechneLohnZeile` UND `berechneStundenZeile` durchgereicht (keine doppelte Abfrage).
+- `jahresSollstundenAusZeitkonto` und `werktagsSollOhneZeitkonto` bekommen den zusaetzlichen Parameter `ausgeklammert`, ueberspringen diese Tage neben dem Feiertagsfilter und liefern zusaetzlich die uebersprungenen Sollstunden zurueck (neuer interner Ergebnistyp `SollUndAusklammerung`).
+- Krankheitsstunden nutzen jetzt `AbwesenheitRepository.sumStundenOhnePhasenTypen(...)` statt der alten Typ-Summe; der KRANKHEITSTAGE_DEFAULT-Fallback greift nur noch, wenn `ausgeklammerteTage == 0`.
+- `berechneLohnZeile`: neuer `anwesenheitsFaktor = (Jahrestage - ausgeklammerteTage) / Jahrestage` (4 Nachkommastellen, HALF_UP), multipliziert auf `gesamtkosten` in beiden Zweigen (GF und regulaer).
+- Die vier bestehenden `getSollstundenFuerTag`-Aufrufe (Zeile 462/471/506/535 vor der Aenderung) bleiben unveraendert beim rohen Zeitkonto-Wert -- kein TagesSollService, wie im Plan als Ausnahme festgehalten. Kommentar dazu direkt am Feldblock ergaenzt.
+- `VerrechnungslohnErgebnisDto`: `MitarbeiterStundenZeile` bekommt `ausgeklammerteTage` (int) und `ausgeklammerteStunden` (BigDecimal, Default ZERO); `MitarbeiterLohnZeile` bekommt `ausgeklammerteTage` (int) und `anwesenheitsFaktor` (BigDecimal, Default ONE).
+- Konstruktor von `VerrechnungslohnService` um 16. Parameter `LangzeitkrankmeldungPhaseRepository phaseRepository` erweitert.
+- Tests (TDD, rot vor der Umsetzung wegen fehlendem Konstruktor-Parameter/fehlenden Feldern): `VerrechnungslohnServiceTest` um Default-Stub `phaseRepository.findImZeitraum(any(), any(), any()) -> emptyList()` in `@BeforeEach` ergaenzt (haelt alle 28 bestehenden Tests unveraendert gruen), plus zwei neue Tests: `krankengeldPhaseKlammertKalendertageUndAnteiligeLohnkostenAus` (Krankengeld 01.03.-30.06.2024, 122 Kalendertage / 86 Werktage, Jahressoll 2096->1408 h, anwesenheitsFaktor 0,6667, Lohnkosten anteilig) und `normalerKrankheitstagOhneLangzeitkrankmeldungWirdWeiterhinVollGezaehlt` (Normalfall ohne jeden Phasenbezug: die neue Query liefert die Stunden unveraendert durch, kein Default-Fallback).
+- Gate: `./mvnw -B test -Dtest=VerrechnungslohnServiceTest` -> 30 Tests, 0 Failures, 0 Errors, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Keine inhaltliche Abweichung. Eine Interpretationsentscheidung, die der Plantext offenliess: der `anwesenheitsFaktor` wird sowohl im Geschaeftsfuehrer- als auch im regulaeren Zweig von `berechneLohnZeile` angewendet (Plan sagt nur "am Ende von berechneLohnZeile", die Methode hat aber zwei Rueckgabepunkte). Falls ein GF explizit von der Ausklammerung ausgenommen bleiben soll, bitte im naechsten Review vermerken.
+- `src/main/resources/static/index.html` zeigt im Worktree weiterhin als geaendert (reine Zeilenenden-Normalisierung) -- nicht angefasst, nicht committet, wie in der Aufgabenbeschreibung vermerkt.
+
+Feldnamen im erweiterten VerrechnungslohnErgebnisDto (fuer Task 16):
+- `MitarbeiterStundenZeile.ausgeklammerteTage` (int)
+- `MitarbeiterStundenZeile.ausgeklammerteStunden` (BigDecimal, Default ZERO)
+- `MitarbeiterLohnZeile.ausgeklammerteTage` (int)
+- `MitarbeiterLohnZeile.anwesenheitsFaktor` (BigDecimal, Default ONE)
+
+## Abschnitt 2 — Task 14 (Coding-Agent)
+
+Zeit: 2026-09-08T15:38:24Z
+Branch: lzk/task-14-bausteine
+Commit(s): 0b701bba
+Status: fertig
+
+Was gemacht wurde:
+- `react-pc-frontend/src/components/langzeitkrankmeldung/phasen.ts` (neu):
+  `PhasenTyp`, `Phase`, `PHASEN_LABEL`, `PHASEN_BADGE`, `formatDatum` — Wording
+  wörtlich aus der Spec ("Lohnfortzahlung durch den Betrieb", "Krankengeld der
+  Krankenkasse", "Wiedereingliederung"), Badge-Farben amber/blue/teal wie im
+  Plan vorgegeben.
+- `PhasenZeitleiste.tsx` (neu): senkrechte Liste, Punkt + Badge + Zeitraum
+  ("ab DD.MM.YYYY" bzw. "DD.MM.YYYY – DD.MM.YYYY"), Stunden pro Tag bei
+  Wiedereingliederung, heute laufende Phase mit `ring-2 ring-rose-400`
+  hervorgehoben (`flex flex-col gap-3`, `min-w-0` auf jeder Text-Ebene laut
+  kriterien.md). Props exakt wie im Plan: `{ phasen: Phase[]; heute?: string }`.
+- `StufenplanTabelle.tsx` (neu): Tabelle mit Spalten ab/bis/Stunden pro
+  Tag/Aktion, gefiltert auf `typ === 'WIEDEREINGLIEDERUNG'`; Zeile zum
+  Hinzufügen mit `<DatePicker>` + Zahlenfeld, Validierung (Stunden > 0 und
+  <= maxStundenProTag) mit Inline-Fehlertext (`role="alert"`) und
+  `toast.error`; Löschen destruktiv über `useConfirm`
+  ("Ja, löschen"/"Abbrechen"); `disabled`-Buttons mit `title`-Begründung.
+  Props exakt wie im Plan: `{ phasen: Phase[]; onHinzufuegen: (p: {
+  vonDatum: string; bisDatum: string | null; stundenProTag: number }) =>
+  Promise<void>; onLoeschen: (phasenId: number) => Promise<void>;
+  maxStundenProTag: number; disabled?: boolean }`.
+- Tests (TDD, erst rot dann grün): `PhasenZeitleiste.test.tsx` (5 Tests:
+  Wording/Badge je Typ, offener/geschlossener Zeitraum, Stunden pro Tag,
+  Hervorhebung der laufenden Phase, Leerhinweis) und
+  `StufenplanTabelle.test.tsx` (7 Tests: Leerzustand, bestehende Stufen,
+  Filterung auf Wiedereingliederung, Ablehnung über dem Stundenlimit ohne
+  onHinzufuegen-Aufruf, erfolgreiches Hinzufügen, Rückfrage vor dem Löschen,
+  disabled-Begründung). Ausschließlich Dummy-Daten.
+- Gates: `npx vitest run src/components/langzeitkrankmeldung` — 2 Testdateien,
+  12/12 grün. `npm run lint` — exit 0, 0 Errors, genau die eine bekannte
+  Warning (`BelegeKasseEditor.tsx:1204`), keine neue. `npm run build` — exit 0
+  (`tsc -b && vite build` durch); Build-Artefakte danach verworfen
+  (`git checkout -- src/main/resources/static/index.html` +
+  neu erzeugte, noch ungetrackte Bundle-Dateien manuell gelöscht).
+- Kein Playwright in diesem Task (laut Plan/Auftrag — Bausteine ohne
+  Task-15-Seite nicht sinnvoll im Browser prüfbar). Kein Dev-Server gestartet.
+
+Bedenken / Abweichungen vom Plan:
+- Der Plan spezifiziert das Wording für die Phasen und für den
+  Meldung-Status ("Läuft noch"/"Wieder voll im Einsatz"/"Zurückgenommen"),
+  aber nicht den genauen Text für zwei Stellen, die die Interfaces offen
+  lassen: (1) den Leerhinweis in `PhasenZeitleiste`, falls `phasen` leer ist
+  (im Plan nur für `StufenplanTabelle` wörtlich vorgegeben: "Noch kein
+  Stufenplan hinterlegt." — das ist umgesetzt); ich habe für
+  `PhasenZeitleiste` ergänzend "Für diese Krankmeldung sind noch keine
+  Phasen hinterlegt." gewählt (eigene Formulierung, Praxisfall dürfte selten
+  sein, da eine laufende Meldung i.d.R. immer mindestens eine Phase hat).
+  (2) den `title`-Text für deaktivierte Buttons in `StufenplanTabelle`, wenn
+  `disabled=true` übergeben wird — die Komponente kennt den konkreten Grund
+  nicht (kommt von Task 15 je nach Meldung-Status), ich habe "Nur möglich,
+  solange die Krankmeldung läuft." als generische Begründung gewählt. Task 15
+  kann/sollte das bei Bedarf spezifischer machen (z.B. eigene Prop für den
+  Grund), falls der Review das für nötig hält.
+- `Phase.label` ist Teil des Interfaces (wie im Plan vorgegeben), wird von
+  den beiden Komponenten selbst aber nicht gerendert — sie leiten das Wording
+  intern aus `PHASEN_LABEL[typ]` ab (deterministisch, nicht vom Aufrufer
+  abhängig). Das Feld bleibt im Typ für Task 15 nutzbar, falls dort ein
+  Feld direkt vom Backend gebraucht wird.
+- `git status` zeigt weiterhin `M src/main/resources/static/index.html`
+  (Zeilenend-Normalisierung, laut Auftrag nicht anfassen) — nicht committet.
