@@ -57,8 +57,14 @@ flaky. Du testest genau deine Änderung: im Backend `./mvnw -B test
 -Dtest=DeineTestklasse`, im Frontend `npx vitest run <deine Testdatei>` plus
 `npm run lint` und `npm run build` (beide schnell). Alles andere — volle Suite,
 alle E2E-Specs, Design-Prüfung — fahren die Review-Agenten nach dem Merge.
-Testläufe immer **im Vordergrund** mit hohem Timeout, nie im Hintergrund:
-Hintergrund-Benachrichtigungen erreichen dich als Subagent nicht.
+
+**Testläufe: Timeout ausdrücklich auf 600000 ms setzen.** Nicht „im Vordergrund
+laufen lassen" — das reicht nachweislich nicht. Der Timeout-Parameter des
+Shell-Werkzeugs steht standardmäßig auf zwei Minuten, und alles, was länger
+braucht (eine Maven-Suite, ein Playwright-Lauf mit Dev-Server-Start), rutscht
+danach **von allein** in den Hintergrund. Dort erreicht dich die Fertigmeldung
+als Subagent nicht mehr, und du wartest bis zum Abbruch auf ein Ereignis, das
+nie kommt. Am 08./09.09.2026 dreimal passiert, jedes Mal trotz der Warnung.
 
 **Mehrere Testklassen trennt ein Komma**, nicht `+` — bei Surefire trennt `+`
 nur Methoden innerhalb einer Klasse: `-Dtest=ErsteTest,ZweiteTest`.

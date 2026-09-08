@@ -92,6 +92,26 @@ als Subagent nicht.* Kommt trotzdem so eine Meldung zurück: **nicht** als
 fertig werten und **nicht** neu starten, sondern denselben Agenten per
 `SendMessage` weitermachen lassen; er kennt seinen Stand.
 
+### Die wahre Ursache: das Standard-Timeout von zwei Minuten
+
+Am 08. und 09.09.2026 ist genau das noch zweimal passiert — **obwohl** die
+Warnung oben im Auftragstext stand. Der Grund ist unscheinbar: Kein Agent
+*entscheidet* sich für den Hintergrund. Das Shell-Werkzeug hat ein
+Standard-Timeout von 120 Sekunden, und ein längerer Lauf — eine Maven-Suite,
+ein Playwright-Lauf mit Dev-Server-Start — rutscht danach **von selbst** in den
+Hintergrund. Der Agent sieht „läuft weiter", wartet brav auf eine Meldung, und
+die kommt nie.
+
+„Synchron im Vordergrund" allein genügt darum nicht als Anweisung — der Agent
+befolgt sie und landet trotzdem im Hintergrund. In den Auftragstext gehört der
+konkrete Wert plus der Hinweis, dass es ein Parameter des Werkzeugs ist und
+nicht der Kommandozeile:
+
+> Setz den Timeout-Parameter des Shell-Werkzeugs ausdrücklich auf 600000 ms.
+> Verlass dich nicht auf den Standardwert — der liegt bei zwei Minuten und
+> schiebt deinen Lauf sonst von allein in den Hintergrund, wo dich seine
+> Fertigmeldung nicht mehr erreicht.
+
 ### Nach jedem Agenten-Abbruch: Halbzustand prüfen
 
 Stirbt ein Agent mitten in der Arbeit (Kontolimit, Timeout), ist der Worktree

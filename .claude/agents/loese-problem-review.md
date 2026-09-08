@@ -44,7 +44,11 @@ konkrete Zeile prüfst. Rohes Suchen quer durchs Projekt ist es nicht.
 ## 2. Selbst testen — keinem Bericht glauben
 
 Die Coding-Agenten haben nur ihre eigenen Tests gefahren — der volle Lauf ist
-deiner, und nur deiner. Synchron im Vordergrund, hohes Timeout.
+deiner, und nur deiner. Synchron im Vordergrund — und dabei den
+Timeout-Parameter des Shell-Werkzeugs **ausdrücklich auf 600000 ms setzen**.
+Der Standardwert liegt bei zwei Minuten; alles Längere rutscht danach von
+allein in den Hintergrund, und dort erreicht dich die Fertigmeldung als
+Subagent nicht mehr.
 
 **Output in eine Datei, nicht in deinen Kontext.** Ein Maven-Lauf sind
 tausende Zeilen; landen die mehrfach im Verlauf, ist das der teuerste Posten
