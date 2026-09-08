@@ -70,7 +70,7 @@ Abgenommenen Abschnitt sofort in den Feature-Branch mergen und **pushen**. Der
 Container kann eingesammelt werden, und ein Kontolimit kann die Pipeline
 jederzeit mitten in der Arbeit abreißen. Was nicht auf `origin` liegt, ist weg.
 
-### Review-Agent meldet „läuft noch" statt einer Ampel
+### Subagent meldet „läuft noch" statt eines Ergebnisses
 
 Ein Reviewer startete `npm run test` im Hintergrund und beendete seine Runde
 mit „ich melde mich, wenn die Suite fertig ist". Als Subagent bekommt er die
@@ -79,6 +79,18 @@ Fertigmeldung: per Nachricht an denselben Agenten weitermachen lassen
 (synchron im Vordergrund, hohes Timeout), nicht neu starten und nicht als
 abgenommen werten. Der Satz „Testläufe synchron im Vordergrund" gehört
 trotzdem in jeden Reviewer-Auftrag, nicht nur in die Agenten-Definition.
+
+**Das trifft Coding-Agenten genauso** (real, 08.09.2026): Ein Task startete
+`npm run build` im Hintergrund und beendete seine Runde mit „sobald die
+Fertigmeldung eintrifft, mache ich weiter" — ohne Commit, ohne Gates, mit
+Build-Artefakten im Arbeitsverzeichnis. Die Meldung kam nie.
+
+Regel für **jeden** Auftragstext, Coding wie Review: *Test- und Buildläufe
+ausschließlich synchron im Vordergrund mit hohem Timeout. Niemals im
+Hintergrund starten und auf eine Benachrichtigung warten — die erreicht dich
+als Subagent nicht.* Kommt trotzdem so eine Meldung zurück: **nicht** als
+fertig werten und **nicht** neu starten, sondern denselben Agenten per
+`SendMessage` weitermachen lassen; er kennt seinen Stand.
 
 ### Nach jedem Agenten-Abbruch: Halbzustand prüfen
 
