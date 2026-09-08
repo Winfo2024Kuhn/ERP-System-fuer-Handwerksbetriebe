@@ -77,6 +77,20 @@ describe('PhasenZeitleiste', () => {
         expect(screen.getByText('2 Std. pro Tag')).toBeInTheDocument();
     });
 
+    // Nachbesserung Abschnitt 5, Befund 1 (BLOCKER): halbe Stunden muessen mit
+    // deutschem Komma erscheinen ("4,5 Std."), nicht mit englischem Punkt.
+    it('zeigt halbe Stunden pro Tag mit deutschem Komma statt englischem Punkt', () => {
+        render(
+            <PhasenZeitleiste
+                phasen={[phase({ id: 1, typ: 'WIEDEREINGLIEDERUNG', vonDatum: '2026-04-01', bisDatum: null, stundenProTag: 4.5 })]}
+                heute="2026-04-01"
+            />,
+        );
+
+        expect(screen.getByText('4,5 Std. pro Tag')).toBeInTheDocument();
+        expect(screen.queryByText('4.5 Std. pro Tag')).not.toBeInTheDocument();
+    });
+
     it('hebt nur die heute tatsaechlich laufende Phase hervor', () => {
         render(
             <PhasenZeitleiste

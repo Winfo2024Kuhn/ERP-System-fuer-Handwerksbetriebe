@@ -18,6 +18,14 @@ interface StufenplanTabelleProps {
 }
 
 /**
+ * Deutsches Zahlenformat (Komma statt Punkt), z.B. 5.5 -> "5,5" -- dieselbe
+ * Regel wie in der Handy-App (toLocaleString('de-DE')). Nachbesserung
+ * Abschnitt 5, Befund 1 (BLOCKER): englische Dezimalpunkte in einer
+ * deutschen Oberfläche.
+ */
+const formatStunden = (n: number): string => n.toLocaleString('de-DE');
+
+/**
  * Wiedereingliederungs-Stufenplan als kleine Tabelle ("ab 01.04. — 2 Stunden
  * pro Tag"), Zeilen hinzufügbar. Reine Präsentationskomponente — die Liste
  * kommt per Props, Änderungen laufen über onHinzufuegen/onLoeschen zum
@@ -57,7 +65,7 @@ export function StufenplanTabelle({ phasen, onHinzufuegen, onLoeschen, maxStunde
         // 1 und N" suggerieren (Nachbesserung Abschnitt 2, Befund 4).
         const stundenZahl = Number(stunden.replace(',', '.'));
         if (!Number.isFinite(stundenZahl) || stundenZahl <= 0 || stundenZahl > maxStundenProTag) {
-            const meldung = `Stunden pro Tag müssen größer als 0 und höchstens ${maxStundenProTag} sein.`;
+            const meldung = `Stunden pro Tag müssen größer als 0 und höchstens ${formatStunden(maxStundenProTag)} sein.`;
             setFehler(meldung);
             toast.error(meldung);
             return;
@@ -122,7 +130,7 @@ export function StufenplanTabelle({ phasen, onHinzufuegen, onLoeschen, maxStunde
                                     {phase.bisDatum ? formatDatum(phase.bisDatum) : '—'}
                                 </td>
                                 <td className="min-w-0 px-3 py-2 tabular-nums">
-                                    {`${phase.stundenProTag ?? '—'} Std.`}
+                                    {`${phase.stundenProTag != null ? formatStunden(phase.stundenProTag) : '—'} Std.`}
                                 </td>
                                 <td className="px-3 py-2 text-right">
                                     <button
@@ -166,7 +174,7 @@ export function StufenplanTabelle({ phasen, onHinzufuegen, onLoeschen, maxStunde
                         max={maxStundenProTag}
                         value={stunden}
                         onChange={(e) => setStunden(e.target.value)}
-                        placeholder={`max. ${maxStundenProTag}`}
+                        placeholder={`max. ${formatStunden(maxStundenProTag)}`}
                         disabled={disabled}
                     />
                 </div>
