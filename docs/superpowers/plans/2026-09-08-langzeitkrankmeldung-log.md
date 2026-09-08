@@ -394,3 +394,54 @@ Bedenken / Abweichungen vom Plan:
   ZeiterfassungApi-Charakterisierungstest, findMitPhasen ohne DISTINCT)
   bleiben als Hinweise stehen und blockieren nicht.
 - Abschnitt 1 ist aus Sicht des Code-Reviews abgenommen.
+
+---
+
+# ⏸ HIER GEHT ES WEITER (Stand 08.09.2026, 16:35)
+
+Pause wegen Nutzungslimit. **Nichts ist verloren, nichts halb fertig.**
+
+## Wo wir stehen
+
+- **Abschnitt 1: 🟢 abgenommen**, gemerged und gepusht.
+  `origin/feature/langzeitkrankmeldung` = `a1e628b8`, lokal identisch.
+  Enthält Datenmodell, Migration V367, Repositories und die sechs
+  Charakterisierungs-Testklassen. Suite: 2488 Tests, genau die 4 bekannten
+  Baseline-Errors.
+- **Abschnitt 2 war gestartet und wurde sauber gestoppt**, bevor irgendein
+  Agent eine Datei geschrieben hat. Die drei Worktrees sind **leer** und auf
+  dem richtigen Branch — kein Halbzustand, nichts zu heilen.
+
+## Der nächste Schritt, ohne Nachdenken
+
+Drei Coding-Agenten (`loese-problem-coding`) parallel in **einer** Nachricht
+starten. Worktrees und Branches existieren bereits, **nicht** neu anlegen:
+
+| Task | Worktree | Branch |
+| --- | --- | --- |
+| 3 — `TagesSollService` | `../wt/lzk-task-3` | `lzk/task-3-tagessoll` |
+| 13 — Verrechnungslohn | `../wt/lzk-task-13` | `lzk/task-13-verrechnungslohn` |
+| 14 — Desktop-Bausteine | `../wt/lzk-task-14` | `lzk/task-14-bausteine` |
+
+`react-pc-frontend/node_modules` in `lzk-task-14` ist bereits als Symlink
+gesetzt und geprüft.
+
+**Wichtig für die Aufträge:**
+
+- Task 3 ist der Flaschenhals — er liefert die drei Größen `periodenSoll`,
+  `feiertagsGutschrift` und `arbeitsSoll`, und die
+  `TagesSollCharakterisierung*`-Tests müssen grün bleiben. Ohne ihn geht in
+  Abschnitt 3 nichts.
+- Task 13 und 14 hängen von niemandem ab. Wenn das Budget knapp ist: **Task 3
+  allein starten**, die anderen beiden später nachziehen.
+- Task 14: **kein** `npm ci`/`npm install` (Symlink!), und `ui-ux-pro-max`
+  **ohne** Namespace-Präfix aufrufen.
+
+Danach: mergen (`git merge --no-ff`), Code-Reviewer in eigenem Worktree,
+dann Abschnitt 3 mit den Tasks 4, 7, 8, 9, 10, 11 zusammen.
+
+## Danach noch offen
+
+Abschnitt 3 (Tasks 4, 7–11) → Abschnitt 4 (Tasks 5, 6, 12) →
+Abschnitt 5 (Tasks 15–19, Frontend, mit Design-Reviewer) → PR → Merge.
+Die Einteilung steht im Plan unter „## Abschnitts-Einteilung (Runden)".
