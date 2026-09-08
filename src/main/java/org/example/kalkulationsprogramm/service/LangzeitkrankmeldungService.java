@@ -623,11 +623,16 @@ public class LangzeitkrankmeldungService {
                                 BigDecimal::add)));
 
         Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
+        // Geplante Stunden EINMAL fuer den Gesamtzeitraum laden statt einmal
+        // pro Tag (Befund 2, Abschnitt 4) - vorher ein TagesSollService-Aufruf
+        // mit eigener Phasen-/Feiertagsabfrage je Schleifendurchlauf, gemessen
+        // 165 statt 9 Repository-Aufrufe fuer 42 Tage Wiedereingliederung.
+        Map<LocalDate, BigDecimal> geplantJeTag = tagesSollService.arbeitsSollJeTag(mitarbeiterId, konto, von, bis);
         List<StufenplanTagDto> tage = new ArrayList<>();
         for (LangzeitkrankmeldungPhase phase : wiedereingliederungsPhasen) {
             LocalDate phasenEnde = phase.getBisDatum() != null ? phase.getBisDatum() : LocalDate.now();
             for (LocalDate tag = phase.getVonDatum(); !tag.isAfter(phasenEnde); tag = tag.plusDays(1)) {
-                BigDecimal geplant = tagesSollService.arbeitsSoll(mitarbeiterId, konto, tag);
+                BigDecimal geplant = geplantJeTag.get(tag);
                 BigDecimal gestempelt = gestempeltProTag.getOrDefault(tag, BigDecimal.ZERO);
 
                 StufenplanTagDto tagDto = new StufenplanTagDto();

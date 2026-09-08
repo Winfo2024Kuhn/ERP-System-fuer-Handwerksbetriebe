@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -595,7 +596,16 @@ class LangzeitkrankmeldungServiceTest {
                 LocalDate.of(2020, 4, 13), LocalDate.of(2020, 4, 17), new BigDecimal("4.00")));
 
         when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
-        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), eq(zeitkonto), any())).thenReturn(new BigDecimal("4.00"));
+        // baueStufenplanTage laedt die geplanten Stunden seit Abschnitt 4
+        // (Befund 2) einmal fuer den Gesamtzeitraum statt einmal pro Tag -
+        // arbeitsSollJeTag ersetzt hier den frueheren Einzeltag-Mock.
+        Map<LocalDate, BigDecimal> geplantJeTag = new LinkedHashMap<>();
+        for (LocalDate tag = LocalDate.of(2020, 4, 13); !tag.isAfter(LocalDate.of(2020, 4, 17)); tag = tag
+                .plusDays(1)) {
+            geplantJeTag.put(tag, new BigDecimal("4.00"));
+        }
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), eq(zeitkonto), any(), any()))
+                .thenReturn(geplantJeTag);
 
         Zeitbuchung buchungMontag = new Zeitbuchung();
         buchungMontag.setStartZeit(LocalDate.of(2020, 4, 13).atTime(8, 0));
