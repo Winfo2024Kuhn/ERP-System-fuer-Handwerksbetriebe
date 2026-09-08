@@ -576,3 +576,542 @@ Bedenken / Abweichungen vom Plan:
   Feld direkt vom Backend gebraucht wird.
 - `git status` zeigt weiterhin `M src/main/resources/static/index.html`
   (Zeilenend-Normalisierung, laut Auftrag nicht anfassen) — nicht committet.
+
+## Abschnitt 2 — Review (Review-Agent)
+
+Zeit: 2026-09-08T16:05:00Z
+Branch: feature/langzeitkrankmeldung (gemergter Stand, 4b988c29)
+Geprueft: Diff e7ddce25..HEAD, Tasks 3, 13, 14
+Status: fertig
+Ampel: 🟡
+
+Testlaeufe (alle synchron, Output in Dateien):
+- `./mvnw -B test`: **2508 Tests, 0 Failures, 4 Errors** — exakt die vier
+  vorbestehenden (`AuditChainRepairIntegrationTest` x2,
+  `AuditHashRoundtripDiagnoseTest` x2, alle `CannotCreateTransaction`).
+  Erwartet waren 2508. Baseline gehalten.
+- `npm run lint` (react-pc-frontend): 0 Errors, 1 Warning
+  (`BelegeKasseEditor.tsx:1204`, bekannt). Gate gehalten.
+- `npx vitest run src/components/langzeitkrankmeldung/`: 2 Dateien, 12 Tests gruen.
+- `TagesSollCharakterisierung*` unveraendert (`git diff` leer) und gruen.
+
+Mutationsproben (alle danach zurueckgenommen, Baum sauber):
+- M1 periodenSoll haelt halben Feiertag nicht mehr → 2 Tests rot (die richtigen).
+- M2 feiertagsGutschrift auch ohne Feiertag → 7 Tests rot.
+- M3 Deckelung auf Zeitkonto-Soll entfaellt → 1 Test rot (der richtige).
+- M4 Stufenplan als harter Override ueber den Feiertag hinweg (E3 gebrochen)
+  → `wiedereingliederung_zweiStunden_amVollenFeiertag_bautKeineMinusstundenAuf`
+  rot. Der E3-Fall ist also wirklich abgedeckt.
+- M5 Typfilter der Stufenplan-Auswahl entfernt → **alle 18 Tests bleiben gruen.**
+  Testluecke, siehe Hinweise.
+- M6 `anwesenheitsFaktor` im Geschaeftsfuehrer-Zweig entfernt → alle 30 Tests
+  gruen. Testluecke, siehe Hinweise.
+
+Geprueft und in Ordnung:
+- Erzeugtes SQL von `sumStundenOhnePhasenTypen` ist ein echter LEFT JOIN,
+  `p IS NULL` wird zu `langzeitkrankmeldung_phase_id is null`. Ein normaler
+  Krankheitstag ohne Phasenbezug wird mitgezaehlt (Repo-Test misst 8.00).
+- `findImZeitraum` nutzt einen impliziten INNER JOIN auf `langzeitkrankmeldung`,
+  die Spalte ist `NOT NULL` — unkritisch.
+- Kein N+1 ueber Tage: `TagesSollService` laedt je Zeitraum genau einmal
+  (mit `times(1)`-Test), `VerrechnungslohnService` einmal je Mitarbeiter
+  ausserhalb aller Tagesschleifen.
+- Kein POST/PUT/PATCH/DELETE, kein Controller, kein `react-zeiterfassung` im
+  Abschnitts-Diff. Die PC-only-Vorgabe ist eingehalten.
+- DSGVO: nur Dummy-Namen (Max/Klaus/Petra Mustermann), Frontend-Tests ganz
+  ohne Personennamen, kein Logging im gesamten Diff, keine Diagnose-/Notizfelder.
+- Wording: alle sichtbaren Strings verwenden die vorgeschriebenen Begriffe,
+  kein "Entgeltfortzahlungszeitraum", kein "AU-Zeitraum", kein "Phase 1/2/3".
+- Design: rose-600 nur fuer Primaeraktion und laufende Phase, sonst slate,
+  Lucide-Icons, `rounded-lg`, `aria-label` an Icon-Buttons, Pflicht-Komponenten
+  (DatePicker, Button, Input, Label, useConfirm, useToast) genutzt.
+
+Fachliche Antwort zum Geschaeftsfuehrer-Zweig (Frage aus Task 13):
+Der Faktor gehoert auf **beide** Return-Punkte — die Einschaetzung des
+Projektinhabers stimmt. Der GF-Zweig existiert nicht, weil dort der Lohn
+anwesenheitsunabhaengig waere, sondern weil die **Quelle** der Lohnzahl eine
+andere ist (kalkulatorischer Lohn statt Lohnabrechnung) und die SV-Behandlung
+abweicht. Beide Zweige liefern gleichermassen eine Jahressumme. Entscheidend:
+der Stunden-Block kuerzt das Jahressoll des GF im selben Lauf. Wuerde man die
+Lohnseite ungekuerzt lassen, saenken die Stunden und die Kosten blieben —
+der Stundensatz schoesse nach oben, genau der Fehler, den der Kommentar im
+`werktagsSollOhneZeitkonto`-Block schon einmal beschreibt.
+
+Blockierende Befunde: keine.
+
+Bedenken / Abweichungen vom Plan (alle 🟡, blockieren nicht):
+- `TagesSollService.java:153` — der Typfilter `typ == WIEDEREINGLIEDERUNG` ist
+  ungetestet. Die beiden Tests fuer LOHNFORTZAHLUNG/KRANKENGELD setzen kein
+  `stundenProTag`, deshalb traegt sie die Null-Pruefung eine Zeile weiter.
+  `stunden_pro_tag` ist in `V367` `NULL`-erlaubt, aber nicht auf den Typ
+  eingeschraenkt. Ein Test mit KRANKENGELD-Phase **und** `stundenProTag = 2.00`
+  schliesst die Luecke.
+- `VerrechnungslohnService.java:264` — der `anwesenheitsFaktor` im
+  GF-Zweig ist ungetestet (M6 blieb gruen). Ein Testfall mit
+  `istGeschaeftsfuehrer = true` und Krankengeld-Phase fehlt.
+- `VerrechnungslohnService.java:274` — im Modus RUECKWIRKEND kommt `brutto`
+  aus echten Lohnabrechnungen, die den Krankengeld-Ausfall bereits abbilden.
+  Der Faktor kuerzt dann ein zweites Mal. Vorschlag: den Faktor auslassen,
+  wenn `zeile.getQuelle() == LohnQuelle.LOHNABRECHNUNG`.
+- `VerrechnungslohnService.java:452` — der Urlaubs-Default bekommt nicht den
+  gleichen `ausgeklammert.isEmpty()`-Schutz wie der Krankheits-Default. Fachlich
+  vertretbar (Urlaubsanspruch laeuft bei Langzeitkrankheit weiter), aber die
+  Asymmetrie gehoert kommentiert.
+- `VerrechnungslohnService.java:439` — `feiertagsstunden` zaehlt weiter alle
+  Feiertage des Jahres, waehrend `sollstunden` gekuerzt ist. Reine Anzeigegroesse,
+  keine Rechenwirkung, aber in einer Langzeitfall-Zeile inkonsistent.
+- `StufenplanTabelle.tsx:54` — Fehlertext sagt "zwischen 1 und N", die Pruefung
+  laesst aber jeden Wert > 0 durch (0,5 h waere gueltig). Text oder Pruefung
+  angleichen.
+- `StufenplanTabelle.tsx:144` — das `<Label>ab</Label>` hat kein `htmlFor` zum
+  DatePicker (das Stundenfeld daneben hat eins).
+- `TagesSollServiceTest.java` — kein Fall fuer eine Wiedereingliederungsphase
+  mit `stundenProTag == null` (Plan-Schritt "Phase ignorieren").
+
+## Abschnitt 3 — Task 9 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-9-abwesenheit
+Commit(s): 3e9ac0ee
+Status: blockiert (eigene Dateien fertig und gruen, Gate-Kommando insgesamt nicht gruen — Ursache liegt in einer Datei ausserhalb meines Task-Scopes, siehe Bedenken)
+
+Was gemacht wurde:
+- `AbwesenheitService`: `private final TagesSollService tagesSollService;` per Constructor Injection ergaenzt (`FeiertagService` bleibt, wird fuer die Feiertagssperre/-bezeichnung weiter gebraucht).
+- Zeile 60 `zeitkonto.getSollstundenFuerTag(wochentag)` durch `tagesSollService.arbeitsSoll(mitarbeiterId, zeitkonto, datum)` ersetzt, lokale Variable `wochentag` entfernt. Begruendung fuer `arbeitsSoll` (statt `periodenSoll`/`feiertagsGutschrift`): `bucheAbwesenheit` braucht "was tatsaechlich zu leisten ist" fuer einen Einzeltag als Basis fuer die zu buchenden Stunden — exakt das, was `arbeitsSoll` liefert (`periodenSoll - feiertagsGutschrift`), inkl. Wiedereingliederungs-Deckelung laut `TagesSollService`-Javadoc.
+- "Kein Arbeitstag"-Fehlermeldung um den Fall erweitert, dass eine Wiedereingliederung an dem Tag 0 Stunden vorsieht (Text bleibt sonst wie vorher, Substring "Kein Arbeitstag" unveraendert erhalten).
+- `halberTag` wirkt weiterhin als zusaetzliche Halbierung auf das von `tagesSollService.arbeitsSoll` ermittelte Tagessoll (Reihenfolge im Code unveraendert).
+- `AbwesenheitServiceTest`: `@Mock TagesSollService tagesSollService` ergaenzt, Stub in `stubGrunddaten()` (`arbeitsSoll(any,any,any) -> 8.00`), neuer Test `krankheit_WaehrendWiedereingliederung_BuchtStufenplanStundenStattVollemSoll` (2h Stufenplan statt 8h Soll). TDD befolgt: Test zuerst rot (UnnecessaryStubbingException bei den Altfaellen + Wertabweichung beim neuen Test), dann Produktivcode geaendert, danach 8/8 gruen.
+- Gate `AbwesenheitServiceTest`: 8/8 gruen (Tests run: 8, Failures: 0, Errors: 0).
+
+Bedenken / Abweichungen vom Plan:
+- **`TagesSollCharakterisierungAbwesenheitTest` wird durch die Umstellung rot (1 Failure, 2 Errors von 4 Tests), obwohl ich die Datei nicht angefasst habe.** Ursache: diese Testklasse (Task 2/Abschnitt 1) deklariert kein `@Mock TagesSollService`. Mockito injiziert `AbwesenheitService` dort ueber den (einzigen, von Lombok generierten) Konstruktor und setzt fuer den nicht gemockten `TagesSollService`-Parameter `null` ein — empirisch verifiziert (Fehlermeldung: "Cannot invoke ... because this.tagesSollService is null"). Betroffen: `krankheit_normalerArbeitstag_gibtVolleSollstunden` und `krankheit_halberTag_gibtVierStunden` (NullPointerException statt Ergebnis), `amSamstag_wirftKeinArbeitstag` (NullPointerException statt der erwarteten IllegalArgumentException). `anFeiertag_wirftAbwesenheitNichtErlaubt` bleibt gruen, weil die Feiertagspruefung schon vorher greift und `tagesSollService` gar nicht erst aufgerufen wird.
+- Das ist kein Zahlen-/Verhaltensfehler: fuer alle vier Fixture-Tage (kein Feiertag, keine Wiedereingliederung) liefert `tagesSollService.arbeitsSoll(...)` rechnerisch exakt denselben Wert wie vorher `zeitkonto.getSollstundenFuerTag(...)` (siehe `TagesSollService`-Javadoc: "Ohne laufende Langzeitkrankmeldung ist das Ergebnis bitgleich zum heutigen Bestand"). Es ist ein reines Mocking-/DI-Luecken-Problem aus Task 2, nicht ein numerischer Regressionsfehler.
+- Ich habe bewusst **keinen** Null-Fallback in `AbwesenheitService` eingebaut (z.B. "wenn `tagesSollService == null`, nimm den rohen Zeitkonto-Wert") — das waere testonly-Code in der Produktionsklasse und widerspraeche dem Sinn von Constructor Injection (garantiert nicht-null, siehe `BACKEND_ARCH.md`). Ich habe die Testdatei auch nicht angefasst, wie ausdruecklich verlangt.
+- Vorschlag fuer die Aufloesung (nicht selbst umgesetzt, da ausserhalb meines Datei-Scopes und explizit verboten): `TagesSollCharakterisierungAbwesenheitTest` um `@Mock private TagesSollService tagesSollService;` plus einen Stub ergaenzen, der fuer die vier Fixture-Tage denselben Wert wie das jeweilige `Zeitkonto` liefert (z.B. `arbeitsSoll(anyLong(), any(), any())` mit einem `thenAnswer`, das `getSollstundenFuerTag` auf dem uebergebenen `Zeitkonto`-Argument aufruft) — die vier bestehenden Assertions/Erwartungswerte muessten dabei unveraendert bleiben.
+- Moeglicherweise betrifft dieselbe Luecke andere Charakterisierungs-Tests im selben Abschnitt (z.B. `TagesSollCharakterisierungMonatsSaldoTest` bei Task 8, das laut Plan ebenfalls von `FeiertagService`- auf `TagesSollService`-Mocking umgestellt werden muesste) — nicht selbst geprueft, nur als Hinweis fuer den Abschnitts-Reviewer.
+
+## Abschnitt 3 — Task 11 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-11-zeitverwaltung
+Commit(s): 80d799f8
+Status: fertig
+
+Was gemacht wurde:
+- `ZeitverwaltungController.getKalender` auf `TagesSollService` (Task 3) umgestellt: `sollStunden` kommt jetzt aus `arbeitsSoll(...)`, die Feiertagsgutschrift auf der Ist-Seite aus `feiertagsGutschrift(...)`. Der alte Sonderzweig `feiertagDaten.contains(...) ? ZERO : ...` sowie der `if (feiertagDaten.contains(...))`-Block für die Ist-Stunden sind entfallen.
+- Neue Abhängigkeit `TagesSollService` in den Konstruktor (`@RequiredArgsConstructor`-Feldblock) ergänzt, kein Field-Injection.
+- Bugfix (bewusste Verhaltensänderung, Plan-Abschnitt "Bewusste Verhaltensänderungen" Punkt 1): an halben Feiertagen (z.B. Heiligabend) wurden bisher die vollen Sollstunden als Ist-Stunden gutgeschrieben, obwohl `sollStundenMonat` den halben Feiertag schon immer korrekt halbierte → +4h Phantom-Überstunden pro halbem Feiertag, Widerspruch zur Monatsübersicht. Jetzt liefert `feiertagsGutschrift()` an halben Feiertagen korrekt die halbe Stundenzahl.
+- `TagesSollCharakterisierungKalenderTest`: **genau eine** Zusicherung geändert — `tage[23].istStunden` von `8` (alter Wert = der Bug) auf `4.00` (neuer Wert = korrekt), mit Kommentar an der Zusicherung selbst und im Klassen-Javadoc. Alle anderen Zusicherungen (`tage[0].sollStunden==8`, `tage[23].sollStunden==0`, `tage[24].sollStunden==0`) unverändert.
+- `ZeitverwaltungControllerTest`: zwei neue Tests ergänzt — `getKalender_WiedereingliederungReduziertSollStundenAnArbeitstag` (Plan-Vorgabe: 2h/Tag während laufender Wiedereingliederung → `tage[].sollStunden == 2.00` an einem normalen Arbeitstag) und `getKalender_HalberFeiertagLiefertHalbeIstStundenUndStimmtMitMonatsuebersichtUeberein` (nagelt den Bugfix fest: halber Feiertag liefert jetzt 4 statt 8 Ist-Stunden, `istStundenMonat`/`sollStundenMonat`/`differenz` zeigen netto 0 statt +4 Phantom-Überstunden). Bestehender Test 1 (`getKalender_LiefertEchteAbwesenheitIdFuerKrankheit`) um Stubs für das neue `@MockBean TagesSollService` ergänzt, unverändert in der Aussage.
+- TDD eingehalten: alle drei geänderten/neuen Testfälle vor der Controller-Änderung rot gefahren (Assertion-Mismatches `expected 4.0/2.0 but was 8.0`), danach grün.
+- Gates: `./mvnw -B test -Dtest=ZeitverwaltungControllerTest,TagesSollCharakterisierungKalenderTest` → `Tests run: 5, Failures: 0, Errors: 0`, `BUILD SUCCESS`.
+
+Bedenken / Abweichungen vom Plan:
+- Performance (N+1, dokumentiert wie im Plan-Schritt "Performance" für Task 11 vorgesehen): `arbeitsSoll`/`feiertagsGutschrift` werden pro Tag einzeln aufgerufen (bis zu 31×2 Aufrufe/Monat), jeder Aufruf lädt intern per `LangzeitkrankmeldungPhaseRepository.findImZeitraum` und `FeiertagService` erneut. Eine Batch-Alternative (`TagesSollService.arbeitsSollJeTag(...)`) hätte eine Änderung an `TagesSollService.java` erfordert — das liegt außerhalb der für diesen Task erlaubten Dateien (`ZeitverwaltungController.java`, `ZeitverwaltungControllerTest.java`, `TagesSollCharakterisierungKalenderTest.java`). Der Plan sieht für genau diesen Fall den "Standardweg" (pro Tag rufen, im Kontext-Log vermerken) explizit als zulässig vor — dabei belassen.
+- Sonst keine Abweichungen vom Plan.
+
+## Abschnitt 3 — Task 10 (Coding-Agent)
+
+Zeit: 2026-09-08T16:40:39Z
+Branch: lzk/task-10-zeiterfassung-api
+Commit(s): b85cc567c382f674e7c0e862ca57dfa07b21b422
+Status: fertig
+
+Was gemacht wurde:
+- `ZeiterfassungApiService.berechneFeiertagsStunden` (private Methode, wortgleiche
+  Kopie aus `MonatsSaldoService`) ersatzlos gelöscht. `TagesSollService` als
+  13. Konstruktor-Parameter ergänzt (`@RequiredArgsConstructor`-Feldblock,
+  hinter `auditService`), Field-Injection-Felder unangetastet gelassen.
+- Einziger Aufrufer (`berechneAnteiligenMonatIst`) ruft jetzt
+  `tagesSollService.feiertagsGutschriftSumme(mitarbeiterId, zeitkonto, von, bis)`
+  — die Summenmethode für Zeiträume, keine Tagesschleife mit Repository-Zugriff.
+- `ZeiterfassungApiServiceConcurrencyTest` und
+  `ZeiterfassungApiServiceVerspaeteterStopTest`: `@Mock private TagesSollService
+  tagesSollService;` ergänzt, Konstruktoraufruf um das Argument erweitert.
+  Keine Stubbings nötig, da beide Testklassen den Feiertagspfad nicht berühren.
+- `TagesSollCharakterisierungZeiterfassungApiTest` (Task-2-Datei, Zugriffsweg-
+  Anpassung ausdrücklich vom Auftraggeber erlaubt): der ReflectionTestUtils-
+  Aufruf auf die jetzt gelöschte private Methode lief ins Leere. Zugriffsweg
+  umgestellt auf eine selbst gebaute `TagesSollService`-Instanz
+  (`new TagesSollService(feiertagService, phaseRepository)`), Aufruf über
+  `tagesSollService.feiertagsGutschrift(mitarbeiterId, zeitkonto, tag)`
+  (Einzeltag-Variante statt Summe, weil alle drei Testfälle von == bis
+  verwenden). Die dafür jetzt ungenutzten Mocks/den ungenutzten Aufbau von
+  `ZeiterfassungApiService` in diesem Test entfernt, da nichts mehr darauf
+  zugreift. Erwartete Zahlen unverändert: voller Feiertag 8, halber Feiertag
+  4.00, Feiertag am Wochenende 0. Nur der Zugriffsweg geändert, keine Zahl.
+- Gate: `ZeiterfassungApiServiceConcurrencyTest` (8), `Verspaeteter­StopTest` (7),
+  `TagesSollCharakterisierungZeiterfassungApiTest` (3) — 18 Tests, 0 Failures,
+  0 Errors, BUILD SUCCESS.
+- `git status` zeigte zusätzlich `M src/main/resources/static/index.html`
+  (Zeilenende-Normalisierung) — nicht angefasst, nicht committet.
+
+Bedenken / Abweichungen vom Plan:
+- Plan-Step "TagesSollCharakterisierungZeiterfassungApiTest unverändert grün
+  halten" ließ sich wörtlich nicht einhalten, weil der Reflection-Zugriffsweg
+  an der gelöschten privaten Methode hing (bereits im Auftrag als bekannte,
+  erlaubte Abweichung benannt — "laut statt still"). Umgesetzt wie im Auftrag
+  vorgegeben: nur der Zugriffsweg geändert, alle drei erwarteten Zahlen (8,
+  4.00, 0) identisch belassen.
+- Sonst keine Abweichung vom Task-10-Block im Plan; Zeilennummern und
+  vorgeschlagener Ersatz-Code (`tagesSollService.feiertagsGutschriftSumme(...)`)
+  stimmten exakt mit dem tatsächlichen Dateizustand überein.
+## Abschnitt 3 — Task 8 (Coding-Agent)
+
+Zeit: 2026-09-08T16:41:09Z
+Branch: lzk/task-8-monatssaldo
+Commit(s): bd1e93a3
+Status: fertig
+
+Was gemacht wurde:
+- `MonatsSaldoService`: Feld `FeiertagService feiertagService` durch `TagesSollService tagesSollService` ersetzt (Constructor Injection via `@RequiredArgsConstructor`, keine Field-Injection).
+- Private Methode `berechneFeiertagsStunden(Zeitkonto, LocalDate, LocalDate)` ersatzlos gelöscht (Tagesschleife komplett entfernt, kein N+1 mehr).
+- Aufruf in `berechneMonatsSaldo` (Kommentar "4. Feiertagsstunden") ruft jetzt `tagesSollService.feiertagsGutschriftSumme(mitarbeiterId, zeitkonto, ersterTag, letzterTag)` — bewusst **nicht** `periodenSoll`/`periodenSollSumme`, das wäre die andere Semantik aus `ZeitkontoService`.
+- `sollStunden` unverändert bei `zeitkontoService.berechneSollstundenFuerMonat(...)` gelassen (nach Task 7 automatisch neuer `periodenSoll`) — nicht doppelt umgebaut, wie im Plan gefordert.
+- Ungenutztes `RoundingMode`-Import entfernt (nur von der gelöschten Methode gebraucht).
+- `MonatsSaldoServiceTest` (TDD): `@Mock FeiertagService` durch `@Mock TagesSollService` ersetzt, alle `istFeiertag`/`istHalberFeiertag`-Stubs auf `tagesSollService.feiertagsGutschriftSumme(eq(mitarbeiterId), eq(testZeitkonto), eq(ersterTag), eq(letzterTag))` umgestellt, erwartete Zahlen unverändert gelassen. RED vor der Produktionsänderung verifiziert (NPE auf `feiertagService`), GREEN danach: 36/36 Tests, 0 Failures, 0 Errors.
+- Gate-Lauf `./mvnw -B test -Dtest='MonatsSaldoServiceTest,TagesSollCharakterisierungMonatsSaldoTest'`: `MonatsSaldoServiceTest` vollständig grün (36 Tests). Gesamtergebnis 39 Tests, 0 Failures, 3 Errors (BUILD FAILURE) — die 3 Errors kommen ausschließlich aus `TagesSollCharakterisierungMonatsSaldoTest`, siehe Bedenken.
+
+Bedenken / Abweichungen vom Plan:
+- **Blocker im Sicherheitsnetz, nicht durch mich behebbar:** `TagesSollCharakterisierungMonatsSaldoTest` (Task 2, Datei darf ich laut Task-Auftrag nicht anfassen) mockt nur `FeiertagService`, nie `TagesSollService`. Mockitos `@InjectMocks`-Konstruktor-Injection füllt einen Konstruktor-Parameter, für den kein passendes `@Mock` in der Testklasse deklariert ist, stillschweigend mit `null` (kein Fehler beim Erzeugen des Objekts) — belegt am bestehenden `self`-Feld in `MonatsSaldoServiceTest`, das genau deshalb manuell per `ReflectionTestUtils.setField` gesetzt wird, weil `@InjectMocks` es nicht automatisch befüllt. Sobald `MonatsSaldoService` einen Konstruktor-Parameter vom Typ `TagesSollService` bekommt (vom Plan für Task 8 zwingend gefordert), bleibt `tagesSollService` in `TagesSollCharakterisierungMonatsSaldoTest` `null`, und alle drei Tests werfen beim Aufruf von `getOrBerechne` eine `NullPointerException` — **nicht** weil sich eine berechnete Zahl geändert hätte. Ich habe das rechnerisch geprüft: `TagesSollService.feiertagsGutschriftSumme` liefert ohne laufende Langzeitkrankmeldung bitgenau dieselben Werte (8 / 4.00 / 0) wie die alte private Methode — das Problem ist rein Mockito-Verdrahtung, keine Verhaltensänderung.
+- Ich habe geprüft, ob eine andere Implementierung das umgeht (z.B. `FeiertagService` zusätzlich behalten, oder `tagesSollService` per `@Autowired @Lazy`-Feld statt Konstruktor injizieren wie beim bestehenden `self`-Feld): keine Variante hilft, weil in jedem Fall ein neuer Verweis auf `TagesSollService` existiert, für den die Charakterisierungs-Testdatei keinen Mock deklariert — und genau das darf ich laut Auftrag nicht nachtragen.
+- Betrifft vermutlich nicht nur Task 8: `TagesSollCharakterisierungZeitkontoTest`, `...AbwesenheitTest`, `...ZeiterfassungApiTest` dürften an derselben Stelle bei Task 7, 9, 10 brechen, sobald diese Services ebenfalls `TagesSollService` statt `FeiertagService` injizieren — aus meinem Task heraus nicht verifizierbar (andere Dateien), aber der Abschnitts-Reviewer sollte das einplanen.
+- Vorschlag für die Behebung (außerhalb meines Dateikreises, Task 8 darf laut Auftrag nur `MonatsSaldoService.java`/`MonatsSaldoServiceTest.java` anfassen): in `TagesSollCharakterisierungMonatsSaldoTest` ein `@Mock private TagesSollService tagesSollService;` ergänzen und je Testfall `lenient().when(tagesSollService.feiertagsGutschriftSumme(eq(1L), eq(testZeitkonto), any(), any())).thenReturn(<8.00|4.00|0>)` stubben — die bereits festgehaltenen Erwartungswerte (8 / 4.00 / 0) bleiben dabei unverändert, es ändert sich nur die Mock-Quelle.
+- `git status` zeigt laut Auftrag `M src/main/resources/static/index.html` (Zeilenende-Normalisierung) — nicht angefasst, wie vorgegeben.
+
+## Abschnitt 3 — Task 4 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-4-service
+Commit(s): e84996a2
+Status: fertig
+
+Was gemacht wurde:
+- `LangzeitkrankmeldungService` neu angelegt (`service/LangzeitkrankmeldungService.java`):
+  Anlegen (42-Tage-Lohnfortzahlung = Beginn + 41 Tage, ueberschreibbar),
+  Aendern, Statusuebergaenge beenden/wiederEroeffnen/abbrechen (inkl. aller
+  verbotenen Uebergaenge inkl. Selbstausschluss bei der
+  Ueberlappungspruefung), Phasenverwaltung (phaseHinzufuegen/phaseAendern/
+  phaseLoeschen) mit voller Regelpruefung (Ueberlappung, Luecke, hoechstens
+  eine offene Phase am Ende, stundenProTag-Pflicht/-Verbot je Typ, Deckelung
+  am Zeitkonto-Tagessoll), verknuepfeAbwesenheiten (eine Abfrage, FK je Tag
+  gesetzt oder zurueckgesetzt), Monats-Cache-Invalidierung, toDto (inkl.
+  Stufenplan-Tage mit ueberPlan-Markierung), getMobileStand (rein lesend,
+  nur 5 Felder: phase/phaseLabel/heuteGeplanteStunden/seit/bisDatum - kein
+  Name, keine Notiz), pruefeUrlaubsHinweise.
+- Fuenf DTOs neu unter `dto/Langzeitkrankmeldung/`: LangzeitkrankmeldungDto,
+  LangzeitkrankmeldungPhaseDto, StufenplanTagDto, LangzeitkrankmeldungAnlegenRequest,
+  LangzeitkrankmeldungPhaseRequest.
+- `LangzeitkrankmeldungServiceTest` (39 Tests, Mockito): 42-Tage-Rechnung,
+  ueberschreibbares Lohnfortzahlungsdatum, Ueberlappung wird abgelehnt,
+  ABGEBROCHEN blockiert nicht, alle sechs Phasen-Regeln einzeln (Ueberlappung,
+  Luecke, zwei offene Phasen, Wiedereingliederung ohne Stunden, andere Typen
+  mit Stunden, Stufenplan-Stunden ueber Zeitkonto-Soll), jeder verbotene
+  Statusuebergang, verknuepfeAbwesenheiten setzt FK korrekt (inkl. Rueckbau
+  auf null fuer Tage ausserhalb einer Phase), getMobileStand liefert {} ohne
+  Meldung und eigene DSGVO-Zusicherung (kein Name/keine Notiz im Ergebnis).
+- Gate: `./mvnw -B test -Dtest=LangzeitkrankmeldungServiceTest` ->
+  Tests run: 39, Failures: 0, Errors: 0, BUILD SUCCESS.
+
+Oeffentliche Signaturen (fuer Tasks 5, 6, 12 und Frontend):
+```
+@Service @RequiredArgsConstructor @Transactional(readOnly = true)
+public class LangzeitkrankmeldungService {
+    @Transactional Langzeitkrankmeldung anlegen(Long mitarbeiterId, LocalDate beginn, LocalDate lohnfortzahlungBis, String notiz);
+    @Transactional Langzeitkrankmeldung aendern(Long id, LocalDate beginn, LocalDate lohnfortzahlungBis, String notiz);
+    @Transactional Langzeitkrankmeldung beenden(Long id, LocalDate ende);
+    @Transactional Langzeitkrankmeldung wiederEroeffnen(Long id);
+    @Transactional Langzeitkrankmeldung abbrechen(Long id);
+    @Transactional Langzeitkrankmeldung phaseHinzufuegen(Long id, LangzeitkrankmeldungPhaseTyp typ, LocalDate vonDatum, LocalDate bisDatum, BigDecimal stundenProTag);
+    @Transactional Langzeitkrankmeldung phaseAendern(Long id, Long phasenId, LangzeitkrankmeldungPhaseTyp typ, LocalDate vonDatum, LocalDate bisDatum, BigDecimal stundenProTag);
+    @Transactional Langzeitkrankmeldung phaseLoeschen(Long id, Long phasenId);
+    List<Langzeitkrankmeldung> finde(LangzeitkrankmeldungStatus status);
+    Langzeitkrankmeldung findeMitPhasen(Long id);
+    Optional<LangzeitkrankmeldungPhase> findePhase(Long mitarbeiterId, LocalDate stichtag);
+    int restTageLohnfortzahlung(Langzeitkrankmeldung meldung, LocalDate stichtag);
+    LangzeitkrankmeldungDto toDto(Langzeitkrankmeldung meldung, boolean mitStufenplanTagen);
+    Map<String, Object> getMobileStand(String loginToken, LocalDate stichtag);
+    List<String> pruefeUrlaubsHinweise(Long mitarbeiterId, LocalDate von, LocalDate bis);
+}
+```
+DTO-Felder exakt wie im Plan spezifiziert:
+- `LangzeitkrankmeldungDto`: id, mitarbeiterId, mitarbeiterName ("Nachname, Vorname"),
+  beginn, ende, status, statusLabel, lohnfortzahlungBis, notiz, version,
+  aktuellePhaseTyp, aktuellePhaseLabel, restTageLohnfortzahlung (Integer, negativ =
+  ueberschritten), heuteGeplanteStunden (BigDecimal, nur bei laufender
+  Wiedereingliederung sonst null), geplanteRueckkehr, phasen (List<LangzeitkrankmeldungPhaseDto>),
+  stufenplanTage (List<StufenplanTagDto>, nur befuellt wenn mitStufenplanTagen=true).
+- `LangzeitkrankmeldungPhaseDto`: id, typ, label, vonDatum, bisDatum, stundenProTag.
+- `StufenplanTagDto`: datum, geplanteStunden, gestempelteStunden, ueberPlan (boolean).
+- `LangzeitkrankmeldungAnlegenRequest`: mitarbeiterId, beginn, lohnfortzahlungBis, notiz
+  (fuer Task 5 gedacht, auch fuer PUT/aendern nutzbar - dort bleibt mitarbeiterId unbeachtet).
+- `LangzeitkrankmeldungPhaseRequest`: typ, vonDatum, bisDatum, stundenProTag.
+
+Bedenken / Abweichungen vom Plan:
+- Der Plan spezifiziert fuer die Request-DTOs (LangzeitkrankmeldungAnlegenRequest,
+  LangzeitkrankmeldungPhaseRequest) keine expliziten Feldlisten (nur die drei
+  Haupt-DTOs sind im Plan detailliert). Felder wurden aus den Service-Signaturen
+  von anlegen/aendern bzw. phaseHinzufuegen/phaseAendern abgeleitet. Task 5
+  (Controller) sollte das beim Bauen der Request-Bodies gegenpruefen.
+- `baueStufenplanTage` ruft `tagesSollService.arbeitsSoll(...)` je Tag des
+  Wiedereingliederungs-Zeitraums auf (so vom Plan fuer Task 4 explizit
+  vorgeschrieben: "geplanteStunden aus tagesSollService.arbeitsSoll"). Das
+  Task-3-Interface bietet fuer Einzeltage nur eine Methode, die intern selbst
+  wieder `phaseRepository.findImZeitraum` fuer genau diesen einen Tag abfragt
+  (kein Batch-Pendant fuer Pro-Tag-Werte, nur `...Summe` fuer den Gesamtwert).
+  Das ist strenggenommen ein N+1 innerhalb dieser einen Detailseiten-Methode,
+  aber bewusst so vom Plan vorgegeben, auf den kurzen (typischerweise
+  wochenlangen) Wiedereingliederungs-Zeitraum begrenzt und nur aktiv, wenn
+  `mitStufenplanTagen=true` (Detailseite einer einzelnen Meldung, keine Liste).
+  Aenderung an TagesSollService/dessen Repository liegt ausserhalb der Files
+  dieses Tasks - nicht angefasst. Zur Kenntnisnahme fuer den Abschnitts-Reviewer.
+- `git status` zeigt laut Auftrag `M src/main/resources/static/index.html`
+  (Zeilenende-Normalisierung) - in diesem Worktree tatsaechlich nicht
+  aufgetreten (`git status --porcelain` zeigte nur die eigenen neuen Dateien),
+  nicht angefasst, kein Handlungsbedarf.
+
+## Abschnitt 3 — Task 10, Nachtrag (Coding-Agent)
+
+Zeit: 2026-09-08T16:55:00Z
+Branch: lzk/task-10-zeiterfassung-api
+Commit(s): b85cc567c382f674e7c0e862ca57dfa07b21b422 (unveraendert, kein neuer Commit)
+Status: fertig
+
+Was gemacht wurde:
+- Auf Rückfrage des Koordinators die Gegenprobe für
+  `TagesSollCharakterisierungZeiterfassungApiTest` nachgeholt: pro Test
+  einen Stub testweise auf einen falschen Wert gesetzt
+  (`vollerFeiertag_ergibtAchtStunden`: `istHalberFeiertag` fälschlich `true`;
+  `halberFeiertag_ergibtVierStunden`: `istHalberFeiertag` fälschlich `false`),
+  Testklasse allein gefahren. Beide Tests wurden korrekt rot
+  (`expected: <0> but was: <1>` bzw. `<-1>`, `Tests run: 3, Failures: 2`) —
+  der dritte Test (`feiertagAmWochenende_ergibtNull`, kein Stub involviert)
+  blieb unberührt grün. Anschließend beide Stubs zurückgenommen,
+  `git diff` gegen den Commit bestätigt leer, vollständiges Gate erneut
+  gefahren: 18 Tests, 0 Failures, 0 Errors, BUILD SUCCESS.
+- Stubbing-Stil bestätigt: pro Fixture-Tag konkreter Wert
+  (`when(feiertagService.istFeiertag(VOLLER_FEIERTAG))...`), kein `any()`.
+  `phaseRepository` bewusst ungestubbt gelassen (Mockito-Standard: leere
+  Liste) — entspricht der Testabsicht "ohne laufende Langzeitkrankmeldung".
+
+Bedenken / Abweichungen vom Plan:
+- Keine neuen. Ergänzt nur die bereits im ersten Block vermerkte
+  Zugriffsweg-Anpassung um den Beleg der Gegenprobe.
+
+### Nachtrag zu Abschnitt 3 — Task 11 (Coding-Agent): Gegenproben auf Koordinator-Hinweis
+
+Auf Hinweis des Koordinators (Stub-Verkabelung vs. Zusicherungen, Gegenproben-Pflicht) zwei Mutationsproben gefahren, danach wieder zurückgenommen (`git diff` gegen Commit 80d799f8 danach leer):
+
+1. **Falscher Stub-Wert:** in `TagesSollCharakterisierungKalenderTest` den Stub für `feiertagsGutschrift(...)` am 24.12. testweise von `4.00` auf `8.00` (falsch) geändert → Test wurde **rot** (`expected:<4.0> but was:<8.0>`). Zeigt: der Test hängt wirklich am gestubbten Wert, nicht an einer festen Erwartung ohne Bezug zur Verkabelung.
+2. **Bugfix zurückgebaut:** in `ZeitverwaltungController.getKalender` den `feiertagsGutschrift`-Aufruf testweise durch die alte Logik (`if (feiertagDaten.contains(...)) istStunden.add(zeitkonto.getSollstundenFuerTag(...))`) ersetzt → genau `getKalender_HalberFeiertagLiefertHalbeIstStundenUndStimmtMitMonatsuebersichtUeberein` wurde **rot** (`expected:<4.0> but was:<8.0>`), die anderen 3 Tests blieben grün. Zeigt: der neue Test nagelt den Bugfix wirklich fest, nicht nur zufällig.
+
+Beide Änderungen zurückgenommen, danach erneut `./mvnw -B test -Dtest=ZeitverwaltungControllerTest,TagesSollCharakterisierungKalenderTest` → `Tests run: 5, Failures: 0, Errors: 0`, `BUILD SUCCESS`. Kein neuer Commit nötig (Arbeitsverzeichnis wieder identisch mit 80d799f8).
+
+## Abschnitt 3 — Task 7 (Coding-Agent)
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/task-7-zeitkonto
+Commit(s): b3ce21ec (ZeitkontoService auf TagesSollService umstellen), 99f50432 (TagesSollCharakterisierungZeitkontoTest auf TagesSollService-Mock umstellen)
+Status: fertig
+
+Was gemacht wurde:
+- `ZeitkontoService.berechneSollstundenFuerZeitraum` (Zeile 113) ist jetzt ein
+  Einzeiler: `return tagesSollService.periodenSollSumme(mitarbeiterId, konto, von, bis)`.
+  Verwendete Methode: `TagesSollService.periodenSollSumme` (Summenmethode, kein
+  Schleifenaufruf pro Tag — kein N+1).
+- Feld `private final FeiertagService feiertagService;` durch
+  `private final TagesSollService tagesSollService;` ersetzt (Constructor Injection
+  über `@RequiredArgsConstructor`, unverändert).
+- `konto.getMitarbeiter()` wird vor dem Aufruf auf `null` geprüft (Alt-Testdaten);
+  bei `null` wird `mitarbeiterId = null` an `periodenSollSumme` durchgereicht.
+- `ZeitkontoServiceTest`: `@Mock FeiertagService` durch `@Mock TagesSollService`
+  ersetzt, die vier Feiertags-Zahlentests durch drei Delegations-Tests ersetzt
+  (Rückgabewert + Aufrufargumente werden geprüft, keine Zahlen mehr nachgerechnet).
+- Laufender Konflikt entdeckt und mit dem Koordinator geklärt: nach der Umstellung
+  lief `TagesSollCharakterisierungZeitkontoTest` (Task 2, außerhalb meiner
+  Files-Liste) mit NullPointerException, weil `@InjectMocks` den neuen
+  Konstruktor-Parameter `TagesSollService` ohne passenden `@Mock` nicht mehr
+  auffüllen konnte. Koordinator hat die Verkabelungs-Anpassung an dieser Datei
+  ausdrücklich freigegeben (nur Mocking/Stubbing, keine Zusicherungen). Umgesetzt:
+  `@Mock TagesSollService` ergänzt, Stubs von `feiertagService.istHalberFeiertag`
+  auf `tagesSollService.periodenSollSumme(1L, zeitkonto, von, bis)` umgestellt,
+  pro Fixture-Tag exakt der bisherige Wert (8 / 0 / 8 / 4.00 / 0 / 40) — kein
+  einziger erwarteter Zahlenwert, keine Test-Methode, keine Fallzahl geändert.
+  Gegenprobe durchgeführt: zwei Stubs testweise auf falsche Werte gesetzt
+  (`montag_normalerArbeitstag...` auf 99 statt 8, `samstag_wochenende...` auf 3
+  statt 0) → genau diese zwei Tests liefen rot (AssertionFailedError), die
+  anderen vier blieben grün. Danach beide Stubs zurückgenommen, erneuter Lauf
+  wieder 12/12 grün. Damit ist belegt: die Zusicherungen prüfen weiterhin echtes
+  Verhalten, nicht nur die Verkabelung.
+- Gate `./mvnw -B test -Dtest='ZeitkontoServiceTest,TagesSollCharakterisierungZeitkontoTest'`:
+  12 Tests, 0 Failures, 0 Errors, BUILD SUCCESS (exit=0).
+
+Bedenken / Abweichungen vom Plan:
+- Der Plan-Schritt "`TagesSollCharakterisierungZeitkontoTest` unverändert grün
+  halten" war so ohne Zusatzabsprache nicht erfüllbar: jede Umstellung, die
+  `TagesSollService` per Constructor Injection in `ZeitkontoService` einbaut,
+  lässt eine Testklasse, die nur `FeiertagService` mockt, mit `tagesSollService
+  == null` zurück. Koordinator hat die Regel präzisiert (Verkabelung darf
+  angepasst werden, Zusicherungen nicht) und das Vorgehen freigegeben — siehe
+  oben. Empfehlung für künftige Pläne mit derselben Struktur: die Klarstellung
+  gleich in den Plan-Text für Task 7 aufnehmen, damit der nächste Agent nicht
+  erst empirisch draufstoßen muss.
+## Abschnitt 3 — Task 8 (Coding-Agent, Nachtrag)
+
+Zeit: 2026-09-08T17:02:39Z
+Branch: lzk/task-8-monatssaldo
+Commit(s): 591d100c
+Status: fertig
+
+Was gemacht wurde:
+- Koordinator hat die zuvor gemeldete Bedenken-Notiz (siehe Block oben) praezisiert: "Diese Testdatei fasst du nicht an" zielte auf die **Zusicherungen**, nicht auf die Mockito-Verkabelung. Verkabelungs-Anpassungen an `TagesSollCharakterisierungMonatsSaldoTest` sind erlaubt, solange jede erwartete Zahl und jeder Testfall unveraendert bleiben.
+- `TagesSollCharakterisierungMonatsSaldoTest`: `@Mock FeiertagService` durch `@Mock TagesSollService` ersetzt. `stubStandardMocks` stubbt jetzt `tagesSollService.feiertagsGutschriftSumme(eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag))` statt `feiertagService.istFeiertag`/`istHalberFeiertag` — mit exakten `eq()`-Matchern, keine `any()`-Pauschale, damit ein falscher Stub-Wert den Test tatsaechlich rot werden laesst.
+- Die drei Erwartungswerte (voller Feiertag `8.00`, halber `4.00`, Feiertag am Wochenende `0`) und alle drei Testfaelle unveraendert uebernommen — nur die Methodensignatur von `stubStandardMocks` musste von `(int, int, LocalDate, boolean)` auf `(int, int, BigDecimal)` angepasst werden, weil die Tagesschleife jetzt in `TagesSollService` liegt und dieser Test nur noch das Ergebnis am Rand mockt.
+- Gegenprobe durchgefuehrt: Stub in `vollerFeiertag_ergibtAchtStundenGutschrift` testweise auf `99.00` gesetzt → Test wurde rot (`AssertionFailedError`, "war: 99.00"). Danach zurueckgesetzt auf `8.00` und erneut gruen verifiziert. Damit ist belegt, dass der Test einen falschen Wert tatsaechlich faengt und nicht nur sich selbst bestaetigt.
+- Finaler Gate-Lauf `./mvnw -B test -Dtest='MonatsSaldoServiceTest,TagesSollCharakterisierungMonatsSaldoTest'`: 39 Tests, 0 Failures, 0 Errors, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Die im vorigen Block dokumentierte Blocker-Bedenken ist damit aufgeloest. Bleibt bestehen: dieselbe Mockito-Verkabelungsluecke betrifft vermutlich `TagesSollCharakterisierungZeitkontoTest`, `...AbwesenheitTest`, `...ZeiterfassungApiTest` bei Task 7, 9, 10 — falls deren Agenten dieselbe Koordinator-Praezisierung noch nicht erhalten haben, betrifft sie dieselbe Klasse von Problem.
+
+## Abschnitt 3 — Task 9 (Coding-Agent, Nachbesserung)
+
+Zeit: 2026-09-08T00:30:00Z
+Branch: lzk/task-9-abwesenheit
+Commit(s): d549a233 (auf 3e9ac0ee)
+Status: fertig
+
+Befund/Klarstellung, die behoben wurde: Koordinator hat praezisiert, dass die
+Regel "TagesSollCharakterisierungAbwesenheitTest nicht anfassen" sich auf die
+Zusicherungen bezieht, nicht auf die Mockito-Verkabelung. Ein Test, der nur
+wegen eines neuen, ungemockten Konstruktor-Parameters mit NullPointerException
+faellt, misst nichts — ihn wieder lauffaehig zu machen ist keine Aufweichung
+des Sicherheitsnetzes.
+
+Was gemacht wurde:
+- `TagesSollCharakterisierungAbwesenheitTest`: `@Mock TagesSollService tagesSollService` ergaenzt. Stubs pro Fixture-Tag statt pauschal `any()`: `arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG_NORMAL) -> 8.00` in `stubGrunddaten()`, `arbeitsSoll(MITARBEITER_ID, testZeitkonto, SAMSTAG_WOCHENENDE) -> 0.00` im Samstag-Test — jeweils exakt der Wert, den vorher der rohe Zeitkonto-Wert lieferte. Keine Zahl, keine Exception-Erwartung, keine Meldung, kein Testfall veraendert oder entfernt.
+- **Stub-Gegenprobe durchgefuehrt**: `arbeitsSoll(..., MONTAG_NORMAL)` testweise auf `5.00` gesetzt (statt `8.00`) → beide betroffenen Tests (`krankheit_normalerArbeitstag_gibtVolleSollstunden`, `krankheit_halberTag_gibtVierStunden`) wurden rot (`expected: <0> but was: <1>`) — das Netz reagiert also wirklich auf falsche Werte. Danach zurueckgesetzt auf `8.00`, wieder gruen.
+- `AbwesenheitService`: die "keine Sollstunden"-Meldung in zwei fachlich unterschiedliche Faelle aufgeteilt, wie vom Koordinator angemahnt. Vorher bekamen ein echtes Wochenende UND ein 0h-Wiedereingliederungstag dieselbe Meldung ("Kein Arbeitstag ... auch nicht waehrend einer Wiedereingliederung"). Jetzt: echtes Wochenende (roher Zeitkonto-Wert <= 0) → unveraendert "Kein Arbeitstag: Am {Wochentag} hat dieser Mitarbeiter keine Sollstunden" (identisch zum Ausgangstext, damit die Samstag-Zusicherung im Charakterisierungstest unangetastet bleibt); regulaerer Arbeitstag mit 0h aus einer laufenden Wiedereingliederung (roher Zeitkonto-Wert > 0, aber `arbeitsSoll` == 0) → eigene Meldung "Keine Sollstunden am {Wochentag}: Die laufende Wiedereingliederung sieht an diesem Tag 0 Stunden vor", ohne den Substring "Kein Arbeitstag".
+- `AbwesenheitServiceTest`: neuer Test `krankheit_WiedereingliederungMitNullStunden_MeldungUnterscheidetSichVonWochenende` (TDD: erst rot beobachtet — Meldung enthielt "Kein Arbeitstag" fuer beide Faelle —, dann Produktivcode angepasst, jetzt gruen).
+
+Gate-Zahlen (final):
+```
+./mvnw -B test -Dtest='AbwesenheitServiceTest,TagesSollCharakterisierungAbwesenheitTest'
+AbwesenheitServiceTest: Tests run: 9, Failures: 0, Errors: 0
+TagesSollCharakterisierungAbwesenheitTest: Tests run: 4, Failures: 0, Errors: 0
+Tests run: 13, Failures: 0, Errors: 0
+BUILD SUCCESS (exit=0)
+```
+
+Bedenken / Abweichungen vom Plan:
+- Keine offenen mehr fuer Task 9 selbst. Weiterhin als Hinweis fuer den Abschnitts-Reviewer (nicht selbst geprueft): dieselbe strukturelle Luecke (Charakterisierungstest ohne `@Mock TagesSollService`, dadurch nach Umstellung nicht mehr lauffaehig) betrifft vermutlich auch die anderen fuenf Umstellungs-Tasks in diesem Abschnitt (4, 7, 8, 10, 11) mit ihren jeweiligen Charakterisierungstests — dort gilt dieselbe Praezisierung: Verkabelung reparieren erlaubt, Zusicherungen unangetastet.
+
+## Abschnitt 2 — Nachbesserung
+
+Zeit: 2026-09-08T00:00:00Z
+Branch: lzk/nachbesserung-abschnitt2
+Commit(s): 028f75f2
+Status: fertig
+
+Was gemacht wurde:
+- Befund 1 (VerrechnungslohnService, RUECKWIRKEND-Modus): anwesenheitsFaktor
+  kuerzte bei Quelle LOHNABRECHNUNG das Brutto ein zweites Mal, obwohl der
+  Krankengeld-Ausfall dort schon in den echten Lohnabrechnungen steckt.
+  Roter Testlauf vor dem Fix (krankengeldPhaseKlammertKalendertageUndAnteiligeLohnkostenAus,
+  angepasste Erwartung 48000.00): AssertionFailedError expected 48000.00,
+  war 32001.60 (48000 x Faktor 0.6667). Fix: Faktor nur noch bei Quellen
+  != LOHNABRECHNUNG anwenden. Neuer Regressionstest
+  hochgerechnetesBruttoWirdBeiKrankengeldWeiterhinUeberDenAnwesenheitsfaktorGekuerzt
+  belegt, dass der Faktor bei STAMMSTUNDENLOHN weiterhin greift (41600.00 x
+  0.6667 = 27734.72). Mutationsprobe: Quelle-Unterscheidung entfernt (immer
+  multiplizieren) -> beide Tests neu ausgefuehrt, LOHNABRECHNUNG-Test wieder
+  rot (erwartet 48000.00, bekam 32001.60 wie im urspruenglichen Bug),
+  Hochrechnungs-Test blieb gruen. Mutation zurueckgenommen, 32/32 Tests gruen.
+- Befund 2: neuer Test
+  geschaeftsfuehrerKalkulatorischerLohnWirdBeiKrankengeldUeberDenAnwesenheitsfaktorGekuerzt
+  (60000 x 0.6667 = 40002.00). Mutationsprobe: gesamt.multiply(anwesenheitsFaktor)
+  im GF-Zweig auskommentiert -> Test rot (erwartet 40002.00, bekam 60000.00).
+  Mutation zurueckgenommen, gruen.
+- Befund 3 (TagesSollServiceTest, TagesSollService.java NICHT geaendert): zwei
+  neue Tests - krankengeldPhaseMitGesetztemStundenProTag_wirdIgnoriert_zeitkontoWertGilt
+  (KRANKENGELD-Phase mit stundenProTag=2.00 muss ignoriert werden, Zeitkonto-
+  Wert 8.00 gilt) und wiedereingliederung_stundenProTagNull_phaseWirdIgnoriertZeitkontoWertGilt
+  (WIEDEREINGLIEDERUNG mit stundenProTag == null -> Zeitkonto-Wert gilt).
+  Mutationsprobe: Typfilter (p.getTyp() == WIEDEREINGLIEDERUNG) in
+  wiedereingliederungAm() temporaer entfernt -> erster Test rot
+  (AssertionFailedError periodenSoll expected <0> but was <1>, d.h. 2.00 statt
+  8.00 -- der Stufenplan-Wert einer KRANKENGELD-Phase wurde faelschlich
+  uebernommen). Mutation exakt zurueckgenommen (git diff auf TagesSollService.java
+  danach leer), 20/20 Tests gruen.
+- Befund 4 (StufenplanTabelle.tsx): Fehlertext von "zwischen 1 und N" auf
+  "groesser als 0 und hoechstens N" geaendert -- Entscheidung: die Pruefung
+  bleibt bei stundenZahl > 0 (keine Ganzzahl-Pflicht), weil halbe Stunden bei
+  einer Wiedereingliederung ueblich sind; nur der Text wurde an die
+  tatsaechliche Pruefung angeglichen. Startdatum-Feld: DatePicker rendert kein
+  natives Formularfeld und akzeptiert kein id/htmlFor-Ziel (Komponente ausserhalb
+  des Aufgabenbereichs, nicht angefasst) -- deshalb ueber role="group" +
+  aria-labelledby mit dem Label verknuepft statt htmlFor. Neue Vitest-Faelle
+  fuer beides (halbe Stunden gueltig, ARIA-Gruppe vorhanden) ergaenzt.
+- Befund 5: zwei Kommentare in VerrechnungslohnService ergaenzt (Urlaubs-Default
+  bewusst ohne ausgeklammert.isEmpty()-Schutz; feiertagsstunden bewusst
+  ungekuerzte Anzeigegroesse) -- Code an beiden Stellen unveraendert.
+- Gates: Backend ./mvnw -B test -Dtest=VerrechnungslohnServiceTest,TagesSollServiceTest
+  -> Tests run: 52, Failures: 0. Frontend npx vitest run
+  src/components/langzeitkrankmeldung/ -> 2 Testdateien, 14 Tests, alle gruen.
+  npm run lint -> 0 Errors, 1 bekannte Warning (BelegeKasseEditor.tsx:1204).
+  npm run build -> BUILD SUCCESS, Artefakte danach per git checkout -- 
+  src/main/resources/static/ plus manuellem rm der beiden neuen, untracked
+  Hash-Dateien wieder entfernt; index.html zeigt weiterhin nur die
+  vorbestehende Zeilenende-Differenz.
+
+Bedenken / Abweichungen vom Plan:
+- StufenplanTabelle ist in diesem Worktree in keiner Seite/Route eingebunden
+  (kein Treffer fuer den Komponentennamen ausserhalb der Komponente selbst) --
+  vermutlich baut ein anderer paralleler Agent die Seite, die sie einbindet.
+  Deshalb keine Playwright-E2E-Spec angelegt: eine Seite dafuer anzulegen liegt
+  ausserhalb des mir zugewiesenen Dateibereichs (nur StufenplanTabelle.tsx +
+  Test), und die expliziten Gates in meinem Auftrag nennen fuer diese
+  Nachbesserung ohnehin nur vitest/lint/build, kein e2e. Bitte im
+  Abschnitts-Review pruefen, sobald die Seite existiert.
+
+## Abschnitt 3 — Task 10, Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-08T17:06:20Z
+Branch: lzk/task-10-zeiterfassung-api
+Commit(s): dd541346c12e5b92770403c8e2d38787ce60effc
+Status: fertig
+
+Was gemacht wurde (Befund des Koordinators: Testsubjekt war TagesSollService
+statt ZeiterfassungApiService — behoben):
+- `TagesSollCharakterisierungZeiterfassungApiTest` erneut umgebaut.
+  Testsubjekt ist wieder `ZeiterfassungApiService`: Konstruktor mit allen 13
+  Argumenten (inkl. `tagesSollService` als Mock), `zeitkontoService` und
+  `zeitkontoKorrekturService` per `ReflectionTestUtils.setField` gesetzt
+  (Field-Injection-Felder). Zugriffsweg jetzt `ReflectionTestUtils.
+  invokeMethod(service, "berechneAnteiligenMonatIst", MITARBEITER_ID, von, bis)`
+  — die einzige Stelle, die `tagesSollService.feiertagsGutschriftSumme`
+  aufruft (Randmonat-Begründung für Reflection unverändert: `getSaldo`s
+  Randmonat-Zweig hängt an `LocalDate.now()`).
+- `TagesSollService` wird gemockt (eigene Tests: `TagesSollServiceTest`,
+  Task 3). Pro Testfall: `feiertagsGutschriftSumme` mit dem konkreten
+  erwarteten Zeitraum gestubbt (kein `any()`), plus `verify(tagesSollService)
+  .feiertagsGutschriftSumme(...)` mit exakt diesem Zeitraum — damit prüft der
+  Test jetzt wieder, dass der Aufrufer richtig verkabelt ist, nicht nur die
+  Zahl. `zeitkontoKorrekturService` mit `any()` für den Zeitraum gestubbt
+  (Nebenabhängigkeit, nicht Testgegenstand — liefert konstant 0).
+  `zeitbuchungRepository`/`abwesenheitRepository` bewusst ungestubbt
+  (Mockito-Default: leere Liste bzw. `null`→im Code auf 0 abgefangen).
+- Mutationsprobe am Produktivcode: `von` in
+  `tagesSollService.feiertagsGutschriftSumme(...)` testweise auf
+  `von.plusDays(1)` verschoben. Alle drei Tests wurden korrekt rot —
+  Mockito `PotentialStubbingProblem: Strict stubbing argument mismatch`
+  (z.B. Aufruf mit `2026-01-02` statt gestubbtem `2026-01-01`),
+  `Tests run: 3, Errors: 3`. Mutation zurückgenommen, `git diff` gegen
+  den vorherigen Commit danach leer bestätigt.
+- Gate erneut gefahren: `ZeiterfassungApiServiceConcurrencyTest` (8) +
+  `ZeiterfassungApiServiceVerspaeteterStopTest` (7) +
+  `TagesSollCharakterisierungZeiterfassungApiTest` (3) = 18 Tests,
+  0 Failures, 0 Errors, BUILD SUCCESS.
+
+Bedenken / Abweichungen vom Plan:
+- Keine neuen. Korrektur des im vorherigen Block dokumentierten Fehlgriffs
+  (Testsubjekt versehentlich auf TagesSollService verschoben) — jetzt behoben.
