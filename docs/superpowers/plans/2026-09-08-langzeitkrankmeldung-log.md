@@ -2605,3 +2605,64 @@ Bedenken / Abweichungen vom Plan:
   greift nach 2 Minuten automatisch). Auf Hinweis des Orchestrators alle
   verwaisten Playwright-/Vite-Prozesse beendet und beide Spec-Läufe sauber
   im Vordergrund mit explizitem Timeout=600000ms wiederholt.
+
+## Abschnitt 5 — Nachbesserung PC-Seite
+
+Zeit: 2026-09-09T00:35:00Z
+Branch: lzk/nb5-pc
+Commit(s): 89dfafda, 93c61d15
+Status: fertig
+
+Was gemacht wurde:
+- Befund 1 (BLOCKER, Dezimalpunkte): alle gefundenen Zahlenausgaben in
+  Langzeitkrankmeldungen.tsx, StufenplanTabelle.tsx und PhasenZeitleiste.tsx
+  auf `toLocaleString('de-DE')` umgestellt -- nicht nur die drei genannten
+  Zeilen, sondern auch der Platzhalter und der Fehlertext des Tageslimits in
+  StufenplanTabelle.tsx (max. 7,5 / "hoechstens 7,5"), die Tabellenzelle dort,
+  die Zeitleiste (PhasenZeitleiste.tsx) und "gestempelt/geplant" plus
+  "Noch N Tage" in Langzeitkrankmeldungen.tsx.
+- Befund 2 (BLOCKER, Design-Pruefung fehlt): e2e/langzeitkrankmeldungen.spec.ts
+  ruft jetzt zweimal designPruefung(...) auf (Details-Ansicht mit
+  Wiedereingliederungs-Phase, und die neue BEENDET-Karte mit "Doch noch
+  krank") -- Screenshots liegen unter test-results/design/ (gitignored, nicht
+  committet).
+- Befund 3 (BLOCKER-nah, kein Rueckweg): neuer Knopf "Doch noch krank"
+  erscheint bei status === 'BEENDET', ruft PUT
+  /api/langzeitkrankmeldungen/{id}/oeffnen (Version im Query-Param, gleiches
+  Muster wie handleBeenden/handleAbbrechen). Serverfehler (z.B. "Bitte neu
+  anlegen" bei ABGEBROCHEN) landen im Fehler-Toast statt stumm zu scheitern,
+  ein 409 loest ueber pruefeAntwort() den bestehenden Konfliktdialog aus --
+  per Unit-Test (400-Fall) und E2E-Test (409-Fall, Dialogtitel "Nicht
+  gespeichert") abgedeckt. Bewusst OHNE zusaetzlichen Bestaetigungsdialog
+  (wie handleUmstellenAufKrankengeld), damit der Knopf die schnelle Korrektur
+  eines Fehlklicks bleibt.
+- Befund 4 (Typ-Fix): aktuellePhaseTyp auf `PhasenTyp | null` gezogen, Badge-
+  Zugriff mit Slate-Fallback ("bg-slate-100 text-slate-700") abgesichert,
+  wenn keine aktuelle Phase vorliegt.
+- Tests: 28 Vitest-Tests gruen (Langzeitkrankmeldungen.test.tsx,
+  StufenplanTabelle.test.tsx, PhasenZeitleiste.test.tsx), lint sauber, 6
+  Playwright-Laeufe gruen (2 Specs x 3 Desktop-Projekte: pc-14zoll,
+  pc-uebergang, pc-monitor), Production-Build erfolgreich (Output danach
+  wieder geloescht).
+
+Bedenken / Abweichungen vom Plan:
+- Das Worktree lzk-nb5-pc existierte beim Start noch nicht und wurde neu
+  angelegt (Branch von feature/langzeitkrankmeldung). node_modules war dabei
+  zunaechst KEIN funktionierender Reparse-Point -- `ln -s` in Git Bash hat
+  ohne SeCreateSymbolicLinkPrivilege still einen echten leeren Ordner
+  angelegt, der zwar Dateinamen zeigte, aber Vitest-Worker mit "Timeout
+  waiting for worker to respond" abschiessen liess (vermutlich Node-
+  Modulaufloesung ueber den falschen Pfad). Behoben durch Loeschen und
+  Neuanlage als echte NTFS-Junction (`mklink /J`, wie bei den
+  Nachbar-Worktrees) -- betrifft nur meinen lokalen Worktree, keine
+  Code-Aenderung.
+- `./graphify update .` konnte am Ende NICHT laufen: weder der
+  `graphify`-Wrapper noch `.graphify-venv/` sind git-getrackt, in einem per
+  `git worktree add` frisch angelegten Worktree existieren sie also gar
+  nicht (nur `graphify-out/graph.json` und `GRAPH_REPORT.md` sind
+  eingecheckt). Betrifft vermutlich jeden Coding-Agenten mit neu angelegtem
+  Worktree in dieser Pipeline, nicht nur diesen Task -- der Graph bleibt nach
+  diesem Task unaktualisiert.
+- phasen.ts, StufenplanTabelle.tsx (Logik) und PhasenZeitleiste.tsx (Logik)
+  waren laut Plan nicht meine Datei bzw. nur fuer die Zahlenformatierung
+  angefasst -- inhaltlich sonst unveraendert gelassen.
