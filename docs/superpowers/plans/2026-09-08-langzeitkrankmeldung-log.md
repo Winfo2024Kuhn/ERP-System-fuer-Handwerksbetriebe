@@ -1504,3 +1504,56 @@ Bedenken / Abweichungen vom Plan:
   wurden zusaetzlich zur explizit vorgegebenen `arbeitsSollJeTag` gebaut (im
   Auftrag als "passende Geschwister" gefordert) und decken denselben
   Zeitraum-Lade-Mechanismus ab.
+
+## Abschnitt 4 — Review
+
+Zeit: 2026-09-08T19:00:15Z
+Branch: feature/langzeitkrankmeldung (gemergt, bb26854c)
+Commit(s): e33f2e21, ffcb3c7f, 492414c2, 1ec5e1ea (Merges), Diff cfbfcb08..HEAD
+Status: blockiert
+Ampel: 🔴
+
+Testlauf (voll, `./mvnw -B test`): 2598 Tests, 0 Failures, 4 Errors —
+exakt die vier vorbestehenden aus der Baseline (AuditChainRepairIntegrationTest
+x2, AuditHashRoundtripDiagnoseTest x2, alle CannotCreateTransaction). Kein
+fuenfter. Baseline gehalten, +44 Tests gegenueber 2554.
+
+Blockierende Befunde:
+- LangzeitkrankmeldungService.baueStufenplanTage:630/635 — NPE (HTTP 500) auf
+  GET /api/langzeitkrankmeldungen/{id}, wenn eine Wiedereingliederung im
+  Voraus geplant ist (geschlossene WE-Phase mit Enddatum in der Zukunft +
+  offene Folgephase). `arbeitsSollJeTag` wird mit von>bis gerufen, liefert eine
+  leere Map, `geplantJeTag.get(tag)` ist null. Regression des Fix-Tasks; vorher
+  rechnete arbeitsSoll je Tag und konnte nicht null werden. Sonde reproduziert:
+  Anfrage 2026-10-01..2026-09-08 -> 0 Eintraege -> NullPointerException.
+- UrlaubsantragController.getHinweise:114 — GET /api/urlaub/antraege/hinweise
+  liegt unter /api/urlaub/**, also auf der permitAll-Kette (SecurityConfig
+  ZEITERFASSUNG_PATHS). Ohne Login, ohne Token, mit frei waehlbarer
+  mitarbeiterId abfragbar; die Antwort verraet Existenz und Beginndatum einer
+  Langzeitkrankmeldung (Gesundheitsdatum, DSGVO Art. 9). Sonde ueber den
+  AntPathMatcher der SecurityConfig: erreichbar=true. Die Desktop-Endpunkte
+  unter /api/langzeitkrankmeldungen sind korrekt geschuetzt (erreichbar=false).
+
+Bewertete Schwerpunkte:
+- Optimistisches Sperren traegt fuer den gemeinten Fall (zwei Bueroleute
+  Minuten auseinander): gemessen, zweiter Schreiber bekommt
+  ObjectOptimisticLockingFailureException -> 409, erster Stand bleibt stehen.
+  Der wirklich ueberlappende Transaktionsfall wird zusaetzlich von JPA @Version
+  beim Flush gefangen. Restluecke ist ein TOCTOU-Fenster von gemessen 26 us
+  Mittel / 1,04 ms Maximum. 🟡, kein Datenverlust-Risiko in der Praxis.
+- approveAntrag soll auf arbeitsSollJeTag nachgezogen werden: 🟡. Gemessen
+  fuer drei Wochen (15 Werktage): 45 Repository-Aufrufe je Tag gegen 3 ueber
+  den Zeitraum.
+- N+1-Fix verifiziert: Kalendermonat 154 -> 6, Stufenplan 42 Tage 102 -> 3
+  Repository-Aufrufe. Feiertagsergebnisse Einzeltag und Batch identisch.
+- LocalDate.MAX restlos ersetzt, OFFENES_ENDE innerhalb des MySQL-DATE-Bereichs.
+- Sicherheitsnetz: sechs Mutationsproben, fuenf wurden rot gefangen. Eine blieb
+  gruen (falscher Zeitraum an arbeitsSollJeTag im Kalender) — Stub im
+  Charakterisierungstest ignoriert seit der Umstellung die Zeitraum-Argumente.
+- Mobile-Endpunkt: rein lesend, tokengebunden, kein Fremdzugriff, kein
+  Token-Existenz-Orakel, keine Klarnamen/Notizen in Logs. Unter
+  /api/zeiterfassung/** existiert kein POST/PUT/PATCH/DELETE fuer das Feature.
+
+Bedenken / Abweichungen vom Plan:
+- Mutationen und Sonden restlos zurueckgenommen; Arbeitsbaum sauber bis auf den
+  bekannten index.html-Zeilenende-Phantomdiff.
