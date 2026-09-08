@@ -1115,3 +1115,141 @@ statt ZeiterfassungApiService — behoben):
 Bedenken / Abweichungen vom Plan:
 - Keine neuen. Korrektur des im vorherigen Block dokumentierten Fehlgriffs
   (Testsubjekt versehentlich auf TagesSollService verschoben) — jetzt behoben.
+
+## Abschnitt 3 — Review (Code-Reviewer)
+
+Zeit: 2026-09-08T17:35:00Z
+Branch: feature/langzeitkrankmeldung (gemergter Stand, ddd6d37a)
+Geprueft: Diff a2d3ea3e..HEAD, Tasks 4, 7, 8, 9, 10, 11 + Nachbesserung Abschnitt 2
+Status: fertig
+Ampel: 🟢
+
+Testlaeufe (alle synchron, Output in Dateien, nie durch eine Pipe):
+- `./mvnw -B test`: **2554 Tests, 0 Failures, 4 Errors** — exakt die vier
+  vorbestehenden (`AuditChainRepairIntegrationTest` x2,
+  `AuditHashRoundtripDiagnoseTest` x2, alle `CannotCreateTransaction`).
+  Baseline war 2508/4, also +46 neue Tests und kein fuenfter Fehler.
+- `npm run lint` (react-pc-frontend): 0 Errors, 1 bekannte Warning
+  (`BelegeKasseEditor.tsx:1204`). Gate gehalten.
+- `npx vitest run src/components/langzeitkrankmeldung/`: 2 Dateien, 14 Tests gruen.
+- Lint/Vitest im Haupt-Checkout gefahren: der Review-Worktree hat gar kein
+  `node_modules` (weder Ordner noch Junction), `eslint` ist dort nicht
+  aufloesbar. Haupt-Checkout stand auf demselben Commit und war sauber.
+
+Mutationsproben (11 Stueck, jede einzeln angewandt und danach zurueckgenommen):
+- MZ  ZeitkontoService delegiert an feiertagsGutschriftSumme statt
+  periodenSollSumme -> TagesSollCharakterisierungZeitkontoTest 6 von 6 rot.
+- MM  MonatsSaldoService uebergibt (ersterTag, ersterTag) statt
+  (ersterTag, letzterTag) -> TagesSollCharakterisierungMonatsSaldoTest 3 von 3 rot.
+- MA  AbwesenheitService fragt datum.plusDays(1) ab ->
+  TagesSollCharakterisierungAbwesenheitTest 3 von 4 rot.
+- MApi ZeiterfassungApiService ruft periodenSollSumme statt
+  feiertagsGutschriftSumme -> TagesSollCharakterisierungZeiterfassungApiTest 3 von 3 rot.
+- MC1 alter Kalender-Bug zurueck (volle Sollstunden als Ist am Feiertag) ->
+  TagesSollCharakterisierungKalenderTest: tage[23].istStunden erwartet 4.0,
+  war 8.0, UND ZeitverwaltungControllerTest.getKalender_HalberFeiertag... rot.
+  Der Bugfix ist doppelt festgenagelt.
+- MC2 sollStunden wieder roh aus dem Zeitkonto -> Kalender-Charakterisierung
+  (tage[23].sollStunden 0 statt 8) und der neue Wiedereingliederungs-Test
+  (tage[1].sollStunden 2.0 statt 8.0) rot.
+- MV1 Ausnahme fuer LOHNABRECHNUNG entfernt (doppelte Kuerzung wieder da) ->
+  krankengeldPhaseKlammertKalendertageUndAnteiligeLohnkostenAus rot.
+- MV2 anwesenheitsFaktor im regulaeren Zweig ganz abgeschaltet ->
+  hochgerechnetesBruttoWirdBeiKrankengeldWeiterhinUeberDenAnwesenheitsfaktorGekuerzt
+  rot. Eine Ueberkorrektur von Befund 1 waere also aufgefallen.
+- MV3 anwesenheitsFaktor im GF-Zweig entfernt ->
+  geschaeftsfuehrerKalkulatorischerLohn... rot. Testluecke aus Abschnitt 2 zu.
+- MV4 Typfilter WIEDEREINGLIEDERUNG in TagesSollService entfernt ->
+  krankengeldPhaseMitGesetztemStundenProTag_wirdIgnoriert... rot. Zweite
+  Testluecke aus Abschnitt 2 zu (vorher blieben alle 18 Tests gruen).
+- ML1 beginn.plusDays(42) statt 41 -> 42-Tage-Test rot.
+- ML2 Name und Notiz in getMobileStand ergaenzt -> DSGVO-Test rot
+  (erwartet 5 Felder, waren 7).
+- ML3 FK-Rueckstellung in verknuepfeAbwesenheiten entfernt -> 2 Tests rot.
+
+Sicherheitsnetz, Ergebnis je Charakterisierungsdatei:
+- Zeitkonto / MonatsSaldo / Abwesenheit / ZeiterfassungApi: keine Zusicherung
+  geaendert, Stubs pro Fixture-Fall mit exakten Argumenten (kein pauschales
+  any()), Testsubjekt jeweils der umgestellte Service. Bei ZeiterfassungApi
+  ist der Rueckbau auf ZeiterfassungApiService angekommen, inklusive verify()
+  auf den uebergebenen Zeitraum.
+- Kalender: genau die eine erlaubte Zahlenaenderung (tage[23].istStunden
+  8 -> 4.00), die Stubs sind per willAnswer tagesabhaengig, nicht konstant.
+- Die Zahlen-Charakterisierung ist nicht verschwunden, sondern liegt in
+  TagesSollServiceTest (20 Tests gegen die echte Rechenlogik). MZ/MM/MApi
+  zeigen, dass die Aufrufer-Verkabelung trotzdem festgenagelt bleibt.
+
+N+1, gemessen statt argumentiert (Wegwerf-Sonde, danach geloescht; gezaehlt
+wurden echte Repository-Aufrufe):
+- Kalenderabruf, Dezember 2026 (31 Tage): 249 Repository-Aufrufe
+  (62x LangzeitkrankmeldungPhaseRepository.findImZeitraum + 187x
+  FeiertagRepository). Vor der Umstellung waren es eine Handvoll.
+- Dieselben Werte ueber die Batch-Methoden: 9 Aufrufe. Faktor rund 28.
+- Stufenplan, 42 Tage Wiedereingliederung: 165 Aufrufe.
+- TagesSollService cacht nichts. Zusaetzlich fragt berechneEinzeltag
+  istFeiertag und istHalberFeiertag getrennt ab, und beide starten je ein
+  getFeiertageForJahr (= findByJahr ueber das ganze Jahr) - 4 Abfragen pro Tag,
+  wo 2 reichen wuerden (getFeiertagInfo liefert beide Flags).
+- Bewertung: gelb, nicht rot. Keine falschen Zahlen, kein Fehlerfall, und der
+  Plan hat den Pro-Tag-Weg fuer Task 4 und 11 ausdruecklich vorgegeben, waehrend
+  TagesSollService.java fuer beide Agenten gesperrt war. Empfehlung fuer einen
+  eigenen Folge-Task VOR Abschnitt 5 (dort laedt die UI den Kalender bei jedem
+  Monatswechsel): eine Map jeTag(mitarbeiterId, konto, von, bis) in
+  TagesSollService, gebaut auf der schon vorhandenen summiere-Schleife;
+  Controller und baueStufenplanTage rufen dann einmal statt 31x bzw. 42x.
+
+Geprueft und in Ordnung:
+- Constructor Injection ueberall, auch in ZeiterfassungApiService (neues Feld
+  im RequiredArgsConstructor-Block, nicht als Autowired-Feld).
+- Query nur mit benannten Parametern. findImZeitraum und findUeberlappende
+  laufen ueber implizite Pfade, aber beide Beziehungen sind
+  ManyToOne(optional = false) - INNER JOIN ist hier korrekt, es haengt kein
+  IS-NULL-Fall daran.
+- PC-only: kein Langzeitkrankmeldung-Controller im Diff, kein POST/PUT/PATCH/
+  DELETE unter /api/zeiterfassung fuer dieses Feature, react-zeiterfassung
+  unberuehrt. getMobileStand liefert exakt fuenf Felder, kein Name, keine
+  Notiz (per Mutation ML2 belegt).
+- DSGVO: Logs schreiben nur meldungId und mitarbeiterId, keine Diagnose, keine
+  Notiz, keine Klarnamen. Testdaten durchgaengig Mustermann/Musterfrau/Beispiel.
+- Nachbesserung Abschnitt 2: der anwesenheitsFaktor greift weiterhin bei
+  KALKULATORISCH, STUNDENLOHN_HOCHRECHNUNG, STAMMSTUNDENLOHN und im GF-Zweig;
+  nur LOHNABRECHNUNG ist ausgenommen (MV1/MV2/MV3 belegen beide Richtungen).
+- Wording: Lohnfortzahlung durch den Betrieb, Krankengeld der Krankenkasse,
+  Wiedereingliederung, Wieder voll im Einsatz. Kein Fachchinesisch.
+- Baum nach allen Proben sauber: git status --short zeigt nur den bekannten
+  static/index.html-Zeilenende-Phantom-Diff.
+
+Bedenken / Abweichungen vom Plan (alle gelb, blockieren nicht):
+- LangzeitkrankmeldungService.java:96,133,175 - LocalDate.MAX geht als
+  Query-Parameter an findUeberlappende. MySQL kennt DATE nur bis 9999-12-31;
+  je nach Server-Modus gibt das einen Fehler oder still keine Treffer, und die
+  Ueberlappungspruefung waere dann wirkungslos. Ohne MySQL nicht messbar, im
+  Test nie beruehrt (H2 plus gemocktes Repository), und heute noch nicht
+  erreichbar, weil der Controller erst in Abschnitt 4 kommt. Vor Abschnitt 4
+  auf LocalDate.of(9999, 12, 31) umstellen.
+- N+1 im Kalender und im Stufenplan, siehe Messung oben.
+- TagesSollService.java:110-111 - istFeiertag plus istHalberFeiertag verdoppeln
+  die Feiertagsabfragen pro Tag; ein getFeiertagInfo wuerde reichen.
+- LangzeitkrankmeldungService.java:130 - aendern setzt die Notiz auch dann,
+  wenn null uebergeben wird, waehrend beginn und lohnfortzahlungBis nur bei
+  Nicht-Null geschrieben werden. Ein PUT ohne Notizfeld loescht damit eine
+  bestehende Notiz. Ein Test haelt das Verhalten fest, es ist also gewollt -
+  Task 5 sollte es bewusst entscheiden und im Request-DTO dokumentieren.
+- LangzeitkrankmeldungService - phaseHinzufuegen/phaseAendern/phaseLoeschen
+  pruefen den Status nicht; an einer ABGEBROCHEN-Meldung lassen sich weiter
+  Phasen anlegen. Folgenlos (die Verknuepfung wird ohnehin entkoppelt), aber
+  unsauber.
+- ZeitverwaltungController.java:436-438,497 - istFeiertag/feiertagName im
+  Kalender kommen aus getFeiertageZwischen OHNE Bundesland-Filter, waehrend
+  sollStunden/istStunden jetzt ueber TagesSollService auf BY filtern. Mit den
+  heutigen, rein bayerischen Feiertagsdaten identisch.
+- AbwesenheitServiceTest.stubGrunddaten stubbt arbeitsSoll pauschal per
+  anyLong(), any(), any() (so im Plan vorgegeben). Der Charakterisierungstest
+  daneben deckt den Fall konkret ab (Mutation MA war rot), deshalb nur Hinweis.
+- Tippfehler in einem Kommentar von
+  VerrechnungslohnServiceTest.geschaeftsfuehrerKalkulatorischerLohn...
+- StufenplanTabelle.tsx hat weiterhin keine Playwright-Spec (der Baustein
+  haengt in keiner Seite). Gehoert in Abschnitt 5 nachgezogen, sobald Task 15
+  die Seite baut - dort laeuft ohnehin die volle Design-Pruefung.
+
+Blockierende Befunde: keine.
