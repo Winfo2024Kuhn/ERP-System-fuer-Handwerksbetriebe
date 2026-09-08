@@ -34,6 +34,7 @@ import ZeiterfassungZeitkonten from './pages/ZeiterfassungZeitkonten';
 import ZeiterfassungFeiertage from './pages/ZeiterfassungFeiertage';
 import ZeiterfassungSteuerberater from './pages/ZeiterfassungSteuerberater';
 import Urlaubsantraege from './pages/Urlaubsantraege';
+import Langzeitkrankmeldungen from './pages/Langzeitkrankmeldungen';
 import AbteilungBerechtigungenEditor from './pages/AbteilungBerechtigungenEditor';
 import TerminKalender from './pages/TerminKalender';
 import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
@@ -108,6 +109,7 @@ export default function App() {
                 <Route path="/zeitkonten" element={<ErrorBoundary><ZeiterfassungZeitkonten /></ErrorBoundary>} />
                 <Route path="/feiertage" element={<ErrorBoundary><ZeiterfassungFeiertage /></ErrorBoundary>} />
                 <Route path="/urlaubsantraege" element={<ErrorBoundary><Urlaubsantraege /></ErrorBoundary>} />
+                <Route path="/langzeitkrankmeldungen" element={<ErrorBoundary><Langzeitkrankmeldungen /></ErrorBoundary>} />
                 <Route path="/abteilung-berechtigungen" element={<RequireAdmin><ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />

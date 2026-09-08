@@ -5,7 +5,7 @@ import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
-    Calendar, CalendarDays, Plane, Shield, Receipt, Wallet
+    Calendar, CalendarDays, Plane, Shield, Receipt, Wallet, Stethoscope
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
@@ -122,9 +122,10 @@ const NAVIGATION: NavCategory[] = [
                 ]
             },
             {
-                label: 'Urlaub',
+                label: 'Abwesenheiten',
                 items: [
                     { name: 'Anträge', href: '/urlaubsantraege', icon: Plane },
+                    { name: 'Lange Krankheit', href: '/langzeitkrankmeldungen', icon: Stethoscope },
                 ]
             }
         ]
