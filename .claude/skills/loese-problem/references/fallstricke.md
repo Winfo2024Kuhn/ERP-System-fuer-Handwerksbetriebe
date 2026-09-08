@@ -168,7 +168,7 @@ Plan als **maßgebliche Quelle** verweisen und dazusagen, dass der Auftragstext
 nur eine Zusammenfassung mit Schwerpunkten ist. Weicht der Plan vom Auftrag
 ab, gilt der Plan — und der Agent soll die Abweichung melden.
 
-### `handwerkerprogramm-design` ist kein aufrufbarer Skill
+### `handwerkerprogramm-design`: unscoped scheitert, worktree-scoped funktioniert
 
 Der Design-Skill des Projekts liegt zwar unter `.claude/skills/`, ist im
 Skill-Tool aber **nicht registriert** — ein Aufruf endet mit „Unknown skill",
@@ -184,6 +184,17 @@ Zeit mit dem Fehlschlag.
 `ui-ux-pro-max:ui-ux-pro-max` schlägt fehl (`Unknown skill`), `ui-ux-pro-max`
 funktioniert. Steht in `FRONTEND_UI.md` falsch — im Auftrag korrekt vorgeben,
 sonst verliert jeder Frontend-Agent Zeit damit.
+
+**Präzisierung (08.09.2026, gemessen):** Arbeitet der Agent in einem
+**Worktree**, registriert Claude Code die Projekt-Skills zusätzlich
+**scoped auf diesen Worktree** — dann heißt der Aufruf
+`wt/<worktree-name>:handwerkerprogramm-design` und **funktioniert**. Der
+unscoped Name `handwerkerprogramm-design` scheitert weiterhin.
+
+Für den Auftragstext heißt das: **den scoped Namen vorgeben**, mit dem
+Datei-Weg (`SKILL.md` + `README.md` lesen, `ui-ux-pro-max` für den Hook) nur
+als Fallback. Der Skill-Aufruf liefert mehr als die Datei — unter anderem die
+beiden pixelgenauen UI-Kits (Desktop und Mobile), die man sonst nicht sieht.
 
 ---
 
