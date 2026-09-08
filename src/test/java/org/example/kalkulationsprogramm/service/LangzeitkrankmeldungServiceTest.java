@@ -625,11 +625,58 @@ class LangzeitkrankmeldungServiceTest {
         assertFalse(dto.getStufenplanTage().get(1).isUeberPlan());
     }
 
+    @Test
+    void toDto_MitStufenplanTagen_GeschlosseneZukuenftigePhaseGefolgtVonOffenerPhase_WirftKeineNullPointerException() {
+        // Nachbesserung Abschnitt 4, Befund 1 (blockierend): bei einer OFFENEN
+        // letzten Phase wurde "bis" bisher immer auf LocalDate.now() gesetzt.
+        // Eine DAVOR liegende, geschlossene Phase mit Enddatum in der Zukunft
+        // lag dann komplett hinter diesem Kartenende - von > bis,
+        // arbeitsSollJeTag bekam einen rueckwaerts laufenden Zeitraum und
+        // lieferte eine leere Map. geplantJeTag.get(tag) war fuer jeden Tag
+        // der geschlossenen Phase null, gestempelt.compareTo(geplant) warf
+        // eine NullPointerException. Reproduziert den vom Reviewer gemeldeten
+        // Fall: eine im Voraus geplante geschlossene Phase (4h), gefolgt von
+        // einer offenen (6h) - "heute" liegt vor beiden Phasen.
+        LocalDate ersteVon = LocalDate.now().plusMonths(1).withDayOfMonth(1);
+        LocalDate ersteBis = ersteVon.plusDays(13);
+        LocalDate zweiteVon = ersteBis.plusDays(1);
+
+        Langzeitkrankmeldung meldung = meldungMitStatus(LangzeitkrankmeldungStatus.LAUFEND, null);
+        meldung.getPhasen().clear();
+        meldung.getPhasen().add(neuePhase(meldung, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
+                ersteVon, ersteBis, new BigDecimal("4.00")));
+        meldung.getPhasen().add(neuePhase(meldung, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
+                zweiteVon, null, new BigDecimal("6.00")));
+
+        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
+        // Bildet die reale Zeitraum-Methode nach: liefert fuer jeden
+        // angefragten Tag einen Wert, damit sich ein falscher (rueckwaerts
+        // laufender oder zu kurzer) Zeitraum als leere/luckenhafte Map zeigt.
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), eq(zeitkonto), any(), any()))
+                .thenAnswer(inv -> {
+                    LocalDate von = inv.getArgument(2);
+                    LocalDate bis = inv.getArgument(3);
+                    Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
+                    for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+                        ergebnis.put(tag, new BigDecimal("4.00"));
+                    }
+                    return ergebnis;
+                });
+        when(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitBetween(eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(List.of());
+
+        LangzeitkrankmeldungDto dto = service.toDto(meldung, true);
+
+        // Die geschlossene Phase (14 Tage) muss vollstaendig auftauchen; die
+        // offene Phase liegt komplett nach "heute" und traegt hier nichts bei.
+        assertEquals(14, dto.getStufenplanTage().size());
+    }
+
     // ==================== getMobileStand ====================
 
     @Test
     void getMobileStand_UnbekanntesToken_LiefertLeereMap() {
-        when(mitarbeiterRepository.findByLoginToken("unbekannt")).thenReturn(Optional.empty());
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrue("unbekannt")).thenReturn(Optional.empty());
 
         Map<String, Object> stand = service.getMobileStand("unbekannt", LocalDate.of(2020, 4, 1));
 
@@ -637,8 +684,29 @@ class LangzeitkrankmeldungServiceTest {
     }
 
     @Test
+    void getMobileStand_NutztDieAktivTrueVariante_DeaktivierterMitarbeiterVerliertZugriffAufAltesToken() {
+        // Nachbesserung Abschnitt 4, Befund 3: findByLoginToken (statt
+        // findByLoginTokenAndAktivTrue) wuerde einen deaktivierten Mitarbeiter
+        // trotzdem finden - das Token wird beim Deaktivieren nirgends
+        // geloescht, ein ausgeschiedener Mitarbeiter behielte Lesezugriff auf
+        // seinen Krankenstand. Jeder andere unauthentifizierte Mobile-Lesepfad
+        // (siehe BelegService) nutzt die Aktiv-Variante. Ruft NICHT die
+        // Optional.empty()-Value allein, sondern die tatsaechlich aufgerufene
+        // Repository-Methode - ein blosser Wertevergleich waere hier blind,
+        // weil Mockito fuer eine unstubbte Optional-Methode ohnehin
+        // Optional.empty() liefert.
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrue("altes-token")).thenReturn(Optional.empty());
+
+        Map<String, Object> stand = service.getMobileStand("altes-token", LocalDate.of(2020, 4, 1));
+
+        assertTrue(stand.isEmpty());
+        org.mockito.Mockito.verify(mitarbeiterRepository).findByLoginTokenAndAktivTrue("altes-token");
+        org.mockito.Mockito.verify(mitarbeiterRepository, org.mockito.Mockito.never()).findByLoginToken(any());
+    }
+
+    @Test
     void getMobileStand_KeineLaufendePhase_LiefertLeereMap() {
-        when(mitarbeiterRepository.findByLoginToken("token")).thenReturn(Optional.of(mitarbeiter));
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token")).thenReturn(Optional.of(mitarbeiter));
         when(phaseRepository.findImZeitraum(eq(MITARBEITER_ID), any(), any())).thenReturn(List.of());
 
         Map<String, Object> stand = service.getMobileStand("token", LocalDate.of(2020, 4, 1));
@@ -655,7 +723,7 @@ class LangzeitkrankmeldungServiceTest {
                 LocalDate.of(2020, 4, 1), null, new BigDecimal("4.00"));
         meldung.getPhasen().add(wiedereingliederung);
 
-        when(mitarbeiterRepository.findByLoginToken("token")).thenReturn(Optional.of(mitarbeiter));
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token")).thenReturn(Optional.of(mitarbeiter));
         when(phaseRepository.findImZeitraum(eq(MITARBEITER_ID), any(), any())).thenReturn(List.of(wiedereingliederung));
         when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
         when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), eq(zeitkonto), any())).thenReturn(new BigDecimal("4.00"));
