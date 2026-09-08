@@ -2,12 +2,14 @@ package org.example.kalkulationsprogramm.repository;
 
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
 import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
+import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -87,4 +89,37 @@ public interface AbwesenheitRepository extends JpaRepository<Abwesenheit, Long> 
          */
         @Query("SELECT a FROM Abwesenheit a JOIN FETCH a.mitarbeiter WHERE a.datum >= :von AND a.datum <= :bis ORDER BY a.datum ASC, a.mitarbeiter.nachname ASC")
         List<Abwesenheit> findAllByDatumBetween(@Param("von") LocalDate von, @Param("bis") LocalDate bis);
+
+        /**
+         * Findet Abwesenheiten eines Mitarbeiters nach Typ in einem Zeitraum.
+         */
+        @Query("SELECT a FROM Abwesenheit a WHERE a.mitarbeiter.id = :mitarbeiterId AND a.typ = :typ "
+                        + "AND a.datum >= :von AND a.datum <= :bis ORDER BY a.datum ASC")
+        List<Abwesenheit> findByMitarbeiterIdAndTypAndDatumBetween(
+                        @Param("mitarbeiterId") Long mitarbeiterId,
+                        @Param("typ") AbwesenheitsTyp typ,
+                        @Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis);
+
+        /**
+         * Summe wie sumStundenByMitarbeiterIdAndTypAndDatumBetween, aber ohne die
+         * Tage, die an einer Phase der genannten Typen haengen (Verrechnungslohn,
+         * Task 13).
+         *
+         * <p>Bewusst expliziter LEFT JOIN statt des impliziten Pfads
+         * "a.langzeitkrankmeldungPhase.typ": Hibernate 6 uebersetzt einen
+         * impliziten Pfad in einen INNER JOIN. Das wuerde jede Abwesenheit
+         * OHNE Phasenbezug (der Normalfall) schon vor der "p IS NULL"-Bedingung
+         * herausfiltern und still 0 statt der tatsaechlichen Summe liefern.
+         */
+        @Query("SELECT COALESCE(SUM(a.stunden), 0) FROM Abwesenheit a LEFT JOIN a.langzeitkrankmeldungPhase p "
+                        + "WHERE a.mitarbeiter.id = :mitarbeiterId "
+                        + "AND a.typ = :typ AND a.datum >= :von AND a.datum <= :bis "
+                        + "AND (p IS NULL OR p.typ NOT IN :ausgeschlossen)")
+        java.math.BigDecimal sumStundenOhnePhasenTypen(
+                        @Param("mitarbeiterId") Long mitarbeiterId,
+                        @Param("typ") AbwesenheitsTyp typ,
+                        @Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis,
+                        @Param("ausgeschlossen") Collection<LangzeitkrankmeldungPhaseTyp> ausgeschlossen);
 }

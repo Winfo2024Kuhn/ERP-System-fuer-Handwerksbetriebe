@@ -72,6 +72,7 @@ public class ZeiterfassungApiService {
     private final LieferantenRepository lieferantenRepository;
     private final FeiertagService feiertagService;
     private final ZeitbuchungAuditService auditService;
+    private final TagesSollService tagesSollService;
 
     // ==================== Daten abrufen ====================
 
@@ -1125,38 +1126,6 @@ public class ZeiterfassungApiService {
     }
 
     /**
-     * Berechnet die Stunden für bezahlte Feiertage in einem Zeitraum.
-     * Nur Feiertage an Arbeitstagen (Mo-Fr) werden gezählt.
-     * Halbe Feiertage (z.B. Heiligabend) zählen 50%.
-     */
-    /**
-     * Berechnet die Stunden für bezahlte Feiertage in einem Zeitraum.
-     * Nur Feiertage an Arbeitstagen (Mo-Fr) werden gezählt.
-     * Halbe Feiertage (z.B. Heiligabend) zählen 50%.
-     */
-    private BigDecimal berechneFeiertagsStunden(Zeitkonto zeitkonto, java.time.LocalDate von, java.time.LocalDate bis) {
-        BigDecimal summe = BigDecimal.ZERO;
-
-        for (java.time.LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
-            int wochentag = tag.getDayOfWeek().getValue();
-            BigDecimal tagesSoll = zeitkonto.getSollstundenFuerTag(wochentag);
-
-            // Nur Feiertage an Arbeitstagen zählen (nicht an Wochenenden)
-            if (tagesSoll.compareTo(BigDecimal.ZERO) > 0 && feiertagService.istFeiertag(tag)) {
-                if (feiertagService.istHalberFeiertag(tag)) {
-                    // Halber Feiertag: 50% der Sollstunden
-                    summe = summe.add(tagesSoll.divide(BigDecimal.valueOf(2), 2, java.math.RoundingMode.HALF_UP));
-                } else {
-                    // Voller Feiertag: volle Sollstunden
-                    summe = summe.add(tagesSoll);
-                }
-            }
-        }
-
-        return summe;
-    }
-
-    /**
      * Berechnet die anteiligen Ist-Stunden für einen Teilzeitraum innerhalb eines Monats.
      * Wird für den ersten und letzten Monat des Gesamtsaldo-Bereichs verwendet,
      * wenn das Start-/Enddatum nicht auf den Monatsersten/-letzten fällt.
@@ -1182,7 +1151,8 @@ public class ZeiterfassungApiService {
 
         // Feiertagsstunden
         Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
-        BigDecimal feiertagsStunden = berechneFeiertagsStunden(zeitkonto, von, bis);
+        BigDecimal feiertagsStunden = tagesSollService.feiertagsGutschriftSumme(
+                mitarbeiterId, zeitkonto, von, bis);
 
         // Korrekturstunden im Teilzeitraum
         BigDecimal korrekturStunden = zeitkontoKorrekturService.summiereAktiveKorrekturenImZeitraum(

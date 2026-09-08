@@ -5,7 +5,7 @@ import {
     Briefcase, Clock, Mail, Package, MoreHorizontal,
     X, FileText, User, Truck, ShoppingCart, FileCheck,
     BarChart3, Euro, Home, Layers, List, Calendar,
-    CalendarDays, Plane, Shield, FileJson, ChevronRight
+    CalendarDays, Plane, Shield, FileJson, ChevronRight, Stethoscope
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -40,6 +40,7 @@ const SUBMENU_ITEMS: Record<string, NavItem[]> = {
         { name: 'Auswertung', href: '/auswertung', icon: BarChart3 },
         { name: 'Zeitkonten', href: '/zeitkonten', icon: Clock },
         { name: 'Urlaub', href: '/urlaubsantraege', icon: Plane },
+        { name: 'Lange Krankheit', href: '/langzeitkrankmeldungen', icon: Stethoscope },
     ],
     '/emails': [
         { name: 'E-Mail Center', href: '/emails', icon: Mail },

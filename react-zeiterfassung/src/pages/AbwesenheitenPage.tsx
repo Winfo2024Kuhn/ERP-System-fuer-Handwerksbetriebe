@@ -17,6 +17,17 @@ interface Antrag {
     bemerkung?: string
 }
 
+// Laufende Langzeitkrankmeldung (Wiedereingliederung o.ä.) – nur lesend, siehe
+// unten am Einsatzort. Kein Name, keine Notiz, keine Diagnose: der Endpunkt
+// liefert bewusst nur diese fünf Felder (DSGVO).
+interface LangzeitFall {
+    phase: 'LOHNFORTZAHLUNG' | 'KRANKENGELD' | 'WIEDEREINGLIEDERUNG'
+    phaseLabel: string
+    heuteGeplanteStunden: number | null
+    seit: string
+    bisDatum: string | null
+}
+
 const statusConfig = {
     OFFEN: { label: 'Offen', icon: Clock, color: 'text-amber-600 bg-amber-50 border-amber-200' },
     GENEHMIGT: { label: 'Genehmigt', icon: CheckCircle2, color: 'text-green-600 bg-green-50 border-green-200' },
@@ -37,6 +48,7 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
     const [loading, setLoading] = useState(true)
     const [statusFilter, setStatusFilter] = useState<string>('ALLE')
     const [jahrFilter, setJahrFilter] = useState<number>(new Date().getFullYear())
+    const [langzeitFall, setLangzeitFall] = useState<LangzeitFall | null>(null)
 
     // Verfügbare Jahre (aktuelles Jahr bis 5 Jahre zurück)
     const currentYear = new Date().getFullYear()
@@ -69,13 +81,43 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
             }
         }
 
-        loadAntraege()
+        // Nur lesend: zeigt, in welcher Phase eine laufende Langzeitkrankmeldung
+        // gerade steckt (z.B. Wiedereingliederung), damit der Mitarbeiter weiß,
+        // wogegen sein reduziertes Tagessoll läuft. Anlegen/Ändern passiert
+        // ausschließlich am PC im Büro (Plan Abschnitt 6, bestätigt vom
+        // Projektinhaber am 08.09.2026) – hier kommt deshalb absichtlich kein
+        // Schreib-Request hin, auch nicht "für später vorbereitet". Ein Fehler
+        // hier darf die Seite nicht stören: einfach keine Zusatzinfo zeigen.
+        const loadLangzeitFall = async () => {
+            try {
+                const token = localStorage.getItem('zeiterfassung_token')
+                if (!token) {
+                    setLangzeitFall(null)
+                    return
+                }
+                const res = await fetch(`/api/zeiterfassung/langzeitkrankmeldung/${token}`)
+                if (res.ok) {
+                    const data = await res.json()
+                    // Leeres Objekt {} = nichts anliegend (siehe Backend-Kontrakt).
+                    setLangzeitFall(data && data.phase ? data : null)
+                }
+            } catch (err) {
+                console.error('Langzeitkrankmeldung konnte nicht geladen werden:', err)
+            }
+        }
+
+        Promise.all([loadAntraege(), loadLangzeitFall()])
     }, [mitarbeiter, statusFilter, jahrFilter])
 
     const formatDatum = (dateStr: string) => {
         const date = new Date(dateStr)
         return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
     }
+
+    // 4.00 -> "4", 2.50 -> "2,5" - deutsches Zahlenformat, dieselbe Regel wie
+    // formatStundenDe im Dashboard (DashboardPage.tsx). Stunden werden in der
+    // App einheitlich geschrieben, nicht mal mit Punkt, mal mit Komma.
+    const formatStundenDe = (stunden: number) => stunden.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 
     const berechneUrlaubstage = (von: string, bis: string) => {
         const start = new Date(von)
@@ -115,6 +157,28 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
                     </button>
                 </div>
             </header>
+
+            {/* Info-Banner: laufende Langzeitkrankmeldung (z.B. Wiedereingliederung).
+                NUR LESEND. Langzeitkrankmeldungen werden ausschließlich am PC im
+                Büro angelegt und geändert (Plan Abschnitt 6, bestätigt vom
+                Projektinhaber am 08.09.2026) – hier daher bewusst kein
+                Bearbeiten-Button, kein Formular, kein Schreib-Request. Bitte
+                nicht "hilfreich" ergänzen.
+                Neutrale Information, keine Warnung -> indigo (--info-Rolle im
+                Design-System). Kein teal - das kommt im Design-System nirgends
+                vor (Design-Review-Befund). */}
+            {langzeitFall && (
+                <div className="mx-4 mt-4 bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+                        <Stethoscope className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <p className="text-sm font-medium text-indigo-800">
+                        {langzeitFall.phaseLabel} seit {formatDatum(langzeitFall.seit)}
+                        {langzeitFall.heuteGeplanteStunden !== null &&
+                            ` — heute ${formatStundenDe(langzeitFall.heuteGeplanteStunden)} Stunden geplant`}
+                    </p>
+                </div>
+            )}
 
             {/* Stats */}
             <div className="grid grid-cols-3 gap-3 p-4">

@@ -58,6 +58,7 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private FeiertagService feiertagService;
     @Mock private ZeitbuchungAuditService auditService;
+    @Mock private TagesSollService tagesSollService;
     @Mock private MonatsSaldoService monatsSaldoService;
 
     private ZeiterfassungApiService service;
@@ -76,7 +77,7 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
                 projektRepository, mitarbeiterRepository, arbeitsgangRepository,
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
-                lieferantenRepository, feiertagService, auditService);
+                lieferantenRepository, feiertagService, auditService, tagesSollService);
         ReflectionTestUtils.setField(service, "monatsSaldoService", monatsSaldoService);
     }
 

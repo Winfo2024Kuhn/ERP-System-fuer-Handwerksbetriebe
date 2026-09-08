@@ -25,6 +25,7 @@ public class AbwesenheitService {
     private final FeiertagService feiertagService;
     private final MonatsSaldoService monatsSaldoService;
     private final ZeitbuchungRepository zeitbuchungRepository;
+    private final TagesSollService tagesSollService;
 
     /**
      * Bucht eine Abwesenheit für einen Mitarbeiter an einem bestimmten Tag.
@@ -54,15 +55,26 @@ public class AbwesenheitService {
                     feiertagService.getFeiertagInfo(datum).map(Feiertag::getBezeichnung).orElse(datum.toString()));
         }
 
-        // Hole Sollstunden für diesen Tag aus dem Zeitkonto
+        // Hole Sollstunden für diesen Tag aus dem Zeitkonto (berücksichtigt eine
+        // laufende Wiedereingliederung: dann zählt deren reduziertes Stufenplan-Soll).
         Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
-        int wochentag = datum.getDayOfWeek().getValue(); // 1=Montag, 7=Sonntag
-        BigDecimal sollStunden = zeitkonto.getSollstundenFuerTag(wochentag);
+        BigDecimal sollStunden = tagesSollService.arbeitsSoll(mitarbeiterId, zeitkonto, datum);
 
-        // Prüfe ob Arbeitstag (Sollstunden > 0)
+        // Prüfe ob Arbeitstag (Sollstunden > 0). Zwei fachlich verschiedene Gründe für
+        // 0 Stunden: entweder ist es laut Zeitkonto grundsätzlich kein Arbeitstag
+        // (Wochenende), oder eine laufende Wiedereingliederung sieht an diesem
+        // regulären Arbeitstag gerade 0 Stunden vor. Das Büro braucht dafür zwei
+        // unterscheidbare Meldungen statt einer irreführenden "Kein Arbeitstag"
+        // an einem Tag, der laut Vertrag ein Arbeitstag ist.
         if (sollStunden.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Kein Arbeitstag: Am " +
-                    datum.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.GERMAN) +
+            String wochentag = datum.getDayOfWeek()
+                    .getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.GERMAN);
+            BigDecimal rohesSoll = zeitkonto.getSollstundenFuerTag(datum.getDayOfWeek().getValue());
+            if (rohesSoll.compareTo(BigDecimal.ZERO) > 0) {
+                throw new IllegalArgumentException("Keine Sollstunden am " + wochentag +
+                        ": Die laufende Wiedereingliederung sieht an diesem Tag 0 Stunden vor");
+            }
+            throw new IllegalArgumentException("Kein Arbeitstag: Am " + wochentag +
                     " hat dieser Mitarbeiter keine Sollstunden");
         }
 

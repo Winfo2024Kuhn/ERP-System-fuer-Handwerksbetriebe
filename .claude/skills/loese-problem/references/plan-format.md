@@ -15,7 +15,7 @@ Kontext-Log: docs/superpowers/plans/<datum>-<thema>-log.md
 
 <Regeln, die für alle Tasks gelten — Doku-Pflichtlektüre, Projektregeln, etc.>
 
-## Abschnitt 1 (max. 3 Tasks, disjunkte Dateien)
+## Abschnitt 1 (disjunkte Dateien, so breit wie möglich)
 
 ### Task 1
 - Branch: <kurzslug>/task-1-<stichwort>
@@ -88,3 +88,30 @@ bei jedem Task erneut Zeit und Kontext. Konkret heißt: Datei + Klasse/Funktion
 gibt. Der Coding-Agent darf `graphify` trotzdem nutzen, aber nur um einzelne
 Punkte aus dem Plan gezielt zu prüfen — nicht um sich einen allgemeinen
 Überblick zu verschaffen, den eigentlich schon der Plan liefern sollte.
+
+## Abschnitte schneiden: so wenig Runden wie möglich
+
+**Vorgabe des Nutzers vom 08.09.2026.** Es gibt **keine** Obergrenze von 3 Tasks
+pro Abschnitt mehr. Sind die Dateien disjunkt und die Abhängigkeiten erfüllt,
+gehören auch sechs Tasks in dieselbe Runde.
+
+Der Schnitt entsteht aus der **topologischen Ebene der `Consumes`-Ketten**,
+nicht aus der Reihenfolge im Plandokument: Alles, was keine offene Abhängigkeit
+mehr hat, läuft zusammen. Ein Task, der weit hinten im Dokument steht, aber nur
+Task 1 braucht, gehört in die **zweite** Runde — nicht in die siebte.
+
+**Warum das zählt:** Jede zusätzliche Runde kostet einen vollen Reviewer-Lauf
+(gemessen ~165k Tokens) plus einen kompletten Testsuite-Durchlauf. Real
+passiert: 19 Tasks wurden erst auf 9 Abschnitte verteilt, obwohl die Ketten nur
+5 erzwingen — rund 660k Tokens und die entsprechende Wartezeit für nichts. Der
+Review-Aufwand skaliert mit der Größe des Diffs, nicht mit der Anzahl der Tasks
+darin: **ein** Reviewer für sechs disjunkte Tasks ist deutlich billiger als
+zwei für je drei.
+
+Beim Schneiden zusätzlich beachten:
+
+- Zwei Tasks derselben Runde dürfen sich **keine Datei** teilen. Das
+  programmatisch prüfen, nicht nach Augenmaß.
+- Jede Runde muss für sich compilierbar und lauffähig sein.
+- Frontend-Tasks möglichst in **dieselbe** Runde legen — dann läuft der
+  Design-Reviewer einmal statt dreimal.

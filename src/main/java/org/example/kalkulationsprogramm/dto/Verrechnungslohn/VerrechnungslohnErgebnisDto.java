@@ -59,6 +59,18 @@ public class VerrechnungslohnErgebnisDto {
         private BigDecimal gesamtkosten = BigDecimal.ZERO;
         private LohnQuelle quelle;
         private boolean bruttoIstDefault;
+        /**
+         * Anzahl der Kalendertage im Jahr, die wegen einer Krankengeld- oder
+         * Wiedereingliederungsphase aus den Lohnkosten ausgeklammert wurden
+         * (Langzeitkrankmeldung, Task 13).
+         */
+        private int ausgeklammerteTage;
+        /**
+         * Anteil der Kalendertage, an denen der Mitarbeiter regulaer im
+         * Lohn steht -- (Jahrestage - ausgeklammerteTage) / Jahrestage.
+         * 1.0 ohne Langzeitkrankmeldung.
+         */
+        private BigDecimal anwesenheitsFaktor = BigDecimal.ONE;
     }
 
     @Getter
@@ -78,6 +90,14 @@ public class VerrechnungslohnErgebnisDto {
         private boolean interneIstDefault;
         /** true, wenn kein Zeitkonto hinterlegt ist und mit 8 h/Werktag gerechnet wurde. */
         private boolean sollIstDefault;
+        /**
+         * Anzahl der Kalendertage im Jahr, die wegen einer Krankengeld- oder
+         * Wiedereingliederungsphase aus dem Jahressoll ausgeklammert wurden
+         * (Langzeitkrankmeldung, Task 13). 0 ohne Langzeitkrankmeldung.
+         */
+        private int ausgeklammerteTage;
+        /** Sollstunden, die wegen ausgeklammerteTage nicht im Jahressoll stecken. */
+        private BigDecimal ausgeklammerteStunden = BigDecimal.ZERO;
     }
 
     @Getter

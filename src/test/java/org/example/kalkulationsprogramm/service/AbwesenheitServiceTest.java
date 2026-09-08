@@ -39,6 +39,8 @@ class AbwesenheitServiceTest {
     private MonatsSaldoService monatsSaldoService;
     @Mock
     private ZeitbuchungRepository zeitbuchungRepository;
+    @Mock
+    private TagesSollService tagesSollService;
 
     @InjectMocks
     private AbwesenheitService abwesenheitService;
@@ -73,6 +75,7 @@ class AbwesenheitServiceTest {
         when(feiertagService.istFeiertag(any())).thenReturn(false);
         when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
         when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(tagesSollService.arbeitsSoll(anyLong(), any(), any())).thenReturn(new BigDecimal("8.00"));
     }
 
     private Zeitbuchung erstelleArbeitsbuchung(BigDecimal stunden) {
@@ -176,6 +179,51 @@ class AbwesenheitServiceTest {
         // Halber Tag: Basis 4h - 1h gearbeitet = 3h
         assertEquals(0, new BigDecimal("3.00").compareTo(result.getStunden()),
                 "Halbtags-Krankheit muss gearbeitete Stunden vom halben Soll abziehen");
+    }
+
+    @Test
+    void krankheit_WaehrendWiedereingliederung_BuchtStufenplanStundenStattVollemSoll() {
+        // Stufenplan: Mitarbeiter läuft laut TagesSollService mit 2h/Tag statt der
+        // vollen 8h Sollstunden aus dem Zeitkonto. Eigene Stubs statt stubGrunddaten(),
+        // weil hier eine engere tagesSollService-Antwort die generische überschreiben
+        // muss (sonst UnnecessaryStubbingException bei doppelter Stubbierung).
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
+        when(feiertagService.istFeiertag(any())).thenReturn(false);
+        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG)).thenReturn(new BigDecimal("2.00"));
+        when(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitBetween(anyLong(), any(), any()))
+                .thenReturn(List.of());
+
+        Abwesenheit result = abwesenheitService.bucheAbwesenheit(
+                MITARBEITER_ID, MONTAG, AbwesenheitsTyp.KRANKHEIT, false);
+
+        assertEquals(0, new BigDecimal("2.00").compareTo(result.getStunden()),
+                "Während einer Wiedereingliederung muss die Krankmeldung die reduzierten " +
+                        "Stufenplan-Stunden (2h) buchen, nicht die vollen Sollstunden (8h)");
+    }
+
+    @Test
+    void krankheit_WiedereingliederungMitNullStunden_MeldungUnterscheidetSichVonWochenende() {
+        // Fachlich zwei verschiedene Dinge: ein Wochenende ist "kein Arbeitstag", ein
+        // Wiedereingliederungstag mit 0 Stunden ist ein Arbeitstag, an dem der Stufenplan
+        // gerade 0 Stunden vorsieht. Das Büro braucht zwei unterscheidbare Meldungen.
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
+        when(feiertagService.istFeiertag(any())).thenReturn(false);
+        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG)).thenReturn(BigDecimal.ZERO);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.KRANKHEIT, false));
+
+        assertFalse(ex.getMessage().contains("Kein Arbeitstag"),
+                "Ein Wiedereingliederungstag mit 0 Stunden darf nicht dieselbe Meldung bekommen wie ein "
+                        + "Wochenende. Meldung war: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("Wiedereingliederung"),
+                "Meldung muss erkennen lassen, dass die Wiedereingliederung greift. Meldung war: "
+                        + ex.getMessage());
     }
 
     @Test
