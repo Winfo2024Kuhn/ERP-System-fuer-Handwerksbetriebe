@@ -137,6 +137,43 @@ testgetrieben nachholt (Fix als Patch sichern, Dateien zurücksetzen, rote
 Spec, Patch wieder anwenden) — und ausdrücklich **kein `git stash`**, der
 Stash ist mit anderen Sitzungen geteilt.
 
+### ⚠️ `git worktree remove --force` löscht durch die node_modules-Junction hindurch
+
+**Der teuerste Fehler dieser Pipeline. Am 09.09.2026 real passiert.**
+
+Ein Agent hatte `node_modules` in seinem Worktree als NTFS-Junction auf das
+Haupt-Checkout gelegt — der empfohlene Weg. Beim Aufräumen lief
+`git worktree remove --force` rekursiv **durch die Junction hindurch** und hat
+den Inhalt des **echten** `node_modules` im Haupt-Checkout gelöscht. Übrig
+blieb ein leeres Verzeichnis.
+
+Verräterisch sind die Fehlermeldungen: `Permission denied` und
+`Filename too long`. Sie sehen nach einem harmlosen Windows-Pfadproblem aus und
+bedeuten in Wahrheit: *Ich bin durch den Verweis gelaufen und nur nicht ganz
+fertig geworden.* Der Schaden fällt erst beim nächsten Testlauf auf, wenn
+`vite`/`vitest` plötzlich fehlen.
+
+**Vor jedem `worktree remove` die Verweise lösen** — `rmdir` ohne `/s` entfernt
+eine Junction, ohne ihr Ziel anzufassen:
+
+```powershell
+Get-ChildItem -Path "<worktree>" -Recurse -Force -Directory -ErrorAction SilentlyContinue |
+  Where-Object { $_.LinkType } |
+  ForEach-Object { & cmd /c "rmdir `"$($_.FullName)`"" }
+git worktree remove "<worktree>" --force
+```
+
+Und **danach nachsehen**, ob das Haupt-`node_modules` noch gefüllt ist:
+
+```powershell
+cmd /c "dir /b `"<haupt>\react-pc-frontend\node_modules`" | find /c /v `"`""
+```
+
+Kommt dort `0` heraus: `npm install` im betroffenen Frontend (nicht `npm ci`,
+siehe oben). Dauert ein bis zwei Minuten und stellt alles wieder her — aber nur,
+wenn man es merkt. Ein stiller Verlust kostet die nächste Runde einen halben
+Vormittag Fehlersuche an der falschen Stelle.
+
 ### Frisches Worktree: `node_modules` verlinken, aber richtig
 
 Ein neues Worktree hat keine `node_modules`. Der Weg ist ein Verweis aufs
