@@ -19,6 +19,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -78,6 +79,14 @@ public class LangzeitkrankmeldungService {
      * Issue #91). NICHT auf {@code LocalDate.MAX} zurueckbauen.
      */
     private static final LocalDate OFFENES_ENDE = LocalDate.of(9999, 12, 31);
+
+    /**
+     * Fuer Datumsangaben, die in einen fertigen, im Buero angezeigten
+     * Hinweis- oder Fehlertext eingebaut werden (Nachbesserung Abschnitt 5,
+     * Befund 5) - NICHT fuer Datumsangaben, die als Daten ueber DTOs/JSON
+     * gehen (die bleiben ISO, das Frontend formatiert sie selbst).
+     */
+    private static final DateTimeFormatter ANZEIGE_DATUM = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     private final LangzeitkrankmeldungRepository repository;
     private final LangzeitkrankmeldungPhaseRepository phaseRepository;
@@ -363,7 +372,7 @@ public class LangzeitkrankmeldungService {
         return repository.findUeberlappende(mitarbeiterId, von, bis).stream()
                 .map(l -> String.format(
                         "In diesem Zeitraum läuft eine Krankmeldung (seit %s). Bitte prüfen, ob der Urlaub wirklich passt.",
-                        l.getBeginn()))
+                        ANZEIGE_DATUM.format(l.getBeginn())))
                 .toList();
     }
 
@@ -389,7 +398,7 @@ public class LangzeitkrankmeldungService {
             Langzeitkrankmeldung erste = ueberlappend.get(0);
             throw new IllegalStateException(
                     String.format("Für diesen Mitarbeiter läuft bereits eine Krankmeldung seit %s.",
-                            erste.getBeginn()));
+                            ANZEIGE_DATUM.format(erste.getBeginn())));
         }
     }
 
