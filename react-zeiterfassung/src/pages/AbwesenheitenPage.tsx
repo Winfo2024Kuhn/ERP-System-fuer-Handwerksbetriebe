@@ -114,6 +114,11 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
         return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
     }
 
+    // 4.00 -> "4", 2.50 -> "2,5" - deutsches Zahlenformat, dieselbe Regel wie
+    // formatStundenDe im Dashboard (DashboardPage.tsx). Stunden werden in der
+    // App einheitlich geschrieben, nicht mal mit Punkt, mal mit Komma.
+    const formatStundenDe = (stunden: number) => stunden.toLocaleString('de-DE', { maximumFractionDigits: 2 })
+
     const berechneUrlaubstage = (von: string, bis: string) => {
         const start = new Date(von)
         const end = new Date(bis)
@@ -158,16 +163,19 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
                 Büro angelegt und geändert (Plan Abschnitt 6, bestätigt vom
                 Projektinhaber am 08.09.2026) – hier daher bewusst kein
                 Bearbeiten-Button, kein Formular, kein Schreib-Request. Bitte
-                nicht "hilfreich" ergänzen. */}
+                nicht "hilfreich" ergänzen.
+                Neutrale Information, keine Warnung -> indigo (--info-Rolle im
+                Design-System). Kein teal - das kommt im Design-System nirgends
+                vor (Design-Review-Befund). */}
             {langzeitFall && (
-                <div className="mx-4 mt-4 bg-teal-50 border border-teal-200 rounded-xl p-3 flex items-center gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
-                        <Stethoscope className="w-5 h-5 text-teal-600" />
+                <div className="mx-4 mt-4 bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+                        <Stethoscope className="w-5 h-5 text-indigo-600" />
                     </div>
-                    <p className="text-sm font-medium text-teal-800">
+                    <p className="text-sm font-medium text-indigo-800">
                         {langzeitFall.phaseLabel} seit {formatDatum(langzeitFall.seit)}
                         {langzeitFall.heuteGeplanteStunden !== null &&
-                            ` — heute ${langzeitFall.heuteGeplanteStunden} Stunden geplant`}
+                            ` — heute ${formatStundenDe(langzeitFall.heuteGeplanteStunden)} Stunden geplant`}
                     </p>
                 </div>
             )}

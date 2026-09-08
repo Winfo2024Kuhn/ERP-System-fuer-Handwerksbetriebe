@@ -1253,20 +1253,21 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                     NUR LESEND - keine Bearbeitung hier, kein Button, kein Formular,
                     kein Schreib-Request. Eine Langzeitkrankmeldung wird ausschließlich
                     am PC angelegt/geändert (Vorgabe des Projektinhabers, 08.09.2026).
-                    Bewusst teal statt amber/rot: das ist eine Information, keine Warnung. */}
+                    Neutrale Information, keine Warnung -> indigo (--info-Rolle im
+                    Design-System, kein teal - das kommt dort nirgends vor). Aufbau
+                    folgt den Nachbarkarten (Kalender, Abwesenheit beantragen,
+                    Saldenauswertung): weiße Karte mit getönter Icon-Kachel. */}
                 {langzeitFall && (
-                    <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 shadow-sm">
-                        <div className="flex items-start gap-3">
-                            <div className="flex-shrink-0 w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center">
-                                <Stethoscope className="w-5 h-5 text-teal-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-semibold text-teal-800">
-                                    {langzeitFall.phase === 'WIEDEREINGLIEDERUNG' && langzeitFall.heuteGeplanteStunden !== null
-                                        ? `${langzeitFall.phaseLabel} — heute ${formatStundenDe(langzeitFall.heuteGeplanteStunden)} Stunden geplant`
-                                        : `${langzeitFall.phaseLabel} — seit ${formatDatumDe(langzeitFall.seit)}`}
-                                </p>
-                            </div>
+                    <div className="w-full bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center gap-4">
+                        <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Stethoscope className="w-5 h-5 text-indigo-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-slate-900">
+                                {langzeitFall.phase === 'WIEDEREINGLIEDERUNG' && langzeitFall.heuteGeplanteStunden !== null
+                                    ? `${langzeitFall.phaseLabel} — heute ${formatStundenDe(langzeitFall.heuteGeplanteStunden)} Stunden geplant`
+                                    : `${langzeitFall.phaseLabel} — seit ${formatDatumDe(langzeitFall.seit)}`}
+                            </p>
                         </div>
                     </div>
                 )}
