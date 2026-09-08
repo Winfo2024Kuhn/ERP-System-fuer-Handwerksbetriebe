@@ -150,4 +150,54 @@ describe('AbwesenheitenPage – Langzeitkrankmeldung im Verlauf', () => {
         expect(screen.queryByText(/Stunden geplant/)).not.toBeInTheDocument()
         expect(screen.queryByText(/Wiedereingliederung/)).not.toBeInTheDocument()
     })
+
+    // Zwei Schreibweisen für Stunden in derselben App sind ein Bug: das
+    // Dashboard formatiert schon deutsch ("2,5"), der Banner hier gab bisher
+    // die rohe Zahl aus ("2.5"). Beide sollen jetzt gleich schreiben.
+    it('schreibt Stunden deutsch (Komma statt Punkt), wie im Dashboard', async () => {
+        vi.stubGlobal(
+            'fetch',
+            buildFetchMock({
+                antraege: [],
+                langzeit: {
+                    phase: 'WIEDEREINGLIEDERUNG',
+                    phaseLabel: 'Wiedereingliederung',
+                    heuteGeplanteStunden: 2.5,
+                    seit: '2026-03-01',
+                    bisDatum: '2026-04-30',
+                },
+            }),
+        )
+
+        renderPage()
+
+        expect(await screen.findByText(/heute 2,5 Stunden geplant/)).toBeInTheDocument()
+        expect(screen.queryByText(/heute 2\.5 Stunden geplant/)).not.toBeInTheDocument()
+    })
+
+    // Befund 1 (Design-Review): teal kommt im Design-System nicht vor. Der
+    // Banner steht für neutrale Information -> indigo (--info-Rolle).
+    it('nutzt indigo statt teal für den Info-Banner', async () => {
+        vi.stubGlobal(
+            'fetch',
+            buildFetchMock({
+                antraege: [],
+                langzeit: {
+                    phase: 'WIEDEREINGLIEDERUNG',
+                    phaseLabel: 'Wiedereingliederung',
+                    heuteGeplanteStunden: 4,
+                    seit: '2026-03-01',
+                    bisDatum: '2026-04-30',
+                },
+            }),
+        )
+
+        renderPage()
+
+        const text = await screen.findByText(/Wiedereingliederung seit 01\.03\.2026/)
+        const banner = text.closest('div.bg-indigo-50') as HTMLElement | null
+        expect(banner).not.toBeNull()
+        expect(banner!.className).not.toMatch(/teal/)
+        expect(banner!.innerHTML).not.toMatch(/teal/)
+    })
 })

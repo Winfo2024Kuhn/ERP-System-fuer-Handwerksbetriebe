@@ -519,4 +519,38 @@ describe('DashboardPage – Langzeitkrankmeldung-Karte', () => {
         expect(await screen.findByText('Zeit erfassen')).toBeInTheDocument()
         expect(screen.queryByText(/Wiedereingliederung/i)).not.toBeInTheDocument()
     })
+
+    // Befund 1 (Design-Review): teal kommt im Design-System nicht vor. Die
+    // Karte folgt jetzt dem Muster der Nachbarkarten (Kalender, Abwesenheit
+    // beantragen, Saldenauswertung): weiße Karte mit getönter Icon-Kachel,
+    // Farbe indigo (--info-Rolle) statt teal.
+    it('nutzt die Nachbarkarten-Optik (weiße Karte, indigo Icon-Kachel) statt teal', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url.includes('/api/zeiterfassung/langzeitkrankmeldung/')) {
+                return new Response(
+                    JSON.stringify({
+                        phase: 'WIEDEREINGLIEDERUNG',
+                        phaseLabel: 'Wiedereingliederung',
+                        heuteGeplanteStunden: 4.0,
+                        seit: '2026-03-01',
+                        bisDatum: '2026-04-30',
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } },
+                )
+            }
+            return new Response('{}', { status: 200 })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        renderDashboard()
+
+        const text = await screen.findByText('Wiedereingliederung — heute 4 Stunden geplant')
+        const card = text.closest('div.bg-white') as HTMLElement | null
+        expect(card).not.toBeNull()
+        expect(card!.className).toContain('border-slate-200')
+        expect(card!.className).not.toMatch(/teal/)
+        expect(card!.querySelector('.bg-indigo-50')).not.toBeNull()
+        expect(card!.innerHTML).not.toMatch(/teal/)
+    })
 })
