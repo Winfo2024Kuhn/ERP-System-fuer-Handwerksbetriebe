@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { designPruefung } from './hilfen/design';
 
 /**
  * Task 17 (Abschnitt 5, Langzeitkrankmeldung, Issue #91): Warnhinweis auf der
@@ -102,7 +103,7 @@ async function stubbeApi(page: Page, opts: { hinweisFehler?: boolean } = {}) {
 }
 
 test.describe('Urlaubsanträge: Hinweis bei laufender Krankmeldung (Task 17)', () => {
-    test('zeigt den Warnhinweis nur beim betroffenen Antrag, und "Genehmigen" wirkt trotzdem', async ({ page }) => {
+    test('zeigt den Warnhinweis nur beim betroffenen Antrag, und "Genehmigen" wirkt trotzdem', async ({ page }, testInfo) => {
         await stubbeApi(page);
         await page.goto('/urlaubsantraege');
 
@@ -119,6 +120,14 @@ test.describe('Urlaubsanträge: Hinweis bei laufender Krankmeldung (Task 17)', (
         // Warnung, keine Sperre: der Knopf bleibt anklickbar.
         const genehmigenKnopf = karteMitHinweis.getByRole('button', { name: 'Genehmigen' });
         await expect(genehmigenKnopf).toBeEnabled();
+
+        // Design-Pruefung (Ebene 2, Befund 2): Screenshot + automatische
+        // Layout-Zusicherungen fuer genau den Zustand, um den es hier geht --
+        // eine Karte mit sichtbarem Warnhinweis neben einer Karte ohne.
+        await designPruefung(page, testInfo, 'urlaubsantrag-krankmeldung-hinweis', {
+            primaerAktion: genehmigenKnopf,
+        });
+
         await genehmigenKnopf.click();
 
         const bestaetigenDialog = page.getByRole('dialog');
