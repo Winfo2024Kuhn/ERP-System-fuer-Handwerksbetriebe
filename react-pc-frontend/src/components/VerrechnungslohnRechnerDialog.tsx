@@ -75,6 +75,10 @@ interface MitarbeiterStundenZeile {
     krankheitIstDefault: boolean;
     interneIstDefault: boolean;
     sollIstDefault: boolean;
+    /** Tage einer Langzeitkrankmeldung (Krankengeld/Wiedereingliederung), die
+     * anteilig aus Jahressoll und Lohnkosten herausgerechnet wurden. 0 bei
+     * Mitarbeitern ohne Langzeitfall. */
+    ausgeklammerteTage: number;
 }
 
 interface KostenstelleAnteil {
@@ -422,6 +426,18 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
         }
         return { gesamt: sum, perId };
     }, [data, stundenOverrides]);
+
+    // Erklaerender Satz unter der Stundentabelle: nur wenn irgendjemand
+    // betroffen ist. Ohne diese Bedingung wuerde der Hinweis auch bei
+    // Mitarbeitern ohne Langzeitfall angezeigt und den Dialog fuer den
+    // Normalfall verstopfen.
+    const ausgeklammerteHinweis = useMemo(() => {
+        if (!data) return null;
+        const betroffene = data.stundenzeilen.filter((z) => z.ausgeklammerteTage > 0);
+        if (betroffene.length === 0) return null;
+        const tage = betroffene.reduce((summe, z) => summe + z.ausgeklammerteTage, 0);
+        return { anzahl: betroffene.length, tage };
+    }, [data]);
 
     const effGemeinkosten = useMemo(() => {
         if (!data) return { gesamt: 0, perId: new Map<number, number>() };
@@ -847,6 +863,12 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                             <th className="py-2 pr-4 font-medium text-right">Soll</th>
                                             <th className="py-2 pr-4 font-medium text-right">Urlaub</th>
                                             <th className="py-2 pr-4 font-medium text-right">Krank</th>
+                                            <th
+                                                className="py-2 pr-4 font-medium text-right"
+                                                title="Diese Tage sind aus Jahressoll und Lohnkosten herausgerechnet."
+                                            >
+                                                Krankengeld/Wiedereingliederung
+                                            </th>
                                             <th className="py-2 pr-4 font-medium text-right">Intern</th>
                                             <th className="py-2 pl-4 font-medium text-right">Verkäuflich</th>
                                         </tr>
@@ -907,6 +929,18 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                         {z.krankheitIstDefault && ' ≈'}
                                                     </td>
                                                     <td
+                                                        className="py-2 pr-4 text-right font-mono text-slate-600"
+                                                        title={
+                                                            z.ausgeklammerteTage > 0
+                                                                ? 'Diese Tage sind aus Jahressoll und Lohnkosten herausgerechnet.'
+                                                                : undefined
+                                                        }
+                                                    >
+                                                        {z.ausgeklammerteTage > 0
+                                                            ? `${z.ausgeklammerteTage} Tage`
+                                                            : '–'}
+                                                    </td>
+                                                    <td
                                                         className={cn(
                                                             'py-2 pr-4 text-right font-mono',
                                                             z.interneIstDefault ? 'text-amber-600' : 'text-slate-600'
@@ -934,7 +968,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                     </tbody>
                                     <tfoot>
                                         <tr>
-                                            <td colSpan={5} className="pt-3 text-right text-sm font-semibold text-slate-900">
+                                            <td colSpan={6} className="pt-3 text-right text-sm font-semibold text-slate-900">
                                                 Verkäufliche Stunden gesamt:
                                             </td>
                                             <td className="pt-3 text-right font-mono font-semibold text-slate-900">
@@ -944,6 +978,13 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                     </tfoot>
                                 </table>
                             </div>
+                            {ausgeklammerteHinweis && (
+                                <p className="mt-3 text-sm text-slate-500">
+                                    Bei {ausgeklammerteHinweis.anzahl} Mitarbeitern sind Krankengeld- und
+                                    Wiedereingliederungszeiten herausgerechnet — insgesamt{' '}
+                                    {ausgeklammerteHinweis.tage} Tage.
+                                </p>
+                            )}
                         </Section>
                     )}
 

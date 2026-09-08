@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { VerrechnungslohnRechnerDialog } from './VerrechnungslohnRechnerDialog';
 
@@ -56,6 +56,7 @@ const antwort = (interneQuoteProzent = 5) => ({
             krankheitIstDefault: false,
             interneIstDefault: true,
             sollIstDefault: false,
+            ausgeklammerteTage: 0,
         },
     ],
     kostenstellen: [],
@@ -76,6 +77,14 @@ const neuRechnenButton = () =>
     screen
         .getAllByRole('button')
         .find((b) => b.textContent?.includes('Neu rechnen')) as HTMLButtonElement;
+
+/** Klappt die Sektion "Wie viele Stunden kann ich verkaufen?" auf -- die
+ * Stundentabelle (inkl. der neuen Spalte fuer ausgeklammerte Tage) ist sonst
+ * gar nicht gerendert (Section rendert children nur wenn expanded). */
+const oeffneStundenSektion = () =>
+    fireEvent.click(
+        screen.getByRole('button', { name: /Wie viele Stunden kann ich verkaufen\?/ })
+    );
 
 describe('VerrechnungslohnRechnerDialog', () => {
     beforeEach(() => {
@@ -235,5 +244,45 @@ describe('VerrechnungslohnRechnerDialog', () => {
 
         await waitFor(() => expect(toastError).toHaveBeenCalled());
         expect(toastError.mock.calls[0][0]).toContain('Schweisserei');
+    });
+
+    it('zeigt bei Mitarbeitern ohne Langzeitkrankmeldung nichts fuer ausgeklammerte Tage', async () => {
+        // ausgeklammerteTage ist 0 (Normalfall) -- die Spalte soll dann "-"
+        // zeigen, nicht "0 Tage", und der erklaerende Satz unter der Tabelle
+        // darf gar nicht erst erscheinen (sonst verstopft er den Dialog fuer
+        // jeden Mitarbeiter ohne Langzeitfall).
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
+
+        oeffneStundenSektion();
+        const zeile = (await screen.findByText('Max Mustermann')).closest('tr') as HTMLElement;
+        expect(within(zeile).getByText('–')).toBeTruthy();
+
+        expect(screen.queryByText(/Krankengeld- und Wiedereingliederungszeiten/)).toBeNull();
+    });
+
+    it('zeigt ausgeklammerte Tage aus einer Langzeitkrankmeldung mit Erklaerung', async () => {
+        const mitLangzeitfall = antwort();
+        mitLangzeitfall.stundenzeilen = [
+            { ...mitLangzeitfall.stundenzeilen[0], ausgeklammerteTage: 122 },
+        ];
+        mockFetch.mockResolvedValue(antwortOk(mitLangzeitfall));
+
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
+
+        oeffneStundenSektion();
+        const zeile = (await screen.findByText('Max Mustermann')).closest('tr') as HTMLElement;
+        const zelle = within(zeile).getByText('122 Tage');
+        expect(zelle).toBeTruthy();
+        expect(zelle.getAttribute('title')).toBe(
+            'Diese Tage sind aus Jahressoll und Lohnkosten herausgerechnet.'
+        );
+
+        expect(
+            screen.getByText(
+                'Bei 1 Mitarbeitern sind Krankengeld- und Wiedereingliederungszeiten herausgerechnet — insgesamt 122 Tage.'
+            )
+        ).toBeTruthy();
     });
 });
