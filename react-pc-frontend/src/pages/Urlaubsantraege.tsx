@@ -4,7 +4,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
-import { Check, X, Calendar, User, FileText, Plane, Stethoscope, Clock } from 'lucide-react';
+import { Check, X, Calendar, User, FileText, Plane, Stethoscope, Clock, AlertTriangle } from 'lucide-react';
 import { useConfirm } from '../components/ui/confirm-dialog';
 
 interface Urlaubsantrag {
@@ -36,6 +36,9 @@ export default function Urlaubsantraege() {
         const v = searchParams.get('antragId');
         return v ? Number(v) : null;
     });
+    // Krankmeldungs-Hinweis je Antrag-ID (Task 17, Abschnitt 5). Reine
+    // Warnung fürs Büro, keine Sperre -- siehe getHinweisWarnungen() unten.
+    const [hinweise, setHinweise] = useState<Record<number, string[]>>({});
 
     // Deep-link: read status + optionalen fokusId aus URL.
     // fokusId wird nach dem Scrollen wieder aus der URL entfernt, damit die Hervorhebung
@@ -75,6 +78,44 @@ export default function Urlaubsantraege() {
         loadAntraege();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusFilter]);
+
+    // Hinweis auf eine laufende Krankmeldung, dort abgefragt, wo die
+    // Entscheidung fällt: bei jedem offenen Antrag, direkt beim Laden, nicht
+    // erst nach dem Klick auf "Genehmigen". Genau EIN Promise.all für alle
+    // offenen Anträge -- kein Fetch-Wasserfall in einer Schleife
+    // (kriterien.md, Performance). Der Hinweis ist Beiwerk: ein Fehler hier
+    // darf die Antragsliste nicht kaputt machen, deshalb kein Toast/Error-UI,
+    // nur ein leerer Kasten (= gar keiner).
+    useEffect(() => {
+        const offeneAntraege = antraege.filter(a => a.status === 'OFFEN');
+        if (offeneAntraege.length === 0) {
+            setHinweise({});
+            return;
+        }
+        let abgebrochen = false;
+        Promise.all(
+            offeneAntraege.map(async (antrag): Promise<[number, string[]]> => {
+                try {
+                    const params = new URLSearchParams({
+                        mitarbeiterId: String(antrag.mitarbeiter.id),
+                        von: antrag.vonDatum,
+                        bis: antrag.bisDatum,
+                    });
+                    const res = await fetch(`/api/langzeitkrankmeldungen/urlaubs-hinweise?${params.toString()}`);
+                    if (!res.ok) return [antrag.id, []];
+                    const data = await res.json();
+                    return [antrag.id, Array.isArray(data.warnungen) ? data.warnungen : []];
+                } catch (error) {
+                    console.error('Error loading Krankmeldungs-Hinweis', error);
+                    return [antrag.id, []];
+                }
+            }),
+        ).then((ergebnisse) => {
+            if (abgebrochen) return;
+            setHinweise(Object.fromEntries(ergebnisse));
+        });
+        return () => { abgebrochen = true; };
+    }, [antraege]);
 
     const loadAntraege = async () => {
         setLoading(true);
@@ -225,22 +266,34 @@ export default function Urlaubsantraege() {
                                     {getStatusBadge(antrag.status)}
                                 </div>
                                 {antrag.status === 'OFFEN' && (
-                                    <div className="flex gap-2">
-                                        <Button
-                                            onClick={() => handleReject(antrag.id)}
-                                            variant="outline"
-                                            className="text-red-600 hover:bg-red-50 border-red-200"
-                                            size="sm"
-                                        >
-                                            <X className="w-4 h-4 mr-1" /> Ablehnen
-                                        </Button>
-                                        <Button
-                                            onClick={() => handleApprove(antrag.id)}
-                                            className="bg-rose-600 text-white hover:bg-rose-700"
-                                            size="sm"
-                                        >
-                                            <Check className="w-4 h-4 mr-1" /> Genehmigen
-                                        </Button>
+                                    <div className="flex flex-col items-end gap-2">
+                                        {hinweise[antrag.id]?.length > 0 && (
+                                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 flex items-start gap-2 max-w-sm">
+                                                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                                <div>
+                                                    {hinweise[antrag.id].map((warnung, i) => (
+                                                        <p key={i}>{warnung}</p>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="flex gap-2">
+                                            <Button
+                                                onClick={() => handleReject(antrag.id)}
+                                                variant="outline"
+                                                className="text-red-600 hover:bg-red-50 border-red-200"
+                                                size="sm"
+                                            >
+                                                <X className="w-4 h-4 mr-1" /> Ablehnen
+                                            </Button>
+                                            <Button
+                                                onClick={() => handleApprove(antrag.id)}
+                                                className="bg-rose-600 text-white hover:bg-rose-700"
+                                                size="sm"
+                                            >
+                                                <Check className="w-4 h-4 mr-1" /> Genehmigen
+                                            </Button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
