@@ -430,3 +430,93 @@ describe('DashboardPage – Feierabend-Rückmeldung', () => {
         expect(mockedOfflineService.addPendingEntryWithOperationId).not.toHaveBeenCalled()
     })
 })
+
+describe('DashboardPage – Langzeitkrankmeldung-Karte', () => {
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', createMemoryStorage())
+        localStorage.setItem('zeiterfassung_token', 'tok-test')
+
+        mockedOfflineService.getFailedEntries.mockResolvedValue([])
+        mockedOfflineService.getHeuteGearbeitet.mockResolvedValue({
+            stunden: 0,
+            minuten: 0,
+            fromCache: false,
+        })
+        // pendingCount=1: loadActiveSession überspringt den Server-Abgleich (kein
+        // aktives Arbeits-Session-Setup nötig für diese Tests).
+        mockedOfflineService.getPendingCount.mockResolvedValue(1)
+        mockedOfflineService.getUnsyncedStopMinutes.mockResolvedValue(0)
+        mockedOfflineService.addPendingEntryWithOperationId.mockResolvedValue(undefined)
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+        localStorage.clear()
+        vi.unstubAllGlobals()
+    })
+
+    it('zeigt die Karte mit Stundentext, solange eine Wiedereingliederung läuft', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url.includes('/api/zeiterfassung/langzeitkrankmeldung/')) {
+                return new Response(
+                    JSON.stringify({
+                        phase: 'WIEDEREINGLIEDERUNG',
+                        phaseLabel: 'Wiedereingliederung',
+                        heuteGeplanteStunden: 4.0,
+                        seit: '2026-03-01',
+                        bisDatum: '2026-04-30',
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } },
+                )
+            }
+            return new Response('{}', { status: 200 })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        renderDashboard()
+
+        expect(await screen.findByText('Wiedereingliederung — heute 4 Stunden geplant')).toBeInTheDocument()
+        // DSGVO: kein Name, keine Notiz auf der Karte - nur die fünf erlaubten Felder.
+        expect(screen.queryByText('Max Mustermann')).not.toBeInTheDocument()
+    })
+
+    it('zeigt keine Karte, wenn der Endpunkt {} liefert (Normalfall)', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url.includes('/api/zeiterfassung/langzeitkrankmeldung/')) {
+                return new Response('{}', { status: 200 })
+            }
+            return new Response('{}', { status: 200 })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        renderDashboard()
+
+        // Dashboard ist fertig geladen (Start-Button sichtbar) …
+        await screen.findByText('Zeit erfassen')
+        // … aber keine Krankmeldungs-Karte, kein Stethoscope-Hinweis.
+        expect(screen.queryByText(/Wiedereingliederung/i)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Lohnfortzahlung/i)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Krankengeld/i)).not.toBeInTheDocument()
+    })
+
+    it('bleibt vollständig nutzbar, wenn die Langzeitkrankmeldung-Abfrage fehlschlägt', async () => {
+        // REGRESSION-Schutz: Der neue Endpunkt ist ein zusätzlicher Fetch neben
+        // dem bestehenden Dashboard-Ablauf. Schlägt er fehl, darf das Dashboard
+        // nicht kaputtgehen (kein weißer Screen) - die Karte bleibt einfach weg.
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url.includes('/api/zeiterfassung/langzeitkrankmeldung/')) {
+                throw new TypeError('Failed to fetch')
+            }
+            return new Response('{}', { status: 200 })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        renderDashboard()
+
+        expect(await screen.findByText('Zeit erfassen')).toBeInTheDocument()
+        expect(screen.queryByText(/Wiedereingliederung/i)).not.toBeInTheDocument()
+    })
+})

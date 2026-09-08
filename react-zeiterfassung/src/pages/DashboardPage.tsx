@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, X } from 'lucide-react'
+import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, X, Stethoscope } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
@@ -101,6 +101,19 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         dringend: boolean
     }
     const [urlaubsWarnung, setUrlaubsWarnung] = useState<UrlaubsVerfallWarnung | null>(null)
+
+    // Langzeitkrankmeldung: informiert den Mitarbeiter, wenn gerade eine Phase
+    // (Lohnfortzahlung/Krankengeld/Wiedereingliederung) läuft - damit klar ist,
+    // wogegen er stempelt, wenn sein Tagessoll reduziert ist. NUR LESEND: die
+    // Meldung wird ausschließlich am PC gepflegt, die App zeigt sie nur an.
+    interface LangzeitFall {
+        phase: 'LOHNFORTZAHLUNG' | 'KRANKENGELD' | 'WIEDEREINGLIEDERUNG'
+        phaseLabel: string
+        heuteGeplanteStunden: number | null
+        seit: string
+        bisDatum: string | null
+    }
+    const [langzeitFall, setLangzeitFall] = useState<LangzeitFall | null>(null)
 
     // Reparatur-Liste (Failed Entries): Buchungen, die der Server beim
     // Sync abgelehnt hat. "Mobile gewinnt" - der Handwerker sieht den
@@ -340,13 +353,38 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         }
     }
 
+    // Load running Langzeitkrankmeldung-Phase (falls vorhanden). Der Endpunkt
+    // liefert genau fünf Felder, kein Name, keine Notiz (DSGVO) - und ein
+    // leeres Objekt {}, wenn nichts anliegt (das ist der Normalfall für fast
+    // alle Mitarbeiter, fast immer). Ein Fehler hier darf das Dashboard nie
+    // kaputtmachen: im Zweifel bleibt die Karte einfach weg.
+    const loadLangzeitkrankmeldung = async () => {
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (!token) return
+        try {
+            const res = await fetch(`/api/zeiterfassung/langzeitkrankmeldung/${token}`)
+            if (res.ok) {
+                const data = await res.json()
+                if (data && data.phase) {
+                    setLangzeitFall(data)
+                } else {
+                    setLangzeitFall(null)
+                }
+            }
+        } catch {
+            console.log('Langzeitkrankmeldung konnte nicht geladen werden')
+        }
+    }
+
     useEffect(() => {
         // Load active session from server (primary) or localStorage (fallback)
         loadActiveSession()
         // Load today's hours
         loadHeuteGearbeitet()
-        // Load vacation expiration warning
-        loadUrlaubsVerfallWarnung()
+        // Urlaubsverfall-Warnung und Langzeitkrankmeldung parallel laden, nicht
+        // nacheinander - Handwerker sind oft im Funkloch, ein Fetch-Wasserfall
+        // kostet dort spürbar Zeit.
+        Promise.all([loadUrlaubsVerfallWarnung(), loadLangzeitkrankmeldung()])
         // Load repair list (failed sync entries)
         loadFailedEntries()
 
@@ -396,6 +434,15 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     const formatTime = (date: Date) => {
         return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
     }
+
+    // ISO-Datum (yyyy-MM-dd) -> deutsches Format, ohne Zeitzonen-Umweg über Date().
+    const formatDatumDe = (isoDatum: string) => {
+        const [jahr, monat, tag] = isoDatum.split('-')
+        return `${tag}.${monat}.${jahr}`
+    }
+
+    // 4.00 -> "4", 2.50 -> "2,5" - deutsches Zahlenformat statt Nachkommastellen-Ballast.
+    const formatStundenDe = (stunden: number) => stunden.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 
     const beginAction = () => {
         if (actionLockRef.current) return false
@@ -1201,6 +1248,28 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                     </div>
                     <p className="text-2xl font-bold text-slate-900">{heuteStunden}h {heuteMinuten.toString().padStart(2, '0')}min</p>
                 </button>
+
+                {/* Langzeitkrankmeldung-Karte: informiert, solange eine Phase läuft.
+                    NUR LESEND - keine Bearbeitung hier, kein Button, kein Formular,
+                    kein Schreib-Request. Eine Langzeitkrankmeldung wird ausschließlich
+                    am PC angelegt/geändert (Vorgabe des Projektinhabers, 08.09.2026).
+                    Bewusst teal statt amber/rot: das ist eine Information, keine Warnung. */}
+                {langzeitFall && (
+                    <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-start gap-3">
+                            <div className="flex-shrink-0 w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center">
+                                <Stethoscope className="w-5 h-5 text-teal-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-teal-800">
+                                    {langzeitFall.phase === 'WIEDEREINGLIEDERUNG' && langzeitFall.heuteGeplanteStunden !== null
+                                        ? `${langzeitFall.phaseLabel} — heute ${formatStundenDe(langzeitFall.heuteGeplanteStunden)} Stunden geplant`
+                                        : `${langzeitFall.phaseLabel} — seit ${formatDatumDe(langzeitFall.seit)}`}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Urlaubsverfall-Warnung - ganz unten auf dem Dashboard */}
                 {urlaubsWarnung && (
