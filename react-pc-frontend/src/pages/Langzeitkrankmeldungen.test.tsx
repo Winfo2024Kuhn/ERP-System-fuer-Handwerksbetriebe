@@ -143,6 +143,37 @@ describe('Langzeitkrankmeldungen', () => {
         expect(screen.getByText('Noch 12 Tage Lohnfortzahlung')).toBeInTheDocument();
     });
 
+    // Nachbesserung Abschnitt 5, Befund 1 (BLOCKER): gestempelte/geplante
+    // Stunden im Stufenplan-Vergleich muessen mit deutschem Komma erscheinen
+    // ("4,5 h"), nicht mit englischem Punkt.
+    it('zeigt gestempelte und geplante Stunden mit deutschem Komma statt englischem Punkt', async () => {
+        const user = userEvent.setup();
+        fetchMock.mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.startsWith('/api/langzeitkrankmeldungen?status=')) {
+                return Promise.resolve(jsonResponse([MELDUNG_LAUFEND]));
+            }
+            if (url === '/api/langzeitkrankmeldungen/1') {
+                return Promise.resolve(jsonResponse({
+                    ...MELDUNG_LAUFEND,
+                    stufenplanTage: [
+                        { datum: '2026-04-01', geplanteStunden: 4.5, gestempelteStunden: 5.5, ueberPlan: true },
+                    ],
+                }));
+            }
+            if (url === '/api/mitarbeiter') return Promise.resolve(jsonResponse([]));
+            if (url === '/api/zeitverwaltung/zeitkonten') return Promise.resolve(jsonResponse([]));
+            return Promise.resolve(jsonResponse({ error: 'Unbekannte Route im Test' }, 404));
+        });
+
+        renderSeite();
+        await screen.findByText('Mustermann, Max');
+        await user.click(screen.getByRole('button', { name: 'Details anzeigen' }));
+
+        expect(await screen.findByText('5,5 h gestempelt, 4,5 h geplant')).toBeInTheDocument();
+        expect(screen.queryByText(/5\.5 h gestempelt/)).not.toBeInTheDocument();
+    });
+
     it('zeigt bei ueberschrittener Lohnfortzahlung das Enddatum und den Umstellen-Knopf', async () => {
         renderSeite();
         await screen.findByText('Beispiel, Erika');

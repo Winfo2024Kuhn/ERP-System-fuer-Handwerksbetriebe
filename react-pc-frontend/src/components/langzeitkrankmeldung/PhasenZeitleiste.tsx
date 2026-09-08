@@ -62,7 +62,7 @@ export function PhasenZeitleiste({ phasen, heute }: PhasenZeitleisteProps) {
                             </div>
                             <p className="mt-1 min-w-0 text-sm text-slate-600">{zeitraumText(phase)}</p>
                             {phase.typ === 'WIEDEREINGLIEDERUNG' && phase.stundenProTag != null && (
-                                <p className="min-w-0 text-sm text-slate-500">{`${phase.stundenProTag} Std. pro Tag`}</p>
+                                <p className="min-w-0 text-sm text-slate-500">{`${phase.stundenProTag.toLocaleString('de-DE')} Std. pro Tag`}</p>
                             )}
                         </div>
                     </li>

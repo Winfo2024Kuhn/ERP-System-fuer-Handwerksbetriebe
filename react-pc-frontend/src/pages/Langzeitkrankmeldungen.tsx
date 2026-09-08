@@ -34,7 +34,11 @@ interface Meldung {
     lohnfortzahlungBis: string;
     notiz: string | null;
     version: number;
-    aktuellePhaseTyp: PhasenTyp;
+    // Befund 4 (Nachbesserung Abschnitt 5): das Backend liefert hier null,
+    // wenn heute keine Phase greift (z.B. bei einer abgeschlossenen Meldung
+    // ohne aktuelle Phase) -- vorher nicht-nullable typisiert, was
+    // PHASEN_BADGE[null] zu einem leeren/kaputten Badge machte.
+    aktuellePhaseTyp: PhasenTyp | null;
     aktuellePhaseLabel: string;
     restTageLohnfortzahlung: number | null;
     heuteGeplanteStunden: number | null;
@@ -387,7 +391,9 @@ export default function Langzeitkrankmeldungen() {
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                                                 <span
-                                                    className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${PHASEN_BADGE[m.aktuellePhaseTyp]}`}
+                                                    className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
+                                                        m.aktuellePhaseTyp ? PHASEN_BADGE[m.aktuellePhaseTyp] : 'bg-slate-100 text-slate-700'
+                                                    }`}
                                                 >
                                                     {m.aktuellePhaseLabel}
                                                 </span>
@@ -411,7 +417,7 @@ export default function Langzeitkrankmeldungen() {
                                         {laeuftGerade && (
                                             restTage > 0 ? (
                                                 <p className="text-sm font-medium text-slate-700 tabular-nums">
-                                                    Noch {restTage} Tage Lohnfortzahlung
+                                                    Noch {restTage.toLocaleString('de-DE')} Tage Lohnfortzahlung
                                                 </p>
                                             ) : (
                                                 <div className="flex flex-col items-start md:items-end gap-1.5">
@@ -478,7 +484,7 @@ export default function Langzeitkrankmeldungen() {
                                                                     <li key={tag.datum} className="flex justify-between gap-2 min-w-0">
                                                                         <span className="min-w-0">{formatDatum(tag.datum)}</span>
                                                                         <span className={`min-w-0 ${tag.ueberPlan ? 'text-amber-700' : ''}`}>
-                                                                            {tag.gestempelteStunden} h gestempelt, {tag.geplanteStunden} h geplant
+                                                                            {tag.gestempelteStunden.toLocaleString('de-DE')} h gestempelt, {tag.geplanteStunden.toLocaleString('de-DE')} h geplant
                                                                         </span>
                                                                     </li>
                                                                 ))}

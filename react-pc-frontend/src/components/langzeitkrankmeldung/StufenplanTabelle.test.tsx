@@ -66,6 +66,34 @@ describe('StufenplanTabelle', () => {
         expect(screen.queryByText('Noch kein Stufenplan hinterlegt.')).not.toBeInTheDocument();
     });
 
+    // Nachbesserung Abschnitt 5, Befund 1 (BLOCKER): halbe Stunden muessen mit
+    // deutschem Komma erscheinen ("5,5 Std."), nicht mit englischem Punkt --
+    // die Handy-App macht das schon richtig mit toLocaleString('de-DE').
+    it('zeigt halbe Stunden mit deutschem Komma statt englischem Punkt', () => {
+        renderTabelle({ phasen: [stufe({ id: 1, vonDatum: '2026-04-01', bisDatum: null, stundenProTag: 5.5 })] });
+
+        expect(screen.getByText('5,5 Std.')).toBeInTheDocument();
+        expect(screen.queryByText('5.5 Std.')).not.toBeInTheDocument();
+    });
+
+    // Nachbesserung Abschnitt 5, Befund 1: das Tageslimit taucht nicht nur in
+    // der Tabellenzeile auf, sondern auch im Platzhalter des Stunden-Feldes
+    // und im Fehlertext -- beides muss ebenfalls deutsch formatiert sein.
+    it('zeigt ein nicht-ganzzahliges Tageslimit im Platzhalter und im Fehlertext mit Komma', async () => {
+        const user = userEvent.setup();
+        renderTabelle({ maxStundenProTag: 7.5 });
+
+        const stundenFeld = screen.getByLabelText('Stunden pro Tag');
+        expect(stundenFeld.getAttribute('placeholder')).toBe('max. 7,5');
+
+        await user.click(screen.getByText('Startdatum'));
+        await user.click(screen.getByText('Heute'));
+        await user.type(stundenFeld, '9');
+        await user.click(screen.getByRole('button', { name: /Zeile hinzufügen/ }));
+
+        expect(screen.getByRole('alert')).toHaveTextContent(/größer als 0 und höchstens 7,5 sein/);
+    });
+
     it('ignoriert Phasen, die kein Stufenplan-Schritt sind', () => {
         renderTabelle({
             phasen: [
