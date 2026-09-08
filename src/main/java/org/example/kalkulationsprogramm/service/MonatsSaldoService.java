@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -47,7 +46,7 @@ public class MonatsSaldoService {
     private final ZeitkontoKorrekturRepository korrekturRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final ZeitkontoService zeitkontoService;
-    private final FeiertagService feiertagService;
+    private final TagesSollService tagesSollService;
 
     @Autowired
     @Lazy
@@ -132,7 +131,8 @@ public class MonatsSaldoService {
 
         // 4. Feiertagsstunden
         Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
-        BigDecimal feiertagsStunden = berechneFeiertagsStunden(zeitkonto, ersterTag, letzterTag);
+        BigDecimal feiertagsStunden = tagesSollService.feiertagsGutschriftSumme(
+                mitarbeiterId, zeitkonto, ersterTag, letzterTag);
 
         // 5. Korrekturstunden (nur STUNDEN-Typ, nicht storniert, Datum im Monat)
         BigDecimal korrekturStunden = korrekturRepository
@@ -246,31 +246,5 @@ public class MonatsSaldoService {
         if (dateTime != null) {
             invalidiereFuerDatum(mitarbeiterId, dateTime.toLocalDate());
         }
-    }
-
-    // ==================== Hilfsmethoden ====================
-
-    /**
-     * Berechnet die Stunden für bezahlte Feiertage in einem Zeitraum.
-     * Nur Feiertage an Arbeitstagen (Sollstunden > 0) werden gezählt.
-     * Halbe Feiertage (z.B. Heiligabend) zählen 50%.
-     */
-    private BigDecimal berechneFeiertagsStunden(Zeitkonto zeitkonto, LocalDate von, LocalDate bis) {
-        BigDecimal summe = BigDecimal.ZERO;
-
-        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
-            int wochentag = tag.getDayOfWeek().getValue();
-            BigDecimal tagesSoll = zeitkonto.getSollstundenFuerTag(wochentag);
-
-            if (tagesSoll.compareTo(BigDecimal.ZERO) > 0 && feiertagService.istFeiertag(tag)) {
-                if (feiertagService.istHalberFeiertag(tag)) {
-                    summe = summe.add(tagesSoll.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP));
-                } else {
-                    summe = summe.add(tagesSoll);
-                }
-            }
-        }
-
-        return summe;
     }
 }

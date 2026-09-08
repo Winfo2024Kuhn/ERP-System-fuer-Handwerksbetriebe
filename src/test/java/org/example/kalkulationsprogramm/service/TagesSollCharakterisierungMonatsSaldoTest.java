@@ -32,9 +32,22 @@ import static org.mockito.Mockito.lenient;
  * Charakterisierungstest (Langzeitkrankmeldung, Abschnitt 1 / Task 2).
  *
  * Friert {@code MonatsSaldo.getFeiertagsStunden()} zahlengenau ein - die
- * private Berechnung in {@link MonatsSaldoService} (heute
- * {@code berechneFeiertagsStunden}), die Task 3 durch
- * {@code TagesSollService.feiertagsGutschrift} ersetzt.
+ * frühere private Berechnung in {@link MonatsSaldoService}
+ * ({@code berechneFeiertagsStunden}), die Task 8 durch
+ * {@code TagesSollService.feiertagsGutschriftSumme} ersetzt hat.
+ *
+ * <p><b>Verkabelung nach Task 8 angepasst, Zusicherungen unveraendert:</b>
+ * {@code MonatsSaldoService} injiziert seit Task 8 keinen {@code FeiertagService}
+ * mehr, sondern einen {@code TagesSollService}. Ohne diese Anpassung wuerde
+ * {@code @InjectMocks} den neuen Konstruktor-Parameter mangels passendem
+ * {@code @Mock} still mit {@code null} fuellen und jeder Test mit einer
+ * {@code NullPointerException} rot werden - unabhaengig davon, ob sich am
+ * berechneten Ergebnis irgendetwas geaendert haette. Deshalb mockt diese
+ * Klasse jetzt {@link TagesSollService} statt {@link FeiertagService} und
+ * stubbt {@code feiertagsGutschriftSumme} direkt auf den erwarteten Wert -
+ * die drei Erwartungswerte (voller Feiertag {@code 8}, halber {@code 4.00},
+ * Feiertag am Wochenende {@code 0}) und alle drei Testfaelle sind exakt
+ * dieselben wie vor Task 8.
  *
  * Die drei Monate liegen bewusst sowohl vor als auch nach dem heutigen Datum
  * (08.09.2026): {@code getOrBerechne} behandelt vergangene Monate ueber den
@@ -62,7 +75,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     @Mock
     private ZeitkontoService zeitkontoService;
     @Mock
-    private FeiertagService feiertagService;
+    private TagesSollService tagesSollService;
 
     @InjectMocks
     private MonatsSaldoService monatsSaldoService;
@@ -94,12 +107,17 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     }
 
     /**
-     * Stubbt alles, was {@code berechneMonatsSaldo} unabhaengig vom Feiertag
-     * braucht, plus (lenient) einen ungueltigen Cache-Eintrag und den
-     * Save-Pfad - fuer den Fall, dass der Monat zum Testzeitpunkt bereits
-     * vergangen ist (siehe Klassen-Javadoc).
+     * Stubbt alles, was {@code berechneMonatsSaldo} braucht, plus (lenient)
+     * einen ungueltigen Cache-Eintrag und den Save-Pfad - fuer den Fall, dass
+     * der Monat zum Testzeitpunkt bereits vergangen ist (siehe Klassen-Javadoc).
+     *
+     * {@code tagesSollService.feiertagsGutschriftSumme} wird mit exakten
+     * {@code eq()}-Matchern (Mitarbeiter, Zeitkonto, ersterTag, letzterTag)
+     * auf den je Testfall erwarteten Wert gestubbt - keine {@code any()}-Pauschale,
+     * damit ein falscher Stub-Wert den jeweiligen Test tatsaechlich rot werden
+     * laesst (siehe Gegenprobe im Kontext-Log).
      */
-    private void stubStandardMocks(int jahr, int monat, LocalDate feiertagDatum, boolean halberTag) {
+    private void stubStandardMocks(int jahr, int monat, BigDecimal erwarteteFeiertagsGutschrift) {
         LocalDate ersterTag = LocalDate.of(jahr, monat, 1);
         LocalDate letzterTag = YearMonth.of(jahr, monat).atEndOfMonth();
 
@@ -110,10 +128,9 @@ class TagesSollCharakterisierungMonatsSaldoTest {
         lenient().when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                 eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag))).thenReturn(BigDecimal.ZERO);
         lenient().when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
-        lenient().when(feiertagService.istFeiertag(any(LocalDate.class)))
-                .thenAnswer(inv -> inv.getArgument(0).equals(feiertagDatum));
-        lenient().when(feiertagService.istHalberFeiertag(any(LocalDate.class)))
-                .thenAnswer(inv -> halberTag && inv.getArgument(0).equals(feiertagDatum));
+        lenient().when(tagesSollService.feiertagsGutschriftSumme(
+                eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                .thenReturn(erwarteteFeiertagsGutschrift);
         lenient().when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                 eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag))).thenReturn(Collections.emptyList());
 
@@ -133,7 +150,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     void vollerFeiertag_ergibtAchtStundenGutschrift() {
         // Do 2026-01-01 (Neujahr) - liegt zum Testzeitpunkt (08.09.2026) in der
         // Vergangenheit, geht also ueber den Cache-Pfad von getOrBerechne.
-        stubStandardMocks(2026, 1, LocalDate.of(2026, 1, 1), false);
+        stubStandardMocks(2026, 1, new BigDecimal("8.00"));
 
         MonatsSaldo result = monatsSaldoService.getOrBerechne(MITARBEITER_ID, 2026, 1);
 
@@ -146,7 +163,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     void halberFeiertag_ergibtVierStundenGutschrift() {
         // Do 2026-12-24 (Heiligabend) - liegt zum Testzeitpunkt in der Zukunft,
         // getOrBerechne berechnet live ohne den Cache zu konsultieren.
-        stubStandardMocks(2026, 12, LocalDate.of(2026, 12, 24), true);
+        stubStandardMocks(2026, 12, new BigDecimal("4.00"));
 
         MonatsSaldo result = monatsSaldoService.getOrBerechne(MITARBEITER_ID, 2026, 12);
 
@@ -158,7 +175,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     void feiertagAmWochenende_ergibtKeineGutschrift() {
         // Sa 2026-12-26 - Sollstunden am Samstag sind 0, deshalb zaehlt der
         // Feiertag trotz vollem Feiertags-Flag nicht mit.
-        stubStandardMocks(2026, 12, LocalDate.of(2026, 12, 26), false);
+        stubStandardMocks(2026, 12, BigDecimal.ZERO);
 
         MonatsSaldo result = monatsSaldoService.getOrBerechne(MITARBEITER_ID, 2026, 12);
 
