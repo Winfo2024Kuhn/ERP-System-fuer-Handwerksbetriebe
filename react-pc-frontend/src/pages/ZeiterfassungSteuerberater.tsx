@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Mail, Loader2, Check, BarChart3 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { SteuerberaterEmailModal } from '../components/SteuerberaterEmailModal';
+import type { ZeitkontoStatus } from '../types/zeitkonto';
 
 interface MitarbeiterStunden {
     mitarbeiterId: number;
@@ -15,21 +16,8 @@ interface MitarbeiterStunden {
     fortbildung: number;
 }
 
-interface Zeitkonto {
-    mitarbeiterId: number;
-    mitarbeiterName: string;
-    montagStunden: number;
-    dienstagStunden: number;
-    mittwochStunden: number;
-    donnerstagStunden: number;
-    freitagStunden: number;
-    samstagStunden: number;
-    sonntagStunden: number;
-    wochenstunden: number;
-}
-
 export default function ZeiterfassungSteuerberater() {
-    const [zeitkonten, setZeitkonten] = useState<Zeitkonto[]>([]);
+    const [zeitkonten, setZeitkonten] = useState<ZeitkontoStatus[]>([]);
     const [stundenDaten, setStundenDaten] = useState<MitarbeiterStunden[]>([]);
     const [selectedMitarbeiter, setSelectedMitarbeiter] = useState<number[]>([]);
     const [loading, setLoading] = useState(false);
@@ -46,8 +34,11 @@ export default function ZeiterfassungSteuerberater() {
         setLoadingZeitkonten(true);
         try {
             const res = await fetch('/api/zeitverwaltung/zeitkonten');
-            const data = await res.json();
-            setZeitkonten(Array.isArray(data) ? data : []);
+            if (!res.ok) throw new Error('Zeitkonten konnten nicht geladen werden.');
+            const data = await res.json() as ZeitkontoStatus[];
+            // Menschen ohne aktuell eingerichtetes Zeitkonto fehlen nur aus der
+            // aktuellen Auswahl. Ihre historischen Auswertungsdaten bleiben im Backend.
+            setZeitkonten(Array.isArray(data) ? data.filter(konto => konto.fuehrtZeitkonto && konto.aktuell !== null) : []);
         } catch (err) {
             console.error('Fehler beim Laden der Zeitkonten:', err);
             setZeitkonten([]);
@@ -67,6 +58,8 @@ export default function ZeiterfassungSteuerberater() {
         const results: MitarbeiterStunden[] = [];
 
         for (const konto of zeitkonten) {
+            const arbeitszeit = konto.aktuell?.arbeitszeit;
+            if (!arbeitszeit) continue;
             try {
                 const res = await fetch(
                     `/api/zeitverwaltung/kalender?mitarbeiterId=${konto.mitarbeiterId}&jahr=${jahr}&monat=${monat}`
@@ -92,13 +85,13 @@ export default function ZeiterfassungSteuerberater() {
                             const wochentag = tag.wochentag;
                             let feiertagsStunden = 0;
                             switch (wochentag) {
-                                case 1: feiertagsStunden = konto.montagStunden; break;
-                                case 2: feiertagsStunden = konto.dienstagStunden; break;
-                                case 3: feiertagsStunden = konto.mittwochStunden; break;
-                                case 4: feiertagsStunden = konto.donnerstagStunden; break;
-                                case 5: feiertagsStunden = konto.freitagStunden; break;
-                                case 6: feiertagsStunden = konto.samstagStunden; break;
-                                case 7: feiertagsStunden = konto.sonntagStunden; break;
+                                case 1: feiertagsStunden = arbeitszeit.montagStunden; break;
+                                case 2: feiertagsStunden = arbeitszeit.dienstagStunden; break;
+                                case 3: feiertagsStunden = arbeitszeit.mittwochStunden; break;
+                                case 4: feiertagsStunden = arbeitszeit.donnerstagStunden; break;
+                                case 5: feiertagsStunden = arbeitszeit.freitagStunden; break;
+                                case 6: feiertagsStunden = arbeitszeit.samstagStunden; break;
+                                case 7: feiertagsStunden = arbeitszeit.sonntagStunden; break;
                             }
                             feiertage += feiertagsStunden || 0;
                         }
@@ -128,7 +121,7 @@ export default function ZeiterfassungSteuerberater() {
                 results.push({
                     mitarbeiterId: konto.mitarbeiterId,
                     mitarbeiterName: konto.mitarbeiterName,
-                    tagessollWoche: Math.round((konto.wochenstunden / 5) * 10) / 10,
+                    tagessollWoche: Math.round(((arbeitszeit.montagStunden + arbeitszeit.dienstagStunden + arbeitszeit.mittwochStunden + arbeitszeit.donnerstagStunden + arbeitszeit.freitagStunden + arbeitszeit.samstagStunden + arbeitszeit.sonntagStunden) / 5) * 10) / 10,
                     sollstundenMonat: Math.round(sollstundenMonat * 10) / 10,
                     arbeitsstunden: Math.round(arbeitsstunden * 10) / 10,
                     urlaub: Math.round(urlaub * 10) / 10,
@@ -141,7 +134,7 @@ export default function ZeiterfassungSteuerberater() {
                 results.push({
                     mitarbeiterId: konto.mitarbeiterId,
                     mitarbeiterName: konto.mitarbeiterName,
-                    tagessollWoche: Math.round((konto.wochenstunden / 5) * 10) / 10,
+                    tagessollWoche: Math.round(((arbeitszeit.montagStunden + arbeitszeit.dienstagStunden + arbeitszeit.mittwochStunden + arbeitszeit.donnerstagStunden + arbeitszeit.freitagStunden + arbeitszeit.samstagStunden + arbeitszeit.sonntagStunden) / 5) * 10) / 10,
                     sollstundenMonat: 0,
                     arbeitsstunden: 0,
                     urlaub: 0,
