@@ -63,9 +63,9 @@ curl -s -o "$SCRATCHPAD/pr-antwort.json" -w "%{http_code}\n" -X POST \
 **Issue anlegen** (Schritt 2) geht genauso gegen `/issues` mit `{"title","body"}`.
 **Kommentar** an PR oder Issue: `/issues/<nummer>/comments` — ein PR ist für diesen
 Endpunkt ein Issue.
-
-Verlinkung mit dem Issue: `Schließt #<nummer>` in den PR-Body. GitHub verlinkt es und
-schließt das Issue beim Merge — ein Extra-Kommentar ist überflüssig.
+Verlinkung mit dem Issue: `Closes #<nummer>` in den PR-Body schreiben. GitHub
+schließt das Issue beim Merge in den Standardbranch automatisch. Das deutsche
+`Schließt #<nummer>` wird nicht als Schlüsselwort zum Schließen erkannt.
 
 ## Danach aufräumen — nicht vergessen
 

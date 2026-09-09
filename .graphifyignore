@@ -39,3 +39,13 @@ attachments/
 
 # Docs (kein Code)
 docs/
+
+# Deployter Frontend-Build: der Vite-Output wird nach src/main/resources/static
+# kopiert und ist dort kein handgeschriebener Code - die Quellen liegen in
+# react-pc-frontend/src und react-zeiterfassung/src. Ohne diese Regel parst
+# graphify 221 minifizierte Bundles (528 MB) und ueberschwemmt jede Query mit
+# Symbolen aus der vendored opencv.js (Emscripten, 8,6 MB).
+src/main/resources/static/
+
+# Vendored OpenCV-WASM-Build fuer den Beleg-Scanner (Emscripten-Output).
+react-zeiterfassung/public/scanner/
