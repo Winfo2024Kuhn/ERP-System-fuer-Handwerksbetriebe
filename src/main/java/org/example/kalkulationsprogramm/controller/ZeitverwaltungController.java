@@ -517,6 +517,7 @@ public class ZeitverwaltungController {
             // Feiertagsbehandlung und laufender Wiedereingliederung; arbeitsSollJeTag
             // liefert an Feiertagen (voll wie halb) von sich aus 0.
             tagData.put("sollStunden", sollStundenJeTag.get(currentTag));
+            tagData.put("feiertagsStunden", feiertagsGutschriftJeTag.get(currentTag));
             tagData.put("buchungen", buchungenProTag.getOrDefault(currentTag, Collections.emptyList()));
 
             // Ist-Stunden berechnen (inkl. Feiertage als Arbeitszeit)

@@ -135,6 +135,9 @@ class TagesSollCharakterisierungKalenderTest {
                 .andExpect(jsonPath("$.tage[23].sollStunden").value(0))
                 .andExpect(jsonPath("$.tage[24].datum").value("2026-12-25"))
                 .andExpect(jsonPath("$.tage[24].sollStunden").value(0))
+                .andExpect(jsonPath("$.tage[0].feiertagsStunden").value(0))
+                .andExpect(jsonPath("$.tage[23].feiertagsStunden").value(4.00))
+                .andExpect(jsonPath("$.tage[24].feiertagsStunden").value(8.00))
                 // Bugfix (Task 11, siehe Plan "Bewusste Verhaltensaenderungen" Punkt 1):
                 // der alte Wert 8.00 war der Bug - der Controller rechnete die
                 // Ist-Stunden am Feiertag NICHT halbiert, obwohl der 24.12. laut
