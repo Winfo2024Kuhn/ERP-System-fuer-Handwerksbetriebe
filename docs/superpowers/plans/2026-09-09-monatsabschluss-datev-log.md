@@ -233,3 +233,68 @@ Artefakte: /tmp/review2-design-e2e.log, /tmp/review2-design-basis.log, /tmp/revi
 ## Abschnitt 2 — Freigabe Orchestrator
 
 Beide Reviews abgenommen (gelb wegen nachgewiesenem Altbestand). Eine Nachbesserungsrunde: zwei Datumstestdateien in bdceac5f angepasst, fünf Tests danach auch vom Reviewer erfolgreich geprüft. Tasks 2, 4 und 7 zusammengeführt. Abschnitt 3 startet mit Tasks 5 und 8 auf diesem geprüften Stand.
+
+## Abschnitt 3 — ergänzende Testfixturekorrektur (Orchestrator)
+
+Commit4445f1f1 behebt die18 inAbschnitt2nachgewiesenen Bestandsfehler vonLieferantDokumentModal.test.tsx: Response erhältDummytextundContent-Type direkt statt eines jsdomBlob ohne stream(). PDF-AntwortinhaltundAssertions unverändert. FokussierterNachlauf19/19grün, /tmp/monatsabschluss-modal-fixture-fix.log. KeinProduktivcode verändert; imfolgendenAbschnittsreview mitprüfen.
+
+Lesbare Erläuterung: Commit 4445f1f1 behebt die 18 in Abschnitt 2 nachgewiesenen Bestandsfehler. Die simulierte Response erhält den Dummytext und Content-Type direkt, statt eines jsdom-Blob ohne stream(). Inhalt und fachliche Zusicherungen bleiben gleich. Alle 19 betroffenen Tests bestehen. Der nächste Abschnittsreview prüft die Änderung mit.
+
+## Abschnitt 3 — Task 8 (Coding-Agent)
+
+Zeit: 2026-09-09T16:52:41.063558+00:00
+Branch: codex/systemeingaben-task-8
+Commit(s): 52ab3728
+Status: fertig
+
+Was gemacht wurde:
+- Mobile lokale Toast-/Confirm-Provider appweit eingebunden, vier Meldungsarten mit Dismiss/Timer-Cleanup; Bestätigung mit Escape, Tab-Zyklus, Fokus-Rückgabe sowie sicheren konkurrierenden Aufrufen und Unmount.
+- Touch-/Tastatur-Select und deutscher String-Draft-DecimalInput mit vollständiger Pflicht-/Grenz-/Ganzzahlvalidierung; keine Cross-App-Imports.
+- Bestehender Kalender mit min/max/Heute-Grenze, gültigem Datum, eigener Pflichtfehlermeldung, Beschriftung, Portal, Touch und Fokus erweitert. Hintergrund-Fokusverlust separat rot reproduziert und behoben.
+- Gezielt 48 Bausteintests bestanden (6 Dateien, einschließlich 10 erhaltener Kalenderbestandstests); Source- und Test-Lint für alle betroffenen Dateien grün; Mobile-Produktionsbuild grün.
+- Playwright echte Lieferscheinprüfung unter E2E_PORT=5188: 1 Test grün, Touchwahl, Escape/Fokus, kein natives Dialogereignis, Kalender innerhalb Viewport. Screenshot im Task-Worktree react-zeiterfassung/test-results/task8-kalender-handy.png angesehen: Rose/Slate klar getrennt, vorhandenes Design, ruhige Ausrichtung, verständliche Kalenderbedienung, Datum im Prüfablauf erreichbar, keine überlappenden Kalenderaktionen.
+- Nur Source und Tests committed. Generierte static-Dateien zurückgeräumt. Playwright/Vite beendet, Port 5188 frei (lsof kontrolliert).
+
+Bedenken / Abweichungen vom Plan:
+- .Codex-Dokupfade fehlen; äquivalente .agents-Skills sowie docs/agent instructions gelesen. Original TDD-Skill vom Orchestrator unter /tmp verwendet.
+- Mobile e2e/hilfen/api.ts fehlt; lokale page.route-Stubs ausschließlich in eigener erlaubter Spec.
+- Neue bisher nicht von Seiten konsumierte Primitives interaktiv mit echten Komponenten getestet; reale Seitenmigration/Toast-vor-Seitenmodal-Abnahme folgt gemäß Vertrag Task 11 und Abschnittsdesignreview.
+- Tool bietet keinen expliziten timeout-Parameter; laufende Prozesse gezielt über Session abgeholt, alle beendet. Kein Graphify-Update/volle Suite gemäß Orchestratorauftrag.
+
+## Abschnitt 3 — Task 5 (Coding-Agent)
+
+Zeit: 2026-09-09T16:57:49.766899+00:00
+Branch: codex/monatsabschluss-datev-task-5
+Commit(s): bc50100df580bcdcb0368bd9f31e2d2ae9d8bc39
+Status: fertig
+
+Was gemacht wurde:
+- Monatsabschluss-Hauptseite, Route und Ribbon-Link; rechtegeschützte Abfragen, eigene Monats/Jahres/Mitarbeiter/Abteilungs/Status-Selects, deutsche Stunden, vollständige Stand-Auswahl bis 500 über Seiten zu 50, serverseitige Summen und sechs Vergleichsmonate.
+- Bestätigter Sammelabschluss mit Busy-/Generationsschutz, Teilergebnissen, Fehlerauswahl, Seitenreset, Notification-Refresh, Verlauf nur auf Anforderung und präzisen Kalenderlinks. DATEV-Typen/API inkl echtem TXT-/ZIP-Dateinamen vorbereitet; keine DATEV-Komponenten-Platzhalter.
+- TDD: fehlende Seite/Route rot; ZIP-Dateinamensvertrag rot; Reviewer-Pagination/Verlauf-Regression rot; Browser-Verlauf-außerhalb-Viewport rot, anschließend alle behoben. Final 9/9 fokussierte Vitest-Tests, fokussiertes ESLint ohne Meldung, PC-Build grün; 6/6 E2E-Fälle auf Port 5185 in 1440x900,1536x960,1920x1080 grün. Logs /tmp/task5-final-{unit,lint,build,e2e}.log. Keine vollen Suiten.
+- Eigener erp-code-reviewer prüfte Verträge/Rechte/Races und meldete zwei Warnungen (Pagination/alter Verlauf); beide durch Regressionstest behoben. Separater Abschnitts-/Designreview folgt beim Orchestrator.
+- Screenshots im Worktree unter react-pc-frontend/test-results/design/monatsabschluss-uebersicht--*.png und den monatsabschluss-Testordnern. Übersicht alle drei Größen und geöffnete Auswahl/Bestätigung/Verlauf persönlich angesehen. Farben klar (rose/slate, amber offen), bestehendes Design-System, ruhiges ausgerichtetes Layout, sichtbare Hauptaktion und Status, Ribbon auffindbar, kein Seitenüberlauf. Verlauf wurde für direkte Sichtbarkeit unter die Filter gesetzt und per toBeInViewport gesichert.
+- Playwright beendet Vite/Browser regulär; Prozesskontrolle für Taskworktree/Port5185 leer. Keine eigenen Dienste verbleiben.
+
+Bedenken / Abweichungen vom Plan:
+- Keine fachlichen Abweichungen. Graphify-Update wie beauftragt nur zentral beim Orchestrator. Generierte static-Build-Dateien nicht committet. Mengen-/Dezimal-Eingabefelder entstehen erst bei den entsprechenden Folgetasks; diese Seite zeigt Stunden deutsch und verwendet eigene Selects.
+
+## Abschnitt 3 — Task 5 Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-09T17:00:13.606071+00:00
+Branch: codex/monatsabschluss-datev-task-5
+Commit(s): dcba8ac9d326f306cb7dc2e9a19ecff9d58fd3b2
+Status: fertig
+
+Was gemacht wurde:
+- Konkreten Orchestrator-Befund korrigiert: E2E-Dummy-Summen entsprechen jetzt zwei Mitarbeiterzeilen, auch im Vergleich. Alle sieben angezeigten Summen werden als unabhängig handgeprüfte Werte zugesichert (u.a. Arbeit 241,00 und Gesamt 291,00). Produktcode unverändert.
+- Neue Assertion zunächst rot gegen Einzelsummen; anschließend fokussierte Spec auf Port5185 in allen drei Desktopgrößen: 6/6 grün. Logs /tmp/task5-fixture-{red,green}.log. Aktualisierten 14-Zoll-Screenshot angesehen: Summen jetzt konsistent.
+- Kein gestarteter Vite-/Playwright-Prozess verbleibt.
+
+Bedenken / Abweichungen vom Plan:
+- Keine.
+
+## Abschnitt 3 — Root-Ergänzungen und Nutzervorgaben
+
+- Task 9: TerminKalender, ZeiterfassungKalender und Steuerberater-Auswahl auf eigene Bausteine umgestellt. Zehn gezielte Unit-Tests und drei Browserfälle in allen Desktopgrößen grün; fünf Zustände je Größe visuell geprüft. Zeitentwürfe werden vor Requests vollständig validiert; unveränderte Sekunden bleiben erhalten; optionales leeres Ende wird korrekt übertragen. Termin-Dialog scrollt ohne verdeckte Eingaben. Gestapelter Stornodialog sperrt seinen Hintergrund; für diesen Zustand gezielte Geometrie-/Erreichbarkeitsprüfung statt des Hintergrundelemente mitzuzählenden globalen Überlappungshelpers.
+- Nutzer hat Auslagern und Wiederverwenden ausdrücklich dauerhaft freigegeben. AGENTS.md ersetzt die frühere erneute Rückfragepflicht für dieses Refactoring. Der lokale Design-Skill hält Wiederverwendung, eigene Meldungen und Dialoge, Zahlenverhalten, Kommaformat, Pflichtvalidierung, erreichbare Aktionen und Prüfung geöffneter Zustände fest. Der bereits unversionierte Design-Skill-Ordner wird nicht pauschal als neue Fremddateisammlung gestaged.

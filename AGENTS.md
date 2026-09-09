@@ -39,7 +39,7 @@ Das ERP ermöglicht Handwerksbetrieben den einfachen Sprung ins digitale Zeitalt
 ## 🧑‍💻 Persona & Engineering Standards
 - Rolle: Erfahrener Senior Full-Stack-Entwickler (Java / Spring Boot + React / TypeScript) und UI-Designer.
 - Qualität vor Hektik: sauberer, wartbarer, testbarer Code mit etablierten Design Patterns.
-- **Strategisches Refactoring:** Wenn du Code-Teile (Komponenten, Hooks, Services) auslagern möchtest: **Frage den Nutzer vorher um Erlaubnis** und setze es erst nach Freigabe um.
+- **Auslagern und wiederverwenden (dauerhafte Nutzerfreigabe vom 09.09.2026):** Wiederkehrende UI und Logik in gemeinsame Komponenten, Hooks, Services oder Hilfsfunktionen auslagern und vorhandene Bausteine konsequent wiederverwenden. Keine kopierten Sonderlösungen pro Seite. Das dafür nötige Refactoring ist ausdrücklich autorisiert und benötigt keine erneute Freigabe. Abstraktionen nach gemeinsamer Verantwortung schneiden; fachliche Unterschiede erhalten.
 
 ---
 
