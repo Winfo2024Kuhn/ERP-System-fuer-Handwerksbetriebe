@@ -4,10 +4,109 @@ import { X } from "lucide-react"
 
 import { cn } from "../../lib/utils"
 
+const DialogDepth = React.createContext(0);
+const focusSelector = 'button, a[href], input, select, textarea, [tabindex], [contenteditable="true"]';
+
+function visible(element: HTMLElement): boolean {
+    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (node.hidden || node.hasAttribute('inert') || node.getAttribute('aria-hidden') === 'true'
+            || style.display === 'none' || style.visibility === 'hidden') return false;
+    }
+    return true;
+}
+function topDialog(exclude?: HTMLElement): HTMLElement | undefined {
+    let result: HTMLElement | undefined;
+    let highest = -Infinity;
+    for (const panel of document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')) {
+        if (panel === exclude || !visible(panel)) continue;
+        let zIndex = 0;
+        for (let node: HTMLElement | null = panel; node; node = node.parentElement) {
+            zIndex = Math.max(zIndex, Number.parseInt(getComputedStyle(node).zIndex) || 0);
+        }
+        if (zIndex >= highest) { highest = zIndex; result = panel; }
+    }
+    return result;
+}
+/** Owned picker portals are linked to their trigger by aria-controls. */
+function focusRoots(panel: HTMLElement): HTMLElement[] {
+    const roots = [panel];
+    for (const trigger of panel.querySelectorAll<HTMLElement>('[aria-controls]')) {
+        for (const id of (trigger.getAttribute('aria-controls') ?? '').split(/\s+/)) {
+            const popup = document.getElementById(id);
+            if (popup && !roots.includes(popup)) roots.push(popup);
+        }
+    }
+    return roots;
+}
+function focusable(panel: HTMLElement): HTMLElement[] {
+    return Array.from(panel.querySelectorAll<HTMLElement>(focusSelector))
+        .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && visible(element));
+}
+
 const Dialog = React.forwardRef<
     HTMLDivElement,
     React.HTMLAttributes<HTMLDivElement> & { open?: boolean; onOpenChange?: (open: boolean) => void }
 >(({ className, open, onOpenChange, children, ...props }, ref) => {
+    const depth = React.useContext(DialogDepth);
+    const panelRef = React.useRef<HTMLDivElement | null>(null);
+    const openerRef = React.useRef<HTMLElement | null>(null);
+    const onChangeRef = React.useRef(onOpenChange);
+    React.useLayoutEffect(() => { onChangeRef.current = onOpenChange; }, [onOpenChange]);
+    // Capture during commit, before a child's autoFocus layout work runs.
+    React.useInsertionEffect(() => {
+        if (open) openerRef.current = document.activeElement as HTMLElement | null;
+    }, [open]);
+
+    React.useLayoutEffect(() => {
+        const panel = panelRef.current;
+        if (!open || !panel) return;
+        const opener = openerRef.current;
+        let lastFocus: HTMLElement | null = null;
+        const belongs = (element: Node | null) => !!element && focusRoots(panel).some(root => root.contains(element));
+        const focusInside = () => {
+            const target = lastFocus?.isConnected && belongs(lastFocus) && visible(lastFocus)
+                ? lastFocus : focusable(panel)[0] ?? panel;
+            target.focus();
+        };
+        const onFocus = (event: FocusEvent) => {
+            if (topDialog() !== panel) return;
+            if (belongs(event.target as Node)) lastFocus = event.target as HTMLElement;
+            else focusInside();
+        };
+        const onKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || topDialog() !== panel) return;
+            if (event.key === 'Escape') {
+                event.preventDefault(); event.stopPropagation(); onChangeRef.current?.(false);
+            } else if (event.key === 'Tab') {
+                // DatePicker manages its own portal navigation and returns to its trigger.
+                if (focusRoots(panel).slice(1).some(root => root.contains(event.target as Node))) return;
+                const elements = focusable(panel);
+                const first = elements[0] ?? panel;
+                const last = elements.at(-1) ?? panel;
+                if (!belongs(document.activeElement) || document.activeElement === panel
+                    || (event.shiftKey && document.activeElement === first)
+                    || (!event.shiftKey && document.activeElement === last)) {
+                    event.preventDefault(); (event.shiftKey ? last : first).focus();
+                }
+            }
+        };
+        document.addEventListener('focusin', onFocus);
+        document.addEventListener('keydown', onKey);
+        if (topDialog() === panel) {
+            if (belongs(document.activeElement)) lastFocus = document.activeElement as HTMLElement;
+            else focusInside();
+        }
+        return () => {
+            document.removeEventListener('focusin', onFocus);
+            document.removeEventListener('keydown', onKey);
+            // Wait until React has removed portals; never steal focus from a newer modal.
+            queueMicrotask(() => {
+                const top = topDialog(panel);
+                if (opener?.isConnected && (!top || focusRoots(top).some(root => root.contains(opener)))) opener.focus();
+            });
+        };
+    }, [open]);
     if (!open) return null;
 
     return createPortal(
@@ -15,33 +114,18 @@ const Dialog = React.forwardRef<
             {/* Backdrop */}
             <div
                 className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-                // Kein onClick - Dialog schließt NUR über X-Button
+                style={{ zIndex: 50 + depth }}
+                // Kein Backdrop-Klick: Schließen über Dialogaktionen oder Escape.
             />
             {/* Dialog Container */}
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: 50 + depth }}>
                 <div
-                    ref={ref}
-                    // Abschnitt 10 (Design-Review Abschnitt 9, Hinweis 4): ohne
-                    // role="dialog" hielt keineUeberschneidungen (design.ts)
-                    // jeden Dialog auf dieser Komponente nicht fuer ein Modal
-                    // und meldete die ganze Seite dahinter als Ueberschneidung
-                    // -- designPruefung war damit fuer jeden Dialog, der auf
-                    // dieser Dialog-Komponente aufsetzt, unbrauchbar. Die
-                    // Attribute sitzen bewusst HIER, am Panel-<div> der
-                    // Dialog-Komponente selbst (Korrektur Design-Review-
-                    // Nachbesserung 1: ein frueherer Kommentar sprach
-                    // faelschlich von "DialogContent" -- das ist die separate,
-                    // schlichte Layout-Komponente weiter unten in dieser Datei,
-                    // die als Kind HIER hineingereicht wird und selbst kein
-                    // eigenes Wurzelelement fuer den Dialog stellt). Andere
-                    // Modale im Projekt (LieferantDokumentModal, Modals.tsx,
-                    // confirm-dialog.tsx u.a.) setzen role="dialog"/aria-modal
-                    // bereits so.
-                    // Fokus-Fang bewusst nicht ergaenzt: kein anderer Dialog im
-                    // Projekt implementiert einen (confirm-dialog.tsx setzt nur
-                    // autoFocus auf einen Knopf) -- ein echter Tab-Kreislauf
-                    // waere eine uebergreifende Barrierefreiheits-Aenderung fuer
-                    // alle Dialoge, kein Teil dieses Vorhabens.
+                    ref={element => {
+                        panelRef.current = element;
+                        if (typeof ref === 'function') ref(element);
+                        else if (ref) ref.current = element;
+                    }}
+                    tabIndex={-1}
                     role="dialog"
                     aria-modal="true"
                     className={cn(
@@ -52,8 +136,9 @@ const Dialog = React.forwardRef<
                     )}
                     {...props}
                 >
-                    {children}
+                    <DialogDepth.Provider value={depth + 1}>{children}</DialogDepth.Provider>
                     <button
+                        type="button"
                         className="absolute right-4 top-4 p-1.5 rounded-full bg-slate-100 opacity-70 transition-all hover:opacity-100 hover:bg-rose-100 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
                         onClick={() => onOpenChange?.(false)}
                     >
