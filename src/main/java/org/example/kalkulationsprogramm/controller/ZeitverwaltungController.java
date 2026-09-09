@@ -26,6 +26,7 @@ import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.FeiertagService;
+import org.example.kalkulationsprogramm.service.TagesSollService;
 import org.example.kalkulationsprogramm.service.ZeitbuchungAuditService;
 import org.example.kalkulationsprogramm.service.ZeitkontoService;
 import org.springframework.http.ResponseEntity;
@@ -55,6 +56,7 @@ public class ZeitverwaltungController {
     private final MitarbeiterRepository mitarbeiterRepository;
     private final FeiertagService feiertagService;
     private final ZeitkontoService zeitkontoService;
+    private final TagesSollService tagesSollService;
     private final org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
     private final org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
     private final org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
@@ -485,6 +487,16 @@ public class ZeitverwaltungController {
                     .add(abwesenheitBuchung);
         }
 
+        // Sollstunden und Feiertagsgutschrift fuer den GESAMTEN Monat einmal
+        // laden statt pro Tag (Befund 2, Abschnitt 4): vorher zwei
+        // TagesSollService-Aufrufe je Tag, jeder mit eigener Phasen-/
+        // Feiertagsabfrage darunter - gemessen 249 statt 9 Repository-
+        // Aufrufe fuer einen 31-Tage-Monat.
+        Map<LocalDate, BigDecimal> sollStundenJeTag = tagesSollService.arbeitsSollJeTag(mitarbeiterId, zeitkonto,
+                ersterTag, letzterTag);
+        Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = tagesSollService.feiertagsGutschriftJeTag(
+                mitarbeiterId, zeitkonto, ersterTag, letzterTag);
+
         // Tage aufbauen
         List<Map<String, Object>> tage = new ArrayList<>();
         for (LocalDate tag = ersterTag; !tag.isAfter(letzterTag); tag = tag.plusDays(1)) {
@@ -498,20 +510,25 @@ public class ZeitverwaltungController {
                     .findFirst()
                     .map(Feiertag::getBezeichnung)
                     .orElse(null));
-            tagData.put("sollStunden", feiertagDaten.contains(currentTag) ? BigDecimal.ZERO
-                    : zeitkonto.getSollstundenFuerTag(currentTag.getDayOfWeek().getValue()));
+            // TagesSollService (Task 3) kapselt die Sollstunden-Ermittlung inkl.
+            // Feiertagsbehandlung und laufender Wiedereingliederung; arbeitsSollJeTag
+            // liefert an Feiertagen (voll wie halb) von sich aus 0.
+            tagData.put("sollStunden", sollStundenJeTag.get(currentTag));
             tagData.put("buchungen", buchungenProTag.getOrDefault(currentTag, Collections.emptyList()));
 
             // Ist-Stunden berechnen (inkl. Feiertage als Arbeitszeit)
             BigDecimal istStunden = BigDecimal.ZERO;
 
-            // Feiertage: Wenn der Mitarbeiter an dem Wochentag normalerweise arbeiten
-            // würde,
-            // zählen die Sollstunden automatisch als Iststunden
-            if (feiertagDaten.contains(currentTag)) {
-                BigDecimal feiertagsStunden = zeitkonto.getSollstundenFuerTag(currentTag.getDayOfWeek().getValue());
-                istStunden = istStunden.add(feiertagsStunden);
-            }
+            // Bugfix (Task 11, siehe Plan "Bewusste Verhaltensaenderungen" Punkt 1):
+            // bisher wurden an JEDEM Feiertag die vollen Sollstunden als
+            // Ist-Stunden gutgeschrieben, auch an einem halben Feiertag wie
+            // Heiligabend - waehrend sollStundenMonat (berechneSollstundenFuerMonat,
+            // unten) den halben Feiertag schon immer korrekt halbierte. Das ergab
+            // +4h Phantom-Ueberstunden pro halbem Feiertag und einen Widerspruch
+            // zur Monatsuebersicht (MonatsSaldoService: Soll 4 / Gutschrift 4 ->
+            // netto 0). feiertagsGutschriftJeTag liefert an halben Feiertagen
+            // korrekt die halbe Stundenzahl (und 0 an Nicht-Feiertagen).
+            istStunden = istStunden.add(feiertagsGutschriftJeTag.get(currentTag));
 
             // Normale Buchungen dazuzählen (PAUSE ausschließen)
             for (Map<String, Object> buchung : buchungenProTag.getOrDefault(currentTag, Collections.emptyList())) {

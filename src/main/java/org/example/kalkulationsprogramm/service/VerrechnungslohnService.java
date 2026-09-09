@@ -11,6 +11,8 @@ import org.example.kalkulationsprogramm.domain.Beschaeftigungsart;
 import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Krankenkasse;
+import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhase;
+import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.MitarbeiterStundenlohn;
@@ -35,6 +37,7 @@ import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepos
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.example.kalkulationsprogramm.repository.FeiertagRepository;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
+import org.example.kalkulationsprogramm.repository.LangzeitkrankmeldungPhaseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LohnabrechnungRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
@@ -94,6 +97,14 @@ public class VerrechnungslohnService {
     private final ArbeitsgangStundensatzRepository stundensatzRepository;
     private final BelegRepository belegRepository;
     private final BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    // Bewusst OHNE TagesSollService (Ausnahme aus der Spec, Task 13): die vier
+    // Aufrufe von Zeitkonto#getSollstundenFuerTag in
+    // jahresSollstundenAusZeitkonto/feiertagSoll/stundenProTag/
+    // wochenstundenSicher bleiben beim rohen Zeitkonto-Wert -- hier geht es um
+    // das Jahres-Normalsoll, nicht um das tatsaechliche Tagessoll waehrend
+    // einer Wiedereingliederung. Die Phasenaufteilung kommt als zusaetzliche
+    // Ausklammerung dazu (siehe ausgeklammerteTage()), nicht als Ersatz.
+    private final LangzeitkrankmeldungPhaseRepository phaseRepository;
 
     @Transactional(readOnly = true)
     public VerrechnungslohnErgebnisDto berechne(int jahr) {
@@ -128,11 +139,15 @@ public class VerrechnungslohnService {
         BigDecimal stundenSumme = BigDecimal.ZERO;
 
         for (Mitarbeiter ma : aktive) {
-            MitarbeiterLohnZeile lohnZeile = berechneLohnZeile(ma, jahr, modus, svKontext, bgSatz, dto.getDatenLuecken());
+            // Eine Abfrage je Mitarbeiter (kein N+1), das Ergebnis geht an
+            // beide Zeilen-Methoden -- nicht zweimal abfragen (Task 13).
+            Set<LocalDate> ausgeklammert = ausgeklammerteTage(ma.getId(), jahresStart, jahresEnde);
+
+            MitarbeiterLohnZeile lohnZeile = berechneLohnZeile(ma, jahr, modus, svKontext, bgSatz, dto.getDatenLuecken(), ausgeklammert);
             dto.getLohnzeilen().add(lohnZeile);
             lohnsumme = lohnsumme.add(lohnZeile.getGesamtkosten());
 
-            MitarbeiterStundenZeile stdZeile = berechneStundenZeile(ma, jahr, jahresStart, jahresEnde, modus, feiertageWerktag, interneQuote, dto.getDatenLuecken());
+            MitarbeiterStundenZeile stdZeile = berechneStundenZeile(ma, jahr, jahresStart, jahresEnde, modus, feiertageWerktag, interneQuote, dto.getDatenLuecken(), ausgeklammert);
             dto.getStundenzeilen().add(stdZeile);
             stundenSumme = stundenSumme.add(stdZeile.getVerkaeuflicheStunden());
         }
@@ -211,12 +226,23 @@ public class VerrechnungslohnService {
                                                    Modus modus,
                                                    SvKontext svKontext,
                                                    BigDecimal bgSatz,
-                                                   List<DatenLuecke> luecken) {
+                                                   List<DatenLuecke> luecken,
+                                                   Set<LocalDate> ausgeklammert) {
         MitarbeiterLohnZeile zeile = new MitarbeiterLohnZeile();
         zeile.setMitarbeiterId(ma.getId());
         zeile.setName(ma.getVorname() + " " + ma.getNachname());
         zeile.setIstGeschaeftsfuehrer(Boolean.TRUE.equals(ma.getIstGeschaeftsfuehrer()));
         zeile.setBeschaeftigungsart(ma.getBeschaeftigungsart() != null ? ma.getBeschaeftigungsart().name() : null);
+
+        // Krankengeld-/Wiedereingliederungstage fallen anteilig aus den
+        // Lohnkosten heraus (Task 13). Lohnkosten sind eine Jahressumme ohne
+        // Tagesaufloesung -- exakt tageweise geht hier nicht (anders als beim
+        // Jahressoll im Stunden-Block), deshalb der Kalendertage-Faktor.
+        BigDecimal jahresTage = BigDecimal.valueOf(Year.of(jahr).length());
+        BigDecimal anwesenheitsFaktor = jahresTage.subtract(BigDecimal.valueOf(ausgeklammert.size()))
+                .divide(jahresTage, 4, RoundingMode.HALF_UP);
+        zeile.setAusgeklammerteTage(ausgeklammert.size());
+        zeile.setAnwesenheitsFaktor(anwesenheitsFaktor);
 
         if (zeile.isIstGeschaeftsfuehrer()) {
             BigDecimal kalk = nz(ma.getKalkulatorischerLohnMonat()).multiply(BigDecimal.valueOf(12));
@@ -235,6 +261,12 @@ public class VerrechnungslohnService {
                 zeile.setBgBeitrag(bg);
                 gesamt = gesamt.add(agSv).add(bg);
             }
+            // Anders als im regulaeren Zweig gibt es hier keine Quelle
+            // LOHNABRECHNUNG: der GF-Lohn ist immer KALKULATORISCH (Jahreswert
+            // aus Monatsbetrag x 12) und kennt den Krankheitsausfall nicht --
+            // der Faktor muss deshalb hier immer greifen (Nachbesserung
+            // Abschnitt 2, Befund 2).
+            gesamt = gesamt.multiply(anwesenheitsFaktor);
             zeile.setGesamtkosten(gesamt.setScale(2, RoundingMode.HALF_UP));
             return zeile;
         }
@@ -245,7 +277,19 @@ public class VerrechnungslohnService {
         BigDecimal bg = berechneBg(brutto, bgSatz);
         zeile.setAgAnteilSv(agSv);
         zeile.setBgBeitrag(bg);
-        zeile.setGesamtkosten(brutto.add(agSv).add(bg).setScale(2, RoundingMode.HALF_UP));
+        BigDecimal summeVorFaktor = brutto.add(agSv).add(bg);
+        // Bei Quelle LOHNABRECHNUNG stammt das Brutto aus echten
+        // Lohnabrechnungen -- der Betrieb hat waehrend des Krankengeldbezugs
+        // tatsaechlich weniger gezahlt, der Ausfall steckt also schon in der
+        // Zahl. Der anwesenheitsFaktor wuerde ein zweites Mal kuerzen (zu
+        // niedrige Lohnkosten, zu niedriger Verrechnungslohn -- Nachbesserung
+        // Abschnitt 2, Befund 1). Bei den anderen drei Quellen (hochgerechnete
+        // oder kalkulatorische Jahreswerte, die den Ausfall nicht kennen)
+        // bleibt der Faktor noetig.
+        BigDecimal gesamtkosten = zeile.getQuelle() == LohnQuelle.LOHNABRECHNUNG
+                ? summeVorFaktor
+                : summeVorFaktor.multiply(anwesenheitsFaktor);
+        zeile.setGesamtkosten(gesamtkosten.setScale(2, RoundingMode.HALF_UP));
         return zeile;
     }
 
@@ -374,7 +418,8 @@ public class VerrechnungslohnService {
                                                          Modus modus,
                                                          Set<LocalDate> feiertageWerktag,
                                                          BigDecimal interneQuote,
-                                                         List<DatenLuecke> luecken) {
+                                                         List<DatenLuecke> luecken,
+                                                         Set<LocalDate> ausgeklammert) {
         MitarbeiterStundenZeile zeile = new MitarbeiterStundenZeile();
         zeile.setMitarbeiterId(ma.getId());
         zeile.setName(ma.getVorname() + " " + ma.getNachname());
@@ -384,14 +429,18 @@ public class VerrechnungslohnService {
         BigDecimal jahresSoll;
         BigDecimal feiertagsSoll;
         if (zeitkontoOpt.isPresent()) {
-            jahresSoll = jahresSollstundenAusZeitkonto(zeitkontoOpt.get(), jahresStart, jahresEnde, feiertageWerktag);
+            SollUndAusklammerung ergebnis = jahresSollstundenAusZeitkonto(zeitkontoOpt.get(), jahresStart, jahresEnde, feiertageWerktag, ausgeklammert);
+            jahresSoll = ergebnis.soll;
+            zeile.setAusgeklammerteStunden(ergebnis.ausgeklammerteStunden);
             feiertagsSoll = feiertagSoll(zeitkontoOpt.get(), feiertageWerktag);
         } else {
             // Ohne Zeitkonto wurden bisher 0 verkaeufliche Stunden gerechnet, waehrend
             // der Lohn-Block denselben Mitarbeiter mit vollen Jahreskosten ansetzt.
             // Ergebnis: der Stundensatz schoss nach oben. Wir rechnen deshalb mit
             // demselben Default wie der Lohn-Block (8 h je Werktag) und melden es.
-            jahresSoll = werktagsSollOhneZeitkonto(jahresStart, jahresEnde, feiertageWerktag);
+            SollUndAusklammerung ergebnis = werktagsSollOhneZeitkonto(jahresStart, jahresEnde, feiertageWerktag, ausgeklammert);
+            jahresSoll = ergebnis.soll;
+            zeile.setAusgeklammerteStunden(ergebnis.ausgeklammerteStunden);
             feiertagsSoll = STUNDEN_PRO_TAG_DEFAULT.multiply(BigDecimal.valueOf(feiertageWerktag.size()));
             zeile.setSollIstDefault(true);
             DatenLuecke l = new DatenLuecke();
@@ -403,18 +452,41 @@ public class VerrechnungslohnService {
         }
 
         zeile.setSollstunden(jahresSoll);
+        // Zaehlt weiterhin ALLE Feiertage des Jahres, auch wenn sie in eine
+        // ausgeklammerte Krankengeld-/Wiedereingliederungsphase fallen --
+        // waehrend sollstunden fuer diese Phase bereits gekuerzt ist. Reine
+        // Anzeigegroesse ohne Rechenwirkung (fliesst in keine weitere Formel
+        // ein), in einer Langzeitfall-Zeile aber inkonsistent zu sollstunden
+        // (Nachbesserung Abschnitt 2, Befund 5 -- bewusst nicht veraendert).
         zeile.setFeiertagsstunden(feiertagsSoll);
+        zeile.setAusgeklammerteTage(ausgeklammert.size());
 
         BigDecimal urlaub = nz(abwesenheitRepository.sumStundenByMitarbeiterIdAndTypAndDatumBetween(
                 ma.getId(), AbwesenheitsTyp.URLAUB, jahresStart, jahresEnde));
-        BigDecimal krank = nz(abwesenheitRepository.sumStundenByMitarbeiterIdAndTypAndDatumBetween(
-                ma.getId(), AbwesenheitsTyp.KRANKHEIT, jahresStart, jahresEnde));
+        // Die Krankengeld-/Wiedereingliederungstage sind schon aus dem Soll raus
+        // (siehe oben) und duerfen nicht zusaetzlich als Krankheitsstunden
+        // abgezogen werden -- deshalb die Summe ohne diese Phasentypen.
+        // Lohnfortzahlungs-Wochen bleiben im Abzug (Spec, Abschnitt 4, Task 13).
+        BigDecimal krank = nz(abwesenheitRepository.sumStundenOhnePhasenTypen(
+                ma.getId(), AbwesenheitsTyp.KRANKHEIT, jahresStart, jahresEnde,
+                List.of(LangzeitkrankmeldungPhaseTyp.KRANKENGELD, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG)));
 
         if (urlaub.compareTo(BigDecimal.ZERO) == 0 && ma.getJahresUrlaub() != null) {
+            // Bewusst OHNE den ausgeklammert.isEmpty()-Schutz, den der
+            // Krankheits-Default unten bekommt: der Urlaubsanspruch laeuft
+            // waehrend einer Langzeitkrankheit unveraendert weiter, ein
+            // Krankengeldbezug "verbraucht" also keinen Urlaub. Der volle
+            // Jahresurlaub als Default ist hier fachlich richtig, auch wenn
+            // ausgeklammert nicht leer ist (Nachbesserung Abschnitt 2,
+            // Befund 5 -- bewusst nicht veraendert).
             urlaub = BigDecimal.valueOf(ma.getJahresUrlaub()).multiply(stundenProTag(zeitkontoOpt));
             zeile.setUrlaubIstDefault(true);
         }
-        if (krank.compareTo(BigDecimal.ZERO) == 0) {
+        // Der 8-Tage-Standard darf nur greifen, wenn wirklich keine Krankheitsdaten
+        // vorliegen. Ist ein Langzeitfall bereits vollstaendig ausgeklammert, waere
+        // krank == 0 sonst faelschlich als "keine Daten" gedeutet und der Default
+        // zusaetzlich zur Ausklammerung abgezogen (Task 13).
+        if (krank.compareTo(BigDecimal.ZERO) == 0 && ausgeklammert.isEmpty()) {
             krank = KRANKHEITSTAGE_DEFAULT.multiply(stundenProTag(zeitkontoOpt));
             zeile.setKrankheitIstDefault(true);
         }
@@ -449,19 +521,56 @@ public class VerrechnungslohnService {
         return zeile;
     }
 
-    private BigDecimal jahresSollstundenAusZeitkonto(Zeitkonto zk,
+    private SollUndAusklammerung jahresSollstundenAusZeitkonto(Zeitkonto zk,
                                                      LocalDate von,
                                                      LocalDate bis,
-                                                     Set<LocalDate> feiertage) {
-        BigDecimal summe = BigDecimal.ZERO;
+                                                     Set<LocalDate> feiertage,
+                                                     Set<LocalDate> ausgeklammert) {
+        SollUndAusklammerung ergebnis = new SollUndAusklammerung();
         for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
             if (feiertage.contains(d)) {
                 continue;
             }
             int dow = d.getDayOfWeek().getValue();
-            summe = summe.add(nz(zk.getSollstundenFuerTag(dow)));
+            BigDecimal stunden = nz(zk.getSollstundenFuerTag(dow));
+            if (ausgeklammert.contains(d)) {
+                ergebnis.ausgeklammerteStunden = ergebnis.ausgeklammerteStunden.add(stunden);
+                continue;
+            }
+            ergebnis.soll = ergebnis.soll.add(stunden);
         }
-        return summe.setScale(2, RoundingMode.HALF_UP);
+        ergebnis.soll = ergebnis.soll.setScale(2, RoundingMode.HALF_UP);
+        ergebnis.ausgeklammerteStunden = ergebnis.ausgeklammerteStunden.setScale(2, RoundingMode.HALF_UP);
+        return ergebnis;
+    }
+
+    /**
+     * Kalendertage im Zeitraum [von, bis], die zu einer Krankengeld- oder
+     * Wiedereingliederungsphase des Mitarbeiters gehoeren (Langzeitkrankmeldung,
+     * Task 13). Eine Abfrage je Mitarbeiter, ausserhalb jeder Tagesschleife.
+     */
+    private Set<LocalDate> ausgeklammerteTage(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        List<LangzeitkrankmeldungPhase> phasen = phaseRepository.findImZeitraum(mitarbeiterId, von, bis);
+        Set<LocalDate> tage = new HashSet<>();
+        for (LangzeitkrankmeldungPhase phase : phasen) {
+            if (phase.getTyp() != LangzeitkrankmeldungPhaseTyp.KRANKENGELD
+                    && phase.getTyp() != LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG) {
+                continue;
+            }
+            LocalDate phasenVon = phase.getVonDatum().isAfter(von) ? phase.getVonDatum() : von;
+            LocalDate phasenBisRoh = phase.getBisDatum();
+            LocalDate phasenBis = (phasenBisRoh == null || phasenBisRoh.isAfter(bis)) ? bis : phasenBisRoh;
+            for (LocalDate d = phasenVon; !d.isAfter(phasenBis); d = d.plusDays(1)) {
+                tage.add(d);
+            }
+        }
+        return tage;
+    }
+
+    /** Ergebnis einer Sollstunden-Berechnung mit Krankheitsphasen-Ausklammerung. */
+    private static class SollUndAusklammerung {
+        BigDecimal soll = BigDecimal.ZERO;
+        BigDecimal ausgeklammerteStunden = BigDecimal.ZERO;
     }
 
     private BigDecimal feiertagSoll(Zeitkonto zk, Set<LocalDate> feiertage) {
@@ -478,16 +587,22 @@ public class VerrechnungslohnService {
      * Feiertage -- dieselbe Annahme, die der Lohn-Block ueber die 2080-h-Woche
      * trifft.
      */
-    private BigDecimal werktagsSollOhneZeitkonto(LocalDate von, LocalDate bis, Set<LocalDate> feiertage) {
-        BigDecimal summe = BigDecimal.ZERO;
+    private SollUndAusklammerung werktagsSollOhneZeitkonto(LocalDate von, LocalDate bis, Set<LocalDate> feiertage, Set<LocalDate> ausgeklammert) {
+        SollUndAusklammerung ergebnis = new SollUndAusklammerung();
         for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
             DayOfWeek dow = d.getDayOfWeek();
             if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY || feiertage.contains(d)) {
                 continue;
             }
-            summe = summe.add(STUNDEN_PRO_TAG_DEFAULT);
+            if (ausgeklammert.contains(d)) {
+                ergebnis.ausgeklammerteStunden = ergebnis.ausgeklammerteStunden.add(STUNDEN_PRO_TAG_DEFAULT);
+                continue;
+            }
+            ergebnis.soll = ergebnis.soll.add(STUNDEN_PRO_TAG_DEFAULT);
         }
-        return summe.setScale(2, RoundingMode.HALF_UP);
+        ergebnis.soll = ergebnis.soll.setScale(2, RoundingMode.HALF_UP);
+        ergebnis.ausgeklammerteStunden = ergebnis.ausgeklammerteStunden.setScale(2, RoundingMode.HALF_UP);
+        return ergebnis;
     }
 
     /**

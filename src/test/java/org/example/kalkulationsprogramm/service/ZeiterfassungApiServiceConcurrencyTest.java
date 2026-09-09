@@ -62,6 +62,7 @@ class ZeiterfassungApiServiceConcurrencyTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private FeiertagService feiertagService;
     @Mock private ZeitbuchungAuditService auditService;
+    @Mock private TagesSollService tagesSollService;
     @Mock private MonatsSaldoService monatsSaldoService;
 
     private ZeiterfassungApiService service;
@@ -77,7 +78,7 @@ class ZeiterfassungApiServiceConcurrencyTest {
                 projektRepository, mitarbeiterRepository, arbeitsgangRepository,
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
-                lieferantenRepository, feiertagService, auditService);
+                lieferantenRepository, feiertagService, auditService, tagesSollService);
         // @Autowired-Felder ueber Reflection setzen (Mix aus Constructor- und
         // Field-Injection im Service - hier Field-Injection nachstellen).
         ReflectionTestUtils.setField(service, "monatsSaldoService", monatsSaldoService);

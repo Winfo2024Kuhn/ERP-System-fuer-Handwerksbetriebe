@@ -4,6 +4,30 @@ Eine Datei pro Vorhaben: `docs/superpowers/plans/<datum>-<thema>-log.md`,
 Pfad steht im Kopf der Plan-Datei. **Append-only** — niemand ändert oder
 löscht bestehenden Text, jeder hängt nur unten einen neuen Block an.
 
+## Welche Datei — der Haupt-Checkout, nicht dein Worktree
+
+**Der Pfad ist absolut anzugeben, auf das Haupt-Checkout.** Nicht relativ zu
+deinem Arbeitsverzeichnis:
+
+```bash
+LOG="C:/Users/<du>/dev/<projekt>/docs/superpowers/plans/<datum>-<thema>-log.md"
+```
+
+Das ist keine Formsache, sondern der Sinn des Locks. Jedes Worktree hat eine
+**eigene Kopie** der Datei. Hängst du relativ an, schreibst du in deine private
+Kopie — dort kann dich kein anderer Agent stören, das Lock schützt nichts, und
+der Block ist für alle anderen unsichtbar.
+
+Schlimmer: Dein Commit passiert **vor** dem Log-Block (so steht es in der
+Reihenfolge unten). Der Block bleibt also als uncommittete Änderung im Worktree
+liegen, der Orchestrator merged nur deinen Branch — und der Block ist weg.
+Am 09.09.2026 zweimal passiert; beide Blöcke mussten von Hand aus den
+Worktrees nachgeholt werden, nachdem der Merge schon durch war.
+
+Der Orchestrator committet das Log getrennt, nachdem alle Agenten eines
+Abschnitts fertig sind. Du committest es **nicht** — täte es jeder in seinem
+Branch, kollidierte jeder Merge am Dateiende mit dem nächsten.
+
 ## Lock-Protokoll (Bash)
 
 Ein Sperr-**Ordner** ist auf allen gängigen Dateisystemen atomar erstellbar

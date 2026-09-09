@@ -21,7 +21,10 @@ import static org.mockito.Mockito.*;
 
 /**
  * Unit-Tests für ZeitkontoService.
- * Testet die Sollstunden-Berechnung unter Berücksichtigung von Feiertagen.
+ * Prüft das Delegieren der Sollstunden-Berechnung an {@link TagesSollService}.
+ * Die eigentlichen Rechenregeln (Feiertage, halbe Feiertage,
+ * Wiedereingliederung) stehen in {@link TagesSollServiceTest} und in
+ * {@link TagesSollCharakterisierungZeitkontoTest}.
  */
 @ExtendWith(MockitoExtension.class)
 class ZeitkontoServiceTest {
@@ -33,7 +36,7 @@ class ZeitkontoServiceTest {
     private MitarbeiterRepository mitarbeiterRepository;
 
     @Mock
-    private FeiertagService feiertagService;
+    private TagesSollService tagesSollService;
 
     @InjectMocks
     private ZeitkontoService zeitkontoService;
@@ -89,82 +92,52 @@ class ZeitkontoServiceTest {
     }
 
     @Test
-    void berechneSollstundenFuerMonat_OhneFeiertage_BerechnetKorrekt() {
-        // Arrange - Januar 2024: 23 Arbeitstage (Mo-Fr), keine Feiertage in diesem Test
-        when(zeitkontoRepository.findByMitarbeiterId(1L)).thenReturn(Optional.of(testZeitkonto));
-        when(feiertagService.istHalberFeiertag(any(LocalDate.class))).thenReturn(false);
+    void berechneSollstundenFuerZeitraum_DelegiertAnTagesSollServicePeriodenSollSumme() {
+        // Arrange
+        LocalDate von = LocalDate.of(2024, 1, 1);
+        LocalDate bis = LocalDate.of(2024, 1, 31);
+        when(tagesSollService.periodenSollSumme(1L, testZeitkonto, von, bis))
+                .thenReturn(new BigDecimal("184.00"));
 
         // Act
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerMonat(1L, 2024, 1);
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(testZeitkonto, von, bis);
 
-        // Assert
-        // Januar 2024: 23 Arbeitstage x 8 Stunden = 184 Stunden
-        // Feiertage sind bezahlte Arbeitstage, werden nicht abgezogen
-        assertEquals(new BigDecimal("184"), result);
+        // Assert - der Service reicht die Berechnung unveraendert durch
+        assertEquals(new BigDecimal("184.00"), result);
+        verify(tagesSollService).periodenSollSumme(1L, testZeitkonto, von, bis);
     }
 
     @Test
-    void berechneSollstundenFuerMonat_MitFeiertag_ZiehtFeiertagAb() {
-        // Arrange - Januar 2024 mit 1 halben Feiertag (Neujahr als halber Feiertag)
-        when(zeitkontoRepository.findByMitarbeiterId(1L)).thenReturn(Optional.of(testZeitkonto));
+    void berechneSollstundenFuerZeitraum_KontoOhneMitarbeiter_UebergibtNullAlsMitarbeiterId() {
+        // Arrange - Alt-Testdaten ohne Mitarbeiter-Zuordnung am Zeitkonto
+        testZeitkonto.setMitarbeiter(null);
+        LocalDate tag = LocalDate.of(2024, 1, 1);
+        when(tagesSollService.periodenSollSumme(null, testZeitkonto, tag, tag))
+                .thenReturn(BigDecimal.ZERO);
 
-        // Neujahr 2024 ist ein Montag – als halber Feiertag simuliert
-        LocalDate neujahr = LocalDate.of(2024, 1, 1);
-        when(feiertagService.istHalberFeiertag(neujahr)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(argThat(date -> !date.equals(neujahr)))).thenReturn(false);
+        // Act
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(testZeitkonto, tag, tag);
+
+        // Assert
+        assertEquals(BigDecimal.ZERO, result);
+        verify(tagesSollService).periodenSollSumme(null, testZeitkonto, tag, tag);
+    }
+
+    @Test
+    void berechneSollstundenFuerMonat_UebergibtErstenUndLetztenTagDesMonatsAnTagesSollService() {
+        // Arrange
+        when(zeitkontoRepository.findByMitarbeiterId(1L)).thenReturn(Optional.of(testZeitkonto));
+        LocalDate ersterTag = LocalDate.of(2024, 1, 1);
+        LocalDate letzterTag = LocalDate.of(2024, 1, 31);
+        when(tagesSollService.periodenSollSumme(1L, testZeitkonto, ersterTag, letzterTag))
+                .thenReturn(new BigDecimal("180.00"));
 
         // Act
         BigDecimal result = zeitkontoService.berechneSollstundenFuerMonat(1L, 2024, 1);
 
         // Assert
-        // Januar 2024: 23 Arbeitstage, 1 halber Feiertag => 22 x 8 + 1 x 4 = 180 Stunden
         assertEquals(new BigDecimal("180.00"), result);
-    }
-
-    @Test
-    void berechneSollstundenFuerMonat_Dezember_MitWeihnachten() {
-        // Arrange - Dezember 2024 mit 2 halben Feiertagen (Heiligabend + Silvester)
-        when(zeitkontoRepository.findByMitarbeiterId(1L)).thenReturn(Optional.of(testZeitkonto));
-
-        LocalDate heiligabend = LocalDate.of(2024, 12, 24);
-        LocalDate silvester = LocalDate.of(2024, 12, 31);
-
-        when(feiertagService.istHalberFeiertag(heiligabend)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(silvester)).thenReturn(true);
-        when(feiertagService.istHalberFeiertag(argThat(date -> !date.equals(heiligabend) && !date.equals(silvester))))
-                .thenReturn(false);
-
-        // Act
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerMonat(1L, 2024, 12);
-
-        // Assert
-        // Dezember 2024: 22 Arbeitstage, 2 halbe Feiertage (Di+Di)
-        // => 20 x 8 + 2 x 4 = 168 Stunden
-        assertEquals(new BigDecimal("168.00"), result);
-    }
-
-    @Test
-    void berechneSollstundenFuerMonat_TeilzeitMitarbeiter() {
-        // Arrange - Teilzeit: nur Mo, Mi, Fr je 6 Stunden
-        testZeitkonto.setMontagStunden(new BigDecimal("6"));
-        testZeitkonto.setDienstagStunden(BigDecimal.ZERO);
-        testZeitkonto.setMittwochStunden(new BigDecimal("6"));
-        testZeitkonto.setDonnerstagStunden(BigDecimal.ZERO);
-        testZeitkonto.setFreitagStunden(new BigDecimal("6"));
-
-        when(zeitkontoRepository.findByMitarbeiterId(1L)).thenReturn(Optional.of(testZeitkonto));
-        when(feiertagService.istHalberFeiertag(any(LocalDate.class))).thenReturn(false);
-
-        // Act
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerMonat(1L, 2024, 1);
-
-        // Assert
-        // Januar 2024: 5 Montage + 5 Mittwoche + 4 Freitage = 14 Arbeitstage x 6
-        // Stunden = 84 Stunden
-        // Korrektur: Montage=5, Mittwoche=5, Freitage=4 => 14 Tage
-        // Eigentlich: 5 Mo x 6 + 5 Mi x 6 + 4 Fr x 6 = 30 + 30 + 24 = 84
-        // Aber genauer betrachtet: Januar 2024 hat genau 5 Mo, 5 Mi, 4 Fr
-        assertTrue(result.compareTo(BigDecimal.ZERO) > 0);
+        verify(tagesSollService).periodenSollSumme(1L, testZeitkonto, ersterTag, letzterTag);
     }
 
     @Test

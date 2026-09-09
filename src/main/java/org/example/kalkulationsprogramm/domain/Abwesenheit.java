@@ -32,6 +32,14 @@ public class Abwesenheit {
     @JoinColumn(name = "urlaubsantrag_id")
     private Urlaubsantrag urlaubsantrag;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "langzeitkrankmeldung_id")
+    private Langzeitkrankmeldung langzeitkrankmeldung;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "langzeitkrankmeldung_phase_id")
+    private LangzeitkrankmeldungPhase langzeitkrankmeldungPhase;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AbwesenheitsTyp typ;

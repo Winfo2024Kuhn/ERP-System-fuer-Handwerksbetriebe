@@ -57,8 +57,31 @@ flaky. Du testest genau deine Änderung: im Backend `./mvnw -B test
 -Dtest=DeineTestklasse`, im Frontend `npx vitest run <deine Testdatei>` plus
 `npm run lint` und `npm run build` (beide schnell). Alles andere — volle Suite,
 alle E2E-Specs, Design-Prüfung — fahren die Review-Agenten nach dem Merge.
-Testläufe immer **im Vordergrund** mit hohem Timeout, nie im Hintergrund:
-Hintergrund-Benachrichtigungen erreichen dich als Subagent nicht.
+
+**Testläufe: Timeout ausdrücklich auf 600000 ms setzen.** Nicht „im Vordergrund
+laufen lassen" — das reicht nachweislich nicht. Der Timeout-Parameter des
+Shell-Werkzeugs steht standardmäßig auf zwei Minuten, und alles, was länger
+braucht (eine Maven-Suite, ein Playwright-Lauf mit Dev-Server-Start), rutscht
+danach **von allein** in den Hintergrund. Dort erreicht dich die Fertigmeldung
+als Subagent nicht mehr, und du wartest bis zum Abbruch auf ein Ereignis, das
+nie kommt. Am 08./09.09.2026 dreimal passiert, jedes Mal trotz der Warnung.
+
+**Mehrere Testklassen trennt ein Komma**, nicht `+` — bei Surefire trennt `+`
+nur Methoden innerhalb einer Klasse: `-Dtest=ErsteTest,ZweiteTest`.
+
+**Den Output in eine Datei lenken, nicht in deinen Kontext.** Ein Maven-Lauf
+sind tausende Zeilen; fährst du ihn fünfmal, liegt der Verlauf fünfmal in
+deinem Kontext — das ist der größte vermeidbare Kostenposten der Pipeline.
+Und **niemals durch eine Pipe**: `./mvnw test | tail` liefert den Exit-Code
+von `tail`, nicht von Maven, und ein kaputter Build sieht aus wie ein grüner.
+
+```bash
+LOG=$(mktemp -d)/test.log
+./mvnw -B test -Dtest=DeineTestklasse > "$LOG" 2>&1; RC=$?
+echo "exit=$RC"
+grep -E "Tests run:|BUILD" "$LOG" | tail -5
+grep -E "^\[ERROR\]" "$LOG" | head -20     # nur wenn rot
+```
 
 **Zusätzlich lesen:** `.claude/skills/loese-problem/references/kriterien.md`
 (Performance, Observability, API-Design). Der Abschnitts-Reviewer prüft
@@ -117,3 +140,27 @@ Kontext-Log an (mit Verweis, welcher Befund behoben wurde).
 ## Output an den Orchestrator
 
 Task-ID, Branch-Name, Status (fertig/blockiert), Commit-Hashes.
+
+## Zum Schluss: beende, was du gestartet hast
+
+**Pflicht, nicht Kür.** Bevor du deinen Report schreibst, beende jeden Dienst,
+den du gestartet hast — Vite-Dev-Server, `spring-boot:run`, `tsc --watch`,
+Playwright-Browser. Sie sterben **nicht** mit deiner Runde, sondern laufen
+weiter, bis jemand sie bemerkt.
+
+Zwei Gründe, warum das mehr ist als Ordnungsliebe:
+
+- `node_modules` ist in deinem Worktree ein **Symlink ins Haupt-Checkout**. Ein
+  laufender Vite-Server sperrt dort die Binaries, und ein späteres `npm ci`
+  scheitert an einer Datei, die niemand mehr zuordnen kann.
+- Über eine Pipeline mit mehreren Runden summieren sich vergessene Dienste, bis
+  Arbeitsspeicher und CPU dichtmachen. Real gemessen am 08.09.2026: ein
+  Dev-Server aus einem Worktree lief nach **vier Tagen** noch mit 200 MB.
+
+Gegenprüfen und im Report vermerken, was du beendet hast (oder dass du nichts
+gestartet hast):
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='esbuild.exe'" |
+  Where-Object { $_.CommandLine -match 'wt\' } | Select-Object ProcessId, CommandLine
+```

@@ -126,8 +126,44 @@ Für jeden Abschnitt der Reihe nach:
 5. **🟢/🟡:** Abschnitt abgenommen. **Sofort in den Feature-Branch mergen und
    pushen** — nicht bis zum Schluss warten. Der Container kann eingesammelt
    werden und ein Kontolimit die Pipeline mitten in der Arbeit abreißen; was
-   nicht auf `origin` liegt, ist weg. Danach die Worktrees des nächsten
-   Abschnitts anlegen und weiter. Keine offenen Abschnitte mehr → Schritt 6.
+   nicht auf `origin` liegt, ist weg. Danach **aufräumen** (Worktrees **und**
+   Prozesse, siehe unten), die Worktrees des nächsten Abschnitts anlegen und
+   weiter. Keine offenen Abschnitte mehr → Schritt 6.
+
+### Aufräumen nach jedem Abschnitt — Prozesse, nicht nur Worktrees
+
+**Vorgabe des Nutzers vom 08.09.2026.** Jeder Abschnitt hinterlässt laufende
+Dienste: Vite-Dev-Server, `esbuild`-Service-Prozesse, Playwright-Browser,
+`tsc --watch`, gelegentlich ein `spring-boot:run`. Die beenden sich **nicht**
+von selbst, wenn der Agent fertig ist — sie überleben ihn, und über eine
+Pipeline mit fünf Runden summiert sich das, bis Arbeitsspeicher und CPU
+dichtmachen.
+
+Real gemessen (08.09.2026): ein Vite-Dev-Server aus einem Worktree lief nach
+**vier Tagen** noch mit 200 MB, zusammen mit zwei weiteren Leichen aus
+demselben Lauf.
+
+Deshalb **nach jeder Abnahme**, bevor die nächsten Worktrees entstehen:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='esbuild.exe' OR Name='java.exe'" |
+  Where-Object { $_.CommandLine -match 'wt\\|vite|esbuild|playwright|spring-boot' } |
+  Select-Object ProcessId, Name, @{n='Start';e={(Get-Process -Id $_.ProcessId).StartTime}},
+                @{n='MB';e={[math]::Round((Get-Process -Id $_.ProcessId).WorkingSet/1MB)}}
+```
+
+Was zu einem **abgeschlossenen** Abschnitt gehört, wird beendet. Was zu einem
+**laufenden** Agenten gehört, bleibt — vor dem Beenden immer Startzeit und
+Kommandozeile ansehen, sonst reißt man dem gerade arbeitenden Design-Reviewer
+den Browser weg.
+
+Zwei Dinge, die das Aufräumen erschweren und die man kennen sollte:
+
+- Ein Worktree-Dev-Server sperrt über den `node_modules`-Symlink die Binaries
+  im **Haupt-Checkout**. Solange er läuft, scheitert dort jedes `npm ci`.
+- Der Permission-Classifier kann `Stop-Process` blocken. Dann nicht dagegen
+  anrennen: dem Nutzer die PIDs mit Startzeit und Speicherverbrauch nennen,
+  damit er selbst entscheidet.
 
 **Wenn ein Agent abstürzt** (Kontolimit, Timeout, API-Fehler): nicht einfach
 neu starten. Erst nachsehen, was er hinterlassen hat —
@@ -212,6 +248,36 @@ statt in die Sammeldatei.
 
 Wird eine feste Grenze erreicht, wird **nicht weitergelooped** — die
 Pipeline stoppt und legt dem Nutzer die verbleibenden Befunde vor.
+
+## Unterbrechung: so anhalten, dass jede Session weitermachen kann
+
+Die Pipeline läuft über Stunden und wird unterbrochen — Nutzungslimit, Pause,
+geschlossenes Fenster. Ein Weckruf per `CronCreate` lebt **nur in der
+laufenden Session** und ist weg, sobald Claude Code beendet wird. Verlass dich
+also nie darauf allein.
+
+**Beim Anhalten, in dieser Reihenfolge:**
+
+1. Laufende Coding-Agenten mit `TaskStop` beenden.
+2. **Halbzustand prüfen**, bei jedem gestoppten Agenten:
+   `git -C <worktree> status --short` und
+   `git -C <worktree> log --oneline <feature-branch>..HEAD`.
+   Wurde nichts geschrieben, ist der Auftrag unverändert gültig und der
+   Agent wird später einfach neu gestartet. Liegt Halbfertiges da, gehört das
+   ausdrücklich ins Log — sonst rät die nächste Session.
+3. Alles Abgenommene committen und **pushen**. Was nicht auf `origin` liegt,
+   existiert nicht.
+4. Einen Block **`# ⏸ HIER GEHT ES WEITER`** ans Kontext-Log anhängen. Das ist
+   der eigentliche Wiederaufnahme-Punkt und muss ohne den Gesprächsverlauf
+   lesbar sein: aktueller Commit, welcher Abschnitt abgenommen ist, welche
+   Worktrees und Branches **schon existieren** (also nicht neu angelegt werden
+   dürfen), was als Nächstes zu starten ist, und die Besonderheiten der
+   nächsten Aufträge (Symlinks, Skill-Namen, Reihenfolge-Zwänge).
+5. Optional zusätzlich `CronCreate` für die automatische Wiederaufnahme —
+   als Komfort, nicht als Absicherung.
+
+**Beim Wiederaufnehmen:** Kontext-Log lesen, dort steht alles. Eine neue
+Session braucht den alten Gesprächsverlauf dann nicht.
 
 ## Referenzen
 
