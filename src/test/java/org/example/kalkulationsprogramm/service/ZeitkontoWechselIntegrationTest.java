@@ -68,4 +68,26 @@ class ZeitkontoWechselIntegrationTest {
         assertEquals(0, new BigDecimal("8").compareTo(abwesenheiten.findById(urlaub.getId()).orElseThrow().getStunden()));
         assertEquals(anzahlVorher + 1, versionen.count());
     }
+
+    @Test void vorschauBerechnetStichtagswechselVonAchtAufVierStundenOhneVersionOderSaldoZuSchreiben() {
+        YearMonth monat = YearMonth.now();
+        Mitarbeiter m = new Mitarbeiter(); m.setVorname("Erika"); m.setNachname("Beispiel");
+        m.setEintrittsdatum(monat.minusMonths(1).atDay(1)); menschen.saveAndFlush(m);
+        ZeitkontoVersion alt = new ZeitkontoVersion(); alt.setMitarbeiter(m); alt.setGueltigVon(monat.minusMonths(1).atDay(1));
+        alt.setMontagStunden(new BigDecimal("8")); versionen.saveAndFlush(alt);
+        MonatsSaldo vorher = salden.berechneOhneSpeichern(m.getId(), monat.getYear(), monat.getMonthValue());
+        var vierStunden = new ZeitkontenmodellDto.Arbeitszeit(new BigDecimal("4"), BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, null);
+        var request = new ZeitkontoWechselDto(monat.atDay(1), m.getVersion(), alt.getId(), alt.getVersion(), null, null, vierStunden);
+        long versionenVorher = versionen.count(); long saldenVorher = monate.count();
+
+        var preview = wechsel.vorschau(m.getId(), request);
+
+        var auswirkung = preview.monate().stream().filter(x -> x.jahr() == monat.getYear() && x.monat() == monat.getMonthValue()).findFirst().orElseThrow();
+        long montage = monat.atDay(1).datesUntil(monat.atEndOfMonth().plusDays(1))
+                .filter(tag -> tag.getDayOfWeek() == java.time.DayOfWeek.MONDAY).count();
+        assertEquals(0, vorher.getDifferenz().add(BigDecimal.valueOf(4).multiply(BigDecimal.valueOf(montage))).compareTo(auswirkung.saldoNachher()));
+        assertTrue(auswirkung.geaendert());
+        assertEquals(versionenVorher, versionen.count()); assertEquals(saldenVorher, monate.count());
+    }
 }
