@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.MonatsSaldo;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.MonatsSaldoRepository;
@@ -86,7 +86,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     private static final Long MITARBEITER_ID = 1L;
 
     private Mitarbeiter testMitarbeiter;
-    private Zeitkonto testZeitkonto;
+    private ZeitkontoVersion testZeitkonto;
 
     @BeforeEach
     void setUp() {
@@ -100,7 +100,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
         testMitarbeiter.setNachname("Mustermann");
         lenient().when(entityManager.find(Mitarbeiter.class, MITARBEITER_ID, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)).thenReturn(testMitarbeiter);
 
-        testZeitkonto = new Zeitkonto(testMitarbeiter);
+        testZeitkonto = new ZeitkontoVersion();
         testZeitkonto.setMontagStunden(new BigDecimal("8.00"));
         testZeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         testZeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -116,7 +116,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
      * der Monat zum Testzeitpunkt bereits vergangen ist (siehe Klassen-Javadoc).
      *
      * {@code tagesSollService.feiertagsGutschriftSumme} wird mit exakten
-     * {@code eq()}-Matchern (Mitarbeiter, Zeitkonto, ersterTag, letzterTag)
+     * {@code eq()}-Matchern (Mitarbeiter, ZeitkontoVersion, ersterTag, letzterTag)
      * auf den je Testfall erwarteten Wert gestubbt - keine {@code any()}-Pauschale,
      * damit ein falscher Stub-Wert den jeweiligen Test tatsaechlich rot werden
      * laesst (siehe Gegenprobe im Kontext-Log).
@@ -131,9 +131,8 @@ class TagesSollCharakterisierungMonatsSaldoTest {
                 .thenReturn(new BigDecimal("168.00"));
         lenient().when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                 eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag))).thenReturn(BigDecimal.ZERO);
-        lenient().when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
         lenient().when(tagesSollService.feiertagsGutschriftSumme(
-                eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                 .thenReturn(erwarteteFeiertagsGutschrift);
         lenient().when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                 eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag))).thenReturn(Collections.emptyList());

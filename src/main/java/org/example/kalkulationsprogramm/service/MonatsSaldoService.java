@@ -74,6 +74,15 @@ public class MonatsSaldoService {
                 berechneMonatsSaldo(mitarbeiterId, jahr, monat));
     }
 
+    /** Schreibfreie Vorschau; in einer laufenden Wechseltransaktion sind neue Versionen bereits sichtbar. */
+    @Transactional(readOnly = true)
+    public MonatsSaldo berechneOhneSpeichern(Long id, int jahr, int monat) {
+        validiereMonat(id, jahr, monat);
+        Optional<MonatsSaldo> cached = monatsSaldoRepository.findByMitarbeiterIdAndJahrAndMonat(id, jahr, monat);
+        if (cached.filter(ms -> Boolean.TRUE.equals(ms.getFestgeschrieben())).isPresent()) return cached.get();
+        return berechneMonatsSaldo(id, jahr, monat);
+    }
+
     private Mitarbeiter sperreMitarbeiter(Long id) {
         Mitarbeiter mitarbeiter = entityManager.find(Mitarbeiter.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (mitarbeiter == null) {
@@ -83,7 +92,14 @@ public class MonatsSaldoService {
     }
 
     private Optional<MonatsSaldo> gesperrterSaldo(Long id, int jahr, int monat) {
-        // Locking read sees the latest commit even under MySQL REPEATABLE READ.
+        // Bulk-Invalidierung erhöht @Version außerhalb des Persistence Context.
+        // Vor einem Lock-Upgrade zunächst die bekannte Entity auffrischen.
+        Optional<MonatsSaldo> verwaltet = monatsSaldoRepository.findByMitarbeiterIdAndJahrAndMonat(id, jahr, monat);
+        if (verwaltet.isPresent()) {
+            entityManager.refresh(verwaltet.get(), LockModeType.PESSIMISTIC_WRITE);
+            return verwaltet;
+        }
+        // Locking read sieht auch seit dem Snapshot neu angelegte Zeilen.
         Optional<MonatsSaldo> saldo = monatsSaldoRepository.findGesperrt(id, jahr, monat);
         saldo.ifPresent(ms -> entityManager.refresh(ms, LockModeType.PESSIMISTIC_WRITE));
         return saldo;
@@ -196,9 +212,8 @@ public class MonatsSaldoService {
         if (abwesenheitsStunden == null) abwesenheitsStunden = BigDecimal.ZERO;
 
         // 4. Feiertagsstunden
-        Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
         BigDecimal feiertagsStunden = tagesSollService.feiertagsGutschriftSumme(
-                mitarbeiterId, zeitkonto, ersterTag, letzterTag);
+                mitarbeiterId, ersterTag, letzterTag);
 
         // 5. Korrekturstunden (nur STUNDEN-Typ, nicht storniert, Datum im Monat)
         BigDecimal korrekturStunden = korrekturRepository

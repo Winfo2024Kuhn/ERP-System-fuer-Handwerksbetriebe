@@ -43,8 +43,7 @@ class MonatsabschlussServiceTest {
     }
     void calculation() {
         when(zeitkontoService.berechneSollstundenFuerMonat(1L, ym.getYear(), ym.getMonthValue())).thenReturn(BigDecimal.TEN);
-        when(zeitkontoService.getOrCreateZeitkonto(1L)).thenReturn(new Zeitkonto(m));
-        when(tagesSollService.feiertagsGutschriftSumme(eq(1L), any(), any(), any())).thenReturn(BigDecimal.ZERO);
+        when(tagesSollService.feiertagsGutschriftSumme(eq(1L), any(), any())).thenReturn(BigDecimal.ZERO);
         when(monatsSaldoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
     @Test void festgeschriebenGewinntVorLiveWeicheUndGueltig() {

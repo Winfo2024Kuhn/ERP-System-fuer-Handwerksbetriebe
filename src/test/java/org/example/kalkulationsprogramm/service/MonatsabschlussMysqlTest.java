@@ -65,8 +65,7 @@ class MonatsabschlussMysqlTest {
         when(berechtigungService.verlangeAkteur(null)).thenReturn(person);
         when(mitarbeiterRepository.existsById(person.getId())).thenReturn(true);
         when(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), anyInt(), anyInt())).thenReturn(new BigDecimal("80"));
-        when(zeitkontoService.getOrCreateZeitkonto(anyLong())).thenReturn(new Zeitkonto(person));
-        when(tagesSollService.feiertagsGutschriftSumme(anyLong(), any(), any(), any())).thenReturn(BigDecimal.ZERO);
+        when(tagesSollService.feiertagsGutschriftSumme(anyLong(), any(), any())).thenReturn(BigDecimal.ZERO);
     }
     MonatsSaldo cache(String hours) { var s = new MonatsSaldo(); s.setIstStunden(new BigDecimal(hours)); return s; }
     void seed() { service.saveMonatsSaldoCache(person.getId(), month.getYear(), month.getMonthValue(), cache("12")); }

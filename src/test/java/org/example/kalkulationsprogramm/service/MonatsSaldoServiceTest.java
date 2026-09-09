@@ -59,7 +59,7 @@ class MonatsSaldoServiceTest {
     private MonatsSaldoService monatsSaldoService;
 
     private Mitarbeiter testMitarbeiter;
-    private Zeitkonto testZeitkonto;
+    private ZeitkontoVersion testZeitkonto;
 
     private static final Long MITARBEITER_ID = 1L;
 
@@ -73,7 +73,7 @@ class MonatsSaldoServiceTest {
         testMitarbeiter.setNachname("Mustermann");
         lenient().when(entityManager.find(Mitarbeiter.class, MITARBEITER_ID, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)).thenReturn(testMitarbeiter);
 
-        testZeitkonto = new Zeitkonto(testMitarbeiter);
+        testZeitkonto = new ZeitkontoVersion();
         testZeitkonto.setMontagStunden(new BigDecimal("8.00"));
         testZeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         testZeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -152,11 +152,9 @@ class MonatsSaldoServiceTest {
                 eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                 .thenReturn(BigDecimal.ZERO);
 
-        lenient().when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID))
-                .thenReturn(testZeitkonto);
 
         lenient().when(tagesSollService.feiertagsGutschriftSumme(
-                eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                 .thenReturn(BigDecimal.ZERO);
 
         lenient().when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
@@ -293,9 +291,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
@@ -323,9 +320,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(new BigDecimal("40.00")); // 5 Urlaubstage
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
@@ -364,9 +360,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
@@ -394,9 +389,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(new BigDecimal("8.00"));
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
@@ -425,9 +419,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(new BigDecimal("4.00"));
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
@@ -456,10 +449,9 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             // Samstag ist Feiertag, aber Sollstunden = 0 → TagesSollService liefert 0 Gutschrift
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
@@ -496,9 +488,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(new BigDecimal("16.00"));
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
@@ -532,9 +523,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(null);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
@@ -568,9 +558,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), any(), any()))
+                    eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
@@ -603,9 +592,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
@@ -636,9 +624,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
@@ -875,9 +862,8 @@ class MonatsSaldoServiceTest {
             when(abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), any(), any()))
                     .thenReturn(BigDecimal.ZERO);
-            when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
             when(tagesSollService.feiertagsGutschriftSumme(
-                    eq(MITARBEITER_ID), eq(testZeitkonto), eq(ersterTag), eq(letzterTag)))
+                    eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
                     .thenReturn(BigDecimal.ZERO);
             when(korrekturRepository.findByMitarbeiterIdAndDatumBetween(
                     eq(MITARBEITER_ID), eq(ersterTag), eq(letzterTag)))
