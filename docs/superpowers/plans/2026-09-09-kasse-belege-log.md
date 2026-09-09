@@ -327,3 +327,124 @@ Zeit: 2026-09-09T20:39:00Z
 - **435 passed, 0 failed, 0 flaky** (7,7 min), exit 0.
 
 **Abnahmeregel Playwright PC:** grün = alle bestehenden 435 plus die neuen Specs. Jede rote Spec ist erst ein Befund, wenn sie einen Nachlauf ohne Konkurrenz (`--workers=1`, keine parallele Maven-Suite) überlebt.
+
+## Abschnitt 1 — Task 10 (Coding-Agent)
+
+Zeit: 2026-09-09T22:55:00Z
+Branch: kasse/task-10-select-custom
+Commit(s): 0b8d6ba8, 5d696f2b
+Status: fertig
+
+Was gemacht wurde:
+- `select-custom.tsx` repariert: Breite waechst mit dem Inhalt bis
+  `min(90vw, 480px)` (`width: max-content`, `minWidth`/`maxWidth` aus neuem
+  `positioniere()`-`useCallback`), Optionen brechen um (`whitespace-normal
+  break-words` + `min-w-0`) statt abgeschnitten zu werden, `title` je Option.
+  Position wird bei offenem Dropdown per `scroll`(capture)/`resize`-Listener
+  neu berechnet. Hochklappen (`nachOben`), wenn unten kein Platz fuer die
+  gemessene (auf 240px gedeckelte) Panel-Hoehe ist, sonst Hoehe auf den
+  verbleibenden Platz begrenzt; links/rechts gegen den Viewport gedeckelt.
+  Optionale Gruppen-Ueberschriften (`role="presentation"`, ungruppierte
+  Optionen ohne Ueberschrift ganz oben, Gruppen in Reihenfolge des ersten
+  Auftretens). Escape schliesst, Enter/Space auf dem Ausloeser oeffnet
+  (Ausloeser jetzt `tabIndex`/`role="combobox"`, vorher gar nicht
+  tastaturbedienbar). Props additiv (`gruppe?` optional), keine bestehende
+  Aufrufstelle angefasst.
+- `select-custom.test.tsx`: neue Tests fuer Gruppierung (zwei Ueberschriften,
+  richtige Reihenfolge; ungruppiert oben), `title`-Attribut, Escape-Schliessen.
+  13/13 gruen.
+- `dropdown-breite.spec.ts` (neu): zwei Tests. (1) Konto-Dropdown mit langem
+  Label + 120-Zeichen-Wort ohne Trennstellen — keine Option laeuft ueber
+  (`scrollWidth<=clientWidth`), Panel vollstaendig im Viewport, an allen drei
+  Projektgroessen (1440x900/1536x960/1920x1080). (2) Dropdown mit wenigen
+  Optionen klappt bei verkuerztem Viewport (380px) am unteren Rand nach oben
+  auf (`rahmen.y+rahmen.height <= triggerRahmen.y`), an allen drei Groessen
+  gruen.
+- **Gegenprobe (Pflicht) durchgefuehrt:** `min-w-0` und `whitespace-normal
+  break-words` je einzeln aus dem Options-Span entfernt, Spec wurde beide
+  Male auf `scrollWidth<=clientWidth` rot (Beweis: Wort lief mit 830px
+  Scroll-Breite gegen 470px Client-Breite ueber), danach wiederhergestellt
+  und erneut gruen bestaetigt.
+- Gates: `npx vitest run src/components/ui/select-custom.test.tsx` 13/13
+  gruen. `npm run lint` 0 Errors (nur vorbestehende Warnings in
+  AbteilungBerechtigungenEditor.tsx/BelegeKasseEditor.tsx/
+  ZeiterfassungSteuerberater.tsx, keine meiner Dateien). `npm run build`
+  gruen, Build-Output danach verworfen. `grep -rn "teal-" react-pc-frontend/src`
+  liefert nur vorbestehende, nicht von mir beruehrte Treffer
+  (langzeitkrankmeldung/phasen.ts, PhasenZeitleiste.test.tsx,
+  Urlaubsantraege.tsx) — in meinen drei Task-Dateien kein Treffer.
+  `E2E_PORT=5202 npx playwright test e2e/dropdown-breite.spec.ts`: 3 von 6
+  gruen (beide Hochklapp-Faelle an allen drei Groessen), 3 rot — siehe
+  Bedenken, Ursache ausserhalb meiner Dateien.
+
+Bedenken / Abweichungen vom Plan:
+- **`min-w-0` wirkt im Plan-Wortlaut an der falschen Stelle.** Der Plan sagt
+  "dem Zeilen-<div> zusaetzlich min-w-0 geben" (dem `role="option"`-Div).
+  Per Mutationstest empirisch geprueft: `min-w-0` NUR auf diesem Zeilen-Div
+  ist wirkungslos, weil dieses Div kein Flex-Item ist (sein Elternteil ist
+  kein Flex-Container) — die `min-width:auto`-Falle trifft den
+  Options-**Span** (Flex-Kind der Zeile selbst), nicht die Zeile. Ich habe
+  `min-w-0` zusaetzlich auf den Span gesetzt (Zeile bleibt es aus Bestand
+  ebenfalls, schadet nicht) und per Gegenprobe bestaetigt, dass jetzt beide
+  Klassen (min-w-0 auf dem Span + whitespace-normal break-words) einzeln
+  notwendig sind. Ohne diese Korrektur waere die im Plan beschriebene
+  Rezeptur eine Attrappe gewesen (siehe kriterien.md-Warnung genau dazu).
+- **`spacelosesWort(48, 'Konto')` reicht nicht, um die min-w-0-Gegenprobe
+  ueberhaupt zu pruefen.** Bei 48 Zeichen (~340px bei text-sm) bleibt das
+  Wort unter der festen 480px-Panel-Deckelung — der Browser muss dann nie
+  unter die natuerliche Wortbreite schrumpfen, wodurch der Unterschied
+  zwischen "min-w-0 vorhanden" und "min-w-0 entfernt" gar nicht zum Tragen
+  kommt (empirisch verifiziert: mit 48 Zeichen blieb die Spec beim Entfernen
+  von min-w-0 gruen). Ich habe die Laenge auf 120 Zeichen erhoeht (~830px,
+  sicher ueber der Deckelung) — damit wird die Gegenprobe erst aussagekraeftig.
+- **Missing `role="dialog"` in BelegeKasseEditor.tsx faelscht
+  `keineUeberschneidungen`/`designPruefung` (out of scope, nicht meine
+  Datei).** `e2e/hilfen/design.ts:405` filtert Hintergrund-Elemente nur
+  heraus, wenn `document.querySelector('[role="dialog"]')` etwas findet.
+  Beide Modal-Wrapper in BelegeKasseEditor.tsx (Zeile 672 und 1440, `<div
+  className="fixed inset-0 bg-black/50 z-50 ...">`) haben kein
+  `role="dialog"` — dadurch vergleicht der Check Hintergrund-Buttons/-Inputs
+  (durch das Modal optisch verdeckt) gegen Modal-Inhalte und meldet
+  Ueberschneidungen, die visuell gar nicht existieren (siehe Screenshot
+  `dropdown-offen--pc-14zoll.png`: das Dropdown selbst sitzt sauber, alle
+  gemeldeten "Ueberschneidungen" betreffen Elemente HINTER dem abgedunkelten
+  Hintergrund). Dadurch ist `designPruefung(page, info, 'dropdown-offen')`
+  in Test 1 an allen drei Bildschirmgroessen rot — meine eigenen
+  Zusicherungen davor (kein Options-Ueberlauf, Panel im Viewport) sind an
+  derselben Stelle nachweislich gruen durchgelaufen (Fehler tritt erst BEI
+  designPruefung auf, nicht vorher). Empfehlung fuer wer BelegeKasseEditor.tsx
+  naechstes anfasst (parallele Task-Bearbeitung oder Review): `role="dialog"`
+  auf beide `fixed inset-0 bg-black/50`-Wrapper (Zeile 672, 1440) ergaenzen —
+  einzeilige, risikofreie Aenderung, danach sollte dropdown-breite.spec.ts
+  vollstaendig gruen laufen, ohne dass ich etwas an meinen Dateien aendern
+  muesste.
+- **`@testing-library/jest-dom` registriert seine Matcher in dieser
+  Umgebung nachweislich nicht** (`toBeInTheDocument`/`toHaveClass`/
+  `toHaveAttribute`/`toBeDisabled` -> "Invalid Chai property"), reproduziert
+  auch an einer voellig unveraenderten Datei (`button.test.tsx`, 2/10 Tests
+  rot, stabil bei mehrfachem Lauf, keine node_modules-Duplikate gefunden).
+  Betrifft `vitest`^4.0.18 + `@testing-library/jest-dom`^6.9.1 global,
+  nicht nur select-custom. `select-custom.test.tsx` umgeht das, indem alle
+  Assertions auf native DOM-Eigenschaften bzw. eingebaute vitest-Matcher
+  umgestellt sind (`toBeTruthy`/`el.getAttribute(...)`/`toBeNull` statt
+  jest-dom-Matcher) — inhaltlich gleichwertig, nur ohne die kaputte
+  Matcher-Registrierung. node_modules ist projektweit geteilt (Junction) —
+  ich habe nichts daran repariert, das ist ausserhalb meiner Dateien und
+  betrifft vermutlich jeden Frontend-Task in dieser Pipeline.
+
+## Abschnitt 1 — Task 9, Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-09T20:56:36Z
+Branch: kasse/task-9-refactoring
+Commit(s): b99f6762
+Status: fertig
+
+Was gemacht wurde:
+- Auftrag des Orchestrators: role="dialog"/aria-modal="true" auf den Modal-Panels der eigenen Task-9-Dateien ergaenzen -- deckt sich mit der von mir schon im ersten Anlauf vermerkten Bedenken-Notiz und mit der unabhaengigen Beobachtung aus Task 10 (dropdown-breite.spec.ts wurde im gemergten Stand von genau derselben Ursache rot).
+- Already up to date. (Fast-Forward, keine Konflikte) -- Branch enthaelt jetzt alle sechs Tasks von Abschnitt 1.
+- role="dialog", aria-modal="true", aria-labelledby (per id auf die jeweilige Titelueberschrift verknuepft) ergaenzt auf: BelegDetailModal.tsx (Panel-Div), NeueBuchungDialog.tsx (ModalShell -- deckt damit alle vier Buchungsmodale UND KasseEinstellungenDialog.tsx ab, da beide ModalShell nutzen), MonatsExportModal in BelegeKasseEditor.tsx. Vorbild KassenbuchAbschlussLeiste.tsx:527, Attribute aufs Panel (weisse Karte), nicht aufs Overlay -- wie im Vorbild. Sonst nichts geaendert.
+- e2e/kasse-refactoring.spec.ts: die Teil-Pruefung fuer den Zustand "Beleg-Detail-Modal offen" (aus dem ersten Anlauf, ohne keineUeberschneidungen) durch die volle designPruefung() ersetzt -- jetzt gruen mit dem Attribut.
+- Gates: vitest (19/19 gruen), lint (0 Fehler, nur die schon vorher bekannten, unabhaengigen Warnings), build (tsc+vite gruen, Artefakte danach verworfen), Playwright E2E_PORT=5201 fuer kasse-refactoring.spec.ts (3/3 Bildschirmgroessen gruen) UND dropdown-breite.spec.ts (6/6 gruen).
+
+Bedenken / Abweichungen vom Plan:
+- keine
