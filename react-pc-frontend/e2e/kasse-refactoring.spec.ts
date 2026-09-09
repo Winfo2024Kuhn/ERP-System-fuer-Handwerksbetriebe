@@ -1,8 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
-import { designPruefung, keinHorizontalerUeberlauf, keinTextGekuerzt, keinTextLaeuftUeber, uebergaengeAusklingenLassen } from './hilfen/design';
+import { designPruefung } from './hilfen/design';
 
 /**
  * Task 9 (Plan "Kasse & Belege", Abschnitt 1): reines Refactoring von
@@ -214,28 +212,10 @@ test('Belege & Kasse bleibt nach der Verschiebung unveraendert: vier Tabs, Kasse
     const uebernehmenButton = page.getByRole('button', { name: 'Prüfen & Übernehmen' });
     await expect(uebernehmenButton).toBeVisible();
 
-    // designPruefung() selbst wird fuer diesen Zustand NICHT aufgerufen --
-    // Vorbild: rahmen-detailseite.spec.ts, die aus demselben Grund nur die
-    // einzelnen Teile aufruft. BelegDetailModal.tsx (vorbestehend, von Task 9
-    // wortgleich verschoben, siehe Plan-Vorgabe "JSX ... bleiben zeichengleich")
-    // traegt auf seinem Wrapper kein role="dialog". keineUeberschneidungen()
-    // blendet den Hintergrund eines offenen Dialogs nur aus, wenn sie dieses
-    // Attribut findet -- ohne es vergleicht sie Hintergrund-Elemente (hier:
-    // die Von/Bis/Suche-Felder des Kassenbuch-Journals und die vier
-    // Shortcut-Knoepfe, durch bg-black/50 fuer den Nutzer unsichtbar) gegen
-    // Elemente im Modal und meldet Ueberschneidungen, die niemand sieht. Das
-    // ist ein vorbestehender Zustand (kein role="dialog" schon vor diesem
-    // Task) und keine Verhaltensaenderung von Task 9 -- Beheben wuerde die
-    // Modal-JSX aendern, was der Task ausdruecklich verbietet. Siehe
-    // Kontext-Log fuer das Bedenken.
-    await uebergaengeAusklingenLassen(page);
-    const zielOrdner = path.join(info.project.outputDir, 'design');
-    fs.mkdirSync(zielOrdner, { recursive: true });
-    const bildPfad = path.join(zielOrdner, `kasse-refactoring-beleg-modal--${info.project.name}.png`);
-    await page.screenshot({ path: bildPfad, fullPage: false });
-    await info.attach('design: kasse-refactoring-beleg-modal', { path: bildPfad, contentType: 'image/png' });
-    await keinHorizontalerUeberlauf(page);
-    await keinTextLaeuftUeber(page);
-    await keinTextGekuerzt(page);
-    await expect(uebernehmenButton, 'Primaeraktion muss ohne Scrollen sichtbar sein').toBeInViewport();
+    // Nachbesserung (Orchestrator, nach Task 9): BelegDetailModal.tsx traegt
+    // jetzt role="dialog" + aria-modal="true" auf dem Panel (Vorbild:
+    // KassenbuchAbschlussLeiste.tsx). Damit blendet keineUeberschneidungen()
+    // den verdeckten Hintergrund korrekt aus und designPruefung() kann hier
+    // wieder als Ganzes laufen statt nur in Einzelteilen.
+    await designPruefung(page, info, 'kasse-refactoring-beleg-modal', { primaerAktion: uebernehmenButton });
 });

@@ -329,9 +329,14 @@ function ModalShell({ title, onClose, wide, children }: {
 }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className={`bg-white rounded-xl shadow-2xl w-full ${wide ? 'max-w-xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}>
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="neue-buchung-titel"
+                className={`bg-white rounded-xl shadow-2xl w-full ${wide ? 'max-w-xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}
+            >
                 <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <h2 className="font-semibold text-slate-900">{title}</h2>
+                    <h2 id="neue-buchung-titel" className="font-semibold text-slate-900">{title}</h2>
                     <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-full">
                         <X className="w-4 h-4 text-slate-500" />
                     </button>

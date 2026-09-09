@@ -302,12 +302,17 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-[98vw] max-h-[95vh] flex flex-col overflow-hidden">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="beleg-detail-titel"
+                className="bg-white rounded-xl shadow-2xl w-full max-w-[98vw] max-h-[95vh] flex flex-col overflow-hidden"
+            >
                 <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Receipt className="w-5 h-5 text-rose-600" />
                         <div>
-                            <h2 className="font-bold text-slate-900">
+                            <h2 id="beleg-detail-titel" className="font-bold text-slate-900">
                                 {istFestgeschrieben ? 'Beleg ansehen' : 'Beleg prüfen & validieren'}
                                 {laufendeNummer != null && (
                                     <span className="ml-2 text-sm font-semibold text-slate-500 tabular-nums">Nr. {laufendeNummer}</span>
