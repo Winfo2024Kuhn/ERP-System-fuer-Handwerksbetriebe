@@ -1,3 +1,5 @@
+import type { KostenstellenSplit } from './components/kasse/KostenstellenSplitsEditor';
+
 export interface TextTemplate {
   id: string;
   name: string;
@@ -1099,4 +1101,214 @@ export interface AbrechnungsverlaufDto {
    * welche Leistungen in einer Schlussrechnung entfallen bzw. dazugekommen sind.
    */
   basisdokumentPositionenJson?: string | null;
+}
+
+// ===== Belege & Kasse =====
+//
+// Task 9 (reine Verschiebung, kein Verhalten geaendert): Typen 1:1 aus
+// BelegeKasseEditor.tsx uebernommen, damit alle Kasse-Komponenten (dieser und
+// spaeterer Tasks) von hier importieren statt jede ihre eigene Kopie zu
+// pflegen. `KostenstellenSplit` bleibt in KostenstellenSplitsEditor.tsx
+// definiert und wird hier nur re-exportiert -- sonst driften zwei
+// Definitionen auseinander.
+
+export type { KostenstellenSplit };
+
+export type BelegStatus = 'NEU' | 'VALIDIERT' | 'VERWORFEN';
+export type SachkontoTyp = 'AUFWAND' | 'ERTRAG' | 'PRIVAT' | 'NEUTRAL';
+
+export interface Sachkonto {
+  id: number;
+  nummer?: string | null;
+  bezeichnung: string;
+  kontoTyp: SachkontoTyp;
+  beschreibung?: string | null;
+  aktiv: boolean;
+  sortierung: number;
+}
+
+export interface Zahlungsart {
+  id: number;
+  bezeichnung: string;
+  aktiv: boolean;
+  sortierung: number;
+}
+
+export interface AuswertungZeile {
+  sachkontoId: number | null;
+  nummer?: string | null;
+  bezeichnung: string;
+  kontoTyp: SachkontoTyp | null;
+  summe: number;
+  anzahlBelege: number;
+}
+
+export interface Auswertung {
+  von: string | null;
+  bis: string | null;
+  summeAufwand: number;
+  summeErtrag: number;
+  summePrivat: number;
+  summeOhneKonto: number;
+  zeilen: AuswertungZeile[];
+}
+
+export type BelegKategorie =
+  | 'UNZUGEORDNET'
+  | 'KASSE_EINNAHME'
+  | 'KASSE_AUSGABE'
+  | 'PRIVATENTNAHME'
+  | 'PRIVATEINLAGE'
+  | 'BANK'
+  | 'KREDITKARTE'
+  | 'SONSTIGER_BELEG';
+export type KiStatus = 'PENDING' | 'LAEUFT' | 'DONE' | 'FAILED';
+
+export type AufteilungsModus = 'VOLLSTAENDIG' | 'TEILWEISE';
+
+export interface BelegPosition {
+  id: number;
+  sortierung: number;
+  beschreibung?: string | null;
+  menge?: number | null;
+  einheit?: string | null;
+  einzelpreis?: number | null;
+  betragNetto?: number | null;
+  betragBrutto?: number | null;
+  mwstSatz?: number | null;
+  istFuerFirma: boolean;
+}
+
+export interface Beleg {
+  id: number;
+  belegKategorie: BelegKategorie;
+  dokumentTyp?: string | null;
+  istUmbuchung?: boolean | null;
+  status: BelegStatus;
+  kiAnalyseStatus: KiStatus;
+  belegDatum?: string | null;
+  belegNummer?: string | null;
+  beschreibung?: string | null;
+  betragNetto?: number | null;
+  betragBrutto?: number | null;
+  mwstSatz?: number | null;
+  zahlungsart?: string | null;
+  lieferantId?: number | null;
+  lieferantName?: string | null;
+  sachkontoId?: number | null;
+  sachkontoBezeichnung?: string | null;
+  sachkontoNummer?: string | null;
+  sachkontoTyp?: SachkontoTyp | null;
+  kiVorgeschlagenerLieferant?: string | null;
+  kiConfidence?: number | null;
+  // Ergebnis des Kostenkonto-Agenten. Der Server liefert das schon lange mit
+  // (BelegDto.Response) — bis Issue #61 wurde es im UI nur nie angezeigt, der
+  // Buchhalter sah nur "KI fertig" und ein leeres Konto-Feld.
+  kiVorgeschlagenerKostenstelleId?: number | null;
+  kiVorgeschlagenerKostenstelleBezeichnung?: string | null;
+  kiVorgeschlagenerSachkontoId?: number | null;
+  kiVorgeschlagenerSachkontoBezeichnung?: string | null;
+  kiKostenkontoConfidence?: number | null;
+  kiKostenkontoBegruendung?: string | null;
+  kiFehlerText?: string | null;
+  originalDateiname?: string | null;
+  mimeType?: string | null;
+  uploadDatum: string;
+  uploadedByName?: string | null;
+  validiertAm?: string | null;
+  validiertVonName?: string | null;
+  notiz?: string | null;
+  eingangsrechnungId?: number | null;
+  // Beleg-Aufteilung (Issue #58): bei TEILWEISE ist nur ein Teil des Belegs
+  // betrieblich. Die Firma-Felder sind dann gefuellt; bei VOLLSTAENDIG null.
+  aufteilungsModus?: AufteilungsModus | null;
+  betragFirmaNetto?: number | null;
+  betragFirmaBrutto?: number | null;
+  betragFirmaMwst?: number | null;
+  positionen?: BelegPosition[] | null;
+  // Issue #60: Kostenstellen-Splits (mehrere Kostenstellen pro Beleg).
+  kostenstellenSplits?: KostenstellenSplit[] | null;
+  // Festschreibung (GoBD): sobald der Monat abgeschlossen ist, sind Datum,
+  // Betrag, MwSt, Art der Buchung, Zahlungsart, Verwendungszweck und
+  // Belegnummer gesperrt. Die Kontierung bleibt bedienbar.
+  laufendeNummer?: number | null;
+  festgeschrieben?: boolean | null;
+  festgeschriebenAm?: string | null;
+  stornoFuerBelegId?: number | null;
+  storniertDurchBelegId?: number | null;
+  storniertAm?: string | null;
+  stornoGrund?: string | null;
+  // Neu (Spec 2026-09-09, Datenmodell): woher der Beleg stammt und ob er
+  // bereits an eine Ausgangsrechnung gekoppelt ist. Alles optional, aendert
+  // fuer sich genommen kein Verhalten der Task-9-Komponenten.
+  quelle?: 'SCAN' | 'QUITTUNG' | 'EIGENBELEG' | 'TRANSFER' | null;
+  gegenpartei?: string | null;
+  ausgangsrechnungId?: number | null;
+  kiZahlungsart?: string | null;
+  kiBelegdatum?: string | null;
+  kiBetragBrutto?: number | null;
+  kiKostenkontoHinweis?: string | null;
+  eingangsrechnungBezahlt?: boolean | null;
+  eingangsrechnungBezahltAm?: string | null;
+  vorschlagSachkonto?: BelegVorschlag | null;
+  vorschlagKostenstelle?: BelegVorschlag | null;
+}
+
+export interface BelegVorschlag {
+  id: number;
+  nummer?: string | null;
+  bezeichnung: string;
+  quelle: 'KI' | 'HISTORIE' | 'LIEFERANT_STANDARD';
+  begruendung?: string | null;
+}
+
+export interface KasseEinstellung {
+  id?: number | null;
+  mindestbestand: number;
+  ehegattengehaltAktiv: boolean;
+  ehegattengehaltBetrag?: number | null;
+  ehegattengehaltTag?: number | null;
+  ehegattengehaltEmpfaengerName?: string | null;
+  privateinlageSachkontoId?: number | null;
+  datevBeraternummer?: string | null;
+  datevMandantennummer?: string | null;
+  wirtschaftsjahrBeginnMonat?: number | null;
+  kassenkontoNummer?: string | null;
+  bankkontoNummer?: string | null;
+}
+
+export interface KassenBewegung {
+  belegId: number;
+  datum: string;
+  kategorie: BelegKategorie;
+  beschreibung?: string | null;
+  lieferantName?: string | null;
+  betrag: number;
+  saldoNachher: number;
+  // Festschreibung: dauerhafte Belegnummer aus dem Monatsabschluss.
+  // null = der Monat ist noch offen, die Buchung hat noch keine feste Nummer.
+  laufendeNummer?: number | null;
+  festgeschrieben?: boolean | null;
+  sachkontoNummer?: string | null;
+  sachkontoBezeichnung?: string | null;
+  zahlungsart?: string | null;
+  mwstSatz?: number | null;
+  mwstBetrag?: number | null;
+  // Storno-Verweise: die eine Zeile hebt die andere auf.
+  stornoFuerBelegId?: number | null;
+  storniertDurchBelegId?: number | null;
+}
+
+export interface Kassenbuch {
+  saldoStart: number;
+  saldoEnde: number;
+  summeEinnahmen: number;
+  summeAusgaben: number;
+  summePrivatentnahmen: number;
+  summePrivateinlagen: number;
+  bewegungen: KassenBewegung[];
+  /** "JJJJ-MM" des zuletzt abgeschlossenen Monats, oder null. */
+  letzterAbschluss?: string | null;
+  /** Wie viele Bewegungen im Zeitraum noch änderbar sind. */
+  offeneBewegungen?: number;
 }
