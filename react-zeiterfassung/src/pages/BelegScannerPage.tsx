@@ -59,6 +59,37 @@ interface ServerBeleg {
     kiAnalyseStatus: string | null
     aufteilungsModus: string
     lieferantName: string | null
+    // Kommt vom Server erst nach der KI-Analyse (BelegDto.Response liefert
+    // die Felder schon heute mit) — bis dahin null.
+    betragBrutto?: number | null
+    belegDatum?: string | null
+    kiVorgeschlagenerLieferant?: string | null
+}
+
+// Serverstatus fuer "KI liest noch" heisst offiziell LAEUFT (BelegKiAnalyseStatus).
+// ServerBelegRow prüfte hier frueher (Tippfehler) nur auf 'RUNNING' — wir
+// akzeptieren beide, damit Anzeige und Poll-Bedingung nie auseinanderlaufen.
+const kiIstOffen = (status: string | null): boolean =>
+    status === 'PENDING' || status === 'LAEUFT' || status === 'RUNNING'
+
+// Deutsche Zahl mit zwei Nachkommastellen, ohne neue Abhaengigkeit.
+const betragFormatter = new Intl.NumberFormat('de-DE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+})
+const formatBetrag = (betrag: number): string => betragFormatter.format(betrag)
+
+// beleg.belegDatum kommt vom Server als "yyyy-MM-dd" (LocalDate). Die
+// Komponenten werden direkt als lokales Datum gebaut statt die ISO-Zeichen-
+// kette zu parsen — sonst interpretiert der Date-Parser sie als UTC-
+// Mitternacht und toLocaleDateString kann je nach Zeitzone einen Tag
+// zurueckspringen.
+const formatBelegDatum = (belegDatum: string): string => {
+    const [jahr, monat, tag] = belegDatum.split('-').map(Number)
+    if (!jahr || !monat || !tag) return belegDatum
+    return new Date(jahr, monat - 1, tag).toLocaleDateString('de-DE', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+    })
 }
 
 interface Permissions {
@@ -133,6 +164,27 @@ export default function BelegScannerPage() {
         document.addEventListener('visibilitychange', onVisible)
         return () => document.removeEventListener('visibilitychange', onVisible)
     }, [permission?.darfSehen, reloadServerBelege])
+
+    // Pollt alle 3s nach, solange mindestens ein eigener Beleg noch auf die
+    // KI-Analyse wartet (PENDING/LAEUFT) — sonst muesste der Buchhalter die
+    // App manuell neu laden, um den Betrag zu sehen. Vorbild: der Detail-
+    // Poller in BelegeKasseEditor.tsx (BelegDetailModal) — cancelled-Flag +
+    // setTimeout, Cleanup raeumt beides auf. Die Neuplanung selbst ergibt
+    // sich hier daraus, dass reloadServerBelege() eine neue serverBelege-
+    // Referenz setzt und der Effekt dadurch mit dem aktuellen Stand neu
+    // entscheidet, ob noch ein Timer noetig ist — sind alle fertig, wird
+    // keiner mehr gestellt.
+    useEffect(() => {
+        if (!permission?.darfSehen) return
+        if (!serverBelege.some(b => kiIstOffen(b.kiAnalyseStatus))) return
+
+        let cancelled = false
+        const timer = setTimeout(() => {
+            if (!cancelled) void reloadServerBelege()
+        }, 3000)
+
+        return () => { cancelled = true; clearTimeout(timer) }
+    }, [serverBelege, permission?.darfSehen, reloadServerBelege])
 
     // Beim Verlassen der Scanner-Page Kamera-Tracks freigeben. Innerhalb der
     // Page bleibt der MediaStream im cameraStreamService gecacht — so wird
@@ -742,7 +794,7 @@ function ServerBelegRow({ beleg, onOpenPositionen }: {
     onOpenPositionen: (belegId: number) => void
 }) {
     const istValidiert = beleg.status === 'VALIDIERT'
-    const kiLaeuft = beleg.kiAnalyseStatus === 'PENDING' || beleg.kiAnalyseStatus === 'RUNNING'
+    const kiLaeuft = kiIstOffen(beleg.kiAnalyseStatus)
     const kiFehler = beleg.kiAnalyseStatus === 'FAILED'
     const istTeilweise = beleg.aufteilungsModus === 'TEILWEISE'
     const kannPositionenWaehlen = istTeilweise && beleg.kiAnalyseStatus === 'DONE' && !istValidiert
@@ -767,13 +819,29 @@ function ServerBelegRow({ beleg, onOpenPositionen }: {
         } catch { return beleg.uploadDatum }
     })()
 
+    // Sobald die KI fertig ist und einen Betrag geliefert hat, ersetzt der
+    // Betrag die reine "Hochgeladen"-Zeile — das ist die erste Zahl, die der
+    // Buchhalter am Handy zu sehen bekommt, auch ohne die App neu zu laden.
+    const betragText = beleg.kiAnalyseStatus === 'DONE' && beleg.betragBrutto != null
+        ? `${formatBetrag(beleg.betragBrutto)} €${beleg.belegDatum ? ` · ${formatBelegDatum(beleg.belegDatum)}` : ''}`
+        : null
+
     const statusText = istValidiert
         ? `Validiert · ${zeit}`
         : kiLaeuft
         ? `KI liest Beleg… · ${zeit}`
         : kiFehler
         ? `KI-Lesefehler · ${zeit}`
+        : betragText
+        ? betragText
         : `Hochgeladen · ${zeit}`
+
+    // Abweichende KI-Lesung: der Buchhalter hat am Handy einen Lieferanten
+    // gewaehlt (oder keinen), die KI liest aus dem Beleg selbst einen Namen.
+    // Weichen die voneinander ab, ist das nur ein Hinweis — bearbeiten laesst
+    // sich das am Handy bewusst nicht (Nicht-Ziel), nur am PC pruefen.
+    const kiLieferantWeichtAb = !!beleg.kiVorgeschlagenerLieferant
+        && beleg.kiVorgeschlagenerLieferant !== beleg.lieferantName
 
     return (
         <div className={`flex items-center gap-3 p-3 rounded-xl border ${bg}`}>
@@ -785,6 +853,11 @@ function ServerBelegRow({ beleg, onOpenPositionen }: {
                 <p className="text-xs text-slate-500">{statusText}</p>
                 {beleg.lieferantName && (
                     <p className="text-xs text-slate-500 truncate">→ {beleg.lieferantName}</p>
+                )}
+                {kiLieferantWeichtAb && (
+                    <p className="text-xs text-amber-700 mt-0.5 truncate">
+                        KI hat "{beleg.kiVorgeschlagenerLieferant}" gelesen – Am PC prüfen
+                    </p>
                 )}
                 {istTeilweise && !kannPositionenWaehlen && !istValidiert && (
                     <p className="text-xs text-amber-700 mt-0.5">Positionen-Auswahl folgt nach KI-Analyse</p>
