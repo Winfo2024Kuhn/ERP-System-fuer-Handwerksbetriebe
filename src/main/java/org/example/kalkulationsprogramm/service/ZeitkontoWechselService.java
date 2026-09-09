@@ -123,6 +123,21 @@ public class ZeitkontoWechselService {
         } else if (request.arbeitszeit() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte die Arbeitszeit ausdrücklich angeben.");
         }
+        pruefeAbgeschlosseneMonate(id, request.gueltigVon());
+    }
+
+    /** Die Vorschau darf keine Änderung anbieten, die die Übernahme ablehnen würde. */
+    private void pruefeAbgeschlosseneMonate(Long id, LocalDate stichtag) {
+        var abgeschlossen = entityManager.createQuery("""
+                SELECT m FROM MonatsSaldo m WHERE m.mitarbeiter.id = :id
+                  AND m.festgeschrieben = true AND m.jahr * 100 + m.monat >= :abMonat
+                """, MonatsSaldo.class)
+                .setParameter("id", id)
+                .setParameter("abMonat", stichtag.getYear() * 100 + stichtag.getMonthValue())
+                .setMaxResults(1).getResultList();
+        if (!abgeschlossen.isEmpty()) {
+            throw konflikt("Die neue Arbeitszeit würde einen abgeschlossenen Monat verändern. Bitte einen späteren Beginn wählen oder den Monat zuerst wieder öffnen.");
+        }
     }
 
     private List<ZeitkontoWechselErgebnisDto.Monat> vorher(Long id, LocalDate stichtag) {
@@ -154,7 +169,7 @@ public class ZeitkontoWechselService {
     /** Berechnet die Wirkung ohne Version, Cache oder Saldo zu speichern. */
     private List<ZeitkontoWechselErgebnisDto.Monat> auswirkungen(Long id, ZeitkontoWechselDto request,
             List<ZeitkontoWechselErgebnisDto.Monat> vorher) {
-        Zeitkonto vorgeschlagen = vorgeschlagenesZeitkonto(request);
+        ZeitkontenmodellDto.Arbeitszeit vorgeschlagen = vorgeschlageneArbeitszeit(request);
         List<ZeitkontoWechselErgebnisDto.Monat> result = new ArrayList<>();
         for (var monat : vorher) {
             if (monat.abgeschlossen()) {
@@ -169,9 +184,9 @@ public class ZeitkontoWechselService {
             if (!ab.isAfter(bis)) {
                 BigDecimal bisherSoll = tagesSollService.periodenSollSumme(id, ab, bis);
                 BigDecimal bisherFeiertag = tagesSollService.feiertagsGutschriftSumme(id, ab, bis);
-                BigDecimal neuesSoll = tagesSollService.periodenSollSumme(id, vorgeschlagen, ab, bis);
-                BigDecimal neuerFeiertag = tagesSollService.feiertagsGutschriftSumme(id, vorgeschlagen, ab, bis);
-                nachher = nachher.add(neuerFeiertag.subtract(bisherFeiertag)).subtract(neuesSoll.subtract(bisherSoll));
+                var neueArbeitszeit = tagesSollService.vorschau(id, vorgeschlagen, ab, bis);
+                nachher = nachher.add(neueArbeitszeit.feiertagsGutschrift().subtract(bisherFeiertag))
+                        .subtract(neueArbeitszeit.periodenSoll().subtract(bisherSoll));
             }
             result.add(new ZeitkontoWechselErgebnisDto.Monat(monat.jahr(), monat.monat(), false,
                     monat.saldoVorher(), nachher, monat.saldoVorher().compareTo(nachher) != 0));
@@ -179,20 +194,14 @@ public class ZeitkontoWechselService {
         return result;
     }
 
-    private Zeitkonto vorgeschlagenesZeitkonto(ZeitkontoWechselDto request) {
+    private ZeitkontenmodellDto.Arbeitszeit vorgeschlageneArbeitszeit(ZeitkontoWechselDto request) {
         ZeitkontenmodellDto.Arbeitszeit arbeitszeit = request.arbeitszeit();
         if (arbeitszeit == null) {
             Zeitkontenmodell vorlage = entityManager.find(Zeitkontenmodell.class, request.vorlageId());
             if (vorlage == null) throw konflikt("Die Vorlage wurde inzwischen geändert. Bitte die Vorschau neu laden.");
             arbeitszeit = ZeitkontenmodellDto.Arbeitszeit.from(vorlage);
         }
-        Zeitkonto konto = new Zeitkonto();
-        konto.setMontagStunden(arbeitszeit.montagStunden()); konto.setDienstagStunden(arbeitszeit.dienstagStunden());
-        konto.setMittwochStunden(arbeitszeit.mittwochStunden()); konto.setDonnerstagStunden(arbeitszeit.donnerstagStunden());
-        konto.setFreitagStunden(arbeitszeit.freitagStunden()); konto.setSamstagStunden(arbeitszeit.samstagStunden());
-        konto.setSonntagStunden(arbeitszeit.sonntagStunden()); konto.setBuchungStartZeit(arbeitszeit.buchungStartZeit());
-        konto.setBuchungEndeZeit(arbeitszeit.buchungEndeZeit());
-        return konto;
+        return arbeitszeit;
     }
 
     private void sperreMitarbeiter(Long id) {

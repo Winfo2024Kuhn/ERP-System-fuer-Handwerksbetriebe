@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhase;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
+import org.example.kalkulationsprogramm.dto.ZeitkontenmodellDto;
 import org.example.kalkulationsprogramm.repository.LangzeitkrankmeldungPhaseRepository;
 import org.springframework.stereotype.Service;
 
@@ -89,6 +90,28 @@ public class TagesSollService {
         return versioniertJeTag(mitarbeiterId, von, bis, w -> w.periodenSoll().subtract(w.feiertagsGutschrift()));
     }
 
+    /**
+     * Reine Vorschau für eine noch nicht gespeicherte Arbeitszeit. Verwendet
+     * dieselbe Feiertags- und Stufenplan-Rechenengine wie die Versionen eines
+     * Mitarbeiters, ohne eine hypothetische Entity zu erzeugen oder zu speichern.
+     */
+    public ArbeitszeitVorschau vorschau(Long mitarbeiterId, ZeitkontenmodellDto.Arbeitszeit arbeitszeit,
+            LocalDate von, LocalDate bis) {
+        if (arbeitszeit == null || von == null || bis == null || bis.isBefore(von)) {
+            throw new IllegalArgumentException("Bitte eine gültige Arbeitszeit und einen gültigen Zeitraum angeben.");
+        }
+        var phasen = phaseRepository.findImZeitraum(mitarbeiterId, von, bis);
+        var feiertage = feiertageNachBundeslandBY(von, bis);
+        BigDecimal periodenSoll = BigDecimal.ZERO;
+        BigDecimal feiertagsGutschrift = BigDecimal.ZERO;
+        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+            TagesWerte werte = berechneTag(tagesBasis(phasen, sollFuerTag(arbeitszeit, tag), tag), feiertage.get(tag));
+            periodenSoll = periodenSoll.add(werte.periodenSoll());
+            feiertagsGutschrift = feiertagsGutschrift.add(werte.feiertagsGutschrift());
+        }
+        return new ArbeitszeitVorschau(periodenSoll, feiertagsGutschrift);
+    }
+
     /** Versions-, Phasen- und Feiertagsdaten jeweils einmal je Zeitraum laden. */
     private Map<LocalDate, BigDecimal> versioniertJeTag(Long id, LocalDate von, LocalDate bis,
             Function<TagesWerte, BigDecimal> auswahl) {
@@ -170,10 +193,25 @@ public class TagesSollService {
                 .orElse(null);
     }
 
+    private static BigDecimal sollFuerTag(ZeitkontenmodellDto.Arbeitszeit arbeitszeit, LocalDate tag) {
+        return switch (tag.getDayOfWeek()) {
+            case MONDAY -> arbeitszeit.montagStunden();
+            case TUESDAY -> arbeitszeit.dienstagStunden();
+            case WEDNESDAY -> arbeitszeit.mittwochStunden();
+            case THURSDAY -> arbeitszeit.donnerstagStunden();
+            case FRIDAY -> arbeitszeit.freitagStunden();
+            case SATURDAY -> arbeitszeit.samstagStunden();
+            case SUNDAY -> arbeitszeit.sonntagStunden();
+        };
+    }
+
     private static BigDecimal halbieren(BigDecimal wert) {
         return wert.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
     }
 
     private record TagesWerte(BigDecimal periodenSoll, BigDecimal feiertagsGutschrift) {
+    }
+
+    public record ArbeitszeitVorschau(BigDecimal periodenSoll, BigDecimal feiertagsGutschrift) {
     }
 }

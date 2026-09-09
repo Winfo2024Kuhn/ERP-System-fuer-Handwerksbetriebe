@@ -53,6 +53,8 @@ class ZeitkontoWechselServiceTest {
     private void monate() {
         when(em.createQuery(anyString(), eq(MonatsSaldo.class))).thenReturn(query);
         when(query.setParameter("id", 1L)).thenReturn(query);
+        when(query.setParameter(eq("abMonat"), anyInt())).thenReturn(query);
+        when(query.setMaxResults(1)).thenReturn(query);
         when(query.getResultList()).thenReturn(List.of());
     }
     private MonatsSaldo saldo(String soll, boolean geschlossen) {
@@ -64,8 +66,8 @@ class ZeitkontoWechselServiceTest {
         when(saldoService.berechneOhneSpeichern(eq(1L), anyInt(), anyInt())).thenReturn(saldo("8", false));
         when(tagesSollService.periodenSollSumme(eq(1L), any(), any())).thenReturn(new BigDecimal("8"));
         when(tagesSollService.feiertagsGutschriftSumme(eq(1L), any(), any())).thenReturn(BigDecimal.ZERO);
-        when(tagesSollService.periodenSollSumme(eq(1L), any(Zeitkonto.class), any(), any())).thenReturn(new BigDecimal("4"));
-        when(tagesSollService.feiertagsGutschriftSumme(eq(1L), any(Zeitkonto.class), any(), any())).thenReturn(BigDecimal.ZERO);
+        when(tagesSollService.vorschau(eq(1L), any(ZeitkontenmodellDto.Arbeitszeit.class), any(), any()))
+                .thenReturn(new TagesSollService.ArbeitszeitVorschau(new BigDecimal("4"), BigDecimal.ZERO));
         when(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(eq(1L), any(), any())).thenReturn(List.of(new Abwesenheit()));
         var result = service.vorschau(1L, request);
         assertFalse(result.gespeichert()); assertEquals(1, result.bestehendeAbwesenheiten());
@@ -75,6 +77,15 @@ class ZeitkontoWechselServiceTest {
         verifyNoInteractions(zeitkontoService);
         verify(em, never()).flush();
         verify(saldoService, never()).saveMonatsSaldoCache(anyLong(), anyInt(), anyInt(), any());
+    }
+
+    @Test void vorschauLehntStichtagAbDerEinenAbgeschlossenenMonatBeruehrenWuerde() {
+        mitarbeiter(); monate();
+        MonatsSaldo abgeschlossen = saldo("8", true);
+        when(query.getResultList()).thenReturn(List.of(abgeschlossen));
+        var ex = assertThrows(ResponseStatusException.class, () -> service.vorschau(1L, request));
+        assertEquals(409, ex.getStatusCode().value());
+        verifyNoInteractions(tagesSollService, zeitkontoService, saldoService);
     }
 
     @Test void mehrfachUebernahmeSperrtAlleMenschenVorDenVorlagenInSortierterReihenfolge() {
