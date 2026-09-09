@@ -30,9 +30,16 @@ public class ZeitkontoMigrationTest {
             s.execute("CREATE TABLE zeitkonto_korrektur (mitarbeiter_id BIGINT, datum DATE)");
             s.execute("CREATE TABLE zeitbuchung (mitarbeiter_id BIGINT, start_zeit TIMESTAMP)");
             s.execute("CREATE TABLE zeitkonto (mitarbeiter_id BIGINT PRIMARY KEY, montag_stunden DECIMAL(4,2), dienstag_stunden DECIMAL(4,2), mittwoch_stunden DECIMAL(4,2), donnerstag_stunden DECIMAL(4,2), freitag_stunden DECIMAL(4,2), samstag_stunden DECIMAL(4,2), sonntag_stunden DECIMAL(4,2), buchung_start_zeit TIME, buchung_ende_zeit TIME)");
-            for (int id = 1; id <= 8; id++) {
-                s.executeUpdate("INSERT INTO mitarbeiter VALUES (" + id + ", NULL, NULL, TRUE)");
-                s.executeUpdate("INSERT INTO zeitkonto VALUES (" + id + ", 7.25, 6.50, 5.75, 4.00, 3.50, NULL, 0.00, '06:15:00', NULL)");
+            try (PreparedStatement mitarbeiter = c.prepareStatement(
+                    "INSERT INTO mitarbeiter VALUES (?, NULL, NULL, TRUE)");
+                 PreparedStatement zeitkonto = c.prepareStatement(
+                    "INSERT INTO zeitkonto VALUES (?, 7.25, 6.50, 5.75, 4.00, 3.50, NULL, 0.00, '06:15:00', NULL)")) {
+                for (int id = 1; id <= 8; id++) {
+                    mitarbeiter.setInt(1, id);
+                    mitarbeiter.executeUpdate();
+                    zeitkonto.setInt(1, id);
+                    zeitkonto.executeUpdate();
+                }
             }
             s.executeUpdate("UPDATE mitarbeiter SET eintrittsdatum = '2020-02-01' WHERE id = 1");
             s.executeUpdate("UPDATE mitarbeiter SET login_token = '__SYSTEM_FUNNEL__', aktiv = FALSE WHERE id = 7");
