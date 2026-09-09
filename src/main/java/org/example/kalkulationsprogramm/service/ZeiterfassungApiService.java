@@ -34,7 +34,7 @@ import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.domain.ProjektProduktkategorie;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
 import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangResponseDto;
 import org.example.kalkulationsprogramm.mapper.ArbeitsgangMapper;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
@@ -45,6 +45,8 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -73,6 +75,10 @@ public class ZeiterfassungApiService {
     private final FeiertagService feiertagService;
     private final ZeitbuchungAuditService auditService;
     private final TagesSollService tagesSollService;
+    private final ZeitkontoService zeitkontoService;
+    private final UrlaubsverfallService urlaubsverfallService;
+    private final ZeitkontoKorrekturService zeitkontoKorrekturService;
+    private final MonatsSaldoService monatsSaldoService;
 
     // ==================== Daten abrufen ====================
 
@@ -216,6 +222,7 @@ public class ZeiterfassungApiService {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                pruefeBuchungsEigentuemer(token, existing.get());
                 return buildIdempotentStartResponse(existing.get(), produktkategorieId);
             }
         }
@@ -232,9 +239,13 @@ public class ZeiterfassungApiService {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                pruefeBuchungsEigentuemer(token, existing.get());
                 return buildIdempotentStartResponse(existing.get(), produktkategorieId);
             }
         }
+
+        LocalDateTime startZeit = originalStartZeit != null ? originalStartZeit : LocalDateTime.now();
+        pruefeNeuenStart(mitarbeiter, startZeit.toLocalDate());
 
         // Prüfe ob bereits eine aktive Buchung existiert. Innerhalb des Mitarbeiter-Locks
         // ist diese Prüfung atomar: kein anderer Thread kann zwischen Read und Write
@@ -256,7 +267,7 @@ public class ZeiterfassungApiService {
         buchung.setMitarbeiter(mitarbeiter);
         buchung.setProjekt(projekt);
         buchung.setArbeitsgang(arbeitsgang);
-        buchung.setStartZeit(originalStartZeit != null ? originalStartZeit : LocalDateTime.now());
+        buchung.setStartZeit(startZeit);
 
         // GoBD-konforme Audit-Felder setzen
         buchung.setErfasstVon(mitarbeiter);
@@ -321,6 +332,7 @@ public class ZeiterfassungApiService {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByStopIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                pruefeBuchungsEigentuemer(token, existing.get());
                 return buildIdempotentStopResponse(existing.get());
             }
         }
@@ -335,6 +347,7 @@ public class ZeiterfassungApiService {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByStopIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                pruefeBuchungsEigentuemer(token, existing.get());
                 return buildIdempotentStopResponse(existing.get());
             }
         }
@@ -514,6 +527,7 @@ public class ZeiterfassungApiService {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                pruefeBuchungsEigentuemer(token, existing.get());
                 Zeitbuchung b = existing.get();
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("id", b.getId());
@@ -534,6 +548,7 @@ public class ZeiterfassungApiService {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<Zeitbuchung> existing = zeitbuchungRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                pruefeBuchungsEigentuemer(token, existing.get());
                 Zeitbuchung b = existing.get();
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("id", b.getId());
@@ -554,6 +569,7 @@ public class ZeiterfassungApiService {
         // und das Handy bekaeme 4xx zurueck - obwohl der Mitarbeiter klar
         // signalisiert hat, dass jetzt Pause ist.
         LocalDateTime pauseStartZeit = originalZeit != null ? originalZeit : LocalDateTime.now();
+        pruefeNeuenStart(mitarbeiter, pauseStartZeit.toLocalDate());
         // Deterministische Reihenfolge fuer den Audit-Trail: chronologisch nach
         // Start der Buchung. Bei normalem Betrieb gibt es genau eine offene
         // Buchung, dann ist die Sortierung irrelevant - aber im Recovery-Fall
@@ -967,6 +983,7 @@ public class ZeiterfassungApiService {
         }
 
         Mitarbeiter mitarbeiter = mitarbeiterOpt.get();
+        fuegeZeitkontoStatusHinzu(result, mitarbeiter, zeitkontoService.versionAm(mitarbeiter.getId(), LocalDate.now()));
         // Use provided year/month or default to current
         int currentYear = (jahr != null) ? jahr : java.time.LocalDate.now().getYear();
         int currentMonth = (monat != null) ? monat : java.time.LocalDate.now().getMonthValue();
@@ -1034,6 +1051,7 @@ public class ZeiterfassungApiService {
         monatData.put("sollStunden", sollStundenMonat);
         monatData.put("istStunden", monatsSaldo.getGesamtIst());
         monatData.put("differenz", monatsDifferenz);
+        monatData.put("festgeschrieben", Boolean.TRUE.equals(monatsSaldo.getFestgeschrieben()));
         result.put("monat", monatData);
 
         // ========== 3. GESAMTSALDO (via monatliche Zwischenspeicherung) ==========
@@ -1072,6 +1090,8 @@ public class ZeiterfassungApiService {
         java.time.YearMonth startYM = java.time.YearMonth.from(startDatum);
         java.time.YearMonth endYM = java.time.YearMonth.from(endDatum);
 
+        LocalDate geprueftBis = null;
+        boolean lueckenlos = true;
         for (java.time.YearMonth ym = startYM; !ym.isAfter(endYM); ym = ym.plusMonths(1)) {
             MonatsSaldo ms = monatsSaldoService.getOrBerechne(
                     mitarbeiter.getId(), ym.getYear(), ym.getMonthValue());
@@ -1082,7 +1102,14 @@ public class ZeiterfassungApiService {
             boolean istErsterMonat = ym.equals(startYM) && startDatum.getDayOfMonth() > 1;
             boolean istLetzterMonat = ym.equals(endYM) && endDatum.getDayOfMonth() < ym.lengthOfMonth();
 
-            if (istErsterMonat || istLetzterMonat) {
+            boolean festgeschrieben = Boolean.TRUE.equals(ms.getFestgeschrieben());
+            if (lueckenlos && festgeschrieben) {
+                geprueftBis = ym.atEndOfMonth();
+            } else {
+                lueckenlos = false;
+            }
+
+            if (!festgeschrieben && (istErsterMonat || istLetzterMonat)) {
                 // Anteilig: Für Rand-Monate direkt aus Quelldaten berechnen
                 // (nur der erste und letzte Monat können anteilig sein)
                 java.time.LocalDate monatVon = istErsterMonat ? startDatum : ym.atDay(1);
@@ -1090,8 +1117,8 @@ public class ZeiterfassungApiService {
 
                 gesamtIst = gesamtIst.add(berechneAnteiligenMonatIst(
                         mitarbeiter.getId(), monatVon, monatBis));
-                gesamtSoll = gesamtSoll.add(zeitkontoService.berechneSollstundenFuerZeitraum(
-                        zeitkontoService.getOrCreateZeitkonto(mitarbeiter.getId()), monatVon, monatBis));
+                gesamtSoll = gesamtSoll.add(tagesSollService.periodenSollSumme(
+                        mitarbeiter.getId(), monatVon, monatBis));
             } else {
                 // Vollständiger Monat: Aus Cache nehmen
                 gesamtIst = gesamtIst.add(ms.getGesamtIst());
@@ -1107,6 +1134,8 @@ public class ZeiterfassungApiService {
         gesamt.put("saldo", gesamtSaldo);
         gesamt.put("startDatum", startDatum.toString());
         gesamt.put("endDatum", endDatum.toString());
+        gesamt.put("geprueftBis", geprueftBis != null ? geprueftBis.toString() : null);
+        gesamt.put("vorlaeufig", geprueftBis == null || geprueftBis.isBefore(endDatum));
         result.put("gesamt", gesamt);
 
         result.put("mitarbeiterName", mitarbeiter.getVorname() + " " + mitarbeiter.getNachname());
@@ -1150,9 +1179,8 @@ public class ZeiterfassungApiService {
         if (abwesenheitsStunden == null) abwesenheitsStunden = BigDecimal.ZERO;
 
         // Feiertagsstunden
-        Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
         BigDecimal feiertagsStunden = tagesSollService.feiertagsGutschriftSumme(
-                mitarbeiterId, zeitkonto, von, bis);
+                mitarbeiterId, von, bis);
 
         // Korrekturstunden im Teilzeitraum
         BigDecimal korrekturStunden = zeitkontoKorrekturService.summiereAktiveKorrekturenImZeitraum(
@@ -1160,18 +1188,6 @@ public class ZeiterfassungApiService {
 
         return istStunden.add(abwesenheitsStunden).add(feiertagsStunden).add(korrekturStunden);
     }
-
-    @org.springframework.beans.factory.annotation.Autowired
-    private ZeitkontoService zeitkontoService;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    private UrlaubsverfallService urlaubsverfallService;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    private ZeitkontoKorrekturService zeitkontoKorrekturService;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    private MonatsSaldoService monatsSaldoService;
 
     /**
      * Gibt das erlaubte Buchungszeitfenster für einen Mitarbeiter zurück.
@@ -1181,11 +1197,44 @@ public class ZeiterfassungApiService {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
 
-        Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(mitarbeiter.getId());
+        Optional<ZeitkontoVersion> version = zeitkontoService.versionAm(mitarbeiter.getId(), LocalDate.now());
+        ZeitkontoVersion konto = Boolean.TRUE.equals(mitarbeiter.getFuehrtZeitkonto()) ? version.orElse(null) : null;
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("buchungStartZeit", konto.getBuchungStartZeit() != null ? konto.getBuchungStartZeit().toString() : null);
-        result.put("buchungEndeZeit", konto.getBuchungEndeZeit() != null ? konto.getBuchungEndeZeit().toString() : null);
+        fuegeZeitkontoStatusHinzu(result, mitarbeiter, version);
+        result.put("buchungStartZeit", konto != null && konto.getBuchungStartZeit() != null ? konto.getBuchungStartZeit().toString() : null);
+        result.put("buchungEndeZeit", konto != null && konto.getBuchungEndeZeit() != null ? konto.getBuchungEndeZeit().toString() : null);
         return result;
     }
+
+    private void pruefeBuchungsEigentuemer(String token, Zeitbuchung buchung) {
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Mitarbeiter nicht gefunden"));
+        if (buchung.getMitarbeiter() == null || !Objects.equals(mitarbeiter.getId(), buchung.getMitarbeiter().getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Diese Buchung gehört nicht zu Ihrem Zugang.");
+        }
+    }
+
+    private void pruefeNeuenStart(Mitarbeiter mitarbeiter, LocalDate buchungstag) {
+        if (!Boolean.TRUE.equals(mitarbeiter.getFuehrtZeitkonto())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Die Zeiterfassung ist für Sie ausgeschaltet.");
+        }
+        LocalDate heute = LocalDate.now();
+        if (zeitkontoService.versionAm(mitarbeiter.getId(), heute).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Für heute ist noch keine Arbeitszeit hinterlegt.");
+        }
+        if (!buchungstag.equals(heute) && zeitkontoService.versionAm(mitarbeiter.getId(), buchungstag).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Für den Buchungstag ist keine Arbeitszeit hinterlegt.");
+        }
+    }
+
+    private void fuegeZeitkontoStatusHinzu(Map<String, Object> result, Mitarbeiter mitarbeiter,
+            Optional<ZeitkontoVersion> version) {
+        boolean fuehrtZeitkonto = Boolean.TRUE.equals(mitarbeiter.getFuehrtZeitkonto());
+        result.put("fuehrtZeitkonto", fuehrtZeitkonto);
+        result.put("eingerichtet", version.isPresent());
+        result.put("hinweis", !fuehrtZeitkonto ? "Die Zeiterfassung ist ausgeschaltet."
+                : version.isEmpty() ? "Noch keine Arbeitszeit hinterlegt." : null);
+    }
+
 }
