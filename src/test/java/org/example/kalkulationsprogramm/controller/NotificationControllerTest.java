@@ -68,8 +68,31 @@ class NotificationControllerTest {
     @Mock private AnfrageRepository anfrageRepository;
     @Mock private ZeitbuchungRepository zeitbuchungRepository;
 
+    @Mock org.example.kalkulationsprogramm.repository.MonatsSaldoRepository monatsSaldoRepository;
+    @Mock org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
+
     @InjectMocks
     private NotificationController controller;
+
+    @Test
+    void abschlussHinweisNurAusSessionUndGebundeltMitKalenderlink() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        given(monatsabschlussBerechtigungService.darfMonatAbschliessen(auth)).willReturn(true);
+        var month = org.mockito.Mockito.mock(org.example.kalkulationsprogramm.repository.MonatsSaldoRepository.OffenerMonat.class);
+        given(month.getJahr()).willReturn(2026); given(month.getMonat()).willReturn(8); given(month.getAnzahl()).willReturn(3);
+        given(monatsSaldoRepository.findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1))).willReturn(List.of(month));
+        var summary = controller.getSummary(999L, auth);
+        assertThat(summary.categories()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).singleElement()
+                .satisfies(c -> { assertThat(c.count()).isEqualTo(3); assertThat(c.link()).isEqualTo("/zeitbuchungen?jahr=2026&monat=8"); });
+        assertThat(summary.recentItems()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).hasSize(1);
+        org.mockito.Mockito.verify(monatsSaldoRepository).findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1));
+    }
+
+    @Test
+    void freiUebermittelteMitarbeiterIdGibtKeinenAbschlussHinweis() {
+        assertThat(controller.getSummary(9L, null).categories()).noneMatch(c -> c.type().equals("MONATSABSCHLUSS"));
+        org.mockito.Mockito.verifyNoInteractions(monatsSaldoRepository);
+    }
 
     @Test
     @DisplayName("Selbst gesendete (OUT) Projekt-E-Mails zählen NICHT in der Glocke")
@@ -82,7 +105,7 @@ class NotificationControllerTest {
         given(emailRepository.findProjectEmails())
                 .willReturn(List.of(eingehendUngelesen, selbstGesendet));
 
-        NotificationSummaryDto summary = controller.getSummary(null);
+        NotificationSummaryDto summary = controller.getSummary(null, null);
 
         // Genau eine Projekt-Email-Kategorie, Counter = 1 (OUT wurde rausgefiltert).
         assertThat(summary.categories())
@@ -110,7 +133,7 @@ class NotificationControllerTest {
         given(emailRepository.findSpam())
                 .willReturn(List.of(spamEingehend, spamSelbstGesendet));
 
-        NotificationSummaryDto summary = controller.getSummary(null);
+        NotificationSummaryDto summary = controller.getSummary(null, null);
 
         assertThat(summary.categories())
                 .filteredOn(c -> "EMAILS_SPAM".equals(c.type()))
@@ -131,7 +154,7 @@ class NotificationControllerTest {
         given(dokumentFreigabeRepository.findKuerzlichAkzeptiert(any(LocalDateTime.class)))
                 .willReturn(List.of(freigabe));
 
-        NotificationSummaryDto summary = controller.getSummary(null);
+        NotificationSummaryDto summary = controller.getSummary(null, null);
 
         assertThat(summary.categories())
                 .filteredOn(c -> "FREIGABEN_ANGENOMMEN".equals(c.type()))
@@ -169,7 +192,7 @@ class NotificationControllerTest {
                 .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
                 .willReturn(List.of(buchung));
 
-        NotificationSummaryDto summary = controller.getSummary(null);
+        NotificationSummaryDto summary = controller.getSummary(null, null);
 
         assertThat(summary.categories())
                 .filteredOn(c -> "ZEITEN_AUTO_BEENDET".equals(c.type()))
@@ -199,7 +222,7 @@ class NotificationControllerTest {
                 .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
                 .willReturn(List.of());
 
-        NotificationSummaryDto summary = controller.getSummary(null);
+        NotificationSummaryDto summary = controller.getSummary(null, null);
 
         assertThat(summary.categories())
                 .noneMatch(c -> "ZEITEN_AUTO_BEENDET".equals(c.type()));

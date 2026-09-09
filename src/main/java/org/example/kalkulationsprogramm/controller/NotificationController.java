@@ -74,9 +74,12 @@ public class NotificationController {
         private final AnfrageDokumentRepository anfrageDokumentRepository;
         private final AnfrageRepository anfrageRepository;
         private final ZeitbuchungRepository zeitbuchungRepository;
+        private final org.example.kalkulationsprogramm.repository.MonatsSaldoRepository monatsSaldoRepository;
+        private final org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
 
         @GetMapping("/summary")
-        public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId) {
+        public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId,
+                        org.springframework.security.core.Authentication authentication) {
                 LocalDate heute = LocalDate.now();
                 LocalTime jetztZeit = LocalTime.now();
 
@@ -640,6 +643,22 @@ public class NotificationController {
                 } catch (Exception ignored) {
                 }
 
+                // Only the authenticated session decides who receives closure reminders.
+                if (monatsabschlussBerechtigungService.darfMonatAbschliessen(authentication)) {
+                        var offeneMonate = monatsSaldoRepository.findOffeneAbschlussMonate(heute.withDayOfMonth(1));
+                        if (!offeneMonate.isEmpty()) {
+                                var erster = offeneMonate.getFirst();
+                                categories.add(new CategoryDto("MONATSABSCHLUSS", "Monate abschließen",
+                                                offeneMonate.stream().mapToInt(m -> m.getAnzahl()).sum(),
+                                                "CalendarCheck", monatsabschlussLink(erster.getJahr(), erster.getMonat())));
+                                offeneMonate.stream().limit(5).forEach(m -> recentItems.add(new RecentItemDto(
+                                                "MONATSABSCHLUSS", String.format("%02d/%d abschließen", m.getMonat(), m.getJahr()),
+                                                m.getAnzahl() + " Mitarbeiter noch zu prüfen",
+                                                LocalDate.of(m.getJahr(), m.getMonat(), 1).atStartOfDay().toString(),
+                                                monatsabschlussLink(m.getJahr(), m.getMonat()))));
+                        }
+                }
+
                 int totalCount = categories.stream().mapToInt(CategoryDto::count).sum();
 
                 // Sort recent items by timestamp descending
@@ -655,6 +674,10 @@ public class NotificationController {
                                 : recentItems;
 
                 return new NotificationSummaryDto(totalCount, categories, limitedItems);
+        }
+
+        private String monatsabschlussLink(int jahr, int monat) {
+                return "/zeitbuchungen?jahr=" + jahr + "&monat=" + monat;
         }
 
         // ---- Helper ----
