@@ -97,8 +97,8 @@ pflegt) kann:
   bekommt bewusst kein Folge-Issue.
 - **Kein Eingriff ins Datenmodell der Abwesenheit.** `abwesenheit.stunden`
   bleibt ein beim Buchen einmalig berechneter, danach eingefrorener Wert
-  (Details Abschnitt 3) — das ist fachlich richtig, kein Mangel, der
-  behoben werden müsste.
+  (Details Abschnitt 3). Bei Änderungen im selben offenen Zeitraum sind
+  abweichende Gutschriften ausdrücklich in der Vorschau sichtbar zu machen.
 - **Das Arbeitszeitmodell wird nicht an die Abteilung gekoppelt.** Ein
   Mitarbeiter erbt seine Arbeitszeit nicht aus seiner Abteilung —
   `AbteilungRepository` und `ArbeitsgangController` bleiben in diesem Sinn
@@ -141,9 +141,9 @@ Probleme:
 - **Monatsabschluss** ist ein Riegel gegen alles: festgeschrieben heißt,
   wird nie wieder gerechnet, egal was sich ändert. Eine Regel an einer
   Stelle statt einer Sorgfaltspflicht an jeder Aufrufstelle.
-- Die Historisierung bleibt trotzdem nötig, aber für einen engeren Zweck:
-  Monate rechnen, die noch nie gerechnet wurden — der Altdaten-Import, der
-  Anlass von #93. Ein Abschluss kann nur einfrieren, was schon existiert.
+- Die Historisierung bleibt nötig für alle offenen Monate und für noch nie
+  berechnete Zeiträume. Sie schützt deren Soll vor einem späteren
+  Modellwechsel. Ein Abschluss kann nur einfrieren, was schon existiert.
 
 Umsetzung — die Infrastruktur ist weitgehend vorhanden. `MonatsSaldo`
 (`src/main/java/org/example/kalkulationsprogramm/domain/MonatsSaldo.java`,
@@ -176,8 +176,9 @@ verifizierte bestehende Felder: `jahr`, `monat`, `gueltig`, `berechnetAm`,
   möglich sein (Korrekturfall) und sichtbar protokolliert werden. Zugriff
   darauf nur mit entsprechender Berechtigung (Abschnitt 5, E13).
 
-Fachlicher Anker: Ist die Lohnabrechnung für den Monat raus, darf sich der
-Wert nicht mehr ändern — GoBD, keine Komfortfrage. Die `Lohnabrechnung`-
+Fachlicher Anker: Nach Prüfung eines Monats soll dessen gespeicherter
+Stundensaldo stabil bleiben. Dies ist eine fachliche Abschlussfunktion,
+keine Zusicherung rechtlicher GoBD-Konformität. Die `Lohnabrechnung`-
 Entity existiert bereits. Ob der Abschluss automatisch an die
 Lohnabrechnung gekoppelt wird oder ein bewusster eigener Schritt bleibt,
 ist offen (siehe Offene Punkte) — Empfehlung: eigener, bewusster Schritt,
@@ -254,9 +255,11 @@ Konkretes Beispiel:
 > Betriebszugehörigkeit.
 
 **Entscheidung des Nutzers:** Das Einfrieren bleibt, kein Eingriff ins
-Datenmodell der Abwesenheit. Es ist fachlich richtig — der Urlaubstag war
-damals 8 Stunden wert, und eine nachträgliche Umrechnung würde gebuchte
-Urlaubstage und damit den Urlaubsanspruch verändern. Der Schutz kommt aus
+Datenmodell der Abwesenheit. Der damalige Stundenwert bleibt als Snapshot erhalten. Stunden und
+Urlaubsanspruch in Tagen sind dabei unterschiedliche Größen; eine
+Stundenänderung bedeutet nicht automatisch eine Änderung des Anspruchs.
+Bei einem Wechsel innerhalb eines offenen Zeitraums muss die Vorschau
+die unveränderten Abwesenheitsgutschriften und mögliche Abweichungen nennen. Der Schutz kommt aus
 dem Monatsabschluss (Abschnitt 1): Ein bereits abgerechneter Monat mit
 eingefrorenen 8-Stunden-Urlaubstagen wird gar nicht erst neu gerechnet.
 
@@ -1083,3 +1086,38 @@ echten Mitarbeiterdaten.
 - Projektregeln: `.claude/CLAUDE.md`,
   `docs/agent instructions/docs/BACKEND_ARCH.md` (Constructor Injection,
   Flyway-Versionierung, Named Params, DSGVO-Dummy-Daten in Tests)
+
+
+## Präzisierungen bei Implementierungsbeginn (09.09.2026)
+
+Die folgenden Regeln konkretisieren offene Punkte und haben bei abweichenden
+Detailformulierungen weiter oben Vorrang:
+
+- Der Nutzer hat die Implementierung ausdrücklich freigegeben. Der Ablauf steht
+  im zugehörigen Implementierungsplan; Tests und Entscheidungen im Kontext-Log.
+- Abschließen ist ein eigener bewusster Schritt, ohne automatische Kopplung an
+  die Lohnabrechnung. Regulär sind nur vergangene Monate abschließbar.
+- Der Abschluss schützt auch den direkten Cache-Schreibpfad und parallele
+  Abschluss-/Cache-Anlage. Bei Randmonaten darf die Gesamtsaldo-Anzeige keinen
+  abgeschlossenen Wert durch eine neue Teilmonatsrechnung ersetzen.
+- „Geprüft bis“ bezeichnet nur einen lückenlos abgeschlossenen Zeitraum. Ein
+  später abgeschlossener Monat darf einen offenen Monat davor nicht verdecken.
+- Der Akteur wird aus der angemeldeten Sitzung und ihrem Mitarbeiterbezug
+  bestimmt, niemals aus einer frei übermittelten Mitarbeiter-ID. Das Recht
+  bleibt standardmäßig aus, auch für Admins. Die Pflege der Rechte bleibt
+  serverseitig auf Admins beschränkt.
+- Historische Sollberechnung richtet sich nach Zeitabschnitten unabhängig vom
+  heutigen Schalter fuehrtZeitkonto. Ausschalten erhält die Historie; erneutes
+  Einschalten erfordert eine ausdrückliche neue Arbeitszeitzuweisung. Eine
+  Lücke darf nur einen ausdrücklich dokumentierten Zeitraum ohne Konto
+  repräsentieren, niemals einen versehentlich fehlenden Vertrag.
+- Die Glocke muss auch fällige Monate ohne vorhandene Cachezeile erfassen.
+  Der relevante Zeitraum ergibt sich aus Eintritt und tatsächlichen Daten,
+  nicht aus einem technischen Migrations-Fallbackdatum.
+- Neue Aggregate erhalten optimistisches Sperren. SYSTEM wird zusätzlich
+  fuehrtZeitkonto=false gesetzt. Alle menschenbezogenen Auswertungen schließen
+  SYSTEM aus, während ausgeschiedene Menschen historisch sichtbar bleiben.
+- Migrationen werden für nachvollziehbare Zwischenstände aufgeteilt. Das
+  Altmodell bleibt nur vorübergehend während des Umbaus kompilierbar; die
+  abschließende Migration entfernt es. Keine Migration setzt automatisch
+  Monatsabschlüsse oder ändert vorhandene Saldozahlen.
