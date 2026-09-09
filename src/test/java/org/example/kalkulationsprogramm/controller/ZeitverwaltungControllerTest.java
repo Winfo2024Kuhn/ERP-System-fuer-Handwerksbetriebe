@@ -12,7 +12,6 @@ import org.example.kalkulationsprogramm.domain.Abwesenheit;
 import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -55,6 +54,8 @@ class ZeitverwaltungControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.ZeitkontoService zeitkontoService;
     @MockBean
+    private org.example.kalkulationsprogramm.service.ZeitkontoWechselService zeitkontoWechselService;
+    @MockBean
     private org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
     @MockBean
     private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
@@ -89,15 +90,6 @@ class ZeitverwaltungControllerTest {
         mitarbeiter.setVorname("Max");
         mitarbeiter.setNachname("Mustermann");
 
-        Zeitkonto zeitkonto = new Zeitkonto(mitarbeiter);
-        zeitkonto.setMontagStunden(new BigDecimal("8.00"));
-        zeitkonto.setDienstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setMittwochStunden(new BigDecimal("8.00"));
-        zeitkonto.setDonnerstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setFreitagStunden(new BigDecimal("8.00"));
-        zeitkonto.setSamstagStunden(BigDecimal.ZERO);
-        zeitkonto.setSonntagStunden(BigDecimal.ZERO);
-
         Abwesenheit krankheit = new Abwesenheit();
         krankheit.setId(42L);
         krankheit.setMitarbeiter(mitarbeiter);
@@ -107,16 +99,15 @@ class ZeitverwaltungControllerTest {
         krankheit.setNotiz("Krankheit (abzgl. 3 h gearbeitet)");
 
         given(feiertagService.getFeiertageZwischen(any(), any())).willReturn(List.of());
-        given(zeitkontoService.getOrCreateZeitkonto(1L)).willReturn(zeitkonto);
+        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
+                .willReturn(new BigDecimal("160.00"));
         given(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitAfter(anyLong(), any()))
                 .willReturn(List.of());
         given(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(anyLong(), any(), any()))
                 .willReturn(List.of(krankheit));
-        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
-                .willReturn(new BigDecimal("160.00"));
-        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(
                 konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), new BigDecimal("8.00")));
-        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any())).willReturn(
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any())).willReturn(
                 konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), BigDecimal.ZERO));
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
@@ -179,31 +170,21 @@ class ZeitverwaltungControllerTest {
         mitarbeiter.setVorname("Max");
         mitarbeiter.setNachname("Mustermann");
 
-        Zeitkonto zeitkonto = new Zeitkonto(mitarbeiter);
-        zeitkonto.setMontagStunden(new BigDecimal("8.00"));
-        zeitkonto.setDienstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setMittwochStunden(new BigDecimal("8.00"));
-        zeitkonto.setDonnerstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setFreitagStunden(new BigDecimal("8.00"));
-        zeitkonto.setSamstagStunden(BigDecimal.ZERO);
-        zeitkonto.setSonntagStunden(BigDecimal.ZERO);
-
         given(feiertagService.getFeiertageZwischen(any(), any())).willReturn(List.of());
-        given(zeitkontoService.getOrCreateZeitkonto(1L)).willReturn(zeitkonto);
+        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
+                .willReturn(new BigDecimal("120.00"));
         given(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitAfter(anyLong(), any()))
                 .willReturn(List.of());
         given(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(anyLong(), any(), any()))
                 .willReturn(List.of());
-        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
-                .willReturn(new BigDecimal("120.00"));
-        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any())).willReturn(
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any())).willReturn(
                 konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), BigDecimal.ZERO));
         // 2.6.2025 (Montag, tage[1]) liegt in einer Wiedereingliederung mit 2h/Tag -
         // alle anderen Tage bleiben beim vollen Zeitkonto-Soll.
         Map<LocalDate, BigDecimal> sollJeTag = konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30),
                 new BigDecimal("8.00"));
         sollJeTag.put(LocalDate.of(2025, 6, 2), new BigDecimal("2.00"));
-        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(sollJeTag);
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(sollJeTag);
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -230,21 +211,13 @@ class ZeitverwaltungControllerTest {
         mitarbeiter.setVorname("Max");
         mitarbeiter.setNachname("Mustermann");
 
-        Zeitkonto zeitkonto = new Zeitkonto(mitarbeiter);
-        zeitkonto.setMontagStunden(new BigDecimal("8.00"));
-        zeitkonto.setDienstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setMittwochStunden(new BigDecimal("8.00"));
-        zeitkonto.setDonnerstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setFreitagStunden(new BigDecimal("8.00"));
-        zeitkonto.setSamstagStunden(BigDecimal.ZERO);
-        zeitkonto.setSonntagStunden(BigDecimal.ZERO);
-
         org.example.kalkulationsprogramm.domain.Feiertag heiligabend =
                 org.example.kalkulationsprogramm.domain.Feiertag.halberFeiertag(
                         LocalDate.of(2026, 12, 24), "Heiligabend");
 
         given(feiertagService.getFeiertageZwischen(any(), any())).willReturn(List.of(heiligabend));
-        given(zeitkontoService.getOrCreateZeitkonto(1L)).willReturn(zeitkonto);
+        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
+                .willReturn(new BigDecimal("4.00"));
         given(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitAfter(anyLong(), any()))
                 .willReturn(List.of());
         given(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(anyLong(), any(), any()))
@@ -252,14 +225,12 @@ class ZeitverwaltungControllerTest {
         // Steht stellvertretend fuer einen Monat, in dem der halbe Feiertag der
         // einzige arbeitsrelevante Tag ist - ZeitkontoService.berechneSollstundenFuerMonat
         // (unveraendert, ausserhalb dieses Tasks) halbiert ihn schon immer korrekt auf 4.00.
-        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
-                .willReturn(new BigDecimal("4.00"));
-        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any())).willReturn(
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(
                 konstanteJeTag(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31), BigDecimal.ZERO));
         Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = konstanteJeTag(LocalDate.of(2026, 12, 1),
                 LocalDate.of(2026, 12, 31), BigDecimal.ZERO);
         feiertagsGutschriftJeTag.put(LocalDate.of(2026, 12, 24), new BigDecimal("4.00"));
-        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any()))
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any()))
                 .willReturn(feiertagsGutschriftJeTag);
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")

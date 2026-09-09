@@ -31,7 +31,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Regression 29.07.2026: Zwei Mitarbeiter hatten am Handy Feierabend gestempelt,
@@ -61,6 +60,12 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
     @Mock private TagesSollService tagesSollService;
     @Mock private MonatsSaldoService monatsSaldoService;
 
+    @Mock private ZeitkontoService zeitkontoService;
+
+    @Mock private UrlaubsverfallService urlaubsverfallService;
+
+    @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
+
     private ZeiterfassungApiService service;
 
     private static final String TOKEN = "test-token-max-mustermann";
@@ -77,8 +82,8 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
                 projektRepository, mitarbeiterRepository, arbeitsgangRepository,
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
-                lieferantenRepository, feiertagService, auditService, tagesSollService);
-        ReflectionTestUtils.setField(service, "monatsSaldoService", monatsSaldoService);
+                lieferantenRepository, feiertagService, auditService, tagesSollService,
+                zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService);
     }
 
     private Mitarbeiter dummyMitarbeiter() {

@@ -24,6 +24,7 @@ import java.util.Set;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import org.example.kalkulationsprogramm.domain.PushSubscription;
 import org.example.kalkulationsprogramm.repository.KalenderEintragRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
@@ -123,6 +124,7 @@ public class WebPushService {
      * Fail-safe: schluckt Fehler, damit ein Push-Problem nie eine fachliche
      * Operation (Annahme) blockiert.
      */
+    @Transactional
     public void notifyAll(String title, String body, String url) {
         if (!isEnabled()) {
             log.debug("WebPush nicht aktiv – notifyAll wird ignoriert");
@@ -144,6 +146,7 @@ public class WebPushService {
      * Abteilung mit darfFreigabeAnnahmePushen=true angehört. So lässt sich
      * pro Abteilung in der Administration steuern, wer den Push bekommt.
      */
+    @Transactional
     public void notifyFreigabeAnnahme(String title, String body, String url) {
         if (!isEnabled()) {
             log.debug("WebPush nicht aktiv – notifyFreigabeAnnahme wird ignoriert");
@@ -170,6 +173,7 @@ public class WebPushService {
      * mit darfWebseitenAnfragenPushen=true angehört. Empfänger steuert der Admin
      * pro Abteilung im Berechtigungs-Editor.
      */
+    @Transactional
     public void notifyWebseitenAnfrage(String title, String body, String url) {
         if (!isEnabled()) {
             log.debug("WebPush nicht aktiv – notifyWebseitenAnfrage wird ignoriert");
@@ -195,14 +199,15 @@ public class WebPushService {
      */
     @Transactional
     public void subscribe(Long mitarbeiterId, String endpoint, String p256dh, String auth) {
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
+                .filter(m -> m.getArt() == MitarbeiterArt.MENSCH && Boolean.TRUE.equals(m.getAktiv()))
+                .orElseThrow(() -> new IllegalArgumentException("Push-Nachrichten sind nur für aktive Mitarbeiter verfügbar."));
+
         // Remove existing subscription for this endpoint (re-subscribe)
         pushSubscriptionRepository.findByEndpoint(endpoint).ifPresent(existing -> {
             pushSubscriptionRepository.delete(existing);
             pushSubscriptionRepository.flush();
         });
-
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
-                .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter not found: " + mitarbeiterId));
 
         PushSubscription sub = new PushSubscription();
         sub.setMitarbeiter(mitarbeiter);
@@ -228,6 +233,7 @@ public class WebPushService {
      * and send push notifications 24h and 1h before.
      */
     @Scheduled(fixedDelay = 120_000, initialDelay = 30_000)
+    @Transactional
     public void checkAndSendNotifications() {
         if (!isEnabled()) return;
 
@@ -293,7 +299,7 @@ public class WebPushService {
 
         // If no specific people assigned (company calendar), send to all active employees
         if (mitarbeiterIds.isEmpty()) {
-            mitarbeiterRepository.findAll().stream()
+            mitarbeiterRepository.findAktiveMenschen().stream()
                     .filter(m -> Boolean.TRUE.equals(m.getAktiv()))
                     .forEach(m -> mitarbeiterIds.add(m.getId()));
         }
@@ -327,6 +333,9 @@ public class WebPushService {
     }
 
     private void sendPush(PushSubscription sub, String title, String body, String url, Long appointmentId, String type) {
+        Mitarbeiter empfaenger = sub.getMitarbeiter();
+        if (empfaenger == null || empfaenger.getArt() != MitarbeiterArt.MENSCH
+                || !Boolean.TRUE.equals(empfaenger.getAktiv())) return;
         try {
             Map<String, Object> payload = new HashMap<>();
             payload.put("title", title);

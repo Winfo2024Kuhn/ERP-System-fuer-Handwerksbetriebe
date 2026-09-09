@@ -48,6 +48,8 @@ public class MonatsSaldoWarmupService {
         YearMonth aktuellerMonat = YearMonth.now();
 
         for (Mitarbeiter mitarbeiter : aktiveMitarbeiter) {
+            if (mitarbeiter.getArt() != org.example.kalkulationsprogramm.domain.MitarbeiterArt.MENSCH
+                    || !Boolean.TRUE.equals(mitarbeiter.getFuehrtZeitkonto())) continue;
             try {
                 int[] counts = warmupFuerMitarbeiter(mitarbeiter, aktuellerMonat);
                 gesamtBerechnet += counts[0];
@@ -93,7 +95,7 @@ public class MonatsSaldoWarmupService {
             // Prüfen ob bereits ein gültiger Cache-Eintrag existiert
             boolean istGueltig = monatsSaldoRepository
                     .findByMitarbeiterIdAndJahrAndMonat(mitarbeiter.getId(), ym.getYear(), ym.getMonthValue())
-                    .map(ms -> Boolean.TRUE.equals(ms.getGueltig()))
+                    .map(ms -> Boolean.TRUE.equals(ms.getFestgeschrieben()) || Boolean.TRUE.equals(ms.getGueltig()))
                     .orElse(false);
 
             if (istGueltig) {

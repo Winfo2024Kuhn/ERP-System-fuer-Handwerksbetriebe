@@ -19,7 +19,8 @@ import org.example.kalkulationsprogramm.domain.MitarbeiterStundenlohn;
 import org.example.kalkulationsprogramm.domain.ProjektArt;
 import org.example.kalkulationsprogramm.domain.SvSatz;
 import org.example.kalkulationsprogramm.domain.SvSatzTyp;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
+import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import org.example.kalkulationsprogramm.dto.Verrechnungslohn.VerrechnungslohnErgebnisDto;
 import org.example.kalkulationsprogramm.dto.Verrechnungslohn.VerrechnungslohnErgebnisDto.AbteilungVorschlag;
 import org.example.kalkulationsprogramm.dto.Verrechnungslohn.VerrechnungslohnErgebnisDto.DatenLuecke;
@@ -44,7 +45,7 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterStundenlohnRepository;
 import org.example.kalkulationsprogramm.repository.SvSatzRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
-import org.example.kalkulationsprogramm.repository.ZeitkontoRepository;
+import org.example.kalkulationsprogramm.repository.ZeitkontoVersionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -86,7 +87,7 @@ public class VerrechnungslohnService {
     private final MitarbeiterStundenlohnRepository stundenlohnRepository;
     private final LohnabrechnungRepository lohnabrechnungRepository;
     private final ZeitbuchungRepository zeitbuchungRepository;
-    private final ZeitkontoRepository zeitkontoRepository;
+    private final ZeitkontoVersionRepository zeitkontoVersionRepository;
     private final AbwesenheitRepository abwesenheitRepository;
     private final FeiertagRepository feiertagRepository;
     private final SvSatzRepository svSatzRepository;
@@ -97,13 +98,8 @@ public class VerrechnungslohnService {
     private final ArbeitsgangStundensatzRepository stundensatzRepository;
     private final BelegRepository belegRepository;
     private final BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
-    // Bewusst OHNE TagesSollService (Ausnahme aus der Spec, Task 13): die vier
-    // Aufrufe von Zeitkonto#getSollstundenFuerTag in
-    // jahresSollstundenAusZeitkonto/feiertagSoll/stundenProTag/
-    // wochenstundenSicher bleiben beim rohen Zeitkonto-Wert -- hier geht es um
-    // das Jahres-Normalsoll, nicht um das tatsaechliche Tagessoll waehrend
-    // einer Wiedereingliederung. Die Phasenaufteilung kommt als zusaetzliche
-    // Ausklammerung dazu (siehe ausgeklammerteTage()), nicht als Ersatz.
+    // Bewusst OHNE TagesSollService: kalkulatorisches Jahres-Normalsoll aus
+    // Vertragsversionen; Krankheitsphasen werden separat ausgeklammert.
     private final LangzeitkrankmeldungPhaseRepository phaseRepository;
 
     @Transactional(readOnly = true)
@@ -134,20 +130,30 @@ public class VerrechnungslohnService {
         SvKontext svKontext = ladeSvKontext(jahresStart);
         Set<LocalDate> feiertageWerktag = ladeFeiertage(jahr);
 
-        List<Mitarbeiter> aktive = mitarbeiterRepository.findByAktivTrue();
+        List<Mitarbeiter> aktive = mitarbeiterRepository.findByAktivTrue().stream()
+                .filter(ma -> ma.getArt() == MitarbeiterArt.MENSCH).toList();
         BigDecimal lohnsumme = BigDecimal.ZERO;
         BigDecimal stundenSumme = BigDecimal.ZERO;
 
         for (Mitarbeiter ma : aktive) {
-            // Eine Abfrage je Mitarbeiter (kein N+1), das Ergebnis geht an
-            // beide Zeilen-Methoden -- nicht zweimal abfragen (Task 13).
+            // Beide Blöcke teilen dieselben Jahresdaten. Der heutige Schalter
+            // fuehrtZeitkonto darf historische Vertragswerte nicht entfernen.
+            Map<LocalDate, ZeitkontoVersion> versionen = new HashMap<>();
+            for (ZeitkontoVersion v : zeitkontoVersionRepository.findImZeitraum(ma.getId(), jahresStart, jahresEnde)) {
+                LocalDate von = v.getGueltigVon().isBefore(jahresStart) ? jahresStart : v.getGueltigVon();
+                LocalDate bis = v.getGueltigBis() == null || v.getGueltigBis().isAfter(jahresEnde)
+                        ? jahresEnde : v.getGueltigBis();
+                for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+                    versionen.put(tag, v);
+                }
+            }
             Set<LocalDate> ausgeklammert = ausgeklammerteTage(ma.getId(), jahresStart, jahresEnde);
 
-            MitarbeiterLohnZeile lohnZeile = berechneLohnZeile(ma, jahr, modus, svKontext, bgSatz, dto.getDatenLuecken(), ausgeklammert);
+            MitarbeiterLohnZeile lohnZeile = berechneLohnZeile(ma, jahr, modus, svKontext, bgSatz, dto.getDatenLuecken(), ausgeklammert, versionen);
             dto.getLohnzeilen().add(lohnZeile);
             lohnsumme = lohnsumme.add(lohnZeile.getGesamtkosten());
 
-            MitarbeiterStundenZeile stdZeile = berechneStundenZeile(ma, jahr, jahresStart, jahresEnde, modus, feiertageWerktag, interneQuote, dto.getDatenLuecken(), ausgeklammert);
+            MitarbeiterStundenZeile stdZeile = berechneStundenZeile(ma, jahr, jahresStart, jahresEnde, modus, feiertageWerktag, interneQuote, dto.getDatenLuecken(), ausgeklammert, versionen);
             dto.getStundenzeilen().add(stdZeile);
             stundenSumme = stundenSumme.add(stdZeile.getVerkaeuflicheStunden());
         }
@@ -227,7 +233,8 @@ public class VerrechnungslohnService {
                                                    SvKontext svKontext,
                                                    BigDecimal bgSatz,
                                                    List<DatenLuecke> luecken,
-                                                   Set<LocalDate> ausgeklammert) {
+                                                   Set<LocalDate> ausgeklammert,
+                                                   Map<LocalDate, ZeitkontoVersion> versionen) {
         MitarbeiterLohnZeile zeile = new MitarbeiterLohnZeile();
         zeile.setMitarbeiterId(ma.getId());
         zeile.setName(ma.getVorname() + " " + ma.getNachname());
@@ -271,7 +278,7 @@ public class VerrechnungslohnService {
             return zeile;
         }
 
-        BigDecimal brutto = ermittleBrutto(ma, jahr, modus, zeile, luecken);
+        BigDecimal brutto = ermittleBrutto(ma, jahr, modus, zeile, luecken, versionen);
         zeile.setBruttoJahr(brutto);
         BigDecimal agSv = berechneAgAnteilSv(brutto, ma, svKontext);
         BigDecimal bg = berechneBg(brutto, bgSatz);
@@ -297,7 +304,8 @@ public class VerrechnungslohnService {
                                       int jahr,
                                       Modus modus,
                                       MitarbeiterLohnZeile zeile,
-                                      List<DatenLuecke> luecken) {
+                                      List<DatenLuecke> luecken,
+                                      Map<LocalDate, ZeitkontoVersion> versionen) {
         if (modus == Modus.RUECKWIRKEND) {
             BigDecimal sum = nz(lohnabrechnungRepository.sumBruttolohnByMitarbeiterIdAndJahr(ma.getId(), jahr));
             long anzahl = lohnabrechnungRepository.countByMitarbeiterIdAndJahr(ma.getId(), jahr);
@@ -322,19 +330,19 @@ public class VerrechnungslohnService {
             l.setProblem("Keine Lohnabrechnungen fuer " + jahr + " - Stammstundenlohn als Default");
             luecken.add(l);
         }
-        BigDecimal hochgerechnet = hochrechnungAusStundenlohn(ma, jahr);
+        BigDecimal hochgerechnet = hochrechnungAusStundenlohn(ma, jahr, versionen);
         zeile.setQuelle(modus == Modus.RUECKWIRKEND ? LohnQuelle.STAMMSTUNDENLOHN : LohnQuelle.STUNDENLOHN_HOCHRECHNUNG);
         zeile.setBruttoIstDefault(true);
         return hochgerechnet;
     }
 
-    private BigDecimal hochrechnungAusStundenlohn(Mitarbeiter ma, int jahr) {
+    private BigDecimal hochrechnungAusStundenlohn(Mitarbeiter ma, int jahr, Map<LocalDate, ZeitkontoVersion> versionen) {
         LocalDate stichtag = LocalDate.of(jahr, 1, 1);
         Optional<MitarbeiterStundenlohn> versionOpt = stundenlohnRepository
                 .findFirstByMitarbeiterIdAndGueltigAbLessThanEqualOrderByGueltigAbDesc(ma.getId(), stichtag.plusYears(1).minusDays(1));
         BigDecimal stundenlohn = versionOpt.map(MitarbeiterStundenlohn::getStundenlohn)
                 .orElse(nz(ma.getStundenlohn()));
-        BigDecimal jahresSoll = jahresSollstunden(ma);
+        BigDecimal jahresSoll = jahresSollstunden(jahr, versionen);
         return stundenlohn.multiply(jahresSoll).setScale(2, RoundingMode.HALF_UP);
     }
 
@@ -419,35 +427,25 @@ public class VerrechnungslohnService {
                                                          Set<LocalDate> feiertageWerktag,
                                                          BigDecimal interneQuote,
                                                          List<DatenLuecke> luecken,
-                                                         Set<LocalDate> ausgeklammert) {
+                                                         Set<LocalDate> ausgeklammert,
+                                                   Map<LocalDate, ZeitkontoVersion> versionen) {
         MitarbeiterStundenZeile zeile = new MitarbeiterStundenZeile();
         zeile.setMitarbeiterId(ma.getId());
         zeile.setName(ma.getVorname() + " " + ma.getNachname());
         zeile.setIstGeschaeftsfuehrer(Boolean.TRUE.equals(ma.getIstGeschaeftsfuehrer()));
 
-        Optional<Zeitkonto> zeitkontoOpt = zeitkontoRepository.findByMitarbeiterId(ma.getId());
-        BigDecimal jahresSoll;
-        BigDecimal feiertagsSoll;
-        if (zeitkontoOpt.isPresent()) {
-            SollUndAusklammerung ergebnis = jahresSollstundenAusZeitkonto(zeitkontoOpt.get(), jahresStart, jahresEnde, feiertageWerktag, ausgeklammert);
-            jahresSoll = ergebnis.soll;
-            zeile.setAusgeklammerteStunden(ergebnis.ausgeklammerteStunden);
-            feiertagsSoll = feiertagSoll(zeitkontoOpt.get(), feiertageWerktag);
-        } else {
-            // Ohne Zeitkonto wurden bisher 0 verkaeufliche Stunden gerechnet, waehrend
-            // der Lohn-Block denselben Mitarbeiter mit vollen Jahreskosten ansetzt.
-            // Ergebnis: der Stundensatz schoss nach oben. Wir rechnen deshalb mit
-            // demselben Default wie der Lohn-Block (8 h je Werktag) und melden es.
-            SollUndAusklammerung ergebnis = werktagsSollOhneZeitkonto(jahresStart, jahresEnde, feiertageWerktag, ausgeklammert);
-            jahresSoll = ergebnis.soll;
-            zeile.setAusgeklammerteStunden(ergebnis.ausgeklammerteStunden);
-            feiertagsSoll = STUNDEN_PRO_TAG_DEFAULT.multiply(BigDecimal.valueOf(feiertageWerktag.size()));
+        SollUndAusklammerung ergebnis = jahresSollstundenAusZeitkonto(versionen, jahresStart, jahresEnde,
+                feiertageWerktag, ausgeklammert);
+        BigDecimal jahresSoll = ergebnis.soll;
+        BigDecimal feiertagsSoll = feiertagSoll(versionen, feiertageWerktag);
+        zeile.setAusgeklammerteStunden(ergebnis.ausgeklammerteStunden);
+        if (versionen.size() < Year.of(jahr).length()) {
             zeile.setSollIstDefault(true);
             DatenLuecke l = new DatenLuecke();
             l.setMitarbeiterId(ma.getId());
             l.setMitarbeiterName(zeile.getName());
-            l.setProblem("Keine Arbeitszeiten hinterlegt - es wird mit "
-                    + STUNDEN_PRO_TAG_DEFAULT.stripTrailingZeros().toPlainString() + " h pro Werktag gerechnet");
+            l.setProblem("Keine Arbeitszeiten hinterlegt für Teile von " + jahr
+                    + " - dort wird kalkulatorisch mit 8 h pro Werktag gerechnet (kein Zeitkonto)");
             luecken.add(l);
         }
 
@@ -479,7 +477,7 @@ public class VerrechnungslohnService {
             // Jahresurlaub als Default ist hier fachlich richtig, auch wenn
             // ausgeklammert nicht leer ist (Nachbesserung Abschnitt 2,
             // Befund 5 -- bewusst nicht veraendert).
-            urlaub = BigDecimal.valueOf(ma.getJahresUrlaub()).multiply(stundenProTag(zeitkontoOpt));
+            urlaub = BigDecimal.valueOf(ma.getJahresUrlaub()).multiply(stundenProTag(versionen, jahresStart, jahresEnde));
             zeile.setUrlaubIstDefault(true);
         }
         // Der 8-Tage-Standard darf nur greifen, wenn wirklich keine Krankheitsdaten
@@ -487,7 +485,7 @@ public class VerrechnungslohnService {
         // krank == 0 sonst faelschlich als "keine Daten" gedeutet und der Default
         // zusaetzlich zur Ausklammerung abgezogen (Task 13).
         if (krank.compareTo(BigDecimal.ZERO) == 0 && ausgeklammert.isEmpty()) {
-            krank = KRANKHEITSTAGE_DEFAULT.multiply(stundenProTag(zeitkontoOpt));
+            krank = KRANKHEITSTAGE_DEFAULT.multiply(stundenProTag(versionen, jahresStart, jahresEnde));
             zeile.setKrankheitIstDefault(true);
         }
         zeile.setUrlaubsstunden(urlaub);
@@ -521,7 +519,7 @@ public class VerrechnungslohnService {
         return zeile;
     }
 
-    private SollUndAusklammerung jahresSollstundenAusZeitkonto(Zeitkonto zk,
+    private SollUndAusklammerung jahresSollstundenAusZeitkonto(Map<LocalDate, ZeitkontoVersion> versionen,
                                                      LocalDate von,
                                                      LocalDate bis,
                                                      Set<LocalDate> feiertage,
@@ -531,8 +529,7 @@ public class VerrechnungslohnService {
             if (feiertage.contains(d)) {
                 continue;
             }
-            int dow = d.getDayOfWeek().getValue();
-            BigDecimal stunden = nz(zk.getSollstundenFuerTag(dow));
+            BigDecimal stunden = kalkulatorischesTagessoll(versionen, d);
             if (ausgeklammert.contains(d)) {
                 ergebnis.ausgeklammerteStunden = ergebnis.ausgeklammerteStunden.add(stunden);
                 continue;
@@ -573,52 +570,27 @@ public class VerrechnungslohnService {
         BigDecimal ausgeklammerteStunden = BigDecimal.ZERO;
     }
 
-    private BigDecimal feiertagSoll(Zeitkonto zk, Set<LocalDate> feiertage) {
+    private BigDecimal feiertagSoll(Map<LocalDate, ZeitkontoVersion> versionen, Set<LocalDate> feiertage) {
         BigDecimal summe = BigDecimal.ZERO;
         for (LocalDate d : feiertage) {
-            int dow = d.getDayOfWeek().getValue();
-            summe = summe.add(nz(zk.getSollstundenFuerTag(dow)));
+            summe = summe.add(kalkulatorischesTagessoll(versionen, d));
         }
         return summe.setScale(2, RoundingMode.HALF_UP);
     }
 
-    /**
-     * Jahressoll fuer Mitarbeiter ohne Zeitkonto: 8 h je Werktag (Mo-Fr) ohne
-     * Feiertage -- dieselbe Annahme, die der Lohn-Block ueber die 2080-h-Woche
-     * trifft.
-     */
-    private SollUndAusklammerung werktagsSollOhneZeitkonto(LocalDate von, LocalDate bis, Set<LocalDate> feiertage, Set<LocalDate> ausgeklammert) {
-        SollUndAusklammerung ergebnis = new SollUndAusklammerung();
-        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
-            DayOfWeek dow = d.getDayOfWeek();
-            if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY || feiertage.contains(d)) {
-                continue;
-            }
-            if (ausgeklammert.contains(d)) {
-                ergebnis.ausgeklammerteStunden = ergebnis.ausgeklammerteStunden.add(STUNDEN_PRO_TAG_DEFAULT);
-                continue;
-            }
-            ergebnis.soll = ergebnis.soll.add(STUNDEN_PRO_TAG_DEFAULT);
-        }
-        ergebnis.soll = ergebnis.soll.setScale(2, RoundingMode.HALF_UP);
-        ergebnis.ausgeklammerteStunden = ergebnis.ausgeklammerteStunden.setScale(2, RoundingMode.HALF_UP);
-        return ergebnis;
+    /** Fehlende Vertragsdaten sind ausschließlich eine sichtbare Kalkulationsannahme. */
+    private BigDecimal kalkulatorischesTagessoll(Map<LocalDate, ZeitkontoVersion> versionen, LocalDate tag) {
+        ZeitkontoVersion v = versionen.get(tag);
+        if (v != null) return v.getSollstundenFuerTag(tag.getDayOfWeek().getValue());
+        return tag.getDayOfWeek().getValue() <= 5 ? STUNDEN_PRO_TAG_DEFAULT : BigDecimal.ZERO;
     }
 
-    /**
-     * Durchschnittliche Stunden je Arbeitstag -- Basis fuer die Bewertung von
-     * Urlaubs- und Krankheitstagen. Es wird durch die Anzahl der tatsaechlichen
-     * Arbeitstage geteilt, nicht fix durch 5: bei einer 4-Tage-Woche
-     * (4 × 8 h) kam sonst 6,4 h statt 8 h heraus und der Urlaub wurde zu
-     * niedrig bewertet. Samstagsarbeit zaehlt ebenfalls mit.
-     */
-    private BigDecimal stundenProTag(Optional<Zeitkonto> zeitkontoOpt) {
-        if (zeitkontoOpt.isEmpty()) return STUNDEN_PRO_TAG_DEFAULT;
-        Zeitkonto zk = zeitkontoOpt.get();
+    /** Gewichtet mit den im abgefragten Jahr tatsächlich gültigen Arbeitstagen. */
+    private BigDecimal stundenProTag(Map<LocalDate, ZeitkontoVersion> versionen, LocalDate von, LocalDate bis) {
         BigDecimal summe = BigDecimal.ZERO;
         int arbeitstage = 0;
-        for (int dow = 1; dow <= 7; dow++) {
-            BigDecimal stunden = nz(zk.getSollstundenFuerTag(dow));
+        for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
+            BigDecimal stunden = kalkulatorischesTagessoll(versionen, d);
             if (stunden.signum() > 0) {
                 summe = summe.add(stunden);
                 arbeitstage++;
@@ -628,28 +600,22 @@ public class VerrechnungslohnService {
         return summe.divide(BigDecimal.valueOf(arbeitstage), 2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal jahresSollstunden(Mitarbeiter ma) {
-        Optional<Zeitkonto> zk = zeitkontoRepository.findByMitarbeiterId(ma.getId());
-        if (zk.isEmpty()) {
-            return new BigDecimal("2080.00"); // 40h × 52
-        }
-        BigDecimal wochenstunden = wochenstundenSicher(zk.get());
-        if (wochenstunden.signum() <= 0) {
-            return new BigDecimal("2080.00");
-        }
-        return wochenstunden.multiply(BigDecimal.valueOf(52));
-    }
-
     /**
-     * Wochenstunden ohne NPE-Risiko: {@link Zeitkonto#getWochenstunden()}
-     * addiert die Tagesfelder ungeprueft, in der Datenbank koennen sie null sein.
+     * Lohnschätzung behält 52 Wochen bei. Wochenmodelle werden nach ihrer
+     * Gültigkeitsdauer im abgefragten Jahr gewichtet, nicht nach dem heutigen Konto.
+     * Ein ganzjähriges Modell liefert dadurch exakt den bisherigen 52-Wochen-Wert.
      */
-    private static BigDecimal wochenstundenSicher(Zeitkonto zk) {
-        BigDecimal summe = BigDecimal.ZERO;
-        for (int dow = 1; dow <= 7; dow++) {
-            summe = summe.add(nz(zk.getSollstundenFuerTag(dow)));
+    private BigDecimal jahresSollstunden(int jahr, Map<LocalDate, ZeitkontoVersion> versionen) {
+        BigDecimal gewichteteWochenstunden = BigDecimal.ZERO;
+        for (LocalDate d = LocalDate.of(jahr, 1, 1); d.getYear() == jahr; d = d.plusDays(1)) {
+            ZeitkontoVersion v = versionen.get(d);
+            BigDecimal wochenstunden = v == null ? BigDecimal.ZERO : v.getWochenstunden();
+            // Bestehende kalkulatorische Lohnannahme für fehlende/Null-Wochen erhalten.
+            if (wochenstunden.signum() <= 0) wochenstunden = new BigDecimal("40.00");
+            gewichteteWochenstunden = gewichteteWochenstunden.add(wochenstunden);
         }
-        return summe;
+        return gewichteteWochenstunden.multiply(BigDecimal.valueOf(52))
+                .divide(BigDecimal.valueOf(Year.of(jahr).length()), 8, RoundingMode.HALF_UP);
     }
 
     /**

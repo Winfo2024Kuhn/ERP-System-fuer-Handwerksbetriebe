@@ -116,3 +116,14 @@ describe('NotificationBell – Spalten ohne recentItems bleiben klickbar', () =>
         expect(navigateMock).toHaveBeenCalledWith('/urlaubsantraege?antragId=1');
     });
 });
+
+it('öffnet MONATSABSCHLUSS als Kalender-Deep-Link auch ohne recentItems', async () => {
+    sessionStorage.clear(); localStorage.clear(); navigateMock.mockClear();
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ totalCount: 3,
+        categories: [{ type: 'MONATSABSCHLUSS', label: 'Monate abschließen', count: 3, icon: 'CalendarCheck', link: '/zeitbuchungen?jahr=2025&monat=8' }], recentItems: [] }) });
+    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTitle('Benachrichtigungen')).toBeInTheDocument());
+    fireEvent.click(screen.getByTitle('Benachrichtigungen'));
+    fireEvent.click(await screen.findByText('Monate abschließen'));
+    expect(navigateMock).toHaveBeenCalledWith('/zeitbuchungen?jahr=2025&monat=8');
+});

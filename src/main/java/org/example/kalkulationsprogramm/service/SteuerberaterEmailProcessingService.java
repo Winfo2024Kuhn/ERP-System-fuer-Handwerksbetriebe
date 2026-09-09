@@ -446,7 +446,7 @@ public class SteuerberaterEmailProcessingService {
      */
     private Mitarbeiter findMitarbeiterByName(String name) {
         String cleanName = name.toLowerCase();
-        List<Mitarbeiter> aktive = mitarbeiterRepository.findByAktivTrue();
+        List<Mitarbeiter> aktive = mitarbeiterRepository.findAktiveMenschen();
 
         for (Mitarbeiter m : aktive) {
             if (cleanName.contains(m.getNachname().toLowerCase())
@@ -512,7 +512,7 @@ public class SteuerberaterEmailProcessingService {
                 .replaceAll("[_\\-.]", " ")
                 .replaceAll("\\s+", " ");
 
-        List<Mitarbeiter> alleMitarbeiter = mitarbeiterRepository.findByAktivTrue();
+        List<Mitarbeiter> alleMitarbeiter = mitarbeiterRepository.findAktiveMenschen();
         
         for (Mitarbeiter ma : alleMitarbeiter) {
             String nachname = ma.getNachname().toLowerCase();

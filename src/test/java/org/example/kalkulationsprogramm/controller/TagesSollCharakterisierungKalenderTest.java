@@ -2,7 +2,6 @@ package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -62,6 +61,8 @@ class TagesSollCharakterisierungKalenderTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.ZeitkontoService zeitkontoService;
     @MockBean
+    private org.example.kalkulationsprogramm.service.ZeitkontoWechselService zeitkontoWechselService;
+    @MockBean
     private org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
     @MockBean
     private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
@@ -87,28 +88,18 @@ class TagesSollCharakterisierungKalenderTest {
         mitarbeiter.setVorname("Max");
         mitarbeiter.setNachname("Mustermann");
 
-        Zeitkonto zeitkonto = new Zeitkonto(mitarbeiter);
-        zeitkonto.setMontagStunden(new BigDecimal("8.00"));
-        zeitkonto.setDienstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setMittwochStunden(new BigDecimal("8.00"));
-        zeitkonto.setDonnerstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setFreitagStunden(new BigDecimal("8.00"));
-        zeitkonto.setSamstagStunden(new BigDecimal("0.00"));
-        zeitkonto.setSonntagStunden(new BigDecimal("0.00"));
-
         // 24.12.2026 = halber Feiertag (Heiligabend), 25.12.2026 = voller Feiertag.
         Feiertag heiligabend = Feiertag.halberFeiertag(LocalDate.of(2026, 12, 24), "Heiligabend");
         Feiertag ersterWeihnachtstag = new Feiertag(LocalDate.of(2026, 12, 25), "1. Weihnachtstag");
 
         given(feiertagService.getFeiertageZwischen(any(), any()))
                 .willReturn(List.of(heiligabend, ersterWeihnachtstag));
-        given(zeitkontoService.getOrCreateZeitkonto(1L)).willReturn(zeitkonto);
+        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
+                .willReturn(new BigDecimal("168.00"));
         given(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitAfter(anyLong(), any()))
                 .willReturn(List.of());
         given(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(anyLong(), any(), any()))
                 .willReturn(List.of());
-        given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
-                .willReturn(new BigDecimal("168.00"));
         // arbeitsSollJeTag/feiertagsGutschriftJeTag bilden nach, was
         // TagesSollService (Task 3, seit Abschnitt 4 als Zeitraum-Variante -
         // siehe Kontext-Log) fuer einen Monat ohne laufende Wiedereingliederung
@@ -127,10 +118,10 @@ class TagesSollCharakterisierungKalenderTest {
         // ZeitverwaltungController.getKalender testweise um sechs Monate
         // verschoben - mit der alten festen Rueckgabe blieb der Test gruen,
         // mit dieser Auswertung wird er rot.
-        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any(), any()))
-                .willAnswer(inv -> arbeitsSollJeTagFuer(inv.getArgument(2), inv.getArgument(3)));
-        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any(), any()))
-                .willAnswer(inv -> feiertagsGutschriftJeTagFuer(inv.getArgument(2), inv.getArgument(3)));
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any()))
+                .willAnswer(inv -> arbeitsSollJeTagFuer(inv.getArgument(1), inv.getArgument(2)));
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any()))
+                .willAnswer(inv -> feiertagsGutschriftJeTagFuer(inv.getArgument(1), inv.getArgument(2)));
 
         // 1.12.2026 ist ein Dienstag -> tage[0].
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
@@ -144,6 +135,9 @@ class TagesSollCharakterisierungKalenderTest {
                 .andExpect(jsonPath("$.tage[23].sollStunden").value(0))
                 .andExpect(jsonPath("$.tage[24].datum").value("2026-12-25"))
                 .andExpect(jsonPath("$.tage[24].sollStunden").value(0))
+                .andExpect(jsonPath("$.tage[0].feiertagsStunden").value(0))
+                .andExpect(jsonPath("$.tage[23].feiertagsStunden").value(4.00))
+                .andExpect(jsonPath("$.tage[24].feiertagsStunden").value(8.00))
                 // Bugfix (Task 11, siehe Plan "Bewusste Verhaltensaenderungen" Punkt 1):
                 // der alte Wert 8.00 war der Bug - der Controller rechnete die
                 // Ist-Stunden am Feiertag NICHT halbiert, obwohl der 24.12. laut

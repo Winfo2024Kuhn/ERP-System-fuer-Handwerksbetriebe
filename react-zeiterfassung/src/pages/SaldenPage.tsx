@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Sun, Briefcase, Clock, TrendingUp, TrendingDown, Minus, RefreshCw, Stethoscope, GraduationCap, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
 
 interface Mitarbeiter {
     id: number
@@ -22,12 +23,15 @@ interface SaldoData {
         sollStunden: number
         istStunden: number
         differenz: number
+        festgeschrieben?: boolean
     }
     gesamt: {
         istStunden: number
         sollStunden: number
         saldo: number
         startDatum?: string
+        geprueftBis?: string | null
+        vorlaeufig?: boolean
     }
     mitarbeiterName: string
     jahr: number
@@ -50,14 +54,35 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
     const [error, setError] = useState<string | null>(null)
     const [saldo, setSaldo] = useState<SaldoData | null>(null)
     const [feiertage, setFeiertage] = useState<Feiertag[]>([])
+    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
+    const [statusLoading, setStatusLoading] = useState(true)
 
     // Month navigation state - default to current month/year
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
 
+    const loadZeitkontoStatus = async () => {
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (!token) return
+        setStatusLoading(true)
+        try {
+            const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
+            if (!res.ok) throw new Error()
+            const data = await res.json() as ZeitkontoStatus
+            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
+            setZeitkontoStatus(data)
+        } catch {
+            setZeitkontoStatus(null)
+        } finally {
+            setStatusLoading(false)
+        }
+    }
+
+    useEffect(() => { loadZeitkontoStatus() }, [])
+
     useEffect(() => {
-        loadSaldo(selectedMonth, selectedYear)
-    }, [selectedMonth, selectedYear])
+        if (hatEingerichtetesZeitkonto(zeitkontoStatus)) loadSaldo(selectedMonth, selectedYear)
+    }, [selectedMonth, selectedYear, zeitkontoStatus])
 
     const loadSaldo = async (month?: number, year?: number) => {
         setLoading(true)
@@ -180,6 +205,10 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
         return new Date(dateStr).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
     }
 
+    const formatDateLong = (dateStr: string) => new Date(`${dateStr}T00:00:00`).toLocaleDateString('de-DE', {
+        day: '2-digit', month: 'long', year: 'numeric'
+    })
+
     const isPastDate = (dateStr: string) => {
         const d = new Date(dateStr)
         const today = new Date()
@@ -216,19 +245,35 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
 
             {/* Content */}
             <main className="flex-1 p-4 space-y-4 overflow-y-auto">
-                {loading && (
+                {statusLoading && (
+                    <div className="flex items-center justify-center py-12" aria-label="Arbeitszeit-Einrichtung wird geprüft">
+                        <RefreshCw className="w-8 h-8 text-rose-500 animate-spin" aria-hidden="true" />
+                    </div>
+                )}
+
+                {!statusLoading && !hatEingerichtetesZeitkonto(zeitkontoStatus) && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm" role="alert">
+                        <h2 className="font-bold text-slate-900">Saldenauswertung nicht verfügbar</h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">{zeitkontoHinweis(zeitkontoStatus)}</p>
+                        <button onClick={loadZeitkontoStatus} className="mt-4 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                            Erneut prüfen
+                        </button>
+                    </div>
+                )}
+
+                {hatEingerichtetesZeitkonto(zeitkontoStatus) && loading && (
                     <div className="flex items-center justify-center py-12">
                         <RefreshCw className="w-8 h-8 text-rose-500 animate-spin" />
                     </div>
                 )}
 
-                {error && (
+                {hatEingerichtetesZeitkonto(zeitkontoStatus) && error && (
                     <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center">
                         {error}
                     </div>
                 )}
 
-                {saldo && !loading && (
+                {hatEingerichtetesZeitkonto(zeitkontoStatus) && saldo && !loading && (
                     <>
                         {/* Urlaub Section */}
                         <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -294,6 +339,9 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                                     ? 'Aktueller Monat'
                                                     : `${selectedYear}`)}
                                         </p>
+                                        <p className={`mt-1 text-xs font-medium ${saldo.monat.festgeschrieben ? 'text-slate-700' : 'text-amber-800'}`}>
+                                            {saldo.monat.festgeschrieben ? 'Monat festgeschrieben' : 'Monatsabschluss noch nicht erfolgt'}
+                                        </p>
                                     </div>
                                 </div>
                                 {/* Month Navigation Buttons */}
@@ -347,6 +395,11 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                         {saldo.gesamt.startDatum
                                             ? `Seit ${formatDateShort(saldo.gesamt.startDatum)}`
                                             : `Jahr ${saldo.jahr} bis heute`}
+                                    </p>
+                                    <p className={`mt-1 text-xs font-medium ${saldo.gesamt.vorlaeufig ? 'text-amber-800' : 'text-slate-700'}`}>
+                                        {saldo.gesamt.geprueftBis
+                                            ? `Geprüft bis ${formatDateLong(saldo.gesamt.geprueftBis)}${saldo.gesamt.vorlaeufig ? ' — die Stunden seitdem sind noch vorläufig.' : ''}`
+                                            : 'Noch nicht geprüft — die Stunden sind noch vorläufig.'}
                                     </p>
                                 </div>
                             </div>

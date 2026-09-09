@@ -1,7 +1,5 @@
 package org.example.kalkulationsprogramm.service;
 
-import org.example.kalkulationsprogramm.domain.Mitarbeiter;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
 import org.example.kalkulationsprogramm.mapper.ArbeitsgangMapper;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
@@ -88,9 +86,12 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
     @Mock private ZeitkontoService zeitkontoService;
     @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
 
+    @Mock private UrlaubsverfallService urlaubsverfallService;
+
+    @Mock private MonatsSaldoService monatsSaldoService;
+
     private ZeiterfassungApiService service;
 
-    private Zeitkonto zeitkonto;
 
     private static final Long MITARBEITER_ID = 1L;
     private static final LocalDate VOLLER_FEIERTAG = LocalDate.of(2026, 1, 1);
@@ -99,33 +100,13 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
 
     @BeforeEach
     void setUp() {
-        // Vorbild: ZeiterfassungApiServiceConcurrencyTest:76-84 (expliziter
-        // Konstruktor statt @InjectMocks, Field-Injection-Felder per
-        // ReflectionTestUtils.setField nachgezogen - die Klasse mischt beide
-        // Injection-Arten).
         service = new ZeiterfassungApiService(
                 projektRepository, mitarbeiterRepository, arbeitsgangRepository,
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
-                lieferantenRepository, feiertagService, auditService, tagesSollService);
-        ReflectionTestUtils.setField(service, "zeitkontoService", zeitkontoService);
-        ReflectionTestUtils.setField(service, "zeitkontoKorrekturService", zeitkontoKorrekturService);
+                lieferantenRepository, feiertagService, auditService, tagesSollService,
+                zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService);
 
-        Mitarbeiter mitarbeiter = new Mitarbeiter();
-        mitarbeiter.setId(MITARBEITER_ID);
-        mitarbeiter.setVorname("Max");
-        mitarbeiter.setNachname("Mustermann");
-
-        zeitkonto = new Zeitkonto(mitarbeiter);
-        zeitkonto.setMontagStunden(new BigDecimal("8.00"));
-        zeitkonto.setDienstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setMittwochStunden(new BigDecimal("8.00"));
-        zeitkonto.setDonnerstagStunden(new BigDecimal("8.00"));
-        zeitkonto.setFreitagStunden(new BigDecimal("8.00"));
-        zeitkonto.setSamstagStunden(new BigDecimal("0.00"));
-        zeitkonto.setSonntagStunden(new BigDecimal("0.00"));
-
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
         // Keine Zeitbuchungen/Abwesenheiten/Korrekturen im Fixture-Zeitraum - isoliert
         // die Zusicherung auf die Feiertagsberechnung. any() fuer den Zeitraum ist hier
         // bewusst: diese Nebenabhaengigkeit ist nicht Testgegenstand. Der Zeitraum, der
@@ -141,36 +122,36 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
 
     @Test
     void vollerFeiertag_ergibtAchtStunden() {
-        when(tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, zeitkonto, VOLLER_FEIERTAG, VOLLER_FEIERTAG))
+        when(tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, VOLLER_FEIERTAG, VOLLER_FEIERTAG))
                 .thenReturn(new BigDecimal("8"));
 
         BigDecimal result = berechneAnteiligenMonatIst(VOLLER_FEIERTAG, VOLLER_FEIERTAG);
 
         assertEquals(0, new BigDecimal("8").compareTo(result));
-        verify(tagesSollService).feiertagsGutschriftSumme(MITARBEITER_ID, zeitkonto, VOLLER_FEIERTAG, VOLLER_FEIERTAG);
+        verify(tagesSollService).feiertagsGutschriftSumme(MITARBEITER_ID, VOLLER_FEIERTAG, VOLLER_FEIERTAG);
     }
 
     @Test
     void halberFeiertag_ergibtVierStunden() {
-        when(tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, zeitkonto, HALBER_FEIERTAG, HALBER_FEIERTAG))
+        when(tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, HALBER_FEIERTAG, HALBER_FEIERTAG))
                 .thenReturn(new BigDecimal("4.00"));
 
         BigDecimal result = berechneAnteiligenMonatIst(HALBER_FEIERTAG, HALBER_FEIERTAG);
 
         assertEquals(0, new BigDecimal("4.00").compareTo(result));
-        verify(tagesSollService).feiertagsGutschriftSumme(MITARBEITER_ID, zeitkonto, HALBER_FEIERTAG, HALBER_FEIERTAG);
+        verify(tagesSollService).feiertagsGutschriftSumme(MITARBEITER_ID, HALBER_FEIERTAG, HALBER_FEIERTAG);
     }
 
     @Test
     void feiertagAmWochenende_ergibtNull() {
         when(tagesSollService.feiertagsGutschriftSumme(
-                MITARBEITER_ID, zeitkonto, FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE))
+                MITARBEITER_ID, FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE))
                 .thenReturn(BigDecimal.ZERO);
 
         BigDecimal result = berechneAnteiligenMonatIst(FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE);
 
         assertEquals(0, BigDecimal.ZERO.compareTo(result));
         verify(tagesSollService).feiertagsGutschriftSumme(
-                MITARBEITER_ID, zeitkonto, FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE);
+                MITARBEITER_ID, FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE);
     }
 }

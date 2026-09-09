@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
+import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
 
 interface Projekt {
     id: number
@@ -53,6 +54,28 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
     const [loading, setLoading] = useState(false)
     const [starting, setStarting] = useState(false)
     const [isSyncing, setIsSyncing] = useState(false)
+    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
+    const [statusLoading, setStatusLoading] = useState(true)
+    const [statusError, setStatusError] = useState<string | null>(null)
+
+    const loadZeitkontoStatus = async () => {
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (!token) return
+        setStatusLoading(true)
+        setStatusError(null)
+        try {
+            const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
+            if (!res.ok) throw new Error()
+            const data = await res.json() as ZeitkontoStatus
+            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
+            setZeitkontoStatus(data)
+        } catch {
+            setZeitkontoStatus(null)
+            setStatusError('Die Arbeitszeit-Einrichtung konnte nicht geprüft werden.')
+        } finally {
+            setStatusLoading(false)
+        }
+    }
 
     const handleSync = async () => {
         setIsSyncing(true)
@@ -72,8 +95,12 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
 
     // Load projects
     useEffect(() => {
-        loadProjekte()
+        loadZeitkontoStatus()
     }, [])
+
+    useEffect(() => {
+        if (hatEingerichtetesZeitkonto(zeitkontoStatus)) loadProjekte()
+    }, [zeitkontoStatus])
 
     // Load categories when project is selected
     useEffect(() => {
@@ -333,6 +360,23 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                 </div>
             </header>
 
+            {!statusLoading && !hatEingerichtetesZeitkonto(zeitkontoStatus) ? (
+                <main className="flex flex-1 items-center p-4">
+                    <div className="w-full rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm" role="alert">
+                        <h2 className="font-bold text-slate-900">Keine neue Zeitbuchung möglich</h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">{zeitkontoHinweis(zeitkontoStatus)}</p>
+                        {statusError && <p className="mt-2 text-sm text-amber-800">{statusError}</p>}
+                        <button onClick={loadZeitkontoStatus} className="mt-4 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                            Erneut prüfen
+                        </button>
+                    </div>
+                </main>
+            ) : statusLoading ? (
+                <main className="flex flex-1 items-center justify-center" aria-label="Arbeitszeit-Einrichtung wird geprüft">
+                    <Loader2 className="h-7 w-7 animate-spin text-rose-600" aria-hidden="true" />
+                </main>
+            ) : <>
+
             {/* Progress Indicator */}
             <div className="flex gap-2 p-4 bg-white border-b border-slate-100">
                 <div className={`flex-1 h-1.5 rounded-full ${step === 'projekt' || step === 'kategorie' || step === 'arbeitsgang' ? 'bg-rose-600' : 'bg-slate-200'}`} />
@@ -513,7 +557,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
             </div>
 
             {/* Start Button (only in step 3) - Fixed at bottom */}
-            {step === 'arbeitsgang' && selectedArbeitsgang && (
+            {step === 'arbeitsgang' && selectedArbeitsgang && hatEingerichtetesZeitkonto(zeitkontoStatus) && (
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 safe-area-bottom shadow-lg">
                     <button
                         onClick={handleStartTracking}
@@ -530,7 +574,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                         )}
                     </button>
                 </div>
-            )}
+            )}</>}
         </div>
     )
 }

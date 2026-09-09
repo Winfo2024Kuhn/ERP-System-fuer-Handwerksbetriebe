@@ -21,7 +21,11 @@ import org.example.kalkulationsprogramm.domain.ErfassungsQuelle;
 import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.dto.ZeitkontoStatusDto;
+import org.example.kalkulationsprogramm.dto.ZeitkontoWechselDto;
+import org.example.kalkulationsprogramm.dto.ZeitkontoWechselErgebnisDto;
+import org.example.kalkulationsprogramm.service.ZeitkontoWechselService;
+import jakarta.validation.Valid;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
@@ -56,6 +60,7 @@ public class ZeitverwaltungController {
     private final MitarbeiterRepository mitarbeiterRepository;
     private final FeiertagService feiertagService;
     private final ZeitkontoService zeitkontoService;
+    private final ZeitkontoWechselService wechselService;
     private final TagesSollService tagesSollService;
     private final org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
     private final org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
@@ -438,8 +443,6 @@ public class ZeitverwaltungController {
                 .map(Feiertag::getDatum)
                 .collect(Collectors.toSet());
 
-        // Zeitkonto laden
-        Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
 
         // Buchungen laden (Zeitbuchungen = Arbeitszeit)
         LocalDateTime startDateTime = ersterTag.atStartOfDay();
@@ -492,10 +495,10 @@ public class ZeitverwaltungController {
         // TagesSollService-Aufrufe je Tag, jeder mit eigener Phasen-/
         // Feiertagsabfrage darunter - gemessen 249 statt 9 Repository-
         // Aufrufe fuer einen 31-Tage-Monat.
-        Map<LocalDate, BigDecimal> sollStundenJeTag = tagesSollService.arbeitsSollJeTag(mitarbeiterId, zeitkonto,
+        Map<LocalDate, BigDecimal> sollStundenJeTag = tagesSollService.arbeitsSollJeTag(mitarbeiterId,
                 ersterTag, letzterTag);
         Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = tagesSollService.feiertagsGutschriftJeTag(
-                mitarbeiterId, zeitkonto, ersterTag, letzterTag);
+                mitarbeiterId, ersterTag, letzterTag);
 
         // Tage aufbauen
         List<Map<String, Object>> tage = new ArrayList<>();
@@ -514,6 +517,7 @@ public class ZeitverwaltungController {
             // Feiertagsbehandlung und laufender Wiedereingliederung; arbeitsSollJeTag
             // liefert an Feiertagen (voll wie halb) von sich aus 0.
             tagData.put("sollStunden", sollStundenJeTag.get(currentTag));
+            tagData.put("feiertagsStunden", feiertagsGutschriftJeTag.get(currentTag));
             tagData.put("buchungen", buchungenProTag.getOrDefault(currentTag, Collections.emptyList()));
 
             // Ist-Stunden berechnen (inkl. Feiertage als Arbeitszeit)
@@ -607,63 +611,37 @@ public class ZeitverwaltungController {
     // ==================== Zeitkonten ====================
 
     @GetMapping("/zeitkonten")
-    public ResponseEntity<List<Map<String, Object>>> getAlleZeitkonten() {
-        List<Mitarbeiter> mitarbeiter = mitarbeiterRepository.findAll();
+    public List<ZeitkontoStatusDto> getAlleZeitkonten() {
+        return wechselService.alle();
+    }
 
-        List<Map<String, Object>> result = mitarbeiter.stream()
-                .map(m -> {
-                    Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(m.getId());
-                    Map<String, Object> map = new LinkedHashMap<>();
-                    map.put("mitarbeiterId", m.getId());
-                    map.put("mitarbeiterName", m.getVorname() + " " + m.getNachname());
-                    map.put("montagStunden", konto.getMontagStunden());
-                    map.put("dienstagStunden", konto.getDienstagStunden());
-                    map.put("mittwochStunden", konto.getMittwochStunden());
-                    map.put("donnerstagStunden", konto.getDonnerstagStunden());
-                    map.put("freitagStunden", konto.getFreitagStunden());
-                    map.put("samstagStunden", konto.getSamstagStunden());
-                    map.put("sonntagStunden", konto.getSonntagStunden());
-                    map.put("wochenstunden", konto.getWochenstunden());
-                    map.put("buchungStartZeit", konto.getBuchungStartZeit() != null ? konto.getBuchungStartZeit().toString() : null);
-                    map.put("buchungEndeZeit", konto.getBuchungEndeZeit() != null ? konto.getBuchungEndeZeit().toString() : null);
-                    return map;
-                })
-                .collect(Collectors.toList());
+    @GetMapping("/zeitkonten/{mitarbeiterId}")
+    public ZeitkontoStatusDto getZeitkonto(@PathVariable Long mitarbeiterId) {
+        return wechselService.status(mitarbeiterId);
+    }
 
-        return ResponseEntity.ok(result);
+    @PostMapping("/zeitkonten/{mitarbeiterId}/vorschau")
+    public ZeitkontoWechselErgebnisDto vorschau(@PathVariable Long mitarbeiterId,
+            @Valid @RequestBody ZeitkontoWechselDto request) {
+        return wechselService.vorschau(mitarbeiterId, request);
     }
 
     @PutMapping("/zeitkonten/{mitarbeiterId}")
-    public ResponseEntity<Zeitkonto> updateZeitkonto(
-            @PathVariable Long mitarbeiterId,
-            @RequestBody Map<String, Object> data) {
+    public ZeitkontoWechselErgebnisDto updateZeitkonto(@PathVariable Long mitarbeiterId,
+            @Valid @RequestBody ZeitkontoWechselDto request) {
+        return wechselService.uebernehmen(mitarbeiterId, request);
+    }
 
-        BigDecimal montag = new BigDecimal(data.get("montagStunden").toString());
-        BigDecimal dienstag = new BigDecimal(data.get("dienstagStunden").toString());
-        BigDecimal mittwoch = new BigDecimal(data.get("mittwochStunden").toString());
-        BigDecimal donnerstag = new BigDecimal(data.get("donnerstagStunden").toString());
-        BigDecimal freitag = new BigDecimal(data.get("freitagStunden").toString());
-        BigDecimal samstag = new BigDecimal(data.get("samstagStunden").toString());
-        BigDecimal sonntag = new BigDecimal(data.get("sonntagStunden").toString());
+    @PostMapping("/zeitkonten/uebernehmen")
+    public List<ZeitkontoWechselErgebnisDto> mehrereZeitkonten(
+            @Valid @RequestBody ZeitkontoWechselErgebnisDto.Mehrere request) {
+        return wechselService.mehrere(request);
+    }
 
-        // Buchungszeitfenster parsen
-        java.time.LocalTime buchungStart = data.get("buchungStartZeit") != null
-                ? java.time.LocalTime.parse(data.get("buchungStartZeit").toString())
-                : null;
-        java.time.LocalTime buchungEnde = data.get("buchungEndeZeit") != null
-                ? java.time.LocalTime.parse(data.get("buchungEndeZeit").toString())
-                : null;
-
-        Zeitkonto updated = zeitkontoService.aktualisiereZeitkonto(
-                mitarbeiterId, montag, dienstag, mittwoch, donnerstag, freitag, samstag, sonntag);
-        updated.setBuchungStartZeit(buchungStart);
-        updated.setBuchungEndeZeit(buchungEnde);
-        zeitkontoService.speichereZeitkonto(updated);
-
-        // Sollstunden haben sich geändert → ALLE MonatsSaldo-Caches invalidieren
-        monatsSaldoService.invalidiereAlle(mitarbeiterId);
-
-        return ResponseEntity.ok(updated);
+    @PostMapping("/zeitkonten/{mitarbeiterId}/ausschalten")
+    public ZeitkontoStatusDto ausschalten(@PathVariable Long mitarbeiterId,
+            @Valid @RequestBody ZeitkontoWechselDto.Ausschalten request) {
+        return wechselService.ausschalten(mitarbeiterId, request);
     }
 
     // ==================== Auswertungen ====================

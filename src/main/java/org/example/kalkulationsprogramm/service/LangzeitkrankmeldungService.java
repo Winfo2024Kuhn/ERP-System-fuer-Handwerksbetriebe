@@ -312,8 +312,7 @@ public class LangzeitkrankmeldungService {
         dto.setGeplanteRueckkehr(geplanteRueckkehr(meldung, sortiert));
 
         if (aktuellePhase != null && aktuellePhase.getTyp() == LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG) {
-            Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(mitarbeiter.getId());
-            dto.setHeuteGeplanteStunden(tagesSollService.arbeitsSoll(mitarbeiter.getId(), konto, heute));
+            dto.setHeuteGeplanteStunden(tagesSollService.arbeitsSoll(mitarbeiter.getId(), heute));
         }
 
         if (mitStufenplanTagen) {
@@ -357,9 +356,8 @@ public class LangzeitkrankmeldungService {
         stand.put("phase", aktuellePhase.getTyp());
         stand.put("phaseLabel", PHASE_LABELS.get(aktuellePhase.getTyp()));
         if (aktuellePhase.getTyp() == LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG) {
-            Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(mitarbeiter.get().getId());
             stand.put("heuteGeplanteStunden",
-                    tagesSollService.arbeitsSoll(mitarbeiter.get().getId(), konto, stichtag));
+                    tagesSollService.arbeitsSoll(mitarbeiter.get().getId(), stichtag));
         } else {
             stand.put("heuteGeplanteStunden", null);
         }
@@ -483,28 +481,40 @@ public class LangzeitkrankmeldungService {
         if (phase.getStundenProTag() == null) {
             return;
         }
-        Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(meldung.getMitarbeiter().getId());
-        for (DayOfWeek wochentag : wochentageInPhase(phase)) {
-            BigDecimal sollstunden = konto.getSollstundenFuerTag(wochentag.getValue());
-            if (sollstunden.signum() <= 0) {
-                continue;
+
+        LocalDate von = phase.getVonDatum();
+        // Auch bekannte zukünftige Vertragswechsel einer offenen Phase prüfen.
+        LocalDate bis = phase.getBisDatum() != null ? phase.getBisDatum() : OFFENES_ENDE;
+        List<ZeitkontoVersion> versionen = zeitkontoService.versionenImZeitraum(
+                meldung.getMitarbeiter().getId(), von, bis).stream()
+                .sorted(Comparator.comparing(ZeitkontoVersion::getGueltigVon)).toList();
+        LocalDate naechsterTag = von;
+        for (ZeitkontoVersion konto : versionen) {
+            LocalDate abschnittVon = konto.getGueltigVon().isAfter(von) ? konto.getGueltigVon() : von;
+            LocalDate abschnittBis = konto.getGueltigBis() == null || konto.getGueltigBis().isAfter(bis)
+                    ? bis : konto.getGueltigBis();
+            if (abschnittBis.isBefore(abschnittVon)) continue;
+            if (abschnittVon.isAfter(naechsterTag)) break;
+            for (DayOfWeek wochentag : wochentageInPhase(abschnittVon, abschnittBis)) {
+                BigDecimal sollstunden = konto.getSollstundenFuerTag(wochentag.getValue());
+                if (sollstunden.signum() > 0 && phase.getStundenProTag().compareTo(sollstunden) > 0) {
+                    throw new IllegalStateException(String.format(
+                            "Die Stufenplan-Stunden (%s) dürfen das normale Tagessoll (%s) ab %s nicht übersteigen.",
+                            phase.getStundenProTag(), sollstunden, abschnittVon));
+                }
             }
-            if (phase.getStundenProTag().compareTo(sollstunden) > 0) {
-                throw new IllegalStateException(String.format(
-                        "Die Stufenplan-Stunden (%s) dürfen das normale Tagessoll (%s) nicht übersteigen.",
-                        phase.getStundenProTag(), sollstunden));
-            }
+            if (abschnittBis.equals(bis)) return;
+            naechsterTag = abschnittBis.plusDays(1);
         }
+        throw new IllegalStateException("Für den " + naechsterTag
+                + " ist noch keine Arbeitszeit hinterlegt. Bitte zuerst Arbeitszeit für den Stufenplan zuweisen.");
     }
 
-    /** Alle Wochentage, die in der Phase vorkommen - hoechstens 7, auch bei offenem Ende. */
-    private Set<DayOfWeek> wochentageInPhase(LangzeitkrankmeldungPhase phase) {
-        long spanne = phase.getBisDatum() != null
-                ? Math.min(6, ChronoUnit.DAYS.between(phase.getVonDatum(), phase.getBisDatum()))
-                : 6;
-        LocalDate ende = phase.getVonDatum().plusDays(spanne);
+    /** Höchstens sieben Wochentage je gültigem Vertragsabschnitt prüfen. */
+    private Set<DayOfWeek> wochentageInPhase(LocalDate von, LocalDate bis) {
+        LocalDate ende = von.plusDays(Math.min(6, ChronoUnit.DAYS.between(von, bis)));
         Set<DayOfWeek> wochentage = EnumSet.noneOf(DayOfWeek.class);
-        for (LocalDate tag = phase.getVonDatum(); !tag.isAfter(ende); tag = tag.plusDays(1)) {
+        for (LocalDate tag = von; !tag.isAfter(ende); tag = tag.plusDays(1)) {
             wochentage.add(tag.getDayOfWeek());
         }
         return wochentage;
@@ -649,12 +659,11 @@ public class LangzeitkrankmeldungService {
                                 b -> b.getAnzahlInStunden() != null ? b.getAnzahlInStunden() : BigDecimal.ZERO,
                                 BigDecimal::add)));
 
-        Zeitkonto konto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
         // Geplante Stunden EINMAL fuer den Gesamtzeitraum laden statt einmal
         // pro Tag (Befund 2, Abschnitt 4) - vorher ein TagesSollService-Aufruf
         // mit eigener Phasen-/Feiertagsabfrage je Schleifendurchlauf, gemessen
         // 165 statt 9 Repository-Aufrufe fuer 42 Tage Wiedereingliederung.
-        Map<LocalDate, BigDecimal> geplantJeTag = tagesSollService.arbeitsSollJeTag(mitarbeiterId, konto, von, bis);
+        Map<LocalDate, BigDecimal> geplantJeTag = tagesSollService.arbeitsSollJeTag(mitarbeiterId, von, bis);
         List<StufenplanTagDto> tage = new ArrayList<>();
         for (LangzeitkrankmeldungPhase phase : wiedereingliederungsPhasen) {
             LocalDate phasenEnde = phase.getBisDatum() != null ? phase.getBisDatum() : LocalDate.now();

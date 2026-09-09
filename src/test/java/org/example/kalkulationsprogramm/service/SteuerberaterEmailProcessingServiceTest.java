@@ -126,7 +126,7 @@ class SteuerberaterEmailProcessingServiceTest {
     @Test
     void sammelPdfOhneKeywordWirdGesplittetUndProMitarbeiterZugewiesen() {
         mockSteuerberaterErkannt();
-        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(max, erika));
+        when(mitarbeiterRepository.findAktiveMenschen()).thenReturn(List.of(max, erika));
         when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
                 .thenReturn(false);
         when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(anyLong(), any(), any()))
@@ -175,7 +175,7 @@ class SteuerberaterEmailProcessingServiceTest {
     @Test
     void korrekturMailErsetztBestehendeAbrechnungDesselbenMonats() throws Exception {
         mockSteuerberaterErkannt();
-        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(max));
+        when(mitarbeiterRepository.findAktiveMenschen()).thenReturn(List.of(max));
         when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
                 .thenReturn(false);
 
@@ -236,7 +236,7 @@ class SteuerberaterEmailProcessingServiceTest {
     @Test
     void unbekannterMitarbeiterWirdUebersprungenAndereTrotzdemAngelegt() {
         mockSteuerberaterErkannt();
-        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(max));
+        when(mitarbeiterRepository.findAktiveMenschen()).thenReturn(List.of(max));
         when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
                 .thenReturn(false);
         when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(anyLong(), any(), any()))
