@@ -4,7 +4,8 @@ import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { DecimalInput } from '../components/ui/decimal-input';
-import { TimeInput, validateTimeInput } from '../components/ui/time-input';
+import { ArbeitszeitFelder } from '../features/zeitkonto/ArbeitszeitFelder';
+import { WOCHENTAGE, leereArbeitszeit, zeitEntwurf, pruefeArbeitszeit, BUCHUNGSZEIT_LABELS, type ArbeitszeitEntwurf } from '../features/zeitkonto/arbeitszeitInput';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -102,24 +103,6 @@ interface Lohnabrechnung {
 const BASE_API = '/api/mitarbeiter';
 const ZEITKONTO_API = '/api/zeitverwaltung/zeitkonten';
 const HEUTE = new Date().toISOString().slice(0, 10);
-const LEERE_ARBEITSZEIT: Arbeitszeit = {
-    montagStunden: 0, dienstagStunden: 0, mittwochStunden: 0, donnerstagStunden: 0,
-    freitagStunden: 0, samstagStunden: 0, sonntagStunden: 0,
-    buchungStartZeit: null, buchungEndeZeit: null,
-};
-const WOCHENTAGE: { key: keyof Pick<Arbeitszeit, 'montagStunden' | 'dienstagStunden' | 'mittwochStunden' | 'donnerstagStunden' | 'freitagStunden' | 'samstagStunden' | 'sonntagStunden'>; label: string }[] = [
-    { key: 'montagStunden', label: 'Montag' }, { key: 'dienstagStunden', label: 'Dienstag' },
-    { key: 'mittwochStunden', label: 'Mittwoch' }, { key: 'donnerstagStunden', label: 'Donnerstag' },
-    { key: 'freitagStunden', label: 'Freitag' }, { key: 'samstagStunden', label: 'Samstag' },
-    { key: 'sonntagStunden', label: 'Sonntag' },
-];
-
-type StundenKey = typeof WOCHENTAGE[number]['key'];
-type ArbeitszeitEntwurf = Record<keyof Arbeitszeit, string>;
-const zeitEntwurf = (a: Arbeitszeit): ArbeitszeitEntwurf => ({
-    ...Object.fromEntries(WOCHENTAGE.map(tag => [tag.key, formatDecimalInput(a[tag.key])])) as Record<StundenKey, string>,
-    buchungStartZeit: a.buchungStartZeit?.slice(0, 5) ?? '', buchungEndeZeit: a.buchungEndeZeit?.slice(0, 5) ?? '',
-});
 type ZahlenFeld = 'jahresUrlaub' | 'stundenlohn' | 'kalkulatorischerLohnMonat' | 'geldwertVorteilMonat';
 type MitarbeiterEntwurf = Partial<Omit<Mitarbeiter, ZahlenFeld> & Record<ZahlenFeld, string>>;
 const mitarbeiterEntwurf = (m: Partial<Mitarbeiter>): MitarbeiterEntwurf => ({ ...m,
@@ -149,7 +132,7 @@ export default function MitarbeiterEditor() {
     const [stichtag, setStichtag] = useState(HEUTE);
     const [vorlageId, setVorlageId] = useState('');
     const [individuelleAbweichung, setIndividuelleAbweichung] = useState(false);
-    const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<ArbeitszeitEntwurf>(zeitEntwurf(LEERE_ARBEITSZEIT));
+    const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<ArbeitszeitEntwurf>(zeitEntwurf(leereArbeitszeit()));
     const [wechselVorschau, setWechselVorschau] = useState<ZeitkontoWechselErgebnis | null>(null);
     const [wechselFehler, setWechselFehler] = useState<string | null>(null);
     const [loadingWechsel, setLoadingWechsel] = useState(false);
@@ -277,7 +260,7 @@ export default function MitarbeiterEditor() {
         setStichtag(zeitkontoStatus?.fuehrtZeitkonto === false ? HEUTE : HEUTE);
         setVorlageId(aktuelleVersion?.vorlageId ? String(aktuelleVersion.vorlageId) : aktuell ? 'individuell' : '');
         setIndividuelleAbweichung(!!aktuell && !!aktuelleVorlage && !arbeitszeitenGleich(aktuell, aktuelleVorlage.arbeitszeit));
-        setIndividuelleArbeitszeit(zeitEntwurf(aktuell ?? LEERE_ARBEITSZEIT));
+        setIndividuelleArbeitszeit(zeitEntwurf(aktuell ?? leereArbeitszeit()));
         invalidiereVorschau();
         setZeitkontoDialogOpen(true);
         setIsDialogOpen(false);
@@ -291,18 +274,7 @@ export default function MitarbeiterEditor() {
             if (!stichtag) throw new Error('Bitte ein Gültig-ab-Datum wählen.');
             if (!vorlageId) throw new Error('Bitte eine Arbeitszeit-Vorlage wählen oder eigene Zeiten festlegen.');
             if (!vorlage || individuelleAbweichung) {
-                arbeitszeit = { ...LEERE_ARBEITSZEIT };
-                for (const tag of WOCHENTAGE) {
-                    const parsed = validateDecimalInput(individuelleArbeitszeit[tag.key], { label: `${tag.label} Stunden`, required: true, min: 0, max: 24 });
-                    if (!parsed.valid || parsed.value === null) throw new Error(!parsed.valid ? parsed.message : `Bitte ${tag.label} Stunden eingeben.`);
-                    arbeitszeit[tag.key] = parsed.value;
-                }
-                const start = validateTimeInput(individuelleArbeitszeit.buchungStartZeit, { label: 'Früheste Buchung' });
-                const ende = validateTimeInput(individuelleArbeitszeit.buchungEndeZeit, { label: 'Späteste Buchung' });
-                if (!start.valid) throw new Error(start.message);
-                if (!ende.valid) throw new Error(ende.message);
-                if (start.value && ende.value && start.value >= ende.value) throw new Error('Späteste Buchung muss nach der frühesten Buchung liegen.');
-                arbeitszeit.buchungStartZeit = start.value; arbeitszeit.buchungEndeZeit = ende.value;
+                arbeitszeit = pruefeArbeitszeit(individuelleArbeitszeit, BUCHUNGSZEIT_LABELS);
             }
         } catch (error) {
             const message = (error as Error).message; setWechselFehler(message); toast.error(message); return null;
@@ -1563,19 +1535,9 @@ export default function MitarbeiterEditor() {
                                     <p className="text-sm font-medium text-slate-800">{individuelleAbweichung ? 'Individuelle Abweichung' : 'Eigene Arbeitszeit'}</p>
                                     <p className="text-xs text-slate-500 mt-1">{individuelleAbweichung ? 'Die ausgewählte Vorlage bleibt als Herkunft erhalten. Diese Person erhält dafür eigene Werte.' : 'Diese Werte werden als persönlicher Zeitabschnitt gespeichert.'}</p>
                                 </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                    {WOCHENTAGE.map(tag => (
-                                        <div key={tag.key} className="space-y-1">
-                                            <Label className="text-xs">{tag.label}</Label>
-                                            <DecimalInput aria-label={`${tag.label} Stunden`} required min={0} max={24} value={individuelleArbeitszeit[tag.key]}
-                                                onChange={draft => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, [tag.key]: draft }); invalidiereVorschau(); }} />
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className="space-y-1"><Label className="text-xs">Früheste Buchung – optional</Label><TimeInput aria-label="Früheste Buchung – optional" value={individuelleArbeitszeit.buchungStartZeit ?? ''} onChange={draft => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungStartZeit: draft }); invalidiereVorschau(); }} /></div>
-                                    <div className="space-y-1"><Label className="text-xs">Späteste Buchung – optional</Label><TimeInput aria-label="Späteste Buchung – optional" value={individuelleArbeitszeit.buchungEndeZeit ?? ''} onChange={draft => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungEndeZeit: draft }); invalidiereVorschau(); }} /></div>
-                                </div>
+                                <ArbeitszeitFelder value={individuelleArbeitszeit}
+                                    zeitfenster={BUCHUNGSZEIT_LABELS} kompakt optionalHinweis
+                                    onChange={draft => { setIndividuelleArbeitszeit(draft); invalidiereVorschau(); }} />
                             </div>
                         )}
                         {!vorlageId && (

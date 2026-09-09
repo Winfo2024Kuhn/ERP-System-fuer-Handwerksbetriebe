@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Monatsabschluss from './Monatsabschluss';
@@ -28,9 +28,9 @@ beforeEach(() => {
 });
 it('ruft ohne Abschlussrecht keine Mitarbeiter oder Monatsdaten ab', async () => { allowed = false; mount(); await screen.findByText(/Keine Berechtigung/); expect(calls).toHaveLength(1); });
 it('wählt alle 500 über Seiten hinweg und behält nach Teilerfolg nur Fehler', async () => {
- mount(); await screen.findByText('Max Mustermann 1'); expect(screen.getByText('72.750,00')).toBeVisible();
- fireEvent.click(screen.getByRole('checkbox', { name: 'Alle gefilterten Mitarbeiter auswählen' })); fireEvent.click(screen.getByRole('button', { name: 'Nächste Seite' })); await screen.findByText('Max Mustermann 51'); expect(screen.getByRole('checkbox', { name: 'Max Mustermann 51 auswählen' })).toBeChecked();
- fireEvent.click(screen.getByRole('button', { name: 'Auswahl abschließen' })); await waitFor(() => expect(submitted).toHaveLength(1)); expect(submitted[0]).toHaveLength(500); await screen.findByText('1 ausgewählt'); expect(toast.error).toHaveBeenCalled();
+ mount(); await screen.findByText('Max Mustermann 1', { selector: 'th' }); expect(screen.getByText('72.750,00')).toBeVisible();
+ fireEvent.click(screen.getByLabelText('Alle gefilterten Mitarbeiter auswählen')); fireEvent.click(screen.getByLabelText('Nächste Seite')); await screen.findByText('Max Mustermann 51', { selector: 'th' }); expect(screen.getByLabelText('Max Mustermann 51 auswählen')).toBeChecked();
+ fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Auswahl abschließen' })); await waitFor(() => expect(submitted).toHaveLength(1)); expect(submitted[0]).toHaveLength(500); await screen.findByText('1 ausgewählt', { selector: 'p' }); expect(toast.error).toHaveBeenCalled();
 });
 it('filtert Abteilung und Status, setzt Auswahl zurück und vergleicht alle Stände', async () => {
  mount(); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' })); await choose('Abteilung', 'Werkstatt'); await screen.findByText('0 ausgewählt'); await choose('Status', 'Noch offen');
