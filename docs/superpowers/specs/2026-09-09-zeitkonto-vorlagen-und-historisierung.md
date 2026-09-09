@@ -1121,3 +1121,13 @@ Detailformulierungen weiter oben Vorrang:
   Altmodell bleibt nur vorübergehend während des Umbaus kompilierbar; die
   abschließende Migration entfernt es. Keine Migration setzt automatisch
   Monatsabschlüsse oder ändert vorhandene Saldozahlen.
+
+## Umsetzungsvertrag vom 09.09.2026
+
+Die Implementierung verwendet Migrationen V368–V371; die alte Tabelle wird nach der Kopie entfernt. Offene Monatswerte werden bei Übernahme innerhalb derselben Transaktion neu berechnet. Eine schreibfreie Vorschau verwendet dieselbe Feiertags- und Wiedereingliederungsberechnung. Geschlossene Monate verhindern einen rückwirkenden Wechsel bis zur bewussten Wiederöffnung. Bestehende Abwesenheitsgutschriften werden ausdrücklich unverändert gelassen und in Einzel- und Mehrfachvorschau genannt.
+
+Der Monatsabschluss liegt im Zeitbuchungskalender, erreichbar über den Hinweis im Notification Center. Das Abteilungsrecht „Monate abschließen und wieder öffnen“ steuert die Aktionen und Erinnerungen; die laufende Stunden-/Urlaubsanzeige eingerichteter Konten bleibt davon unabhängig. Es gibt keine automatische Kopplung an einen Lohnexport.
+
+Bei Vorlagenabweichungen bleiben Herkunft und Versionsstand erhalten. Eine geänderte Eingabe verwirft ihre Vorschau; die Übernahme sendet genau die geprüften Werte. Historische Exporte beziehen Arbeitszeitwerte auf den ausgewählten Monat und Feiertagsgutschriften auf die Backend-Berechnung.
+
+Prüfergebnisse, bekannte vorbestehende Testfehler und Reviewkorrekturen stehen im gleichnamigen Kontext-Log unter `docs/superpowers/plans/`.
