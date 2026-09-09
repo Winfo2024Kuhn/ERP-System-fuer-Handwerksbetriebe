@@ -202,6 +202,7 @@ public class SecurityConfig {
                         "/api/firma",
                         "/api/firma/steuerberater",
                         "/api/firma/steuerberater/*").authenticated()
+                .requestMatchers(HttpMethod.PUT, "/api/abteilungen/*/berechtigungen").hasRole("ADMIN")
                 .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**").hasRole("ADMIN")
                 // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
                 // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.

@@ -5,9 +5,12 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.dao.DataIntegrityViolationException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import org.example.kalkulationsprogramm.dto.MonatsabschlussDto;
+import org.springframework.security.core.Authentication;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,56 +51,119 @@ public class MonatsSaldoService {
     private final ZeitkontoService zeitkontoService;
     private final TagesSollService tagesSollService;
 
-    @Autowired
-    @Lazy
-    private MonatsSaldoService self;
+    private final EntityManager entityManager;
+    private final MonatsabschlussAuditRepository auditRepository;
+    private final MonatsabschlussBerechtigungService berechtigungService;
 
-    // ==================== Cache-Abfrage ====================
-
-    /**
-     * Gibt den MonatsSaldo für einen Monat zurück.
-     * Falls der Cache gültig ist, wird er direkt geliefert.
-     * Falls nicht, wird er neu berechnet und gespeichert.
-     * 
-     * Der aktuelle Monat wird NIE gecached, sondern immer live berechnet.
-     * 
-     * @return MonatsSaldo mit allen Komponenten
-     */
+    /** Separate owning transaction; never call this while holding a Mitarbeiter lock. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public MonatsSaldo getOrBerechne(Long mitarbeiterId, int jahr, int monat) {
-        // Aktueller Monat: immer live berechnen
-        LocalDate heute = LocalDate.now();
-        if (jahr == heute.getYear() && monat == heute.getMonthValue()) {
-            return berechneMonatsSaldo(mitarbeiterId, jahr, monat);
-        }
-
-        // Zukünftige Monate: ebenfalls immer live berechnen
-        YearMonth abfrage = YearMonth.of(jahr, monat);
-        YearMonth aktuell = YearMonth.of(heute.getYear(), heute.getMonthValue());
-        if (abfrage.isAfter(aktuell)) {
-            return berechneMonatsSaldo(mitarbeiterId, jahr, monat);
-        }
-
-        // Vergangener Monat: Cache prüfen
-        Optional<MonatsSaldo> cached = monatsSaldoRepository.findByMitarbeiterIdAndJahrAndMonat(
-                mitarbeiterId, jahr, monat);
-
-        if (cached.isPresent() && Boolean.TRUE.equals(cached.get().getGueltig())) {
+        validiereMonat(mitarbeiterId, jahr, monat);
+        sperreMitarbeiter(mitarbeiterId);
+        Optional<MonatsSaldo> cached = gesperrterSaldo(mitarbeiterId, jahr, monat);
+        if (cached.filter(ms -> Boolean.TRUE.equals(ms.getFestgeschrieben())).isPresent()) {
             return cached.get();
         }
-
-        // Cache ungültig oder nicht vorhanden → neu berechnen
-        MonatsSaldo berechnet = berechneMonatsSaldo(mitarbeiterId, jahr, monat);
-
-        // Speichern in separater TX, damit ein Duplicate-Key-Fehler
-        // diese TX nicht vergiftet
-        try {
-            return self.saveMonatsSaldoCache(mitarbeiterId, jahr, monat, berechnet);
-        } catch (DataIntegrityViolationException e) {
-            log.debug("MonatsSaldo-Cache concurrent insert für MA={}, {}/{} – verwende berechneten Wert",
-                    mitarbeiterId, jahr, monat);
-            return berechnet;
+        if (!YearMonth.of(jahr, monat).isBefore(YearMonth.now())) {
+            return berechneMonatsSaldo(mitarbeiterId, jahr, monat);
         }
+        if (cached.filter(ms -> Boolean.TRUE.equals(ms.getGueltig())).isPresent()) {
+            return cached.get();
+        }
+        return saveMonatsSaldoCache(mitarbeiterId, jahr, monat,
+                berechneMonatsSaldo(mitarbeiterId, jahr, monat));
+    }
+
+    private Mitarbeiter sperreMitarbeiter(Long id) {
+        Mitarbeiter mitarbeiter = entityManager.find(Mitarbeiter.class, id, LockModeType.PESSIMISTIC_WRITE);
+        if (mitarbeiter == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Mitarbeiter nicht gefunden");
+        }
+        return mitarbeiter;
+    }
+
+    private Optional<MonatsSaldo> gesperrterSaldo(Long id, int jahr, int monat) {
+        // Locking read sees the latest commit even under MySQL REPEATABLE READ.
+        Optional<MonatsSaldo> saldo = monatsSaldoRepository.findGesperrt(id, jahr, monat);
+        saldo.ifPresent(ms -> entityManager.refresh(ms, LockModeType.PESSIMISTIC_WRITE));
+        return saldo;
+    }
+
+    private void validiereMonat(Long id, int jahr, int monat) {
+        if (id == null || id <= 0 || jahr < 1000 || jahr > 9999 || monat < 1 || monat > 12) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte einen gültigen Mitarbeiter und Monat wählen");
+        }
+    }
+
+    @Transactional
+    public MonatsabschlussDto status(Long id, int jahr, int monat) {
+        validiereMonat(id, jahr, monat);
+        if (!mitarbeiterRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Mitarbeiter nicht gefunden");
+        }
+        return statusDto(id, jahr, monat,
+                getOrBerechne(id, jahr, monat));
+    }
+
+    @Transactional
+    public MonatsabschlussDto abschliessen(Long id, int jahr, int monat, Authentication authentication) {
+        Mitarbeiter akteur = berechtigungService.verlangeAkteur(authentication);
+        validiereMonat(id, jahr, monat);
+        if (!YearMonth.of(jahr, monat).isBefore(YearMonth.now())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Nur vergangene Monate können abgeschlossen werden");
+        }
+        Mitarbeiter ziel = sperreMitarbeiter(id);
+        if (ziel.getArt() != MitarbeiterArt.MENSCH) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "System-Mitarbeiter haben keinen Monatsabschluss");
+        }
+        MonatsSaldo saldo = gesperrterSaldo(id, jahr, monat).orElse(null);
+        if (saldo != null && Boolean.TRUE.equals(saldo.getFestgeschrieben())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Dieser Monat ist bereits abgeschlossen");
+        }
+        // Calculate and persist within this TX: no REQUIRES_NEW under the employee lock.
+        saldo = saveMonatsSaldoCache(id, jahr, monat, berechneMonatsSaldo(id, jahr, monat));
+        LocalDateTime zeitpunkt = LocalDateTime.now();
+        saldo.setFestgeschrieben(true);
+        saldo.setFestgeschriebenAm(zeitpunkt);
+        saldo.setFestgeschriebenVon(akteur);
+        monatsSaldoRepository.saveAndFlush(saldo);
+        auditRepository.save(new MonatsabschlussAudit(ziel, jahr, monat,
+                MonatsabschlussAudit.Aktion.ABSCHLIESSEN, akteur, zeitpunkt));
+        return statusDto(id, jahr, monat, saldo);
+    }
+
+    @Transactional
+    public MonatsabschlussDto oeffnen(Long id, int jahr, int monat, Authentication authentication) {
+        Mitarbeiter akteur = berechtigungService.verlangeAkteur(authentication);
+        validiereMonat(id, jahr, monat);
+        Mitarbeiter ziel = sperreMitarbeiter(id);
+        MonatsSaldo saldo = gesperrterSaldo(id, jahr, monat).orElse(null);
+        if (saldo == null || !Boolean.TRUE.equals(saldo.getFestgeschrieben())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Dieser Monat ist bereits offen");
+        }
+        saldo.setFestgeschrieben(false);
+        saldo.setFestgeschriebenAm(null);
+        saldo.setFestgeschriebenVon(null);
+        saldo.setGueltig(false);
+        monatsSaldoRepository.saveAndFlush(saldo);
+        auditRepository.save(new MonatsabschlussAudit(ziel, jahr, monat,
+                MonatsabschlussAudit.Aktion.OEFFNEN, akteur, LocalDateTime.now()));
+        return statusDto(id, jahr, monat, saveMonatsSaldoCache(id, jahr, monat, berechneMonatsSaldo(id, jahr, monat)));
+    }
+
+    private MonatsabschlussDto statusDto(Long id, int jahr, int monat, MonatsSaldo saldo) {
+        entityManager.flush();
+        return new MonatsabschlussDto(id, jahr, monat,
+                saldo != null && Boolean.TRUE.equals(saldo.getFestgeschrieben()),
+                saldo == null ? null : saldo.getVersion(),
+                saldo == null ? null : saldo.getFestgeschriebenAm(),
+                saldo == null || saldo.getFestgeschriebenVon() == null ? null : saldo.getFestgeschriebenVon().getId(),
+                saldo.getIstStunden(), saldo.getSollStunden(), saldo.getAbwesenheitsStunden(),
+                saldo.getFeiertagsStunden(), saldo.getKorrekturStunden(), saldo.getGesamtIst(), saldo.getDifferenz(),
+                auditRepository.findByMitarbeiterIdAndJahrAndMonatOrderByZeitpunktAscIdAsc(id, jahr, monat)
+                        .stream().map(a -> new MonatsabschlussDto.Audit(a.getId(), a.getAktion().name(),
+                                a.getAkteur().getId(), a.getAkteur().getVorname() + " " + a.getAkteur().getNachname(),
+                                a.getZeitpunkt())).toList());
     }
 
     // ==================== Berechnung ====================
@@ -158,27 +224,22 @@ public class MonatsSaldoService {
         return saldo;
     }
 
-    /**
-     * Speichert einen berechneten MonatsSaldo in die DB (Insert oder Update).
-     * Läuft in einer eigenen REQUIRES_NEW-Transaktion, damit ein
-     * Duplicate-Key-Fehler (Race Condition bei Concurrent Warmup + API)
-     * die aufrufende Transaktion nicht vergiftet.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /** Cache writes join their owning transaction and serialize first inserts with closure. */
+    @Transactional
     public MonatsSaldo saveMonatsSaldoCache(Long mitarbeiterId, int jahr, int monat,
                                             MonatsSaldo berechnet) {
-        // In dieser neuen TX nochmals prüfen – ein anderer Thread könnte
-        // zwischenzeitlich committed haben
-        Optional<MonatsSaldo> existing = monatsSaldoRepository.findByMitarbeiterIdAndJahrAndMonat(
-                mitarbeiterId, jahr, monat);
+        validiereMonat(mitarbeiterId, jahr, monat);
+        Mitarbeiter mitarbeiter = sperreMitarbeiter(mitarbeiterId);
+        Optional<MonatsSaldo> existing = gesperrterSaldo(mitarbeiterId, jahr, monat);
+        if (existing.filter(ms -> Boolean.TRUE.equals(ms.getFestgeschrieben())).isPresent()) {
+            return existing.get();
+        }
 
         MonatsSaldo entity;
         if (existing.isPresent()) {
             entity = existing.get();
         } else {
             entity = new MonatsSaldo();
-            Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
-                    .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden: " + mitarbeiterId));
             entity.setMitarbeiter(mitarbeiter);
             entity.setJahr(jahr);
             entity.setMonat(monat);
@@ -203,6 +264,7 @@ public class MonatsSaldoService {
      */
     @Transactional
     public void invalidiereMonat(Long mitarbeiterId, int jahr, int monat) {
+        sperreMitarbeiter(mitarbeiterId);
         monatsSaldoRepository.invalidiere(mitarbeiterId, jahr, monat);
         log.debug("MonatsSaldo invalidiert: Mitarbeiter={}, {}/{}", mitarbeiterId, jahr, monat);
     }
@@ -213,6 +275,7 @@ public class MonatsSaldoService {
      */
     @Transactional
     public void invalidiereJahr(Long mitarbeiterId, int jahr) {
+        sperreMitarbeiter(mitarbeiterId);
         monatsSaldoRepository.invalidiereJahr(mitarbeiterId, jahr);
         log.debug("MonatsSaldo invalidiert (ganzes Jahr): Mitarbeiter={}, {}", mitarbeiterId, jahr);
     }
@@ -223,6 +286,7 @@ public class MonatsSaldoService {
      */
     @Transactional
     public void invalidiereAlle(Long mitarbeiterId) {
+        sperreMitarbeiter(mitarbeiterId);
         monatsSaldoRepository.invalidiereAlle(mitarbeiterId);
         log.debug("MonatsSaldo invalidiert (alle): Mitarbeiter={}", mitarbeiterId);
     }

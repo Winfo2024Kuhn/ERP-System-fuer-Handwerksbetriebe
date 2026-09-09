@@ -77,6 +77,9 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     @Mock
     private TagesSollService tagesSollService;
 
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
+
     @InjectMocks
     private MonatsSaldoService monatsSaldoService;
 
@@ -89,12 +92,13 @@ class TagesSollCharakterisierungMonatsSaldoTest {
     void setUp() {
         // self-injection fuer den @Lazy @Autowired self-Proxy simulieren
         // (Vorbild: MonatsSaldoServiceTest.setUp()).
-        ReflectionTestUtils.setField(monatsSaldoService, "self", monatsSaldoService);
+
 
         testMitarbeiter = new Mitarbeiter();
         testMitarbeiter.setId(MITARBEITER_ID);
         testMitarbeiter.setVorname("Max");
         testMitarbeiter.setNachname("Mustermann");
+        lenient().when(entityManager.find(Mitarbeiter.class, MITARBEITER_ID, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)).thenReturn(testMitarbeiter);
 
         testZeitkonto = new Zeitkonto(testMitarbeiter);
         testZeitkonto.setMontagStunden(new BigDecimal("8.00"));
@@ -140,7 +144,7 @@ class TagesSollCharakterisierungMonatsSaldoTest {
         ungueltigerCache.setMonat(monat);
         ungueltigerCache.setGueltig(false);
         ungueltigerCache.setBerechnetAm(LocalDateTime.now().minusDays(1));
-        lenient().when(monatsSaldoRepository.findByMitarbeiterIdAndJahrAndMonat(MITARBEITER_ID, jahr, monat))
+        lenient().when(monatsSaldoRepository.findGesperrt(MITARBEITER_ID, jahr, monat))
                 .thenReturn(Optional.of(ungueltigerCache));
         lenient().when(monatsSaldoRepository.save(any(MonatsSaldo.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
