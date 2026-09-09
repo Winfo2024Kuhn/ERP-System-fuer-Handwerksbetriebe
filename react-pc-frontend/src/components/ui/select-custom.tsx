@@ -216,7 +216,7 @@ export function Select({ options, value, onChange, placeholder = "Bitte wählen.
                                 )}
                                 onClick={() => handleSelect(option.value)}
                             >
-                                <span className="whitespace-normal break-words">{option.label}</span>
+                                <span className="min-w-0 whitespace-normal break-words">{option.label}</span>
                                 {value === option.value && (
                                     <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
                                         <Check className="h-4 w-4" />
