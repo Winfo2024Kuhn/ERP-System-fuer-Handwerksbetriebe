@@ -83,20 +83,20 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void montag_normalerArbeitstag_gibtVolleSollstunden() {
-        when(tagesSollService.periodenSollSumme(1L, zeitkonto, MONTAG_NORMAL, MONTAG_NORMAL))
+        when(tagesSollService.periodenSollSumme(1L, MONTAG_NORMAL, MONTAG_NORMAL))
                 .thenReturn(new BigDecimal("8"));
 
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, MONTAG_NORMAL, MONTAG_NORMAL);
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(1L, MONTAG_NORMAL, MONTAG_NORMAL);
 
         assertEquals(0, new BigDecimal("8").compareTo(result));
     }
 
     @Test
     void samstag_wochenende_gibtNull() {
-        when(tagesSollService.periodenSollSumme(1L, zeitkonto, SAMSTAG_WOCHENENDE, SAMSTAG_WOCHENENDE))
+        when(tagesSollService.periodenSollSumme(1L, SAMSTAG_WOCHENENDE, SAMSTAG_WOCHENENDE))
                 .thenReturn(BigDecimal.ZERO);
 
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, SAMSTAG_WOCHENENDE,
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(1L, SAMSTAG_WOCHENENDE,
                 SAMSTAG_WOCHENENDE);
 
         assertEquals(0, BigDecimal.ZERO.compareTo(result));
@@ -104,10 +104,10 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void vollerFeiertag_zaehltAlsBezahlterArbeitstag_gibtVolleSollstunden() {
-        when(tagesSollService.periodenSollSumme(1L, zeitkonto, VOLLER_FEIERTAG, VOLLER_FEIERTAG))
+        when(tagesSollService.periodenSollSumme(1L, VOLLER_FEIERTAG, VOLLER_FEIERTAG))
                 .thenReturn(new BigDecimal("8"));
 
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, VOLLER_FEIERTAG,
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(1L, VOLLER_FEIERTAG,
                 VOLLER_FEIERTAG);
 
         assertEquals(0, new BigDecimal("8").compareTo(result));
@@ -115,10 +115,10 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void halberFeiertag_gibtHalbeSollstunden() {
-        when(tagesSollService.periodenSollSumme(1L, zeitkonto, HALBER_FEIERTAG, HALBER_FEIERTAG))
+        when(tagesSollService.periodenSollSumme(1L, HALBER_FEIERTAG, HALBER_FEIERTAG))
                 .thenReturn(new BigDecimal("4.00"));
 
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, HALBER_FEIERTAG,
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(1L, HALBER_FEIERTAG,
                 HALBER_FEIERTAG);
 
         assertEquals(0, new BigDecimal("4.00").compareTo(result));
@@ -126,10 +126,10 @@ class TagesSollCharakterisierungZeitkontoTest {
 
     @Test
     void feiertagAmWochenende_gibtNull() {
-        when(tagesSollService.periodenSollSumme(1L, zeitkonto, FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE))
+        when(tagesSollService.periodenSollSumme(1L, FEIERTAG_AM_WOCHENENDE, FEIERTAG_AM_WOCHENENDE))
                 .thenReturn(BigDecimal.ZERO);
 
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, FEIERTAG_AM_WOCHENENDE,
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(1L, FEIERTAG_AM_WOCHENENDE,
                 FEIERTAG_AM_WOCHENENDE);
 
         assertEquals(0, BigDecimal.ZERO.compareTo(result));
@@ -142,10 +142,10 @@ class TagesSollCharakterisierungZeitkontoTest {
         // voller Feiertag als bezahlter Arbeitstag zaehlt (siehe Klassen-Javadoc).
         LocalDate wochenStart = LocalDate.of(2026, 6, 1);
         LocalDate wochenEnde = LocalDate.of(2026, 6, 7);
-        when(tagesSollService.periodenSollSumme(1L, zeitkonto, wochenStart, wochenEnde))
+        when(tagesSollService.periodenSollSumme(1L, wochenStart, wochenEnde))
                 .thenReturn(new BigDecimal("40"));
 
-        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(zeitkonto, wochenStart, wochenEnde);
+        BigDecimal result = zeitkontoService.berechneSollstundenFuerZeitraum(1L, wochenStart, wochenEnde);
 
         assertEquals(0, new BigDecimal("40").compareTo(result));
     }

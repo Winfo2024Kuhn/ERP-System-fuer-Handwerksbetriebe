@@ -10,6 +10,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ZeitkontoVersionRepository extends JpaRepository<ZeitkontoVersion, Long> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    Optional<ZeitkontoVersion> findFirstByMitarbeiterIdOrderByGueltigVonDesc(Long mitarbeiterId);
+    boolean existsByVorlageId(Long vorlageId);
+
     /** Inklusive Grenzen; Herkunft mitladen, um spätere Vergleiche ohne N+1 zu erlauben. */
     @Query("""
             SELECT v FROM ZeitkontoVersion v LEFT JOIN FETCH v.vorlage

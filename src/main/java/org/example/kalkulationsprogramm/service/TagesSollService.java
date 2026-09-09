@@ -52,6 +52,66 @@ public class TagesSollService {
 
     private final FeiertagService feiertagService;
     private final LangzeitkrankmeldungPhaseRepository phaseRepository;
+    private final org.example.kalkulationsprogramm.repository.ZeitkontoVersionRepository versionRepository;
+
+    public BigDecimal periodenSoll(Long mitarbeiterId, LocalDate tag) {
+        return periodenSollJeTag(mitarbeiterId, tag, tag).get(tag);
+    }
+
+    public BigDecimal periodenSollSumme(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        return periodenSollJeTag(mitarbeiterId, von, bis).values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public Map<LocalDate, BigDecimal> periodenSollJeTag(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        return versioniertJeTag(mitarbeiterId, von, bis, TagesWerte::periodenSoll);
+    }
+
+    public BigDecimal feiertagsGutschrift(Long mitarbeiterId, LocalDate tag) {
+        return feiertagsGutschriftJeTag(mitarbeiterId, tag, tag).get(tag);
+    }
+
+    public BigDecimal feiertagsGutschriftSumme(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        return feiertagsGutschriftJeTag(mitarbeiterId, von, bis).values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        return versioniertJeTag(mitarbeiterId, von, bis, TagesWerte::feiertagsGutschrift);
+    }
+
+    public BigDecimal arbeitsSoll(Long mitarbeiterId, LocalDate tag) {
+        return arbeitsSollJeTag(mitarbeiterId, tag, tag).get(tag);
+    }
+
+    public BigDecimal arbeitsSollSumme(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        return arbeitsSollJeTag(mitarbeiterId, von, bis).values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public Map<LocalDate, BigDecimal> arbeitsSollJeTag(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        return versioniertJeTag(mitarbeiterId, von, bis, w -> w.periodenSoll().subtract(w.feiertagsGutschrift()));
+    }
+
+    /** Versions-, Phasen- und Feiertagsdaten jeweils einmal je Zeitraum laden. */
+    private Map<LocalDate, BigDecimal> versioniertJeTag(Long id, LocalDate von, LocalDate bis,
+            Function<TagesWerte, BigDecimal> auswahl) {
+        if (von == null || bis == null || bis.isBefore(von)) {
+            throw new IllegalArgumentException("Bitte einen gültigen Zeitraum angeben.");
+        }
+        var versionen = versionRepository.findImZeitraum(id, von, bis);
+        var phasen = phaseRepository.findImZeitraum(id, von, bis);
+        var feiertage = feiertageNachBundeslandBY(von, bis);
+        Map<LocalDate, BigDecimal> result = new LinkedHashMap<>();
+        int index = 0;
+        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
+            while (index < versionen.size() && versionen.get(index).getGueltigBis() != null
+                    && versionen.get(index).getGueltigBis().isBefore(tag)) index++;
+            BigDecimal roh = BigDecimal.ZERO;
+            if (index < versionen.size() && !versionen.get(index).getGueltigVon().isAfter(tag)) {
+                roh = versionen.get(index).getSollstundenFuerTag(tag.getDayOfWeek().getValue());
+            }
+            result.put(tag, auswahl.apply(berechneTag(tagesBasis(phasen, roh, tag), feiertage.get(tag))));
+        }
+        return result;
+    }
 
     public BigDecimal periodenSoll(Long mitarbeiterId, Zeitkonto konto, LocalDate tag) {
         return berechneEinzeltag(mitarbeiterId, konto, tag).periodenSoll();
@@ -187,7 +247,10 @@ public class TagesSollService {
      * erhoehen (Sicherheitsnetz, siehe E2 im Plan).
      */
     private BigDecimal tagesBasis(List<LangzeitkrankmeldungPhase> phasen, Zeitkonto konto, LocalDate tag) {
-        BigDecimal roh = konto.getSollstundenFuerTag(tag.getDayOfWeek().getValue());
+        return tagesBasis(phasen, konto.getSollstundenFuerTag(tag.getDayOfWeek().getValue()), tag);
+    }
+
+    private BigDecimal tagesBasis(List<LangzeitkrankmeldungPhase> phasen, BigDecimal roh, LocalDate tag) {
         if (roh == null || roh.signum() <= 0) {
             return BigDecimal.ZERO;
         }
