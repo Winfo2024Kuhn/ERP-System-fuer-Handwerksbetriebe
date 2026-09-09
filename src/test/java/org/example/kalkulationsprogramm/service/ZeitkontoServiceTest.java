@@ -126,10 +126,9 @@ class ZeitkontoServiceTest {
     @Test
     void berechneSollstundenFuerMonat_UebergibtErstenUndLetztenTagDesMonatsAnTagesSollService() {
         // Arrange
-        when(zeitkontoRepository.findByMitarbeiterId(1L)).thenReturn(Optional.of(testZeitkonto));
         LocalDate ersterTag = LocalDate.of(2024, 1, 1);
         LocalDate letzterTag = LocalDate.of(2024, 1, 31);
-        when(tagesSollService.periodenSollSumme(1L, testZeitkonto, ersterTag, letzterTag))
+        when(tagesSollService.periodenSollSumme(1L, ersterTag, letzterTag))
                 .thenReturn(new BigDecimal("180.00"));
 
         // Act
@@ -137,7 +136,7 @@ class ZeitkontoServiceTest {
 
         // Assert
         assertEquals(new BigDecimal("180.00"), result);
-        verify(tagesSollService).periodenSollSumme(1L, testZeitkonto, ersterTag, letzterTag);
+        verify(tagesSollService).periodenSollSumme(1L, ersterTag, letzterTag);
     }
 
     @Test
