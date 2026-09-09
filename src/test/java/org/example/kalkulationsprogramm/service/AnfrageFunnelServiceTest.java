@@ -69,6 +69,9 @@ class AnfrageFunnelServiceTest {
 
         systemMitarbeiter = new Mitarbeiter();
         systemMitarbeiter.setId(99L);
+        systemMitarbeiter.setArt(org.example.kalkulationsprogramm.domain.MitarbeiterArt.SYSTEM);
+        systemMitarbeiter.setFuehrtZeitkonto(false);
+        systemMitarbeiter.setAktiv(false);
         systemMitarbeiter.setVorname("System");
         systemMitarbeiter.setNachname("Webseite");
 
@@ -184,6 +187,8 @@ class AnfrageFunnelServiceTest {
         verify(anfrageNotizRepository).save(captor.capture());
         AnfrageNotiz notiz = captor.getValue();
         assertThat(notiz.getMitarbeiter()).isSameAs(systemMitarbeiter);
+        verify(mitarbeiterRepository, never()).save(any(Mitarbeiter.class));
+        assertThat(systemMitarbeiter.getFuehrtZeitkonto()).isFalse();
         assertThat(notiz.getNotiz()).contains("Anfrage über Webseite");
         assertThat(notiz.getNotiz()).contains("max@example.de");
         assertThat(notiz.getNotiz()).contains("Service: Neubau");

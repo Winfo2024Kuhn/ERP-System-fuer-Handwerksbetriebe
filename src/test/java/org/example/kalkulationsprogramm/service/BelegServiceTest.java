@@ -31,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -398,7 +399,7 @@ class BelegServiceTest {
         profile.setId(7L);
         profile.setMitarbeiter(null); // FK noch nicht gesetzt
         given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
-        given(mitarbeiterRepository.findAll()).willReturn(List.of(m));
+        given(mitarbeiterRepository.findAktiveMenschen()).willReturn(List.of(m));
         Authentication auth = pcAuth(7L, "buchhalter@firma.example");
 
         Mitarbeiter result = service.findCaller(null, auth);
@@ -416,7 +417,7 @@ class BelegServiceTest {
         profile.setMitarbeiter(m);
         given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
         // Email-Fallback findet ihn ebenfalls nicht
-        given(mitarbeiterRepository.findAll()).willReturn(List.of(m));
+        given(mitarbeiterRepository.findAktiveMenschen()).willReturn(List.of(m));
         Authentication auth = pcAuth(7L, "x@y.example");
 
         Mitarbeiter result = service.findCaller(null, auth);
@@ -477,6 +478,17 @@ class BelegServiceTest {
     }
 
     // ===================== Test-Helfer =====================
+
+    @Test
+    void findCaller_systemProfilIstKeinMensch() {
+        Mitarbeiter system = mitarbeiter(42L, Set.of());
+        system.setArt(org.example.kalkulationsprogramm.domain.MitarbeiterArt.SYSTEM);
+        FrontendUserProfile profile = new FrontendUserProfile();
+        profile.setMitarbeiter(system);
+        given(frontendUserProfileRepository.findById(7L)).willReturn(Optional.of(profile));
+        given(mitarbeiterRepository.findAktiveMenschen()).willReturn(List.of());
+        assertThat(service.findCaller(null, pcAuth(7L, "test@example.com"))).isNull();
+    }
 
     private static Mitarbeiter mitarbeiter(Long id, Set<Abteilung> abteilungen) {
         Mitarbeiter m = new Mitarbeiter();

@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.dto.Mitarbeiter;
 
 import lombok.Data;
+import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -22,6 +23,8 @@ public class MitarbeiterDto {
     private LocalDate geburtstag;
     private LocalDate eintrittsdatum;
     private Boolean aktiv;
+    private MitarbeiterArt art;
+    private Boolean fuehrtZeitkonto;
     private List<Long> abteilungIds;
     private String abteilungNames; // Komma-separierte Namen für Anzeige
     private String loginToken;
