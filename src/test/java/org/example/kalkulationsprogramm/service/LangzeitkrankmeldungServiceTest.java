@@ -21,6 +21,10 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -56,7 +60,7 @@ class LangzeitkrankmeldungServiceTest {
     private static final Long MITARBEITER_ID = 1L;
 
     private Mitarbeiter mitarbeiter;
-    private Zeitkonto zeitkonto;
+    private ZeitkontoVersion zeitkonto;
 
     @BeforeEach
     void setUp() {
@@ -65,7 +69,9 @@ class LangzeitkrankmeldungServiceTest {
         mitarbeiter.setVorname("Max");
         mitarbeiter.setNachname("Mustermann");
 
-        zeitkonto = new Zeitkonto(mitarbeiter);
+        zeitkonto = new ZeitkontoVersion();
+        zeitkonto.setMitarbeiter(mitarbeiter);
+        zeitkonto.setGueltigVon(LocalDate.of(2000, 1, 1));
         zeitkonto.setMontagStunden(new BigDecimal("8.00"));
         zeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         zeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -345,7 +351,7 @@ class LangzeitkrankmeldungServiceTest {
         // Lohnfortzahlung Mo 30.3. - So 12.4., neue Phase ab Mo 13.4. (luecken- und ueberlappungsfrei)
         Langzeitkrankmeldung meldung = meldungMitLohnfortzahlung(LocalDate.of(2020, 3, 30), LocalDate.of(2020, 4, 12));
         when(repository.findMitPhasenById(1L)).thenReturn(Optional.of(meldung));
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
+        when(zeitkontoService.versionenImZeitraum(eq(MITARBEITER_ID), any(), any())).thenReturn(List.of(zeitkonto));
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> service.phaseHinzufuegen(1L, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
@@ -358,7 +364,7 @@ class LangzeitkrankmeldungServiceTest {
     void phaseHinzufuegen_GueltigeWiedereingliederung_WirdGespeichert() {
         Langzeitkrankmeldung meldung = meldungMitLohnfortzahlung(LocalDate.of(2020, 3, 30), LocalDate.of(2020, 4, 12));
         when(repository.findMitPhasenById(1L)).thenReturn(Optional.of(meldung));
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
+        when(zeitkontoService.versionenImZeitraum(eq(MITARBEITER_ID), any(), any())).thenReturn(List.of(zeitkonto));
         when(repository.save(any(Langzeitkrankmeldung.class))).thenAnswer(inv -> inv.getArgument(0));
         when(abwesenheitRepository.findByMitarbeiterIdAndTypAndDatumBetween(eq(MITARBEITER_ID),
                 eq(AbwesenheitsTyp.KRANKHEIT), any(), any())).thenReturn(List.of());
@@ -583,8 +589,8 @@ class LangzeitkrankmeldungServiceTest {
         meldung.getPhasen().add(neuePhase(meldung, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
                 LocalDate.of(2020, 1, 1), null, new BigDecimal("4.00")));
 
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
-        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), eq(zeitkonto), any())).thenReturn(new BigDecimal("4.00"));
+
+        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), any())).thenReturn(new BigDecimal("4.00"));
 
         LangzeitkrankmeldungDto dto = service.toDto(meldung, false);
 
@@ -599,7 +605,7 @@ class LangzeitkrankmeldungServiceTest {
         meldung.getPhasen().add(neuePhase(meldung, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
                 LocalDate.of(2020, 4, 13), LocalDate.of(2020, 4, 17), new BigDecimal("4.00")));
 
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
+
         // baueStufenplanTage laedt die geplanten Stunden seit Abschnitt 4
         // (Befund 2) einmal fuer den Gesamtzeitraum statt einmal pro Tag -
         // arbeitsSollJeTag ersetzt hier den frueheren Einzeltag-Mock.
@@ -608,7 +614,7 @@ class LangzeitkrankmeldungServiceTest {
                 .plusDays(1)) {
             geplantJeTag.put(tag, new BigDecimal("4.00"));
         }
-        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), eq(zeitkonto), any(), any()))
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), any(), any()))
                 .thenReturn(geplantJeTag);
 
         Zeitbuchung buchungMontag = new Zeitbuchung();
@@ -652,14 +658,14 @@ class LangzeitkrankmeldungServiceTest {
         meldung.getPhasen().add(neuePhase(meldung, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
                 zweiteVon, null, new BigDecimal("6.00")));
 
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
+
         // Bildet die reale Zeitraum-Methode nach: liefert fuer jeden
         // angefragten Tag einen Wert, damit sich ein falscher (rueckwaerts
         // laufender oder zu kurzer) Zeitraum als leere/luckenhafte Map zeigt.
-        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), eq(zeitkonto), any(), any()))
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), any(), any()))
                 .thenAnswer(inv -> {
-                    LocalDate von = inv.getArgument(2);
-                    LocalDate bis = inv.getArgument(3);
+                    LocalDate von = inv.getArgument(1);
+                    LocalDate bis = inv.getArgument(2);
                     Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
                     for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
                         ergebnis.put(tag, new BigDecimal("4.00"));
@@ -740,8 +746,8 @@ class LangzeitkrankmeldungServiceTest {
 
         when(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token")).thenReturn(Optional.of(mitarbeiter));
         when(phaseRepository.findImZeitraum(eq(MITARBEITER_ID), any(), any())).thenReturn(List.of(wiedereingliederung));
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(zeitkonto);
-        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), eq(zeitkonto), any())).thenReturn(new BigDecimal("4.00"));
+
+        when(tagesSollService.arbeitsSoll(eq(MITARBEITER_ID), any())).thenReturn(new BigDecimal("4.00"));
 
         Map<String, Object> stand = service.getMobileStand("token", LocalDate.of(2020, 4, 6));
 
@@ -781,4 +787,80 @@ class LangzeitkrankmeldungServiceTest {
 
         assertTrue(hinweise.isEmpty());
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void stufenplan_prueftStichtagswechselAuchNachDerErstenWoche(boolean offen) {
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        LocalDate wechsel = start.plusDays(14);
+        Langzeitkrankmeldung meldung = meldungMitLohnfortzahlung(start.minusDays(42), start.minusDays(1));
+        when(repository.findMitPhasenById(1L)).thenReturn(Optional.of(meldung));
+        zeitkonto.setGueltigBis(wechsel.minusDays(1));
+        ZeitkontoVersion reduziert = new ZeitkontoVersion();
+        reduziert.setGueltigVon(wechsel);
+        reduziert.setMontagStunden(new BigDecimal("3.00"));
+        when(zeitkontoService.versionenImZeitraum(eq(MITARBEITER_ID), eq(start), any()))
+                .thenReturn(List.of(zeitkonto, reduziert));
+
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> service.phaseHinzufuegen(1L, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
+                        start, offen ? null : wechsel.plusDays(4), new BigDecimal("4.00")));
+
+        assertTrue(fehler.getMessage().contains("Tagessoll"));
+        assertTrue(fehler.getMessage().contains(wechsel.toString()));
+        verify(repository, never()).save(any());
+        verifyNoInteractions(tagesSollService);
+    }
+
+    @Test
+    void stufenplan_kurzerVertragsabschnitt_prueftNurTatsaechlicheWochentage() {
+        LocalDate start = LocalDate.of(2026, 6, 1); // Montag
+        LocalDate wechsel = start.plusDays(1); // Dienstag
+        mitarbeiter.setFuehrtZeitkonto(false);
+        Langzeitkrankmeldung meldung = meldungMitLohnfortzahlung(start.minusDays(42), start.minusDays(1));
+        when(repository.findMitPhasenById(1L)).thenReturn(Optional.of(meldung));
+        zeitkonto.setGueltigBis(start);
+        zeitkonto.setDienstagStunden(new BigDecimal("1.00")); // Gilt nicht mehr am Dienstag
+        ZeitkontoVersion neu = new ZeitkontoVersion();
+        neu.setGueltigVon(wechsel);
+        neu.setGueltigBis(wechsel);
+        neu.setMontagStunden(new BigDecimal("1.00")); // Gilt noch nicht am Montag
+        neu.setDienstagStunden(new BigDecimal("6.00"));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, start, wechsel))
+                .thenReturn(List.of(zeitkonto, neu));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        Abwesenheit snapshot = new Abwesenheit();
+        snapshot.setDatum(start);
+        snapshot.setStunden(new BigDecimal("8.00"));
+        when(abwesenheitRepository.findByMitarbeiterIdAndTypAndDatumBetween(
+                eq(MITARBEITER_ID), eq(AbwesenheitsTyp.KRANKHEIT), any(), any())).thenReturn(List.of(snapshot));
+
+        assertDoesNotThrow(() -> service.phaseHinzufuegen(1L, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
+                start, wechsel, new BigDecimal("4.00")));
+
+        assertEquals(new BigDecimal("8.00"), snapshot.getStunden());
+        assertEquals(LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
+                snapshot.getLangzeitkrankmeldungPhase().getTyp());
+        verify(zeitkontoService, times(1)).versionenImZeitraum(MITARBEITER_ID, start, wechsel);
+        verifyNoInteractions(tagesSollService);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void stufenplan_ohneVersionOderMitLuecke_wirdVerstaendlichAbgelehnt(boolean mitLuecke) {
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        Langzeitkrankmeldung meldung = meldungMitLohnfortzahlung(start.minusDays(42), start.minusDays(1));
+        when(repository.findMitPhasenById(1L)).thenReturn(Optional.of(meldung));
+        zeitkonto.setGueltigBis(start.plusDays(1));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, start, start.plusDays(4)))
+                .thenReturn(mitLuecke ? List.of(zeitkonto) : List.of());
+
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> service.phaseHinzufuegen(1L, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
+                        start, start.plusDays(4), new BigDecimal("4.00")));
+
+        assertTrue(fehler.getMessage().contains("noch keine Arbeitszeit hinterlegt"));
+        assertTrue(fehler.getMessage().contains((mitLuecke ? start.plusDays(2) : start).toString()));
+        verify(repository, never()).save(any());
+    }
+
 }

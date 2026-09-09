@@ -99,13 +99,25 @@ public class UrlaubsantragService {
             throw new IllegalStateException("Nur offene Anträge können genehmigt werden");
         }
 
-        antrag.setStatus(Urlaubsantrag.Status.GENEHMIGT);
-
         // AbwesenheitsTyp ermitteln
         AbwesenheitsTyp abwesenheitsTyp = toAbwesenheitsTyp(antrag.getTyp());
 
-        // Zeitkonto einmal vor der Schleife laden, nicht je Tag (N+1).
-        Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(antrag.getMitarbeiter().getId());
+        // Vertragsdaten einmal laden und alle Buchungstage vor der ersten Änderung prüfen.
+        // Der heutige Kontoschalter darf historische Buchungen nicht verhindern.
+        List<ZeitkontoVersion> versionen = zeitkontoService.versionenImZeitraum(
+                antrag.getMitarbeiter().getId(), antrag.getVonDatum(), antrag.getBisDatum());
+        List<LocalDate> buchungstage = antrag.getVonDatum().datesUntil(antrag.getBisDatum().plusDays(1))
+                .filter(tag -> tag.getDayOfWeek() != DayOfWeek.SATURDAY && tag.getDayOfWeek() != DayOfWeek.SUNDAY)
+                .filter(tag -> !feiertagService.istFeiertag(tag))
+                .toList();
+        for (LocalDate tag : buchungstage) {
+            boolean konfiguriert = versionen.stream().anyMatch(v -> !v.getGueltigVon().isAfter(tag)
+                    && (v.getGueltigBis() == null || !v.getGueltigBis().isBefore(tag)));
+            if (!konfiguriert) {
+                throw new IllegalStateException("Für den " + tag
+                        + " ist noch keine Arbeitszeit hinterlegt. Bitte zuerst Arbeitszeit zuweisen.");
+            }
+        }
 
         // Soll-Stunden für den GESAMTEN Zeitraum auf einmal laden (Zeitraum-
         // Variante statt Einzeltag-Aufruf je Schleifendurchlauf, Abschnitt 4
@@ -114,20 +126,10 @@ public class UrlaubsantragService {
         // Schleife unten vollständig abdecken, sonst liefert die Map für einen
         // Tag nichts zurück; getOrDefault(..., ZERO) fängt das zusätzlich ab.
         Map<LocalDate, BigDecimal> sollStundenJeTag = tagesSollService.arbeitsSollJeTag(
-                antrag.getMitarbeiter().getId(), zeitkonto, antrag.getVonDatum(), antrag.getBisDatum());
+                antrag.getMitarbeiter().getId(), antrag.getVonDatum(), antrag.getBisDatum());
 
         // Zeitraum iterieren und Abwesenheiten erstellen
-        for (LocalDate date = antrag.getVonDatum(); !date.isAfter(antrag.getBisDatum()); date = date.plusDays(1)) {
-            // Wochenenden überspringen
-            if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                continue;
-            }
-
-            // Feiertage überspringen
-            if (feiertagService.istFeiertag(date)) {
-                continue;
-            }
-
+        for (LocalDate date : buchungstage) {
             // Soll-Stunden ermitteln (Gegenbuchung zum Tagessoll, siehe Javadoc oben)
             BigDecimal sollStunden = sollStundenJeTag.getOrDefault(date, BigDecimal.ZERO);
 
@@ -148,6 +150,8 @@ public class UrlaubsantragService {
                 }
             }
         }
+
+        antrag.setStatus(Urlaubsantrag.Status.GENEHMIGT);
 
         // MonatsSaldo-Cache invalidieren für alle betroffenen Monate
         invalidiereBetroffeneMonate(antrag.getMitarbeiter().getId(),

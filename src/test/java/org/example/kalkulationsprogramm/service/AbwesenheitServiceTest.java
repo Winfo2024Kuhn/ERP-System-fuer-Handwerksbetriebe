@@ -46,7 +46,7 @@ class AbwesenheitServiceTest {
     private AbwesenheitService abwesenheitService;
 
     private Mitarbeiter testMitarbeiter;
-    private Zeitkonto testZeitkonto;
+    private ZeitkontoVersion testZeitkonto;
 
     private static final Long MITARBEITER_ID = 1L;
     // 2025-06-02 ist ein Montag → Soll 8h
@@ -59,7 +59,9 @@ class AbwesenheitServiceTest {
         testMitarbeiter.setVorname("Max");
         testMitarbeiter.setNachname("Mustermann");
 
-        testZeitkonto = new Zeitkonto(testMitarbeiter);
+        testZeitkonto = new ZeitkontoVersion();
+        testZeitkonto.setMitarbeiter(testMitarbeiter);
+        testZeitkonto.setGueltigVon(LocalDate.of(2000, 1, 1));
         testZeitkonto.setMontagStunden(new BigDecimal("8.00"));
         testZeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         testZeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -73,9 +75,9 @@ class AbwesenheitServiceTest {
         when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(feiertagService.istFeiertag(any())).thenReturn(false);
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any(LocalDate.class))).thenReturn(Optional.of(testZeitkonto));
         when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(tagesSollService.arbeitsSoll(anyLong(), any(), any())).thenReturn(new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSoll(anyLong(), any())).thenReturn(new BigDecimal("8.00"));
     }
 
     private Zeitbuchung erstelleArbeitsbuchung(BigDecimal stunden) {
@@ -184,15 +186,15 @@ class AbwesenheitServiceTest {
     @Test
     void krankheit_WaehrendWiedereingliederung_BuchtStufenplanStundenStattVollemSoll() {
         // Stufenplan: Mitarbeiter läuft laut TagesSollService mit 2h/Tag statt der
-        // vollen 8h Sollstunden aus dem Zeitkonto. Eigene Stubs statt stubGrunddaten(),
+        // vollen 8h Sollstunden aus dem ZeitkontoVersion. Eigene Stubs statt stubGrunddaten(),
         // weil hier eine engere tagesSollService-Antwort die generische überschreiben
         // muss (sonst UnnecessaryStubbingException bei doppelter Stubbierung).
         when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(feiertagService.istFeiertag(any())).thenReturn(false);
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any(LocalDate.class))).thenReturn(Optional.of(testZeitkonto));
         when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG)).thenReturn(new BigDecimal("2.00"));
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, MONTAG)).thenReturn(new BigDecimal("2.00"));
         when(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitBetween(anyLong(), any(), any()))
                 .thenReturn(List.of());
 
@@ -212,8 +214,8 @@ class AbwesenheitServiceTest {
         when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(feiertagService.istFeiertag(any())).thenReturn(false);
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
-        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG)).thenReturn(BigDecimal.ZERO);
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any(LocalDate.class))).thenReturn(Optional.of(testZeitkonto));
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, MONTAG)).thenReturn(BigDecimal.ZERO);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.KRANKHEIT, false));
@@ -238,4 +240,52 @@ class AbwesenheitServiceTest {
                 "Urlaub darf nicht um gearbeitete Stunden reduziert werden");
         verify(zeitbuchungRepository, never()).findByMitarbeiterIdAndStartZeitBetween(anyLong(), any(), any());
     }
+    @Test
+    void historischeBuchung_trotzHeuteOhneKonto_verwendetDamalsGueltigeStunden() {
+        testMitarbeiter.setFuehrtZeitkonto(false);
+        testZeitkonto.setGueltigBis(MONTAG.plusDays(4));
+        ZeitkontoVersionRepository versionRepository = mock(ZeitkontoVersionRepository.class);
+        when(versionRepository.findImZeitraum(MITARBEITER_ID, MONTAG, MONTAG))
+                .thenReturn(List.of(testZeitkonto));
+        TagesSollService realesSoll = new TagesSollService(feiertagService,
+                mock(LangzeitkrankmeldungPhaseRepository.class), versionRepository);
+        AbwesenheitService service = new AbwesenheitService(abwesenheitRepository, mitarbeiterRepository,
+                zeitkontoService, feiertagService, monatsSaldoService, zeitbuchungRepository, realesSoll);
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(zeitkontoService.versionAm(MITARBEITER_ID, MONTAG)).thenReturn(Optional.of(testZeitkonto));
+        when(abwesenheitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Abwesenheit gespeichert = service.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.URLAUB, false);
+
+        assertEquals(new BigDecimal("8.00"), gespeichert.getStunden());
+        verify(zeitkontoService).versionAm(MITARBEITER_ID, MONTAG);
+    }
+
+    @Test
+    void fehlendeArbeitszeit_verhindertBuchungMitVerstaendlicherAntwort() {
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.URLAUB, false));
+        assertTrue(fehler.getMessage().contains("noch keine Arbeitszeit hinterlegt"));
+        assertTrue(fehler.getMessage().contains(MONTAG.toString()));
+        verify(abwesenheitRepository, never()).save(any());
+        verifyNoInteractions(tagesSollService, monatsSaldoService);
+    }
+
+    @Test
+    void gespeicherterUrlaub_wirdNachVertragswechselUnveraendertGelesen() {
+        Abwesenheit gespeichert = new Abwesenheit();
+        gespeichert.setDatum(MONTAG);
+        gespeichert.setTyp(AbwesenheitsTyp.URLAUB);
+        gespeichert.setStunden(new BigDecimal("8.00"));
+        testMitarbeiter.setFuehrtZeitkonto(false);
+        when(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(MITARBEITER_ID, MONTAG, MONTAG))
+                .thenReturn(List.of(gespeichert));
+
+        assertEquals(new BigDecimal("8.00"), abwesenheitService
+                .getAbwesenheitenByMitarbeiterAndZeitraum(MITARBEITER_ID, MONTAG, MONTAG).getFirst().getStunden());
+        verifyNoInteractions(zeitkontoService, tagesSollService);
+        verify(abwesenheitRepository, never()).save(any());
+    }
+
 }
