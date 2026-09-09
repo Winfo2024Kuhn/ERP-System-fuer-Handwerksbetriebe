@@ -1,200 +1,46 @@
-import { useState, useEffect } from 'react';
-import { Edit2, Save, X, Loader2, Clock } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, Clock, Edit2, Loader2, Plus, Save, Trash2, Users } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { DatePicker } from '../components/ui/datepicker';
+import { Select } from '../components/ui/select-custom';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { useConfirm } from '../components/ui/confirm-dialog';
+import { useToast } from '../components/ui/toast';
+import type { Arbeitszeit, ZeitkontoStatus, ZeitkontoWechsel, ZeitkontoWechselErgebnis, Zeitkontenmodell } from '../types/zeitkonto';
 
-interface Zeitkonto {
-    mitarbeiterId: number;
-    mitarbeiterName: string;
-    montagStunden: number;
-    dienstagStunden: number;
-    mittwochStunden: number;
-    donnerstagStunden: number;
-    freitagStunden: number;
-    samstagStunden: number;
-    sonntagStunden: number;
-    wochenstunden: number;
-    buchungStartZeit: string | null;
-    buchungEndeZeit: string | null;
+const tage: Array<[keyof Arbeitszeit, string]> = [['montagStunden','Montag'],['dienstagStunden','Dienstag'],['mittwochStunden','Mittwoch'],['donnerstagStunden','Donnerstag'],['freitagStunden','Freitag'],['samstagStunden','Samstag'],['sonntagStunden','Sonntag']];
+const leer = (): Arbeitszeit => ({ montagStunden: 0, dienstagStunden: 0, mittwochStunden: 0, donnerstagStunden: 0, freitagStunden: 0, samstagStunden: 0, sonntagStunden: 0, buchungStartZeit: null, buchungEndeZeit: null });
+const heute = () => new Date().toISOString().slice(0, 10);
+const wochenstunden = (a: Arbeitszeit) => tage.reduce((summe, [feld]) => summe + Number(a[feld]), 0);
+const zeit = (wert: string | null) => wert?.slice(0, 5) ?? '—';
+async function antwort<T>(res: Response): Promise<T> { if (res.ok) return res.status === 204 ? undefined as T : res.json() as Promise<T>; const body = await res.json().catch(() => null) as { message?: string; detail?: string } | null; throw new Error(body?.message ?? body?.detail ?? 'Die Anfrage konnte nicht verarbeitet werden.'); }
+
+function Stundenfelder({ value, onChange }: { value: Arbeitszeit; onChange: (next: Arbeitszeit) => void }) {
+    return <><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{tage.map(([feld, label]) => <label key={feld} className="text-sm font-medium text-slate-700">{label}<div className="relative mt-1"><input aria-label={`${label} Stunden`} type="number" min="0" max="24" step="0.25" value={Number(value[feld])} onChange={e => onChange({ ...value, [feld]: Number(e.target.value) || 0 })} className="h-10 w-full rounded-lg border border-slate-200 px-3 pr-8 text-right focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-200" /><span className="absolute right-3 top-2.5 text-slate-400">h</span></div></label>)}</div><div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4"><label className="text-sm font-medium text-slate-700">Frühester Start<input aria-label="Frühester Start" type="time" value={value.buchungStartZeit ?? ''} onChange={e => onChange({ ...value, buchungStartZeit: e.target.value || null })} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3" /></label><label className="text-sm font-medium text-slate-700">Spätestes Ende<input aria-label="Spätestes Ende" type="time" value={value.buchungEndeZeit ?? ''} onChange={e => onChange({ ...value, buchungEndeZeit: e.target.value || null })} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3" /></label></div></>;
 }
+function Monate({ ergebnis }: { ergebnis: ZeitkontoWechselErgebnis }) { return <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-slate-200">{ergebnis.monate.map(monat => <div key={`${monat.jahr}-${monat.monat}`} className="flex justify-between border-b border-slate-100 px-3 py-2 text-sm last:border-0"><span>{String(monat.monat).padStart(2, '0')}/{monat.jahr}</span><span className={monat.abgeschlossen ? 'text-slate-500' : monat.geaendert ? 'font-medium text-rose-700' : 'text-slate-600'}>{monat.abgeschlossen ? 'Abgeschlossen · unverändert' : monat.geaendert ? `${monat.saldoVorher} h → ${monat.saldoNachher} h` : 'Unverändert'}</span></div>)}</div>; }
 
 export default function ZeiterfassungZeitkonten() {
-    const [zeitkonten, setZeitkonten] = useState<Zeitkonto[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [editKonto, setEditKonto] = useState<Zeitkonto | null>(null);
-    const [saving, setSaving] = useState(false);
-
-    const loadZeitkonten = async () => {
-        setLoading(true);
-        try {
-            const res = await fetch('/api/zeitverwaltung/zeitkonten');
-            const data = await res.json();
-            setZeitkonten(Array.isArray(data) ? data : []);
-        } catch (err) {
-            console.error('Fehler beim Laden der Zeitkonten:', err);
-            setZeitkonten([]);
-        }
-        setLoading(false);
-    };
-
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        loadZeitkonten();
-    }, []);
-
-    const saveZeitkonto = async () => {
-        if (!editKonto) return;
-        setSaving(true);
-        await fetch(`/api/zeitverwaltung/zeitkonten/${editKonto.mitarbeiterId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(editKonto)
-        });
-        setSaving(false);
-        setEditKonto(null);
-        loadZeitkonten();
-    };
-
-    return (
-        <div className="p-6 max-w-7xl mx-auto">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">
-                <div>
-                    <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide">
-                        Einstellungen
-                    </p>
-                    <h1 className="text-3xl font-bold text-slate-900">
-                        ZEITKONTEN
-                    </h1>
-                    <p className="text-slate-500 mt-1">
-                        Sollstunden pro Wochentag für jeden Mitarbeiter konfigurieren
-                    </p>
-                </div>
-            </div>
-
-            <div className="space-y-6">
-                <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-                    <div className="p-4 border-b border-slate-200">
-                        <h3 className="font-bold text-lg">Sollstunden pro Wochentag</h3>
-                        <p className="text-slate-500 text-sm">Konfiguriere die regulären Arbeitszeiten für jeden Mitarbeiter</p>
-                    </div>
-                    {loading ? (
-                        <div className="p-8 text-center">
-                            <Loader2 className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
-                        </div>
-                    ) : (
-                        <table className="w-full">
-                            <thead className="bg-slate-50">
-                                <tr>
-                                    <th className="text-left p-3 font-medium text-slate-600">Mitarbeiter</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Mo</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Di</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Mi</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Do</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Fr</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Sa</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">So</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Woche</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Zeitfenster</th>
-                                    <th className="p-3"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {zeitkonten.map(konto => (
-                                    <tr key={konto.mitarbeiterId} className="border-t border-slate-100">
-                                        <td className="p-3 font-medium">{konto.mitarbeiterName}</td>
-                                        <td className="p-3 text-center">{konto.montagStunden}h</td>
-                                        <td className="p-3 text-center">{konto.dienstagStunden}h</td>
-                                        <td className="p-3 text-center">{konto.mittwochStunden}h</td>
-                                        <td className="p-3 text-center">{konto.donnerstagStunden}h</td>
-                                        <td className="p-3 text-center">{konto.freitagStunden}h</td>
-                                        <td className="p-3 text-center text-slate-400">{konto.samstagStunden}h</td>
-                                        <td className="p-3 text-center text-slate-400">{konto.sonntagStunden}h</td>
-                                        <td className="p-3 text-center font-bold">{konto.wochenstunden}h</td>
-                                        <td className="p-3 text-center text-sm">
-                                            {konto.buchungStartZeit && konto.buchungEndeZeit ? (
-                                                <span className="inline-flex items-center gap-1 text-slate-600">
-                                                    <Clock className="w-3.5 h-3.5" />
-                                                    {konto.buchungStartZeit.substring(0, 5)} – {konto.buchungEndeZeit.substring(0, 5)}
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-400">—</span>
-                                            )}
-                                        </td>
-                                        <td className="p-3">
-                                            <Button variant="ghost" size="sm" onClick={() => setEditKonto(konto)}>
-                                                <Edit2 className="w-4 h-4" />
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-
-                {/* Edit Modal */}
-                {editKonto && (
-                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-lg">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-bold">Zeitkonto: {editKonto.mitarbeiterName}</h3>
-                                <button onClick={() => setEditKonto(null)}><X className="w-5 h-5" /></button>
-                            </div>
-                            <div className="grid grid-cols-4 gap-3">
-                                {['montag', 'dienstag', 'mittwoch', 'donnerstag', 'freitag', 'samstag', 'sonntag'].map(tag => (
-                                    <div key={tag}>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1 capitalize">{tag}</label>
-                                        <input
-                                            type="number"
-                                            step="0.5"
-                                            min="0"
-                                            max="24"
-                                            value={(editKonto as unknown as Record<string, number>)[`${tag}Stunden`]}
-                                            onChange={(e) => setEditKonto({ ...editKonto, [`${tag}Stunden`]: parseFloat(e.target.value) || 0 })}
-                                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-center"
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="mt-4 pt-4 border-t border-slate-200">
-                                <h4 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
-                                    <Clock className="w-4 h-4" /> Erlaubtes Buchungszeitfenster
-                                </h4>
-                                <p className="text-xs text-slate-500 mb-3">
-                                    Buchungen außerhalb dieses Zeitfensters werden automatisch beendet. Leer lassen = keine Einschränkung.
-                                </p>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Frühester Start</label>
-                                        <input
-                                            type="time"
-                                            value={editKonto.buchungStartZeit || ''}
-                                            onChange={(e) => setEditKonto({ ...editKonto, buchungStartZeit: e.target.value || null })}
-                                            className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Spätestes Ende</label>
-                                        <input
-                                            type="time"
-                                            value={editKonto.buchungEndeZeit || ''}
-                                            onChange={(e) => setEditKonto({ ...editKonto, buchungEndeZeit: e.target.value || null })}
-                                            className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex gap-2 mt-6 justify-end">
-                                <Button variant="outline" onClick={() => setEditKonto(null)}>Abbrechen</Button>
-                                <Button onClick={saveZeitkonto} disabled={saving} className="bg-rose-600 hover:bg-rose-700 text-white">
-                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
-                                    Speichern
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+    const toast = useToast(); const confirm = useConfirm();
+    const [konten, setKonten] = useState<ZeitkontoStatus[]>([]); const [vorlagen, setVorlagen] = useState<Zeitkontenmodell[]>([]); const [loading, setLoading] = useState(true); const [speichert, setSpeichert] = useState(false);
+    const [vorlagenOffen, setVorlagenOffen] = useState(false); const [form, setForm] = useState<{id:number|null;version:number|null;bezeichnung:string;arbeitszeit:Arbeitszeit}>({ id:null, version:null, bezeichnung:'', arbeitszeit:leer() });
+    const [wechsel, setWechsel] = useState<ZeitkontoStatus|null>(null); const [wechselVorlage, setWechselVorlage] = useState(''); const [wechselArbeitszeit, setWechselArbeitszeit] = useState<Arbeitszeit>(leer()); const [wechselDatum, setWechselDatum] = useState(heute()); const [vorschau, setVorschau] = useState<ZeitkontoWechselErgebnis|null>(null);
+    const [uebernahme, setUebernahme] = useState<Zeitkontenmodell|null>(null); const [uebernahmeDatum, setUebernahmeDatum] = useState(heute()); const [kandidaten, setKandidaten] = useState<Record<number,{ausgewaehlt:boolean;ergebnis:ZeitkontoWechselErgebnis|null}>>({}); const [ergebnisse, setErgebnisse] = useState<ZeitkontoWechselErgebnis[]|null>(null);
+    const laden = useCallback(async () => { setLoading(true); try { const [status, modelle] = await Promise.all([fetch('/api/zeitverwaltung/zeitkonten').then(antwort<ZeitkontoStatus[]>), fetch('/api/zeitverwaltung/zeitkontenmodelle').then(antwort<Zeitkontenmodell[]>)]); setKonten(status); setVorlagen(modelle); } catch (e) { toast.error(e instanceof Error ? `Zeitkonten konnten nicht geladen werden: ${e.message}` : 'Zeitkonten konnten nicht geladen werden.'); } finally { setLoading(false); } }, [toast]);
+    useEffect(() => { void laden(); }, [laden]);
+    const gewaehltesModell = vorlagen.find(v => v.id === Number(wechselVorlage)) ?? null;
+    const payload = (status: ZeitkontoStatus, modell: Zeitkontenmodell|null, datum: string, arbeitszeit: Arbeitszeit|null): ZeitkontoWechsel => ({ gueltigVon:datum, expectedMitarbeiterVersion:status.mitarbeiterVersion, expectedLetzteVersionId:status.letzteVersion?.id ?? null, expectedLetzteVersion:status.letzteVersion?.version ?? null, vorlageId:modell?.id ?? null, expectedVorlageVersion:modell?.version ?? null, arbeitszeit });
+    const oeffneWechsel = (status: ZeitkontoStatus) => { setWechsel(status); setWechselVorlage(status.aktuell?.vorlageId?.toString() ?? ''); setWechselArbeitszeit(status.aktuell?.arbeitszeit ?? leer()); setWechselDatum(heute()); setVorschau(null); };
+    const einzelVorschau = async () => { if (!wechsel) return; setSpeichert(true); try { setVorschau(await fetch(`/api/zeitverwaltung/zeitkonten/${wechsel.mitarbeiterId}/vorschau`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload(wechsel, gewaehltesModell, wechselDatum, gewaehltesModell ? null : wechselArbeitszeit)) }).then(antwort<ZeitkontoWechselErgebnis>)); } catch(e) { toast.error(e instanceof Error ? `Vorschau konnte nicht geladen werden: ${e.message}` : 'Vorschau konnte nicht geladen werden.'); } finally { setSpeichert(false); } };
+    const einzelUebernehmen = async () => { if (!wechsel || !vorschau) return; setSpeichert(true); try { await fetch(`/api/zeitverwaltung/zeitkonten/${wechsel.mitarbeiterId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload(wechsel, gewaehltesModell, wechselDatum, gewaehltesModell ? null : wechselArbeitszeit)) }).then(antwort<ZeitkontoWechselErgebnis>); toast.success('Arbeitszeit wurde übernommen.'); setWechsel(null); await laden(); } catch(e) { toast.error(e instanceof Error ? `Arbeitszeit konnte nicht übernommen werden: ${e.message}` : 'Arbeitszeit konnte nicht übernommen werden.'); } finally { setSpeichert(false); } };
+    const speichereVorlage = async () => { if (!form.bezeichnung.trim()) { toast.warning('Bitte geben Sie der Arbeitszeit-Vorlage einen Namen.'); return; } setSpeichert(true); try { const neu = form.id === null; const body = neu ? { bezeichnung:form.bezeichnung.trim(), arbeitszeit:form.arbeitszeit } : { expectedVersion:form.version, bezeichnung:form.bezeichnung.trim(), arbeitszeit:form.arbeitszeit }; const modell = await fetch(neu ? '/api/zeitverwaltung/zeitkontenmodelle' : `/api/zeitverwaltung/zeitkontenmodelle/${form.id}`, {method:neu?'POST':'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(antwort<Zeitkontenmodell>); toast.success(neu ? 'Arbeitszeit-Vorlage angelegt.' : 'Arbeitszeit-Vorlage gespeichert.'); setVorlagenOffen(false); await laden(); if (!neu) { setUebernahme(modell); setUebernahmeDatum(heute()); setKandidaten({}); setErgebnisse(null); } } catch(e) { toast.error(e instanceof Error ? `Vorlage konnte nicht gespeichert werden: ${e.message}` : 'Vorlage konnte nicht gespeichert werden.'); } finally { setSpeichert(false); } };
+    const loeschen = async (modell: Zeitkontenmodell) => { if (!await confirm({title:'Arbeitszeit-Vorlage löschen',message:`„${modell.bezeichnung}“ wirklich löschen? Bereits zugewiesene Arbeitszeiten bleiben erhalten.`,variant:'danger',confirmLabel:'Löschen'})) return; try { await fetch(`/api/zeitverwaltung/zeitkontenmodelle/${modell.id}?expectedVersion=${modell.version}`, {method:'DELETE'}).then(antwort<void>); toast.success('Arbeitszeit-Vorlage gelöscht.'); await laden(); } catch(e) { toast.error(e instanceof Error ? `Vorlage konnte nicht gelöscht werden: ${e.message}` : 'Vorlage konnte nicht gelöscht werden.'); } };
+    const relevante = useMemo(() => uebernahme ? konten.filter(k => k.aktuell?.vorlageId === uebernahme.id) : [], [konten, uebernahme]);
+    const kandidatenVorschau = async (status: ZeitkontoStatus) => { if (!uebernahme) return; setSpeichert(true); try { const ergebnis = await fetch(`/api/zeitverwaltung/zeitkonten/${status.mitarbeiterId}/vorschau`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload(status, uebernahme, uebernahmeDatum, null))}).then(antwort<ZeitkontoWechselErgebnis>); setKandidaten(alt => ({...alt,[status.mitarbeiterId]:{ausgewaehlt:alt[status.mitarbeiterId]?.ausgewaehlt ?? false,ergebnis}})); } catch(e) { toast.error(e instanceof Error ? `Vorschau für ${status.mitarbeiterName} konnte nicht geladen werden: ${e.message}` : 'Vorschau konnte nicht geladen werden.'); } finally { setSpeichert(false); } };
+    const mehrfachUebernehmen = async () => { if (!uebernahme) return; const auswahl = relevante.filter(k => kandidaten[k.mitarbeiterId]?.ausgewaehlt).slice(0,100); if (!auswahl.length) { toast.warning('Bitte wählen Sie mindestens einen Mitarbeiter aus.'); return; } setSpeichert(true); try { const result = await fetch('/api/zeitverwaltung/zeitkonten/uebernehmen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mitarbeiter:auswahl.map(status => ({mitarbeiterId:status.mitarbeiterId, wechsel:payload(status,uebernahme,uebernahmeDatum,null)}))})}).then(antwort<ZeitkontoWechselErgebnis[]>); setErgebnisse(result); toast.success('Arbeitszeit wurde für die Auswahl übernommen.'); await laden(); } catch(e) { toast.error(e instanceof Error ? `Arbeitszeit konnte nicht übernommen werden: ${e.message}` : 'Arbeitszeit konnte nicht übernommen werden.'); } finally { setSpeichert(false); } };
+    return <div className="mx-auto max-w-7xl p-6"><header className="mb-8"><p className="text-sm font-semibold uppercase tracking-wide text-rose-600">Zeiterfassung · Einstellungen</p><h1 className="text-3xl font-bold text-slate-900">ZEITKONTEN</h1><p className="mt-1 text-slate-500">Arbeitszeiten nachvollziehbar festlegen und Vorlagen bewusst übernehmen.</p></header>{loading ? <div className="space-y-3 motion-safe:animate-pulse"><div className="h-36 rounded-lg bg-slate-100"/><div className="h-56 rounded-lg bg-slate-100"/></div> : <div className="space-y-6"><section className="rounded-lg border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 p-4"><div><h2 className="font-semibold text-slate-900">Arbeitszeit-Vorlagen</h2><p className="text-sm text-slate-500">Eine Änderung gilt erst, wenn Sie sie bewusst für Mitarbeiter übernehmen.</p></div><Button onClick={() => {setForm({id:null,version:null,bezeichnung:'',arbeitszeit:leer()});setVorlagenOffen(true);}} className="bg-rose-600 text-white hover:bg-rose-700"><Plus className="mr-2 h-4 w-4"/>Vorlage anlegen</Button></div>{vorlagen.length===0?<div className="p-8 text-center text-sm text-slate-500">Noch keine Arbeitszeit-Vorlage angelegt.</div>:<div className="divide-y divide-slate-100">{vorlagen.map(modell=><div key={modell.id} className="flex flex-wrap items-center justify-between gap-4 p-4"><div><p className="font-medium text-slate-900">{modell.bezeichnung}</p><p className="mt-1 text-sm text-slate-500">{wochenstunden(modell.arbeitszeit)} h/Woche · Zeitfenster {zeit(modell.arbeitszeit.buchungStartZeit)} – {zeit(modell.arbeitszeit.buchungEndeZeit)}</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={()=>{setForm({id:modell.id,version:modell.version,bezeichnung:modell.bezeichnung,arbeitszeit:modell.arbeitszeit});setVorlagenOffen(true);}}><Edit2 className="mr-1 h-4 w-4"/>Bearbeiten</Button><Button aria-label={`${modell.bezeichnung} löschen`} variant="outline" size="sm" onClick={()=>void loeschen(modell)}><Trash2 className="h-4 w-4 text-red-600"/></Button></div></div>)}</div>}</section><section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-200 p-4"><h2 className="font-semibold text-slate-900">Mitarbeiter mit Zeitkonto</h2><p className="text-sm text-slate-500">Jede Änderung legt einen neuen Zeitabschnitt an. Frühere Arbeitszeiten bleiben erhalten.</p></div>{konten.length===0?<div className="p-8 text-center text-sm text-slate-500">Keine Mitarbeiter mit eingerichteter Arbeitszeit.</div>:<div className="divide-y divide-slate-100">{konten.map(status=><div key={status.mitarbeiterId} className="flex flex-wrap items-center justify-between gap-4 p-4"><div><p className="font-medium text-slate-900">{status.mitarbeiterName}</p>{status.aktuell?<><p className="text-sm text-slate-600">Gültig ab {status.aktuell.gueltigVon} · {wochenstunden(status.aktuell.arbeitszeit)} h/Woche</p><p className="text-xs text-slate-500">{status.aktuell.vorlageId ? `Vorlage: ${vorlagen.find(v=>v.id===status.aktuell?.vorlageId)?.bezeichnung ?? 'nicht mehr vorhanden'}`:'Individuelle Arbeitszeit'} · {status.historie.length} Zeitabschnitt(e)</p></>:<p className="text-sm text-amber-700">{status.hinweis ?? 'Arbeitszeit noch nicht eingerichtet.'}</p>}</div><Button variant="outline" size="sm" onClick={()=>oeffneWechsel(status)}><Clock className="mr-1 h-4 w-4"/>Arbeitszeit ändern</Button></div>)}</div>}</section></div>}
+        <Dialog open={vorlagenOffen} onOpenChange={setVorlagenOffen} className="w-full max-w-2xl"><DialogHeader><DialogTitle>{form.id?'Arbeitszeit-Vorlage bearbeiten':'Arbeitszeit-Vorlage anlegen'}</DialogTitle></DialogHeader><DialogContent className="overflow-y-auto"><label className="text-sm font-medium text-slate-700">Bezeichnung<input value={form.bezeichnung} onChange={e=>setForm({...form,bezeichnung:e.target.value})} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3" placeholder="z. B. Werkstatt Vollzeit"/></label><Stundenfelder value={form.arbeitszeit} onChange={arbeitszeit=>setForm({...form,arbeitszeit})}/></DialogContent><DialogFooter><Button variant="outline" onClick={()=>setVorlagenOffen(false)}>Abbrechen</Button><Button disabled={speichert} onClick={()=>void speichereVorlage()} className="bg-rose-600 text-white hover:bg-rose-700">{speichert?<Loader2 className="mr-2 h-4 w-4 animate-spin"/>:<Save className="mr-2 h-4 w-4"/>}Speichern</Button></DialogFooter></Dialog>
+        <Dialog open={wechsel!==null} onOpenChange={open=>!open&&setWechsel(null)} className="w-full max-w-2xl"><DialogHeader><DialogTitle>Arbeitszeit ändern: {wechsel?.mitarbeiterName}</DialogTitle></DialogHeader><DialogContent className="overflow-y-auto"><p className="text-sm text-slate-600">Mit dem Stichtag entsteht ein neuer Zeitabschnitt. Abgeschlossene Monate bleiben unverändert.</p><label className="text-sm font-medium text-slate-700">Gültig ab<div className="mt-1"><DatePicker value={wechselDatum} onChange={wert=>{setWechselDatum(wert);setVorschau(null);}}/></div></label><div><p className="text-sm font-medium text-slate-700">Arbeitszeit-Vorlage</p><Select value={wechselVorlage} onChange={id=>{setWechselVorlage(id);setVorschau(null);const modell=vorlagen.find(v=>v.id===Number(id));if(modell)setWechselArbeitszeit(modell.arbeitszeit);}} options={[{value:'',label:'Individuelle Arbeitszeit'},...vorlagen.map(modell=>({value:String(modell.id),label:modell.bezeichnung}))]} className="mt-1"/></div>{!gewaehltesModell&&<Stundenfelder value={wechselArbeitszeit} onChange={wert=>{setWechselArbeitszeit(wert);setVorschau(null);}}/>}{vorschau&&<div className="rounded-lg bg-amber-50 p-3 text-sm text-slate-700"><p>{vorschau.hinweis}</p><Monate ergebnis={vorschau}/></div>}</DialogContent><DialogFooter><Button variant="outline" onClick={()=>setWechsel(null)}>Abbrechen</Button><Button variant="outline" disabled={speichert} onClick={()=>void einzelVorschau()}>Vorschau laden</Button><Button disabled={speichert||!vorschau} title={!vorschau?'Bitte laden Sie zuerst die Vorschau.':undefined} onClick={()=>void einzelUebernehmen()} className="bg-rose-600 text-white hover:bg-rose-700"><Check className="mr-2 h-4 w-4"/>Übernehmen</Button></DialogFooter></Dialog>
+        <Dialog open={uebernahme!==null} onOpenChange={open=>!open&&setUebernahme(null)} className="w-full max-w-3xl"><DialogHeader><DialogTitle>Vorlagenänderung übernehmen: {uebernahme?.bezeichnung}</DialogTitle></DialogHeader><DialogContent className="overflow-y-auto"><p className="text-sm text-slate-600">Die Vorlage allein ändert keine Arbeitszeit. Wählen Sie bewusst aus, für wen sie ab wann gelten soll.</p><label className="text-sm font-medium text-slate-700">Gültig ab<div className="mt-1 max-w-xs"><DatePicker value={uebernahmeDatum} onChange={wert=>{setUebernahmeDatum(wert);setKandidaten({});setErgebnisse(null);}}/></div></label><div className="rounded-lg border border-slate-200">{relevante.length===0?<p className="p-4 text-sm text-slate-500">Diese Vorlage ist aktuell keinem Mitarbeiter zugeordnet.</p>:relevante.map(status=>{const kandidat=kandidaten[status.mitarbeiterId];return <div key={status.mitarbeiterId} className="border-b border-slate-100 p-3 last:border-0"><div className="flex flex-wrap items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm font-medium text-slate-900"><input aria-label={`${status.mitarbeiterName} auswählen`} type="checkbox" checked={kandidat?.ausgewaehlt??false} disabled={!kandidat?.ergebnis} onChange={e=>setKandidaten(alt=>({...alt,[status.mitarbeiterId]:{ausgewaehlt:e.target.checked,ergebnis:kandidat?.ergebnis??null}}))}/>{status.mitarbeiterName}</label><Button variant="outline" size="sm" disabled={speichert} onClick={()=>void kandidatenVorschau(status)}>Vorschau</Button></div>{kandidat?.ergebnis&&<Monate ergebnis={kandidat.ergebnis}/>}</div>})}</div>{ergebnisse&&<div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900"><p className="font-medium">Übernahme abgeschlossen.</p>{ergebnisse.map(ergebnis=><p key={ergebnis.zeitkonto.mitarbeiterId}>{ergebnis.zeitkonto.mitarbeiterName}: {ergebnis.monate.filter(m=>m.abgeschlossen).length} abgeschlossene Monate unverändert.</p>)}</div>}</DialogContent><DialogFooter><Button variant="outline" onClick={()=>setUebernahme(null)}>Schließen</Button><Button disabled={speichert||!Object.values(kandidaten).some(k=>k.ausgewaehlt)} title={!Object.values(kandidaten).some(k=>k.ausgewaehlt)?'Bitte wählen Sie Mitarbeiter mit geladener Vorschau aus.':undefined} onClick={()=>void mehrfachUebernehmen()} className="bg-rose-600 text-white hover:bg-rose-700"><Users className="mr-2 h-4 w-4"/>Für Auswahl übernehmen</Button></DialogFooter></Dialog>
+    </div>;
 }
