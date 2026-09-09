@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Save, AlertTriangle, X } from 'lucide-react';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
+import { DecimalInput } from './ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
+import { useToast } from './ui/toast';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
 import { type Arbeitsgang } from '../types';
@@ -19,6 +21,7 @@ export const StundensatzEditModal: React.FC<StundensatzEditModalProps> = ({
     onClose,
     onSave,
 }) => {
+    const toast = useToast();
     const [stundensatz, setStundensatz] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -29,25 +32,26 @@ export const StundensatzEditModal: React.FC<StundensatzEditModalProps> = ({
 
     useEffect(() => {
         if (isOpen) {
-            setStundensatz(arbeitsgang.stundensatz?.toString() || '');
+            setStundensatz(arbeitsgang.stundensatz == null ? '' : formatDecimalInput(arbeitsgang.stundensatz));
             setError('');
         }
     }, [isOpen, arbeitsgang]);
 
     const handleSave = async () => {
-        const parsed = parseFloat(stundensatz.replace(',', '.'));
-        if (isNaN(parsed) || parsed < 0) {
-            setError('Bitte einen gültigen Stundensatz eingeben.');
+        const result = validateDecimalInput(stundensatz, { label: 'Stundensatz', required: true, min: 0 });
+        if (!result.valid || result.value === null) {
+            const message = !result.valid ? result.message : 'Bitte Stundensatz eingeben.';
+            setError(message); toast.error(message);
             return;
         }
 
         setSaving(true);
         setError('');
         try {
-            await onSave(arbeitsgang.id, parsed);
+            await onSave(arbeitsgang.id, result.value);
             onClose();
         } catch (err) {
-            setError('Fehler beim Speichern des Stundensatzes.');
+            setError('Fehler beim Speichern des Stundensatzes.'); toast.error('Stundensatz konnte nicht gespeichert werden.');
             console.error(err);
         } finally {
             setSaving(false);
@@ -91,21 +95,19 @@ export const StundensatzEditModal: React.FC<StundensatzEditModalProps> = ({
 
                     <div className="space-y-2">
                         <Label htmlFor="stundensatz">Neuer Stundensatz (€/h)</Label>
-                        <Input
+                        <DecimalInput
                             id="stundensatz"
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            min={0}
+                            required
                             value={stundensatz}
-                            onChange={(e) => setStundensatz(e.target.value)}
+                            onChange={setStundensatz}
                             onKeyDown={handleKeyDown}
-                            placeholder="z.B. 65.00"
+                            placeholder="z. B. 65,00"
                             className="text-right font-mono"
-                            autoFocus
                         />
                         {arbeitsgang.stundensatz !== null && (
                             <p className="text-xs text-slate-500">
-                                Aktueller Wert: {arbeitsgang.stundensatz.toFixed(2)} €/h
+                                Aktueller Wert: {arbeitsgang.stundensatz.toLocaleString('de-DE', { minimumFractionDigits: 2 })} €/h
                                 {arbeitsgang.stundensatzJahr && ` (${arbeitsgang.stundensatzJahr})`}
                             </p>
                         )}

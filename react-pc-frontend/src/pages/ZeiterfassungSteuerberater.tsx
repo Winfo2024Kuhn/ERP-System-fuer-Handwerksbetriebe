@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Mail, Loader2, Check, BarChart3 } from 'lucide-react';
+import { Select } from '../components/ui/select-custom';
 import { Button } from '../components/ui/button';
 import { SteuerberaterEmailModal } from '../components/SteuerberaterEmailModal';
 import type { Arbeitszeit, ZeitkontoStatus } from '../types/zeitkonto';
@@ -47,7 +48,6 @@ export default function ZeiterfassungSteuerberater() {
     };
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         loadZeitkonten();
     }, []);
 
@@ -196,27 +196,13 @@ export default function ZeiterfassungSteuerberater() {
                 <div className="flex gap-4 items-end bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-wrap">
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Monat</label>
-                        <select
-                            value={monat}
-                            onChange={(e) => setMonat(parseInt(e.target.value))}
-                            className="h-10 px-3 border border-slate-200 rounded-lg bg-white focus:border-rose-300 focus:ring-1 focus:ring-rose-200 outline-none"
-                        >
-                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
-                                <option key={m} value={m}>{getMonthName(m)}</option>
-                            ))}
-                        </select>
+                        <Select aria-label="Monat" value={String(monat)} onChange={value => setMonat(Number(value))}
+                            className="w-44" options={Array.from({ length: 12 }, (_, index) => ({ value: String(index + 1), label: getMonthName(index + 1) }))} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Jahr</label>
-                        <select
-                            value={jahr}
-                            onChange={(e) => setJahr(parseInt(e.target.value))}
-                            className="h-10 px-3 border border-slate-200 rounded-lg bg-white focus:border-rose-300 focus:ring-1 focus:ring-rose-200 outline-none"
-                        >
-                            {[2024, 2025, 2026, 2027].map(y => (
-                                <option key={y} value={y}>{y}</option>
-                            ))}
-                        </select>
+                        <Select aria-label="Jahr" value={String(jahr)} onChange={value => setJahr(Number(value))}
+                            className="w-32" options={[2024, 2025, 2026, 2027].map(value => ({ value: String(value), label: String(value) }))} />
                     </div>
                     <Button
                         onClick={loadStundenDaten}

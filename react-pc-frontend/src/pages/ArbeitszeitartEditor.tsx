@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Save, Trash2, Clock, Search, RefreshCw, X, Pencil } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { TiptapEditor } from '../components/TiptapEditor';
@@ -23,6 +25,7 @@ const priceFormatter = new Intl.NumberFormat('de-DE', { style: 'currency', curre
 
 export default function ArbeitszeitartEditor() {
   const toast = useToast();
+  const showError = toast.error;
   const confirmDialog = useConfirm();
   const [items, setItems] = useState<Arbeitszeitart[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -49,16 +52,18 @@ export default function ArbeitszeitartEditor() {
   const loadItems = useCallback(async () => {
     try {
       const res = await fetch('/api/arbeitszeitarten/alle');
+      if (!res.ok) throw new Error('Arbeitszeitarten konnten nicht geladen werden.');
       if (res.ok) {
         const data = await res.json();
         setItems(data);
       }
     } catch (err) {
       console.error('Fehler beim Laden:', err);
+      showError('Arbeitszeitarten konnten nicht geladen werden.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     loadItems();
@@ -69,7 +74,7 @@ export default function ArbeitszeitartEditor() {
     setSelectedId(item.id);
     setBezeichnung(item.bezeichnung);
     setBeschreibung(item.beschreibung || '');
-    setStundensatz(item.stundensatz.toString());
+    setStundensatz(formatDecimalInput(item.stundensatz));
     setAktiv(item.aktiv);
     setSortierung(item.sortierung);
     setIsCreating(false);
@@ -80,7 +85,7 @@ export default function ArbeitszeitartEditor() {
     setSelectedId(null);
     setBezeichnung('');
     setBeschreibung('');
-    setStundensatz('65.00');
+    setStundensatz('65,00');
     setAktiv(true);
     setSortierung(items.length);
     setIsCreating(true);
@@ -93,9 +98,9 @@ export default function ArbeitszeitartEditor() {
       return;
     }
 
-    const parsedPrice = parseFloat(stundensatz.replace(',', '.'));
-    if (isNaN(parsedPrice) || parsedPrice <= 0) {
-      toast.warning('Bitte gültigen Stundensatz eingeben');
+    const parsed = validateDecimalInput(stundensatz, { label: 'Stundensatz', required: true, min: 0 });
+    if (!parsed.valid || parsed.value === null || parsed.value <= 0) {
+      toast.error(!parsed.valid ? parsed.message : 'Stundensatz muss größer als 0 sein.');
       return;
     }
 
@@ -104,7 +109,7 @@ export default function ArbeitszeitartEditor() {
       const body = {
         bezeichnung: bezeichnung.trim(),
         beschreibung,
-        stundensatz: parsedPrice,
+        stundensatz: parsed.value,
         aktiv,
         sortierung
       };
@@ -147,6 +152,7 @@ export default function ArbeitszeitartEditor() {
 
     try {
       const res = await fetch(`/api/arbeitszeitarten/${selectedId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Arbeitszeitart konnte nicht gelöscht werden.');
       if (res.ok) {
         setSelectedId(null);
         setIsCreating(false);
@@ -157,6 +163,7 @@ export default function ArbeitszeitartEditor() {
       }
     } catch (err) {
       console.error('Fehler:', err);
+      toast.error('Arbeitszeitart konnte nicht gelöscht werden.');
     }
   };
 
@@ -307,14 +314,14 @@ export default function ArbeitszeitartEditor() {
 
                 <div>
                   <Label htmlFor="stundensatz">Stundensatz (€/h) *</Label>
-                  <Input
+                  <DecimalInput
                     id="stundensatz"
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    required
+
+                    min={0}
                     value={stundensatz}
-                    onChange={(e) => setStundensatz(e.target.value)}
-                    placeholder="65.00"
+                    onChange={setStundensatz}
+                    placeholder="65,00"
                     className="mt-1 w-40 font-mono text-right"
                   />
                 </div>
