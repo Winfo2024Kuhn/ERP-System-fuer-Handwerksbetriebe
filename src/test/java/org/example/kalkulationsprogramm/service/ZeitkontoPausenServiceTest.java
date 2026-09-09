@@ -20,8 +20,6 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ZeitkontoPausenServiceTest {
-    @Mock ZeitkontoRepository zeitkontoRepository;
-    @Mock MitarbeiterRepository mitarbeiterRepository;
     @Mock TagesSollService tagesSollService;
     @Mock ZeitkontoVersionRepository versionRepository;
     @Mock ZeitkontoPauseRepository pauseRepository;
@@ -76,7 +74,6 @@ class ZeitkontoPausenServiceTest {
         assertEquals(heute, result.gueltigVon()); assertEquals(new BigDecimal("7"), result.arbeitszeit().montagStunden());
         verify(entityManager).refresh(mitarbeiter, LockModeType.PESSIMISTIC_WRITE);
         verify(monatsSaldoRepository).invalidiereAlle(1L);
-        verifyNoInteractions(zeitkontoRepository, mitarbeiterRepository);
     }
     @Test void ersteZuweisungHatFreienBeginnUndKeineStandardstunden() {
         sperre(); speichert();
