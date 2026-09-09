@@ -57,8 +57,10 @@ public class AbwesenheitService {
 
         // Hole Sollstunden für diesen Tag aus dem Zeitkonto (berücksichtigt eine
         // laufende Wiedereingliederung: dann zählt deren reduziertes Stufenplan-Soll).
-        Zeitkonto zeitkonto = zeitkontoService.getOrCreateZeitkonto(mitarbeiterId);
-        BigDecimal sollStunden = tagesSollService.arbeitsSoll(mitarbeiterId, zeitkonto, datum);
+        ZeitkontoVersion zeitkonto = zeitkontoService.versionAm(mitarbeiterId, datum)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Für den " + datum + " ist noch keine Arbeitszeit hinterlegt. Bitte zuerst Arbeitszeit zuweisen."));
+        BigDecimal sollStunden = tagesSollService.arbeitsSoll(mitarbeiterId, datum);
 
         // Prüfe ob Arbeitstag (Sollstunden > 0). Zwei fachlich verschiedene Gründe für
         // 0 Stunden: entweder ist es laut Zeitkonto grundsätzlich kein Arbeitstag

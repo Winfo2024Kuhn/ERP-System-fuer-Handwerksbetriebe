@@ -14,9 +14,11 @@ import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
+import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
+import java.util.Optional;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
-import org.example.kalkulationsprogramm.repository.ZeitkontoRepository;
+import org.example.kalkulationsprogramm.repository.ZeitkontoVersionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -30,7 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ZeitbuchungAutoStopServiceTest {
 
     @Mock private ZeitbuchungRepository zeitbuchungRepository;
-    @Mock private ZeitkontoRepository zeitkontoRepository;
+    @Mock private ZeitkontoVersionRepository zeitkontoVersionRepository;
     @Mock private ZeitbuchungAuditService auditService;
     @Mock private MonatsSaldoService monatsSaldoService;
 
@@ -38,7 +40,7 @@ class ZeitbuchungAutoStopServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ZeitbuchungAutoStopService(zeitbuchungRepository, zeitkontoRepository, auditService, monatsSaldoService);
+        service = new ZeitbuchungAutoStopService(zeitbuchungRepository, zeitkontoVersionRepository, auditService, monatsSaldoService);
     }
 
     private Mitarbeiter erstelleMitarbeiter(Long id) {
@@ -47,8 +49,8 @@ class ZeitbuchungAutoStopServiceTest {
         return m;
     }
 
-    private Zeitkonto erstelleZeitkonto(Long id, Mitarbeiter mitarbeiter, LocalTime buchungEndeZeit) {
-        Zeitkonto konto = new Zeitkonto();
+    private ZeitkontoVersion erstelleZeitkonto(Long id, Mitarbeiter mitarbeiter, LocalTime buchungEndeZeit) {
+        ZeitkontoVersion konto = new ZeitkontoVersion();
         konto.setId(id);
         konto.setMitarbeiter(mitarbeiter);
         konto.setBuchungEndeZeit(buchungEndeZeit);
@@ -61,7 +63,7 @@ class ZeitbuchungAutoStopServiceTest {
         @Test
         void stopptBuchungUeberMitternacht() {
             Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
-            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+            ZeitkontoVersion konto = erstelleZeitkonto(1L, mitarbeiter, null);
 
             Zeitbuchung buchung = new Zeitbuchung();
             buchung.setId(100L);
@@ -84,7 +86,7 @@ class ZeitbuchungAutoStopServiceTest {
         @Test
         void berechnetStundenKorrektBeiMitternachtStop() {
             Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
-            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+            ZeitkontoVersion konto = erstelleZeitkonto(1L, mitarbeiter, null);
 
             Zeitbuchung buchung = new Zeitbuchung();
             buchung.setId(100L);
@@ -104,7 +106,7 @@ class ZeitbuchungAutoStopServiceTest {
         @Test
         void uebergibt_ErfassungsQuelle_SYSTEM_an_AuditService() {
             Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
-            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+            ZeitkontoVersion konto = erstelleZeitkonto(1L, mitarbeiter, null);
 
             Zeitbuchung buchung = new Zeitbuchung();
             buchung.setId(100L);
@@ -126,7 +128,7 @@ class ZeitbuchungAutoStopServiceTest {
         @Test
         void markiertAutomatischBeendeteBuchungAlsPruefFall() {
             Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
-            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+            ZeitkontoVersion konto = erstelleZeitkonto(1L, mitarbeiter, null);
 
             Zeitbuchung buchung = new Zeitbuchung();
             buchung.setId(100L);
@@ -144,7 +146,7 @@ class ZeitbuchungAutoStopServiceTest {
         void stopptNichtWennBuchungHeute() {
             Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
             // Kein buchungEndeZeit gesetzt
-            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+            ZeitkontoVersion konto = erstelleZeitkonto(1L, mitarbeiter, null);
 
             Zeitbuchung buchung = new Zeitbuchung();
             buchung.setId(100L);
@@ -166,7 +168,7 @@ class ZeitbuchungAutoStopServiceTest {
         @Test
         void verarbeitetAlleOffenenBuchungenAllerZeitkonten() {
             Mitarbeiter m1 = erstelleMitarbeiter(1L);
-            Zeitkonto konto1 = erstelleZeitkonto(1L, m1, null);
+            ZeitkontoVersion konto1 = erstelleZeitkonto(1L, m1, null);
 
             // Offene Buchung von gestern
             Zeitbuchung offeneBuchung = new Zeitbuchung();
@@ -175,8 +177,9 @@ class ZeitbuchungAutoStopServiceTest {
             offeneBuchung.setStartZeit(LocalDate.now().minusDays(1).atTime(20, 0));
             offeneBuchung.setVersion(1);
 
-            when(zeitkontoRepository.findAll()).thenReturn(List.of(konto1));
-            when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(1L))
+            when(zeitkontoVersionRepository.findAm(1L, offeneBuchung.getStartZeit().toLocalDate()))
+                    .thenReturn(Optional.of(konto1));
+            when(zeitbuchungRepository.findByEndeZeitIsNull())
                     .thenReturn(List.of(offeneBuchung));
 
             service.pruefUndStoppeOffeneBuchungen();
@@ -187,12 +190,91 @@ class ZeitbuchungAutoStopServiceTest {
 
         @Test
         void behandeltLeereListeOhneError() {
-            when(zeitkontoRepository.findAll()).thenReturn(Collections.emptyList());
+            when(zeitbuchungRepository.findByEndeZeitIsNull()).thenReturn(Collections.emptyList());
 
             service.pruefUndStoppeOffeneBuchungen();
 
-            verify(zeitbuchungRepository, never()).findByMitarbeiterIdAndEndeZeitIsNull(any());
+            verifyNoInteractions(zeitkontoVersionRepository);
         }
+    }
+
+    @Test
+    void verwendetBuchungstagTrotzAusgeschaltetemKontoUndSpaeteremLauf() {
+        Mitarbeiter m = erstelleMitarbeiter(1L);
+        m.setFuehrtZeitkonto(false);
+        m.setAktiv(false);
+        LocalDate gestern = LocalDate.now().minusDays(1);
+        Zeitbuchung b = offeneBuchung(m, gestern.atTime(8, 0));
+        ZeitkontoVersion alt = erstelleZeitkonto(1L, m, LocalTime.of(17, 0));
+        alt.setGueltigVon(gestern.minusYears(1));
+        alt.setGueltigBis(gestern);
+        when(zeitbuchungRepository.findByEndeZeitIsNull()).thenReturn(List.of(b));
+        when(zeitkontoVersionRepository.findAm(1L, gestern)).thenReturn(Optional.of(alt));
+
+        service.pruefUndStoppeOffeneBuchungen();
+
+        assertThat(b.getEndeZeit()).isEqualTo(gestern.atTime(17, 0));
+        assertThat(b.getAnzahlInStunden()).isEqualByComparingTo("9.00");
+        assertThat(b.isAutomatischBeendet()).isTrue();
+        verify(zeitkontoVersionRepository).findAm(1L, gestern);
+        verify(zeitkontoVersionRepository, never()).findAm(1L, LocalDate.now());
+        verify(monatsSaldoService).invalidiereFuerDateTime(1L, b.getStartZeit());
+        verify(auditService).protokolliereAenderung(eq(b), eq(m), eq(ErfassungsQuelle.SYSTEM), any());
+    }
+
+    @Test
+    void ohneVersionWerdenOffeneBuchungenWeiterBehandeltUndLookupGeteilt() {
+        Mitarbeiter m = erstelleMitarbeiter(1L);
+        m.setFuehrtZeitkonto(false);
+        LocalDate gestern = LocalDate.now().minusDays(1);
+        Zeitbuchung b1 = offeneBuchung(m, gestern.atTime(20, 0));
+        Zeitbuchung b2 = offeneBuchung(m, gestern.atTime(22, 0));
+        when(zeitbuchungRepository.findByEndeZeitIsNull()).thenReturn(List.of(b1, b2));
+        when(zeitkontoVersionRepository.findAm(1L, gestern)).thenReturn(Optional.empty());
+        service.pruefUndStoppeOffeneBuchungen();
+        assertThat(b1.getEndeZeit()).isEqualTo(gestern.atTime(23, 59));
+        assertThat(b2.getEndeZeit()).isEqualTo(gestern.atTime(23, 59));
+        verify(zeitkontoVersionRepository, times(1)).findAm(1L, gestern);
+        verify(zeitbuchungRepository).save(b1);
+        verify(zeitbuchungRepository).save(b2);
+    }
+
+    @Test
+    void systemUndUnvollstaendigeBuchungenWerdenUebersprungen() {
+        Mitarbeiter system = erstelleMitarbeiter(2L);
+        system.setArt(MitarbeiterArt.SYSTEM);
+        LocalDateTime gestern = LocalDate.now().minusDays(1).atTime(20, 0);
+        when(zeitbuchungRepository.findByEndeZeitIsNull()).thenReturn(List.of(
+                offeneBuchung(system, gestern), offeneBuchung(null, gestern),
+                offeneBuchung(erstelleMitarbeiter(1L), null)));
+        service.pruefUndStoppeOffeneBuchungen();
+        verifyNoInteractions(zeitkontoVersionRepository, auditService, monatsSaldoService);
+        verify(zeitbuchungRepository, never()).save(any());
+    }
+
+    @Test
+    void startNachZeitfensterWirdNichtRueckwaertsBeendet() {
+        Mitarbeiter m = erstelleMitarbeiter(1L);
+        LocalDate gestern = LocalDate.now().minusDays(1);
+        Zeitbuchung b = offeneBuchung(m, gestern.atTime(23, 59, 30));
+        service.autoStoppeWennNoetig(b, erstelleZeitkonto(1L, m, LocalTime.of(17, 0)));
+        assertThat(b.getEndeZeit()).isEqualTo(b.getStartZeit());
+        assertThat(b.getAnzahlInStunden()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void ohneVersionHeuteBleibtBuchungOffen() {
+        Zeitbuchung b = offeneBuchung(erstelleMitarbeiter(1L), LocalDate.now().atStartOfDay());
+        service.autoStoppeWennNoetig(b, null);
+        assertThat(b.getEndeZeit()).isNull();
+        verify(zeitbuchungRepository, never()).save(any());
+    }
+
+    private Zeitbuchung offeneBuchung(Mitarbeiter m, LocalDateTime start) {
+        Zeitbuchung b = new Zeitbuchung();
+        b.setMitarbeiter(m);
+        b.setStartZeit(start);
+        return b;
     }
 
     @Nested
@@ -201,7 +283,7 @@ class ZeitbuchungAutoStopServiceTest {
         @Test
         void invalidertMonatsSaldoNachAutoStop() {
             Mitarbeiter mitarbeiter = erstelleMitarbeiter(1L);
-            Zeitkonto konto = erstelleZeitkonto(1L, mitarbeiter, null);
+            ZeitkontoVersion konto = erstelleZeitkonto(1L, mitarbeiter, null);
 
             Zeitbuchung buchung = new Zeitbuchung();
             buchung.setId(100L);

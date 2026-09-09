@@ -125,6 +125,27 @@ class WebPushServiceTest {
     class Subscribe {
 
         @Test
+        void vorhandeneSystemSubscriptionWirdVorPayloadUndVersandUebersprungen() {
+            Mitarbeiter system = createMitarbeiter(99L, "System", "Test");
+            system.setArt(org.example.kalkulationsprogramm.domain.MitarbeiterArt.SYSTEM);
+            PushSubscription sub = createSubscription(99L, system);
+            ReflectionTestUtils.invokeMethod(webPushService, "sendPush", sub,
+                    "Test", "Test", "/test", 1L, "freigabe");
+            verifyNoInteractions(objectMapper, pushSubscriptionRepository);
+        }
+
+
+        @Test
+        void systemDarfKeineSubscriptionAnlegenOderBestehendeLoeschen() {
+            Mitarbeiter system = createMitarbeiter(1L, "System", "Test");
+            system.setArt(org.example.kalkulationsprogramm.domain.MitarbeiterArt.SYSTEM);
+            when(mitarbeiterRepository.findById(1L)).thenReturn(Optional.of(system));
+            assertThrows(IllegalArgumentException.class,
+                    () -> webPushService.subscribe(1L, "endpoint", "key", "auth"));
+            verifyNoInteractions(pushSubscriptionRepository);
+        }
+
+        @Test
         @DisplayName("Speichert neue Push-Subscription")
         void speichertNeueSubscription() {
             Mitarbeiter m = createMitarbeiter(1L, "Max", "Mustermann");
@@ -161,7 +182,6 @@ class WebPushServiceTest {
         @Test
         @DisplayName("Wirft Fehler bei unbekanntem Mitarbeiter")
         void wirftFehlerBeiUnbekanntemMitarbeiter() {
-            when(pushSubscriptionRepository.findByEndpoint(anyString())).thenReturn(Optional.empty());
             when(mitarbeiterRepository.findById(999L)).thenReturn(Optional.empty());
 
             assertThrows(IllegalArgumentException.class,

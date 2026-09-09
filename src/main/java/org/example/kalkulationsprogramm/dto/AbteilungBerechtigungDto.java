@@ -18,6 +18,7 @@ public class AbteilungBerechtigungDto {
         private Long abteilungId;
         private String abteilungName;
         private List<TypBerechtigung> berechtigungen;
+        private Boolean darfMonatAbschliessen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
         private Boolean darfFreigabeAnnahmePushen;
@@ -39,6 +40,7 @@ public class AbteilungBerechtigungDto {
     @AllArgsConstructor
     public static class UpdateRequest {
         private List<TypBerechtigung> berechtigungen;
+        private Boolean darfMonatAbschliessen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
         private Boolean darfFreigabeAnnahmePushen;

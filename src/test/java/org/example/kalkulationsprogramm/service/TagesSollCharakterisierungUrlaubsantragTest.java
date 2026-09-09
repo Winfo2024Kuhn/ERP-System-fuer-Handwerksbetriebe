@@ -3,7 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository;
@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -67,7 +68,7 @@ class TagesSollCharakterisierungUrlaubsantragTest {
     private static final Long ANTRAG_ID = 100L;
 
     private Mitarbeiter testMitarbeiter;
-    private Zeitkonto testZeitkonto;
+    private ZeitkontoVersion testZeitkonto;
 
     @BeforeEach
     void setUp() {
@@ -76,7 +77,9 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         testMitarbeiter.setVorname("Max");
         testMitarbeiter.setNachname("Mustermann");
 
-        testZeitkonto = new Zeitkonto(testMitarbeiter);
+        testZeitkonto = new ZeitkontoVersion();
+        testZeitkonto.setMitarbeiter(testMitarbeiter);
+        testZeitkonto.setGueltigVon(LocalDate.of(2000, 1, 1));
         testZeitkonto.setMontagStunden(new BigDecimal("8.00"));
         testZeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         testZeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -85,7 +88,7 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         testZeitkonto.setSamstagStunden(new BigDecimal("0.00"));
         testZeitkonto.setSonntagStunden(new BigDecimal("0.00"));
 
-        when(zeitkontoService.getOrCreateZeitkonto(1L)).thenReturn(testZeitkonto);
+        when(zeitkontoService.versionenImZeitraum(eq(1L), any(), any())).thenReturn(List.of(testZeitkonto));
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
         when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -116,7 +119,7 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         sollJeTag.put(LocalDate.of(2026, 6, 3), new BigDecimal("8.00"));
         sollJeTag.put(LocalDate.of(2026, 6, 4), new BigDecimal("8.00"));
         sollJeTag.put(LocalDate.of(2026, 6, 5), new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSollJeTag(1L, testZeitkonto, von, bis)).thenReturn(sollJeTag);
+        when(tagesSollService.arbeitsSollJeTag(1L, von, bis)).thenReturn(sollJeTag);
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
@@ -151,7 +154,7 @@ class TagesSollCharakterisierungUrlaubsantragTest {
         sollJeTag.put(LocalDate.of(2026, 6, 3), new BigDecimal("8.00"));
         sollJeTag.put(LocalDate.of(2026, 6, 4), new BigDecimal("8.00"));
         sollJeTag.put(LocalDate.of(2026, 6, 5), new BigDecimal("8.00"));
-        when(tagesSollService.arbeitsSollJeTag(1L, testZeitkonto, von, bis)).thenReturn(sollJeTag);
+        when(tagesSollService.arbeitsSollJeTag(1L, von, bis)).thenReturn(sollJeTag);
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 

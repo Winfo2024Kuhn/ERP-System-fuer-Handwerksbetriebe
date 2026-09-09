@@ -34,7 +34,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Race-Condition-Tests fuer ZeiterfassungApiService.
@@ -65,6 +64,12 @@ class ZeiterfassungApiServiceConcurrencyTest {
     @Mock private TagesSollService tagesSollService;
     @Mock private MonatsSaldoService monatsSaldoService;
 
+    @Mock private ZeitkontoService zeitkontoService;
+
+    @Mock private UrlaubsverfallService urlaubsverfallService;
+
+    @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
+
     private ZeiterfassungApiService service;
 
     private static final String TOKEN = "test-token-max-mustermann";
@@ -78,10 +83,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
                 projektRepository, mitarbeiterRepository, arbeitsgangRepository,
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
-                lieferantenRepository, feiertagService, auditService, tagesSollService);
-        // @Autowired-Felder ueber Reflection setzen (Mix aus Constructor- und
-        // Field-Injection im Service - hier Field-Injection nachstellen).
-        ReflectionTestUtils.setField(service, "monatsSaldoService", monatsSaldoService);
+                lieferantenRepository, feiertagService, auditService, tagesSollService,
+                zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService);
     }
 
     private Mitarbeiter dummyMitarbeiter() {
@@ -116,6 +119,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
 
     @Test
     void startZeiterfassung_verwendetPessimisticLockedFinder() {
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
         when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
                 .thenReturn(Optional.of(dummyMitarbeiter()));
         when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
@@ -141,6 +146,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
 
     @Test
     void startZeiterfassung_wirftFehlerWennBereitsAktiveBuchungExistiert() {
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
         Zeitbuchung aktiveBuchung = new Zeitbuchung();
         aktiveBuchung.setId(123L);
         aktiveBuchung.setMitarbeiter(dummyMitarbeiter());
@@ -159,6 +166,7 @@ class ZeiterfassungApiServiceConcurrencyTest {
 
     @Test
     void startZeiterfassung_idempotencyKey_gibtBestehendeBuchungZurueckOhneLock() {
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrue(TOKEN)).thenReturn(Optional.of(dummyMitarbeiter()));
         String idempotencyKey = "uuid-max-mustermann-retry";
         Zeitbuchung bestehend = new Zeitbuchung();
         bestehend.setId(555L);
@@ -208,6 +216,7 @@ class ZeiterfassungApiServiceConcurrencyTest {
 
     @Test
     void stopZeiterfassung_stopIdempotencyKey_gibtBestehendeBuchungZurueckOhneLock() {
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrue(TOKEN)).thenReturn(Optional.of(dummyMitarbeiter()));
         String stopKey = "uuid-stop-retry";
         Zeitbuchung bereitsGestoppt = new Zeitbuchung();
         bereitsGestoppt.setId(888L);
@@ -233,6 +242,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
 
     @Test
     void startPause_verwendetPessimisticLockedFinder() {
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
         when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
                 .thenReturn(Optional.of(dummyMitarbeiter()));
         when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
@@ -259,6 +270,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
      */
     @Test
     void startPause_schliesstAlleOffenenBuchungen_damitPauseAnlegbarBleibt() {
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
         Mitarbeiter mitarbeiter = dummyMitarbeiter();
         when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
                 .thenReturn(Optional.of(mitarbeiter));
@@ -324,6 +337,8 @@ class ZeiterfassungApiServiceConcurrencyTest {
      */
     @Test
     void startPause_ruftSaveAndFlushFuerAktiveBuchungen_verhindertConstraintViolation() {
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
         Mitarbeiter mitarbeiter = dummyMitarbeiter();
         when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
                 .thenReturn(Optional.of(mitarbeiter));

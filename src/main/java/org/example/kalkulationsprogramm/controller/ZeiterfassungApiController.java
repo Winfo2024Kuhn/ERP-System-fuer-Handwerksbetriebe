@@ -105,6 +105,8 @@ public class ZeiterfassungApiController {
             Map<String, Object> result = service.startZeiterfassung(token, projektId, arbeitsgangId,
                     produktkategorieId, originalZeit, idempotencyKey);
             return ResponseEntity.ok(result);
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -128,6 +130,8 @@ public class ZeiterfassungApiController {
 
             Map<String, Object> result = service.stopZeiterfassung(token, originalZeit, idempotencyKey);
             return ResponseEntity.ok(result);
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -151,6 +155,8 @@ public class ZeiterfassungApiController {
 
             Map<String, Object> result = service.startPause(token, originalZeit, idempotencyKey);
             return ResponseEntity.ok(result);
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -221,6 +227,8 @@ public class ZeiterfassungApiController {
     public ResponseEntity<?> getBuchungszeitfenster(@PathVariable String token) {
         try {
             return ResponseEntity.ok(service.getBuchungszeitfenster(token));
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

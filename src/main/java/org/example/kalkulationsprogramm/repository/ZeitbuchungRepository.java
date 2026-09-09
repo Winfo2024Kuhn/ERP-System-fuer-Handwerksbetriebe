@@ -19,6 +19,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ZeitbuchungRepository extends JpaRepository<Zeitbuchung, Long> {
 
+        /** Alle offenen Buchungen, unabhängig vom heutigen Zeitkonto-/Aktiv-Status. */
+        @Query("SELECT z FROM Zeitbuchung z LEFT JOIN FETCH z.mitarbeiter WHERE z.endeZeit IS NULL")
+        List<Zeitbuchung> findByEndeZeitIsNull();
+
         // ==================== Mobile Zeiterfassung ====================
 
         /**

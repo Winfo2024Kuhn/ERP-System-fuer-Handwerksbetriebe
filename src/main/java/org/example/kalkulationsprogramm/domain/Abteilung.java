@@ -11,6 +11,9 @@ import java.util.List;
 @Getter
 @Entity
 public class Abteilung {
+
+    @Column(nullable = false)
+    private Boolean darfMonatAbschliessen = false;
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

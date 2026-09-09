@@ -4,7 +4,8 @@ import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhase;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
+import org.example.kalkulationsprogramm.dto.ZeitkontenmodellDto;
 import org.example.kalkulationsprogramm.repository.LangzeitkrankmeldungPhaseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,10 +52,13 @@ class TagesSollServiceTest {
     @Mock
     private LangzeitkrankmeldungPhaseRepository phaseRepository;
 
+    @Mock
+    private org.example.kalkulationsprogramm.repository.ZeitkontoVersionRepository versionRepository;
+
     @InjectMocks
     private TagesSollService tagesSollService;
 
-    private Zeitkonto zeitkonto;
+    private ZeitkontoVersion zeitkonto;
 
     private static final Long MITARBEITER_ID = 1L;
 
@@ -71,7 +76,9 @@ class TagesSollServiceTest {
         mitarbeiter.setVorname("Max");
         mitarbeiter.setNachname("Mustermann");
 
-        zeitkonto = new Zeitkonto(mitarbeiter);
+        zeitkonto = new ZeitkontoVersion();
+        zeitkonto.setMitarbeiter(mitarbeiter);
+        zeitkonto.setGueltigVon(LocalDate.of(2000, 1, 1));
         zeitkonto.setMontagStunden(new BigDecimal("8.00"));
         zeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         zeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -79,6 +86,8 @@ class TagesSollServiceTest {
         zeitkonto.setFreitagStunden(new BigDecimal("8.00"));
         zeitkonto.setSamstagStunden(new BigDecimal("0.00"));
         zeitkonto.setSonntagStunden(new BigDecimal("0.00"));
+        lenient().when(versionRepository.findImZeitraum(org.mockito.ArgumentMatchers.eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(List.of(zeitkonto));
     }
 
     private static LangzeitkrankmeldungPhase wiedereingliederungsPhase(BigDecimal stundenProTag, LocalDate tag) {
@@ -99,26 +108,24 @@ class TagesSollServiceTest {
     }
 
     /**
-     * Stubt {@code getFeiertagInfo} statt der beiden getrennten Methoden
-     * {@code istFeiertag}/{@code istHalberFeiertag} - seit Befund 2 (Abschnitt 4)
-     * fragt {@code berechneEinzeltag} beides in EINEM Zugriff ab.
+     * Stellt die Feiertagsdaten für die datumsbasierte Bereichsabfrage bereit.
      */
     private void stubFeiertag(LocalDate tag, boolean istFeiertag, boolean istHalberFeiertag) {
-        Optional<Feiertag> ergebnis = istFeiertag
-                ? Optional.of(new Feiertag(tag, "Test-Feiertag", "BY", istHalberFeiertag))
-                : Optional.empty();
-        when(feiertagService.getFeiertagInfo(tag)).thenReturn(ergebnis);
+        List<Feiertag> ergebnis = istFeiertag
+                ? List.of(new Feiertag(tag, "Test-Feiertag", "BY", istHalberFeiertag))
+                : List.of();
+        when(feiertagService.getFeiertageZwischen(tag, tag)).thenReturn(ergebnis);
     }
 
     private void assertWerte(LocalDate tag, String erwartetPeriodenSoll, String erwartetFeiertagsGutschrift,
             String erwartetArbeitsSoll) {
         assertEquals(0, new BigDecimal(erwartetPeriodenSoll)
-                .compareTo(tagesSollService.periodenSoll(MITARBEITER_ID, zeitkonto, tag)), "periodenSoll");
+                .compareTo(tagesSollService.periodenSoll(MITARBEITER_ID, tag)), "periodenSoll");
         assertEquals(0, new BigDecimal(erwartetFeiertagsGutschrift)
-                .compareTo(tagesSollService.feiertagsGutschrift(MITARBEITER_ID, zeitkonto, tag)),
+                .compareTo(tagesSollService.feiertagsGutschrift(MITARBEITER_ID, tag)),
                 "feiertagsGutschrift");
         assertEquals(0, new BigDecimal(erwartetArbeitsSoll)
-                .compareTo(tagesSollService.arbeitsSoll(MITARBEITER_ID, zeitkonto, tag)), "arbeitsSoll");
+                .compareTo(tagesSollService.arbeitsSoll(MITARBEITER_ID, tag)), "arbeitsSoll");
     }
 
     // ---- (a) ohne Phase = heutiger Bestand fuer alle fuenf Tagestypen ----
@@ -282,9 +289,9 @@ class TagesSollServiceTest {
         stubOhnePhase(SAMSTAG_WOCHENENDE);
 
         for (LocalDate tag : List.of(MONTAG_NORMAL, VOLLER_FEIERTAG, HALBER_FEIERTAG, SAMSTAG_WOCHENENDE)) {
-            BigDecimal periodenSoll = tagesSollService.periodenSoll(MITARBEITER_ID, zeitkonto, tag);
-            BigDecimal feiertagsGutschrift = tagesSollService.feiertagsGutschrift(MITARBEITER_ID, zeitkonto, tag);
-            BigDecimal arbeitsSoll = tagesSollService.arbeitsSoll(MITARBEITER_ID, zeitkonto, tag);
+            BigDecimal periodenSoll = tagesSollService.periodenSoll(MITARBEITER_ID, tag);
+            BigDecimal feiertagsGutschrift = tagesSollService.feiertagsGutschrift(MITARBEITER_ID, tag);
+            BigDecimal arbeitsSoll = tagesSollService.arbeitsSoll(MITARBEITER_ID, tag);
 
             assertEquals(0, periodenSoll.subtract(feiertagsGutschrift).compareTo(arbeitsSoll),
                     "Invariante arbeitsSoll == periodenSoll - feiertagsGutschrift verletzt fuer " + tag);
@@ -300,7 +307,7 @@ class TagesSollServiceTest {
         when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
         when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(Collections.emptyList());
 
-        tagesSollService.periodenSollSumme(MITARBEITER_ID, zeitkonto, von, bis);
+        tagesSollService.periodenSollSumme(MITARBEITER_ID, von, bis);
 
         verify(phaseRepository, times(1)).findImZeitraum(MITARBEITER_ID, von, bis);
         verify(feiertagService, times(1)).getFeiertageZwischen(von, bis);
@@ -315,7 +322,7 @@ class TagesSollServiceTest {
         when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
         when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(Collections.emptyList());
 
-        tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, zeitkonto, von, bis);
+        tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, von, bis);
 
         verify(phaseRepository, times(1)).findImZeitraum(MITARBEITER_ID, von, bis);
         verify(feiertagService, times(1)).getFeiertageZwischen(von, bis);
@@ -332,7 +339,7 @@ class TagesSollServiceTest {
         when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
         when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(Collections.emptyList());
 
-        BigDecimal result = tagesSollService.periodenSollSumme(MITARBEITER_ID, zeitkonto, von, bis);
+        BigDecimal result = tagesSollService.periodenSollSumme(MITARBEITER_ID, von, bis);
 
         assertEquals(0, new BigDecimal("40").compareTo(result));
     }
@@ -346,8 +353,8 @@ class TagesSollServiceTest {
         when(feiertagService.getFeiertageZwischen(von, bis))
                 .thenReturn(List.of(new Feiertag(neujahr, "Neujahr", "BY")));
 
-        BigDecimal periodenSoll = tagesSollService.periodenSollSumme(MITARBEITER_ID, zeitkonto, von, bis);
-        BigDecimal feiertagsGutschrift = tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, zeitkonto, von,
+        BigDecimal periodenSoll = tagesSollService.periodenSollSumme(MITARBEITER_ID, von, bis);
+        BigDecimal feiertagsGutschrift = tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, von,
                 bis);
 
         assertEquals(0, new BigDecimal("40").compareTo(periodenSoll),
@@ -366,9 +373,9 @@ class TagesSollServiceTest {
         when(feiertagService.getFeiertageZwischen(MONTAG_NORMAL, MONTAG_NORMAL))
                 .thenReturn(List.of(new Feiertag(MONTAG_NORMAL, "Fronleichnam", "NW", true)));
 
-        BigDecimal periodenSoll = tagesSollService.periodenSollSumme(MITARBEITER_ID, zeitkonto, MONTAG_NORMAL,
+        BigDecimal periodenSoll = tagesSollService.periodenSollSumme(MITARBEITER_ID, MONTAG_NORMAL,
                 MONTAG_NORMAL);
-        BigDecimal feiertagsGutschrift = tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID, zeitkonto,
+        BigDecimal feiertagsGutschrift = tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID,
                 MONTAG_NORMAL, MONTAG_NORMAL);
 
         assertEquals(0, new BigDecimal("8.00").compareTo(periodenSoll),
@@ -387,9 +394,9 @@ class TagesSollServiceTest {
         stubOhnePhase(VOLLER_FEIERTAG);
         stubFeiertag(VOLLER_FEIERTAG, true, false);
 
-        tagesSollService.arbeitsSoll(MITARBEITER_ID, zeitkonto, VOLLER_FEIERTAG);
+        tagesSollService.arbeitsSoll(MITARBEITER_ID, VOLLER_FEIERTAG);
 
-        verify(feiertagService, times(1)).getFeiertagInfo(VOLLER_FEIERTAG);
+        verify(feiertagService, times(1)).getFeiertageZwischen(VOLLER_FEIERTAG, VOLLER_FEIERTAG);
         verify(feiertagService, never()).istFeiertag(any());
         verify(feiertagService, never()).istHalberFeiertag(any());
     }
@@ -403,7 +410,7 @@ class TagesSollServiceTest {
         when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
         when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(Collections.emptyList());
 
-        tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, zeitkonto, von, bis);
+        tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis);
 
         verify(phaseRepository, times(1)).findImZeitraum(MITARBEITER_ID, von, bis);
         verify(feiertagService, times(1)).getFeiertageZwischen(von, bis);
@@ -419,8 +426,8 @@ class TagesSollServiceTest {
         when(phaseRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(Collections.emptyList());
         when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(Collections.emptyList());
 
-        tagesSollService.periodenSollJeTag(MITARBEITER_ID, zeitkonto, von, bis);
-        tagesSollService.feiertagsGutschriftJeTag(MITARBEITER_ID, zeitkonto, von, bis);
+        tagesSollService.periodenSollJeTag(MITARBEITER_ID, von, bis);
+        tagesSollService.feiertagsGutschriftJeTag(MITARBEITER_ID, von, bis);
 
         // Zwei Aufrufe (einer je Methode), aber jeweils genau EINE Ladung pro
         // Aufruf - keine Ladung pro Tag.
@@ -437,11 +444,11 @@ class TagesSollServiceTest {
         when(feiertagService.getFeiertageZwischen(von, bis))
                 .thenReturn(List.of(new Feiertag(neujahr, "Neujahr", "BY")));
 
-        Map<LocalDate, BigDecimal> periodenSollJeTag = tagesSollService.periodenSollJeTag(MITARBEITER_ID, zeitkonto,
+        Map<LocalDate, BigDecimal> periodenSollJeTag = tagesSollService.periodenSollJeTag(MITARBEITER_ID,
                 von, bis);
         Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = tagesSollService.feiertagsGutschriftJeTag(
-                MITARBEITER_ID, zeitkonto, von, bis);
-        Map<LocalDate, BigDecimal> arbeitsSollJeTag = tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, zeitkonto,
+                MITARBEITER_ID, von, bis);
+        Map<LocalDate, BigDecimal> arbeitsSollJeTag = tagesSollService.arbeitsSollJeTag(MITARBEITER_ID,
                 von, bis);
 
         assertEquals(7, periodenSollJeTag.size(), "ein Karteneintrag pro Tag im Zeitraum");
@@ -461,5 +468,98 @@ class TagesSollServiceTest {
             assertEquals(0, periodenSollJeTag.get(tag).subtract(feiertagsGutschriftJeTag.get(tag))
                     .compareTo(arbeitsSollJeTag.get(tag)), "Invariante verletzt fuer " + tag);
         }
+    }
+
+    @Test
+    void versionen38komma5Und7Ergeben45komma5UndHistorieBleibtBeiDeaktivierung() {
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        LocalDate wechsel = von.plusWeeks(1);
+        LocalDate bis = von.plusDays(13);
+        var alt = version(von, wechsel.minusDays(1));
+        alt.setMontagStunden(new BigDecimal("8"));
+        alt.setDienstagStunden(new BigDecimal("8"));
+        alt.setMittwochStunden(new BigDecimal("8"));
+        alt.setDonnerstagStunden(new BigDecimal("8"));
+        alt.setFreitagStunden(new BigDecimal("6.5"));
+        var neu = version(wechsel, null);
+        neu.setMontagStunden(new BigDecimal("7"));
+        when(versionRepository.findImZeitraum(1L, von, bis)).thenReturn(List.of(alt, neu));
+        assertEquals(0, new BigDecimal("45.5").compareTo(tagesSollService.periodenSollSumme(1L, von, bis)));
+        verify(versionRepository, times(1)).findImZeitraum(1L, von, bis);
+        verify(phaseRepository, times(1)).findImZeitraum(1L, von, bis);
+        verify(feiertagService, times(1)).getFeiertageZwischen(von, bis);
+        alt.getMitarbeiter().setFuehrtZeitkonto(false);
+        when(versionRepository.findImZeitraum(1L, von, wechsel.minusDays(1))).thenReturn(List.of(alt));
+        assertEquals(0, new BigDecimal("38.5").compareTo(
+                tagesSollService.periodenSollSumme(1L, von, wechsel.minusDays(1))));
+        verify(versionRepository, never()).save(any());
+    }
+
+    @Test
+    void versionierteFeiertageUndStufenplanBehaltenAlleRechenregeln() {
+        LocalDate von = LocalDate.of(2026, 12, 21);
+        LocalDate bis = von.plusDays(6);
+        var v = version(von, null);
+        v.setMontagStunden(new BigDecimal("8"));
+        v.setDienstagStunden(new BigDecimal("8"));
+        v.setMittwochStunden(new BigDecimal("8"));
+        v.setDonnerstagStunden(new BigDecimal("8"));
+        v.setFreitagStunden(new BigDecimal("8"));
+        when(versionRepository.findImZeitraum(1L, von, bis)).thenReturn(List.of(v));
+        when(phaseRepository.findImZeitraum(1L, von, bis))
+                .thenReturn(List.of(wiedereingliederungsPhase(new BigDecimal("3.5"), von)));
+        Feiertag halb = new Feiertag(); halb.setDatum(von.plusDays(3)); halb.setBundesland("BY"); halb.setHalbTag(true);
+        Feiertag voll = new Feiertag(); voll.setDatum(von.plusDays(4)); voll.setBundesland("BY");
+        Feiertag fremd = new Feiertag(); fremd.setDatum(von); fremd.setBundesland("HE");
+        Feiertag wochenende = new Feiertag(); wochenende.setDatum(bis); wochenende.setBundesland("BY");
+        when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(List.of(halb, voll, fremd, wochenende));
+        assertEquals(0, new BigDecimal("15.75").compareTo(tagesSollService.periodenSollSumme(1L, von, bis)));
+        assertEquals(0, new BigDecimal("5.25").compareTo(tagesSollService.feiertagsGutschriftSumme(1L, von, bis)));
+        assertEquals(0, new BigDecimal("10.50").compareTo(tagesSollService.arbeitsSollSumme(1L, von, bis)));
+        when(versionRepository.findImZeitraum(1L, halb.getDatum(), halb.getDatum())).thenReturn(List.of(v));
+        when(phaseRepository.findImZeitraum(1L, halb.getDatum(), halb.getDatum()))
+                .thenReturn(List.of(wiedereingliederungsPhase(new BigDecimal("3.5"), von)));
+        when(feiertagService.getFeiertageZwischen(halb.getDatum(), halb.getDatum())).thenReturn(List.of(halb));
+        assertEquals(0, new BigDecimal("1.75").compareTo(tagesSollService.periodenSoll(1L, halb.getDatum())));
+        assertEquals(0, new BigDecimal("1.75").compareTo(tagesSollService.feiertagsGutschrift(1L, halb.getDatum())));
+        assertEquals(0, BigDecimal.ZERO.compareTo(tagesSollService.arbeitsSoll(1L, halb.getDatum())));
+    }
+
+    @Test
+    void fehlendeVersionUndKontopauseLiefernNullOhneStillesStandardkonto() {
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        var v = version(von.plusDays(7), null); v.setMontagStunden(new BigDecimal("7"));
+        when(versionRepository.findImZeitraum(1L, von, von.plusDays(7))).thenReturn(List.of(v));
+        var tage = tagesSollService.periodenSollJeTag(1L, von, von.plusDays(7));
+        assertEquals(BigDecimal.ZERO, tage.get(von));
+        assertEquals(new BigDecimal("7"), tage.get(von.plusDays(7)));
+        when(versionRepository.findImZeitraum(1L, von, von)).thenReturn(List.of());
+        assertEquals(BigDecimal.ZERO, tagesSollService.periodenSoll(1L, von));
+        verify(versionRepository, never()).save(any());
+    }
+
+    @Test
+    void vorschauMitArbeitszeitBeruecksichtigtFeiertagUndStufenplanOhneVersionZuLaden() {
+        stubMitPhase(HALBER_FEIERTAG,
+                wiedereingliederungsPhase(new BigDecimal("2.00"), HALBER_FEIERTAG));
+        stubFeiertag(HALBER_FEIERTAG, true, true);
+        var arbeitszeit = new ZeitkontenmodellDto.Arbeitszeit(
+                new BigDecimal("8.00"), new BigDecimal("8.00"), new BigDecimal("8.00"),
+                new BigDecimal("8.00"), new BigDecimal("8.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                null, null);
+
+        var ergebnis = tagesSollService.vorschau(MITARBEITER_ID, arbeitszeit,
+                HALBER_FEIERTAG, HALBER_FEIERTAG);
+
+        assertEquals(0, new BigDecimal("1.00").compareTo(ergebnis.periodenSoll()));
+        assertEquals(0, new BigDecimal("1.00").compareTo(ergebnis.feiertagsGutschrift()));
+        verify(versionRepository, never()).findImZeitraum(any(), any(), any());
+        verify(versionRepository, never()).save(any());
+    }
+
+    private org.example.kalkulationsprogramm.domain.ZeitkontoVersion version(LocalDate von, LocalDate bis) {
+        var v = new org.example.kalkulationsprogramm.domain.ZeitkontoVersion();
+        v.setMitarbeiter(zeitkonto.getMitarbeiter()); v.setGueltigVon(von); v.setGueltigBis(bis);
+        return v;
     }
 }

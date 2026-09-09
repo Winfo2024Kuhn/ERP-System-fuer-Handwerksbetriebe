@@ -15,13 +15,15 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
 /**
  * Performance-Cache für monatliche Saldo-Daten pro Mitarbeiter.
  * 
- * Dies ist KEIN rechtsgültiges Dokument, sondern ein reiner Berechnungscache.
+ * Offene Monate dienen als Berechnungscache; abgeschlossene Monate bewahren
+ * den vom Büro geprüften Stand. Die Abschlusssperre wird im Service durchgesetzt.
  * Die rechtsgültigen Quelldaten (Zeitbuchung, Abwesenheit, ZeitkontoKorrektur)
  * bleiben unverändert bestehen. Bei jeder Änderung an den Quelldaten wird
  * der Cache für den betroffenen Monat invalidiert (gueltig=false) und
@@ -47,6 +49,19 @@ public class MonatsSaldo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Version
+    @Column(nullable = false)
+    private Long version;
+
+    @Column(nullable = false)
+    private Boolean festgeschrieben = false;
+
+    private LocalDateTime festgeschriebenAm;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "festgeschrieben_von_mitarbeiter_id")
+    private Mitarbeiter festgeschriebenVon;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "mitarbeiter_id", nullable = false)

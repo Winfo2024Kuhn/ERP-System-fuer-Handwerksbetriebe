@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -15,8 +15,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select } from '../components/ui/select-custom';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { useToast } from '../components/ui/toast';
 import { StundenlohnHistorieList } from '../components/mitarbeiter/StundenlohnHistorieList';
 import { BeschaeftigungsWizard, type Beschaeftigungsart } from '../components/mitarbeiter/BeschaeftigungsWizard';
+import type { Arbeitszeit, Zeitkontenmodell, ZeitkontoStatus, ZeitkontoWechsel, ZeitkontoWechselErgebnis } from '../types/zeitkonto';
 
 // Interfaces
 interface Abteilung {
@@ -51,6 +53,7 @@ interface Mitarbeiter {
     istGeschaeftsfuehrer?: boolean | null;
     kalkulatorischerLohnMonat?: number | null;
     geldwertVorteilMonat?: number | null;
+    fuehrtZeitkonto?: boolean | null;
 }
 
 const QUALIFIKATIONEN = [
@@ -94,9 +97,23 @@ interface Lohnabrechnung {
 }
 
 const BASE_API = '/api/mitarbeiter';
+const ZEITKONTO_API = '/api/zeitverwaltung/zeitkonten';
+const HEUTE = new Date().toISOString().slice(0, 10);
+const LEERE_ARBEITSZEIT: Arbeitszeit = {
+    montagStunden: 0, dienstagStunden: 0, mittwochStunden: 0, donnerstagStunden: 0,
+    freitagStunden: 0, samstagStunden: 0, sonntagStunden: 0,
+    buchungStartZeit: null, buchungEndeZeit: null,
+};
+const WOCHENTAGE: { key: keyof Pick<Arbeitszeit, 'montagStunden' | 'dienstagStunden' | 'mittwochStunden' | 'donnerstagStunden' | 'freitagStunden' | 'samstagStunden' | 'sonntagStunden'>; label: string }[] = [
+    { key: 'montagStunden', label: 'Montag' }, { key: 'dienstagStunden', label: 'Dienstag' },
+    { key: 'mittwochStunden', label: 'Mittwoch' }, { key: 'donnerstagStunden', label: 'Donnerstag' },
+    { key: 'freitagStunden', label: 'Freitag' }, { key: 'samstagStunden', label: 'Samstag' },
+    { key: 'sonntagStunden', label: 'Sonntag' },
+];
 
 export default function MitarbeiterEditor() {
     const confirmDialog = useConfirm();
+    const toast = useToast();
     const [view, setView] = useState<'LIST' | 'DETAIL'>('LIST');
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
     const [selectedMitarbeiter, setSelectedMitarbeiter] = useState<Mitarbeiter | null>(null);
@@ -106,6 +123,18 @@ export default function MitarbeiterEditor() {
     // Form States
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<Mitarbeiter>>({});
+    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null);
+    const [zeitkontenmodelle, setZeitkontenmodelle] = useState<Zeitkontenmodell[]>([]);
+    const [loadingZeitkonto, setLoadingZeitkonto] = useState(false);
+    const [zeitkontoDialogOpen, setZeitkontoDialogOpen] = useState(false);
+    const [stichtag, setStichtag] = useState(HEUTE);
+    const [vorlageId, setVorlageId] = useState('');
+    const [individuelleAbweichung, setIndividuelleAbweichung] = useState(false);
+    const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<Arbeitszeit>(LEERE_ARBEITSZEIT);
+    const [wechselVorschau, setWechselVorschau] = useState<ZeitkontoWechselErgebnis | null>(null);
+    const [wechselFehler, setWechselFehler] = useState<string | null>(null);
+    const [loadingWechsel, setLoadingWechsel] = useState(false);
+    const vorschauRequestId = useRef(0);
 
     // QR-Code States
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -154,6 +183,175 @@ export default function MitarbeiterEditor() {
         } catch (error) {
             console.error("Error loading departments", error);
         }
+    };
+
+    const antwortFehler = async (res: Response, fallback: string) => {
+        try {
+            const body = await res.json();
+            return body.message || body.error || fallback;
+        } catch {
+            return fallback;
+        }
+    };
+
+    const loadZeitkonto = async (mitarbeiterId: number) => {
+        setLoadingZeitkonto(true);
+        try {
+            const [statusRes, modelleRes] = await Promise.all([
+                fetch(`${ZEITKONTO_API}/${mitarbeiterId}`),
+                fetch('/api/zeitverwaltung/zeitkontenmodelle'),
+            ]);
+            if (!statusRes.ok) throw new Error(await antwortFehler(statusRes, 'Arbeitszeit konnte nicht geladen werden.'));
+            if (!modelleRes.ok) throw new Error(await antwortFehler(modelleRes, 'Arbeitszeit-Vorlagen konnten nicht geladen werden.'));
+            const [status, modelle] = await Promise.all([statusRes.json(), modelleRes.json()]);
+            setZeitkontoStatus(status);
+            setZeitkontenmodelle(modelle);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Arbeitszeit konnte nicht geladen werden.';
+            setZeitkontoStatus(null);
+            toast.error(message);
+        } finally {
+            setLoadingZeitkonto(false);
+        }
+    };
+
+    const uebernehmeZeitkontoStatus = (status: ZeitkontoStatus) => {
+        setZeitkontoStatus(status);
+        setFormData(prev => ({ ...prev, fuehrtZeitkonto: status.fuehrtZeitkonto }));
+        setSelectedMitarbeiter(prev => prev?.id === status.mitarbeiterId
+            ? { ...prev, fuehrtZeitkonto: status.fuehrtZeitkonto } : prev);
+        setMitarbeiter(prev => prev.map(m => m.id === status.mitarbeiterId
+            ? { ...m, fuehrtZeitkonto: status.fuehrtZeitkonto } : m));
+    };
+
+    const arbeitszeitenGleich = (links: Arbeitszeit, rechts: Arbeitszeit) => WOCHENTAGE.every(tag => links[tag.key] === rechts[tag.key])
+        && links.buchungStartZeit === rechts.buchungStartZeit
+        && links.buchungEndeZeit === rechts.buchungEndeZeit;
+
+    const invalidiereVorschau = () => {
+        vorschauRequestId.current += 1;
+        setWechselVorschau(null);
+        setWechselFehler(null);
+        setLoadingWechsel(false);
+    };
+
+    useEffect(() => {
+        if (isDialogOpen && formData.id) {
+            void loadZeitkonto(formData.id);
+        } else if (!isDialogOpen && !zeitkontoDialogOpen) {
+            setZeitkontoStatus(null);
+            setWechselVorschau(null);
+            setWechselFehler(null);
+        }
+    // Der Dialog soll nur bei einem anderen Mitarbeiter oder beim Oeffnen erneut laden.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDialogOpen, zeitkontoDialogOpen, formData.id]);
+
+    const oeffneArbeitszeitDialog = () => {
+        const aktuelleVersion = zeitkontoStatus?.aktuell;
+        const aktuell = aktuelleVersion?.arbeitszeit;
+        const aktuelleVorlage = zeitkontenmodelle.find(modell => modell.id === aktuelleVersion?.vorlageId);
+        setStichtag(zeitkontoStatus?.fuehrtZeitkonto === false ? HEUTE : HEUTE);
+        setVorlageId(aktuelleVersion?.vorlageId ? String(aktuelleVersion.vorlageId) : aktuell ? 'individuell' : '');
+        setIndividuelleAbweichung(!!aktuell && !!aktuelleVorlage && !arbeitszeitenGleich(aktuell, aktuelleVorlage.arbeitszeit));
+        setIndividuelleArbeitszeit(aktuell ?? LEERE_ARBEITSZEIT);
+        invalidiereVorschau();
+        setZeitkontoDialogOpen(true);
+        setIsDialogOpen(false);
+    };
+
+    const wechselRequest = (): ZeitkontoWechsel | null => {
+        if (!zeitkontoStatus) return null;
+        const vorlage = zeitkontenmodelle.find(m => m.id === Number(vorlageId));
+        return {
+            gueltigVon: stichtag,
+            expectedMitarbeiterVersion: zeitkontoStatus.mitarbeiterVersion,
+            expectedLetzteVersionId: zeitkontoStatus.letzteVersion?.id ?? null,
+            expectedLetzteVersion: zeitkontoStatus.letzteVersion?.version ?? null,
+            vorlageId: vorlage?.id ?? null,
+            expectedVorlageVersion: vorlage?.version ?? null,
+            arbeitszeit: vorlage && !individuelleAbweichung ? null : individuelleArbeitszeit,
+        };
+    };
+
+    const ladeVorschau = async () => {
+        if (!zeitkontoStatus) return;
+        const request = wechselRequest();
+        if (!request) return;
+        const requestId = ++vorschauRequestId.current;
+        setLoadingWechsel(true);
+        setWechselFehler(null);
+        try {
+            const res = await fetch(`${ZEITKONTO_API}/${zeitkontoStatus.mitarbeiterId}/vorschau`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+            });
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Die Vorschau konnte nicht erstellt werden.'));
+            const ergebnis: ZeitkontoWechselErgebnis = await res.json();
+            if (requestId === vorschauRequestId.current) setWechselVorschau(ergebnis);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Die Vorschau konnte nicht erstellt werden.';
+            if (requestId === vorschauRequestId.current) {
+                setWechselFehler(message);
+                toast.error(message);
+            }
+        } finally {
+            if (requestId === vorschauRequestId.current) setLoadingWechsel(false);
+        }
+    };
+
+    const uebernehmeArbeitszeit = async () => {
+        if (!zeitkontoStatus) return;
+        const request = wechselRequest();
+        if (!request) return;
+        setLoadingWechsel(true);
+        setWechselFehler(null);
+        try {
+            const res = await fetch(`${ZEITKONTO_API}/${zeitkontoStatus.mitarbeiterId}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+            });
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Die Arbeitszeit konnte nicht übernommen werden.'));
+            const ergebnis: ZeitkontoWechselErgebnis = await res.json();
+            uebernehmeZeitkontoStatus(ergebnis.zeitkonto);
+            setWechselVorschau(ergebnis);
+            toast.success('Arbeitszeit wurde übernommen.');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Die Arbeitszeit konnte nicht übernommen werden.';
+            setWechselFehler(message);
+            toast.error(message);
+        } finally {
+            setLoadingWechsel(false);
+        }
+    };
+
+    const schalteArbeitszeitAus = async () => {
+        if (!zeitkontoStatus) return;
+        if (!await confirmDialog({ title: 'Arbeitszeit ausschalten', message: 'Diese Person führt dann kein Zeitkonto mehr. Bereits erfasste Stunden bleiben erhalten.', variant: 'danger', confirmLabel: 'Ausschalten' })) return;
+        setLoadingWechsel(true);
+        try {
+            const res = await fetch(`${ZEITKONTO_API}/${zeitkontoStatus.mitarbeiterId}/ausschalten`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    expectedMitarbeiterVersion: zeitkontoStatus.mitarbeiterVersion,
+                    expectedLetzteVersionId: zeitkontoStatus.letzteVersion?.id ?? null,
+                    expectedLetzteVersion: zeitkontoStatus.letzteVersion?.version ?? null,
+                }),
+            });
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Arbeitszeit konnte nicht ausgeschaltet werden.'));
+            uebernehmeZeitkontoStatus(await res.json());
+            toast.success('Arbeitszeit ist ausgeschaltet.');
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Arbeitszeit konnte nicht ausgeschaltet werden.');
+        } finally {
+            setLoadingWechsel(false);
+        }
+    };
+
+    const beschreibeArbeitszeit = (version: ZeitkontoStatus['aktuell']) => {
+        if (!version?.vorlageId) return 'eigene Arbeitszeit';
+        const vorlage = zeitkontenmodelle.find(modell => modell.id === version.vorlageId);
+        if (!vorlage) return 'Arbeitszeit-Vorlage';
+        const gleich = arbeitszeitenGleich(version.arbeitszeit, vorlage.arbeitszeit);
+        return gleich ? `Vorlage „${vorlage.bezeichnung}“` : `weicht von „${vorlage.bezeichnung}“ ab`;
     };
 
     const loadDokumente = async (id: number) => {
@@ -236,24 +434,34 @@ export default function MitarbeiterEditor() {
         try {
             const method = formData.id ? 'PUT' : 'POST';
             const url = formData.id ? `${BASE_API}/${formData.id}` : BASE_API;
+            // Bestehende Mitarbeiter duerfen das Flag nie ueber den Stamm-Endpoint aendern.
+            // Die sichtbare Aktualisierung stammt vorher aus dem atomaren Zeitkonto-Workflow.
+            const payload = { ...formData };
+            if (formData.id) delete payload.fuehrtZeitkonto;
 
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(payload)
             });
 
-            if (res.ok) {
-                const saved = await res.json();
-                if (view === 'DETAIL' && selectedMitarbeiter?.id === saved.id) {
-                    setSelectedMitarbeiter(saved);
-                }
-                loadMitarbeiter();
-                setIsDialogOpen(false);
-                setFormData({});
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Mitarbeiter konnte nicht gespeichert werden.'));
+            const saved = await res.json();
+            const mitAktuellemZeitkonto = zeitkontoStatus && zeitkontoStatus.mitarbeiterId === saved.id
+                ? { ...saved, fuehrtZeitkonto: zeitkontoStatus.fuehrtZeitkonto } : saved;
+            if (view === 'DETAIL' && selectedMitarbeiter?.id === saved.id) setSelectedMitarbeiter(mitAktuellemZeitkonto);
+            if (!formData.id) {
+                setSelectedMitarbeiter(mitAktuellemZeitkonto);
+                setView('DETAIL');
+                toast.info('Mitarbeiter angelegt. Arbeitszeit können Sie jetzt bewusst einrichten.');
+            } else {
+                toast.success('Mitarbeiter gespeichert.');
             }
+            void loadMitarbeiter();
+            setIsDialogOpen(false);
+            setFormData({});
         } catch (error) {
-            console.error("Error saving employee", error);
+            toast.error(error instanceof Error ? error.message : 'Mitarbeiter konnte nicht gespeichert werden.');
         }
     };
 
@@ -1152,6 +1360,74 @@ export default function MitarbeiterEditor() {
                                         <p className="text-xs text-slate-500">Mitarbeiter ist im System aktiv und kann sich anmelden</p>
                                     </div>
                                 </label>
+                                {formData.id ? (
+                                    loadingZeitkonto ? (
+                                        <div className="h-28 rounded-lg border border-slate-200 bg-slate-50 motion-safe:animate-pulse" aria-label="Arbeitszeit wird geladen" />
+                                    ) : zeitkontoStatus ? (
+                                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-800">Arbeitszeit erfassen</p>
+                                                    <p className="mt-1 text-xs text-slate-500">
+                                                        {zeitkontoStatus.hinweis || 'Die Arbeitszeit ist eingerichtet.'}
+                                                    </p>
+                                                </div>
+                                                <span className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium ${zeitkontoStatus.fuehrtZeitkonto ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                    {zeitkontoStatus.fuehrtZeitkonto ? 'An' : 'Aus'}
+                                                </span>
+                                            </div>
+                                            {zeitkontoStatus.aktuell && (
+                                                    <p className="text-xs text-slate-600">
+                                                    Aktuell seit {new Date(`${zeitkontoStatus.aktuell.gueltigVon}T00:00:00`).toLocaleDateString('de-DE')}
+                                                    {' · '}{beschreibeArbeitszeit(zeitkontoStatus.aktuell)}.
+                                                </p>
+                                            )}
+                                            {zeitkontoStatus.historie.length > 0 && (
+                                                <div className="border-t border-slate-100 pt-2">
+                                                    <p className="text-xs font-medium text-slate-600">Bisherige Arbeitszeiten</p>
+                                                    <ul className="mt-1 space-y-1 text-xs text-slate-500">
+                                                        {zeitkontoStatus.historie.slice().reverse().map(version => (
+                                                            <li key={version.id}>
+                                                                Ab {new Date(`${version.gueltigVon}T00:00:00`).toLocaleDateString('de-DE')}
+                                                                {version.gueltigBis ? ` bis ${new Date(`${version.gueltigBis}T00:00:00`).toLocaleDateString('de-DE')}` : ''}
+                                                                {' · '}{beschreibeArbeitszeit(version)}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                                                {zeitkontoStatus.fuehrtZeitkonto ? (
+                                                    <>
+                                                        <Button type="button" size="sm" variant="outline" onClick={oeffneArbeitszeitDialog} disabled={loadingWechsel} className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                                                            {zeitkontoStatus.eingerichtet ? 'Arbeitszeit ändern' : 'Arbeitszeit einrichten'}
+                                                        </Button>
+                                                        <Button type="button" size="sm" variant="ghost" onClick={schalteArbeitszeitAus} disabled={loadingWechsel} className="text-rose-700 hover:bg-rose-50">
+                                                            Arbeitszeit ausschalten
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <Button type="button" size="sm" onClick={oeffneArbeitszeitDialog} disabled={loadingWechsel} className="bg-rose-600 text-white hover:bg-rose-700">
+                                                        Arbeitszeit einschalten und einrichten
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : null
+                                ) : (
+                                    <label className="flex items-start gap-3 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.fuehrtZeitkonto ?? true}
+                                            onChange={e => setFormData({ ...formData, fuehrtZeitkonto: e.target.checked })}
+                                            className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                        />
+                                        <div>
+                                            <span className="text-sm font-medium text-slate-700">Arbeitszeit erfassen</span>
+                                            <p className="text-xs text-slate-500 mt-1">Ausschalten, wenn diese Person nicht stempelt, zum Beispiel als Chef. Die Arbeitszeit richten Sie nach dem Anlegen bewusst ein.</p>
+                                        </div>
+                                    </label>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1159,6 +1435,121 @@ export default function MitarbeiterEditor() {
                     <DialogFooter className="border-t pt-4">
                         <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Abbrechen</Button>
                         <Button onClick={handleSave} className="bg-rose-600 text-white hover:bg-rose-700">Speichern</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={zeitkontoDialogOpen} onOpenChange={offen => {
+                setZeitkontoDialogOpen(offen);
+                if (!offen) {
+                    invalidiereVorschau();
+                    setIsDialogOpen(true);
+                }
+            }}>
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>Arbeitszeit {zeitkontoStatus?.eingerichtet ? 'ändern' : 'einrichten'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-5 py-2">
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                            Der Stichtag entscheidet, ab wann die neue Arbeitszeit gilt. Abgeschlossene Monate bleiben unverändert; offene Monate werden danach neu gerechnet.
+                        </div>
+                        {zeitkontoStatus?.fuehrtZeitkonto === false && (
+                            <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                Beim Einschalten beginnt die Arbeitszeit heute. Frühere Zeiträume bleiben unverändert.
+                            </p>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <Label className="text-xs">Gültig ab</Label>
+                                <DatePicker value={stichtag} onChange={value => { setStichtag(value); invalidiereVorschau(); }} disabled={zeitkontoStatus?.fuehrtZeitkonto === false} />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Arbeitszeit-Vorlage</Label>
+                                <Select
+                                    value={vorlageId}
+                                    onChange={value => {
+                                        setVorlageId(value);
+                                        if (value && value !== 'individuell') {
+                                            const vorlage = zeitkontenmodelle.find(m => m.id === Number(value));
+                                            if (vorlage) setIndividuelleArbeitszeit(vorlage.arbeitszeit);
+                                        }
+                                        setIndividuelleAbweichung(false);
+                                        invalidiereVorschau();
+                                    }}
+                                    placeholder="Vorlage auswählen"
+                                    options={[
+                                        ...zeitkontenmodelle.map(modell => ({ value: String(modell.id), label: modell.bezeichnung })),
+                                        { value: 'individuell', label: 'Eigene Arbeitszeit festlegen' },
+                                    ]}
+                                />
+                            </div>
+                        </div>
+                        {vorlageId && vorlageId !== 'individuell' && (
+                            <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 cursor-pointer hover:bg-slate-50">
+                                <input type="checkbox" checked={individuelleAbweichung}
+                                    onChange={e => { setIndividuelleAbweichung(e.target.checked); invalidiereVorschau(); }}
+                                    className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+                                <span className="text-sm text-slate-700">Diese Vorlage für diese Person individuell anpassen</span>
+                            </label>
+                        )}
+                        {(vorlageId === 'individuell' || individuelleAbweichung) && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
+                                <div>
+                                    <p className="text-sm font-medium text-slate-800">{individuelleAbweichung ? 'Individuelle Abweichung' : 'Eigene Arbeitszeit'}</p>
+                                    <p className="text-xs text-slate-500 mt-1">{individuelleAbweichung ? 'Die ausgewählte Vorlage bleibt als Herkunft erhalten. Diese Person erhält dafür eigene Werte.' : 'Diese Werte werden als persönlicher Zeitabschnitt gespeichert.'}</p>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    {WOCHENTAGE.map(tag => (
+                                        <div key={tag.key} className="space-y-1">
+                                            <Label className="text-xs">{tag.label}</Label>
+                                            <Input type="number" min="0" max="24" step="0.25" value={individuelleArbeitszeit[tag.key]}
+                                                onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, [tag.key]: Number(e.target.value) }); invalidiereVorschau(); }} />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-1"><Label className="text-xs">Früheste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungStartZeit ?? ''} onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungStartZeit: e.target.value || null }); invalidiereVorschau(); }} /></div>
+                                    <div className="space-y-1"><Label className="text-xs">Späteste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungEndeZeit ?? ''} onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungEndeZeit: e.target.value || null }); invalidiereVorschau(); }} /></div>
+                                </div>
+                            </div>
+                        )}
+                        {!vorlageId && (
+                            <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">Bitte eine Arbeitszeit-Vorlage wählen oder eigene Zeiten festlegen.</p>
+                        )}
+                        {wechselFehler && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{wechselFehler}</p>}
+                        {wechselVorschau && (
+                            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-900">{wechselVorschau.gespeichert ? 'Übernommen' : 'Vorschau'}</p>
+                                    <p className="mt-1 text-sm text-slate-600">{wechselVorschau.hinweis}</p>
+                                    {wechselVorschau.bestehendeAbwesenheiten > 0 && <p className="mt-1 text-xs text-amber-800">{wechselVorschau.bestehendeAbwesenheiten} gebuchte Abwesenheit(en) behalten ihre bisherigen Stunden.</p>}
+                                </div>
+                                <ul className="divide-y divide-slate-100 text-sm">
+                                    {wechselVorschau.monate.map(monat => (
+                                        <li key={`${monat.jahr}-${monat.monat}`} className="flex flex-wrap justify-between gap-2 py-2 text-slate-700">
+                                            <span>{new Date(monat.jahr, monat.monat - 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}{monat.abgeschlossen ? ' · abgeschlossen' : ''}</span>
+                                            <span className={monat.geaendert ? 'font-medium text-rose-700' : 'text-slate-500'}>
+                                                {monat.saldoNachher == null ? `${monat.saldoVorher.toFixed(2)} Std.` : `${monat.saldoVorher.toFixed(2)} → ${monat.saldoNachher.toFixed(2)} Std.`}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter className="shrink-0 border-t pt-4">
+                        <Button variant="outline" onClick={() => setZeitkontoDialogOpen(false)}>Abbrechen</Button>
+                        {!wechselVorschau?.gespeichert && (
+                            <Button type="button" variant="outline" onClick={ladeVorschau} disabled={loadingWechsel || !vorlageId} className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                                {loadingWechsel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Vorschau anzeigen
+                            </Button>
+                        )}
+                        {wechselVorschau && !wechselVorschau.gespeichert && (
+                            <Button type="button" onClick={uebernehmeArbeitszeit} disabled={loadingWechsel} className="bg-rose-600 text-white hover:bg-rose-700">
+                                {loadingWechsel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Jetzt übernehmen
+                            </Button>
+                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -1389,4 +1780,3 @@ export default function MitarbeiterEditor() {
         </PageLayout>
     );
 }
-

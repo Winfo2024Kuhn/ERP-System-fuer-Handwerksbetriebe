@@ -57,6 +57,7 @@ public class AbteilungBerechtigungController {
             result.add(AbteilungBerechtigungDto.Response.builder()
                 .abteilungId(abt.getId())
                 .abteilungName(abt.getName())
+                .darfMonatAbschliessen(Boolean.TRUE.equals(abt.getDarfMonatAbschliessen()))
                 .berechtigungen(typBerechtigungen)
                 .darfRechnungenGenehmigen(Boolean.TRUE.equals(abt.getDarfRechnungenGenehmigen()))
                 .darfRechnungenSehen(Boolean.TRUE.equals(abt.getDarfRechnungenSehen()))
@@ -99,6 +100,7 @@ public class AbteilungBerechtigungController {
         return ResponseEntity.ok(AbteilungBerechtigungDto.Response.builder()
             .abteilungId(abteilung.getId())
             .abteilungName(abteilung.getName())
+            .darfMonatAbschliessen(Boolean.TRUE.equals(abteilung.getDarfMonatAbschliessen()))
             .berechtigungen(typBerechtigungen)
             .darfRechnungenGenehmigen(Boolean.TRUE.equals(abteilung.getDarfRechnungenGenehmigen()))
             .darfRechnungenSehen(Boolean.TRUE.equals(abteilung.getDarfRechnungenSehen()))
@@ -161,10 +163,13 @@ public class AbteilungBerechtigungController {
         if (request.getDarfWebseitenAnfragenPushen() != null) {
             abteilung.setDarfWebseitenAnfragenPushen(request.getDarfWebseitenAnfragenPushen());
         }
+        if (request.getDarfMonatAbschliessen() != null) {
+            abteilung.setDarfMonatAbschliessen(request.getDarfMonatAbschliessen());
+        }
         abteilungRepository.save(abteilung);
 
         // Berechtigungen aktualisieren oder erstellen
-        for (AbteilungBerechtigungDto.TypBerechtigung tb : request.getBerechtigungen()) {
+        for (AbteilungBerechtigungDto.TypBerechtigung tb : request.getBerechtigungen() == null ? List.<AbteilungBerechtigungDto.TypBerechtigung>of() : request.getBerechtigungen()) {
             AbteilungDokumentBerechtigung b = map.get(tb.getTyp());
             if (b == null) {
                 b = new AbteilungDokumentBerechtigung();

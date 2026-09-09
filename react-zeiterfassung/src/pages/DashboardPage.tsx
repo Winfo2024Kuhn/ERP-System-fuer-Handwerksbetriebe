@@ -4,6 +4,7 @@ import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, 
 import { buildBookingRequestPayload, createOperationId, OfflineService, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
+import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
 
 interface Session {
     projektId: number | null
@@ -76,6 +77,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     const [actionInProgress, setActionInProgress] = useState(false)
     const [heuteStunden, setHeuteStunden] = useState(0)
     const [heuteMinuten, setHeuteMinuten] = useState(0)
+    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
+    const [zeitkontoWirdGeprueft, setZeitkontoWirdGeprueft] = useState(true)
+    const [zeitkontoFehler, setZeitkontoFehler] = useState<string | null>(null)
 
     // Checkbox/Switch logic
     const [viewMode, setViewMode] = useState<'activities' | 'projects'>('activities')
@@ -120,6 +124,30 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     // Fehler statt dass die Buchung still gelöscht wird.
     const [failedEntries, setFailedEntries] = useState<FailedEntry[]>([])
     const [showFailedModal, setShowFailedModal] = useState(false)
+
+    const hatZeitkonto = hatEingerichtetesZeitkonto(zeitkontoStatus)
+
+    const loadZeitkontoStatus = async () => {
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (!token) return
+
+        setZeitkontoWirdGeprueft(true)
+        setZeitkontoFehler(null)
+        try {
+            const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
+            if (!res.ok) throw new Error('Status konnte nicht geladen werden')
+            const data = await res.json() as ZeitkontoStatus
+            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') {
+                throw new Error('Unvollständige Antwort')
+            }
+            setZeitkontoStatus(data)
+        } catch {
+            setZeitkontoStatus(null)
+            setZeitkontoFehler('Die Arbeitszeit-Einrichtung konnte nicht geprüft werden. Bitte später erneut versuchen.')
+        } finally {
+            setZeitkontoWirdGeprueft(false)
+        }
+    }
 
     const loadFailedEntries = async () => {
         const entries = await OfflineService.getFailedEntries()
@@ -379,6 +407,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     useEffect(() => {
         // Load active session from server (primary) or localStorage (fallback)
         loadActiveSession()
+        loadZeitkontoStatus()
         // Load today's hours
         loadHeuteGearbeitet()
         // Urlaubsverfall-Warnung und Langzeitkrankmeldung parallel laden, nicht
@@ -399,6 +428,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             loadActiveSession()
             loadHeuteGearbeitet()
             loadFailedEntries()
+            loadZeitkontoStatus()
         }
     }, [syncStatus])
 
@@ -1053,6 +1083,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         </div>
 
                         {/* Action Buttons */}
+                        {hatZeitkonto && (
                         <div className="grid grid-cols-3 gap-2 mb-3">
                             {isAbwesenheitOderPause(activeSession.typ) ? (
                                 <>
@@ -1091,9 +1122,10 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                                 </>
                             )}
                         </div>
+                        )}
 
                         {/* Pause Button (above Gehen, same size) */}
-                        {!isAbwesenheitOderPause(activeSession.typ) && (
+                        {hatZeitkonto && !isAbwesenheitOderPause(activeSession.typ) && (
                             <button
                                 onClick={handlePause}
                                 disabled={actionInProgress}
@@ -1114,7 +1146,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                             Gehen (Feierabend)
                         </button>
                     </div>
-                ) : (
+                ) : hatZeitkonto ? (
                     <button
                         onClick={() => navigate('/zeiterfassung')}
                         className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-2xl p-6 shadow-sm transition-colors"
@@ -1132,6 +1164,19 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                             <ChevronRight className="w-6 h-6 text-white/70" />
                         </div>
                     </button>
+                ) : (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm" role="status">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" aria-hidden="true" />
+                            <div>
+                                <p className="font-semibold text-slate-900">Zeiterfassung derzeit nicht verfügbar</p>
+                                <p className="mt-1 text-sm text-slate-700">
+                                    {zeitkontoWirdGeprueft ? 'Die Arbeitszeit-Einrichtung wird geprüft.' : zeitkontoHinweis(zeitkontoStatus)}
+                                </p>
+                                {zeitkontoFehler && <p className="mt-1 text-sm text-amber-800">{zeitkontoFehler}</p>}
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {/* Quick Actions Grid - 2x2 */}
@@ -1209,7 +1254,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         </div>
                     </button>
 
-                    <button
+                    {hatZeitkonto && <button
                         onClick={() => navigate('/urlaub')}
                         className="w-full bg-white border border-slate-200 rounded-xl p-4 hover:border-rose-200 hover:shadow-md transition-all text-left flex items-center gap-4"
                     >
@@ -1220,9 +1265,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                             <p className="font-semibold text-slate-900">Abwesenheit beantragen</p>
                             <p className="text-sm text-slate-500">Urlaub, Krankheit, Fortbildung</p>
                         </div>
-                    </button>
+                    </button>}
 
-                    <button
+                    {hatZeitkonto && <button
                         onClick={() => navigate('/salden')}
                         className="w-full bg-white border border-slate-200 rounded-xl p-4 hover:border-rose-200 hover:shadow-md transition-all text-left flex items-center gap-4"
                     >
@@ -1233,11 +1278,11 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                             <p className="font-semibold text-slate-900">Saldenauswertung</p>
                             <p className="text-sm text-slate-500">Urlaub & Stunden übersicht</p>
                         </div>
-                    </button>
+                    </button>}
                 </div>
 
                 {/* Heute Stats */}
-                <button
+                {hatZeitkonto && <button
                     onClick={() => navigate('/tagesbuchungen')}
                     className="w-full bg-white border border-slate-200 rounded-xl p-4 text-left hover:border-rose-200 hover:shadow-sm transition-all"
                 >
@@ -1247,7 +1292,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         <ChevronRight className="w-4 h-4 text-slate-400 ml-auto" />
                     </div>
                     <p className="text-2xl font-bold text-slate-900">{heuteStunden}h {heuteMinuten.toString().padStart(2, '0')}min</p>
-                </button>
+                </button>}
 
                 {/* Langzeitkrankmeldung-Karte: informiert, solange eine Phase läuft.
                     NUR LESEND - keine Bearbeitung hier, kein Button, kein Formular,
