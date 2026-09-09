@@ -26,7 +26,7 @@ import static org.mockito.Mockito.*;
  *
  * Schwerpunkt: {@code approveAntrag} bucht Urlaubsstunden über
  * {@code TagesSollService.arbeitsSollJeTag} (Zeitraum-Variante, Abschnitt 4
- * Nachbesserung Befund 2) statt direkt über das Zeitkonto-Soll (E1 im Plan
+ * Nachbesserung Befund 2) statt direkt über das ZeitkontoVersion-Soll (E1 im Plan
  * "Langzeitkrankmeldung") — damit folgen Urlaubsstunden während einer
  * laufenden Wiedereingliederung dem Stufenplan, statt Phantom-Überstunden zu
  * erzeugen, und die Phasen/Feiertage werden einmal für den ganzen Zeitraum
@@ -64,7 +64,7 @@ class UrlaubsantragServiceTest {
     private static final Long ANTRAG_ID = 100L;
 
     private Mitarbeiter testMitarbeiter;
-    private Zeitkonto testZeitkonto;
+    private ZeitkontoVersion testZeitkonto;
 
     @BeforeEach
     void setUp() {
@@ -73,7 +73,9 @@ class UrlaubsantragServiceTest {
         testMitarbeiter.setVorname("Max");
         testMitarbeiter.setNachname("Mustermann");
 
-        testZeitkonto = new Zeitkonto(testMitarbeiter);
+        testZeitkonto = new ZeitkontoVersion();
+        testZeitkonto.setMitarbeiter(testMitarbeiter);
+        testZeitkonto.setGueltigVon(LocalDate.of(2000, 1, 1));
         testZeitkonto.setMontagStunden(new BigDecimal("8.00"));
         testZeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         testZeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -96,7 +98,7 @@ class UrlaubsantragServiceTest {
 
     /** Stubbt die für jeden approveAntrag-Test nötige Grundverkabelung. */
     private void stubApproveGrunddaten() {
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        when(zeitkontoService.versionenImZeitraum(eq(MITARBEITER_ID), any(), any())).thenReturn(List.of(testZeitkonto));
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
         when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -118,7 +120,7 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis))
                 .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
@@ -138,7 +140,7 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis))
                 .thenReturn(jeTag(von, bis, new BigDecimal("2.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
@@ -163,7 +165,7 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenAnswer(inv -> inv.getArgument(0).equals(feiertag));
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis))
                 .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
@@ -182,7 +184,7 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis))
                 .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
@@ -204,7 +206,7 @@ class UrlaubsantragServiceTest {
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
         Map<LocalDate, BigDecimal> map = jeTag(von, bis, new BigDecimal("8.00"));
         map.remove(luecke);
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis)).thenReturn(map);
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis)).thenReturn(map);
 
         assertDoesNotThrow(() -> urlaubsantragService.approveAntrag(ANTRAG_ID));
 
@@ -215,18 +217,18 @@ class UrlaubsantragServiceTest {
     }
 
     @Test
-    void approveAntrag_ruftGetOrCreateZeitkontoGenauEinmalAuf_keinN1InDerSchleife() {
+    void approveAntrag_laedtVersionenGenauEinmal_keinN1InDerSchleife() {
         LocalDate von = LocalDate.of(2026, 6, 1);
         LocalDate bis = LocalDate.of(2026, 6, 5);
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis))
                 .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
-        verify(zeitkontoService, times(1)).getOrCreateZeitkonto(MITARBEITER_ID);
+        verify(zeitkontoService, times(1)).versionenImZeitraum(MITARBEITER_ID, von, bis);
     }
 
     @Test
@@ -239,13 +241,13 @@ class UrlaubsantragServiceTest {
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis))
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis))
                 .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
-        verify(tagesSollService, times(1)).arbeitsSollJeTag(MITARBEITER_ID, testZeitkonto, von, bis);
-        verify(tagesSollService, never()).arbeitsSoll(any(), any(), any());
+        verify(tagesSollService, times(1)).arbeitsSollJeTag(MITARBEITER_ID, von, bis);
+        verify(tagesSollService, never()).arbeitsSoll(any(), any());
     }
 
     @Test
@@ -272,4 +274,72 @@ class UrlaubsantragServiceTest {
 
         assertTrue(ergebnis.isEmpty());
     }
+    @Test
+    void genehmigungUeberVertragswechsel_buchtHistorischeUndNeueStunden_trotzHeuteOhneKonto() {
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        LocalDate bis = von.plusDays(4);
+        LocalDate wechsel = von.plusDays(2);
+        testMitarbeiter.setFuehrtZeitkonto(false);
+        testZeitkonto.setGueltigBis(wechsel.minusDays(1));
+        ZeitkontoVersion neu = new ZeitkontoVersion();
+        neu.setGueltigVon(wechsel);
+        neu.setGueltigBis(bis);
+        neu.setMittwochStunden(new BigDecimal("6.00"));
+        neu.setDonnerstagStunden(new BigDecimal("6.00"));
+        neu.setFreitagStunden(new BigDecimal("6.00"));
+        List<ZeitkontoVersion> versionen = List.of(testZeitkonto, neu);
+        ZeitkontoVersionRepository versionRepository = mock(ZeitkontoVersionRepository.class);
+        when(versionRepository.findImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(versionen);
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(versionen);
+        TagesSollService realesSoll = new TagesSollService(feiertagService,
+                mock(LangzeitkrankmeldungPhaseRepository.class), versionRepository);
+        UrlaubsantragService service = new UrlaubsantragService(repository, mitarbeiterRepository,
+                abwesenheitRepository, feiertagService, zeitkontoService, monatsSaldoService,
+                zeitkontoKorrekturService, realesSoll, langzeitkrankmeldungService);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
+
+        service.approveAntrag(ANTRAG_ID);
+
+        ArgumentCaptor<Abwesenheit> captor = ArgumentCaptor.forClass(Abwesenheit.class);
+        verify(abwesenheitRepository, times(5)).save(captor.capture());
+        assertEquals(List.of(new BigDecimal("8.00"), new BigDecimal("8.00"), new BigDecimal("6.00"),
+                new BigDecimal("6.00"), new BigDecimal("6.00")),
+                captor.getAllValues().stream().map(Abwesenheit::getStunden).toList());
+    }
+
+    @Test
+    void fehlendeVersionMittenImUrlaub_keineTeilbuchungUndAntragBleibtOffen() {
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        LocalDate bis = von.plusDays(4);
+        testZeitkonto.setGueltigBis(von.plusDays(1));
+        Urlaubsantrag antrag = antrag(von, bis);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(List.of(testZeitkonto));
+
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.approveAntrag(ANTRAG_ID));
+
+        assertTrue(fehler.getMessage().contains("noch keine Arbeitszeit hinterlegt"));
+        assertTrue(fehler.getMessage().contains(von.plusDays(2).toString()));
+        assertEquals(Urlaubsantrag.Status.OFFEN, antrag.getStatus());
+        verify(abwesenheitRepository, never()).save(any());
+        verify(repository, never()).save(any());
+        verifyNoInteractions(monatsSaldoService, tagesSollService);
+    }
+
+    @Test
+    void genehmigung_bestehendeUrlaubsgutschriftWirdNichtUmgeschrieben() {
+        LocalDate tag = LocalDate.of(2026, 6, 1);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(tag, tag)));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, tag, tag)).thenReturn(List.of(testZeitkonto));
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, tag, tag))
+                .thenReturn(Map.of(tag, new BigDecimal("6.00")));
+        when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(MITARBEITER_ID, tag, AbwesenheitsTyp.URLAUB))
+                .thenReturn(true);
+
+        urlaubsantragService.approveAntrag(ANTRAG_ID);
+
+        verify(abwesenheitRepository, never()).save(any());
+    }
+
 }

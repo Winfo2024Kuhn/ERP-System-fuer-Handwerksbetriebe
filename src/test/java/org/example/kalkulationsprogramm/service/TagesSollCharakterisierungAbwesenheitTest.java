@@ -3,7 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
 import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
@@ -16,11 +16,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
@@ -63,7 +65,7 @@ class TagesSollCharakterisierungAbwesenheitTest {
     private static final LocalDate VOLLER_FEIERTAG = LocalDate.of(2026, 1, 1); // Neujahr
 
     private Mitarbeiter testMitarbeiter;
-    private Zeitkonto testZeitkonto;
+    private ZeitkontoVersion testZeitkonto;
 
     @BeforeEach
     void setUp() {
@@ -72,7 +74,9 @@ class TagesSollCharakterisierungAbwesenheitTest {
         testMitarbeiter.setVorname("Max");
         testMitarbeiter.setNachname("Mustermann");
 
-        testZeitkonto = new Zeitkonto(testMitarbeiter);
+        testZeitkonto = new ZeitkontoVersion();
+        testZeitkonto.setMitarbeiter(testMitarbeiter);
+        testZeitkonto.setGueltigVon(LocalDate.of(2000, 1, 1));
         testZeitkonto.setMontagStunden(new BigDecimal("8.00"));
         testZeitkonto.setDienstagStunden(new BigDecimal("8.00"));
         testZeitkonto.setMittwochStunden(new BigDecimal("8.00"));
@@ -86,12 +90,12 @@ class TagesSollCharakterisierungAbwesenheitTest {
         when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(java.util.Optional.of(testMitarbeiter));
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(feiertagService.istFeiertag(any())).thenReturn(false);
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any(LocalDate.class))).thenReturn(Optional.of(testZeitkonto));
         when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
         // Verkabelung fuer TagesSollService: pro Fixture-Tag exakt der Wert, den vorher
-        // der rohe Zeitkonto-Wert lieferte (Montag = 8.00h) - kein pauschales any()->Wert,
+        // der rohe ZeitkontoVersion-Wert lieferte (Montag = 8.00h) - kein pauschales any()->Wert,
         // damit ein falscher Stub-Wert die Zusicherungen unten tatsaechlich zum Kippen bringt.
-        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, MONTAG_NORMAL))
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, MONTAG_NORMAL))
                 .thenReturn(new BigDecimal("8.00"));
     }
 
@@ -124,9 +128,9 @@ class TagesSollCharakterisierungAbwesenheitTest {
         when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(java.util.Optional.of(testMitarbeiter));
         when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
         when(feiertagService.istFeiertag(SAMSTAG_WOCHENENDE)).thenReturn(false);
-        when(zeitkontoService.getOrCreateZeitkonto(MITARBEITER_ID)).thenReturn(testZeitkonto);
-        // Samstag: Zeitkonto liefert roh 0.00h - derselbe Wert wie vorher direkt aus dem Zeitkonto.
-        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, testZeitkonto, SAMSTAG_WOCHENENDE))
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any(LocalDate.class))).thenReturn(Optional.of(testZeitkonto));
+        // Samstag: ZeitkontoVersion liefert roh 0.00h - derselbe Wert wie vorher direkt aus dem ZeitkontoVersion.
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, SAMSTAG_WOCHENENDE))
                 .thenReturn(new BigDecimal("0.00"));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
