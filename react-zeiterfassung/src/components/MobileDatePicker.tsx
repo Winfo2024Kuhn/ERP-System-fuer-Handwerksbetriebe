@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 
 interface MobileDatePickerProps {
@@ -7,6 +8,12 @@ interface MobileDatePickerProps {
     label?: string
     required?: boolean
     min?: string
+    max?: string
+    id?: string
+    name?: string
+    disabled?: boolean
+    error?: string
+    'aria-label'?: string
 }
 
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -23,35 +30,38 @@ const formatLocalDate = (date: Date): string => {
     return `${year}-${month}-${day}`
 }
 
-export default function MobileDatePicker({ value, onChange, label, required, min }: MobileDatePickerProps) {
+export default function MobileDatePicker({ value, onChange, label, required, min, max, id, name, disabled, error, 'aria-label': ariaLabel }: MobileDatePickerProps) {
+    const generatedId = useId()
+    const inputId = id ?? generatedId
+    const triggerRef = useRef<HTMLButtonElement>(null)
+    const popupRef = useRef<HTMLDivElement>(null)
+    const validationRef = useRef<HTMLInputElement>(null)
+    const [attempted, setAttempted] = useState(false)
+    const parseDate = (text: string) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null
+        const date = new Date(text + 'T12:00:00')
+        return Number.isFinite(date.getTime()) && formatLocalDate(date) === text ? date : null
+    }
+    const validationMessage = !value ? (required ? `Bitte ${label ?? ariaLabel ?? 'Datum'} auswählen.` : '')
+        : !parseDate(value) ? 'Bitte ein gültiges Datum auswählen.'
+        : (min && value < min) || (max && value > max) ? 'Datum liegt außerhalb des erlaubten Zeitraums.' : ''
+    const shownError = error || (attempted ? validationMessage : '')
+    useEffect(() => { validationRef.current?.setCustomValidity(validationMessage) }, [validationMessage])
+    const close = () => { setIsOpen(false); triggerRef.current?.focus() }
     const [isOpen, setIsOpen] = useState(false)
     const [viewDate, setViewDate] = useState(() => {
-        if (value) return new Date(value)
+        if (parseDate(value)) return parseDate(value)!
         return new Date()
     })
-    const containerRef = useRef<HTMLDivElement>(null)
 
     // Parse value to Date
-    const selectedDate = value ? new Date(value) : null
-    const minDate = min ? new Date(min) : null
-
-    // Close on outside click
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-                setIsOpen(false)
-            }
-        }
-        if (isOpen) {
-            document.addEventListener('mousedown', handleClickOutside)
-        }
-        return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [isOpen])
+    const selectedDate = parseDate(value)
 
     // Format display value
     const formatDisplayDate = (dateStr: string) => {
         if (!dateStr) return ''
-        const d = new Date(dateStr)
+        const d = parseDate(dateStr)
+        if (!d) return dateStr
         return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
     }
 
@@ -85,12 +95,12 @@ export default function MobileDatePicker({ value, onChange, label, required, min
     const handleDayClick = (date: Date) => {
         const formatted = formatLocalDate(date)
         onChange(formatted)
-        setIsOpen(false)
+        close()
     }
 
     const isDisabled = (date: Date) => {
-        if (!minDate) return false
-        return date < new Date(formatLocalDate(minDate))
+        const text = formatLocalDate(date)
+        return Boolean((min && text < min) || (max && text > max))
     }
 
     const isSelected = (date: Date) => {
@@ -111,17 +121,19 @@ export default function MobileDatePicker({ value, onChange, label, required, min
     }
 
     return (
-        <div ref={containerRef} className="relative w-full">
+        <div className="relative w-full">
             {label && (
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor={inputId} className="block text-sm font-medium text-slate-700 mb-1">
                     {label}
                 </label>
             )}
 
             {/* Input Field */}
             <button
-                type="button"
-                onClick={() => setIsOpen(!isOpen)}
+                ref={triggerRef} id={inputId} type="button" disabled={disabled}
+                aria-label={ariaLabel ?? label ?? 'Datum wählen'} aria-haspopup="dialog" aria-expanded={isOpen}
+                aria-required={required} aria-invalid={shownError ? true : undefined} aria-describedby={shownError ? `${inputId}-error` : undefined}
+                onClick={() => { if (isOpen) close(); else { setViewDate(parseDate(value) ?? parseDate(min ?? '') ?? new Date()); setIsOpen(true) } }}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none transition-all bg-white text-left flex items-center justify-between"
             >
                 <span className={value ? 'text-slate-900' : 'text-slate-400'}>
@@ -130,27 +142,28 @@ export default function MobileDatePicker({ value, onChange, label, required, min
                 <Calendar className="w-5 h-5 text-slate-400" />
             </button>
 
-            {/* Hidden input for form validation */}
-            {required && (
-                <input
-                    type="text"
-                    value={value}
-                    required
-                    readOnly
-                    className="sr-only"
-                    tabIndex={-1}
-                />
-            )}
-
-            {/* Calendar Popup - Full width on mobile */}
-            {isOpen && (
-                <div className="absolute z-50 mt-2 left-0 right-0 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+            <input ref={validationRef} type="text" value={value} name={name} required={required} disabled={disabled} onChange={() => {}} className="sr-only" tabIndex={-1} aria-hidden="true"
+                onInvalid={event => { event.preventDefault(); setAttempted(true); triggerRef.current?.focus() }} />
+            {shownError && <p id={`${inputId}-error`} role="alert" className="mt-1 text-sm text-rose-700">{shownError}</p>}
+            {isOpen && !disabled && createPortal(
+                <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm"
+                    onClick={event => { if (event.target === event.currentTarget) close() }}
+                    onKeyDown={event => {
+                        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
+                        if (event.key === 'Tab') {
+                            const buttons = Array.from(popupRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
+                            const first=buttons[0], last=buttons.at(-1)
+                            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+                            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+                        }
+                    }}>
+                <div ref={popupRef} role="dialog" aria-modal="true" aria-label={label ?? ariaLabel ?? 'Datum wählen'} className="w-full max-w-sm max-h-[80dvh] overflow-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-3">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-4">
                         <button
                             type="button"
-                            onClick={prevMonth}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                            autoFocus aria-label="Vorheriger Monat" onClick={prevMonth}
+                            className="min-h-11 min-w-11 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-rose-500 p-2 hover:bg-slate-100 rounded-lg transition-colors"
                         >
                             <ChevronLeft className="w-5 h-5 text-slate-600" />
                         </button>
@@ -159,8 +172,8 @@ export default function MobileDatePicker({ value, onChange, label, required, min
                         </span>
                         <button
                             type="button"
-                            onClick={nextMonth}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                            aria-label="Nächster Monat" onClick={nextMonth}
+                            className="min-h-11 min-w-11 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-rose-500 p-2 hover:bg-slate-100 rounded-lg transition-colors"
                         >
                             <ChevronRight className="w-5 h-5 text-slate-600" />
                         </button>
@@ -182,9 +195,11 @@ export default function MobileDatePicker({ value, onChange, label, required, min
                                 {date ? (
                                     <button
                                         type="button"
+                                        aria-label={formatDisplayDate(formatLocalDate(date))}
+                                        aria-pressed={isSelected(date)}
                                         onClick={() => !isDisabled(date) && handleDayClick(date)}
                                         disabled={isDisabled(date)}
-                                        className={`w-full min-h-[44px] rounded-xl text-base font-semibold transition-colors flex items-center justify-center
+                                        className={`w-full min-h-[44px] focus:outline-none focus:ring-2 focus:ring-rose-500 rounded-xl text-base font-semibold transition-colors flex items-center justify-center
                                             ${isSelected(date)
                                                 ? 'bg-rose-600 text-white shadow-sm'
                                                 : isToday(date)
@@ -207,24 +222,25 @@ export default function MobileDatePicker({ value, onChange, label, required, min
                     <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
                         <button
                             type="button"
+                            disabled={isDisabled(new Date())}
                             onClick={() => {
                                 const today = formatLocalDate(new Date())
                                 onChange(today)
-                                setIsOpen(false)
+                                close()
                             }}
-                            className="flex-1 py-2 text-sm font-medium text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 transition-colors"
+                            className="flex-1 min-h-11 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-40 py-2 text-sm font-medium text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 transition-colors"
                         >
                             Heute
                         </button>
                         <button
                             type="button"
-                            onClick={() => setIsOpen(false)}
-                            className="flex-1 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+                            onClick={close}
+                            className="flex-1 min-h-11 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-40 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
                         >
                             Schließen
                         </button>
                     </div>
-                </div>
+                </div></div>, document.body
             )}
         </div>
     )
