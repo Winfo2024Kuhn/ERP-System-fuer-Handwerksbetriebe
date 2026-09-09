@@ -10,13 +10,13 @@ Hauptplan: [Monatsabschluss und DATEV](2026-09-09-monatsabschluss-datev.md). Iss
 - Kein kosmetischer globaler Austausch `type=number` gegen `text`: bisherige `Number(value)||0`, `parseFloat` und `parseInt` zerstören Leerzustände und Kommazahlen. Jeder Aufrufer führt einen String-Draft, validiert vollständig vor Mutation/Berechnung und wandelt erst dann in den fachlichen Payload um. Leere Pflichtwerte sind keine 0; unvollständige Werte weder still zurücksetzen noch speichern.
 - Alle API-/Validierungsfehler systemeigen toasten, konkrete Feldhinweise zusätzlich. Bestehende `useConfirm()`-Aufrufe sind bereits systemeigene Dialoge. Native `prompt` durch Eingabedialog mit Pflichtvalidierung ersetzen, nicht durch Toast.
 - Jeder Task besitzt nur unten aufgelistete Dateien plus explizit benannte Tests. Abhängige Abschnitte erst nach Merge und Review starten. Keine fremden Änderungen zurücksetzen; taskeigene Worktrees jeweils vom geprüften Featurebranch erstellen. Gemeinsam genutzte Testkonfiguration nicht parallel ändern.
-- Die Kategorien A/B/C beschreiben Abhängigkeiten, keine zusätzliche Wartepflicht nach dem gesamten Hauptfeature. Verbindliche gemeinsame Ausführungsreihenfolge: Abschnitt 1 [1,3], Abschnitt 2 [2,4,7], Abschnitt 3 [5,8], Abschnitt 4 [6,9,10], Abschnitt 5 [11,12,13], Abschnitt 6 [14]. So bleibt jeder Abschnitt dateidisjunkt, maximal drei Tasks, und jeder Consumer startet auf geprüften Produzenten. Je Abschnitt Code-Reviewer und bei Frontend-Änderungen separater Designreview nach loese-problem; maximal zwei Nachbesserungen. Abschluss: beide Frontendtests/-builds, passende Backend-Gesamttests des Hauptumfangs, Browserprüfung, Diff und einmal Graphify durch Orchestrator.
+- Die Kategorien A/B/C beschreiben Abhängigkeiten, keine zusätzliche Wartepflicht nach dem gesamten Hauptfeature. Verbindliche gemeinsame Ausführungsreihenfolge: Abschnitt 1 [1,3], Abschnitt 2 [2,4,7], Abschnitt 3 [5,8,9], Abschnitt 4 [6,10,11], Abschnitt 5 [12,13,14]. So bleibt jeder Abschnitt dateidisjunkt, maximal drei Tasks, und jeder Consumer startet auf geprüften Produzenten. Je Abschnitt Code-Reviewer und bei Frontend-Änderungen separater Designreview nach loese-problem; maximal zwei Nachbesserungen. Abschluss: beide Frontendtests/-builds, passende Backend-Gesamttests des Hauptumfangs, Browserprüfung, Diff und einmal Graphify durch Orchestrator.
 
 | Abschnitt | Parallel | Voraussetzung | Ergebnis |
 | --- | --- | --- | --- |
 | A | 7 in Runde 2, 8 in Runde 3 | bestehende Basis; unabhängig vom Hauptfeature | feste PC-/Mobile-Bausteinverträge |
-| B | 9/10 in Runde 4, 11 in Runde 5 | jeweilige Grundlagen geprüft | Personal/Zeit, Finanzen/Miete, Mobile migriert |
-| C | 12/13 in Runde 5, 14 in Runde 6 | PC-Grundlagen geprüft | übrige PC-Eingaben vollständig migriert |
+| B | 9 in Runde 3, 10/11 in Runde 4 | jeweilige Grundlagen geprüft | Personal/Zeit, Finanzen/Miete, Mobile migriert |
+| C | 12/13/14 in Runde 5 | PC-Grundlagen geprüft | übrige PC-Eingaben vollständig migriert |
 
 Branches immer `codex/systemeingaben-task-N`, Worktrees `.Codex/worktrees/systemeingaben-task-N` für N=7–14. Kontext-Log nur nach gemeinsamem append-only/Lock-Protokoll des Hauptplans. Code-/Designreview-Berichte schreibt ausschließlich jeweiliger Reviewer in dessen Worktree.
 
@@ -109,3 +109,5 @@ PC-Neuverträge, in Abschnitt A vollständig implementieren und testen:
 ## Gesamtabnahme der Ergänzung
 
 Statische Suche nach verbleibenden sichtbaren `select`, `type=number/date/time/datetime-local/month/week/color`, `alert/confirm/prompt` in Produktionsquellen beider Frontends; Treffer klassifizieren, keine Tests/XSS-Strings oder systemeigene Confirm-Hooks als native Fehler zählen. Zusätzlich bereits textbasierte numeric/decimal-Felder auf Fokusnull/Validierung prüfen. Keine Behauptung, alle Controls migriert zu haben, solange bekannte sichtbare Treffer offen sind. Alle fachlichen numerischen Payloads bleiben korrekt; serverseitige bestehende Grenzen dürfen nicht durch UI-Umstellung umgangen werden. Falls relevante serverseitige Validierung fehlt, konkret an Orchestrator melden und zusätzlichen disjunkten Backendtask planen, nicht still als erledigt markieren.
+
+Nach Abnahme von Task7 wird Task9 bereits in Abschnitt3 parallel zu5/8 ausgeführt: er konsumiert ausschließlich die geprüften PC-Bausteine und besitzt disjunkte Dateien. Task11 folgt auf den abgenommenen Mobile-Bausteinen in Abschnitt4. Dadurch bleiben maximal drei Tasks parallel und alle Review-Gates erhalten, bei fünf statt sechs Abschnitten.

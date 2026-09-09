@@ -212,4 +212,4 @@ Abschlusszusammenfassungen werden nach den Abschnittsreviews ergänzt.
 
 ## Gemeinsame Ausführungsreihenfolge nach Scope-Erweiterung
 
-Die Nutzervorgabe zu systemeigenen Eingaben wird mit den Featuretasks verflochten: Abschnitt 1 [1,3], Abschnitt 2 [2,4,7], Abschnitt 3 [5,8], Abschnitt 4 [6,9,10], Abschnitt 5 [11,12,13], Abschnitt 6 [14]. Tasknummern7–14 und Dateibesitz stehen im verlinkten Zusatzplan. Pro Abschnitt max3 disjunkte Tasks; alle erforderlichen Produzenten sind vorher geprüft. Task6 bleibt beim Frontend-Agenten von Task5. Backend-only Abschnitt1 hat keinen Designreview, weitere Abschnitte bekommen den separaten Designreview.
+Die Nutzervorgabe zu systemeigenen Eingaben wird mit den Featuretasks verflochten: Abschnitt 1 [1,3], Abschnitt 2 [2,4,7], Abschnitt 3 [5,8,9], Abschnitt 4 [6,10,11], Abschnitt 5 [12,13,14]. Tasknummern7–14 und Dateibesitz stehen im verlinkten Zusatzplan. Pro Abschnitt max3 disjunkte Tasks; alle erforderlichen Produzenten sind vorher geprüft. Task6 bleibt beim Frontend-Agenten von Task5. Backend-only Abschnitt1 hat keinen Designreview, weitere Abschnitte bekommen den separaten Designreview.
