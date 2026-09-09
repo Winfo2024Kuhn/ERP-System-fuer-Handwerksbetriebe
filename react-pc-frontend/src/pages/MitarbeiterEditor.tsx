@@ -420,8 +420,8 @@ export default function MitarbeiterEditor() {
             const url = formData.id ? `${BASE_API}/${formData.id}` : BASE_API;
             // Bestehende Mitarbeiter duerfen das Flag nie ueber den Stamm-Endpoint aendern.
             // Die sichtbare Aktualisierung stammt vorher aus dem atomaren Zeitkonto-Workflow.
-            const { fuehrtZeitkonto: _fuehrtZeitkonto, ...stammDaten } = formData;
-            const payload = formData.id ? stammDaten : formData;
+            const payload = { ...formData };
+            if (formData.id) delete payload.fuehrtZeitkonto;
 
             const res = await fetch(url, {
                 method,
