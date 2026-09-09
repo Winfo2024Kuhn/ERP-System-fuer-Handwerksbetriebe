@@ -319,3 +319,91 @@ Bedenken / Abweichungen vom Plan:
 - Zusätzlich bestehender Fachtest pages/ZeiterfassungZeitkontenTask9b.test.tsx nach Meldung an Root lediglich auf Textbox-Locators migriert; Versions-/Payloadassertions erhalten. Root bearbeitete disjunkt die drei Kalender-/Steuerberaterdateien plus dazugehörige Tests im gleichen Worktree.
 - Parallel laufende Playwright-Specs leerten zunächst den gemeinsamen test-results-Ordner; anschließend getrennte /tmp-Ausgabeordner und eigene Spec wiederholt, damit Screenshotbelege erhalten bleiben.
 - Kein Graphupdate und keine Gesamtsuite entsprechend Taskvertrag; keine Auslagerung erforderlich, gemeinsame Bausteine konsequent wiederverwendet.
+
+## Abschnitt 3 — unabhängiger Code-Review
+
+Zeit: 2026-09-09T17:29:45.936949+00:00
+Branch: codex/monatsabschluss-review-3-code
+Commit: f7b34ff8
+Status: fertig
+Ampel: 🟡
+
+- HEAD 68e43eeb, Tasks 5/8/9 und Fixture4445f1f1 unabhängig geprüft. Kein belegter Produkt-/Sicherheitsfehler.
+- PC vollständig 1230/1230 mit maxWorkers=2; erster Standardlauf 1229/1230 wegen 500er-Testtimeout, isolierter Nachlauf 9/9. Mobile vollständig 185/185. Beide Lint/Build Exit 0.
+- Orchestrator plant ausdrücklich gemeinsame Auslagerung der doppelten Arbeitszeit-Entwurfs-/Validierungslogik gemäß neuem Nutzerauftrag und gezielte Testrobustheit ohne Assertionsverlust.
+- Backend unverändert; Abschnitt-2-Backend-/MySQL-Nachweise referenziert. Design/E2E beim unabhängigen Designreview. Bericht: 2026-09-09-monatsabschluss-review-3-code.md.
+
+## Abschnitt 3 — erste gebündelte Nachbesserung läuft
+
+- Nutzervorgabe konkret umgesetzt: gemeinsame ArbeitszeitFelder und arbeitszeitInput ersetzen doppelte sieben-Tage-Entwurfs-/Validierungslogik beider Editoren, Commit 41d97bc9. Fachliche Labels und Versionsabläufe erhalten. 44 fokussierte Tests sowie 9 Arbeitszeit-Browserfälle grün, Lint/Build erfolgreich.
+- Root-Korrektur fb65a7d3: Tageserfassung nur Speichern als volle Rose-Hauptaktion; alte Browserfixtures auf beschriftete Textfelder und Kommawerte umgestellt. Mobile Browserprüfungen verwenden nun eine gemeinsame Kontext-Netzwerkgrenze und testbezogene Screenshotpfade. 18 betroffene PC- und 3 Mobile-Browserfälle grün, Tagesdialog-Screenshots aller drei Desktopgrößen angesehen: klare Aktionen, Rose/Slate, ruhige Ausrichtung, Speichern sichtbar, keine Überdeckung.
+- Zusätzlicher vom Designreview nachgewiesener Fokusbefund im Stornodialog: Tab entkommt dem obersten Dialog. Gemeinsamer Dialog-Fokusfang wird gerade ergänzt; neue Browserassertions für Tab/ShiftTab/Abbrechen/Escape und Fokusrückgabe sind im Korrekturcommit bereits enthalten, ihre erfolgreiche Ausführung steht noch aus. Keine Abschnittsabnahme vor dieser Nachprüfung.
+
+## Abschnitt 3 — Design-Review (ursprünglicher Gesamtstand)
+
+Zeit: 2026-09-09T17:38:37.323298+00:00
+Branch: codex/monatsabschluss-review-3-design
+Commit(s): b227114f
+Status: fertig
+Ampel: ROT vor Nachbesserung
+
+- HEAD 68e43eeb: volle PC-E2E 439/456 grün; 17 rot = 5 dokumentierte Baseline + 12 neue veraltete Locator-/Komma-Assertions. Mobile 3/3 grün. Eigene Ports 5191/5192; keine Listener nach Abschluss.
+- 199 PC-Designbilder in beschrifteten Kontaktbögen vollständig angesehen; neue Abläufe zusätzlich einzeln, drei Mobile-Bilder einzeln. Alle sechs Fragen je Größe stehen im Bericht docs/superpowers/plans/2026-09-09-abschnitt3-design-review.md.
+- Farben/Design: klare Statusflächen, aber zweite Rose-Hauptaktion im Tagesdialog und blaue Checkbox im Arbeitszeitdialog. Look-and-Feel: ruhig und ausgerichtet in 1440/1536/1920 sowie 393-Mobile. UX: konkrete Eingabefehler und Teilerfolg/Verlauf verständlich; separat reproduzierter Fokusverlust nach Tab vom letzten Storno-Dialogknopf bleibt rot. Auffindbarkeit: neue Abschluss-/Vorschau-/Speicheraktionen sichtbar. Überdeckungen: keine zusätzliche bestätigte neue Überdeckung; fünf alte Fälle separat belegt.
+- Mobile-Spec ohne vollständigen Fremdhost-Riegel und mit festem Screenshotpfad beanstandet; kein tatsächlicher Fremdhost-Request nachgewiesen. Root korrigiert bereits gebündelt. Keine Produktedits im Review.
+- Bedenken: Bericht bewertet ursprünglichen Stand; gezielte unabhängige Nachprüfung der Fixes erforderlich. Keine weitere Vollsuite ohne neuen Grund.
+
+## Abschnitt 3 — Arbeitszeit-Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-09T17:39:31.040143+00:00
+Branch: codex/monatsabschluss-review-3-fixes
+Commit(s): 41d97bc90f76ec2775f32f9854a11f5becc50d7c
+Status: fertig
+
+Was gemacht wurde:
+- Reviewbefund zur duplizierten Arbeitszeitlogik behoben: gemeinsame arbeitszeitInput-Hilfe für Textentwürfe, Nullwerte, Wochentage, vollständige Siebentageprüfung und optionale Zeitfenster. ArbeitszeitFelder rendert beide Dialogvarianten mit bestehenden DecimalInput/TimeInput, Fachlabels bleiben erhalten. Mitarbeiter-/Vorlagen-/Versionsabläufe unverändert.
+- Neue Helper-/Komponententests zuerst rot; danach 44/44 fokussierte Tests, ESLint und PC-Build grün. 9/9 Arbeitszeit-E2E auf Port5193 in drei Desktopgrößen grün. Alle sechs Dialog-Screenshots persönlich angesehen. Logs /tmp/arbeitszeit-refactor-{green,lint,build,e2e}.log.
+- Monatsabschluss500er-Test: ausschließlich DOM-Suchbereiche/Labels eingegrenzt, sämtliche fachlichen Assertions und Datenmengen erhalten. In gezielter kombinierter Runde590ms; keine Aussage über identische Lastbedingungen gegenüber früherem Vollsuite-Timeout.
+- Root bearbeitet disjunkte Dateien im selben Worktree; nur eigene sieben Dateien committet. Weitere zentrale Dialog-Fokuskorrektur folgt separat.
+
+Bedenken / Abweichungen vom Plan:
+- Keine. Graphpflege zentral.
+
+## Abschnitt 3 — Zentraler Dialog-Fokus (Coding-Agent)
+
+Zeit: 2026-09-09T17:41:15.985128+00:00
+Branch: codex/monatsabschluss-review-3-fixes
+Commit(s): 5e267a35c09c5c34e17c1ef6de36dcc77445e620
+Status: fertig
+
+Was gemacht wurde:
+- Designbefund Fokus entkommt Storno behoben, zentral im gemeinsamen Dialog: initialer Fokus, Tab/ShiftTab-Kreislauf, Klickfokus-Rückführung, Escape nur für obersten Dialog, Fokusrückgabe beim Schließen/Unmount. Verschachtelte Dialoge erhalten gestaffelte Ebenen. Eigene Select-/DatePicker-Portale über aria-controls zugeordnet, höherliegende externe Bestätigungen behalten ihren Fokus.
+- Drei neue Regressionen zuerst rot. 45/45 gezielte Dialog/Picker/Arbeitszeit-Tests sowie PC-Build grün. Danach Render-Ref-Zugriffe für ESLint durch Commit-/Layout-Effekte ersetzt; abschließend12/12Dialogtests und Lintgrün, einschließlich explizitemAutoFocus und nestedCancel. Logs /tmp/dialog-focus-{red,unit,build}.log und /tmp/dialog-focus-final-{unit,lint}.log.
+- Root meldet18/18PCBrowserfälle inkl StornoTab/ShiftTab/Abbrechen/Escape/Fokusrückgabe grün auf Fassung vor internerLintkorrektur. KombinierteNachprüfung folgt zentral.
+- Keine eigenenVite/PlaywrightProzesse verbleiben. NurDialog2Dateiencommittet; RootCSS/Fixturedateien und generierteBuildartefakte unangetastet.
+
+Bedenken / Abweichungen vom Plan:
+- Keine; zentraleBarrierefreiheitskorrektur ausdrücklich vomOrchestrator zugewiesen.
+
+## Abschnitt 3 — Code-Nachprüfung, Korrekturrunde 1
+
+Zeit: 2026-09-09T17:43:53.593862+00:00
+Branch: codex/monatsabschluss-review-3-code
+Status: fertig
+Ampel: 🟢
+
+- Gemeinsame Arbeitszeit-Hilfen und Felder, 500er-Testrobustheit, zentraler Dialog-Fokusfang und Auswahlfeld-CSS unabhängig geprüft. Keine offenen Codebefunde.
+- Eigene Nachprüfung: 91/91 fokussierte Tests; zwei zusätzliche StrictMode-Proben 2/2; PC-Lint und Build Exit 0. Berichtnachtrag in 2026-09-09-monatsabschluss-review-3-code.md. Designreview bleibt getrennt.
+
+## Abschnitt 3 — Design-Nachprüfung
+
+Zeit: 2026-09-09T17:45:30.588243+00:00
+Branch: codex/monatsabschluss-review-3-design
+Commit(s): de515367
+Status: fertig
+Ampel: GRÜN für Abschnitt-3-Änderungen
+
+- Review-Merge 6203f0b8 einschließlich 5e267a35: 27+9 gezielte PC-E2E und 3 Mobile-E2E grün; zusätzliche synthetische Kontextnetzprüfung 1/1 grün. D3-1 bis D3-5 erledigt.
+- Tab/Shift-Tab-Storno-Fokusfang, Escape/Abbrechen mit Fokusrückgabe und DatePicker-Portal in allen drei PC-Größen geprüft. Beide Arbeitszeit-Verbraucher mit gültigen numerischen Payloads; Null-/Komma-/Ungültigtests erhalten.
+- 66 neue Bilder in Kontaktbögen angesehen, drei Tagesdialogbilder zusätzlich einzeln. Sechs Fragen: Farben und eigene Gestaltung jetzt konsistent rose, ruhige Ausrichtung, klare Rückmeldungen, nur eine Hauptaktion, Aktionen sichtbar und keine neue bestätigte Überdeckung in allen Desktopgrößen; Mobile weiterhin klare Touchauswahl.
+- Berichtnachtrag docs/superpowers/plans/2026-09-09-abschnitt3-design-review.md. Die fünf dokumentierten Bestandsfehler bleiben, keine Behauptung einer grünen Gesamtsuite. Keine erneute Vollsuite, keine Sourceänderungen. Temporäre Spec entfernt, Ports5191/5192 frei.
