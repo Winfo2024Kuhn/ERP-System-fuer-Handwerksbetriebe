@@ -17,7 +17,8 @@ import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.SvSatz;
 import org.example.kalkulationsprogramm.domain.SvSatzTyp;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
+import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import org.example.kalkulationsprogramm.dto.Verrechnungslohn.VerrechnungslohnErgebnisDto;
 import org.example.kalkulationsprogramm.dto.Verrechnungslohn.VerrechnungslohnUebernehmenRequest;
 import org.example.kalkulationsprogramm.repository.AbteilungRepository;
@@ -35,7 +36,7 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterStundenlohnRepository;
 import org.example.kalkulationsprogramm.repository.SvSatzRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
-import org.example.kalkulationsprogramm.repository.ZeitkontoRepository;
+import org.example.kalkulationsprogramm.repository.ZeitkontoVersionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -74,7 +75,7 @@ class VerrechnungslohnServiceTest {
     private MitarbeiterStundenlohnRepository stundenlohnRepository;
     private LohnabrechnungRepository lohnabrechnungRepository;
     private ZeitbuchungRepository zeitbuchungRepository;
-    private ZeitkontoRepository zeitkontoRepository;
+    private ZeitkontoVersionRepository zeitkontoVersionRepository;
     private AbwesenheitRepository abwesenheitRepository;
     private FeiertagRepository feiertagRepository;
     private SvSatzRepository svSatzRepository;
@@ -95,7 +96,7 @@ class VerrechnungslohnServiceTest {
         stundenlohnRepository = mock(MitarbeiterStundenlohnRepository.class);
         lohnabrechnungRepository = mock(LohnabrechnungRepository.class);
         zeitbuchungRepository = mock(ZeitbuchungRepository.class);
-        zeitkontoRepository = mock(ZeitkontoRepository.class);
+        zeitkontoVersionRepository = mock(ZeitkontoVersionRepository.class);
         abwesenheitRepository = mock(AbwesenheitRepository.class);
         feiertagRepository = mock(FeiertagRepository.class);
         svSatzRepository = mock(SvSatzRepository.class);
@@ -116,7 +117,7 @@ class VerrechnungslohnServiceTest {
                 stundenlohnRepository,
                 lohnabrechnungRepository,
                 zeitbuchungRepository,
-                zeitkontoRepository,
+                zeitkontoVersionRepository,
                 abwesenheitRepository,
                 feiertagRepository,
                 svSatzRepository,
@@ -279,8 +280,8 @@ class VerrechnungslohnServiceTest {
         ma.setKalkulatorischerLohnMonat(new BigDecimal("5000.00"));
         when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
         // Zeitkonto 40h Wochenstunden → 2080h Soll, abzüglich 5% intern + Default Krank 8d × 8h = 64
-        Zeitkonto zk = zeitkontoFuer(ma);
-        when(zeitkontoRepository.findByMitarbeiterId(5L)).thenReturn(Optional.of(zk));
+        ZeitkontoVersion zk = zeitkontoFuer(ma);
+        when(zeitkontoVersionRepository.findImZeitraum(eq(5L), any(), any())).thenReturn(List.of(zk));
 
         VerrechnungslohnErgebnisDto dto = service.berechne(Year.now().getValue());
 
@@ -432,7 +433,7 @@ class VerrechnungslohnServiceTest {
         ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
         ma.setStundenlohn(new BigDecimal("25.00"));
         when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
-        when(zeitkontoRepository.findByMitarbeiterId(7L)).thenReturn(Optional.empty());
+        when(zeitkontoVersionRepository.findImZeitraum(eq(7L), any(), any())).thenReturn(List.of());
 
         VerrechnungslohnErgebnisDto dto = service.berechne(Year.now().getValue());
 
@@ -453,10 +454,10 @@ class VerrechnungslohnServiceTest {
         Mitarbeiter ma = mitarbeiter(8L, "Erika", "Musterfrau");
         ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
         ma.setJahresUrlaub(25);
-        Zeitkonto zk = zeitkontoFuer(ma);
+        ZeitkontoVersion zk = zeitkontoFuer(ma);
         zk.setFreitagStunden(new BigDecimal("0.00"));
         when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
-        when(zeitkontoRepository.findByMitarbeiterId(8L)).thenReturn(Optional.of(zk));
+        when(zeitkontoVersionRepository.findImZeitraum(eq(8L), any(), any())).thenReturn(List.of(zk));
 
         VerrechnungslohnErgebnisDto dto = service.berechne(Year.now().getValue());
 
@@ -472,9 +473,9 @@ class VerrechnungslohnServiceTest {
         // aber immer mit fest verdrahteten 5 %. Der Regler hatte keine Wirkung.
         Mitarbeiter ma = mitarbeiter(9L, "Otto", "Mustermann");
         ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
-        Zeitkonto zk = zeitkontoFuer(ma);
+        ZeitkontoVersion zk = zeitkontoFuer(ma);
         when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
-        when(zeitkontoRepository.findByMitarbeiterId(9L)).thenReturn(Optional.of(zk));
+        when(zeitkontoVersionRepository.findImZeitraum(eq(9L), any(), any())).thenReturn(List.of(zk));
 
         VerrechnungslohnErgebnisDto standard = service.berechne(Year.now().getValue());
         VerrechnungslohnErgebnisDto mitZwanzig = service.berechne(Year.now().getValue(), 20);
@@ -815,9 +816,9 @@ class VerrechnungslohnServiceTest {
         // Krankheitsstunden zeigen nur noch die Lohnfortzahlungs-Tage.
         Mitarbeiter ma = mitarbeiter(20L, "Klaus", "Mustermann");
         ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
-        Zeitkonto zk = zeitkontoFuer(ma);
+        ZeitkontoVersion zk = zeitkontoFuer(ma);
         when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
-        when(zeitkontoRepository.findByMitarbeiterId(20L)).thenReturn(Optional.of(zk));
+        when(zeitkontoVersionRepository.findImZeitraum(eq(20L), any(), any())).thenReturn(List.of(zk));
         when(lohnabrechnungRepository.sumBruttolohnByMitarbeiterIdAndJahr(20L, 2024))
                 .thenReturn(new BigDecimal("48000.00"));
         when(lohnabrechnungRepository.countByMitarbeiterIdAndJahr(20L, 2024)).thenReturn(12L);
@@ -873,9 +874,9 @@ class VerrechnungslohnServiceTest {
         Mitarbeiter ma = mitarbeiter(22L, "Sven", "Mustermann");
         ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
         ma.setStundenlohn(new BigDecimal("20.00"));
-        Zeitkonto zk = zeitkontoFuer(ma);
+        ZeitkontoVersion zk = zeitkontoFuer(ma);
         when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
-        when(zeitkontoRepository.findByMitarbeiterId(22L)).thenReturn(Optional.of(zk));
+        when(zeitkontoVersionRepository.findImZeitraum(eq(22L), any(), any())).thenReturn(List.of(zk));
         when(lohnabrechnungRepository.sumBruttolohnByMitarbeiterIdAndJahr(22L, 2024)).thenReturn(BigDecimal.ZERO);
         when(lohnabrechnungRepository.countByMitarbeiterIdAndJahr(22L, 2024)).thenReturn(0L);
         when(stundenlohnRepository.findFirstByMitarbeiterIdAndGueltigAbLessThanEqualOrderByGueltigAbDesc(eq(22L), any(LocalDate.class)))
@@ -943,9 +944,9 @@ class VerrechnungslohnServiceTest {
         // KRANKHEITSTAGE_DEFAULT-Fallback ersetzt.
         Mitarbeiter ma = mitarbeiter(21L, "Petra", "Mustermann");
         ma.setBeschaeftigungsart(Beschaeftigungsart.REGULAER);
-        Zeitkonto zk = zeitkontoFuer(ma);
+        ZeitkontoVersion zk = zeitkontoFuer(ma);
         when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
-        when(zeitkontoRepository.findByMitarbeiterId(21L)).thenReturn(Optional.of(zk));
+        when(zeitkontoVersionRepository.findImZeitraum(eq(21L), any(), any())).thenReturn(List.of(zk));
         // Kein Bezug zu einer Langzeitkrankmeldung -- phaseRepository liefert
         // ueber den Default-Stub aus @BeforeEach eine leere Liste.
         when(abwesenheitRepository.sumStundenOhnePhasenTypen(
@@ -979,8 +980,68 @@ class VerrechnungslohnServiceTest {
         return a;
     }
 
-    private static Zeitkonto zeitkontoFuer(Mitarbeiter ma) {
-        Zeitkonto zk = new Zeitkonto(ma);
+    @Test
+    void jahreswechselUndHeutigerSchalterVeraendernHistorischesSollNicht() {
+        Mitarbeiter ma = mitarbeiter(101L, "Max", "Mustermann");
+        ma.setStundenlohn(new BigDecimal("25"));
+        ma.setFuehrtZeitkonto(false);
+        ma.setJahresUrlaub(10);
+        ZeitkontoVersion alt = zeitkontoFuer(ma);
+        alt.setGueltigBis(LocalDate.of(2024, 6, 30));
+        ZeitkontoVersion neu = zeitkontoFuer(ma);
+        neu.setGueltigVon(LocalDate.of(2024, 7, 1));
+        neu.setMontagStunden(new BigDecimal("4"));
+        neu.setDienstagStunden(new BigDecimal("4"));
+        neu.setMittwochStunden(new BigDecimal("4"));
+        neu.setDonnerstagStunden(new BigDecimal("4"));
+        neu.setFreitagStunden(new BigDecimal("4"));
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoVersionRepository.findImZeitraum(101L, LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31)))
+                .thenReturn(List.of(alt, neu));
+
+        var dto = service.berechne(2024);
+        assertThat(dto.getStundenzeilen().getFirst().getSollstunden()).isEqualByComparingTo("1568.00");
+        assertThat(dto.getStundenzeilen().getFirst().getUrlaubsstunden()).isEqualByComparingTo("59.80");
+        BigDecimal lohn = BigDecimal.valueOf(40 * 182 + 20 * 184).multiply(BigDecimal.valueOf(52 * 25))
+                .divide(BigDecimal.valueOf(366), 2, java.math.RoundingMode.HALF_UP);
+        assertThat(dto.getLohnzeilen().getFirst().getBruttoJahr()).isEqualByComparingTo(lohn);
+        verify(zeitkontoVersionRepository, times(1)).findImZeitraum(101L, LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31));
+        verify(zeitkontoVersionRepository, never()).findAm(any(), any());
+        verify(zeitkontoVersionRepository, never()).save(any());
+    }
+
+    @Test
+    void systemMitarbeiterWirdVorAllenBerechnungenAusgeschlossen() {
+        Mitarbeiter system = mitarbeiter(102L, "Max", "Mustermann");
+        system.setArt(MitarbeiterArt.SYSTEM);
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(system));
+        var dto = service.berechne(2024);
+        assertThat(dto.getLohnzeilen()).isEmpty();
+        assertThat(dto.getStundenzeilen()).isEmpty();
+        org.mockito.Mockito.verifyNoInteractions(zeitkontoVersionRepository, phaseRepository);
+    }
+
+    @Test
+    void lueckeWirdNurAnFehlendenTagenKalkulatorischErgaenzt() {
+        Mitarbeiter ma = mitarbeiter(103L, "Max", "Mustermann");
+        ZeitkontoVersion v = zeitkontoFuer(ma);
+        v.setGueltigVon(LocalDate.of(2024, 1, 2));
+        v.setMontagStunden(new BigDecimal("4"));
+        when(mitarbeiterRepository.findByAktivTrue()).thenReturn(List.of(ma));
+        when(zeitkontoVersionRepository.findImZeitraum(eq(103L), any(), any())).thenReturn(List.of(v));
+        var dto = service.berechne(2024);
+        // 262 Werktage * 8, 52 gültige Montage je 4 Stunden weniger;
+        // der fehlende 1. Januar erhält den kenntlich gemachten 8h-Default.
+        assertThat(dto.getStundenzeilen().getFirst().getSollstunden()).isEqualByComparingTo("1888.00");
+        assertThat(dto.getStundenzeilen().getFirst().isSollIstDefault()).isTrue();
+        assertThat(dto.getDatenLuecken()).anyMatch(l -> l.getProblem().contains("kalkulatorisch"));
+        verify(zeitkontoVersionRepository, never()).save(any());
+    }
+
+    private static ZeitkontoVersion zeitkontoFuer(Mitarbeiter ma) {
+        ZeitkontoVersion zk = new ZeitkontoVersion();
+        zk.setMitarbeiter(ma);
+        zk.setGueltigVon(LocalDate.of(1000, 1, 1));
         zk.setMontagStunden(new BigDecimal("8.00"));
         zk.setDienstagStunden(new BigDecimal("8.00"));
         zk.setMittwochStunden(new BigDecimal("8.00"));
