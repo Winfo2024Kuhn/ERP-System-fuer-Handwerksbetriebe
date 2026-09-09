@@ -1,3 +1,4 @@
+import { useToast } from '../components/ui/toast'
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, User, FileText, Upload, Loader2 } from 'lucide-react';
@@ -22,6 +23,7 @@ interface Reklamation {
 
 export function LieferantReklamationDetailPage() {
     const { id } = useParams();
+    const toast = useToast()
     const navigate = useNavigate();
     const [reklamation, setReklamation] = useState<Reklamation | null>(null);
     const [loading, setLoading] = useState(true);
@@ -36,12 +38,14 @@ export function LieferantReklamationDetailPage() {
     const loadData = async () => {
         try {
             const res = await fetch(`/api/reklamationen/${id}`);
+            if (!res.ok) throw new Error('Reklamation konnte nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setReklamation(data);
             }
         } catch (error) {
             console.error(error);
+            toast.error('Reklamation konnte nicht geladen werden.');
         } finally {
             setLoading(false);
         }
@@ -57,15 +61,16 @@ export function LieferantReklamationDetailPage() {
                 const formData = new FormData();
                 formData.append("datei", file);
 
-                await fetch(`/api/reklamationen/${id}/bilder`, {
+                const response = await fetch(`/api/reklamationen/${id}/bilder`, {
                     method: "POST",
                     body: formData
                 });
+                if (!response.ok) throw new Error('Bilder konnten nicht hochgeladen werden.');
             }
             loadData(); // Refresh to see new images
         } catch (error) {
             console.error(error);
-            alert("Fehler beim Hochladen.");
+            toast.error("Fehler beim Hochladen.");
         } finally {
             setUploading(false);
         }

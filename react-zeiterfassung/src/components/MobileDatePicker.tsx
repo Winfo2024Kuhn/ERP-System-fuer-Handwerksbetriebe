@@ -1,3 +1,4 @@
+import { mobileOverlayStyle } from './ui/toast'
 import { useState, useRef, useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
@@ -146,7 +147,7 @@ export default function MobileDatePicker({ value, onChange, label, required, min
                 onInvalid={event => { event.preventDefault(); setAttempted(true); triggerRef.current?.focus() }} />
             {shownError && <p id={`${inputId}-error`} role="alert" className="mt-1 text-sm text-rose-700">{shownError}</p>}
             {isOpen && !disabled && createPortal(
-                <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm"
+                <div style={mobileOverlayStyle} className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm"
                     onClick={event => { if (event.target === event.currentTarget) close() }}
                     onKeyDown={event => {
                         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
@@ -157,7 +158,7 @@ export default function MobileDatePicker({ value, onChange, label, required, min
                             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
                         }
                     }}>
-                <div ref={popupRef} role="dialog" aria-modal="true" aria-label={label ?? ariaLabel ?? 'Datum wählen'} className="w-full max-w-sm max-h-[80dvh] overflow-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-3">
+                <div ref={popupRef} role="dialog" aria-modal="true" aria-label={label ?? ariaLabel ?? 'Datum wählen'} className="w-full max-w-sm max-h-full overflow-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-3">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-4">
                         <button

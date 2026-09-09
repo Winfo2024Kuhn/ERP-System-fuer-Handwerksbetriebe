@@ -1,3 +1,5 @@
+import { useToast, mobileOverlayStyle } from '../components/ui/toast'
+import { useConfirm } from '../components/ui/confirm-dialog'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
@@ -43,6 +45,8 @@ interface Notiz {
 
 export default function AnfrageNotizenPage() {
     const { anfrageId } = useParams<{ anfrageId: string }>()
+    const toast = useToast()
+    const confirm = useConfirm()
     const navigate = useNavigate()
     const [notizen, setNotizen] = useState<Notiz[]>([])
     const [loading, setLoading] = useState(true)
@@ -68,12 +72,14 @@ export default function AnfrageNotizenPage() {
         try {
             const token = localStorage.getItem('zeiterfassung_token')
             const res = await fetch(`/api/anfragen/${anfrageId}/notizen?token=${token}`)
+            if (!res.ok) throw new Error('Notizen konnten nicht geladen werden.')
             if (res.ok) {
                 const data = await res.json()
                 setNotizen(data)
             }
         } catch (err) {
             console.error('Fehler beim Laden der Notizen:', err)
+            toast.error('Notizen konnten nicht geladen werden.')
         }
         setLoading(false)
     }
@@ -122,17 +128,17 @@ export default function AnfrageNotizenPage() {
                 setShowModal(false)
                 loadNotizen()
             } else {
-                alert('Fehler beim Speichern der Notiz')
+                toast.error('Fehler beim Speichern der Notiz')
             }
         } catch (err) {
             console.error('Fehler beim Speichern:', err)
-            alert('Fehler beim Speichern')
+            toast.error('Fehler beim Speichern')
         }
         setSaving(false)
     }
 
     const handleDelete = async (notizId: number) => {
-        if (!window.confirm('Notiz wirklich löschen?')) return
+        if (!await confirm({ title: 'Notiz löschen', message: 'Notiz wirklich löschen?', confirmLabel: 'Löschen', variant: 'danger' })) return
         try {
             const token = localStorage.getItem('zeiterfassung_token')
             const res = await fetch(`/api/anfragen/${anfrageId}/notizen/${notizId}?token=${token}`, {
@@ -141,11 +147,11 @@ export default function AnfrageNotizenPage() {
             if (res.ok) {
                 loadNotizen()
             } else {
-                alert('Fehler beim Löschen')
+                toast.error('Fehler beim Löschen')
             }
         } catch (err) {
             console.error(err)
-            alert('Fehler beim Löschen')
+            toast.error('Fehler beim Löschen')
         }
     }
 
@@ -163,18 +169,18 @@ export default function AnfrageNotizenPage() {
             if (res.ok) {
                 loadNotizen()
             } else {
-                alert('Fehler beim Hochladen des Bildes')
+                toast.error('Fehler beim Hochladen des Bildes')
             }
         } catch (err) {
             console.error('Fehler beim Hochladen:', err)
-            alert('Fehler beim Hochladen')
+            toast.error('Fehler beim Hochladen')
         }
         setUploadingBildNotizId(null)
         setSelectedNotizForImage(null)
     }
 
     const handleDeleteImage = async (notizId: number, bildId: number) => {
-        if (!window.confirm('Bild wirklich löschen?')) return
+        if (!await confirm({ title: 'Bild löschen', message: 'Bild wirklich löschen?', confirmLabel: 'Löschen', variant: 'danger' })) return
         try {
             const token = localStorage.getItem('zeiterfassung_token')
             const res = await fetch(`/api/anfragen/${anfrageId}/notizen/${notizId}/bilder/${bildId}?token=${token}`, {
@@ -183,11 +189,11 @@ export default function AnfrageNotizenPage() {
             if (res.ok) {
                 loadNotizen()
             } else {
-                alert('Fehler beim Löschen des Bildes')
+                toast.error('Fehler beim Löschen des Bildes')
             }
         } catch (err) {
             console.error(err)
-            alert('Fehler beim Löschen')
+            toast.error('Fehler beim Löschen')
         }
     }
 
@@ -305,6 +311,7 @@ export default function AnfrageNotizenPage() {
                         </div>
                     </div>
                     <button
+                        aria-label="Eintrag hinzufügen"
                         onClick={handleOpenCreateModal}
                         className="ml-auto p-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors active:scale-95"
                     >
@@ -382,6 +389,7 @@ export default function AnfrageNotizenPage() {
                                                         </button>
                                                         {notiz.canEdit && (
                                                             <button
+                                                                aria-label="Bild löschen"
                                                                 onClick={() => handleDeleteImage(notiz.id, bild.id)}
                                                                 className="absolute top-1 right-1 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow"
                                                             >
@@ -462,6 +470,7 @@ export default function AnfrageNotizenPage() {
                                                 <Edit2 className="w-4 h-4" />
                                             </button>
                                             <button
+                                                aria-label="Notiz löschen"
                                                 onClick={() => handleDelete(notiz.id)}
                                                 className="p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-full active:bg-red-100"
                                             >
@@ -478,12 +487,13 @@ export default function AnfrageNotizenPage() {
 
             {/* New Note Modal */}
             {showModal && (
-                <div
+                <div style={mobileOverlayStyle}
                     className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center"
                     onClick={() => setShowModal(false)}
                 >
                     <div
-                        className="bg-white rounded-t-2xl w-full max-w-lg p-6 safe-area-bottom animate-slide-up"
+                        role="dialog" aria-modal="true" aria-label={editingNotiz ? 'Eintrag bearbeiten' : 'Neuer Eintrag'}
+                        className="bg-white rounded-t-2xl w-full max-w-lg max-h-full overflow-auto p-6 safe-area-bottom motion-safe:animate-slide-up"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">
