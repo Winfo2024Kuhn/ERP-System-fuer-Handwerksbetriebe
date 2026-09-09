@@ -25,7 +25,7 @@ public class MonatsabschlussUebersichtService {
         var monate = zeilen(f.jahr(), f.monat(), f.mitarbeiterId(), f.abteilungId(), 1);
         var alle = monate.getFirst().stream().filter(z -> f.status().equals("ALLE") || z.festgeschrieben()==f.status().equals("ABGESCHLOSSEN")).toList();
         int start=(int)Math.min((long)f.page()*f.size(), alle.size());
-        return new Uebersicht(alle.subList(start, Math.min(start+f.size(),alle.size())), alle.size(),f.page(),f.size(),summe(alle),alle.stream().map(z -> new Stand(z.referenz().mitarbeiterId(),f.jahr(),f.monat(),z.version())).toList());
+        return new Uebersicht(alle.subList(start, Math.min(start+f.size(),alle.size())), alle.size(),f.page(),f.size(),summe(alle),alle.stream().map(z -> new Stand(z.referenz().mitarbeiterId(),f.jahr(),f.monat(),z.version(),z.festgeschrieben())).toList());
     }
     public List<Vergleichsmonat> vergleich(int jahr,int monat,Long mitarbeiterId,Long abteilungId,Authentication auth) {
         berechtigung.verlangeAkteur(auth); validiere(jahr,monat,mitarbeiterId,abteilungId);

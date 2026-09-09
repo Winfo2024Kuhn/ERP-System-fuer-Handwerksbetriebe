@@ -41,4 +41,18 @@ class MonatsabschlussUebersichtServiceTest {
         when(repo.personen(any(),any(),any())).thenReturn(Collections.nCopies(501,person(1)));assertThatThrownBy(()->service.lade(new Filter(2025,1,null,null,"ALLE",0,50),null)).hasMessageContaining("500");
         doThrow(new org.springframework.security.access.AccessDeniedException("Nein")).when(recht).verlangeAkteur(null);assertThatThrownBy(()->service.vergleich(2025,1,null,null,null)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
+    @Test void auswahlEnthaeltEchtenAbschlussstatusAuchJenseitsDerSeite() {
+        var geschlossen=stand(1,2025,1,true);geschlossen.setVersion(3L);
+        var offen=stand(2,2025,1,false);offen.setVersion(3L);offen.setGueltig(true);
+        when(repo.personen(any(),any(),any())).thenReturn(List.of(person(1),person(2)));
+        when(repo.salden(anyList(),anyInt(),anyInt())).thenReturn(List.of(geschlossen,offen));
+        var result=service.lade(new Filter(2025,1,null,null,"ALLE",0,1),null);
+        assertThat(result.items()).hasSize(1);
+        var json=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(result.auswahl());
+        assertThat(json.get(0).path("festgeschrieben").asBoolean()).isTrue();
+        assertThat(json.get(1).path("festgeschrieben").isBoolean()).isTrue();
+        assertThat(json.get(1).path("festgeschrieben").asBoolean()).isFalse();
+        assertThat(result.auswahl()).allSatisfy(s->assertThat(s.version()).isEqualTo(3L));
+        verifyNoInteractions(saldo);
+    }
 }

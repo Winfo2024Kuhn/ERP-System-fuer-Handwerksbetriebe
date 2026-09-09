@@ -14,7 +14,7 @@ test('DATEV: eigene Eingaben, bewusste Auswahl, Ausschlüsse, Konflikt und echte
   if (path === '/api/auth/me') body = { id: 1, username: 'test', email: 'test@example.com', vorname: 'Max', nachname: 'Mustermann', admin: true, roles: ['ADMIN'], requiresInitialSetup: false };
   if (path.endsWith('/berechtigung')) body = { darfMonatAbschliessen: true };
   if (path === '/api/mitarbeiter') body = [{ id: 1, vorname: 'Max', nachname: 'Mustermann' }, { id: 2, vorname: 'Erika', nachname: 'Mustermann' }];
-  if (path.endsWith('/uebersicht')) body = { items: [1, 2].map(id => ({ referenz: { mitarbeiterId: id, jahr, monat }, mitarbeiterName: id === 1 ? 'Max Mustermann' : 'Erika Mustermann', abteilungIds: [], festgeschrieben: true, version: 3, festgeschriebenAm: '2026-09-01T10:00:00', kennzahlen: zahlen })), totalElements: 2, page: 0, size: 50, summen: Object.fromEntries(Object.entries(zahlen).map(([k, v]) => [k, v * 2])), auswahl: [1, 2].map(mitarbeiterId => ({ mitarbeiterId, jahr, monat, version: 3 })) };
+  if (path.endsWith('/uebersicht')) body = { items: [1, 2].map(id => ({ referenz: { mitarbeiterId: id, jahr, monat }, mitarbeiterName: id === 1 ? 'Max Mustermann' : 'Erika Mustermann', abteilungIds: [], festgeschrieben: true, version: 3, festgeschriebenAm: '2026-09-01T10:00:00', kennzahlen: zahlen })), totalElements: 2, page: 0, size: 50, summen: Object.fromEntries(Object.entries(zahlen).map(([k, v]) => [k, v * 2])), auswahl: [1, 2].map(mitarbeiterId => ({ mitarbeiterId, jahr, monat, version: 3, festgeschrieben: true })) };
   if (path.endsWith('/konfiguration')) { if (route.request().method() === 'PUT') config = { ...route.request().postDataJSON(), version: 1 }; body = config; }
   if (path.endsWith('/vorpruefung')) { vorpruefungen++; geprueft = route.request().postDataJSON(); body = { ...geprueft, gueltig: true, fehler: [], ausschluesse: [{ referenz: geprueft!.auswahl[0], kategorie: 'KORREKTUR', stunden: 1.5, meldung: 'Zeitkontokorrekturen werden nicht ausgezahlt.' }] }; }
   if (path.endsWith('/export')) {
@@ -40,7 +40,7 @@ test('DATEV: eigene Eingaben, bewusste Auswahl, Ausschlüsse, Konflikt und echte
  expect(config.beraterNr).toBe('001234'); expect(config.personalnummern).toEqual([{ mitarbeiterId: 1, personalnummer: '00014' }]); expect(config.zuordnungen).toHaveLength(8);
  await page.screenshot({ path: info.outputPath('datev-einstellungen.png'), fullPage: true });
  await page.getByRole('button', { name: 'DATEV einrichten', exact: true }).click(); await page.getByRole('button', { name: 'Für DATEV exportieren', exact: true }).click();
- const dialog = page.getByRole('dialog'); await expect(dialog).toContainText('Max Mustermann'); await expect(dialog).not.toContainText('Erika Mustermann');
+ const dialog = page.getByRole('dialog', { name: 'DATEV-Export prüfen' }); await expect(dialog).toContainText('Max Mustermann'); await expect(dialog).not.toContainText('Erika Mustermann');
  await dialog.getByRole('button', { name: 'Vorprüfung starten', exact: true }).click(); await expect(dialog.getByText('1,50 h', { exact: true })).toBeVisible();
  expect(geprueft!.auswahl).toHaveLength(1); expect(geprueft!.auswahl[0].mitarbeiterId).toBe(1);
  const download = dialog.getByRole('button', { name: 'Datei herunterladen', exact: true }); await expect(download).toBeDisabled(); await dialog.getByRole('checkbox').check();
@@ -49,4 +49,35 @@ test('DATEV: eigene Eingaben, bewusste Auswahl, Ausschlüsse, Konflikt und echte
  await dialog.getByRole('button', { name: 'Vorprüfung starten', exact: true }).click(); await expect(dialog.getByText('Die Vorprüfung ist erfolgreich.', { exact: true })).toBeVisible(); await expect(dialog.getByRole('checkbox')).not.toBeChecked(); await dialog.getByRole('checkbox').check();
  const received = page.waitForEvent('download'); await download.click(); const file = await received; expect(file.suggestedFilename()).toBe('lodas-2026-08.txt'); await file.saveAs(info.outputPath(file.suggestedFilename())); expect(await file.failure()).toBeNull(); expect(await readFile(info.outputPath(file.suggestedFilename()), 'utf8')).toBe('3;01/08/2026;120,50;01;200;14;\r\n');
  await expect(page.getByText('Datei heruntergeladen – bitte im Steuerbüro importieren.', { exact: true })).toBeVisible();
+});
+
+test('DATEV sperrt offenen Stand 3 auch außerhalb der sichtbaren Ergebnisseite', async ({ page }, info) => {
+ await page.route('**/api/**', async route => {
+  const url = new URL(route.request().url()); const path = url.pathname;
+  const jahr = Number(url.searchParams.get('jahr')); const monat = Number(url.searchParams.get('monat'));
+  const pageNumber = Number(url.searchParams.get('page'));
+  const all = Array.from({ length: 51 }, (_, i) => ({ mitarbeiterId: i + 1, jahr, monat, version: 3, festgeschrieben: i < 50 }));
+  const kennzahlen = { istStunden: 8, sollStunden: 8, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 8, differenz: 0 };
+  let body: unknown = [];
+  if (path === '/api/auth/me') body = { id: 1, username: 'test', email: 'test@example.com', admin: true, roles: ['ADMIN'], requiresInitialSetup: false };
+  if (path.endsWith('/berechtigung')) body = { darfMonatAbschliessen: true };
+  if (path === '/api/mitarbeiter') body = all.map(s => ({ id: s.mitarbeiterId, vorname: 'Max', nachname: `Mustermann ${s.mitarbeiterId}` }));
+  if (path.endsWith('/uebersicht')) body = { items: all.slice(pageNumber * 50, pageNumber * 50 + 50).map(s => ({ referenz: { mitarbeiterId: s.mitarbeiterId, jahr, monat }, mitarbeiterName: `Max Mustermann ${s.mitarbeiterId}`, abteilungIds: [], festgeschrieben: s.festgeschrieben, version: s.version, festgeschriebenAm: null, kennzahlen })), totalElements: 51, page: pageNumber, size: 50, summen: kennzahlen, auswahl: all };
+  await route.fulfill({ json: body });
+ });
+ await page.goto('/monatsabschluss');
+ const exportieren = page.getByRole('button', { name: 'Für DATEV exportieren', exact: true });
+ await page.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen', exact: true }).check();
+ await expect(exportieren).toBeEnabled();
+ await page.getByRole('checkbox', { name: 'Alle gefilterten Mitarbeiter auswählen', exact: true }).check();
+ await expect(page.getByText('51 ausgewählt', { exact: true })).toBeVisible();
+ await expect(exportieren).toBeDisabled();
+ await expect(page.getByText('Bitte die ausgewählten Monate zuerst abschließen und aktualisieren.', { exact: true })).toBeVisible();
+ await page.getByRole('button', { name: 'Nächste Seite', exact: true }).click();
+ await expect(page.getByRole('checkbox', { name: 'Max Mustermann 51 auswählen', exact: true })).toBeChecked();
+ await expect(exportieren).toBeDisabled();
+ await page.getByRole('checkbox', { name: 'Alle gefilterten Mitarbeiter auswählen', exact: true }).uncheck();
+ await page.getByRole('checkbox', { name: 'Max Mustermann 51 auswählen', exact: true }).check();
+ await expect(exportieren).toBeDisabled();
+ await page.screenshot({ path: info.outputPath('datev-offener-stand.png') });
 });

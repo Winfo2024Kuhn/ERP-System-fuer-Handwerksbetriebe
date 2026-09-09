@@ -1,9 +1,10 @@
 export interface Referenz { mitarbeiterId: number; jahr: number; monat: number }
 export interface Stand extends Referenz { version: number | null }
+export interface AuswahlStand extends Stand { festgeschrieben: boolean }
 export interface Kennzahlen { istStunden: number; sollStunden: number; abwesenheitsStunden: number; feiertagsStunden: number; korrekturStunden: number; gesamtIst: number; differenz: number }
 export interface Zeile { referenz: Referenz; mitarbeiterName: string; abteilungIds: number[]; festgeschrieben: boolean; version: number | null; festgeschriebenAm: string | null; kennzahlen: Kennzahlen }
 export interface Filter { jahr: number; monat: number; mitarbeiterId?: number; abteilungId?: number; status: 'ALLE' | 'OFFEN' | 'ABGESCHLOSSEN'; page: number; size: number }
-export interface Uebersicht { items: Zeile[]; totalElements: number; page: number; size: number; summen: Kennzahlen; auswahl: Stand[] }
+export interface Uebersicht { items: Zeile[]; totalElements: number; page: number; size: number; summen: Kennzahlen; auswahl: AuswahlStand[] }
 export interface Vergleichsmonat { jahr: number; monat: number; summen: Kennzahlen; offen: number; abgeschlossen: number }
 export interface SammelRequest { auswahl: Referenz[] }
 export interface Einzelergebnis { referenz: Referenz; status: 'ABGESCHLOSSEN' | 'BEREITS_ABGESCHLOSSEN' | 'FEHLGESCHLAGEN'; meldung: string }

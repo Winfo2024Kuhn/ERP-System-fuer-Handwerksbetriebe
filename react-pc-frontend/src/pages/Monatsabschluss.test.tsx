@@ -19,7 +19,7 @@ beforeEach(() => {
  if (input.endsWith('/berechtigung')) body = { darfMonatAbschliessen: allowed };
  if (input === '/api/mitarbeiter') body = [{ id: 1, vorname: 'Max', nachname: 'Mustermann' }];
  if (input.endsWith('/abteilungen')) body = [{ id: 2, name: 'Werkstatt' }];
- if (url.pathname.endsWith('/uebersicht')) { const page = Number(url.searchParams.get('page')); body = { items: Array.from({ length: 50 }, (_, i) => ({ referenz: { mitarbeiterId: page * 50 + i + 1, jahr, monat }, mitarbeiterName: `Max Mustermann ${page * 50 + i + 1}`, abteilungIds: [2], festgeschrieben: false, version: 3, festgeschriebenAm: null, kennzahlen })), totalElements: 500, page, size: 50, summen: { ...kennzahlen, gesamtIst: 72750 }, auswahl: Array.from({ length: 500 }, (_, i) => ({ mitarbeiterId: i + 1, jahr, monat, version: 3 })) }; }
+ if (url.pathname.endsWith('/uebersicht')) { const page = Number(url.searchParams.get('page')); body = { items: Array.from({ length: 50 }, (_, i) => ({ referenz: { mitarbeiterId: page * 50 + i + 1, jahr, monat }, mitarbeiterName: `Max Mustermann ${page * 50 + i + 1}`, abteilungIds: [2], festgeschrieben: false, version: 3, festgeschriebenAm: null, kennzahlen })), totalElements: 500, page, size: 50, summen: { ...kennzahlen, gesamtIst: 72750 }, auswahl: Array.from({ length: 500 }, (_, i) => ({ mitarbeiterId: i + 1, jahr, monat, version: 3, festgeschrieben: false })) }; }
  if (url.pathname.endsWith('/vergleich')) body = Array.from({ length: 6 }, (_, i) => ({ jahr: 2026, monat: i + 1, summen: kennzahlen, offen: 3, abgeschlossen: 4 }));
  if (input.endsWith('/sammelabschluss')) { const refs = JSON.parse(String(init?.body)).auswahl; submitted.push(refs); body = { ergebnisse: refs.map((referenz: { mitarbeiterId: number }) => ({ referenz, status: referenz.mitarbeiterId === 1 ? 'FEHLGESCHLAGEN' : 'ABGESCHLOSSEN', meldung: referenz.mitarbeiterId === 1 ? 'Zeiten bitte prüfen.' : 'Monat abgeschlossen.' })) }; }
  if (/monatsabschluesse\/\d+\/\d+\/\d+$/.test(input)) body = { audit: [{ id: 1, aktion: 'ABSCHLIESSEN', akteurMitarbeiterId: 1, akteurName: 'Max Mustermann', zeitpunkt: '2026-08-01T10:00:00' }] };
@@ -63,4 +63,16 @@ it('springt nach Abschluss zurück zur ersten Ergebnisseite und schließt den al
  fireEvent.click(screen.getByRole('button', { name: 'Verlauf für Max Mustermann 51' })); await screen.findByText(/Abgeschlossen durch Max Mustermann/);
  fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 51 auswählen' })); fireEvent.click(screen.getByRole('button', { name: 'Auswahl abschließen' }));
  await waitFor(() => expect(submitted).toHaveLength(1)); await screen.findByText('Max Mustermann 1'); expect(screen.queryByRole('region', { name: 'Abschlussverlauf' })).not.toBeInTheDocument();
+});
+
+it('sperrt DATEV für offene Version 3 bei Einzel- und seitenübergreifender Auswahl', async () => {
+ mount(); await screen.findByText('Max Mustermann 1');
+ fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' }));
+ expect(screen.getByRole('button', { name: 'Für DATEV exportieren' })).toBeDisabled();
+ fireEvent.click(screen.getByRole('checkbox', { name: 'Alle gefilterten Mitarbeiter auswählen' }));
+ fireEvent.click(screen.getByRole('button', { name: 'Nächste Seite' }));
+ await screen.findByText('Max Mustermann 51');
+ expect(screen.getByText('500 ausgewählt')).toBeVisible();
+ expect(screen.getByRole('button', { name: 'Für DATEV exportieren' })).toBeDisabled();
+ expect(calls.some(c => c.includes('/datev/'))).toBe(false);
 });
