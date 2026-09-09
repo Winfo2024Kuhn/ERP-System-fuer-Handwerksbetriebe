@@ -30,6 +30,16 @@ vi.mock('../services/OfflineService', async () => {
 
 const mockedOfflineService = vi.mocked(OfflineService)
 
+const configuredZeitkonto = { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null }
+
+const antwortMitZeitkontoStatus = (input: RequestInfo | URL, fallback: unknown = {}) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    return new Response(JSON.stringify(url.includes('/buchungszeitfenster/') ? configuredZeitkonto : fallback), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+    })
+}
+
 function createMemoryStorage(): Storage {
     const store = new Map<string, string>()
     return {
@@ -118,7 +128,7 @@ describe('DashboardPage – Pause-Button', () => {
                 )
             }
             // Andere Fetches (Permissions, Urlaubsverfall, aktiv) freundlich ablehnen
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -164,7 +174,7 @@ describe('DashboardPage – Pause-Button', () => {
                     { status: 200, headers: { 'Content-Type': 'application/json' } },
                 )
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -197,7 +207,7 @@ describe('DashboardPage – Pause-Button', () => {
                     { status: 200, headers: { 'Content-Type': 'application/json' } },
                 )
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -218,12 +228,46 @@ describe('DashboardPage – Pause-Button', () => {
     })
 })
 
+describe('DashboardPage – Zeitkonto-Status', () => {
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', createMemoryStorage())
+        localStorage.setItem('zeiterfassung_token', 'tok-test')
+        mockedOfflineService.getFailedEntries.mockResolvedValue([])
+        mockedOfflineService.getHeuteGearbeitet.mockResolvedValue({ stunden: 0, minuten: 0, fromCache: false })
+        mockedOfflineService.getPendingCount.mockResolvedValue(0)
+        mockedOfflineService.getUnsyncedStopMinutes.mockResolvedValue(0)
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+        localStorage.clear()
+        vi.unstubAllGlobals()
+    })
+
+    it('blendet Zeitkonto-Navigation bei ausgeschalteter Zeiterfassung aus und lässt Projekte erreichbar', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url.includes('/buchungszeitfenster/')) {
+                return new Response(JSON.stringify({ fuehrtZeitkonto: false, eingerichtet: false, hinweis: 'Die Zeiterfassung ist ausgeschaltet.' }))
+            }
+            return new Response('{}', { status: 200 })
+        }))
+
+        renderDashboard()
+
+        expect(await screen.findByText('Zeiterfassung derzeit nicht verfügbar')).toBeInTheDocument()
+        expect(screen.getByText('Projekte')).toBeInTheDocument()
+        expect(screen.queryByText('Saldenauswertung')).not.toBeInTheDocument()
+        expect(screen.queryByText('Zeit erfassen')).not.toBeInTheDocument()
+    })
+})
+
 describe('DashboardPage – loadActiveSession Frisch-Guard', () => {
     // Stellt ein fetch-Mock bereit, bei dem GET /aktiv "keine aktive Buchung"
     // (leeres Objekt, kein .id) liefert. Genau diese verzögerte Server-Antwort
     // hat die frisch angestochene Buchung früher gelöscht.
     const stubFetchAktivLeer = () => {
-        const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input))
         vi.stubGlobal('fetch', fetchMock)
         return fetchMock
     }
@@ -378,7 +422,7 @@ describe('DashboardPage – Feierabend-Rückmeldung', () => {
             if (url.includes('/api/zeiterfassung/stop')) {
                 throw new TypeError('Failed to fetch') // kein Empfang
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -413,7 +457,7 @@ describe('DashboardPage – Feierabend-Rückmeldung', () => {
                     { status: 200, headers: { 'Content-Type': 'application/json' } },
                 )
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -470,7 +514,7 @@ describe('DashboardPage – Langzeitkrankmeldung-Karte', () => {
                     { status: 200, headers: { 'Content-Type': 'application/json' } },
                 )
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -487,7 +531,7 @@ describe('DashboardPage – Langzeitkrankmeldung-Karte', () => {
             if (url.includes('/api/zeiterfassung/langzeitkrankmeldung/')) {
                 return new Response('{}', { status: 200 })
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -510,7 +554,7 @@ describe('DashboardPage – Langzeitkrankmeldung-Karte', () => {
             if (url.includes('/api/zeiterfassung/langzeitkrankmeldung/')) {
                 throw new TypeError('Failed to fetch')
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -539,7 +583,7 @@ describe('DashboardPage – Langzeitkrankmeldung-Karte', () => {
                     { status: 200, headers: { 'Content-Type': 'application/json' } },
                 )
             }
-            return new Response('{}', { status: 200 })
+            return antwortMitZeitkontoStatus(input)
         })
         vi.stubGlobal('fetch', fetchMock)
 
