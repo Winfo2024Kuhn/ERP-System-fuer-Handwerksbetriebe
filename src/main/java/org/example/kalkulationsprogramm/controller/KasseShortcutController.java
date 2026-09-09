@@ -161,7 +161,8 @@ public class KasseShortcutController {
         return ResponseEntity.ok(kasseEinstellungRepository.findSingleton()
                 .map(KasseShortcutController::toEinstellungDto)
                 .orElseGet(() -> new EinstellungResponse(
-                        null, BigDecimal.ZERO, false, null, null, null, null)));
+                        null, BigDecimal.ZERO, false, null, null, null, null,
+                        null, null, 1, "1000", "1200")));
     }
 
     @PutMapping("/einstellung")
@@ -190,10 +191,39 @@ public class KasseShortcutController {
                 k.setPrivateinlageSachkonto(null);
             }
             validateEhegattengehaltKonfig(k);
+
+            // Angaben fuer den Steuerberater (DATEV-Export, Entscheidung 6 des Orchestrators).
+            if (req.wirtschaftsjahrBeginnMonat() != null) {
+                if (req.wirtschaftsjahrBeginnMonat() < 1 || req.wirtschaftsjahrBeginnMonat() > 12) {
+                    throw new IllegalArgumentException("Der Wirtschaftsjahr-Beginn muss ein Monat zwischen 1 und 12 sein");
+                }
+                k.setWirtschaftsjahrBeginnMonat(req.wirtschaftsjahrBeginnMonat());
+            }
+            validateDatevNummer(req.datevBeraternummer(), 7, "Die Beraternummer");
+            validateDatevNummer(req.datevMandantennummer(), 5, "Die Mandantennummer");
+            validateKontonummer(req.kassenkontoNummer(), "Das Kassenkonto");
+            validateKontonummer(req.bankkontoNummer(), "Das Bankkonto");
+            k.setDatevBeraternummer(req.datevBeraternummer());
+            k.setDatevMandantennummer(req.datevMandantennummer());
+            k.setKassenkontoNummer(req.kassenkontoNummer());
+            k.setBankkontoNummer(req.bankkontoNummer());
+
             KasseEinstellung gespeichert = kasseEinstellungRepository.save(k);
             return ResponseEntity.ok(toEinstellungDto(gespeichert));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    private static void validateDatevNummer(String wert, int maxLaenge, String feldname) {
+        if (wert != null && wert.length() > maxLaenge) {
+            throw new IllegalArgumentException(feldname + " darf hoechstens " + maxLaenge + " Zeichen haben");
+        }
+    }
+
+    private static void validateKontonummer(String wert, String feldname) {
+        if (wert != null && !wert.isEmpty() && (!wert.matches("\\d+") || wert.length() > 8)) {
+            throw new IllegalArgumentException(feldname + " darf nur Ziffern enthalten und hoechstens 8 Zeichen haben");
         }
     }
 
@@ -234,7 +264,12 @@ public class KasseShortcutController {
                 k.getEhegattengehaltBetrag(),
                 k.getEhegattengehaltTag(),
                 k.getEhegattengehaltEmpfaengerName(),
-                k.getPrivateinlageSachkonto() != null ? k.getPrivateinlageSachkonto().getId() : null);
+                k.getPrivateinlageSachkonto() != null ? k.getPrivateinlageSachkonto().getId() : null,
+                k.getDatevBeraternummer(),
+                k.getDatevMandantennummer(),
+                k.getWirtschaftsjahrBeginnMonat(),
+                k.getKassenkontoNummer(),
+                k.getBankkontoNummer());
     }
 
     // ===================== Request / Response DTOs =====================
@@ -251,7 +286,12 @@ public class KasseShortcutController {
             BigDecimal ehegattengehaltBetrag,
             Integer ehegattengehaltTag,
             String ehegattengehaltEmpfaengerName,
-            Long privateinlageSachkontoId) {}
+            Long privateinlageSachkontoId,
+            String datevBeraternummer,
+            String datevMandantennummer,
+            Integer wirtschaftsjahrBeginnMonat,
+            String kassenkontoNummer,
+            String bankkontoNummer) {}
 
     public record EinstellungResponse(
             Long id,
@@ -260,5 +300,10 @@ public class KasseShortcutController {
             BigDecimal ehegattengehaltBetrag,
             Integer ehegattengehaltTag,
             String ehegattengehaltEmpfaengerName,
-            Long privateinlageSachkontoId) {}
+            Long privateinlageSachkontoId,
+            String datevBeraternummer,
+            String datevMandantennummer,
+            Integer wirtschaftsjahrBeginnMonat,
+            String kassenkontoNummer,
+            String bankkontoNummer) {}
 }
