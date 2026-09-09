@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { DatevBereich } from '../features/monatsabschluss/DatevBereich';
 import { api } from '../features/monatsabschluss/api';
 import type { Filter, Stand, Referenz, Uebersicht, Vergleichsmonat, Einzelergebnis, Verlauf, Kennzahlen, Zeile } from '../features/monatsabschluss/types';
 const monate = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
@@ -107,6 +108,7 @@ export default function Monatsabschluss() {
         {fehler && <p role="alert" className="rounded-lg bg-rose-50 text-rose-800 p-4">{fehler}</p>}
         {verlaufZeile && <section aria-label="Abschlussverlauf" className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><h2 className="font-semibold">Verlauf für {verlaufZeile.mitarbeiterName}</h2><Button variant="outline" size="sm" onClick={() => setVerlaufZeile(null)}>Verlauf schließen</Button></div>{verlaufFehler ? <p role="alert">{verlaufFehler}</p> : !verlauf ? <p role="status">Verlauf wird geladen …</p> : verlauf.audit.length ? <ul className="mt-3 space-y-2">{verlauf.audit.map(a => <li key={a.id}>{a.aktion === 'ABSCHLIESSEN' ? 'Abgeschlossen' : 'Wieder geöffnet'} durch {a.akteurName} · {datum(a.zeitpunkt)}</li>)}</ul> : <p className="mt-3 text-slate-500">Noch kein Abschluss vorhanden.</p>}</section>}
         <div className="flex items-center justify-between"><p className="font-medium text-slate-700">{auswahl.length} ausgewählt</p><Button variant="outline" size="sm" disabled={laedt || busy} onClick={() => { generation.current++; setAuswahl([]); setRevision(v => v + 1); }}><RefreshCw aria-hidden="true" className="w-4 h-4 mr-2" />Aktualisieren</Button></div>
+        <DatevBereich auswahl={laedt || busy || !daten ? [] : auswahl} mitarbeiter={mitarbeiter} />
         {laedt ? <p role="status" className="bg-slate-100 rounded-lg p-8 motion-safe:animate-pulse">Monatsdaten werden geladen …</p> : daten && <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 space-y-4" aria-label="Monatsübersicht">
             <h2 className="font-semibold text-lg">{monate[filter.monat - 1]} {filter.jahr}</h2>
             <p className="text-sm text-slate-600">Alle Angaben in Stunden. Gesamt = Arbeit + Abwesenheit + Feiertage + Korrektur.</p>
