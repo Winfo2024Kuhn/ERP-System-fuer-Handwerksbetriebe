@@ -10,7 +10,7 @@ Kontext-Log: docs/superpowers/plans/2026-09-09-monatsabschluss-datev-log.md
 - Dauerhafte Zahlenfeld-Nutzervorgabe in AGENTS.md verbindlich: Nullwerte bei Klick-/Tab-Fokus leeren, Nichtnullwerte erhalten, Texteingabe mit leeren Zwischenständen/deutschem Komma, vollständige Pflichtzahl beim Speichern validieren. Kennnummern bleiben Ziffernstrings mit führenden Nullen. UI-Tests der Tasks5/6 decken diese Regeln an betroffenen Feldern ab.
 - DATEV-Export muss vollständig implementiert und mit offiziellen Formatregeln, Golden-Datei und echtem Browser-Download geprüft werden. Keine Platzhalter. Ein tatsächlicher Import in einer DATEV-Installation ist hier nicht verfügbar und wird im Abschluss ausdrücklich nicht als erfolgt behauptet.
 
-- Pflichtlektüre: `AGENTS.md`, `docs/agent instructions/docs/BACKEND_ARCH.md`, `docs/agent instructions/docs/FRONTEND_UI.md`, `docs/agent instructions/docs/TESTING_SECURITY.md`, `.agents/skills/loese-problem/references/kriterien.md`. Frontend zusätzlich Skills `handwerkerprogramm-design`, `new-page`, `playwright-design-pruefung`. Keine Änderungen am Mobile-Frontend.
+- Pflichtlektüre: `AGENTS.md`, `docs/agent instructions/docs/BACKEND_ARCH.md`, `docs/agent instructions/docs/FRONTEND_UI.md`, `docs/agent instructions/docs/TESTING_SECURITY.md`, `.agents/skills/loese-problem/references/kriterien.md`. Frontend zusätzlich Skills `handwerkerprogramm-design`, `new-page`, `playwright-design-pruefung`. Mobile-Änderungen sind für die ausdrücklich freigegebene Ergänzung systemeigener Eingaben und Meldungen gemäß [Zusatzplan](2026-09-09-systemeigene-eingaben.md) erlaubt; keine Änderungen an mobiler Fachlogik außerhalb dieses UI-Scopes.
 - Bestehende Dateien wurden direkt gelesen; Recherche mit `./graphify query 'MonatsSaldoService Monatsabschluss Berechtigung Kalender Mitarbeiter Abteilung'`, `./graphify explain MonatsSaldoService`, `./graphify path MonatsSaldoService ZeitverwaltungController` (gerichtet kein Pfad; Explain zeigt Referenz), zusätzlicher Graph-Abfrage für App und Tests. Zeilen beziehen sich auf Stand 2026-09-09 vor Umsetzung.
 - Keine neuen Berechnungsregeln: Gesamtist = Arbeit + Abwesenheit + Feiertag + Korrektur; Differenz = Gesamtist − Soll. Geschlossene Werte gewinnen immer vor Livewerten. Keine alten Abschlüsse mit heute berechneten Abwesenheitsdetails anreichern.
 - Konstruktor-Injection, DTOs, parametrisierte Abfragen. Neue idempotente Migrationen V372 (Snapshot) und V373 (DATEV); vor Anwendung auf Kollisionen prüfen, alte Migrationen unverändert lassen. Bestehende Einzel-API bleibt kompatibel.
@@ -80,7 +80,7 @@ record Datei(String dateiname, String contentType, byte[] inhalt) {}
 | 3 | 5 | Abschnitt2 geprüft und gemergt | Code plus separater Designreview der Hauptseite |
 | 4 | 6 inklusive Page-Integration | Abschnitt3 geprüft und gemergt | Code plus separater Designreview einschließlich DATEV-End-to-End |
 
-Maximal zwei Coding-Agenten laufen gleichzeitig; jede Consumes-Leistung muss vor Taskstart abgenommen sein. Featurebranch und Taskbranches benutzen das vorgegebene `codex/`-Präfix. Taskworktrees werden jeweils erst vom geprüften Featurestand angelegt. Keine Task-Commits verändern fremde Dateien oder den Graph gemeinsam.
+In der gemeinsamen Ausführung maximal drei Coding-Agenten gleichzeitig; jede Consumes-Leistung muss vor Taskstart abgenommen sein. Featurebranch und Taskbranches benutzen das vorgegebene `codex/`-Präfix. Taskworktrees werden jeweils erst vom geprüften Featurestand angelegt. Keine Task-Commits verändern fremde Dateien oder den Graph gemeinsam.
 
 Designreview nach Abschnitten3 und4 jeweils durch einen eigenen Designreview-Agenten parallel zum Code-Reviewer, mit separatem Worktree `.Codex/worktrees/monatsabschluss-datev-design-3` bzw. `-design-4` und Branch `codex/monatsabschluss-datev-design-3` bzw. `-design-4`. Beide Reviews prüfen denselben zusammengeführten Abschnittsstand. Der nächste Abschnitt beginnt erst nach beiden Ergebnissen. Verbindliche Viewports/UX-Kriterien stehen im Design-Prüfskill. Keine gemeinsam beschriebenen Testberichte in Coding-Worktrees.
 
@@ -202,6 +202,14 @@ Kontext-Log: append-only; alle Agenten benutzen den absoluten Logpfad im Hauptch
   - [ ] Download über API als Blob, servergenerierten Dateinamen verwenden, ObjectURL anschließend freigeben. Meldung „Datei heruntergeladen – bitte im Steuerbüro importieren“, keine Importbestätigung behaupten. Laden/Fehler/Leere/Speichern unterscheiden und Fehler toasten.
   - [ ] Vitest und PC-Build; Browser-End-to-End mit Dummy-Daten: Filter → Alle-Auswahl → Teilerfolg → Verlauf/Kalender → Konfiguration → Vorprüfung → TXT-Download → zwischenzeitliche Wiederöffnung/409. Feste Viewports aus Design-Prüfskill, Tastatur und kein abgeschnittener Dialog/Seitenoverflow.
 
+## Freigegebene Ergänzung: systemeigene Eingaben und Meldungen
+
+Der [Zusatzplan mit Tasks 7–14](2026-09-09-systemeigene-eingaben.md) gehört zur gleichen freigegebenen Aufgabe und zum Featurebranch. Er erweitert den Abschluss um beide Frontends, eigene Picker/Toasts sowie deutsche Zahlenfelder. Die Ergänzung wird gemäß der gemeinsamen Ausführungsreihenfolge unten mit den Haupttasks verzahnt und vor Gesamtprüfung/PR vollständig abgeschlossen. Kein weiterer Designfreigabepunkt.
+
 ## Log
 
 Abschlusszusammenfassungen werden nach den Abschnittsreviews ergänzt.
+
+## Gemeinsame Ausführungsreihenfolge nach Scope-Erweiterung
+
+Die Nutzervorgabe zu systemeigenen Eingaben wird mit den Featuretasks verflochten: Abschnitt 1 [1,3], Abschnitt 2 [2,4,7], Abschnitt 3 [5,8], Abschnitt 4 [6,9,10], Abschnitt 5 [11,12,13], Abschnitt 6 [14]. Tasknummern7–14 und Dateibesitz stehen im verlinkten Zusatzplan. Pro Abschnitt max3 disjunkte Tasks; alle erforderlichen Produzenten sind vorher geprüft. Task6 bleibt beim Frontend-Agenten von Task5. Backend-only Abschnitt1 hat keinen Designreview, weitere Abschnitte bekommen den separaten Designreview.
