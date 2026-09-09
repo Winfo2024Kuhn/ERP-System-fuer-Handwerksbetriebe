@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhase;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
-import org.example.kalkulationsprogramm.domain.Zeitkonto;
 import org.example.kalkulationsprogramm.repository.LangzeitkrankmeldungPhaseRepository;
 import org.springframework.stereotype.Service;
 
@@ -113,83 +112,6 @@ public class TagesSollService {
         return result;
     }
 
-    public BigDecimal periodenSoll(Long mitarbeiterId, Zeitkonto konto, LocalDate tag) {
-        return berechneEinzeltag(mitarbeiterId, konto, tag).periodenSoll();
-    }
-
-    public BigDecimal feiertagsGutschrift(Long mitarbeiterId, Zeitkonto konto, LocalDate tag) {
-        return berechneEinzeltag(mitarbeiterId, konto, tag).feiertagsGutschrift();
-    }
-
-    public BigDecimal arbeitsSoll(Long mitarbeiterId, Zeitkonto konto, LocalDate tag) {
-        TagesWerte werte = berechneEinzeltag(mitarbeiterId, konto, tag);
-        return werte.periodenSoll().subtract(werte.feiertagsGutschrift());
-    }
-
-    public BigDecimal periodenSollSumme(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis) {
-        return summiere(mitarbeiterId, konto, von, bis, TagesWerte::periodenSoll);
-    }
-
-    public BigDecimal feiertagsGutschriftSumme(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis) {
-        return summiere(mitarbeiterId, konto, von, bis, TagesWerte::feiertagsGutschrift);
-    }
-
-    /**
-     * Wie {@link #periodenSoll}, aber fuer einen ganzen Zeitraum auf einmal:
-     * Phasen und Feiertage werden EINMAL geladen statt einmal pro Tag. Fuer
-     * Aufrufer, die den Wert je Tag brauchen (Kalenderansicht,
-     * Stufenplan-Tabelle) statt nur der Summe - sonst waeren
-     * {@code periodenSollSumme}/{@code feiertagsGutschriftSumme} keine Option,
-     * weil sie die Tageswerte nicht einzeln herausgeben.
-     *
-     * <p>Gemessen (Abschnitt 4, Befund 2): ein 31-Tage-Kalendermonat kam vorher
-     * auf 249 Repository-Aufrufe (62 x {@code findImZeitraum} + 187 gegen
-     * {@code FeiertagRepository}), weil {@code ZeitverwaltungController} pro
-     * Tag einzeln {@link #arbeitsSoll} und {@link #feiertagsGutschrift} rief.
-     * Ueber diese Methode sind es 2 (eine {@code findImZeitraum}- und eine
-     * {@code getFeiertageZwischen}-Ladung je Aufruf).
-     */
-    public Map<LocalDate, BigDecimal> periodenSollJeTag(Long mitarbeiterId, Zeitkonto konto, LocalDate von,
-            LocalDate bis) {
-        return jeTag(mitarbeiterId, konto, von, bis, TagesWerte::periodenSoll);
-    }
-
-    /** Zeitraum-Geschwister von {@link #feiertagsGutschrift} - siehe {@link #periodenSollJeTag}. */
-    public Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag(Long mitarbeiterId, Zeitkonto konto, LocalDate von,
-            LocalDate bis) {
-        return jeTag(mitarbeiterId, konto, von, bis, TagesWerte::feiertagsGutschrift);
-    }
-
-    /** Zeitraum-Geschwister von {@link #arbeitsSoll} - siehe {@link #periodenSollJeTag}. */
-    public Map<LocalDate, BigDecimal> arbeitsSollJeTag(Long mitarbeiterId, Zeitkonto konto, LocalDate von,
-            LocalDate bis) {
-        return jeTag(mitarbeiterId, konto, von, bis, w -> w.periodenSoll().subtract(w.feiertagsGutschrift()));
-    }
-
-    private BigDecimal summiere(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis,
-            Function<TagesWerte, BigDecimal> ausgewaehlterWert) {
-        return jeTag(mitarbeiterId, konto, von, bis, ausgewaehlterWert).values().stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    /**
-     * Laedt Phasen und Feiertage fuer den Zeitraum EINMAL und liefert den
-     * gewaehlten Wert je Tag - Grundlage sowohl fuer {@link #summiere} als
-     * auch fuer die drei oeffentlichen Je-Tag-Methoden.
-     */
-    private Map<LocalDate, BigDecimal> jeTag(Long mitarbeiterId, Zeitkonto konto, LocalDate von, LocalDate bis,
-            Function<TagesWerte, BigDecimal> ausgewaehlterWert) {
-        List<LangzeitkrankmeldungPhase> phasen = phaseRepository.findImZeitraum(mitarbeiterId, von, bis);
-        Map<LocalDate, Feiertag> feiertage = feiertageNachBundeslandBY(von, bis);
-
-        Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
-        for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
-            TagesWerte werte = berechneTag(tagesBasis(phasen, konto, tag), feiertage.get(tag));
-            ergebnis.put(tag, ausgewaehlterWert.apply(werte));
-        }
-        return ergebnis;
-    }
-
     /**
      * Laedt Feiertage im Zeitraum und filtert auf Bayern.
      * {@link FeiertagService#getFeiertageZwischen} filtert - anders als
@@ -202,24 +124,6 @@ public class TagesSollService {
         return feiertagService.getFeiertageZwischen(von, bis).stream()
                 .filter(f -> "BY".equals(f.getBundesland()))
                 .collect(Collectors.toMap(Feiertag::getDatum, Function.identity(), (a, b) -> a));
-    }
-
-    /**
-     * Einzeltag-Variante: fragt FeiertagService direkt ab (kein Batch-Kontext
-     * vorhanden). Nutzt {@code getFeiertagInfo} statt getrennter
-     * {@code istFeiertag}/{@code istHalberFeiertag}-Aufrufe - beide Fragen
-     * (ist es ein Feiertag? ist er halb?) stecken in derselben Zeile, ein
-     * zweiter Zugriff auf denselben Datensatz war unnoetig (Befund 2,
-     * Abschnitt 4).
-     */
-    private TagesWerte berechneEinzeltag(Long mitarbeiterId, Zeitkonto konto, LocalDate tag) {
-        List<LangzeitkrankmeldungPhase> phasen = phaseRepository.findImZeitraum(mitarbeiterId, tag, tag);
-        BigDecimal basis = tagesBasis(phasen, konto, tag);
-        if (basis.signum() == 0) {
-            return new TagesWerte(BigDecimal.ZERO, BigDecimal.ZERO);
-        }
-        Feiertag feiertagAmTag = feiertagService.getFeiertagInfo(tag).orElse(null);
-        return berechneTag(basis, feiertagAmTag);
     }
 
     /** Batch-Variante: nutzt die vorab geladene Feiertags-Map statt eigener FeiertagService-Abfragen. */
@@ -246,10 +150,6 @@ public class TagesSollService {
      * Wochenende (Soll 0) bleibt immer 0 - der Stufenplan darf das Soll nie
      * erhoehen (Sicherheitsnetz, siehe E2 im Plan).
      */
-    private BigDecimal tagesBasis(List<LangzeitkrankmeldungPhase> phasen, Zeitkonto konto, LocalDate tag) {
-        return tagesBasis(phasen, konto.getSollstundenFuerTag(tag.getDayOfWeek().getValue()), tag);
-    }
-
     private BigDecimal tagesBasis(List<LangzeitkrankmeldungPhase> phasen, BigDecimal roh, LocalDate tag) {
         if (roh == null || roh.signum() <= 0) {
             return BigDecimal.ZERO;
