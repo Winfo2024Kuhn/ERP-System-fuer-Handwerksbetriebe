@@ -92,6 +92,14 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 
+### Verbindliche Eingaben und Meldungen (Nutzervorgabe 09.09.2026)
+
+- In beiden Frontends ausschließlich die eigenen gestalteten Eingaben, Toasts und Bestätigungsdialoge verwenden. Das gilt auch für geöffnete Auswahllisten und Picker; ein gestalteter Rahmen um einen nativen Browserdialog genügt nicht. Kein `alert`, `window.confirm`, `prompt` oder nativer Datums-, Uhrzeit-, Zahlen-Spinner- oder Farbpicker. Betriebssystem-Dateiauswahl und Berechtigungsdialoge bleiben echte Systemfunktionen.
+- Mengen und Beträge als String bearbeiten und im deutschen Zahlenformat mit Dezimalkomma anzeigen und annehmen. Eine angezeigte `0` oder `0,00` beim Fokus durch Klick oder Tab leeren; andere Werte erhalten. Leere Zwischenstände dürfen beim Tippen bestehen bleiben und dürfen nicht durch `Number(value) || 0` ersetzt werden.
+- Vor Speichern, Vorschau und Berechnen vollständig validieren, auch bei Aktionen ohne Formular. Leere Pflichtwerte, unvollständige Dezimalzahlen und verletzte Fachgrenzen mit eigener Meldung ablehnen. Erst nach erfolgreicher Prüfung in numerische API-Werte umwandeln; optional leere Felder nach ihrem fachlichen Vertrag behandeln.
+- Kennnummern wie Personalnummern und Lohnarten bleiben Ziffernstrings mit führenden Nullen. Die Nullfokus- und Dezimalformatierung gilt für sie nicht. Uhrzeiten werden als `HH:mm` geprüft.
+- Die gemeinsamen Bausteine unter `components/ui/` wiederverwenden. Geöffnete Picker, Tastaturbedienung, Fehler und Toasts vor offenen Dialogen im Browser prüfen.
+
 ### Page Header Pattern (Zwingend für alle Seiten)
 ```tsx
 <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">
