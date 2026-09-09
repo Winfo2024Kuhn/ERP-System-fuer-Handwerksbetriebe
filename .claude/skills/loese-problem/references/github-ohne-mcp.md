@@ -63,25 +63,9 @@ curl -s -o "$SCRATCHPAD/pr-antwort.json" -w "%{http_code}\n" -X POST \
 **Issue anlegen** (Schritt 2) geht genauso gegen `/issues` mit `{"title","body"}`.
 **Kommentar** an PR oder Issue: `/issues/<nummer>/comments` — ein PR ist für diesen
 Endpunkt ein Issue.
-Verlinkung mit dem Issue: `Schließt #<nummer>` in den PR-Body. Das verlinkt für
-menschliche Leser — **schließt das Issue aber nicht**, siehe den nächsten
-Abschnitt.
-
-## „Schließt #91" schließt gar nichts
-
-GitHub erkennt nur **englische** Schlüsselwörter im PR-Text: `closes`, `fixes`,
-`resolves` (samt ihren Beugungen). Ein deutsches „Schließt #91" ist für GitHub
-reiner Fließtext. Für Menschen lesbar, ja — das Issue bleibt nach dem Merge
-trotzdem offen, und niemand merkt es, weil der PR ja sauber durchgelaufen ist.
-
-Am 09.09.2026 so passiert. Zwei Wege sind in Ordnung, nur die Annahme nicht:
-
-- Deutschen Text behalten und das Issue **nach dem Merge selbst schließen**:
-  `PATCH /repos/<repo>/issues/<n>` mit `state=closed` und
-  `state_reason=completed`. Dabei gleich einen Kommentar hinterlassen, der auf
-  den PR verweist und die offen gebliebenen Punkte nennt — das ist ohnehin
-  wertvoller als ein stilles Zuklappen.
-- Oder `Closes #91` schreiben und GitHub die Arbeit machen lassen.
+Verlinkung mit dem Issue: `Closes #<nummer>` in den PR-Body schreiben. GitHub
+schließt das Issue beim Merge in den Standardbranch automatisch. Das deutsche
+`Schließt #<nummer>` wird nicht als Schlüsselwort zum Schließen erkannt.
 
 ## Danach aufräumen — nicht vergessen
 
