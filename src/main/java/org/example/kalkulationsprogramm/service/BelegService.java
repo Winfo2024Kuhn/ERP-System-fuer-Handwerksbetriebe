@@ -14,6 +14,7 @@ import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.dto.BelegDto;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
@@ -1217,13 +1218,13 @@ public class BelegService {
             Mitarbeiter linked = frontendUserProfileRepository.findById(principal.getId())
                     .map(p -> p.getMitarbeiter())
                     .orElse(null);
-            if (linked != null && Boolean.TRUE.equals(linked.getAktiv())) {
+            if (linked != null && linked.getArt() == MitarbeiterArt.MENSCH && Boolean.TRUE.equals(linked.getAktiv())) {
                 return linked;
             }
         }
         String username = principal.getUsername();
         if (username == null || username.isBlank()) return null;
-        return mitarbeiterRepository.findAll().stream()
+        return mitarbeiterRepository.findAktiveMenschen().stream()
                 .filter(m -> Boolean.TRUE.equals(m.getAktiv()))
                 .filter(m -> username.equalsIgnoreCase(m.getEmail()))
                 .findFirst().orElse(null);

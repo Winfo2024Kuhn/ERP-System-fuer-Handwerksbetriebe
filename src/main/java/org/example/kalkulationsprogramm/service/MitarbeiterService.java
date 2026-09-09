@@ -6,6 +6,9 @@ import org.example.kalkulationsprogramm.domain.Beschaeftigungsart;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.Krankenkasse;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.example.kalkulationsprogramm.domain.MitarbeiterDokument;
 import org.example.kalkulationsprogramm.domain.MitarbeiterStundenlohn;
 import org.example.kalkulationsprogramm.domain.Qualifikation;
@@ -63,14 +66,14 @@ public class MitarbeiterService {
 
     @Transactional(readOnly = true)
     public List<MitarbeiterDto> list() {
-        return repository.findAll().stream()
+        return repository.findMenschen().stream()
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public Optional<MitarbeiterDto> findById(Long id) {
-        return repository.findById(id).map(this::mapToDto);
+        return repository.findById(id).filter(m -> m.getArt() == MitarbeiterArt.MENSCH).map(this::mapToDto);
     }
 
     @Transactional(readOnly = true)
@@ -86,6 +89,20 @@ public class MitarbeiterService {
             entity = repository.findById(id).orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
         } else {
             entity = new Mitarbeiter();
+        }
+        requireMensch(entity);
+        if (dto.getArt() != null && dto.getArt() != MitarbeiterArt.MENSCH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Im Mitarbeiterstamm können nur Menschen angelegt und bearbeitet werden.");
+        }
+        if (id == null) {
+            entity.setFuehrtZeitkonto(dto.getFuehrtZeitkonto() == null || dto.getFuehrtZeitkonto());
+        } else if (dto.getFuehrtZeitkonto() != null
+                && !Objects.equals(dto.getFuehrtZeitkonto(), entity.getFuehrtZeitkonto())) {
+            // Task 5 bindet hier die atomare Versionsoperation an. Niemals nur das Flag ändern.
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Arbeitszeit erfassen kann nur zusammen mit der Arbeitszeit-Historie geändert werden. "
+                            + "Bitte die Zeitkonto-Verwaltung verwenden.");
         }
         entity.setVorname(dto.getVorname());
         entity.setNachname(dto.getNachname());
@@ -150,6 +167,7 @@ public class MitarbeiterService {
 
     @Transactional
     public void delete(Long id) {
+        repository.findById(id).ifPresent(MitarbeiterService::requireMensch);
         repository.deleteById(id);
     }
 
@@ -158,6 +176,7 @@ public class MitarbeiterService {
             DokumentGruppe gruppe) {
         Mitarbeiter mitarbeiter = repository.findById(mitarbeiterId)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+        requireMensch(mitarbeiter);
 
         try {
             Path uploadPath = Path.of(uploadDir).toAbsolutePath().normalize();
@@ -214,6 +233,8 @@ public class MitarbeiterService {
         dto.setEintrittsdatum(m.getEintrittsdatum());
         dto.setJahresUrlaub(m.getJahresUrlaub());
         dto.setAktiv(m.getAktiv());
+        dto.setArt(m.getArt());
+        dto.setFuehrtZeitkonto(m.getFuehrtZeitkonto());
         dto.setLoginToken(m.getLoginToken());
 
         // Abteilungen (N:M)
@@ -250,6 +271,7 @@ public class MitarbeiterService {
     public String generateLoginToken(Long id) {
         Mitarbeiter mitarbeiter = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+        requireMensch(mitarbeiter);
         String token = UUID.randomUUID().toString();
         mitarbeiter.setLoginToken(token);
         repository.save(mitarbeiter);
@@ -259,6 +281,7 @@ public class MitarbeiterService {
     public byte[] generateQrCode(Long id, int width, int height) {
         Mitarbeiter mitarbeiter = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+        requireMensch(mitarbeiter);
 
         String token = mitarbeiter.getLoginToken();
         if (token == null || token.isEmpty()) {
@@ -309,6 +332,7 @@ public class MitarbeiterService {
             String inhalt) {
         Mitarbeiter mitarbeiter = repository.findById(mitarbeiterId)
                 .orElseThrow(() -> new RuntimeException("Mitarbeiter nicht gefunden"));
+        requireMensch(mitarbeiter);
 
         org.example.kalkulationsprogramm.domain.MitarbeiterNotiz notiz = new org.example.kalkulationsprogramm.domain.MitarbeiterNotiz();
         notiz.setInhalt(inhalt);
@@ -349,6 +373,7 @@ public class MitarbeiterService {
     public MitarbeiterStundenlohnDto addStundenlohn(Long mitarbeiterId, MitarbeiterStundenlohnDto dto) {
         Mitarbeiter mitarbeiter = repository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden: " + mitarbeiterId));
+        requireMensch(mitarbeiter);
         validateStundenlohnDto(dto);
         MitarbeiterStundenlohn entity = new MitarbeiterStundenlohn();
         entity.setMitarbeiter(mitarbeiter);
@@ -364,6 +389,7 @@ public class MitarbeiterService {
     public MitarbeiterStundenlohnDto updateStundenlohn(Long eintragId, MitarbeiterStundenlohnDto dto) {
         MitarbeiterStundenlohn entity = stundenlohnRepository.findById(eintragId)
                 .orElseThrow(() -> new IllegalArgumentException("Stundenlohn-Eintrag nicht gefunden: " + eintragId));
+        requireMensch(entity.getMitarbeiter());
         validateStundenlohnDto(dto);
         entity.setStundenlohn(dto.getStundenlohn());
         entity.setGueltigAb(dto.getGueltigAb());
@@ -378,6 +404,7 @@ public class MitarbeiterService {
         MitarbeiterStundenlohn entity = stundenlohnRepository.findById(eintragId)
                 .orElseThrow(() -> new IllegalArgumentException("Stundenlohn-Eintrag nicht gefunden: " + eintragId));
         Mitarbeiter mitarbeiter = entity.getMitarbeiter();
+        requireMensch(mitarbeiter);
         stundenlohnRepository.delete(entity);
         syncAktuellenStundenlohn(mitarbeiter);
     }
@@ -390,6 +417,13 @@ public class MitarbeiterService {
                 .orElse(null);
         mitarbeiter.setStundenlohn(aktuell);
         repository.save(mitarbeiter);
+    }
+
+    private static void requireMensch(Mitarbeiter mitarbeiter) {
+        if (mitarbeiter.getArt() != MitarbeiterArt.MENSCH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Technische Systemeinträge können nicht im Mitarbeiterstamm bearbeitet werden.");
+        }
     }
 
     private static void validateStundenlohnDto(MitarbeiterStundenlohnDto dto) {
