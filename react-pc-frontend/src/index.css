@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Gemeinsame Standardgestaltung für Auswahlfelder in unserem Design-System. */
+@layer base {
+  input:where([type="checkbox"], [type="radio"]) {
+    accent-color: #e11d48;
+  }
+}
+
 /* Hide number input spinners globally */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {

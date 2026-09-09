@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './hilfen/test'
 
-test('Lieferschein: Belegdatum im eigenen mobilen Kalender wählen', async ({ page }) => {
+test('Lieferschein: Belegdatum im eigenen mobilen Kalender wählen', async ({ page }, info) => {
     const nativeDialogs: string[] = []
     page.on('dialog', async dialog => { nativeDialogs.push(dialog.type()); await dialog.dismiss() })
     await page.addInitScript(() => {
@@ -25,7 +25,7 @@ test('Lieferschein: Belegdatum im eigenen mobilen Kalender wählen', async ({ pa
     expect(bounds!.x).toBeGreaterThanOrEqual(0)
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(393)
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(852)
-    await page.screenshot({ path: 'test-results/task8-kalender-handy.png' })
+    await page.screenshot({ path: info.outputPath('task8-kalender-handy.png') })
     await calendar.getByRole('button', { name: '20.01.2020' }).tap()
     await expect(trigger).toHaveText('20.01.2020')
     await expect(trigger).toBeFocused()

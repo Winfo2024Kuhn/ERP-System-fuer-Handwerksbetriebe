@@ -1482,7 +1482,7 @@ function DayEditorModal({
 
                         {/* Add Button Area */}
                         <div className="pt-4 flex justify-center gap-3">
-                            <Button onClick={handleAddBooking} className="bg-rose-600 hover:bg-rose-700 text-white px-6">
+                            <Button onClick={handleAddBooking} variant="outline" className="px-6">
                                 <Plus className="w-5 h-5 mr-2" /> Neue Buchung
                             </Button>
                             <Button onClick={handleAddPause} variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-50 px-6">
