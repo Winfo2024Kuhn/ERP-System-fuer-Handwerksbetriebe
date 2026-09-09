@@ -33,8 +33,20 @@ describe('ZeiterfassungZeitkonten Task 9b', () => {
         await screen.findByText('Abgeschlossen · unverändert');
         const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/zeitkonten/7/vorschau'));
         expect(call).toBeDefined();
-        expect(JSON.parse(call![1].body)).toMatchObject({ expectedMitarbeiterVersion: 4, expectedLetzteVersionId: 9, expectedLetzteVersion: 2, vorlageId: 3, expectedVorlageVersion: 6, arbeitszeit: null });
+        expect(JSON.parse(call![1].body)).toMatchObject({ expectedMitarbeiterVersion: 4, expectedLetzteVersionId: 9, expectedLetzteVersion: 2, vorlageId: 3, expectedVorlageVersion: 6, arbeitszeit });
         expect(screen.getByRole('button', { name: 'Übernehmen' })).toBeEnabled();
+    });
+
+    it('behält Vorlage, Versionsstand und abweichende Stunden für die Übernahme bei', async () => {
+        const user = userEvent.setup(); renderSeite(); await screen.findByText('Max Mustermann');
+        await user.click(screen.getByRole('button', { name: /Arbeitszeit ändern/i }));
+        await user.clear(screen.getByRole('spinbutton', { name: 'Freitag Stunden' }));
+        await user.type(screen.getByRole('spinbutton', { name: 'Freitag Stunden' }), '6');
+        await user.click(screen.getByRole('button', { name: 'Vorschau laden' }));
+        await screen.findByText('Abgeschlossen · unverändert');
+        await user.click(screen.getByRole('button', { name: 'Übernehmen' }));
+        const save = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/zeitverwaltung/zeitkonten/7' && (init as RequestInit).method === 'PUT');
+        expect(JSON.parse((save![1] as RequestInit).body as string)).toMatchObject({ vorlageId: 3, expectedVorlageVersion: 6, arbeitszeit: { freitagStunden: 6 } });
     });
 
     it('zeigt nach dem Speichern einer Vorlage keine automatische Auswahl zur Übernahme', async () => {

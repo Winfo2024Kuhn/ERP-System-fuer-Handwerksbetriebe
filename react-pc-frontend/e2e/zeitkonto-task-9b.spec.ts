@@ -28,7 +28,7 @@ test('Zeitkonto: Vorschau vor der bewussten Übernahme', async ({ page }, testIn
     await page.getByRole('button', { name: 'Vorschau laden' }).click();
     await expect(page.getByText('Abgeschlossen · unverändert')).toBeVisible();
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ expectedMitarbeiterVersion: 4, expectedLetzteVersionId: 9, expectedLetzteVersion: 2, vorlageId: 3, expectedVorlageVersion: 6, arbeitszeit: null });
+    expect(calls[0]).toMatchObject({ expectedMitarbeiterVersion: 4, expectedLetzteVersionId: 9, expectedLetzteVersion: 2, vorlageId: 3, expectedVorlageVersion: 6, arbeitszeit });
     await designPruefung(page, testInfo, 'zeitkonto-vorschau', { primaerAktion: page.getByRole('button', { name: 'Übernehmen' }) });
 });
 

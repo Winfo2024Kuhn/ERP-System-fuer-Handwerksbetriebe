@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Mail, Loader2, Check, BarChart3 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { SteuerberaterEmailModal } from '../components/SteuerberaterEmailModal';
-import type { ZeitkontoStatus } from '../types/zeitkonto';
+import type { Arbeitszeit, ZeitkontoStatus } from '../types/zeitkonto';
 
 interface MitarbeiterStunden {
     mitarbeiterId: number;
@@ -51,6 +51,17 @@ export default function ZeiterfassungSteuerberater() {
         loadZeitkonten();
     }, []);
 
+    const arbeitszeitAm = (konto: ZeitkontoStatus, datum: string): Arbeitszeit | null => {
+        const versionen = [...konto.historie, ...(konto.aktuell ? [konto.aktuell] : [])];
+        return versionen.find(version => version.gueltigVon <= datum && (!version.gueltigBis || datum <= version.gueltigBis))?.arbeitszeit ?? null;
+    };
+
+    const tagessollAm = (konto: ZeitkontoStatus, datum: string) => {
+        const arbeitszeit = arbeitszeitAm(konto, datum);
+        if (!arbeitszeit) return 0;
+        return (arbeitszeit.montagStunden + arbeitszeit.dienstagStunden + arbeitszeit.mittwochStunden + arbeitszeit.donnerstagStunden + arbeitszeit.freitagStunden + arbeitszeit.samstagStunden + arbeitszeit.sonntagStunden) / 5;
+    };
+
     const loadStundenDaten = async () => {
         if (zeitkonten.length === 0) return;
 
@@ -78,22 +89,8 @@ export default function ZeiterfassungSteuerberater() {
 
                 if (data.tage && Array.isArray(data.tage)) {
                     for (const tag of data.tage) {
-                        // Add holiday hours - use employee's sollstunden for that weekday
-                        // Backend sets sollStunden to 0 for holidays, so we calculate based on weekday
                         if (tag.istFeiertag) {
-                            // wochentag: 1=Monday, 2=Tuesday, ..., 7=Sunday
-                            const wochentag = tag.wochentag;
-                            let feiertagsStunden = 0;
-                            switch (wochentag) {
-                                case 1: feiertagsStunden = arbeitszeit.montagStunden; break;
-                                case 2: feiertagsStunden = arbeitszeit.dienstagStunden; break;
-                                case 3: feiertagsStunden = arbeitszeit.mittwochStunden; break;
-                                case 4: feiertagsStunden = arbeitszeit.donnerstagStunden; break;
-                                case 5: feiertagsStunden = arbeitszeit.freitagStunden; break;
-                                case 6: feiertagsStunden = arbeitszeit.samstagStunden; break;
-                                case 7: feiertagsStunden = arbeitszeit.sonntagStunden; break;
-                            }
-                            feiertage += feiertagsStunden || 0;
+                            feiertage += Number(tag.feiertagsStunden) || 0;
                         }
 
                         // Process bookings for this day
@@ -118,10 +115,12 @@ export default function ZeiterfassungSteuerberater() {
                     }
                 }
 
+                const tage = Array.isArray(data.tage) ? data.tage : [];
+                const tagessollWoche = tage.length === 0 ? 0 : Math.round((tage.reduce((summe: number, tag: { datum: string }) => summe + tagessollAm(konto, tag.datum), 0) / tage.length) * 10) / 10;
                 results.push({
                     mitarbeiterId: konto.mitarbeiterId,
                     mitarbeiterName: konto.mitarbeiterName,
-                    tagessollWoche: Math.round(((arbeitszeit.montagStunden + arbeitszeit.dienstagStunden + arbeitszeit.mittwochStunden + arbeitszeit.donnerstagStunden + arbeitszeit.freitagStunden + arbeitszeit.samstagStunden + arbeitszeit.sonntagStunden) / 5) * 10) / 10,
+                    tagessollWoche,
                     sollstundenMonat: Math.round(sollstundenMonat * 10) / 10,
                     arbeitsstunden: Math.round(arbeitsstunden * 10) / 10,
                     urlaub: Math.round(urlaub * 10) / 10,
@@ -272,7 +271,7 @@ export default function ZeiterfassungSteuerberater() {
                                     </th>
                                     <th className="text-left p-3 font-medium text-slate-600">Nr.</th>
                                     <th className="text-left p-3 font-medium text-slate-600">Name</th>
-                                    <th className="text-center p-3 font-medium text-slate-600">Tagessoll</th>
+                                    <th className="text-center p-3 font-medium text-slate-600">Tagessoll Ø</th>
                                     <th className="text-center p-3 font-medium text-slate-600">Sollstunden</th>
                                     <th className="text-center p-3 font-medium text-slate-600">Ist-Stunden</th>
                                     <th className="text-center p-3 font-medium text-slate-600">+/- Stunden</th>
