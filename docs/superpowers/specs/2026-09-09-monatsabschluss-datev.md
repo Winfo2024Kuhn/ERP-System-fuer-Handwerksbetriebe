@@ -18,7 +18,15 @@ Der Nutzer hat den vorgeschlagenen Umfang mit eigenem Menüpunkt, Mehrfachauswah
 - Keine Änderung der bestehenden Berechnung von Sollstunden, Abwesenheiten, Feiertagen oder Zeitkorrekturen.
 - Keine Aufhebung bestehender Berechtigungen und Abschlusssperren; kein Abschluss aktueller oder zukünftiger Monate.
 - Kein zusätzlicher Sammelprozess zum Wiederöffnen. Der bestehende einzelne Vorgang bleibt erreichbar.
-- Keine Neugestaltung der mobilen Zeiterfassung.
+- Keine fachliche Neugestaltung der mobilen Zeiterfassung. Die nachträglich ausdrücklich beauftragte Vereinheitlichung vorhandener Eingaben und Meldungen gilt auch dort.
+
+## Nachträglich freigegebene Ergänzung: systemeigene Eingaben und Meldungen
+
+Der Nutzer hat nach der Designfreigabe ausdrücklich verlangt, bestehende Browser-Standardfelder und Meldungen in den Oberflächen auf die eigenen Design-Komponenten umzustellen. Das gezeigte Beispiel ist der blaue native Uhrzeit-Picker im Dialog „Arbeitszeit einrichten“. Geöffnete Auswahlelemente müssen ebenso zum Design-System passen wie ihre geschlossenen Felder. Vorhandene gestaltete Eingaben, Selects, DatePicker und Toasts sind wiederzuverwenden; korrekt gestaltete HTML-Inputs müssen nicht allein wegen ihrer HTML-Grundlage ersetzt werden.
+
+Für Mengen-/Dezimalfelder gilt: Eine anfänglich angezeigte 0 (auch `0,00`) wird bei Klick-/Tab-Fokus geleert, Nichtnullwerte bleiben erhalten. Zwischenstände werden als Text bearbeitet; Pflichtzahlen werden bei der Übernahme validiert, leer wird nicht still zu 0. Eingabe und Anzeige verwenden deutsches Dezimalkomma. Kennnummern bleiben Ziffernstrings mit führenden Nullen und sind vom automatischen Leeren ausgenommen. Diese Regeln werden dauerhaft in AGENTS.md und dem Design-Skill festgehalten.
+
+Eine Bestandsaufnahme grenzt zusätzliche dateidisjunkte Tasks für beide Frontends ab. Prüfung: keine sichtbaren nativen Uhrzeit-/Datumspicker, Number-Spinner, Browser-alert/confirm oder fremden Toast-Systeme in den umgestellten Abläufen; eigene Bestätigungsdialoge und Toasts, Tastaturbedienung, Null-Fokusverhalten, Kommawerte, Pflichtfeldfehler sowie bestehende Speicherabläufe im Browser testen.
 
 ## Bestand und betroffene Bereiche
 

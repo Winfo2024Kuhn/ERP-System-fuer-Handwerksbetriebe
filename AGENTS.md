@@ -76,6 +76,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   - `<ImageViewer>` → `src/components/ui/image-viewer.tsx`
   - `<DetailLayout>` → `src/components/DetailLayout.tsx`
 - **Sicherheit:** Kein `dangerouslySetInnerHTML` ohne Sanitizing.
+- **Systemeigene Eingaben und Meldungen:** Vorhandene gestaltete UI-Komponenten und Toast-/Bestätigungsdialoge verwenden. Keine sichtbaren Browser-Standard-Picker für Datum/Uhrzeit, Number-Spinner, nativen Select-Popups oder `window.alert`/`window.confirm`. Auch geöffnete Auswahlen und fokussierte Felder müssen dem eigenen Design-System entsprechen.
 
 ### Zahlenfelder (dauerhafte Nutzervorgabe vom 09.09.2026)
 - **Deutsch formatieren:** Dezimalzahlen mit Komma eingeben und anzeigen (z. B. `12,5`); für formatierte Anzeigen `de-DE` verwenden. DATEV-Dateien folgen zusätzlich ihrer Formatspezifikation.
