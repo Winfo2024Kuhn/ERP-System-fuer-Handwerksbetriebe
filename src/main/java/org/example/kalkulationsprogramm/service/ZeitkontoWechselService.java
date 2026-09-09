@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.*;
@@ -24,6 +25,7 @@ public class ZeitkontoWechselService {
     private final AbwesenheitRepository abwesenheitRepository;
     private final ZeitkontoService zeitkontoService;
     private final MonatsSaldoService saldoService;
+    private final TagesSollService tagesSollService;
     private final EntityManager entityManager;
     private final Validator validator;
 
@@ -52,7 +54,8 @@ public class ZeitkontoWechselService {
     @Transactional(readOnly = true)
     public ZeitkontoWechselErgebnisDto vorschau(Long id, ZeitkontoWechselDto request) {
         pruefe(id, request);
-        return ergebnis(id, request.gueltigVon(), false, vorher(id, request.gueltigVon()));
+        List<ZeitkontoWechselErgebnisDto.Monat> vorher = vorher(id, request.gueltigVon());
+        return ergebnis(id, request.gueltigVon(), false, auswirkungen(id, request, vorher));
     }
 
     @Transactional
@@ -85,7 +88,12 @@ public class ZeitkontoWechselService {
         for (var auswahl : request.mitarbeiter()) {
             if (!ids.add(auswahl.mitarbeiterId())) throw konflikt("Bitte jeden Mitarbeiter nur einmal auswählen.");
         }
-        // Feste Reihenfolge verhindert wechselseitige Sperren bei paralleler Mehrfachübernahme.
+        // Ein Mehrfachwechsel sperrt zuerst jede Person, dann jede Vorlage in
+        // aufsteigender Reihenfolge. Damit kann A -> V, B -> V nicht gegen
+        // B -> V mit einer anderen Mitarbeiterauswahl zyklisch warten.
+        ids.stream().sorted().forEach(this::sperreMitarbeiter);
+        request.mitarbeiter().stream().map(a -> a.wechsel().vorlageId()).filter(Objects::nonNull).distinct()
+                .sorted().forEach(this::sperreVorlage);
         return request.mitarbeiter().stream().sorted(Comparator.comparing(ZeitkontoWechselErgebnisDto.Auswahl::mitarbeiterId))
                 .map(a -> uebernehmen(a.mitarbeiterId(), a.wechsel())).toList();
     }
@@ -115,6 +123,21 @@ public class ZeitkontoWechselService {
         } else if (request.arbeitszeit() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte die Arbeitszeit ausdrücklich angeben.");
         }
+        pruefeAbgeschlosseneMonate(id, request.gueltigVon());
+    }
+
+    /** Die Vorschau darf keine Änderung anbieten, die die Übernahme ablehnen würde. */
+    private void pruefeAbgeschlosseneMonate(Long id, LocalDate stichtag) {
+        var abgeschlossen = entityManager.createQuery("""
+                SELECT m FROM MonatsSaldo m WHERE m.mitarbeiter.id = :id
+                  AND m.festgeschrieben = true AND m.jahr * 100 + m.monat >= :abMonat
+                """, MonatsSaldo.class)
+                .setParameter("id", id)
+                .setParameter("abMonat", stichtag.getYear() * 100 + stichtag.getMonthValue())
+                .setMaxResults(1).getResultList();
+        if (!abgeschlossen.isEmpty()) {
+            throw konflikt("Die neue Arbeitszeit würde einen abgeschlossenen Monat verändern. Bitte einen späteren Beginn wählen oder den Monat zuerst wieder öffnen.");
+        }
     }
 
     private List<ZeitkontoWechselErgebnisDto.Monat> vorher(Long id, LocalDate stichtag) {
@@ -141,6 +164,54 @@ public class ZeitkontoWechselService {
                     Boolean.TRUE.equals(saldo.getFestgeschrieben()), saldo.getDifferenz(), null, false));
         }
         return result;
+    }
+
+    /** Berechnet die Wirkung ohne Version, Cache oder Saldo zu speichern. */
+    private List<ZeitkontoWechselErgebnisDto.Monat> auswirkungen(Long id, ZeitkontoWechselDto request,
+            List<ZeitkontoWechselErgebnisDto.Monat> vorher) {
+        ZeitkontenmodellDto.Arbeitszeit vorgeschlagen = vorgeschlageneArbeitszeit(request);
+        List<ZeitkontoWechselErgebnisDto.Monat> result = new ArrayList<>();
+        for (var monat : vorher) {
+            if (monat.abgeschlossen()) {
+                result.add(new ZeitkontoWechselErgebnisDto.Monat(monat.jahr(), monat.monat(), true,
+                        monat.saldoVorher(), monat.saldoVorher(), false));
+                continue;
+            }
+            LocalDate von = YearMonth.of(monat.jahr(), monat.monat()).atDay(1);
+            LocalDate bis = YearMonth.of(monat.jahr(), monat.monat()).atEndOfMonth();
+            LocalDate ab = request.gueltigVon().isAfter(von) ? request.gueltigVon() : von;
+            BigDecimal nachher = monat.saldoVorher();
+            if (!ab.isAfter(bis)) {
+                BigDecimal bisherSoll = tagesSollService.periodenSollSumme(id, ab, bis);
+                BigDecimal bisherFeiertag = tagesSollService.feiertagsGutschriftSumme(id, ab, bis);
+                var neueArbeitszeit = tagesSollService.vorschau(id, vorgeschlagen, ab, bis);
+                nachher = nachher.add(neueArbeitszeit.feiertagsGutschrift().subtract(bisherFeiertag))
+                        .subtract(neueArbeitszeit.periodenSoll().subtract(bisherSoll));
+            }
+            result.add(new ZeitkontoWechselErgebnisDto.Monat(monat.jahr(), monat.monat(), false,
+                    monat.saldoVorher(), nachher, monat.saldoVorher().compareTo(nachher) != 0));
+        }
+        return result;
+    }
+
+    private ZeitkontenmodellDto.Arbeitszeit vorgeschlageneArbeitszeit(ZeitkontoWechselDto request) {
+        ZeitkontenmodellDto.Arbeitszeit arbeitszeit = request.arbeitszeit();
+        if (arbeitszeit == null) {
+            Zeitkontenmodell vorlage = entityManager.find(Zeitkontenmodell.class, request.vorlageId());
+            if (vorlage == null) throw konflikt("Die Vorlage wurde inzwischen geändert. Bitte die Vorschau neu laden.");
+            arbeitszeit = ZeitkontenmodellDto.Arbeitszeit.from(vorlage);
+        }
+        return arbeitszeit;
+    }
+
+    private void sperreMitarbeiter(Long id) {
+        if (entityManager.find(Mitarbeiter.class, id, LockModeType.PESSIMISTIC_WRITE) == null)
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Mitarbeiter nicht gefunden.");
+    }
+
+    private void sperreVorlage(Long id) {
+        if (entityManager.find(Zeitkontenmodell.class, id, LockModeType.PESSIMISTIC_WRITE) == null)
+            throw konflikt("Die Vorlage wurde inzwischen geändert. Bitte die Vorschau neu laden.");
     }
 
     private ZeitkontoWechselErgebnisDto ergebnis(Long id, LocalDate stichtag, boolean gespeichert,

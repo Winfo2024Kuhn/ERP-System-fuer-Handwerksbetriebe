@@ -28,6 +28,7 @@ class ZeitkontoWechselServiceTest {
     @Mock AbwesenheitRepository abwesenheitRepository;
     @Mock ZeitkontoService zeitkontoService;
     @Mock MonatsSaldoService saldoService;
+    @Mock TagesSollService tagesSollService;
     @Mock EntityManager em;
     @Mock TypedQuery<MonatsSaldo> query;
     ZeitkontoWechselService service;
@@ -37,7 +38,7 @@ class ZeitkontoWechselServiceTest {
     @BeforeEach void setup() {
         Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         service = new ZeitkontoWechselService(mitarbeiterRepository, versionRepository, buchungRepository,
-                abwesenheitRepository, zeitkontoService, saldoService, em, validator);
+                abwesenheitRepository, zeitkontoService, saldoService, tagesSollService, em, validator);
         mensch = new Mitarbeiter(); mensch.setId(1L); mensch.setVersion(2L);
         mensch.setVorname("Max"); mensch.setNachname("Mustermann");
         mensch.setEintrittsdatum(LocalDate.now().withDayOfMonth(1));
@@ -52,23 +53,61 @@ class ZeitkontoWechselServiceTest {
     private void monate() {
         when(em.createQuery(anyString(), eq(MonatsSaldo.class))).thenReturn(query);
         when(query.setParameter("id", 1L)).thenReturn(query);
+        when(query.setParameter(eq("abMonat"), anyInt())).thenReturn(query);
+        when(query.setMaxResults(1)).thenReturn(query);
         when(query.getResultList()).thenReturn(List.of());
     }
     private MonatsSaldo saldo(String soll, boolean geschlossen) {
         MonatsSaldo s = new MonatsSaldo(); s.setSollStunden(new BigDecimal(soll));
         s.setIstStunden(new BigDecimal("10")); s.setFestgeschrieben(geschlossen); return s;
     }
-    @Test void vorschauSchreibtNichtsUndWarntVorSnapshots() {
+    @Test void vorschauZeigtBerechneteAuswirkungOhneEtwasZuSchreiben() {
         mitarbeiter(); monate();
         when(saldoService.berechneOhneSpeichern(eq(1L), anyInt(), anyInt())).thenReturn(saldo("8", false));
+        when(tagesSollService.periodenSollSumme(eq(1L), any(), any())).thenReturn(new BigDecimal("8"));
+        when(tagesSollService.feiertagsGutschriftSumme(eq(1L), any(), any())).thenReturn(BigDecimal.ZERO);
+        when(tagesSollService.vorschau(eq(1L), any(ZeitkontenmodellDto.Arbeitszeit.class), any(), any()))
+                .thenReturn(new TagesSollService.ArbeitszeitVorschau(new BigDecimal("4"), BigDecimal.ZERO));
         when(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(eq(1L), any(), any())).thenReturn(List.of(new Abwesenheit()));
         var result = service.vorschau(1L, request);
         assertFalse(result.gespeichert()); assertEquals(1, result.bestehendeAbwesenheiten());
         assertTrue(result.hinweis().contains("Abwesenheitsstunden bleiben unverändert"));
-        assertNull(result.monate().get(0).saldoNachher());
+        assertEquals(new BigDecimal("6"), result.monate().get(0).saldoNachher());
+        assertTrue(result.monate().get(0).geaendert());
         verifyNoInteractions(zeitkontoService);
         verify(em, never()).flush();
         verify(saldoService, never()).saveMonatsSaldoCache(anyLong(), anyInt(), anyInt(), any());
+    }
+
+    @Test void vorschauLehntStichtagAbDerEinenAbgeschlossenenMonatBeruehrenWuerde() {
+        mitarbeiter(); monate();
+        MonatsSaldo abgeschlossen = saldo("8", true);
+        when(query.getResultList()).thenReturn(List.of(abgeschlossen));
+        var ex = assertThrows(ResponseStatusException.class, () -> service.vorschau(1L, request));
+        assertEquals(409, ex.getStatusCode().value());
+        verifyNoInteractions(tagesSollService, zeitkontoService, saldoService);
+    }
+
+    @Test void mehrfachUebernahmeSperrtAlleMenschenVorDenVorlagenInSortierterReihenfolge() {
+        Mitarbeiter zweiter = new Mitarbeiter(); zweiter.setId(2L); zweiter.setVersion(2L);
+        zweiter.setVorname("Erika"); zweiter.setNachname("Beispiel"); zweiter.setEintrittsdatum(LocalDate.now().withDayOfMonth(1));
+        Zeitkontenmodell modell = new Zeitkontenmodell(); modell.setId(3L); modell.setVersion(1L);
+        Zeitkontenmodell zweitesModell = new Zeitkontenmodell(); zweitesModell.setId(5L); zweitesModell.setVersion(1L);
+        when(em.find(eq(Mitarbeiter.class), eq(1L), eq(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE))).thenReturn(mensch);
+        when(em.find(eq(Mitarbeiter.class), eq(2L), eq(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE))).thenReturn(zweiter);
+        when(em.find(eq(Zeitkontenmodell.class), eq(3L), eq(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE))).thenReturn(modell);
+        when(em.find(eq(Zeitkontenmodell.class), eq(5L), eq(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE))).thenReturn(zweitesModell);
+        var mitVorlage = new ZeitkontoWechselDto(request.gueltigVon(), 2L, null, null, 3L, 1L, null);
+        var mitZweiterVorlage = new ZeitkontoWechselDto(request.gueltigVon(), 2L, null, null, 5L, 1L, null);
+        var auswahl = new ZeitkontoWechselErgebnisDto.Mehrere(List.of(
+                new ZeitkontoWechselErgebnisDto.Auswahl(2L, mitVorlage),
+                new ZeitkontoWechselErgebnisDto.Auswahl(1L, mitZweiterVorlage)));
+        assertThrows(ResponseStatusException.class, () -> service.mehrere(auswahl));
+        var order = inOrder(em);
+        order.verify(em).find(Mitarbeiter.class, 1L, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        order.verify(em).find(Mitarbeiter.class, 2L, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        order.verify(em).find(Zeitkontenmodell.class, 3L, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        order.verify(em).find(Zeitkontenmodell.class, 5L, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
     }
     @Test void uebernahmeZeigtTatsaechlicheAenderungNachDemSchreiben() {
         mitarbeiter(); monate();

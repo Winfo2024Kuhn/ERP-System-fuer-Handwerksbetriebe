@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhase;
 import org.example.kalkulationsprogramm.domain.LangzeitkrankmeldungPhaseTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
+import org.example.kalkulationsprogramm.dto.ZeitkontenmodellDto;
 import org.example.kalkulationsprogramm.repository.LangzeitkrankmeldungPhaseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -84,7 +86,7 @@ class TagesSollServiceTest {
         zeitkonto.setFreitagStunden(new BigDecimal("8.00"));
         zeitkonto.setSamstagStunden(new BigDecimal("0.00"));
         zeitkonto.setSonntagStunden(new BigDecimal("0.00"));
-        when(versionRepository.findImZeitraum(org.mockito.ArgumentMatchers.eq(MITARBEITER_ID), any(), any()))
+        lenient().when(versionRepository.findImZeitraum(org.mockito.ArgumentMatchers.eq(MITARBEITER_ID), any(), any()))
                 .thenReturn(List.of(zeitkonto));
     }
 
@@ -533,6 +535,25 @@ class TagesSollServiceTest {
         assertEquals(new BigDecimal("7"), tage.get(von.plusDays(7)));
         when(versionRepository.findImZeitraum(1L, von, von)).thenReturn(List.of());
         assertEquals(BigDecimal.ZERO, tagesSollService.periodenSoll(1L, von));
+        verify(versionRepository, never()).save(any());
+    }
+
+    @Test
+    void vorschauMitArbeitszeitBeruecksichtigtFeiertagUndStufenplanOhneVersionZuLaden() {
+        stubMitPhase(HALBER_FEIERTAG,
+                wiedereingliederungsPhase(new BigDecimal("2.00"), HALBER_FEIERTAG));
+        stubFeiertag(HALBER_FEIERTAG, true, true);
+        var arbeitszeit = new ZeitkontenmodellDto.Arbeitszeit(
+                new BigDecimal("8.00"), new BigDecimal("8.00"), new BigDecimal("8.00"),
+                new BigDecimal("8.00"), new BigDecimal("8.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                null, null);
+
+        var ergebnis = tagesSollService.vorschau(MITARBEITER_ID, arbeitszeit,
+                HALBER_FEIERTAG, HALBER_FEIERTAG);
+
+        assertEquals(0, new BigDecimal("1.00").compareTo(ergebnis.periodenSoll()));
+        assertEquals(0, new BigDecimal("1.00").compareTo(ergebnis.feiertagsGutschrift()));
+        verify(versionRepository, never()).findImZeitraum(any(), any(), any());
         verify(versionRepository, never()).save(any());
     }
 
