@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Trash2, Save, X, Loader2, Calendar, Plus, Clock, Briefcase, BarChart2, RefreshCw, Folder, Plane, Stethoscope, GraduationCap, Search, Calculator, TrendingUp, Palmtree } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, Save, X, Loader2, Calendar, Plus, Clock, Briefcase, BarChart2, RefreshCw, Folder, Plane, Stethoscope, GraduationCap, Search, Calculator, TrendingUp, Palmtree, CalendarCheck, LockKeyhole, History } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { ProjektKategorieTreeModal } from '../components/ProjektKategorieTreeModal';
@@ -65,18 +65,99 @@ interface KalenderData {
     differenz: number;
 }
 
+interface Monatsabschluss {
+    mitarbeiterId: number; jahr: number; monat: number; festgeschrieben: boolean;
+    version: number | null; festgeschriebenAm: string | null; festgeschriebenVonMitarbeiterId: number | null;
+    istStunden: number; sollStunden: number; abwesenheitsStunden: number; feiertagsStunden: number;
+    korrekturStunden: number; gesamtIst: number; differenz: number;
+    audit: { id: number; aktion: 'ABSCHLIESSEN' | 'OEFFNEN'; akteurMitarbeiterId: number; akteurName: string; zeitpunkt: string }[];
+}
+
 const WOCHENTAGE = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const MONATE = ['', 'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
     'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
 export default function ZeiterfassungKalender() {
     const toast = useToast();
+    const toastRef = useRef(toast);
+    toastRef.current = toast;
     const [searchParams, setSearchParams] = useSearchParams();
-    const initialMitarbeiterId = searchParams.get('mitarbeiterId') ? Number(searchParams.get('mitarbeiterId')) : null;
+    const confirm = useConfirm();
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
-    const [selectedMitarbeiter, setSelectedMitarbeiter] = useState<number | null>(initialMitarbeiterId);
-    const [jahr, setJahr] = useState(new Date().getFullYear());
-    const [monat, setMonat] = useState(new Date().getMonth() + 1);
+    const heute = new Date();
+    const parsedJahr = Number(searchParams.get('jahr'));
+    const parsedMonat = Number(searchParams.get('monat'));
+    const parsedMitarbeiter = Number(searchParams.get('mitarbeiterId'));
+    const jahr = Number.isInteger(parsedJahr) && parsedJahr >= 1000 && parsedJahr <= 9999 ? parsedJahr : heute.getFullYear();
+    const monat = Number.isInteger(parsedMonat) && parsedMonat >= 1 && parsedMonat <= 12 ? parsedMonat : heute.getMonth() + 1;
+    const selectedMitarbeiter = Number.isSafeInteger(parsedMitarbeiter) && parsedMitarbeiter > 0 ? parsedMitarbeiter : null;
+    const setSelectedMitarbeiter = (id: number) => setSearchParams(prev => { const next = new URLSearchParams(prev); next.set('mitarbeiterId', String(id)); return next; }, { replace: true });
+    const setJahr = (value: number) => setSearchParams(prev => { const next = new URLSearchParams(prev); next.set('jahr', String(value)); return next; });
+    const setMonat = (value: number) => setSearchParams(prev => { const next = new URLSearchParams(prev); next.set('monat', String(value)); return next; });
+    const [abschluss, setAbschluss] = useState<Monatsabschluss | null>(null);
+    const [darfAbschliessen, setDarfAbschliessen] = useState(false);
+    const [abschlussLaedt, setAbschlussLaedt] = useState(false);
+    const [abschlussFehler, setAbschlussFehler] = useState<string | null>(null);
+    const [abschlussRevision, setAbschlussRevision] = useState(0);
+    const [abschlussSpeichert, setAbschlussSpeichert] = useState(false);
+    const abschlussBusy = useRef(false);
+    const auswahlKey = `${selectedMitarbeiter}/${jahr}/${monat}`;
+    const auswahlRef = useRef(auswahlKey);
+    auswahlRef.current = auswahlKey;
+    const aktuellerAbschluss = abschluss?.mitarbeiterId === selectedMitarbeiter && abschluss.jahr === jahr && abschluss.monat === monat ? abschluss : null;
+    const vergangenerMonat = jahr * 12 + monat < heute.getFullYear() * 12 + heute.getMonth() + 1;
+
+    useEffect(() => {
+        const controller = new AbortController();
+        fetch('/api/zeitverwaltung/monatsabschluesse/berechtigung', { signal: controller.signal })
+            .then(async res => { if (!res.ok) throw new Error('Abschlussrecht konnte nicht geladen werden.'); return res.json(); })
+            .then(data => { if (!controller.signal.aborted) setDarfAbschliessen(data.darfMonatAbschliessen === true); })
+            .catch(err => { if (!controller.signal.aborted) toastRef.current.error(err.message); });
+        return () => controller.abort();
+    }, []);
+
+    useEffect(() => {
+        if (!selectedMitarbeiter) return;
+        const controller = new AbortController();
+        setAbschlussLaedt(true);
+        setAbschlussFehler(null);
+        fetch(`/api/zeitverwaltung/monatsabschluesse/${auswahlKey}`, { signal: controller.signal })
+            .then(async res => { if (!res.ok) throw new Error('Monatsabschluss konnte nicht geladen werden.'); return res.json(); })
+            .then(data => { if (!controller.signal.aborted) setAbschluss(data); })
+            .catch(err => { if (!controller.signal.aborted) { setAbschlussFehler(err.message); toastRef.current.error(err.message); } })
+            .finally(() => { if (!controller.signal.aborted) setAbschlussLaedt(false); });
+        return () => controller.abort();
+    }, [auswahlKey, selectedMitarbeiter, abschlussRevision]);
+
+    const aendereAbschluss = async () => {
+        if (!aktuellerAbschluss || !darfAbschliessen || abschlussBusy.current || abschlussLaedt || abschlussFehler) return;
+        const oeffnen = aktuellerAbschluss.festgeschrieben;
+        if (!oeffnen && !vergangenerMonat) return;
+        const key = auswahlKey;
+        abschlussBusy.current = true;
+        setAbschlussSpeichert(true);
+        try {
+            const bestaetigt = await confirm({
+                title: oeffnen ? 'Monat wieder öffnen?' : 'Monat abschließen?',
+                message: oeffnen ? 'Der festgehaltene Monatsstand wird wieder aus den vorhandenen Zeiten berechnet. Die bisherigen Abschlüsse bleiben im Verlauf sichtbar.'
+                    : `${MONATE[monat]} ${jahr}: Sind die Zeiten geprüft? Dieser Monatsstand bleibt nach dem Abschluss festgehalten.`,
+                confirmLabel: oeffnen ? 'Wieder öffnen' : 'Abschließen', variant: 'warning',
+            });
+            if (!bestaetigt || auswahlRef.current !== key) return;
+            const res = await fetch(`/api/zeitverwaltung/monatsabschluesse/${key}/${oeffnen ? 'oeffnen' : 'abschliessen'}`, { method: 'POST' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || data.detail || (res.status === 403 ? 'Keine Berechtigung für den Monatsabschluss.' : res.status === 409 ? 'Der Monatsstand hat sich geändert. Bitte erneut prüfen.' : 'Monatsabschluss konnte nicht gespeichert werden.'));
+            }
+            const data: Monatsabschluss = await res.json();
+            if (auswahlRef.current === key) { setAbschluss(data); loadKalender(); }
+            toast.success(oeffnen ? 'Monat wieder geöffnet. Stunden wurden neu berechnet.' : 'Monat abgeschlossen. Der geprüfte Stand ist festgehalten.');
+            window.dispatchEvent(new Event('notifications:refresh'));
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Monatsabschluss konnte nicht gespeichert werden.');
+            if (auswahlRef.current === key) setAbschlussRevision(v => v + 1);
+        } finally { abschlussBusy.current = false; setAbschlussSpeichert(false); }
+    };
     const [kalenderData, setKalenderData] = useState<KalenderData | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -125,7 +206,6 @@ export default function ZeiterfassungKalender() {
                 setMitarbeiter(arr);
                 if (arr.length > 0 && !selectedMitarbeiter) {
                     setSelectedMitarbeiter(arr[0].id);
-                    setSearchParams({ mitarbeiterId: String(arr[0].id) }, { replace: true });
                 }
             });
 
@@ -376,6 +456,8 @@ export default function ZeiterfassungKalender() {
         setContextMenuLoading(false);
     };
 
+    const monatsDifferenz = aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.differenz : (kalenderData?.differenz ?? 0);
+
     return (
         <div className="p-6 max-w-7xl mx-auto">
             {/* Header */}
@@ -403,7 +485,6 @@ export default function ZeiterfassungKalender() {
                             onChange={(val) => {
                                 const id = Number(val);
                                 setSelectedMitarbeiter(id);
-                                setSearchParams({ mitarbeiterId: String(id) }, { replace: true });
                             }}
                             options={mitarbeiter.map(m => ({ value: m.id.toString(), label: `${m.vorname} ${m.nachname}` }))}
                             placeholder="Mitarbeiter wählen"
@@ -489,6 +570,39 @@ export default function ZeiterfassungKalender() {
                     </div>
                 </div>
 
+                {selectedMitarbeiter && <section aria-label="Monatsabschluss" className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="flex items-center gap-2 font-semibold text-slate-900">
+                                {aktuellerAbschluss?.festgeschrieben ? <LockKeyhole className="h-4 w-4 text-slate-600" /> : <CalendarCheck className="h-4 w-4 text-rose-600" />}
+                                Monatsabschluss · {MONATE[monat]} {jahr}
+                            </h2>
+                            {abschlussLaedt ? <p role="status" className="mt-2 motion-safe:animate-pulse text-sm text-slate-500">Monatsstand wird geladen …</p>
+                                : abschlussFehler ? <p role="alert" className="mt-1 text-sm text-rose-700">{abschlussFehler} Die Zeiten bleiben sichtbar.</p>
+                                : aktuellerAbschluss && <p className="mt-1 text-sm text-slate-600">
+                                    {aktuellerAbschluss.festgeschrieben ? 'Abgeschlossen – die Monatssummen zeigen den festgehaltenen Stand.' : 'Noch offen – die Stunden werden weiterhin aktuell angezeigt.'}
+                                </p>}
+                            {!darfAbschliessen && <p className="mt-1 text-xs text-slate-500">Abschließen und Öffnen benötigt das Recht Ihrer Abteilung.</p>}
+                            {darfAbschliessen && !vergangenerMonat && !aktuellerAbschluss?.festgeschrieben && <p className="mt-1 text-xs text-slate-500">Nur vergangene Monate können abgeschlossen werden.</p>}
+                        </div>
+                        {abschlussFehler ? <Button size="sm" variant="outline" onClick={() => setAbschlussRevision(v => v + 1)}>Monatsstand erneut laden</Button>
+                            : darfAbschliessen && <Button size="sm" variant={aktuellerAbschluss?.festgeschrieben ? 'outline' : 'default'}
+                                className={aktuellerAbschluss?.festgeschrieben ? 'border-rose-300 text-rose-700 hover:bg-rose-50' : 'bg-rose-600 text-white hover:bg-rose-700'}
+                                disabled={abschlussSpeichert || abschlussLaedt || !aktuellerAbschluss || (!vergangenerMonat && !aktuellerAbschluss.festgeschrieben)}
+                                title={!vergangenerMonat && !aktuellerAbschluss?.festgeschrieben ? 'Nur vergangene Monate können abgeschlossen werden.' : undefined}
+                                onClick={aendereAbschluss}>
+                                {abschlussSpeichert && <Loader2 className="mr-2 h-4 w-4 motion-safe:animate-spin" />}
+                                {aktuellerAbschluss?.festgeschrieben ? 'Monat wieder öffnen' : 'Monat abschließen'}
+                            </Button>}
+                    </div>
+                    {!!aktuellerAbschluss?.audit.length && <details className="mt-3 border-t border-slate-100 pt-3 text-sm">
+                        <summary className="w-fit cursor-pointer rounded text-slate-700 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-500"><History className="mr-2 inline h-4 w-4" />Verlauf der Monatsabschlüsse ({aktuellerAbschluss.audit.length})</summary>
+                        <ol className="mt-3 space-y-2 text-slate-600">{aktuellerAbschluss.audit.map(e => <li key={e.id}>
+                            <span className="font-medium text-slate-800">{e.aktion === 'ABSCHLIESSEN' ? 'Abgeschlossen' : 'Wieder geöffnet'}</span> von {e.akteurName} · {new Date(e.zeitpunkt).toLocaleString('de-DE')}
+                        </li>)}</ol>
+                    </details>}
+                </section>}
+
                 {/* Summary Cards */}
                 {kalenderData && (
                     <>
@@ -501,7 +615,7 @@ export default function ZeiterfassungKalender() {
                                     </div>
                                     <div>
                                         <p className="text-sm text-slate-500 font-medium">Soll-Stunden</p>
-                                        <p className="text-xl font-bold text-slate-900">{kalenderData.sollStundenMonat.toFixed(1)}h</p>
+                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.sollStunden : kalenderData.sollStundenMonat).toFixed(1)}h</p>
                                     </div>
                                 </div>
                             </div>
@@ -512,19 +626,19 @@ export default function ZeiterfassungKalender() {
                                     </div>
                                     <div>
                                         <p className="text-sm text-slate-500 font-medium">Ist-Stunden</p>
-                                        <p className="text-xl font-bold text-slate-900">{kalenderData.istStundenMonat.toFixed(1)}h</p>
+                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.gesamtIst : kalenderData.istStundenMonat).toFixed(1)}h</p>
                                     </div>
                                 </div>
                             </div>
                             <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
                                 <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-lg ${kalenderData.differenz >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                                    <div className={`p-2 rounded-lg ${monatsDifferenz >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
                                         <BarChart2 className="w-5 h-5" />
                                     </div>
                                     <div>
                                         <p className="text-sm text-slate-500 font-medium">Differenz</p>
-                                        <p className={`text-xl font-bold ${kalenderData.differenz >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {kalenderData.differenz >= 0 ? '+' : ''}{kalenderData.differenz.toFixed(1)}h
+                                        <p className={`text-xl font-bold ${monatsDifferenz >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {monatsDifferenz >= 0 ? '+' : ''}{monatsDifferenz.toFixed(1)}h
                                         </p>
                                     </div>
                                 </div>
