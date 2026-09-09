@@ -2,9 +2,9 @@
 
 > **Zielgruppe:** Inhaber, Buchhalter, Steuerberater.
 > **Modul:** Buchhaltung → Kasse (Pfad: `/buchhaltung/kasse`).
-> **Status:** Live ab Migrationen V302–V320.
+> **Status:** Live ab Migrationen V302–V320, um Kassenbuchungen und DATEV-Export erweitert in V372.
 
-Das Kasse-Modul ist das doppisch geführte Bar-Kassenbuch des Handwerksbetriebs. Es führt jede Bar-Bewegung als Beleg mit Soll-/Haben-Buchung, validiert den Bar-Saldo gegen Negativ-Bestände und exportiert monatlich ein steuerberater-fertiges T-Konto-PDF.
+Das Kasse-Modul ist das doppisch geführte Bar-Kassenbuch des Handwerksbetriebs. Es führt jede Bar-Bewegung als Beleg mit Soll-/Haben-Buchung, validiert den Bar-Saldo gegen Negativ-Bestände und stellt monatlich ein steuerberater-fertiges Export-Paket bereit (Kassenbuch als PDF, DATEV-Buchungsstapel, Belegbilder).
 
 ---
 
@@ -27,9 +27,47 @@ Vor jeder Buchung, die den Saldo senkt (`KASSE_AUSGABE`, `PRIVATENTNAHME`, Lohn-
 
 ---
 
-## 2. Shortcuts (häufige Buchungen mit einem Klick)
+## 2. Neue Buchung — sechs Kacheln
 
-Endpoints unter `/api/buchhaltung/kasse/*` (siehe `KasseShortcutController`).
+Der Button „Neue Buchung" im Kassenbuch-Tab öffnet sechs Kacheln. Jede
+Kachel steht für einen Vorgang, den ein Handwerksbetrieb bar erledigt.
+Alle sechs laufen über denselben Backend-Pfad
+`KassenbuchungService.buche(...)`
+(`POST /api/buchhaltung/kassenbuch/buchungen`, `multipart/form-data`, Teil
+`daten` mit den Feldern, optionaler Teil `datei` mit dem Belegfoto).
+
+| Kachel (`KassenbuchungDto.Art`) | Kategorie | Quelle | Sachkonto | Beleg |
+|---|---|---|---|---|
+| `GELD_EINGENOMMEN` | KASSE_EINNAHME | QUITTUNG | Pflicht, Standard „8400 Erlöse 19 %" | Quittung-PDF |
+| `GELD_AUSGEGEBEN` (mit Datei) | KASSE_AUSGABE | SCAN | Pflicht | hochgeladene Datei |
+| `GELD_AUSGEGEBEN` (kein Beleg) | KASSE_AUSGABE | EIGENBELEG | Pflicht | Ersatzbeleg-PDF, MwSt zwingend 0 % |
+| `VON_BANK_GEHOLT` | KASSE_EINNAHME | TRANSFER | „1200 Bank-Kassen-Umbuchung" | Ersatzbeleg-PDF |
+| `ZUR_BANK_GEBRACHT` | KASSE_AUSGABE | TRANSFER | „1200 Bank-Kassen-Umbuchung" | Ersatzbeleg-PDF |
+| `EIGENES_GELD_EINGELEGT` | PRIVATEINLAGE | TRANSFER | `KasseEinstellung.privateinlageSachkonto`, sonst „1810 Privateinlage" | Ersatzbeleg-PDF |
+| `GELD_PRIVAT_ENTNOMMEN` | PRIVATENTNAHME | TRANSFER | „1800 Privatentnahme" | Ersatzbeleg-PDF |
+
+Die Spalte `quelle` (`beleg.quelle`, seit V372) hält fest, wie der Beleg
+entstanden ist: `SCAN` = fotografiert oder hochgeladen, `QUITTUNG` = vom
+Programm erzeugte Kundenquittung, `EIGENBELEG` = vom Programm erzeugter
+Ersatzbeleg, `TRANSFER` = Bank↔Kasse oder privat, ohne Fremdbeleg. Jede
+Kachel legt sofort einen validierten Beleg mit Belegdatei an — auch eine
+Buchung ohne Fremdbeleg bekommt so ihre eigene Datei und einen
+Fingerabdruck (SHA-256).
+
+Der bisherige Endpoint `POST /api/buchhaltung/umbuchungen`
+(`BelegController.createUmbuchung`) bleibt erhalten, ist für die vier
+Kassenbewegungen (Bank↔Kasse, Privateinlage, Privatentnahme) aber nur noch
+ein **Alias**: Er übersetzt seine Anfrage in einen Aufruf von
+`KassenbuchungService.buche` und ändert an Statuscodes oder Antwortform
+nichts. Bank- und Kreditkartenbuchungen (keine Kassenbewegungen) laufen
+weiterhin über den ursprünglichen Pfad in `BelegService`.
+
+Auth: Session-Cookie (PC-Frontend) oder `?token=…` (Mobile) – delegiert an `BelegService.findCaller()`.
+
+### Shortcuts (weiterhin bestehend)
+
+Neben den sechs Kacheln bleiben die bisherigen Schnellbuchungen unter
+`/api/buchhaltung/kasse/*` (siehe `KasseShortcutController`) erhalten:
 
 | Shortcut | Endpoint | Wirkung |
 |----------|----------|---------|
@@ -38,9 +76,7 @@ Endpoints unter `/api/buchhaltung/kasse/*` (siehe `KasseShortcutController`).
 | Privatentnahme | `POST /privatentnahme` | Inhaber entnimmt Bar fürs Private |
 | Lohn-Zahlung | `POST /lohn-zahlung` | Lohn aus der Kasse zahlen; bei Unterdeckung wird automatisch eine Privateinlage vorgeschaltet |
 | Saldo abfragen | `GET /saldo` | Aktueller Bar-Bestand zum jetzigen Zeitpunkt |
-| Einstellungen | `GET/PUT /einstellung` | Ehegattengehalt-Konfiguration (Höhe, Stichtag, aktiv/inaktiv) |
-
-Auth: Session-Cookie (PC-Frontend) oder `?token=…` (Mobile) – delegiert an `BelegService.findCaller()`.
+| Einstellungen | `GET/PUT /einstellung` | Ehegattengehalt-Konfiguration, DATEV-Stammdaten und Kontonummern (siehe Abschnitt 4 und 6) |
 
 ---
 
@@ -81,21 +117,66 @@ Jeder validierte Beleg erhält automatisch einen Buchungssatz `Soll an Haben` (s
 
 Standard-Sachkonten (handwerker-typisch) werden per V307 vorbefüllt; weitere lassen sich über `SachkontoController` pflegen.
 
+### Kontonummern für den DATEV-Export
+
+Für den DATEV-Buchungsstapel reicht eine Bezeichnung wie „1000 Kasse"
+nicht — DATEV braucht reine Kontonummern. Dafür gibt es
+`BuchungssatzAbleitung.ableitenKonten(beleg, einstellung)`: Sie liefert
+ein `Konten`-Record mit `sollKontoNr` und `habenKontoNr`, abgeleitet aus
+`BelegKategorie`, `beleg.quelle` und dem gewählten Sachkonto. Die
+bestehende Methode `ableiten(...)` (Soll/Haben als Klartext-Labels, für
+das Kassenbuch-PDF) bleibt davon unberührt.
+
+Kassen- und Bankkontonummer stehen seit V372 nicht mehr fest im Code,
+sondern in `KasseEinstellung.kassenkontoNummer` (Standard „1000") und
+`.bankkontoNummer` (Standard „1200") — beide sind unter Einstellungen
+änderbar.
+
+Der DATEV-Writer (`DatevExportService`) schreibt für jede Zeile immer das
+Soll/Haben-Kennzeichen `S`. Die Richtung steckt nicht im Kennzeichen,
+sondern in der Reihenfolge der Konten: Das erste Konto der Zeile
+(`ableitenKonten(...).sollKontoNr()`) steht im Soll, das zweite
+(`.habenKontoNr()`) im Haben.
+
 ### Kostenstellen-Splits
 
 Aufwands-Belege können auf mehrere Kostenstellen aufgeteilt werden (V313, V318). Beispiel: ein Tankbeleg über 120 € wird zu 60 % auf „Baustelle Müller" und zu 40 % auf „Werkstatt" gebucht. Die Anteile müssen in Summe 100 % ergeben – Validierung im Backend.
 
 ---
 
-## 5. T-Konto-Monatsexport für Steuerberater
+## 5. Was der Steuerberater bekommt
 
-`BelegeKasseExportPdfService` erzeugt pro Monat eine PDF im klassischen T-Konto-Layout: links **Soll** (Belastungen), rechts **Haben** (Gutschriften), je Zeile Datum, Beleg-Nr., Buchungstext, Sachkonto, Betrag. Aufruf über die UI: **Buchhaltung → Kasse → Export Steuerberater**.
+Über **Buchhaltung → Kasse → Für den Steuerberater** lässt sich für einen
+Monat ein ZIP-Paket erzeugen (`SteuerberaterExportService.erzeugeZip`,
+`GET /api/buchhaltung/steuerberater/paket?jahr=&monat=&trotzdem=`). Es
+enthält fünf Bausteine:
 
-| Filter | Wirkung |
-|--------|---------|
-| Zeitraum (Monat) | Nur Belege im gewählten Monat |
-| Kassen-Filter | Nur die vier Bar-Kategorien werden gerendert (kein Bank, keine Eingangsrechnungen) |
-| Firmenlogo | Aus `Firma.logo` ins PDF-Header eingebettet (Commit `ac8ab9f`) |
+| Datei | Inhalt |
+|---|---|
+| `01_Kassenbuch_<Monat>.pdf` | das Kassenbuch als PDF, wie bisher (`BelegeKasseExportPdfService`), je Zeile Datum, Beleg-Nr., Buchungstext, Sachkonto, Betrag und Bestand danach |
+| `02_Buchungen_DATEV_<Monat>.csv` | der DATEV-Buchungsstapel (EXTF 700) aus `DatevExportService` |
+| `03_Eingangsrechnungen_<Monat>.csv` | Nr, Datum, Lieferant, Netto, MwSt, Brutto, Konto, Kostenstelle, Zahlungsart, bezahlt am / offen |
+| `04_Belege/` | die Originaldateien, benannt nach laufender Nummer, Belegdatum und Lieferant |
+| `LIESMICH.txt` | Klartext-Erklärung, was in welcher Datei steht, Kontenrahmen, Kassen-/Bankkonto, Hinweis auf die Verfahrensdokumentation |
+
+**Vorprüfung.** Vor dem Export prüft `SteuerberaterExportService.pruefe`,
+ob im Monat Belege ohne Sachkonto oder ohne Zahlungsart stecken. Gibt es
+solche, antwortet `GET /vorpruefung` bzw. `GET /paket` mit HTTP 409 und
+der Liste der offenen Punkte; das Frontend zeigt sie an, der Nutzer kann
+sie beheben oder „trotzdem" exportieren. Bei einem Export trotz offener
+Punkte bleibt das Konto in der CSV leer, und der Buchungstext bekommt das
+Präfix „PRÜFEN: ".
+
+**Bewusst nicht dabei: Bank- und Kreditkartenbuchungen.** Das Programm
+kennt keine Bankumsätze — die holt sich der Steuerberater weiterhin selbst
+vom Kontoauszug. Ob und wann eine Eingangsrechnung bezahlt wurde, steht
+trotzdem in Datei 03, damit beim Abgleich nichts fehlt.
+
+Der Begriff „T-Konto" ist aus diesem Export verschwunden: Die Oberfläche
+zeigt im Kassenbuch-Tab eine fortlaufende Journal-Tabelle (Nr., Datum,
+Was, Beleg, Einnahme, Ausgabe, Bestand danach) statt der früheren
+T-Konto-Darstellung — das PDF war ohnehin schon ein Journal, nur die
+Bezeichnung im Menü hat sich geändert.
 
 ---
 
@@ -103,31 +184,87 @@ Aufwands-Belege können auf mehrere Kostenstellen aufgeteilt werden (V313, V318)
 
 ```
 Beleg
- ├─ belegKategorie       : BelegKategorie (Enum, V309)
- ├─ status               : BelegStatus (ENTWURF | VALIDIERT | STORNIERT)
- ├─ betragBrutto         : BigDecimal
- ├─ sachkontoId          : FK Sachkonto (Pflicht)
- ├─ kostenstellenAnteile : List<BelegKostenstellenAnteil> (V313, V318)
- └─ uploadedBy           : FK Mitarbeiter (V315 Index)
+ ├─ belegKategorie         : BelegKategorie (Enum, V309)
+ ├─ status                 : BelegStatus (ENTWURF | VALIDIERT | STORNIERT)
+ ├─ betragBrutto           : BigDecimal
+ ├─ sachkontoId            : FK Sachkonto (Pflicht)
+ ├─ kostenstellenAnteile   : List<BelegKostenstellenAnteil> (V313, V318)
+ ├─ uploadedBy             : FK Mitarbeiter (V315 Index)
+ ├─ quelle                 : BelegQuelle (SCAN | QUITTUNG | EIGENBELEG | TRANSFER, V372)
+ ├─ gegenpartei             : String, 120 Zeichen – „Von wem" / „An wen" (V372)
+ ├─ ausgangsrechnungId      : FK ProjektGeschaeftsdokument, nullable (V372)
+ ├─ kiZahlungsart           : String – Rohwert der KI-Lesung, unverändert (V372)
+ ├─ kiBelegdatum            : LocalDate – Rohwert der KI-Lesung (V372)
+ ├─ kiBetragBrutto          : BigDecimal – Rohwert der KI-Lesung (V372)
+ └─ kiKostenkontoHinweis    : String, 255 Zeichen – Grund, warum kein Konto-Vorschlag kam (V372)
 
-Sachkonto                  KasseEinstellung
- ├─ nummer (z.B. "4120")    ├─ ehegattengehaltAktiv
- ├─ bezeichnung             ├─ ehegattengehaltBetrag
- └─ typ (AUFWAND/ERTRAG/…)  ├─ stichtagImMonat
-                            └─ letzteBuchungJahrmonat  (Idempotenz-Lock)
+Sachkonto                    KasseEinstellung
+ ├─ nummer (z.B. "4120")      ├─ ehegattengehaltAktiv
+ ├─ bezeichnung               ├─ ehegattengehaltBetrag
+ └─ typ (AUFWAND/ERTRAG/…)    ├─ stichtagImMonat
+                              ├─ letzteBuchungJahrmonat     (Idempotenz-Lock)
+                              ├─ datevBeraternummer         (V372, max. 7 Zeichen)
+                              ├─ datevMandantennummer       (V372, max. 5 Zeichen)
+                              ├─ wirtschaftsjahrBeginnMonat (V372, Standard 1 = Januar)
+                              ├─ kassenkontoNummer          (V372, Standard "1000")
+                              └─ bankkontoNummer            (V372, Standard "1200")
 ```
 
-Relevante Migrationen: **V302** (Beleg-Tabelle), **V303** (Sachkonto), **V307** (Standard-Sachkonten Handwerker), **V308** (Zahlungsart-Stammdaten), **V309** (ENUM-Typen für Beleg+Sachkonto), **V310** (Privateinlage-Kategorie), **V312–V313** (Kostenstellen-Splits & KI-Vorschläge), **V318** (Anteile-Detail), **V319–V320** (Kasse-Einstellungen + Ehegattengehalt-Vereinfachung).
+Relevante Migrationen: **V302** (Beleg-Tabelle), **V303** (Sachkonto), **V307** (Standard-Sachkonten Handwerker), **V308** (Zahlungsart-Stammdaten), **V309** (ENUM-Typen für Beleg+Sachkonto), **V310** (Privateinlage-Kategorie), **V312–V313** (Kostenstellen-Splits & KI-Vorschläge), **V318** (Anteile-Detail), **V319–V320** (Kasse-Einstellungen + Ehegattengehalt-Vereinfachung), **V372** (Kassenbuchungen und Export: sieben neue `beleg`-Spalten, fünf neue `kasse_einstellung`-Spalten, Backfill der Zahlungsart-Werte auf Klartext).
 
 ---
 
-## 7. Frontend-Shortcuts (PC-Frontend)
+## 7. Zahlungsart-Mapping
 
-Im PC-Frontend (Pfad: `/buchhaltung/kasse`) liegen die häufigen Buchungen als Tastatur-Shortcuts und Schnell-Buttons. Die genaue Tastenbelegung ist in `react-pc-frontend/src/pages/KassePage.tsx` (Suche nach `keydown`) gepflegt – siehe dort, falls sich Shortcuts ändern.
+Die KI liest am Beleg einen Rohcode (`ki_zahlungsart`), die Stammdaten-
+Tabelle `zahlungsart` (V308) kennt dagegen feste Klartext-Bezeichnungen.
+`ZahlungsartMapper` (statische Utility-Klasse, kein Spring-Bean) ist die
+**einzige** Stelle, die zwischen KI-Code, Stammdaten-Bezeichnung,
+Belegkategorie und Bezahlt-Status vermittelt:
+
+| KI-Code | Stammdaten-Bezeichnung | BelegKategorie | gilt als bezahlt |
+|---|---|---|---|
+| `BAR` | Bar | KASSE_AUSGABE / KASSE_EINNAHME | ja |
+| `EC`, `EC_KARTE`, `GIROCARD` | EC-Karte | BANK | ja |
+| `UEBERWEISUNG` | Überweisung | BANK | nein |
+| `SEPA_LASTSCHRIFT`, `LASTSCHRIFT` | Lastschrift | BANK | nein |
+| `KREDITKARTE` | Kreditkarte | KREDITKARTE | ja |
+| `PAYPAL` | PayPal | BANK | ja |
+| `AMAZON_PAY` | Online-Zahlung | BANK | ja |
+| `VORAUSKASSE` | Überweisung | BANK | ja |
+| `RECHNUNG` | Rechnung | SONSTIGER_BELEG | nein |
+| `SCHECK` | Scheck | BANK | nein |
+| `SONSTIGE`, leer, unbekannt | `null` | `null` | nein |
+
+`zuStammdaten` akzeptiert zusätzlich die Klartext-Bezeichnungen selbst
+(„Bar", „Überweisung", …) und gibt sie unverändert zurück — der Mapper ist
+damit auch für bereits migrierte Werte idempotent. Die Backfill-`CASE`-
+Anweisung in V372 spiegelt exakt diese Tabelle; ändert sich das Mapping,
+muss `ZahlungsartMapper` **und** eine neue Migration angepasst werden, nie
+nur eine Seite.
 
 ---
 
-## 8. Häufige Fehler & Diagnose
+## 8. Frontend-Shortcuts (PC-Frontend)
+
+Im PC-Frontend (Pfad: `/buchhaltung/kasse`) ist die Kasse auf mehrere
+Dateien unter `react-pc-frontend/src/components/kasse/` aufgeteilt:
+
+| Datei | Zuständigkeit |
+|---|---|
+| `KassenbuchJournal.tsx` | die Journal-Tabelle (ersetzt das frühere `KassenbuchView` + `TKontoZeile`) |
+| `NeueBuchungDialog.tsx` | die sechs Kacheln aus Abschnitt 2 (ersetzt die vier einzelnen Modals aus `KasseShortcuts.tsx`) |
+| `BelegDetailModal.tsx` | der Prüfen-Dialog für einen einzelnen Beleg |
+| `VorschlagsChip.tsx` | die KI-/Historie-Vorschlagskarte (früher `KiVorschlagKarte`) |
+
+Gemeinsam genutzte Typen (`Beleg`, `Sachkonto`, `Zahlungsart`,
+`BelegKategorie`, …) liegen zentral in `react-pc-frontend/src/types.ts`.
+Tastenkürzel sind weiterhin in `react-pc-frontend/src/pages/KassePage.tsx`
+(Suche nach `keydown`) gepflegt – siehe dort, falls sich Shortcuts ändern.
+
+---
+
+## 9. Häufige Fehler & Diagnose
 
 | Symptom | Ursache | Lösung |
 |---------|---------|--------|
@@ -138,8 +275,9 @@ Im PC-Frontend (Pfad: `/buchhaltung/kasse`) liegen die häufigen Buchungen als T
 
 ---
 
-## 9. Weiterführende Docs
+## 10. Weiterführende Docs
 
+- [KASSE_ANLEITUNG.md](KASSE_ANLEITUNG.md) – kurze Bedienungsanleitung für den Kassenbuch-Tab (Kacheln, Kassensturz, Monatsabschluss)
 - [GOBD_COMPLIANCE.md](GOBD_COMPLIANCE.md) – Unveränderbarkeit & Audit-Trail aller Belege
 - [ZAHLUNGSVERKEHR.md](ZAHLUNGSVERKEHR.md) – Bankkonto-Zahlungen & offene Posten
 - [DOKUMENTEN_LIFECYCLE.md](DOKUMENTEN_LIFECYCLE.md) – Eingangsbelege & KI-Erkennung
