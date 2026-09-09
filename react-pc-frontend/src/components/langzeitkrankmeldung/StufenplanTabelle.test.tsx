@@ -129,7 +129,7 @@ describe('StufenplanTabelle', () => {
 
         await user.click(screen.getByText('Startdatum'));
         await user.click(screen.getByText('Heute'));
-        await user.type(screen.getByLabelText('Stunden pro Tag'), '0.5');
+        await user.type(screen.getByLabelText('Stunden pro Tag'), '0,5');
         await user.click(screen.getByRole('button', { name: /Zeile hinzufügen/ }));
 
         await waitFor(() =>

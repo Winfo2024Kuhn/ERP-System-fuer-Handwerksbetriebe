@@ -140,9 +140,9 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         await user.click(screen.getByText('Vorlage auswählen'));
         await user.click(await screen.findByRole('option', { name: 'Vollzeit Werkstatt' }));
         await user.click(screen.getByLabelText('Diese Vorlage für diese Person individuell anpassen'));
-        const stundenFelder = screen.getAllByRole('spinbutton');
-        await user.clear(stundenFelder[0]);
-        await user.type(stundenFelder[0], '7.5');
+        const montag = screen.getByRole('textbox', { name: 'Montag Stunden' });
+        await user.clear(montag);
+        await user.type(montag, '7,5');
         await user.click(screen.getByRole('button', { name: 'Vorschau anzeigen' }));
         alteVorschauAufloesen?.(await response({ zeitkonto: STATUS, gueltigVon: '2026-09-09', gespeichert: false, bestehendeAbwesenheiten: 0, hinweis: 'Offene Monate werden neu gerechnet.', monate: [] }));
         await screen.findByText('Offene Monate werden neu gerechnet.');
@@ -151,4 +151,29 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
             vorlageId: 3, expectedVorlageVersion: 2, arbeitszeit: { montagStunden: 7.5 },
         });
     });
+    it('leert Null bei Klick und Tab und blockiert unvollständige Stunden und Uhrzeiten vor Vorschau', async () => {
+        const user=userEvent.setup();renderEditor();
+        await user.click(await screen.findByText('Mustermann',{exact:true}));
+        await user.click(screen.getByRole('button',{name:'Bearbeiten'}));
+        await user.click(await screen.findByRole('button',{name:'Arbeitszeit einrichten'}));
+        await user.click(screen.getByText('Vorlage auswählen'));
+        await user.click(await screen.findByRole('option',{name:'Vollzeit Werkstatt'}));
+        await user.click(screen.getByLabelText('Diese Vorlage für diese Person individuell anpassen'));
+        const samstag=screen.getByRole('textbox',{name:'Samstag Stunden'});
+        expect(samstag).toHaveValue('0');await user.click(samstag);expect(samstag).toHaveValue('');
+        await user.click(screen.getByRole('button',{name:'Vorschau anzeigen'}));
+        expect(requests.some(r=>r.url.endsWith('/vorschau'))).toBe(false);
+        await user.type(samstag,'24,1');await user.click(screen.getByRole('button',{name:'Vorschau anzeigen'}));
+        expect(requests.some(r=>r.url.endsWith('/vorschau'))).toBe(false);
+        await user.clear(samstag);await user.type(samstag,'8,5');await user.tab();
+        const sonntag=screen.getByRole('textbox',{name:'Sonntag Stunden'});expect(sonntag).toHaveFocus();expect(sonntag).toHaveValue('');
+        await user.type(sonntag,'0');
+        const start=screen.getByRole('textbox',{name:'Früheste Buchung – optional'});
+        await user.type(start,'25:99');await user.click(screen.getByRole('button',{name:'Vorschau anzeigen'}));
+        expect(requests.some(r=>r.url.endsWith('/vorschau'))).toBe(false);
+        await user.clear(start);await user.type(start,'09:05');await user.click(screen.getByRole('button',{name:'Vorschau anzeigen'}));
+        const req=requests.find(r=>r.url.endsWith('/vorschau'));
+        expect(JSON.parse(String(req?.init?.body))).toMatchObject({arbeitszeit:{samstagStunden:8.5,sonntagStunden:0,buchungStartZeit:'09:05'}});
+    });
+
 });
