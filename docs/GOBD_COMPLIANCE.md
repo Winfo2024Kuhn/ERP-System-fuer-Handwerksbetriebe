@@ -38,19 +38,40 @@ Dieses ERP ist **ein Vorsystem für Ausgangsbelege im Lead-to-Cash-Prozess**, ke
 | Bereich | Wo es stattdessen läuft | Begründung |
 |---|---|---|
 | **Finanzbuchhaltung (DATEV, Bilanz, USt-Voranmeldung)** | Steuerberater mit zertifizierter Software | Trennung von Vorsystem und Buchungssystem ist gewollt – das Vorsystem liefert die Belege, der Steuerberater bucht. |
-| **Barkasse mit TSE / DSFinV-K** | Separates Kassenprogramm mit zertifizierter Technischer Sicherheitseinrichtung (TSE) | Kassenführung mit Bargeld erfordert seit 2020 eine TSE (§ 146a AO). Diese Pflicht wird durch ein dediziertes Kassenprogramm erfüllt, das ebenfalls an den Steuerberater übergibt. |
+| **Registrierkasse / POS mit TSE (§ 146a AO)** | Nicht abgebildet — wird auch nicht gebraucht | Das System führt ein *elektronisches Kassenbuch*, kein Aufzeichnungssystem mit Kassenfunktion. Wer eine offene Ladenkasse mit Einzelaufzeichnung führt, braucht keine TSE und muss nichts melden. Die bei einer Bareinnahme erzeugte Quittung ist der Beleg zur Buchung (§ 33 UStDV / § 14 UStG), kein Bon im Sinne von § 146a AO. |
 | **Lagerbuchführung / Inventur** | Manueller Prozess bzw. nicht abgebildet | Für reine Auftragsfertigung (Handwerk) nicht zwingend; bei Lagerhaltung über Bagatellgrenze wäre ein separates Modul nötig. |
 | **Lohnbuchhaltung** | Steuerberater | Personalstammdaten und Zeitbuchungen werden im ERP geführt, aber die Lohnabrechnung erfolgt extern. |
+
+**Abgrenzung Kasse vs. Registrierkasse:** Die TSE-Pflicht, die
+Kassenmeldung ans Finanzamt (ab 2025) und die Belegausgabepflicht gelten
+für elektronische Aufzeichnungssysteme *mit Kassenfunktion* – also für
+Registrierkassen und POS-Systeme, die einen Verkauf abschließen. Ein
+elektronisches Kassenbuch ist dagegen Buchführungssoftware: Es zeichnet
+die Bewegung des Bargelds auf, nicht den Verkauf. Wer eine offene
+Ladenkasse (Geldkassette) plus Kassenbuch mit Einzelaufzeichnung führt,
+braucht deshalb keine TSE und muss nichts melden – genau dieses Modell
+ist hier umgesetzt. Konsequenz für die Oberfläche: Das Programm tritt nie
+wie eine Registrierkasse auf, es gibt kein „Verkauf abschließen" und
+keinen Kassenbon als Verkaufsbeleg. Wie die Kasse im Alltag bedient wird,
+steht in [`docs/KASSE_ANLEITUNG.md`](KASSE_ANLEITUNG.md).
 
 ### 0.3 Konsequenz für die GoBD-Prüfung
 
 Bei einer Außenprüfung sind drei Datenquellen relevant:
 
 1. **Dieses ERP** liefert per Z3-Export alle Ausgangsbelege inklusive Audit-Trail und Hash-Kette.
-2. **Das Kassenprogramm** liefert die DSFinV-K-Daten der Barkasse.
+2. **Dieses ERP** liefert zusätzlich das Kassenbuch, den DATEV-Buchungsstapel und die Belegbilder als Monatspaket.
 3. **Der Steuerberater** liefert die Buchhaltungs-Exporte (DATEV).
 
-Diese Aufteilung ist eine bewusste Architekturentscheidung: Sie verhindert, dass eine selbstgebaute Software in den zertifizierungspflichtigen Bereich Kasse/Buchhaltung hineingreift, ohne die dafür nötigen Nachweise (Verfahrensdokumentation, TSE-Zertifizierung, Buchhaltungs-Testat) erbringen zu müssen.
+Für die **Finanzbuchhaltung** bleibt die ursprüngliche Architekturentscheidung
+richtig: Sie verhindert, dass eine selbstgebaute Software in den
+zertifizierungspflichtigen Bereich der Buchhaltung hineingreift, ohne die
+dafür nötigen Nachweise (Buchhaltungs-Testat) erbringen zu müssen – das
+bleibt beim Steuerberater. Für die **Kasse** gilt das dagegen nicht mehr:
+Das eingebaute Kassenbuch ist kein zertifizierungspflichtiges
+Aufzeichnungssystem (siehe Abgrenzung oben), sondern klassische
+Buchführung nach § 146 AO. Dafür braucht es weder eine TSE-Zertifizierung
+noch eine externe Software.
 
 ---
 
