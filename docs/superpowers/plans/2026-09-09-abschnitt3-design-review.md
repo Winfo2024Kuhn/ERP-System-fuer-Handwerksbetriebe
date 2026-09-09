@@ -72,3 +72,28 @@ Untersucht und **nicht bestätigt**: Toast bei Monatsabschluss-Teilerfolg könnt
 ## Nachprüfung
 
 Nach gebündelter Korrektur nur die betroffenen E2E-Specs, zentrale Dialog-Tastaturfälle und gemeinsamen Arbeitszeitfelder auf den drei PC-Größen sowie Mobile-Netzwerkriegel gezielt erneut prüfen. Keine unbegründete Wiederholung der vollständigen Suite. Root meldet bereits 18 PC- und 3 Mobile-Fixfälle grün; das ist zum Zeitpunkt dieses Berichts eine Autorenprüfung und keine unabhängige Abnahme.
+
+
+## Unabhängige Nachprüfung der gebündelten Korrektur
+
+Geprüft am 09.09.2026 auf Review-Merge `6203f0b8`, einschließlich Dialog-Fix `5e267a35`.
+
+**Ampel für die Änderungen in Abschnitt 3: GRÜN. D3-1 bis D3-5 erledigt.** Die fünf unveränderten Bestandsfehler des vollständigen Ursprungslaufs bleiben dokumentiert; diese Abnahme behauptet keine vollständig grüne Gesamtsuite.
+
+- **27/27 PC-Prüfungen grün**: `mitarbeiter-arbeitszeit-task8.spec.ts`, `monatsabschluss-task9.spec.ts`, `systemeingaben-task-9.spec.ts`, `systemeingaben-task-9-kalender.spec.ts`, jeweils in allen drei Desktopgrößen. Log `/tmp/review3-fixes-react-pc-frontend.log`.
+- **9/9 zusätzliche gezielte PC-Prüfungen grün**: `zeitkonto-task-9b.spec.ts` und `systemeingaben-task-7.spec.ts`. Damit auch der zweite Verbraucher der gemeinsamen Arbeitszeitfelder sowie die Datumsauswahl im Dialogportal geprüft. Log `/tmp/review3-fixes-extra-react-pc-frontend.log`.
+- **3/3 Mobile-Prüfungen grün**, beide regulären Specs mit gemeinsamem Kontext-Riegel und separater Ausgabe. Log `/tmp/review3-fixes-react-zeiterfassung.log`.
+- **1/1 zusätzliche Mobile-Netzwerkprüfung grün**: synthetische Navigation nach `https://review.invalid/dummy` sowohl in der vorhandenen als auch einer neu erzeugten Kontextseite wird abgebrochen; keine fremde Antwort. Log `/tmp/review3-fixes-extra-react-zeiterfassung.log`. Keine echten Daten. Temporäre Spec anschließend entfernt.
+- **66 neue Bilder** ohne duplizierte Attachments in acht beschrifteten Kontaktbögen angesehen (`/tmp/review3-fixes-contact/`, Manifest enthält Originalpfade). Tagesdialog in allen drei Größen zusätzlich in Einzelansicht geprüft. Artefakte unter `/tmp/review3-fixes*-artifacts/`.
+
+| Befund | Unabhängig geprüftes Ergebnis |
+|---|---|
+| D3-1 Fokus | Tab und Shift-Tab bleiben im Stornodialog. Abbrechen und Escape geben den Fokus an Stornieren zurück. Der Kalenderportal erhält Tastaturfokus, Escape schließt nur die Auswahl und fokussiert ihren Auslöser. Alle drei Desktopgrößen grün. |
+| D3-2 Hauptaktion | „Neue Buchung“ ist eine umrandete Nebenaktion; nur „Alle Speichern“ vollflächig rose. Ohne Scrollen erreichbar, keine neue Überdeckung. |
+| D3-3 Checkbox | Arbeitszeit-Checkbox sichtbar rose; berechnetes `accent-color` in allen drei Größen `rgb(225, 29, 72)`. Beide Frontends verwenden gemeinsame Basisgestaltung für Checkbox/Radio. |
+| D3-4 Mobile-Isolation | Beide Specs importieren denselben Kontextbaustein. Neue Kontextseiten sind ebenfalls gesperrt; Screenshot liegt im übergebenen Ausgabeverzeichnis. |
+| D3-5 Testmigration | Alle zwölf vormals roten Fälle jetzt grün. Kommaanzeige und beschriftete Textfelder verwendet; fachliche Versions-, Payload-, Abschluss-, Wiederöffnungs- und Berechtigungsprüfungen erhalten. |
+
+Die gemeinsame Arbeitszeit-Komponente bleibt in Mitarbeiter- und Zeitkontoformular übersichtlich. Leere Zwischenstände, Null-Leeren mit Klick/Tab, vollständige Kommazahl, ungültige Uhrzeit und numerischer API-Payload funktionieren weiterhin. Die sechs Designfragen fallen für die korrigierten Zustände in allen drei Desktopgrößen positiv aus: klare Farben und eigene Gestaltung, ruhige Ausrichtung, eindeutige Hauptaktion und Rückmeldung, sichtbare Aktionen, keine neue bestätigte Überdeckung. Mobile behält die klare Datumsauswahl und passenden Touchflächen. Die Netzwerkprüfung ergänzt die visuelle Kontrolle.
+
+Keine Sourceänderungen durch den Reviewer, keine neue Vollsuite. Eigene Vite-/Browserprozesse beendet; 5191 und 5192 haben nach Abschluss keine Listener. Review-Worktree nach Entfernung der temporären Netzwerk-Spec nur mit diesem Bericht geändert.
