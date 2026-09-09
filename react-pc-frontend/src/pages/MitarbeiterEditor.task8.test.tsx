@@ -115,12 +115,12 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
 
         await user.click(screen.getByText('09.09.2026'));
         await user.click(screen.getByTitle('Nächster Monat'));
-        await user.click(screen.getByRole('button', { name: '1', exact: true }));
+        await user.click(screen.getByRole('button', { name: '01.10.2026', exact: true }));
         await user.click(screen.getByRole('button', { name: 'Vorschau anzeigen' }));
 
         await user.click(screen.getByText('01.10.2026'));
         await user.click(screen.getByTitle('Nächster Monat'));
-        await user.click(screen.getByRole('button', { name: '1', exact: true }));
+        await user.click(screen.getByRole('button', { name: '01.11.2026', exact: true }));
         alteVorschauAufloesen?.(await response({ zeitkonto: STATUS, gueltigVon: '2026-10-01', gespeichert: false, bestehendeAbwesenheiten: 0, hinweis: 'Alte Vorschau', monate: [] }));
         await waitFor(() => expect(screen.queryByRole('button', { name: 'Jetzt übernehmen' })).not.toBeInTheDocument());
 

@@ -49,7 +49,7 @@ describe('ZeiterfassungZeitkonten Task 10', () => {
         await user.click(screen.getByRole('button', { name: 'Vorschau' }));
         await user.click(screen.getByText(/^\d{2}\.\d{2}\.\d{4}$/));
         await user.click(screen.getByTitle('Nächster Monat'));
-        await user.click(screen.getByRole('button', { name: '1', exact: true }));
+        await user.click(screen.getByRole('button', { name: /^01\.\d{2}\.\d{4}$/ }));
         await act(async () => { resolvePreviews[0](json({ ...ergebnis, hinweis: 'Oktober-Antwort' })); });
         await waitFor(() => expect(screen.queryByText('Oktober-Antwort')).not.toBeInTheDocument());
         expect(screen.getByRole('checkbox', { name: 'Max Mustermann auswählen' })).toBeDisabled();
