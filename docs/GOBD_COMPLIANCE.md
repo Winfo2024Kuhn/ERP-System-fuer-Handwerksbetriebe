@@ -18,7 +18,7 @@ Rechtsgrundlagen:
 
 ## 0. Geltungsbereich & Abgrenzung
 
-Dieses ERP ist **ein Vorsystem für Ausgangsbelege im Lead-to-Cash-Prozess**, kein Komplettsystem mit eigener Finanzbuchhaltung oder Kasse. Die GoBD-Verantwortung ist arbeitsteilig organisiert, damit das System nicht in den Zuständigkeitsbereich zertifizierungspflichtiger Software (Buchhaltung, Kasse) hineingreift.
+Dieses ERP ist **ein Vorsystem für Ausgangsbelege im Lead-to-Cash-Prozess** mit einem **elektronischen Kassenbuch** für die Barkasse (siehe 0.2), aber kein Komplettsystem mit eigener Finanzbuchhaltung. Die GoBD-Verantwortung ist arbeitsteilig organisiert, damit das System nicht in den Zuständigkeitsbereich zertifizierungspflichtiger Software (Finanzbuchhaltung, Registrierkassen mit TSE) hineingreift.
 
 ### 0.1 Was dieses System abdeckt
 
