@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X, Package, CheckCircle2,
-    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck, Clock
+    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck, Clock, CalendarCheck
 } from 'lucide-react';
 
 // ── Types & Pure-Logic Helpers ───────────────────────────────────────────
@@ -29,6 +29,7 @@ const RECENT_TYPE_COLORS: Record<string, string> = {
     FREIGABE_ANGENOMMEN: 'text-emerald-500',
     ANFRAGE_WEBSEITE: 'text-rose-600',
     ZEIT_AUTO_BEENDET: 'text-amber-600',
+    MONATSABSCHLUSS: 'text-rose-600',
 };
 
 const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -44,6 +45,7 @@ const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string
     FREIGABE_ANGENOMMEN: CheckCircle2,
     ANFRAGE_WEBSEITE: Globe,
     ZEIT_AUTO_BEENDET: Clock,
+    MONATSABSCHLUSS: CalendarCheck,
 };
 
 // ── Gruppen-Definition ─────────────────────────────────────────────────
@@ -81,8 +83,8 @@ const GROUPS: NotificationGroup[] = [
         icon: Clock,
         accentText: 'text-amber-700',
         accentBg: 'bg-amber-100',
-        types: ['ZEITEN_AUTO_BEENDET'],
-        recentTypes: ['ZEIT_AUTO_BEENDET'],
+        types: ['ZEITEN_AUTO_BEENDET', 'MONATSABSCHLUSS'],
+        recentTypes: ['ZEIT_AUTO_BEENDET', 'MONATSABSCHLUSS'],
     },
     {
         id: 'posteingaenge',
