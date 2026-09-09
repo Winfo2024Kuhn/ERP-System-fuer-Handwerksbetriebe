@@ -50,6 +50,9 @@ class TagesSollServiceTest {
     @Mock
     private LangzeitkrankmeldungPhaseRepository phaseRepository;
 
+    @Mock
+    private org.example.kalkulationsprogramm.repository.ZeitkontoVersionRepository versionRepository;
+
     @InjectMocks
     private TagesSollService tagesSollService;
 
@@ -461,5 +464,78 @@ class TagesSollServiceTest {
             assertEquals(0, periodenSollJeTag.get(tag).subtract(feiertagsGutschriftJeTag.get(tag))
                     .compareTo(arbeitsSollJeTag.get(tag)), "Invariante verletzt fuer " + tag);
         }
+    }
+
+    @Test
+    void versionen38komma5Und7Ergeben45komma5UndHistorieBleibtBeiDeaktivierung() {
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        LocalDate wechsel = von.plusWeeks(1);
+        LocalDate bis = von.plusDays(13);
+        var alt = version(von, wechsel.minusDays(1));
+        alt.setMontagStunden(new BigDecimal("8"));
+        alt.setDienstagStunden(new BigDecimal("8"));
+        alt.setMittwochStunden(new BigDecimal("8"));
+        alt.setDonnerstagStunden(new BigDecimal("8"));
+        alt.setFreitagStunden(new BigDecimal("6.5"));
+        var neu = version(wechsel, null);
+        neu.setMontagStunden(new BigDecimal("7"));
+        when(versionRepository.findImZeitraum(1L, von, bis)).thenReturn(List.of(alt, neu));
+        assertEquals(0, new BigDecimal("45.5").compareTo(tagesSollService.periodenSollSumme(1L, von, bis)));
+        verify(versionRepository, times(1)).findImZeitraum(1L, von, bis);
+        verify(phaseRepository, times(1)).findImZeitraum(1L, von, bis);
+        verify(feiertagService, times(1)).getFeiertageZwischen(von, bis);
+        alt.getMitarbeiter().setFuehrtZeitkonto(false);
+        when(versionRepository.findImZeitraum(1L, von, wechsel.minusDays(1))).thenReturn(List.of(alt));
+        assertEquals(0, new BigDecimal("38.5").compareTo(
+                tagesSollService.periodenSollSumme(1L, von, wechsel.minusDays(1))));
+        verify(versionRepository, never()).save(any());
+    }
+
+    @Test
+    void versionierteFeiertageUndStufenplanBehaltenAlleRechenregeln() {
+        LocalDate von = LocalDate.of(2026, 12, 21);
+        LocalDate bis = von.plusDays(6);
+        var v = version(von, null);
+        v.setMontagStunden(new BigDecimal("8"));
+        v.setDienstagStunden(new BigDecimal("8"));
+        v.setMittwochStunden(new BigDecimal("8"));
+        v.setDonnerstagStunden(new BigDecimal("8"));
+        v.setFreitagStunden(new BigDecimal("8"));
+        when(versionRepository.findImZeitraum(1L, von, bis)).thenReturn(List.of(v));
+        when(phaseRepository.findImZeitraum(1L, von, bis))
+                .thenReturn(List.of(wiedereingliederungsPhase(new BigDecimal("3.5"), von)));
+        Feiertag halb = new Feiertag(); halb.setDatum(von.plusDays(3)); halb.setBundesland("BY"); halb.setHalbTag(true);
+        Feiertag voll = new Feiertag(); voll.setDatum(von.plusDays(4)); voll.setBundesland("BY");
+        Feiertag fremd = new Feiertag(); fremd.setDatum(von); fremd.setBundesland("HE");
+        Feiertag wochenende = new Feiertag(); wochenende.setDatum(bis); wochenende.setBundesland("BY");
+        when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(List.of(halb, voll, fremd, wochenende));
+        assertEquals(0, new BigDecimal("15.75").compareTo(tagesSollService.periodenSollSumme(1L, von, bis)));
+        assertEquals(0, new BigDecimal("5.25").compareTo(tagesSollService.feiertagsGutschriftSumme(1L, von, bis)));
+        assertEquals(0, new BigDecimal("10.50").compareTo(tagesSollService.arbeitsSollSumme(1L, von, bis)));
+        when(versionRepository.findImZeitraum(1L, halb.getDatum(), halb.getDatum())).thenReturn(List.of(v));
+        when(phaseRepository.findImZeitraum(1L, halb.getDatum(), halb.getDatum()))
+                .thenReturn(List.of(wiedereingliederungsPhase(new BigDecimal("3.5"), von)));
+        when(feiertagService.getFeiertageZwischen(halb.getDatum(), halb.getDatum())).thenReturn(List.of(halb));
+        assertEquals(0, new BigDecimal("1.75").compareTo(tagesSollService.periodenSoll(1L, halb.getDatum())));
+        assertEquals(0, new BigDecimal("1.75").compareTo(tagesSollService.feiertagsGutschrift(1L, halb.getDatum())));
+        assertEquals(0, BigDecimal.ZERO.compareTo(tagesSollService.arbeitsSoll(1L, halb.getDatum())));
+    }
+
+    @Test
+    void fehlendeVersionUndKontopauseLiefernNullOhneStillesStandardkonto() {
+        LocalDate von = LocalDate.of(2026, 6, 1);
+        var v = version(von.plusDays(7), null); v.setMontagStunden(new BigDecimal("7"));
+        when(versionRepository.findImZeitraum(1L, von, von.plusDays(7))).thenReturn(List.of(v));
+        var tage = tagesSollService.periodenSollJeTag(1L, von, von.plusDays(7));
+        assertEquals(BigDecimal.ZERO, tage.get(von));
+        assertEquals(new BigDecimal("7"), tage.get(von.plusDays(7)));
+        assertEquals(BigDecimal.ZERO, tagesSollService.periodenSoll(1L, von));
+        verify(versionRepository, never()).save(any());
+    }
+
+    private org.example.kalkulationsprogramm.domain.ZeitkontoVersion version(LocalDate von, LocalDate bis) {
+        var v = new org.example.kalkulationsprogramm.domain.ZeitkontoVersion();
+        v.setMitarbeiter(zeitkonto.getMitarbeiter()); v.setGueltigVon(von); v.setGueltigBis(bis);
+        return v;
     }
 }
