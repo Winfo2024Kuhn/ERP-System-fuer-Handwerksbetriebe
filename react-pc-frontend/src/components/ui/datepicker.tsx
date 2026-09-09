@@ -1,239 +1,135 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useId } from 'react';
+import ReactDOM from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-interface DatePickerProps {
+export interface DatePickerProps {
     value: string;
     onChange: (value: string) => void;
     placeholder?: string;
     className?: string;
     disabled?: boolean;
+    id?: string;
+    name?: string;
+    required?: boolean;
+    min?: string;
+    max?: string;
+    error?: string;
+    'aria-label'?: string;
+    'aria-describedby'?: string;
 }
-
-const MONTHS = [
-    'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
-    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
-];
-
+const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const isoDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+function parseDate(value: string): Date | null {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(0); date.setFullYear(year, month - 1, day); date.setHours(0, 0, 0, 0);
+    return isoDate(date) === value ? date : null;
+}
+const displayDate = (date: Date) => date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-export function DatePicker({ value, onChange, placeholder = "Datum wählen", className, disabled }: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder = 'Datum wählen', className, disabled, id, name, required, min, max, error, 'aria-label': ariaLabel, 'aria-describedby': describedBy }: DatePickerProps) {
+    const generatedId = useId(); const inputId = id ?? generatedId;
     const [isOpen, setIsOpen] = useState(false);
-    const [currentMonth, setCurrentMonth] = useState(new Date());
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    // Parse value to Date
-    const selectedDate = value ? new Date(value) : null;
-
-    useEffect(() => {
-        if (selectedDate) {
-            setCurrentMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [value]);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
+    const [view, setView] = useState(() => new Date());
+    const [activeDate, setActiveDate] = useState('');
+    const [attempted, setAttempted] = useState(false);
+    const [position, setPosition] = useState({ top: 0, left: 0, width: 288, maxHeight: 400 });
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const popupRef = useRef<HTMLDivElement>(null);
+    const validationRef = useRef<HTMLInputElement>(null);
+    const selectedDate = parseDate(value);
+    const minValue = min && parseDate(min) ? min : undefined;
+    const maxValue = max && parseDate(max) ? max : undefined;
+    const allowed = (date: string) => (!minValue || date >= minValue) && (!maxValue || date <= maxValue);
+    const label = ariaLabel ?? 'Datum';
+    const validationMessage = !value ? (required ? `Bitte ${label} auswählen.` : '') : !selectedDate ? `Bitte ein gültiges ${label} auswählen.` : !allowed(value) ? `${label} liegt außerhalb des erlaubten Zeitraums.` : '';
+    const shownError = error || (attempted ? validationMessage : '');
+    useEffect(() => { validationRef.current?.setCustomValidity(validationMessage); }, [validationMessage]);
+    const close = () => { setIsOpen(false); triggerRef.current?.focus(); };
+    const choose = (date: string) => { if (date && !allowed(date)) return; onChange(date); close(); };
+    const open = () => {
+        let date = selectedDate ? value : isoDate(new Date());
+        if (minValue && date < minValue) date = minValue;
+        if (maxValue && date > maxValue) date = maxValue;
+        setView(parseDate(date) ?? new Date()); setActiveDate(date); setIsOpen(true);
+    };
+    useLayoutEffect(() => {
+        if (!isOpen || disabled) return;
+        const update = () => {
+            const rect = triggerRef.current?.getBoundingClientRect(); if (!rect) return;
+            const height = Math.min(400, Math.max(120, window.innerHeight - 16));
+            const below = window.innerHeight - rect.bottom - 12;
+            const upward = below < height && rect.top > below;
+            const maxHeight = Math.max(80, Math.min(height, upward ? rect.top - 12 : below));
+            const width = Math.min(304, window.innerWidth - 16);
+            setPosition({ top: upward ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width, maxHeight });
         };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    const formatDate = (date: Date): string => {
-        return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    };
-
-    const getDaysInMonth = (date: Date): number => {
-        return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-    };
-
-    const getFirstDayOfMonth = (date: Date): number => {
-        const day = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
-        return day === 0 ? 6 : day - 1; // Monday = 0
-    };
-
-    const handlePrevMonth = () => {
-        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-    };
-
-    const handleNextMonth = () => {
-        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-    };
-
-    const handleDateSelect = (day: number) => {
-        const newDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-        // Format as YYYY-MM-DD for input value
-        const year = newDate.getFullYear();
-        const month = String(newDate.getMonth() + 1).padStart(2, '0');
-        const dayStr = String(day).padStart(2, '0');
-        onChange(`${year}-${month}-${dayStr}`);
-        setIsOpen(false);
-    };
-
-    const isToday = (day: number): boolean => {
-        const today = new Date();
-        return (
-            day === today.getDate() &&
-            currentMonth.getMonth() === today.getMonth() &&
-            currentMonth.getFullYear() === today.getFullYear()
-        );
-    };
-
-    const isSelected = (day: number): boolean => {
-        if (!selectedDate) return false;
-        return (
-            day === selectedDate.getDate() &&
-            currentMonth.getMonth() === selectedDate.getMonth() &&
-            currentMonth.getFullYear() === selectedDate.getFullYear()
-        );
-    };
-
-    const renderDays = () => {
-        const daysInMonth = getDaysInMonth(currentMonth);
-        const firstDay = getFirstDayOfMonth(currentMonth);
-        const days = [];
-
-        // Empty cells for days before first of month
-        for (let i = 0; i < firstDay; i++) {
-            days.push(<div key={`empty-${i}`} className="h-8 w-8" />);
-        }
-
-        // Days of month
-        for (let day = 1; day <= daysInMonth; day++) {
-            days.push(
-                <button
-                    key={day}
-                    type="button"
-                    onClick={() => handleDateSelect(day)}
-                    className={cn(
-                        "h-8 w-8 rounded-full text-sm font-medium transition-colors",
-                        "hover:bg-rose-100 hover:text-rose-700",
-                        isToday(day) && !isSelected(day) && "border border-rose-300 text-rose-600",
-                        isSelected(day) && "bg-rose-600 text-white hover:bg-rose-700 hover:text-white"
-                    )}
-                >
-                    {day}
-                </button>
-            );
-        }
-
-        return days;
-    };
-
-    return (
-        <div className={cn("relative w-full", className)} ref={containerRef}>
-            <div
-                className={cn(
-                    "flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-slate-50 transition-colors",
-                    disabled && "opacity-50 cursor-not-allowed hover:bg-white",
-                    isOpen && "ring-2 ring-rose-500 ring-offset-2 border-rose-500"
-                )}
-                onClick={() => !disabled && setIsOpen(!isOpen)}
-            >
-                <span className={cn("truncate", !selectedDate && "text-slate-500")}>
-                    {selectedDate ? formatDate(selectedDate) : placeholder}
-                </span>
-                <Calendar className="h-4 w-4 opacity-50" />
+        const outside = (event: MouseEvent) => { const target = event.target as Node; if (!triggerRef.current?.contains(target) && !popupRef.current?.contains(target)) setIsOpen(false); };
+        update(); window.addEventListener('resize', update); window.addEventListener('scroll', update, true); document.addEventListener('mousedown', outside);
+        return () => { window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); document.removeEventListener('mousedown', outside); };
+    }, [isOpen, disabled]);
+    useEffect(() => {
+        if (isOpen && !disabled) popupRef.current?.querySelector<HTMLButtonElement>(`[data-date="${activeDate}"]:not(:disabled)`)?.focus();
+    }, [isOpen, activeDate, disabled]);
+    const days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+    const first = (new Date(view.getFullYear(), view.getMonth(), 1).getDay() + 6) % 7;
+    const today = isoDate(new Date());
+    const firstVisible = isoDate(new Date(view.getFullYear(), view.getMonth(), 1));
+    const lastVisible = isoDate(new Date(view.getFullYear(), view.getMonth(), days));
+    const focusDate = activeDate >= firstVisible && activeDate <= lastVisible ? activeDate : (minValue && minValue > firstVisible && minValue <= lastVisible ? minValue : firstVisible);
+    const navigate = (offset: number) => setView(new Date(view.getFullYear(), view.getMonth() + offset, 1));
+    const canPrevious = !minValue || minValue < firstVisible;
+    const canNext = !maxValue || maxValue > lastVisible;
+    return <div className={cn('relative w-full', className)}>
+        <button ref={triggerRef} id={inputId} type="button" aria-label={ariaLabel} disabled={disabled} aria-haspopup="dialog" aria-expanded={isOpen && !disabled}
+            aria-controls={isOpen ? `${inputId}-calendar` : undefined} aria-required={required} aria-invalid={shownError ? true : undefined}
+            aria-describedby={[describedBy, shownError ? `${inputId}-error` : undefined].filter(Boolean).join(' ') || undefined}
+            className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-slate-50"
+            onClick={() => isOpen ? close() : open()}>
+            <span className={cn('truncate', !selectedDate && 'text-slate-500')}>{selectedDate ? displayDate(selectedDate) : placeholder}</span>
+            <Calendar aria-hidden="true" className="h-4 w-4 shrink-0 opacity-50" />
+        </button>
+        <input ref={validationRef} name={name} type="text" tabIndex={-1} aria-hidden="true" className="sr-only" value={value} required={required} disabled={disabled} onChange={() => {}}
+            onInvalid={event => { event.preventDefault(); setAttempted(true); triggerRef.current?.focus(); }} />
+        {shownError && <p id={`${inputId}-error`} role="alert" className="mt-1 text-sm text-rose-700">{shownError}</p>}
+        {isOpen && !disabled && ReactDOM.createPortal(<div ref={popupRef} id={`${inputId}-calendar`} role="dialog" aria-label={`${label} auswählen`}
+            className="overflow-auto rounded-lg border border-slate-200 bg-white p-3 shadow-2xl" style={{ position: 'fixed', ...position, zIndex: 99999 }}
+            onKeyDown={event => {
+                if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
+                if (event.key === 'Tab') {
+                    const buttons = Array.from(popupRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled):not([tabindex="-1"])') ?? []);
+                    if ((event.shiftKey && event.target === buttons[0]) || (!event.shiftKey && event.target === buttons.at(-1))) {
+                        if (event.shiftKey) event.preventDefault(); close();
+                    }
+                }
+            }}>
+            <div className="mb-3 flex items-center justify-between">
+                <button type="button" title="Vorheriger Monat" aria-label="Vorheriger Monat" disabled={!canPrevious} onClick={() => navigate(-1)} className="rounded p-2 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-30"><ChevronLeft aria-hidden="true" className="h-4 w-4" /></button>
+                <span aria-live="polite" className="text-sm font-semibold">{MONTHS[view.getMonth()]} {view.getFullYear()}</span>
+                <button type="button" title="Nächster Monat" aria-label="Nächster Monat" disabled={!canNext} onClick={() => navigate(1)} className="rounded p-2 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-30"><ChevronRight aria-hidden="true" className="h-4 w-4" /></button>
             </div>
-
-            {isOpen && !disabled && (
-                <div className="absolute z-50 mt-1 w-72 rounded-md border border-slate-200 bg-white p-3 shadow-lg animate-in fade-in-0 zoom-in-95">
-                    {/* Header with Year and Month navigation */}
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-1">
-                            <button
-                                type="button"
-                                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth(), 1))}
-                                className="p-1 rounded hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
-                                title="Vorheriges Jahr"
-                            >
-                                <ChevronLeft className="h-3 w-3" />
-                                <ChevronLeft className="h-3 w-3 -ml-2" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handlePrevMonth}
-                                className="p-1 rounded hover:bg-slate-100 transition-colors"
-                                title="Vorheriger Monat"
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                            </button>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setCurrentMonth(new Date())}
-                            className="font-semibold text-slate-900 hover:text-rose-600 transition-colors"
-                            title="Zum aktuellen Monat"
-                        >
-                            {MONTHS[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                        </button>
-                        <div className="flex items-center gap-1">
-                            <button
-                                type="button"
-                                onClick={handleNextMonth}
-                                className="p-1 rounded hover:bg-slate-100 transition-colors"
-                                title="Nächster Monat"
-                            >
-                                <ChevronRight className="h-4 w-4" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth(), 1))}
-                                className="p-1 rounded hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
-                                title="Nächstes Jahr"
-                            >
-                                <ChevronRight className="h-3 w-3" />
-                                <ChevronRight className="h-3 w-3 -ml-2" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Weekday headers */}
-                    <div className="grid grid-cols-7 gap-1 mb-1">
-                        {WEEKDAYS.map(day => (
-                            <div key={day} className="h-8 w-8 flex items-center justify-center text-xs font-medium text-slate-500">
-                                {day}
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Days grid */}
-                    <div className="grid grid-cols-7 gap-1">
-                        {renderDays()}
-                    </div>
-
-                    {/* Quick actions */}
-                    <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onChange('');
-                                setIsOpen(false);
-                            }}
-                            className="text-xs text-slate-500 hover:text-slate-700"
-                        >
-                            Löschen
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const today = new Date();
-                                const year = today.getFullYear();
-                                const month = String(today.getMonth() + 1).padStart(2, '0');
-                                const day = String(today.getDate()).padStart(2, '0');
-                                onChange(`${year}-${month}-${day}`);
-                                setIsOpen(false);
-                            }}
-                            className="text-xs text-rose-600 hover:text-rose-700 font-medium"
-                        >
-                            Heute
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
+            <div className="grid grid-cols-7 gap-1">
+                {WEEKDAYS.map(day => <span key={day} className="py-1 text-center text-xs text-slate-500">{day}</span>)}
+                {Array.from({ length: first }, (_, index) => <span key={`empty-${index}`} />)}
+                {Array.from({ length: days }, (_, index) => {
+                    const date = new Date(view.getFullYear(), view.getMonth(), index + 1); const iso = isoDate(date);
+                    return <button key={iso} data-date={iso} type="button" aria-label={displayDate(date)} aria-pressed={value === iso} disabled={!allowed(iso)} tabIndex={iso === focusDate ? 0 : -1}
+                        className={cn('h-9 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:text-slate-300', value === iso ? 'bg-rose-600 text-white hover:bg-rose-700' : 'hover:bg-rose-50', today === iso && value !== iso && 'border border-rose-300 text-rose-700')}
+                        onClick={() => choose(iso)} onKeyDown={event => {
+                            const offsets: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, Home: -((date.getDay() + 6) % 7), End: 6 - ((date.getDay() + 6) % 7) };
+                            if (offsets[event.key] === undefined) return;
+                            event.preventDefault(); const next = new Date(date); next.setDate(date.getDate() + offsets[event.key]);
+                            const nextIso = isoDate(next); if (allowed(nextIso)) { setView(next); setActiveDate(nextIso); }
+                        }}>{index + 1}</button>;
+                })}
+            </div>
+            <div className="mt-3 flex justify-between gap-2 border-t border-slate-100 pt-2">
+                <button type="button" disabled={!allowed(today)} onClick={() => choose(today)} className="rounded px-3 py-2 text-sm text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-40">Heute</button>
+                <button type="button" onClick={() => choose('')} className="rounded px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500">Löschen</button>
+                <button type="button" onClick={close} className="rounded px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500">Schließen</button>
+            </div>
+        </div>, document.body)}
+    </div>;
 }
