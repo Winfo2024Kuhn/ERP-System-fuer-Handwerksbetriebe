@@ -34,8 +34,13 @@ function renderEditor() {
 describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
     let fetchMock: ReturnType<typeof vi.fn>;
     const requests: { url: string; init?: RequestInit }[] = [];
+    let vorschauAnzahl: number;
+    let alteVorschauAufloesen: ((wert: Awaited<ReturnType<typeof response>>) => void) | null;
 
     beforeEach(() => {
+        requests.length = 0;
+        vorschauAnzahl = 0;
+        alteVorschauAufloesen = null;
         fetchMock = vi.fn((url: string, init?: RequestInit) => {
             requests.push({ url, init });
             if (url === '/api/mitarbeiter') return response([MITARBEITER]);
@@ -53,10 +58,15 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
                 return response(STATUS);
             }
             if (url === '/api/zeitverwaltung/zeitkontenmodelle') return response([{ id: 3, version: 2, bezeichnung: 'Vollzeit Werkstatt', arbeitszeit: ARBEITSZEIT }]);
-            if (url === '/api/zeitverwaltung/zeitkonten/42/vorschau') return response({
-                zeitkonto: STATUS, gueltigVon: '2026-09-09', gespeichert: false, bestehendeAbwesenheiten: 1,
-                hinweis: 'Offene Monate werden neu gerechnet.', monate: [{ jahr: 2026, monat: 9, abgeschlossen: false, saldoVorher: 2, saldoNachher: null, geaendert: false }],
-            });
+            if (url === '/api/zeitverwaltung/zeitkonten/42/vorschau') {
+                const ergebnis = {
+                    zeitkonto: STATUS, gueltigVon: '2026-09-09', gespeichert: false, bestehendeAbwesenheiten: 1,
+                    hinweis: 'Offene Monate werden neu gerechnet.', monate: [{ jahr: 2026, monat: 9, abgeschlossen: false, saldoVorher: 2, saldoNachher: null, geaendert: false }],
+                };
+                vorschauAnzahl += 1;
+                if (vorschauAnzahl === 1) return new Promise(resolve => { alteVorschauAufloesen = resolve; });
+                return response(ergebnis);
+            }
             return response([]);
         });
         global.fetch = fetchMock as unknown as typeof fetch;
@@ -75,6 +85,10 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         await user.click(screen.getByText('Vorlage auswählen'));
         await user.click(await screen.findByRole('option', { name: 'Vollzeit Werkstatt' }));
         await user.click(screen.getByRole('button', { name: 'Vorschau anzeigen' }));
+        alteVorschauAufloesen?.(await response({
+            zeitkonto: STATUS, gueltigVon: '2026-09-09', gespeichert: false, bestehendeAbwesenheiten: 1,
+            hinweis: 'Offene Monate werden neu gerechnet.', monate: [{ jahr: 2026, monat: 9, abgeschlossen: false, saldoVorher: 2, saldoNachher: null, geaendert: false }],
+        }));
 
         await screen.findByText('Offene Monate werden neu gerechnet.');
         const previewRequest = requests.find(request => request.url.endsWith('/vorschau'));
@@ -88,5 +102,53 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         await screen.findByText('Arbeitszeit wurde übernommen.');
         await waitFor(() => expect(requests.some(request => request.url === '/api/zeitverwaltung/zeitkonten/42' && request.init?.method === 'PUT')).toBe(true));
         expect(requests.some(request => request.url === '/api/mitarbeiter/42' && request.init?.method === 'PUT')).toBe(false);
+    });
+
+    it('verwirft eine verspätete Vorschau nach Stichtagwechsel und sendet beim Übernehmen den neuen Stichtag', async () => {
+        const user = userEvent.setup();
+        renderEditor();
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await user.click(screen.getByRole('button', { name: 'Bearbeiten' }));
+        await user.click(await screen.findByRole('button', { name: 'Arbeitszeit einrichten' }));
+        await user.click(screen.getByText('Vorlage auswählen'));
+        await user.click(await screen.findByRole('option', { name: 'Vollzeit Werkstatt' }));
+
+        await user.click(screen.getByText('09.09.2026'));
+        await user.click(screen.getByTitle('Nächster Monat'));
+        await user.click(screen.getByRole('button', { name: '1', exact: true }));
+        await user.click(screen.getByRole('button', { name: 'Vorschau anzeigen' }));
+
+        await user.click(screen.getByText('01.10.2026'));
+        await user.click(screen.getByTitle('Nächster Monat'));
+        await user.click(screen.getByRole('button', { name: '1', exact: true }));
+        alteVorschauAufloesen?.(await response({ zeitkonto: STATUS, gueltigVon: '2026-10-01', gespeichert: false, bestehendeAbwesenheiten: 0, hinweis: 'Alte Vorschau', monate: [] }));
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Jetzt übernehmen' })).not.toBeInTheDocument());
+
+        await user.click(screen.getByRole('button', { name: 'Vorschau anzeigen' }));
+        await screen.findByText('Offene Monate werden neu gerechnet.');
+        await user.click(screen.getByRole('button', { name: 'Jetzt übernehmen' }));
+        const saveRequest = requests.find(request => request.url === '/api/zeitverwaltung/zeitkonten/42' && request.init?.method === 'PUT');
+        expect(JSON.parse(String(saveRequest?.init?.body))).toMatchObject({ gueltigVon: '2026-11-01' });
+    });
+
+    it('behält die Arbeitszeit-Vorlage bei einer individuellen Abweichung im Wechsel-Request', async () => {
+        const user = userEvent.setup();
+        renderEditor();
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await user.click(screen.getByRole('button', { name: 'Bearbeiten' }));
+        await user.click(await screen.findByRole('button', { name: 'Arbeitszeit einrichten' }));
+        await user.click(screen.getByText('Vorlage auswählen'));
+        await user.click(await screen.findByRole('option', { name: 'Vollzeit Werkstatt' }));
+        await user.click(screen.getByLabelText('Diese Vorlage für diese Person individuell anpassen'));
+        const stundenFelder = screen.getAllByRole('spinbutton');
+        await user.clear(stundenFelder[0]);
+        await user.type(stundenFelder[0], '7.5');
+        await user.click(screen.getByRole('button', { name: 'Vorschau anzeigen' }));
+        alteVorschauAufloesen?.(await response({ zeitkonto: STATUS, gueltigVon: '2026-09-09', gespeichert: false, bestehendeAbwesenheiten: 0, hinweis: 'Offene Monate werden neu gerechnet.', monate: [] }));
+        await screen.findByText('Offene Monate werden neu gerechnet.');
+        const previewRequest = requests.find(request => request.url.endsWith('/vorschau'));
+        expect(JSON.parse(String(previewRequest?.init?.body))).toMatchObject({
+            vorlageId: 3, expectedVorlageVersion: 2, arbeitszeit: { montagStunden: 7.5 },
+        });
     });
 });

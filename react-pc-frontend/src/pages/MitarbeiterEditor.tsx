@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -129,10 +129,12 @@ export default function MitarbeiterEditor() {
     const [zeitkontoDialogOpen, setZeitkontoDialogOpen] = useState(false);
     const [stichtag, setStichtag] = useState(HEUTE);
     const [vorlageId, setVorlageId] = useState('');
+    const [individuelleAbweichung, setIndividuelleAbweichung] = useState(false);
     const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<Arbeitszeit>(LEERE_ARBEITSZEIT);
     const [wechselVorschau, setWechselVorschau] = useState<ZeitkontoWechselErgebnis | null>(null);
     const [wechselFehler, setWechselFehler] = useState<string | null>(null);
     const [loadingWechsel, setLoadingWechsel] = useState(false);
+    const vorschauRequestId = useRef(0);
 
     // QR-Code States
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -222,6 +224,17 @@ export default function MitarbeiterEditor() {
             ? { ...m, fuehrtZeitkonto: status.fuehrtZeitkonto } : m));
     };
 
+    const arbeitszeitenGleich = (links: Arbeitszeit, rechts: Arbeitszeit) => WOCHENTAGE.every(tag => links[tag.key] === rechts[tag.key])
+        && links.buchungStartZeit === rechts.buchungStartZeit
+        && links.buchungEndeZeit === rechts.buchungEndeZeit;
+
+    const invalidiereVorschau = () => {
+        vorschauRequestId.current += 1;
+        setWechselVorschau(null);
+        setWechselFehler(null);
+        setLoadingWechsel(false);
+    };
+
     useEffect(() => {
         if (isDialogOpen && formData.id) {
             void loadZeitkonto(formData.id);
@@ -237,11 +250,12 @@ export default function MitarbeiterEditor() {
     const oeffneArbeitszeitDialog = () => {
         const aktuelleVersion = zeitkontoStatus?.aktuell;
         const aktuell = aktuelleVersion?.arbeitszeit;
+        const aktuelleVorlage = zeitkontenmodelle.find(modell => modell.id === aktuelleVersion?.vorlageId);
         setStichtag(zeitkontoStatus?.fuehrtZeitkonto === false ? HEUTE : HEUTE);
         setVorlageId(aktuelleVersion?.vorlageId ? String(aktuelleVersion.vorlageId) : aktuell ? 'individuell' : '');
+        setIndividuelleAbweichung(!!aktuell && !!aktuelleVorlage && !arbeitszeitenGleich(aktuell, aktuelleVorlage.arbeitszeit));
         setIndividuelleArbeitszeit(aktuell ?? LEERE_ARBEITSZEIT);
-        setWechselVorschau(null);
-        setWechselFehler(null);
+        invalidiereVorschau();
         setZeitkontoDialogOpen(true);
         setIsDialogOpen(false);
     };
@@ -256,7 +270,7 @@ export default function MitarbeiterEditor() {
             expectedLetzteVersion: zeitkontoStatus.letzteVersion?.version ?? null,
             vorlageId: vorlage?.id ?? null,
             expectedVorlageVersion: vorlage?.version ?? null,
-            arbeitszeit: vorlage ? null : individuelleArbeitszeit,
+            arbeitszeit: vorlage && !individuelleAbweichung ? null : individuelleArbeitszeit,
         };
     };
 
@@ -264,6 +278,7 @@ export default function MitarbeiterEditor() {
         if (!zeitkontoStatus) return;
         const request = wechselRequest();
         if (!request) return;
+        const requestId = ++vorschauRequestId.current;
         setLoadingWechsel(true);
         setWechselFehler(null);
         try {
@@ -271,13 +286,16 @@ export default function MitarbeiterEditor() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
             });
             if (!res.ok) throw new Error(await antwortFehler(res, 'Die Vorschau konnte nicht erstellt werden.'));
-            setWechselVorschau(await res.json());
+            const ergebnis: ZeitkontoWechselErgebnis = await res.json();
+            if (requestId === vorschauRequestId.current) setWechselVorschau(ergebnis);
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Die Vorschau konnte nicht erstellt werden.';
-            setWechselFehler(message);
-            toast.error(message);
+            if (requestId === vorschauRequestId.current) {
+                setWechselFehler(message);
+                toast.error(message);
+            }
         } finally {
-            setLoadingWechsel(false);
+            if (requestId === vorschauRequestId.current) setLoadingWechsel(false);
         }
     };
 
@@ -332,9 +350,7 @@ export default function MitarbeiterEditor() {
         if (!version?.vorlageId) return 'eigene Arbeitszeit';
         const vorlage = zeitkontenmodelle.find(modell => modell.id === version.vorlageId);
         if (!vorlage) return 'Arbeitszeit-Vorlage';
-        const gleich = WOCHENTAGE.every(tag => version.arbeitszeit[tag.key] === vorlage.arbeitszeit[tag.key])
-            && version.arbeitszeit.buchungStartZeit === vorlage.arbeitszeit.buchungStartZeit
-            && version.arbeitszeit.buchungEndeZeit === vorlage.arbeitszeit.buchungEndeZeit;
+        const gleich = arbeitszeitenGleich(version.arbeitszeit, vorlage.arbeitszeit);
         return gleich ? `Vorlage „${vorlage.bezeichnung}“` : `weicht von „${vorlage.bezeichnung}“ ab`;
     };
 
@@ -1426,15 +1442,15 @@ export default function MitarbeiterEditor() {
             <Dialog open={zeitkontoDialogOpen} onOpenChange={offen => {
                 setZeitkontoDialogOpen(offen);
                 if (!offen) {
-                    if (wechselVorschau?.gespeichert) setWechselVorschau(null);
+                    invalidiereVorschau();
                     setIsDialogOpen(true);
                 }
             }}>
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
                     <DialogHeader>
                         <DialogTitle>Arbeitszeit {zeitkontoStatus?.eingerichtet ? 'ändern' : 'einrichten'}</DialogTitle>
                     </DialogHeader>
-                    <div className="space-y-5 py-2">
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-5 py-2">
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                             Der Stichtag entscheidet, ab wann die neue Arbeitszeit gilt. Abgeschlossene Monate bleiben unverändert; offene Monate werden danach neu gerechnet.
                         </div>
@@ -1446,7 +1462,7 @@ export default function MitarbeiterEditor() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-1">
                                 <Label className="text-xs">Gültig ab</Label>
-                                <DatePicker value={stichtag} onChange={setStichtag} disabled={zeitkontoStatus?.fuehrtZeitkonto === false} />
+                                <DatePicker value={stichtag} onChange={value => { setStichtag(value); invalidiereVorschau(); }} disabled={zeitkontoStatus?.fuehrtZeitkonto === false} />
                             </div>
                             <div className="space-y-1">
                                 <Label className="text-xs">Arbeitszeit-Vorlage</Label>
@@ -1458,7 +1474,8 @@ export default function MitarbeiterEditor() {
                                             const vorlage = zeitkontenmodelle.find(m => m.id === Number(value));
                                             if (vorlage) setIndividuelleArbeitszeit(vorlage.arbeitszeit);
                                         }
-                                        setWechselVorschau(null);
+                                        setIndividuelleAbweichung(false);
+                                        invalidiereVorschau();
                                     }}
                                     placeholder="Vorlage auswählen"
                                     options={[
@@ -1468,24 +1485,32 @@ export default function MitarbeiterEditor() {
                                 />
                             </div>
                         </div>
-                        {vorlageId === 'individuell' && (
+                        {vorlageId && vorlageId !== 'individuell' && (
+                            <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 cursor-pointer hover:bg-slate-50">
+                                <input type="checkbox" checked={individuelleAbweichung}
+                                    onChange={e => { setIndividuelleAbweichung(e.target.checked); invalidiereVorschau(); }}
+                                    className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+                                <span className="text-sm text-slate-700">Diese Vorlage für diese Person individuell anpassen</span>
+                            </label>
+                        )}
+                        {(vorlageId === 'individuell' || individuelleAbweichung) && (
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
                                 <div>
-                                    <p className="text-sm font-medium text-slate-800">Eigene Arbeitszeit</p>
-                                    <p className="text-xs text-slate-500 mt-1">Diese Werte weichen von einer Vorlage ab und werden als persönlicher Zeitabschnitt gespeichert.</p>
+                                    <p className="text-sm font-medium text-slate-800">{individuelleAbweichung ? 'Individuelle Abweichung' : 'Eigene Arbeitszeit'}</p>
+                                    <p className="text-xs text-slate-500 mt-1">{individuelleAbweichung ? 'Die ausgewählte Vorlage bleibt als Herkunft erhalten. Diese Person erhält dafür eigene Werte.' : 'Diese Werte werden als persönlicher Zeitabschnitt gespeichert.'}</p>
                                 </div>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                     {WOCHENTAGE.map(tag => (
                                         <div key={tag.key} className="space-y-1">
                                             <Label className="text-xs">{tag.label}</Label>
                                             <Input type="number" min="0" max="24" step="0.25" value={individuelleArbeitszeit[tag.key]}
-                                                onChange={e => setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, [tag.key]: Number(e.target.value) })} />
+                                                onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, [tag.key]: Number(e.target.value) }); invalidiereVorschau(); }} />
                                         </div>
                                     ))}
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className="space-y-1"><Label className="text-xs">Früheste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungStartZeit ?? ''} onChange={e => setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungStartZeit: e.target.value || null })} /></div>
-                                    <div className="space-y-1"><Label className="text-xs">Späteste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungEndeZeit ?? ''} onChange={e => setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungEndeZeit: e.target.value || null })} /></div>
+                                    <div className="space-y-1"><Label className="text-xs">Früheste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungStartZeit ?? ''} onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungStartZeit: e.target.value || null }); invalidiereVorschau(); }} /></div>
+                                    <div className="space-y-1"><Label className="text-xs">Späteste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungEndeZeit ?? ''} onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungEndeZeit: e.target.value || null }); invalidiereVorschau(); }} /></div>
                                 </div>
                             </div>
                         )}
@@ -1513,7 +1538,7 @@ export default function MitarbeiterEditor() {
                             </div>
                         )}
                     </div>
-                    <DialogFooter className="border-t pt-4">
+                    <DialogFooter className="shrink-0 border-t pt-4">
                         <Button variant="outline" onClick={() => setZeitkontoDialogOpen(false)}>Abbrechen</Button>
                         {!wechselVorschau?.gespeichert && (
                             <Button type="button" variant="outline" onClick={ladeVorschau} disabled={loadingWechsel || !vorlageId} className="border-rose-300 text-rose-700 hover:bg-rose-50">
