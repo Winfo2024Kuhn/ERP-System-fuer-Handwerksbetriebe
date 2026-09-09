@@ -298,3 +298,24 @@ Bedenken / Abweichungen vom Plan:
 
 - Task 9: TerminKalender, ZeiterfassungKalender und Steuerberater-Auswahl auf eigene Bausteine umgestellt. Zehn gezielte Unit-Tests und drei Browserfälle in allen Desktopgrößen grün; fünf Zustände je Größe visuell geprüft. Zeitentwürfe werden vor Requests vollständig validiert; unveränderte Sekunden bleiben erhalten; optionales leeres Ende wird korrekt übertragen. Termin-Dialog scrollt ohne verdeckte Eingaben. Gestapelter Stornodialog sperrt seinen Hintergrund; für diesen Zustand gezielte Geometrie-/Erreichbarkeitsprüfung statt des Hintergrundelemente mitzuzählenden globalen Überlappungshelpers.
 - Nutzer hat Auslagern und Wiederverwenden ausdrücklich dauerhaft freigegeben. AGENTS.md ersetzt die frühere erneute Rückfragepflicht für dieses Refactoring. Der lokale Design-Skill hält Wiederverwendung, eigene Meldungen und Dialoge, Zahlenverhalten, Kommaformat, Pflichtvalidierung, erreichbare Aktionen und Prüfung geöffneter Zustände fest. Der bereits unversionierte Design-Skill-Ordner wird nicht pauschal als neue Fremddateisammlung gestaged.
+
+## Abschnitt 3 — Task 9 (Coding-Agent)
+
+Zeit: 2026-09-09T17:25:33.732839+00:00
+Branch: codex/systemeingaben-task-9
+Commit(s): bff11148
+Status: fertig
+
+Was gemacht wurde:
+- Alle 13 PC-Zeit-/Personalformulare verwenden die bestehenden DecimalInput-, TimeInput-, DatePicker-, Select- und ColorInput-Bausteine; deutsche String-Entwürfe, Null bei Klick/Tab leer, vollständige Pflicht-/Grenzvalidierung vor Vorschau und Speicherung. Kennnummern bleiben Ziffernfolgen.
+- Arbeitszeit-Vorschau bleibt versioniert; deutsche Stundenwerte werden numerisch übertragen. Rechner erhält ungültige Entwürfe auch bei zugeklappten Tabellen. Formeln unverändert.
+- Korrekturstorno als Pflichtgrunddialog mit Fokus und inertem Hintergrund; Netzwerk-/HTTP-Fehler als systemeigene Toasts. Optionales Kalender-Ende aus Leerzeichen wird null, unveränderte Bestandssekunden bleiben erhalten (Root-Mitarbeit).
+- Browserbefunde korrigiert: Termininhalt scrollt getrennt von Footer; Rechner-Schließen liegt neben der Primäraktion außerhalb des Toastbereichs. Click-trial belegte Fehler zuerst rot, danach grün.
+- 59 gezielte Tests in 14 Dateien grün (/tmp/task9-complete-unit.log); nach stabilisierten Mitarbeiter-Ladecallbacks dort nochmals 4/4 grün. Build erfolgreich, ESLint 0 Fehler und nur 3 vorbestehende fremde Warnungen (/tmp/task9-callback-*.log).
+- Eigene Browser-Spec 9/9 grün auf Port 5189, alle drei PC-Größen; Root-Kalenderspec zusätzlich 3/3 grün auf Port 5190. Dummy-APIs und Fremdnetzblockade; Screenshots unter /tmp/task9-e2e-artifacts und /tmp/task9-root-e2e-artifacts, angesehen.
+- ERP-Code-Reviewer nach Korrekturen grün ohne offene Befunde. Staged-Diff geprüft; ausschließlich 29 Source-/Testdateien committed, keine generierten Static-Dateien. Keine eigenen Dienste übrig; Vite/Playwright von 5189 beendet.
+
+Bedenken / Abweichungen vom Plan:
+- Zusätzlich bestehender Fachtest pages/ZeiterfassungZeitkontenTask9b.test.tsx nach Meldung an Root lediglich auf Textbox-Locators migriert; Versions-/Payloadassertions erhalten. Root bearbeitete disjunkt die drei Kalender-/Steuerberaterdateien plus dazugehörige Tests im gleichen Worktree.
+- Parallel laufende Playwright-Specs leerten zunächst den gemeinsamen test-results-Ordner; anschließend getrennte /tmp-Ausgabeordner und eigene Spec wiederholt, damit Screenshotbelege erhalten bleiben.
+- Kein Graphupdate und keine Gesamtsuite entsprechend Taskvertrag; keine Auslagerung erforderlich, gemeinsame Bausteine konsequent wiederverwendet.
