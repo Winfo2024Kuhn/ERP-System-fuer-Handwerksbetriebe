@@ -77,6 +77,13 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   - `<DetailLayout>` → `src/components/DetailLayout.tsx`
 - **Sicherheit:** Kein `dangerouslySetInnerHTML` ohne Sanitizing.
 
+### Zahlenfelder (dauerhafte Nutzervorgabe vom 09.09.2026)
+- **Deutsch formatieren:** Dezimalzahlen mit Komma eingeben und anzeigen (z. B. `12,5`); für formatierte Anzeigen `de-DE` verwenden. DATEV-Dateien folgen zusätzlich ihrer Formatspezifikation.
+- **0 bei Fokus leeren:** Eine 0 darf im unberührten Mengen-/Dezimalfeld angezeigt werden. Sobald das Feld per Klick oder Tab den Fokus erhält, einen vorhandenen Nullwert (auch `0,00`) leeren, damit direkt neu getippt werden kann. Andere Werte nicht löschen; Kennnummern sind davon ausgenommen. Eingabewerte während des Bearbeitens als Text halten. Leere Zwischenstände und ein noch unvollständiges Dezimalkomma zulassen; nicht bei jedem Tastendruck mit `Number(value) || 0` wieder eine 0 einsetzen.
+- **Zahlpflicht bei Übernahme:** Pflichtfelder beim Speichern/Bestätigen auf eine vollständige, gültige Zahl und fachliche Grenzen prüfen. Leer ist nicht automatisch 0. Ungültige Eingaben mit konkreter deutscher Fehlermeldung anzeigen und nicht speichern; serverseitig ebenfalls validieren.
+- **Kennnummern sind keine Mengen:** Personalnummern, Lohnarten und ähnliche Ziffernfolgen als Text behandeln, führende Nullen erhalten, nur erlaubte Ziffern/Längen akzeptieren; kein Dezimalkomma oder Tausenderformat dafür.
+- **Prüfung:** Bei geänderten Zahlenfeldern `0 anzeigen → Fokus per Klick/Tab → leeres Feld → neuen Wert eingeben`, unveränderte Nichtnullwerte, Kommawerte, leere Pflichtfelder und ungültige Eingaben im passenden UI-Test abdecken.
+
 ---
 
 ## 🚀 Build & Run (Quickstart)
