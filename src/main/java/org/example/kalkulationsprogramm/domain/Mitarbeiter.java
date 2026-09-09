@@ -58,6 +58,13 @@ public class Mitarbeiter {
     @Column(nullable = false)
     private Boolean aktiv = true;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private MitarbeiterArt art = MitarbeiterArt.MENSCH;
+
+    @Column(nullable = false)
+    private Boolean fuehrtZeitkonto = true;
+
     @Column(precision = 10, scale = 2)
     private BigDecimal stundenlohn;
 
