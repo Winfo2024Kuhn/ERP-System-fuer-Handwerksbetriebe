@@ -33,3 +33,24 @@ Backend/SQL/Migrationen sind gegenüber dem bereits abgenommenen Abschnitt 2 unv
 - Deutsche Texteingaben werden vollständig validiert, bevor Zahlen an APIs gehen. Leere Pflichtfelder bleiben ungültig, Kommazwischenstände werden nicht still zur Null. Bestehende unveränderte Buchungssekunden bleiben erhalten; optional leeres Ende ergibt null. Mehrere geänderte Buchungen werden vor dem ersten Schreibrequest auf Eingabefehler geprüft.
 - Mobile UI-Bausteine kapseln Zahlen, Auswahl, Meldungen und Bestätigungen. Bestätigungen behandeln Abbruch/Unmount/konkurrierende Aufrufe; temporäre Ereignislistener und Toasttimer werden aufgeräumt. React-Ausgabe bleibt escaped, neue API-Adapter enthalten keine dynamischen fremden Hosts oder Geheimnisse. Keine neuen personenbezogenen Diagnose-Logs gefunden.
 - Nicht vollständig migrierte andere Seiten und noch fehlende DATEV-Bedienoberfläche sind explizite Folgetasks 6 und 10–14; kein Abschnittsregressionsbefund. Tatsächlicher DATEV-Import bleibt außerhalb der verfügbaren Verifikation.
+
+## Nachprüfung der ersten gebündelten Korrektur
+
+Geprüft nach Merge des korrigierten Featurebranches in eigenen Reviewstand `da865317`: 41d97bc9 (Arbeitszeit-Wiederverwendung/Testrobustheit), fb65a7d3 (Testmigration/Netzhelper), 5e267a35 (gemeinsamer Dialogfokus) und 322e965e (Auswahlfeld-Akzentfarben).
+
+**Code-Ampel nach Korrektur: 🟢 – keine offenen Codebefunde.** Die unabhängige Designabnahme bleibt erforderlich.
+
+- `features/zeitkonto/arbeitszeitInput.ts` und `ArbeitszeitFelder.tsx` kapseln nun gemeinsam Wochentage, Entwurfskonvertierung, Pflicht-/Grenzvalidierung und Zeitfenster. Beide Editoren nutzen sie tatsächlich; Vorlagenwahl, individuelle Abweichung, Versionsdaten und Invalidierung laufender Vorschauen bleiben bei den Konsumenten erhalten. Unterschiedliche Beschriftungen ändern keine Fachregeln.
+- Der 500er-Test behält sämtliche Fachassertions bei. Beschriftungsbasierte Abfragen und auf den Header begrenzte Rollensuche reduzieren DOM-Scanning; kein erhöhter Timeout und kein verringerter Auswahlumfang.
+- Der zentrale Dialog berücksichtigt den obersten sichtbaren Modalzustand, verschachtelte Dialogtiefe und über aria-controls zugehörige Pickerportale. Tab/Shift-Tab, Escape, Fokusabwehr außerhalb, Rückgabe an den Öffner und Listener-Cleanup sind gezielt geprüft. Externe darüberliegende Bestätigungen behalten den Fokus. Geschlossene/abgebaute Portale und entfernte Öffner werden vor verzögerter Fokusrückgabe geprüft.
+- Eigene zusätzliche temporäre Tests unter React.StrictMode prüfen sowohl initial geöffneten Dialog als auch Öffnung per Button, jeweils autoFocus und Microtask-Cleanup/Fokusrückgabe nach Unmount. Beide bestanden. Prüfquelle zur Nachvollziehbarkeit: `/tmp/review3-dialog-strictmode-probe.test.tsx`; kein zusätzlicher Produkt- oder Testcode im Commit.
+- Zentrale Checkbox-/Radiofarben beider Apps ändern nur Styling. E2E-Testmigrationen und Fremdhost-Sperre sind statisch geprüft; Browserausführung bleibt beim Designreview.
+
+| Eigene Nachprüfung | Ergebnis | Log |
+| --- | --- | --- |
+| Dialog, Datum/Select/Zahl/Uhrzeit, gemeinsame Arbeitszeitfelder/-validierung, beide Editoren, Monatsabschluss | 91/91 Tests in 11 Dateien bestanden | `/tmp/review3-correction-tests.log` |
+| Zusätzliche StrictMode-Proben | 2/2 bestanden | `/tmp/review3-dialog-strictmode.log` |
+| PC vollständiger Lint | Exit 0 | `/tmp/review3-correction-lint.log` |
+| PC Produktionsbuild | Exit 0 | `/tmp/review3-correction-build.log` |
+
+Keine identische Wiederholung der vorher vollständig belegten Suiten; gezielte Nachprüfung entsprechend Korrekturumfang. Mobile betrifft in dieser Korrektur nur CSS und E2E-Hilfen, keine Anwendungslogik. Eigene Buildartefakte wieder entfernt/zurückgenommen.
