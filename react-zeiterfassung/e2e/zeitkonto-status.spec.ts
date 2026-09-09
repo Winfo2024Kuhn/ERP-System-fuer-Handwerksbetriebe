@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './hilfen/test'
 
 const configuredStatus = { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null }
 
@@ -7,9 +7,8 @@ async function vorbereiten(page: import('@playwright/test').Page, status = confi
         localStorage.setItem('zeiterfassung_token', 'test-token')
         localStorage.setItem('zeiterfassung_mitarbeiter', JSON.stringify({ id: 1, name: 'Max Mustermann' }))
     })
-    await page.route('**/*', route => {
+    await page.route('**/api/**', route => {
         const url = route.request().url()
-        if (!url.includes('127.0.0.1') && !url.includes('localhost')) return route.abort()
         if (url.includes('/api/zeiterfassung/buchungszeitfenster/')) return route.fulfill({ json: status })
         if (url.includes('/api/zeiterfassung/aktiv/')) return route.fulfill({ json: { aktiv: false } })
         if (url.includes('/api/zeiterfassung/heute/')) return route.fulfill({ json: { stunden: 0, minuten: 0 } })

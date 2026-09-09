@@ -38,7 +38,8 @@ test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async 
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
     await page.getByText('3', { exact: true }).click({ button: 'right' });
     await page.getByText('Zeitkonto-Korrektur', { exact: true }).click();
-    await page.getByTitle('Stornieren', { exact: true }).click();
+    const stornoOeffner = page.getByTitle('Stornieren', { exact: true });
+    await stornoOeffner.click();
     const storno = page.getByRole('dialog', { name: 'Korrektur stornieren' });
     await storno.getByRole('button', { name: 'Stornierung bestätigen' }).click();
     await expect(storno.getByRole('alert')).toBeVisible();
@@ -53,7 +54,14 @@ test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async 
     for (const button of await storno.getByRole('button').all()) await expect(button).toBeInViewport();
     await uebergaengeAusklingenLassen(page);
     await page.screenshot({ path: info.outputPath('stornogrund-offen.png') });
+    const grund = storno.getByRole('textbox', { name: 'Stornierungsgrund' });
+    const schliessen = storno.getByRole('button').last();
+    await grund.focus(); await grund.press('Shift+Tab'); await expect(schliessen).toBeFocused();
+    await schliessen.press('Tab'); await expect(grund).toBeFocused();
     await storno.getByRole('button', { name: 'Abbrechen', exact: true }).click();
+    await expect(stornoOeffner).toBeFocused();
+    await stornoOeffner.click(); await grund.press('Escape');
+    await expect(storno).toBeHidden(); await expect(stornoOeffner).toBeFocused();
     expect(writes.filter(w => w.path.startsWith('/api/zeitkonto/korrekturen/'))).toHaveLength(0);
     await page.goto('/steuerberater');
     const monat = page.getByRole('combobox', { name: 'Monat', exact: true });
