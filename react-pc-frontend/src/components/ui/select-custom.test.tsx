@@ -74,3 +74,20 @@ describe('Select', () => {
         expect(screen.getByText('Bitte wählen...')).toBeInTheDocument();
     });
 });
+
+describe('Select Tastatur und Pflichtwert', () => {
+    it('ist beschriftet, überspringt gesperrte Optionen und schließt mit Escape', async () => {
+        const user = userEvent.setup(); const changed = vi.fn();
+        render(<Select aria-label="Abteilung" options={[{value:'a',label:'A',disabled:true},{value:'b',label:'B'},{value:'c',label:'C'}]} value="" onChange={changed} />);
+        await user.tab(); expect(screen.getByRole('combobox')).toHaveFocus();
+        await user.keyboard('{ArrowDown}{Enter}'); expect(changed).toHaveBeenCalledWith('b');
+        await user.keyboard('{ArrowDown}{Escape}'); expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+        expect(screen.getByRole('combobox')).toHaveFocus();
+    });
+    it('blockiert ein Formular ohne Pflichtauswahl mit eigener Fehlermeldung', async () => {
+        const user = userEvent.setup(); const submit = vi.fn(e => e.preventDefault());
+        render(<form onSubmit={submit}><Select aria-label="Abteilung" required options={defaultOptions} value="" onChange={vi.fn()} /><button>Speichern</button></form>);
+        await user.click(screen.getByText('Speichern')); expect(submit).not.toHaveBeenCalled();
+        expect(screen.getByRole('alert')).toHaveTextContent('Abteilung');
+    });
+});

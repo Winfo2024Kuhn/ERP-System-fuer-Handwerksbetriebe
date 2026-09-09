@@ -92,3 +92,22 @@ describe('DatePicker', () => {
         expect(screen.getByText('Datum wählen')).toBeInTheDocument();
     });
 });
+
+describe('DatePicker zugängliche Grenzen', () => {
+    it('öffnet per Tastatur und fokussiert den gewählten Tag, Escape stellt Fokus wieder her', async () => {
+        const user = userEvent.setup();
+        render(<DatePicker aria-label="Gültig ab" value="2026-03-10" onChange={vi.fn()} />);
+        await user.tab(); await user.keyboard('{Enter}');
+        expect(screen.getByRole('button', { name: '10.03.2026' })).toHaveFocus();
+        await user.keyboard('{Escape}'); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Gültig ab' })).toHaveFocus();
+    });
+    it('sperrt Tage und Heute außerhalb der Grenzen', async () => {
+        const user = userEvent.setup();
+        render(<DatePicker value="2026-03-10" min="2026-03-10" max="2026-03-12" onChange={vi.fn()} />);
+        await user.click(screen.getByText('10.03.2026'));
+        expect(screen.getByRole('button', { name: '09.03.2026' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: '13.03.2026' })).toBeDisabled();
+        expect(screen.getByText('Heute')).toBeDisabled();
+    });
+});
