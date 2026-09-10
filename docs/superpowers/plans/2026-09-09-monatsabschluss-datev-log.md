@@ -487,3 +487,25 @@ Was gemacht wurde:
 
 Bedenken / Abweichungen vom Plan:
 - Orchestrator hat Backend-DTO, Übersichtsservice und passende Tests sowie zusätzliche Übersichtsfixtures ausdrücklich freigegeben. Keine offenen Befunde aus dieser begrenzten Vorprüfung; unabhängiger Gesamtreview folgt.
+
+## Abschnitt 4 — Orchestrator übernimmt (neue Session)
+
+Zeit: 2026-09-10
+Branch: claude/monatsabschluss-datev-final (von codex/monatsabschluss-datev, HEAD f22e815b)
+Commit(s): 4fc097b9, 87c8f32e, d8701b55
+Status: Konsolidierung fertig, Abschnitt-4-Reviews und Abschnitt C laufen
+
+Was gemacht wurde:
+- Offener Task-10-Stand aus `.Codex/worktrees/systemeingaben-task-10` war nie committet. Übernommen und als 4fc097b9 committet: Kassen-/Beleg-/Rechnungs-/Mietformulare auf gemeinsame Bausteine, gemeinsame numberDrafts/moneyDrafts, zentrale PC-Meldungsfläche (`--pc-toast-height`) in toast.tsx/dialog.tsx/MainLayout/index.css. Damit ist der gemeldete 14-Zoll-Sperrbefund (gestapelte Toasts verdecken Eingaben) im Code adressiert; die Browserabnahme läuft im Designreview.
+- Gesamtläufe auf dem konsolidierten Stand: Backend 2804 Tests, 0 Failures, 4 Errors — alle vier ausschließlich `AuditChainRepairIntegrationTest`/`AuditHashRoundtripDiagnoseTest` mit `@ActiveProfiles("local")` gegen MySQL 3307; `application-local.properties` existiert hier nicht, also umgebungsbedingt und unabhängig vom Feature (zuletzt von main-Commit 813c0523 berührt). Mobile 216/216, Lint und Build grün.
+- PC-Vitest war auf dem übernommenen Stand rot: 4 Fehler in 3 Dateien. Ursachen einzeln gegen f22e815b geprüft, statt sie pauschal als Testschwäche abzutun.
+  - `StufenplanTabelle`: echte Regression aus dem neuen Toast — Fehler-Toasts tragen jetzt bewusst `role="alert"`, damit sind es zwei Treffer. Produktverhalten behalten, Test prüft gezielt den Inline-Fehler außerhalb `[data-pc-toasts]`.
+  - `StundensatzEditModal`: **echter Produktfehler**. Der gemeinsame Dialog fokussiert beim Öffnen das erste Feld, der gespeicherte Wert kommt erst danach an — das `focus`-Event ist dann vorbei und die 0 blieb stehen; getippte Ziffern hingen sich hinten an ("08,5"). Genau die Nutzervorgabe war damit in jedem so gebauten Dialog verletzt. Zentral in `DecimalInput` behoben: eine von außen nachgereichte Null wird auch im bereits fokussierten Feld geleert, eine selbst getippte 0 (Anfang von "0,5") bleibt. Zusätzlich hörte der Modal-Effekt auf das ganze `arbeitsgang`-Objekt und setzte den Entwurf bei jedem Render zurück.
+  - `MitarbeiterEditor.task8`: datumsabhängiger Test gegen die eingefrorene Modulkonstante `HEUTE`. Neue gemeinsame `lib/datum.ts` (`heuteIso`/`isoDatum`, lokale Zeit statt UTC) ersetzt sie; der Test pinnt die Uhr, ohne die Timer zu fälschen.
+- Danach PC 1307/1307 grün, ESLint 0 Fehler, Build grün.
+- Rest-Audit der nativen Bedienelemente: Mobile vollständig sauber (0 Treffer). PC noch 7 native `<select>`, 51 `type=number/date/time/color` und 5 `alert/confirm/prompt` — das ist exakt Abschnitt C (Tasks 12/13/14) des Zusatzplans. Drei Coding-Agenten dafür parallel gestartet, dateidisjunkt zu Abschnitt 4.
+- Abschnitt-4-Reviews (Code und Design) laufen unabhängig auf `claude/monatsabschluss-datev-final` @ 87c8f32e.
+
+Bedenken / Abweichungen vom Plan:
+- Feature-Branch heißt jetzt `claude/monatsabschluss-datev-final`, weil `codex/monatsabschluss-datev` im Haupt-Checkout ausgecheckt ist und aus einem Worktree nicht fortgeschrieben werden kann. Inhalt identisch plus die obigen Commits.
+- Der DATEV-Export ist gegen die offizielle Formatbeschreibung und einen Byte-Golden-Test geprüft. Ein tatsächlicher Import in einer DATEV-Installation hat nicht stattgefunden und wird nicht behauptet.
