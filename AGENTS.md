@@ -83,7 +83,9 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 - **0 bei Fokus leeren:** Eine 0 darf im unberührten Mengen-/Dezimalfeld angezeigt werden. Sobald das Feld per Klick oder Tab den Fokus erhält, einen vorhandenen Nullwert (auch `0,00`) leeren, damit direkt neu getippt werden kann. Andere Werte nicht löschen; Kennnummern sind davon ausgenommen. Eingabewerte während des Bearbeitens als Text halten. Leere Zwischenstände und ein noch unvollständiges Dezimalkomma zulassen; nicht bei jedem Tastendruck mit `Number(value) || 0` wieder eine 0 einsetzen.
 - **Zahlpflicht bei Übernahme:** Pflichtfelder beim Speichern/Bestätigen auf eine vollständige, gültige Zahl und fachliche Grenzen prüfen. Leer ist nicht automatisch 0. Ungültige Eingaben mit konkreter deutscher Fehlermeldung anzeigen und nicht speichern; serverseitig ebenfalls validieren.
 - **Kennnummern sind keine Mengen:** Personalnummern, Lohnarten und ähnliche Ziffernfolgen als Text behandeln, führende Nullen erhalten, nur erlaubte Ziffern/Längen akzeptieren; kein Dezimalkomma oder Tausenderformat dafür.
-- **Prüfung:** Bei geänderten Zahlenfeldern `0 anzeigen → Fokus per Klick/Tab → leeres Feld → neuen Wert eingeben`, unveränderte Nichtnullwerte, Kommawerte, leere Pflichtfelder und ungültige Eingaben im passenden UI-Test abdecken.
+### End-to-End-Tests (dauerhafte Nutzervorgabe vom 10.09.2026)
+- **Immer wenn End-to-End-Tests fehlen:** Für jedes neue Feature, jeden neuen Benutzer-Workflow, jede neue Seite oder signifikante Verhaltensänderung (Desktop in `react-pc-frontend/e2e/` und Mobile in `react-zeiterfassung/e2e/`) MÜSSEN vollständige Playwright End-to-End-Tests geschrieben bzw. ergänzt werden.
+- Vor dem Commit immer die E2E-Tests ausführen (`npm run test:e2e`).
 
 ---
 
@@ -98,6 +100,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run build     # Produktions-Build
   npm run lint      # Linter
   npm test          # Vitest Testsuite
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 - **Frontend Zeiterfassung (Mobile):**
   ```bash
@@ -105,6 +108,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run dev
   npm run build
   npm test
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 
 ---
@@ -113,12 +117,16 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 Am Ende jeder Aufgabe:
 1. Tests ausführen:
    - Backend: `./mvnw test`
-   - Frontend: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend Unit: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend E2E: `npm run test:e2e` im jeweiligen Frontend-Ordner
 2. Builds prüfen:
    - `npm run build` in betroffenen Frontend-Verzeichnissen
-3. Diff prüfen:
+3. Sub-Agent Code-Review:
+   - Ein Sub-Agent mit leerem Kontextfenster (`erp-code-reviewer`) prüft die Änderungen und liefert eine Ampel-Bewertung (🟢/🟡/🔴).
+4. Diff prüfen:
    - `git status` und `git diff` prüfen.
    - Nur Dateien stagen, die für diese Aufgabe geändert wurden (keine Fremdänderungen).
    - `git diff --staged` auf versehentlich committete Secrets oder Logs prüfen.
-4. Graphify synchronisieren:
+5. Graphify synchronisieren:
    - `./graphify update .`
+

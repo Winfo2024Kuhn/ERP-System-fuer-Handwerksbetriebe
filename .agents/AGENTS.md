@@ -74,10 +74,14 @@ Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht
 **Hinweis:** Der Hook ersetzt nicht das tatsächliche Verständnis. Lies das Doc wirklich (nicht nur die ersten 5 Zeilen, um das Flag zu setzen) – die Regeln darin (rose-/slate-Farben, Pflicht-Komponenten, Constructor Injection, Flyway-Versionierung, Named-Params, DSGVO-Dummy-Daten) werden im Reviewer-Subagent gegengeprüft und blocken den Commit, wenn sie verletzt sind.
 
 ## 🚀 Build & Run (Quickstart)
-- Backend: `./mvnw spring-boot:run` (Port 8080)
-- Frontend PC: `cd react-pc-frontend && npm run dev`
-- Frontend Mobile: `cd react-zeiterfassung && npm run dev`
+- Backend starten: `./mvnw spring-boot:run` (Port 8080)
+- Backend testen: `./mvnw test`
+- Frontend PC: `cd react-pc-frontend && npm run dev` (Unit: `npm test`, E2E: `npm run test:e2e`)
+- Frontend Mobile: `cd react-zeiterfassung && npm run dev` (Unit: `npm test`, E2E: `npm run test:e2e`)
 
+### 🧪 End-to-End-Tests (dauerhafte Nutzervorgabe vom 10.09.2026)
+- **Immer wenn End-to-End-Tests fehlen:** Für jedes neue Feature, jeden neuen Benutzer-Workflow, jede neue Seite oder signifikante Verhaltensänderung (Desktop in `react-pc-frontend/e2e/` und Mobile in `react-zeiterfassung/e2e/`) MÜSSEN vollständige Playwright End-to-End-Tests geschrieben bzw. ergänzt werden.
+- Vor dem Commit immer die E2E-Tests ausführen (`npm run test:e2e`).
 
 3. **Sprache und Wording in der UI:**
    Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
@@ -86,7 +90,7 @@ Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht
    Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
    `.claude\commands\review-and-ship.md`.
 
-   **Aufgabenteilung im Skill:** Der `erp-code-reviewer`-Subagent prüft Code-Quality, Architektur, Security, DSGVO und Secrets parallel zur Build-Phase und liefert einen strukturierten Befund-Report mit Ampel. Du als Hauptagent kümmerst dich um Build, Tests und Coverage und arbeitest anschließend die Reviewer-Findings ein, bis die Ampel 🟢 ist – erst dann Commit & Push. Details zur Phasenfolge stehen im Skill selbst.
+   **Aufgabenteilung im Skill:** Der `erp-code-reviewer`-Subagent (mit frischem/leerem Kontextfenster) prüft Code-Quality, Architektur, E2E-Tests, Security, DSGVO und Secrets parallel zur Build-Phase und liefert einen strukturierten Befund-Report mit Ampel. Du als Hauptagent kümmerst dich um Build, Tests und Coverage und arbeitest anschließend die Reviewer-Findings ein, bis die Ampel 🟢 ist – erst dann Commit & Push. Details zur Phasenfolge stehen im Skill selbst.
 
 ## graphify
 
