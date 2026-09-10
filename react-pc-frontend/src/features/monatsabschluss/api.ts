@@ -24,6 +24,7 @@ export const api = {
     ladeUebersicht: (filter: Filter, signal?: AbortSignal) => json<Uebersicht>(`${basis}/uebersicht?${parameter(filter)}`, { signal }),
     ladeVergleich: (filter: Filter, signal?: AbortSignal) => json<Vergleichsmonat[]>(`${basis}/vergleich?${parameter(filter, true)}`, { signal }),
     sammelabschluss: (auswahl: Referenz[]) => json<SammelResponse>(`${basis}/sammelabschluss`, schreiben('POST', { auswahl })),
+    oeffnen: (referenz: Referenz) => json<unknown>(`${basis}/${referenz.mitarbeiterId}/${referenz.jahr}/${referenz.monat}/oeffnen`, schreiben('POST', {})),
     ladeVerlauf: (referenz: Referenz, signal?: AbortSignal) => json<Verlauf>(`${basis}/${referenz.mitarbeiterId}/${referenz.jahr}/${referenz.monat}`, { signal }),
     ladeDatevKonfiguration: () => json<Konfiguration>(`${basis}/datev/konfiguration`),
     speichereDatevKonfiguration: (config: Konfiguration) => json<Konfiguration>(`${basis}/datev/konfiguration`, schreiben('PUT', config)),

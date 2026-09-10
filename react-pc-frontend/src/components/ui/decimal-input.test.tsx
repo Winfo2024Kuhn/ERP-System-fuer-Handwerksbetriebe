@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
 import { DecimalInput } from './decimal-input';
@@ -41,7 +41,7 @@ describe('DecimalInput', () => {
         const field = screen.getByRole('textbox', { name: 'Stunden' });
         expect(field).toHaveFocus();
         await screen.findByText('geladen');
-        expect(field).toHaveValue('');
+        await waitFor(() => expect(field).toHaveValue(''));
 
         // Eine selbst getippte 0 ist der Anfang von "0,5" und darf nicht verschwinden.
         await user.type(field, '0,5');

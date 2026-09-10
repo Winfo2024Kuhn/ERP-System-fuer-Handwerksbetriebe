@@ -418,6 +418,15 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                         </p>
                                     </div>
                                 </div>
+                                {saldo.gesamt.saldo > 0 && (
+                                    <button
+                                        onClick={() => navigate('/urlaub?typ=ZEITAUSGLEICH')}
+                                        className="mt-3 w-full py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
+                                    >
+                                        <Clock className="w-4 h-4 text-rose-600" />
+                                        Zeitausgleich beantragen
+                                    </button>
+                                )}
                             </div>
                         </section>
 

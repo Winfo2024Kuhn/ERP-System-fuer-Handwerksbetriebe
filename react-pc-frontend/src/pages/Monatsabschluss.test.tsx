@@ -10,7 +10,7 @@ const kennzahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 1
 let allowed: boolean;
 let calls: string[];
 let submitted: { mitarbeiterId: number; jahr: number; monat: number }[][];
-function mount() { return render(<MemoryRouter><Monatsabschluss /></MemoryRouter>); }
+function mount(url = '/monatsabschluss') { return render(<MemoryRouter initialEntries={[url]}><Monatsabschluss /></MemoryRouter>); }
 async function choose(label: string, option: string) { fireEvent.click(screen.getByRole('combobox', { name: label })); fireEvent.click(await screen.findByRole('option', { name: option, exact: true })); }
 beforeEach(() => {
  vi.clearAllMocks(); allowed = true; calls = []; submitted = []; confirm.mockResolvedValue(true);
@@ -75,4 +75,31 @@ it('sperrt DATEV für offene Version 3 bei Einzel- und seitenübergreifender Aus
  expect(screen.getByText('500 ausgewählt')).toBeVisible();
  expect(screen.getByRole('button', { name: 'Für DATEV exportieren' })).toBeDisabled();
  expect(calls.some(c => c.includes('/datev/'))).toBe(false);
+});
+
+it('öffnet einen abgeschlossenen Monat wieder nach Bestätigung', async () => {
+  fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
+    calls.push(input);
+    const url = new URL(input, 'http://localhost');
+    if (input.endsWith('/berechtigung')) return new Response(JSON.stringify({ darfMonatAbschliessen: true }));
+    if (input === '/api/mitarbeiter') return new Response(JSON.stringify([{ id: 1, vorname: 'Max', nachname: 'Mustermann' }]));
+    if (input.endsWith('/abteilungen')) return new Response(JSON.stringify([{ id: 2, name: 'Werkstatt' }]));
+    if (url.pathname.endsWith('/uebersicht')) {
+      return new Response(JSON.stringify({
+        items: [{ referenz: { mitarbeiterId: 1, jahr: 2026, monat: 1 }, mitarbeiterName: 'Max Mustermann 1', abteilungIds: [2], festgeschrieben: true, version: 3, festgeschriebenAm: '2026-02-01T10:00:00', kennzahlen }],
+        totalElements: 1, page: 0, size: 50, summen: kennzahlen, auswahl: []
+      }));
+    }
+    if (url.pathname.endsWith('/vergleich')) return new Response(JSON.stringify([]));
+    if (input.endsWith('/oeffnen') && init?.method === 'POST') {
+      return new Response(JSON.stringify({ mitarbeiterId: 1, jahr: 2026, monat: 1, festgeschrieben: false }));
+    }
+    return new Response(JSON.stringify([]));
+  });
+  mount('/monatsabschluss?jahr=2026&monat=1&mitarbeiterId=1');
+  const oeffnenBtn = await screen.findByRole('button', { name: 'Monat für Max Mustermann 1 wieder öffnen' });
+  fireEvent.click(oeffnenBtn);
+  expect(confirm).toHaveBeenCalled();
+  await waitFor(() => expect(calls.some(c => c.endsWith('/monatsabschluesse/1/2026/1/oeffnen'))).toBe(true));
+  expect(toast.success).toHaveBeenCalledWith('Monat für Max Mustermann 1 wieder geöffnet.');
 });

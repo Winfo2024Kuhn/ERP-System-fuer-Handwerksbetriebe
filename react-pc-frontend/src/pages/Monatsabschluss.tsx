@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Calendar, ChevronLeft, ChevronRight, FileCheck, History, RefreshCw } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Calendar, ChevronLeft, ChevronRight, FileCheck, History, LockOpen, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { useToast } from '../components/ui/toast';
@@ -15,8 +15,18 @@ const key = (r: Referenz) => `${r.mitarbeiterId}/${r.jahr}/${r.monat}`;
 const datum = (value: string) => new Date(value).toLocaleString('de-DE');
 const meldung = (err: unknown) => err instanceof Error ? err.message : 'Monatsdaten konnten nicht geladen werden.';
 export default function Monatsabschluss() {
+    const [searchParams] = useSearchParams();
     const heute = new Date();
-    const [filter, setFilter] = useState<Filter>(() => { const last = new Date(heute.getFullYear(), heute.getMonth() - 1, 1); return { jahr: last.getFullYear(), monat: last.getMonth() + 1, status: 'ALLE', page: 0, size: 50 }; });
+    const [filter, setFilter] = useState<Filter>(() => {
+        const last = new Date(heute.getFullYear(), heute.getMonth() - 1, 1);
+        const pJahr = Number(searchParams.get('jahr'));
+        const pMonat = Number(searchParams.get('monat'));
+        const pMitarbeiter = Number(searchParams.get('mitarbeiterId'));
+        const jahr = Number.isInteger(pJahr) && pJahr >= 1000 && pJahr <= 9999 ? pJahr : last.getFullYear();
+        const monat = Number.isInteger(pMonat) && pMonat >= 1 && pMonat <= 12 ? pMonat : last.getMonth() + 1;
+        const mitarbeiterId = Number.isSafeInteger(pMitarbeiter) && pMitarbeiter > 0 ? pMitarbeiter : undefined;
+        return { jahr, monat, mitarbeiterId, status: 'ALLE', page: 0, size: 50 };
+    });
     const [recht, setRecht] = useState<boolean | null>(null);
     const [fehler, setFehler] = useState('');
     const [mitarbeiter, setMitarbeiter] = useState<{ id: number; name: string }[]>([]);
@@ -91,6 +101,32 @@ export default function Monatsabschluss() {
         } catch (err) { toastRef.current.error(meldung(err)); if (lauf === generation.current) { setFehler(meldung(err)); setRevision(v => v + 1); } }
         finally { busyRef.current = false; setBusy(false); }
     }
+    async function oeffneMonat(zeile: Zeile) {
+        if (busyRef.current || !recht) return;
+        const ok = await confirm({
+            title: 'Monat wieder öffnen?',
+            message: `${monate[zeile.referenz.monat - 1]} ${zeile.referenz.jahr} für ${zeile.mitarbeiterName}: Der festgehaltene Monatsstand wird wieder aus den vorhandenen Zeiten berechnet.`,
+            confirmLabel: 'Wieder öffnen',
+            variant: 'warning',
+        });
+        if (!ok) return;
+        busyRef.current = true;
+        setBusy(true);
+        try {
+            await api.oeffnen(zeile.referenz);
+            toastRef.current.success(`Monat für ${zeile.mitarbeiterName} wieder geöffnet.`);
+            window.dispatchEvent(new Event('notifications:refresh'));
+            setRevision(v => v + 1);
+            if (verlaufZeile && key(verlaufZeile.referenz) === key(zeile.referenz)) {
+                setVerlaufZeile(null);
+            }
+        } catch (err) {
+            toastRef.current.error(meldung(err));
+        } finally {
+            busyRef.current = false;
+            setBusy(false);
+        }
+    }
     const all = !!daten?.auswahl.length && daten.auswahl.every(s => auswahl.some(a => key(a) === key(s)));
     const grund = !vergangen ? 'Nur vergangene Monate können abgeschlossen werden.' : laedt ? 'Monatsdaten werden geladen.' : !auswahl.length ? 'Bitte zuerst Mitarbeiter auswählen.' : busy ? 'Die Bestätigung oder der Abschluss läuft.' : '';
     return <div className="p-6 space-y-6">
@@ -106,14 +142,14 @@ export default function Monatsabschluss() {
         </section>
         {!vergangen && <p className="text-sm text-slate-600">Nur vergangene Monate können abgeschlossen werden.</p>}
         {fehler && <p role="alert" className="rounded-lg bg-rose-50 text-rose-800 p-4">{fehler}</p>}
-        {verlaufZeile && <section aria-label="Abschlussverlauf" className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><h2 className="font-semibold">Verlauf für {verlaufZeile.mitarbeiterName}</h2><Button variant="outline" size="sm" onClick={() => setVerlaufZeile(null)}>Verlauf schließen</Button></div>{verlaufFehler ? <p role="alert">{verlaufFehler}</p> : !verlauf ? <p role="status">Verlauf wird geladen …</p> : verlauf.audit.length ? <ul className="mt-3 space-y-2">{verlauf.audit.map(a => <li key={a.id}>{a.aktion === 'ABSCHLIESSEN' ? 'Abgeschlossen' : 'Wieder geöffnet'} durch {a.akteurName} · {datum(a.zeitpunkt)}</li>)}</ul> : <p className="mt-3 text-slate-500">Noch kein Abschluss vorhanden.</p>}</section>}
+        {verlaufZeile && <section aria-label="Abschlussverlauf" className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><h2 className="font-semibold">Verlauf für {verlaufZeile.mitarbeiterName}</h2><div className="flex gap-2">{verlaufZeile.festgeschrieben && recht && <Button size="sm" variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50" onClick={() => oeffneMonat(verlaufZeile)}><LockOpen className="w-4 h-4 mr-1.5" />Monat wieder öffnen</Button>}<Button variant="outline" size="sm" onClick={() => setVerlaufZeile(null)}>Verlauf schließen</Button></div></div>{verlaufFehler ? <p role="alert">{verlaufFehler}</p> : !verlauf ? <p role="status">Verlauf wird geladen …</p> : verlauf.audit.length ? <ul className="mt-3 space-y-2">{verlauf.audit.map(a => <li key={a.id}>{a.aktion === 'ABSCHLIESSEN' ? 'Abgeschlossen' : 'Wieder geöffnet'} durch {a.akteurName} · {datum(a.zeitpunkt)}</li>)}</ul> : <p className="mt-3 text-slate-500">Noch kein Abschluss vorhanden.</p>}</section>}
         <div className="flex items-center justify-between"><p className="font-medium text-slate-700">{auswahl.length} ausgewählt</p><Button variant="outline" size="sm" disabled={laedt || busy} onClick={() => { generation.current++; setAuswahl([]); setRevision(v => v + 1); }}><RefreshCw aria-hidden="true" className="w-4 h-4 mr-2" />Aktualisieren</Button></div>
         <DatevBereich auswahl={laedt || busy || !daten ? [] : auswahl} mitarbeiter={mitarbeiter} />
         {laedt ? <p role="status" className="bg-slate-100 rounded-lg p-8 motion-safe:animate-pulse">Monatsdaten werden geladen …</p> : daten && <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 space-y-4" aria-label="Monatsübersicht">
             <h2 className="font-semibold text-lg">{monate[filter.monat - 1]} {filter.jahr}</h2>
             <p className="text-sm text-slate-600">Alle Angaben in Stunden. Gesamt = Arbeit + Abwesenheit + Feiertage + Korrektur.</p>
             <table className="w-full table-fixed text-sm"><thead><tr className="border-b text-left text-slate-600"><th className="w-9 py-3"><input type="checkbox" className="accent-rose-600 h-4 w-4" aria-label="Alle gefilterten Mitarbeiter auswählen" checked={all} disabled={!daten.auswahl.length || busy} onChange={() => { generation.current++; setAuswahl(all ? [] : daten.auswahl); }} /></th><th className="w-[17%]">Mitarbeiter</th>{felder.map(([id, name]) => <th key={id} className="text-right px-1 break-words">{name}</th>)}<th className="w-[15%] pl-3">Stand</th><th className="w-20">Details</th></tr></thead>
-            <tbody>{daten.items.map(zeile => <tr key={key(zeile.referenz)} className="border-b border-slate-100 hover:bg-slate-50"><td className="py-3"><input type="checkbox" className="accent-rose-600 h-4 w-4" aria-label={`${zeile.mitarbeiterName} auswählen`} disabled={busy} checked={auswahl.some(s => key(s) === key(zeile.referenz))} onChange={() => waehle({ ...zeile.referenz, version: zeile.version, festgeschrieben: zeile.festgeschrieben })} /></td><th scope="row" className="text-left font-medium break-words pr-2">{zeile.mitarbeiterName}</th>{felder.map(([id]) => <td key={id} className="text-right tabular-nums px-1">{zahl(zeile.kennzahlen[id])}</td>)}<td className="pl-3"><span className={`inline-block rounded px-2 py-1 text-xs ${zeile.festgeschrieben ? 'bg-slate-100 text-slate-800' : 'bg-amber-50 text-amber-800'}`}>{zeile.festgeschrieben ? 'Abgeschlossen' : 'Noch offen'}</span>{zeile.festgeschriebenAm && <p className="text-xs text-slate-500 mt-1">{datum(zeile.festgeschriebenAm)}</p>}</td><td><div className="flex gap-1"><Button variant="ghost" size="sm" className="px-2" title="Verlauf anzeigen" aria-label={`Verlauf für ${zeile.mitarbeiterName}`} onClick={() => setVerlaufZeile(zeile)}><History className="w-4 h-4" /></Button><Link className="p-2 rounded hover:bg-rose-50 text-rose-700 focus:ring-2 focus:ring-rose-500" title="Im Kalender prüfen" aria-label={`Kalender für ${zeile.mitarbeiterName}`} to={`/zeitbuchungen?${new URLSearchParams({ mitarbeiterId: String(zeile.referenz.mitarbeiterId), jahr: String(zeile.referenz.jahr), monat: String(zeile.referenz.monat) })}`}><Calendar className="w-4 h-4" /></Link></div></td></tr>)}</tbody>
+            <tbody>{daten.items.map(zeile => <tr key={key(zeile.referenz)} className="border-b border-slate-100 hover:bg-slate-50"><td className="py-3"><input type="checkbox" className="accent-rose-600 h-4 w-4" aria-label={`${zeile.mitarbeiterName} auswählen`} disabled={busy} checked={auswahl.some(s => key(s) === key(zeile.referenz))} onChange={() => waehle({ ...zeile.referenz, version: zeile.version, festgeschrieben: zeile.festgeschrieben })} /></td><th scope="row" className="text-left font-medium break-words pr-2">{zeile.mitarbeiterName}</th>{felder.map(([id]) => <td key={id} className="text-right tabular-nums px-1">{zahl(zeile.kennzahlen[id])}</td>)}<td className="pl-3"><span className={`inline-block rounded px-2 py-1 text-xs ${zeile.festgeschrieben ? 'bg-slate-100 text-slate-800' : 'bg-amber-50 text-amber-800'}`}>{zeile.festgeschrieben ? 'Abgeschlossen' : 'Noch offen'}</span>{zeile.festgeschriebenAm && <p className="text-xs text-slate-500 mt-1">{datum(zeile.festgeschriebenAm)}</p>}</td><td><div className="flex gap-1"><Button variant="ghost" size="sm" className="px-2" title="Verlauf anzeigen" aria-label={`Verlauf für ${zeile.mitarbeiterName}`} onClick={() => setVerlaufZeile(zeile)}><History className="w-4 h-4" /></Button><Link className="p-2 rounded hover:bg-rose-50 text-rose-700 focus:ring-2 focus:ring-rose-500" title="Im Kalender prüfen" aria-label={`Kalender für ${zeile.mitarbeiterName}`} to={`/zeitbuchungen?${new URLSearchParams({ mitarbeiterId: String(zeile.referenz.mitarbeiterId), jahr: String(zeile.referenz.jahr), monat: String(zeile.referenz.monat) })}`}><Calendar className="w-4 h-4" /></Link>{zeile.festgeschrieben && recht && <Button variant="ghost" size="sm" className="px-2 text-rose-700 hover:bg-rose-50" title="Monat wieder öffnen" aria-label={`Monat für ${zeile.mitarbeiterName} wieder öffnen`} onClick={() => oeffneMonat(zeile)}><LockOpen className="w-4 h-4" /></Button>}</div></td></tr>)}</tbody>
             <tfoot><tr className="font-semibold bg-slate-50"><th colSpan={2} className="text-left py-3 pr-2">Alle gefilterten Mitarbeiter</th>{felder.map(([id]) => <td key={id} className="text-right tabular-nums px-1">{zahl(daten.summen[id])}</td>)}<td colSpan={2} /></tr></tfoot></table>
             {!daten.items.length && <p className="p-4 text-slate-500">Keine Mitarbeiter für diese Filter gefunden.</p>}
             <div className="flex justify-between items-center text-sm"><p>{daten.totalElements} Mitarbeiter · Seite {filter.page + 1} von {Math.max(1, Math.ceil(daten.totalElements / filter.size))}</p><div className="flex gap-2"><Button variant="outline" size="sm" aria-label="Vorherige Seite" disabled={filter.page === 0 || busy} onClick={() => setFilter(f => ({ ...f, page: f.page - 1 }))}><ChevronLeft className="w-4 h-4" />Zurück</Button><Button variant="outline" size="sm" aria-label="Nächste Seite" disabled={(filter.page + 1) * filter.size >= daten.totalElements || busy} onClick={() => setFilter(f => ({ ...f, page: f.page + 1 }))}>Weiter<ChevronRight className="w-4 h-4" /></Button></div></div>

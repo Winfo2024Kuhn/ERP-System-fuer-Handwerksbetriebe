@@ -2,7 +2,7 @@ import MobileDatePicker from '../components/MobileDatePicker'
 import { Select } from '../components/ui/select-custom'
 import { useToast, mobileOverlayStyle } from '../components/ui/toast'
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, Send, Loader2, CheckCircle2, Plane, Stethoscope, Calendar, AlertTriangle, X, Clock, RefreshCw } from 'lucide-react'
 
 interface UrlaubsantragPageProps {
@@ -36,12 +36,18 @@ const STATUS_FILTER_OPTIONS = [
 export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: UrlaubsantragPageProps) {
     const toast = useToast()
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
 
     // Tab State
     const [activeTab, setActiveTab] = useState<'BEANTRAGEN' | 'UEBERSICHT'>('BEANTRAGEN')
 
     // Form State
-    const [typ, setTyp] = useState<'URLAUB' | 'KRANKHEIT' | 'FORTBILDUNG' | 'ZEITAUSGLEICH'>('URLAUB')
+    const queryTyp = searchParams.get('typ')?.toUpperCase()
+    const initialTyp = queryTyp === 'ZEITAUSGLEICH' ? 'ZEITAUSGLEICH'
+        : queryTyp === 'KRANKHEIT' ? 'KRANKHEIT'
+        : queryTyp === 'FORTBILDUNG' ? 'FORTBILDUNG'
+        : 'URLAUB'
+    const [typ, setTyp] = useState<'URLAUB' | 'KRANKHEIT' | 'FORTBILDUNG' | 'ZEITAUSGLEICH'>(initialTyp)
     const [von, setVon] = useState('')
     const [bis, setBis] = useState('')
     const [bemerkung, setBemerkung] = useState('')
@@ -53,6 +59,10 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     const [resturlaub, setResturlaub] = useState<number | null>(null)
     const [loadingResturlaub, setLoadingResturlaub] = useState(false)
 
+    // Zeitkonto Saldo State
+    const [zeitkontoSaldo, setZeitkontoSaldo] = useState<number | null>(null)
+    const [loadingZeitkontoSaldo, setLoadingZeitkontoSaldo] = useState(false)
+
     // Overview State
     const [antraege, setAntraege] = useState<Urlaubsantrag[]>([])
     const [loadingAntraege, setLoadingAntraege] = useState(false)
@@ -62,6 +72,12 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     // Feiertag Modal State
     const [showFeiertagModal, setShowFeiertagModal] = useState(false)
     const [gefundeneFeiertage, setGefundeneFeiertage] = useState<Feiertag[]>([])
+
+    useEffect(() => {
+        if (queryTyp === 'ZEITAUSGLEICH' || queryTyp === 'KRANKHEIT' || queryTyp === 'FORTBILDUNG' || queryTyp === 'URLAUB') {
+            setTyp(queryTyp)
+        }
+    }, [queryTyp])
 
     // Fetch Antraege when tab is overview or year changes
     useEffect(() => {
@@ -80,6 +96,34 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mitarbeiter, typ])
+
+    // Fetch Zeitkonto-Saldo when typ=ZEITAUSGLEICH
+    useEffect(() => {
+        if (typ === 'ZEITAUSGLEICH') {
+            fetchZeitkontoSaldo()
+        } else {
+            setZeitkontoSaldo(null)
+        }
+    }, [typ])
+
+    const fetchZeitkontoSaldo = async () => {
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (!token) return
+        setLoadingZeitkontoSaldo(true)
+        try {
+            const res = await fetch(`/api/zeiterfassung/saldo/${encodeURIComponent(token)}?gesamtBisHeute=true`)
+            if (res.ok) {
+                const data = await res.json()
+                if (data && data.gesamt && typeof data.gesamt.saldo === 'number') {
+                    setZeitkontoSaldo(data.gesamt.saldo)
+                }
+            }
+        } catch (err) {
+            console.error('Fehler beim Laden des Stundenkontos:', err)
+        } finally {
+            setLoadingZeitkontoSaldo(false)
+        }
+    }
 
     const fetchResturlaub = async () => {
         if (!mitarbeiter) return
@@ -265,7 +309,12 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                     <CheckCircle2 className="w-8 h-8 text-green-600" />
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900 mb-2">Antrag gesendet!</h2>
-                <p className="text-slate-500">Dein Urlaubsantrag wurde erfolgreich übermittelt.</p>
+                <p className="text-slate-500">
+                    {typ === 'ZEITAUSGLEICH' ? 'Dein Zeitausgleichsantrag wurde erfolgreich übermittelt.'
+                        : typ === 'KRANKHEIT' ? 'Deine Krankmeldung wurde erfolgreich übermittelt.'
+                        : typ === 'FORTBILDUNG' ? 'Dein Fortbildungsantrag wurde erfolgreich übermittelt.'
+                        : 'Dein Urlaubsantrag wurde erfolgreich übermittelt.'}
+                </p>
             </div>
         )
     }
@@ -430,6 +479,48 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                 </div>
                             )}
 
+                            {/* Zeitkonto Saldo Info */}
+                            {typ === 'ZEITAUSGLEICH' && (
+                                <div className={`flex items-start gap-3 p-3 rounded-xl text-sm ${
+                                    loadingZeitkontoSaldo
+                                        ? 'bg-slate-50 text-slate-500'
+                                        : (zeitkontoSaldo !== null && zeitkontoSaldo < 0)
+                                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                }`}>
+                                    {loadingZeitkontoSaldo ? (
+                                        <Loader2 className="w-4 h-4 animate-spin mt-0.5 shrink-0" />
+                                    ) : (zeitkontoSaldo !== null && zeitkontoSaldo < 0) ? (
+                                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                    ) : (
+                                        <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                                    )}
+                                    <div>
+                                        {loadingZeitkontoSaldo ? (
+                                            <span>Stundenkonto wird geladen…</span>
+                                        ) : zeitkontoSaldo !== null ? (
+                                            <>
+                                                <span className="font-semibold">
+                                                    Aktuelles Zeitkonto: {zeitkontoSaldo >= 0 ? `+${zeitkontoSaldo.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}` : zeitkontoSaldo.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} Std.
+                                                </span>
+                                                {beantragteTage > 0 && (
+                                                    <span className="block mt-0.5">
+                                                        Beantragt: {beantragteTage} Arbeitstag{beantragteTage !== 1 ? 'e' : ''} Zeitausgleich
+                                                    </span>
+                                                )}
+                                                {zeitkontoSaldo <= 0 && (
+                                                    <span className="block mt-0.5 text-xs text-amber-700">
+                                                        Hinweis: Dein Zeitkonto weist derzeit kein Überstundenguthaben auf.
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <span>Kein Zeitkonto hinterlegt.</span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {error && (
                                 <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl">
                                     {error}
@@ -442,7 +533,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                 className="w-full bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
                             >
                                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                                Antrag senden
+                                {typ === 'ZEITAUSGLEICH' ? 'Zeitausgleich beantragen' : typ === 'KRANKHEIT' ? 'Krankmeldung senden' : typ === 'FORTBILDUNG' ? 'Fortbildungsantrag senden' : 'Antrag senden'}
                             </button>
                         </form>
                     </div>
