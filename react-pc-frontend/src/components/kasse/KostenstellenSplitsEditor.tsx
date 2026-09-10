@@ -2,28 +2,17 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight, Split } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Select } from '../ui/select-custom';
+import { DecimalInput } from '../ui/decimal-input';
+import { useToast } from '../ui/toast';
+import { draft, type KostenstellenSplit, type SplitZahl } from '../../features/finanzen/kostenstellenDrafts';
+export type { KostenstellenSplit } from '../../features/finanzen/kostenstellenDrafts';
+import { validateNumberDrafts } from '../../lib/numberDrafts';
 
 // Kostenstellen-Splits-Editor (Issue #60).
 //
 // Erlaubt mehrere Kostenstellen pro Beleg mit Prozent ODER absolutem Betrag
 // und optionaler Streckung über mehrere Jahre. Beim Speichern landet das
 // Ergebnis im PUT /api/buchhaltung/belege/{id} im Feld `kostenstellenSplits`.
-
-export interface KostenstellenSplit {
-    id?: number | null;
-    kostenstelleId: number | null;
-    kostenstelleBezeichnung?: string | null;
-    kostenstelleIstFixkosten?: boolean | null;
-    prozent: number | null;
-    absoluterBetrag: number | null;
-    berechneterBetrag?: number | null;
-    beschreibung?: string | null;
-    streckungJahre: number;
-    streckungStartJahr: number | null;
-    // Client-seitiger Stabil-Key fuer React-Reconciliation. Wird nur beim
-    // Hinzufuegen vergeben; persistierte Splits nutzen ihre echte id.
-    _clientKey?: string;
-}
 
 interface Kostenstelle {
     id: number;
@@ -41,6 +30,7 @@ interface Props {
 const inputCls = 'w-full rounded-md border border-slate-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500';
 
 export function KostenstellenSplitsEditor({ splits, onChange, defaultStartJahr }: Props) {
+    const toast = useToast();
     const [open, setOpen] = useState<boolean>(splits.length > 0);
     const [kostenstellen, setKostenstellen] = useState<Kostenstelle[]>([]);
 
@@ -48,13 +38,17 @@ export function KostenstellenSplitsEditor({ splits, onChange, defaultStartJahr }
         fetch('/api/bestellungen-uebersicht/kostenstellen')
             .then(r => r.ok ? r.json() : [])
             .then((d: Kostenstelle[]) => setKostenstellen(Array.isArray(d) ? d : []))
-            .catch(err => console.error('Kostenstellen laden fehlgeschlagen', err));
-    }, []);
+            .catch(() => toast.error('Kostenstellen konnten nicht geladen werden.'));
+    }, [toast]);
 
-    const prozentSumme = splits.reduce((acc, s) => acc + (s.prozent ?? 0), 0);
+    const prozentSumme = splits.reduce((acc, s) => {
+        const result = validateNumberDrafts({ prozent: draft(s, 'prozent') }, { prozent: { label: 'Anteil', min: 0, max: 100, integer: true } });
+        return result.valid ? acc + (result.values.prozent ?? 0) : Number.NaN;
+    }, 0);
     const ueberhang = prozentSumme > 100;
 
     const addSplit = () => {
+        if (!Number.isFinite(prozentSumme)) { toast.error('Bitte vorhandene Anteile vollständig und zwischen 0 und 100 eingeben.'); return; }
         onChange([
             ...splits,
             {
@@ -71,6 +65,13 @@ export function KostenstellenSplitsEditor({ splits, onChange, defaultStartJahr }
 
     const updateSplit = (index: number, patch: Partial<KostenstellenSplit>) => {
         onChange(splits.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+    };
+
+    const updateDraft = (index: number, key: SplitZahl, value: string) => {
+        const fields = { ...splits[index]._drafts, [key]: value };
+        if (value !== '' && key === 'prozent') fields.absoluterBetrag = '';
+        if (value !== '' && key === 'absoluterBetrag') fields.prozent = '';
+        updateSplit(index, { _drafts: fields });
     };
 
     const removeSplit = (index: number) => {
@@ -124,31 +125,15 @@ export function KostenstellenSplitsEditor({ splits, onChange, defaultStartJahr }
                                 </div>
                                 <div className="col-span-2">
                                     <label className="block text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">% Anteil</label>
-                                    <input type="number" min={0} max={100} step={1}
-                                        value={s.prozent ?? ''}
-                                        onChange={e => {
-                                            const v = e.target.value === '' ? null : Number(e.target.value);
-                                            // Prozent UND Absolut sind exklusiv — beim Setzen das andere leeren.
-                                            updateSplit(i, { prozent: v, absoluterBetrag: v != null ? null : s.absoluterBetrag });
-                                        }}
-                                        className={inputCls} />
+                                    <DecimalInput aria-label={`Anteil Split ${i + 1} (%)`} value={draft(s, 'prozent')} onChange={value => updateDraft(i, 'prozent', value)} className={inputCls} />
                                 </div>
                                 <div className="col-span-2">
                                     <label className="block text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">€ absolut</label>
-                                    <input type="number" step={0.01}
-                                        value={s.absoluterBetrag ?? ''}
-                                        onChange={e => {
-                                            const v = e.target.value === '' ? null : Number(e.target.value);
-                                            updateSplit(i, { absoluterBetrag: v, prozent: v != null ? null : s.prozent });
-                                        }}
-                                        className={inputCls} />
+                                    <DecimalInput aria-label={`Betrag Split ${i + 1} (€)`} value={draft(s, 'absoluterBetrag')} onChange={value => updateDraft(i, 'absoluterBetrag', value)} className={inputCls} />
                                 </div>
                                 <div className="col-span-2">
-                                    <label className="block text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">Streckung (Jahre)</label>
-                                    <input type="number" min={1} max={20} step={1}
-                                        value={s.streckungJahre}
-                                        onChange={e => updateSplit(i, { streckungJahre: Math.max(1, Number(e.target.value || 1)) })}
-                                        className={inputCls} />
+                                    <label className="block text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">Jahre</label>
+                                    <DecimalInput aria-label={`Streckung Split ${i + 1}`} value={draft(s, 'streckungJahre')} onChange={value => updateDraft(i, 'streckungJahre', value)} className={inputCls} />
                                 </div>
                                 <div className="col-span-1 flex justify-end pb-0.5">
                                     <button type="button"
@@ -158,17 +143,14 @@ export function KostenstellenSplitsEditor({ splits, onChange, defaultStartJahr }
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
-                                {s.streckungJahre > 1 && (
+                                {draft(s, 'streckungJahre') !== '1' && (
                                     <>
                                         <div className="col-span-3">
                                             <label className="block text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">Startjahr Streckung</label>
-                                            <input type="number" min={2000} max={2100} step={1}
-                                                value={s.streckungStartJahr ?? defaultStartJahr}
-                                                onChange={e => updateSplit(i, { streckungStartJahr: Number(e.target.value || defaultStartJahr) })}
-                                                className={inputCls} />
+                                            <DecimalInput aria-label={`Startjahr Split ${i + 1}`} value={draft(s, 'streckungStartJahr')} onChange={value => updateDraft(i, 'streckungStartJahr', value)} className={inputCls} />
                                         </div>
                                         <div className="col-span-9 text-[11px] text-slate-500 italic self-end pb-1">
-                                            Über {s.streckungJahre} Jahre verteilt — ab {s.streckungStartJahr ?? defaultStartJahr}.
+                                            Über {draft(s, 'streckungJahre')} Jahre verteilt — ab {draft(s, 'streckungStartJahr') || '–'}.
                                         </div>
                                     </>
                                 )}
@@ -191,7 +173,7 @@ export function KostenstellenSplitsEditor({ splits, onChange, defaultStartJahr }
                             <Plus className="w-3 h-3 mr-1" /> Split hinzufügen
                         </Button>
                         <div className={`text-xs ${ueberhang ? 'text-red-700 font-semibold' : 'text-slate-500'}`}>
-                            Summe Prozent: {prozentSumme}%{ueberhang ? ' — über 100%!' : ''}
+                            Summe Prozent: {Number.isFinite(prozentSumme) ? prozentSumme.toLocaleString('de-DE') : '–'}%{ueberhang ? ' — über 100%!' : ''}
                         </div>
                     </div>
                 </div>

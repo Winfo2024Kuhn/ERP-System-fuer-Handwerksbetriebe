@@ -1,6 +1,8 @@
+import { useToast } from '../components/ui/toast'
+import { Select } from '../components/ui/select-custom'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Calendar, Plane, Stethoscope, GraduationCap, Clock, CheckCircle2, XCircle, HelpCircle, Filter, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Calendar, Plane, Stethoscope, GraduationCap, Clock, CheckCircle2, XCircle, HelpCircle, RefreshCw } from 'lucide-react'
 
 interface AbwesenheitenPageProps {
     mitarbeiter: { id: number; name: string } | null
@@ -43,6 +45,7 @@ const typConfig = {
 }
 
 export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: AbwesenheitenPageProps) {
+    const toast = useToast()
     const navigate = useNavigate()
     const [antraege, setAntraege] = useState<Antrag[]>([])
     const [loading, setLoading] = useState(true)
@@ -70,12 +73,14 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
                 }
 
                 const res = await fetch(url)
+                if (!res.ok) throw new Error('Anträge konnten nicht geladen werden.')
                 if (res.ok) {
                     const data = await res.json()
                     setAntraege(data)
                 }
             } catch (err) {
                 console.error('Fehler beim Laden der Anträge:', err)
+                toast.error('Anträge konnten nicht geladen werden.')
             } finally {
                 setLoading(false)
             }
@@ -107,7 +112,7 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
         }
 
         Promise.all([loadAntraege(), loadLangzeitFall()])
-    }, [mitarbeiter, statusFilter, jahrFilter])
+    }, [mitarbeiter, statusFilter, jahrFilter, toast])
 
     const formatDatum = (dateStr: string) => {
         const date = new Date(dateStr)
@@ -200,31 +205,12 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
             <div className="px-4 pb-4 flex gap-2">
                 {/* Status Filter */}
                 <div className="flex-1 relative">
-                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    >
-                        <option value="ALLE">Alle Status</option>
-                        <option value="OFFEN">Offen</option>
-                        <option value="GENEHMIGT">Genehmigt</option>
-                        <option value="ABGELEHNT">Abgelehnt</option>
-                    </select>
+                    <Select aria-label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ value: 'ALLE', label: 'Alle Status' }, { value: 'OFFEN', label: 'Offen' }, { value: 'GENEHMIGT', label: 'Genehmigt' }, { value: 'ABGELEHNT', label: 'Abgelehnt' }]} />
                 </div>
 
                 {/* Jahr Filter */}
                 <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <select
-                        value={jahrFilter}
-                        onChange={(e) => setJahrFilter(Number(e.target.value))}
-                        className="pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    >
-                        {years.map(year => (
-                            <option key={year} value={year}>{year}</option>
-                        ))}
-                    </select>
+                    <Select aria-label="Jahr" value={String(jahrFilter)} onChange={value => setJahrFilter(Number(value))} options={years.map(year => ({ value: String(year), label: String(year) }))} />
                 </div>
             </div>
 

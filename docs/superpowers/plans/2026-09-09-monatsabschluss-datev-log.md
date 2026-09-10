@@ -1,0 +1,511 @@
+# Kontext-Log: Monatsabschluss und DATEV-Dateiexport
+
+Append-only. Einträge nach dem atomaren mkdir-Lock-Protokoll in `.agents/skills/loese-problem/references/kontext-log-format.md`. Noch keine Ausführungs- oder Revieweinträge.
+
+## Abschnitt 1 — Task 1 (Coding-Agent)
+
+Zeit: 2026-09-09T16:11:35.458137+00:00
+Branch: codex/monatsabschluss-datev-task-1
+Commit(s): 51b99cab
+Status: fertig
+
+Was gemacht wurde:
+- Sechs nullable Abwesenheits-Snapshotfelder und idempotente Migration V372 ohne Backfill.
+- Gruppierte LEFT-JOIN-Aggregation nach Abwesenheits-/Phasentyp, exakte Summenprüfung vor Festschreiben unter bestehendem Mitarbeiterlock.
+- abschliessenOhneVerlauf mit audit=[] ohne Audit-Lesequery, bestehende API unverändert.
+- Fokussierte Tests MonatsabschlussSnapshotTest und MonatsabschlussServiceTest: 12 Tests grün, Rotlauf vor Implementierung; 600000-ms-Timeout über subprocess, Ausgaben in /tmp/monatsabschluss-snapshot-*.log. Staged Diff und git diff --check geprüft.
+- Keine Dienste/Devserver gestartet; Maven-Prozesse abgeschlossen, Worktree sauber.
+
+Bedenken / Abweichungen vom Plan:
+- .Codex-Pflichtdoku fehlt; vorhandene .agents-Pendants gelesen. TDD-Zusatzskill nicht vorhanden, gemäß Orchestrator vollständigen Rot/Grün-Vertrag aus Plan/Coding-Anweisung angewandt.
+- Migration/Query nicht gegen reale Datenbank ausgeführt; fokussierte Tests verwenden Mockito. Datenbank-/Abschnittsreview und einmaliges Graphupdate übernimmt Root.
+
+## Abschnitt 1 — zusätzliche Migrationsprüfung (Orchestrator)
+
+Zeit: 2026-09-09T16:12:32.322442+00:00
+
+V372 auf eigener wegwerfbarer MySQL-8.4-Instanz zweimal angewandt. Sechs nullable DECIMAL-Spalten verifiziert; vorhandene Dummy-Abschlusszeile behält NULL-Details. Keine Betriebsdaten verwendet.
+
+## Abschnitt 1 — Task 3 (Coding-Agent)
+
+Zeit: 2026-09-09T16:12:55.624022+00:00
+Branch: codex/monatsabschluss-datev-task-3
+Commit(s): 8a24f1bb
+Status: fertig
+
+Was gemacht wurde:
+- DATEV-DTOs, persistente Singleton-Konfiguration mit Sperre/Versionsschutz, atomare Personalnummernzuordnung und V373.
+- Nummern als Strings; normalisierte Unique-Personalnummern, Menschenprüfung; unvollständige Einrichtung speicherbar, unbekannte/ungültige Entscheidungen abgewiesen.
+- GET/PUT mit Abschlussrecht/CSRF; 14 fokussierte Tests grün einschließlich H2-Versionserhöhung, DB-Unique, Migration zweimal und FK. Red zuerst fehlende Implementierung nachgewiesen.
+- Offizielle LODAS 94. Auflage Juni2026 Fach2 S.2-6 bestätigt Berater 4–7/Mandant1–5: https://help-center.apps.datev.de/api/amr/knowledge-common/v1/entities/st81064830359671307_de.pdf
+- Keine Dienste gestartet; H2-Factories geschlossen, Maven beendet. Graphupdate und Abschnittsreview übernimmt Root.
+
+Bedenken / Abweichungen vom Plan:
+- superpowers:TDD-Zusatzskill lokal nicht verfügbar; nach Root-Klärung vollständigen Testvertrag des Plans und TESTING_SECURITY verwendet. Shell-Tool bietet keinen Timeout-Parameter; kurze fokussierte Läufe per Session bis Exit verfolgt, Logs nur /tmp.
+- Konfigurations-PUT limitiert auf 10000 Personalnummern; Exportlimits bleiben Aufgabe4. Fehlende Exportpflichtwerte werden dort vorgeprüft.
+
+## Abschnitt 1 — Task 1 Zusatzprüfung (Coding-Agent)
+
+Zeit: 2026-09-09T16:18:03.411585+00:00
+Branch: codex/monatsabschluss-snapshot-query-test
+Commit(s): a6d79b8c
+Status: fertig
+
+Was gemacht wurde:
+- Echter H2-DataJpaTest für sumStundenNachTypUndPhase: Nullphasen bei Urlaub/Krankheit, alle drei Krankheitsphasen, Dezimalsummen, projizierte Enums, inklusive Monatsgrenzen, Ausschluss fremder Mitarbeiter und benachbarter Monate, leerer Monat.
+- Gezielter Maven-Lauf: 2 Tests, 0 Fehler; BUILD SUCCESS. Staged Diff geprüft. Keine Dienste gestartet, Maven vollständig beendet.
+
+Bedenken / Abweichungen vom Plan:
+- Nur ergänzender Test für vorhandene Implementierung; kein Produktivcode geändert.
+
+## Abschnitt 1 — Review-Agent
+
+Zeit: 2026-09-09T16:19:42.892764+00:00
+Branch: codex/monatsabschluss-datev
+Commit(s): d97dae52, 024f4b91, a1b1a44f
+Status: fertig
+Ampel: 🟢
+
+Was gemacht wurde:
+- Tasks 1/3 und ergänzenden echten Snapshot-Repositorytest konfliktfrei gemergt; Integration, Architektur, Security und Schema geprüft. Keine kritischen Befunde.
+- Gesamte Backend-Suite selbst ausgeführt: 2768 Tests, zunächst vier umgebungsbedingte Errors in bestehenden lokalen Audit-Tests (MySQL-Treiber bei H2-URL). Die beiden Klassen separat mit expliziter isolierter MySQL-URL und passendem Dialekt erfolgreich nachgeprüft: 4 Tests, 0 Fehler, 1 erwarteter Skip mangels alter Auditdaten. Alle übrigen 2764 Tests einschließlich 8 MySQL-Abschlussprüfungen grün.
+- Ergänzender echter Snapshot-JPQL-Test selbst ausgeführt: 2 Tests grün (LEFT JOIN/Nullphasen, Krankheitstypen, Summen, Monatsgrenzen/Mitarbeiterfilter).
+- V373 zweimal auf isoliertem MySQL 8.4 erfolgreich ausgeführt, Singleton und Unique/FK geprüft; git diff --check sauber.
+- Logs: /tmp/monatsabschluss-review1-tests.log, /tmp/monatsabschluss-review1-audit.log, /tmp/monatsabschluss-review1-query.log.
+
+Bedenken / Abweichungen vom Plan:
+- Kein Produktivcode durch Reviewer geändert. Bestehender Audit-Rebuild-Test für echte Altbestände auf leerer Wegwerf-DB erwartungsgemäß übersprungen.
+
+## Abschnitt 2 — Task 2 (Coding-Agent)
+
+Zeit: 2026-09-09T16:28:55.828878+00:00
+Branch: codex/monatsabschluss-datev-task-2
+Commit(s): a94f3470
+Status: fertig
+
+Was gemacht wurde:
+- DTO-Vertrag, gefilterte paginierte Übersicht mit vollständigen Summen/Auswahl, sechs Vergleichsmonate, Set-Projektionen einschließlich ausgeschiedener Menschen und Abteilungen. Geschlossene Stände ohne Live-/Auditabfragen. Kalte offene Caches über begrenzte Bestandsberechnung.
+- Sammelabschluss mit Recht/Gesamtvalidierung vor erster Mutation, REQUIRES_NEW je Referenz, Mitarbeiterlock, idempotentem Bereits-abgeschlossen-Ergebnis, Rollback vor Fehlerbehandlung und Fortsetzung.
+- 12 fokussierte Tests grün (4 Übersicht, 2 Sammelunit, 3 MockMvc-Security, 3 reale MySQL-Tests). MySQL-Latch: paralleler Einzel-/Sammelabschluss erzeugt genau ein Audit; neu erfolgreicher Sammelabschluss bleibt trotz nachfolgendem Rollback bestehen; Wiederholung idempotent. Reale Repository-Projektionen mit Abteilungsfilter/Menschenstamm geprüft.
+- Lauf: ./mvnw -B test -Dtest=MonatsabschlussUebersichtServiceTest,MonatsabschlussSammelServiceTest,MonatsabschlussUebersichtSecurityTest,MonatsabschlussSammelMysqlTest -Dzeitkonto.mysql.url=jdbc:mysql://127.0.0.1:33379/monatsabschluss_task2; BUILD SUCCESS. Log /tmp/task2-final.log. Ausschließlich eigene wegwerfbare DB monatsabschluss_task2.
+- Staged-Diff und diff --check geprüft. Keine Dienste gestartet; Maven-Prozesse beendet. Root-Docker bleibt bei seinem Besitzer. Graphupdate/Gesamtreview vereinbarungsgemäß durch Root.
+
+Bedenken / Abweichungen vom Plan:
+- Initialer Taskauftrag erlaubte vorhandenen Testvertrag statt TDD-Skill. Implementierung entstand deshalb vor ausführbaren Tests; spätere TDD-Nachricht transparent berücksichtigt, Root hat Fortsetzen ohne Löschen bestätigt. Erste Testläufe deckten Testfixturefehler auf (verschachteltes Mockito-Stubbing/JSON-Escaping/Mock-Override); behoben, final alle Tests grün. Kein beobachteter Rot-Grün-Vorlauf der Featureimplementierung behauptet.
+- Shelltool bietet keinen Timeout-Parameter 600000; gestartete Testprozesse explizit bis Exit 0 überwacht, Ausgaben ausschließlich in Logs.
+
+## Zusatzabschnitt A — Task 7 (Coding-Agent)
+
+Zeit: 2026-09-09T16:34:20.092442+00:00
+Branch: codex/systemeingaben-task-7
+Commit: c0130bd9
+Status: fertig
+
+- PC DecimalInput/String-Drafts mit Nullfokus, deutscher vollständiger Pflicht-/Grenzvalidierung; TimeInput HH:mm; eigene ColorInput-Palette/Hex. Select/DatePicker additive Labels, Formularvalidierung ohne Browserblasen, Tastatur, Escape und Viewport-Positionierung. Keine Seitenmigration.
+- TDD rot/grün: 50 fokussierte Tests grün. PC-Build, fokussiertes ESLint und E2E-Typprüfung grün. Port5187 systemeingaben-task-7.spec.ts 3/3 grün (1440x900,1536x960,1920x1080), alle API-Daten Dummy, fremde Hosts blockiert.
+- Screenshots der echten Arbeitszeitseite angesehen: Rose-Fokus/Slate-Flächen klar; vorhandenes Design eingehalten; kompakte ausgerichtete Oberfläche; Tastatur/Enter/Escape funktioniert; beide Auswahlen ohne Scrollen auffindbar; Popup vollständig im Viewport, Schaltflächen enthalten. Anfangs kurz unpositionierter Select per useLayoutEffect korrigiert und Positionsassertion ergänzt.
+- Designhelper zählt bei offenem Kalender absichtlich überdeckte Hintergrund-Checkbox als Überschneidung. Spec prüft deshalb offenen Kalender separat auf Viewport-/Button-Grenzen, nach Schließen vollständigen globalen Designcheck; Screenshot im Test angehängt. Keine Testhelper geändert. Neue bisher unbenutzte Primitives interaktiv per Unit getestet; echte Seitenintegration und deren E2E folgen Tasks9–14.
+- Generierte Builddateien unter src/main/resources/static liegen uncommittet im eigenen Worktree. Automatische Befehlsprüfung lehnte rm-f-Aufräumen ab; keine Builddateien gestaged/committet, kein weiterer Löschversuch. Kein Graphify-Update und keine volle Suite durch Coding-Agent.
+
+## Abschnitt 2 — Task 4 (Coding-Agent)
+
+Zeit: 2026-09-09T16:35:53.144554+00:00
+Branch: codex/monatsabschluss-datev-task-4
+Commit(s): fd21fa54
+Status: fertig
+
+Was gemacht wurde:
+- LODAS-Vorprüfung und TXT-/ZIP-Download, explizite Zuordnung/Ausschluss jeder Kategorie, kein Livezugriff auf historische Abwesenheiten, Korrekturen stets ausgeschlossen. Keine Teildatei bei Fehlern.
+- REQUIRES_NEW/READ_COMMITTED, frischer Persistence Context und OPTIMISTIC-Prüfung der Konfiguration/ausgewählten Salden vor Commit; Bytes erst nach Commit zurückgeben. Set-Abfragen für Salden/Personalnummern, Requestlimits und Abschlussrechte.
+- Golden-Bytes (CRLF, ohne BOM, numerisch sortiert und aggregiert), ZIP pro Monat; no-store/attachment und Einrichtungs-/Importanleitung docs/benutzer/datev-lodas-export.md.
+- TDD: Writer-Stub 3 rote Tests, Service-Stub 9 rote Tests, Controller-Stub 3 rote Tests beobachtet; anschließend grün. Abschließend 12 Servicetests + 3 Writertests + 4 HTTP/Securitytests + 6 echte MySQL-Tests grün. Eigene wegwerfbare DB monatsabschluss_task4 auf Port33379, Testprozesse mit explizitem 600s-Subprocess-Timeout und Logumleitung.
+- MySQL weist Wiederöffnung nach Vorprüfung, konkurrierende Wiederöffnung/Konfigurationsänderung/Personalnummeränderung sowie stale PersistenceContext nach. Personalnummeränderung durch realen Konfigurationsservice in separatem GET-/PUT-TX-Vertrag.
+- ERP-Code-Review ohne blockierende Befunde; beide genannten Testlücken (HTTP-Vorprüfung, Personalnummerkonkurrenz) ergänzt. Keine eigenen dauerhaften Dienste gestartet; keine Task4-/Surefire-Prozesse verblieben. Root-MySQL-Container unverändert weiter in Verantwortung Orchestrator.
+
+Bedenken / Abweichungen vom Plan:
+- Die aktuelle offizielle DATEV-PDF war nur über offizielle Suchindexauszüge zugänglich (Direktdownload Redirect auf App-HTML). Header/Satzbeschreibung/BS01-Stunden und NUM11.2 belegt. Die Strukturgrenze 999999999,99 wird geprüft; ein gesondertes BS01-Höchstmaß konnte nicht belegt werden (Fach4 weist auf BS-abhängige Grenzen hin). Mit Orchestrator abgestimmt ausdrücklich in Anleitung dokumentiert, keine erfundene Monatsstundengrenze. Kein tatsächlicher DATEV-Import/keine Zertifizierung behauptet.
+- Task3-Randfall zur Review-Beurteilung gemeldet: configurations.laden() und speichern() innerhalb derselben umspannenden TX hält Personalnummer-Entities nach deleteAllInBatch im PersistenceContext; anschließendes saveAll derselben ID führte im Test zu ObjectOptimisticLockingFailure. Normaler HTTP-GET-/PUT-Vertrag mit getrennten TX ist grün; kein bekannter erreichbarer gemeinsamer TX-Aufrufpfad, daher keine Fremdedits.
+- Golden-Fixture enthält absichtlich CRLF; git diff --check meldet dies als Whitespace, mit core.whitespace=cr-at-eol sauber. Keine weiteren Whitespace-/Secretbefunde im staged Diff. Graphupdate/Gesamtsuite erfolgen zentral, nicht parallel im Taskworktree.
+
+## Abschnitt 2 — Review-Agent Code (Nachprüfung)
+
+Zeit: 2026-09-09T16:41:00Z
+Branch: codex/monatsabschluss-review-2-code
+Commit(s): f602247d; Nachbesserung bdceac5f / b71ea5da; Bericht c64b52b1
+Status: fertig
+Ampel: 🟡 — abgenommen nach Nachbesserung
+
+Was gemacht wurde:
+- Gesamten gemergten Abschnitt Tasks2/4/7 auf Korrektheit, Security, Datenschutz und Architektur geprüft.
+- Backendvollsuite2803: keine Failures,4 bekannte Audit-Konfigurationserrors,13skips. Separater MySQL-Auditnachlauf4Tests/0Errors/1bekannterSkip. DATEVMySQL6/6 und SammelMySQL3/3 erfolgreich auf eigenen WegwerfDBs.
+- PC lint/build grün. Vollsuite1202 zunächst20Fehler; Baseline beweist18 unveränderte LieferantDokumentModal-Fehler (object.stream). Zwei neue DatePicker-Locatorfehler behoben in bdceac5f; eigene Nachprüfung beider Stichtagdateien5/5grün.
+- Bericht docs/superpowers/plans/2026-09-09-monatsabschluss-review-2-code.md; keine Produktänderungen, keine statischen Buildartefakte committet.
+
+Bedenken / Abweichungen vom Plan:
+- Kein offener neuer Rotbefund. Standardsuiten wegen belegtem Altbestand nicht vollständig grün; DATEV-BS01-Fachgrenze/echter Import weiter ausdrücklich unbestätigt. Design/E2E durch separaten Reviewer.
+
+## Abschnitt 2 — Design-Review (Design-Reviewer)
+
+Stand: 579b4bf8, Task 7 c0130bd9; Frontend identisch zum nachfolgenden Backend-Merge f602247d.
+Ampel für Task 7: 🟡 — keine neue funktionale oder gestalterische Regression nachgewiesen.
+
+Prüfung: vollständige PC-Suite mit E2E_PORT=5192 und --workers=1: 438 Tests, 433 grün, 5 rot (4,5 Minuten). Alle fünf roten Tests wurden gezielt auf a1b1a44f in einem separaten Basis-Worktree erneut ausgeführt und scheitern identisch. Die Suite wird daher ausdrücklich nicht als insgesamt grün bezeichnet. Fokussierter Task-7-Nachlauf: 3/3 grün, Größen 1440×900, 1536×960, 1920×1080.
+
+Bestandsfehler (keine Regression durch Task 7):
+- e2e/dokument-editor-seite.spec.ts:245 und dokument-editor-tab-schliessen.spec.ts:63: Dokumentnummer RE-2026/09/00001 und Max Mustermann im abgedunkelten Editorhintergrund unter dem Warnmodal gekürzt; keinTextGekuerzt schlägt an.
+- e2e/menueleiste-layout.spec.ts:185 und :290: Kategorieninhalt 805 px bei 803 px Containerbreite.
+- e2e/projekt-detail-layout.spec.ts:189: Tagebuchreiter bricht um; vertikaler Abstand 42 px statt maximal 2 px.
+
+Task-7-Nachweis: echte Mitarbeiterseite → Max Mustermann → Bearbeiten → Arbeitszeit einrichten. Vorlage per Pfeil/Enter gewählt, Kalender per Enter geöffnet, Datum per Pfeil fokussiert, Escape schließt mit Fokusrückgabe. Native Dialogereignisse bleiben leer. Popupgrenzen und Datumsschaltflächen sind im Viewport. Keine künstliche Produktionsroute. DecimalInput/TimeInput/ColorInput sind laut Plan erst in Tasks 9ff integriert; hier keine Behauptung einer bereits geprüften Seitenintegration.
+
+Hinweise:
+- Der Kalenderscreenshot war nur als In-Memory-Attachment vorhanden. Ein temporärer Reporter /tmp/review2-design-reporter.cjs hat ihn im fokussierten Nachlauf persistiert; anschließend unter test-results/design/systemeingaben-task7-kalender--<projekt>.png abgelegt. Dauerhafte Persistenz der Spec wäre sinnvoll.
+- Vorschau anzeigen bleibt im vorhandenen Mitarbeiterdialog ein Outline-Button. Bei der vorgesehenen Seitenmigration als klare Primäraktion auszeichnen.
+- Visuelle Abdeckung ist bewusst exakt angegeben: alle 9 Task-7-Zustände und 41 weitere Designscreenshots plus 5 Fehlerbilder einzeln geöffnet. Nicht sämtliche 202 Designbilder der gesamten Bestandssuite wurden visuell bewertet; daraus folgt keine vollständige Designabnahme aller Bestandsseiten.
+
+Sechs Fragen je tatsächlich angesehenem Designbild. Pfadbasis: /Users/marvinkuhn/Documents/GitHub/ERP-System-fuer-Handwerksbetriebe/.Codex/worktrees/monatsabschluss-review-2-design/react-pc-frontend/test-results/design/. F1 Farben, F2 Design-System, F3 Look-and-Feel, F4 UX, F5 Auffindbarkeit, F6 Überschneidung/Abschneiden. Amber/Grün werden als vorhandene semantische Zustände bewertet, nicht als neue Primärpalette.
+
+| Screenshot (inklusive Größe) | F1 | F2 | F3 | F4 | F5 | F6 |
+|---|---|---|---|---|---|---|
+| anfrage-detail-kopf--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| anfrage-detail-kopf-komposita--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| anfragen-uebersicht-karten--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Bestands-Kartentitel mit Ellipse; keine neue Task7-Abschneidung |
+| anfragen-uebersicht-kurzer-titel--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Bestands-Kartentitel mit Ellipse; keine neue Task7-Abschneidung |
+| dokument-editor-ungespeichert-warnung--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Bestandsprüfung rot: Titel im Modalhintergrund gekürzt |
+| dokument-editor-vor-schliessen--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-bearbeiten--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-fehler--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Fehlerhinweis und deaktivierter Bearbeitenknopf sichtbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-gebucht--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-gesperrt--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar; PDF und Bearbeiten konkurrieren als Roseaktionen | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-lesen--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar; PDF und Bearbeiten konkurrieren als Roseaktionen | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-tab-schliessen--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| systemeingaben-task7-auswahl--pc-14zoll.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Auswahl klar hervorgehoben; Sperrgrund vor Öffnen sichtbar | Datum und Vorlage ohne Scrollen erreichbar | Popup vollständig im Viewport; Überdeckung des Hintergrunds erwartbar |
+| systemeingaben-task7-geschlossen--pc-14zoll.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Pfeile/Enter/Escape und Fokusrückgabe grün | Datum und Vorlage ohne Scrollen erreichbar | Felder und Footer sichtbar; keine Überlagerung |
+| anfrage-detail-kopf--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| anfrage-detail-kopf-komposita--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| anfragen-uebersicht-karten--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Bestands-Kartentitel mit Ellipse; keine neue Task7-Abschneidung |
+| anfragen-uebersicht-kurzer-titel--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Bestands-Kartentitel mit Ellipse; keine neue Task7-Abschneidung |
+| dokument-editor-ungespeichert-warnung--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| dokument-editor-vor-schliessen--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-bearbeiten--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-fehler--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Fehlerhinweis und deaktivierter Bearbeitenknopf sichtbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-gebucht--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-gesperrt--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar; PDF und Bearbeiten konkurrieren als Roseaktionen | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-lesen--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar; PDF und Bearbeiten konkurrieren als Roseaktionen | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-tab-schliessen--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| editor-seite-warn-dialog-blockiert-leiste--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Bestandsprüfung rot: Titel im Modalhintergrund gekürzt |
+| editor-seite-warn-dialog-blockiert-leiste--pc-uebergang.png | Rose/slate klar; Zustand erkennbar | Vorhandene Editoroptik; Systemschrift und Rose | Aufgeräumt und ausgerichtet | Lesen/Bearbeiten/Sperre bzw. Schließen-Zustand unterscheidbar | Relevante Kopfaktion sichtbar | Kein sichtbarer neuer Layoutkonflikt |
+| kunde-detail-langer-name--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Lange Detailtexte umbrechen; Suchplatzhalter teils abgeschnitten |
+| kunde-mini-karten-anfragen--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Bestandsbadge violett; außerhalb Task7 | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Lange Detailtexte umbrechen; Suchplatzhalter teils abgeschnitten |
+| kunde-mini-karten-dokumente--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Lange Detailtexte umbrechen; Suchplatzhalter teils abgeschnitten |
+| kunde-mini-karten-projekte--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Lange Detailtexte umbrechen; Suchplatzhalter teils abgeschnitten |
+| kunde-uebersicht-lange-namen--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Aufgeräumt und ausgerichtet | Aktionen/Status sichtbar; Momentaufnahme | Relevante Kopfaktion sichtbar | Lange Detailtexte umbrechen; Suchplatzhalter teils abgeschnitten |
+| lange-krankheit-beendet--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene semantische Amber-/Türkis-Chips | Aufgeräumt und ausgerichtet | Status/Details erkennbar; mehrere Bestands-Roseaktionen | Relevante Kopfaktion sichtbar | Vertikal gescrollter Zustand; sichtbare Karte sauber |
+| lange-krankheit-details--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Vorhandene semantische Amber-/Türkis-Chips | Aufgeräumt und ausgerichtet | Status/Details erkennbar; mehrere Bestands-Roseaktionen | Relevante Kopfaktion sichtbar | Untere Aktionen reichen an Viewportrand; Bestandsseite |
+| systemeingaben-task7-auswahl--pc-uebergang.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Auswahl klar hervorgehoben; Sperrgrund vor Öffnen sichtbar | Datum und Vorlage ohne Scrollen erreichbar | Popup vollständig im Viewport; Überdeckung des Hintergrunds erwartbar |
+| systemeingaben-task7-geschlossen--pc-uebergang.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Pfeile/Enter/Escape und Fokusrückgabe grün | Datum und Vorlage ohne Scrollen erreichbar | Felder und Footer sichtbar; keine Überlagerung |
+| leiste-bearbeiten--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| leiste-countdown--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| leiste-deaktiviert--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| leiste-lesen--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| leiste-verbindung-weg--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| lieferant-modal-bearbeiten--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| lieferant-modal-fremdes-lock--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| lieferant-modal-lesen-hinweis--pc-14zoll.png | Rose/slate klar; Zustand erkennbar | Systemschrift, ruhige Flächen und Icons | Breite Vorschaufläche im Fixture leer; schmale rechte Eingabespalte | Bearbeitungs-/Sperrstatus und Footeraktionen klar | Relevante Kopfaktion sichtbar | Footer bleibt sichtbar; darunterliegende Felder benötigen Scrollen |
+| systemeingaben-task7-auswahl--pc-monitor.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Auswahl klar hervorgehoben; Sperrgrund vor Öffnen sichtbar | Datum und Vorlage ohne Scrollen erreichbar | Popup vollständig im Viewport; Überdeckung des Hintergrunds erwartbar |
+| systemeingaben-task7-geschlossen--pc-monitor.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Pfeile/Enter/Escape und Fokusrückgabe grün | Datum und Vorlage ohne Scrollen erreichbar | Felder und Footer sichtbar; keine Überlagerung |
+| systemeingaben-task7-kalender--pc-14zoll.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Ausgewählter Tag und Tastaturfokus klar getrennt | Datum und Vorlage ohne Scrollen erreichbar | Popup vollständig im Viewport; Überdeckung des Hintergrunds erwartbar |
+| systemeingaben-task7-kalender--pc-uebergang.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Ausgewählter Tag und Tastaturfokus klar getrennt | Datum und Vorlage ohne Scrollen erreichbar | Popup vollständig im Viewport; Überdeckung des Hintergrunds erwartbar |
+| systemeingaben-task7-kalender--pc-monitor.png | Rosefokus/Markierung klar; Amberhinweis unterscheidbar | Eigene gestaltete Felder/Popup, Systemschrift, Lucide | Kompakter zentrierter Dialog, saubere Abstände | Ausgewählter Tag und Tastaturfokus klar getrennt | Datum und Vorlage ohne Scrollen erreichbar | Popup vollständig im Viewport; Überdeckung des Hintergrunds erwartbar |
+
+Zusätzlich einzeln angesehene Fehlerbilder unter /Users/marvinkuhn/Documents/GitHub/ERP-System-fuer-Handwerksbetriebe/.Codex/worktrees/monatsabschluss-review-2-design/react-pc-frontend/test-results/:
+- menueleiste-layout-Menuele-3e981-gorie-Leiste-ohne-Ueberlauf-pc-14zoll/test-failed-1.png
+- projekt-detail-layout-Proj-c2dfe-berlaeuft-auf-keinem-Reiter-pc-14zoll/test-failed-1.png
+- menueleiste-layout-Menuele-5828b-eber-alle-Kategorien-lesbar-pc-14zoll/test-failed-1.png
+- dokument-editor-tab-schlie-b633b-chließen-speichert-wirklich-pc-14zoll/test-failed-1.png
+- dokument-editor-seite-Docu-1e21f-ig-durch-das-Modal-hindurch-pc-14zoll/test-failed-1.png
+
+Für die beiden Editor-Fehlerbilder: F1 Rose/Amber klar, F2 eigene Modaloptik, F3 zentriert/lesbar, F4 eindeutige Speichern-/Abbrechenentscheidung, F5 sämtliche Dialogaktionen sichtbar, F6 Dialog selbst frei; Prüffehler betrifft gekürzten Hintergrund. Für die beiden Ribbon-Fehlerbilder: F1 Rose/slate klar, F2 bestehendes Ribbon, F3 ruhig, F4 Navigation erkennbar, F5 Kategorien erreichbar, F6 gemessener 2-px-Überlauf. Für das Projekt-Fehlerbild: F1 Rose/slate mit semantischem Grün, F2 vorhandene Detailkarten, F3 langer Titel ordentlich umbrochen, F4 Aktionen sichtbar, F5 Bearbeiten sichtbar, F6 Reiterleiste unerwartet zweizeilig (42 px).
+
+Artefakte: /tmp/review2-design-e2e.log, /tmp/review2-design-basis.log, /tmp/review2-task7.log. Produktivcode und Specs unverändert. Playwright hat alle eigenen Browser und Vite-Prozesse beendet; Port 5192 ist frei, Prozessprüfung enthält keine eigenen Review-Server. Kein browser_close-MCP ist verfügbar; es wurde kein MCP-Browser geöffnet. Die Test-Browser wurden durch Playwright-Context-/Runner-Teardown geschlossen.
+
+
+## Abschnitt 2 — Freigabe Orchestrator
+
+Beide Reviews abgenommen (gelb wegen nachgewiesenem Altbestand). Eine Nachbesserungsrunde: zwei Datumstestdateien in bdceac5f angepasst, fünf Tests danach auch vom Reviewer erfolgreich geprüft. Tasks 2, 4 und 7 zusammengeführt. Abschnitt 3 startet mit Tasks 5 und 8 auf diesem geprüften Stand.
+
+## Abschnitt 3 — ergänzende Testfixturekorrektur (Orchestrator)
+
+Commit4445f1f1 behebt die18 inAbschnitt2nachgewiesenen Bestandsfehler vonLieferantDokumentModal.test.tsx: Response erhältDummytextundContent-Type direkt statt eines jsdomBlob ohne stream(). PDF-AntwortinhaltundAssertions unverändert. FokussierterNachlauf19/19grün, /tmp/monatsabschluss-modal-fixture-fix.log. KeinProduktivcode verändert; imfolgendenAbschnittsreview mitprüfen.
+
+Lesbare Erläuterung: Commit 4445f1f1 behebt die 18 in Abschnitt 2 nachgewiesenen Bestandsfehler. Die simulierte Response erhält den Dummytext und Content-Type direkt, statt eines jsdom-Blob ohne stream(). Inhalt und fachliche Zusicherungen bleiben gleich. Alle 19 betroffenen Tests bestehen. Der nächste Abschnittsreview prüft die Änderung mit.
+
+## Abschnitt 3 — Task 8 (Coding-Agent)
+
+Zeit: 2026-09-09T16:52:41.063558+00:00
+Branch: codex/systemeingaben-task-8
+Commit(s): 52ab3728
+Status: fertig
+
+Was gemacht wurde:
+- Mobile lokale Toast-/Confirm-Provider appweit eingebunden, vier Meldungsarten mit Dismiss/Timer-Cleanup; Bestätigung mit Escape, Tab-Zyklus, Fokus-Rückgabe sowie sicheren konkurrierenden Aufrufen und Unmount.
+- Touch-/Tastatur-Select und deutscher String-Draft-DecimalInput mit vollständiger Pflicht-/Grenz-/Ganzzahlvalidierung; keine Cross-App-Imports.
+- Bestehender Kalender mit min/max/Heute-Grenze, gültigem Datum, eigener Pflichtfehlermeldung, Beschriftung, Portal, Touch und Fokus erweitert. Hintergrund-Fokusverlust separat rot reproduziert und behoben.
+- Gezielt 48 Bausteintests bestanden (6 Dateien, einschließlich 10 erhaltener Kalenderbestandstests); Source- und Test-Lint für alle betroffenen Dateien grün; Mobile-Produktionsbuild grün.
+- Playwright echte Lieferscheinprüfung unter E2E_PORT=5188: 1 Test grün, Touchwahl, Escape/Fokus, kein natives Dialogereignis, Kalender innerhalb Viewport. Screenshot im Task-Worktree react-zeiterfassung/test-results/task8-kalender-handy.png angesehen: Rose/Slate klar getrennt, vorhandenes Design, ruhige Ausrichtung, verständliche Kalenderbedienung, Datum im Prüfablauf erreichbar, keine überlappenden Kalenderaktionen.
+- Nur Source und Tests committed. Generierte static-Dateien zurückgeräumt. Playwright/Vite beendet, Port 5188 frei (lsof kontrolliert).
+
+Bedenken / Abweichungen vom Plan:
+- .Codex-Dokupfade fehlen; äquivalente .agents-Skills sowie docs/agent instructions gelesen. Original TDD-Skill vom Orchestrator unter /tmp verwendet.
+- Mobile e2e/hilfen/api.ts fehlt; lokale page.route-Stubs ausschließlich in eigener erlaubter Spec.
+- Neue bisher nicht von Seiten konsumierte Primitives interaktiv mit echten Komponenten getestet; reale Seitenmigration/Toast-vor-Seitenmodal-Abnahme folgt gemäß Vertrag Task 11 und Abschnittsdesignreview.
+- Tool bietet keinen expliziten timeout-Parameter; laufende Prozesse gezielt über Session abgeholt, alle beendet. Kein Graphify-Update/volle Suite gemäß Orchestratorauftrag.
+
+## Abschnitt 3 — Task 5 (Coding-Agent)
+
+Zeit: 2026-09-09T16:57:49.766899+00:00
+Branch: codex/monatsabschluss-datev-task-5
+Commit(s): bc50100df580bcdcb0368bd9f31e2d2ae9d8bc39
+Status: fertig
+
+Was gemacht wurde:
+- Monatsabschluss-Hauptseite, Route und Ribbon-Link; rechtegeschützte Abfragen, eigene Monats/Jahres/Mitarbeiter/Abteilungs/Status-Selects, deutsche Stunden, vollständige Stand-Auswahl bis 500 über Seiten zu 50, serverseitige Summen und sechs Vergleichsmonate.
+- Bestätigter Sammelabschluss mit Busy-/Generationsschutz, Teilergebnissen, Fehlerauswahl, Seitenreset, Notification-Refresh, Verlauf nur auf Anforderung und präzisen Kalenderlinks. DATEV-Typen/API inkl echtem TXT-/ZIP-Dateinamen vorbereitet; keine DATEV-Komponenten-Platzhalter.
+- TDD: fehlende Seite/Route rot; ZIP-Dateinamensvertrag rot; Reviewer-Pagination/Verlauf-Regression rot; Browser-Verlauf-außerhalb-Viewport rot, anschließend alle behoben. Final 9/9 fokussierte Vitest-Tests, fokussiertes ESLint ohne Meldung, PC-Build grün; 6/6 E2E-Fälle auf Port 5185 in 1440x900,1536x960,1920x1080 grün. Logs /tmp/task5-final-{unit,lint,build,e2e}.log. Keine vollen Suiten.
+- Eigener erp-code-reviewer prüfte Verträge/Rechte/Races und meldete zwei Warnungen (Pagination/alter Verlauf); beide durch Regressionstest behoben. Separater Abschnitts-/Designreview folgt beim Orchestrator.
+- Screenshots im Worktree unter react-pc-frontend/test-results/design/monatsabschluss-uebersicht--*.png und den monatsabschluss-Testordnern. Übersicht alle drei Größen und geöffnete Auswahl/Bestätigung/Verlauf persönlich angesehen. Farben klar (rose/slate, amber offen), bestehendes Design-System, ruhiges ausgerichtetes Layout, sichtbare Hauptaktion und Status, Ribbon auffindbar, kein Seitenüberlauf. Verlauf wurde für direkte Sichtbarkeit unter die Filter gesetzt und per toBeInViewport gesichert.
+- Playwright beendet Vite/Browser regulär; Prozesskontrolle für Taskworktree/Port5185 leer. Keine eigenen Dienste verbleiben.
+
+Bedenken / Abweichungen vom Plan:
+- Keine fachlichen Abweichungen. Graphify-Update wie beauftragt nur zentral beim Orchestrator. Generierte static-Build-Dateien nicht committet. Mengen-/Dezimal-Eingabefelder entstehen erst bei den entsprechenden Folgetasks; diese Seite zeigt Stunden deutsch und verwendet eigene Selects.
+
+## Abschnitt 3 — Task 5 Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-09T17:00:13.606071+00:00
+Branch: codex/monatsabschluss-datev-task-5
+Commit(s): dcba8ac9d326f306cb7dc2e9a19ecff9d58fd3b2
+Status: fertig
+
+Was gemacht wurde:
+- Konkreten Orchestrator-Befund korrigiert: E2E-Dummy-Summen entsprechen jetzt zwei Mitarbeiterzeilen, auch im Vergleich. Alle sieben angezeigten Summen werden als unabhängig handgeprüfte Werte zugesichert (u.a. Arbeit 241,00 und Gesamt 291,00). Produktcode unverändert.
+- Neue Assertion zunächst rot gegen Einzelsummen; anschließend fokussierte Spec auf Port5185 in allen drei Desktopgrößen: 6/6 grün. Logs /tmp/task5-fixture-{red,green}.log. Aktualisierten 14-Zoll-Screenshot angesehen: Summen jetzt konsistent.
+- Kein gestarteter Vite-/Playwright-Prozess verbleibt.
+
+Bedenken / Abweichungen vom Plan:
+- Keine.
+
+## Abschnitt 3 — Root-Ergänzungen und Nutzervorgaben
+
+- Task 9: TerminKalender, ZeiterfassungKalender und Steuerberater-Auswahl auf eigene Bausteine umgestellt. Zehn gezielte Unit-Tests und drei Browserfälle in allen Desktopgrößen grün; fünf Zustände je Größe visuell geprüft. Zeitentwürfe werden vor Requests vollständig validiert; unveränderte Sekunden bleiben erhalten; optionales leeres Ende wird korrekt übertragen. Termin-Dialog scrollt ohne verdeckte Eingaben. Gestapelter Stornodialog sperrt seinen Hintergrund; für diesen Zustand gezielte Geometrie-/Erreichbarkeitsprüfung statt des Hintergrundelemente mitzuzählenden globalen Überlappungshelpers.
+- Nutzer hat Auslagern und Wiederverwenden ausdrücklich dauerhaft freigegeben. AGENTS.md ersetzt die frühere erneute Rückfragepflicht für dieses Refactoring. Der lokale Design-Skill hält Wiederverwendung, eigene Meldungen und Dialoge, Zahlenverhalten, Kommaformat, Pflichtvalidierung, erreichbare Aktionen und Prüfung geöffneter Zustände fest. Der bereits unversionierte Design-Skill-Ordner wird nicht pauschal als neue Fremddateisammlung gestaged.
+
+## Abschnitt 3 — Task 9 (Coding-Agent)
+
+Zeit: 2026-09-09T17:25:33.732839+00:00
+Branch: codex/systemeingaben-task-9
+Commit(s): bff11148
+Status: fertig
+
+Was gemacht wurde:
+- Alle 13 PC-Zeit-/Personalformulare verwenden die bestehenden DecimalInput-, TimeInput-, DatePicker-, Select- und ColorInput-Bausteine; deutsche String-Entwürfe, Null bei Klick/Tab leer, vollständige Pflicht-/Grenzvalidierung vor Vorschau und Speicherung. Kennnummern bleiben Ziffernfolgen.
+- Arbeitszeit-Vorschau bleibt versioniert; deutsche Stundenwerte werden numerisch übertragen. Rechner erhält ungültige Entwürfe auch bei zugeklappten Tabellen. Formeln unverändert.
+- Korrekturstorno als Pflichtgrunddialog mit Fokus und inertem Hintergrund; Netzwerk-/HTTP-Fehler als systemeigene Toasts. Optionales Kalender-Ende aus Leerzeichen wird null, unveränderte Bestandssekunden bleiben erhalten (Root-Mitarbeit).
+- Browserbefunde korrigiert: Termininhalt scrollt getrennt von Footer; Rechner-Schließen liegt neben der Primäraktion außerhalb des Toastbereichs. Click-trial belegte Fehler zuerst rot, danach grün.
+- 59 gezielte Tests in 14 Dateien grün (/tmp/task9-complete-unit.log); nach stabilisierten Mitarbeiter-Ladecallbacks dort nochmals 4/4 grün. Build erfolgreich, ESLint 0 Fehler und nur 3 vorbestehende fremde Warnungen (/tmp/task9-callback-*.log).
+- Eigene Browser-Spec 9/9 grün auf Port 5189, alle drei PC-Größen; Root-Kalenderspec zusätzlich 3/3 grün auf Port 5190. Dummy-APIs und Fremdnetzblockade; Screenshots unter /tmp/task9-e2e-artifacts und /tmp/task9-root-e2e-artifacts, angesehen.
+- ERP-Code-Reviewer nach Korrekturen grün ohne offene Befunde. Staged-Diff geprüft; ausschließlich 29 Source-/Testdateien committed, keine generierten Static-Dateien. Keine eigenen Dienste übrig; Vite/Playwright von 5189 beendet.
+
+Bedenken / Abweichungen vom Plan:
+- Zusätzlich bestehender Fachtest pages/ZeiterfassungZeitkontenTask9b.test.tsx nach Meldung an Root lediglich auf Textbox-Locators migriert; Versions-/Payloadassertions erhalten. Root bearbeitete disjunkt die drei Kalender-/Steuerberaterdateien plus dazugehörige Tests im gleichen Worktree.
+- Parallel laufende Playwright-Specs leerten zunächst den gemeinsamen test-results-Ordner; anschließend getrennte /tmp-Ausgabeordner und eigene Spec wiederholt, damit Screenshotbelege erhalten bleiben.
+- Kein Graphupdate und keine Gesamtsuite entsprechend Taskvertrag; keine Auslagerung erforderlich, gemeinsame Bausteine konsequent wiederverwendet.
+
+## Abschnitt 3 — unabhängiger Code-Review
+
+Zeit: 2026-09-09T17:29:45.936949+00:00
+Branch: codex/monatsabschluss-review-3-code
+Commit: f7b34ff8
+Status: fertig
+Ampel: 🟡
+
+- HEAD 68e43eeb, Tasks 5/8/9 und Fixture4445f1f1 unabhängig geprüft. Kein belegter Produkt-/Sicherheitsfehler.
+- PC vollständig 1230/1230 mit maxWorkers=2; erster Standardlauf 1229/1230 wegen 500er-Testtimeout, isolierter Nachlauf 9/9. Mobile vollständig 185/185. Beide Lint/Build Exit 0.
+- Orchestrator plant ausdrücklich gemeinsame Auslagerung der doppelten Arbeitszeit-Entwurfs-/Validierungslogik gemäß neuem Nutzerauftrag und gezielte Testrobustheit ohne Assertionsverlust.
+- Backend unverändert; Abschnitt-2-Backend-/MySQL-Nachweise referenziert. Design/E2E beim unabhängigen Designreview. Bericht: 2026-09-09-monatsabschluss-review-3-code.md.
+
+## Abschnitt 3 — erste gebündelte Nachbesserung läuft
+
+- Nutzervorgabe konkret umgesetzt: gemeinsame ArbeitszeitFelder und arbeitszeitInput ersetzen doppelte sieben-Tage-Entwurfs-/Validierungslogik beider Editoren, Commit 41d97bc9. Fachliche Labels und Versionsabläufe erhalten. 44 fokussierte Tests sowie 9 Arbeitszeit-Browserfälle grün, Lint/Build erfolgreich.
+- Root-Korrektur fb65a7d3: Tageserfassung nur Speichern als volle Rose-Hauptaktion; alte Browserfixtures auf beschriftete Textfelder und Kommawerte umgestellt. Mobile Browserprüfungen verwenden nun eine gemeinsame Kontext-Netzwerkgrenze und testbezogene Screenshotpfade. 18 betroffene PC- und 3 Mobile-Browserfälle grün, Tagesdialog-Screenshots aller drei Desktopgrößen angesehen: klare Aktionen, Rose/Slate, ruhige Ausrichtung, Speichern sichtbar, keine Überdeckung.
+- Zusätzlicher vom Designreview nachgewiesener Fokusbefund im Stornodialog: Tab entkommt dem obersten Dialog. Gemeinsamer Dialog-Fokusfang wird gerade ergänzt; neue Browserassertions für Tab/ShiftTab/Abbrechen/Escape und Fokusrückgabe sind im Korrekturcommit bereits enthalten, ihre erfolgreiche Ausführung steht noch aus. Keine Abschnittsabnahme vor dieser Nachprüfung.
+
+## Abschnitt 3 — Design-Review (ursprünglicher Gesamtstand)
+
+Zeit: 2026-09-09T17:38:37.323298+00:00
+Branch: codex/monatsabschluss-review-3-design
+Commit(s): b227114f
+Status: fertig
+Ampel: ROT vor Nachbesserung
+
+- HEAD 68e43eeb: volle PC-E2E 439/456 grün; 17 rot = 5 dokumentierte Baseline + 12 neue veraltete Locator-/Komma-Assertions. Mobile 3/3 grün. Eigene Ports 5191/5192; keine Listener nach Abschluss.
+- 199 PC-Designbilder in beschrifteten Kontaktbögen vollständig angesehen; neue Abläufe zusätzlich einzeln, drei Mobile-Bilder einzeln. Alle sechs Fragen je Größe stehen im Bericht docs/superpowers/plans/2026-09-09-abschnitt3-design-review.md.
+- Farben/Design: klare Statusflächen, aber zweite Rose-Hauptaktion im Tagesdialog und blaue Checkbox im Arbeitszeitdialog. Look-and-Feel: ruhig und ausgerichtet in 1440/1536/1920 sowie 393-Mobile. UX: konkrete Eingabefehler und Teilerfolg/Verlauf verständlich; separat reproduzierter Fokusverlust nach Tab vom letzten Storno-Dialogknopf bleibt rot. Auffindbarkeit: neue Abschluss-/Vorschau-/Speicheraktionen sichtbar. Überdeckungen: keine zusätzliche bestätigte neue Überdeckung; fünf alte Fälle separat belegt.
+- Mobile-Spec ohne vollständigen Fremdhost-Riegel und mit festem Screenshotpfad beanstandet; kein tatsächlicher Fremdhost-Request nachgewiesen. Root korrigiert bereits gebündelt. Keine Produktedits im Review.
+- Bedenken: Bericht bewertet ursprünglichen Stand; gezielte unabhängige Nachprüfung der Fixes erforderlich. Keine weitere Vollsuite ohne neuen Grund.
+
+## Abschnitt 3 — Arbeitszeit-Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-09T17:39:31.040143+00:00
+Branch: codex/monatsabschluss-review-3-fixes
+Commit(s): 41d97bc90f76ec2775f32f9854a11f5becc50d7c
+Status: fertig
+
+Was gemacht wurde:
+- Reviewbefund zur duplizierten Arbeitszeitlogik behoben: gemeinsame arbeitszeitInput-Hilfe für Textentwürfe, Nullwerte, Wochentage, vollständige Siebentageprüfung und optionale Zeitfenster. ArbeitszeitFelder rendert beide Dialogvarianten mit bestehenden DecimalInput/TimeInput, Fachlabels bleiben erhalten. Mitarbeiter-/Vorlagen-/Versionsabläufe unverändert.
+- Neue Helper-/Komponententests zuerst rot; danach 44/44 fokussierte Tests, ESLint und PC-Build grün. 9/9 Arbeitszeit-E2E auf Port5193 in drei Desktopgrößen grün. Alle sechs Dialog-Screenshots persönlich angesehen. Logs /tmp/arbeitszeit-refactor-{green,lint,build,e2e}.log.
+- Monatsabschluss500er-Test: ausschließlich DOM-Suchbereiche/Labels eingegrenzt, sämtliche fachlichen Assertions und Datenmengen erhalten. In gezielter kombinierter Runde590ms; keine Aussage über identische Lastbedingungen gegenüber früherem Vollsuite-Timeout.
+- Root bearbeitet disjunkte Dateien im selben Worktree; nur eigene sieben Dateien committet. Weitere zentrale Dialog-Fokuskorrektur folgt separat.
+
+Bedenken / Abweichungen vom Plan:
+- Keine. Graphpflege zentral.
+
+## Abschnitt 3 — Zentraler Dialog-Fokus (Coding-Agent)
+
+Zeit: 2026-09-09T17:41:15.985128+00:00
+Branch: codex/monatsabschluss-review-3-fixes
+Commit(s): 5e267a35c09c5c34e17c1ef6de36dcc77445e620
+Status: fertig
+
+Was gemacht wurde:
+- Designbefund Fokus entkommt Storno behoben, zentral im gemeinsamen Dialog: initialer Fokus, Tab/ShiftTab-Kreislauf, Klickfokus-Rückführung, Escape nur für obersten Dialog, Fokusrückgabe beim Schließen/Unmount. Verschachtelte Dialoge erhalten gestaffelte Ebenen. Eigene Select-/DatePicker-Portale über aria-controls zugeordnet, höherliegende externe Bestätigungen behalten ihren Fokus.
+- Drei neue Regressionen zuerst rot. 45/45 gezielte Dialog/Picker/Arbeitszeit-Tests sowie PC-Build grün. Danach Render-Ref-Zugriffe für ESLint durch Commit-/Layout-Effekte ersetzt; abschließend12/12Dialogtests und Lintgrün, einschließlich explizitemAutoFocus und nestedCancel. Logs /tmp/dialog-focus-{red,unit,build}.log und /tmp/dialog-focus-final-{unit,lint}.log.
+- Root meldet18/18PCBrowserfälle inkl StornoTab/ShiftTab/Abbrechen/Escape/Fokusrückgabe grün auf Fassung vor internerLintkorrektur. KombinierteNachprüfung folgt zentral.
+- Keine eigenenVite/PlaywrightProzesse verbleiben. NurDialog2Dateiencommittet; RootCSS/Fixturedateien und generierteBuildartefakte unangetastet.
+
+Bedenken / Abweichungen vom Plan:
+- Keine; zentraleBarrierefreiheitskorrektur ausdrücklich vomOrchestrator zugewiesen.
+
+## Abschnitt 3 — Code-Nachprüfung, Korrekturrunde 1
+
+Zeit: 2026-09-09T17:43:53.593862+00:00
+Branch: codex/monatsabschluss-review-3-code
+Status: fertig
+Ampel: 🟢
+
+- Gemeinsame Arbeitszeit-Hilfen und Felder, 500er-Testrobustheit, zentraler Dialog-Fokusfang und Auswahlfeld-CSS unabhängig geprüft. Keine offenen Codebefunde.
+- Eigene Nachprüfung: 91/91 fokussierte Tests; zwei zusätzliche StrictMode-Proben 2/2; PC-Lint und Build Exit 0. Berichtnachtrag in 2026-09-09-monatsabschluss-review-3-code.md. Designreview bleibt getrennt.
+
+## Abschnitt 3 — Design-Nachprüfung
+
+Zeit: 2026-09-09T17:45:30.588243+00:00
+Branch: codex/monatsabschluss-review-3-design
+Commit(s): de515367
+Status: fertig
+Ampel: GRÜN für Abschnitt-3-Änderungen
+
+- Review-Merge 6203f0b8 einschließlich 5e267a35: 27+9 gezielte PC-E2E und 3 Mobile-E2E grün; zusätzliche synthetische Kontextnetzprüfung 1/1 grün. D3-1 bis D3-5 erledigt.
+- Tab/Shift-Tab-Storno-Fokusfang, Escape/Abbrechen mit Fokusrückgabe und DatePicker-Portal in allen drei PC-Größen geprüft. Beide Arbeitszeit-Verbraucher mit gültigen numerischen Payloads; Null-/Komma-/Ungültigtests erhalten.
+- 66 neue Bilder in Kontaktbögen angesehen, drei Tagesdialogbilder zusätzlich einzeln. Sechs Fragen: Farben und eigene Gestaltung jetzt konsistent rose, ruhige Ausrichtung, klare Rückmeldungen, nur eine Hauptaktion, Aktionen sichtbar und keine neue bestätigte Überdeckung in allen Desktopgrößen; Mobile weiterhin klare Touchauswahl.
+- Berichtnachtrag docs/superpowers/plans/2026-09-09-abschnitt3-design-review.md. Die fünf dokumentierten Bestandsfehler bleiben, keine Behauptung einer grünen Gesamtsuite. Keine erneute Vollsuite, keine Sourceänderungen. Temporäre Spec entfernt, Ports5191/5192 frei.
+
+## Task 6 – DATEV-Einrichtung und Download – fertig
+- Branch: `codex/monatsabschluss-datev-task-6`, Commit: `1158a0bf3f843175ef18bc63f5bd1147ae588e6b`. Nur die vier Taskdateien geändert.
+- Aufklappbare LODAS-Einrichtung ohne Beispielnummern, acht Kategorien mit explizitem Ausschluss oder Lohnart, Personalnummern als Text mit führenden Nullen. Gemeinsame Input/Select/Dialog/Toast verwendet. Korrekturen fest ohne Auszahlung. Unvollständiges Speichern, Nummern-/Duplikatvalidierung, Version-409 erhält Entwurf.
+- Explizite Hauptmonatsauswahl und Versionen im Prüfdialog; Fehler/Ausschlüsse mit Mitarbeiter, Monat, Kategorie und deutschen Stunden. Auswahl-/Konfigurationswechsel einschließlich Hin-und-Rückwechsel und Dialogschluss verwerfen Freigaben/verspätete Antworten. Ausschlüsse separat bestätigen, nach 409 keine automatische Prüfung. Blob-Download mit Serverdateiname und ObjectURL-Freigabe; kein DATEV-Import behauptet.
+- TDD: initial fehlende Komponente rot, anschließend gezielte Rotnachweise für Hin-/Rückwechsel und Monat im Hinweis. Abschließend 22/22 fokussierte Units (13 DATEV, 9 Monatsabschluss), fokussiertes ESLint ohne Warnungen, PC-Build grün (bekannte Bundlegrößenwarnung). Logs `/tmp/task6-final-{unit,lint,build,e2e}.log`.
+- E2E: eigene DATEV-Spec plus bestehende Monatsabschluss-Integrationsspec, 9/9 auf Port 5196 in allen drei PC-Größen. TXT-Dateiname und tatsächlicher Downloadinhalt geprüft, führende Nullen, 8 Zuordnungen, Auswahl, Ausschluss und 409. Bilder unter `/tmp/task6-e2e-artifacts` geprüft, Dialog vollständig sichtbar; eigener Select/Focus in Rose.
+- Begründete Planabweichung, vom Root bestätigt: kompakte DATEV-Aktion unmittelbar unter der Auswahlleiste vor der Tabelle, damit sie auch bei 50 Zeilen sichtbar bleibt. Einrichtung standardmäßig geschlossen.
+- Privater Reviewer mangels freiem Slot nicht gestartet; Root für Abschnittsreview informiert. Keine Vollsuiten, kein Graphupdate, kein Push. Buildartefakte entfernt, WT sauber. Playwright/Vite beendet; Prozessprüfung zeigt keinen Task6-Dienst.
+
+## Abschnitt 4 — Task 11 (Coding-Agent)
+
+Zeit: 2026-09-09T18:11:10Z
+Branch: codex/systemeingaben-task-11
+Commit(s): 3b7fa579
+Status: fertig
+
+Was gemacht wurde:
+- Zehn mobile Seiten/Komponenten auf gemeinsame eigene Toasts, asynchrone Bestätigung, Select und MobileDatePicker umgestellt. Abbrechen bei Notiz-/Bildlöschung sendet keine Mutation; Fehler bleiben im eigenen Design sichtbar.
+- Mehrwertsteuer nutzt DecimalInput und zentrale vollständige deutsche Zahlenvalidierung einschließlich Backend-Grenzen; Null wird per Klick/Tab geleert, Nichtnullwerte bleiben, unvollständige Eingaben verhindern Requests.
+- Zentraler ToastProvider reserviert normale Layoutfläche; ResizeObserver aktualisiert gemeinsame --mobile-toast-height. Letzte Meldung räumt Fläche auf, Unmount stellt früheren Variablenwert wieder her. Eigene Overlays verwenden exportiertes mobileOverlayStyle; Confirm/DatePicker und große Formulare respektieren die verbleibende Höhe.
+- Lieferscheinformular erhielt getrennten scrollbaren Inhalt und festen Formularabschluss: letztes Feld bleibt oberhalb Speichern erreichbar. Upload-HTTP-Fehler werden erkannt; teilweise erstellte Reklamation navigiert zur vorhandenen Detailseite statt Erfolg vorzutäuschen oder erneutes Anlegen anzuregen.
+- TDD: gezielte rote Regressionen vor Fix, zuletzt 57/57 Tests in zehn betroffenen Testdateien, Lint und Build grün. Keine Vollsuite. Eigene Playwright-Spec 10/10 grün auf Port 5198, Handy 393×852/Touch, zentraler Netzriegel und ausschließlich Dummy-Daten.
+- 22 Screenshots unter /tmp/task11-e2e-artifacts tatsächlich betrachtet; nach letzten Korrekturen betroffene Aufnahmen erneut geprüft. Eigene Rose/Slate-Auswahlen, ruhige klare Hierarchie, eindeutige Aktionen/Fehler, verständliche Texte, abbrechbare Löschung, erreichbare Kopf-/Speicheraktionen und scrollbare Inhalte. Geometrie/Click-trial prüfen Toast vor Header/Confirm/DatePicker/Formular, Footerüberdeckung und Entfernung ohne Leerraum.
+- Build-Artefakte zurückgesetzt, Diff geprüft, Worktree sauber. Playwright-Dienste beendet; Port 5198 frei, keine eigenen Vite-/Browserprozesse übrig.
+
+Bedenken / Abweichungen vom Plan:
+- Orchestrator gab toast.tsx/.test sowie ConfirmDialog und MobileDatePicker zusätzlich exklusiv zur zentralen Layoutkorrektur frei. Keine anderen Shared-Source-Dateien geändert.
+- Künftige eigene fixed-Overlays müssen mobileOverlayStyle wiederverwenden; gemeinsame Confirm/DatePicker und alle im Task betroffenen Overlays sind angebunden. Keine Kamera-, Offline- oder Pushfachlogik umgebaut. Bestehendes Langzeit-Infodesign beibehalten.
+
+
+## Task 10 — Finanz/Kassen-Teilstand vor gemeinsamer Abnahme
+
+Zeit: 2026-09-09T18:18:41.483373+00:00
+Branch: codex/systemeingaben-task-10
+Commit(s): noch keiner; gemeinsamer Commit mit ROOT-Mietdateien gemäß Abstimmung ausstehend
+Status: Umsetzung und fokussierte Codeprüfungen bereit, globale Toast-Nachbesserung offen
+
+- Fünf Finanz-/Kassen-Dateien auf DecimalInput-Entwürfe, zentrale DatePicker/Dialog/Toast und vollständige Gruppenvalidierung umgestellt. Gemeinsame numberDrafts.ts plus kostenstellenDrafts.ts nach expliziter Ownership-Zuweisung; Prozente als INT gemäß V318, Geld und MwSt Scale2 gemäß Beleg/KasseEinstellung. Null bei Fokus leer, Nichtnull bleibt, Kommawerte numerisch im API-Payload; Unterdeckungs-Vorab-Einlage bei ungültigem/geändertem Entwurf gesperrt.
+- Fokussiertes ERP-Review durch review_miete: nullable Folgeupload, deaktivierte Automatik mit unsichtbarem ungültigem Draft und Escape im Lieferanten-Unterdialog zunächst rot reproduziert, danach behoben und grün geprüft. Nullable Analysebetrag bleibt leer und kann keinen Altbetrag übernehmen. Endgültige Reviewer-Antwort folgt separat.
+- 17/17 Units in 6 eigenen Dateien grün (/tmp/task10-units-end.log); Build und Lint Exit0 (/tmp/task10-build-end.log, /tmp/task10-lint-end.log), keine neue Lint-Warnung. Eigene Browser-Spec E2E_PORT=5197: 1536/1920 grün, 1440 rot ausschließlich am unten genannten Befund (/tmp/task10-e2e-end.log). Dummy-API und gemeinsamer Fremdnetz-Riegel aktiv; Beleg-/Datum-/Kassen-/Zählungs-/Einstellungs-/Import-Screenshots repräsentativ in allen Größen angesehen. Keine gesamte Suite.
+- Bedenken: Unbegrenzter globaler PC-Toast-Stapel (acht Meldungen aus schneller Fehlerfolge) überdeckt bei 1440px Eingaben im Kassen-Einstellungsdialog. Reproduktion/Screenshot: /tmp/task10-e2e-artifacts/design/task10-kasseneinstellung--pc-14zoll.png. ROOT informiert; globale Toast-Datei außerhalb Ownership bewusst nicht verändert. Eigene Beleg-Footeraktionen rechts angeordnet, damit Toasts Verwerfen nicht verdecken. Zu schmale Jahre-Beschriftung und abgeschnittene Fokusringe lokal behoben.
+- ROOT hat seine vier Mietdateien samt Tests im selben Worktree bearbeitet; diese Fremdedits bleiben erhalten. Gemeinsame Commit-Bereitschaft noch nicht gemeldet. Keine generierten Static-Builddateien verbleiben, Port5197 nach Testende frei; keine eigenen Dienste laufen.
+
+### Task 10 — Finanz-Code-Nachprüfung
+
+- review_miete bestätigt nach Source-Nachprüfung: alle drei gemeldeten Codebefunde behoben, keine neuen Befunde; Code-Ampel GRÜN. 17/17 gezielte Tests bestätigt. Gesamt-UI-Abnahme bleibt vom dokumentierten globalen Toast-Stapelbefund abhängig. Keine eigenen Dienste laufen. Gemeinsamer Commit weiterhin gemäß ROOT-Abstimmung ausstehend.
+
+## Abschnitt 4 — Task 10 Miete (Coding-Agent Nachbesserung)
+
+Zeit: 2026-09-09T18:58:15.922023+00:00
+Branch: codex/systemeingaben-task-10
+Commit(s): ausstehend, Orchestrator übernimmt nach unabhängigem Review
+Status: Nachbesserungen fertig, gemeinsame Toast-Prüfung ausstehend
+
+- Vier konkrete Mietbefunde reproduziert: Null-Fläche/Null-Betrag verursachten RangeError, gespeicherte vierstellige Zählerwerte und sechsstellige Faktoren wurden abgelehnt. Regressionen zuerst 4 rot / 6 grün, danach 10/10 grün. Nullable TS-Verträge korrigiert und fehlende Werte als leere Drafts behandelt.
+- Build grün, Lint 0 Fehler / 3 bestehende oder fremde Warnungen. Logs /tmp/miete-review-{red,green,build,lint,e2e}.log.
+- Eigene Playwright-Spec auf Port 5199: 2/3 Größen grün, 14 Zoll roter echter Toast-Overlap bei neun Meldungen vor Kostenpositionsdialog. An datev_export gemeldet, dort zentrale Toast-Verantwortung. Keine lokale Umgehung.
+- 18 Screenshots angeschaut: Rose/Slate mit unterscheidbaren Fehler-/Erfolgstönen; eigene ruhige Dialoge und Eingaben; Speichern/Abbrechen und Fehlermeldungen sichtbar; Aktionen auffindbar. Einziger visueller Sperrbefund: angesammelte Toasts überdecken auf 1440 einzelne Formularfelder. Übergangsgröße zusätzlich Toast am linken Dialogrand, auf 1920 kein Overlap.
+- Kalenderportal absichtlich über Formular: eigene Screenshot-/Viewport-/Klickbarkeitsprüfung statt allgemeiner Ebenen-blinder Überschneidungsprüfung in genau diesem Zustand. Alle anderen fünf Screenshotzustände behalten vollständige designPruefung.
+- Eigener Vite/Playwright-Prozess beendet, Port 5199 frei. Build-Ausgaben nicht gestaged (gemeinsamer WT). Keine fremden Dateien gestaged oder zurückgesetzt.
+
+## Abschnitt 4 — Task 6 Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-09T19:00:25Z
+Branch: codex/monatsabschluss-datev-task-6
+Commit(s): 862e0b5b (auf 1158a0bf)
+Status: fertig
+
+Was gemacht wurde:
+- Unabhängige Vertragsprüfung fand offene reale Salden mit Version 3, die im UI fälschlich als Exportkandidaten erschienen. Backend blockierte bereits korrekt.
+- Übersichts-Stand enthält nun additiv festgeschrieben. Frontend-AuswahlStand übernimmt diesen Status sowohl aus Einzelzeilen als auch aus der vollständigen Auswahl jenseits der aktuellen Seite. Statusänderungen invalidieren vorhandene Vorprüfung; offene/fehlende Statusangaben sperren den Export. DATEV-Requests projizieren unverändert die vier bisherigen Stand-Felder.
+- Dialog erhielt den zugänglichen Namen am tatsächlichen role=dialog statt am inneren Inhalt.
+- Rote Regressionen für realen offenen Backend-Saldo Version 3, UI-Sperre und Dialogname vor Fix nachgewiesen. Danach 5 Backendtests und 24 Frontendtests grün, Build grün, Lint ohne Fehler (3 unveränderte Fremdwarnungen).
+- Eigene DATEV-E2E-Spec 6/6 grün: 1440×900, 1536×960, 1920×1080; Download/409/Ausschlussbestätigung sowie offener Mitarbeiter 51 außerhalb erster Seite. Drei Status-Screenshots unter /tmp/task6-open-e2e-artifacts tatsächlich geprüft: klarer Noch-offen-Status, deaktivierter Export mit Erklärung, konsistente eigene Gestaltung.
+- Bestehende Test-Wartebedingung wartet jetzt auf aktivierte Vorprüfung statt nur auf vorhandenen Button (Ladevorgang war sonst ein Rennen). Bestehende Übersicht-E2E-Fixtures tragen den tatsächlichen Status.
+- Build-Artefakte bereinigt, Worktree sauber, eigener Playwright-Server beendet und Port 5206 frei. Keine Vollsuite, kein tatsächlicher DATEV-Import behauptet.
+
+Bedenken / Abweichungen vom Plan:
+- Orchestrator hat Backend-DTO, Übersichtsservice und passende Tests sowie zusätzliche Übersichtsfixtures ausdrücklich freigegeben. Keine offenen Befunde aus dieser begrenzten Vorprüfung; unabhängiger Gesamtreview folgt.
+
+## Abschnitt 4 — Orchestrator übernimmt (neue Session)
+
+Zeit: 2026-09-10
+Branch: claude/monatsabschluss-datev-final (von codex/monatsabschluss-datev, HEAD f22e815b)
+Commit(s): 4fc097b9, 87c8f32e, d8701b55
+Status: Konsolidierung fertig, Abschnitt-4-Reviews und Abschnitt C laufen
+
+Was gemacht wurde:
+- Offener Task-10-Stand aus `.Codex/worktrees/systemeingaben-task-10` war nie committet. Übernommen und als 4fc097b9 committet: Kassen-/Beleg-/Rechnungs-/Mietformulare auf gemeinsame Bausteine, gemeinsame numberDrafts/moneyDrafts, zentrale PC-Meldungsfläche (`--pc-toast-height`) in toast.tsx/dialog.tsx/MainLayout/index.css. Damit ist der gemeldete 14-Zoll-Sperrbefund (gestapelte Toasts verdecken Eingaben) im Code adressiert; die Browserabnahme läuft im Designreview.
+- Gesamtläufe auf dem konsolidierten Stand: Backend 2804 Tests, 0 Failures, 4 Errors — alle vier ausschließlich `AuditChainRepairIntegrationTest`/`AuditHashRoundtripDiagnoseTest` mit `@ActiveProfiles("local")` gegen MySQL 3307; `application-local.properties` existiert hier nicht, also umgebungsbedingt und unabhängig vom Feature (zuletzt von main-Commit 813c0523 berührt). Mobile 216/216, Lint und Build grün.
+- PC-Vitest war auf dem übernommenen Stand rot: 4 Fehler in 3 Dateien. Ursachen einzeln gegen f22e815b geprüft, statt sie pauschal als Testschwäche abzutun.
+  - `StufenplanTabelle`: echte Regression aus dem neuen Toast — Fehler-Toasts tragen jetzt bewusst `role="alert"`, damit sind es zwei Treffer. Produktverhalten behalten, Test prüft gezielt den Inline-Fehler außerhalb `[data-pc-toasts]`.
+  - `StundensatzEditModal`: **echter Produktfehler**. Der gemeinsame Dialog fokussiert beim Öffnen das erste Feld, der gespeicherte Wert kommt erst danach an — das `focus`-Event ist dann vorbei und die 0 blieb stehen; getippte Ziffern hingen sich hinten an ("08,5"). Genau die Nutzervorgabe war damit in jedem so gebauten Dialog verletzt. Zentral in `DecimalInput` behoben: eine von außen nachgereichte Null wird auch im bereits fokussierten Feld geleert, eine selbst getippte 0 (Anfang von "0,5") bleibt. Zusätzlich hörte der Modal-Effekt auf das ganze `arbeitsgang`-Objekt und setzte den Entwurf bei jedem Render zurück.
+  - `MitarbeiterEditor.task8`: datumsabhängiger Test gegen die eingefrorene Modulkonstante `HEUTE`. Neue gemeinsame `lib/datum.ts` (`heuteIso`/`isoDatum`, lokale Zeit statt UTC) ersetzt sie; der Test pinnt die Uhr, ohne die Timer zu fälschen.
+- Danach PC 1307/1307 grün, ESLint 0 Fehler, Build grün.
+- Rest-Audit der nativen Bedienelemente: Mobile vollständig sauber (0 Treffer). PC noch 7 native `<select>`, 51 `type=number/date/time/color` und 5 `alert/confirm/prompt` — das ist exakt Abschnitt C (Tasks 12/13/14) des Zusatzplans. Drei Coding-Agenten dafür parallel gestartet, dateidisjunkt zu Abschnitt 4.
+- Abschnitt-4-Reviews (Code und Design) laufen unabhängig auf `claude/monatsabschluss-datev-final` @ 87c8f32e.
+
+Bedenken / Abweichungen vom Plan:
+- Feature-Branch heißt jetzt `claude/monatsabschluss-datev-final`, weil `codex/monatsabschluss-datev` im Haupt-Checkout ausgecheckt ist und aus einem Worktree nicht fortgeschrieben werden kann. Inhalt identisch plus die obigen Commits.
+- Der DATEV-Export ist gegen die offizielle Formatbeschreibung und einen Byte-Golden-Test geprüft. Ein tatsächlicher Import in einer DATEV-Installation hat nicht stattgefunden und wird nicht behauptet.

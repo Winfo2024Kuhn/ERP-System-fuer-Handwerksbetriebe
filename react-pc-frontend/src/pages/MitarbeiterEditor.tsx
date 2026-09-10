@@ -1,8 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { ArbeitszeitFelder } from '../features/zeitkonto/ArbeitszeitFelder';
+import { WOCHENTAGE, leereArbeitszeit, zeitEntwurf, pruefeArbeitszeit, BUCHUNGSZEIT_LABELS, type ArbeitszeitEntwurf } from '../features/zeitkonto/arbeitszeitInput';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
+import { heuteIso } from '../lib/datum';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { DatePicker } from '../components/ui/datepicker';
@@ -98,22 +103,19 @@ interface Lohnabrechnung {
 
 const BASE_API = '/api/mitarbeiter';
 const ZEITKONTO_API = '/api/zeitverwaltung/zeitkonten';
-const HEUTE = new Date().toISOString().slice(0, 10);
-const LEERE_ARBEITSZEIT: Arbeitszeit = {
-    montagStunden: 0, dienstagStunden: 0, mittwochStunden: 0, donnerstagStunden: 0,
-    freitagStunden: 0, samstagStunden: 0, sonntagStunden: 0,
-    buchungStartZeit: null, buchungEndeZeit: null,
-};
-const WOCHENTAGE: { key: keyof Pick<Arbeitszeit, 'montagStunden' | 'dienstagStunden' | 'mittwochStunden' | 'donnerstagStunden' | 'freitagStunden' | 'samstagStunden' | 'sonntagStunden'>; label: string }[] = [
-    { key: 'montagStunden', label: 'Montag' }, { key: 'dienstagStunden', label: 'Dienstag' },
-    { key: 'mittwochStunden', label: 'Mittwoch' }, { key: 'donnerstagStunden', label: 'Donnerstag' },
-    { key: 'freitagStunden', label: 'Freitag' }, { key: 'samstagStunden', label: 'Samstag' },
-    { key: 'sonntagStunden', label: 'Sonntag' },
-];
+type ZahlenFeld = 'jahresUrlaub' | 'stundenlohn' | 'kalkulatorischerLohnMonat' | 'geldwertVorteilMonat';
+type MitarbeiterEntwurf = Partial<Omit<Mitarbeiter, ZahlenFeld> & Record<ZahlenFeld, string>>;
+const mitarbeiterEntwurf = (m: Partial<Mitarbeiter>): MitarbeiterEntwurf => ({ ...m,
+    jahresUrlaub: m.jahresUrlaub == null ? '' : formatDecimalInput(m.jahresUrlaub),
+    stundenlohn: m.stundenlohn == null ? '' : formatDecimalInput(m.stundenlohn),
+    kalkulatorischerLohnMonat: m.kalkulatorischerLohnMonat == null ? '' : formatDecimalInput(m.kalkulatorischerLohnMonat),
+    geldwertVorteilMonat: m.geldwertVorteilMonat == null ? '' : formatDecimalInput(m.geldwertVorteilMonat),
+});
 
 export default function MitarbeiterEditor() {
     const confirmDialog = useConfirm();
     const toast = useToast();
+    const showError = toast.error;
     const [view, setView] = useState<'LIST' | 'DETAIL'>('LIST');
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
     const [selectedMitarbeiter, setSelectedMitarbeiter] = useState<Mitarbeiter | null>(null);
@@ -122,15 +124,15 @@ export default function MitarbeiterEditor() {
 
     // Form States
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [formData, setFormData] = useState<Partial<Mitarbeiter>>({});
+    const [formData, setFormData] = useState<MitarbeiterEntwurf>({});
     const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null);
     const [zeitkontenmodelle, setZeitkontenmodelle] = useState<Zeitkontenmodell[]>([]);
     const [loadingZeitkonto, setLoadingZeitkonto] = useState(false);
     const [zeitkontoDialogOpen, setZeitkontoDialogOpen] = useState(false);
-    const [stichtag, setStichtag] = useState(HEUTE);
+    const [stichtag, setStichtag] = useState(heuteIso);
     const [vorlageId, setVorlageId] = useState('');
     const [individuelleAbweichung, setIndividuelleAbweichung] = useState(false);
-    const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<Arbeitszeit>(LEERE_ARBEITSZEIT);
+    const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<ArbeitszeitEntwurf>(zeitEntwurf(leereArbeitszeit()));
     const [wechselVorschau, setWechselVorschau] = useState<ZeitkontoWechselErgebnis | null>(null);
     const [wechselFehler, setWechselFehler] = useState<string | null>(null);
     const [loadingWechsel, setLoadingWechsel] = useState(false);
@@ -156,34 +158,38 @@ export default function MitarbeiterEditor() {
     const [lohnFilterJahr, setLohnFilterJahr] = useState('alle');
     const [lohnFilterMonat, setLohnFilterMonat] = useState('alle');
 
-    useEffect(() => {
-        loadMitarbeiter();
-        loadAbteilungen();
-    }, []);
-
-    const loadMitarbeiter = async () => {
+    const loadMitarbeiter = useCallback(async () => {
         try {
             const res = await fetch(BASE_API);
+            if (!res.ok) throw new Error('Mitarbeiter konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setMitarbeiter(data);
             }
         } catch (error) {
             console.error("Error loading employees", error);
+            showError('Mitarbeiter konnten nicht geladen werden.');
         }
-    };
+    }, [showError]);
 
-    const loadAbteilungen = async () => {
+    const loadAbteilungen = useCallback(async () => {
         try {
             const res = await fetch('/api/abteilungen');
+            if (!res.ok) throw new Error('Abteilungen konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setAbteilungen(data);
             }
         } catch (error) {
             console.error("Error loading departments", error);
+            showError('Abteilungen konnten nicht geladen werden.');
         }
-    };
+    }, [showError]);
+
+    useEffect(() => {
+        void loadMitarbeiter();
+        void loadAbteilungen();
+    }, [loadMitarbeiter, loadAbteilungen]);
 
     const antwortFehler = async (res: Response, fallback: string) => {
         try {
@@ -251,10 +257,10 @@ export default function MitarbeiterEditor() {
         const aktuelleVersion = zeitkontoStatus?.aktuell;
         const aktuell = aktuelleVersion?.arbeitszeit;
         const aktuelleVorlage = zeitkontenmodelle.find(modell => modell.id === aktuelleVersion?.vorlageId);
-        setStichtag(zeitkontoStatus?.fuehrtZeitkonto === false ? HEUTE : HEUTE);
+        setStichtag(heuteIso());
         setVorlageId(aktuelleVersion?.vorlageId ? String(aktuelleVersion.vorlageId) : aktuell ? 'individuell' : '');
         setIndividuelleAbweichung(!!aktuell && !!aktuelleVorlage && !arbeitszeitenGleich(aktuell, aktuelleVorlage.arbeitszeit));
-        setIndividuelleArbeitszeit(aktuell ?? LEERE_ARBEITSZEIT);
+        setIndividuelleArbeitszeit(zeitEntwurf(aktuell ?? leereArbeitszeit()));
         invalidiereVorschau();
         setZeitkontoDialogOpen(true);
         setIsDialogOpen(false);
@@ -263,6 +269,16 @@ export default function MitarbeiterEditor() {
     const wechselRequest = (): ZeitkontoWechsel | null => {
         if (!zeitkontoStatus) return null;
         const vorlage = zeitkontenmodelle.find(m => m.id === Number(vorlageId));
+        let arbeitszeit: Arbeitszeit | null = null;
+        try {
+            if (!stichtag) throw new Error('Bitte ein Gültig-ab-Datum wählen.');
+            if (!vorlageId) throw new Error('Bitte eine Arbeitszeit-Vorlage wählen oder eigene Zeiten festlegen.');
+            if (!vorlage || individuelleAbweichung) {
+                arbeitszeit = pruefeArbeitszeit(individuelleArbeitszeit, BUCHUNGSZEIT_LABELS);
+            }
+        } catch (error) {
+            const message = (error as Error).message; setWechselFehler(message); toast.error(message); return null;
+        }
         return {
             gueltigVon: stichtag,
             expectedMitarbeiterVersion: zeitkontoStatus.mitarbeiterVersion,
@@ -270,7 +286,7 @@ export default function MitarbeiterEditor() {
             expectedLetzteVersion: zeitkontoStatus.letzteVersion?.version ?? null,
             vorlageId: vorlage?.id ?? null,
             expectedVorlageVersion: vorlage?.version ?? null,
-            arbeitszeit: vorlage && !individuelleAbweichung ? null : individuelleArbeitszeit,
+            arbeitszeit,
         };
     };
 
@@ -357,48 +373,54 @@ export default function MitarbeiterEditor() {
     const loadDokumente = async (id: number) => {
         try {
             const res = await fetch(`${BASE_API}/${id}/dokumente`);
+            if (!res.ok) throw new Error('Dokumente konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setDokumente(data);
             }
         } catch (error) {
             console.error("Error loading documents", error);
+            toast.error('Dokumente konnten nicht geladen werden.');
         }
     };
 
     const loadNotizen = async (id: number) => {
         try {
             const res = await fetch(`${BASE_API}/${id}/notizen`);
+            if (!res.ok) throw new Error('Notizen konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setNotizen(data);
             }
         } catch (error) {
             console.error("Error loading notes", error);
+            toast.error('Notizen konnten nicht geladen werden.');
         }
     };
 
-    const loadLohnabrechnungen = async (id: number) => {
+    const loadLohnabrechnungen = useCallback(async (id: number) => {
         setLoadingLohnabrechnungen(true);
         try {
             const res = await fetch(`/api/lohnabrechnungen/mitarbeiter/${id}`);
+            if (!res.ok) throw new Error('Lohnabrechnungen konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setLohnabrechnungen(data);
             }
         } catch (error) {
             console.error("Error loading payrolls", error);
+            showError('Lohnabrechnungen konnten nicht geladen werden.');
         } finally {
             setLoadingLohnabrechnungen(false);
         }
-    };
+    }, [showError]);
 
     // Load lohnabrechnungen when tab is activated
     useEffect(() => {
         if (activeTab === 'lohnabrechnungen' && selectedMitarbeiter) {
             loadLohnabrechnungen(selectedMitarbeiter.id);
         }
-    }, [activeTab, selectedMitarbeiter]);
+    }, [activeTab, selectedMitarbeiter, loadLohnabrechnungen]);
 
     const handleCreateNotiz = async () => {
         if (!selectedMitarbeiter || !neueNotiz.trim()) return;
@@ -408,6 +430,7 @@ export default function MitarbeiterEditor() {
                 headers: { 'Content-Type': 'application/json' },
                 body: neueNotiz.trim() // Backend expects plain string body based on controller
             });
+            if (!res.ok) throw new Error('Notiz konnte nicht gespeichert werden.');
             if (res.ok) {
                 loadNotizen(selectedMitarbeiter.id);
                 setNeueNotiz('');
@@ -415,6 +438,7 @@ export default function MitarbeiterEditor() {
             }
         } catch (error) {
             console.error("Error creating note", error);
+            toast.error('Notiz konnte nicht gespeichert werden.');
         }
     };
 
@@ -422,11 +446,13 @@ export default function MitarbeiterEditor() {
         if (!await confirmDialog({ title: 'Notiz löschen', message: 'Notiz wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
             const res = await fetch(`${BASE_API}/notizen/${notizId}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Notiz konnte nicht gelöscht werden.');
             if (res.ok && selectedMitarbeiter) {
                 loadNotizen(selectedMitarbeiter.id);
             }
         } catch (error) {
             console.error("Error deleting note", error);
+            toast.error('Notiz konnte nicht gelöscht werden.');
         }
     };
 
@@ -436,7 +462,19 @@ export default function MitarbeiterEditor() {
             const url = formData.id ? `${BASE_API}/${formData.id}` : BASE_API;
             // Bestehende Mitarbeiter duerfen das Flag nie ueber den Stamm-Endpoint aendern.
             // Die sichtbare Aktualisierung stammt vorher aus dem atomaren Zeitkonto-Workflow.
-            const payload = { ...formData };
+            const { jahresUrlaub, stundenlohn, kalkulatorischerLohnMonat, geldwertVorteilMonat, ...rest } = formData;
+            const payload: Partial<Mitarbeiter> = { ...rest };
+            const fields: [ZahlenFeld, string | undefined, string, boolean, boolean][] = [
+                ['jahresUrlaub', jahresUrlaub, 'Jahresurlaub', true, true],
+                ['stundenlohn', stundenlohn, 'Stundenlohn', false, false],
+                ['kalkulatorischerLohnMonat', kalkulatorischerLohnMonat, 'Wunschlohn pro Monat', !!formData.istGeschaeftsfuehrer, false],
+                ['geldwertVorteilMonat', geldwertVorteilMonat, 'Privatanteile pro Monat', false, false],
+            ];
+            for (const [key, draft, label, required, integer] of fields) {
+                const parsed = validateDecimalInput(draft ?? '', { label, required, integer, min: 0 });
+                if (!parsed.valid) throw new Error(parsed.message);
+                payload[key] = parsed.value;
+            }
             if (formData.id) delete payload.fuehrtZeitkonto;
 
             const res = await fetch(url, {
@@ -469,6 +507,7 @@ export default function MitarbeiterEditor() {
         if (!await confirmDialog({ title: 'Mitarbeiter löschen', message: 'Mitarbeiter wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
             const res = await fetch(`${BASE_API}/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Mitarbeiter konnte nicht gelöscht werden.');
             if (res.ok) {
                 loadMitarbeiter();
                 if (selectedMitarbeiter?.id === id) {
@@ -478,6 +517,7 @@ export default function MitarbeiterEditor() {
             }
         } catch (error) {
             console.error("Error deleting employee", error);
+            toast.error('Mitarbeiter konnte nicht gelöscht werden.');
         }
     };
 
@@ -494,11 +534,13 @@ export default function MitarbeiterEditor() {
                 method: 'POST',
                 body: formData
             });
+            if (!res.ok) throw new Error('Dokument konnte nicht hochgeladen werden.');
             if (res.ok) {
                 loadDokumente(selectedMitarbeiter.id);
             }
         } catch (error) {
             console.error("Error uploading file", error);
+            toast.error('Dokument konnte nicht hochgeladen werden.');
         }
     };
 
@@ -510,6 +552,7 @@ export default function MitarbeiterEditor() {
             const res = await fetch(`${BASE_API}/${selectedMitarbeiter.id}/regenerate-token`, {
                 method: 'POST'
             });
+            if (!res.ok) throw new Error('Zugangscode konnte nicht erneuert werden.');
             if (res.ok) {
                 const newToken = await res.text();
                 setSelectedMitarbeiter({ ...selectedMitarbeiter, loginToken: newToken });
@@ -520,6 +563,7 @@ export default function MitarbeiterEditor() {
             }
         } catch (error) {
             console.error("Error regenerating token", error);
+            toast.error('Zugangscode konnte nicht erneuert werden.');
         } finally {
             setRegenerating(false);
         }
@@ -576,7 +620,7 @@ export default function MitarbeiterEditor() {
                 <Button
                     className="bg-rose-600 text-white hover:bg-rose-700"
                     onClick={() => {
-                        setFormData(selectedMitarbeiter || {});
+                        setFormData(mitarbeiterEntwurf(selectedMitarbeiter || {}));
                         setIsDialogOpen(true);
                     }}
                 >
@@ -1193,16 +1237,8 @@ export default function MitarbeiterEditor() {
                                 </div>
                                 <div className="space-y-1">
                                     <Label htmlFor="qualifikation" className="text-xs">Qualifikation</Label>
-                                    <select
-                                        id="qualifikation"
-                                        value={formData.qualifikation || ''}
-                                        onChange={e => setFormData({ ...formData, qualifikation: e.target.value })}
-                                        className="w-full h-10 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent bg-white"
-                                    >
-                                        {QUALIFIKATIONEN.map(q => (
-                                            <option key={q.value} value={q.value}>{q.label}</option>
-                                        ))}
-                                    </select>
+                                    <Select id="qualifikation" aria-label="Qualifikation" value={formData.qualifikation || ''}
+                                        onChange={value => setFormData({ ...formData, qualifikation: value })} options={QUALIFIKATIONEN} />
                                 </div>
                             </div>
 
@@ -1222,11 +1258,11 @@ export default function MitarbeiterEditor() {
                                     </div>
                                     <div className="space-y-1">
                                         <Label htmlFor="jahresUrlaub" className="text-xs">Jahresurlaub (Tage)</Label>
-                                        <Input
+                                        <DecimalInput
                                             id="jahresUrlaub"
-                                            type="number"
-                                            value={formData.jahresUrlaub || ''}
-                                            onChange={e => setFormData({ ...formData, jahresUrlaub: parseInt(e.target.value) })}
+                                            min={0}
+                                            value={formData.jahresUrlaub ?? ''}
+                                            onChange={value => setFormData({ ...formData, jahresUrlaub: value })} required integer
                                             placeholder="30"
                                         />
                                     </div>
@@ -1242,13 +1278,13 @@ export default function MitarbeiterEditor() {
                                     <Label htmlFor="stundenlohn" className="text-xs">
                                         {formData.id ? 'Aktueller Stundenlohn (€)' : 'Stundenlohn (€) – startet ab Eintrittsdatum'}
                                     </Label>
-                                    <Input
+                                    <DecimalInput
                                         id="stundenlohn"
-                                        type="number"
-                                        step="0.01"
-                                        value={formData.stundenlohn || ''}
-                                        onChange={e => setFormData({ ...formData, stundenlohn: parseFloat(e.target.value) })}
-                                        placeholder="25.00"
+                                        min={0}
+
+                                        value={formData.stundenlohn ?? ''}
+                                        onChange={value => setFormData({ ...formData, stundenlohn: value })}
+                                        placeholder="25,00"
                                         disabled={!!formData.id}
                                     />
                                     {formData.id && (
@@ -1287,8 +1323,8 @@ export default function MitarbeiterEditor() {
                                             ...formData,
                                             istGeschaeftsfuehrer: e.target.checked,
                                             ...(e.target.checked ? {} : {
-                                                kalkulatorischerLohnMonat: null,
-                                                geldwertVorteilMonat: null,
+                                                kalkulatorischerLohnMonat: '',
+                                                geldwertVorteilMonat: '',
                                             }),
                                         })}
                                         className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
@@ -1307,16 +1343,16 @@ export default function MitarbeiterEditor() {
                                             <Label htmlFor="kalkulatorischerLohnMonat" className="text-xs">
                                                 Was möchtest du dir pro Monat als Lohn rechnen? (€)
                                             </Label>
-                                            <Input
+                                            <DecimalInput
                                                 id="kalkulatorischerLohnMonat"
-                                                type="number"
-                                                step="0.01"
+                                                min={0}
+
                                                 value={formData.kalkulatorischerLohnMonat ?? ''}
-                                                onChange={e => setFormData({
+                                                onChange={value => setFormData({
                                                     ...formData,
-                                                    kalkulatorischerLohnMonat: e.target.value === '' ? null : parseFloat(e.target.value),
+                                                    kalkulatorischerLohnMonat: value,
                                                 })}
-                                                placeholder="5000.00"
+                                                placeholder="5000,00"
                                             />
                                             <p className="text-xs text-slate-500">
                                                 Wunschlohn pro Monat – fließt 12× ins Jahr in den Stundensatz ein.
@@ -1326,16 +1362,16 @@ export default function MitarbeiterEditor() {
                                             <Label htmlFor="geldwertVorteilMonat" className="text-xs">
                                                 Auto/Telefon/Privatanteile pro Monat (€) – optional
                                             </Label>
-                                            <Input
+                                            <DecimalInput
                                                 id="geldwertVorteilMonat"
-                                                type="number"
-                                                step="0.01"
+                                                min={0}
+
                                                 value={formData.geldwertVorteilMonat ?? ''}
-                                                onChange={e => setFormData({
+                                                onChange={value => setFormData({
                                                     ...formData,
-                                                    geldwertVorteilMonat: e.target.value === '' ? null : parseFloat(e.target.value),
+                                                    geldwertVorteilMonat: value,
                                                 })}
-                                                placeholder="500.00"
+                                                placeholder="500,00"
                                             />
                                             <p className="text-xs text-slate-500">
                                                 Pauschal: was die Firma für dich privat trägt (z.B. Firmenwagen, Handy).
@@ -1472,7 +1508,7 @@ export default function MitarbeiterEditor() {
                                         setVorlageId(value);
                                         if (value && value !== 'individuell') {
                                             const vorlage = zeitkontenmodelle.find(m => m.id === Number(value));
-                                            if (vorlage) setIndividuelleArbeitszeit(vorlage.arbeitszeit);
+                                            if (vorlage) setIndividuelleArbeitszeit(zeitEntwurf(vorlage.arbeitszeit));
                                         }
                                         setIndividuelleAbweichung(false);
                                         invalidiereVorschau();
@@ -1499,19 +1535,9 @@ export default function MitarbeiterEditor() {
                                     <p className="text-sm font-medium text-slate-800">{individuelleAbweichung ? 'Individuelle Abweichung' : 'Eigene Arbeitszeit'}</p>
                                     <p className="text-xs text-slate-500 mt-1">{individuelleAbweichung ? 'Die ausgewählte Vorlage bleibt als Herkunft erhalten. Diese Person erhält dafür eigene Werte.' : 'Diese Werte werden als persönlicher Zeitabschnitt gespeichert.'}</p>
                                 </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                    {WOCHENTAGE.map(tag => (
-                                        <div key={tag.key} className="space-y-1">
-                                            <Label className="text-xs">{tag.label}</Label>
-                                            <Input type="number" min="0" max="24" step="0.25" value={individuelleArbeitszeit[tag.key]}
-                                                onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, [tag.key]: Number(e.target.value) }); invalidiereVorschau(); }} />
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className="space-y-1"><Label className="text-xs">Früheste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungStartZeit ?? ''} onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungStartZeit: e.target.value || null }); invalidiereVorschau(); }} /></div>
-                                    <div className="space-y-1"><Label className="text-xs">Späteste Buchung – optional</Label><Input type="time" value={individuelleArbeitszeit.buchungEndeZeit ?? ''} onChange={e => { setIndividuelleArbeitszeit({ ...individuelleArbeitszeit, buchungEndeZeit: e.target.value || null }); invalidiereVorschau(); }} /></div>
-                                </div>
+                                <ArbeitszeitFelder value={individuelleArbeitszeit}
+                                    zeitfenster={BUCHUNGSZEIT_LABELS} kompakt optionalHinweis
+                                    onChange={draft => { setIndividuelleArbeitszeit(draft); invalidiereVorschau(); }} />
                             </div>
                         )}
                         {!vorlageId && (
@@ -1530,7 +1556,7 @@ export default function MitarbeiterEditor() {
                                         <li key={`${monat.jahr}-${monat.monat}`} className="flex flex-wrap justify-between gap-2 py-2 text-slate-700">
                                             <span>{new Date(monat.jahr, monat.monat - 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}{monat.abgeschlossen ? ' · abgeschlossen' : ''}</span>
                                             <span className={monat.geaendert ? 'font-medium text-rose-700' : 'text-slate-500'}>
-                                                {monat.saldoNachher == null ? `${monat.saldoVorher.toFixed(2)} Std.` : `${monat.saldoVorher.toFixed(2)} → ${monat.saldoNachher.toFixed(2)} Std.`}
+                                                {monat.saldoNachher == null ? `${monat.saldoVorher.toLocaleString('de-DE', { minimumFractionDigits: 2 })} Std.` : `${monat.saldoVorher.toLocaleString('de-DE', { minimumFractionDigits: 2 })} → ${monat.saldoNachher.toLocaleString('de-DE', { minimumFractionDigits: 2 })} Std.`}
                                             </span>
                                         </li>
                                     ))}
@@ -1541,7 +1567,7 @@ export default function MitarbeiterEditor() {
                     <DialogFooter className="shrink-0 border-t pt-4">
                         <Button variant="outline" onClick={() => setZeitkontoDialogOpen(false)}>Abbrechen</Button>
                         {!wechselVorschau?.gespeichert && (
-                            <Button type="button" variant="outline" onClick={ladeVorschau} disabled={loadingWechsel || !vorlageId} className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                            <Button type="button" variant={wechselVorschau ? "outline" : "default"} onClick={ladeVorschau} disabled={loadingWechsel || !vorlageId} className={wechselVorschau ? "border-rose-300 text-rose-700 hover:bg-rose-50" : "bg-rose-600 text-white hover:bg-rose-700"}>
                                 {loadingWechsel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Vorschau anzeigen
                             </Button>
                         )}

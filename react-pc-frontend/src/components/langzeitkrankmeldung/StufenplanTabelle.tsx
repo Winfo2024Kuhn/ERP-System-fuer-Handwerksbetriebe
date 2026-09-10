@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { DatePicker } from '../ui/datepicker';
-import { Input } from '../ui/input';
+import { DecimalInput } from '../ui/decimal-input';
+import { validateDecimalInput } from '../../lib/numberInput';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
 import { useConfirm } from '../ui/confirm-dialog';
@@ -63,7 +64,12 @@ export function StufenplanTabelle({ phasen, onHinzufuegen, onLoeschen, maxStunde
         // im Stufenplan). Die Prüfung erlaubt deshalb jeden Wert > 0 bis zum
         // Tageslimit -- der Fehlertext muss das widerspiegeln, nicht "zwischen
         // 1 und N" suggerieren (Nachbesserung Abschnitt 2, Befund 4).
-        const stundenZahl = Number(stunden.replace(',', '.'));
+        const result = validateDecimalInput(stunden, { label: 'Stunden pro Tag', required: true });
+        if (!result.valid || result.value === null) {
+            const meldung = !result.valid ? result.message : 'Bitte Stunden pro Tag eingeben.';
+            setFehler(meldung); toast.error(meldung); return;
+        }
+        const stundenZahl = result.value;
         if (!Number.isFinite(stundenZahl) || stundenZahl <= 0 || stundenZahl > maxStundenProTag) {
             const meldung = `Stunden pro Tag müssen größer als 0 und höchstens ${formatStunden(maxStundenProTag)} sein.`;
             setFehler(meldung);
@@ -167,13 +173,13 @@ export function StufenplanTabelle({ phasen, onHinzufuegen, onLoeschen, maxStunde
                 </div>
                 <div className="min-w-0 sm:w-40">
                     <Label htmlFor="stufenplan-stunden">Stunden pro Tag</Label>
-                    <Input
+                    <DecimalInput
                         id="stufenplan-stunden"
-                        type="number"
+                        required
                         min={0}
                         max={maxStundenProTag}
                         value={stunden}
-                        onChange={(e) => setStunden(e.target.value)}
+                        onChange={setStunden}
                         placeholder={`max. ${formatStunden(maxStundenProTag)}`}
                         disabled={disabled}
                     />

@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Trash2, Save, X, Loader2, Calendar, Plus, Clock, Briefcase, BarChart2, RefreshCw, Folder, Plane, Stethoscope, GraduationCap, Search, Calculator, TrendingUp, Palmtree, CalendarCheck, LockKeyhole, History } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { TimeInput, validateTimeInput } from '../components/ui/time-input';
 import { Select } from '../components/ui/select-custom';
 import { ProjektKategorieTreeModal } from '../components/ProjektKategorieTreeModal';
 import { ProjektSearchModal } from '../components/ProjektSearchModal';
@@ -615,7 +616,7 @@ export default function ZeiterfassungKalender() {
                                     </div>
                                     <div>
                                         <p className="text-sm text-slate-500 font-medium">Soll-Stunden</p>
-                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.sollStunden : kalenderData.sollStundenMonat).toFixed(1)}h</p>
+                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.sollStunden : kalenderData.sollStundenMonat).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
                                     </div>
                                 </div>
                             </div>
@@ -626,7 +627,7 @@ export default function ZeiterfassungKalender() {
                                     </div>
                                     <div>
                                         <p className="text-sm text-slate-500 font-medium">Ist-Stunden</p>
-                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.gesamtIst : kalenderData.istStundenMonat).toFixed(1)}h</p>
+                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.gesamtIst : kalenderData.istStundenMonat).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
                                     </div>
                                 </div>
                             </div>
@@ -638,7 +639,7 @@ export default function ZeiterfassungKalender() {
                                     <div>
                                         <p className="text-sm text-slate-500 font-medium">Differenz</p>
                                         <p className={`text-xl font-bold ${monatsDifferenz >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {monatsDifferenz >= 0 ? '+' : ''}{monatsDifferenz.toFixed(1)}h
+                                            {monatsDifferenz >= 0 ? '+' : ''}{monatsDifferenz.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
                                         </p>
                                     </div>
                                 </div>
@@ -657,12 +658,12 @@ export default function ZeiterfassungKalender() {
                                         <div className="flex-1">
                                             <p className="text-sm text-slate-500 font-medium">Gesamtstundenkonto {jahr}</p>
                                             <p className={`text-2xl font-bold ${jahresSaldo.gesamt.saldo >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                {jahresSaldo.gesamt.saldo >= 0 ? '+' : ''}{Number(jahresSaldo.gesamt.saldo).toFixed(1)}h
+                                                {jahresSaldo.gesamt.saldo >= 0 ? '+' : ''}{Number(jahresSaldo.gesamt.saldo).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
                                             </p>
                                         </div>
                                         <div className="text-right text-xs text-slate-400">
-                                            <p>Ist: {Number(jahresSaldo.gesamt.istStunden).toFixed(1)}h</p>
-                                            <p>Soll: {Number(jahresSaldo.gesamt.sollStunden).toFixed(1)}h</p>
+                                            <p>Ist: {Number(jahresSaldo.gesamt.istStunden).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
+                                            <p>Soll: {Number(jahresSaldo.gesamt.sollStunden).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
                                         </div>
                                     </div>
                                 </div>
@@ -757,7 +758,7 @@ export default function ZeiterfassungKalender() {
                                             </span>
                                             {tag.buchungen.length > 0 && (
                                                 <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
-                                                    {tag.istStunden.toFixed(1)}h
+                                                    {tag.istStunden.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
                                                 </span>
                                             )}
                                         </div>
@@ -965,6 +966,13 @@ function DayEditorModal({
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [buchungen, setBuchungen] = useState<Buchung[]>(tag.buchungen);
+    const [zeitEntwuerfe, setZeitEntwuerfe] = useState<Record<string, string>>({});
+    // Bestehende Sekunden bleiben im Payload erhalten, solange das Zeitfeld nicht geändert wird.
+    const zeitEntwurf = useCallback((buchung: Buchung, feld: 'startZeit' | 'endeZeit') => {
+        const bestand = buchung[feld] ?? '';
+        return zeitEntwuerfe[`${buchung.id}:${feld}`] ??
+            (buchung.id > 0 && /^\d{2}:\d{2}:\d{2}$/.test(bestand) ? bestand.substring(0, 5) : bestand);
+    }, [zeitEntwuerfe]);
     const [dirtyBuchungIds, setDirtyBuchungIds] = useState<Set<number>>(new Set()); // Track modified bookings
     const [clipboard, setClipboard] = useState<Partial<Buchung> | null>(null);
     const [focusedIndex, setFocusedIndex] = useState<number>(0);
@@ -995,8 +1003,8 @@ function DayEditorModal({
                     setClipboard({
                         projektId: buchung.projektId,
                         arbeitsgangId: buchung.arbeitsgangId,
-                        startZeit: buchung.startZeit,
-                        endeZeit: buchung.endeZeit,
+                        startZeit: zeitEntwurf(buchung, 'startZeit'),
+                        endeZeit: zeitEntwurf(buchung, 'endeZeit'),
                         notiz: buchung.notiz
                     });
                 }
@@ -1008,8 +1016,8 @@ function DayEditorModal({
                         id: -Date.now(),
                         projektId: clipboard.projektId || (projekte.length > 0 ? projekte[0].id : 0),
                         arbeitsgangId: clipboard.arbeitsgangId || (arbeitsgaenge.length > 0 ? arbeitsgaenge[0].id : 0),
-                        startZeit: clipboard.startZeit || '08:00',
-                        endeZeit: clipboard.endeZeit || '16:00',
+                        startZeit: clipboard.startZeit ?? '08:00',
+                        endeZeit: clipboard.endeZeit ?? '16:00',
                         projektName: '',
                         arbeitsgangName: '',
                         notiz: clipboard.notiz || '',
@@ -1028,8 +1036,8 @@ function DayEditorModal({
                         id: -Date.now(),
                         projektId: buchung.projektId,
                         arbeitsgangId: 0, // Tätigkeit leer lassen zum Ändern
-                        startZeit: buchung.startZeit,
-                        endeZeit: buchung.endeZeit,
+                        startZeit: zeitEntwurf(buchung, 'startZeit'),
+                        endeZeit: zeitEntwurf(buchung, 'endeZeit'),
                         projektName: '',
                         arbeitsgangName: '',
                         notiz: '',
@@ -1044,7 +1052,7 @@ function DayEditorModal({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [buchungen, focusedIndex, clipboard, projekte, arbeitsgaenge]);
+    }, [buchungen, focusedIndex, clipboard, projekte, arbeitsgaenge, zeitEntwurf]);
 
     // Add a new empty booking locally
     const handleAddBooking = () => {
@@ -1084,16 +1092,16 @@ function DayEditorModal({
 
     // Parse "HH:MM" zu Minuten seit Mitternacht
     const parseTime = (time: string | null | undefined): number => {
-        if (!time || time.trim() === '') return -1;
-        const parts = time.substring(0, 5).split(':');
-        if (parts.length !== 2) return -1;
-        const h = parseInt(parts[0], 10);
-        const m = parseInt(parts[1], 10);
-        if (isNaN(h) || isNaN(m)) return -1;
+        const checked = validateTimeInput(time?.substring(0, 5) ?? '', { label: 'Uhrzeit', required: true });
+        if (!checked.valid || !checked.value) return -1;
+        const [h, m] = checked.value.split(':').map(Number);
         return h * 60 + m;
     };
 
     const handleUpdateBooking = (id: number, field: string, value: string | number | null) => {
+        if (field === 'startZeit' || field === 'endeZeit') {
+            setZeitEntwuerfe(prev => ({ ...prev, [`${id}:${field}`]: String(value ?? '') }));
+        }
         setBuchungen(prev => prev.map(b =>
             b.id === id ? { ...b, [field]: value } : b
         ));
@@ -1117,7 +1125,7 @@ function DayEditorModal({
             projektId: buchung.projektId,
             arbeitsgangId: buchung.arbeitsgangId,
             startZeit: `${tag.datum}T${buchung.startZeit.length === 5 ? buchung.startZeit + ':00' : buchung.startZeit}`,
-            endeZeit: buchung.endeZeit
+            endeZeit: buchung.endeZeit?.trim()
                 ? `${tag.datum}T${buchung.endeZeit.length === 5 ? buchung.endeZeit + ':00' : buchung.endeZeit}`
                 : null,
             notiz: buchung.notiz,
@@ -1180,6 +1188,20 @@ function DayEditorModal({
 
     // Globaler Speichern-Button
     const handleSaveAll = async () => {
+        // Erst sämtliche Änderungen prüfen, bevor die erste Buchung geschrieben wird.
+        for (const buchung of buchungen) {
+            const istAbwesenheit = !!buchung.typ && ['URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'ZEITAUSGLEICH'].includes(buchung.typ);
+            if (istAbwesenheit || (buchung.id > 0 && !dirtyBuchungIds.has(buchung.id))) continue;
+            if (buchung.typ !== 'PAUSE' && (!buchung.projektId || buchung.projektId <= 0)) {
+                toast.error('Bitte für jede geänderte Buchung ein Projekt wählen.'); return;
+            }
+            const start = validateTimeInput(zeitEntwurf(buchung, 'startZeit'), { label: 'Beginn', required: true });
+            const ende = validateTimeInput(zeitEntwurf(buchung, 'endeZeit'), { label: 'Ende' });
+            if (!start.valid || !ende.valid) {
+                toast.error(!start.valid ? start.message : !ende.valid ? ende.message : 'Bitte Uhrzeiten prüfen.');
+                return;
+            }
+        }
         // Hinweis bei Überschneidung
         if (hasOverlaps()) {
             if (!await confirmDialog({ title: "Überschneidungen", message: "Es liegen zeitliche Überschneidungen bei den Buchungen vor.\nMöchten Sie trotzdem speichern?", variant: "warning", confirmLabel: "Trotzdem speichern" })) {
@@ -1250,14 +1272,14 @@ function DayEditorModal({
     return (
         <>
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <div className="bg-slate-50 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div role="dialog" aria-modal="true" aria-label="Tageserfassung" className="bg-slate-50 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
                     {/* Header */}
                     <div className="bg-white p-5 border-b border-slate-200 flex justify-between items-center">
                         <div>
                             <h2 className="text-xl font-bold text-slate-800">Tageserfassung</h2>
                             <p className="text-rose-600 font-medium">{datumFormatted}</p>
                         </div>
-                        <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <button aria-label="Tageserfassung schließen" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                             <X className="w-6 h-6 text-slate-500" />
                         </button>
                     </div>
@@ -1298,7 +1320,7 @@ function DayEditorModal({
                                                 <div className="flex-1 min-w-0">
                                                     <p className={`font-semibold ${cfg.text}`}>{cfg.label}</p>
                                                     <p className="text-sm text-slate-500">
-                                                        {stunden != null ? `${stunden.toFixed(1).replace('.', ',')} Std. angerechnet` : 'Ganzer Tag'}
+                                                        {stunden != null ? `${stunden.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Std. angerechnet` : 'Ganzer Tag'}
                                                     </p>
                                                     {b.notiz && <p className="text-xs text-slate-400 mt-0.5 truncate" title={b.notiz}>{b.notiz}</p>}
                                                 </div>
@@ -1334,20 +1356,18 @@ function DayEditorModal({
                                             <div className="col-span-2 flex items-center gap-4">
                                                 <div className="flex-1">
                                                     <label className="block text-xs font-semibold text-slate-500 mb-1">Von</label>
-                                                    <input
-                                                        type="time"
+                                                    <TimeInput required aria-label={`Von Buchung ${index + 1}`}
                                                         className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-                                                        value={b.startZeit?.substring(0, 5) || ''}
-                                                        onChange={e => handleUpdateBooking(b.id, 'startZeit', e.target.value)}
+                                                        value={zeitEntwurf(b, 'startZeit')}
+                                                        onChange={value => handleUpdateBooking(b.id, 'startZeit', value)}
                                                     />
                                                 </div>
                                                 <div className="flex-1">
                                                     <label className="block text-xs font-semibold text-slate-500 mb-1">Bis</label>
-                                                    <input
-                                                        type="time"
+                                                    <TimeInput aria-label={`Bis Buchung ${index + 1}`}
                                                         className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-                                                        value={b.endeZeit?.substring(0, 5) || ''}
-                                                        onChange={e => handleUpdateBooking(b.id, 'endeZeit', e.target.value)}
+                                                        value={zeitEntwurf(b, 'endeZeit')}
+                                                        onChange={value => handleUpdateBooking(b.id, 'endeZeit', value)}
                                                     />
                                                 </div>
                                                 <div className="flex-1">
@@ -1355,7 +1375,7 @@ function DayEditorModal({
                                                     <div className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-600 text-sm">
                                                         {/* Calc duration if both times present */}
                                                         {(() => {
-                                                            if (b.startZeit && b.endeZeit) {
+                                                            if (b.startZeit && b.endeZeit && validateTimeInput(zeitEntwurf(b, 'startZeit'), { label: 'Beginn' }).valid && validateTimeInput(zeitEntwurf(b, 'endeZeit'), { label: 'Ende' }).valid) {
                                                                 const start = new Date(`2000-01-01T${b.startZeit.length === 5 ? b.startZeit + ':00' : b.startZeit}`);
                                                                 const end = new Date(`2000-01-01T${b.endeZeit.length === 5 ? b.endeZeit + ':00' : b.endeZeit}`);
                                                                 let diff = (end.getTime() - start.getTime()) / 60000;
@@ -1462,7 +1482,7 @@ function DayEditorModal({
 
                         {/* Add Button Area */}
                         <div className="pt-4 flex justify-center gap-3">
-                            <Button onClick={handleAddBooking} className="bg-rose-600 hover:bg-rose-700 text-white px-6">
+                            <Button onClick={handleAddBooking} variant="outline" className="px-6">
                                 <Plus className="w-5 h-5 mr-2" /> Neue Buchung
                             </Button>
                             <Button onClick={handleAddPause} variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-50 px-6">

@@ -123,6 +123,17 @@ public class MonatsSaldoService {
 
     @Transactional
     public MonatsabschlussDto abschliessen(Long id, int jahr, int monat, Authentication authentication) {
+        return abschliessenIntern(id, jahr, monat, authentication, true);
+    }
+
+    /** Sammelabschluss ohne eine zusätzliche Verlaufsabfrage pro Mitarbeiter. */
+    @Transactional
+    public MonatsabschlussDto abschliessenOhneVerlauf(Long id, int jahr, int monat, Authentication authentication) {
+        return abschliessenIntern(id, jahr, monat, authentication, false);
+    }
+
+    private MonatsabschlussDto abschliessenIntern(Long id, int jahr, int monat,
+                                                 Authentication authentication, boolean mitVerlauf) {
         Mitarbeiter akteur = berechtigungService.verlangeAkteur(authentication);
         validiereMonat(id, jahr, monat);
         if (!YearMonth.of(jahr, monat).isBefore(YearMonth.now())) {
@@ -138,6 +149,7 @@ public class MonatsSaldoService {
         }
         // Calculate and persist within this TX: no REQUIRES_NEW under the employee lock.
         saldo = saveMonatsSaldoCache(id, jahr, monat, berechneMonatsSaldo(id, jahr, monat));
+        sichereAbwesenheitsDetails(id, jahr, monat, saldo);
         LocalDateTime zeitpunkt = LocalDateTime.now();
         saldo.setFestgeschrieben(true);
         saldo.setFestgeschriebenAm(zeitpunkt);
@@ -145,7 +157,7 @@ public class MonatsSaldoService {
         monatsSaldoRepository.saveAndFlush(saldo);
         auditRepository.save(new MonatsabschlussAudit(ziel, jahr, monat,
                 MonatsabschlussAudit.Aktion.ABSCHLIESSEN, akteur, zeitpunkt));
-        return statusDto(id, jahr, monat, saldo);
+        return statusDto(id, jahr, monat, saldo, mitVerlauf);
     }
 
     @Transactional
@@ -168,6 +180,10 @@ public class MonatsSaldoService {
     }
 
     private MonatsabschlussDto statusDto(Long id, int jahr, int monat, MonatsSaldo saldo) {
+        return statusDto(id, jahr, monat, saldo, true);
+    }
+
+    private MonatsabschlussDto statusDto(Long id, int jahr, int monat, MonatsSaldo saldo, boolean mitVerlauf) {
         entityManager.flush();
         return new MonatsabschlussDto(id, jahr, monat,
                 saldo != null && Boolean.TRUE.equals(saldo.getFestgeschrieben()),
@@ -176,10 +192,51 @@ public class MonatsSaldoService {
                 saldo == null || saldo.getFestgeschriebenVon() == null ? null : saldo.getFestgeschriebenVon().getId(),
                 saldo.getIstStunden(), saldo.getSollStunden(), saldo.getAbwesenheitsStunden(),
                 saldo.getFeiertagsStunden(), saldo.getKorrekturStunden(), saldo.getGesamtIst(), saldo.getDifferenz(),
-                auditRepository.findByMitarbeiterIdAndJahrAndMonatOrderByZeitpunktAscIdAsc(id, jahr, monat)
+                mitVerlauf ? auditRepository.findByMitarbeiterIdAndJahrAndMonatOrderByZeitpunktAscIdAsc(id, jahr, monat)
                         .stream().map(a -> new MonatsabschlussDto.Audit(a.getId(), a.getAktion().name(),
                                 a.getAkteur().getId(), a.getAkteur().getVorname() + " " + a.getAkteur().getNachname(),
-                                a.getZeitpunkt())).toList());
+                                a.getZeitpunkt())).toList() : List.of());
+    }
+
+    /** Wird ausschließlich beim Abschluss unter dem bestehenden Mitarbeiterlock ausgeführt. */
+    private void sichereAbwesenheitsDetails(Long id, int jahr, int monat, MonatsSaldo saldo) {
+        BigDecimal urlaub = BigDecimal.ZERO;
+        BigDecimal krankheit = BigDecimal.ZERO;
+        BigDecimal fortbildung = BigDecimal.ZERO;
+        BigDecimal zeitausgleich = BigDecimal.ZERO;
+        BigDecimal krankengeld = BigDecimal.ZERO;
+        BigDecimal wiedereingliederung = BigDecimal.ZERO;
+        YearMonth zeitraum = YearMonth.of(jahr, monat);
+        for (var gruppe : abwesenheitRepository.sumStundenNachTypUndPhase(id,
+                zeitraum.atDay(1), zeitraum.atEndOfMonth())) {
+            BigDecimal stunden = gruppe.getStunden() == null ? BigDecimal.ZERO : gruppe.getStunden();
+            switch (gruppe.getTyp()) {
+                case URLAUB -> urlaub = urlaub.add(stunden);
+                case FORTBILDUNG -> fortbildung = fortbildung.add(stunden);
+                case ZEITAUSGLEICH -> zeitausgleich = zeitausgleich.add(stunden);
+                case KRANKHEIT -> {
+                    if (gruppe.getPhaseTyp() == LangzeitkrankmeldungPhaseTyp.KRANKENGELD) {
+                        krankengeld = krankengeld.add(stunden);
+                    } else if (gruppe.getPhaseTyp() == LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG) {
+                        wiedereingliederung = wiedereingliederung.add(stunden);
+                    } else {
+                        krankheit = krankheit.add(stunden);
+                    }
+                }
+            }
+        }
+        BigDecimal summe = urlaub.add(krankheit).add(fortbildung).add(zeitausgleich)
+                .add(krankengeld).add(wiedereingliederung);
+        if (summe.compareTo(saldo.getAbwesenheitsStunden()) != 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Die Abwesenheitsdetails stimmen nicht mit den Monatsstunden überein. Bitte den Monat neu laden.");
+        }
+        saldo.setUrlaubStunden(urlaub);
+        saldo.setKrankheitStunden(krankheit);
+        saldo.setFortbildungStunden(fortbildung);
+        saldo.setZeitausgleichStunden(zeitausgleich);
+        saldo.setKrankengeldStunden(krankengeld);
+        saldo.setWiedereingliederungStunden(wiedereingliederung);
     }
 
     // ==================== Berechnung ====================

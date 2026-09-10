@@ -21,7 +21,7 @@ export interface Raum {
     mietobjektId?: number;
     name: string;
     beschreibung: string;
-    flaecheQuadratmeter: number;
+    flaecheQuadratmeter: number | null;
     verbraucher?: Verbraucher[];
 }
 
@@ -71,7 +71,7 @@ export interface Kostenposition {
     kostenstelleId: number;
     abrechnungsJahr?: number;
     buchungsdatum: string; // YYYY-MM-DD
-    betrag: number;
+    betrag: number | null;
     berechnung?: 'BETRAG' | 'VERBRAUCHSFAKTOR';
     verbrauchsfaktor?: number | null;
     berechneterBetrag?: number;

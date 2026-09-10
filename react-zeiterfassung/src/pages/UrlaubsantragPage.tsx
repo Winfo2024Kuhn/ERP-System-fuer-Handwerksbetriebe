@@ -1,3 +1,6 @@
+import MobileDatePicker from '../components/MobileDatePicker'
+import { Select } from '../components/ui/select-custom'
+import { useToast, mobileOverlayStyle } from '../components/ui/toast'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, FileText, Send, Loader2, CheckCircle2, Plane, Stethoscope, Calendar, AlertTriangle, X, Clock, RefreshCw } from 'lucide-react'
@@ -31,6 +34,7 @@ const STATUS_FILTER_OPTIONS = [
 ] as const
 
 export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: UrlaubsantragPageProps) {
+    const toast = useToast()
     const navigate = useNavigate()
 
     // Tab State
@@ -82,12 +86,14 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
         setLoadingResturlaub(true)
         try {
             const res = await fetch(`/api/urlaub/resturlaub?mitarbeiterId=${mitarbeiter.id}`)
+            if (!res.ok) throw new Error('Resturlaub konnte nicht geladen werden.')
             if (res.ok) {
                 const data = await res.json()
                 setResturlaub(data.verbleibend)
             }
         } catch (err) {
             console.error('Fehler beim Laden des Resturlaubs:', err)
+            toast.error('Resturlaub konnte nicht geladen werden.')
         } finally {
             setLoadingResturlaub(false)
         }
@@ -120,6 +126,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
         try {
             // Fetch by year (filtering by status happens client-side for better UX with small lists)
             const res = await fetch(`/api/urlaub/antraege?mitarbeiterId=${mitarbeiter.id}&jahr=${selectedYear}`)
+            if (!res.ok) throw new Error('Anträge konnten nicht geladen werden.')
             if (res.ok) {
                 const data = await res.json()
                 // Sort by date desc
@@ -128,6 +135,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
             }
         } catch (error) {
             console.error("Failed to fetch antraege", error)
+            toast.error('Anträge konnten nicht geladen werden.')
         } finally {
             setLoadingAntraege(false)
         }
@@ -185,13 +193,16 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                 try {
                     const errorData = await res.json()
                     setError(errorData.error || 'Fehler beim Senden des Antrags.')
+                    toast.error(errorData.error || 'Fehler beim Senden des Antrags.')
                 } catch {
                     setError('Fehler beim Senden des Antrags.')
+                    toast.error('Fehler beim Senden des Antrags.')
                 }
             }
         } catch (err) {
             console.error(err)
             setError('Verbindungsfehler. Bitte später versuchen.')
+            toast.error('Verbindungsfehler. Bitte später versuchen.')
         } finally {
             setLoading(false)
         }
@@ -199,7 +210,11 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!mitarbeiter || !von || !bis) return
+        if (!mitarbeiter) return
+        if (!von || !bis || bis < von) {
+            const message = !von || !bis ? 'Bitte Beginn und Ende auswählen.' : 'Das Ende darf nicht vor dem Beginn liegen.'
+            setError(message); toast.error(message); return
+        }
 
         setLoading(true)
         setError(null)
@@ -296,7 +311,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
             <main className="flex-1 p-4 overflow-x-hidden overflow-y-auto">
                 {activeTab === 'BEANTRAGEN' ? (
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        <form onSubmit={handleSubmit} className="p-5 space-y-6 overflow-hidden">
+                        <form noValidate onSubmit={handleSubmit} className="p-5 space-y-6 overflow-hidden">
                             <div className="space-y-4">
                                 <h2 className="text-base font-semibold text-slate-900">Neuen Antrag stellen</h2>
                                 <div className="grid grid-cols-2 gap-2 mb-6">
@@ -350,29 +365,14 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
                                         Vom (Erster Tag)
                                     </label>
-                                    <input
-                                        type="date"
-                                        required
-                                        value={von}
-                                        onChange={(e) => setVon(e.target.value)}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none transition-all appearance-none"
-                                        style={{ maxWidth: '100%' }}
-                                    />
+                                    <MobileDatePicker required aria-label="Vom (Erster Tag)" value={von} onChange={setVon} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
                                         Bis (Letzter Tag)
                                     </label>
-                                    <input
-                                        type="date"
-                                        required
-                                        value={bis}
-                                        min={von}
-                                        onChange={(e) => setBis(e.target.value)}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none transition-all appearance-none"
-                                        style={{ maxWidth: '100%' }}
-                                    />
+                                    <MobileDatePicker required aria-label="Bis (Letzter Tag)" value={bis} min={von} onChange={setBis} />
                                 </div>
 
                                 <div>
@@ -450,18 +450,9 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                     <div className="space-y-4">
                         {/* Filters */}
                         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-3">
                                 <label className="text-sm font-medium text-slate-700">Jahr</label>
-                                <select
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                                    className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                >
-                                    {[0, 1, 2].map(offset => {
-                                        const y = new Date().getFullYear() - 1 + offset
-                                        return <option key={y} value={y}>{y}</option>
-                                    })}
-                                </select>
+                                <Select aria-label="Jahr" value={String(selectedYear)} onChange={value => setSelectedYear(Number(value))} options={Array.from({ length: 3 }, (_, i) => { const year = new Date().getFullYear() - 1 + i; return { value: String(year), label: String(year) } })} />
                             </div>
 
                             <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -531,8 +522,8 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
 
             {/* Feiertage Modal */}
             {showFeiertagModal && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-md rounded-2xl shadow-xl animate-slide-up">
+                <div style={mobileOverlayStyle} className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md max-h-full overflow-auto rounded-2xl shadow-xl motion-safe:animate-slide-up">
                         {/* Modal Header */}
                         <div className="flex items-center gap-3 p-5 border-b border-slate-100">
                             <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">

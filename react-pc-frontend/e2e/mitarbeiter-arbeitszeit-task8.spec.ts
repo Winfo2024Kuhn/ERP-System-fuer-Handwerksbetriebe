@@ -47,7 +47,8 @@ test('Task 8: Arbeitszeit bewusst einrichten und Vorschau prüfen', async ({ pag
     await page.getByText('Vorlage auswählen').click();
     await page.getByRole('option', { name: 'Vollzeit Werkstatt' }).click();
     await page.getByText('Diese Vorlage für diese Person individuell anpassen').click();
-    await page.locator('input[type="number"]').first().fill('7.5');
+    await expect(page.getByRole('checkbox', { name: 'Diese Vorlage für diese Person individuell anpassen' })).toHaveCSS('accent-color', 'rgb(225, 29, 72)');
+    await page.getByRole('textbox', { name: 'Montag Stunden', exact: true }).fill('7,5');
     await page.getByRole('button', { name: 'Vorschau anzeigen' }).click();
     await expect(page.getByText('Offene Monate werden neu gerechnet.')).toBeVisible();
     expect(vorschauBody).toMatchObject({ vorlageId: 3, expectedVorlageVersion: 2, arbeitszeit: { montagStunden: 7.5 } });

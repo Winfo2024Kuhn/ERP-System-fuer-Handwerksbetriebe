@@ -66,7 +66,7 @@ function buildFetchMock(szenario: FetchSzenario = {}) {
         const methode = options?.method ?? 'GET';
 
         if (typeof url === 'string' && url.includes('/download')) {
-            return Promise.resolve(new Response(new Blob(['dummy'], { type: 'application/pdf' })));
+            return Promise.resolve(new Response('dummy', { headers: { 'Content-Type': 'application/pdf' } }));
         }
         if (typeof url === 'string' && url.endsWith('/acquire')) {
             acquireAufrufe += 1;

@@ -5,7 +5,7 @@ import { KiHilfeChat } from '../KiHilfeChat';
 
 export function MainLayout() {
   return (
-    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
+    <div className="bg-slate-50 flex flex-col overflow-hidden" style={{ height: 'calc(100dvh - var(--pc-toast-height, 0px))' }}>
       {/* Desktop Navigation - hidden on mobile */}
       <div className="hidden md:block">
         <RibbonNavigation />

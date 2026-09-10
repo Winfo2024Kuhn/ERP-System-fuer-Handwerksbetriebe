@@ -1,124 +1,115 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useId } from 'react';
 import ReactDOM from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-interface Option {
-    value: string;
-    label: string;
-}
-
-interface SelectProps {
+interface Option { value: string; label: string; disabled?: boolean }
+export interface SelectProps {
     options: Option[];
     value: string;
     onChange: (value: string) => void;
     placeholder?: string;
     className?: string;
     disabled?: boolean;
+    id?: string;
+    name?: string;
+    required?: boolean;
+    error?: string;
+    'aria-label'?: string;
+    'aria-describedby'?: string;
 }
 
-export function Select({ options, value, onChange, placeholder = "Bitte wählen...", className, disabled }: SelectProps) {
+export function Select({ options, value, onChange, placeholder = 'Bitte wählen...', className, disabled, id, name, required, error, 'aria-label': ariaLabel, 'aria-describedby': describedBy }: SelectProps) {
+    const generatedId = useId();
+    const inputId = id ?? generatedId;
+    const listId = `${inputId}-options`;
     const [isOpen, setIsOpen] = useState(false);
-    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
-    const triggerRef = useRef<HTMLDivElement>(null);
+    const [activeIndex, setActiveIndex] = useState(-1);
+    const [attempted, setAttempted] = useState(false);
+    const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 240 });
+    const triggerRef = useRef<HTMLButtonElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const validationRef = useRef<HTMLInputElement>(null);
+    const selected = options.find(option => option.value === value);
+    const validationMessage = required && !value ? `Bitte ${ariaLabel ?? 'eine Auswahl'} auswählen.` : '';
+    const shownError = error || (attempted ? validationMessage : '');
+    useEffect(() => { validationRef.current?.setCustomValidity(validationMessage); }, [validationMessage]);
 
-    const selectedOption = options.find(opt => opt.value === value);
-
-    // Position dropdown when opening
-    useEffect(() => {
-        if (isOpen && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            setDropdownPosition({
-                top: rect.bottom + 4,
-                left: rect.left,
-                width: rect.width
-            });
-        }
-    }, [isOpen]);
-
-    // Close dropdown when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            const target = event.target as Node;
-            const isOutsideTrigger = triggerRef.current && !triggerRef.current.contains(target);
-            const isOutsideDropdown = dropdownRef.current && !dropdownRef.current.contains(target);
-
-            if (isOutsideTrigger && isOutsideDropdown) {
-                setIsOpen(false);
-            }
-        };
-
-        if (isOpen) {
-            setTimeout(() => {
-                document.addEventListener('mousedown', handleClickOutside);
-            }, 0);
-        }
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [isOpen]);
-
-    const handleSelect = (val: string) => {
-        onChange(val);
-        setIsOpen(false);
+    const open = (last = false) => {
+        const selectedIndex = options.findIndex(option => option.value === value && !option.disabled);
+        const enabled = options.map((option, index) => option.disabled ? -1 : index).filter(index => index >= 0);
+        setActiveIndex(selectedIndex >= 0 ? selectedIndex : (last ? enabled.at(-1) : enabled[0]) ?? -1);
+        setIsOpen(true);
     };
+    const choose = (index: number) => {
+        const option = options[index];
+        if (!option || option.disabled || disabled) return;
+        onChange(option.value);
+        setIsOpen(false);
+        triggerRef.current?.focus();
+    };
+    useLayoutEffect(() => {
+        if (!isOpen || disabled) return;
+        const update = () => {
+            const rect = triggerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const below = window.innerHeight - rect.bottom - 12;
+            const above = rect.top - 12;
+            const upward = below < 160 && above > below;
+            const maxHeight = Math.max(48, Math.min(240, upward ? above : below));
+            const width = Math.min(rect.width, window.innerWidth - 16);
+            setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: upward ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4, width, maxHeight });
+        };
+        const outside = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (!triggerRef.current?.contains(target) && !dropdownRef.current?.contains(target)) setIsOpen(false);
+        };
+        update();
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update, true);
+        document.addEventListener('mousedown', outside);
+        return () => { window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); document.removeEventListener('mousedown', outside); };
+    }, [isOpen, disabled]);
+    useEffect(() => {
+        if (isOpen) document.getElementById(`${listId}-${activeIndex}`)?.scrollIntoView?.({ block: 'nearest' });
+    }, [isOpen, activeIndex, listId]);
 
-    const dropdownContent = (
-        <div
-            ref={dropdownRef}
-            role="listbox"
-            className="max-h-60 overflow-auto rounded-md border border-slate-200 bg-white p-1 text-slate-950 shadow-2xl"
-            style={{
-                position: 'fixed',
-                top: dropdownPosition.top,
-                left: dropdownPosition.left,
-                width: dropdownPosition.width,
-                zIndex: 99999,
-            }}
-        >
-            {options.length === 0 ? (
-                <div className="py-2 px-2 text-sm text-slate-500 text-center">Keine Optionen</div>
-            ) : (
-                options.map((option) => (
-                    <div
-                        key={option.value}
-                        role="option"
-                        aria-selected={value === option.value}
-                        className={cn(
-                            "relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none hover:bg-rose-50 hover:text-rose-900",
-                            value === option.value && "bg-rose-50 text-rose-900 font-medium"
-                        )}
-                        onClick={() => handleSelect(option.value)}
-                    >
-                        <span className="truncate">{option.label}</span>
-                        {value === option.value && (
-                            <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
-                                <Check className="h-4 w-4" />
-                            </span>
-                        )}
-                    </div>
-                ))
-            )}
-        </div>
-    );
-
-    return (
-        <div className={cn("relative w-full", className)}>
-            <div
-                ref={triggerRef}
-                className={cn(
-                    "flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-slate-50 transition-colors",
-                    disabled && "opacity-50 cursor-not-allowed hover:bg-white",
-                    isOpen && "ring-2 ring-rose-500 ring-offset-2 border-rose-500"
-                )}
-                onClick={() => !disabled && setIsOpen(!isOpen)}
-            >
-                <span className={cn("truncate", !selectedOption && "text-slate-500")}>
-                    {selectedOption ? selectedOption.label : placeholder}
-                </span>
-                <ChevronDown className={cn("h-4 w-4 opacity-50 transition-transform", isOpen && "rotate-180")} />
-            </div>
-
-            {isOpen && !disabled && ReactDOM.createPortal(dropdownContent, document.body)}
-        </div>
-    );
+    return <div className={cn('relative w-full', className)}>
+        <button ref={triggerRef} id={inputId} type="button" role="combobox" disabled={disabled}
+            aria-label={ariaLabel} aria-expanded={isOpen && !disabled} aria-haspopup="listbox" aria-controls={isOpen ? listId : undefined}
+            aria-activedescendant={isOpen && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
+            aria-required={required} aria-invalid={shownError ? true : undefined}
+            aria-describedby={[describedBy, shownError ? `${inputId}-error` : undefined].filter(Boolean).join(' ') || undefined}
+            className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-slate-50"
+            onClick={() => isOpen ? setIsOpen(false) : open()}
+            onBlur={event => { if (!dropdownRef.current?.contains(event.relatedTarget as Node)) setIsOpen(false); }}
+            onKeyDown={event => {
+                if (event.key === 'Escape') { if (isOpen) { event.preventDefault(); event.stopPropagation(); setIsOpen(false); } return; }
+                if (event.key === 'Tab') { setIsOpen(false); return; }
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+                    event.preventDefault();
+                    if (!isOpen) { open(event.key === 'ArrowUp' || event.key === 'End'); return; }
+                    const enabled = options.map((option, index) => option.disabled ? -1 : index).filter(index => index >= 0);
+                    const current = enabled.indexOf(activeIndex);
+                    const next = event.key === 'Home' ? 0 : event.key === 'End' ? enabled.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + enabled.length) % enabled.length;
+                    setActiveIndex(enabled[next] ?? -1);
+                } else if ((event.key === 'Enter' || event.key === ' ') && isOpen) { event.preventDefault(); choose(activeIndex); }
+            }}>
+            <span className={cn('truncate', !selected && 'text-slate-500')}>{selected?.label ?? placeholder}</span>
+            <ChevronDown aria-hidden="true" className={cn('h-4 w-4 shrink-0 opacity-50', isOpen && 'rotate-180')} />
+        </button>
+        <input ref={validationRef} type="text" tabIndex={-1} aria-hidden="true" className="sr-only" name={name} value={value} required={required} disabled={disabled} onChange={() => {}}
+            onInvalid={event => { event.preventDefault(); setAttempted(true); triggerRef.current?.focus(); }} />
+        {shownError && <p id={`${inputId}-error`} role="alert" className="mt-1 text-sm text-rose-700">{shownError}</p>}
+        {isOpen && !disabled && ReactDOM.createPortal(<div ref={dropdownRef} id={listId} role="listbox" aria-label={ariaLabel ?? 'Auswahl'}
+            className="overflow-auto rounded-md border border-slate-200 bg-white p-1 text-slate-950 shadow-2xl"
+            style={{ position: 'fixed', ...position, zIndex: 99999 }} onMouseDown={event => event.preventDefault()}>
+            {options.length === 0 ? <div className="px-2 py-2 text-center text-sm text-slate-500">Keine Optionen</div> : options.map((option, index) =>
+                <div key={option.value} id={`${listId}-${index}`} role="option" aria-selected={value === option.value} aria-disabled={option.disabled}
+                    className={cn('relative rounded-sm py-2 pl-2 pr-8 text-sm', option.disabled ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer hover:bg-rose-50 hover:text-rose-900', activeIndex === index && !option.disabled && 'bg-rose-50 text-rose-900', value === option.value && 'font-medium')}
+                    onMouseMove={() => !option.disabled && setActiveIndex(index)} onClick={() => choose(index)}>
+                    {option.label}{value === option.value && <Check aria-hidden="true" className="absolute right-2 top-2 h-4 w-4" />}
+                </div>)}
+        </div>, document.body)}
+    </div>;
 }

@@ -105,6 +105,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Übersicht',
                 items: [
                     { name: 'Kalender', href: '/zeitbuchungen', icon: Calendar },
+                    { name: 'Monatsabschluss', href: '/monatsabschluss', icon: FileCheck },
                 ]
             },
             {

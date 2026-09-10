@@ -99,15 +99,15 @@ describe('VerrechnungslohnRechnerDialog', () => {
         await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
 
         const feld = aufschlagFeld();
-        fireEvent.change(feld, { target: { value: '1.234,56' } });
+        fireEvent.change(feld, { target: { value: '1234,56' } });
         fireEvent.blur(feld);
-        await waitFor(() => expect(aufschlagFeld().value).toBe('1.234,56'));
+        await waitFor(() => expect(aufschlagFeld().value).toBe('1234,56'));
 
         // Jetzt nur noch fokussieren und wieder verlassen - nichts tippen.
         fireEvent.focus(aufschlagFeld());
         fireEvent.blur(aufschlagFeld());
 
-        await waitFor(() => expect(aufschlagFeld().value).toBe('1.234,56'));
+        await waitFor(() => expect(aufschlagFeld().value).toBe('1234,56'));
         expect(aufschlagFeld().value).not.toBe('123.456,00');
     });
 
@@ -117,9 +117,9 @@ describe('VerrechnungslohnRechnerDialog', () => {
         render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
         await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
 
-        fireEvent.change(aufschlagFeld(), { target: { value: '1.234,56' } });
+        fireEvent.change(aufschlagFeld(), { target: { value: '1234,56' } });
         fireEvent.blur(aufschlagFeld());
-        await waitFor(() => expect(aufschlagFeld().value).toBe('1.234,56'));
+        await waitFor(() => expect(aufschlagFeld().value).toBe('1234,56'));
 
         // Die zweite Antwort kommt mit der angefragten Quote zurueck.
         mockFetch.mockResolvedValue(antwortOk(antwort(30)));
@@ -135,7 +135,7 @@ describe('VerrechnungslohnRechnerDialog', () => {
         // bevor das Ueberschreiben ueberhaupt passieren konnte.
         await waitFor(() => expect(neuRechnenButton().disabled).toBe(true));
 
-        expect(aufschlagFeld().value).toBe('1.234,56');
+        expect(aufschlagFeld().value).toBe('1234,56');
     });
 
     it('uebernimmt einen neu berechneten Aufschlag, solange niemand ihn angefasst hat', async () => {
@@ -143,7 +143,7 @@ describe('VerrechnungslohnRechnerDialog', () => {
         // dem Server folgen. Sonst rechnet der Dialog stumm mit veralteten Zahlen.
         render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
         await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
-        expect(aufschlagFeld().value).toBe('0,00');
+        expect(aufschlagFeld().value).toBe('0');
 
         // Zweite Antwort: gleiche Abteilung, aber ein anderer Vorschlag.
         const mitAufschlag = antwort(30);
@@ -155,7 +155,7 @@ describe('VerrechnungslohnRechnerDialog', () => {
         await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
         await waitFor(() => expect(neuRechnenButton().disabled).toBe(true));
 
-        expect(aufschlagFeld().value).toBe('12,50');
+        expect(aufschlagFeld().value).toBe('12,5');
     });
 
     it('laesst einen Abschlag mit Minuszeichen zu', async () => {
@@ -166,7 +166,7 @@ describe('VerrechnungslohnRechnerDialog', () => {
         fireEvent.change(feld, { target: { value: '-5,00' } });
         fireEvent.blur(feld);
 
-        await waitFor(() => expect(aufschlagFeld().value).toBe('-5,00'));
+        await waitFor(() => expect(aufschlagFeld().value).toBe('-5'));
     });
 
     it('sperrt das Uebernehmen, wenn der Abschlag den Stundensatz aufzehrt', async () => {
@@ -174,7 +174,7 @@ describe('VerrechnungslohnRechnerDialog', () => {
         await waitFor(() => expect(aufschlagFeld()).toBeTruthy());
 
         const feld = aufschlagFeld();
-        fireEvent.change(feld, { target: { value: '-9.999,00' } });
+        fireEvent.change(feld, { target: { value: '-9999,00' } });
         fireEvent.blur(feld);
 
         await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
@@ -223,6 +223,55 @@ describe('VerrechnungslohnRechnerDialog', () => {
 
         await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
         expect(String(mockFetch.mock.calls[1][0])).toContain('internProzent=25');
+    });
+
+    it('leert Null bei Fokus und blockiert leere und unvollständige Entwürfe auch nach dem Zuklappen', async () => {
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        const field = await screen.findByLabelText('Aufschlag oder Abschlag für Schweisserei in Euro');
+        fireEvent.focus(field);
+        expect(field).toHaveValue('');
+        fireEvent.blur(field);
+        const apply = screen.getByRole('button', { name: /Auf alle Arbeitsgänge.*übernehmen/ });
+        fireEvent.click(apply);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(field).toHaveValue('');
+        fireEvent.change(field, { target: { value: '8,' } });
+        fireEvent.blur(field);
+        fireEvent.click(apply);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(field).toHaveValue('8,');
+        fireEvent.change(field, { target: { value: '8,5' } }); fireEvent.blur(field);
+        oeffneStundenSektion();
+        const hours = screen.getByRole('textbox', { name: 'Verkäufliche Stunden für Max Mustermann' });
+        fireEvent.change(hours, { target: { value: '' } }); fireEvent.blur(hours);
+        oeffneStundenSektion();
+        fireEvent.click(apply);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        oeffneStundenSektion();
+        expect(screen.getByRole('textbox', { name: 'Verkäufliche Stunden für Max Mustermann' })).toHaveValue('');
+    });
+
+    it('prüft die interne Quote vollständig und akzeptiert Dezimalkomma', async () => {
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        const field = await screen.findByLabelText('Interne Stunden?');
+        fireEvent.change(field, { target: { value: '8,' } });
+        fireEvent.click(neuRechnenButton());
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(field).toHaveValue('8,');
+        fireEvent.change(field, { target: { value: '100,1' } });
+        fireEvent.click(neuRechnenButton());
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        mockFetch.mockResolvedValue(antwortOk(antwort(8.5)));
+        fireEvent.change(field, { target: { value: '8,5' } });
+        fireEvent.click(neuRechnenButton());
+        await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+        expect(String(mockFetch.mock.calls[1][0])).toContain('internProzent=8.5');
+    });
+
+    it('meldet Berechnungsfehler als systemeigenen Toast', async () => {
+        mockFetch.mockResolvedValue({ ok: false, status: 503 });
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith('Berechnung fehlgeschlagen (Status 503).'));
     });
 
     it('zeigt die Klartext-Meldung des Servers statt einer Statusnummer', async () => {

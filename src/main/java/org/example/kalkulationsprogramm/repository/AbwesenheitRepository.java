@@ -122,4 +122,19 @@ public interface AbwesenheitRepository extends JpaRepository<Abwesenheit, Long> 
                         @Param("von") LocalDate von,
                         @Param("bis") LocalDate bis,
                         @Param("ausgeschlossen") Collection<LangzeitkrankmeldungPhaseTyp> ausgeschlossen);
+        /** Aggregierte Abschlussdetails; LEFT JOIN bewahrt Abwesenheiten ohne Krankheitsphase. */
+        interface StundenNachTypUndPhase {
+                AbwesenheitsTyp getTyp();
+                LangzeitkrankmeldungPhaseTyp getPhaseTyp();
+                java.math.BigDecimal getStunden();
+        }
+
+        @Query("SELECT a.typ AS typ, p.typ AS phaseTyp, SUM(a.stunden) AS stunden "
+                        + "FROM Abwesenheit a LEFT JOIN a.langzeitkrankmeldungPhase p "
+                        + "WHERE a.mitarbeiter.id = :mitarbeiterId AND a.datum >= :von AND a.datum <= :bis "
+                        + "GROUP BY a.typ, p.typ")
+        List<StundenNachTypUndPhase> sumStundenNachTypUndPhase(
+                        @Param("mitarbeiterId") Long mitarbeiterId,
+                        @Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis);
 }
