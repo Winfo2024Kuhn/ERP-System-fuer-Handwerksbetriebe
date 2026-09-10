@@ -28,6 +28,9 @@ function topDialog(exclude?: HTMLElement): HTMLElement | undefined {
     }
     return result;
 }
+function notificationRoots(): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-pc-toasts]')).filter(visible);
+}
 /** Owned picker portals are linked to their trigger by aria-controls. */
 function focusRoots(panel: HTMLElement): HTMLElement[] {
     const roots = [panel];
@@ -37,10 +40,13 @@ function focusRoots(panel: HTMLElement): HTMLElement[] {
             if (popup && !roots.includes(popup)) roots.push(popup);
         }
     }
-    return roots;
+    return [...roots, ...notificationRoots()];
 }
 function focusable(panel: HTMLElement): HTMLElement[] {
-    return Array.from(panel.querySelectorAll<HTMLElement>(focusSelector))
+    const candidates = [panel, ...notificationRoots()].flatMap(root => [
+        ...(root !== panel ? [root] : []), ...root.querySelectorAll<HTMLElement>(focusSelector),
+    ]);
+    return Array.from(new Set(candidates))
         .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && visible(element));
 }
 
@@ -63,27 +69,44 @@ const Dialog = React.forwardRef<
         if (!open || !panel) return;
         const opener = openerRef.current;
         let lastFocus: HTMLElement | null = null;
+        let lastDialogFocus: HTMLElement | null = null;
         const belongs = (element: Node | null) => !!element && focusRoots(panel).some(root => root.contains(element));
         const focusInside = () => {
             const target = lastFocus?.isConnected && belongs(lastFocus) && visible(lastFocus)
-                ? lastFocus : focusable(panel)[0] ?? panel;
+                ? lastFocus : lastDialogFocus?.isConnected && visible(lastDialogFocus) ? lastDialogFocus : focusable(panel)[0] ?? panel;
             target.focus();
         };
         const onFocus = (event: FocusEvent) => {
             if (topDialog() !== panel) return;
-            if (belongs(event.target as Node)) lastFocus = event.target as HTMLElement;
-            else focusInside();
+            if (belongs(event.target as Node)) {
+                lastFocus = event.target as HTMLElement;
+                if (!notificationRoots().some(root => root.contains(lastFocus))) lastDialogFocus = lastFocus;
+            } else focusInside();
         };
         const onKey = (event: KeyboardEvent) => {
             if (event.defaultPrevented || topDialog() !== panel) return;
             if (event.key === 'Escape') {
-                event.preventDefault(); event.stopPropagation(); onChangeRef.current?.(false);
+                event.preventDefault(); event.stopPropagation();
+                if (notificationRoots().some(root => root.contains(event.target as Node))) {
+                    // Escape in a notification returns to the unfinished form;
+                    // it must never close that form as a side effect.
+                    const target = lastDialogFocus?.isConnected && visible(lastDialogFocus) ? lastDialogFocus : focusable(panel)[0] ?? panel;
+                    target.focus();
+                } else onChangeRef.current?.(false);
             } else if (event.key === 'Tab') {
                 // DatePicker manages its own portal navigation and returns to its trigger.
-                if (focusRoots(panel).slice(1).some(root => root.contains(event.target as Node))) return;
+                if (focusRoots(panel).slice(1).some(root => !root.hasAttribute('data-pc-toasts') && root.contains(event.target as Node))) return;
                 const elements = focusable(panel);
                 const first = elements[0] ?? panel;
                 const last = elements.at(-1) ?? panel;
+                const lastPanel = elements.filter(element => panel.contains(element)).at(-1);
+                const firstNotice = elements.find(element => !panel.contains(element));
+                // Notification DOM precedes the portal. Bridge that boundary
+                // explicitly; ordinary navigation inside each region stays native.
+                if (firstNotice && ((!event.shiftKey && document.activeElement === lastPanel)
+                    || (event.shiftKey && document.activeElement === firstNotice))) {
+                    event.preventDefault(); (event.shiftKey ? lastPanel ?? panel : firstNotice).focus(); return;
+                }
                 if (!belongs(document.activeElement) || document.activeElement === panel
                     || (event.shiftKey && document.activeElement === first)
                     || (!event.shiftKey && document.activeElement === last)) {
@@ -94,7 +117,7 @@ const Dialog = React.forwardRef<
         document.addEventListener('focusin', onFocus);
         document.addEventListener('keydown', onKey);
         if (topDialog() === panel) {
-            if (belongs(document.activeElement)) lastFocus = document.activeElement as HTMLElement;
+            if (belongs(document.activeElement)) { lastFocus = document.activeElement as HTMLElement; lastDialogFocus = lastFocus; }
             else focusInside();
         }
         return () => {
@@ -143,7 +166,7 @@ const Dialog = React.forwardRef<
                         onClick={() => onOpenChange?.(false)}
                     >
                         <X className="h-4 w-4" />
-                        <span className="sr-only">Close</span>
+                        <span className="sr-only">Schließen</span>
                     </button>
                 </div>
             </div>

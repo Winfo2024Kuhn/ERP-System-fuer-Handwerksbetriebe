@@ -407,3 +407,83 @@ Ampel: GRÜN für Abschnitt-3-Änderungen
 - Tab/Shift-Tab-Storno-Fokusfang, Escape/Abbrechen mit Fokusrückgabe und DatePicker-Portal in allen drei PC-Größen geprüft. Beide Arbeitszeit-Verbraucher mit gültigen numerischen Payloads; Null-/Komma-/Ungültigtests erhalten.
 - 66 neue Bilder in Kontaktbögen angesehen, drei Tagesdialogbilder zusätzlich einzeln. Sechs Fragen: Farben und eigene Gestaltung jetzt konsistent rose, ruhige Ausrichtung, klare Rückmeldungen, nur eine Hauptaktion, Aktionen sichtbar und keine neue bestätigte Überdeckung in allen Desktopgrößen; Mobile weiterhin klare Touchauswahl.
 - Berichtnachtrag docs/superpowers/plans/2026-09-09-abschnitt3-design-review.md. Die fünf dokumentierten Bestandsfehler bleiben, keine Behauptung einer grünen Gesamtsuite. Keine erneute Vollsuite, keine Sourceänderungen. Temporäre Spec entfernt, Ports5191/5192 frei.
+
+## Task 6 – DATEV-Einrichtung und Download – fertig
+- Branch: `codex/monatsabschluss-datev-task-6`, Commit: `1158a0bf3f843175ef18bc63f5bd1147ae588e6b`. Nur die vier Taskdateien geändert.
+- Aufklappbare LODAS-Einrichtung ohne Beispielnummern, acht Kategorien mit explizitem Ausschluss oder Lohnart, Personalnummern als Text mit führenden Nullen. Gemeinsame Input/Select/Dialog/Toast verwendet. Korrekturen fest ohne Auszahlung. Unvollständiges Speichern, Nummern-/Duplikatvalidierung, Version-409 erhält Entwurf.
+- Explizite Hauptmonatsauswahl und Versionen im Prüfdialog; Fehler/Ausschlüsse mit Mitarbeiter, Monat, Kategorie und deutschen Stunden. Auswahl-/Konfigurationswechsel einschließlich Hin-und-Rückwechsel und Dialogschluss verwerfen Freigaben/verspätete Antworten. Ausschlüsse separat bestätigen, nach 409 keine automatische Prüfung. Blob-Download mit Serverdateiname und ObjectURL-Freigabe; kein DATEV-Import behauptet.
+- TDD: initial fehlende Komponente rot, anschließend gezielte Rotnachweise für Hin-/Rückwechsel und Monat im Hinweis. Abschließend 22/22 fokussierte Units (13 DATEV, 9 Monatsabschluss), fokussiertes ESLint ohne Warnungen, PC-Build grün (bekannte Bundlegrößenwarnung). Logs `/tmp/task6-final-{unit,lint,build,e2e}.log`.
+- E2E: eigene DATEV-Spec plus bestehende Monatsabschluss-Integrationsspec, 9/9 auf Port 5196 in allen drei PC-Größen. TXT-Dateiname und tatsächlicher Downloadinhalt geprüft, führende Nullen, 8 Zuordnungen, Auswahl, Ausschluss und 409. Bilder unter `/tmp/task6-e2e-artifacts` geprüft, Dialog vollständig sichtbar; eigener Select/Focus in Rose.
+- Begründete Planabweichung, vom Root bestätigt: kompakte DATEV-Aktion unmittelbar unter der Auswahlleiste vor der Tabelle, damit sie auch bei 50 Zeilen sichtbar bleibt. Einrichtung standardmäßig geschlossen.
+- Privater Reviewer mangels freiem Slot nicht gestartet; Root für Abschnittsreview informiert. Keine Vollsuiten, kein Graphupdate, kein Push. Buildartefakte entfernt, WT sauber. Playwright/Vite beendet; Prozessprüfung zeigt keinen Task6-Dienst.
+
+## Abschnitt 4 — Task 11 (Coding-Agent)
+
+Zeit: 2026-09-09T18:11:10Z
+Branch: codex/systemeingaben-task-11
+Commit(s): 3b7fa579
+Status: fertig
+
+Was gemacht wurde:
+- Zehn mobile Seiten/Komponenten auf gemeinsame eigene Toasts, asynchrone Bestätigung, Select und MobileDatePicker umgestellt. Abbrechen bei Notiz-/Bildlöschung sendet keine Mutation; Fehler bleiben im eigenen Design sichtbar.
+- Mehrwertsteuer nutzt DecimalInput und zentrale vollständige deutsche Zahlenvalidierung einschließlich Backend-Grenzen; Null wird per Klick/Tab geleert, Nichtnullwerte bleiben, unvollständige Eingaben verhindern Requests.
+- Zentraler ToastProvider reserviert normale Layoutfläche; ResizeObserver aktualisiert gemeinsame --mobile-toast-height. Letzte Meldung räumt Fläche auf, Unmount stellt früheren Variablenwert wieder her. Eigene Overlays verwenden exportiertes mobileOverlayStyle; Confirm/DatePicker und große Formulare respektieren die verbleibende Höhe.
+- Lieferscheinformular erhielt getrennten scrollbaren Inhalt und festen Formularabschluss: letztes Feld bleibt oberhalb Speichern erreichbar. Upload-HTTP-Fehler werden erkannt; teilweise erstellte Reklamation navigiert zur vorhandenen Detailseite statt Erfolg vorzutäuschen oder erneutes Anlegen anzuregen.
+- TDD: gezielte rote Regressionen vor Fix, zuletzt 57/57 Tests in zehn betroffenen Testdateien, Lint und Build grün. Keine Vollsuite. Eigene Playwright-Spec 10/10 grün auf Port 5198, Handy 393×852/Touch, zentraler Netzriegel und ausschließlich Dummy-Daten.
+- 22 Screenshots unter /tmp/task11-e2e-artifacts tatsächlich betrachtet; nach letzten Korrekturen betroffene Aufnahmen erneut geprüft. Eigene Rose/Slate-Auswahlen, ruhige klare Hierarchie, eindeutige Aktionen/Fehler, verständliche Texte, abbrechbare Löschung, erreichbare Kopf-/Speicheraktionen und scrollbare Inhalte. Geometrie/Click-trial prüfen Toast vor Header/Confirm/DatePicker/Formular, Footerüberdeckung und Entfernung ohne Leerraum.
+- Build-Artefakte zurückgesetzt, Diff geprüft, Worktree sauber. Playwright-Dienste beendet; Port 5198 frei, keine eigenen Vite-/Browserprozesse übrig.
+
+Bedenken / Abweichungen vom Plan:
+- Orchestrator gab toast.tsx/.test sowie ConfirmDialog und MobileDatePicker zusätzlich exklusiv zur zentralen Layoutkorrektur frei. Keine anderen Shared-Source-Dateien geändert.
+- Künftige eigene fixed-Overlays müssen mobileOverlayStyle wiederverwenden; gemeinsame Confirm/DatePicker und alle im Task betroffenen Overlays sind angebunden. Keine Kamera-, Offline- oder Pushfachlogik umgebaut. Bestehendes Langzeit-Infodesign beibehalten.
+
+
+## Task 10 — Finanz/Kassen-Teilstand vor gemeinsamer Abnahme
+
+Zeit: 2026-09-09T18:18:41.483373+00:00
+Branch: codex/systemeingaben-task-10
+Commit(s): noch keiner; gemeinsamer Commit mit ROOT-Mietdateien gemäß Abstimmung ausstehend
+Status: Umsetzung und fokussierte Codeprüfungen bereit, globale Toast-Nachbesserung offen
+
+- Fünf Finanz-/Kassen-Dateien auf DecimalInput-Entwürfe, zentrale DatePicker/Dialog/Toast und vollständige Gruppenvalidierung umgestellt. Gemeinsame numberDrafts.ts plus kostenstellenDrafts.ts nach expliziter Ownership-Zuweisung; Prozente als INT gemäß V318, Geld und MwSt Scale2 gemäß Beleg/KasseEinstellung. Null bei Fokus leer, Nichtnull bleibt, Kommawerte numerisch im API-Payload; Unterdeckungs-Vorab-Einlage bei ungültigem/geändertem Entwurf gesperrt.
+- Fokussiertes ERP-Review durch review_miete: nullable Folgeupload, deaktivierte Automatik mit unsichtbarem ungültigem Draft und Escape im Lieferanten-Unterdialog zunächst rot reproduziert, danach behoben und grün geprüft. Nullable Analysebetrag bleibt leer und kann keinen Altbetrag übernehmen. Endgültige Reviewer-Antwort folgt separat.
+- 17/17 Units in 6 eigenen Dateien grün (/tmp/task10-units-end.log); Build und Lint Exit0 (/tmp/task10-build-end.log, /tmp/task10-lint-end.log), keine neue Lint-Warnung. Eigene Browser-Spec E2E_PORT=5197: 1536/1920 grün, 1440 rot ausschließlich am unten genannten Befund (/tmp/task10-e2e-end.log). Dummy-API und gemeinsamer Fremdnetz-Riegel aktiv; Beleg-/Datum-/Kassen-/Zählungs-/Einstellungs-/Import-Screenshots repräsentativ in allen Größen angesehen. Keine gesamte Suite.
+- Bedenken: Unbegrenzter globaler PC-Toast-Stapel (acht Meldungen aus schneller Fehlerfolge) überdeckt bei 1440px Eingaben im Kassen-Einstellungsdialog. Reproduktion/Screenshot: /tmp/task10-e2e-artifacts/design/task10-kasseneinstellung--pc-14zoll.png. ROOT informiert; globale Toast-Datei außerhalb Ownership bewusst nicht verändert. Eigene Beleg-Footeraktionen rechts angeordnet, damit Toasts Verwerfen nicht verdecken. Zu schmale Jahre-Beschriftung und abgeschnittene Fokusringe lokal behoben.
+- ROOT hat seine vier Mietdateien samt Tests im selben Worktree bearbeitet; diese Fremdedits bleiben erhalten. Gemeinsame Commit-Bereitschaft noch nicht gemeldet. Keine generierten Static-Builddateien verbleiben, Port5197 nach Testende frei; keine eigenen Dienste laufen.
+
+### Task 10 — Finanz-Code-Nachprüfung
+
+- review_miete bestätigt nach Source-Nachprüfung: alle drei gemeldeten Codebefunde behoben, keine neuen Befunde; Code-Ampel GRÜN. 17/17 gezielte Tests bestätigt. Gesamt-UI-Abnahme bleibt vom dokumentierten globalen Toast-Stapelbefund abhängig. Keine eigenen Dienste laufen. Gemeinsamer Commit weiterhin gemäß ROOT-Abstimmung ausstehend.
+
+## Abschnitt 4 — Task 10 Miete (Coding-Agent Nachbesserung)
+
+Zeit: 2026-09-09T18:58:15.922023+00:00
+Branch: codex/systemeingaben-task-10
+Commit(s): ausstehend, Orchestrator übernimmt nach unabhängigem Review
+Status: Nachbesserungen fertig, gemeinsame Toast-Prüfung ausstehend
+
+- Vier konkrete Mietbefunde reproduziert: Null-Fläche/Null-Betrag verursachten RangeError, gespeicherte vierstellige Zählerwerte und sechsstellige Faktoren wurden abgelehnt. Regressionen zuerst 4 rot / 6 grün, danach 10/10 grün. Nullable TS-Verträge korrigiert und fehlende Werte als leere Drafts behandelt.
+- Build grün, Lint 0 Fehler / 3 bestehende oder fremde Warnungen. Logs /tmp/miete-review-{red,green,build,lint,e2e}.log.
+- Eigene Playwright-Spec auf Port 5199: 2/3 Größen grün, 14 Zoll roter echter Toast-Overlap bei neun Meldungen vor Kostenpositionsdialog. An datev_export gemeldet, dort zentrale Toast-Verantwortung. Keine lokale Umgehung.
+- 18 Screenshots angeschaut: Rose/Slate mit unterscheidbaren Fehler-/Erfolgstönen; eigene ruhige Dialoge und Eingaben; Speichern/Abbrechen und Fehlermeldungen sichtbar; Aktionen auffindbar. Einziger visueller Sperrbefund: angesammelte Toasts überdecken auf 1440 einzelne Formularfelder. Übergangsgröße zusätzlich Toast am linken Dialogrand, auf 1920 kein Overlap.
+- Kalenderportal absichtlich über Formular: eigene Screenshot-/Viewport-/Klickbarkeitsprüfung statt allgemeiner Ebenen-blinder Überschneidungsprüfung in genau diesem Zustand. Alle anderen fünf Screenshotzustände behalten vollständige designPruefung.
+- Eigener Vite/Playwright-Prozess beendet, Port 5199 frei. Build-Ausgaben nicht gestaged (gemeinsamer WT). Keine fremden Dateien gestaged oder zurückgesetzt.
+
+## Abschnitt 4 — Task 6 Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-09T19:00:25Z
+Branch: codex/monatsabschluss-datev-task-6
+Commit(s): 862e0b5b (auf 1158a0bf)
+Status: fertig
+
+Was gemacht wurde:
+- Unabhängige Vertragsprüfung fand offene reale Salden mit Version 3, die im UI fälschlich als Exportkandidaten erschienen. Backend blockierte bereits korrekt.
+- Übersichts-Stand enthält nun additiv festgeschrieben. Frontend-AuswahlStand übernimmt diesen Status sowohl aus Einzelzeilen als auch aus der vollständigen Auswahl jenseits der aktuellen Seite. Statusänderungen invalidieren vorhandene Vorprüfung; offene/fehlende Statusangaben sperren den Export. DATEV-Requests projizieren unverändert die vier bisherigen Stand-Felder.
+- Dialog erhielt den zugänglichen Namen am tatsächlichen role=dialog statt am inneren Inhalt.
+- Rote Regressionen für realen offenen Backend-Saldo Version 3, UI-Sperre und Dialogname vor Fix nachgewiesen. Danach 5 Backendtests und 24 Frontendtests grün, Build grün, Lint ohne Fehler (3 unveränderte Fremdwarnungen).
+- Eigene DATEV-E2E-Spec 6/6 grün: 1440×900, 1536×960, 1920×1080; Download/409/Ausschlussbestätigung sowie offener Mitarbeiter 51 außerhalb erster Seite. Drei Status-Screenshots unter /tmp/task6-open-e2e-artifacts tatsächlich geprüft: klarer Noch-offen-Status, deaktivierter Export mit Erklärung, konsistente eigene Gestaltung.
+- Bestehende Test-Wartebedingung wartet jetzt auf aktivierte Vorprüfung statt nur auf vorhandenen Button (Ladevorgang war sonst ein Rennen). Bestehende Übersicht-E2E-Fixtures tragen den tatsächlichen Status.
+- Build-Artefakte bereinigt, Worktree sauber, eigener Playwright-Server beendet und Port 5206 frei. Keine Vollsuite, kein tatsächlicher DATEV-Import behauptet.
+
+Bedenken / Abweichungen vom Plan:
+- Orchestrator hat Backend-DTO, Übersichtsservice und passende Tests sowie zusätzliche Übersichtsfixtures ausdrücklich freigegeben. Keine offenen Befunde aus dieser begrenzten Vorprüfung; unabhängiger Gesamtreview folgt.

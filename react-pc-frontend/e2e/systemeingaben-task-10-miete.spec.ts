@@ -1,0 +1,81 @@
+import { test, expect } from './hilfen/test';
+import { designPruefung } from './hilfen/design';
+
+test('Miete: eigene Dialoge, Kommazahlen und optionale Verbrauchsberechnung', async ({ page }, info) => {
+    const writes: { path: string; body: Record<string, unknown> }[] = [];
+    const browserDialogs: string[] = [];
+    let created = false;
+    page.on('dialog', async dialog => { browserDialogs.push(dialog.type()); await dialog.dismiss(); });
+    await page.route('**/api/**', async route => {
+        const url = new URL(route.request().url()); const path = url.pathname;
+        let data: unknown = [];
+        if (path === '/api/auth/me') data = { id: 1, username: 'test', email: 'test@example.com', vorname: 'Max', nachname: 'Mustermann', admin: true, roles: ['ADMIN'], requiresInitialSetup: false };
+        if (path === '/api/miete/mietobjekte') data = [{ id: 1, name: 'Testobjekt', strasse: '', plz: '', ort: '' }, ...(created ? [{ id: 2, name: 'Zweites Testobjekt', strasse: '', plz: '', ort: '' }] : [])];
+        if (path.endsWith('/jahresabrechnung')) data = { mietobjektId: 1, jahr: Number(url.searchParams.get('jahr')), gesamtkosten: 0, gesamtkostenVorjahr: 0, gesamtkostenDifferenz: 0, verbrauchsvergleiche: [] };
+        if (path.endsWith('/raeume')) data = [{ id: 1, mietobjektId: 2, name: 'Testraum', beschreibung: '', flaecheQuadratmeter: 12.5 }];
+        if (path.endsWith('/verbrauchsgegenstaende')) data = [{ id: 1, raumId: 1, name: 'Testzähler', verbrauchsart: 'WASSER', einheit: 'm³', seriennummer: '001', aktiv: true }];
+        if (path.endsWith('/kostenstellen')) data = [{ id: 1, name: 'Testkosten', kostenpositionen: [] }];
+        if (['POST', 'PUT'].includes(route.request().method())) {
+            const body = route.request().postDataJSON() as Record<string, unknown>; writes.push({ path, body }); data = { ...body, id: 2 };
+            if (path === '/api/miete/mietobjekte') created = true;
+        }
+        await route.fulfill({ json: data });
+    });
+    await page.goto('/miete');
+    await page.getByRole('button', { name: 'Neues Objekt', exact: true }).click();
+    await page.getByRole('button', { name: 'Anlegen', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible(); expect(writes).toHaveLength(0);
+    await designPruefung(page, info, 'miete-objekt-pflichtname');
+    await page.getByRole('button', { name: 'Abbrechen', exact: true }).click(); expect(writes).toHaveLength(0);
+    await page.getByRole('button', { name: 'Neues Objekt', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Name des Mietobjekts' }).fill('Zweites Testobjekt');
+    await page.getByRole('button', { name: 'Anlegen', exact: true }).click();
+    await expect.poll(() => writes.length).toBe(1);
+    await page.getByRole('button', { name: 'Parteien', exact: true }).click();
+    await page.getByRole('button', { name: /Partei hinzufügen/ }).click();
+    await page.getByRole('textbox', { name: 'Name / Firma' }).fill('Testpartei');
+    const advance = page.getByRole('textbox', { name: 'Monatlicher Vorschuss (€)' });
+    await advance.click(); await expect(advance).toHaveValue('');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click(); expect(writes).toHaveLength(1);
+    await advance.fill('12,50'); await designPruefung(page, info, 'miete-vorschuss');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await expect.poll(() => writes.find(w => w.path.endsWith('/parteien'))?.body.monatlicherVorschuss).toBe(12.5);
+    await page.getByRole('button', { name: 'Räume & Zähler', exact: true }).click();
+    await page.getByRole('button', { name: /Raum hinzufügen/ }).click();
+    await page.getByRole('textbox', { name: 'Bezeichnung', exact: true }).fill('Testzimmer');
+    const area = page.getByRole('textbox', { name: 'Fläche (m²)' });
+    await area.click(); await expect(area).toHaveValue(''); await area.fill('12,');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click(); expect(writes.filter(w => w.path.endsWith('/raeume'))).toHaveLength(0);
+    await area.fill('12,50'); await designPruefung(page, info, 'miete-flaeche');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await expect.poll(() => writes.find(w => w.path.endsWith('/raeume'))?.body.flaecheQuadratmeter).toBe(12.5);
+    await page.getByRole('button', { name: 'Stand', exact: true }).click();
+    const year = page.getByRole('textbox', { name: 'Abrechnungsjahr', exact: true });
+    await year.fill('2026,5'); await page.getByRole('textbox', { name: 'Zählerstand', exact: true }).fill('12,375');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click(); expect(writes.filter(w => w.path.endsWith('/zaehlerstaende'))).toHaveLength(0);
+    await year.fill('2026');
+    await page.getByRole('button', { name: 'Stichtag', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Stichtag auswählen' })).toBeVisible();
+    // Der Kalender ist ein beabsichtigtes Portal über dem Formular. Die allgemeine
+    // Überschneidungsprüfung unterscheidet diese beiden Ebenen nicht.
+    const calendar = page.getByRole('dialog', { name: 'Stichtag auswählen' });
+    await expect(calendar.getByRole('button', { name: 'Schließen', exact: true })).toBeInViewport();
+    await calendar.getByRole('button', { name: 'Schließen', exact: true }).click({ trial: true });
+    await page.screenshot({ path: info.outputPath('miete-stichtag-auswahl.png') });
+    await page.keyboard.press('Escape');
+    await designPruefung(page, info, 'miete-zaehlerstand');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await expect.poll(() => writes.find(w => w.path.endsWith('/zaehlerstaende'))?.body.stand).toBe(12.375);
+    expect(writes.find(w => w.path.endsWith('/zaehlerstaende'))?.body).not.toHaveProperty('verbrauch');
+    await page.getByRole('button', { name: 'Kostenpositionen', exact: true }).click();
+    await page.getByRole('button', { name: /Kostenposition$/ }).click();
+    await page.getByRole('combobox', { name: 'Berechnungsart', exact: true }).click();
+    await page.getByRole('option', { name: 'Verbrauch × Faktor', exact: true }).click();
+    const factor = page.getByRole('textbox', { name: 'Verbrauchsfaktor (€ pro Einheit)' });
+    await factor.fill('1,2345678'); await page.getByRole('button', { name: 'Speichern', exact: true }).click(); expect(writes.filter(w => w.path.endsWith('/kostenpositionen'))).toHaveLength(0);
+    await factor.fill('1,234567'); await designPruefung(page, info, 'miete-verbrauchsfaktor');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await expect.poll(() => writes.find(w => w.path.endsWith('/kostenpositionen'))?.body).toMatchObject({ betrag: 0, verbrauchsfaktor: 1.234567 });
+    expect(browserDialogs).toEqual([]);
+    expect(writes).toHaveLength(5);
+});

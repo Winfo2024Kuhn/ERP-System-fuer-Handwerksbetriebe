@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
     Banknote, ArrowDownToLine, ArrowUpFromLine, UserSquare2,
-    Settings, X, Loader2, Coins, AlertTriangle,
+    Settings, Loader2, Coins, AlertTriangle,
 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Select } from '../ui/select-custom';
 import { DatePicker } from '../ui/datepicker';
+import { DecimalInput } from '../ui/decimal-input';
+import { Dialog, DialogHeader, DialogTitle } from '../ui/dialog';
+import { useToast } from '../ui/toast';
+import { formatDecimalInput } from '../../lib/numberInput';
+import { validateNumberDrafts } from '../../lib/numberDrafts';
+import { validateMoneyDraft } from '../../features/finanzen/moneyDrafts';
 
 // Saldo-Bar + 4 Shortcut-Buttons + Settings (Issue #59).
 //
@@ -56,7 +62,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
     const [saldo, setSaldo] = useState<SaldoInfo | null>(null);
     const [openModal, setOpenModal] = useState<null | 'bank' | 'lohn' | 'einlage' | 'entnahme' | 'settings'>(null);
-    const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+    const toast = useToast();
 
     const loadSaldo = useCallback(async () => {
         try {
@@ -82,19 +88,12 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
         return () => { cancelled = true; };
     }, []);
 
-    // Toast nach 4s automatisch ausblenden — kein alert(), kein blocking dialog.
-    useEffect(() => {
-        if (!toast) return;
-        const t = setTimeout(() => setToast(null), 4000);
-        return () => clearTimeout(t);
-    }, [toast]);
-
     const refreshAlles = useCallback(() => {
         loadSaldo();
         onChanged();
     }, [loadSaldo, onChanged]);
 
-    const showToast = (kind: 'ok' | 'err', text: string) => setToast({ kind, text });
+    const showToast = (kind: 'ok' | 'err', text: string) => kind === 'ok' ? toast.success(text) : toast.error(text);
 
     const saldoUnterMindestbestand = saldo != null && saldo.saldo < saldo.mindestbestand;
 
@@ -198,15 +197,6 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
                 />
             )}
 
-            {toast && (
-                <div className={`mt-3 text-sm px-3 py-2 rounded-lg border ${
-                    toast.kind === 'ok'
-                        ? 'bg-rose-50 border-rose-200 text-rose-800'
-                        : 'bg-red-50 border-red-200 text-red-800'
-                }`}>
-                    {toast.text}
-                </div>
-            )}
         </Card>
     );
 }
@@ -225,15 +215,15 @@ function BankAbhebungModal({ onClose, onSuccess, onError, saldo }: {
     const [beschreibung, setBeschreibung] = useState<string>('');
     const [saving, setSaving] = useState(false);
 
-    const projSaldo = saldo && betrag !== '' && !Number.isNaN(Number(betrag))
-        ? saldo.saldo + Number(betrag) : null;
+    const parsed = validateMoneyDraft(betrag);
+    const projSaldo = saldo && parsed.valid && parsed.value! > 0 ? saldo.saldo + parsed.value! : null;
 
     const submit = async () => {
-        const b = Number(betrag);
-        if (!betrag || !Number.isFinite(b) || b <= 0) {
-            onError('Bitte einen positiven Betrag eingeben.');
-            return;
-        }
+        const result = validateMoneyDraft(betrag);
+        if (!result.valid) { onError(result.message); return; }
+        const b = result.value!;
+        if (b <= 0) { onError('Bitte einen positiven Betrag eingeben.'); return; }
+        if (!datum) { onError('Bitte ein Buchungsdatum wählen.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/bank-abhebung', {
@@ -261,12 +251,12 @@ function BankAbhebungModal({ onClose, onSuccess, onError, saldo }: {
                 Bargeld, das du gerade bei der Bank geholt hast — wird als Kassen-Eingang gebucht.
             </p>
             <FieldRow label="Betrag (€)">
-                <input type="number" step="0.01" value={betrag}
-                    onChange={e => setBetrag(e.target.value)}
+                <DecimalInput aria-label="Betrag (€)" value={betrag}
+                    onChange={setBetrag}
                     className={inputCls} autoFocus />
             </FieldRow>
             <FieldRow label="Datum">
-                <DatePicker value={datum} onChange={setDatum} />
+                <DatePicker aria-label="Buchungsdatum" value={datum} onChange={setDatum} />
             </FieldRow>
             <FieldRow label="Beleg-Nr. (optional)">
                 <input type="text" value={belegNr}
@@ -304,14 +294,14 @@ function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClose, onS
     const [datum, setDatum] = useState<string>(todayIso());
     const [beschreibung, setBeschreibung] = useState<string>(defaultBeschreibung);
     const [saving, setSaving] = useState(false);
-    const [konflikt, setKonflikt] = useState<{ projizierterSaldo: number; mindestbestand: number; message: string } | null>(null);
+    const [konflikt, setKonflikt] = useState<{ projizierterSaldo: number; mindestbestand: number; message: string; betrag: number; datum: string } | null>(null);
 
     const submit = async (): Promise<void> => {
-        const b = Number(betrag);
-        if (!betrag || !Number.isFinite(b) || b <= 0) {
-            onError('Bitte einen positiven Betrag eingeben.');
-            return;
-        }
+        const result = validateMoneyDraft(betrag);
+        if (!result.valid) { onError(result.message); return; }
+        const b = result.value!;
+        if (b <= 0) { onError('Bitte einen positiven Betrag eingeben.'); return; }
+        if (!datum) { onError('Bitte ein Buchungsdatum wählen.'); return; }
         setSaving(true);
         setKonflikt(null);
         try {
@@ -329,8 +319,9 @@ function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClose, onS
                 setKonflikt({
                     projizierterSaldo: Number(body.projizierterSaldo),
                     mindestbestand: Number(body.mindestbestand),
-                    message: body.message ?? 'Kasse würde unter Mindestbestand fallen',
+                    message: body.message ?? 'Kasse würde unter Mindestbestand fallen', betrag: b, datum,
                 });
+                onError(body.message ?? 'Kasse würde unter Mindestbestand fallen');
                 return;
             }
             const body = await res.json().catch(() => null);
@@ -347,6 +338,11 @@ function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClose, onS
     // dann den Original-Versuch wiederholen.
     const loeseUnterdeckung = async () => {
         if (!konflikt) return;
+        const parsed = validateMoneyDraft(betrag);
+        if (!parsed.valid) { onError(parsed.message); return; }
+        if (parsed.value! <= 0 || !datum) { onError('Bitte einen positiven Betrag und ein Buchungsdatum eingeben.'); return; }
+        // Bei geändertem Entwurf erst dessen aktuellen Konflikt vom Server prüfen.
+        if (konflikt.betrag !== parsed.value || konflikt.datum !== datum) { await submit(); return; }
         const benoetigt = Math.max(0, konflikt.mindestbestand - konflikt.projizierterSaldo);
         if (benoetigt <= 0) {
             setKonflikt(null);
@@ -365,7 +361,7 @@ function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClose, onS
             }
             setKonflikt(null);
             await submit();
-        } finally {
+        } catch { onError('Vorab-Einlage konnte nicht gebucht werden.'); } finally {
             setSaving(false);
         }
     };
@@ -373,12 +369,12 @@ function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClose, onS
     return (
         <ModalShell title={titel} onClose={onClose}>
             <FieldRow label="Betrag (€)">
-                <input type="number" step="0.01" value={betrag}
-                    onChange={e => setBetrag(e.target.value)}
+                <DecimalInput aria-label="Betrag (€)" value={betrag}
+                    onChange={setBetrag}
                     className={inputCls} autoFocus />
             </FieldRow>
             <FieldRow label="Datum">
-                <DatePicker value={datum} onChange={setDatum} />
+                <DatePicker aria-label="Buchungsdatum" value={datum} onChange={setDatum} />
             </FieldRow>
             <FieldRow label="Beschreibung (optional)">
                 <input type="text" value={beschreibung}
@@ -429,7 +425,7 @@ function LohnZahlungModal({ onClose, onSuccess, onError }: {
             .then((e: KasseEinstellung | null) => {
                 if (!e) return;
                 setEinstellung(e);
-                if (e.ehegattengehaltBetrag) setBetrag(String(e.ehegattengehaltBetrag));
+                if (e.ehegattengehaltBetrag) setBetrag(formatDecimalInput(e.ehegattengehaltBetrag));
                 if (e.ehegattengehaltEmpfaengerName) setEmpfaenger(e.ehegattengehaltEmpfaengerName);
             })
             .catch(err => console.error(err));
@@ -439,14 +435,17 @@ function LohnZahlungModal({ onClose, onSuccess, onError }: {
             .catch(err => console.error(err));
     }, []);
 
-    const b = Number(betrag);
-    const valid = Number.isFinite(b) && b > 0;
+    const parsed = validateMoneyDraft(betrag);
+    const b = parsed.valid ? parsed.value! : 0;
+    const valid = parsed.valid && b > 0;
     const projSaldo = saldo && valid ? saldo.saldo - b : null;
     const benoetigteEinlage = projSaldo != null && saldo
         ? Math.max(0, saldo.mindestbestand - projSaldo) : 0;
 
     const submit = async () => {
+        if (!parsed.valid) { onError(parsed.message); return; }
         if (!valid) { onError('Bitte einen positiven Betrag eingeben.'); return; }
+        if (!datum) { onError('Bitte ein Buchungsdatum wählen.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/lohn-zahlung', {
@@ -486,11 +485,11 @@ function LohnZahlungModal({ onClose, onSuccess, onError }: {
                     className={inputCls} placeholder="z.B. Diana Mustermann" />
             </FieldRow>
             <FieldRow label="Monat (zur Notiz)">
-                <DatePicker value={datum} onChange={setDatum} />
+                <DatePicker aria-label="Buchungsdatum" value={datum} onChange={setDatum} />
             </FieldRow>
             <FieldRow label="Betrag (€)">
-                <input type="number" step="0.01" value={betrag}
-                    onChange={e => setBetrag(e.target.value)}
+                <DecimalInput aria-label="Betrag (€)" value={betrag}
+                    onChange={setBetrag}
                     className={inputCls} autoFocus />
             </FieldRow>
 
@@ -522,11 +521,15 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
 }) {
     const [einstellung, setEinstellung] = useState<KasseEinstellung | null>(null);
     const [saving, setSaving] = useState(false);
+    const [drafts, setDrafts] = useState({ minimum: '0', betrag: '', tag: '' });
 
     useEffect(() => {
         fetch('/api/buchhaltung/kasse/einstellung')
             .then(r => r.ok ? r.json() : null)
-            .then((e: KasseEinstellung | null) => setEinstellung(e ?? defaultEinstellung()))
+            .then((e: KasseEinstellung | null) => {
+                const value = e ?? defaultEinstellung(); setEinstellung(value);
+                setDrafts({ minimum: formatDecimalInput(value.mindestbestand ?? 0), betrag: value.ehegattengehaltBetrag == null ? '' : formatDecimalInput(value.ehegattengehaltBetrag), tag: value.ehegattengehaltTag == null ? '' : String(value.ehegattengehaltTag) });
+            })
             .catch(() => setEinstellung(defaultEinstellung()));
     }, []);
 
@@ -544,16 +547,24 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
     const privatSachkonten = sachkonten.filter(s => s.kontoTyp === 'PRIVAT').sort((a, b) => a.sortierung - b.sortierung);
 
     const submit = async () => {
+        const activeDrafts = einstellung.ehegattengehaltAktiv ? drafts : { ...drafts, betrag: '', tag: '' };
+        const result = validateNumberDrafts(activeDrafts, {
+            minimum: { label: 'Mindestbestand', required: true, min: 0, maxDecimalPlaces: 2 },
+            betrag: { label: 'Monatlicher Betrag', required: einstellung.ehegattengehaltAktiv, min: 0, maxDecimalPlaces: 2 },
+            tag: { label: 'Tag des Monats', required: einstellung.ehegattengehaltAktiv, integer: true, min: 1, max: 28 },
+        });
+        if (!result.valid) { onError(result.message); return; }
+        if (einstellung.ehegattengehaltAktiv && result.values.betrag! <= 0) { onError('Bitte einen positiven monatlichen Betrag eingeben.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/einstellung', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    mindestbestand: einstellung.mindestbestand ?? 0,
+                    mindestbestand: result.values.minimum,
                     ehegattengehaltAktiv: einstellung.ehegattengehaltAktiv,
-                    ehegattengehaltBetrag: einstellung.ehegattengehaltBetrag ?? null,
-                    ehegattengehaltTag: einstellung.ehegattengehaltTag ?? null,
+                    ehegattengehaltBetrag: einstellung.ehegattengehaltAktiv ? result.values.betrag : einstellung.ehegattengehaltBetrag ?? null,
+                    ehegattengehaltTag: einstellung.ehegattengehaltAktiv ? result.values.tag : einstellung.ehegattengehaltTag ?? null,
                     ehegattengehaltEmpfaengerName: einstellung.ehegattengehaltEmpfaengerName ?? null,
                     privateinlageSachkontoId: einstellung.privateinlageSachkontoId ?? null,
                 }),
@@ -576,9 +587,7 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
         <ModalShell title="Kassen-Einstellungen" onClose={onClose} wide>
             <h3 className="font-semibold text-slate-900 mb-2 text-sm">Mindestbestand der Kasse</h3>
             <FieldRow label="Mindestbestand (€)">
-                <input type="number" step="0.01" value={einstellung.mindestbestand ?? 0}
-                    onChange={e => update('mindestbestand', Number(e.target.value))}
-                    className={inputCls} />
+                <DecimalInput aria-label="Mindestbestand (€)" value={drafts.minimum} onChange={value => setDrafts(d => ({ ...d, minimum: value }))} className={inputCls} />
             </FieldRow>
             <p className="text-xs text-slate-500 mb-4">
                 Buchungen, die den Kassenstand unter diesen Wert fallen lassen würden, werden geblockt.
@@ -619,14 +628,10 @@ function KasseSettingsModal({ sachkonten, onClose, onSaved, onError }: {
                             className={inputCls} placeholder="z.B. Diana Mustermann" />
                     </FieldRow>
                     <FieldRow label="Monatlicher Betrag (€)">
-                        <input type="number" step="0.01" value={einstellung.ehegattengehaltBetrag ?? ''}
-                            onChange={e => update('ehegattengehaltBetrag', e.target.value === '' ? null : Number(e.target.value))}
-                            className={inputCls} />
+                        <DecimalInput aria-label="Monatlicher Betrag (€)" value={drafts.betrag} onChange={value => setDrafts(d => ({ ...d, betrag: value }))} className={inputCls} />
                     </FieldRow>
                     <FieldRow label="Tag des Monats (1–28)">
-                        <input type="number" min={1} max={28} value={einstellung.ehegattengehaltTag ?? ''}
-                            onChange={e => update('ehegattengehaltTag', e.target.value === '' ? null : Number(e.target.value))}
-                            className={inputCls} />
+                        <DecimalInput aria-label="Tag des Monats (1–28)" value={drafts.tag} onChange={value => setDrafts(d => ({ ...d, tag: value }))} className={inputCls} />
                     </FieldRow>
                 </>
             )}
@@ -651,19 +656,10 @@ function ModalShell({ title, onClose, wide, children }: {
     children: React.ReactNode;
 }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className={`bg-white rounded-xl shadow-2xl w-full ${wide ? 'max-w-xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}>
-                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <h2 className="font-semibold text-slate-900">{title}</h2>
-                    <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-full">
-                        <X className="w-4 h-4 text-slate-500" />
-                    </button>
-                </div>
-                <div className="p-4 overflow-auto">
-                    {children}
-                </div>
-            </div>
-        </div>
+        <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label={title} className={`w-full ${wide ? 'max-w-xl' : 'max-w-md'}`}>
+            <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+            <div className="mt-4 overflow-y-auto min-h-0 p-1 -mx-1">{children}</div>
+        </Dialog>
     );
 }
 

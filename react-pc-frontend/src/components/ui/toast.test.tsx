@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { StrictMode, useEffect } from 'react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ToastProvider, useToast } from './toast';
 import { act } from '@testing-library/react';
@@ -90,131 +90,62 @@ describe('Toast', () => {
     });
 });
 
-/**
- * Regressionsschutz fuer einen Design-Review-Befund (Abschnitt 6, Task 6b
- * Nachbesserung 1): der Toast-Container liegt fest unten rechts -- genau
- * dort, wo die Fussleiste ("Abbrechen"/"Speichern") praktisch jedes Modals im
- * Projekt sitzt. Ein Fehler-Toast beim Oeffnen von LieferantDokumentModal
- * legte sich auf 1440x900 fuenf Sekunden lang ueber genau diese Knoepfe --
- * ein Klick in ihre Mitte traf den Toast statt den Knopf.
- */
-function TestKomponenteMitDialog({ dialogOffen }: { dialogOffen: boolean }) {
-    const toast = useToast();
-    return (
-        <div>
-            <button onClick={() => toast.error('Sperre konnte nicht geholt werden — bitte neu laden.')}>
-                Fehler ausloesen
-            </button>
-            {dialogOffen && (
-                <div role="dialog" aria-modal="true" aria-label="Testdialog">
-                    Modal-Inhalt
-                </div>
-            )}
-        </div>
-    );
-}
 
-describe('Toast-Container - Positionierung bei offenem Dialog', () => {
-    it('liegt unten rechts, wenn kein Dialog offen ist', async () => {
-        render(
-            <ToastProvider>
-                <TestKomponenteMitDialog dialogOffen={false} />
-            </ToastProvider>
-        );
-        await act(async () => {
-            screen.getByText('Fehler ausloesen').click();
-        });
-
-        const container = screen.getByTestId('toast-container');
-        expect(container.className).toContain('bottom-6');
-        expect(container.className).toContain('right-6');
-        expect(container.className).not.toContain('top-6');
-        expect(container.className).not.toContain('left-6');
+describe('Reservierte Meldungsfläche', () => {
+    it('behält auch acht Meldungen in einer begrenzten scrollbaren Fläche erreichbar', async () => {
+        render(<ToastProvider><TestComponent /></ToastProvider>);
+        await act(async () => { for (let i = 0; i < 8; i++) screen.getByText('Error').click(); });
+        expect(screen.getAllByRole('alert')).toHaveLength(8);
+        expect(screen.getAllByRole('button', { name: 'Meldung schließen' })).toHaveLength(8);
+        expect(screen.getByRole('region', { name: 'Meldungen' })).toBeInTheDocument();
     });
 
-    it('wandert nach unten LINKS, solange ein Dialog offen ist (Task 8c: oben links schnitt auf 14 Zoll die Modal-Ueberschrift an)', async () => {
-        render(
-            <ToastProvider>
-                <TestKomponenteMitDialog dialogOffen={true} />
-            </ToastProvider>
-        );
-        await act(async () => {
-            screen.getByText('Fehler ausloesen').click();
-        });
+    it('hält die Toast-API stabil, damit Fehlermeldungen keine Formulare neu laden', async () => {
+        const geladen = vi.fn();
+        function Formular() {
+            const toast = useToast();
+            useEffect(geladen, [toast]);
+            return <button onClick={() => toast.error('Prüfen')}>Prüfen</button>;
+        }
+        render(<ToastProvider><Formular /></ToastProvider>);
+        expect(geladen).toHaveBeenCalledTimes(1);
+        await act(async () => { screen.getByRole('button', { name: 'Prüfen' }).click(); });
+        expect(geladen).toHaveBeenCalledTimes(1);
+    });
 
-        const container = screen.getByTestId('toast-container');
-        expect(container.className).toContain('bottom-6');
-        expect(container.className).toContain('left-6');
-        expect(container.className).not.toContain('top-6');
-        expect(container.className).not.toContain('right-6');
+    it('reserviert gemessene Höhe, reagiert auf Resize und räumt im StrictMode auf', async () => {
+        let height = 80;
+        const disconnect = vi.spyOn(ResizeObserver.prototype, 'disconnect');
+        const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height } as DOMRect));
+        document.documentElement.style.setProperty('--pc-toast-height', '17px');
+        const { unmount } = render(<StrictMode><ToastProvider><TestComponent /></ToastProvider></StrictMode>);
+        await act(async () => { screen.getByText('Error').click(); });
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('80px');
+        height = 120;
+        act(() => window.dispatchEvent(new Event('resize')));
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('120px');
+        unmount();
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('17px');
+        expect(disconnect).toHaveBeenCalled();
+        document.documentElement.style.removeProperty('--pc-toast-height');
+        bounds.mockRestore(); disconnect.mockRestore();
     });
 });
 
-/**
- * Task 8a, Befund aus dem Code-Review: beide Tests oben rendern den Dialog
- * schon BEIM MOUNT -- damit treffen sie nur den useState-Initializer in
- * useIrgendeinDialogOffen() (`() => document.querySelector(...) !== null`),
- * nicht den MutationObserver darunter. Entfernt man den kompletten Observer
- * (samt seinem useEffect), bleiben oben trotzdem alle Tests gruen, weil der
- * Dialog beim allerersten Render schon im DOM steht. Die Tests hier oeffnen
- * und schliessen den Dialog dagegen ERST NACH dem Mount -- nur so wird der
- * Observer ueberhaupt gebraucht.
- */
-function UmschaltbarerDialogTest() {
-    const [dialogOffen, setDialogOffen] = useState(false);
-    return (
-        <div>
-            <button onClick={() => setDialogOffen(o => !o)}>Dialog umschalten</button>
-            <TestKomponenteMitDialog dialogOffen={dialogOffen} />
-        </div>
-    );
-}
-
-describe('Toast-Container - MutationObserver (Task 8a)', () => {
-    it('wandert per MutationObserver von rechts nach links und zurueck, wenn der Dialog ERST NACH dem Mount geoeffnet/geschlossen wird (Task 8c: beide Positionen bleiben unten, "bottom-6" aendert sich nicht)', async () => {
-        render(
-            <ToastProvider>
-                <UmschaltbarerDialogTest />
-            </ToastProvider>
-        );
-        await act(async () => {
-            screen.getByText('Fehler ausloesen').click();
-        });
-        expect(screen.getByTestId('toast-container').className).toContain('bottom-6');
-        expect(screen.getByTestId('toast-container').className).toContain('right-6');
-
-        // Dialog jetzt erst oeffnen -- der useState-Initializer traf schon
-        // beim ersten Render zu (Dialog war da noch zu), diesen Wechsel kann
-        // NUR der MutationObserver melden.
-        await act(async () => {
-            screen.getByText('Dialog umschalten').click();
-        });
-        await waitFor(() => expect(screen.getByTestId('toast-container').className).toContain('left-6'));
-        expect(screen.getByTestId('toast-container').className).toContain('bottom-6');
-        expect(screen.getByTestId('toast-container').className).not.toContain('right-6');
-        expect(screen.getByTestId('toast-container').className).not.toContain('top-6');
-
-        // Und wieder schliessen -- der Container wandert zurueck nach rechts.
-        await act(async () => {
-            screen.getByText('Dialog umschalten').click();
-        });
-        await waitFor(() => expect(screen.getByTestId('toast-container').className).toContain('right-6'));
-        expect(screen.getByTestId('toast-container').className).toContain('bottom-6');
-        expect(screen.getByTestId('toast-container').className).not.toContain('left-6');
-    });
-
-    it('trennt den MutationObserver beim Unmount des ToastProvider (kein Speicherleck/Zombie-Listener)', () => {
-        const disconnectSpy = vi.spyOn(MutationObserver.prototype, 'disconnect');
-
-        const { unmount } = render(
-            <ToastProvider>
-                <TestKomponenteMitDialog dialogOffen={false} />
-            </ToastProvider>
-        );
-
+it('gibt die Meldungsfläche nach Ablauf frei und beendet Timer beim Unmount', async () => {
+    vi.useFakeTimers();
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 80 } as DOMRect);
+    const { unmount } = render(<ToastProvider><TestComponent /></ToastProvider>);
+    try {
+        act(() => screen.getByText('Error').click());
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('80px');
+        act(() => vi.advanceTimersByTime(5000));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('0px');
+        act(() => screen.getByText('Error').click());
         unmount();
-
-        expect(disconnectSpy).toHaveBeenCalled();
-        disconnectSpy.mockRestore();
-    });
+        expect(vi.getTimerCount()).toBe(0);
+    } finally {
+        unmount(); bounds.mockRestore(); vi.useRealTimers();
+    }
 });

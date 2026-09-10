@@ -615,3 +615,15 @@ body {
   width: var(--dropdown-width);
   z-index: 9999;
 }
+
+/* Reservierte PC-Meldungsfläche: nur semantische App-Dialogcontainer oder
+   explizite Opt-ins verschieben, niemals pauschal Bilder/Loading-Overlays.
+   DatePicker- und Select-Portale positionieren sich weiterhin am Auslöser. */
+.fixed:has(> [role="dialog"][aria-modal="true"]),
+[data-app-overlay-container] {
+  top: var(--pc-toast-height, 0px);
+}
+.fixed > [role="dialog"][aria-modal="true"],
+[data-app-overlay-container] > [role="dialog"][aria-modal="true"] {
+  max-height: calc(100dvh - var(--pc-toast-height, 0px) - 2rem);
+}

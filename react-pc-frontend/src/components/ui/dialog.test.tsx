@@ -1,3 +1,4 @@
+import { ToastProvider, useToast } from './toast';
 import { useState } from 'react';
 import { Select } from './select-custom';
 import { DatePicker } from './datepicker';
@@ -44,7 +45,7 @@ describe('Dialog', () => {
                 <DialogContent>Inhalt</DialogContent>
             </Dialog>
         );
-        expect(screen.getByText('Close')).toBeInTheDocument();
+        expect(screen.getByText('Schließen')).toBeInTheDocument();
     });
 
     it('ruft onOpenChange beim Klick auf X auf', async () => {
@@ -55,8 +56,8 @@ describe('Dialog', () => {
                 <DialogContent>Inhalt</DialogContent>
             </Dialog>
         );
-        // Der X-Button hat sr-only "Close"
-        await user.click(screen.getByText('Close').closest('button')!);
+        // Der X-Button hat sr-only "Schließen"
+        await user.click(screen.getByText('Schließen').closest('button')!);
         expect(handleOpenChange).toHaveBeenCalledWith(false);
     });
 
@@ -99,7 +100,7 @@ it('fängt Tab und ShiftTab und führt nach Abbrechen zum Öffner zurück', asyn
     const user = userEvent.setup(); render(<FocusExample />);
     const opener = screen.getByRole('button', { name: 'Öffnen' }); await user.click(opener);
     const first = screen.getByRole('textbox', { name: 'Grund' }); expect(first).toHaveFocus();
-    const close = within(screen.getByRole('dialog', { name: 'Hauptdialog' })).getByRole('button', { name: 'Close' });
+    const close = within(screen.getByRole('dialog', { name: 'Hauptdialog' })).getByRole('button', { name: 'Schließen' });
     await user.tab({ shift: true }); expect(close).toHaveFocus(); await user.tab(); expect(first).toHaveFocus();
     await user.click(screen.getByRole('button', { name: 'Abbrechen' })); await waitFor(() => expect(opener).toHaveFocus());
 });
@@ -142,4 +143,33 @@ it('kehrt beim Abbrechen des Unterdialogs zu dessen Öffner zurück', async () =
     const user = userEvent.setup(); render(<FocusExample />); await user.click(screen.getByRole('button', { name: 'Öffnen' }));
     const opener = screen.getByRole('button', { name: 'Unterdialog' }); await user.click(opener); await user.click(screen.getByRole('button', { name: 'Zurück' }));
     await waitFor(() => expect(opener).toHaveFocus()); expect(screen.getByRole('dialog', { name: 'Hauptdialog' })).toBeVisible();
+});
+
+it('erlaubt Meldungen per Tastatur, hält den Hintergrund gesperrt und kehrt mit Escape zum Entwurf zurück', async () => {
+    const user = userEvent.setup();
+    function Formular() {
+        const toast = useToast();
+        const [open, setOpen] = useState(true);
+        return <><button>Hintergrund</button><Dialog open={open} onOpenChange={setOpen} aria-label="Entwurf">
+            <input aria-label="Ungespeichert" defaultValue="Entwurf bleibt" />
+            <button onClick={() => { toast.error('Erste Meldung'); toast.error('Zweite Meldung'); }}>Meldungen auslösen</button>
+        </Dialog></>;
+    }
+    render(<ToastProvider><Formular /></ToastProvider>);
+    await user.click(screen.getByRole('button', { name: 'Meldungen auslösen' }));
+    const field = screen.getByRole('textbox', { name: 'Ungespeichert' });
+    act(() => field.focus());
+    const region = screen.getByRole('region', { name: 'Meldungen' });
+    act(() => within(screen.getByRole('dialog', { name: 'Entwurf' })).getByRole('button', { name: 'Schließen' }).focus());
+    await user.tab(); expect(region).toHaveFocus();
+    act(() => field.focus());
+    act(() => region.focus());
+    expect(region).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(field).toHaveFocus(); expect(field).toHaveValue('Entwurf bleibt');
+    await user.tab({ shift: true });
+    expect(screen.getAllByRole('button', { name: 'Meldung schließen' }).at(-1)).toHaveFocus();
+    act(() => screen.getByRole('button', { name: 'Hintergrund' }).focus());
+    expect(screen.getAllByRole('button', { name: 'Meldung schließen' }).at(-1)).toHaveFocus();
+    await user.tab(); expect(field).toHaveFocus();
 });

@@ -1,220 +1,99 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
-// --- Types ---
 type ToastType = 'success' | 'error' | 'warning' | 'info';
+type ToastApi = Record<ToastType, (message: string, duration?: number) => void>;
+interface Toast { id: number; type: ToastType; message: string }
+const ToastContext = createContext<ToastApi | null>(null);
 
-interface Toast {
-    id: number;
-    type: ToastType;
-    message: string;
-    duration: number;
-}
-
-interface ToastContextValue {
-    toast: {
-        success: (message: string, duration?: number) => void;
-        error: (message: string, duration?: number) => void;
-        warning: (message: string, duration?: number) => void;
-        info: (message: string, duration?: number) => void;
-    };
-}
-
-// --- Context ---
-const ToastContext = createContext<ToastContextValue | null>(null);
-
-// --- Hook ---
 export function useToast() {
-    const ctx = useContext(ToastContext);
-    if (!ctx) throw new Error('useToast must be used within a ToastProvider');
-    return ctx.toast;
+    const toast = useContext(ToastContext);
+    if (!toast) throw new Error('useToast must be used within a ToastProvider');
+    return toast;
 }
 
-// --- Icons ---
-const iconMap: Record<ToastType, React.ReactNode> = {
-    success: <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />,
-    error: <XCircle className="w-5 h-5 text-red-500 shrink-0" />,
-    warning: <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />,
-    info: <Info className="w-5 h-5 text-sky-500 shrink-0" />,
+const icons = { success: CheckCircle, error: XCircle, warning: AlertTriangle, info: Info };
+const colors = {
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    error: 'border-rose-200 bg-rose-50 text-rose-800',
+    warning: 'border-amber-200 bg-amber-50 text-amber-800',
+    info: 'border-slate-200 bg-slate-50 text-slate-800',
 };
-
-const bgMap: Record<ToastType, string> = {
-    success: 'border-emerald-200 bg-emerald-50',
-    error: 'border-red-200 bg-red-50',
-    warning: 'border-amber-200 bg-amber-50',
-    info: 'border-sky-200 bg-sky-50',
-};
-
-const textMap: Record<ToastType, string> = {
-    success: 'text-emerald-800',
-    error: 'text-red-800',
-    warning: 'text-amber-800',
-    info: 'text-sky-800',
-};
-
-// --- Single Toast Item ---
-function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
-    const [visible, setVisible] = useState(false);
-    const [exiting, setExiting] = useState(false);
-
-    useEffect(() => {
-        // Trigger enter animation
-        requestAnimationFrame(() => setVisible(true));
-        const timer = setTimeout(() => {
-            setExiting(true);
-            setTimeout(() => onDismiss(toast.id), 300);
-        }, toast.duration);
-        return () => clearTimeout(timer);
-    }, [toast.duration, toast.id, onDismiss]);
-
-    const handleDismiss = () => {
-        setExiting(true);
-        setTimeout(() => onDismiss(toast.id), 300);
-    };
-
-    return (
-        <div
-            className={`
-                flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-sm
-                transition-all duration-300 ease-out min-w-[320px] max-w-[480px]
-                ${bgMap[toast.type]}
-                ${visible && !exiting ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}
-            `}
-        >
-            {iconMap[toast.type]}
-            <p className={`text-sm font-medium flex-1 ${textMap[toast.type]}`}>
-                {toast.message}
-            </p>
-            <button
-                onClick={handleDismiss}
-                className="p-0.5 rounded-full hover:bg-black/5 transition-colors shrink-0"
-            >
-                <X className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-        </div>
-    );
-}
 
 /**
- * True, solange irgendwo ein offener Dialog (role="dialog") im DOM steht.
- *
- * Grund: der Toast-Container liegt fest unten rechts -- genau dort, wo so
- * gut wie jedes Modal im Projekt seine Fussleiste mit "Abbrechen"/"Speichern"
- * hat (siehe LieferantDokumentModal.tsx). Ein Fehler-Toast beim Oeffnen legt
- * sich dann fuenf Sekunden lang ueber genau die Knoepfe, die als naechstes
- * gebraucht werden -- auf 14 Zoll (1440x900) trifft ein Klick in die Mitte
- * beider Knoepfe den Toast statt den Knopf. Ausweichen statt den Fehler in
- * jedem einzelnen Modal einzeln zu umschiffen: bei offenem Dialog wandert der
- * GESAMTE Container nach unten LINKS (siehe Kommentar am Container unten fuer
- * die Begruendung, warum unten links und nicht oben rechts/oben links).
+ * Meldungen belegen eine eigene, begrenzte Fläche oberhalb der Anwendung.
+ * MainLayout und die semantischen Dialogcontainer berücksichtigen deren
+ * gemessene Höhe über --pc-toast-height (siehe index.css). Auch bei vielen
+ * Meldungen bleibt der Rest der Oberfläche bedienbar; ältere Meldungen sind
+ * innerhalb dieser Fläche erreichbar und werden nicht still verworfen.
  */
-function useIrgendeinDialogOffen(): boolean {
-    const [offen, setOffen] = useState(
-        () => typeof document !== 'undefined' && document.querySelector('[role="dialog"]') !== null
-    );
+export function ToastProvider({ children }: { children: ReactNode }) {
+    const [messages, setMessages] = useState<Toast[]>([]);
+    const noticeRef = useRef<HTMLDivElement>(null);
+    const nextId = useRef(0);
+    const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
-    useEffect(() => {
-        if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
-
-        const aktualisieren = () => {
-            setOffen(document.querySelector('[role="dialog"]') !== null);
+    useLayoutEffect(() => {
+        const style = document.documentElement.style;
+        const previous = style.getPropertyValue('--pc-toast-height');
+        return () => {
+            if (previous) style.setProperty('--pc-toast-height', previous);
+            else style.removeProperty('--pc-toast-height');
         };
-        aktualisieren();
-
-        // Beobachtet das ganze Dokument, nicht nur einen bekannten Modal-Slot --
-        // Modale werden hier ganz unterschiedlich eingehaengt (Portal, direkt im
-        // Baum, ...). attributeFilter auf 'role' begrenzt, damit nicht jede
-        // beliebige Attribut-Aenderung irgendwo im DOM einen Re-Check ausloest.
-        const observer = new MutationObserver(aktualisieren);
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['role'],
-        });
-
-        return () => observer.disconnect();
     }, []);
 
-    return offen;
-}
-
-// --- Provider ---
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    const idCounter = useRef(0);
-    const dialogOffen = useIrgendeinDialogOffen();
+    useLayoutEffect(() => {
+        const panel = noticeRef.current;
+        const measure = () => document.documentElement.style.setProperty('--pc-toast-height', `${messages.length ? panel?.getBoundingClientRect().height ?? 0 : 0}px`);
+        measure();
+        if (panel) panel.scrollTop = panel.scrollHeight;
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+        if (panel) observer?.observe(panel);
+        window.addEventListener('resize', measure);
+        return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+    }, [messages.length]);
 
     const dismiss = useCallback((id: number) => {
-        setToasts(prev => prev.filter(t => t.id !== id));
+        clearTimeout(timers.current.get(id));
+        timers.current.delete(id);
+        setMessages(current => current.filter(message => message.id !== id));
     }, []);
 
-    const addToast = useCallback((type: ToastType, message: string, duration = 4000) => {
-        const id = ++idCounter.current;
-        setToasts(prev => [...prev, { id, type, message, duration }]);
+    useEffect(() => {
+        const pending = timers.current;
+        return () => { pending.forEach(clearTimeout); pending.clear(); };
     }, []);
 
-    const toast = {
-        success: useCallback((msg: string, dur?: number) => addToast('success', msg, dur), [addToast]),
-        error: useCallback((msg: string, dur?: number) => addToast('error', msg, dur ?? 5000), [addToast]),
-        warning: useCallback((msg: string, dur?: number) => addToast('warning', msg, dur ?? 5000), [addToast]),
-        info: useCallback((msg: string, dur?: number) => addToast('info', msg, dur), [addToast]),
-    };
+    // Stabile Referenz: Meldungen dürfen Effekte der Verbraucher nicht erneut
+    // auslösen und dabei deren ungespeicherte Formularentwürfe überschreiben.
+    const api = useMemo<ToastApi>(() => {
+        const add = (type: ToastType, fallback: number) => (message: string, duration = fallback) => {
+            const id = ++nextId.current;
+            setMessages(current => [...current, { id, type, message }]);
+            timers.current.set(id, setTimeout(() => dismiss(id), Math.max(0, duration)));
+        };
+        return { success: add('success', 4000), error: add('error', 5000), warning: add('warning', 5000), info: add('info', 4000) };
+    }, [dismiss]);
 
-    return (
-        <ToastContext.Provider value={{ toast }}>
-            {children}
-            {/*
-                Toast Container -- unten LINKS bei offenem Dialog, sonst unten
-                rechts (siehe useIrgendeinDialogOffen).
-
-                Design-Review-Nachbesserung (Task 8a): "oben rechts" (die
-                6b-Loesung) reichte nicht -- dort sitzen bei praktisch jedem
-                Modal der Schliessen-X-Knopf UND oft ein weiterer Kopf-Knopf
-                (z.B. "Vorschau aktiv" in LieferantDokumentModal). Gemessen
-                blieben zwischen einem einzeiligen Toast und dem X nur 4px
-                Luft (Toast endet y=70, X beginnt y=74) -- ein zweizeiliger
-                Toast (46 -> 86px) ueberdeckt X und "Vorschau aktiv" auf
-                beiden Bildschirmgroessen. Die naechste Wahl war oben LINKS --
-                die eine Ecke, die in keinem Modal im Projekt eine Aktion
-                traegt.
-
-                Design-Review-Nachbesserung 2 (Task 8c): "oben links" schnitt
-                seinerseits auf 14 Zoll die Modal-Ueberschrift an. Gemessen
-                endet ein zweizeiliger Toast [24,24,480,66] bei y=90, der
-                Titel "Dokument bearbeiten" beginnt schon bei y=78 (12px
-                Ueberlappung -- elementFromPoint auf Titel UND Eyebrow trifft
-                dort den Toast statt den Text). Nach oben ausweichen geht auf
-                14 Zoll nicht: das Modal beginnt bei y=57, ein 66px hoher
-                Toast reicht selbst bei top-2 bis y=74. UNTEN LINKS traegt
-                dagegen weder LieferantDokumentModal (Fussleiste rechts) noch
-                der Confirm-Dialog (Knoepfe mittig/rechts) irgendeine Aktion --
-                und die Ecke bleibt frei, unabhaengig davon, wie viele Zeilen
-                der Toast-Text braucht.
-
-                Task 8c Nachtrag (Code-Review-Befund 4): z-[9999] lag UNTER
-                dem Confirm-Backdrop (z-[10000]) und dessen Dialog-Wrapper
-                (z-[10001], siehe confirm-dialog.tsx) -- stand ein
-                Confirm-Dialog offen, lag der (an sich sichtbare, korrekt
-                positionierte) Toast optisch abgedunkelt HINTER dem Backdrop,
-                und ein Klick auf ihn traf in Wirklichkeit den Backdrop
-                (⇒ handleCancel des Confirm-Dialogs). z-[10010] liegt bewusst
-                ueber ALLEM im Projekt (hoechster bisheriger Wert war 10001,
-                siehe Grep ueber `z-[` in src/) -- der Toast traegt nie eine
-                Aktion, die einen gleichzeitig offenen Dialog stoeren koennte,
-                er darf also immer obenauf liegen.
-            */}
-            <div
-                data-testid="toast-container"
-                className={`fixed z-[10010] flex flex-col gap-2 pointer-events-auto ${
-                    dialogOffen ? 'bottom-6 left-6 items-start' : 'bottom-6 right-6 items-end'
-                }`}
-            >
-                {toasts.map(t => (
-                    <ToastItem key={t.id} toast={t} onDismiss={dismiss} />
-                ))}
+    return <ToastContext.Provider value={api}>
+        <div ref={noticeRef} data-testid="toast-container" data-pc-toasts role="region" aria-label="Meldungen" tabIndex={messages.length ? 0 : -1}
+            hidden={!messages.length}
+            className={messages.length ? 'relative z-[10010] max-h-[min(25dvh,12rem)] overflow-y-auto bg-slate-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-rose-500' : 'hidden'}>
+            <div className="mx-auto flex max-w-[1600px] flex-col gap-2">
+                {messages.map(({ id, type, message }) => {
+                    const Icon = icons[type];
+                    return <div key={id} role={type === 'error' || type === 'warning' ? 'alert' : 'status'} className={`flex items-start gap-3 rounded-xl border px-4 py-3 shadow-sm ${colors[type]}`}>
+                        <Icon aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
+                        <p className="min-w-0 flex-1 break-words text-sm font-medium">{message}</p>
+                        <button type="button" aria-label="Meldung schließen" onClick={() => dismiss(id)} className="shrink-0 rounded-md p-1 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-rose-500">
+                            <X aria-hidden="true" className="h-4 w-4" />
+                        </button>
+                    </div>;
+                })}
             </div>
-        </ToastContext.Provider>
-    );
+        </div>
+        {children}
+    </ToastContext.Provider>;
 }
