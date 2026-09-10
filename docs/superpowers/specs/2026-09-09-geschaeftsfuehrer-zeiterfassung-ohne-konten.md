@@ -16,7 +16,7 @@ Geschäftsführer sollen ihre tatsächliche Arbeit weiterhin auf Projekte stempe
 
 Für Geschäftsführer werden kein Stundenkonto mit Plus- und Minusstunden und kein Urlaubskonto geführt. Urlaub bleibt eine erfasste Abwesenheit: Der Geschäftsführer kann ihn eintragen, das Team sieht seine Abwesenheit und vergangene Urlaube bleiben später nachvollziehbar.
 
-Der aktuelle Auftrag umfasst die Vorbereitung durch Spec, Issues und einen Branch. Die folgenden Umsetzungspakete beschreiben spätere Arbeiten; eine Umsetzung, ein Pull Request oder ein Merge gehören nicht zu diesem Auftrag.
+Der erste Auftrag umfasste die Vorbereitung durch Spec, Issues und einen Branch. Mit den unter "Getroffene Entscheidungen" festgehaltenen Klärungen vom 2026-09-10 ist die Umsetzung der drei Pakete freigegeben.
 
 ## Nicht-Ziele
 
@@ -107,7 +107,40 @@ Betroffen ist `react-zeiterfassung`, insbesondere die mobile Auswertung sowie di
 
 **Prüfungen:** Geeignete UI-Tests mit Geschäftsführer- und regulären Mitarbeiterdaten; Browserprüfung von Projektstempeln, Monatsauswertung und vorhandenen Urlaubsabläufen in mobilen Bildschirmgrößen. Build und passende Frontend-Tests nach Umsetzung.
 
-## Offene Entscheidungen für den Grobplan
+## Getroffene Entscheidungen (2026-09-10)
+
+Die zuvor offenen Punkte sind mit dem Auftraggeber geklärt. Sie sind für
+Grobplan und Umsetzung verbindlich.
+
+1. **Zeitliche Gültigkeit und Statuswechsel:** Kein Stichtag. Das Kennzeichen
+   `Mitarbeiter.istGeschaeftsfuehrer` wirkt als aktueller Zustand auf alle
+   Zeiträume, auch rückwirkend: Solange es gesetzt ist, werden für diese Person
+   nirgends Plus-/Minusstunden, Sollvergleiche, Stundenkontosalden,
+   Urlaubsanspruch oder Resturlaub berechnet oder angezeigt. Es werden keine
+   Daten gelöscht und keine Werte rückwirkend überschrieben; wird das
+   Kennzeichen entfernt, greift wieder das bisherige Kontenverhalten mit den
+   vorhandenen Daten. Bestehende Monatsabschlüsse bleiben unverändert
+   gespeichert.
+2. **Zusammenspiel bestehender Felder:** `fuehrtZeitkonto` bleibt der Schalter
+   "Zeiterfassung an/aus" und bleibt für Geschäftsführer eingeschaltet — sie
+   stempeln weiterhin auf Projekte. `istGeschaeftsfuehrer` ist die neue,
+   davon unabhängige Regel "führt kein Stundenkonto". Beide Felder bleiben
+   getrennt; es entsteht kein neues Berechtigungsmodell.
+3. **Arbeitszeit-Voraussetzung:** Für Geschäftsführer ist keine hinterlegte
+   Wochenarbeitszeit (`ZeitkontoVersion`) mehr Voraussetzung. Sie können ohne
+   Einrichtungsschritt stempeln, und ihr Urlaub wird auch ohne Arbeitszeit und
+   ohne positive Sollstunden als sichtbare Abwesenheit dokumentiert.
+4. **Urlaubsgenehmigung:** Geschäftsführerurlaub durchläuft kein
+   Genehmigungsverfahren. Der Eintrag ist sofort gültig und sichtbar. Ein
+   Urlaubsguthaben wird nicht vorausgesetzt und nicht geführt.
+5. **API-Abbildung:** Nicht anwendbare Kontenwerte werden nicht als Nullsaldo
+   ausgeliefert. Die bestehenden Zeitkonto-Status-Nutzlasten erhalten ein
+   zusätzliches Kennzeichen, an dem PC- und Mobile-Frontend erkennen, dass
+   für diese Person kein Stunden- und Urlaubskonto existiert; die betroffenen
+   Kontenfelder entfallen dann aus der Antwort. Die genaue Feldbenennung und
+   Modulzuordnung legt der Grobplan fest.
+
+## Ursprünglich offene Entscheidungen (durch Abschnitt oben ersetzt)
 
 1. **Zeitliche Gültigkeit und Statuswechsel:** Ab welchem Stichtag wirkt das Geschäftsführerkennzeichen auf Konten? Wie werden Wechsel zum Geschäftsführer und zurück mit vorhandenen Versionen und Abschlüssen behandelt? Welche historischen Kontenanzeigen bleiben für frühere Zeiträume zugänglich?
 2. **Zusammenspiel bestehender Felder:** Wie wird `istGeschaeftsfuehrer` gegenüber `fuehrtZeitkonto` fachlich ausgewertet und in der Mitarbeiterverwaltung dargestellt, sodass keine widersprüchliche Konfiguration entsteht?
