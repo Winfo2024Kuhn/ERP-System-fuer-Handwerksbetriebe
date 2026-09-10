@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useId } from 'react';
 import ReactDOM from 'react-dom';
-import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { isoDatum, parseIsoDatum, parseDeutschesDatum } from '../../lib/datum';
 
@@ -172,8 +172,10 @@ export function DatePicker({ value, onChange, placeholder = 'Datum wählen', cla
                 <button type="button" title={zurueckLabel} aria-label={zurueckLabel} disabled={!canPrevious} onClick={zurueck} className="rounded p-2 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-30"><ChevronLeft aria-hidden="true" className="h-4 w-4" /></button>
                 <button type="button" title={kopfLabel} aria-label={kopfLabel} aria-expanded={ansicht !== 'tage'}
                     onClick={() => setAnsicht(ansicht === 'tage' ? 'monate' : ansicht === 'monate' ? 'jahre' : 'monate')}
-                    className="min-w-0 flex-1 rounded px-2 py-1 text-sm font-semibold hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500">
-                    <span aria-live="polite">{kopfText}</span>
+                    className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-sm font-semibold hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500">
+                    <span aria-live="polite" className="truncate">{kopfText}</span>
+                    {/* Ohne sichtbaren Hinweis findet niemand die Jahresauswahl. */}
+                    <ChevronDown aria-hidden="true" className={cn('h-4 w-4 shrink-0 text-rose-600 transition-transform', ansicht !== 'tage' && 'rotate-180')} />
                 </button>
                 <button type="button" title={vorLabel} aria-label={vorLabel} disabled={!canNext} onClick={vor} className="rounded p-2 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-30"><ChevronRight aria-hidden="true" className="h-4 w-4" /></button>
             </div>
