@@ -35,8 +35,10 @@ public class UrlaubsantragService {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
 
-        // Urlaubskontingent prüfen (nur für URLAUB-Typ)
-        if (typ == Urlaubsantrag.Typ.URLAUB) {
+        boolean istGf = Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer());
+
+        // Urlaubskontingent prüfen (nur für URLAUB-Typ bei normalen Mitarbeitern)
+        if (!istGf && typ == Urlaubsantrag.Typ.URLAUB) {
             int jahr = von.getYear();
             int verbleibend = getResturlaub(mitarbeiterId, jahr);
             long beantragteTage = zaehleArbeitstage(von, bis);
@@ -62,9 +64,35 @@ public class UrlaubsantragService {
         antrag.setBisDatum(bis);
         antrag.setBemerkung(bemerkung);
         antrag.setTyp(typ != null ? typ : Urlaubsantrag.Typ.URLAUB);
-        antrag.setStatus(Urlaubsantrag.Status.OFFEN);
+        antrag.setStatus(istGf ? Urlaubsantrag.Status.GENEHMIGT : Urlaubsantrag.Status.OFFEN);
 
-        return repository.save(antrag);
+        Urlaubsantrag savedAntrag = repository.save(antrag);
+
+        // Bei Geschäftsführern wird der Urlaub direkt genehmigt und Abwesenheiten mit 0 Stunden erfasst
+        if (istGf) {
+            AbwesenheitsTyp abwesenheitsTyp = toAbwesenheitsTyp(savedAntrag.getTyp());
+            List<LocalDate> buchungstage = von.datesUntil(bis.plusDays(1))
+                    .filter(tag -> tag.getDayOfWeek() != DayOfWeek.SATURDAY && tag.getDayOfWeek() != DayOfWeek.SUNDAY)
+                    .filter(tag -> !feiertagService.istFeiertag(tag))
+                    .toList();
+
+            for (LocalDate date : buchungstage) {
+                if (!abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(
+                        mitarbeiterId, date, abwesenheitsTyp)) {
+                    Abwesenheit abwesenheit = new Abwesenheit();
+                    abwesenheit.setMitarbeiter(mitarbeiter);
+                    abwesenheit.setUrlaubsantrag(savedAntrag);
+                    abwesenheit.setTyp(abwesenheitsTyp);
+                    abwesenheit.setDatum(date);
+                    abwesenheit.setStunden(BigDecimal.ZERO);
+                    abwesenheit.setNotiz(savedAntrag.getTyp().name() + " (GF-Eintrag)");
+                    abwesenheitRepository.save(abwesenheit);
+                }
+            }
+            invalidiereBetroffeneMonate(mitarbeiterId, von, bis);
+        }
+
+        return savedAntrag;
     }
 
     /**
@@ -102,38 +130,39 @@ public class UrlaubsantragService {
         // AbwesenheitsTyp ermitteln
         AbwesenheitsTyp abwesenheitsTyp = toAbwesenheitsTyp(antrag.getTyp());
 
-        // Vertragsdaten einmal laden und alle Buchungstage vor der ersten Änderung prüfen.
-        // Der heutige Kontoschalter darf historische Buchungen nicht verhindern.
-        List<ZeitkontoVersion> versionen = zeitkontoService.versionenImZeitraum(
-                antrag.getMitarbeiter().getId(), antrag.getVonDatum(), antrag.getBisDatum());
+        boolean istGf = Boolean.TRUE.equals(antrag.getMitarbeiter().getIstGeschaeftsfuehrer());
+
         List<LocalDate> buchungstage = antrag.getVonDatum().datesUntil(antrag.getBisDatum().plusDays(1))
                 .filter(tag -> tag.getDayOfWeek() != DayOfWeek.SATURDAY && tag.getDayOfWeek() != DayOfWeek.SUNDAY)
                 .filter(tag -> !feiertagService.istFeiertag(tag))
                 .toList();
-        for (LocalDate tag : buchungstage) {
-            boolean konfiguriert = versionen.stream().anyMatch(v -> !v.getGueltigVon().isAfter(tag)
-                    && (v.getGueltigBis() == null || !v.getGueltigBis().isBefore(tag)));
-            if (!konfiguriert) {
-                throw new IllegalStateException("Für den " + tag
-                        + " ist noch keine Arbeitszeit hinterlegt. Bitte zuerst Arbeitszeit zuweisen.");
+
+        if (!istGf) {
+            // Vertragsdaten einmal laden und alle Buchungstage vor der ersten Änderung prüfen.
+            // Der heutige Kontoschalter darf historische Buchungen nicht verhindern.
+            List<ZeitkontoVersion> versionen = zeitkontoService.versionenImZeitraum(
+                    antrag.getMitarbeiter().getId(), antrag.getVonDatum(), antrag.getBisDatum());
+            for (LocalDate tag : buchungstage) {
+                boolean konfiguriert = versionen.stream().anyMatch(v -> !v.getGueltigVon().isAfter(tag)
+                        && (v.getGueltigBis() == null || !v.getGueltigBis().isBefore(tag)));
+                if (!konfiguriert) {
+                    throw new IllegalStateException("Für den " + tag
+                            + " ist noch keine Arbeitszeit hinterlegt. Bitte zuerst Arbeitszeit zuweisen.");
+                }
             }
         }
 
-        // Soll-Stunden für den GESAMTEN Zeitraum auf einmal laden (Zeitraum-
-        // Variante statt Einzeltag-Aufruf je Schleifendurchlauf, Abschnitt 4
-        // Nachbesserung Befund 2): Phasen und Feiertage werden dafür intern nur
-        // einmal geladen statt einmal pro Tag. Der übergebene Zeitraum MUSS die
-        // Schleife unten vollständig abdecken, sonst liefert die Map für einen
-        // Tag nichts zurück; getOrDefault(..., ZERO) fängt das zusätzlich ab.
-        Map<LocalDate, BigDecimal> sollStundenJeTag = tagesSollService.arbeitsSollJeTag(
-                antrag.getMitarbeiter().getId(), antrag.getVonDatum(), antrag.getBisDatum());
+        // Soll-Stunden für den GESAMTEN Zeitraum auf einmal laden
+        Map<LocalDate, BigDecimal> sollStundenJeTag = istGf
+                ? Map.of()
+                : tagesSollService.arbeitsSollJeTag(
+                        antrag.getMitarbeiter().getId(), antrag.getVonDatum(), antrag.getBisDatum());
 
         // Zeitraum iterieren und Abwesenheiten erstellen
         for (LocalDate date : buchungstage) {
-            // Soll-Stunden ermitteln (Gegenbuchung zum Tagessoll, siehe Javadoc oben)
-            BigDecimal sollStunden = sollStundenJeTag.getOrDefault(date, BigDecimal.ZERO);
+            BigDecimal sollStunden = istGf ? BigDecimal.ZERO : sollStundenJeTag.getOrDefault(date, BigDecimal.ZERO);
 
-            if (sollStunden.compareTo(BigDecimal.ZERO) > 0) {
+            if (istGf || sollStunden.compareTo(BigDecimal.ZERO) > 0) {
                 // Prüfen ob bereits Abwesenheit für diesen Tag existiert
                 if (!abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(
                         antrag.getMitarbeiter().getId(), date, abwesenheitsTyp)) {
@@ -144,7 +173,7 @@ public class UrlaubsantragService {
                     abwesenheit.setTyp(abwesenheitsTyp);
                     abwesenheit.setDatum(date);
                     abwesenheit.setStunden(sollStunden);
-                    abwesenheit.setNotiz(antrag.getTyp().name() + " (Antrag #" + antrag.getId() + ")");
+                    abwesenheit.setNotiz(antrag.getTyp().name() + (istGf ? " (GF-Eintrag)" : (" (Antrag #" + antrag.getId() + ")")));
 
                     abwesenheitRepository.save(abwesenheit);
                 }

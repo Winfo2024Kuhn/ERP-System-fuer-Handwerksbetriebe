@@ -44,6 +44,13 @@ public class AbwesenheitService {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden: " + mitarbeiterId));
 
+        // Prüfe ob Monat festgeschrieben ist
+        if (monatsSaldoService.isMonatFestgeschrieben(mitarbeiterId, datum.getYear(), datum.getMonthValue())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück.");
+        }
+
         // Prüfe ob bereits Abwesenheit für diesen Tag existiert
         if (abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(mitarbeiterId, datum, typ)) {
             throw new IllegalStateException("Für diesen Tag existiert bereits eine " + typ + "-Buchung");
@@ -147,30 +154,12 @@ public class AbwesenheitService {
     }
 
     /**
-     * Berechnet den aktuellen Stundensaldo eines Mitarbeiters.
+     * Berechnet den aktuellen Stundensaldo eines Mitarbeiters bis heute
+     * unter Einbeziehung aller Zeitbuchungen, Abwesenheiten, Feiertage und Korrekturbuchungen.
      * Positiv = Überstunden, Negativ = Fehlstunden.
      */
     private BigDecimal berechneAktuellenSaldo(Long mitarbeiterId) {
-        LocalDate heute = LocalDate.now();
-        int currentYear = heute.getYear();
-        int currentMonth = heute.getMonthValue();
-
-        // Vereinfachte Berechnung: Summe der Überstundensalden pro Monat
-        // Für genauere Berechnung könnte ZeiterfassungApiService.getSaldo() verwendet
-        // werden
-        BigDecimal saldo = BigDecimal.ZERO;
-        for (int m = 1; m <= currentMonth; m++) {
-            BigDecimal sollMonat = zeitkontoService.berechneSollstundenFuerMonat(mitarbeiterId, currentYear, m);
-            saldo = saldo.subtract(sollMonat);
-        }
-
-        // Abwesenheitsstunden addieren (zählen als gearbeitet)
-        LocalDate jahresanfang = LocalDate.of(currentYear, 1, 1);
-        BigDecimal abwesenheitsStunden = abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
-                mitarbeiterId, jahresanfang, heute);
-        saldo = saldo.add(abwesenheitsStunden);
-
-        return saldo;
+        return monatsSaldoService.berechneGesamtsaldo(mitarbeiterId, LocalDate.now());
     }
 
     /**
@@ -183,6 +172,12 @@ public class AbwesenheitService {
 
         Long mitarbeiterId = abwesenheit.getMitarbeiter().getId();
         LocalDate datum = abwesenheit.getDatum();
+
+        if (monatsSaldoService.isMonatFestgeschrieben(mitarbeiterId, datum.getYear(), datum.getMonthValue())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück.");
+        }
 
         abwesenheitRepository.deleteById(abwesenheitId);
 

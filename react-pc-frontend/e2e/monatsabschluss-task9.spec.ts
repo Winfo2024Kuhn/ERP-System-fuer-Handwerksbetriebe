@@ -14,17 +14,47 @@ async function stub(page: Page, options: { allowed?: boolean; error?: boolean; c
         const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
         if (path === '/api/auth/me') return json({ id: 70, username: 'test@example.com', displayName: 'Max Mustermann', active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false });
         if (path === '/api/notifications/summary') return json({ totalCount: closed ? 0 : 1,
-            categories: closed ? [] : [{ type: 'MONATSABSCHLUSS', label: 'Monate abschließen', count: 1, icon: 'CalendarCheck', link: '/zeitbuchungen?jahr=2025&monat=8' }],
-            recentItems: closed ? [] : [{ type: 'MONATSABSCHLUSS', title: 'August 2025 abschließen', subtitle: '1 Mitarbeiter noch zu prüfen', timestamp: '2025-08-01T00:00:00', link: '/zeitbuchungen?jahr=2025&monat=8' }] });
+            categories: closed ? [] : [{ type: 'MONATSABSCHLUSS', label: 'Monate abschließen', count: 1, icon: 'CalendarCheck', link: '/monatsabschluss?jahr=2025&monat=8' }],
+            recentItems: closed ? [] : [{ type: 'MONATSABSCHLUSS', title: 'August 2025 abschließen', subtitle: '1 Mitarbeiter noch zu prüfen', timestamp: '2025-08-01T00:00:00', link: '/monatsabschluss?jahr=2025&monat=8' }] });
         if (path === '/api/mitarbeiter') return json([{ id: 1, vorname: 'Max', nachname: 'Mustermann' }]);
         if (path === '/api/mitarbeiter/1') return json({ id: 1 });
+        if (path === '/api/abteilungen') return json([]);
         if (path === '/api/abteilungen/berechtigungen') return json([{ abteilungId: 1, abteilungName: 'Testabteilung', berechtigungen: [], darfMonatAbschliessen: allowed }]);
         if (path === '/api/abteilungen/1/berechtigungen' && method === 'PUT') {
             allowed = route.request().postDataJSON().darfMonatAbschliessen; writes.push('recht'); return json({ darfMonatAbschliessen: allowed });
         }
         if (path === '/api/zeitverwaltung/kalender') return json({ jahr: Number(url.searchParams.get('jahr')), monat: Number(url.searchParams.get('monat')),
             tage: Array.from({ length: 31 }, (_, n) => ({ datum: `2025-08-${String(n + 1).padStart(2, '0')}`, wochentag: (n + 4) % 7 + 1, istFeiertag: false, feiertagName: null, sollStunden: 8, istStunden: 8, buchungen: [] })), sollStundenMonat: 160, istStundenMonat: 168, differenz: 8 });
-        if (path.endsWith('/monatsabschluesse/berechtigung')) return json({ darfMonatAbschliessen: allowed });
+        if (path.endsWith('/monatsabschluesse/berechtigung') || path.endsWith('/monatsabschluss/berechtigung')) return json({ darfMonatAbschliessen: allowed });
+        if (path.endsWith('/uebersicht')) {
+            const jahr = Number(url.searchParams.get('jahr')) || 2025;
+            const monat = Number(url.searchParams.get('monat')) || 8;
+            return json({
+                items: [{
+                    referenz: { mitarbeiterId: 1, jahr, monat },
+                    mitarbeiterName: 'Max Mustermann',
+                    abteilungIds: [],
+                    festgeschrieben: closed,
+                    version: audit.length,
+                    festgeschriebenAm: closed ? '2026-09-09T10:00:00' : null,
+                    kennzahlen: { istStunden: 120, sollStunden: 120, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 120, differenz: 0 }
+                }],
+                totalElements: 1,
+                page: 0,
+                size: 50,
+                summen: { istStunden: 120, sollStunden: 120, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 120, differenz: 0 },
+                auswahl: [{ mitarbeiterId: 1, jahr, monat, version: audit.length, festgeschrieben: closed }]
+            });
+        }
+        if (path.endsWith('/vergleich')) {
+            return json([]);
+        }
+        if (path.endsWith('/sammelabschluss')) {
+            writes.push(path);
+            closed = true;
+            audit = [...audit, { id: audit.length + 1, aktion: 'ABSCHLIESSEN', akteurName: 'Max Mustermann', zeitpunkt: '2026-09-09T10:00:00' }];
+            return json({ ergebnisse: [{ referenz: { mitarbeiterId: 1, jahr: 2025, monat: 8 }, status: 'ABGESCHLOSSEN', meldung: 'Monat abgeschlossen.' }] });
+        }
         if (path.includes('/monatsabschluesse/')) {
             if (options.error) return json({ message: 'Monatsabschluss konnte nicht geladen werden.' }, 500);
             if (method === 'POST') {
@@ -52,25 +82,23 @@ test('Recht speichern, Glockenlink, Abschluss und Wiederöffnung mit Verlauf', a
     await designPruefung(page, info, 'task9-rechte');
     await page.getByTitle('Benachrichtigungen', { exact: true }).click();
     await page.getByText('August 2025 abschließen', { exact: true }).click();
-    await expect(page).toHaveURL(/jahr=2025&monat=8/);
-    const close = page.getByRole('button', { name: 'Monat abschließen', exact: true });
+    await expect(page).toHaveURL(/monatsabschluss\?jahr=2025&monat=8/);
+    await page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true }).check();
+    const close = page.getByRole('button', { name: 'Monat jetzt abschließen', exact: true });
     await expect(close).toBeEnabled();
-    await expect(page.getByText('168,0h', { exact: true })).toBeVisible();
     await designPruefung(page, info, 'task9-offen', { primaerAktion: close });
     await close.click();
     await page.getByRole('button', { name: 'Abschließen', exact: true }).click();
+    await page.getByRole('button', { name: 'Verlauf für Max Mustermann', exact: true }).click();
     const reopen = page.getByRole('button', { name: 'Monat wieder öffnen', exact: true });
     await expect(reopen).toBeEnabled();
-    await expect(page.getByText('125,0h', { exact: true })).toBeVisible();
-    await page.getByText('Verlauf der Monatsabschlüsse (1)', { exact: true }).click();
     await designPruefung(page, info, 'task9-abgeschlossen', { primaerAktion: reopen });
     await reopen.click();
     await page.getByRole('button', { name: 'Wieder öffnen', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true }).check();
     await expect(close).toBeEnabled();
-    await expect(page.getByText('168,0h', { exact: true })).toBeVisible();
-    await expect(page.getByText('Verlauf der Monatsabschlüsse (2)', { exact: true })).toBeVisible();
     await designPruefung(page, info, 'task9-wieder-offen', { primaerAktion: close });
-    expect(writes).toEqual(['recht', '/api/zeitverwaltung/monatsabschluesse/1/2025/8/abschliessen', '/api/zeitverwaltung/monatsabschluesse/1/2025/8/oeffnen']);
+    expect(writes).toEqual(['recht', '/api/zeitverwaltung/monatsabschluesse/sammelabschluss', '/api/zeitverwaltung/monatsabschluesse/1/2025/8/oeffnen']);
 });
 
 test('Ohne Abschlussrecht bleiben offene Stunden lesbar', async ({ page }, info) => {
@@ -93,9 +121,10 @@ test('Fehler im Monatsstatus sperrt die Stundenanzeige nicht', async ({ page }, 
 
 test('Laufender Monat kann nicht abgeschlossen werden', async ({ page }, info) => {
     const writes = await stub(page);
-    await page.goto('/zeitbuchungen');
+    const jetzt = new Date();
+    await page.goto(`/monatsabschluss?jahr=${jetzt.getFullYear()}&monat=${jetzt.getMonth() + 1}`);
     await expect(page.getByText('Nur vergangene Monate können abgeschlossen werden.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Monat abschließen', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Monat jetzt abschließen', exact: true })).toBeDisabled();
     await designPruefung(page, info, 'task9-laufender-monat');
     expect(writes).toHaveLength(0);
 });

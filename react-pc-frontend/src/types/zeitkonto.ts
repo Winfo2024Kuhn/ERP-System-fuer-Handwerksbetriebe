@@ -12,7 +12,7 @@ export interface ZeitkontoVersion {
 }
 export interface ZeitkontoStatus {
     mitarbeiterId: number; mitarbeiterVersion: number; mitarbeiterName: string;
-    fuehrtZeitkonto: boolean; eingerichtet: boolean; hinweis: string | null;
+    fuehrtZeitkonto: boolean; eingerichtet: boolean; istGeschaeftsfuehrer?: boolean; hinweis: string | null;
     aktuell: ZeitkontoVersion | null; letzteVersion: ZeitkontoVersion | null; historie: ZeitkontoVersion[];
 }
 export interface ZeitkontoWechsel {

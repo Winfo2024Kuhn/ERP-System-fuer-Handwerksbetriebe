@@ -62,6 +62,24 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     // Zeitkonto Saldo State
     const [zeitkontoSaldo, setZeitkontoSaldo] = useState<number | null>(null)
     const [loadingZeitkontoSaldo, setLoadingZeitkontoSaldo] = useState(false)
+    const [zeitkontoStatus, setZeitkontoStatus] = useState<{ fuehrtZeitkonto?: boolean; eingerichtet?: boolean; istGeschaeftsfuehrer?: boolean } | null>(null)
+    const istGeschaeftsfuehrer = !!zeitkontoStatus?.istGeschaeftsfuehrer
+
+    useEffect(() => {
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (!token) return
+        fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data) {
+                    setZeitkontoStatus(data)
+                    if (data.istGeschaeftsfuehrer && typ === 'ZEITAUSGLEICH') {
+                        setTyp('URLAUB')
+                    }
+                }
+            })
+            .catch(() => {})
+    }, [typ])
 
     // Overview State
     const [antraege, setAntraege] = useState<Urlaubsantrag[]>([])
@@ -162,7 +180,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     }
 
     const beantragteTage = zaehleArbeitstage(von, bis)
-    const ueberschritten = typ === 'URLAUB' && resturlaub !== null && beantragteTage > resturlaub
+    const ueberschritten = !istGeschaeftsfuehrer && typ === 'URLAUB' && resturlaub !== null && beantragteTage > resturlaub
 
     const fetchAntraege = async () => {
         if (!mitarbeiter) return
@@ -363,7 +381,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                         <form noValidate onSubmit={handleSubmit} className="p-5 space-y-6 overflow-hidden">
                             <div className="space-y-4">
                                 <h2 className="text-base font-semibold text-slate-900">Neuen Antrag stellen</h2>
-                                <div className="grid grid-cols-2 gap-2 mb-6">
+                                <div className={`grid ${istGeschaeftsfuehrer ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'} gap-2 mb-6`}>
                                     <button
                                         type="button"
                                         onClick={() => setTyp('URLAUB')}
@@ -397,17 +415,19 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                         <FileText className="w-5 h-5" />
                                         <span className="font-semibold text-xs">Fortbildung</span>
                                     </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setTyp('ZEITAUSGLEICH')}
-                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${typ === 'ZEITAUSGLEICH'
-                                            ? 'bg-rose-50 border-rose-600 text-rose-700 ring-1 ring-rose-600'
-                                            : 'bg-white border-slate-200 text-slate-500 hover:border-rose-200'
-                                            }`}
-                                    >
-                                        <Clock className="w-5 h-5" />
-                                        <span className="font-semibold text-xs">Zeitausgleich</span>
-                                    </button>
+                                    {!istGeschaeftsfuehrer && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setTyp('ZEITAUSGLEICH')}
+                                            className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${typ === 'ZEITAUSGLEICH'
+                                                ? 'bg-rose-50 border-rose-600 text-rose-700 ring-1 ring-rose-600'
+                                                : 'bg-white border-slate-200 text-slate-500 hover:border-rose-200'
+                                                }`}
+                                        >
+                                            <Clock className="w-5 h-5" />
+                                            <span className="font-semibold text-xs">Zeitausgleich</span>
+                                        </button>
+                                    )}
                                 </div>
 
                                 <div>
@@ -458,7 +478,12 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                         <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
                                     )}
                                     <div>
-                                        {loadingResturlaub ? (
+                                        {istGeschaeftsfuehrer ? (
+                                            <>
+                                                <span className="font-semibold text-slate-800">Urlaub erfassen</span>
+                                                <span className="block text-xs text-slate-500 mt-0.5">Als Geschäftsführer wird der Urlaub ohne Kontingentabzug direkt dokumentiert.</span>
+                                            </>
+                                        ) : loadingResturlaub ? (
                                             <span>Resturlaub wird geladen…</span>
                                         ) : resturlaub !== null ? (
                                             <>
@@ -533,7 +558,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                 className="w-full bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
                             >
                                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                                {typ === 'ZEITAUSGLEICH' ? 'Zeitausgleich beantragen' : typ === 'KRANKHEIT' ? 'Krankmeldung senden' : typ === 'FORTBILDUNG' ? 'Fortbildungsantrag senden' : 'Antrag senden'}
+                                {typ === 'ZEITAUSGLEICH' ? 'Zeitausgleich beantragen' : typ === 'KRANKHEIT' ? 'Krankmeldung senden' : typ === 'FORTBILDUNG' ? 'Fortbildungsantrag senden' : (istGeschaeftsfuehrer ? 'Urlaub eintragen' : 'Antrag senden')}
                             </button>
                         </form>
                     </div>

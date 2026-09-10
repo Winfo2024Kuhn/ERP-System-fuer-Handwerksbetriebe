@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Monatsabschluss from './Monatsabschluss';
@@ -30,7 +30,7 @@ it('ruft ohne Abschlussrecht keine Mitarbeiter oder Monatsdaten ab', async () =>
 it('wählt alle 500 über Seiten hinweg und behält nach Teilerfolg nur Fehler', async () => {
  mount(); await screen.findByText('Max Mustermann 1', { selector: 'th' }); expect(screen.getByText('72.750,00')).toBeVisible();
  fireEvent.click(screen.getByLabelText('Alle gefilterten Mitarbeiter auswählen')); fireEvent.click(screen.getByLabelText('Nächste Seite')); await screen.findByText('Max Mustermann 51', { selector: 'th' }); expect(screen.getByLabelText('Max Mustermann 51 auswählen')).toBeChecked();
- fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Auswahl abschließen' })); await waitFor(() => expect(submitted).toHaveLength(1)); expect(submitted[0]).toHaveLength(500); await screen.findByText('1 ausgewählt', { selector: 'p' }); expect(toast.error).toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button', { name: 'Monat jetzt abschließen' })); await waitFor(() => expect(submitted).toHaveLength(1)); expect(submitted[0]).toHaveLength(500); await screen.findByText('1 ausgewählt', { selector: 'p' }); expect(toast.error).toHaveBeenCalled();
 });
 it('filtert Abteilung und Status, setzt Auswahl zurück und vergleicht alle Stände', async () => {
  mount(); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' })); await choose('Abteilung', 'Werkstatt'); await screen.findByText('0 ausgewählt'); await choose('Status', 'Noch offen');
@@ -40,7 +40,7 @@ it('lädt Verlauf erst auf Klick und verlinkt den genauen Kalendermonat', async 
  mount(); await screen.findByText('Max Mustermann 1'); expect(calls.some(c => /monatsabschluesse\/\d+\//.test(c))).toBe(false); expect(screen.getByRole('link', { name: 'Kalender für Max Mustermann 1' }).getAttribute('href')).toMatch(/^\/zeitbuchungen\?mitarbeiterId=1&jahr=\d+&monat=\d+$/); fireEvent.click(screen.getByRole('button', { name: 'Verlauf für Max Mustermann 1' })); await screen.findByText(/Abgeschlossen durch Max Mustermann/);
 });
 it('verwirft alte Bestätigung bei Monatswechsel und blockiert Doppelklicks', async () => {
- let finish!: (ok: boolean) => void; confirm.mockImplementation(() => new Promise(resolve => { finish = resolve; })); mount(); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' })); const button = screen.getByRole('button', { name: 'Auswahl abschließen' }); fireEvent.click(button); fireEvent.click(button); expect(confirm).toHaveBeenCalledTimes(1);
+ let finish!: (ok: boolean) => void; confirm.mockImplementation(() => new Promise(resolve => { finish = resolve; })); mount(); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' })); const button = screen.getByRole('button', { name: 'Monat jetzt abschließen' }); fireEvent.click(button); fireEvent.click(button); expect(confirm).toHaveBeenCalledTimes(1);
  const current = screen.getByRole('combobox', { name: 'Monat' }).textContent; await choose('Monat', current === 'Januar' ? 'Februar' : 'Januar'); await act(async () => finish(true)); expect(submitted).toHaveLength(0);
 });
 it('verwirft verspätete Übersichten und bricht ausstehende Anfragen beim Wechsel ab', async () => {
@@ -50,7 +50,7 @@ it('verwirft verspätete Übersichten und bricht ausstehende Anfragen beim Wechs
  await act(async () => finish(new Response(JSON.stringify({ items: [], totalElements: 0, page: 0, size: 50, summen: kennzahlen, auswahl: [] })))); expect(screen.getByText('Max Mustermann 1')).toBeVisible(); view.unmount();
 });
 it('blockiert den laufenden Monat vor einer Schreibanfrage', async () => {
- mount(); await screen.findByText('Max Mustermann 1'); const now = new Date(); await choose('Jahr', String(now.getFullYear())); await choose('Monat', new Intl.DateTimeFormat('de-DE', { month: 'long' }).format(now)); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' })); expect(screen.getByRole('button', { name: 'Auswahl abschließen' })).toBeDisabled(); expect(submitted).toHaveLength(0);
+ mount(); await screen.findByText('Max Mustermann 1'); const now = new Date(); await choose('Jahr', String(now.getFullYear())); await choose('Monat', new Intl.DateTimeFormat('de-DE', { month: 'long' }).format(now)); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' })); expect(screen.getByRole('button', { name: 'Monat jetzt abschließen' })).toBeDisabled(); expect(submitted).toHaveLength(0);
 });
 it('übernimmt den tatsächlichen ZIP-Dateinamen und behandelt Downloadkonflikte', async () => {
  const { api } = await import('../features/monatsabschluss/api');
@@ -61,7 +61,7 @@ it('übernimmt den tatsächlichen ZIP-Dateinamen und behandelt Downloadkonflikte
 it('springt nach Abschluss zurück zur ersten Ergebnisseite und schließt den alten Verlauf', async () => {
  mount(); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('button', { name: 'Nächste Seite' })); await screen.findByText('Max Mustermann 51');
  fireEvent.click(screen.getByRole('button', { name: 'Verlauf für Max Mustermann 51' })); await screen.findByText(/Abgeschlossen durch Max Mustermann/);
- fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 51 auswählen' })); fireEvent.click(screen.getByRole('button', { name: 'Auswahl abschließen' }));
+ fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 51 auswählen' })); fireEvent.click(screen.getByRole('button', { name: 'Monat jetzt abschließen' }));
  await waitFor(() => expect(submitted).toHaveLength(1)); await screen.findByText('Max Mustermann 1'); expect(screen.queryByRole('region', { name: 'Abschlussverlauf' })).not.toBeInTheDocument();
 });
 

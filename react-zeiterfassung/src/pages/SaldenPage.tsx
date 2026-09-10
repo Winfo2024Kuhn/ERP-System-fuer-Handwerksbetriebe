@@ -8,24 +8,28 @@ interface Mitarbeiter {
     name?: string
 }
 
+// Fuer die Geschaeftsfuehrung liefert das Backend bewusst weniger Felder:
+// kein Jahresanspruch, keine Soll-/Differenzwerte und keinen Gesamtsaldo.
+// Diese Keys sind daher optional und duerfen nie ungeprueft gerendert werden.
 interface SaldoData {
     urlaub: {
-        jahresanspruch: number
+        jahresanspruch?: number
         genommen: number
         geplant: number
-        verbleibend: number
+        verbleibend?: number
+        korrektur?: number
         krankheitsTage: number
         fortbildungsTage: number
     }
     monat: {
         name: string
         monatNummer: number
-        sollStunden: number
+        sollStunden?: number
         istStunden: number
-        differenz: number
+        differenz?: number
         festgeschrieben?: boolean
     }
-    gesamt: {
+    gesamt?: {
         istStunden: number
         sollStunden: number
         saldo: number
@@ -283,14 +287,18 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                 </div>
                                 <div>
                                     <h2 className="font-bold text-slate-900">Urlaubstage</h2>
-                                    <p className="text-xs text-slate-500">Jahresanspruch {saldo.jahr}</p>
+                                    <p className="text-xs text-slate-500">
+                                        {zeitkontoStatus?.istGeschaeftsfuehrer ? `Eingetragene Tage ${saldo.jahr}` : `Jahresanspruch ${saldo.jahr}`}
+                                    </p>
                                 </div>
                             </div>
-                            <div className="p-4 grid grid-cols-4 gap-2">
-                                <div className="text-center">
-                                    <p className="text-xl font-bold text-slate-900">{saldo.urlaub.jahresanspruch}</p>
-                                    <p className="text-[10px] text-slate-500">Anspruch</p>
-                                </div>
+                            <div className={`p-4 grid gap-2 ${zeitkontoStatus?.istGeschaeftsfuehrer ? 'grid-cols-2' : 'grid-cols-4'}`}>
+                                {!zeitkontoStatus?.istGeschaeftsfuehrer && (
+                                    <div className="text-center">
+                                        <p className="text-xl font-bold text-slate-900">{saldo.urlaub.jahresanspruch ?? 0}</p>
+                                        <p className="text-[10px] text-slate-500">Anspruch</p>
+                                    </div>
+                                )}
                                 <div className="text-center">
                                     <p className="text-xl font-bold text-amber-600">{saldo.urlaub.genommen}</p>
                                     <p className="text-[10px] text-slate-500">Genommen</p>
@@ -299,10 +307,12 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                     <p className="text-xl font-bold text-blue-600">{saldo.urlaub.geplant || 0}</p>
                                     <p className="text-[10px] text-slate-500">Geplant</p>
                                 </div>
-                                <div className="text-center">
-                                    <p className="text-xl font-bold text-green-600">{saldo.urlaub.verbleibend}</p>
-                                    <p className="text-[10px] text-slate-500">Frei</p>
-                                </div>
+                                {!zeitkontoStatus?.istGeschaeftsfuehrer && (
+                                    <div className="text-center">
+                                        <p className="text-xl font-bold text-green-600">{saldo.urlaub.verbleibend ?? 0}</p>
+                                        <p className="text-[10px] text-slate-500">Frei</p>
+                                    </div>
+                                )}
                             </div>
                             {/* Krankheit & Fortbildung */}
                             <div className="px-4 pb-4 grid grid-cols-2 gap-3">
@@ -339,9 +349,11 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                                     ? 'Aktueller Monat'
                                                     : `${selectedYear}`)}
                                         </p>
-                                        <p className={`mt-1 text-xs font-medium ${saldo.monat.festgeschrieben ? 'text-slate-700' : 'text-amber-800'}`}>
-                                            {saldo.monat.festgeschrieben ? 'Monat festgeschrieben' : 'Monatsabschluss noch nicht erfolgt'}
-                                        </p>
+                                        {!zeitkontoStatus?.istGeschaeftsfuehrer && (
+                                            <p className={`mt-1 text-xs font-medium ${saldo.monat.festgeschrieben ? 'text-slate-700' : 'text-amber-800'}`}>
+                                                {saldo.monat.festgeschrieben ? 'Monat festgeschrieben' : 'Monatsabschluss noch nicht erfolgt'}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 {/* Month Navigation Buttons */}
@@ -362,73 +374,85 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                     </button>
                                 </div>
                             </div>
-                            <div className="p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className="text-sm text-slate-600">Soll-Stunden</span>
-                                    <span className="font-semibold text-slate-900">{saldo.monat.sollStunden.toFixed(1)}h</span>
+                            {zeitkontoStatus?.istGeschaeftsfuehrer ? (
+                                <div className="p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm text-slate-600">Erfasste Arbeitszeit</span>
+                                        <span className="font-bold text-lg text-slate-900">{saldo.monat.istStunden.toFixed(1)}h</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500">Projektbezogene Zeiterfassung ohne Arbeitszeitkonto</p>
                                 </div>
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className="text-sm text-slate-600">Ist-Stunden</span>
-                                    <span className="font-semibold text-slate-900">{saldo.monat.istStunden.toFixed(1)}h</span>
-                                </div>
-                                <div className={`flex items-center justify-between p-3 rounded-xl ${getSaldoBg(saldo.monat.differenz)}`}>
-                                    <span className={`text-sm font-medium ${getSaldoColor(saldo.monat.differenz)}`}>
-                                        {saldo.monat.differenz >= 0 ? 'Überstunden' : 'Fehlstunden'}
-                                    </span>
-                                    <div className={`flex items-center gap-2 ${getSaldoColor(saldo.monat.differenz)}`}>
-                                        {getSaldoIcon(saldo.monat.differenz)}
-                                        <span className="font-bold text-lg">{formatHours(saldo.monat.differenz)}h</span>
+                            ) : (
+                                <div className="p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <span className="text-sm text-slate-600">Soll-Stunden</span>
+                                        <span className="font-semibold text-slate-900">{(saldo.monat.sollStunden ?? 0).toFixed(1)}h</span>
+                                    </div>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <span className="text-sm text-slate-600">Ist-Stunden</span>
+                                        <span className="font-semibold text-slate-900">{saldo.monat.istStunden.toFixed(1)}h</span>
+                                    </div>
+                                    <div className={`flex items-center justify-between p-3 rounded-xl ${getSaldoBg((saldo.monat.differenz ?? 0))}`}>
+                                        <span className={`text-sm font-medium ${getSaldoColor((saldo.monat.differenz ?? 0))}`}>
+                                            {(saldo.monat.differenz ?? 0) >= 0 ? 'Überstunden' : 'Fehlstunden'}
+                                        </span>
+                                        <div className={`flex items-center gap-2 ${getSaldoColor((saldo.monat.differenz ?? 0))}`}>
+                                            {getSaldoIcon((saldo.monat.differenz ?? 0))}
+                                            <span className="font-bold text-lg">{formatHours((saldo.monat.differenz ?? 0))}h</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </section>
 
                         {/* Gesamtsaldo Section */}
-                        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div className="p-4 border-b border-slate-100 flex items-center gap-3">
-                                <div className="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center">
-                                    <Briefcase className="w-5 h-5 text-rose-600" />
+                        {!zeitkontoStatus?.istGeschaeftsfuehrer && saldo.gesamt && (
+                            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="p-4 border-b border-slate-100 flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center">
+                                        <Briefcase className="w-5 h-5 text-rose-600" />
+                                    </div>
+                                    <div>
+                                        <h2 className="font-bold text-slate-900">Gesamtsaldo</h2>
+                                        <p className="text-xs text-slate-500">
+                                            {saldo.gesamt.startDatum
+                                                ? `Seit ${formatDateShort(saldo.gesamt.startDatum)}`
+                                                : `Jahr ${saldo.jahr} bis heute`}
+                                        </p>
+                                        <p className={`mt-1 text-xs font-medium ${saldo.gesamt.vorlaeufig ? 'text-amber-800' : 'text-slate-700'}`}>
+                                            {saldo.gesamt.geprueftBis
+                                                ? `Geprüft bis ${formatDateLong(saldo.gesamt.geprueftBis)}${saldo.gesamt.vorlaeufig ? ' — die Stunden seitdem sind noch vorläufig.' : ''}`
+                                                : 'Noch nicht geprüft — die Stunden sind noch vorläufig.'}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h2 className="font-bold text-slate-900">Gesamtsaldo</h2>
-                                    <p className="text-xs text-slate-500">
-                                        {saldo.gesamt.startDatum
-                                            ? `Seit ${formatDateShort(saldo.gesamt.startDatum)}`
-                                            : `Jahr ${saldo.jahr} bis heute`}
-                                    </p>
-                                    <p className={`mt-1 text-xs font-medium ${saldo.gesamt.vorlaeufig ? 'text-amber-800' : 'text-slate-700'}`}>
-                                        {saldo.gesamt.geprueftBis
-                                            ? `Geprüft bis ${formatDateLong(saldo.gesamt.geprueftBis)}${saldo.gesamt.vorlaeufig ? ' — die Stunden seitdem sind noch vorläufig.' : ''}`
-                                            : 'Noch nicht geprüft — die Stunden sind noch vorläufig.'}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="p-4">
+                                <div className="p-4">
 
-                                <div className={`flex items-center justify-center gap-3 p-4 rounded-xl ${getSaldoBg(saldo.gesamt.saldo)}`}>
-                                    <div className={getSaldoColor(saldo.gesamt.saldo)}>
-                                        {getSaldoIcon(saldo.gesamt.saldo)}
+                                    <div className={`flex items-center justify-center gap-3 p-4 rounded-xl ${getSaldoBg(saldo.gesamt.saldo)}`}>
+                                        <div className={getSaldoColor(saldo.gesamt.saldo)}>
+                                            {getSaldoIcon(saldo.gesamt.saldo)}
+                                        </div>
+                                        <div className="text-center">
+                                            <p className={`text-3xl font-bold ${getSaldoColor(saldo.gesamt.saldo)}`}>
+                                                {formatHours(saldo.gesamt.saldo)}h
+                                            </p>
+                                            <p className="text-sm text-slate-500">
+                                                {saldo.gesamt.saldo >= 0 ? 'Überstunden' : 'Fehlstunden'}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div className="text-center">
-                                        <p className={`text-3xl font-bold ${getSaldoColor(saldo.gesamt.saldo)}`}>
-                                            {formatHours(saldo.gesamt.saldo)}h
-                                        </p>
-                                        <p className="text-sm text-slate-500">
-                                            {saldo.gesamt.saldo >= 0 ? 'Überstunden' : 'Fehlstunden'}
-                                        </p>
-                                    </div>
+                                    {saldo.gesamt.saldo > 0 && (
+                                        <button
+                                            onClick={() => navigate('/urlaub?typ=ZEITAUSGLEICH')}
+                                            className="mt-3 w-full py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
+                                        >
+                                            <Clock className="w-4 h-4 text-rose-600" />
+                                            Zeitausgleich beantragen
+                                        </button>
+                                    )}
                                 </div>
-                                {saldo.gesamt.saldo > 0 && (
-                                    <button
-                                        onClick={() => navigate('/urlaub?typ=ZEITAUSGLEICH')}
-                                        className="mt-3 w-full py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
-                                    >
-                                        <Clock className="w-4 h-4 text-rose-600" />
-                                        Zeitausgleich beantragen
-                                    </button>
-                                )}
-                            </div>
-                        </section>
+                            </section>
+                        )}
 
                         {/* Feiertage Section */}
                         <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
