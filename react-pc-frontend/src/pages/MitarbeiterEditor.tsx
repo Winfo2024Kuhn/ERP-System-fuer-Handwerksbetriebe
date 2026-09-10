@@ -7,6 +7,7 @@ import { DecimalInput } from '../components/ui/decimal-input';
 import { ArbeitszeitFelder } from '../features/zeitkonto/ArbeitszeitFelder';
 import { WOCHENTAGE, leereArbeitszeit, zeitEntwurf, pruefeArbeitszeit, BUCHUNGSZEIT_LABELS, type ArbeitszeitEntwurf } from '../features/zeitkonto/arbeitszeitInput';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
+import { heuteIso } from '../lib/datum';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { DatePicker } from '../components/ui/datepicker';
@@ -102,7 +103,6 @@ interface Lohnabrechnung {
 
 const BASE_API = '/api/mitarbeiter';
 const ZEITKONTO_API = '/api/zeitverwaltung/zeitkonten';
-const HEUTE = new Date().toISOString().slice(0, 10);
 type ZahlenFeld = 'jahresUrlaub' | 'stundenlohn' | 'kalkulatorischerLohnMonat' | 'geldwertVorteilMonat';
 type MitarbeiterEntwurf = Partial<Omit<Mitarbeiter, ZahlenFeld> & Record<ZahlenFeld, string>>;
 const mitarbeiterEntwurf = (m: Partial<Mitarbeiter>): MitarbeiterEntwurf => ({ ...m,
@@ -129,7 +129,7 @@ export default function MitarbeiterEditor() {
     const [zeitkontenmodelle, setZeitkontenmodelle] = useState<Zeitkontenmodell[]>([]);
     const [loadingZeitkonto, setLoadingZeitkonto] = useState(false);
     const [zeitkontoDialogOpen, setZeitkontoDialogOpen] = useState(false);
-    const [stichtag, setStichtag] = useState(HEUTE);
+    const [stichtag, setStichtag] = useState(heuteIso);
     const [vorlageId, setVorlageId] = useState('');
     const [individuelleAbweichung, setIndividuelleAbweichung] = useState(false);
     const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<ArbeitszeitEntwurf>(zeitEntwurf(leereArbeitszeit()));
@@ -257,7 +257,7 @@ export default function MitarbeiterEditor() {
         const aktuelleVersion = zeitkontoStatus?.aktuell;
         const aktuell = aktuelleVersion?.arbeitszeit;
         const aktuelleVorlage = zeitkontenmodelle.find(modell => modell.id === aktuelleVersion?.vorlageId);
-        setStichtag(zeitkontoStatus?.fuehrtZeitkonto === false ? HEUTE : HEUTE);
+        setStichtag(heuteIso());
         setVorlageId(aktuelleVersion?.vorlageId ? String(aktuelleVersion.vorlageId) : aktuell ? 'individuell' : '');
         setIndividuelleAbweichung(!!aktuell && !!aktuelleVorlage && !arbeitszeitenGleich(aktuell, aktuelleVorlage.arbeitszeit));
         setIndividuelleArbeitszeit(zeitEntwurf(aktuell ?? leereArbeitszeit()));

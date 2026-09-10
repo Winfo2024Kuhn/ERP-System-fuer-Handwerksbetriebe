@@ -51,6 +51,14 @@ function renderTabelle(overrides: {
     return { onHinzufuegen, onLoeschen };
 }
 
+/**
+ * Fehlermeldungen erscheinen zweimal mit role="alert": einmal inline am Feld
+ * und einmal als Toast (Fehler-Toasts sind bewusst role="alert", damit
+ * Screenreader sie sofort ansagen). Hier gezielt den Inline-Text pruefen.
+ */
+const inlineFehler = () =>
+    screen.getAllByRole('alert').find(element => !element.closest('[data-pc-toasts]'));
+
 describe('StufenplanTabelle', () => {
     it('zeigt den Leerzustand, wenn noch kein Stufenplan hinterlegt ist', () => {
         renderTabelle();
@@ -91,7 +99,7 @@ describe('StufenplanTabelle', () => {
         await user.type(stundenFeld, '9');
         await user.click(screen.getByRole('button', { name: /Zeile hinzufügen/ }));
 
-        expect(screen.getByRole('alert')).toHaveTextContent(/größer als 0 und höchstens 7,5 sein/);
+        expect(inlineFehler()).toHaveTextContent(/größer als 0 und höchstens 7,5 sein/);
     });
 
     it('ignoriert Phasen, die kein Stufenplan-Schritt sind', () => {
@@ -116,7 +124,7 @@ describe('StufenplanTabelle', () => {
         expect(onHinzufuegen).not.toHaveBeenCalled();
         // Inline-Fehlertext (role="alert") UND Toast zeigen dieselbe Meldung -
         // gezielt auf den Inline-Text pruefen, statt auf beide Treffer zu stossen.
-        expect(screen.getByRole('alert')).toHaveTextContent(/größer als 0 und höchstens 4/);
+        expect(inlineFehler()).toHaveTextContent(/größer als 0 und höchstens 4/);
     });
 
     it('erlaubt halbe Stunden, weil die Pruefung selbst keine Ganzzahl verlangt', async () => {

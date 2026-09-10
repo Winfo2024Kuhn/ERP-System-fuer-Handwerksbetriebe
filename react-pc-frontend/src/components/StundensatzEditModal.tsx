@@ -30,12 +30,16 @@ export const StundensatzEditModal: React.FC<StundensatzEditModalProps> = ({
     const isOutdated = arbeitsgang.stundensatzJahr !== null &&
         currentYear - arbeitsgang.stundensatzJahr >= 1;
 
+    // Bewusst auf id/stundensatz statt auf das ganze arbeitsgang-Objekt hoeren:
+    // uebergibt der Aufrufer ein frisch erzeugtes Objekt, lief der Effekt sonst
+    // nach jedem Render erneut und hat den getippten Entwurf wieder auf den
+    // gespeicherten Wert zurueckgesetzt.
     useEffect(() => {
         if (isOpen) {
             setStundensatz(arbeitsgang.stundensatz == null ? '' : formatDecimalInput(arbeitsgang.stundensatz));
             setError('');
         }
-    }, [isOpen, arbeitsgang]);
+    }, [isOpen, arbeitsgang.id, arbeitsgang.stundensatz]);
 
     const handleSave = async () => {
         const result = validateDecimalInput(stundensatz, { label: 'Stundensatz', required: true, min: 0 });

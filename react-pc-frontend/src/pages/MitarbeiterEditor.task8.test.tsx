@@ -38,6 +38,10 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
     let alteVorschauAufloesen: ((wert: Awaited<ReturnType<typeof response>>) => void) | null;
 
     beforeEach(() => {
+        // Der Stichtag ist standardmaessig "heute". Nur die Uhr faelschen, nicht
+        // die Timer: userEvent und waitFor brauchen weiterhin echte setTimeout.
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date(2026, 8, 9, 10, 0));
         requests.length = 0;
         vorschauAnzahl = 0;
         alteVorschauAufloesen = null;
@@ -72,7 +76,7 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         global.fetch = fetchMock as unknown as typeof fetch;
     });
 
-    afterEach(() => vi.restoreAllMocks());
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
     it('zeigt die fehlende Einrichtung, erstellt eine Vorschau und speichert nur über den Wechsel-Endpunkt', async () => {
         const user = userEvent.setup();

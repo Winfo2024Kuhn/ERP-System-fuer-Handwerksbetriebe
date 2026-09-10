@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
@@ -21,6 +21,25 @@ describe('DecimalInput', () => {
         await user.click(field); await user.type(field, '5'); expect(field).toHaveValue('12,5');
         await user.click(screen.getByText('Übernehmen')); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
+    it('leert eine erst nach dem Fokus nachgeladene 0 und erhält eine selbst getippte 0', async () => {
+        // Dialoge setzen den Fokus beim Öffnen, der gespeicherte Wert kommt erst
+        // danach an — dann feuert kein focus-Event mehr.
+        const user = userEvent.setup();
+        function NachgeladeneNull() {
+            const [value, setValue] = useState('');
+            useEffect(() => { setValue('0,00'); }, []);
+            return <DecimalInput label="Stunden" value={value} onChange={setValue} autoFocus />;
+        }
+        render(<NachgeladeneNull />);
+        const field = screen.getByRole('textbox', { name: 'Stunden' });
+        expect(field).toHaveFocus();
+        expect(field).toHaveValue('');
+
+        // Eine selbst getippte 0 ist der Anfang von "0,5" und darf nicht verschwinden.
+        await user.type(field, '0,5');
+        expect(field).toHaveValue('0,5');
+    });
+
     it('leert bei Tab, erhält Nichtnullwerte und blockiert leere Pflichtwerte', async () => {
         const user = userEvent.setup(); const { unmount } = render(<Example />);
         await user.tab(); expect(screen.getByRole('textbox')).toHaveValue('');
