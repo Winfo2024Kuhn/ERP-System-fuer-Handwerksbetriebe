@@ -111,3 +111,80 @@ describe('DatePicker zugängliche Grenzen', () => {
         expect(screen.getByText('Heute')).toBeDisabled();
     });
 });
+
+describe('DatePicker: schnelle Jahres- und Monatswahl', () => {
+    it('erreicht 1967 über Jahresraster statt über hunderte Monatsklicks', async () => {
+        const handleChange = vi.fn();
+        const user = userEvent.setup();
+        render(<DatePicker aria-label="Geburtstag" value="2026-03-10" onChange={handleChange} />);
+        await user.click(screen.getByText('10.03.2026'));
+
+        // Kopfzeile: Tage -> Monate -> Jahre
+        await user.click(screen.getByRole('button', { name: 'Monat und Jahr wählen' }));
+        expect(screen.getByRole('button', { name: 'März 2026' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Jahr wählen' }));
+
+        // Jahrzehntweise zurück statt Monat für Monat: 2016er-Seite ... 1956er-Seite
+        expect(screen.getByText('2016 – 2027')).toBeInTheDocument();
+        for (let i = 0; i < 5; i++) await user.click(screen.getByRole('button', { name: 'Frühere Jahre' }));
+        expect(screen.getByText('1956 – 1967')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: '1967' }));
+        await user.click(screen.getByRole('button', { name: 'September 1967' }));
+        await user.click(screen.getByRole('button', { name: '09.09.1967' }));
+        expect(handleChange).toHaveBeenCalledWith('1967-09-09');
+    });
+
+    it('übernimmt eine getippte deutsche Eingabe direkt', async () => {
+        const handleChange = vi.fn();
+        const user = userEvent.setup();
+        render(<DatePicker aria-label="Geburtstag" value="" onChange={handleChange} />);
+        await user.click(screen.getByText('Datum wählen'));
+        const eingabe = screen.getByLabelText('Datum eingeben');
+        await user.type(eingabe, '9.9.1967');
+        // Vollständige Eingabe springt sofort in die Ansicht, übernimmt aber noch nicht.
+        expect(screen.getByText(/September 1967/)).toBeInTheDocument();
+        expect(handleChange).not.toHaveBeenCalled();
+        await user.keyboard('{Enter}');
+        expect(handleChange).toHaveBeenCalledWith('1967-09-09');
+    });
+
+    it('meldet unvollständige oder gesperrte Eingaben, statt sie stillschweigend zu übernehmen', async () => {
+        const handleChange = vi.fn();
+        const user = userEvent.setup();
+        render(<DatePicker aria-label="Gültig ab" value="" min="2026-01-01" onChange={handleChange} />);
+        await user.click(screen.getByText('Datum wählen'));
+        const eingabe = screen.getByLabelText('Datum eingeben');
+        await user.type(eingabe, '31.02.2026{Enter}');
+        expect(screen.getByRole('alert')).toHaveTextContent('TT.MM.JJJJ');
+        expect(handleChange).not.toHaveBeenCalled();
+        await user.clear(eingabe);
+        await user.type(eingabe, '09.09.1967{Enter}');
+        expect(screen.getByRole('alert')).toHaveTextContent('außerhalb des erlaubten Zeitraums');
+        expect(handleChange).not.toHaveBeenCalled();
+    });
+
+    it('springt mit Bild auf/ab ganze Monate und mit Umschalt ganze Jahre', async () => {
+        const user = userEvent.setup();
+        render(<DatePicker aria-label="Geburtstag" value="2026-03-10" onChange={vi.fn()} />);
+        await user.click(screen.getByText('10.03.2026'));
+        expect(screen.getByRole('button', { name: '10.03.2026' })).toHaveFocus();
+        await user.keyboard('{PageUp}');
+        expect(screen.getByText(/Februar 2026/)).toBeInTheDocument();
+        await user.keyboard('{Shift>}{PageUp}{/Shift}');
+        expect(screen.getByText(/Februar 2025/)).toBeInTheDocument();
+    });
+
+    it('sperrt Monate und Jahre ausserhalb der Grenzen', async () => {
+        const user = userEvent.setup();
+        render(<DatePicker aria-label="Gültig ab" value="2026-03-10" min="2026-03-01" max="2026-05-31" onChange={vi.fn()} />);
+        await user.click(screen.getByText('10.03.2026'));
+        await user.click(screen.getByRole('button', { name: 'Monat und Jahr wählen' }));
+        expect(screen.getByRole('button', { name: 'Februar 2026' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'April 2026' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Juni 2026' })).toBeDisabled();
+        await user.click(screen.getByRole('button', { name: 'Jahr wählen' }));
+        expect(screen.getByRole('button', { name: '2025' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: '2026' })).toBeEnabled();
+    });
+});

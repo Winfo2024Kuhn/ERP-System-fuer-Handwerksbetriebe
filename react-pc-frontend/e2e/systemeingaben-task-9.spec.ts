@@ -133,7 +133,10 @@ test('Systemeingaben Task9: Verrechnung erhält leere Entwürfe bis zur gültige
     await apply.click(); expect(applied).toHaveLength(0);
     await expect(page.getByRole('heading', { name: 'Auf alle Arbeitsgänge übernehmen' })).toHaveCount(0);
     await field.fill('8,'); await apply.click(); expect(applied).toHaveLength(0);
-    await page.getByRole('button', { name: 'Schließen', exact: true }).click({ trial: true, timeout: 1000 });
+    // Die Fussleiste des Rechners traegt "Schließen"; das X des gemeinsamen
+    // Dialogs heisst "Fenster schließen". Hier ist die Fussleiste gemeint --
+    // sie darf nicht von Meldungen verdeckt sein.
+    await page.getByRole('dialog').getByRole('button', { name: 'Schließen', exact: true }).click({ trial: true, timeout: 1000 });
     await field.fill('8,5'); await field.press('Tab');
     await expect(field).toHaveValue('8,5');
     await page.screenshot({ path: testInfo.outputPath('verrechnungslohn.png') });

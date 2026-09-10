@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { heuteIso, isoDatum } from './datum';
+import { heuteIso, isoDatum, parseDeutschesDatum } from './datum';
 
 describe('Datumsumwandlung', () => {
     afterEach(() => { vi.useRealTimers(); });
@@ -17,5 +17,20 @@ describe('Datumsumwandlung', () => {
         expect(heuteIso()).toBe('2026-09-09');
         vi.setSystemTime(new Date(2026, 8, 10, 0, 5));
         expect(heuteIso()).toBe('2026-09-10');
+    });
+});
+
+describe('Deutsche Datumseingabe', () => {
+    it('akzeptiert die üblichen Schreibweisen', () => {
+        expect(parseDeutschesDatum('9.9.1967')).toBe('1967-09-09');
+        expect(parseDeutschesDatum('09.09.1967')).toBe('1967-09-09');
+        expect(parseDeutschesDatum(' 09091967 ')).toBe('1967-09-09');
+        expect(parseDeutschesDatum('1.12.2026')).toBe('2026-12-01');
+    });
+    it('lehnt unvollständige, erfundene und zweistellige Jahre ab', () => {
+        expect(parseDeutschesDatum('31.02.2026')).toBeNull();
+        expect(parseDeutschesDatum('9.9.67')).toBeNull();
+        expect(parseDeutschesDatum('9.1967')).toBeNull();
+        expect(parseDeutschesDatum('')).toBeNull();
     });
 });

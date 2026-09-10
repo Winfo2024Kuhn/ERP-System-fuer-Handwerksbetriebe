@@ -45,7 +45,7 @@ describe('Dialog', () => {
                 <DialogContent>Inhalt</DialogContent>
             </Dialog>
         );
-        expect(screen.getByText('Schließen')).toBeInTheDocument();
+        expect(screen.getByText('Fenster schließen')).toBeInTheDocument();
     });
 
     it('ruft onOpenChange beim Klick auf X auf', async () => {
@@ -57,7 +57,7 @@ describe('Dialog', () => {
             </Dialog>
         );
         // Der X-Button hat sr-only "Schließen"
-        await user.click(screen.getByText('Schließen').closest('button')!);
+        await user.click(screen.getByText('Fenster schließen').closest('button')!);
         expect(handleOpenChange).toHaveBeenCalledWith(false);
     });
 
@@ -100,7 +100,7 @@ it('fängt Tab und ShiftTab und führt nach Abbrechen zum Öffner zurück', asyn
     const user = userEvent.setup(); render(<FocusExample />);
     const opener = screen.getByRole('button', { name: 'Öffnen' }); await user.click(opener);
     const first = screen.getByRole('textbox', { name: 'Grund' }); expect(first).toHaveFocus();
-    const close = within(screen.getByRole('dialog', { name: 'Hauptdialog' })).getByRole('button', { name: 'Schließen' });
+    const close = within(screen.getByRole('dialog', { name: 'Hauptdialog' })).getByRole('button', { name: 'Fenster schließen' });
     await user.tab({ shift: true }); expect(close).toHaveFocus(); await user.tab(); expect(first).toHaveFocus();
     await user.click(screen.getByRole('button', { name: 'Abbrechen' })); await waitFor(() => expect(opener).toHaveFocus());
 });
@@ -160,7 +160,7 @@ it('erlaubt Meldungen per Tastatur, hält den Hintergrund gesperrt und kehrt mit
     const field = screen.getByRole('textbox', { name: 'Ungespeichert' });
     act(() => field.focus());
     const region = screen.getByRole('region', { name: 'Meldungen' });
-    act(() => within(screen.getByRole('dialog', { name: 'Entwurf' })).getByRole('button', { name: 'Schließen' }).focus());
+    act(() => within(screen.getByRole('dialog', { name: 'Entwurf' })).getByRole('button', { name: 'Fenster schließen' }).focus());
     await user.tab(); expect(region).toHaveFocus();
     act(() => field.focus());
     act(() => region.focus());

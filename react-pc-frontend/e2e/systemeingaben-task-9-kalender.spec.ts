@@ -56,8 +56,29 @@ test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async 
     await page.screenshot({ path: info.outputPath('stornogrund-offen.png') });
     const grund = storno.getByRole('textbox', { name: 'Stornierungsgrund' });
     const schliessen = storno.getByRole('button').last();
-    await grund.focus(); await grund.press('Shift+Tab'); await expect(schliessen).toBeFocused();
-    await schliessen.press('Tab'); await expect(grund).toBeFocused();
+    // Der Pflichtgrund-Fehler erzeugt zugleich eine Meldung. Seit Abschnitt 4
+    // gehoert die Meldungsflaeche bewusst zum Tab-Kreis des obersten Dialogs
+    // (sie soll per Tastatur erreichbar sein). Entscheidend bleibt: der Fokus
+    // verlaesst nie den Dialog samt Meldungsflaeche in den gesperrten
+    // Hintergrund -- genau das pruefen wir hier ueber eine volle Runde.
+    const meldungen = page.locator('[data-pc-toasts]');
+    await expect(meldungen).toBeVisible();
+    const imKreis = () => page.evaluate(() => {
+        const aktiv = document.activeElement;
+        if (!aktiv) return false;
+        return !!aktiv.closest('[role="dialog"]') || !!aktiv.closest('[data-pc-toasts]');
+    });
+    await grund.focus();
+    for (let schritt = 0; schritt < 12; schritt++) {
+        await page.keyboard.press('Tab');
+        expect(await imKreis(), `Fokus ist nach ${schritt + 1}x Tab aus Dialog und Meldungsflaeche entkommen`).toBe(true);
+    }
+    for (let schritt = 0; schritt < 12; schritt++) {
+        await page.keyboard.press('Shift+Tab');
+        expect(await imKreis(), `Fokus ist nach ${schritt + 1}x Shift+Tab aus Dialog und Meldungsflaeche entkommen`).toBe(true);
+    }
+    await grund.focus(); await expect(grund).toBeFocused();
+    await expect(schliessen).toBeVisible();
     await storno.getByRole('button', { name: 'Abbrechen', exact: true }).click();
     await expect(stornoOeffner).toBeFocused();
     await stornoOeffner.click(); await grund.press('Escape');

@@ -166,7 +166,7 @@ const Dialog = React.forwardRef<
                         onClick={() => onOpenChange?.(false)}
                     >
                         <X className="h-4 w-4" />
-                        <span className="sr-only">Schließen</span>
+                        <span className="sr-only">Fenster schließen</span>
                     </button>
                 </div>
             </div>

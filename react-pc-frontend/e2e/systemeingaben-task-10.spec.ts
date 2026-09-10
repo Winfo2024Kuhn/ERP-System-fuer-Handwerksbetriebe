@@ -118,7 +118,7 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     expect(noticeBounds!.y + noticeBounds!.height).toBeLessThanOrEqual(dialogBounds!.y);
     expect(noticeBounds!.height).toBeLessThanOrEqual(Math.min(page.viewportSize()!.height * 0.25, 192));
     expect(await notices.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
-    await settings.getByRole('button', { name: 'Schließen', exact: true }).focus();
+    await settings.getByRole('button', { name: 'Fenster schließen', exact: true }).focus();
     await page.keyboard.press('Tab'); await expect(notices).toBeFocused();
     await notices.press('Home');
     await day.focus(); await notices.focus(); await page.keyboard.press('Escape');
