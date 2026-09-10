@@ -55,19 +55,19 @@ test('Recht speichern, Glockenlink, Abschluss und Wiederöffnung mit Verlauf', a
     await expect(page).toHaveURL(/jahr=2025&monat=8/);
     const close = page.getByRole('button', { name: 'Monat abschließen', exact: true });
     await expect(close).toBeEnabled();
-    await expect(page.getByText('168.0h', { exact: true })).toBeVisible();
+    await expect(page.getByText('168,0h', { exact: true })).toBeVisible();
     await designPruefung(page, info, 'task9-offen', { primaerAktion: close });
     await close.click();
     await page.getByRole('button', { name: 'Abschließen', exact: true }).click();
     const reopen = page.getByRole('button', { name: 'Monat wieder öffnen', exact: true });
     await expect(reopen).toBeEnabled();
-    await expect(page.getByText('125.0h', { exact: true })).toBeVisible();
+    await expect(page.getByText('125,0h', { exact: true })).toBeVisible();
     await page.getByText('Verlauf der Monatsabschlüsse (1)', { exact: true }).click();
     await designPruefung(page, info, 'task9-abgeschlossen', { primaerAktion: reopen });
     await reopen.click();
     await page.getByRole('button', { name: 'Wieder öffnen', exact: true }).click();
     await expect(close).toBeEnabled();
-    await expect(page.getByText('168.0h', { exact: true })).toBeVisible();
+    await expect(page.getByText('168,0h', { exact: true })).toBeVisible();
     await expect(page.getByText('Verlauf der Monatsabschlüsse (2)', { exact: true })).toBeVisible();
     await designPruefung(page, info, 'task9-wieder-offen', { primaerAktion: close });
     expect(writes).toEqual(['recht', '/api/zeitverwaltung/monatsabschluesse/1/2025/8/abschliessen', '/api/zeitverwaltung/monatsabschluesse/1/2025/8/oeffnen']);
@@ -78,7 +78,7 @@ test('Ohne Abschlussrecht bleiben offene Stunden lesbar', async ({ page }, info)
     await page.goto('/zeitbuchungen?jahr=2025&monat=8');
     await expect(page.getByText('Noch offen – die Stunden werden weiterhin aktuell angezeigt.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Monat abschließen', exact: true })).toHaveCount(0);
-    await expect(page.getByText('168.0h', { exact: true })).toBeVisible();
+    await expect(page.getByText('168,0h', { exact: true })).toBeVisible();
     await designPruefung(page, info, 'task9-ohne-recht');
     expect(writes).toHaveLength(0);
 });
@@ -87,7 +87,7 @@ test('Fehler im Monatsstatus sperrt die Stundenanzeige nicht', async ({ page }, 
     await stub(page, { error: true });
     await page.goto('/zeitbuchungen?jahr=2025&monat=8');
     await expect(page.getByRole('button', { name: 'Monatsstand erneut laden' })).toBeVisible();
-    await expect(page.getByText('168.0h', { exact: true })).toBeVisible();
+    await expect(page.getByText('168,0h', { exact: true })).toBeVisible();
     await designPruefung(page, info, 'task9-statusfehler');
 });
 

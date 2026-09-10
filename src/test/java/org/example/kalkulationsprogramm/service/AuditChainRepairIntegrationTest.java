@@ -38,7 +38,17 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.jpa.hibernate.ddl-auto=none",
         "spring.datasource.driverClassName=com.mysql.cj.jdbc.Driver",
 })
+@org.junit.jupiter.api.condition.EnabledIf("mysqlErreichbar")
 class AuditChainRepairIntegrationTest {
+
+    static boolean mysqlErreichbar() {
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress("127.0.0.1", 3306), 200);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     @Autowired
     private AuditChainRepairService repairService;

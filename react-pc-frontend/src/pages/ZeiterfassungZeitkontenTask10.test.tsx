@@ -16,6 +16,7 @@ function renderSeite() { return render(<ToastProvider><ConfirmProvider><Zeiterfa
 describe('ZeiterfassungZeitkonten Task 10', () => {
     const fetchMock = vi.fn();
     beforeEach(() => {
+        fetchMock.mockClear();
         fetchMock.mockImplementation((input: RequestInfo | URL) => {
             const url = String(input);
             if (url === '/api/zeitverwaltung/zeitkonten') return Promise.resolve(json([status]));
@@ -49,7 +50,7 @@ describe('ZeiterfassungZeitkonten Task 10', () => {
         await user.click(screen.getByRole('button', { name: 'Vorschau' }));
         await user.click(screen.getByText(/^\d{2}\.\d{2}\.\d{4}$/));
         await user.click(screen.getByTitle('Nächster Monat'));
-        await user.click(screen.getByRole('button', { name: '1', exact: true }));
+        await user.click(screen.getByRole('button', { name: /^01\.\d{2}\.\d{4}$/ }));
         await act(async () => { resolvePreviews[0](json({ ...ergebnis, hinweis: 'Oktober-Antwort' })); });
         await waitFor(() => expect(screen.queryByText('Oktober-Antwort')).not.toBeInTheDocument());
         expect(screen.getByRole('checkbox', { name: 'Max Mustermann auswählen' })).toBeDisabled();
@@ -74,4 +75,16 @@ describe('ZeiterfassungZeitkonten Task 10', () => {
         expect(await screen.findByText(/2 bereits gebuchte Abwesenheitsgutschrift/)).toBeInTheDocument();
         expect(screen.getByText(/Urlaub bleibt gebucht/)).toBeInTheDocument();
     });
+    it('behält Null-Leerzustände und deutsche Stunden bis zur vollständig geprüften Übernahme',async()=>{
+        const user=userEvent.setup();renderSeite();await screen.findByText('Werkstatt Vollzeit');
+        await user.click(screen.getByRole('button',{name:'Arbeitszeit ändern'}));
+        const montag=screen.getByRole('textbox',{name:'Montag Stunden'});expect(montag).toHaveValue('8');
+        const samstag=screen.getByRole('textbox',{name:'Samstag Stunden'});await user.click(samstag);expect(samstag).toHaveValue('');
+        await user.click(screen.getByRole('button',{name:'Vorschau laden'}));expect(fetchMock.mock.calls.some(c=>String(c[0]).endsWith('/vorschau'))).toBe(false);
+        await user.type(samstag,'8,5');await user.click(screen.getByRole('button',{name:'Vorschau laden'}));
+        await screen.findByText('Offene Monate werden neu gerechnet.');
+        const call=fetchMock.mock.calls.find(c=>String(c[0]).endsWith('/vorschau'));
+        expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({arbeitszeit:{samstagStunden:8.5,montagStunden:8}});
+    });
+
 });

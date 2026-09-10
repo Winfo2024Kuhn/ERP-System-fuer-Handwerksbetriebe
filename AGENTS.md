@@ -39,7 +39,7 @@ Das ERP ermöglicht Handwerksbetrieben den einfachen Sprung ins digitale Zeitalt
 ## 🧑‍💻 Persona & Engineering Standards
 - Rolle: Erfahrener Senior Full-Stack-Entwickler (Java / Spring Boot + React / TypeScript) und UI-Designer.
 - Qualität vor Hektik: sauberer, wartbarer, testbarer Code mit etablierten Design Patterns.
-- **Strategisches Refactoring:** Wenn du Code-Teile (Komponenten, Hooks, Services) auslagern möchtest: **Frage den Nutzer vorher um Erlaubnis** und setze es erst nach Freigabe um.
+- **Auslagern und wiederverwenden (dauerhafte Nutzerfreigabe vom 09.09.2026):** Wiederkehrende UI und Logik in gemeinsame Komponenten, Hooks, Services oder Hilfsfunktionen auslagern und vorhandene Bausteine konsequent wiederverwenden. Keine kopierten Sonderlösungen pro Seite. Das dafür nötige Refactoring ist ausdrücklich autorisiert und benötigt keine erneute Freigabe. Abstraktionen nach gemeinsamer Verantwortung schneiden; fachliche Unterschiede erhalten.
 
 ---
 
@@ -76,6 +76,16 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   - `<ImageViewer>` → `src/components/ui/image-viewer.tsx`
   - `<DetailLayout>` → `src/components/DetailLayout.tsx`
 - **Sicherheit:** Kein `dangerouslySetInnerHTML` ohne Sanitizing.
+- **Systemeigene Eingaben und Meldungen:** Vorhandene gestaltete UI-Komponenten und Toast-/Bestätigungsdialoge verwenden. Keine sichtbaren Browser-Standard-Picker für Datum/Uhrzeit, Number-Spinner, nativen Select-Popups oder `window.alert`/`window.confirm`. Auch geöffnete Auswahlen und fokussierte Felder müssen dem eigenen Design-System entsprechen.
+
+### Zahlenfelder (dauerhafte Nutzervorgabe vom 09.09.2026)
+- **Deutsch formatieren:** Dezimalzahlen mit Komma eingeben und anzeigen (z. B. `12,5`); für formatierte Anzeigen `de-DE` verwenden. DATEV-Dateien folgen zusätzlich ihrer Formatspezifikation.
+- **0 bei Fokus leeren:** Eine 0 darf im unberührten Mengen-/Dezimalfeld angezeigt werden. Sobald das Feld per Klick oder Tab den Fokus erhält, einen vorhandenen Nullwert (auch `0,00`) leeren, damit direkt neu getippt werden kann. Andere Werte nicht löschen; Kennnummern sind davon ausgenommen. Eingabewerte während des Bearbeitens als Text halten. Leere Zwischenstände und ein noch unvollständiges Dezimalkomma zulassen; nicht bei jedem Tastendruck mit `Number(value) || 0` wieder eine 0 einsetzen.
+- **Zahlpflicht bei Übernahme:** Pflichtfelder beim Speichern/Bestätigen auf eine vollständige, gültige Zahl und fachliche Grenzen prüfen. Leer ist nicht automatisch 0. Ungültige Eingaben mit konkreter deutscher Fehlermeldung anzeigen und nicht speichern; serverseitig ebenfalls validieren.
+- **Kennnummern sind keine Mengen:** Personalnummern, Lohnarten und ähnliche Ziffernfolgen als Text behandeln, führende Nullen erhalten, nur erlaubte Ziffern/Längen akzeptieren; kein Dezimalkomma oder Tausenderformat dafür.
+### End-to-End-Tests (dauerhafte Nutzervorgabe vom 10.09.2026)
+- **Immer wenn End-to-End-Tests fehlen:** Für jedes neue Feature, jeden neuen Benutzer-Workflow, jede neue Seite oder signifikante Verhaltensänderung (Desktop in `react-pc-frontend/e2e/` und Mobile in `react-zeiterfassung/e2e/`) MÜSSEN vollständige Playwright End-to-End-Tests geschrieben bzw. ergänzt werden.
+- Vor dem Commit immer die E2E-Tests ausführen (`npm run test:e2e`).
 
 ---
 
@@ -90,6 +100,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run build     # Produktions-Build
   npm run lint      # Linter
   npm test          # Vitest Testsuite
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 - **Frontend Zeiterfassung (Mobile):**
   ```bash
@@ -97,6 +108,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run dev
   npm run build
   npm test
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 
 ---
@@ -105,12 +117,16 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 Am Ende jeder Aufgabe:
 1. Tests ausführen:
    - Backend: `./mvnw test`
-   - Frontend: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend Unit: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend E2E: `npm run test:e2e` im jeweiligen Frontend-Ordner
 2. Builds prüfen:
    - `npm run build` in betroffenen Frontend-Verzeichnissen
-3. Diff prüfen:
+3. Sub-Agent Code-Review:
+   - Ein Sub-Agent mit leerem Kontextfenster (`erp-code-reviewer`) prüft die Änderungen und liefert eine Ampel-Bewertung (🟢/🟡/🔴).
+4. Diff prüfen:
    - `git status` und `git diff` prüfen.
    - Nur Dateien stagen, die für diese Aufgabe geändert wurden (keine Fremdänderungen).
    - `git diff --staged` auf versehentlich committete Secrets oder Logs prüfen.
-4. Graphify synchronisieren:
+5. Graphify synchronisieren:
    - `./graphify update .`
+

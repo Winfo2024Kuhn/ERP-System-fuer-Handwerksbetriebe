@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import { ToastProvider } from './components/ui/toast'
+import { ConfirmProvider } from './components/ui/confirm-dialog'
 
 // ─── PWA Service Worker Auto-Update ───
 // Registriert den SW und lädt die Seite automatisch neu wenn ein Update verfügbar ist
@@ -49,7 +51,7 @@ if ('serviceWorker' in navigator) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter basename="/zeiterfassung">
-      <App />
+      <ToastProvider><ConfirmProvider><App /></ConfirmProvider></ToastProvider>
     </BrowserRouter>
   </StrictMode>,
 )

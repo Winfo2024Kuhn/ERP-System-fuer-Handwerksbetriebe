@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
-import { Input } from './ui/input';
+import { DecimalInput } from './ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import {
@@ -30,12 +31,9 @@ import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import { cn } from '../lib/utils';
 import {
-    clampPercent,
-    formatEingabe,
     formatEur,
     formatHours,
     leseFehlermeldung,
-    parseDecimal,
 } from './verrechnungslohnFormat';
 
 // ==================== API-Typen (Spiegel zu VerrechnungslohnErgebnisDto) ====================
@@ -182,6 +180,9 @@ const Section: React.FC<SectionProps> = ({ icon, title, summary, expanded, onTog
 
 interface NumberCellProps {
     value: number;
+    draft?: string;
+    onDraftChange: (draft: string) => void;
+    onCommit: () => void;
     isDefault?: boolean;
     onChange: (next: number) => void;
     suffix?: string;
@@ -192,45 +193,37 @@ interface NumberCellProps {
 
 const NumberCell: React.FC<NumberCellProps> = ({
     value,
+    draft: pendingDraft,
+    onDraftChange,
+    onCommit,
     isDefault,
     onChange,
     suffix,
     allowNegative = false,
     'aria-label': ariaLabel,
 }) => {
-    const [draft, setDraft] = useState<string>(() => formatEingabe(value));
-
-    // Ändert sich der Wert von außen (neue Server-Antwort), zieht der Entwurf nach.
-    // Bewusst beim Rendern statt in einem Effekt: Effekte laufen erst nach dem
-    // Rendern. Tippte der Nutzer in dieser Lücke, verwarf der Effekt die frische
-    // Eingabe wieder und stellte den Serverwert her — beim Öffnen des Dialogs gingen
-    // so die ersten Zeichen verloren.
-    const [letzterWert, setLetzterWert] = useState(value);
-    if (letzterWert !== value) {
-        setLetzterWert(value);
-        setDraft(formatEingabe(value));
-    }
-
+    const toast = useToast();
+    const draft = pendingDraft ?? formatDecimalInput(value);
+    const [error, setError] = useState('');
     const commit = () => {
-        const parsed = parseDecimal(draft);
-        // Unlesbares oder (wo nicht erlaubt) negatives: auf den letzten guten Wert zurück.
-        if (parsed === null || (!allowNegative && parsed < 0)) {
-            setDraft(formatEingabe(value));
-            return;
-        }
-        if (parsed !== value) onChange(parsed);
-        setDraft(formatEingabe(parsed));
+        const parsed = validateDecimalInput(draft, { label: ariaLabel ?? 'Wert', required: true, ...(allowNegative ? {} : { min: 0 }) });
+        if (!parsed.valid) { setError(parsed.message); toast.error(parsed.message); return; }
+        if (parsed.value === null) return;
+        setError('');
+        if (parsed.value !== value) onChange(parsed.value);
+        onCommit();
     };
 
     return (
         <div className="flex items-center justify-end gap-2">
             <div className="relative">
-                <input
-                    type="text"
-                    inputMode="decimal"
+                <DecimalInput
+                    required
+                    min={allowNegative ? undefined : 0}
+                    error={error}
                     aria-label={ariaLabel}
                     value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    onChange={(next) => { onDraftChange(next); setError(''); }}
                     onBlur={commit}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -280,11 +273,12 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
 }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
+    const showError = toast.error;
 
     const [jahr, setJahr] = useState<number>(currentYear);
     // Zwei Werte mit Absicht: was im Feld steht (Entwurf) und womit zuletzt
     // gerechnet wurde. Sonst löst jeder Tastendruck eine neue Abfrage aus.
-    const [internEntwurf, setInternEntwurf] = useState<number>(DEFAULT_INTERN_PROZENT);
+    const [internEntwurf, setInternEntwurf] = useState<string>(formatDecimalInput(DEFAULT_INTERN_PROZENT));
     const [internBerechnet, setInternBerechnet] = useState<number>(DEFAULT_INTERN_PROZENT);
 
     const [data, setData] = useState<VerrechnungslohnErgebnis | null>(null);
@@ -297,6 +291,22 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
     const [stundenOverrides, setStundenOverrides] = useState<Record<number, number>>({});
     const [kostenstelleOverrides, setKostenstelleOverrides] = useState<Record<number, number>>({});
     const [abteilungAufschlaege, setAbteilungAufschlaege] = useState<Record<number, number>>({});
+
+    // Entwürfe bleiben auch beim Zuklappen einer Tabelle erhalten. Zahlen werden erst bei gültiger Übernahme geändert.
+    const [zellenEntwuerfe, setZellenEntwuerfe] = useState<Record<string, { draft: string; label: string; allowNegative: boolean }>>({});
+    const zellenProps = (key: string, label: string, allowNegative = false) => ({
+        draft: zellenEntwuerfe[key]?.draft,
+        'aria-label': label,
+        onDraftChange: (draft: string) => setZellenEntwuerfe(previous => ({ ...previous, [key]: { draft, label, allowNegative } })),
+        onCommit: () => setZellenEntwuerfe(previous => { const next = { ...previous }; delete next[key]; return next; }),
+    });
+    const pruefeZellen = () => {
+        for (const cell of Object.values(zellenEntwuerfe)) {
+            const result = validateDecimalInput(cell.draft, { label: cell.label, required: true, ...(cell.allowNegative ? {} : { min: 0 }) });
+            if (!result.valid) { toast.error(result.message); return false; }
+        }
+        return true;
+    };
 
     const [gewinnProzent, setGewinnProzent] = useState<number>(DEFAULT_GEWINN_PROZENT);
 
@@ -314,9 +324,10 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
     useEffect(() => {
         if (!open) return;
         setJahr(currentYear);
-        setInternEntwurf(DEFAULT_INTERN_PROZENT);
+        setInternEntwurf(formatDecimalInput(DEFAULT_INTERN_PROZENT));
         setInternBerechnet(DEFAULT_INTERN_PROZENT);
         setGewinnProzent(DEFAULT_GEWINN_PROZENT);
+        setZellenEntwuerfe({});
         setLohnOverrides({});
         setStundenOverrides({});
         setKostenstelleOverrides({});
@@ -348,11 +359,13 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
             });
             if (!res.ok) {
                 if (res.status === 404) {
-                    setError(
-                        'Der Verrechnungslohn-Service ist auf diesem Server noch nicht freigeschaltet.'
-                    );
+                    const message = 'Der Verrechnungslohn-Service ist auf diesem Server noch nicht freigeschaltet.';
+                    setError(message);
+                    showError(message);
                 } else {
-                    setError(`Berechnung fehlgeschlagen (Status ${res.status}).`);
+                    const message = `Berechnung fehlgeschlagen (Status ${res.status}).`;
+                    setError(message);
+                    showError(message);
                 }
                 setData(null);
                 return;
@@ -365,7 +378,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
             if (typeof json.interneQuoteProzent === 'number') {
                 setInternBerechnet(json.interneQuoteProzent);
                 setInternEntwurf((entwurf) =>
-                    entwurf === internBerechnet ? json.interneQuoteProzent : entwurf
+                    entwurf === formatDecimalInput(internBerechnet) ? formatDecimalInput(json.interneQuoteProzent) : entwurf
                 );
             }
             setLohnOverrides({});
@@ -396,11 +409,12 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
             if (controller.signal.aborted) return;
             console.error(e);
             setError('Verbindung zum Server fehlgeschlagen.');
+            showError('Verbindung zum Server fehlgeschlagen.');
             setData(null);
         } finally {
             if (!controller.signal.aborted) setLoading(false);
         }
-    }, [jahr, internBerechnet]);
+    }, [jahr, internBerechnet, showError]);
 
     useEffect(() => {
         if (!open) return;
@@ -480,7 +494,10 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
 
     // Übernehmen
     const handleUebernehmen = async () => {
-        if (!data) return;
+        if (!data || !pruefeZellen()) return;
+        const quote = validateDecimalInput(internEntwurf, { label: 'Interne Stunden', required: true, min: 0, max: 100 });
+        if (!quote.valid) { toast.error(quote.message); return; }
+        if (quote.value !== internBerechnet) { toast.error('Bitte die geänderte interne Quote zuerst neu berechnen.'); return; }
         if (selbstkosten <= 0) {
             toast.error('Es gibt nichts zum Übernehmen — die Selbstkosten sind 0.');
             return;
@@ -534,7 +551,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
     };
 
     const istHochrechnung = data?.modus === 'HOCHRECHNUNG';
-    const internAenderungOffen = internEntwurf !== internBerechnet;
+    const internAenderungOffen = internEntwurf !== formatDecimalInput(internBerechnet);
     const keineStunden = !!data && effStunden.gesamt <= 0;
 
     return (
@@ -595,16 +612,13 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                     <div className="space-y-1.5">
                                         <Label htmlFor="vrl-intern">Interne Stunden?</Label>
                                         <div className="relative">
-                                            <Input
+                                            <DecimalInput
                                                 id="vrl-intern"
-                                                type="number"
+                                                required
                                                 min={0}
                                                 max={100}
-                                                step={1}
                                                 value={internEntwurf}
-                                                onChange={(e) =>
-                                                    setInternEntwurf(clampPercent(e.target.value))
-                                                }
+                                                onChange={setInternEntwurf}
                                                 className="w-24 text-right pr-6 font-mono"
                                             />
                                             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
@@ -617,7 +631,12 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => setInternBerechnet(internEntwurf)}
+                                            onClick={() => {
+                                                if (!pruefeZellen()) return;
+                                                const result = validateDecimalInput(internEntwurf, { label: 'Interne Stunden', required: true, min: 0, max: 100 });
+                                                if (!result.valid) { toast.error(result.message); return; }
+                                                if (result.value !== null) setInternBerechnet(result.value);
+                                            }}
                                             disabled={loading || !internAenderungOffen}
                                             className={cn(
                                                 internAenderungOffen &&
@@ -753,6 +772,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                     </td>
                                                     <td className="py-2 pl-4">
                                                         <NumberCell
+                                                            {...zellenProps(`lohn-${z.mitarbeiterId}`, `Lohnkosten für ${z.name}`)}
                                                             value={eff}
                                                             isDefault={!isOverridden && z.bruttoIstDefault}
                                                             onChange={(v) =>
@@ -824,6 +844,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                         </td>
                                                         <td className="py-2 pl-4">
                                                             <NumberCell
+                                                                {...zellenProps(`kosten-${k.kostenstelleId}`, `Jahresbetrag für ${k.bezeichnung}`)}
                                                                 value={eff}
                                                                 onChange={(v) =>
                                                                     setKostenstelleOverrides((p) => ({
@@ -959,6 +980,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                     </td>
                                                     <td className="py-2 pl-4">
                                                         <NumberCell
+                                                            {...zellenProps(`stunden-${z.mitarbeiterId}`, `Verkäufliche Stunden für ${z.name}`)}
                                                             value={eff}
                                                             isDefault={!isOverridden && anyDefault}
                                                             onChange={(v) =>
@@ -1091,9 +1113,9 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                                                     <span className="text-sm text-slate-700 truncate">{a.name}</span>
                                                     <div className="flex items-center gap-2">
                                                         <NumberCell
+                                                            {...zellenProps(`abteilung-${a.abteilungId}`, `Aufschlag oder Abschlag für ${a.name} in Euro`, true)}
                                                             value={aufschlag}
                                                             allowNegative
-                                                            aria-label={`Aufschlag oder Abschlag für ${a.name} in Euro`}
                                                             onChange={(v) =>
                                                                 setAbteilungAufschlaege((p) => ({
                                                                     ...p,
@@ -1136,7 +1158,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                 </div>
 
                 {/* Footer */}
-                <DialogFooter className="px-6 py-4 border-t border-slate-100 bg-white !justify-between sm:!flex-row">
+                <DialogFooter className="px-6 py-4 border-t border-slate-100 bg-white !justify-end sm:!flex-row">
                     <Button variant="outline" size="sm" onClick={onClose} disabled={applying}>
                         <X className="w-4 h-4" /> Schließen
                     </Button>

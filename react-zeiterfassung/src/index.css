@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Gemeinsame Standardgestaltung für Auswahlfelder in unserem Design-System. */
+@layer base {
+  input:where([type="checkbox"], [type="radio"]) {
+    accent-color: #e11d48;
+  }
+}
+
 /* Mobile Zeiterfassung App - Corporate Identity */
 :root {
   --rose-primary: #dc2626;

@@ -85,6 +85,25 @@ public class MonatsSaldo {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal abwesenheitsStunden = BigDecimal.ZERO;
 
+    /** Historischer Abwesenheitsstand: null bei Abschlüssen vor Einführung der Aufschlüsselung. */
+    @Column(precision = 10, scale = 2)
+    private BigDecimal urlaubStunden;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal krankheitStunden;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal fortbildungStunden;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal zeitausgleichStunden;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal krankengeldStunden;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal wiedereingliederungStunden;
+
     /** Bezahlte Feiertagsstunden (an Arbeitstagen) */
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal feiertagsStunden = BigDecimal.ZERO;

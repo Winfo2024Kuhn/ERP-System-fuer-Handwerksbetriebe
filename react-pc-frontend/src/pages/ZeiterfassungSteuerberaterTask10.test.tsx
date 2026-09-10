@@ -26,8 +26,10 @@ describe('ZeiterfassungSteuerberater Task 10', () => {
         render(<ZeiterfassungSteuerberater />);
         await screen.findByRole('button', { name: 'Vorschau laden' });
         const [monatAuswahl, jahrAuswahl] = screen.getAllByRole('combobox');
-        await user.selectOptions(monatAuswahl, '5');
-        await user.selectOptions(jahrAuswahl, '2026');
+        await user.click(monatAuswahl);
+        await user.click(screen.getByRole('option', { name: 'Mai', exact: true }));
+        await user.click(jahrAuswahl);
+        await user.click(screen.getByRole('option', { name: '2026', exact: true }));
         await user.click(screen.getByRole('button', { name: 'Vorschau laden' }));
         const zeile = (await screen.findByText('Max Mustermann')).closest('tr')!;
         expect(within(zeile).getByText('8', { selector: 'td' })).toBeInTheDocument();

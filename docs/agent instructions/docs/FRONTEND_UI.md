@@ -92,6 +92,21 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 
+### Verbindliche Eingaben und Meldungen (Nutzervorgabe 09.09.2026)
+
+- In beiden Frontends ausschließlich die eigenen gestalteten Eingaben, Toasts und Bestätigungsdialoge verwenden. Das gilt auch für geöffnete Auswahllisten und Picker; ein gestalteter Rahmen um einen nativen Browserdialog genügt nicht. Kein `alert`, `window.confirm`, `prompt` oder nativer Datums-, Uhrzeit-, Zahlen-Spinner- oder Farbpicker. Betriebssystem-Dateiauswahl und Berechtigungsdialoge bleiben echte Systemfunktionen.
+- Mengen und Beträge als String bearbeiten und im deutschen Zahlenformat mit Dezimalkomma anzeigen und annehmen. Eine angezeigte `0` oder `0,00` beim Fokus durch Klick oder Tab leeren; andere Werte erhalten. Leere Zwischenstände dürfen beim Tippen bestehen bleiben und dürfen nicht durch `Number(value) || 0` ersetzt werden.
+- Vor Speichern, Vorschau und Berechnen vollständig validieren, auch bei Aktionen ohne Formular. Leere Pflichtwerte, unvollständige Dezimalzahlen und verletzte Fachgrenzen mit eigener Meldung ablehnen. Erst nach erfolgreicher Prüfung in numerische API-Werte umwandeln; optional leere Felder nach ihrem fachlichen Vertrag behandeln.
+- Kennnummern wie Personalnummern und Lohnarten bleiben Ziffernstrings mit führenden Nullen. Die Nullfokus- und Dezimalformatierung gilt für sie nicht. Uhrzeiten werden als `HH:mm` geprüft.
+- Die gemeinsamen Bausteine unter `components/ui/` wiederverwenden. Geöffnete Picker, Tastaturbedienung, Fehler und Toasts vor offenen Dialogen im Browser prüfen.
+
+### Gemeinsame Zahlenprüfung und Meldungsfläche
+
+- PC: `lib/numberDrafts.ts` prüft mehrere Zahlenentwürfe vollständig vor der ersten Aktion. Fachliche Geldregeln liegen in `features/finanzen/moneyDrafts.ts`; keine Kopien in Seiten anlegen. Zulässige Genauigkeit folgt dem API-/Datenbankvertrag. Fehlende gespeicherte Zahlen ergeben einen leeren Entwurf, keinen erfundenen Nullwert.
+- PC-Toasts reservieren eine begrenzte Fläche über der Anwendung (`--pc-toast-height`). `MainLayout` und der gemeinsame `Dialog` berücksichtigen diese. Eigene feste Dialogcontainer mit direktem `role="dialog"`/`aria-modal="true"`-Kind werden zentral berücksichtigt; nötige weitere Overlaycontainer können `data-app-overlay-container` verwenden. Neue Dialoge bevorzugt mit dem gemeinsamen `Dialog` bauen und dessen Fokusverhalten wiederverwenden.
+- Mobile: eigene feste Overlays verwenden `mobileOverlayStyle` aus `components/ui/toast.tsx`. Die Höhe der Meldungsfläche wird zentral gemessen. Mehrere Meldungen, kleine verbleibende Dialoghöhe, erreichbare letzte Eingaben und Speichern gemeinsam prüfen.
+- Toasts dürfen auch bei offenem Dialog per Tastatur erreichbar sein. Dabei bleibt der übrige Seitenhintergrund gesperrt; Escape aus der Meldungsfläche darf keinen ungespeicherten Dialog verwerfen.
+
 ### Page Header Pattern (Zwingend für alle Seiten)
 ```tsx
 <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">

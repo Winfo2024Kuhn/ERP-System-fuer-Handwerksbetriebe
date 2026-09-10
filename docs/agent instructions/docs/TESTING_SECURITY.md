@@ -4,7 +4,8 @@
 - **Service-Schicht:** JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`). Ziel: ≥ 80% Coverage.
 - **Controller-Schicht:** MockMvc (`@WebMvcTest`). Ziel: Alle Endpoints (Happy-Path + Fehlerfall).
 - **Repository-Schicht:** H2 In-Memory (`@DataJpaTest`).
-- **Frontend:** Vitest + Testing Library (neben Quell-Datei als `*.test.tsx`).
+- **Frontend Unit/Komponenten-Tests:** Vitest + Testing Library (neben Quell-Datei als `*.test.tsx`).
+- **End-to-End-Tests (Playwright - Pflicht whenever missing):** Immer wenn End-to-End-Tests fehlen, müssen für neue Features, Abläufe, Seiten und Dialoge Playwright-E2E-Tests geschrieben bzw. ergänzt werden (`react-pc-frontend/e2e/` und `react-zeiterfassung/e2e/`).
 - **Daten:** Immer Dummy-Daten nutzen (DSGVO!). Utils erfordern 100% Coverage.
 
 ## Sicherheits-Pflichtcheckliste (Für JEDEN neuen Endpoint)

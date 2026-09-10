@@ -21,11 +21,21 @@ import { designPruefung } from './hilfen/design';
  * 2. confirm-dialog.tsx trug bisher KEIN role="dialog" -- der Toast-Umzug
  *    (der ausschliesslich per document.querySelector('[role="dialog"]')
  *    erkennt, ob "irgendein Dialog" offen ist) griff dort nicht.
+ * 3. Abschnitt 4 beendet diese Ecken-Suche. Ausloeser war ein weiterer Befund
+ *    aus dem 14-Zoll-Designreview: acht bis neun gestapelte Meldungen
+ *    verdeckten Eingaben im Kassen-Einstellungs- und im Kostenpositions-
+ *    dialog. Eine vierte Ecke haette das nicht geloest, weil ein schwebendes
+ *    Overlay bei genug Meldungen jede Ecke fuellt. Meldungen belegen deshalb
+ *    seither eine eigene, in der Hoehe begrenzte und intern scrollbare Flaeche
+ *    oberhalb der Anwendung (toast.tsx); MainLayout und die Dialogcontainer
+ *    rechnen deren gemessene Hoehe ueber --pc-toast-height ab (index.css).
+ *    Die Tests unten pruefen darum nicht mehr eine bestimmte Ecke, sondern
+ *    den Vertrag dieser Flaeche -- siehe erwarteReservierteMeldungsflaeche.
  *
  * Technischer Hinweis zum "zweizeiligen Toast" in Test 1: alle Toast-Texte,
  * die LieferantDokumentModal ueber echte Nutzerabläufe tatsaechlich ausloest
  * (LOCK_FEHLER_TEXT, "Speichern fehlgeschlagen"), sind feste, kurze Strings
- * und passen bei max-w-[480px] auf eine Zeile -- die Produktionslogik liest
+ * und passen auf eine Zeile -- die Produktionslogik liest
  * an keiner Stelle einen laengeren, vom Server/Stub gesteuerten Text in den
  * Toast ein (siehe Kontext-Log, Abschnitt "Bedenken"). Um den vom
  * Design-Reviewer beschriebenen zweizeiligen Fall trotzdem GENAU nachzustellen
@@ -199,6 +209,41 @@ async function erwarteKeineUeberlappungMitToast(toast: Locator, ziel: Locator, b
 }
 
 /**
+ * Prueft den Vertrag der reservierten Meldungsflaeche (Abschnitt 4): Meldungen
+ * liegen nicht mehr als schwebendes Overlay in irgendeiner Bildschirmecke,
+ * sondern belegen eine eigene Flaeche oberhalb der Anwendung. Ihre gemessene
+ * Hoehe steht in --pc-toast-height; MainLayout und die Dialogcontainer rechnen
+ * sie ab (siehe toast.tsx und index.css).
+ *
+ * Damit ist die Ecken-Suche der Tasks 8a/8c erledigt: die Flaeche KANN
+ * Dialoginhalte gar nicht mehr ueberdecken, statt es je nach Textlaenge und
+ * Bildschirmgroesse mal zu tun und mal nicht. Diese Pruefung sichert genau
+ * das ab -- Hoehe veroeffentlicht und keine Ueberschneidung mit dem offenen
+ * Dialog -- statt wie frueher eine bestimmte Ecke festzuschreiben.
+ */
+async function erwarteReservierteMeldungsflaeche(page: Page, toast: Locator) {
+    await expect(toast).toBeVisible();
+    const hoehe = await page.evaluate(() =>
+        parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pc-toast-height')) || 0);
+    const toastBox = await toast.boundingBox();
+    if (!toastBox) throw new Error('Kein Bounding-Box fuer die Meldungsflaeche gefunden');
+    expect(hoehe, 'Die Meldungsflaeche muss ihre Hoehe in --pc-toast-height veroeffentlichen').toBeGreaterThan(0);
+    expect(Math.abs(hoehe - toastBox.height), '--pc-toast-height muss der tatsaechlichen Hoehe entsprechen').toBeLessThan(2);
+
+    const dialogBox = await dialog(page).boundingBox();
+    if (dialogBox) {
+        const ueberlappt =
+            toastBox.x < dialogBox.x + dialogBox.width && toastBox.x + toastBox.width > dialogBox.x &&
+            toastBox.y < dialogBox.y + dialogBox.height && toastBox.y + toastBox.height > dialogBox.y;
+        expect(
+            ueberlappt,
+            `Meldungsflaeche [${toastBox.x},${toastBox.y},${toastBox.width},${toastBox.height}] ueberlappt den offenen Dialog ` +
+            `[${dialogBox.x},${dialogBox.y},${dialogBox.width},${dialogBox.height}]`,
+        ).toBe(false);
+    }
+}
+
+/**
  * Prueft, dass der Toast ueber ALLEM anderen liegt -- insbesondere ueber
  * einem gleichzeitig offenen Confirm-Backdrop (Task 8c Nachtrag,
  * Code-Review-Befund 4). `elementFromPoint` in der Toast-Mitte muss ein
@@ -232,7 +277,7 @@ async function erwarteToastLiegtUeberAllem(page: Page, toast: Locator) {
     ).toBe(true);
 }
 
-test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung Task 8c)', () => {
+test.describe('Meldungen bei offenem Dialog (Tasks 8a/8c, ab Abschnitt 4 reservierte Meldungsflaeche)', () => {
     test('zweizeiliger Fehler-Toast bei offenem Modal verdeckt weder Modal-Titel, Eyebrow, Schließen-X, "Abbrechen" noch "Speichern"', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'fehler');
         await oeffneDokumentModal(page);
@@ -246,10 +291,7 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung T
         // Container muss jetzt unten links stehen (offener Dialog -- das
         // Modal selbst traegt role="dialog"). Task 8c: nicht mehr oben links,
         // das schnitt die Modal-Ueberschrift an (siehe Datei-Kommentar oben).
-        await expect(toastContainer).toHaveClass(/bottom-6/);
-        await expect(toastContainer).toHaveClass(/left-6/);
-        await expect(toastContainer).not.toHaveClass(/top-6/);
-        await expect(toastContainer).not.toHaveClass(/right-6/);
+        await erwarteReservierteMeldungsflaeche(page, toastContainer);
 
         // Text im ECHT ausgeloesten, ECHT positionierten Toast direkt im DOM
         // verlaengern, bis er zweizeilig umbricht -- siehe Erklaerung im
@@ -258,8 +300,17 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung T
         await page.evaluate(() => {
             const absatz = document.querySelector('[data-testid="toast-container"] p');
             if (!absatz) throw new Error('Kein Toast-Text im DOM gefunden');
+            // Die Meldungsflaeche ist seit Abschnitt 4 ueber die volle Breite
+            // angelegt (max-w-[1600px]) statt max-w-[480px] wie der frueher
+            // schwebende Toast. Der Text muss darum deutlich laenger sein, um
+            // ueberhaupt noch auf zwei Zeilen umzubrechen -- genau das ist hier
+            // der Pruefzweck: eine hohe Meldungsflaeche darf den Dialog nicht
+            // anschneiden.
             absatz.textContent =
-                'Sperre konnte nicht geholt werden — der Server antwortet gerade nicht zuverlässig, bitte laden Sie in Kürze erneut.';
+                'Sperre konnte nicht geholt werden — der Server antwortet gerade nicht zuverlässig. '
+                + 'Bitte laden Sie das Dokument in Kürze erneut und prüfen Sie vorher, ob eine Kollegin oder '
+                + 'ein Kollege denselben Beleg gerade geöffnet hat. Ungespeicherte Änderungen bleiben so lange '
+                + 'in diesem Fenster erhalten und gehen durch das erneute Laden nicht verloren.';
         });
 
         const toastAbsatz = toastContainer.locator('p');
@@ -295,7 +346,7 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung T
         await erwarteTrefferPerText(page, speichernKnopf, 'Speichern');
     });
 
-    test('Versionskonflikt: der Confirm-Dialog traegt jetzt selbst role="dialog", und der Toast-Container steht entsprechend unten links', async ({ page }, testInfo) => {
+    test('Versionskonflikt: der Confirm-Dialog traegt selbst role="dialog", und die Meldungsflaeche bleibt ausserhalb des Dialogs', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'frei');
         await page.route(`**/api/lieferant-dokumente/${DOKUMENT_ID}`, route => {
             if (route.request().method() !== 'PUT') return route.fulfill({ status: 404, body: '' });
@@ -319,11 +370,15 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung T
         await expect(konfliktDialog).toBeVisible();
         await expect(konfliktDialog).toHaveAttribute('aria-modal', 'true');
 
+        // Der 409 oeffnet nur den Confirm-Dialog, er loest keine Meldung aus.
+        // Dann darf die Meldungsflaeche auch keinen Platz kosten: leer heisst
+        // --pc-toast-height = 0, sonst schoebe eine unsichtbare Flaeche die
+        // ganze Anwendung nach unten.
         const toastContainer = page.getByTestId('toast-container');
-        await expect(toastContainer).toHaveClass(/bottom-6/);
-        await expect(toastContainer).toHaveClass(/left-6/);
-        await expect(toastContainer).not.toHaveClass(/top-6/);
-        await expect(toastContainer).not.toHaveClass(/right-6/);
+        await expect(toastContainer).toBeHidden();
+        const reservierteHoehe = await page.evaluate(() =>
+            parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pc-toast-height')) || 0);
+        expect(reservierteHoehe, 'Ohne Meldung darf die Meldungsflaeche keinen Platz belegen').toBe(0);
 
         await designPruefung(page, testInfo, 'toast-bei-dialog-versionskonflikt', {
             primaerAktion: konfliktDialog.getByRole('button', { name: 'Neu laden' }),
@@ -333,7 +388,7 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung T
         await expect(konfliktDialog).not.toBeVisible();
     });
 
-    test('Toast liegt ueber dem Confirm-Backdrop, statt abgedunkelt darunter zu verschwinden (Task 8c Nachtrag, Code-Review-Befund 4)', async ({ page }, testInfo) => {
+    test('Meldung bleibt neben offenem Confirm-Dialog lesbar und anklickbar, statt hinter dessen Backdrop zu verschwinden', async ({ page }, testInfo) => {
         // toast.tsx (z-[9999]) und confirm-dialog.tsx (Backdrop z-[10000],
         // Dialog z-[10001]) sind beide `fixed` im selben Stacking-Kontext --
         // der Confirm-Backdrop lag bisher UEBER dem Toast. Reproduziert mit
@@ -365,8 +420,7 @@ test.describe('Toast-Positionierung bei offenem Dialog (Task 8a, Nachbesserung T
 
         const toastContainer = page.getByTestId('toast-container');
         await expect(toastContainer).toContainText('Speichern fehlgeschlagen');
-        await expect(toastContainer).toHaveClass(/bottom-6/);
-        await expect(toastContainer).toHaveClass(/left-6/);
+        await erwarteReservierteMeldungsflaeche(page, toastContainer);
 
         // Zweiter Versuch, noch waehrend der erste Toast sichtbar ist (5s-Timer
         // laeuft noch) -- der Confirm-Dialog oeffnet sich jetzt zusaetzlich.

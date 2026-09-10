@@ -77,6 +77,10 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   - `<DetailLayout>` → `src/components/DetailLayout.tsx`
 - **Sicherheit:** Kein `dangerouslySetInnerHTML` ohne Sanitizing.
 
+### End-to-End-Tests (dauerhafte Nutzervorgabe vom 10.09.2026)
+- **Immer wenn End-to-End-Tests fehlen:** Für jedes neue Feature, jeden neuen Benutzer-Workflow, jede neue Seite oder signifikante Verhaltensänderung (Desktop in `react-pc-frontend/e2e/` und Mobile in `react-zeiterfassung/e2e/`) MÜSSEN vollständige Playwright End-to-End-Tests geschrieben bzw. ergänzt werden.
+- Vor dem Commit immer die E2E-Tests ausführen (`npm run test:e2e`).
+
 ---
 
 ## 🚀 Build & Run (Quickstart)
@@ -90,6 +94,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run build     # Produktions-Build
   npm run lint      # Linter
   npm test          # Vitest Testsuite
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 - **Frontend Zeiterfassung (Mobile):**
   ```bash
@@ -97,6 +102,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run dev
   npm run build
   npm test
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 
 ---
@@ -105,12 +111,16 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 Am Ende jeder Aufgabe:
 1. Tests ausführen:
    - Backend: `./mvnw test`
-   - Frontend: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend Unit: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend E2E: `npm run test:e2e` im jeweiligen Frontend-Ordner
 2. Builds prüfen:
    - `npm run build` in betroffenen Frontend-Verzeichnissen
-3. Diff prüfen:
+3. Sub-Agent Code-Review:
+   - Ein Sub-Agent mit leerem Kontextfenster (`erp-code-reviewer`) prüft die Änderungen und liefert eine Ampel-Bewertung (🟢/🟡/🔴).
+4. Diff prüfen:
    - `git status` und `git diff` prüfen.
    - Nur Dateien stagen, die für diese Aufgabe geändert wurden (keine Fremdänderungen).
    - `git diff --staged` auf versehentlich committete Secrets oder Logs prüfen.
-4. Graphify synchronisieren:
+5. Graphify synchronisieren:
    - `./graphify update .`
+
