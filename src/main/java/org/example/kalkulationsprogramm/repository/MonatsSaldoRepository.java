@@ -103,6 +103,7 @@ public interface MonatsSaldoRepository extends JpaRepository<MonatsSaldo, Long> 
                 JOIN monate mo ON mo.tag >= CAST(DATE_FORMAT(g.von, '%Y-%m-01') AS DATE)
                 LEFT JOIN letzte_daten ld ON ld.mitarbeiter_id = m.id
                 WHERE m.art = 'MENSCH' AND mo.tag < :aktuellerMonat
+                  AND m.fuehrt_zeitkonto = TRUE AND (m.ist_geschaeftsfuehrer IS NULL OR m.ist_geschaeftsfuehrer = FALSE)
                   AND (EXISTS (SELECT 1 FROM zeitkonto_version v
                       WHERE v.mitarbeiter_id = m.id AND v.gueltig_von <= LAST_DAY(mo.tag)
                         AND (v.gueltig_bis IS NULL OR v.gueltig_bis >= mo.tag)

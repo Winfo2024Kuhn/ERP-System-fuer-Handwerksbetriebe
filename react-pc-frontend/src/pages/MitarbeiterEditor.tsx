@@ -1412,6 +1412,14 @@ export default function MitarbeiterEditor() {
                                                     {zeitkontoStatus.fuehrtZeitkonto ? 'An' : 'Aus'}
                                                 </span>
                                             </div>
+                                            {formData.istGeschaeftsfuehrer && !zeitkontoStatus.aktuell && (
+                                                <div className="rounded-md bg-rose-50 border border-rose-100 p-3 text-xs text-rose-800">
+                                                    <p className="font-semibold">Hinweis für Geschäftsführer:</p>
+                                                    <p className="mt-0.5 text-slate-600">
+                                                        Als Geschäftsführer müssen Sie keine Arbeitszeit einrichten. Sie können Zeiten projektbezogen erfassen, ohne dass Soll-Stunden oder Monatsabschlüsse berechnet werden. Das Einrichten einer Arbeitszeit ist vollkommen optional.
+                                                    </p>
+                                                </div>
+                                            )}
                                             {zeitkontoStatus.aktuell && (
                                                     <p className="text-xs text-slate-600">
                                                     Aktuell seit {new Date(`${zeitkontoStatus.aktuell.gueltigVon}T00:00:00`).toLocaleDateString('de-DE')}
@@ -1436,7 +1444,7 @@ export default function MitarbeiterEditor() {
                                                 {zeitkontoStatus.fuehrtZeitkonto ? (
                                                     <>
                                                         <Button type="button" size="sm" variant="outline" onClick={oeffneArbeitszeitDialog} disabled={loadingWechsel} className="border-rose-300 text-rose-700 hover:bg-rose-50">
-                                                            {zeitkontoStatus.eingerichtet ? 'Arbeitszeit ändern' : 'Arbeitszeit einrichten'}
+                                                            {zeitkontoStatus.aktuell ? 'Arbeitszeit ändern' : (formData.istGeschaeftsfuehrer ? 'Arbeitszeit optional einrichten' : 'Arbeitszeit einrichten')}
                                                         </Button>
                                                         <Button type="button" size="sm" variant="ghost" onClick={schalteArbeitszeitAus} disabled={loadingWechsel} className="text-rose-700 hover:bg-rose-50">
                                                             Arbeitszeit ausschalten
@@ -1460,7 +1468,11 @@ export default function MitarbeiterEditor() {
                                         />
                                         <div>
                                             <span className="text-sm font-medium text-slate-700">Arbeitszeit erfassen</span>
-                                            <p className="text-xs text-slate-500 mt-1">Ausschalten, wenn diese Person nicht stempelt, zum Beispiel als Chef. Die Arbeitszeit richten Sie nach dem Anlegen bewusst ein.</p>
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                {formData.istGeschaeftsfuehrer
+                                                    ? 'Für Geschäftsführer ist die Arbeitszeit optional. Projektbezogenes Stempeln ist auch ohne Arbeitszeitkonto möglich.'
+                                                    : 'Ausschalten, wenn diese Person nicht stempelt, zum Beispiel als Chef. Die Arbeitszeit richten Sie nach dem Anlegen bewusst ein.'}
+                                            </p>
                                         </div>
                                     </label>
                                 )}

@@ -36,10 +36,13 @@ public class MonatsabschlussUebersichtService {
         return List.copyOf(result);
     }
     private List<List<Zeile>> zeilen(int jahr,int monat,Long id,Long abteilung,int anzahl) {
-        var personen=repository.personen(id,abteilung,PageRequest.of(0,501));
+        var ende=YearMonth.of(jahr,monat); var start=ende.minusMonths(anzahl-1);
+        var vonDatum=start.atDay(1); var bisDatum=ende.atEndOfMonth();
+        var vonDT=vonDatum.atStartOfDay(); var bisDT=bisDatum.atTime(23,59,59);
+        int vonYM=start.getYear()*12+start.getMonthValue(); int bisYM=jahr*12+monat;
+        var personen=repository.personen(id,abteilung,vonDatum,bisDatum,vonDT,bisDT,vonYM,bisYM,PageRequest.of(0,501));
         if(personen.size()>500) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Mehr als 500 Mitarbeiter. Bitte den Filter eingrenzen.");
         var ids=personen.stream().map(MonatsabschlussUebersichtRepository.Person::getId).toList();
-        var ende=YearMonth.of(jahr,monat); var start=ende.minusMonths(anzahl-1);
         var abteilungen=new HashMap<Long,List<Long>>(); var snapshots=new HashMap<Referenz,MonatsSaldo>();
         if(!ids.isEmpty()) {
             for(var a:repository.abteilungen(ids)) abteilungen.computeIfAbsent(a.getMitarbeiterId(),k->new ArrayList<>()).add(a.getAbteilungId());

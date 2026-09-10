@@ -1028,12 +1028,19 @@ public class ZeiterfassungApiService {
         int urlaubstagVerbleibend = (int) (jahresUrlaub - urlaubstagGenommen - urlaubstagGeplant
                 + manuellKorrekturTage);
 
+        boolean istGf = Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer());
+
         Map<String, Object> urlaub = new LinkedHashMap<>();
-        urlaub.put("jahresanspruch", jahresUrlaub);
-        urlaub.put("genommen", urlaubstagGenommen);
-        urlaub.put("geplant", urlaubstagGeplant);
-        urlaub.put("korrektur", manuellKorrekturTage);
-        urlaub.put("verbleibend", Math.max(0, urlaubstagVerbleibend));
+        if (!istGf) {
+            urlaub.put("jahresanspruch", jahresUrlaub);
+            urlaub.put("genommen", urlaubstagGenommen);
+            urlaub.put("geplant", urlaubstagGeplant);
+            urlaub.put("korrektur", manuellKorrekturTage);
+            urlaub.put("verbleibend", Math.max(0, urlaubstagVerbleibend));
+        } else {
+            urlaub.put("genommen", urlaubstagGenommen);
+            urlaub.put("geplant", urlaubstagGeplant);
+        }
         urlaub.put("krankheitsTage", krankheitsTage);
         urlaub.put("fortbildungsTage", fortbildungsTage);
         result.put("urlaub", urlaub);
@@ -1041,20 +1048,22 @@ public class ZeiterfassungApiService {
         // ========== 2. AKTUELLER MONAT (via MonatsSaldo-Cache) ==========
         MonatsSaldo monatsSaldo = monatsSaldoService.getOrBerechne(mitarbeiter.getId(), currentYear, currentMonth);
 
-        BigDecimal sollStundenMonat = monatsSaldo.getSollStunden();
-        BigDecimal monatsDifferenz = monatsSaldo.getGesamtIst().subtract(sollStundenMonat);
-
         Map<String, Object> monatData = new LinkedHashMap<>();
         monatData.put("name", java.time.Month.of(currentMonth).getDisplayName(java.time.format.TextStyle.FULL,
                 java.util.Locale.GERMAN));
         monatData.put("monatNummer", currentMonth);
-        monatData.put("sollStunden", sollStundenMonat);
-        monatData.put("istStunden", monatsSaldo.getGesamtIst());
-        monatData.put("differenz", monatsDifferenz);
-        monatData.put("festgeschrieben", Boolean.TRUE.equals(monatsSaldo.getFestgeschrieben()));
+        monatData.put("istStunden", istGf ? monatsSaldo.getIstStunden() : monatsSaldo.getGesamtIst());
+        if (!istGf) {
+            BigDecimal sollStundenMonat = monatsSaldo.getSollStunden();
+            BigDecimal monatsDifferenz = monatsSaldo.getGesamtIst().subtract(sollStundenMonat);
+            monatData.put("sollStunden", sollStundenMonat);
+            monatData.put("differenz", monatsDifferenz);
+            monatData.put("festgeschrieben", Boolean.TRUE.equals(monatsSaldo.getFestgeschrieben()));
+        }
         result.put("monat", monatData);
 
-        // ========== 3. GESAMTSALDO (via monatliche Zwischenspeicherung) ==========
+        if (!istGf) {
+            // ========== 3. GESAMTSALDO (via monatliche Zwischenspeicherung) ==========
         // Startdatum bestimmen: Eintrittsdatum oder erste Buchung
         java.time.LocalDate startDatum = mitarbeiter.getEintrittsdatum();
 
@@ -1137,6 +1146,7 @@ public class ZeiterfassungApiService {
         gesamt.put("geprueftBis", geprueftBis != null ? geprueftBis.toString() : null);
         gesamt.put("vorlaeufig", geprueftBis == null || geprueftBis.isBefore(endDatum));
         result.put("gesamt", gesamt);
+        }
 
         result.put("mitarbeiterName", mitarbeiter.getVorname() + " " + mitarbeiter.getNachname());
         result.put("jahr", currentYear);
@@ -1159,7 +1169,10 @@ public class ZeiterfassungApiService {
      * Wird für den ersten und letzten Monat des Gesamtsaldo-Bereichs verwendet,
      * wenn das Start-/Enddatum nicht auf den Monatsersten/-letzten fällt.
      * 
-     * Berücksichtigt: Zeitbuchungen + Abwesenheiten + Feiertage + Korrekturen.
+     * @param mitarbeiterId ID des Mitarbeiters
+     * @param von           Startdatum des Teilzeitraums (inklusiv)
+     * @param bis           Enddatum des Teilzeitraums (inklusiv)
+     * @return Summe der geleisteten Arbeitsstunden im Zeitraum
      */
     private BigDecimal berechneAnteiligenMonatIst(Long mitarbeiterId, LocalDate von, LocalDate bis) {
         LocalDateTime vonDT = von.atStartOfDay();
@@ -1219,6 +1232,9 @@ public class ZeiterfassungApiService {
         if (!Boolean.TRUE.equals(mitarbeiter.getFuehrtZeitkonto())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Die Zeiterfassung ist für Sie ausgeschaltet.");
         }
+        if (Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer())) {
+            return;
+        }
         LocalDate heute = LocalDate.now();
         if (zeitkontoService.versionAm(mitarbeiter.getId(), heute).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Für heute ist noch keine Arbeitszeit hinterlegt.");
@@ -1231,9 +1247,13 @@ public class ZeiterfassungApiService {
     private void fuegeZeitkontoStatusHinzu(Map<String, Object> result, Mitarbeiter mitarbeiter,
             Optional<ZeitkontoVersion> version) {
         boolean fuehrtZeitkonto = Boolean.TRUE.equals(mitarbeiter.getFuehrtZeitkonto());
+        boolean istGf = Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer());
         result.put("fuehrtZeitkonto", fuehrtZeitkonto);
-        result.put("eingerichtet", version.isPresent());
+        result.put("istGeschaeftsfuehrer", istGf);
+        result.put("kontenGefuehrt", !istGf);
+        result.put("eingerichtet", version.isPresent() || istGf);
         result.put("hinweis", !fuehrtZeitkonto ? "Die Zeiterfassung ist ausgeschaltet."
+                : istGf ? "Als Geschäftsführung erfassen Sie Projektzeiten ohne Arbeitszeitkonto."
                 : version.isEmpty() ? "Noch keine Arbeitszeit hinterlegt." : null);
     }
 

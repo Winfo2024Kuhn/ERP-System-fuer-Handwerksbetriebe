@@ -38,6 +38,8 @@ public class MonatsabschlussSammelService {
             try { result.add(tx.execute(status -> {
                 var person=em.find(Mitarbeiter.class,r.mitarbeiterId(),LockModeType.PESSIMISTIC_WRITE);
                 if(person==null||person.getArt()!=MitarbeiterArt.MENSCH) return new Einzelergebnis(r,"FEHLGESCHLAGEN","Mitarbeiter nicht vorhanden oder kein Mensch.");
+                if(Boolean.TRUE.equals(person.getIstGeschaeftsfuehrer())) return new Einzelergebnis(r,"FEHLGESCHLAGEN","Geschäftsführer führen kein Zeitkonto und haben keinen Monatsabschluss.");
+                if(!Boolean.TRUE.equals(person.getFuehrtZeitkonto())) return new Einzelergebnis(r,"FEHLGESCHLAGEN","Mitarbeiter ohne Zeiterfassung haben keinen Monatsabschluss.");
                 var saldo=repository.findGesperrt(r.mitarbeiterId(),r.jahr(),r.monat());
                 saldo.ifPresent(s->em.refresh(s,LockModeType.PESSIMISTIC_WRITE));
                 if(saldo.filter(s->Boolean.TRUE.equals(s.getFestgeschrieben())).isPresent()) return new Einzelergebnis(r,"BEREITS_ABGESCHLOSSEN","Dieser Monat ist bereits abgeschlossen.");

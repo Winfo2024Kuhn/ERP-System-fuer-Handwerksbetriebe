@@ -106,8 +106,19 @@ class MonatsabschlussSammelMysqlTest {
     }
     @Test void echteProjektionenLadenInaktiveMenschenUndAbteilungenAberKeineSysteme() {
         tx.executeWithoutResult(s->{person=em.find(Mitarbeiter.class,person.getId());person.setAktiv(false);person.setFuehrtZeitkonto(false);var a=new Abteilung();a.setName("Test");em.persist(a);person.setAbteilungen(java.util.Set.of(a));var sys=new Mitarbeiter();sys.setArt(MitarbeiterArt.SYSTEM);sys.setVorname("System");sys.setNachname("Test");em.persist(sys);});
-        var people=uebersicht.personen(null,null,org.springframework.data.domain.PageRequest.of(0,501));assertThat(people).hasSize(1);assertThat(people.getFirst().getId()).isEqualTo(person.getId());
-        var departments=uebersicht.abteilungen(java.util.List.of(person.getId()));assertThat(departments).hasSize(1);assertThat(uebersicht.personen(null,departments.getFirst().getAbteilungId(),org.springframework.data.domain.PageRequest.of(0,501))).hasSize(1);
-        seed();assertThat(uebersicht.salden(java.util.List.of(person.getId()),month.getYear()*12+month.getMonthValue(),month.getYear()*12+month.getMonthValue())).hasSize(1);
+        seed();
+        tx.executeWithoutResult(s->{
+            var ms = salden.findByMitarbeiterIdAndJahrAndMonat(person.getId(), month.getYear(), month.getMonthValue()).orElseThrow();
+            ms.setFestgeschrieben(true);
+            em.merge(ms);
+        });
+        var von = month.atDay(1);
+        var bis = month.atEndOfMonth();
+        var vonDt = von.atStartOfDay();
+        var bisDt = bis.atTime(23, 59, 59, 999_999_999);
+        int ym = month.getYear() * 12 + month.getMonthValue();
+        var people=uebersicht.personen(null,null,von,bis,vonDt,bisDt,ym,ym,org.springframework.data.domain.PageRequest.of(0,501));assertThat(people).hasSize(1);assertThat(people.getFirst().getId()).isEqualTo(person.getId());
+        var departments=uebersicht.abteilungen(java.util.List.of(person.getId()));assertThat(departments).hasSize(1);assertThat(uebersicht.personen(null,departments.getFirst().getAbteilungId(),von,bis,vonDt,bisDt,ym,ym,org.springframework.data.domain.PageRequest.of(0,501))).hasSize(1);
+        assertThat(uebersicht.salden(java.util.List.of(person.getId()),month.getYear()*12+month.getMonthValue(),month.getYear()*12+month.getMonthValue())).hasSize(1);
     }
 }

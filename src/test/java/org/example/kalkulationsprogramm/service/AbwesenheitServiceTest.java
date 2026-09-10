@@ -269,7 +269,8 @@ class AbwesenheitServiceTest {
         assertTrue(fehler.getMessage().contains("noch keine Arbeitszeit hinterlegt"));
         assertTrue(fehler.getMessage().contains(MONTAG.toString()));
         verify(abwesenheitRepository, never()).save(any());
-        verifyNoInteractions(tagesSollService, monatsSaldoService);
+        verifyNoInteractions(tagesSollService);
+        verify(monatsSaldoService).isMonatFestgeschrieben(MITARBEITER_ID, MONTAG.getYear(), MONTAG.getMonthValue());
     }
 
     @Test
@@ -285,6 +286,72 @@ class AbwesenheitServiceTest {
         assertEquals(new BigDecimal("8.00"), abwesenheitService
                 .getAbwesenheitenByMitarbeiterAndZeitraum(MITARBEITER_ID, MONTAG, MONTAG).getFirst().getStunden());
         verifyNoInteractions(zeitkontoService, tagesSollService);
+        verify(abwesenheitRepository, never()).save(any());
+    }
+
+    @Test
+    void bucheAbwesenheit_wirftConflict_wennMonatFestgeschrieben() {
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(monatsSaldoService.isMonatFestgeschrieben(MITARBEITER_ID, MONTAG.getYear(), MONTAG.getMonthValue()))
+                .thenReturn(true);
+
+        org.springframework.web.server.ResponseStatusException ex = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.URLAUB, false));
+
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("festgeschrieben"));
+        verify(abwesenheitRepository, never()).save(any());
+    }
+
+    @Test
+    void loescheAbwesenheit_wirftConflict_wennMonatFestgeschrieben() {
+        Abwesenheit abw = new Abwesenheit();
+        abw.setId(99L);
+        abw.setMitarbeiter(testMitarbeiter);
+        abw.setDatum(MONTAG);
+        when(abwesenheitRepository.findById(99L)).thenReturn(Optional.of(abw));
+        when(monatsSaldoService.isMonatFestgeschrieben(MITARBEITER_ID, MONTAG.getYear(), MONTAG.getMonthValue()))
+                .thenReturn(true);
+
+        org.springframework.web.server.ResponseStatusException ex = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> abwesenheitService.loescheAbwesenheit(99L));
+
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        verify(abwesenheitRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void zeitausgleich_nutztBerechnetenGesamtsaldo_erfolgreich() {
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(monatsSaldoService.isMonatFestgeschrieben(any(), anyInt(), anyInt())).thenReturn(false);
+        when(zeitkontoService.versionAm(MITARBEITER_ID, MONTAG)).thenReturn(Optional.of(testZeitkonto));
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, MONTAG)).thenReturn(new BigDecimal("8.00"));
+        when(monatsSaldoService.berechneGesamtsaldo(eq(MITARBEITER_ID), any())).thenReturn(new BigDecimal("10.00"));
+        when(abwesenheitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Abwesenheit gespeichert = abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.ZEITAUSGLEICH, false);
+
+        assertNotNull(gespeichert);
+        assertEquals(new BigDecimal("8.00"), gespeichert.getStunden());
+        verify(monatsSaldoService).berechneGesamtsaldo(eq(MITARBEITER_ID), any());
+    }
+
+    @Test
+    void zeitausgleich_wirftException_wennGesamtsaldoZuGering() {
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(monatsSaldoService.isMonatFestgeschrieben(any(), anyInt(), anyInt())).thenReturn(false);
+        when(zeitkontoService.versionAm(MITARBEITER_ID, MONTAG)).thenReturn(Optional.of(testZeitkonto));
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, MONTAG)).thenReturn(new BigDecimal("8.00"));
+        when(monatsSaldoService.berechneGesamtsaldo(eq(MITARBEITER_ID), any())).thenReturn(new BigDecimal("5.00"));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.ZEITAUSGLEICH, false));
+
+        assertTrue(ex.getMessage().contains("Nicht genügend Überstunden"));
+        assertTrue(ex.getMessage().contains("5.0h"));
+        assertTrue(ex.getMessage().contains("8.0h"));
         verify(abwesenheitRepository, never()).save(any());
     }
 

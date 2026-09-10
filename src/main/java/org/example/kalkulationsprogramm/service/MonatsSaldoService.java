@@ -83,6 +83,105 @@ public class MonatsSaldoService {
         return berechneMonatsSaldo(id, jahr, monat);
     }
 
+    /**
+     * Prüft, ob der angegebene Monat für den Mitarbeiter festgeschrieben (abgeschlossen) ist.
+     */
+    @Transactional(readOnly = true)
+    public boolean isMonatFestgeschrieben(Long mitarbeiterId, int jahr, int monat) {
+        if (mitarbeiterId == null || jahr < 1000 || monat < 1 || monat > 12) {
+            return false;
+        }
+        return monatsSaldoRepository.findByMitarbeiterIdAndJahrAndMonat(mitarbeiterId, jahr, monat)
+                .map(ms -> Boolean.TRUE.equals(ms.getFestgeschrieben()))
+                .orElse(false);
+    }
+
+    /**
+     * Berechnet den tatsächlichen Gesamtsaldo (Überstunden/Minusstunden) eines Mitarbeiters
+     * von Beginn bis zum angegebenen Stichtag unter Einbeziehung aller Zeitbuchungen,
+     * Abwesenheiten, Feiertagsgutschriften und aktiver Korrekturbuchungen.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal berechneGesamtsaldo(Long mitarbeiterId, LocalDate bisDatum) {
+        if (mitarbeiterId == null || bisDatum == null) {
+            return BigDecimal.ZERO;
+        }
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
+        if (mitarbeiter == null || Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer())) {
+            return BigDecimal.ZERO;
+        }
+
+        LocalDate startDatum = mitarbeiter.getEintrittsdatum();
+        if (startDatum == null) {
+            Optional<Zeitbuchung> ersteBuchung = zeitbuchungRepository
+                    .findFirstByMitarbeiterIdOrderByStartZeitAsc(mitarbeiterId);
+            if (ersteBuchung.isPresent()) {
+                startDatum = ersteBuchung.get().getStartZeit().toLocalDate();
+            } else {
+                startDatum = LocalDate.of(bisDatum.getYear(), 1, 1);
+            }
+        }
+
+        if (bisDatum.isBefore(startDatum)) {
+            return BigDecimal.ZERO;
+        }
+
+        YearMonth startYM = YearMonth.from(startDatum);
+        YearMonth endYM = YearMonth.from(bisDatum);
+
+        BigDecimal gesamtIst = BigDecimal.ZERO;
+        BigDecimal gesamtSoll = BigDecimal.ZERO;
+
+        for (YearMonth ym = startYM; !ym.isAfter(endYM); ym = ym.plusMonths(1)) {
+            final YearMonth monat = ym;
+            boolean istErsterMonat = ym.equals(startYM) && startDatum.getDayOfMonth() > 1;
+            boolean istLetzterMonat = ym.equals(endYM) && bisDatum.getDayOfMonth() < ym.lengthOfMonth();
+
+            Optional<MonatsSaldo> cached = monatsSaldoRepository.findByMitarbeiterIdAndJahrAndMonat(
+                    mitarbeiterId, ym.getYear(), ym.getMonthValue());
+            boolean festgeschrieben = cached.map(ms -> Boolean.TRUE.equals(ms.getFestgeschrieben())).orElse(false);
+
+            if (!festgeschrieben && (istErsterMonat || istLetzterMonat)) {
+                LocalDate monatVon = istErsterMonat ? startDatum : ym.atDay(1);
+                LocalDate monatBis = istLetzterMonat ? bisDatum : ym.atEndOfMonth();
+
+                LocalDateTime vonDT = monatVon.atStartOfDay();
+                LocalDateTime bisDT = monatBis.atTime(23, 59, 59);
+
+                BigDecimal istStunden = zeitbuchungRepository.findByMitarbeiterIdAndStartZeitBetween(
+                        mitarbeiterId, vonDT, bisDT).stream()
+                        .filter(b -> b.getTyp() != BuchungsTyp.PAUSE)
+                        .filter(b -> b.getAnzahlInStunden() != null)
+                        .map(Zeitbuchung::getAnzahlInStunden)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal abwesenheitsStunden = abwesenheitRepository.sumStundenByMitarbeiterIdAndDatumBetween(
+                        mitarbeiterId, monatVon, monatBis);
+                if (abwesenheitsStunden == null) abwesenheitsStunden = BigDecimal.ZERO;
+
+                BigDecimal feiertagsStunden = tagesSollService.feiertagsGutschriftSumme(
+                        mitarbeiterId, monatVon, monatBis);
+
+                BigDecimal korrekturStunden = korrekturRepository.findByMitarbeiterIdAndDatumBetween(
+                        mitarbeiterId, monatVon, monatBis).stream()
+                        .filter(k -> !Boolean.TRUE.equals(k.getStorniert()))
+                        .filter(k -> k.getTyp() == KorrekturTyp.STUNDEN)
+                        .map(k -> k.getStunden() != null ? k.getStunden() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                gesamtIst = gesamtIst.add(istStunden).add(abwesenheitsStunden).add(feiertagsStunden).add(korrekturStunden);
+                gesamtSoll = gesamtSoll.add(tagesSollService.periodenSollSumme(mitarbeiterId, monatVon, monatBis));
+            } else {
+                MonatsSaldo ms = cached.filter(s -> Boolean.TRUE.equals(s.getGueltig()))
+                        .orElseGet(() -> berechneMonatsSaldo(mitarbeiterId, monat.getYear(), monat.getMonthValue()));
+                gesamtIst = gesamtIst.add(ms.getGesamtIst());
+                gesamtSoll = gesamtSoll.add(ms.getSollStunden());
+            }
+        }
+
+        return gesamtIst.subtract(gesamtSoll);
+    }
+
     private Mitarbeiter sperreMitarbeiter(Long id) {
         Mitarbeiter mitarbeiter = entityManager.find(Mitarbeiter.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (mitarbeiter == null) {
@@ -142,6 +241,12 @@ public class MonatsSaldoService {
         Mitarbeiter ziel = sperreMitarbeiter(id);
         if (ziel.getArt() != MitarbeiterArt.MENSCH) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "System-Mitarbeiter haben keinen Monatsabschluss");
+        }
+        if (Boolean.TRUE.equals(ziel.getIstGeschaeftsfuehrer())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Geschäftsführer führen kein Zeitkonto und haben keinen Monatsabschluss");
+        }
+        if (!Boolean.TRUE.equals(ziel.getFuehrtZeitkonto())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Mitarbeiter ohne Zeiterfassung haben keinen Monatsabschluss");
         }
         MonatsSaldo saldo = gesperrterSaldo(id, jahr, monat).orElse(null);
         if (saldo != null && Boolean.TRUE.equals(saldo.getFestgeschrieben())) {

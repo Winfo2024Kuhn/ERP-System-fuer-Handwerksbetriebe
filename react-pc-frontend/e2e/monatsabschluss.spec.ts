@@ -24,7 +24,7 @@ test('Monatsabschluss: Filter, vollständige Auswahl, Teilerfolg und Verlauf', a
  await page.getByRole('combobox', { name: 'Abteilung', exact: true }).click(); await expect(page.getByRole('listbox')).toBeVisible();
  await page.screenshot({ path: info.outputPath('abteilung-offen.png') }); await page.getByRole('option', { name: 'Werkstatt' }).click();
  await page.getByRole('checkbox', { name: 'Alle gefilterten Mitarbeiter auswählen' }).check();
- const primary = page.getByRole('button', { name: 'Auswahl abschließen', exact: true });
+ const primary = page.getByRole('button', { name: 'Monat jetzt abschließen', exact: true });
  await designPruefung(page, info, 'monatsabschluss-uebersicht', { primaerAktion: primary });
  await primary.click(); await expect(page.getByRole('dialog')).toContainText('2 Mitarbeiter'); await page.screenshot({ path: info.outputPath('bestaetigung.png') }); await page.getByRole('button', { name: 'Abschließen', exact: true }).click();
  await expect(page.getByText('1 ausgewählt', { exact: true })).toBeVisible(); expect(posts).toBe(1); expect(historie).toBe(0);

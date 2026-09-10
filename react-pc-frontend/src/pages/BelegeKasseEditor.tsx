@@ -1189,21 +1189,26 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
     // Sonst wuerde eine spaet eintreffende KI-Antwort die Eingaben ueberschreiben,
     // die der Buchhalter waehrenddessen getippt hat.
     const [detailBeleg, setDetailBeleg] = useState<Beleg>(beleg);
+    // Bewusst nur diese drei Werte als Abhaengigkeit: eine neue `beleg`-Identitaet
+    // bei sonst gleichen Werten wuerde das Polling sonst unnoetig neu starten.
+    const belegId = beleg.id;
+    const belegAufteilungsModus = beleg.aufteilungsModus;
+    const belegKiStatus = beleg.kiAnalyseStatus;
     useEffect(() => {
-        const kiOffen = (b: Beleg) => b.kiAnalyseStatus === 'PENDING' || b.kiAnalyseStatus === 'LAEUFT';
-        if (beleg.aufteilungsModus !== 'TEILWEISE' && !kiOffen(beleg)) return;
+        const kiOffen = (status?: Beleg['kiAnalyseStatus']) => status === 'PENDING' || status === 'LAEUFT';
+        if (belegAufteilungsModus !== 'TEILWEISE' && !kiOffen(belegKiStatus)) return;
 
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
 
         const lade = async () => {
             try {
-                const res = await fetch(`/api/buchhaltung/belege/${beleg.id}`);
+                const res = await fetch(`/api/buchhaltung/belege/${belegId}`);
                 if (!res.ok) return;
                 const data: Beleg = await res.json();
                 if (cancelled) return;
                 setDetailBeleg(data);
-                if (kiOffen(data)) timer = setTimeout(lade, 4000);
+                if (kiOffen(data.kiAnalyseStatus)) timer = setTimeout(lade, 4000);
             } catch (e) {
                 console.error('Beleg-Detail laden fehlgeschlagen', e);
             }
@@ -1211,7 +1216,7 @@ function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, 
         lade();
 
         return () => { cancelled = true; if (timer) clearTimeout(timer); };
-    }, [beleg.id, beleg.aufteilungsModus, beleg.kiAnalyseStatus]);
+    }, [belegId, belegAufteilungsModus, belegKiStatus]);
 
     const [form, setForm] = useState({
         belegKategorie: beleg.belegKategorie,

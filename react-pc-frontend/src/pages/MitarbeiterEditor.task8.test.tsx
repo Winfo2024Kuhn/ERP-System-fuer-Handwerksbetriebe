@@ -180,4 +180,29 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         expect(JSON.parse(String(req?.init?.body))).toMatchObject({arbeitszeit:{samstagStunden:8.5,sonntagStunden:0,buchungStartZeit:'09:05'}});
     });
 
+    it('erklärt für Geschäftsführer die optionale Arbeitszeit und zeigt Button Arbeitszeit optional einrichten', async () => {
+        const gf = { ...MITARBEITER, id: 43, istGeschaeftsfuehrer: true };
+        // Entspricht dem echten Backend-Contract (ZeitkontoWechselService.status):
+        // Fuer Geschaeftsfuehrer ist eingerichtet immer true, aktuell bleibt ohne
+        // hinterlegte Arbeitszeit null.
+        const gfStatus = {
+            ...STATUS, mitarbeiterId: 43, istGeschaeftsfuehrer: true, eingerichtet: true, aktuell: null,
+            hinweis: 'Geschäftsführung: Arbeitszeit kann optional hinterlegt werden, ist für die Zeiterfassung jedoch nicht erforderlich.',
+        };
+        fetchMock.mockImplementation((url: string) => {
+            if (url === '/api/mitarbeiter') return response([gf]);
+            if (url === '/api/zeitverwaltung/zeitkonten/43') return response(gfStatus);
+            if (url === '/api/abteilungen') return response([]);
+            return response([]);
+        });
+        const user = userEvent.setup();
+        renderEditor();
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await user.click(screen.getByRole('button', { name: 'Bearbeiten' }));
+
+        expect(await screen.findByText(/Hinweis für Geschäftsführer/i)).toBeInTheDocument();
+        expect(screen.getByText(/Als Geschäftsführer müssen Sie keine Arbeitszeit einrichten/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Arbeitszeit optional einrichten' })).toBeVisible();
+    });
+
 });

@@ -25,11 +25,19 @@ let closed: boolean, statusFailure: boolean;
 function setup() {
     mockFetch.mockImplementation(async (input: string, init?: RequestInit) => {
         let body: unknown = [];
-        if (input === '/api/mitarbeiter') body = [{ id: 1, vorname: 'Max', nachname: 'Mustermann' }];
+        if (input === '/api/mitarbeiter') body = [
+            { id: 1, vorname: 'Max', nachname: 'Mustermann', aktiv: true },
+            { id: 2, vorname: 'Anna', nachname: 'Inaktiv', aktiv: false },
+            { id: 3, vorname: 'Chef', nachname: 'Boss', aktiv: true, istGeschaeftsfuehrer: true }
+        ];
         if (input.startsWith('/api/zeitverwaltung/kalender')) body = { tage, sollStundenMonat: 160, istStundenMonat: 168, differenz: 8 };
         if (input === base) {
             if (statusFailure) return { ok: false, status: 500, json: async () => ({ message: 'Monatsabschluss konnte nicht geladen werden.' }) };
             body = status(closed);
+        }
+        if (input.endsWith('/oeffnen') && init?.method === 'POST') {
+            closed = false;
+            return { ok: true, json: async () => status(false) };
         }
         if (input === '/api/abwesenheit' && init?.method === 'POST') {
             const req = JSON.parse(String(init.body));
@@ -237,3 +245,104 @@ describe('Tageserfassung und smarte Buchungslogik', () => {
         expect(JSON.parse(optional![1].body).endeZeit).toBeNull();
     });
 });
+
+describe('Mitarbeiter-Filter und Geschäftsführer-Ansicht', () => {
+    it('filtert aktive und nicht aktive Mitarbeiter im Dropdown', async () => {
+        mount();
+        await screen.findByRole('combobox', { name: 'Mitarbeiter-Filter' });
+        // Default is AKTIV: Max Mustermann and Chef Boss (aktiv)
+        fireEvent.click(screen.getByRole('combobox', { name: 'Mitarbeiter' }));
+        expect(await screen.findByRole('option', { name: /Max Mustermann/ })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: /Anna Inaktiv/ })).not.toBeInTheDocument();
+        // Close dropdown by selecting Max
+        fireEvent.click(screen.getByRole('option', { name: /Max Mustermann/ }));
+
+        // Switch to INAKTIV
+        fireEvent.click(screen.getByRole('combobox', { name: 'Mitarbeiter-Filter' }));
+        fireEvent.click(await screen.findByRole('option', { name: 'Nicht aktive Mitarbeiter' }));
+
+        // Open Mitarbeiter dropdown again
+        fireEvent.click(screen.getByRole('combobox', { name: 'Mitarbeiter' }));
+        expect(await screen.findByRole('option', { name: /Anna Inaktiv/ })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: /Max Mustermann/ })).not.toBeInTheDocument();
+    });
+
+    it('zeigt für Geschäftsführer reine Ist-Stunden und blendet Monatsabschluss und Korrekturen aus', async () => {
+        mount(`/zeitbuchungen?jahr=${year}&monat=8&mitarbeiterId=3`);
+        await screen.findByText(/ZEITERFASSUNG KALENDER/);
+        expect(screen.queryByRole('region', { name: 'Monatsabschluss' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Korrekturen/ })).not.toBeInTheDocument();
+        expect(screen.getByText(/Erfasste Arbeitszeit/)).toBeVisible();
+        expect(screen.queryByText(/Soll-Stunden/)).not.toBeInTheDocument();
+    });
+});
+
+describe('Festgeschriebener Monat Sperre und Freigabe-Dialog', () => {
+    it('öffnet bei festgeschriebenem Monat einen Dialog und erlaubt Nur-Ansehen-Modus', async () => {
+        closed = true;
+        tage = [{
+            datum: `${year}-08-03`,
+            wochentag: 1,
+            istFeiertag: false,
+            feiertagName: null,
+            sollStunden: 8,
+            istStunden: 4,
+            buchungen: [{
+                id: 1,
+                projektId: 1,
+                projektName: 'Testauftrag',
+                arbeitsgangName: 'Montage',
+                startZeit: '08:00',
+                endeZeit: '12:00',
+                dauerMinuten: 240,
+                dauerFormatiert: '4:00',
+                notiz: ''
+            }]
+        }];
+        mount();
+        await screen.findByText('125,0h');
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+
+        // Dialog must appear
+        expect(screen.getByRole('dialog', { name: 'Monatsabschluss ist festgeschrieben' })).toBeVisible();
+        expect(screen.getByRole('button', { name: /Monatsabschluss zurücksetzen/ })).toBeVisible();
+
+        // Click 'Nur ansehen'
+        fireEvent.click(screen.getByRole('button', { name: /Nur ansehen/ }));
+        expect(screen.getByRole('dialog', { name: 'Tageserfassung' })).toBeVisible();
+        expect(screen.getAllByText(/schreibgeschützt/i).length).toBeGreaterThan(0);
+
+        // Inputs must be disabled and save button hidden
+        const vonInput = screen.getByRole('textbox', { name: 'Von Buchung 1' });
+        expect(vonInput).toBeDisabled();
+        expect(screen.queryByRole('button', { name: 'Alle Speichern' })).not.toBeInTheDocument();
+    });
+
+    it('setzt den Monatsabschluss über den Freigabe-Dialog zurück', async () => {
+        closed = true;
+        tage = [{
+            datum: `${year}-08-03`,
+            wochentag: 1,
+            istFeiertag: false,
+            feiertagName: null,
+            sollStunden: 8,
+            istStunden: 4,
+            buchungen: []
+        }];
+        mount();
+        await screen.findByText('125,0h');
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+
+        const resetBtn = screen.getByRole('button', { name: /Monatsabschluss zurücksetzen/ });
+        fireEvent.click(resetBtn);
+
+        await waitFor(() => {
+            expect(mockFetch).toHaveBeenCalledWith(
+                expect.stringMatching(/\/api\/zeitverwaltung\/monatsabschluesse\/1\/\d+\/8\/oeffnen$/),
+                expect.objectContaining({ method: 'POST' })
+            );
+        });
+        expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/zurückgesetzt/));
+    });
+});
+

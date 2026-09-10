@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Trash2, Save, X, Loader2, Calendar, Plus, Clock, Briefcase, BarChart2, RefreshCw, Folder, Plane, Stethoscope, GraduationCap, Search, Calculator, TrendingUp, Palmtree, CalendarCheck, LockKeyhole, History } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, Save, X, Loader2, Calendar, Plus, Clock, Briefcase, BarChart2, RefreshCw, Folder, Plane, Stethoscope, GraduationCap, Search, Calculator, TrendingUp, Palmtree, CalendarCheck, LockKeyhole, History, LockOpen, Eye } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { TimeInput, validateTimeInput } from '../components/ui/time-input';
 import { Select } from '../components/ui/select-custom';
@@ -15,6 +15,9 @@ interface Mitarbeiter {
     id: number;
     vorname: string;
     nachname: string;
+    aktiv?: boolean;
+    fuehrtZeitkonto?: boolean;
+    istGeschaeftsfuehrer?: boolean;
 }
 
 interface Projekt {
@@ -79,6 +82,7 @@ const MONATE = ['', 'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
     'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
 export default function ZeiterfassungKalender() {
+    const bestaetige = useConfirm();
     const toast = useToast();
     const toastRef = useRef(toast);
     toastRef.current = toast;
@@ -100,6 +104,59 @@ export default function ZeiterfassungKalender() {
     const [abschlussRevision, setAbschlussRevision] = useState(0);
     const auswahlKey = `${selectedMitarbeiter}/${jahr}/${monat}`;
     const aktuellerAbschluss = abschluss?.mitarbeiterId === selectedMitarbeiter && abschluss.jahr === jahr && abschluss.monat === monat ? abschluss : null;
+
+    const [mitarbeiterFilter, setMitarbeiterFilter] = useState<'AKTIV' | 'INAKTIV' | 'ALLE'>('AKTIV');
+    const [showClosedMonthDialog, setShowClosedMonthDialog] = useState(false);
+    const [pendingDayForModal, setPendingDayForModal] = useState<KalenderTag | null>(null);
+    const [isReadOnlyDayModal, setIsReadOnlyDayModal] = useState(false);
+    const [resettingAbschluss, setResettingAbschluss] = useState(false);
+
+    const aktuellerMitarbeiter = mitarbeiter.find(m => m.id === selectedMitarbeiter);
+    const istGeschaeftsfuehrer = !!aktuellerMitarbeiter?.istGeschaeftsfuehrer;
+    const isMonatFestgeschrieben = !istGeschaeftsfuehrer && !!aktuellerAbschluss?.festgeschrieben;
+
+    const gefilterteMitarbeiter = mitarbeiter.filter(m => {
+        if (mitarbeiterFilter === 'AKTIV') return m.aktiv !== false;
+        if (mitarbeiterFilter === 'INAKTIV') return m.aktiv === false;
+        return true;
+    });
+
+    const handleResetMonatsabschluss = async (bereitsBestaetigt = false) => {
+        if (!selectedMitarbeiter) return;
+        if (!bereitsBestaetigt) {
+            const ok = await bestaetige({
+                title: 'Monatsabschluss zurücksetzen?',
+                message: 'Der abgeschlossene Monat wird wieder zur Bearbeitung freigegeben. Das wird im Abschlussverlauf festgehalten.',
+                confirmLabel: 'Zurücksetzen',
+                variant: 'warning',
+            });
+            if (!ok) return;
+        }
+        setResettingAbschluss(true);
+        try {
+            const res = await fetch(`/api/zeitverwaltung/monatsabschluesse/${selectedMitarbeiter}/${jahr}/${monat}/oeffnen`, {
+                method: 'POST'
+            });
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || 'Monatsabschluss konnte nicht zurückgesetzt werden.');
+            }
+            toastRef.current.success('Monatsabschluss wurde zurückgesetzt. Zeiten können wieder bearbeitet werden.');
+            window.dispatchEvent(new Event('notifications:refresh'));
+            setAbschlussRevision(v => v + 1);
+            await loadKalender();
+            setShowClosedMonthDialog(false);
+            setIsReadOnlyDayModal(false);
+            if (pendingDayForModal) {
+                setSelectedDay(pendingDayForModal);
+                setPendingDayForModal(null);
+            }
+        } catch (err) {
+            toastRef.current.error(err instanceof Error ? err.message : 'Fehler beim Zurücksetzen des Monatsabschlusses.');
+        } finally {
+            setResettingAbschluss(false);
+        }
+    };
 
     useEffect(() => {
         if (!selectedMitarbeiter) return;
@@ -160,7 +217,13 @@ export default function ZeiterfassungKalender() {
                 const arr = Array.isArray(data) ? data : [];
                 setMitarbeiter(arr);
                 if (arr.length > 0 && !selectedMitarbeiter) {
-                    setSelectedMitarbeiter(arr[0].id);
+                    const firstAktiv = arr.find(m => m.aktiv !== false) || arr[0];
+                    setSelectedMitarbeiter(firstAktiv.id);
+                } else if (selectedMitarbeiter) {
+                    const selected = arr.find(m => m.id === selectedMitarbeiter);
+                    if (selected && selected.aktiv === false) {
+                        setMitarbeiterFilter('INAKTIV');
+                    }
                 }
             });
 
@@ -252,7 +315,13 @@ export default function ZeiterfassungKalender() {
     };
 
     const handleDayDoubleClick = (tag: KalenderTag) => {
-        setSelectedDay(tag);
+        if (isMonatFestgeschrieben) {
+            setPendingDayForModal(tag);
+            setShowClosedMonthDialog(true);
+        } else {
+            setIsReadOnlyDayModal(false);
+            setSelectedDay(tag);
+        }
     };
 
     const handleEditorClose = () => {
@@ -263,6 +332,11 @@ export default function ZeiterfassungKalender() {
     // Kontextmenü Handler
     const handleContextMenu = (e: React.MouseEvent, tag: KalenderTag) => {
         e.preventDefault();
+        if (isMonatFestgeschrieben) {
+            setPendingDayForModal(tag);
+            setShowClosedMonthDialog(true);
+            return;
+        }
 
         // Position berechnen und Grenzen prüfen
         let x = e.clientX;
@@ -444,15 +518,41 @@ export default function ZeiterfassungKalender() {
             <div className="space-y-6">
                 {/* Controls */}
                 <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                    <div className="w-48">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Mitarbeiter-Filter</label>
+                        <Select
+                            aria-label="Mitarbeiter-Filter"
+                            value={mitarbeiterFilter}
+                            onChange={(val) => {
+                                const neuerFilter = val as 'AKTIV' | 'INAKTIV' | 'ALLE';
+                                setMitarbeiterFilter(neuerFilter);
+                                const neuGefiltert = mitarbeiter.filter(m => {
+                                    if (neuerFilter === 'AKTIV') return m.aktiv !== false;
+                                    if (neuerFilter === 'INAKTIV') return m.aktiv === false;
+                                    return true;
+                                });
+                                if (neuGefiltert.length > 0 && !neuGefiltert.some(m => m.id === selectedMitarbeiter)) {
+                                    setSelectedMitarbeiter(neuGefiltert[0].id);
+                                }
+                            }}
+                            options={[
+                                { value: 'AKTIV', label: 'Aktive Mitarbeiter' },
+                                { value: 'INAKTIV', label: 'Nicht aktive Mitarbeiter' },
+                                { value: 'ALLE', label: 'Alle Mitarbeiter' }
+                            ]}
+                        />
+                    </div>
+
                     <div className="min-w-64">
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Mitarbeiter</label>
                         <Select
+                            aria-label="Mitarbeiter"
                             value={selectedMitarbeiter?.toString() || ''}
                             onChange={(val) => {
                                 const id = Number(val);
                                 setSelectedMitarbeiter(id);
                             }}
-                            options={mitarbeiter.map(m => ({ value: m.id.toString(), label: `${m.vorname} ${m.nachname}` }))}
+                            options={gefilterteMitarbeiter.map(m => ({ value: m.id.toString(), label: `${m.vorname} ${m.nachname}${m.aktiv === false ? ' (inaktiv)' : ''}${m.istGeschaeftsfuehrer ? ' (Geschäftsführung)' : ''}` }))}
                             placeholder="Mitarbeiter wählen"
                         />
                     </div>
@@ -520,23 +620,25 @@ export default function ZeiterfassungKalender() {
                         </div>
 
                         {/* Zeitkonto-Korrekturen Button */}
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">&nbsp;</label>
-                            <Button
-                                onClick={() => setShowKorrekturenModal(true)}
-                                variant="outline"
-                                size="sm"
-                                className="border-rose-200 text-rose-700 hover:bg-rose-50"
-                                disabled={!selectedMitarbeiter}
-                            >
-                                <Calculator className="w-4 h-4 mr-1" />
-                                Korrekturen
-                            </Button>
-                        </div>
+                        {!istGeschaeftsfuehrer && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">&nbsp;</label>
+                                <Button
+                                    onClick={() => setShowKorrekturenModal(true)}
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                                    disabled={!selectedMitarbeiter}
+                                >
+                                    <Calculator className="w-4 h-4 mr-1" />
+                                    Korrekturen
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {selectedMitarbeiter && <section aria-label="Monatsabschluss" className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                {selectedMitarbeiter && !istGeschaeftsfuehrer && <section aria-label="Monatsabschluss" className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="min-w-0 flex-1">
                             <h2 className="flex items-center gap-2 font-semibold text-slate-900">
@@ -571,47 +673,62 @@ export default function ZeiterfassungKalender() {
                 {/* Summary Cards */}
                 {kalenderData && (
                     <>
-                        {/* Monats-Übersicht (bisherige Karten) */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                                        <Clock className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-slate-500 font-medium">Soll-Stunden</p>
-                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.sollStunden : kalenderData.sollStundenMonat).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                        {/* Monats-Übersicht */}
+                        {istGeschaeftsfuehrer ? (
+                            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm max-w-sm">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
                                         <Briefcase className="w-5 h-5" />
                                     </div>
                                     <div>
-                                        <p className="text-sm text-slate-500 font-medium">Ist-Stunden</p>
-                                        <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.gesamtIst : kalenderData.istStundenMonat).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
+                                        <p className="text-sm text-slate-500 font-medium">Erfasste Arbeitszeit ({MONATE[monat]})</p>
+                                        <p className="text-xl font-bold text-slate-900">{kalenderData.istStundenMonat.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">Projektbezogene Zeiterfassung ohne Arbeitszeitkonto</p>
                                     </div>
                                 </div>
                             </div>
-                            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                                <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-lg ${monatsDifferenz >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-                                        <BarChart2 className="w-5 h-5" />
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                                            <Clock className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-slate-500 font-medium">Soll-Stunden</p>
+                                            <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.sollStunden : kalenderData.sollStundenMonat).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="text-sm text-slate-500 font-medium">Differenz</p>
-                                        <p className={`text-xl font-bold ${monatsDifferenz >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {monatsDifferenz >= 0 ? '+' : ''}{monatsDifferenz.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
-                                        </p>
+                                </div>
+                                <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                                            <Briefcase className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-slate-500 font-medium">Ist-Stunden</p>
+                                            <p className="text-xl font-bold text-slate-900">{(aktuellerAbschluss?.festgeschrieben ? aktuellerAbschluss.gesamtIst : kalenderData.istStundenMonat).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-lg ${monatsDifferenz >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                                            <BarChart2 className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-slate-500 font-medium">Differenz</p>
+                                            <p className={`text-xl font-bold ${monatsDifferenz >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                {monatsDifferenz >= 0 ? '+' : ''}{monatsDifferenz.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
 
-                        {/* Jahres-Übersicht (neue Karten) */}
-                        {jahresSaldo && (
+                        {/* Jahres-Übersicht */}
+                        {jahresSaldo && !istGeschaeftsfuehrer && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Gesamtstundenkonto */}
                                 <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-4 rounded-lg border border-slate-200 shadow-sm">
@@ -800,6 +917,8 @@ export default function ZeiterfassungKalender() {
                     projekte={projekte}
                     arbeitsgaenge={arbeitsgaenge}
                     onClose={handleEditorClose}
+                    readOnly={isReadOnlyDayModal}
+                    onMonatsabschlussZuruecksetzen={isReadOnlyDayModal ? () => handleResetMonatsabschluss() : undefined}
                 />
             )}
 
@@ -895,24 +1014,89 @@ export default function ZeiterfassungKalender() {
                                         <RefreshCw className="w-4 h-4 text-amber-500" />
                                         <span>Zeitausgleich {hasMultiSelection ? `(${selectedCount} Tage)` : ''}</span>
                                     </button>
-                                    <div className="border-t border-slate-100 my-1" />
-                                    <button
-                                        onClick={() => {
-                                            setShowKorrekturenModal(true);
-                                            handleCloseContextMenu();
-                                            clearSelection();
-                                        }}
-                                        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-rose-50 text-slate-700 hover:text-rose-700 transition-colors"
-                                    >
-                                        <Calculator className="w-4 h-4 text-rose-500" />
-                                        <span>Zeitkonto-Korrektur</span>
-                                    </button>
+                                                    {/* Zeitkonto-Korrektur */}
+                                    {!istGeschaeftsfuehrer && (
+                                        <button
+                                            onClick={() => {
+                                                setShowKorrekturenModal(true);
+                                                handleCloseContextMenu();
+                                                clearSelection();
+                                            }}
+                                            className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-rose-50 text-slate-700 hover:text-rose-700 transition-colors"
+                                        >
+                                            <Calculator className="w-4 h-4 text-rose-500" />
+                                            <span>Zeitkonto-Korrektur</span>
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>
                     </>
                 );
             })()}
+
+            {/* Monatsabschluss festgeschrieben Dialog */}
+            {showClosedMonthDialog && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div role="dialog" aria-modal="true" aria-label="Monatsabschluss ist festgeschrieben" className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="p-6">
+                            <div className="flex items-start gap-4">
+                                <div className="p-3 bg-amber-100 text-amber-700 rounded-xl flex-shrink-0">
+                                    <LockKeyhole className="w-6 h-6" />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-bold text-slate-900">Monatsabschluss ist festgeschrieben</h3>
+                                    <p className="text-sm text-slate-600 mt-2">
+                                        Der Monat <span className="font-semibold text-slate-800">{MONATE[monat]} {jahr}</span> ist für {aktuellerMitarbeiter?.vorname} {aktuellerMitarbeiter?.nachname} bereits abgeschlossen und festgeschrieben. In abgeschlossenen Monaten können keine Zeiten geändert oder neu erfasst werden.
+                                    </p>
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        Um Buchungen zu bearbeiten, setzen Sie bitte den Monatsabschluss zurück. Alternativ können Sie die bestehenden Buchungen im Nur-Lese-Modus ansehen.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-wrap items-center justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setShowClosedMonthDialog(false);
+                                    setPendingDayForModal(null);
+                                }}
+                                disabled={resettingAbschluss}
+                            >
+                                Abbrechen
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="border-slate-300 text-slate-700 hover:bg-slate-100"
+                                onClick={() => {
+                                    setShowClosedMonthDialog(false);
+                                    setIsReadOnlyDayModal(true);
+                                    if (pendingDayForModal) {
+                                        setSelectedDay(pendingDayForModal);
+                                        setPendingDayForModal(null);
+                                    }
+                                }}
+                                disabled={resettingAbschluss}
+                            >
+                                <Eye className="w-4 h-4 mr-1.5" />
+                                Nur ansehen
+                            </Button>
+                            <Button
+                                className="bg-rose-600 hover:bg-rose-700 text-white"
+                                onClick={() => handleResetMonatsabschluss(true)}
+                                disabled={resettingAbschluss}
+                            >
+                                {resettingAbschluss ? (
+                                    <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Wird zurückgesetzt…</>
+                                ) : (
+                                    <><LockOpen className="w-4 h-4 mr-1.5" />Monatsabschluss zurücksetzen</>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -932,13 +1116,17 @@ function DayEditorModal({
     mitarbeiterId,
     projekte,
     arbeitsgaenge,
-    onClose
+    onClose,
+    readOnly = false,
+    onMonatsabschlussZuruecksetzen
 }: {
     tag: KalenderTag;
     mitarbeiterId: number;
     projekte: Projekt[];
     arbeitsgaenge: Arbeitsgang[];
     onClose: () => void;
+    readOnly?: boolean;
+    onMonatsabschlussZuruecksetzen?: () => Promise<void>;
 }) {
     const toast = useToast();
     const confirmDialog = useConfirm();
@@ -1485,6 +1673,26 @@ function DayEditorModal({
                         </button>
                     </div>
 
+                    {readOnly && (
+                        <div className="mx-6 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-3 text-amber-800 text-sm">
+                            <div className="flex items-center gap-2">
+                                <LockKeyhole className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                                <span>Dieser Monat ist abgeschlossen (schreibgeschützt). Keine Buchungsänderungen möglich.</span>
+                            </div>
+                            {onMonatsabschlussZuruecksetzen && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-amber-300 text-amber-900 hover:bg-amber-100 flex-shrink-0"
+                                    onClick={onMonatsabschlussZuruecksetzen}
+                                >
+                                    <LockOpen className="w-4 h-4 mr-1.5" />
+                                    Monatsabschluss zurücksetzen
+                                </Button>
+                            )}
+                        </div>
+                    )}
+
                     {/* Content - Scrollable */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-4">
                         {buchungen.length === 0 ? (
@@ -1525,13 +1733,15 @@ function DayEditorModal({
                                                     </p>
                                                     {b.notiz && <p className="text-xs text-slate-400 mt-0.5 truncate" title={b.notiz}>{b.notiz}</p>}
                                                 </div>
-                                                <button
-                                                    onClick={() => handleDelete(b)}
-                                                    className="p-2 bg-white/60 text-slate-400 rounded hover:bg-white hover:text-red-500 transition-colors flex-shrink-0"
-                                                    title="Entfernen"
-                                                >
-                                                    <Trash2 className="w-5 h-5" />
-                                                </button>
+                                                {!readOnly && (
+                                                    <button
+                                                        onClick={() => handleDelete(b)}
+                                                        className="p-2 bg-white/60 text-slate-400 rounded hover:bg-white hover:text-red-500 transition-colors flex-shrink-0"
+                                                        title="Entfernen"
+                                                    >
+                                                        <Trash2 className="w-5 h-5" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     );
@@ -1558,17 +1768,19 @@ function DayEditorModal({
                                                 <div className="flex-1">
                                                     <label className="block text-xs font-semibold text-slate-500 mb-1">Von</label>
                                                     <TimeInput required aria-label={`Von Buchung ${index + 1}`}
-                                                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                                                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-500"
                                                         value={zeitEntwurf(b, 'startZeit')}
                                                         onChange={value => handleUpdateBooking(b.id, 'startZeit', value)}
+                                                        disabled={readOnly}
                                                     />
                                                 </div>
                                                 <div className="flex-1">
                                                     <label className="block text-xs font-semibold text-slate-500 mb-1">Bis</label>
                                                     <TimeInput aria-label={`Bis Buchung ${index + 1}`}
-                                                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                                                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-500"
                                                         value={zeitEntwurf(b, 'endeZeit')}
                                                         onChange={value => handleUpdateBooking(b.id, 'endeZeit', value)}
+                                                        disabled={readOnly}
                                                     />
                                                 </div>
                                                 <div className="flex-1">
@@ -1599,7 +1811,8 @@ function DayEditorModal({
                                                         <button
                                                             type="button"
                                                             onClick={() => setProjektModalForBuchungId(b.id)}
-                                                            className="w-full flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 text-left hover:border-rose-400 hover:bg-rose-50 transition-colors group"
+                                                            disabled={readOnly}
+                                                            className="w-full flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 text-left hover:border-rose-400 hover:bg-rose-50 transition-colors group disabled:opacity-60 disabled:hover:bg-white disabled:hover:border-slate-300"
                                                         >
                                                             <Search className="w-4 h-4 text-slate-400 group-hover:text-rose-500 flex-shrink-0" />
                                                             <span className="flex-1 truncate text-sm">
@@ -1623,6 +1836,7 @@ function DayEditorModal({
                                                             options={arbeitsgaenge.map(a => ({ value: a.id.toString(), label: a.beschreibung }))}
                                                             placeholder="Tätigkeit wählen..."
                                                             className="w-full"
+                                                            disabled={readOnly}
                                                         />
                                                     </div>
 
@@ -1632,7 +1846,8 @@ function DayEditorModal({
                                                         <button
                                                             type="button"
                                                             onClick={() => setKategorieModalForBuchungId(b.id)}
-                                                            className="w-full flex items-center gap-2 px-3 py-1.5 border border-slate-300 rounded-md text-left text-sm hover:bg-slate-50 focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                                                            disabled={readOnly}
+                                                            className="w-full flex items-center gap-2 px-3 py-1.5 border border-slate-300 rounded-md text-left text-sm hover:bg-slate-50 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:opacity-60 disabled:hover:bg-white"
                                                         >
                                                             <Folder className="w-4 h-4 text-rose-500 flex-shrink-0" />
                                                             <span className={b.produktkategorieName ? 'text-slate-800' : 'text-slate-400'}>
@@ -1658,22 +1873,25 @@ function DayEditorModal({
                                                 <input
                                                     type="text"
                                                     placeholder="Optionale Notiz zur Tätigkeit..."
-                                                    className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                                                    className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-500"
                                                     value={b.notiz || ''}
                                                     onChange={e => handleUpdateBooking(b.id, 'notiz', e.target.value)}
+                                                    disabled={readOnly}
                                                 />
                                             </div>
                                         </div>
 
                                         {/* Actions */}
                                         <div className="col-span-1 flex flex-col gap-2 pt-6">
-                                            <button
-                                                onClick={() => handleDelete(b)}
-                                                className="p-2 bg-slate-50 text-slate-400 rounded hover:bg-slate-100 hover:text-red-500 transition-colors"
-                                                title="Löschen"
-                                            >
-                                                <Trash2 className="w-5 h-5" />
-                                            </button>
+                                            {!readOnly && (
+                                                <button
+                                                    onClick={() => handleDelete(b)}
+                                                    className="p-2 bg-slate-50 text-slate-400 rounded hover:bg-slate-100 hover:text-red-500 transition-colors"
+                                                    title="Löschen"
+                                                >
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -1682,50 +1900,61 @@ function DayEditorModal({
                         )}
 
                         {/* Add Button Area */}
-                        <div className="pt-4 flex flex-wrap justify-center gap-3">
-                            <Button onClick={handleAddBooking} variant="outline" className="px-4">
-                                <Plus className="w-5 h-5 mr-1" /> Neue Buchung
-                            </Button>
-                            <Button onClick={handleAddPause} variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-50 px-4">
-                                <Plus className="w-5 h-5 mr-1" /> Pause
-                            </Button>
-                            <Button onClick={() => handleAddAbwesenheit('URLAUB')} variant="outline" className="border-green-400 text-green-700 hover:bg-green-50 px-4">
-                                <Plus className="w-5 h-5 mr-1" /> Urlaub
-                            </Button>
-                            <Button onClick={() => handleAddAbwesenheit('KRANKHEIT')} variant="outline" className="border-red-400 text-red-700 hover:bg-red-50 px-4">
-                                <Plus className="w-5 h-5 mr-1" /> Krankheit
-                            </Button>
-                            <Button onClick={() => handleAddAbwesenheit('ZEITAUSGLEICH')} variant="outline" className="border-amber-500 text-amber-800 hover:bg-amber-50 px-4">
-                                <Plus className="w-5 h-5 mr-1" /> Zeitausgleich
-                            </Button>
-                        </div>
+                        {!readOnly && (
+                            <div className="pt-4 flex flex-wrap justify-center gap-3">
+                                <Button onClick={handleAddBooking} variant="outline" className="px-4">
+                                    <Plus className="w-5 h-5 mr-1" /> Neue Buchung
+                                </Button>
+                                <Button onClick={handleAddPause} variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-50 px-4">
+                                    <Plus className="w-5 h-5 mr-1" /> Pause
+                                </Button>
+                                <Button onClick={() => handleAddAbwesenheit('URLAUB')} variant="outline" className="border-green-400 text-green-700 hover:bg-green-50 px-4">
+                                    <Plus className="w-5 h-5 mr-1" /> Urlaub
+                                </Button>
+                                <Button onClick={() => handleAddAbwesenheit('KRANKHEIT')} variant="outline" className="border-red-400 text-red-700 hover:bg-red-50 px-4">
+                                    <Plus className="w-5 h-5 mr-1" /> Krankheit
+                                </Button>
+                                <Button onClick={() => handleAddAbwesenheit('ZEITAUSGLEICH')} variant="outline" className="border-amber-500 text-amber-800 hover:bg-amber-50 px-4">
+                                    <Plus className="w-5 h-5 mr-1" /> Zeitausgleich
+                                </Button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Footer with Keyboard Hints */}
                     <div className="bg-slate-50 p-4 border-t border-slate-200 flex items-center justify-between">
-                        <div className="text-xs text-slate-400 flex items-center gap-4">
-                            {clipboard && <span className="bg-green-100 text-green-700 px-2 py-1 rounded">✓ Kopiert</span>}
-                            <span title="Zeile kopieren"><kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-mono">Strg+C</kbd> Kopieren</span>
-                            <span title="Einfügen"><kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-mono">Strg+V</kbd> Einfügen</span>
-                            <span title="Duplizieren mit anderer Tätigkeit"><kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-mono">Strg+D</kbd> Duplizieren</span>
-                        </div>
+                        {!readOnly ? (
+                            <div className="text-xs text-slate-400 flex items-center gap-4">
+                                {clipboard && <span className="bg-green-100 text-green-700 px-2 py-1 rounded">✓ Kopiert</span>}
+                                <span title="Zeile kopieren"><kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-mono">Strg+C</kbd> Kopieren</span>
+                                <span title="Einfügen"><kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-mono">Strg+V</kbd> Einfügen</span>
+                                <span title="Duplizieren mit anderer Tätigkeit"><kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-mono">Strg+D</kbd> Duplizieren</span>
+                            </div>
+                        ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 bg-amber-100 px-2.5 py-1 rounded-md">
+                                <LockKeyhole className="w-3.5 h-3.5" />
+                                Schreibgeschützt (abgeschlossener Monat)
+                            </span>
+                        )}
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={onClose} size="default">
                                 Schließen
                             </Button>
-                            <Button
-                                onClick={handleSaveAll}
-                                disabled={saving || buchungen.length === 0}
-                                className="bg-rose-600 hover:bg-rose-700 text-white"
-                            >
-                                {saving ? (
-                                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Speichern...</>
-                                ) : saveSuccess ? (
-                                    <><Save className="w-4 h-4 mr-2" /> Gespeichert!</>
-                                ) : (
-                                    <><Save className="w-4 h-4 mr-2" /> Alle Speichern</>
-                                )}
-                            </Button>
+                            {!readOnly && (
+                                <Button
+                                    onClick={handleSaveAll}
+                                    disabled={saving || buchungen.length === 0}
+                                    className="bg-rose-600 hover:bg-rose-700 text-white"
+                                >
+                                    {saving ? (
+                                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Speichern...</>
+                                    ) : saveSuccess ? (
+                                        <><Save className="w-4 h-4 mr-2" /> Gespeichert!</>
+                                    ) : (
+                                        <><Save className="w-4 h-4 mr-2" /> Alle Speichern</>
+                                    )}
+                                </Button>
+                            )}
                         </div>
                     </div>
                 </div>
