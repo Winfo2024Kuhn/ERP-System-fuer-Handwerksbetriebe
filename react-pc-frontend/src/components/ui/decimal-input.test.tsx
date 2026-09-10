@@ -27,12 +27,20 @@ describe('DecimalInput', () => {
         const user = userEvent.setup();
         function NachgeladeneNull() {
             const [value, setValue] = useState('');
-            useEffect(() => { setValue('0,00'); }, []);
-            return <DecimalInput label="Stunden" value={value} onChange={setValue} autoFocus />;
+            const [geladen, setGeladen] = useState(false);
+            useEffect(() => {
+                const timer = setTimeout(() => { setValue('0,00'); setGeladen(true); }, 0);
+                return () => clearTimeout(timer);
+            }, []);
+            return <>
+                <DecimalInput label="Stunden" value={value} onChange={setValue} autoFocus />
+                {geladen && <span>geladen</span>}
+            </>;
         }
         render(<NachgeladeneNull />);
         const field = screen.getByRole('textbox', { name: 'Stunden' });
         expect(field).toHaveFocus();
+        await screen.findByText('geladen');
         expect(field).toHaveValue('');
 
         // Eine selbst getippte 0 ist der Anfang von "0,5" und darf nicht verschwinden.
