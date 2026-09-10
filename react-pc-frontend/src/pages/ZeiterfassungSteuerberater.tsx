@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Loader2, Check, BarChart3 } from 'lucide-react';
+import { Mail, Loader2, Check, BarChart3, AlertCircle, Lock, Clock, ExternalLink } from 'lucide-react';
 import { Select } from '../components/ui/select-custom';
 import { Button } from '../components/ui/button';
 import { SteuerberaterEmailModal } from '../components/SteuerberaterEmailModal';
@@ -15,6 +15,7 @@ interface MitarbeiterStunden {
     feiertage: number;
     krankheit: number;
     fortbildung: number;
+    festgeschrieben: boolean;
 }
 
 export default function ZeiterfassungSteuerberater() {
@@ -68,6 +69,31 @@ export default function ZeiterfassungSteuerberater() {
         setLoading(true);
         const results: MitarbeiterStunden[] = [];
 
+        // Monatsabschluss-Status für den Monat laden
+        const statusMap = new Map<number, boolean>();
+        try {
+            const statusRes = await fetch(
+                `/api/zeitverwaltung/monatsabschluesse/uebersicht?jahr=${jahr}&monat=${monat}&status=ALLE&size=100`
+            );
+            if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                if (Array.isArray(statusData.items)) {
+                    for (const item of statusData.items) {
+                        const id = item.referenz?.mitarbeiterId ?? item.mitarbeiterId;
+                        if (id != null) statusMap.set(Number(id), !!item.festgeschrieben);
+                    }
+                }
+                if (Array.isArray(statusData.auswahl)) {
+                    for (const item of statusData.auswahl) {
+                        const id = item.mitarbeiterId;
+                        if (id != null) statusMap.set(Number(id), !!item.festgeschrieben);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Fehler beim Laden des Monatsabschluss-Status:', e);
+        }
+
         for (const konto of zeitkonten) {
             const arbeitszeit = konto.aktuell?.arbeitszeit;
             if (!arbeitszeit) continue;
@@ -117,6 +143,7 @@ export default function ZeiterfassungSteuerberater() {
 
                 const tage = Array.isArray(data.tage) ? data.tage : [];
                 const tagessollWoche = tage.length === 0 ? 0 : Math.round((tage.reduce((summe: number, tag: { datum: string }) => summe + tagessollAm(konto, tag.datum), 0) / tage.length) * 10) / 10;
+                const isFestgeschrieben = statusMap.get(konto.mitarbeiterId) ?? Boolean(data?.monatsabschluss?.festgeschrieben);
                 results.push({
                     mitarbeiterId: konto.mitarbeiterId,
                     mitarbeiterName: konto.mitarbeiterName,
@@ -127,9 +154,11 @@ export default function ZeiterfassungSteuerberater() {
                     feiertage: Math.round(feiertage * 10) / 10,
                     krankheit: Math.round(krankheit * 10) / 10,
                     fortbildung: Math.round(fortbildung * 10) / 10,
+                    festgeschrieben: isFestgeschrieben,
                 });
             } catch (err) {
                 console.error(`Fehler beim Laden der Daten für Mitarbeiter ${konto.mitarbeiterId}:`, err);
+                const isFestgeschrieben = statusMap.get(konto.mitarbeiterId) ?? false;
                 results.push({
                     mitarbeiterId: konto.mitarbeiterId,
                     mitarbeiterName: konto.mitarbeiterName,
@@ -140,6 +169,7 @@ export default function ZeiterfassungSteuerberater() {
                     feiertage: 0,
                     krankheit: 0,
                     fortbildung: 0,
+                    festgeschrieben: isFestgeschrieben,
                 });
             }
         }
@@ -173,6 +203,7 @@ export default function ZeiterfassungSteuerberater() {
     };
 
     const selectedDaten = stundenDaten.filter(m => selectedMitarbeiter.includes(m.mitarbeiterId));
+    const hasOpenSelected = selectedDaten.some(m => !m.festgeschrieben);
 
     return (
         <div className="p-6 max-w-7xl mx-auto">
@@ -214,15 +245,41 @@ export default function ZeiterfassungSteuerberater() {
                     </Button>
 
                     {stundenDaten.length > 0 && selectedMitarbeiter.length > 0 && (
-                        <Button
-                            onClick={() => setShowEmailModal(true)}
-                            className="bg-rose-600 hover:bg-rose-700 text-white ml-auto"
-                        >
-                            <Mail className="w-4 h-4 mr-2" />
-                            Per E-Mail senden ({selectedMitarbeiter.length})
-                        </Button>
+                        <div className="ml-auto" title={hasOpenSelected ? 'Übermittlung erst möglich, wenn alle ausgewählten Mitarbeiter für diesen Monat abgeschlossen sind.' : undefined}>
+                            <Button
+                                onClick={() => setShowEmailModal(true)}
+                                className="bg-rose-600 hover:bg-rose-700 text-white disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
+                                disabled={hasOpenSelected}
+                            >
+                                <Mail className="w-4 h-4 mr-2" />
+                                Per E-Mail senden ({selectedMitarbeiter.length})
+                            </Button>
+                        </div>
                     )}
                 </div>
+
+                {/* Alert banner when any selected employee is not festgeschrieben */}
+                {stundenDaten.length > 0 && hasOpenSelected && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-3">
+                            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-semibold text-amber-900">
+                                    Monat {getMonthName(monat)} {jahr} ist noch nicht abgeschlossen
+                                </p>
+                                <p className="text-xs text-amber-700 mt-0.5">
+                                    An den Steuerberater dürfen erst Stunden übermittelt werden, wenn der Monat für alle ausgewählten Mitarbeiter abgeschlossen und festgeschrieben ist.
+                                </p>
+                            </div>
+                        </div>
+                        <a
+                            href={`/monatsabschluss?jahr=${jahr}&monat=${monat}`}
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-white border border-rose-300 rounded-md hover:bg-rose-50 flex-shrink-0 transition-colors shadow-sm"
+                        >
+                            Zum Monatsabschluss <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                    </div>
+                )}
 
                 {/* Results Table */}
                 {loading || loadingZeitkonten ? (
@@ -257,6 +314,7 @@ export default function ZeiterfassungSteuerberater() {
                                     </th>
                                     <th className="text-left p-3 font-medium text-slate-600">Nr.</th>
                                     <th className="text-left p-3 font-medium text-slate-600">Name</th>
+                                    <th className="text-center p-3 font-medium text-slate-600">Status</th>
                                     <th className="text-center p-3 font-medium text-slate-600">Tagessoll Ø</th>
                                     <th className="text-center p-3 font-medium text-slate-600">Sollstunden</th>
                                     <th className="text-center p-3 font-medium text-slate-600">Ist-Stunden</th>
@@ -289,6 +347,17 @@ export default function ZeiterfassungSteuerberater() {
                                         </td>
                                         <td className="p-3 text-slate-500">{index + 1}</td>
                                         <td className="p-3 font-medium">{m.mitarbeiterName}</td>
+                                        <td className="p-3 text-center whitespace-nowrap">
+                                            {m.festgeschrieben ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                                    <Lock className="w-3 h-3" /> Abgeschlossen
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                                                    <Clock className="w-3 h-3" /> Noch offen
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="p-3 text-center">{m.tagessollWoche}</td>
                                         <td className="p-3 text-center">{m.sollstundenMonat}</td>
                                         <td className="p-3 text-center font-medium">{m.arbeitsstunden}</td>

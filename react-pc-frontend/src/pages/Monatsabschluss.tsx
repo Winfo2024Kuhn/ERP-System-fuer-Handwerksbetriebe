@@ -6,8 +6,9 @@ import { Select } from '../components/ui/select-custom';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { DatevBereich } from '../features/monatsabschluss/DatevBereich';
+import { JahresvergleichCharts } from '../features/monatsabschluss/JahresvergleichCharts';
 import { api } from '../features/monatsabschluss/api';
-import type { Filter, AuswahlStand, Referenz, Uebersicht, Vergleichsmonat, Einzelergebnis, Verlauf, Kennzahlen, Zeile } from '../features/monatsabschluss/types';
+import type { Filter, AuswahlStand, Referenz, Uebersicht, Einzelergebnis, Verlauf, Kennzahlen, Zeile, Jahresvergleich } from '../features/monatsabschluss/types';
 const monate = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const felder: [keyof Kennzahlen, string][] = [['istStunden', 'Arbeit'], ['abwesenheitsStunden', 'Abwesenheit'], ['feiertagsStunden', 'Feiertage'], ['korrekturStunden', 'Korrektur'], ['gesamtIst', 'Gesamt'], ['sollStunden', 'Soll'], ['differenz', 'Differenz']];
 const zahl = (value: number) => value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,7 +33,7 @@ export default function Monatsabschluss() {
     const [mitarbeiter, setMitarbeiter] = useState<{ id: number; name: string }[]>([]);
     const [abteilungen, setAbteilungen] = useState<{ id: number; name: string }[]>([]);
     const [daten, setDaten] = useState<Uebersicht | null>(null);
-    const [vergleich, setVergleich] = useState<Vergleichsmonat[]>([]);
+    const [jahresvergleich, setJahresvergleich] = useState<Jahresvergleich | null>(null);
     const [auswahl, setAuswahl] = useState<AuswahlStand[]>([]);
     const [ergebnisse, setErgebnisse] = useState<Einzelergebnis[]>([]);
     const [laedt, setLaedt] = useState(false);
@@ -67,12 +68,15 @@ export default function Monatsabschluss() {
     useEffect(() => {
         if (!recht) return;
         const controller = new AbortController(); setLaedt(true); setFehler('');
-        Promise.all([api.ladeUebersicht(filter, controller.signal), api.ladeVergleich(filter, controller.signal)]).then(([uebersicht, monate]) => {
+        Promise.all([
+            api.ladeUebersicht(filter, controller.signal),
+            api.ladeJahresvergleich({ jahr: filter.jahr, mitarbeiterId: filter.mitarbeiterId, abteilungId: filter.abteilungId }, controller.signal)
+        ]).then(([uebersicht, jv]) => {
             if (controller.signal.aborted) return;
             if (uebersicht.totalElements > 500 || uebersicht.auswahl.length > 500) throw new Error('Bitte die Auswahl auf höchstens 500 Mitarbeiter eingrenzen.');
-            setDaten(uebersicht); setVergleich(monate);
+            setDaten(uebersicht); setJahresvergleich(jv);
             setAuswahl(current => current.map(stand => uebersicht.auswahl.find(s => key(s) === key(stand)) ?? stand));
-        }).catch(err => { if (!controller.signal.aborted) { setDaten(null); setVergleich([]); setFehler(meldung(err)); toastRef.current.error(meldung(err)); } })
+        }).catch(err => { if (!controller.signal.aborted) { setDaten(null); setJahresvergleich(null); setFehler(meldung(err)); toastRef.current.error(meldung(err)); } })
             .finally(() => { if (!controller.signal.aborted) setLaedt(false); });
         return () => controller.abort();
     }, [recht, filter, revision]);
@@ -84,7 +88,7 @@ export default function Monatsabschluss() {
             .catch(err => { if (!controller.signal.aborted) { setVerlaufFehler(meldung(err)); toastRef.current.error(meldung(err)); } });
         return () => controller.abort();
     }, [verlaufZeile]);
-    function aendereFilter(next: Partial<Filter>) { generation.current++; setAuswahl([]); setErgebnisse([]); setVerlaufZeile(null); setDaten(null); setVergleich([]); setFilter(prev => ({ ...prev, ...next, page: 0 })); }
+    function aendereFilter(next: Partial<Filter>) { generation.current++; setAuswahl([]); setErgebnisse([]); setVerlaufZeile(null); setDaten(null); setJahresvergleich(null); setFilter(prev => ({ ...prev, ...next, page: 0 })); }
     function waehle(stand: AuswahlStand) { generation.current++; setAuswahl(prev => prev.some(s => key(s) === key(stand)) ? prev.filter(s => key(s) !== key(stand)) : [...prev, stand]); }
     async function abschliessen() {
         if (busyRef.current || !recht || !vergangen || laedt || !daten || !auswahl.length) return;
@@ -167,7 +171,7 @@ export default function Monatsabschluss() {
         </section>}
         {ergebnisse.length > 0 && <section aria-label="Abschlussergebnisse" className="rounded-lg border border-slate-200 bg-white p-4"><h2 className="font-semibold text-lg mb-2">Ergebnis des Abschlusses</h2><ul className="max-h-64 overflow-auto space-y-2">{ergebnisse.map(e => <li key={key(e.referenz)} className={e.status === 'FEHLGESCHLAGEN' ? 'text-rose-700' : 'text-slate-700'}>{mitarbeiter.find(m => m.id === e.referenz.mitarbeiterId)?.name ?? `Mitarbeiter ${e.referenz.mitarbeiterId}`} · {monate[e.referenz.monat - 1]} {e.referenz.jahr}: {e.meldung}</li>)}</ul></section>}
 
-        {vergleich.length > 0 && !laedt && <section className="rounded-lg border border-slate-200 bg-white p-4"><h2 className="text-lg font-semibold">Die letzten sechs Monate</h2><p className="text-sm text-slate-500 mt-1 mb-4">Für die gewählten Mitarbeiter und Abteilungen, unabhängig vom Statusfilter. Offene Monate sind vorläufig.</p><table className="w-full text-sm"><thead><tr className="border-b text-left text-slate-600"><th className="py-2">Monat</th><th>Stand</th>{felder.map(([id, name]) => <th key={id} className="text-right">{name}</th>)}</tr></thead><tbody>{vergleich.map(m => <tr key={`${m.jahr}-${m.monat}`} className="border-b border-slate-100"><th className="text-left font-medium py-3">{monate[m.monat - 1]} {m.jahr}</th><td>{m.offen ? `${m.offen} offen · vorläufig` : 'Abgeschlossen'} · {m.abgeschlossen} abgeschlossen</td>{felder.map(([id]) => <td key={id} className="text-right tabular-nums">{zahl(m.summen[id])}</td>)}</tr>)}</tbody></table></section>}
+        <JahresvergleichCharts daten={jahresvergleich} jahr={filter.jahr} laedt={laedt} />
         </>}
     </div>;
 }

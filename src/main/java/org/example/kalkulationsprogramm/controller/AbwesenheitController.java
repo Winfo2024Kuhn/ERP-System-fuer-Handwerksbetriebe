@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +42,9 @@ public class AbwesenheitController {
             LocalDate datum = LocalDate.parse((String) body.get("datum"));
             AbwesenheitsTyp typ = AbwesenheitsTyp.valueOf((String) body.get("typ"));
             boolean halberTag = body.get("halberTag") != null && (Boolean) body.get("halberTag");
+            BigDecimal stunden = body.get("stunden") != null ? new BigDecimal(body.get("stunden").toString()) : null;
 
-            Abwesenheit abwesenheit = abwesenheitService.bucheAbwesenheit(mitarbeiterId, datum, typ, halberTag);
+            Abwesenheit abwesenheit = abwesenheitService.bucheAbwesenheit(mitarbeiterId, datum, typ, halberTag, stunden);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "id", abwesenheit.getId(),

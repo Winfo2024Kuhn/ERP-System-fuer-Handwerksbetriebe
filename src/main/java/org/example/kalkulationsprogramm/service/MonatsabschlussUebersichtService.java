@@ -17,6 +17,7 @@ public class MonatsabschlussUebersichtService {
     private final MonatsabschlussUebersichtRepository repository;
     private final MonatsSaldoService salden;
     private final MonatsabschlussBerechtigungService berechtigung;
+    private final org.example.kalkulationsprogramm.repository.AbwesenheitRepository abwesenheitRepository;
     public Uebersicht lade(Filter f, Authentication auth) {
         berechtigung.verlangeAkteur(auth);
         if (f == null) throw ungueltig();
@@ -34,6 +35,48 @@ public class MonatsabschlussUebersichtService {
         var result=new ArrayList<Vergleichsmonat>();
         for(int i=0;i<6;i++) { var ym=start.plusMonths(i); var list=rows.get(i); int closed=(int)list.stream().filter(Zeile::festgeschrieben).count(); result.add(new Vergleichsmonat(ym.getYear(),ym.getMonthValue(),summe(list),list.size()-closed,closed)); }
         return List.copyOf(result);
+    }
+    public Jahresvergleich jahresvergleich(int jahr, Long mitarbeiterId, Long abteilungId, Authentication auth) {
+        berechtigung.verlangeAkteur(auth); validiere(jahr, 1, mitarbeiterId, abteilungId);
+        var rowsAktuell = zeilen(jahr, 12, mitarbeiterId, abteilungId, 12);
+        var rowsVorjahr = zeilen(jahr - 1, 12, mitarbeiterId, abteilungId, 12);
+        var startDatum = java.time.LocalDate.of(jahr - 1, 1, 1);
+        var endeDatum = java.time.LocalDate.of(jahr, 12, 31);
+        var startDT = startDatum.atStartOfDay();
+        var endeDT = endeDatum.atTime(23, 59, 59);
+        int vonYM = (jahr - 1) * 12 + 1;
+        int bisYM = jahr * 12 + 12;
+        var personen = repository.personen(mitarbeiterId, abteilungId, startDatum, endeDatum, startDT, endeDT, vonYM, bisYM, PageRequest.of(0, 501));
+        if (personen.size() > 500) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mehr als 500 Mitarbeiter. Bitte den Filter eingrenzen.");
+        var ids = personen.stream().map(MonatsabschlussUebersichtRepository.Person::getId).toList();
+        var urlaubMap = new HashMap<String, BigDecimal>();
+        var krankheitMap = new HashMap<String, BigDecimal>();
+        if (!ids.isEmpty()) {
+            var abwesenheiten = abwesenheitRepository.findByMitarbeiterIdInAndDatumBetween(ids, startDatum, endeDatum);
+            for (var a : abwesenheiten) {
+                if (a.getDatum() == null || a.getTyp() == null) continue;
+                String key = a.getDatum().getYear() + "-" + a.getDatum().getMonthValue();
+                BigDecimal tage = (a.getNotiz() != null && a.getNotiz().toLowerCase().contains("halb")) ? new BigDecimal("0.5") : BigDecimal.ONE;
+                if (a.getTyp() == org.example.kalkulationsprogramm.domain.AbwesenheitsTyp.URLAUB) {
+                    urlaubMap.merge(key, tage, BigDecimal::add);
+                } else if (a.getTyp() == org.example.kalkulationsprogramm.domain.AbwesenheitsTyp.KRANKHEIT) {
+                    krankheitMap.merge(key, tage, BigDecimal::add);
+                }
+            }
+        }
+        var aktuellList = new ArrayList<JahresvergleichMonat>();
+        for (int m = 1; m <= 12; m++) {
+            var sum = summe(rowsAktuell.get(m - 1));
+            String key = jahr + "-" + m;
+            aktuellList.add(new JahresvergleichMonat(m, sum.istStunden(), krankheitMap.getOrDefault(key, BigDecimal.ZERO), urlaubMap.getOrDefault(key, BigDecimal.ZERO)));
+        }
+        var vorjahrList = new ArrayList<JahresvergleichMonat>();
+        for (int m = 1; m <= 12; m++) {
+            var sum = summe(rowsVorjahr.get(m - 1));
+            String key = (jahr - 1) + "-" + m;
+            vorjahrList.add(new JahresvergleichMonat(m, sum.istStunden(), krankheitMap.getOrDefault(key, BigDecimal.ZERO), urlaubMap.getOrDefault(key, BigDecimal.ZERO)));
+        }
+        return new Jahresvergleich(jahr, List.copyOf(aktuellList), List.copyOf(vorjahrList));
     }
     private List<List<Zeile>> zeilen(int jahr,int monat,Long id,Long abteilung,int anzahl) {
         var ende=YearMonth.of(jahr,monat); var start=ende.minusMonths(anzahl-1);

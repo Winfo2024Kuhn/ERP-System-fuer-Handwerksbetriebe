@@ -16,3 +16,17 @@ export interface Konfiguration { version: number | null; ziel: string; beraterNr
 export interface ExportRequest { auswahl: Stand[]; konfigurationVersion: number | null }
 export interface Hinweis { referenz: Referenz | null; kategorie: string; stunden: number | null; meldung: string }
 export interface Vorpruefung { gueltig: boolean; fehler: Hinweis[]; ausschluesse: Hinweis[]; auswahl: Stand[]; konfigurationVersion: number | null }
+
+export interface JahresvergleichMonat {
+    monat: number;
+    arbeitsstunden: number;
+    krankheitstage: number;
+    urlaubstage: number;
+}
+
+export interface Jahresvergleich {
+    jahr: number;
+    aktuellesJahr: JahresvergleichMonat[];
+    vorjahrDaten: JahresvergleichMonat[];
+    vorjahr?: JahresvergleichMonat[];
+}

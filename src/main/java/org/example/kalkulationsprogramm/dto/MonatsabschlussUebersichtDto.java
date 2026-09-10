@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.dto;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonProperty;
 public final class MonatsabschlussUebersichtDto {
     private MonatsabschlussUebersichtDto() {}
     public record Referenz(Long mitarbeiterId, int jahr, int monat) {}
@@ -14,4 +15,15 @@ public final class MonatsabschlussUebersichtDto {
     public record SammelRequest(List<Referenz> auswahl) {}
     public record Einzelergebnis(Referenz referenz, String status, String meldung) {}
     public record SammelResponse(List<Einzelergebnis> ergebnisse) {}
+    public record JahresvergleichMonat(
+            int monat,
+            @JsonProperty("arbeitsstunden") BigDecimal istStunden,
+            @JsonProperty("krankheitstage") BigDecimal krankheitTage,
+            @JsonProperty("urlaubstage") BigDecimal urlaubTage
+    ) {}
+    public record Jahresvergleich(
+            int jahr,
+            List<JahresvergleichMonat> aktuellesJahr,
+            @JsonProperty("vorjahrDaten") List<JahresvergleichMonat> vorjahr
+    ) {}
 }

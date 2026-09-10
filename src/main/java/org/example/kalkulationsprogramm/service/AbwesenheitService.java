@@ -41,6 +41,11 @@ public class AbwesenheitService {
      */
     @Transactional
     public Abwesenheit bucheAbwesenheit(Long mitarbeiterId, LocalDate datum, AbwesenheitsTyp typ, boolean halberTag) {
+        return bucheAbwesenheit(mitarbeiterId, datum, typ, halberTag, null);
+    }
+
+    @Transactional
+    public Abwesenheit bucheAbwesenheit(Long mitarbeiterId, LocalDate datum, AbwesenheitsTyp typ, boolean halberTag, BigDecimal customStunden) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden: " + mitarbeiterId));
 
@@ -87,10 +92,18 @@ public class AbwesenheitService {
                     " hat dieser Mitarbeiter keine Sollstunden");
         }
 
-        // Bei halbem Tag nur 50% der Stunden
-        BigDecimal basisStunden = halberTag
-                ? sollStunden.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP)
-                : sollStunden;
+        // Bei individuellem Stundensatz (z. B. variabler Zeitausgleich) oder halbem Tag
+        BigDecimal basisStunden;
+        if (customStunden != null) {
+            if (customStunden.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Die Stunden müssen größer als 0 sein");
+            }
+            basisStunden = customStunden.setScale(2, RoundingMode.HALF_UP);
+        } else {
+            basisStunden = halberTag
+                    ? sollStunden.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP)
+                    : sollStunden;
+        }
 
         // KRANKHEIT: Bereits an diesem Tag gearbeitete Stunden vom Soll abziehen.
         // Szenario: Mitarbeiter arbeitet morgens, merkt dass es nicht geht, geht zum
@@ -125,6 +138,8 @@ public class AbwesenheitService {
             // Echten gearbeiteten Wert verwenden (nicht aus dem geclampten Saldo zurückrechnen).
             abwesenheit.setNotiz("Krankheit (abzgl. " + gearbeiteteStunden.stripTrailingZeros().toPlainString()
                     + " h gearbeitet)");
+        } else if (customStunden != null) {
+            abwesenheit.setNotiz(typ == AbwesenheitsTyp.ZEITAUSGLEICH ? "Zeitausgleich (" + customStunden.stripTrailingZeros().toPlainString() + " h)" : "Manuell gebucht (" + customStunden.stripTrailingZeros().toPlainString() + " h)");
         } else {
             abwesenheit.setNotiz(halberTag ? "Halber Tag (manuell gebucht)" : "Manuell gebucht");
         }

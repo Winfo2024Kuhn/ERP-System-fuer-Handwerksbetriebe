@@ -32,6 +32,12 @@ public interface AbwesenheitRepository extends JpaRepository<Abwesenheit, Long> 
                         @Param("von") LocalDate von,
                         @Param("bis") LocalDate bis);
 
+        @Query("SELECT a FROM Abwesenheit a WHERE a.mitarbeiter.id IN :mitarbeiterIds AND a.datum >= :von AND a.datum <= :bis ORDER BY a.datum ASC")
+        List<Abwesenheit> findByMitarbeiterIdInAndDatumBetween(
+                        @Param("mitarbeiterIds") Collection<Long> mitarbeiterIds,
+                        @Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis);
+
         /**
          * Findet Abwesenheiten eines Mitarbeiters nach Typ.
          */

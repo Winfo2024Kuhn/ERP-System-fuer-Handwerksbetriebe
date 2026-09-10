@@ -34,5 +34,31 @@ describe('ZeiterfassungSteuerberater Task 10', () => {
         const zeile = (await screen.findByText('Max Mustermann')).closest('tr')!;
         expect(within(zeile).getByText('8', { selector: 'td' })).toBeInTheDocument();
         expect(within(zeile).getByText('4', { selector: 'td' })).toBeInTheDocument();
+        expect(within(zeile).getByText('Noch offen')).toBeInTheDocument();
+        // Senden button is disabled because month is not abgeschlossen
+        expect(screen.getByRole('button', { name: /Per E-Mail senden/ })).toBeDisabled();
+        expect(screen.getByText(/Monat Mai 2026 ist noch nicht abgeschlossen/)).toBeInTheDocument();
+    });
+
+    it('aktiviert E-Mail-Senden wenn der Monat abgeschlossen ist', async () => {
+        fetchMock.mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url === '/api/zeitverwaltung/zeitkonten') return Promise.resolve(json([konto]));
+            if (url.includes('/api/zeitverwaltung/kalender')) return Promise.resolve(json({ sollStundenMonat: 0, tage: [] }));
+            if (url.includes('/api/zeitverwaltung/monatsabschluesse/uebersicht')) {
+                return Promise.resolve(json({
+                    items: [{ referenz: { mitarbeiterId: 7, jahr: 2026, monat: 5 }, festgeschrieben: true }],
+                    auswahl: [{ mitarbeiterId: 7, festgeschrieben: true }]
+                }));
+            }
+            return Promise.resolve(json({}));
+        });
+        const user = userEvent.setup();
+        render(<ZeiterfassungSteuerberater />);
+        await user.click(await screen.findByRole('button', { name: 'Vorschau laden' }));
+        const zeile = (await screen.findByText('Max Mustermann')).closest('tr')!;
+        expect(within(zeile).getByText('Abgeschlossen')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Per E-Mail senden/ })).not.toBeDisabled();
+        expect(screen.queryByText(/ist noch nicht abgeschlossen/)).not.toBeInTheDocument();
     });
 });

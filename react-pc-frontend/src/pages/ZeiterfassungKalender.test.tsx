@@ -187,6 +187,8 @@ describe('Tageserfassung und smarte Buchungslogik', () => {
         expect(zeitausgleichBtn).toBeVisible();
 
         fireEvent.click(urlaubBtn);
+        expect(await screen.findByRole('heading', { name: 'Urlaub buchen' })).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: '1,0 Tag buchen' }));
         await waitFor(() => {
             expect(mockFetch).toHaveBeenCalledWith('/api/abwesenheit', expect.objectContaining({
                 method: 'POST',
@@ -196,13 +198,39 @@ describe('Tageserfassung und smarte Buchungslogik', () => {
         expect(await screen.findByText('Urlaub', { selector: 'p' })).toBeVisible();
 
         fireEvent.click(zeitausgleichBtn);
+        expect(await screen.findByRole('heading', { name: 'Zeitausgleich buchen' })).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Zeitausgleich buchen' }));
         await waitFor(() => {
             expect(mockFetch).toHaveBeenCalledWith('/api/abwesenheit', expect.objectContaining({
                 method: 'POST',
-                body: JSON.stringify({ mitarbeiterId: 1, datum: `${year}-08-03`, typ: 'ZEITAUSGLEICH', halberTag: false })
+                body: JSON.stringify({ mitarbeiterId: 1, datum: `${year}-08-03`, typ: 'ZEITAUSGLEICH', halberTag: false, stunden: 8 })
             }));
         });
         expect(await screen.findByText('Zeitausgleich', { selector: 'p' })).toBeVisible();
+    });
+
+    it('bucht halben Urlaubstag über das Dialogfenster', async () => {
+        tage = [{
+            datum: `${year}-08-04`,
+            wochentag: 2,
+            istFeiertag: false,
+            feiertagName: null,
+            sollStunden: 8,
+            istStunden: 0,
+            buchungen: []
+        }];
+        mount();
+        fireEvent.doubleClick(await screen.findByText('4', { selector: 'span' }));
+        fireEvent.click(screen.getByRole('button', { name: /Urlaub/ }));
+        expect(await screen.findByRole('heading', { name: 'Urlaub buchen' })).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Halber Tag Urlaub auswählen' }));
+        fireEvent.click(screen.getByRole('button', { name: '0,5 Tage buchen' }));
+        await waitFor(() => {
+            expect(mockFetch).toHaveBeenCalledWith('/api/abwesenheit', expect.objectContaining({
+                method: 'POST',
+                body: JSON.stringify({ mitarbeiterId: 1, datum: `${year}-08-04`, typ: 'URLAUB', halberTag: true })
+            }));
+        });
     });
 
     it('prüft alle Uhrzeitentwürfe vor dem ersten Speichern und erhält unveränderte Sekunden', async () => {

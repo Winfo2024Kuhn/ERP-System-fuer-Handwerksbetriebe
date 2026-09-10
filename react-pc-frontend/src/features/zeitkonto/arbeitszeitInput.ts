@@ -42,8 +42,14 @@ export function pruefeArbeitszeit(entwurf: ArbeitszeitEntwurf, labels = ZEITFENS
         if (!parsed.valid || parsed.value === null) throw new Error(!parsed.valid ? parsed.message : `Bitte ${tag.label} Stunden eingeben.`);
         result[tag.key] = parsed.value;
     }
+    const rawStart = (entwurf.buchungStartZeit ?? '').trim();
+    const rawEnde = (entwurf.buchungEndeZeit ?? '').trim();
+    const strictTime = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const invalidTimeMessage = (label: string) => `Bitte ${label} als gültige Uhrzeit von 00:00 bis 23:59 eingeben (HH:mm).`;
     const start = validateTimeInput(entwurf.buchungStartZeit, { label: labels.start });
     const ende = validateTimeInput(entwurf.buchungEndeZeit, { label: labels.ende });
+    if (rawStart && !strictTime.test(rawStart)) throw new Error(invalidTimeMessage(labels.start));
+    if (rawEnde && !strictTime.test(rawEnde)) throw new Error(invalidTimeMessage(labels.ende));
     if (!start.valid) throw new Error(start.message);
     if (!ende.valid) throw new Error(ende.message);
     if (start.value && ende.value && start.value >= ende.value) throw new Error(labels.reihenfolgeFehler);

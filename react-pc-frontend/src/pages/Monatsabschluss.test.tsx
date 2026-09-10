@@ -5,6 +5,7 @@ import Monatsabschluss from './Monatsabschluss';
 const { toast, confirm } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() }, confirm: vi.fn() }));
 vi.mock('../components/ui/toast', () => ({ useToast: () => toast }));
 vi.mock('../components/ui/confirm-dialog', () => ({ useConfirm: () => confirm }));
+vi.mock('react-chartjs-2', () => ({ Line: () => <div data-testid="line-chart" /> }));
 const fetchMock = vi.fn();
 const kennzahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 16, feiertagsStunden: 8, korrekturStunden: 1, gesamtIst: 145.5, differenz: -14.5 };
 let allowed: boolean;
@@ -21,6 +22,7 @@ beforeEach(() => {
  if (input.endsWith('/abteilungen')) body = [{ id: 2, name: 'Werkstatt' }];
  if (url.pathname.endsWith('/uebersicht')) { const page = Number(url.searchParams.get('page')); body = { items: Array.from({ length: 50 }, (_, i) => ({ referenz: { mitarbeiterId: page * 50 + i + 1, jahr, monat }, mitarbeiterName: `Max Mustermann ${page * 50 + i + 1}`, abteilungIds: [2], festgeschrieben: false, version: 3, festgeschriebenAm: null, kennzahlen })), totalElements: 500, page, size: 50, summen: { ...kennzahlen, gesamtIst: 72750 }, auswahl: Array.from({ length: 500 }, (_, i) => ({ mitarbeiterId: i + 1, jahr, monat, version: 3, festgeschrieben: false })) }; }
  if (url.pathname.endsWith('/vergleich')) body = Array.from({ length: 6 }, (_, i) => ({ jahr: 2026, monat: i + 1, summen: kennzahlen, offen: 3, abgeschlossen: 4 }));
+ if (url.pathname.endsWith('/jahresvergleich')) body = { jahr, vorjahr: jahr - 1, aktuellesJahr: Array.from({ length: 12 }, (_, i) => ({ monat: i + 1, arbeitsstunden: 160, krankheitstage: 1, urlaubstage: 2 })), vorjahrDaten: Array.from({ length: 12 }, (_, i) => ({ monat: i + 1, arbeitsstunden: 155, krankheitstage: 2, urlaubstage: 2 })) };
  if (input.endsWith('/sammelabschluss')) { const refs = JSON.parse(String(init?.body)).auswahl; submitted.push(refs); body = { ergebnisse: refs.map((referenz: { mitarbeiterId: number }) => ({ referenz, status: referenz.mitarbeiterId === 1 ? 'FEHLGESCHLAGEN' : 'ABGESCHLOSSEN', meldung: referenz.mitarbeiterId === 1 ? 'Zeiten bitte prüfen.' : 'Monat abgeschlossen.' })) }; }
  if (/monatsabschluesse\/\d+\/\d+\/\d+$/.test(input)) body = { audit: [{ id: 1, aktion: 'ABSCHLIESSEN', akteurMitarbeiterId: 1, akteurName: 'Max Mustermann', zeitpunkt: '2026-08-01T10:00:00' }] };
  return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -34,7 +36,7 @@ it('wählt alle 500 über Seiten hinweg und behält nach Teilerfolg nur Fehler',
 });
 it('filtert Abteilung und Status, setzt Auswahl zurück und vergleicht alle Stände', async () => {
  mount(); await screen.findByText('Max Mustermann 1'); fireEvent.click(screen.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen' })); await choose('Abteilung', 'Werkstatt'); await screen.findByText('0 ausgewählt'); await choose('Status', 'Noch offen');
- await waitFor(() => expect(calls.some(c => c.includes('status=OFFEN') && c.includes('abteilungId=2'))).toBe(true)); expect(calls.filter(c => c.includes('/vergleich?')).every(c => !c.includes('status='))).toBe(true); expect(screen.getAllByText(/vorläufig/).length).toBeGreaterThanOrEqual(6);
+ await waitFor(() => expect(calls.some(c => c.includes('status=OFFEN') && c.includes('abteilungId=2'))).toBe(true)); expect(calls.filter(c => c.includes('/jahresvergleich?')).every(c => !c.includes('status='))).toBe(true); expect(await screen.findByRole('region', { name: 'Jahresvergleich' })).toBeInTheDocument();
 });
 it('lädt Verlauf erst auf Klick und verlinkt den genauen Kalendermonat', async () => {
  mount(); await screen.findByText('Max Mustermann 1'); expect(calls.some(c => /monatsabschluesse\/\d+\//.test(c))).toBe(false); expect(screen.getByRole('link', { name: 'Kalender für Max Mustermann 1' }).getAttribute('href')).toMatch(/^\/zeitbuchungen\?mitarbeiterId=1&jahr=\d+&monat=\d+$/); fireEvent.click(screen.getByRole('button', { name: 'Verlauf für Max Mustermann 1' })); await screen.findByText(/Abgeschlossen durch Max Mustermann/);
@@ -90,7 +92,7 @@ it('öffnet einen abgeschlossenen Monat wieder nach Bestätigung', async () => {
         totalElements: 1, page: 0, size: 50, summen: kennzahlen, auswahl: []
       }));
     }
-    if (url.pathname.endsWith('/vergleich')) return new Response(JSON.stringify([]));
+    if (url.pathname.endsWith('/vergleich') || url.pathname.endsWith('/jahresvergleich')) return new Response(JSON.stringify({ jahr: 2026, vorjahr: 2025, aktuellesJahr: [], vorjahrDaten: [] }));
     if (input.endsWith('/oeffnen') && init?.method === 'POST') {
       return new Response(JSON.stringify({ mitarbeiterId: 1, jahr: 2026, monat: 1, festgeschrieben: false }));
     }

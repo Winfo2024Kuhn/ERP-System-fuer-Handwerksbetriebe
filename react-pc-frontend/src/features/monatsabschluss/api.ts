@@ -1,4 +1,4 @@
-import type { Filter, Uebersicht, Vergleichsmonat, Referenz, SammelResponse, Verlauf, Konfiguration, ExportRequest, Vorpruefung } from './types';
+import type { Filter, Uebersicht, Vergleichsmonat, Referenz, SammelResponse, Verlauf, Konfiguration, ExportRequest, Vorpruefung, Jahresvergleich } from './types';
 const basis = '/api/zeitverwaltung/monatsabschluesse';
 async function antwort(url: string, init?: RequestInit): Promise<Response> {
     const response = await fetch(url, init);
@@ -23,6 +23,12 @@ export const api = {
     ladeAbteilungen: (signal?: AbortSignal) => json<{ id: number; name: string }[]>('/api/abteilungen', { signal }),
     ladeUebersicht: (filter: Filter, signal?: AbortSignal) => json<Uebersicht>(`${basis}/uebersicht?${parameter(filter)}`, { signal }),
     ladeVergleich: (filter: Filter, signal?: AbortSignal) => json<Vergleichsmonat[]>(`${basis}/vergleich?${parameter(filter, true)}`, { signal }),
+    ladeJahresvergleich: (filter: { jahr: number; mitarbeiterId?: number; abteilungId?: number }, signal?: AbortSignal) => {
+        const params = new URLSearchParams({ jahr: String(filter.jahr) });
+        if (filter.mitarbeiterId) params.set('mitarbeiterId', String(filter.mitarbeiterId));
+        if (filter.abteilungId) params.set('abteilungId', String(filter.abteilungId));
+        return json<Jahresvergleich>(`${basis}/jahresvergleich?${params}`, { signal });
+    },
     sammelabschluss: (auswahl: Referenz[]) => json<SammelResponse>(`${basis}/sammelabschluss`, schreiben('POST', { auswahl })),
     oeffnen: (referenz: Referenz) => json<unknown>(`${basis}/${referenz.mitarbeiterId}/${referenz.jahr}/${referenz.monat}/oeffnen`, schreiben('POST', {})),
     ladeVerlauf: (referenz: Referenz, signal?: AbortSignal) => json<Verlauf>(`${basis}/${referenz.mitarbeiterId}/${referenz.jahr}/${referenz.monat}`, { signal }),

@@ -355,4 +355,31 @@ class AbwesenheitServiceTest {
         verify(abwesenheitRepository, never()).save(any());
     }
 
+    @Test
+    void zeitausgleich_mitVariablenStunden_erfolgreich() {
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(monatsSaldoService.isMonatFestgeschrieben(any(), anyInt(), anyInt())).thenReturn(false);
+        when(zeitkontoService.versionAm(MITARBEITER_ID, MONTAG)).thenReturn(Optional.of(testZeitkonto));
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, MONTAG)).thenReturn(new BigDecimal("8.00"));
+        when(monatsSaldoService.berechneGesamtsaldo(eq(MITARBEITER_ID), any())).thenReturn(new BigDecimal("10.00"));
+        when(abwesenheitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Abwesenheit gespeichert = abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.ZEITAUSGLEICH, false, new BigDecimal("2.5"));
+
+        assertNotNull(gespeichert);
+        assertEquals(new BigDecimal("2.50"), gespeichert.getStunden());
+        assertTrue(gespeichert.getNotiz().contains("2.5 h"));
+        verify(abwesenheitRepository).save(any());
+    }
+
+    @Test
+    void zeitausgleich_mitUngueltigenStunden_wirftException() {
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(monatsSaldoService.isMonatFestgeschrieben(any(), anyInt(), anyInt())).thenReturn(false);
+        when(zeitkontoService.versionAm(MITARBEITER_ID, MONTAG)).thenReturn(Optional.of(testZeitkonto));
+        when(tagesSollService.arbeitsSoll(MITARBEITER_ID, MONTAG)).thenReturn(new BigDecimal("8.00"));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> abwesenheitService.bucheAbwesenheit(MITARBEITER_ID, MONTAG, AbwesenheitsTyp.ZEITAUSGLEICH, false, BigDecimal.ZERO));
+    }
 }

@@ -9,6 +9,9 @@ import { ProjektSearchModal } from '../components/ProjektSearchModal';
 import { ZeitkontoKorrekturenModal } from '../components/ZeitkontoKorrekturenModal';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 
 // Types
 interface Mitarbeiter {
@@ -1111,6 +1114,227 @@ function getNextTempBookingId(): number {
     return -nextTempBookingCounter;
 }
 
+function UrlaubBuchenModal({
+    open,
+    onClose,
+    datumFormatted,
+    sollStunden,
+    onConfirm,
+}: {
+    open: boolean;
+    onClose: () => void;
+    datumFormatted: string;
+    sollStunden: number | null;
+    onConfirm: (halberTag: boolean) => Promise<void>;
+}) {
+    const [halberTag, setHalberTag] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const effectiveSoll = sollStunden && sollStunden > 0 ? sollStunden : 8;
+    const ganzerTagStunden = effectiveSoll;
+    const halberTagStunden = Math.round((effectiveSoll / 2) * 10) / 10;
+
+    return (
+        <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="text-xl font-bold text-slate-800">Urlaub buchen</DialogTitle>
+                    <p className="text-sm text-slate-500">{datumFormatted}</p>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                    <p className="text-sm text-slate-600">
+                        Bitte wähle aus, ob ein ganzer Tag oder ein halber Tag Urlaub gebucht werden soll:
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            aria-label="Ganzer Tag Urlaub auswählen"
+                            onClick={() => setHalberTag(false)}
+                            className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                !halberTag
+                                    ? 'border-green-600 bg-green-50/80 text-green-950 ring-2 ring-green-200'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2 font-bold mb-1">
+                                <Plane className="w-4 h-4 text-green-600" />
+                                <span>Ganzer Tag</span>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                {ganzerTagStunden.toLocaleString('de-DE', { minimumFractionDigits: 1 })} Std. angerechnet
+                            </p>
+                            <span className="inline-block text-xs font-semibold text-green-700 mt-2">1,0 Urlaubstag</span>
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Halber Tag Urlaub auswählen"
+                            onClick={() => setHalberTag(true)}
+                            className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                halberTag
+                                    ? 'border-green-600 bg-green-50/80 text-green-950 ring-2 ring-green-200'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2 font-bold mb-1">
+                                <Plane className="w-4 h-4 text-green-600" />
+                                <span>Halber Tag</span>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                {halberTagStunden.toLocaleString('de-DE', { minimumFractionDigits: 1 })} Std. angerechnet
+                            </p>
+                            <span className="inline-block text-xs font-semibold text-green-700 mt-2">0,5 Urlaubstage</span>
+                        </button>
+                    </div>
+                </div>
+                <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={onClose} disabled={submitting}>
+                        Abbrechen
+                    </Button>
+                    <Button
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        disabled={submitting}
+                        onClick={async () => {
+                            setSubmitting(true);
+                            try {
+                                await onConfirm(halberTag);
+                                onClose();
+                            } finally {
+                                setSubmitting(false);
+                            }
+                        }}
+                    >
+                        {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plane className="w-4 h-4 mr-2" />}
+                        {halberTag ? '0,5 Tage buchen' : '1,0 Tag buchen'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function ZeitausgleichBuchenModal({
+    open,
+    onClose,
+    datumFormatted,
+    sollStunden,
+    onConfirm,
+}: {
+    open: boolean;
+    onClose: () => void;
+    datumFormatted: string;
+    sollStunden: number | null;
+    onConfirm: (stunden: number) => Promise<void>;
+}) {
+    const defaultHours = sollStunden && sollStunden > 0 ? sollStunden : 8;
+    const [stundenDraft, setStundenDraft] = useState(() => formatDecimalInput(defaultHours));
+    const [submitting, setSubmitting] = useState(false);
+    const [localError, setLocalError] = useState('');
+
+    useEffect(() => {
+        if (open) {
+            setStundenDraft(formatDecimalInput(defaultHours));
+            setLocalError('');
+        }
+    }, [open, defaultHours]);
+
+    const handleConfirm = async () => {
+        const val = validateDecimalInput(stundenDraft, { label: 'Stunden', min: 0.1, max: 24, required: true });
+        if (!val.valid) {
+            setLocalError(val.message);
+            return;
+        }
+        setSubmitting(true);
+        try {
+            await onConfirm(val.value!);
+            onClose();
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="text-xl font-bold text-slate-800">Zeitausgleich buchen</DialogTitle>
+                    <p className="text-sm text-slate-500">{datumFormatted}</p>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                    <p className="text-sm text-slate-600">
+                        Wie viele Stunden sollen als Zeitausgleich für diesen Tag gebucht werden?
+                    </p>
+                    <DecimalInput
+                        label="Stunden für Zeitausgleich (in Std.)"
+                        aria-label="Stunden für Zeitausgleich"
+                        value={stundenDraft}
+                        onChange={val => {
+                            setStundenDraft(val);
+                            setLocalError('');
+                        }}
+                        error={localError}
+                        required
+                        autoFocus
+                    />
+                    <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStundenDraft(formatDecimalInput(defaultHours));
+                                setLocalError('');
+                            }}
+                            className="px-2.5 py-1 text-xs font-medium rounded-md bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+                        >
+                            Ganzer Tag ({formatDecimalInput(defaultHours)} h)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStundenDraft(formatDecimalInput(Math.round((defaultHours / 2) * 10) / 10));
+                                setLocalError('');
+                            }}
+                            className="px-2.5 py-1 text-xs font-medium rounded-md bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+                        >
+                            Halber Tag ({formatDecimalInput(Math.round((defaultHours / 2) * 10) / 10)} h)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStundenDraft('2,0');
+                                setLocalError('');
+                            }}
+                            className="px-2.5 py-1 text-xs font-medium rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        >
+                            2,0 h
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStundenDraft('1,0');
+                                setLocalError('');
+                            }}
+                            className="px-2.5 py-1 text-xs font-medium rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        >
+                            1,0 h
+                        </button>
+                    </div>
+                </div>
+                <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={onClose} disabled={submitting}>
+                        Abbrechen
+                    </Button>
+                    <Button
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                        disabled={submitting}
+                        onClick={handleConfirm}
+                    >
+                        {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                        Zeitausgleich buchen
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function DayEditorModal({
     tag,
     mitarbeiterId,
@@ -1145,6 +1369,8 @@ function DayEditorModal({
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [kategorieModalForBuchungId, setKategorieModalForBuchungId] = useState<number | null>(null);
     const [projektModalForBuchungId, setProjektModalForBuchungId] = useState<number | null>(null);
+    const [showUrlaubModal, setShowUrlaubModal] = useState(false);
+    const [showZeitausgleichModal, setShowZeitausgleichModal] = useState(false);
 
     const datumFormatted = new Date(tag.datum).toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -1412,7 +1638,7 @@ function DayEditorModal({
     };
 
     // Add Abwesenheit (Urlaub, Krankheit, Zeitausgleich)
-    const handleAddAbwesenheit = async (typ: 'URLAUB' | 'KRANKHEIT' | 'ZEITAUSGLEICH') => {
+    const handleAddAbwesenheit = async (typ: 'URLAUB' | 'KRANKHEIT' | 'ZEITAUSGLEICH', halberTag = false, customStunden?: number) => {
         try {
             const res = await fetch('/api/abwesenheit', {
                 method: 'POST',
@@ -1421,7 +1647,8 @@ function DayEditorModal({
                     mitarbeiterId: mitarbeiterId,
                     datum: tag.datum,
                     typ: typ,
-                    halberTag: false,
+                    halberTag: halberTag,
+                    stunden: customStunden,
                 }),
             });
             if (!res.ok) {
@@ -1431,7 +1658,9 @@ function DayEditorModal({
             }
             const data = await res.json();
             const tempId = getNextTempBookingId();
-            const stunden = data.stunden != null ? data.stunden : (tag.sollStunden || null);
+            const stunden = data.stunden != null
+                ? data.stunden
+                : (customStunden ?? (halberTag && tag.sollStunden ? tag.sollStunden / 2 : (tag.sollStunden || null)));
             const newAbwesenheit: Buchung = {
                 id: tempId,
                 abwesenheitId: data.id,
@@ -1578,19 +1807,43 @@ function DayEditorModal({
     // Globaler Speichern-Button
     const handleSaveAll = async () => {
         // Erst sämtliche Änderungen prüfen, bevor die erste Buchung geschrieben wird.
-        for (const buchung of buchungen) {
+        let hasValidationError = false;
+        const normalisierteBuchungen = buchungen.map((buchung) => {
             const istAbwesenheit = !!buchung.typ && ['URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'ZEITAUSGLEICH'].includes(buchung.typ);
-            if (istAbwesenheit || (buchung.id > 0 && !dirtyBuchungIds.has(buchung.id))) continue;
+            if (istAbwesenheit || (buchung.id > 0 && !dirtyBuchungIds.has(buchung.id))) return buchung;
             if (buchung.typ !== 'PAUSE' && (!buchung.projektId || buchung.projektId <= 0)) {
-                toast.error('Bitte für jede geänderte Buchung ein Projekt wählen.'); return;
+                toast.error('Bitte für jede geänderte Buchung ein Projekt wählen.');
+                hasValidationError = true;
+                return buchung;
             }
-            const start = validateTimeInput(zeitEntwurf(buchung, 'startZeit'), { label: 'Beginn', required: true });
-            const ende = validateTimeInput(zeitEntwurf(buchung, 'endeZeit'), { label: 'Ende' });
+            const startEntwurfKey = `${buchung.id}:startZeit`;
+            const endeEntwurfKey = `${buchung.id}:endeZeit`;
+            const hasStartEntwurf = Object.prototype.hasOwnProperty.call(zeitEntwuerfe, startEntwurfKey);
+            const hasEndeEntwurf = Object.prototype.hasOwnProperty.call(zeitEntwuerfe, endeEntwurfKey);
+            const startZuPruefen = (hasStartEntwurf ? zeitEntwuerfe[startEntwurfKey] : buchung.startZeit).substring(0, 5);
+            const endeZuPruefen = (hasEndeEntwurf ? zeitEntwuerfe[endeEntwurfKey] : (buchung.endeZeit || '')).substring(0, 5);
+            const start = validateTimeInput(startZuPruefen, { label: 'Beginn', required: true, forgiving: true });
+            const ende = validateTimeInput(endeZuPruefen, { label: 'Ende', forgiving: true });
             if (!start.valid || !ende.valid) {
                 toast.error(!start.valid ? start.message : !ende.valid ? ende.message : 'Bitte Uhrzeiten prüfen.');
-                return;
+                hasValidationError = true;
+                return buchung;
             }
-        }
+            const originalStartOhneSekunden = buchung.startZeit.substring(0, 5);
+            const originalEndeOhneSekunden = (buchung.endeZeit || '').substring(0, 5);
+            const startGeaendert = hasStartEntwurf && start.value !== originalStartOhneSekunden;
+            const endeGeaendert = hasEndeEntwurf && ende.value !== originalEndeOhneSekunden;
+            const normalisierterStart = start.value ?? buchung.startZeit;
+            const normalisierteEnde = ende.value ?? null;
+            if (!startGeaendert && !endeGeaendert) return buchung;
+            return {
+                ...buchung,
+                ...(startGeaendert ? { startZeit: normalisierterStart } : {}),
+                ...(endeGeaendert ? { endeZeit: normalisierteEnde } : {})
+            };
+        });
+        if (hasValidationError) return;
+        setBuchungen(normalisierteBuchungen);
         // Hinweis bei Überschneidung
         if (hasOverlaps()) {
             if (!await confirmDialog({ title: "Überschneidungen", message: "Es liegen zeitliche Überschneidungen bei den Buchungen vor.\nMöchten Sie trotzdem speichern?", variant: "warning", confirmLabel: "Trotzdem speichern" })) {
@@ -1602,7 +1855,7 @@ function DayEditorModal({
         setSaveSuccess(false);
 
         let allSuccess = true;
-        for (const buchung of buchungen) {
+        for (const buchung of normalisierteBuchungen) {
             // Nur neue (id < 0) oder geänderte Buchungen speichern
             const isNew = buchung.id < 0;
             const isDirty = dirtyBuchungIds.has(buchung.id);
@@ -1908,13 +2161,13 @@ function DayEditorModal({
                                 <Button onClick={handleAddPause} variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-50 px-4">
                                     <Plus className="w-5 h-5 mr-1" /> Pause
                                 </Button>
-                                <Button onClick={() => handleAddAbwesenheit('URLAUB')} variant="outline" className="border-green-400 text-green-700 hover:bg-green-50 px-4">
+                                <Button onClick={() => setShowUrlaubModal(true)} variant="outline" className="border-green-400 text-green-700 hover:bg-green-50 px-4">
                                     <Plus className="w-5 h-5 mr-1" /> Urlaub
                                 </Button>
                                 <Button onClick={() => handleAddAbwesenheit('KRANKHEIT')} variant="outline" className="border-red-400 text-red-700 hover:bg-red-50 px-4">
                                     <Plus className="w-5 h-5 mr-1" /> Krankheit
                                 </Button>
-                                <Button onClick={() => handleAddAbwesenheit('ZEITAUSGLEICH')} variant="outline" className="border-amber-500 text-amber-800 hover:bg-amber-50 px-4">
+                                <Button onClick={() => setShowZeitausgleichModal(true)} variant="outline" className="border-amber-500 text-amber-800 hover:bg-amber-50 px-4">
                                     <Plus className="w-5 h-5 mr-1" /> Zeitausgleich
                                 </Button>
                             </div>
@@ -1983,6 +2236,32 @@ function DayEditorModal({
                         setProjektModalForBuchungId(null);
                     }}
                     onClose={() => setProjektModalForBuchungId(null)}
+                />
+            )}
+
+            {/* Urlaub buchen Modal (Ganzer Tag / Halber Tag) */}
+            {showUrlaubModal && (
+                <UrlaubBuchenModal
+                    open={showUrlaubModal}
+                    onClose={() => setShowUrlaubModal(false)}
+                    datumFormatted={datumFormatted}
+                    sollStunden={tag.sollStunden}
+                    onConfirm={async (halberTag) => {
+                        await handleAddAbwesenheit('URLAUB', halberTag);
+                    }}
+                />
+            )}
+
+            {/* Zeitausgleich buchen Modal (Variable Stunden) */}
+            {showZeitausgleichModal && (
+                <ZeitausgleichBuchenModal
+                    open={showZeitausgleichModal}
+                    onClose={() => setShowZeitausgleichModal(false)}
+                    datumFormatted={datumFormatted}
+                    sollStunden={tag.sollStunden}
+                    onConfirm={async (stunden) => {
+                        await handleAddAbwesenheit('ZEITAUSGLEICH', false, stunden);
+                    }}
                 />
             )}
         </>

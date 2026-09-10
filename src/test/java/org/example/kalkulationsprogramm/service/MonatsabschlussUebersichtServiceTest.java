@@ -12,7 +12,8 @@ class MonatsabschlussUebersichtServiceTest {
     final MonatsabschlussUebersichtRepository repo=mock(MonatsabschlussUebersichtRepository.class);
     final MonatsSaldoService saldo=mock(MonatsSaldoService.class);
     final MonatsabschlussBerechtigungService recht=mock(MonatsabschlussBerechtigungService.class);
-    final MonatsabschlussUebersichtService service=new MonatsabschlussUebersichtService(repo,saldo,recht);
+    final AbwesenheitRepository abwesenheiten=mock(AbwesenheitRepository.class);
+    final MonatsabschlussUebersichtService service=new MonatsabschlussUebersichtService(repo,saldo,recht,abwesenheiten);
     MonatsabschlussUebersichtRepository.Person person(long id) {
         return new MonatsabschlussUebersichtRepository.Person() { public Long getId(){return id;} public String getVorname(){return "Max";} public String getNachname(){return "Mustermann";} };
     }
@@ -54,5 +55,32 @@ class MonatsabschlussUebersichtServiceTest {
         assertThat(json.get(1).path("festgeschrieben").asBoolean()).isFalse();
         assertThat(result.auswahl()).allSatisfy(s->assertThat(s.version()).isEqualTo(3L));
         verifyNoInteractions(saldo);
+    }
+    @Test void jahresvergleichLiefertZwoelfMonateFuerAktuellUndVorjahrMitKrankheitUndUrlaub() {
+        when(repo.personen(any(),any(),any(),any(),any(),any(),anyInt(),anyInt(),any())).thenReturn(List.of(person(1)));
+        var rowsAktuell = new ArrayList<MonatsSaldo>();
+        for (int i = 1; i <= 12; i++) rowsAktuell.add(stand(1, 2026, i, true));
+        var rowsVorjahr = new ArrayList<MonatsSaldo>();
+        for (int i = 1; i <= 12; i++) rowsVorjahr.add(stand(1, 2025, i, true));
+        when(repo.salden(anyList(), eq(2026*12+1), eq(2026*12+12))).thenReturn(rowsAktuell);
+        when(repo.salden(anyList(), eq(2025*12+1), eq(2025*12+12))).thenReturn(rowsVorjahr);
+
+        var abw1 = new Abwesenheit();
+        abw1.setDatum(java.time.LocalDate.of(2026, 3, 10));
+        abw1.setTyp(AbwesenheitsTyp.KRANKHEIT);
+        var abw2 = new Abwesenheit();
+        abw2.setDatum(java.time.LocalDate.of(2026, 7, 15));
+        abw2.setTyp(AbwesenheitsTyp.URLAUB);
+        abw2.setNotiz("Halber Tag (manuell gebucht)");
+        when(abwesenheiten.findByMitarbeiterIdInAndDatumBetween(anyCollection(), any(), any()))
+                .thenReturn(List.of(abw1, abw2));
+
+        var jv = service.jahresvergleich(2026, null, null, null);
+        assertThat(jv.jahr()).isEqualTo(2026);
+        assertThat(jv.aktuellesJahr()).hasSize(12);
+        assertThat(jv.vorjahr()).hasSize(12);
+        assertThat(jv.aktuellesJahr().get(2).krankheitTage()).isEqualByComparingTo("1.0");
+        assertThat(jv.aktuellesJahr().get(6).urlaubTage()).isEqualByComparingTo("0.5");
+        assertThat(jv.aktuellesJahr().getFirst().istStunden()).isEqualByComparingTo("7.7");
     }
 }

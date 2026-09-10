@@ -109,3 +109,6 @@ db-ops/
 
 # Brainstorming-Vorschauen (lokal, nicht ins Repo)
 /.superpowers/
+
+# React Component Preview
+previewConfig.json
