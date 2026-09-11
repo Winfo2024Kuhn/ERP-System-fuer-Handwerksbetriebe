@@ -7,6 +7,9 @@ import {
     infoAdresseZuDomain,
     istInfoAdresse,
     waehleInfoEmpfaenger,
+    parseRecipientList,
+    formatRecipientList,
+    escapeHtml,
 } from './emailAddress';
 
 describe('extractEmailAddress', () => {
@@ -176,5 +179,101 @@ describe('waehleInfoEmpfaenger', () => {
         expect(waehleInfoEmpfaenger([])).toBe('');
         expect(waehleInfoEmpfaenger(undefined)).toBe('');
         expect(waehleInfoEmpfaenger([undefined, ''])).toBe('');
+    });
+});
+
+describe('parseRecipientList', () => {
+    it('behandelt Whitespace-Strings und reine Klammer-Adressen ohne Namen', () => {
+        expect(parseRecipientList('   ')).toEqual([]);
+        const list = parseRecipientList('<only-email@example.com>');
+        expect(list).toHaveLength(1);
+        expect(list[0].email).toBe('only-email@example.com');
+        expect(list[0].displayName).toBe('only-email@example.com');
+    });
+    it('parst Namen mit Apostroph ("O\x27Connor" <o@example.com>) korrekt', () => {
+        const list = parseRecipientList('"O\x27Connor" <oconnor@example.com>');
+        expect(list).toHaveLength(1);
+        expect(list[0].email).toBe('oconnor@example.com');
+        expect(list[0].displayName).toBe("O'Connor");
+    });
+
+    it('parst Namen mit Apostroph ohne Anführungszeichen (O\x27Connor <o@example.com>)', () => {
+        const list = parseRecipientList("O'Connor <oconnor@example.com>");
+        expect(list).toHaveLength(1);
+        expect(list[0].email).toBe('oconnor@example.com');
+        expect(list[0].displayName).toBe("O'Connor");
+    });
+
+    it('parst mehrere Empfänger inklusive Apostroph und Kommas in Namen', () => {
+        const input = '"O\x27Connor, Sean" <oconnor@example.com>, "Mustermann, Max" <max@example.com>, erika@example.com';
+        const list = parseRecipientList(input);
+        expect(list).toHaveLength(3);
+        expect(list[0].email).toBe('oconnor@example.com');
+        expect(list[0].displayName).toBe("O'Connor, Sean");
+        expect(list[1].email).toBe('max@example.com');
+        expect(list[1].displayName).toBe('Mustermann, Max');
+        expect(list[2].email).toBe('erika@example.com');
+        expect(list[2].displayName).toBe('erika@example.com');
+    });
+});
+
+describe('formatRecipientList', () => {
+    it('fällt auf r.raw zurück, wenn formatRecipient einen leeren String liefert', () => {
+        expect(formatRecipientList('keine-adresse')).toBe('keine-adresse');
+        expect(formatRecipientList('keine-adresse-1, keine-adresse-2')).toBe('keine-adresse-1, keine-adresse-2');
+    });
+    it('behält vorhandene Anzeigenamen auch ohne expliziten singleNameOverride bei', () => {
+        expect(formatRecipientList('"Mustermann" <max@example.com>')).toBe('"Mustermann" <max@example.com>');
+        expect(formatRecipientList('max@example.com')).toBe('max@example.com');
+    });
+
+    it('gibt den getrimmten String zurück, wenn keine gültigen Adressen geparst werden konnten', () => {
+        expect(formatRecipientList(',,,')).toBe(',,,');
+        expect(formatRecipientList('   ')).toBe('');
+    });
+
+    it('formatiert gemischte Listen mit und ohne Namen', () => {
+        const input = '"Anna" <anna@example.com>, ben@example.com';
+        expect(formatRecipientList(input)).toBe('"Anna" <anna@example.com>, ben@example.com');
+    });
+    it('behält bei Rundmails alle Empfänger und vertauscht/verliert keine Namen', () => {
+        const input = '"Anna" <anna@example.com>, "Ben" <ben@example.com>';
+        const formatted = formatRecipientList(input, 'Schlotz Architekten');
+        // Bei mehreren Empfängern darf der pauschale Kundenname NICHT auf alle angewendet werden
+        expect(formatted).toBe('"Anna" <anna@example.com>, "Ben" <ben@example.com>');
+    });
+
+    it('wendet den hinterlegten Kundennamen nur bei genau einem Empfänger an', () => {
+        const formatted = formatRecipientList('kunde@schlotz-architekten.de', 'Schlotz Architekten');
+        expect(formatted).toBe('"Schlotz Architekten" <kunde@schlotz-architekten.de>');
+    });
+
+    it('formatiert reine Adresslisten ohne Namen sauber', () => {
+        const input = 'anna@example.com, ben@example.com';
+        expect(formatRecipientList(input)).toBe('anna@example.com, ben@example.com');
+    });
+
+    it('liefert leeren String bei leerer Eingabe', () => {
+        expect(formatRecipientList('')).toBe('');
+        expect(formatRecipientList(undefined)).toBe('');
+    });
+});
+
+describe('escapeHtml', () => {
+    it('maskiert spitze Klammern, damit E-Mail-Adressen nicht als HTML-Tags verschwinden', () => {
+        const header = 'Am 11.09.2026, 16:00 Uhr schrieben Sie an "Anna" <anna@example.com>:';
+        const escaped = escapeHtml(header);
+        expect(escaped).toBe('Am 11.09.2026, 16:00 Uhr schrieben Sie an &quot;Anna&quot; &lt;anna@example.com&gt;:');
+        expect(escaped).not.toContain('<anna@example.com>');
+    });
+
+    it('maskiert alle HTML-relevanten Sonderzeichen (&, <, >, ", \')', () => {
+        expect(escapeHtml('<script>alert("XSS & test \'")</script>'))
+            .toBe('&lt;script&gt;alert(&quot;XSS &amp; test &#039;&quot;)&lt;/script&gt;');
+    });
+
+    it('behandelt leere oder undefinierte Werte', () => {
+        expect(escapeHtml('')).toBe('');
+        expect(escapeHtml(undefined)).toBe('');
     });
 });

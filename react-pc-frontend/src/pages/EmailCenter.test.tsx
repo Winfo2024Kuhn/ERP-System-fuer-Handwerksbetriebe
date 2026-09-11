@@ -54,6 +54,7 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
         '/api/emails/spam': [],
         '/api/emails/newsletter': [],
         '/api/emails/tax-advisors': [],
+        '/api/emails/from-addresses': ['bauschlosserei-kuhn@t-online.de'],
         ...overrides
     };
 
@@ -461,5 +462,245 @@ describe('EmailCenter', () => {
                 expect(screen.getByText('E-Mail senden')).toBeInTheDocument();
             });
         });
+    });
+
+    describe('Resizable Columns und Collapsible Sidebar', () => {
+        it('initialisiert Spaltenbreiten und Splitter', async () => {
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+
+            expect(screen.getByTitle('Ordnerspalte verschieben')).toBeInTheDocument();
+            expect(screen.getByTitle('Listenbreite verschieben')).toBeInTheDocument();
+        });
+
+        it('kann Ordnerleiste ein- und ausklappen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+
+            const collapseBtn = screen.getByTitle('Ordnerleiste einklappen');
+            await user.click(collapseBtn);
+
+            expect(screen.getByTitle('Ordnerleiste ausklappen')).toBeInTheDocument();
+            expect(localStorage.getItem('email_center_sidebar_collapsed')).toBe('true');
+        });
+    });
+
+    describe('Thread-Kundenempfänger und Antwort-Logik', () => {
+        it('setzt beim Antworten auf eine Ausgangsmail den Kunden als Zieladresse, nicht die eigene Adresse', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const outEmail = {
+                id: 42,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Angebot Metallgeländer',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: 'kunde@schlotz-architekten.de',
+                body: 'Hier ist das Angebot.',
+                sentAt: new Date().toISOString(),
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [outEmail],
+                '/api/emails/42': outEmail,
+                '/api/emails/42/thread': {
+                    rootEmailId: 42,
+                    focusedEmailId: 42,
+                    emails: [{
+                        id: 42,
+                        subject: 'Angebot Metallgeländer',
+                        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                        recipient: 'kunde@schlotz-architekten.de',
+                        direction: 'OUT',
+                        sentAt: new Date().toISOString(),
+                        attachments: []
+                    }]
+                }
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Angebot Metallgeländer')).toBeInTheDocument());
+
+            // E-Mail auswählen
+            await user.click(screen.getByText('Angebot Metallgeländer'));
+            await waitFor(() => expect(screen.getByText('Hier ist das Angebot.')).toBeInTheDocument());
+
+            // Auf "Antworten" im Header klicken
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            // Compose-Formular öffnet sich: Empfängerfeld muss den Kunden enthalten und NICHT die eigene Adresse!
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+            expect(screen.getByDisplayValue('kunde@schlotz-architekten.de')).toBeInTheDocument();
+        });
+        it('behält beim Antworten auf eine Rundmail alle Empfänger mit ihren jeweiligen Namen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const roundmail = {
+                id: 43,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Rundmail Protokoll',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
+                body: 'Anbei das Protokoll.',
+                sentAt: new Date().toISOString(),
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                kundeName: 'Schlotz Architekten',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [roundmail],
+                '/api/emails/43': roundmail,
+                '/api/emails/43/thread': {
+                    rootEmailId: 43,
+                    focusedEmailId: 43,
+                    emails: [{
+                        id: 43,
+                        subject: 'Rundmail Protokoll',
+                        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                        recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
+                        direction: 'OUT',
+                        sentAt: new Date().toISOString(),
+                        attachments: []
+                    }]
+                }
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Rundmail Protokoll')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Rundmail Protokoll'));
+            await waitFor(() => expect(screen.getByText('Anbei das Protokoll.')).toBeInTheDocument());
+
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+
+            // Beide Empfänger müssen mit ihren eigenen Namen enthalten sein
+            expect(screen.getByDisplayValue('"Anna" <anna@example.com>, "Ben" <ben@example.com>')).toBeInTheDocument();
+        });
+
+        it('behält E-Mail-Adresse im Zitatkopf sichtbar dank HTML-Maskierung', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const emailWithBrackets = {
+                id: 44,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Re: Sichtbarer Zitatkopf',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: '"Anna" <anna@example.com>',
+                body: 'Klarer Textkörper',
+                sentAt: '2026-09-11T16:00:00',
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [emailWithBrackets],
+                '/api/emails/44': emailWithBrackets,
+                '/api/emails/44/thread': {
+                    rootEmailId: 44,
+                    focusedEmailId: 44,
+                    emails: [emailWithBrackets]
+                }
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Re: Sichtbarer Zitatkopf')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Re: Sichtbarer Zitatkopf'));
+            await waitFor(() => expect(screen.getByText('Klarer Textkörper')).toBeInTheDocument());
+
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+
+            // Die Adresse darf im Editor nicht als HTML-Tag verschwinden, sondern muss als Text sichtbar sein
+            await waitFor(() => {
+                expect(screen.getByText(/schrieben Sie an/i)).toBeInTheDocument();
+                expect(screen.getByText(/<anna@example.com>/i)).toBeInTheDocument();
+            });
+        });
+
+        it('zeigt Toast-Fehler wenn /api/emails/from-addresses fehlschlaegt', async () => {
+            vi.stubGlobal('fetch', vi.fn((url: string) => {
+                if (url.includes('/api/emails/from-addresses')) {
+                    return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve([]) } as Response);
+                }
+                if (url.includes('/api/emails/stats')) {
+                    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockStats) } as Response);
+                }
+                if (url.includes('/api/emails/inbox')) {
+                    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) } as Response);
+                }
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) } as Response);
+            }));
+
+            renderEmailCenter('inbox');
+            expect(await screen.findByText('Eigene Absenderadressen konnten nicht geladen werden.')).toBeInTheDocument();
+        });
+
+        it('laesst Empfaengerfeld leer und warnt per Toast wenn alle Empfaenger eigene Adressen sind', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const selfSentEmail = {
+                id: 45,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Selbst gesendete Notiz',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: 'bauschlosserei-kuhn@t-online.de',
+                body: 'Nur eine interne Notiz an mich selbst.',
+                sentAt: '2026-09-11T16:00:00',
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [selfSentEmail],
+                '/api/emails/45': selfSentEmail,
+                '/api/emails/45/thread': {
+                    rootEmailId: 45,
+                    focusedEmailId: 45,
+                    emails: [selfSentEmail]
+                },
+                '/api/emails/from-addresses': ['bauschlosserei-kuhn@t-online.de']
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Selbst gesendete Notiz')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Selbst gesendete Notiz'));
+            await waitFor(() => expect(screen.getByText('Nur eine interne Notiz an mich selbst.')).toBeInTheDocument());
+
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+
+            // Toast-Hinweis muss erscheinen
+            expect(await screen.findByText('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.')).toBeInTheDocument();
+
+            // Eigene Adresse darf keinesfalls im Empfängerfeld stehen!
+            expect(screen.queryByDisplayValue('bauschlosserei-kuhn@t-online.de')).not.toBeInTheDocument();
+
+            // Zitatkopf ohne unvollständiges "an :"
+            expect(screen.getByText(/schrieben Sie:/i)).toBeInTheDocument();
+            expect(screen.queryByText(/schrieben Sie an :/i)).not.toBeInTheDocument();
+        });
+
+
     });
 });

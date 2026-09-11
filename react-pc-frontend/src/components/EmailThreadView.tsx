@@ -4,6 +4,7 @@ import { klartextGrund } from '../lib/zustellGrund';
 import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { cn } from '../lib/utils';
 import { EmailContentFrame } from './EmailContentFrame';
+import { EmailRecipientDropdown } from './EmailRecipientDropdown';
 
 // ─────────────────────────────────────────────────────────────────
 // TYPEN (1:1 mit Backend-DTO)
@@ -240,15 +241,15 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
     useEffect(() => {
         if (isFocused && bubbleRef.current) {
             const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            bubbleRef.current.scrollIntoView({ block: 'center', behavior: prefersReduced ? 'auto' : 'smooth' });
+            if (typeof bubbleRef.current.scrollIntoView === 'function') {
+                bubbleRef.current.scrollIntoView({ block: 'center', behavior: prefersReduced ? 'auto' : 'smooth' });
+            }
         }
     }, [isFocused]);
 
     const visibleAttachments = entry.attachments.filter(a => !a.inline);
     const fromName = extractDisplayName(entry.fromAddress);
     const fromEmail = extractEmailAddress(entry.fromAddress);
-    const toName = extractDisplayName(entry.recipient);
-    const toEmail = extractEmailAddress(entry.recipient);
     const avatarName = fromName; // immer der Absender
     const initial = (avatarName.charAt(0) || '?').toUpperCase();
     const avatarBg = isOut ? 'bg-emerald-500' : 'bg-rose-500';
@@ -298,7 +299,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                             ) : (
                                 <p><span className="text-slate-400">Von:</span> {fromName}{fromEmail && fromEmail !== fromName && ` <${fromEmail}>`}</p>
                             )}
-                            <p><span className="text-slate-400">An:</span> {toName}{toEmail && toEmail !== toName && ` <${toEmail}>`}</p>
+                            <EmailRecipientDropdown recipients={entry.recipient} />
                         </div>
                     </div>
 
@@ -448,7 +449,6 @@ interface DraftBubbleProps {
 }
 
 function DraftThreadBubble({ entry, onOpenDraft, onDeleteDraft }: DraftBubbleProps) {
-    const toName = extractDisplayName(entry.recipient);
     const hasContent = entry.snippet && entry.snippet !== '[Entwurf]';
 
     return (
@@ -495,9 +495,9 @@ function DraftThreadBubble({ entry, onOpenDraft, onDeleteDraft }: DraftBubblePro
 
                     {/* Recipient */}
                     {entry.recipient && (
-                        <p className="text-xs text-amber-700/80 mb-1">
-                            <span className="text-amber-600/60">An:</span> {toName}
-                        </p>
+                        <div className="mb-1">
+                            <EmailRecipientDropdown recipients={entry.recipient} label="An:" className="text-amber-700/80 text-xs" />
+                        </div>
                     )}
 
                     {/* Subject */}
