@@ -61,4 +61,24 @@ describe('ZeiterfassungSteuerberater Task 10', () => {
         expect(screen.getByRole('button', { name: /Per E-Mail senden/ })).not.toBeDisabled();
         expect(screen.queryByText(/ist noch nicht abgeschlossen/)).not.toBeInTheDocument();
     });
+
+    it('blendet Mitarbeiter mit Status Geschäftsführer aus', async () => {
+        const gfKonto = {
+            ...konto,
+            mitarbeiterId: 99,
+            mitarbeiterName: 'Chef Boss',
+            istGeschaeftsfuehrer: true,
+        };
+        fetchMock.mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url === '/api/zeitverwaltung/zeitkonten') return Promise.resolve(json([konto, gfKonto]));
+            if (url.includes('/api/zeitverwaltung/kalender')) return Promise.resolve(json({ sollStundenMonat: 0, tage: [] }));
+            return Promise.resolve(json({}));
+        });
+        const user = userEvent.setup();
+        render(<ZeiterfassungSteuerberater />);
+        await user.click(await screen.findByRole('button', { name: 'Vorschau laden' }));
+        expect(await screen.findByText('Max Mustermann')).toBeInTheDocument();
+        expect(screen.queryByText('Chef Boss')).not.toBeInTheDocument();
+    });
 });

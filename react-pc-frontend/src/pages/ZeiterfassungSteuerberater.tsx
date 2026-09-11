@@ -40,7 +40,8 @@ export default function ZeiterfassungSteuerberater() {
             const data = await res.json() as ZeitkontoStatus[];
             // Menschen ohne aktuell eingerichtetes Zeitkonto fehlen nur aus der
             // aktuellen Auswahl. Ihre historischen Auswertungsdaten bleiben im Backend.
-            setZeitkonten(Array.isArray(data) ? data.filter(konto => konto.fuehrtZeitkonto && konto.aktuell !== null) : []);
+            // Geschäftsführer werden bei der monatlichen Stundenübermittlung an den Steuerberater nicht aufgeführt.
+            setZeitkonten(Array.isArray(data) ? data.filter(konto => konto.fuehrtZeitkonto && konto.aktuell !== null && !konto.istGeschaeftsfuehrer) : []);
         } catch (err) {
             console.error('Fehler beim Laden der Zeitkonten:', err);
             setZeitkonten([]);
