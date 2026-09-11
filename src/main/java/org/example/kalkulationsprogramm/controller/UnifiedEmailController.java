@@ -1452,7 +1452,10 @@ public class UnifiedEmailController {
                             org.springframework.core.io.Resource resource = dateiSpeicherService
                                     .ladeDokumentAlsResource(attachedStoredFilename);
                             if (resource != null && resource.exists()) {
-                                byte[] dokBytes = resource.getInputStream().readAllBytes();
+                                byte[] dokBytes;
+                                try (java.io.InputStream is = resource.getInputStream()) {
+                                    dokBytes = is.readAllBytes();
+                                }
                                 String rawDocName = attachedOriginalFilename != null ? attachedOriginalFilename : "dokument.pdf";
                                 String safeDocName = java.nio.file.Path.of(rawDocName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
                                 attachmentsForEmail.add(new org.example.email.EmailService.Attachment(

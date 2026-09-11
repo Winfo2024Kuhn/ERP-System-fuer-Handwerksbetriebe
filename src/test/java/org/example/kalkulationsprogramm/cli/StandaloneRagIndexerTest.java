@@ -37,15 +37,20 @@ class StandaloneRagIndexerTest {
                     public void doSomething() {
                         System.out.println(name);
                     }
+
+                    List<String> buildKetten(int id) {
+                        return List.of();
+                    }
                 }
                 """;
 
         List<String> methods = indexer.splitJavaMethods(javaCode);
-        assertThat(methods).hasSize(4);
+        assertThat(methods).hasSize(5);
         assertThat(methods.get(0)).contains("name;");
         assertThat(methods.get(1)).startsWith("public SampleService");
         assertThat(methods.get(2)).startsWith("@Override");
         assertThat(methods.get(3)).startsWith("public void doSomething");
+        assertThat(methods.get(4)).startsWith("List<String> buildKetten");
     }
 
     @Test

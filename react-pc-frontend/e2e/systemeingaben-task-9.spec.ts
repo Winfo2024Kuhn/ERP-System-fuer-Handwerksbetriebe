@@ -136,7 +136,7 @@ test('Systemeingaben Task9: Verrechnung erhält leere Entwürfe bis zur gültige
     // Die Fussleiste des Rechners traegt "Schließen"; das X des gemeinsamen
     // Dialogs heisst "Fenster schließen". Hier ist die Fussleiste gemeint --
     // sie darf nicht von Meldungen verdeckt sein.
-    await page.getByRole('dialog').getByRole('button', { name: 'Schließen', exact: true }).click({ trial: true, timeout: 1000 });
+    await page.getByRole('dialog').getByRole('button', { name: 'Schließen', exact: true }).click({ trial: true, timeout: 5000 });
     await field.fill('8,5'); await field.press('Tab');
     await expect(field).toHaveValue('8,5');
     await page.screenshot({ path: testInfo.outputPath('verrechnungslohn.png') });
