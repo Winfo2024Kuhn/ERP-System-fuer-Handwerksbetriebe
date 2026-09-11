@@ -448,3 +448,101 @@ Was gemacht wurde:
 
 Bedenken / Abweichungen vom Plan:
 - keine
+
+## Abschnitt 1 (Review-Agent, Code/Korrektheit)
+
+Zeit: 2026-09-09T21:35:00Z
+Branch: feature/kasse-belege
+Commit(s): 370e761d (gemergt: 9fc3c935, 79210643, 31e26025, 9b367972, 22673c06, 79515b36, 06706eb8)
+Status: fertig
+Ampel: 🔴
+
+Was geprueft wurde:
+- Volle Suiten selbst gefahren. Backend `./mvnw -B test`: 2781 Tests, 0 Failures,
+  genau die 4 Baseline-Errors (AuditChainRepair ×2, AuditHashRoundtrip ×2,
+  CannotCreateTransaction) — +34 Tests gegenueber Baseline, keine neuen Fehler.
+  PC: lint 0 Errors / 4 Warnings (Baseline), test 1195 Tests, nur die bekannten
+  2 Timeouts in MitarbeiterEditor.task8.test.tsx — einzeln nachgefahren, gruen;
+  build gruen. Mobile: lint 0, 147 Tests gruen, build gruen. Build-Artefakte
+  unter src/main/resources/static verworfen, `git status` sauber.
+- Mutationsproben (alle rot, danach restlos zurueckgenommen):
+  V372 `ki_belegdatum`-ALTER entfernt -> KasseBelegeMigrationTest rot; Typ auf
+  VARCHAR(10) geaendert -> rot (assertSpalte prueft echten Spaltentyp, nicht nur
+  den Statement-Count); Backfill AMAZON_PAY -> 'PayPal' -> rot (assertZahlungsart);
+  ZahlungsartMapper PAYPAL -> "Bar" -> ZahlungsartMapperTest rot;
+  select-custom Gruppenreihenfolge gebrochen -> select-custom.test.tsx rot.
+- Task 1: V372 gegen Plan und Spec durchgegangen (idempotent nach V351-Muster,
+  native ENUM fuer quelle, INT fuer den Monat mit Begruendungskommentar, FK ueber
+  TABLE_CONSTRAINTS abgesichert, Backfill-CASE vollstaendig, Online-Zahlung-Seed
+  per INSERT IGNORE). Entity-Felder decken sich mit den Spalten (Typ, Laenge,
+  Nullability, Defaults); ZahlungsartMapper stimmt Zeile fuer Zeile mit der
+  verbindlichen Tabelle (Entscheidung 1) inkl. VORAUSKASSE = "gilt als bezahlt".
+- Task 2: BelegPdfService — kein Nutzereingabe-Anteil im Dateinamen (UUID +
+  konstanter Titel + Datum), Gegenpartei/Beschreibung nur im PDF-Inhalt, kein
+  Path-Traversal (Logo-Pfad zusaetzlich per normalize+startsWith geprueft),
+  SHA-256 blockweise korrekt, Eigenbeleg ohne MwSt-Ausweis (per Test belegt),
+  keine Klarnamen im Log.
+- Task 9: Verhalten unveraendert belegt — alle fetch-URLs identisch in Anzahl und
+  Wert, alle String-Literale und Template-Literale identisch bis auf die drei
+  neuen aria-labelledby-IDs; KpiTile exportiert, KostenstellenSplit in types.ts
+  re-exportiert statt kopiert, modalInputCls bewusst getrennt von inputCls.
+  Nachbesserung: role/aria-modal/aria-labelledby nur an den drei Panels.
+- Task 10: kein Aufrufer musste geaendert werden (nur select-custom.tsx/.test.tsx
+  + Spec im Task-Diff), Scroll/Resize-Listener sauber aufgeraeumt,
+  Escape/Enter/Space vorhanden, Gruppenreihenfolge wie dokumentiert, title je
+  Option. Die Behauptung "jest-dom-Matcher projektweit kaputt" stimmt nicht:
+  src/components/ui/button.test.tsx nutzt toBeInTheDocument/toBeDisabled und
+  laeuft gruen (setupTests.ts importiert @testing-library/jest-dom/vitest).
+- Task 16: Polling stoppt, sobald kein Beleg mehr PENDING/LAEUFT ist;
+  reloadServerBelege ist useCallback([token]) und damit stabil, Cleanup raeumt
+  Timer und cancelled-Flag auf, keine Doppel-Timer. Keine neue Abhaengigkeit
+  (Intl.NumberFormat). RUNNING/LAEUFT ueber kiIstOffen vereinheitlicht.
+- Task 17: Rechtsaussagen zu § 146a AO, § 146 AO, § 33 UStDV und Eigenbeleg ohne
+  Vorsteuer sind sachlich richtig.
+- DSGVO/Secrets: nur Dummy-Daten (Max Mustermann, Musterbetrieb GmbH), keine
+  Secrets im Abschnitts-Diff, keine Klarnamen in Logs.
+
+Blockierende Befunde (🔴):
+1. KasseShortcutController.updateEinstellung:206-209 — die vier neuen
+   String-Felder werden bedingungslos aus dem Request uebernommen. Der heute
+   ausgelieferte KasseEinstellungenDialog.tsx:47-54 sendet sie nicht mit, also
+   setzt jedes Speichern der Kassen-Einstellungen datev_beraternummer,
+   datev_mandantennummer, kassenkonto_nummer und bankkonto_nummer auf NULL —
+   die von V372 gesetzten Defaults '1000'/'1200' gehen dabei verloren.
+   wirtschaftsjahrBeginnMonat ist bereits korrekt per null-Check geschuetzt.
+   Empfehlung: dieselbe `if (req.x() != null)`-Regel auf die vier String-Felder
+   anwenden (oder den Dialog die Felder mitschicken lassen).
+2. VerfahrensdokumentationService.java:79-82 — "Jede Zeile im Kassenbuch hat
+   eine Datei ... Das ist auf Datenbankebene erzwungen; eine belegfreie Buchung
+   kann in diesem System nicht entstehen." Der DB-CHECK
+   `chk_beleg_datei_oder_umbuchung` (V304:71) nimmt `ist_umbuchung = 1`
+   ausdruecklich aus, und V372 ist laut Plan (Zeile 54) die einzige neue
+   Migration — die Aussage bleibt also auch nach Abschnitt 4 falsch. Die vier
+   Schnellbuchungen legen heute Belege ohne Datei an (KasseShortcutService
+   .baseBeleg), diese Altbestaende bleiben dateilos. Empfehlung: die
+   DB-Erzwingung wieder auf a)/b) beschraenken und fuer c) sagen, dass das
+   Programm die Datei selbst erzeugt.
+
+Hinweise (nicht blockierend, 🟡):
+- Keine dedizierten Tests fuer die neue Einstellungs-Validierung. Die Logik
+  selbst ist korrekt (Monat 1-12, Laengen 7/5 passend zu den Spalten,
+  Ziffern-only + max 8 schuetzt auch den spaeteren DATEV-Export) — daher 🟡.
+- validateKontonummer laesst den Leerstring durch, damit landet "" in der
+  Spalte statt des Defaults.
+- ZahlungsartMapper.giltAlsBezahlt ist nicht idempotent fuer Klartext:
+  "AMAZON_PAY" -> true, "Online-Zahlung" -> false. Vertragskonform (Parameter
+  heisst kiCode), aber leicht ueberraschend.
+- BelegPdfService.berechneDateiHash liefert bei Fehlern still null zurueck; der
+  Fingerabdruck ist der GoBD-Nachweis, ein harter Fehler waere ehrlicher.
+- `Field` liegt jetzt dreimal identisch (BelegDetailModal, KassenbuchJournal,
+  BelegeKasseEditor) — vorher einmal. Bewusste Duplizierung statt Auslagerung.
+- select-custom.test.tsx:6-15 traegt einen falschen Kommentar ueber angeblich
+  kaputte jest-dom-Matcher; die Zusicherungen sind gleichwertig, aber der
+  Kommentar fuehrt den naechsten Agenten in die Irre und sollte weg.
+- select-custom.tsx:153-158: der setTimeout-Trick beim Click-Outside-Listener
+  kann bei Unmount im selben Tick einen Listener zuruecklassen — vorbestehend,
+  unveraendert.
+- BelegScannerPage: haengt ein Beleg dauerhaft auf PENDING, pollt die Seite
+  endlos alle 3s. Ein Abbruch nach N Versuchen waere freundlicher.
+- Die Doku-Dateien beschreiben den Zielzustand nach Abschnitt 4 im Praesens.
+  Vom Plan (Zeile 224-235) ausdruecklich so gewollt, deshalb nur als Hinweis.
