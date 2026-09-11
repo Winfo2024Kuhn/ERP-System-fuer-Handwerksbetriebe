@@ -34,6 +34,17 @@ function clampZoom(z: number): number {
     return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
 }
 
+function buildSafePdfIframeSrc(rawUrl?: string | null): string | undefined {
+    const safeUrl = toSafeResourceUrl(rawUrl);
+    if (!safeUrl) return undefined;
+
+    if (!(safeUrl.startsWith('blob:') || safeUrl.startsWith('https://') || safeUrl.startsWith('http://'))) {
+        return undefined;
+    }
+
+    return `${safeUrl}#toolbar=0&navpanes=0&view=FitH`;
+}
+
 /** Aufräumfrist, falls der Browser kein `afterprint` meldet – großzügig, damit niemand mitten im Druckdialog abgeschnitten wird. */
 const PRINT_FRAME_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -354,9 +365,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
 
     if (useFallback) {
         const candidate = fallbackBlobUrl ?? url;
-        const safeUrl = toSafeResourceUrl(candidate);
-        const isSafeProtocol = safeUrl.startsWith('blob:') || safeUrl.startsWith('https://') || safeUrl.startsWith('http://') || safeUrl.startsWith('/');
-        const iframeSrc = (safeUrl && isSafeProtocol) ? `${safeUrl}#toolbar=0&navpanes=0&view=FitH` : undefined;
+        const iframeSrc = buildSafePdfIframeSrc(candidate);
         return (
             <div className="relative w-full h-full">
                 {showPrintButton && (
