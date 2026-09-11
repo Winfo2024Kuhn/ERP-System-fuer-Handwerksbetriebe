@@ -462,4 +462,79 @@ describe('EmailCenter', () => {
             });
         });
     });
+
+    describe('Resizable Columns und Collapsible Sidebar', () => {
+        it('initialisiert Spaltenbreiten und Splitter', async () => {
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+
+            expect(screen.getByTitle('Ordnerspalte verschieben')).toBeInTheDocument();
+            expect(screen.getByTitle('Listenbreite verschieben')).toBeInTheDocument();
+        });
+
+        it('kann Ordnerleiste ein- und ausklappen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            renderEmailCenter();
+            await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
+
+            const collapseBtn = screen.getByTitle('Ordnerleiste einklappen');
+            await user.click(collapseBtn);
+
+            expect(screen.getByTitle('Ordnerleiste ausklappen')).toBeInTheDocument();
+            expect(localStorage.getItem('email_center_sidebar_collapsed')).toBe('true');
+        });
+    });
+
+    describe('Thread-Kundenempfänger und Antwort-Logik', () => {
+        it('setzt beim Antworten auf eine Ausgangsmail den Kunden als Zieladresse, nicht die eigene Adresse', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const outEmail = {
+                id: 42,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Angebot Metallgeländer',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: 'kunde@schlotz-architekten.de',
+                body: 'Hier ist das Angebot.',
+                sentAt: new Date().toISOString(),
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [outEmail],
+                '/api/emails/42': outEmail,
+                '/api/emails/42/thread': {
+                    rootEmailId: 42,
+                    focusedEmailId: 42,
+                    emails: [{
+                        id: 42,
+                        subject: 'Angebot Metallgeländer',
+                        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                        recipient: 'kunde@schlotz-architekten.de',
+                        direction: 'OUT',
+                        sentAt: new Date().toISOString(),
+                        attachments: []
+                    }]
+                }
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Angebot Metallgeländer')).toBeInTheDocument());
+
+            // E-Mail auswählen
+            await user.click(screen.getByText('Angebot Metallgeländer'));
+            await waitFor(() => expect(screen.getByText('Hier ist das Angebot.')).toBeInTheDocument());
+
+            // Auf "Antworten" im Header klicken
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            // Compose-Formular öffnet sich: Empfängerfeld muss den Kunden enthalten und NICHT die eigene Adresse!
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+            expect(screen.getByDisplayValue('kunde@schlotz-architekten.de')).toBeInTheDocument();
+        });
+    });
 });

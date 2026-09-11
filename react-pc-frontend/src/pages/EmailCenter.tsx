@@ -39,7 +39,10 @@ import {
     ArrowDownAZ,
     ArrowUpAZ,
     CheckCircle2,
-    Calculator
+    Calculator,
+    PanelLeftClose,
+    PanelLeftOpen,
+    Users
 } from 'lucide-react';
 import {
     DndContext,
@@ -55,7 +58,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
-import { extractDisplayName, formatRecipient } from '../lib/emailAddress';
+import { extractDisplayName, extractEmailAddress, formatRecipient } from '../lib/emailAddress';
 import { refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
@@ -65,6 +68,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { EmailThreadView } from '../components/EmailThreadView';
 import type { EmailThread } from '../components/EmailThreadView';
+import { EmailRecipientDropdown, parseRecipientList } from '../components/EmailRecipientDropdown';
 
 
 /** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
@@ -141,9 +145,28 @@ const getSenderName = (email: EmailItem) => {
 const getRecipientName = (email: EmailItem) => extractDisplayName(email.recipient);
 
 const getDisplayName = (email: EmailItem) => {
+    if (email.kundeName) return email.kundeName;
+    if (email.lieferantName) return email.lieferantName;
+    if (email.projektName) return email.projektName;
+    if (email.anfrageName) return email.anfrageName;
+
     if (email.direction === 'OUT') {
+        const parsed = parseRecipientList(email.recipient);
+        if (parsed.length > 1) {
+            return `${parsed[0].displayName} (+${parsed.length - 1})`;
+        }
         return getRecipientName(email);
     }
+
+    // Bei eingehenden E-Mails: Wenn fromAddress eine eigene Firmenadresse ist (z.B. versehentliche Selbst-Antwort),
+    // lieber den Kunden-Empfänger anzeigen
+    const fromClean = extractEmailAddress(email.fromAddress).toLowerCase();
+    const isFromSelf = fromClean.includes('bauschlosserei') || fromClean.includes('t-online.de') || fromClean.includes('kuhn');
+    if (isFromSelf && email.recipient) {
+        const recip = getRecipientName(email);
+        if (recip && recip !== 'Unbekannt') return recip;
+    }
+
     return getSenderName(email);
 };
 
@@ -363,6 +386,7 @@ interface DroppableFolderButtonProps {
     /** wenn true, läuft gerade ein Drag – Non-Drop-Ordner werden dann visuell ausgegraut */
     dragActive: boolean;
     countVariant?: 'rose' | 'amber' | 'slate';
+    collapsed?: boolean;
 }
 
 function DroppableFolderButton({
@@ -374,7 +398,8 @@ function DroppableFolderButton({
     onClick,
     droppable,
     dragActive,
-    countVariant = 'slate'
+    countVariant = 'slate',
+    collapsed = false,
 }: DroppableFolderButtonProps) {
     const { isOver, setNodeRef } = useDroppable({
         id: `folder-${folderId}`,
@@ -383,6 +408,36 @@ function DroppableFolderButton({
     });
 
     const readOnlyDuringDrag = dragActive && !droppable;
+
+    if (collapsed) {
+        return (
+            <button
+                ref={setNodeRef}
+                onClick={onClick}
+                title={`${label}${count ? ` (${count})` : ''}`}
+                className={cn(
+                    "relative w-10 h-10 mx-auto flex items-center justify-center rounded-xl transition-all duration-200 cursor-pointer",
+                    isActive
+                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                    isOver && droppable && "bg-rose-100 text-rose-800 ring-2 ring-rose-400 shadow-lg",
+                    readOnlyDuringDrag && "opacity-40 cursor-not-allowed"
+                )}
+            >
+                <Icon className="w-4 h-4" />
+                {count != null && count > 0 && (
+                    <span className={cn(
+                        "absolute -top-1 -right-1 text-[9px] font-bold px-1 py-0.2 rounded-full min-w-[1rem] text-center tabular-nums leading-tight shadow-xs",
+                        countVariant === 'rose' && "bg-rose-500 text-white",
+                        countVariant === 'amber' && "bg-amber-500 text-white",
+                        countVariant === 'slate' && "bg-slate-200 text-slate-700"
+                    )}>
+                        {count > 99 ? '99+' : count}
+                    </span>
+                )}
+            </button>
+        );
+    }
 
     return (
         <button
@@ -460,6 +515,113 @@ export default function EmailCenter() {
 
     // State
     const [emails, setEmails] = useState<EmailItem[]>([]);
+
+    // Eigene Firmenadressen laden (verhindert Antworten an mich selbst)
+    const [ownAddresses, setOwnAddresses] = useState<string[]>([]);
+    useEffect(() => {
+        fetch('/api/emails/from-addresses')
+            .then(res => res.ok ? res.json() : [])
+            .then(data => {
+                if (Array.isArray(data)) setOwnAddresses(data);
+            })
+            .catch(() => {});
+    }, []);
+
+    const isOwnEmail = useCallback((addr?: string) => {
+        if (!addr) return false;
+        const clean = extractEmailAddress(addr).toLowerCase();
+        if (!clean) return false;
+        if (ownAddresses.some(own => own.toLowerCase() === clean)) return true;
+        return clean.includes('bauschlosserei-kuhn') || clean.startsWith('info-bauschlosserei');
+    }, [ownAddresses]);
+
+    // Resizable Spalten & Einklappen (im localStorage gemerkt)
+    const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+        const saved = localStorage.getItem('email_center_sidebar_width');
+        if (saved) {
+            const val = parseInt(saved, 10);
+            if (!isNaN(val) && val >= 180 && val <= 400) return val;
+        }
+        return 240;
+    });
+
+    const [listWidth, setListWidth] = useState<number>(() => {
+        const saved = localStorage.getItem('email_center_list_width');
+        if (saved) {
+            const val = parseInt(saved, 10);
+            if (!isNaN(val) && val >= 280 && val <= 700) return val;
+        }
+        return 380;
+    });
+
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+        return localStorage.getItem('email_center_sidebar_collapsed') === 'true';
+    });
+
+    const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
+    const [isDraggingList, setIsDraggingList] = useState(false);
+
+    const toggleSidebar = useCallback(() => {
+        setIsSidebarCollapsed(prev => {
+            const next = !prev;
+            localStorage.setItem('email_center_sidebar_collapsed', String(next));
+            return next;
+        });
+    }, []);
+
+    const handleSidebarResizeStart = useCallback((e: React.PointerEvent) => {
+        e.preventDefault();
+        setIsDraggingSidebar(true);
+        const startX = e.clientX;
+        const startWidth = sidebarWidth;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'col-resize';
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const delta = moveEvent.clientX - startX;
+            const newWidth = Math.min(Math.max(startWidth + delta, 180), 400);
+            setSidebarWidth(newWidth);
+            localStorage.setItem('email_center_sidebar_width', String(newWidth));
+        };
+
+        const onPointerUp = () => {
+            setIsDraggingSidebar(false);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    }, [sidebarWidth]);
+
+    const handleListResizeStart = useCallback((e: React.PointerEvent) => {
+        e.preventDefault();
+        setIsDraggingList(true);
+        const startX = e.clientX;
+        const startWidth = listWidth;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'col-resize';
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const delta = moveEvent.clientX - startX;
+            const newWidth = Math.min(Math.max(startWidth + delta, 280), 700);
+            setListWidth(newWidth);
+            localStorage.setItem('email_center_list_width', String(newWidth));
+        };
+
+        const onPointerUp = () => {
+            setIsDraggingList(false);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    }, [listWidth]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isGlobalSearch, setIsGlobalSearch] = useState(false);
     const [globalSearchResults, setGlobalSearchResults] = useState<EmailItem[]>([]);
@@ -1585,6 +1747,48 @@ export default function EmailCenter() {
     // direction=IN; die OUT-Wurzel liegt ausserhalb).
     // Sortierung und Ungelesen-Filter basieren auf Thread-Aggregaten, damit
     // neue eingehende Antworten den Thread nach oben holen und in "Ungelesen" auftauchen.
+    // Thread-Kunden-Gegenstelle ermitteln: Pro Thread den externen Kunden/Partner finden,
+    // damit auch bei Folgenachrichten/Selbst-Antworten der Thread immer den Kunden zeigt.
+    const threadCounterparts = useMemo(() => {
+        const byId = new Map<number, EmailItem>();
+        for (const e of emails) byId.set(e.id, e);
+
+        const findVisibleRootId = (start: EmailItem): number => {
+            let cur = start;
+            const seen = new Set<number>();
+            while (cur.parentEmailId && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const parent = byId.get(cur.parentEmailId);
+                if (!parent) break;
+                cur = parent;
+            }
+            return cur.id;
+        };
+
+        const counterparts = new Map<number, string>();
+        for (const e of emails) {
+            const rootId = findVisibleRootId(e);
+            if (!counterparts.has(rootId)) {
+                if (e.kundeName) {
+                    counterparts.set(rootId, e.kundeName);
+                } else if (e.lieferantName) {
+                    counterparts.set(rootId, e.lieferantName);
+                } else if (e.direction === 'IN' && e.fromAddress && !isOwnEmail(e.fromAddress)) {
+                    counterparts.set(rootId, extractDisplayName(e.fromAddress));
+                } else if (e.direction === 'OUT' && e.recipient && !isOwnEmail(e.recipient)) {
+                    const parsed = parseRecipientList(e.recipient);
+                    const external = parsed.filter(p => !isOwnEmail(p.email));
+                    if (external.length > 0) {
+                        counterparts.set(rootId, external[0].displayName);
+                    } else {
+                        counterparts.set(rootId, extractDisplayName(e.recipient));
+                    }
+                }
+            }
+        }
+        return counterparts;
+    }, [emails, isOwnEmail]);
+
     const filteredEmails = useMemo(() => {
         const byId = new Map<number, EmailItem>();
         for (const e of emails) byId.set(e.id, e);
@@ -1624,6 +1828,8 @@ export default function EmailCenter() {
                 if (isUnread) agg.anyUnread = true;
             }
         }
+
+
 
         const isVisibleRoot = (e: EmailItem) => rootIdByEmail.get(e.id) === e.id;
 
@@ -1755,13 +1961,26 @@ export default function EmailCenter() {
                     ${cleanBody}
                 </div>`;
             } else if (replyToEmail) {
-                const senderName = getSenderName(replyToEmail);
-                // formatRecipient lässt den Namen weg, wenn er nur die Adresse
-                // wiederholt – sonst stünde `"a@b.de" <a@b.de>` im Empfängerfeld.
-                initialRecipient = formatRecipient(replyToEmail.fromAddress, senderName) || senderName;
+                const isReplyToOut = replyToEmail.direction === 'OUT' || isOwnEmail(replyToEmail.fromAddress);
+
+                // Wenn auf eine Ausgangsnachricht geantwortet wird (Folgenachricht / etwas vergessen):
+                // Empfänger MUSS der externe Kunde sein, niemals die eigene Firmenadresse!
+                if (isReplyToOut) {
+                    const parsed = parseRecipientList(replyToEmail.recipient);
+                    const external = parsed.filter(p => !isOwnEmail(p.email));
+                    const targetAddress = external.length > 0
+                        ? external.map(r => r.raw).join(', ')
+                        : (replyToEmail.recipient || '');
+                    const customerName = replyToEmail.kundeName || (external.length > 0 ? external[0].displayName : getRecipientName(replyToEmail));
+                    initialRecipient = formatRecipient(targetAddress, customerName) || targetAddress;
+                } else {
+                    const senderName = getSenderName(replyToEmail);
+                    initialRecipient = formatRecipient(replyToEmail.fromAddress, senderName) || senderName;
+                }
+
                 initialSubject = replyToEmail.subject?.startsWith('Re:') ? replyToEmail.subject : `Re: ${replyToEmail.subject || ''}`;
 
-                // Zitat aufbauen – Quote separat, Signatur wird in EmailComposeForm dazwischen gesetzt
+                // Zitat aufbauen
                 const date = new Date(replyToEmail.sentAt || '').toLocaleDateString('de-DE', {
                     day: '2-digit', month: '2-digit', year: 'numeric',
                 }) + ', ' + new Date(replyToEmail.sentAt || '').toLocaleTimeString('de-DE', {
@@ -1776,8 +1995,12 @@ export default function EmailCenter() {
                     cleanBody = doc.body.innerHTML;
                 } catch { /* ignore */ }
 
+                const quoteHeader = isReplyToOut
+                    ? `Am ${date} schrieben Sie an ${initialRecipient}:`
+                    : `Am ${date} schrieb ${getSenderName(replyToEmail)}:`;
+
                 replyQuote = `<div class="email-quote" style="border-left:3px solid #e2e8f0;padding-left:1rem;color:#64748b;margin-top:0.5rem">
-                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">Am ${date} schrieb ${senderName}:</p>
+                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">${quoteHeader}</p>
                     ${cleanBody}
                 </div>`;
             }
@@ -1950,25 +2173,37 @@ export default function EmailCenter() {
                 <>
                     {/* Header */}
                     <div className="p-6 border-b border-slate-200">
-                        <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap lg:flex-nowrap items-start justify-between gap-4">
+                            <div className="flex-1 min-w-[220px]">
                                 <div className="flex items-center gap-3 text-sm text-slate-600">
                                     <div className={cn(
-                                        "w-9 h-9 rounded-full flex items-center justify-center text-white font-medium text-sm shadow-sm",
+                                        "w-9 h-9 rounded-full flex items-center justify-center text-white font-medium text-sm shadow-sm shrink-0",
                                         selectedEmail.direction === 'IN' ? "bg-rose-500" : "bg-emerald-500"
                                     )}>
-                                        {getDisplayName(selectedEmail).charAt(0).toUpperCase()}
+                                        {(selectedEmail.direction === 'OUT'
+                                            ? (getRecipientName(selectedEmail).charAt(0) || 'A')
+                                            : (getDisplayName(selectedEmail).charAt(0) || 'V')
+                                        ).toUpperCase()}
                                     </div>
-                                    <div className="min-w-0">
-                                        <p className="font-medium text-slate-900 truncate">
-                                            {getSenderName(selectedEmail)}
-                                        </p>
-                                        <p className="text-slate-500 font-normal text-xs text-muted-foreground break-all">
-                                            &lt;{selectedEmail.fromAddress}&gt;
-                                        </p>
-                                        <p className="text-xs text-slate-500 mt-0.5">
-                                            An: <span className="text-slate-700">{getRecipientName(selectedEmail)}</span>
-                                        </p>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-baseline gap-2 flex-wrap">
+                                            <p className="font-semibold text-slate-900 truncate">
+                                                {selectedEmail.direction === 'OUT' ? 'Gesendet an:' : getSenderName(selectedEmail)}
+                                            </p>
+                                            <p className="text-slate-400 font-normal text-xs truncate" title={selectedEmail.fromAddress}>
+                                                {selectedEmail.direction === 'OUT'
+                                                    ? `(von: ${selectedEmail.fromAddress || 'mir'})`
+                                                    : `<${selectedEmail.fromAddress || ''}>`}
+                                            </p>
+                                        </div>
+                                        <div className="mt-0.5 max-w-full">
+                                            <EmailRecipientDropdown
+                                                recipients={selectedEmail.recipient}
+                                                cc={selectedEmail.cc}
+                                                label={selectedEmail.direction === 'OUT' ? '' : 'An:'}
+                                                className="text-xs"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                                 <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
@@ -1982,7 +2217,7 @@ export default function EmailCenter() {
                             </div>
 
                             {/* Actions */}
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center flex-wrap gap-1.5 shrink-0 justify-end">
                                 {activeFolder === 'trash' && (
                                     <Button
                                         variant="outline"
@@ -2124,7 +2359,7 @@ export default function EmailCenter() {
                                 >
                                     <Star className={cn("w-4 h-4", selectedEmail.isStarred && "fill-amber-400")} />
                                 </Button>
-                                {activeFolder !== 'sent' && (
+                                {activeFolder !== 'trash' && (
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -2216,6 +2451,8 @@ export default function EmailCenter() {
                                     projektId: selectedEmail.projektId,
                                     anfrageId: selectedEmail.anfrageId,
                                     lieferantId: selectedEmail.lieferantId,
+                                    kundeId: selectedEmail.kundeId,
+                                    kundeName: selectedEmail.kundeName,
                                 };
                                 handleReply(replyItem, entry.id);
                             }}
@@ -2270,29 +2507,69 @@ export default function EmailCenter() {
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex bg-slate-100 overflow-hidden -m-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)]">
             {/* Left Sidebar - Folders */}
-            <div className="w-64 bg-slate-50/80 border-r border-slate-200/80 flex flex-col flex-shrink-0">
+            <div
+                style={{ width: isSidebarCollapsed ? 56 : sidebarWidth }}
+                className={cn(
+                    "bg-slate-50/80 border-r border-slate-200/80 flex flex-col shrink-0 overflow-hidden",
+                    !isDraggingSidebar && "transition-[width] duration-150",
+                    isSidebarCollapsed ? "w-14 items-center" : ""
+                )}
+            >
                 {/* Header */}
-                <div className="p-2 border-b border-slate-200/80 bg-white space-y-1">
-                    <div>
-                        <h2 className="font-bold text-slate-900 text-sm leading-tight">E-Mail Center</h2>
-                        <p className="text-[10px] text-slate-400 leading-tight">Postfach verwalten</p>
+                {!isSidebarCollapsed ? (
+                    <div className="p-2 border-b border-slate-200/80 bg-white space-y-1 shrink-0 w-full">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="font-bold text-slate-900 text-sm leading-tight">E-Mail Center</h2>
+                                <p className="text-[10px] text-slate-400 leading-tight">Postfach verwalten</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={toggleSidebar}
+                                className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                                title="Ordnerleiste einklappen"
+                            >
+                                <PanelLeftClose className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <Button
+                            onClick={handleComposeNew}
+                            className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200/50 gap-2 h-8 font-semibold text-xs"
+                        >
+                            <PenSquare className="w-4 h-4" />
+                            Neue E-Mail
+                        </Button>
                     </div>
-                    <Button
-                        onClick={handleComposeNew}
-                        className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200/50 gap-2 h-8 font-semibold"
-                    >
-                        <PenSquare className="w-4 h-4" />
-                        Neue E-Mail
-                    </Button>
-                </div>
+                ) : (
+                    <div className="p-2 border-b border-slate-200/80 bg-white flex flex-col items-center gap-2 shrink-0 w-full">
+                        <button
+                            type="button"
+                            onClick={toggleSidebar}
+                            className="p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="Ordnerleiste ausklappen"
+                        >
+                            <PanelLeftOpen className="w-4 h-4 text-rose-600" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleComposeNew}
+                            className="w-8 h-8 rounded-lg bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-sm shadow-rose-200 transition-transform active:scale-95 cursor-pointer"
+                            title="Neue E-Mail schreiben"
+                        >
+                            <PenSquare className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
 
                 {/* Folders */}
                 <div className="flex-1 overflow-hidden p-2 space-y-0.5">
                     {/* ═══ ORDNER (Drag & Drop Drop-Ziele) ═══ */}
-                    <div className="px-3 py-1 flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordner</span>
-                        <span className="text-[9px] text-slate-300 font-medium">· Drag &amp; Drop</span>
-                    </div>
+                    {!isSidebarCollapsed && (
+                        <div className="px-3 py-1 flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordner</span>
+                            <span className="text-[9px] text-slate-300 font-medium">· Drag &amp; Drop</span>
+                        </div>
+                    )}
 
                     <DroppableFolderButton
                         folderId="inbox"
@@ -2304,6 +2581,7 @@ export default function EmailCenter() {
                         droppable={true}
                         dragActive={dragActiveEmail !== null}
                         countVariant="rose"
+                        collapsed={isSidebarCollapsed}
                     />
                     <DroppableFolderButton
                         folderId="trash"
@@ -2314,6 +2592,7 @@ export default function EmailCenter() {
                         onClick={() => setActiveFolder('trash')}
                         droppable={true}
                         dragActive={dragActiveEmail !== null}
+                        collapsed={isSidebarCollapsed}
                     />
                     <DroppableFolderButton
                         folderId="spam"
@@ -2324,6 +2603,7 @@ export default function EmailCenter() {
                         onClick={() => setActiveFolder('spam')}
                         droppable={true}
                         dragActive={dragActiveEmail !== null}
+                        collapsed={isSidebarCollapsed}
                     />
                     <DroppableFolderButton
                         folderId="newsletter"
@@ -2334,6 +2614,7 @@ export default function EmailCenter() {
                         onClick={() => setActiveFolder('newsletter')}
                         droppable={true}
                         dragActive={dragActiveEmail !== null}
+                        collapsed={isSidebarCollapsed}
                     />
 
                     <div className="h-px bg-slate-200 my-1.5" />
@@ -2346,6 +2627,7 @@ export default function EmailCenter() {
                         onClick={() => setActiveFolder('sent')}
                         droppable={false}
                         dragActive={dragActiveEmail !== null}
+                        collapsed={isSidebarCollapsed}
                     />
                     <DroppableFolderButton
                         folderId="drafts"
@@ -2356,6 +2638,7 @@ export default function EmailCenter() {
                         onClick={() => setActiveFolder('drafts')}
                         droppable={false}
                         dragActive={dragActiveEmail !== null}
+                        collapsed={isSidebarCollapsed}
                     />
                     <DroppableFolderButton
                         folderId="starred"
@@ -2367,20 +2650,25 @@ export default function EmailCenter() {
                         droppable={false}
                         dragActive={dragActiveEmail !== null}
                         countVariant="amber"
+                        collapsed={isSidebarCollapsed}
                     />
 
                     <div className="h-px bg-slate-200 my-1.5" />
 
                     {/* ═══ ZUGEORDNET (read-only, auto-assigned) ═══ */}
-                    <div className="px-3 py-1 flex items-center justify-between" title="Werden automatisch zugeordnet – kein Drag & Drop möglich">
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Zugeordnet</span>
-                            <span className="text-[9px] text-slate-300 font-medium">· automatisch</span>
+                    {!isSidebarCollapsed ? (
+                        <div className="px-3 py-1 flex items-center justify-between" title="Werden automatisch zugeordnet – kein Drag & Drop möglich">
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Zugeordnet</span>
+                                <span className="text-[9px] text-slate-300 font-medium">· automatisch</span>
+                            </div>
+                            <button onClick={() => setExpandedFilters(!expandedFilters)} className="cursor-pointer p-0.5 rounded hover:bg-slate-100 transition-colors">
+                                {expandedFilters ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+                            </button>
                         </div>
-                        <button onClick={() => setExpandedFilters(!expandedFilters)} className="cursor-pointer p-0.5 rounded hover:bg-slate-100 transition-colors">
-                            {expandedFilters ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-                        </button>
-                    </div>
+                    ) : (
+                        <div className="h-px bg-slate-200 my-1.5 w-8 mx-auto" />
+                    )}
 
                     {expandedFilters && (
                         <>
@@ -2441,23 +2729,55 @@ export default function EmailCenter() {
                     <div className="h-px bg-slate-200 my-1.5" />
 
                     {/* Settings Button */}
-                    <button
-                        onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
-                        className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
-                            showSettings
-                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                                : "text-slate-700 hover:bg-slate-50"
-                        )}
-                    >
-                        <Settings className="w-4 h-4" />
-                        <span className="flex-1 text-left">Einstellungen</span>
-                    </button>
+                    {!isSidebarCollapsed ? (
+                        <button
+                            onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
+                            className={cn(
+                                "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
+                                showSettings
+                                    ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                    : "text-slate-700 hover:bg-slate-50"
+                            )}
+                        >
+                            <Settings className="w-4 h-4" />
+                            <span className="flex-1 text-left">Einstellungen</span>
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
+                            title="Einstellungen"
+                            className={cn(
+                                "w-10 h-10 mx-auto flex items-center justify-center rounded-xl transition-all duration-200 cursor-pointer",
+                                showSettings
+                                    ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
+                                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                            )}
+                        >
+                            <Settings className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
             </div>
 
+            {/* Splitter 1: Sidebar Resizer */}
+            {!isSidebarCollapsed && (
+                <div
+                    onPointerDown={handleSidebarResizeStart}
+                    className={cn(
+                        "w-1 hover:w-1.5 bg-slate-200/80 hover:bg-rose-400 active:bg-rose-600 cursor-col-resize transition-all select-none relative shrink-0 z-20 group",
+                        isDraggingSidebar && "bg-rose-500 w-1.5"
+                    )}
+                    title="Ordnerspalte verschieben"
+                >
+                    <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
+                </div>
+            )}
+
             {/* Middle List - Email List */}
-            <div className="w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+            <div
+                style={{ width: `${listWidth}px` }}
+                className="bg-white border-r border-slate-200 flex flex-col shrink-0 min-w-[280px]"
+            >
                 {/* Ordner-Header mit "Alle gelesen"-Button */}
                 {!isGlobalSearch && activeFolder !== 'sent' && emails.some(e => !e.isRead) && (
                     <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
@@ -2669,7 +2989,7 @@ export default function EmailCenter() {
                                             "text-sm truncate",
                                             !email.isRead ? "font-bold text-slate-900" : "font-medium text-slate-700"
                                         )}>
-                                            {getDisplayName(email)}
+                                            {threadCounterparts.get(email.id) || getDisplayName(email)}
                                         </p>
                                         <div className="flex items-center gap-1 shrink-0">
                                             <button
@@ -2794,8 +3114,20 @@ export default function EmailCenter() {
                 </div>
             </div>
 
+            {/* Splitter 2: List Resizer */}
+            <div
+                onPointerDown={handleListResizeStart}
+                className={cn(
+                    "w-1 hover:w-1.5 bg-slate-200/80 hover:bg-rose-400 active:bg-rose-600 cursor-col-resize transition-all select-none relative shrink-0 z-20 group",
+                    isDraggingList && "bg-rose-500 w-1.5"
+                )}
+                title="Listenbreite verschieben"
+            >
+                <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
+            </div>
+
             {/* Right Pane - Preview/Compose */}
-            <div className="flex-1 bg-slate-50 flex flex-col min-w-0">
+            <div className="flex-1 bg-slate-50 flex flex-col min-w-0 overflow-hidden">
                 {renderRightPane()}
             </div>
 
