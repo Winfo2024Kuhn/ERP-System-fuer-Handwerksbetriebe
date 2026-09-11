@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -763,13 +764,25 @@ class UnifiedEmailControllerTest {
         @Test
         @DisplayName("GET /api/emails/from-addresses liefert aktive Absender ohne PathVariable-Fehler")
         void getFromAddresses_liefertAktiveAbsender() throws Exception {
-            given(emailAbsenderService.findActiveEmailAddresses())
+            given(emailAbsenderService.getPrioritizedFromAddresses(isNull()))
                     .willReturn(List.of("info@example.com", "buchhaltung@example.com"));
 
             mockMvc.perform(get("/api/emails/from-addresses"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0]").value("info@example.com"))
                     .andExpect(jsonPath("$[1]").value("buchhaltung@example.com"));
+        }
+
+        @Test
+        @DisplayName("GET /api/emails/from-addresses delegiert frontendUserId an Service")
+        void getFromAddresses_delegiertFrontendUserId() throws Exception {
+            given(emailAbsenderService.getPrioritizedFromAddresses(42L))
+                    .willReturn(List.of("user@example.com", "info@example.com"));
+
+            mockMvc.perform(get("/api/emails/from-addresses?frontendUserId=42"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0]").value("user@example.com"))
+                    .andExpect(jsonPath("$[1]").value("info@example.com"));
         }
     }
 

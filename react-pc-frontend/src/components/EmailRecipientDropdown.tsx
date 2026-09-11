@@ -17,6 +17,7 @@ function useSafeToast() {
 }
 
 import { parseRecipientList, type ParsedEmailRecipient } from '../lib/emailAddress';
+// eslint-disable-next-line react-refresh/only-export-components
 export { parseRecipientList, type ParsedEmailRecipient };
 
 interface EmailRecipientDropdownProps {

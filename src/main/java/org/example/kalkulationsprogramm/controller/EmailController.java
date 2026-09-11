@@ -76,22 +76,7 @@ public class EmailController {
     @GetMapping("/from-addresses")
     public ResponseEntity<java.util.List<String>> getFromAddresses(
             @org.springframework.web.bind.annotation.RequestParam(value = "frontendUserId", required = false) Long frontendUserId) {
-        java.util.List<String> aktive = new java.util.ArrayList<>(emailAbsenderService.findActiveEmailAddresses());
-
-        if (frontendUserId != null) {
-            String userAdresse = frontendUserProfileService.findById(frontendUserId)
-                    .map(FrontendUserProfile::getEmailAbsender)
-                    .map(a -> a.getEmailAdresse())
-                    .filter(s -> s != null && !s.isBlank())
-                    .orElse(null);
-            if (userAdresse != null) {
-                // User-Adresse an den Anfang stellen, Duplikate vermeiden.
-                aktive.removeIf(a -> a.equalsIgnoreCase(userAdresse));
-                aktive.add(0, userAdresse);
-            }
-        }
-
-        return ResponseEntity.ok(aktive);
+        return ResponseEntity.ok(emailAbsenderService.getPrioritizedFromAddresses(frontendUserId));
     }
 
     /**

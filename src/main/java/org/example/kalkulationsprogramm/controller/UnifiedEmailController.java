@@ -104,21 +104,7 @@ public class UnifiedEmailController {
     @GetMapping("/from-addresses")
     public ResponseEntity<List<String>> getFromAddresses(
             @RequestParam(value = "frontendUserId", required = false) Long frontendUserId) {
-        List<String> aktive = new ArrayList<>(emailAbsenderService.findActiveEmailAddresses());
-
-        if (frontendUserId != null) {
-            String userAdresse = frontendUserProfileService.findById(frontendUserId)
-                    .map(org.example.kalkulationsprogramm.domain.FrontendUserProfile::getEmailAbsender)
-                    .map(org.example.kalkulationsprogramm.domain.EmailAbsender::getEmailAdresse)
-                    .filter(s -> s != null && !s.isBlank())
-                    .orElse(null);
-            if (userAdresse != null) {
-                aktive.removeIf(a -> a.equalsIgnoreCase(userAdresse));
-                aktive.add(0, userAdresse);
-            }
-        }
-
-        return ResponseEntity.ok(aktive);
+        return ResponseEntity.ok(emailAbsenderService.getPrioritizedFromAddresses(frontendUserId));
     }
 
     @GetMapping("/{emailId}/attachments/{attachmentId}")
@@ -212,7 +198,7 @@ public class UnifiedEmailController {
                 mimeType = "application/octet-stream";
             }
 
-            log.debug("Serving attachment {} with MIME-Type: {}", attachmentId, mimeType);
+            log.debug("Serving attachment {}", attachmentId);
 
             // MIME-Type gegen CR/LF absichern und Header-Parameter bereinigen
             org.springframework.http.MediaType mediaType;
@@ -225,7 +211,8 @@ public class UnifiedEmailController {
                     mediaType = org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
                 }
             } catch (Exception ex) {
-                log.warn("Konnte MIME-Type '{}' nicht parsen, nutze Fallback: {}", mimeType, ex.getMessage());
+                log.warn("Konnte MIME-Type fuer Attachment {} nicht parsen ({}), nutze Fallback application/octet-stream",
+                        attachmentId, ex.getClass().getSimpleName());
                 mediaType = org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
             }
 

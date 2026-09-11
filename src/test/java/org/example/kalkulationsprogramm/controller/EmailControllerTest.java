@@ -24,10 +24,13 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -254,6 +257,35 @@ class EmailControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/email/from-addresses")
+    class FromAddresses {
+
+        @Test
+        @DisplayName("Liefert aktive Absender ohne User-Parameter")
+        void liefertAktiveAbsender() throws Exception {
+            given(emailAbsenderService.getPrioritizedFromAddresses(isNull()))
+                    .willReturn(List.of("info@example.com", "buchhaltung@example.com"));
+
+            mockMvc.perform(get("/api/email/from-addresses"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0]").value("info@example.com"))
+                    .andExpect(jsonPath("$[1]").value("buchhaltung@example.com"));
+        }
+
+        @Test
+        @DisplayName("Delegiert frontendUserId an Service")
+        void delegiertFrontendUserId() throws Exception {
+            given(emailAbsenderService.getPrioritizedFromAddresses(15L))
+                    .willReturn(List.of("user@example.com", "info@example.com"));
+
+            mockMvc.perform(get("/api/email/from-addresses?frontendUserId=15"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0]").value("user@example.com"))
+                    .andExpect(jsonPath("$[1]").value("info@example.com"));
         }
     }
 }

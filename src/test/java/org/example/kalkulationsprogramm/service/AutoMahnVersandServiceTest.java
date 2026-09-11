@@ -607,4 +607,19 @@ class AutoMahnVersandServiceTest
 
         assertThat(stufe).isNull();
     }
+
+    @Test
+    void verarbeiteRechnung_ignoriertStornorechnung()
+    {
+        Firmeninformation firma = firmaMitAbstaenden(7, 7, 7);
+        ProjektGeschaeftsdokument storno = offeneRechnung();
+        storno.setSystemGeneriert(true);
+        storno.setGeschaeftsdokumentart("Stornorechnung");
+        storno.setFaelligkeitsdatum(HEUTE.minusDays(10));
+
+        AutoMahnVersandService service = neuService();
+        boolean result = service.verarbeiteRechnung(storno, firma, HEUTE);
+
+        assertThat(result).isFalse();
+    }
 }
