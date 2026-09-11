@@ -328,16 +328,8 @@ public class LieferantenController {
         }
 
         // Handle Attachments (Send & Save)
-        List<java.io.File> tempFiles = new ArrayList<>();
         List<org.example.email.EmailService.Attachment> attachmentsForEmail = new ArrayList<>();
         try {
-            // 1. Send Email
-            // Note: Our EmailService might need adaptation for attachments.
-            // For now assuming we can send WITHOUT attachments in this step OR we use a
-            // version that supports it.
-            // The logic here is simplified: we save first, then send? Or send then save?
-            // Sending with attachments from MultipartFile requires streaming or temp files.
-
             // For saving to unified storage:
             org.example.kalkulationsprogramm.domain.Email emailContext = new org.example.kalkulationsprogramm.domain.Email();
             emailContext.assignToLieferant(lieferant);
@@ -356,30 +348,33 @@ public class LieferantenController {
             // Save Attachments
             if (attachments != null) {
                 java.nio.file.Path dstDir = Path.of(mailAttachmentDir).toAbsolutePath().normalize()
-                        .resolve("attachments").resolve(String.valueOf(emailContext.getId()));
+                        .resolve("attachments").resolve(String.valueOf(emailContext.getId())).normalize();
                 java.nio.file.Files.createDirectories(dstDir);
 
                 for (MultipartFile mpf : attachments) {
                     if (mpf.isEmpty())
                         continue;
-                    String original = mpf.getOriginalFilename();
-                    String storedName = java.util.UUID.randomUUID() + "_" + original;
-                    java.nio.file.Path dst = dstDir.resolve(storedName);
+                    String rawOriginal = mpf.getOriginalFilename() != null ? mpf.getOriginalFilename() : "attachment";
+                    String safeOriginal = java.nio.file.Path.of(rawOriginal).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
+                    String storedName = java.util.UUID.randomUUID() + "_" + safeOriginal;
+                    java.nio.file.Path dst = dstDir.resolve(storedName).normalize();
+                    if (!dst.startsWith(dstDir)) {
+                        throw new IllegalArgumentException("Ungültiger Dateiname für Anhang");
+                    }
                     mpf.transferTo(dst);
 
                     var att = new org.example.kalkulationsprogramm.domain.EmailAttachment();
                     att.setEmail(emailContext);
-                    att.setOriginalFilename(original);
+                    att.setOriginalFilename(rawOriginal);
                     att.setStoredFilename(storedName);
                     att.setSizeBytes(mpf.getSize());
                     att.setMimeType(mpf.getContentType());
 
                     emailContext.addAttachment(att);
 
-                    // Add to send list
-                    tempFiles.add(dst.toFile());
+                    // Add to send list with in-memory bytes
                     attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
-                            dst.toFile(), original, mpf.getContentType()));
+                            mpf.getBytes(), safeOriginal, mpf.getContentType()));
                 }
                 emailContext = emailRepository.save(emailContext);
             }

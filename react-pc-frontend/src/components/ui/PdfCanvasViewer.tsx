@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Printer } from 'lucide-react';
+import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -85,9 +86,12 @@ function openPrintFrame(src: string, ownsUrl: boolean): void {
             cleanup();
         }
     };
-    frame.onerror = cleanup;
-
-    frame.src = src;
+    const safeSrc = toSafeResourceUrl(src);
+    if (!safeSrc) {
+        cleanup();
+        return;
+    }
+    frame.src = safeSrc;
     document.body.appendChild(frame);
     // Bewusst schon hier scharfstellen: Bleibt `onload` aus (z.B. Content-Disposition
     // "attachment" oder ein geblockter Frame), gäbe es sonst nie ein Aufräumen.
@@ -349,6 +353,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
     );
 
     if (useFallback) {
+        const safeUrl = toSafeResourceUrl(fallbackBlobUrl ?? url);
         return (
             <div className="relative w-full h-full">
                 {showPrintButton && (
@@ -357,7 +362,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
                     </div>
                 )}
                 <iframe
-                    src={`${fallbackBlobUrl ?? url}#toolbar=0&navpanes=0&view=FitH`}
+                    src={safeUrl ? `${safeUrl}#toolbar=0&navpanes=0&view=FitH` : undefined}
                     className={className || "w-full h-[70vh] rounded-lg border border-slate-200"}
                     style={{ background: 'white' }}
                     title="PDF Vorschau"

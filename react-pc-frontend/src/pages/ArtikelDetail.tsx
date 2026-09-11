@@ -16,6 +16,7 @@ import { ArtikelDokumente } from "../components/artikel/ArtikelDokumente";
 // Dieselbe Waehrungsformatierung wie in der Trefferliste - inklusive der
 // zusaetzlichen Nachkommastellen bei Kleinstpreisen (Schrauben, Muttern).
 import { formatCurrency as formatEuro } from "../components/artikel/formatCurrency";
+import { stripHtmlTags } from "../lib/htmlSanitizer";
 import type { Artikel, ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
 
 /** Wie in der Liste - nur steht hier ein Strich, wo gar kein Preis gepflegt ist. */
@@ -38,8 +39,7 @@ const formatZahl = (val?: number, nachkomma = 3) =>
  * Zeichen) und gewoehnliche Leerzeichen.
  */
 function richtextOderNull(html: string): string | null {
-    const sichtbarerText = html
-        .replace(/<[^>]*>/g, "")
+    const sichtbarerText = stripHtmlTags(html)
         .replace(/&nbsp;/gi, " ")
         .replace(/\u00a0/g, " ")
         .trim();
