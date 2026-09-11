@@ -54,6 +54,21 @@ const MOCK_EMAILS = [
         zuordnungTyp: 'KEINE',
         kundeName: 'Schlotz Architekten',
         attachments: []
+    },
+    {
+        id: 103,
+        type: 'EMAIL',
+        direction: 'OUT',
+        subject: 'Rundmail Projekt-Update',
+        sender: 'Bauschlosserei Kuhn',
+        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+        recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
+        body: 'Hallo zusammen, hier ist das Update.',
+        htmlBody: '<p>Hallo zusammen, hier ist das Update.</p>',
+        sentAt: '2026-09-11T16:10:00',
+        isRead: true,
+        zuordnungTyp: 'KEINE',
+        attachments: []
     }
 ];
 
@@ -127,6 +142,27 @@ async function stubEmailApi(page: Page) {
         if (url.includes('/api/emails/102')) {
             return json(route, MOCK_EMAILS[1]);
         }
+        if (url.includes('/api/emails/103/thread')) {
+            return json(route, {
+                rootEmailId: 103,
+                focusedEmailId: 103,
+                emails: [{
+                    id: 103,
+                    subject: 'Rundmail Projekt-Update',
+                    fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                    recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
+                    sentAt: '2026-09-11T16:10:00',
+                    direction: 'OUT',
+                    snippet: 'Hallo zusammen, hier ist das Update.',
+                    htmlBody: '<p>Hallo zusammen, hier ist das Update.</p>',
+                    attachments: []
+                }]
+            });
+        }
+        if (url.includes('/api/emails/103')) {
+            return json(route, MOCK_EMAILS[2]);
+        }
+
 
         // Fallback fuer sonstige Endpunkte (User, Benachrichtigungen etc.)
         return json(route, []);
@@ -225,4 +261,28 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
         const ownRecipientInput = page.locator('input[value*="bauschlosserei-kuhn@t-online.de"]');
         await expect(ownRecipientInput).not.toBeVisible();
     });
+    test('4. Antworten auf Ausgangs-Rundmail behaelt alle Empfaenger und maskiert spitze Klammern im Zitat', async ({ page }) => {
+        await stubEmailApi(page);
+        await page.goto('/emails/inbox');
+
+        await page.getByText('Rundmail Projekt-Update').click();
+        await expect(page.getByText('Hallo zusammen, hier ist das Update.')).toBeVisible();
+
+        const antwortenButtons = page.getByRole('button', { name: 'Antworten' });
+        await antwortenButtons.first().click();
+
+        await expect(page.getByText('E-Mail senden')).toBeVisible();
+
+        // Beide Empfaenger muessen im Empfaengerfeld stehen! (Weder Anna verloren noch Bens Name ueberschrieben)
+        const recipientInput = page.locator('input[value*="anna@example.com"]');
+        await expect(recipientInput).toBeVisible();
+        const value = await recipientInput.inputValue();
+        expect(value).toContain('anna@example.com');
+        expect(value).toContain('ben@example.com');
+
+        // Zitatkopf muss dank HTML-Escaping die Adresse als Text sichtbar darstellen
+        await expect(page.locator('.email-quote')).toBeVisible();
+        await expect(page.locator('.email-quote')).toContainText('anna@example.com');
+    });
+
 });

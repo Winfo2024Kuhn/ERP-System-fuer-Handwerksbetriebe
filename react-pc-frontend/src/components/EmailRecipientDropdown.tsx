@@ -2,59 +2,8 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Users, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-export interface ParsedEmailRecipient {
-    raw: string;
-    email: string;
-    displayName: string;
-}
-
-/**
- * Zerlegt eine Liste von Empfängern (komma- oder semikolongetrennt) und beachtet
- * Anführungszeichen in Anzeigenamen wie "Zech, Philipp" <p@zech.de>.
- */
-export function parseRecipientList(input?: string): ParsedEmailRecipient[] {
-    if (!input || !input.trim()) return [];
-
-    const items: string[] = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < input.length; i++) {
-        const char = input[i];
-        if (char === '"') {
-            inQuotes = !inQuotes;
-            current += char;
-        } else if ((char === ',' || char === ';') && !inQuotes) {
-            if (current.trim()) items.push(current.trim());
-            current = '';
-        } else {
-            current += char;
-        }
-    }
-    if (current.trim()) items.push(current.trim());
-
-    return items.map(item => {
-        const trimmed = item.trim();
-        // Format: "Name" <email> oder Name <email> oder <email>
-        const angleMatch = trimmed.match(/^(?:["']?([^<>"']+)["']?\s*)?<([^<>]+)>$/);
-        if (angleMatch) {
-            const name = (angleMatch[1] || '').trim();
-            const email = (angleMatch[2] || '').trim();
-            return {
-                raw: trimmed,
-                email,
-                displayName: name || email,
-            };
-        }
-        // Reine E-Mail oder Name ohne Klammern
-        const clean = trimmed.replace(/^["']|["']$/g, '');
-        return {
-            raw: trimmed,
-            email: clean,
-            displayName: clean,
-        };
-    }).filter(r => r.email.length > 0);
-}
+import { parseRecipientList, type ParsedEmailRecipient } from '../lib/emailAddress';
+export { parseRecipientList, type ParsedEmailRecipient };
 
 interface EmailRecipientDropdownProps {
     recipients?: string;

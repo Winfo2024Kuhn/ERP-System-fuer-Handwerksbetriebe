@@ -20,6 +20,13 @@ describe('EmailRecipientDropdown', () => {
             expect(list[1].email).toBe('info@tfm.de');
         });
 
+        it('parst Namen mit Apostroph ("O\x27Connor" <o@example.com>) korrekt', () => {
+            const list = parseRecipientList('"O\x27Connor" <oconnor@example.com>');
+            expect(list).toHaveLength(1);
+            expect(list[0].email).toBe('oconnor@example.com');
+            expect(list[0].displayName).toBe("O'Connor");
+        });
+
         it('gibt leeres Array bei leerem String zurück', () => {
             expect(parseRecipientList('')).toEqual([]);
             expect(parseRecipientList(undefined)).toEqual([]);
@@ -65,5 +72,20 @@ describe('EmailRecipientDropdown', () => {
         fireEvent.click(copyBtn);
 
         expect(writeTextMock).toHaveBeenCalledWith('a@b.de, c@d.de, e@f.de');
+    });
+    it('kopiert bei Namen mit Apostroph nur die reine E-Mail-Adresse', () => {
+        const writeTextMock = vi.fn();
+        Object.assign(navigator, {
+            clipboard: {
+                writeText: writeTextMock,
+            },
+        });
+
+        render(<EmailRecipientDropdown recipients='"O\x27Connor" <oconnor@example.com>, a@b.de' maxInline={1} />);
+        fireEvent.click(screen.getByText('+1 weitere'));
+        const copyBtns = screen.getAllByTitle('Adresse kopieren');
+        fireEvent.click(copyBtns[0]);
+
+        expect(writeTextMock).toHaveBeenCalledWith('oconnor@example.com');
     });
 });

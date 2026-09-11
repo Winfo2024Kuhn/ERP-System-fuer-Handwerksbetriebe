@@ -536,5 +536,101 @@ describe('EmailCenter', () => {
             await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
             expect(screen.getByDisplayValue('kunde@schlotz-architekten.de')).toBeInTheDocument();
         });
+        it('behält beim Antworten auf eine Rundmail alle Empfänger mit ihren jeweiligen Namen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const roundmail = {
+                id: 43,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Rundmail Protokoll',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
+                body: 'Anbei das Protokoll.',
+                sentAt: new Date().toISOString(),
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                kundeName: 'Schlotz Architekten',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [roundmail],
+                '/api/emails/43': roundmail,
+                '/api/emails/43/thread': {
+                    rootEmailId: 43,
+                    focusedEmailId: 43,
+                    emails: [{
+                        id: 43,
+                        subject: 'Rundmail Protokoll',
+                        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                        recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
+                        direction: 'OUT',
+                        sentAt: new Date().toISOString(),
+                        attachments: []
+                    }]
+                }
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Rundmail Protokoll')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Rundmail Protokoll'));
+            await waitFor(() => expect(screen.getByText('Anbei das Protokoll.')).toBeInTheDocument());
+
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+
+            // Beide Empfänger müssen mit ihren eigenen Namen enthalten sein
+            expect(screen.getByDisplayValue('"Anna" <anna@example.com>, "Ben" <ben@example.com>')).toBeInTheDocument();
+        });
+
+        it('behält E-Mail-Adresse im Zitatkopf sichtbar dank HTML-Maskierung', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const emailWithBrackets = {
+                id: 44,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Re: Sichtbarer Zitatkopf',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: '"Anna" <anna@example.com>',
+                body: 'Klarer Textkörper',
+                sentAt: '2026-09-11T16:00:00',
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [emailWithBrackets],
+                '/api/emails/44': emailWithBrackets,
+                '/api/emails/44/thread': {
+                    rootEmailId: 44,
+                    focusedEmailId: 44,
+                    emails: [emailWithBrackets]
+                }
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Re: Sichtbarer Zitatkopf')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Re: Sichtbarer Zitatkopf'));
+            await waitFor(() => expect(screen.getByText('Klarer Textkörper')).toBeInTheDocument());
+
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+
+            // Die Adresse darf im Editor nicht als HTML-Tag verschwinden, sondern muss als Text sichtbar sein
+            await waitFor(() => {
+                expect(screen.getByText(/schrieben Sie an/i)).toBeInTheDocument();
+                expect(screen.getByText(/<anna@example.com>/i)).toBeInTheDocument();
+            });
+        });
+
     });
 });

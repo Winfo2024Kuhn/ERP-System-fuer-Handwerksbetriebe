@@ -58,7 +58,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
-import { extractDisplayName, extractEmailAddress, formatRecipient } from '../lib/emailAddress';
+import { extractDisplayName, extractEmailAddress, formatRecipient, formatRecipientList, escapeHtml, parseRecipientList } from '../lib/emailAddress';
 import { refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
@@ -68,7 +68,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { EmailThreadView } from '../components/EmailThreadView';
 import type { EmailThread } from '../components/EmailThreadView';
-import { EmailRecipientDropdown, parseRecipientList } from '../components/EmailRecipientDropdown';
+import { EmailRecipientDropdown } from '../components/EmailRecipientDropdown';
 
 
 /** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
@@ -1954,10 +1954,10 @@ export default function EmailCenter() {
                 // die korrekte Reihenfolge: [leer] → [Signatur] → [Zitat] erzeugt
                 replyQuote = `<div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:1rem;color:#64748b">
                     <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">---------- Weitergeleitete Nachricht ----------<br/>
-                    Von: ${senderName} &lt;${forwardEmail.fromAddress || ''}&gt;<br/>
-                    Datum: ${date}<br/>
-                    Betreff: ${forwardEmail.subject || ''}<br/>
-                    An: ${forwardEmail.recipient || ''}</p>
+                    Von: ${escapeHtml(senderName)} &lt;${escapeHtml(forwardEmail.fromAddress || '')}&gt;<br/>
+                    Datum: ${escapeHtml(date)}<br/>
+                    Betreff: ${escapeHtml(forwardEmail.subject || '')}<br/>
+                    An: ${escapeHtml(forwardEmail.recipient || '')}</p>
                     ${cleanBody}
                 </div>`;
             } else if (replyToEmail) {
@@ -1968,14 +1968,24 @@ export default function EmailCenter() {
                 if (isReplyToOut) {
                     const parsed = parseRecipientList(replyToEmail.recipient);
                     const external = parsed.filter(p => !isOwnEmail(p.email));
-                    const targetAddress = external.length > 0
-                        ? external.map(r => r.raw).join(', ')
-                        : (replyToEmail.recipient || '');
-                    const customerName = replyToEmail.kundeName || (external.length > 0 ? external[0].displayName : getRecipientName(replyToEmail));
-                    initialRecipient = formatRecipient(targetAddress, customerName) || targetAddress;
+                    const targetList = external.length > 0 ? external : parsed;
+
+                    if (targetList.length === 1) {
+                        const r = targetList[0];
+                        const customerName = replyToEmail.kundeName || (r.displayName !== r.email ? r.displayName : undefined);
+                        initialRecipient = formatRecipient(r.raw, customerName) || r.raw;
+                    } else if (targetList.length > 1) {
+                        // Bei Rundmails jeden Empfänger einzeln formatieren – keinen pauschalen Kundennamen anwenden!
+                        initialRecipient = targetList.map(r => {
+                            const nameOverride = r.displayName !== r.email ? r.displayName : undefined;
+                            return formatRecipient(r.raw, nameOverride) || r.raw;
+                        }).join(', ');
+                    } else {
+                        initialRecipient = replyToEmail.recipient || '';
+                    }
                 } else {
                     const senderName = getSenderName(replyToEmail);
-                    initialRecipient = formatRecipient(replyToEmail.fromAddress, senderName) || senderName;
+                    initialRecipient = formatRecipientList(replyToEmail.fromAddress, senderName) || senderName;
                 }
 
                 initialSubject = replyToEmail.subject?.startsWith('Re:') ? replyToEmail.subject : `Re: ${replyToEmail.subject || ''}`;
@@ -2000,7 +2010,7 @@ export default function EmailCenter() {
                     : `Am ${date} schrieb ${getSenderName(replyToEmail)}:`;
 
                 replyQuote = `<div class="email-quote" style="border-left:3px solid #e2e8f0;padding-left:1rem;color:#64748b;margin-top:0.5rem">
-                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">${quoteHeader}</p>
+                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">${escapeHtml(quoteHeader)}</p>
                     ${cleanBody}
                 </div>`;
             }
