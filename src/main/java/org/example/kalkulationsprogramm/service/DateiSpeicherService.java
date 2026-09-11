@@ -1653,7 +1653,11 @@ public class DateiSpeicherService {
     }
 
     private boolean istRechnung(String art) {
-        return art != null && "rechnung".equalsIgnoreCase(art);
+        if (art == null) {
+            return false;
+        }
+        String lower = art.toLowerCase(Locale.GERMAN);
+        return lower.contains("rechnung") && !lower.contains("mahn");
     }
 
     private boolean istMahnung(String art) {

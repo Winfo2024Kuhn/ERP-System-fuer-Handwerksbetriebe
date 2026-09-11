@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
@@ -50,6 +51,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -752,6 +754,78 @@ class UnifiedEmailControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.kundeId").value(5))
                     .andExpect(jsonPath("$.kundeName").value("Früher Kunde"));
+        }
+    }
+
+    @Nested
+    @DisplayName("From-Addresses Endpoint Tests")
+    class FromAddressesTests {
+        @Test
+        @DisplayName("GET /api/emails/from-addresses liefert aktive Absender ohne PathVariable-Fehler")
+        void getFromAddresses_liefertAktiveAbsender() throws Exception {
+            given(emailAbsenderService.findActiveEmailAddresses())
+                    .willReturn(List.of("info@example.com", "buchhaltung@example.com"));
+
+            mockMvc.perform(get("/api/emails/from-addresses"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0]").value("info@example.com"))
+                    .andExpect(jsonPath("$[1]").value("buchhaltung@example.com"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Attachment Download Tests")
+    class AttachmentDownloadTests {
+        @Test
+        @DisplayName("downloadAttachment bereinigt CRLF aus MIME-Type")
+        void downloadAttachment_bereinigtCrlfAusMimeType() throws Exception {
+            java.nio.file.Path tempDir = java.nio.file.Path.of("target/test-attachments");
+            java.nio.file.Files.createDirectories(tempDir);
+            java.nio.file.Path dummyFile = tempDir.resolve("test-crlf.pdf");
+            java.nio.file.Files.writeString(dummyFile, "%PDF-1.4 dummy");
+
+            Email email = createTestEmail(200L, "Test", "absender@example.com");
+            EmailAttachment att = new EmailAttachment();
+            att.setId(501L);
+            att.setEmail(email);
+            att.setOriginalFilename("beleg.pdf");
+            att.setStoredFilename("test-crlf.pdf");
+            att.setMimeType("application/pdf;\r\n name=\"beleg.pdf\"");
+            email.setAttachments(List.of(att));
+
+            given(emailRepository.findById(200L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(get("/api/emails/200/attachments/501"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/pdf"));
+        }
+
+        @Test
+        @DisplayName("downloadAttachment kodiert Nicht-ASCII Unicode im Content-Disposition Header (RFC 5987)")
+        void downloadAttachment_kodiertNichtAsciiDateinamen() throws Exception {
+            java.nio.file.Path tempDir = java.nio.file.Path.of("target/test-attachments");
+            java.nio.file.Files.createDirectories(tempDir);
+            java.nio.file.Path dummyFile = tempDir.resolve("test-unicode.pdf");
+            java.nio.file.Files.writeString(dummyFile, "%PDF-1.4 dummy");
+
+            Email email = createTestEmail(201L, "Test", "absender@example.com");
+            EmailAttachment att = new EmailAttachment();
+            att.setId(502L);
+            att.setEmail(email);
+            att.setOriginalFilename("Lebenslauf JAVİD MEHRDAD_Überweisung.pdf");
+            att.setStoredFilename("test-unicode.pdf");
+            att.setMimeType("application/pdf");
+            email.setAttachments(List.of(att));
+
+            given(emailRepository.findById(201L)).willReturn(Optional.of(email));
+
+            var result = mockMvc.perform(get("/api/emails/201/attachments/502"))
+                    .andExpect(status().isOk())
+                    .andReturn();
+
+            String disposition = result.getResponse().getHeader(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION);
+            org.junit.jupiter.api.Assertions.assertNotNull(disposition);
+            org.junit.jupiter.api.Assertions.assertTrue(disposition.contains("filename*="));
         }
     }
 }

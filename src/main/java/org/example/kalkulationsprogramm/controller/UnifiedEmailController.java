@@ -101,6 +101,26 @@ public class UnifiedEmailController {
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
 
+    @GetMapping("/from-addresses")
+    public ResponseEntity<List<String>> getFromAddresses(
+            @RequestParam(value = "frontendUserId", required = false) Long frontendUserId) {
+        List<String> aktive = new ArrayList<>(emailAbsenderService.findActiveEmailAddresses());
+
+        if (frontendUserId != null) {
+            String userAdresse = frontendUserProfileService.findById(frontendUserId)
+                    .map(org.example.kalkulationsprogramm.domain.FrontendUserProfile::getEmailAbsender)
+                    .map(org.example.kalkulationsprogramm.domain.EmailAbsender::getEmailAdresse)
+                    .filter(s -> s != null && !s.isBlank())
+                    .orElse(null);
+            if (userAdresse != null) {
+                aktive.removeIf(a -> a.equalsIgnoreCase(userAdresse));
+                aktive.add(0, userAdresse);
+            }
+        }
+
+        return ResponseEntity.ok(aktive);
+    }
+
     @GetMapping("/{emailId}/attachments/{attachmentId}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadAttachment(
             @PathVariable Long emailId,
@@ -194,10 +214,33 @@ public class UnifiedEmailController {
 
             log.debug("Serving attachment {} with MIME-Type: {}", attachmentId, mimeType);
 
+            // MIME-Type gegen CR/LF absichern und Header-Parameter bereinigen
+            org.springframework.http.MediaType mediaType;
+            try {
+                if (mimeType != null && !mimeType.isBlank()) {
+                    String cleanMime = mimeType.replaceAll("[\\r\\n]", " ").trim();
+                    mediaType = org.springframework.http.MediaType.parseMediaType(cleanMime);
+                    mediaType = new org.springframework.http.MediaType(mediaType.getType(), mediaType.getSubtype());
+                } else {
+                    mediaType = org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
+                }
+            } catch (Exception ex) {
+                log.warn("Konnte MIME-Type '{}' nicht parsen, nutze Fallback: {}", mimeType, ex.getMessage());
+                mediaType = org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
+            }
+
+            String dateiname = attachment.getOriginalFilename();
+            if (dateiname == null || dateiname.isBlank()) {
+                dateiname = "attachment";
+            }
+            String contentDisposition = org.springframework.http.ContentDisposition.inline()
+                    .filename(dateiname, java.nio.charset.StandardCharsets.UTF_8)
+                    .build()
+                    .toString();
+
             return ResponseEntity.ok()
-                    .contentType(org.springframework.http.MediaType.parseMediaType(mimeType))
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "inline; filename=\"" + attachment.getOriginalFilename() + "\"")
+                    .contentType(mediaType)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
                     .body(resource);
         } catch (Exception e) {
             log.error("Fehler beim Download des Attachments", e);
@@ -725,7 +768,7 @@ public class UnifiedEmailController {
     // EINZELNE EMAIL
     // ═══════════════════════════════════════════════════════════════
 
-    @GetMapping("/{id}")
+    @GetMapping("/{id:[0-9]+}")
     @Transactional(readOnly = true)
     public ResponseEntity<UnifiedEmailDto> getEmailById(@PathVariable Long id) {
         return emailRepository.findById(id)

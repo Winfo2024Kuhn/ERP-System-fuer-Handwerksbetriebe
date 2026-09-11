@@ -730,6 +730,29 @@ class EmailImportServiceTest {
             // Verify the spam filter was still called before attachments
             verify(spamFilterService).analyzeAndMarkSpam(email);
         }
+
+        @Test
+        void isFolderOrStoreClosedErkenntVerbindungsabbruch() {
+            jakarta.mail.Folder openFolder = mock(jakarta.mail.Folder.class);
+            when(openFolder.isOpen()).thenReturn(true);
+
+            jakarta.mail.Folder closedFolder = mock(jakarta.mail.Folder.class);
+            when(closedFolder.isOpen()).thenReturn(false);
+
+            // Folder ist geschlossen
+            assertThat(EmailImportService.isFolderOrStoreClosed(new RuntimeException("test"), closedFolder)).isTrue();
+
+            // FolderOpen, aber Exception ist FolderClosedException
+            jakarta.mail.FolderClosedException folderClosedEx = new jakarta.mail.FolderClosedException(openFolder, "closed");
+            assertThat(EmailImportService.isFolderOrStoreClosed(folderClosedEx, openFolder)).isTrue();
+
+            // Gewrappte Exception (z.B. RuntimeException mit Cause FolderClosedException)
+            RuntimeException wrapped = new RuntimeException("wrapped", folderClosedEx);
+            assertThat(EmailImportService.isFolderOrStoreClosed(wrapped, openFolder)).isTrue();
+
+            // Normale Exception bei offenem Folder
+            assertThat(EmailImportService.isFolderOrStoreClosed(new IllegalArgumentException("normale Exception"), openFolder)).isFalse();
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
