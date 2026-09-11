@@ -16,6 +16,7 @@ import { komprimiereBildFuerEmail, komprimiereBilderFuerEmail } from '../lib/bil
 import { EmailRecipientInput } from './EmailRecipientInput';
 import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
 import { EmailZuordnungSearchModal, type EmailZuordnung } from './EmailZuordnungSearchModal';
+import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 
 // Interface für hochgeladene externe Dateien
 interface UploadedFile {
@@ -1281,7 +1282,7 @@ export function EmailComposeForm({
                                 </div>
                                 <div className="flex flex-1 items-center justify-center overflow-hidden bg-slate-100 p-4">
                                     <img
-                                        src={imagePreview.url}
+                                        src={toSafeResourceUrl(imagePreview.url)}
                                         alt={imagePreview.name}
                                         className="max-h-full max-w-full rounded object-contain shadow"
                                     />
@@ -1411,11 +1412,13 @@ export function EmailComposeForm({
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
-                                                            const url = URL.createObjectURL(uf.file);
+                                                            const rawUrl = URL.createObjectURL(uf.file);
+                                                            const safeUrl = toSafeResourceUrl(rawUrl);
+                                                            if (!safeUrl) return;
                                                             if (isImageAttachment(uf.file)) {
-                                                                setImagePreview({ url, name: uf.file.name });
+                                                                setImagePreview({ url: safeUrl, name: uf.file.name });
                                                             } else {
-                                                                setPdfPreviewUrl(url);
+                                                                setPdfPreviewUrl(safeUrl);
                                                             }
                                                         }}
                                                         title="Vorschau"

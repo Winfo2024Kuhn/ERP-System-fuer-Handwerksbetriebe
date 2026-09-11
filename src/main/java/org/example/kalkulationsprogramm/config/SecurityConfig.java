@@ -77,8 +77,8 @@ public class SecurityConfig {
     public SecurityFilterChain funnelFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/internal/**")
-                // CSRF disabled: stateless JWT-authed S2S endpoint, see Javadoc above for full threat model.
-                .csrf(csrf -> csrf.disable())
+                // CSRF ignored: stateless JWT-authed S2S endpoint, see Javadoc above for full threat model.
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/internal/**"))
                 .addFilterBefore(cloudflareAccessJwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
