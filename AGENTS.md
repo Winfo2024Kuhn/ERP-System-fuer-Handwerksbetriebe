@@ -87,6 +87,11 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 - **Immer wenn End-to-End-Tests fehlen:** Für jedes neue Feature, jeden neuen Benutzer-Workflow, jede neue Seite oder signifikante Verhaltensänderung (Desktop in `react-pc-frontend/e2e/` und Mobile in `react-zeiterfassung/e2e/`) MÜSSEN vollständige Playwright End-to-End-Tests geschrieben bzw. ergänzt werden.
 - Vor dem Commit immer die E2E-Tests ausführen (`npm run test:e2e`).
 
+### 🟢 Alle Tests & Linting MÜSSEN immer grün sein (dauerhafte Nutzervorgabe vom 11.09.2026)
+- **100% grüne Tests und fehlerfreies Linting:** Alle Tests (Backend: `./mvnw test`, Frontend Unit: `npm test` und E2E: `npm run test:e2e`) sowie Linter (`npm run lint`) MÜSSEN ausnahmslos fehlerfrei durchlaufen.
+- Niemals fehlschlagende Tests oder Linter-Fehler überspringen, ignorieren, auskommentieren oder ungelöst lassen. Vor jedem Commit, Push oder PR muss alles vollständig grün sein.
+- **Review & Ship Pflicht:** Am Ende jeder Aufgabe immer `/review-and-ship` ausführen.
+
 ---
 
 ## 🚀 Build & Run (Quickstart)
