@@ -250,8 +250,6 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
     const visibleAttachments = entry.attachments.filter(a => !a.inline);
     const fromName = extractDisplayName(entry.fromAddress);
     const fromEmail = extractEmailAddress(entry.fromAddress);
-    const toName = extractDisplayName(entry.recipient);
-    const toEmail = extractEmailAddress(entry.recipient);
     const avatarName = fromName; // immer der Absender
     const initial = (avatarName.charAt(0) || '?').toUpperCase();
     const avatarBg = isOut ? 'bg-emerald-500' : 'bg-rose-500';
@@ -451,7 +449,6 @@ interface DraftBubbleProps {
 }
 
 function DraftThreadBubble({ entry, onOpenDraft, onDeleteDraft }: DraftBubbleProps) {
-    const toName = extractDisplayName(entry.recipient);
     const hasContent = entry.snippet && entry.snippet !== '[Entwurf]';
 
     return (

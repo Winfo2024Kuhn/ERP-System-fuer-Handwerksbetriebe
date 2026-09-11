@@ -69,6 +69,21 @@ const MOCK_EMAILS = [
         isRead: true,
         zuordnungTyp: 'KEINE',
         attachments: []
+    },
+    {
+        id: 104,
+        type: 'EMAIL',
+        direction: 'OUT',
+        subject: 'Eigene Notiz ohne externen Empfaenger',
+        sender: 'Bauschlosserei Kuhn',
+        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+        recipient: 'bauschlosserei-kuhn@t-online.de',
+        body: 'Nur an mich selbst geschickt.',
+        htmlBody: '<p>Nur an mich selbst geschickt.</p>',
+        sentAt: '2026-09-11T16:15:00',
+        isRead: true,
+        zuordnungTyp: 'KEINE',
+        attachments: []
     }
 ];
 
@@ -162,6 +177,27 @@ async function stubEmailApi(page: Page) {
         if (url.includes('/api/emails/103')) {
             return json(route, MOCK_EMAILS[2]);
         }
+        if (url.includes('/api/emails/104/thread')) {
+            return json(route, {
+                rootEmailId: 104,
+                focusedEmailId: 104,
+                emails: [{
+                    id: 104,
+                    subject: 'Eigene Notiz ohne externen Empfaenger',
+                    fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                    recipient: 'bauschlosserei-kuhn@t-online.de',
+                    sentAt: '2026-09-11T16:15:00',
+                    direction: 'OUT',
+                    snippet: 'Nur an mich selbst geschickt.',
+                    htmlBody: '<p>Nur an mich selbst geschickt.</p>',
+                    attachments: []
+                }]
+            });
+        }
+        if (url.includes('/api/emails/104')) {
+            return json(route, MOCK_EMAILS[3]);
+        }
+
 
 
         // Fallback fuer sonstige Endpunkte (User, Benachrichtigungen etc.)
@@ -283,6 +319,40 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
         // Zitatkopf muss dank HTML-Escaping die Adresse als Text sichtbar darstellen
         await expect(page.locator('.email-quote')).toBeVisible();
         await expect(page.locator('.email-quote')).toContainText('anna@example.com');
+    });
+
+    test('5. Tastaturbedienung des Rundmail-Popovers & Schutz vor Selbst-Antworten bei reinen Eigenadressen', async ({ page }) => {
+        await stubEmailApi(page);
+        await page.goto('/emails/inbox');
+
+        // Rundmail öffnen
+        await page.getByText('BV Zech Hangleiten 1 - Protokoll Nr. 40').click();
+        const badge = page.getByText('+12 weitere').first();
+        await badge.click();
+
+        // Prüfen, dass Einzel-Kopierbuttons für Tastaturnavigation focus-visible-Klassen besitzen
+        const copySingleBtn = page.getByTitle('Adresse kopieren').first();
+        await expect(copySingleBtn).toHaveClass(/focus-visible:opacity-100/);
+        await expect(copySingleBtn).toHaveClass(/focus-visible:ring-2/);
+
+        // Escape zum Schließen
+        await page.keyboard.press('Escape');
+
+        // Jetzt Ausgangsmail mit ausschließlich eigener Adresse anklicken
+        await page.getByText('Eigene Notiz ohne externen Empfaenger').click();
+        await expect(page.getByText('Nur an mich selbst geschickt.')).toBeVisible();
+
+        const antwortenButtons = page.getByRole('button', { name: 'Antworten' });
+        await antwortenButtons.first().click();
+
+        await expect(page.getByText('E-Mail senden')).toBeVisible();
+
+        // Toast-Meldung muss sichtbar sein
+        await expect(page.getByText('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.')).toBeVisible();
+
+        // Empfängerfeld darf die eigene Adresse NICHT enthalten
+        const ownRecipientInput = page.locator('input[value*="bauschlosserei-kuhn@t-online.de"]');
+        await expect(ownRecipientInput).not.toBeVisible();
     });
 
 });

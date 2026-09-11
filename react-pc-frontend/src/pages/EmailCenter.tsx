@@ -41,8 +41,7 @@ import {
     CheckCircle2,
     Calculator,
     PanelLeftClose,
-    PanelLeftOpen,
-    Users
+    PanelLeftOpen
 } from 'lucide-react';
 import {
     DndContext,
@@ -109,6 +108,7 @@ interface EmailItem {
     kundeName?: string;
     isRead?: boolean;
     recipient?: string;
+    cc?: string;
     spamScore?: number;
     // Assignment IDs
     projektId?: number;
@@ -519,13 +519,25 @@ export default function EmailCenter() {
     // Eigene Firmenadressen laden (verhindert Antworten an mich selbst)
     const [ownAddresses, setOwnAddresses] = useState<string[]>([]);
     useEffect(() => {
+        let isMounted = true;
         fetch('/api/emails/from-addresses')
-            .then(res => res.ok ? res.json() : [])
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
             .then(data => {
+                if (!isMounted) return;
                 if (Array.isArray(data)) setOwnAddresses(data);
             })
-            .catch(() => {});
-    }, []);
+            .catch(err => {
+                if (!isMounted) return;
+                console.error('Fehler beim Laden der eigenen Absenderadressen:', err);
+                toast.error('Eigene Absenderadressen konnten nicht geladen werden.');
+            });
+        return () => {
+            isMounted = false;
+        };
+    }, [toast]);
 
     const isOwnEmail = useCallback((addr?: string) => {
         if (!addr) return false;
@@ -732,6 +744,16 @@ export default function EmailCenter() {
                 if (res.ok) fullEmail = await res.json();
             } catch { /* use truncated version as fallback */ }
         }
+
+        const isReplyToOut = fullEmail.direction === 'OUT' || isOwnEmail(fullEmail.fromAddress);
+        if (isReplyToOut) {
+            const parsed = parseRecipientList(fullEmail.recipient);
+            const external = parsed.filter(p => !isOwnEmail(p.email));
+            if (external.length === 0) {
+                toast.info('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.');
+            }
+        }
+
         setReplyToEmail(fullEmail);
         setReplyToEmailId(replyId ?? email.id);
         setForwardEmail(null);
@@ -1968,20 +1990,23 @@ export default function EmailCenter() {
                 if (isReplyToOut) {
                     const parsed = parseRecipientList(replyToEmail.recipient);
                     const external = parsed.filter(p => !isOwnEmail(p.email));
-                    const targetList = external.length > 0 ? external : parsed;
 
-                    if (targetList.length === 1) {
-                        const r = targetList[0];
+                    if (external.length === 1) {
+                        const r = external[0];
                         const customerName = replyToEmail.kundeName || (r.displayName !== r.email ? r.displayName : undefined);
                         initialRecipient = formatRecipient(r.raw, customerName) || r.raw;
-                    } else if (targetList.length > 1) {
+                    } else if (external.length > 1) {
                         // Bei Rundmails jeden Empfänger einzeln formatieren – keinen pauschalen Kundennamen anwenden!
-                        initialRecipient = targetList.map(r => {
+                        initialRecipient = external.map(r => {
                             const nameOverride = r.displayName !== r.email ? r.displayName : undefined;
                             return formatRecipient(r.raw, nameOverride) || r.raw;
                         }).join(', ');
                     } else {
-                        initialRecipient = replyToEmail.recipient || '';
+                        // Alle Empfänger waren eigene Adressen – niemals an sich selbst antworten!
+                        // Empfängerfeld zur bewussten Auswahl freilassen und Hinweis anzeigen.
+                        // Alle Empfänger waren eigene Adressen – niemals an sich selbst antworten!
+                        // Empfängerfeld zur bewussten Auswahl freilassen.
+                        initialRecipient = '';
                     }
                 } else {
                     const senderName = getSenderName(replyToEmail);
@@ -2006,7 +2031,9 @@ export default function EmailCenter() {
                 } catch { /* ignore */ }
 
                 const quoteHeader = isReplyToOut
-                    ? `Am ${date} schrieben Sie an ${initialRecipient}:`
+                    ? (initialRecipient
+                        ? `Am ${date} schrieben Sie an ${initialRecipient}:`
+                        : `Am ${date} schrieben Sie:`)
                     : `Am ${date} schrieb ${getSenderName(replyToEmail)}:`;
 
                 replyQuote = `<div class="email-quote" style="border-left:3px solid #e2e8f0;padding-left:1rem;color:#64748b;margin-top:0.5rem">

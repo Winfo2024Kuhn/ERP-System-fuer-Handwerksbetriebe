@@ -54,6 +54,7 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
         '/api/emails/spam': [],
         '/api/emails/newsletter': [],
         '/api/emails/tax-advisors': [],
+        '/api/emails/from-addresses': ['bauschlosserei-kuhn@t-online.de'],
         ...overrides
     };
 
@@ -631,6 +632,75 @@ describe('EmailCenter', () => {
                 expect(screen.getByText(/<anna@example.com>/i)).toBeInTheDocument();
             });
         });
+
+        it('zeigt Toast-Fehler wenn /api/emails/from-addresses fehlschlaegt', async () => {
+            vi.stubGlobal('fetch', vi.fn((url: string) => {
+                if (url.includes('/api/emails/from-addresses')) {
+                    return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve([]) } as Response);
+                }
+                if (url.includes('/api/emails/stats')) {
+                    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockStats) } as Response);
+                }
+                if (url.includes('/api/emails/inbox')) {
+                    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) } as Response);
+                }
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) } as Response);
+            }));
+
+            renderEmailCenter('inbox');
+            expect(await screen.findByText('Eigene Absenderadressen konnten nicht geladen werden.')).toBeInTheDocument();
+        });
+
+        it('laesst Empfaengerfeld leer und warnt per Toast wenn alle Empfaenger eigene Adressen sind', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const selfSentEmail = {
+                id: 45,
+                type: 'EMAIL',
+                direction: 'OUT' as const,
+                subject: 'Selbst gesendete Notiz',
+                sender: 'Bauschlosserei Kuhn',
+                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                recipient: 'bauschlosserei-kuhn@t-online.de',
+                body: 'Nur eine interne Notiz an mich selbst.',
+                sentAt: '2026-09-11T16:00:00',
+                isRead: true,
+                zuordnungTyp: 'KEINE',
+                attachments: []
+            };
+
+            vi.stubGlobal('fetch', mockFetchResponses({
+                '/api/emails/sent': [selfSentEmail],
+                '/api/emails/45': selfSentEmail,
+                '/api/emails/45/thread': {
+                    rootEmailId: 45,
+                    focusedEmailId: 45,
+                    emails: [selfSentEmail]
+                },
+                '/api/emails/from-addresses': ['bauschlosserei-kuhn@t-online.de']
+            }));
+
+            renderEmailCenter('sent');
+            await waitFor(() => expect(screen.getByText('Selbst gesendete Notiz')).toBeInTheDocument());
+
+            await user.click(screen.getByText('Selbst gesendete Notiz'));
+            await waitFor(() => expect(screen.getByText('Nur eine interne Notiz an mich selbst.')).toBeInTheDocument());
+
+            const replyBtn = screen.getAllByRole('button', { name: /Antworten/i })[0];
+            await user.click(replyBtn);
+
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+
+            // Toast-Hinweis muss erscheinen
+            expect(await screen.findByText('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.')).toBeInTheDocument();
+
+            // Eigene Adresse darf keinesfalls im Empfängerfeld stehen!
+            expect(screen.queryByDisplayValue('bauschlosserei-kuhn@t-online.de')).not.toBeInTheDocument();
+
+            // Zitatkopf ohne unvollständiges "an :"
+            expect(screen.getByText(/schrieben Sie:/i)).toBeInTheDocument();
+            expect(screen.queryByText(/schrieben Sie an :/i)).not.toBeInTheDocument();
+        });
+
 
     });
 });

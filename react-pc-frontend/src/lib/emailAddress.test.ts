@@ -183,6 +183,13 @@ describe('waehleInfoEmpfaenger', () => {
 });
 
 describe('parseRecipientList', () => {
+    it('behandelt Whitespace-Strings und reine Klammer-Adressen ohne Namen', () => {
+        expect(parseRecipientList('   ')).toEqual([]);
+        const list = parseRecipientList('<only-email@example.com>');
+        expect(list).toHaveLength(1);
+        expect(list[0].email).toBe('only-email@example.com');
+        expect(list[0].displayName).toBe('only-email@example.com');
+    });
     it('parst Namen mit Apostroph ("O\x27Connor" <o@example.com>) korrekt', () => {
         const list = parseRecipientList('"O\x27Connor" <oconnor@example.com>');
         expect(list).toHaveLength(1);
@@ -211,6 +218,24 @@ describe('parseRecipientList', () => {
 });
 
 describe('formatRecipientList', () => {
+    it('fällt auf r.raw zurück, wenn formatRecipient einen leeren String liefert', () => {
+        expect(formatRecipientList('keine-adresse')).toBe('keine-adresse');
+        expect(formatRecipientList('keine-adresse-1, keine-adresse-2')).toBe('keine-adresse-1, keine-adresse-2');
+    });
+    it('behält vorhandene Anzeigenamen auch ohne expliziten singleNameOverride bei', () => {
+        expect(formatRecipientList('"Mustermann" <max@example.com>')).toBe('"Mustermann" <max@example.com>');
+        expect(formatRecipientList('max@example.com')).toBe('max@example.com');
+    });
+
+    it('gibt den getrimmten String zurück, wenn keine gültigen Adressen geparst werden konnten', () => {
+        expect(formatRecipientList(',,,')).toBe(',,,');
+        expect(formatRecipientList('   ')).toBe('');
+    });
+
+    it('formatiert gemischte Listen mit und ohne Namen', () => {
+        const input = '"Anna" <anna@example.com>, ben@example.com';
+        expect(formatRecipientList(input)).toBe('"Anna" <anna@example.com>, ben@example.com');
+    });
     it('behält bei Rundmails alle Empfänger und vertauscht/verliert keine Namen', () => {
         const input = '"Anna" <anna@example.com>, "Ben" <ben@example.com>';
         const formatted = formatRecipientList(input, 'Schlotz Architekten');

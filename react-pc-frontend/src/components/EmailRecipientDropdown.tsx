@@ -1,6 +1,20 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Users, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { Users, ChevronDown, ChevronUp, Copy, Check, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useToast } from '../components/ui/toast';
+
+function useSafeToast() {
+    try {
+        return useToast();
+    } catch {
+        return {
+            success: () => {},
+            error: (msg: string) => console.error(msg),
+            warning: () => {},
+            info: () => {},
+        };
+    }
+}
 
 import { parseRecipientList, type ParsedEmailRecipient } from '../lib/emailAddress';
 export { parseRecipientList, type ParsedEmailRecipient };
@@ -24,9 +38,12 @@ export function EmailRecipientDropdown({
 }: EmailRecipientDropdownProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [copiedAll, setCopiedAll] = useState(false);
+    const [isCopyingAll, setIsCopyingAll] = useState(false);
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+    const [copyingIndex, setCopyingIndex] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const toast = useSafeToast();
 
     const toList = useMemo(() => parseRecipientList(recipients), [recipients]);
     const ccList = useMemo(() => parseRecipientList(cc), [cc]);
@@ -62,19 +79,44 @@ export function EmailRecipientDropdown({
     const inlineTo = toList.slice(0, maxInline);
     const remainingCount = totalCount - inlineTo.length;
 
-    const handleCopyAll = (e: React.MouseEvent) => {
+    const handleCopyAll = async (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (isCopyingAll) return;
         const allEmails = [...toList, ...ccList].map(r => r.email).join(', ');
-        navigator.clipboard.writeText(allEmails);
-        setCopiedAll(true);
-        setTimeout(() => setCopiedAll(false), 2000);
+        if (!allEmails) return;
+
+        setIsCopyingAll(true);
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error('Clipboard API nicht verfügbar');
+            }
+            await navigator.clipboard.writeText(allEmails);
+            setCopiedAll(true);
+            setTimeout(() => setCopiedAll(false), 2000);
+        } catch {
+            toast.error('E-Mail-Adressen konnten nicht kopiert werden.');
+        } finally {
+            setIsCopyingAll(false);
+        }
     };
 
-    const handleCopySingle = (email: string, index: number, e: React.MouseEvent) => {
+    const handleCopySingle = async (email: string, index: number, e: React.MouseEvent) => {
         e.stopPropagation();
-        navigator.clipboard.writeText(email);
-        setCopiedIndex(index);
-        setTimeout(() => setCopiedIndex(null), 1500);
+        if (copyingIndex !== null) return;
+
+        setCopyingIndex(index);
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error('Clipboard API nicht verfügbar');
+            }
+            await navigator.clipboard.writeText(email);
+            setCopiedIndex(index);
+            setTimeout(() => setCopiedIndex(null), 1500);
+        } catch {
+            toast.error('E-Mail-Adresse konnte nicht kopiert werden.');
+        } finally {
+            setCopyingIndex(null);
+        }
     };
 
     const filteredToList = searchQuery.trim()
@@ -145,13 +187,19 @@ export function EmailRecipientDropdown({
                             <button
                                 type="button"
                                 onClick={handleCopyAll}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 transition-colors cursor-pointer"
+                                disabled={isCopyingAll}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Alle E-Mail-Adressen in die Zwischenablage kopieren"
                             >
                                 {copiedAll ? (
                                     <>
                                         <Check className="w-3 h-3 text-emerald-600" />
                                         <span className="text-emerald-700 font-semibold">Kopiert!</span>
+                                    </>
+                                ) : isCopyingAll ? (
+                                    <>
+                                        <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
+                                        <span>Kopiere...</span>
                                     </>
                                 ) : (
                                     <>
@@ -210,11 +258,15 @@ export function EmailRecipientDropdown({
                                             <button
                                                 type="button"
                                                 onClick={(e) => handleCopySingle(r.email, idx, e)}
-                                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 transition-all shrink-0 cursor-pointer"
+                                                disabled={copyingIndex === idx}
+                                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none p-1 rounded hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 transition-all shrink-0 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                                                 title="Adresse kopieren"
+                                                aria-label={`${r.displayName} kopieren`}
                                             >
                                                 {copiedIndex === idx ? (
                                                     <Check className="w-3 h-3 text-emerald-600" />
+                                                ) : copyingIndex === idx ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
                                                 ) : (
                                                     <Copy className="w-3 h-3" />
                                                 )}
@@ -255,11 +307,15 @@ export function EmailRecipientDropdown({
                                             <button
                                                 type="button"
                                                 onClick={(e) => handleCopySingle(r.email, 1000 + idx, e)}
-                                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 transition-all shrink-0 cursor-pointer"
+                                                disabled={copyingIndex === 1000 + idx}
+                                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none p-1 rounded hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 transition-all shrink-0 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                                                 title="Adresse kopieren"
+                                                aria-label={`${r.displayName} kopieren`}
                                             >
                                                 {copiedIndex === 1000 + idx ? (
                                                     <Check className="w-3 h-3 text-emerald-600" />
+                                                ) : copyingIndex === 1000 + idx ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
                                                 ) : (
                                                     <Copy className="w-3 h-3" />
                                                 )}

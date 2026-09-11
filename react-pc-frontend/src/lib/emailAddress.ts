@@ -45,9 +45,9 @@ export function parseRecipientList(input?: string): ParsedEmailRecipient[] {
         // Erkennt beliebige Anzeigenamen (auch mit Apostroph wie "O'Connor" oder unquoted)
         const angleMatch = trimmed.match(/^(.*?)\s*<([^<>]+)>$/);
         if (angleMatch) {
-            const rawName = (angleMatch[1] || "").trim();
+            const rawName = angleMatch[1].trim();
             const name = rawName.replace(/^["']|["']$/g, "").trim();
-            const email = (angleMatch[2] || "").trim();
+            const email = angleMatch[2].trim();
             return {
                 raw: trimmed,
                 email,
@@ -145,12 +145,12 @@ export function formatRecipientList(input?: string, singleNameOverride?: string)
     if (parsed.length === 1) {
         const r = parsed[0];
         const nameOverride = singleNameOverride || (r.displayName !== r.email ? r.displayName : undefined);
-        return formatRecipient(r.raw, nameOverride) || r.raw;
+        return formatRecipient(r.raw, nameOverride);
     }
     // Mehrere Empfänger: Jeden einzeln formatieren, keinen pauschalen nameOverride auf alle anwenden
     return parsed.map(r => {
         const nameOverride = r.displayName !== r.email ? r.displayName : undefined;
-        return formatRecipient(r.raw, nameOverride) || r.raw;
+        return formatRecipient(r.raw, nameOverride);
     }).join(", ");
 }
 
