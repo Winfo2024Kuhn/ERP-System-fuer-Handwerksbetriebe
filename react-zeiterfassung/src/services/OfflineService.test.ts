@@ -636,8 +636,9 @@ describe('OfflineService', () => {
     // ==================== HEUTE GEARBEITET (immer korrekt) ====================
     describe('getUnsyncedStopMinutes', () => {
         function isoToday(time: string): string {
-            const today = new Date().toISOString().split('T')[0]
-            return `${today}T${time}`
+            const parts = time.replace('Z', '').split(':').map(Number)
+            const now = new Date()
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate(), parts[0] || 0, parts[1] || 0, parts[2] || 0).toISOString()
         }
 
         it('sollte 0 zurückgeben bei leeren Queues', async () => {
