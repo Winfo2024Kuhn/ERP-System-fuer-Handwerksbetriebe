@@ -19,6 +19,15 @@ describe('htmlSanitizer', () => {
         it('behandelt leere Eingaben sauber', () => {
             expect(stripHtmlTags('')).toBe('');
         });
+
+        it('bereinigt auch mehr als 20 rekursiv geschachtelte Tag-Ebenen restlos bis zum Fixpunkt', () => {
+            // 25-fach geschachteltes Tag-Konstrukt:
+            let nested = 'alert(1)';
+            for (let i = 0; i < 25; i++) {
+                nested = `<script>${nested}</script>`;
+            }
+            expect(stripHtmlTags(nested)).toBe('alert(1)');
+        });
     });
 
     describe('unescapeHtmlEntities', () => {

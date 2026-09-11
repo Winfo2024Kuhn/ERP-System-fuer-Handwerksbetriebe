@@ -10,18 +10,24 @@
 /**
  * Entfernt alle HTML-Tags vollständig per Fixpunktschleife.
  * Durch den innere-Klammern-Muster /<[^<>]*>/g werden geschachtelte Tags
- * von innen nach außen schrittweise und restlos aufgelöst.
+ * von innen nach außen schrittweise und restlos aufgelöst, bis ein echter
+ * Fixpunkt erreicht ist (keine Tags mehr vorhanden).
+ * Ein defensives Limit schützt vor Endlosschleifen und schlägt bei Überschreitung
+ * fail-closed fehl, indem verbleibende Klammern restlos entfernt werden.
  */
 export function stripHtmlTags(input: string, replacement = ''): string {
     if (!input) return '';
     let prev = '';
     let result = input;
     let iterations = 0;
-    do {
+    while (result !== prev) {
         prev = result;
         result = result.replace(/<[^<>]*>/g, replacement);
         iterations++;
-    } while (result !== prev && iterations < 20);
+        if (iterations > 200) {
+            return result.replace(/[<>]/g, '');
+        }
+    }
     return result;
 }
 

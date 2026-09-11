@@ -153,4 +153,24 @@ describe('PdfCanvasViewer', () => {
         await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith(genutzteUrl));
         expect(druckFrames()).toHaveLength(0);
     });
+
+    it('validiert den Blob im Fallback und lehnt HTML-Inhalte ohne iframe-Erzeugung ab (CodeQL DOM-XSS Schutz)', async () => {
+        // Fallback-Modus (kein window.pdfjsLib) mit HTML-Antwort statt PDF
+        const htmlBlob = new Blob(['<!DOCTYPE html><html><body><script>alert(1)</script></body></html>'], { type: 'text/html' });
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            blob: async () => htmlBlob,
+        })));
+
+        render(<PdfCanvasViewer url="/api/projekte/export-html-as-pdf" />);
+
+        // Es darf KEINE Object-URL erzeugt werden
+        await waitFor(() => expect(screen.getByTestId('pdf-fallback-error')).toBeInTheDocument());
+        expect(createObjectURL).not.toHaveBeenCalled();
+
+        // Es darf KEIN Vorschau-iframe existieren
+        expect(document.querySelector('iframe[title="PDF Vorschau"]')).toBeNull();
+    });
 });
+

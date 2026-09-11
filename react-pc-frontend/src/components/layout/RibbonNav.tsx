@@ -255,7 +255,7 @@ export function RibbonNavigation() {
                     Kategorie-Leiste ist keine Loesung -- wenn hier noch etwas
                     ueberlaeuft, soll es als Scrollbalken sichtbar sein statt
                     unsichtbar abgeschnitten (Spec C, Befund 3). */}
-                <div className="flex-1 flex overflow-x-auto overflow-y-hidden gap-1 min-[1680px]:gap-2 h-full items-end">
+                <div className="flex-1 flex overflow-x-auto overflow-y-hidden gap-0.5 min-[1680px]:gap-2 h-full items-end">
                     {visibleNavigation.map((group) => (
                         <button
                             key={group.category}
@@ -269,10 +269,10 @@ export function RibbonNavigation() {
                                 }
                             }}
                             className={cn(
-                                // px-2 bei 1440px, px-2.5 bei 1536px, px-4 ab 1680px:
+                                // px-1.5 bei 1440px, px-2.5 ab 1480px, px-4 ab 1680px:
                                 // spart genug Breite, damit alle fünf Kategorien auch bei breiteren Linux-Systemfonts
                                 // auf CI-Runnern und Bildschirmen zwischen 1440px und 1600px ohne Überlauf nebeneinander passen.
-                                "px-2 min-[1480px]:px-2.5 min-[1680px]:px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
+                                "px-1.5 min-[1480px]:px-2.5 min-[1680px]:px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
                                 activeCategory === group.category
                                     ? "text-rose-700 bg-rose-50 border-t-2 border-x border-rose-200 border-b-transparent shadow-sm z-10"
                                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-transparent border-b-2 border-b-transparent mb-[1px]"
@@ -286,7 +286,7 @@ export function RibbonNavigation() {
                 {/* KI-Hilfe Button */}
                 <button
                     onClick={() => window.dispatchEvent(new CustomEvent('ki-hilfe-open'))}
-                    className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
                     title="KI-Hilfe öffnen"
                 >
                     <Gem className="w-4 h-4" />
@@ -294,12 +294,12 @@ export function RibbonNavigation() {
                 </button>
 
                 {/* Notification Bell */}
-                <div className="flex items-center ml-1">
+                <div className="flex items-center">
                     <NotificationBell />
                 </div>
 
                 {/* User Selector */}
-                <div className="relative ml-2 pl-4 border-l border-slate-200">
+                <div className="relative pl-3 border-l border-slate-200">
                     <button
                         onClick={() => setShowUserMenu(!showUserMenu)}
                         className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors group"
