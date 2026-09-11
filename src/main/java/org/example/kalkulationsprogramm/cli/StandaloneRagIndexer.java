@@ -294,9 +294,9 @@ public class StandaloneRagIndexer {
         return m.find() ? m.group(1) : "Unknown";
     }
 
-    private List<String> splitJavaMethods(String content) {
+    List<String> splitJavaMethods(String content) {
         Pattern methodPattern = Pattern.compile(
-                "^\\s{4}(?:@\\w+.*\\n)*\\s{4}(?:public|private|protected|static|final|synchronized|abstract|default|void|\\w+)\\s",
+                "^[ ]{4}(?>@[a-zA-Z0-9_]+[^\\r\\n]*+\\r?\\n[ ]{4})*+(?:(?:public|private|protected|static|final|synchronized|abstract|default|native|void)\\b|(?:<[a-zA-Z0-9_, ?&]*+>[ ]++)?[a-zA-Z0-9_]+(?:<[^>\\r\\n]*+>)?(?:\\[\\])*+[ ]++[a-zA-Z0-9_]+[ ]*+\\()",
                 Pattern.MULTILINE);
         Matcher m = methodPattern.matcher(content);
 

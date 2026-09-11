@@ -16,6 +16,7 @@ import { komprimiereBildFuerEmail, komprimiereBilderFuerEmail } from '../lib/bil
 import { EmailRecipientInput } from './EmailRecipientInput';
 import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
 import { EmailZuordnungSearchModal, type EmailZuordnung } from './EmailZuordnungSearchModal';
+import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 
 // Interface für hochgeladene externe Dateien
 interface UploadedFile {
@@ -329,6 +330,14 @@ export function EmailComposeForm({
     // Dokumente
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
     const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null);
+    const safeImagePreviewUrl = useMemo(() => {
+        if (!imagePreview?.url) return '';
+        const safe = toSafeResourceUrl(imagePreview.url);
+        if (safe.startsWith('blob:') || safe.startsWith('https://') || safe.startsWith('/')) {
+            return safe;
+        }
+        return '';
+    }, [imagePreview]);
     const [entityDokumente, setEntityDokumente] = useState<ProjektDokument[]>([]);
     const [loadingEntityDokumente, setLoadingEntityDokumente] = useState(false);
     const [showEntityDokumente, setShowEntityDokumente] = useState(false);
@@ -1280,11 +1289,13 @@ export function EmailComposeForm({
                                     </Button>
                                 </div>
                                 <div className="flex flex-1 items-center justify-center overflow-hidden bg-slate-100 p-4">
-                                    <img
-                                        src={imagePreview.url}
-                                        alt={imagePreview.name}
-                                        className="max-h-full max-w-full rounded object-contain shadow"
-                                    />
+                                    {safeImagePreviewUrl && (
+                                        <img
+                                            src={safeImagePreviewUrl}
+                                            alt={imagePreview.name}
+                                            className="max-h-full max-w-full rounded object-contain shadow"
+                                        />
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1411,11 +1422,13 @@ export function EmailComposeForm({
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
-                                                            const url = URL.createObjectURL(uf.file);
+                                                            const rawUrl = URL.createObjectURL(uf.file);
+                                                            const safeUrl = toSafeResourceUrl(rawUrl);
+                                                            if (!safeUrl) return;
                                                             if (isImageAttachment(uf.file)) {
-                                                                setImagePreview({ url, name: uf.file.name });
+                                                                setImagePreview({ url: safeUrl, name: uf.file.name });
                                                             } else {
-                                                                setPdfPreviewUrl(url);
+                                                                setPdfPreviewUrl(safeUrl);
                                                             }
                                                         }}
                                                         title="Vorschau"

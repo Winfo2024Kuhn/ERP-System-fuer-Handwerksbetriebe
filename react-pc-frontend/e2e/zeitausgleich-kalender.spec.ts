@@ -96,6 +96,10 @@ test('Kalender: Zeitausgleich buchen, smarter Buchungsbeginn, Pausenschnitt & Mo
 
     // 6. Zeitausgleich per Button buchen
     await zeitausgleichBtn.click();
+    const buchenModal = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Zeitausgleich buchen' }) });
+    await expect(buchenModal).toBeVisible();
+    await buchenModal.getByRole('button', { name: 'Zeitausgleich buchen' }).click();
+    await expect(buchenModal).toBeHidden();
     await expect.poll(() => apiCalls.some(c => c.path === '/api/abwesenheit' && (c.body as Record<string, unknown>)?.typ === 'ZEITAUSGLEICH')).toBe(true);
 
     await designPruefung(page, info, 'kalender-zeitausgleich-modal');
@@ -310,7 +314,9 @@ test('Kalender: Mitarbeiter-Filter, geschlossener Monat Schutzdialog & GF-Ansich
 
     // Klick auf "Monatsabschluss zurücksetzen" im Banner
     await modal.getByRole('button', { name: 'Monatsabschluss zurücksetzen' }).click();
-    expect(oeffnenCalled).toBe(true);
+    const confirmDialog = page.getByRole('alertdialog').or(page.getByRole('dialog', { name: /Monatsabschluss zurücksetzen/ }));
+    await confirmDialog.getByRole('button', { name: 'Zurücksetzen' }).click();
+    await expect.poll(() => oeffnenCalled).toBe(true);
 
     // Modal schließen
     await modal.getByRole('button', { name: 'Schließen', exact: true }).click();

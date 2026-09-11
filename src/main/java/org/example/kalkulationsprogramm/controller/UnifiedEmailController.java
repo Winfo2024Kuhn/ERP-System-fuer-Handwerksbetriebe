@@ -101,6 +101,27 @@ public class UnifiedEmailController {
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
 
+    public static final long MAX_SINGLE_ATTACHMENT_BYTES = 15 * 1024 * 1024L; // 15 MB
+    public static final long MAX_TOTAL_ATTACHMENTS_BYTES = 25 * 1024 * 1024L; // 25 MB
+
+    String sendeSmtpMail(
+            org.example.email.EmailService emailService,
+            String recipient,
+            String cc,
+            String sender,
+            String subject,
+            String htmlBody,
+            List<org.example.email.EmailService.Attachment> attachments) throws Exception {
+        return emailService.sendEmailWithMultipleAttachments(
+                recipient,
+                cc,
+                sender,
+                subject,
+                htmlBody,
+                Map.of(),
+                attachments);
+    }
+
     @GetMapping("/from-addresses")
     public ResponseEntity<List<String>> getFromAddresses(
             @RequestParam(value = "frontendUserId", required = false) Long frontendUserId) {
@@ -1400,9 +1421,24 @@ public class UnifiedEmailController {
             @RequestPart(value = "dokumentId", required = false) String dokumentIdStr) {
 
         try {
+            // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)
+            long totalAttachmentsSize = 0L;
+            if (attachments != null) {
+                for (MultipartFile file : attachments) {
+                    if (file != null && !file.isEmpty()) {
+                        if (file.getSize() > MAX_SINGLE_ATTACHMENT_BYTES) {
+                            return ResponseEntity.badRequest().body(Map.of(
+                                    "message",
+                                    "Der Anhang '" + (file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment")
+                                            + "' überschreitet die maximal zulässige Einzelgröße von 15 MB."));
+                        }
+                        totalAttachmentsSize += file.getSize();
+                    }
+                }
+            }
+
             // Attachments vorbereiten
             List<org.example.email.EmailService.Attachment> attachmentsForEmail = new ArrayList<>();
-            List<java.io.File> tempFiles = new ArrayList<>();
 
             // Der Versand-Account wird erst weiter unten gewaehlt: Ob das eigene
             // Postfach zum Zug kommt, haengt davon ab, ob hier ein
@@ -1415,6 +1451,7 @@ public class UnifiedEmailController {
             AnfrageDokument anfrageDokument = null;
             String attachedOriginalFilename = null;
             String attachedStoredFilename = null;
+            String attachedMimeType = "application/octet-stream";
 
             if (dokumentIdStr != null && !dokumentIdStr.isBlank()) {
                 try {
@@ -1427,8 +1464,11 @@ public class UnifiedEmailController {
                         if (anfrageDokument != null && anfrageDokument.getGespeicherterDateiname() != null) {
                             attachedOriginalFilename = anfrageDokument.getOriginalDateiname();
                             attachedStoredFilename = anfrageDokument.getGespeicherterDateiname();
-                            log.info("Anfrage-Kontext: Dokument '{}' gefunden (ID: {})", attachedOriginalFilename,
-                                    dokumentId);
+                            if (anfrageDokument.getDateityp() != null && !anfrageDokument.getDateityp().isBlank()) {
+                                attachedMimeType = anfrageDokument.getDateityp();
+                            }
+                            log.info("Anfrage-Kontext: Dokument '{}' gefunden (ID: {}, Typ: {})", attachedOriginalFilename,
+                                    dokumentId, attachedMimeType);
                         } else {
                             log.warn("Anfrage-Kontext: Dokument mit ID {} nicht in AnfrageDokument gefunden",
                                     dokumentId);
@@ -1439,8 +1479,11 @@ public class UnifiedEmailController {
                         if (projektDokument != null && projektDokument.getGespeicherterDateiname() != null) {
                             attachedOriginalFilename = projektDokument.getOriginalDateiname();
                             attachedStoredFilename = projektDokument.getGespeicherterDateiname();
-                            log.info("Projekt-Kontext: Dokument '{}' gefunden (ID: {})", attachedOriginalFilename,
-                                    dokumentId);
+                            if (projektDokument.getDateityp() != null && !projektDokument.getDateityp().isBlank()) {
+                                attachedMimeType = projektDokument.getDateityp();
+                            }
+                            log.info("Projekt-Kontext: Dokument '{}' gefunden (ID: {}, Typ: {})", attachedOriginalFilename,
+                                    dokumentId, attachedMimeType);
                         } else {
                             log.warn("Projekt-Kontext: Dokument mit ID {} nicht in ProjektDokument gefunden",
                                     dokumentId);
@@ -1453,22 +1496,22 @@ public class UnifiedEmailController {
                             org.springframework.core.io.Resource resource = dateiSpeicherService
                                     .ladeDokumentAlsResource(attachedStoredFilename);
                             if (resource != null && resource.exists()) {
-                                // Wichtig: Kopiere mit Originaldateiname in Temp-Verzeichnis
-                                // damit der SMTP-Anhang den korrekten Namen hat
-                                java.io.File tempFile = java.io.File.createTempFile("email_dok_",
-                                        "_" + attachedOriginalFilename);
-                                // Umbenennen zu Originaldateiname im gleichen Verzeichnis
-                                java.io.File renamedFile = new java.io.File(tempFile.getParent(),
-                                        attachedOriginalFilename);
-                                if (renamedFile.exists())
-                                    renamedFile.delete();
-                                java.nio.file.Files.copy(resource.getFile().toPath(), renamedFile.toPath(),
-                                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                                tempFile.delete(); // Original temp file löschen
+                                long docSize = resource.contentLength();
+                                if (docSize > MAX_SINGLE_ATTACHMENT_BYTES) {
+                                    return ResponseEntity.badRequest().body(Map.of(
+                                            "message",
+                                            "Das angehängte Dokument überschreitet die maximal zulässige Einzelgröße von 15 MB."));
+                                }
+                                totalAttachmentsSize += docSize;
+                                byte[] dokBytes;
+                                try (java.io.InputStream is = resource.getInputStream()) {
+                                    dokBytes = is.readAllBytes();
+                                }
+                                String rawDocName = attachedOriginalFilename != null ? attachedOriginalFilename : "dokument.pdf";
+                                String safeDocName = java.nio.file.Path.of(rawDocName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
                                 attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
-                                        renamedFile, attachedOriginalFilename, null));
-                                tempFiles.add(renamedFile); // Für spätere Aufräumung
-                                log.info("Dokument '{}' als Anhang hinzugefügt", attachedOriginalFilename);
+                                        dokBytes, safeDocName, attachedMimeType));
+                                log.info("Dokument '{}' als Anhang hinzugefügt ({})", safeDocName, attachedMimeType);
                             }
                         } catch (Exception e) {
                             log.warn("Konnte Dokument {} nicht laden: {}", dokumentId, e.getMessage());
@@ -1479,18 +1522,20 @@ public class UnifiedEmailController {
                 }
             }
 
+            if (totalAttachmentsSize > MAX_TOTAL_ATTACHMENTS_BYTES) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "message",
+                        "Die Anhänge überschreiten die maximal zulässige Gesamtgröße von 25 MB."));
+            }
+
             // 2. Hochgeladene Dateien als Anhänge
             if (attachments != null) {
                 for (MultipartFile file : attachments) {
                     if (!file.isEmpty()) {
-                        String safeFilename = file.getOriginalFilename() != null
-                                ? file.getOriginalFilename().replaceAll("[\\\\/:*?\"<>|]", "_")
-                                : "attachment";
-                        java.io.File tempFile = java.io.File.createTempFile("email_", "_" + safeFilename);
-                        file.transferTo(tempFile);
+                        String rawName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment";
+                        String safeFilename = java.nio.file.Path.of(rawName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
                         attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
-                                tempFile, safeFilename, file.getContentType()));
-                        tempFiles.add(tempFile);
+                                file.getBytes(), safeFilename, file.getContentType()));
                     }
                 }
             }
@@ -1570,13 +1615,13 @@ public class UnifiedEmailController {
                         .orElse(konto.fromName()));
             }
 
-            String messageId = emailService.sendEmailWithMultipleAttachments(
+            String messageId = sendeSmtpMail(
+                    emailService,
                     recipient,
                     cc, // Pass CC here
                     sender,
                     dto.getSubject(),
                     htmlBody,
-                    Map.of(),
                     attachmentsForEmail);
 
             // Email-Entität speichern
@@ -1630,20 +1675,25 @@ public class UnifiedEmailController {
                     org.springframework.core.io.Resource resource = dateiSpeicherService
                             .ladeDokumentAlsResource(attachedStoredFilename);
                     if (resource != null && resource.exists()) {
-                        String safeAttachedName = attachedOriginalFilename.replaceAll("[\\\\/:*?\"<>|]", "_");
+                        String rawAttachedName = attachedOriginalFilename != null ? attachedOriginalFilename : "dokument.pdf";
+                        String safeAttachedName = java.nio.file.Path.of(rawAttachedName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
                         String storedName = java.util.UUID.randomUUID() + "_" + safeAttachedName;
-                        java.nio.file.Path dst = baseDir.resolve(storedName);
-                        java.nio.file.Files.copy(resource.getFile().toPath(), dst,
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        java.nio.file.Path dst = baseDir.resolve(storedName).normalize();
+                        if (!dst.startsWith(baseDir.normalize())) {
+                            throw new IllegalArgumentException("Ungültiger Dateiname");
+                        }
+                        try (var in = resource.getInputStream()) {
+                            java.nio.file.Files.copy(in, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        }
 
                         EmailAttachment att = new EmailAttachment();
                         att.setEmail(email);
                         att.setOriginalFilename(attachedOriginalFilename);
                         att.setStoredFilename(storedName);
                         att.setSizeBytes(java.nio.file.Files.size(dst));
-                        att.setMimeType("application/pdf");
+                        att.setMimeType(attachedMimeType);
                         email.addAttachment(att);
-                        log.info("Dokument '{}' als EmailAttachment gespeichert", attachedOriginalFilename);
+                        log.info("Dokument '{}' als EmailAttachment gespeichert ({})", attachedOriginalFilename, attachedMimeType);
                     }
                 } catch (Exception e) {
                     log.warn("Konnte Dokument nicht als EmailAttachment speichern: {}", e.getMessage());
@@ -1652,16 +1702,18 @@ public class UnifiedEmailController {
 
             // 2. Hochgeladene Dateien als Attachments speichern
             if (attachments != null) {
-                for (int i = 0; i < attachments.length; i++) {
-                    MultipartFile file = attachments[i];
+                for (MultipartFile file : attachments) {
                     if (!file.isEmpty()) {
-                        String safeOrigName = file.getOriginalFilename() != null
-                                ? file.getOriginalFilename().replaceAll("[\\\\/:*?\"<>|]", "_")
-                                : "attachment";
+                        String rawOrigName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment";
+                        String safeOrigName = java.nio.file.Path.of(rawOrigName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
                         String storedName = java.util.UUID.randomUUID() + "_" + safeOrigName;
-                        java.nio.file.Path dst = baseDir.resolve(storedName);
-                        java.nio.file.Files.copy(tempFiles.get(i).toPath(), dst,
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        java.nio.file.Path dst = baseDir.resolve(storedName).normalize();
+                        if (!dst.startsWith(baseDir.normalize())) {
+                            throw new IllegalArgumentException("Ungültiger Dateiname");
+                        }
+                        try (var in = file.getInputStream()) {
+                            java.nio.file.Files.copy(in, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        }
 
                         EmailAttachment att = new EmailAttachment();
                         att.setEmail(email);
@@ -1674,14 +1726,6 @@ public class UnifiedEmailController {
                 }
             }
             emailRepository.save(email);
-
-            // Temp files aufräumen
-            for (java.io.File f : tempFiles) {
-                try {
-                    f.delete();
-                } catch (Exception ignored) {
-                }
-            }
 
             return ResponseEntity.ok(toDto(email));
         } catch (Exception e) {
@@ -1712,21 +1756,37 @@ public class UnifiedEmailController {
                     systemSettingsService.getSmtpPassword())
                     .mitSentKopie(sentMailArchiver);
 
+            // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)
+            long totalReplyAttachmentsSize = 0L;
+            if (attachments != null) {
+                for (MultipartFile file : attachments) {
+                    if (file != null && !file.isEmpty()) {
+                        if (file.getSize() > MAX_SINGLE_ATTACHMENT_BYTES) {
+                            return ResponseEntity.badRequest().body(Map.of(
+                                    "message",
+                                    "Der Anhang '" + (file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment")
+                                            + "' überschreitet die maximal zulässige Einzelgröße von 15 MB."));
+                        }
+                        totalReplyAttachmentsSize += file.getSize();
+                    }
+                }
+            }
+            if (totalReplyAttachmentsSize > MAX_TOTAL_ATTACHMENTS_BYTES) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "message",
+                        "Die Anhänge überschreiten die maximal zulässige Gesamtgröße von 25 MB."));
+            }
+
             // Attachments vorbereiten
             List<org.example.email.EmailService.Attachment> attachmentsForEmail = new ArrayList<>();
-            List<java.io.File> tempFiles = new ArrayList<>();
 
             if (attachments != null) {
                 for (MultipartFile file : attachments) {
                     if (!file.isEmpty()) {
-                        String safeFilename = file.getOriginalFilename() != null
-                                ? file.getOriginalFilename().replaceAll("[\\\\/:*?\"<>|]", "_")
-                                : "attachment";
-                        java.io.File tempFile = java.io.File.createTempFile("email_", "_" + safeFilename);
-                        file.transferTo(tempFile);
+                        String rawName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment";
+                        String safeFilename = java.nio.file.Path.of(rawName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
                         attachmentsForEmail.add(new org.example.email.EmailService.Attachment(
-                                tempFile, safeFilename, file.getContentType()));
-                        tempFiles.add(tempFile);
+                                file.getBytes(), safeFilename, file.getContentType()));
                     }
                 }
             }
@@ -1754,13 +1814,13 @@ public class UnifiedEmailController {
                     .findAnzeigenameFuerAdresse(sender)
                     .orElse(systemSettingsService.getMailAbsenderName()));
 
-            String messageId = emailService.sendEmailWithMultipleAttachments(
+            String messageId = sendeSmtpMail(
+                    emailService,
                     recipient,
                     null, // cc
                     sender,
                     dto.getSubject(),
                     htmlBody,
-                    Map.of(), // keine Inline-CID-Bilder
                     attachmentsForEmail);
 
             // Email-Entität speichern
@@ -1813,16 +1873,18 @@ public class UnifiedEmailController {
                 java.nio.file.Path baseDir = Path.of(mailAttachmentDir);
                 java.nio.file.Files.createDirectories(baseDir);
 
-                for (int i = 0; i < attachments.length; i++) {
-                    MultipartFile file = attachments[i];
+                for (MultipartFile file : attachments) {
                     if (!file.isEmpty()) {
-                        String safeOrigName = file.getOriginalFilename() != null
-                                ? file.getOriginalFilename().replaceAll("[\\\\/:*?\"<>|]", "_")
-                                : "attachment";
+                        String rawOrigName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment";
+                        String safeOrigName = java.nio.file.Path.of(rawOrigName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
                         String storedName = java.util.UUID.randomUUID() + "_" + safeOrigName;
-                        java.nio.file.Path dst = baseDir.resolve(storedName);
-                        java.nio.file.Files.copy(tempFiles.get(i).toPath(), dst,
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        java.nio.file.Path dst = baseDir.resolve(storedName).normalize();
+                        if (!dst.startsWith(baseDir.normalize())) {
+                            throw new IllegalArgumentException("Ungültiger Dateiname");
+                        }
+                        try (var in = file.getInputStream()) {
+                            java.nio.file.Files.copy(in, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        }
 
                         EmailAttachment att = new EmailAttachment();
                         att.setEmail(email);
@@ -1834,14 +1896,6 @@ public class UnifiedEmailController {
                     }
                 }
                 emailRepository.save(email);
-            }
-
-            // Temp files aufräumen
-            for (java.io.File f : tempFiles) {
-                try {
-                    f.delete();
-                } catch (Exception ignored) {
-                }
             }
 
             return ResponseEntity.ok(toDto(email));
