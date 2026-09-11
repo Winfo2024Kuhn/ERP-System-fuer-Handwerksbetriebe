@@ -92,11 +92,13 @@ test('Recht speichern, Glockenlink, Abschluss und Wiederöffnung mit Verlauf', a
     await page.getByRole('button', { name: 'Verlauf für Max Mustermann', exact: true }).click();
     const reopen = page.getByRole('button', { name: 'Monat wieder öffnen', exact: true });
     await expect(reopen).toBeEnabled();
+    await reopen.scrollIntoViewIfNeeded();
     await designPruefung(page, info, 'task9-abgeschlossen', { primaerAktion: reopen });
     await reopen.click();
     await page.getByRole('button', { name: 'Wieder öffnen', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true }).check();
     await expect(close).toBeEnabled();
+    await close.scrollIntoViewIfNeeded();
     await designPruefung(page, info, 'task9-wieder-offen', { primaerAktion: close });
     expect(writes).toEqual(['recht', '/api/zeitverwaltung/monatsabschluesse/sammelabschluss', '/api/zeitverwaltung/monatsabschluesse/1/2025/8/oeffnen']);
 });

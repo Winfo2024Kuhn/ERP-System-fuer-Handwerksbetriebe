@@ -22,8 +22,7 @@ export function stripHtmlTags(input: string, replacement = ''): string {
         result = result.replace(/<[^<>]*>/g, replacement);
         iterations++;
     } while (result !== prev && iterations < 20);
-    // Abschluss-Pass für evtl. verbleibende Tag-Reste
-    return result.replace(/<[^>]*>/g, replacement);
+    return result;
 }
 
 /**
@@ -69,13 +68,30 @@ export function toSafeResourceUrl(
         return trimmed;
     }
 
-    try {
-        const parsed = new URL(trimmed, window.location.origin);
-        if (allowedProtocols.includes(parsed.protocol)) {
-            return trimmed;
+    // Blob-URLs: Dürfen nur mit 'blob:' beginnen und müssen ein gültiges URL-Format haben
+    if (trimmed.startsWith('blob:')) {
+        try {
+            const parsed = new URL(trimmed);
+            if (parsed.protocol === 'blob:' && allowedProtocols.includes('blob:')) {
+                return parsed.href;
+            }
+        } catch {
+            return '';
         }
-    } catch {
-        // Ungültige URL
+        return '';
+    }
+
+    // HTTP / HTTPS mit Whitelist
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        try {
+            const parsed = new URL(trimmed);
+            if (allowedProtocols.includes(parsed.protocol)) {
+                return parsed.href;
+            }
+        } catch {
+            return '';
+        }
+        return '';
     }
 
     return '';

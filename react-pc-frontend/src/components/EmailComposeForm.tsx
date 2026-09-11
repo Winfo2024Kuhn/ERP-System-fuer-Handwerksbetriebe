@@ -330,6 +330,14 @@ export function EmailComposeForm({
     // Dokumente
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
     const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null);
+    const safeImagePreviewUrl = useMemo(() => {
+        if (!imagePreview?.url) return '';
+        const safe = toSafeResourceUrl(imagePreview.url);
+        if (safe.startsWith('blob:') || safe.startsWith('https://') || safe.startsWith('/')) {
+            return safe;
+        }
+        return '';
+    }, [imagePreview]);
     const [entityDokumente, setEntityDokumente] = useState<ProjektDokument[]>([]);
     const [loadingEntityDokumente, setLoadingEntityDokumente] = useState(false);
     const [showEntityDokumente, setShowEntityDokumente] = useState(false);
@@ -1281,11 +1289,13 @@ export function EmailComposeForm({
                                     </Button>
                                 </div>
                                 <div className="flex flex-1 items-center justify-center overflow-hidden bg-slate-100 p-4">
-                                    <img
-                                        src={toSafeResourceUrl(imagePreview.url)}
-                                        alt={imagePreview.name}
-                                        className="max-h-full max-w-full rounded object-contain shadow"
-                                    />
+                                    {safeImagePreviewUrl && (
+                                        <img
+                                            src={safeImagePreviewUrl}
+                                            alt={imagePreview.name}
+                                            className="max-h-full max-w-full rounded object-contain shadow"
+                                        />
+                                    )}
                                 </div>
                             </div>
                         </div>

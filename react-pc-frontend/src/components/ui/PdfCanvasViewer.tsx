@@ -353,7 +353,10 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
     );
 
     if (useFallback) {
-        const safeUrl = toSafeResourceUrl(fallbackBlobUrl ?? url);
+        const candidate = fallbackBlobUrl ?? url;
+        const safeUrl = toSafeResourceUrl(candidate);
+        const isSafeProtocol = safeUrl.startsWith('blob:') || safeUrl.startsWith('https://') || safeUrl.startsWith('http://') || safeUrl.startsWith('/');
+        const iframeSrc = (safeUrl && isSafeProtocol) ? `${safeUrl}#toolbar=0&navpanes=0&view=FitH` : undefined;
         return (
             <div className="relative w-full h-full">
                 {showPrintButton && (
@@ -362,7 +365,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
                     </div>
                 )}
                 <iframe
-                    src={safeUrl ? `${safeUrl}#toolbar=0&navpanes=0&view=FitH` : undefined}
+                    src={iframeSrc}
                     className={className || "w-full h-[70vh] rounded-lg border border-slate-200"}
                     style={{ background: 'white' }}
                     title="PDF Vorschau"

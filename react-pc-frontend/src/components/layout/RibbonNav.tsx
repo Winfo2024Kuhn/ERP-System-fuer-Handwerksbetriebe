@@ -255,7 +255,7 @@ export function RibbonNavigation() {
                     Kategorie-Leiste ist keine Loesung -- wenn hier noch etwas
                     ueberlaeuft, soll es als Scrollbalken sichtbar sein statt
                     unsichtbar abgeschnitten (Spec C, Befund 3). */}
-                <div className="flex-1 flex overflow-x-auto overflow-y-hidden gap-2 h-full items-end">
+                <div className="flex-1 flex overflow-x-auto overflow-y-hidden gap-1.5 2xl:gap-2 h-full items-end">
                     {visibleNavigation.map((group) => (
                         <button
                             key={group.category}
@@ -269,9 +269,9 @@ export function RibbonNavigation() {
                                 }
                             }}
                             className={cn(
-                                // px-3 statt px-4 unterhalb 2xl (1536px): spart bei 1440px
-                                // genug Breite, damit alle fuenf Kategorien nebeneinander passen.
-                                "px-3 2xl:px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
+                                // px-2.5 statt px-4 unterhalb 2xl (1536px): spart bei 1440px
+                                // genug Breite, damit alle fuenf Kategorien auch bei leicht breiteren Schriften nebeneinander passen.
+                                "px-2.5 2xl:px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
                                 activeCategory === group.category
                                     ? "text-rose-700 bg-rose-50 border-t-2 border-x border-rose-200 border-b-transparent shadow-sm z-10"
                                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-transparent border-b-2 border-b-transparent mb-[1px]"
