@@ -287,30 +287,34 @@
                 </dependencies>
             </plugin>
 
-            <!-- Maven Assembly Plugin for creating Fat JAR with all dependencies -->
+            <!-- Maven Assembly Plugin: erzeugt auf Zuruf (mvn assembly:single, siehe
+                 rag-index.cmd/.sh) einen Fat-Jar fuer den StandaloneRagIndexer, der per
+                 "java -cp" ohne Spring-Boot-Loader laufen muss.
+                 WICHTIG: KEINE <executions> mit Phasen-Bindung hier! Das single-Goal haengt
+                 sonst wieder automatisch an "package" und laeuft bei jedem "mvn package"
+                 (z.B. im Produktions-Update-Skript deployment/scripts/update-production.ps1)
+                 zusaetzlich zum spring-boot-maven-plugin. Der so erzeugte
+                 *-jar-with-dependencies.jar landet in target/ mit einem juengeren
+                 Zeitstempel als der eigentliche Boot-Jar, das Update-Skript waehlt dann
+                 faelschlich diesen Jar zum Deployen aus - und er startet nicht, weil der
+                 Assembly-Plugin-Merge Dateien wie META-INF/spring.factories nicht
+                 zusammenfuehrt, sondern nur eine Kopie behaelt (siehe Vorfall 11.09.2026:
+                 Server ging nach Update-Skript nicht mehr hoch). -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>single</goal>
-                        </goals>
-                        <configuration>
-                            <archive>
-                                <manifest>
-                                    <mainClass>org.example.kalkulationsprogramm.KalkulationsprogrammApplication</mainClass>
-                                </manifest>
-                            </archive>
-                            <descriptorRefs>
-                                <descriptorRef>jar-with-dependencies</descriptorRef>
-                            </descriptorRefs>
-                            <appendAssemblyId>true</appendAssemblyId>
-                        </configuration>
-                    </execution>
-                </executions>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>org.example.kalkulationsprogramm.KalkulationsprogrammApplication</mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                    <appendAssemblyId>true</appendAssemblyId>
+                </configuration>
             </plugin>
         </plugins>
     </build>

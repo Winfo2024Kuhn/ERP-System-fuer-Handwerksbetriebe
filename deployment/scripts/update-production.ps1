@@ -366,10 +366,15 @@ if (-not $SkipBuild) {
 }
 
 # Finde die gebaute JAR Datei dynamisch im target-Verzeichnis
+# -jar-with-dependencies wird explizit ausgeschlossen: Das ist der Fat-Jar des
+# maven-assembly-plugin fuer den StandaloneRagIndexer (siehe rag-index.cmd/.sh),
+# kein lauffaehiger Spring-Boot-Jar. Er darf nie als "neueste JAR" ausgewaehlt
+# werden, selbst wenn er (z.B. durch eine kuenftige Phasen-Bindung im pom.xml)
+# einen juengeren Zeitstempel als der echte Boot-Jar bekommt.
 $targetDir = Join-Path $REPO_PATH "target"
-$jarFile = Get-ChildItem $targetDir -Filter "*.jar" -ErrorAction SilentlyContinue | 
-           Where-Object { $_.Name -notmatch '(-sources|-javadoc|\.original)' } | 
-           Sort-Object LastWriteTime -Descending | 
+$jarFile = Get-ChildItem $targetDir -Filter "*.jar" -ErrorAction SilentlyContinue |
+           Where-Object { $_.Name -notmatch '(-sources|-javadoc|-jar-with-dependencies|\.original)' } |
+           Sort-Object LastWriteTime -Descending |
            Select-Object -First 1
 
 if (-not $jarFile) {
