@@ -33,7 +33,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path target/jpackage-input -Force | Out-Null
-          $jar = Get-ChildItem target/Kalkulationsprogramm-*.jar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          # -jar-with-dependencies ausschliessen: das ist der Fat-Jar des maven-assembly-plugin
+          # fuer den StandaloneRagIndexer (siehe pom.xml), kein Spring-Boot-Jar - er darf hier
+          # nie als "neueste JAR" durchrutschen (gleiche Ursache wie im Produktions-Update-Skript).
+          $jar = Get-ChildItem target/Kalkulationsprogramm-*.jar |
+                 Where-Object { $_.Name -notmatch '-jar-with-dependencies' } |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $jar) {
             throw "Keine Spring-Boot-JAR in target/ gefunden."
           }
