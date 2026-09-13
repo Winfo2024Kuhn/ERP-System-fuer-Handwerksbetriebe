@@ -12,9 +12,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
 class RechnungsuebersichtEingangRepositoryTest {
-    @Autowired LieferantenRepository lieferantenRepository;
-    @Autowired LieferantDokumentRepository dokumentRepository;
-    @Autowired LieferantGeschaeftsdokumentRepository repository;
+    private final LieferantenRepository lieferantenRepository;
+    private final LieferantDokumentRepository dokumentRepository;
+    private final LieferantGeschaeftsdokumentRepository repository;
+    private final AusgangsGeschaeftsDokumentRepository ausgangsRepository;
+
+    @Autowired
+    RechnungsuebersichtEingangRepositoryTest(LieferantenRepository lieferantenRepository,
+            LieferantDokumentRepository dokumentRepository,
+            LieferantGeschaeftsdokumentRepository repository,
+            AusgangsGeschaeftsDokumentRepository ausgangsRepository) {
+        this.lieferantenRepository = lieferantenRepository;
+        this.dokumentRepository = dokumentRepository;
+        this.repository = repository;
+        this.ausgangsRepository = ausgangsRepository;
+    }
 
     @Test
     void monatsUndGesamtansichtEnthaltenGutschriftenMitNegativemBetrag() {
@@ -47,7 +59,6 @@ class RechnungsuebersichtEingangRepositoryTest {
         repository.saveAndFlush(daten);
     }
 
-    @Autowired AusgangsGeschaeftsDokumentRepository ausgangsRepository;
 
     @Test
     void ausgangFiltertRechnungstypenUndMonatInDerDatenbank() {

@@ -1,4 +1,5 @@
 import { test, expect } from './hilfen/test';
+import { BEISPIEL_DOKUMENT } from './hilfen/dokument-editor';
 
 const rechnungen = [
     { id: 41, dokumentid: 'RE-2026/09/00001', geschaeftsdokumentart: 'Rechnung', rechnungsdatum: '2026-09-10', bruttoBetrag: 119, bezahlt: false, storniert: true, storno: false, projektKunde: 'Max Mustermann', editorUrl: '/dokument-editor?dokumentId=41&dokumentTyp=RECHNUNG' },
@@ -8,11 +9,18 @@ const rechnungen = [
 test('zeigt Stornos, verrechnet die Monatssumme und exportiert die Ausgangsdokument-IDs', async ({ page }) => {
     const exports: unknown[] = [];
     const filters: string[] = [];
-    await page.route('**/api/**', async route => {
+    await page.context().route('**/api/**', async route => {
         const url = new URL(route.request().url());
         const json = (body: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
         if (url.pathname === '/api/auth/me') return json({ id: 1, username: 'test', displayName: 'Max Mustermann', active: true, roles: ['USER'], admin: true, requiresInitialSetup: false });
         if (url.pathname === '/api/notifications/summary') return json({ totalCount: 0, categories: [], recentItems: [] });
+        if (url.pathname === '/api/firma') return json({});
+        if (url.pathname.startsWith('/api/formulare/templates/selection')) return route.fulfill({ status: 404, body: '' });
+        if (url.pathname === '/api/ausgangs-dokumente/42') return json({ ...BEISPIEL_DOKUMENT, id: 42, typ: 'STORNO', gebucht: true });
+        if (url.pathname.startsWith('/api/datensatz-locks/')) {
+            if (route.request().method() === 'DELETE') return route.fulfill({ status: 204, body: '' });
+            return json({ status: 'ACQUIRED', holderUserId: 1, holderDisplayName: 'Max Mustermann', acquiredAt: new Date().toISOString(), lastHeartbeatAt: new Date().toISOString() });
+        }
         if (url.pathname === '/api/rechnungsuebersicht/ausgang') {
             filters.push(url.search);
             const search = url.searchParams.get('search')?.toLowerCase();
@@ -31,6 +39,15 @@ test('zeigt Stornos, verrechnet die Monatssumme und exportiert die Ausgangsdokum
     await expect(page.getByRole('row').filter({ hasText: 'RE-2026/09/00001' })).toContainText('Storniert');
     await expect(page.getByText('Gesamtsumme', { exact: true }).locator('..')).toContainText('0,00 €');
     await expect(page.getByRole('link', { name: 'ST-2026/09/00001 im Dokumenteditor öffnen' })).toHaveAttribute('href', '/dokument-editor?dokumentId=42&dokumentTyp=STORNO');
+    const popupPromise = page.waitForEvent('popup');
+    await page.getByRole('link', { name: 'ST-2026/09/00001 im Dokumenteditor öffnen' }).click();
+    const editor = await popupPromise;
+    await expect(editor.getByText('Musterweg 1')).toBeVisible();
+    expect(await editor.evaluate(() => window.opener === null)).toBe(true);
+    const closed = editor.waitForEvent('close');
+    await editor.getByRole('button', { name: 'Editor schließen' }).click();
+    await closed;
+    await expect(storno).toBeVisible();
     await page.getByRole('combobox').filter({ hasText: 'Alle Monate' }).click();
     await page.getByRole('option', { name: 'September', exact: true }).click();
     await expect.poll(() => filters.some(f => f.includes('month=9'))).toBe(true);

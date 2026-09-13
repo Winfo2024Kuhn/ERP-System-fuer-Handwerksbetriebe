@@ -620,7 +620,7 @@ export default function RechnungsuebersichtEditor() {
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-slate-900 font-medium">
                                                     {r.editorUrl ? (
-                                                        <a href={r.editorUrl} target="_blank" rel="opener"
+                                                        <a href={r.editorUrl} target="_blank" rel="noopener noreferrer"
                                                             aria-label={`${r.dokumentid} im Dokumenteditor öffnen`}
                                                             className="text-rose-600 hover:underline">
                                                             {r.dokumentid || '–'}
