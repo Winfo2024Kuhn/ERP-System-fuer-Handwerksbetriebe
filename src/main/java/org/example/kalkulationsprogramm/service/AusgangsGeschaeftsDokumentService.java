@@ -858,6 +858,10 @@ public class AusgangsGeschaeftsDokumentService {
             throw new RuntimeException("PDF konnte nicht gespeichert werden", e);
         }
 
+        // Die PDF gehört zum Ausgangsdokument, auch ohne Offene-Posten-Eintrag.
+        dokument.setPdfDateiname(gespeicherterDateiname);
+        dokumentRepository.save(dokument);
+
         // Offene-Posten-Eintrag aktualisieren: gespeicherterDateiname auf die echte PDF setzen
         projektDokumentRepository.findAllGeschaeftsdokumente().stream()
                 .filter(g -> dokument.getDokumentNummer().equals(g.getDokumentid()))

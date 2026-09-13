@@ -95,6 +95,9 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
   @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE g.dokumentid = :dokumentid")
   List<ProjektGeschaeftsdokument> findGeschaeftsdokumenteByDokumentid(@Param("dokumentid") String dokumentid);
 
+  @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE g.dokumentid IN :nummern ORDER BY g.id")
+  List<ProjektGeschaeftsdokument> findGeschaeftsdokumenteByDokumentidIn(@Param("nummern") List<String> nummern);
+
   /**
    * Prüft ob es noch unbezahlte Rechnungen für ein Projekt gibt.
    */
