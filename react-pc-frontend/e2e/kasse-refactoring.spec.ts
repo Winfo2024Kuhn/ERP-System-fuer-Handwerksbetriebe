@@ -196,9 +196,9 @@ test('Belege & Kasse: vier Tabs, Journal, Pruefen-Dialog und Shortcuts bleiben b
     await expect(page.getByText('250,00 €').first()).toBeVisible();
 
     // Die bisherigen Einzelaktionen sind im zentralen Buchungsdialog. Das
-    // Ehegattengehalt bleibt bis Task 14 noch als eigener Shortcut bestehen.
+    // Ehegattengehalt wird seit Task 14 aus den Kassen-Einstellungen geöffnet.
     await expect(page.getByRole('button', { name: 'Neue Buchung', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Ehegattengehalt/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Ehegattengehalt/ })).toHaveCount(0);
     await designPruefung(page, info, 'kasse-refactoring-kassenbuch', { primaerAktion: hochladenButton });
 
     // Prüfen-Dialog: oeffnet sich per Klick auf eine Belegzeile im Kassenbuch-
