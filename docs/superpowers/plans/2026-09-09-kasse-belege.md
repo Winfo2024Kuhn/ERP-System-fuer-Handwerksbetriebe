@@ -1,6 +1,6 @@
 # Plan: Kasse & Belege
 
-Issue: #<wird nachgetragen>
+Issue: #155 — https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues/155
 Feature-Branch: feature/kasse-belege
 Kontext-Log: docs/superpowers/plans/2026-09-09-kasse-belege-log.md
 

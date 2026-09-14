@@ -1,5 +1,7 @@
 # Spec: Kasse & Belege
 
+Issue: [#155](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues/155)
+
 Status: Grundlage ist das vom Nutzer am 09.09.2026 abgenommene Brainstorming
 (`docs/superpowers/specs/2026-09-09-kasse-belege-brainstorming.md`, Teil A
 Recherche, Teil B Ist-Zustand, Teil C Design C1–C13). Diese Spec erfindet
