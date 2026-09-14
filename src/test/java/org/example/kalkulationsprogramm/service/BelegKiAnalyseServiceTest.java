@@ -18,6 +18,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -26,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -202,12 +207,8 @@ class BelegKiAnalyseServiceTest {
     }
 
     @Test
-    @DisplayName("KI-Vorschlag-Lieferant ohne DB-Match -> Feld bleibt null (kein Falsch-Vorschlag im PC-Dialog)")
-    void kiVorgeschlagenerLieferant_nullWennNichtInDb() {
-        // Tankquittung Q1: KI erkennt "Q1 Energie AG", dieser Lieferant ist aber
-        // NICHT in der Stammdaten-Tabelle angelegt. Der "KI-Vorschlag: Q1 Energie AG"
-        // soll dann NICHT im Validier-Dialog erscheinen, weil der Buchhalter ihn
-        // ohnehin nicht uebernehmen koennte.
+    @DisplayName("KI-Lieferantenlesung bleibt auch ohne Stammdaten-Treffer erhalten")
+    void kiVorgeschlagenerLieferant_rohlesungOhneDbMatch() {
         Beleg beleg = beleg(7L, null);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
@@ -222,7 +223,7 @@ class BelegKiAnalyseServiceTest {
         service.analysiereBelegAsync(7L);
 
         assertThat(beleg.getLieferant()).isNull();
-        assertThat(beleg.getKiVorgeschlagenerLieferant()).isNull();
+        assertThat(beleg.getKiVorgeschlagenerLieferant()).isEqualTo("Q1 Energie AG");
     }
 
     @Test
@@ -243,28 +244,28 @@ class BelegKiAnalyseServiceTest {
         service.analysiereBelegAsync(7L);
 
         assertThat(beleg.getLieferant()).isEqualTo(lief);
-        assertThat(beleg.getKiVorgeschlagenerLieferant()).isEqualTo("Aral Tankstelle");
+        assertThat(beleg.getKiVorgeschlagenerLieferant()).isEqualTo("aral tankstelle");
     }
 
     @Test
-    @DisplayName("ableitenBelegKategorie: KREDITKARTE -> KREDITKARTE, BAR -> KASSE_AUSGABE, Lastschrift/Ueberweisung/PayPal/Vorkasse -> BANK")
-    void ableitenBelegKategorie_mapping() {
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("KREDITKARTE"))
+    @DisplayName("ZahlungsartMapper: KREDITKARTE -> KREDITKARTE, BAR -> KASSE_AUSGABE, Lastschrift/Ueberweisung/PayPal/Vorkasse -> BANK")
+    void zahlungsartMapper_mapping() {
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten("KREDITKARTE"), true))
                 .isEqualTo(BelegKategorie.KREDITKARTE);
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("BAR"))
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten("BAR"), true))
                 .isEqualTo(BelegKategorie.KASSE_AUSGABE);
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("SEPA_LASTSCHRIFT"))
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten("SEPA_LASTSCHRIFT"), true))
                 .isEqualTo(BelegKategorie.BANK);
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("UEBERWEISUNG"))
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten("UEBERWEISUNG"), true))
                 .isEqualTo(BelegKategorie.BANK);
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("PAYPAL"))
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten("PAYPAL"), true))
                 .isEqualTo(BelegKategorie.BANK);
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("VORAUSKASSE"))
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten("VORAUSKASSE"), true))
                 .isEqualTo(BelegKategorie.BANK);
         // SONSTIGE/null -> keine Ableitung, Buchhalter waehlt manuell
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("SONSTIGE")).isNull();
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie(null)).isNull();
-        assertThat(BelegKiAnalyseService.ableitenBelegKategorie("")).isNull();
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten("SONSTIGE"), true)).isNull();
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten(null), true)).isNull();
+        assertThat(ZahlungsartMapper.zuKategorie(ZahlungsartMapper.zuStammdaten(""), true)).isNull();
     }
 
     @Test
@@ -305,6 +306,130 @@ class BelegKiAnalyseServiceTest {
         service.analysiereBelegAsync(7L);
 
         assertThat(beleg.getBelegKategorie()).isEqualTo(BelegKategorie.KREDITKARTE);
+    }
+
+    @Test
+    @DisplayName("Am Handy gewaehlter Lieferant bleibt erhalten, abweichende KI-Lesung bleibt sichtbar")
+    void manuellerLieferant_bleibtNebenAbweichenderKiLesungErhalten() {
+        Lieferanten manuell = lieferant(42L, "OBI");
+        Beleg beleg = beleg(7L, manuell);
+        var ergebnis = LieferantDokumentDto.AnalyzeResponse.builder()
+                .dokumentTyp(LieferantDokumentTyp.SONSTIG)
+                .lieferantName("  Hornbach  ")
+                .build();
+        analysiere(beleg, ergebnis);
+
+        assertThat(beleg.getLieferant()).isSameAs(manuell);
+        assertThat(beleg.getKiVorgeschlagenerLieferant()).isEqualTo("Hornbach");
+        verify(lieferantenRepository, never()).findByLieferantennameIgnoreCase(anyString());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = "   ")
+    @DisplayName("Fehlende KI-Lieferantenlesung wird nicht durch den manuell gewaehlten Lieferanten ersetzt")
+    void fehlenderKiLieferant_uebernimmtNichtDenNutzerwert(String kiName) {
+        Lieferanten manuell = lieferant(42L, "Musterbetrieb GmbH");
+        Beleg beleg = beleg(7L, manuell);
+        analysiere(beleg, LieferantDokumentDto.AnalyzeResponse.builder()
+                .dokumentTyp(LieferantDokumentTyp.SONSTIG)
+                .lieferantName(kiName)
+                .build());
+
+        assertThat(beleg.getLieferant()).isSameAs(manuell);
+        assertThat(beleg.getKiVorgeschlagenerLieferant()).isNull();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "UEBERWEISUNG, Überweisung, BANK",
+            "BAR, Bar, KASSE_AUSGABE",
+            "EC_KARTE, EC-Karte, BANK",
+            "RECHNUNG, Rechnung, SONSTIGER_BELEG"
+    })
+    @DisplayName("KI-Code wird fuer Zahlungsart und Kategorie auf Stammdaten abgebildet")
+    void zahlungsart_uebernimmtStammdatenUndKategorie(String kiCode, String bezeichnung,
+                                                    BelegKategorie kategorie) {
+        Beleg beleg = beleg(7L, null);
+        analysiere(beleg, LieferantDokumentDto.AnalyzeResponse.builder()
+                .dokumentTyp(LieferantDokumentTyp.SONSTIG)
+                .zahlungsart(kiCode)
+                .build());
+
+        assertThat(beleg.getZahlungsart()).isEqualTo(bezeichnung);
+        assertThat(beleg.getBelegKategorie()).isEqualTo(kategorie);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"SONSTIGE", "   "})
+    @DisplayName("Unbekannte oder leere Zahlungsart bleibt fuer die manuelle Pruefung leer")
+    void zahlungsart_ohneZuordnungBleibtLeer(String kiCode) {
+        Beleg beleg = beleg(7L, null);
+        analysiere(beleg, LieferantDokumentDto.AnalyzeResponse.builder()
+                .dokumentTyp(LieferantDokumentTyp.SONSTIG)
+                .zahlungsart(kiCode)
+                .build());
+
+        assertThat(beleg.getZahlungsart()).isNull();
+        assertThat(beleg.getBelegKategorie()).isEqualTo(BelegKategorie.UNZUGEORDNET);
+        assertThat(beleg.getKiZahlungsart()).isEqualTo(kiCode);
+    }
+
+    @Test
+    @DisplayName("KI-Provenienz enthaelt die unveraenderte Lesung unabhaengig von korrigierten Geschaeftsdaten")
+    void kiProvenienz_sichertUnveraenderteRohlesung() {
+        Beleg beleg = beleg(7L, null);
+        analysiere(beleg, LieferantDokumentDto.AnalyzeResponse.builder()
+                .dokumentTyp(LieferantDokumentTyp.SONSTIG)
+                .zahlungsart(" UEBERWEISUNG ")
+                .dokumentDatum(LocalDate.of(2026, 9, 10))
+                .betragBrutto(new BigDecimal("123.45"))
+                .build());
+        beleg.setZahlungsart("Bar");
+        beleg.setBelegDatum(LocalDate.of(2026, 9, 11));
+        beleg.setBetragBrutto(new BigDecimal("150.00"));
+
+        assertThat(beleg.getKiZahlungsart()).isEqualTo(" UEBERWEISUNG ");
+        assertThat(beleg.getKiBelegdatum()).isEqualTo(LocalDate.of(2026, 9, 10));
+        assertThat(beleg.getKiBetragBrutto()).isEqualByComparingTo("123.45");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "BAR, false, true",
+            "BAR, , true",
+            "UEBERWEISUNG, false, false",
+            "UEBERWEISUNG, , false",
+            "UEBERWEISUNG, true, true",
+            "VORAUSKASSE, false, true"
+    })
+    @DisplayName("Eingangsrechnung nutzt KI-Zahlungsart oder expliziten Bezahlt-Hinweis fuer den Zahlungsstatus")
+    void eingangsrechnung_leitetBereitsGezahltAb(String kiCode, Boolean bezahltHinweis, boolean erwartet) {
+        Beleg beleg = beleg(7L, lieferant(42L, "Musterbetrieb GmbH"));
+        given(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+        analysiere(beleg, LieferantDokumentDto.AnalyzeResponse.builder()
+                .dokumentTyp(LieferantDokumentTyp.RECHNUNG)
+                .dokumentNummer("RE-MUSTER-001")
+                .zahlungsart(kiCode)
+                .bereitsGezahlt(bezahltHinweis)
+                .build());
+
+        ArgumentCaptor<LieferantGeschaeftsdokument> gespeichert =
+                ArgumentCaptor.forClass(LieferantGeschaeftsdokument.class);
+        verify(lieferantGeschaeftsdokumentRepository).save(gespeichert.capture());
+        assertThat(gespeichert.getValue().getBereitsGezahlt()).isEqualTo(erwartet);
+        // VORAUSKASSE wird ebenfalls als Ueberweisung angezeigt, gilt aber schon als bezahlt.
+        assertThat(gespeichert.getValue().getZahlungsart())
+                .isEqualTo("BAR".equals(kiCode) ? "Bar" : "Überweisung");
+    }
+
+    private void analysiere(Beleg beleg, LieferantDokumentDto.AnalyzeResponse ergebnis) {
+        given(belegRepository.findById(beleg.getId())).willReturn(Optional.of(beleg));
+        given(geminiService.analyzeFile(any(), anyString())).willReturn(ergebnis);
+        service.analysiereBelegAsync(beleg.getId());
+        assertThat(beleg.getKiAnalyseStatus()).isEqualTo(BelegKiAnalyseStatus.DONE);
     }
 
     // ===================== Helfer =====================

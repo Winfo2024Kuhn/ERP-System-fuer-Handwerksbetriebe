@@ -16,19 +16,11 @@ beforeEach(() => {
     }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-it('bucht deutsche Beträge und blockiert leere und unvollständige Entwürfe', async () => {
+it('öffnet den zentralen Dialog statt einzelner Kassenaktionen', async () => {
     render(<ToastProvider><KasseShortcuts sachkonten={[]} onChanged={() => { }}/></ToastProvider>);
-    fireEvent.click(screen.getByRole('button', { name: 'Privateinlage', exact: true }));
-    const input = screen.getByRole('textbox', { name: 'Betrag (€)' });
-    for (const value of ['', '12,', '-1', '12,501']) {
-        fireEvent.change(input, { target: { value } });
-        fireEvent.click(screen.getByRole('button', { name: 'Buchen', exact: true }));
-        expect(writes).toHaveLength(0);
-    }
-    fireEvent.change(input, { target: { value: '12,50' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Buchen', exact: true }));
-    await waitFor(() => expect(writes).toHaveLength(1));
-    expect(writes[0].body.betrag).toBe(12.5);
+    fireEvent.click(screen.getByRole('button', { name: 'Neue Buchung', exact: true }));
+    expect(screen.getByText('Geld eingenommen', { exact: true })).toBeVisible();
+    expect(screen.getByText('Geld privat entnommen', { exact: true })).toBeVisible();
 });
 it('prüft alle Einstellungen vor dem Speichern und erhält Nichtnullwerte', async () => {
     render(<ToastProvider><KasseShortcuts sachkonten={[]} onChanged={() => { }}/></ToastProvider>);
@@ -52,12 +44,13 @@ it('prüft alle Einstellungen vor dem Speichern und erhält Nichtnullwerte', asy
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes[0].body).toMatchObject({ mindestbestand: 0, ehegattengehaltBetrag: 12.5, ehegattengehaltTag: 28 });
 });
-it.each(['Bank → Kasse', 'Privatentnahme', 'Ehegattengehalt'])('prüft auch %s vor der ersten Buchung', async (name) => {
+it('öffnet Ehegattengehalt aus den Kassen-Einstellungen', async () => {
     render(<ToastProvider><KasseShortcuts sachkonten={[]} onChanged={() => { }}/></ToastProvider>);
-    fireEvent.click(screen.getByRole('button', { name, exact: true }));
+    fireEvent.click(screen.getByTitle('Mindestbestand & Automatik einstellen'));
+    await screen.findByRole('heading', { name: 'Für den Steuerberater' });
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt einmalig auszahlen/ }));
     const input = await screen.findByRole('textbox', { name: 'Betrag (€)' });
-    if (name === 'Ehegattengehalt')
-        await waitFor(() => expect(input).toHaveValue('12,5'));
+    await waitFor(() => expect(input).toHaveValue('12,5'));
     fireEvent.change(input, { target: { value: '12,501' } });
     fireEvent.click(screen.getByRole('button', { name: /^(Buchen|Auszahlen|Abhebung buchen|Lohn buchen)$/ }));
     expect(writes).toHaveLength(0);

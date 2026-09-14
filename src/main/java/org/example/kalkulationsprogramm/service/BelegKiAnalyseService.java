@@ -119,7 +119,12 @@ public class BelegKiAnalyseService {
             beleg.setBetragNetto(ergebnis.getBetragNetto());
             beleg.setBetragBrutto(ergebnis.getBetragBrutto());
             beleg.setMwstSatz(ergebnis.getMwstSatz());
-            beleg.setZahlungsart(ergebnis.getZahlungsart());
+            beleg.setZahlungsart(ZahlungsartMapper.zuStammdaten(ergebnis.getZahlungsart()));
+
+            // Unveraenderte KI-Lesung getrennt von den korrigierbaren Geschaeftsdaten sichern.
+            beleg.setKiZahlungsart(ergebnis.getZahlungsart());
+            beleg.setKiBelegdatum(ergebnis.getDokumentDatum());
+            beleg.setKiBetragBrutto(ergebnis.getBetragBrutto());
             // KI-Klassifikation auf den Beleg uebernehmen — bestimmt, ob nachgelagert
             // ein LieferantGeschaeftsdokument auto-erstellt wird (siehe unten).
             beleg.setDokumentTyp(ergebnis.getDokumentTyp());
@@ -127,21 +132,18 @@ public class BelegKiAnalyseService {
                 beleg.setKiConfidence(java.math.BigDecimal.valueOf(ergebnis.getAiConfidence())
                         .setScale(2, java.math.RoundingMode.HALF_UP));
             }
-            // KI-Vorschlag fuer den Lieferanten nur uebernehmen, wenn der Name auch
-            // tatsaechlich einem aktiven Lieferanten in der Stammdaten-Tabelle
-            // entspricht. Andernfalls hat der Buchhalter im Validier-Dialog nichts
-            // davon — "KI-Vorschlag: Q1 Energie AG" anzuzeigen, obwohl dieser
-            // Lieferant gar nicht angelegt ist, fuehrt zu Klick-Aufwand ohne Nutzen
-            // (man kann den Vorschlag nicht uebernehmen, ohne ihn vorher manuell
-            // anzulegen). Quelle: Lieferantenstammdaten siehe Lieferanten-Entity.
+            // Einen noch nicht zugeordneten Lieferanten aus den aktiven Stammdaten ergaenzen.
             if (ergebnis.getLieferantName() != null && !ergebnis.getLieferantName().isBlank()
                     && beleg.getLieferant() == null) {
                 lieferantenRepository.findByLieferantennameIgnoreCase(ergebnis.getLieferantName().trim())
                         .filter(l -> !Boolean.FALSE.equals(l.getIstAktiv()))
                         .ifPresent(beleg::setLieferant);
             }
-            beleg.setKiVorgeschlagenerLieferant(
-                    beleg.getLieferant() != null ? beleg.getLieferant().getLieferantenname() : null);
+            // Immer die reine KI-Lesung sichern, damit Abweichungen vom am Handy
+            // gewaehlten Lieferanten bei der Pruefung sichtbar bleiben.
+            if (ergebnis.getLieferantName() != null && !ergebnis.getLieferantName().isBlank()) {
+                beleg.setKiVorgeschlagenerLieferant(ergebnis.getLieferantName().trim());
+            }
 
             // "Wo gezahlt" (BelegKategorie) aus der erkannten Zahlungsart ableiten,
             // solange der Buchhalter noch nichts vorgegeben hat. Karte/Lastschrift/
@@ -150,7 +152,7 @@ public class BelegKiAnalyseService {
             // "Wo gezahlt" + "Zahlungsart" im Validier-Dialog.
             if (beleg.getBelegKategorie() == null
                     || beleg.getBelegKategorie() == BelegKategorie.UNZUGEORDNET) {
-                BelegKategorie abgeleitet = ableitenBelegKategorie(ergebnis.getZahlungsart());
+                BelegKategorie abgeleitet = ZahlungsartMapper.zuKategorie(beleg.getZahlungsart(), true);
                 if (abgeleitet != null) {
                     beleg.setBelegKategorie(abgeleitet);
                 }
@@ -181,7 +183,7 @@ public class BelegKiAnalyseService {
 
             // KI-Agent fuer Kostenstelle + Sachkonto: liest die im System
             // angelegten Optionen aus der Datenbank und schlaegt die passende
-            // Zuordnung vor. High-Confidence-Treffer (>=0.80) werden direkt
+            // Zuordnung vor. High-Confidence-Treffer (>=0.95) werden direkt
             // gesetzt, damit der Beleg sofort im Verrechnungslohn-Gemeinkosten-
             // Bucket landet; bei niedriger Confidence bleibt es ein Vorschlag.
             // Best-effort: ein KI-Fehler hier darf die Beleg-Extraktion nicht
@@ -286,32 +288,6 @@ public class BelegKiAnalyseService {
         return v != null ? (v.length() > 500 ? v.substring(0, 500) : v) : fallback;
     }
 
-    /**
-     * Mappt eine KI-erkannte Zahlungsart auf die passende {@link BelegKategorie}
-     * ("Wo gezahlt"). Liefert null, wenn keine eindeutige Zuordnung moeglich ist —
-     * dann bleibt die Kategorie auf {@code UNZUGEORDNET} und der Buchhalter
-     * waehlt manuell.
-     *
-     * Mapping:
-     *  - BAR                                       -> KASSE_AUSGABE (Bon = Ausgabe)
-     *  - KREDITKARTE                               -> KREDITKARTE
-     *  - SEPA_LASTSCHRIFT / UEBERWEISUNG /
-     *    VORAUSKASSE / PAYPAL / AMAZON_PAY         -> BANK (alles per Bankkonto)
-     *  - SONSTIGE / null                           -> keine Ableitung
-     */
-    static BelegKategorie ableitenBelegKategorie(String zahlungsart) {
-        if (zahlungsart == null || zahlungsart.isBlank()) {
-            return null;
-        }
-        return switch (zahlungsart.trim().toUpperCase()) {
-            case "BAR" -> BelegKategorie.KASSE_AUSGABE;
-            case "KREDITKARTE" -> BelegKategorie.KREDITKARTE;
-            case "SEPA_LASTSCHRIFT", "UEBERWEISUNG", "VORAUSKASSE",
-                 "PAYPAL", "AMAZON_PAY" -> BelegKategorie.BANK;
-            default -> null;
-        };
-    }
-
     private static BigDecimal numericOrNull(JsonNode n) {
         if (n == null || n.isNull() || n.isMissingNode()) return null;
         try {
@@ -385,7 +361,8 @@ public class BelegKiAnalyseService {
         lgd.setBetragBrutto(beleg.getBetragBrutto());
         lgd.setMwstSatz(beleg.getMwstSatz());
         lgd.setZahlungsart(beleg.getZahlungsart());
-        lgd.setBereitsGezahlt(Boolean.TRUE.equals(ergebnis.getBereitsGezahlt()));
+        boolean gezahltLautZahlungsart = ZahlungsartMapper.giltAlsBezahlt(beleg.getKiZahlungsart());
+        lgd.setBereitsGezahlt(Boolean.TRUE.equals(ergebnis.getBereitsGezahlt()) || gezahltLautZahlungsart);
         lgd.setSkontoTage(ergebnis.getSkontoTage());
         lgd.setSkontoProzent(ergebnis.getSkontoProzent());
         lgd.setNettoTage(ergebnis.getNettoTage());

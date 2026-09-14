@@ -78,6 +78,9 @@ class KassenbuchFestschreibungTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "vorschlagService",
+                new BelegVorschlagService(belegRepository, sachkontoRepository, kostenstelleRepository));
+
         maxMustermann = new Mitarbeiter();
         maxMustermann.setId(1L);
         maxMustermann.setVorname("Max");

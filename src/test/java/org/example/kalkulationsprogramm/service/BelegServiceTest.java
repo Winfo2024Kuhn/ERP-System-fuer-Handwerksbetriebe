@@ -71,6 +71,9 @@ class BelegServiceTest {
 
     @BeforeEach
     void setup() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "vorschlagService",
+                new BelegVorschlagService(belegRepository, sachkontoRepository, org.mockito.Mockito.mock(org.example.kalkulationsprogramm.repository.KostenstelleRepository.class)));
+
         // uploadPath nicht @Value-injected im Mock-Kontext — bleibt null, ist OK
         // weil unsere Tests entweder validierungs-bedingt vor file write abbrechen
         // (ungueltige Dateien) oder Upload nicht aufrufen.

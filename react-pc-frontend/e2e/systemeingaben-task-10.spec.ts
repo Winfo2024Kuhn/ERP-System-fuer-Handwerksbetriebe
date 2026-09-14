@@ -7,7 +7,7 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     }[] = [];
     const native: string[] = [];
     page.on('dialog', async (d) => { native.push(d.type()); await d.dismiss(); });
-    const beleg = { id: 1, belegNummer: 'TEST-BELEG', belegKategorie: 'SONSTIGER_BELEG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 0, betragNetto: 10, mwstSatz: 19, kostenstellenSplits: [{ kostenstelleId: 1, prozent: 0, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: 2026 }] };
+    const beleg = { id: 1, belegNummer: 'TEST-BELEG', belegKategorie: 'SONSTIGER_BELEG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 0, betragNetto: 10, mwstSatz: 19, zahlungsart: 'Bar', kostenstellenSplits: [{ kostenstelleId: 1, prozent: 0, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: 2026 }] };
     await page.route('**/api/**', async (route) => {
         const path = new URL(route.request().url()).pathname;
         let body: unknown = [];
@@ -15,6 +15,8 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
             body = { id: 1, username: 'test', email: 'test@example.com', vorname: 'Max', nachname: 'Mustermann', admin: true, roles: ['ADMIN'], requiresInitialSetup: false };
         if (path === '/api/buchhaltung/belege')
             body = [beleg];
+        if (path === '/api/buchhaltung/belege/1')
+            body = beleg;
         if (path === '/api/bestellungen-uebersicht/kostenstellen')
             body = [{ id: 1, bezeichnung: 'Testwerkstatt' }];
         if (path === '/api/buchhaltung/kasse/saldo')
@@ -32,6 +34,12 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
                 body = [{ analyzeResponse: { betragBrutto: 0, dokumentTyp: 'RECHNUNG', dokumentDatum: '2026-09-09', lieferantName: 'Testlieferant' } }];
             else if (path.endsWith('/import-upload'))
                 writes.push({ path, body: {} });
+            else if (path === '/api/buchhaltung/kassenbuch/buchungen') {
+                const daten = route.request().postData() ?? '';
+                const json = daten.match(/\r?\n\r?\n({.*})\r?\n--/)?.[1] ?? '{}';
+                writes.push({ path, body: JSON.parse(json) });
+                body = beleg;
+            }
             else {
                 writes.push({ path, body: route.request().postDataJSON() });
                 body = beleg;
@@ -74,7 +82,8 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     await save.click();
     await expect.poll(() => writes[0]?.body.betragBrutto).toBe(12.5);
     await page.getByRole('button', { name: 'Kassenbuch', exact: true }).click();
-    await page.getByRole('button', { name: 'Privateinlage', exact: true }).click();
+    await page.getByRole('button', { name: 'Neue Buchung', exact: true }).click();
+    await page.getByRole('button', { name: /Eigenes Geld eingelegt/ }).click();
     const cash = page.getByRole('textbox', { name: 'Betrag (€)', exact: true });
     await cash.fill('12,501');
     await page.getByRole('button', { name: /buchen/i }).last().click();

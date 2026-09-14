@@ -95,6 +95,21 @@ public class BelegDto {
         private String stornoGrund;
         /** SHA-256 der Belegdatei – Nachweis, dass das Bild nicht ausgetauscht wurde. */
         private String dateiHash;
+        // Kasse & Belege (V372): Herkunft, Gegenpartei und KI-Rohwerte der
+        // Zahlungsart-/Betrags-/Datums-Erkennung, plus Bezahlt-Status der
+        // verknuepften Ausgangsrechnung und Kontier-Vorschlaege
+        // (Historie/Lieferant-Standard). Gefuellt wird das in Task 5.
+        private String quelle;
+        private String gegenpartei;
+        private Long ausgangsrechnungId;
+        private String kiZahlungsart;
+        private LocalDate kiBelegdatum;
+        private BigDecimal kiBetragBrutto;
+        private String kiKostenkontoHinweis;
+        private Boolean eingangsrechnungBezahlt;
+        private LocalDate eingangsrechnungBezahltAm;
+        private VorschlagDto vorschlagSachkonto;
+        private VorschlagDto vorschlagKostenstelle;
     }
 
     /**
@@ -119,6 +134,23 @@ public class BelegDto {
         private String beschreibung;
         private Integer streckungJahre;
         private Integer streckungStartJahr;
+    }
+
+    /**
+     * Ein Kontier-Vorschlag (Sachkonto oder Kostenstelle) fuer einen Beleg --
+     * z.B. aus der KI-Analyse, aus der Buchungshistorie desselben Lieferanten
+     * oder aus dem hinterlegten Standard-Sachkonto des Lieferanten.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class VorschlagDto {
+        private Long id;              // Sachkonto- bzw. Kostenstellen-ID
+        private String nummer;        // nur beim Sachkonto gefuellt
+        private String bezeichnung;
+        private String quelle;        // "KI" | "HISTORIE" | "LIEFERANT_STANDARD"
+        private String begruendung;   // ein Satz in Handwerker-Sprache
     }
 
     /**
@@ -205,6 +237,11 @@ public class BelegDto {
         // Kostenstellen-Splits (#60). null = "nicht aenderbar" (Liste bleibt
         // unveraendert), leere Liste = "alle bestehenden Splits loeschen".
         private List<KostenstellenSplitDto> kostenstellenSplits;
+        // Zahlungsstatus-Aenderung beim Pruefen (Task 5): "BEZAHLT"/"OFFEN" +
+        // Datum, wenn der Buchhalter eine offene Eingangsrechnung als
+        // bezahlt markiert.
+        private String zahlungsstatus;
+        private LocalDate bezahltAm;
     }
 
     /**

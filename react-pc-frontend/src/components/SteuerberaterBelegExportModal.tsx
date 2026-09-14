@@ -62,6 +62,7 @@ interface SteuerberaterBelegExportModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess?: () => void;
+    anhang?: { dateiname: string; blob: Blob; jahr: number; monat: number } | null;
 }
 
 const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
@@ -206,6 +207,7 @@ export function SteuerberaterBelegExportModal({
     isOpen,
     onClose,
     onSuccess,
+    anhang = null,
 }: SteuerberaterBelegExportModalProps) {
     const heute = new Date();
     // Default: Vormonat – der Steuerberater bekommt typischerweise den abgeschlossenen Monat.
@@ -224,6 +226,8 @@ export function SteuerberaterBelegExportModal({
     const [loadingSteuerberater, setLoadingSteuerberater] = useState(false);
     const [entries, setEntries] = useState<ExportEntry[]>([]);
     const [loadingEntries, setLoadingEntries] = useState(false);
+    const paketMonat = anhang?.monat ?? monat;
+    const paketJahr = anhang?.jahr ?? jahr;
 
     const editorRef = useRef<HTMLDivElement>(null);
     const signatureRef = useRef<string>('');
@@ -259,7 +263,7 @@ export function SteuerberaterBelegExportModal({
 
     // Belege im Monat laden
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen || anhang) return;
         let cancelled = false;
         setLoadingEntries(true);
         const params = new URLSearchParams({ von: dateRange.von, bis: dateRange.bis });
@@ -278,10 +282,10 @@ export function SteuerberaterBelegExportModal({
                 if (!cancelled) setLoadingEntries(false);
             });
         return () => { cancelled = true; };
-    }, [isOpen, dateRange.von, dateRange.bis]);
+    }, [isOpen, dateRange.von, dateRange.bis, anhang]);
 
     const generateEmailBody = useCallback((sig: string, anredeZeile: string) => {
-        const monatName = MONATSNAMEN[monat - 1] || '';
+        const monatName = MONATSNAMEN[paketMonat - 1] || '';
 
         const headerCells = [
             'Datum', 'Beleg-Nr', 'Lieferant', 'Art',
@@ -382,7 +386,7 @@ ${tableHtml}
 
 ${sig}
 `;
-    }, [entries, monat, jahr]);
+    }, [entries, paketMonat, jahr]);
 
     const loadSignature = useCallback(async (): Promise<string> => {
         try {
@@ -417,7 +421,7 @@ ${sig}
         }
         let cancelled = false;
         setLoadingSteuerberater(true);
-        const monatName = MONATSNAMEN[monat - 1] || '';
+        const monatName = MONATSNAMEN[paketMonat - 1] || '';
 
         Promise.all([
             fetch('/api/firma/steuerberater').then(r => r.ok ? r.json() : []),
@@ -429,8 +433,8 @@ ${sig}
             const firmenname = (firma && typeof firma === 'object' && firma.firmenname)
                 ? String(firma.firmenname).trim() : '';
             setSubject(firmenname
-                ? `Belegaufstellung Kasse ${monatName} ${jahr} - ${firmenname}`
-                : `Belegaufstellung Kasse ${monatName} ${jahr}`);
+                ? `Belegaufstellung Kasse ${monatName} ${paketJahr} - ${firmenname}`
+                : `Belegaufstellung Kasse ${monatName} ${paketJahr}`);
             signatureRef.current = sig;
             setSteuerberaterListe(sbListe);
 
@@ -448,7 +452,7 @@ ${sig}
             setLoadingSteuerberater(false);
         });
         return () => { cancelled = true; };
-    }, [isOpen, monat, jahr, loadSignature]);
+    }, [isOpen, monat, jahr, paketMonat, paketJahr, loadSignature]);
 
     useEffect(() => {
         if (!selectedSteuerberater) return;
@@ -481,10 +485,12 @@ ${sig}
             ? buildAnredeZeile(selectedAnsprechpartner.anrede, selectedAnsprechpartner.nachname)
             : 'Sehr geehrte Damen und Herren,';
 
-        const body = generateEmailBody(signatureRef.current, anredeZeile);
+        const body = anhang
+            ? `<p>${anredeZeile}</p><p>anbei die Kassenunterlagen für ${MONATSNAMEN[paketMonat - 1]} ${paketJahr} als ZIP-Datei. Sie enthält das Kassenbuch als PDF, die Buchungen als DATEV-Datei, die Belegliste und alle Belegbilder.</p><p>Mit freundlichen Grüßen,</p>${signatureRef.current}`
+            : generateEmailBody(signatureRef.current, anredeZeile);
         if (editorRef.current) editorRef.current.innerHTML = body;
         lastRenderedKeyRef.current = key;
-    }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, entriesFingerprint, loadingEntries, generateEmailBody]);
+    }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, entriesFingerprint, loadingEntries, generateEmailBody, anhang, paketMonat, paketJahr]);
 
     const jahre: number[] = [];
     for (let j = heute.getFullYear() + 1; j >= heute.getFullYear() - 5; j--) jahre.push(j);
@@ -508,6 +514,7 @@ ${sig}
                 frontendUserId: currentUser?.id || null,
             };
             formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
+            if (anhang) formData.append('attachments', anhang.blob, anhang.dateiname);
             const res = await fetch('/api/emails/send', { method: 'POST', body: formData });
             if (!res.ok) throw new Error('E-Mail senden fehlgeschlagen');
             if (onSuccess) onSuccess();
@@ -540,7 +547,7 @@ ${sig}
                         <div>
                             <h2 className="text-lg font-semibold text-slate-900">Belegaufstellung Kasse an Steuerberater</h2>
                             <p className="text-sm text-slate-500">
-                                {loadingEntries ? 'Belege werden geladen…' : `${entries.length} validierte Kassen-Belege im Monat`}
+                                {anhang ? `ZIP-Anhang: ${anhang.dateiname}` : loadingEntries ? 'Belege werden geladen…' : `${entries.length} validierte Kassen-Belege im Monat`}
                             </p>
                         </div>
                     </div>
@@ -568,9 +575,7 @@ ${sig}
                     <div className="bg-rose-50/60 border border-rose-100 rounded-lg p-3 text-xs text-slate-600 flex items-start gap-2">
                         <Calendar className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
                         <span>
-                            Diese E-Mail enthält die Aufstellung als HTML-Tabelle direkt im Body –
-                            keine PDF-Anhänge. Die physischen Belege liegen dem Steuerberater bereits vor;
-                            die Beleg-Nr. dient als Referenz.
+                            {anhang ? 'Die Kassenunterlagen werden als ZIP-Datei angehängt.' : 'Diese E-Mail enthält die Aufstellung als HTML-Tabelle direkt im Body – keine PDF-Anhänge. Die physischen Belege liegen dem Steuerberater bereits vor; die Beleg-Nr. dient als Referenz.'}
                         </span>
                     </div>
 
@@ -578,17 +583,19 @@ ${sig}
                         <div className="space-y-1">
                             <Label>Monat</Label>
                             <Select
-                                value={String(monat)}
+                                value={String(paketMonat)}
                                 onChange={v => setMonat(Number(v))}
                                 options={MONATSNAMEN.map((label, i) => ({ value: String(i + 1), label }))}
+                                disabled={Boolean(anhang)}
                             />
                         </div>
                         <div className="space-y-1">
                             <Label>Jahr</Label>
                             <Select
-                                value={String(jahr)}
+                                value={String(paketJahr)}
                                 onChange={v => setJahr(Number(v))}
                                 options={jahre.map(j => ({ value: String(j), label: String(j) }))}
+                                disabled={Boolean(anhang)}
                             />
                         </div>
                     </div>

@@ -103,6 +103,15 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
     List<Beleg> findAehnlicheBelegeByLieferant(@Param("lieferantId") Long lieferantId,
                                                org.springframework.data.domain.Pageable pageable);
 
+    @Query("SELECT b FROM Beleg b LEFT JOIN FETCH b.sachkonto LEFT JOIN FETCH b.kostenstelle "
+           + "WHERE b.lieferant.id = :lieferantId "
+           + "  AND b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT "
+           + "  AND b.id <> :ausgenommenId "
+           + "ORDER BY b.belegDatum DESC, b.id DESC")
+    List<Beleg> findLetzteGepruefteByLieferant(@Param("lieferantId") Long lieferantId,
+                                             @Param("ausgenommenId") Long ausgenommenId,
+                                             org.springframework.data.domain.Pageable pageable);
+
     /**
      * Liefert validierte Belege im Datumsbereich (chronologisch) fuer den
      * Steuerberater-Beleg-Export (Issue #58). Lieferant + Sachkonto werden per

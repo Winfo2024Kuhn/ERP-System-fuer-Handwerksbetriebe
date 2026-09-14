@@ -16,13 +16,18 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Base64;
+import java.util.Locale;
 import java.util.List;
 
 /**
@@ -66,6 +71,8 @@ public class BelegKiKostenkontoService {
     private static final BigDecimal AUTO_APPLY_THRESHOLD = new BigDecimal("0.95");
     private static final int MAX_ITERATIONS = 6;
     private static final int AEHNLICHE_BELEGE_LIMIT = 8;
+    private static final int MAX_INLINE_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_PROMPT_POSITIONEN = 15;
 
     /**
      * Max. Anzahl Versuche pro Gemini-Call bei transienten Fehlern (HTTP 429
@@ -94,6 +101,9 @@ public class BelegKiKostenkontoService {
     @Value("${ai.gemini.model.dokument-analyse:gemini-3-flash-preview}")
     private String geminiModel;
 
+    @Value("${upload.path:uploads}")
+    private String uploadPath = "uploads";
+
     /**
      * Klassifiziert den Beleg via KI-Agent und schreibt die Vorschlaege direkt
      * an das Beleg-Objekt (Aufrufer ist transaktional und persistiert).
@@ -103,6 +113,8 @@ public class BelegKiKostenkontoService {
             return;
         }
         if (beleg.getKostenstelle() != null) {
+            beleg.setKiKostenkontoHinweis(
+                    "Es war schon eine Baustelle zugeordnet – die KI hat nicht nachgeschaut.");
             log.debug("Beleg {} hat schon Kostenstelle {} — Agent uebersprungen",
                     beleg.getId(), beleg.getKostenstelle().getId());
             return;
@@ -110,13 +122,15 @@ public class BelegKiKostenkontoService {
 
         String apiKey = systemSettingsService.getGeminiApiKey();
         if (apiKey == null || apiKey.isBlank()) {
+            beleg.setKiKostenkontoHinweis(
+                    "Kein KI-Schlüssel hinterlegt – das Programm kann nichts vorschlagen.");
             log.warn("Kein Gemini-API-Key konfiguriert — KI-Agent uebersprungen fuer Beleg {}", beleg.getId());
             return;
         }
 
         // Konversations-Verlauf: wird mit jedem Tool-Cycle erweitert.
         ArrayNode contents = objectMapper.createArrayNode();
-        contents.add(userTurn(buildInitialPrompt(beleg)));
+        contents.add(buildInitialTurn(beleg));
 
         AgentErgebnis ergebnis = null;
         int iteration = 0;
@@ -126,7 +140,8 @@ public class BelegKiKostenkontoService {
             JsonNode antwort = callGemini(apiKey, contents);
             if (antwort == null) {
                 log.warn("KI-Agent Beleg {}: leere Antwort in Iteration {}", beleg.getId(), iteration);
-                break;
+                beleg.setKiKostenkontoHinweis("Die KI hat nicht geantwortet. Bitte von Hand wählen.");
+                return;
             }
 
             JsonNode functionCall = findeFunctionCall(antwort);
@@ -165,6 +180,7 @@ public class BelegKiKostenkontoService {
         } while (iteration < MAX_ITERATIONS);
 
         if (ergebnis == null) {
+            beleg.setKiKostenkontoHinweis("Die KI konnte sich nicht entscheiden. Bitte von Hand wählen.");
             log.info("KI-Agent Beleg {}: keine finale_zuordnung nach {} Iterationen", beleg.getId(), iteration);
             return;
         }
@@ -348,6 +364,18 @@ public class BelegKiKostenkontoService {
             }
         }
 
+        if (autoAppliedKostenstelle || autoAppliedSachkonto) {
+            beleg.setKiKostenkontoHinweis(null);
+        } else if (!highConfidence) {
+            String confidenceText = clampedConfidence == null ? ""
+                    : " (" + clampedConfidence.setScale(2, RoundingMode.HALF_UP)
+                            .toPlainString().replace('.', ',') + ")";
+            beleg.setKiKostenkontoHinweis("KI unsicher" + confidenceText + " – bitte prüfen.");
+        } else {
+            beleg.setKiKostenkontoHinweis(
+                    "Die KI hat nichts automatisch zugeordnet. Bitte von Hand wählen.");
+        }
+
         log.info("KI-Agent Beleg {}: ks={} sk={} conf={} autoKs={} autoSk={}",
                 beleg.getId(), ergebnis.kostenstelleId(), ergebnis.sachkontoId(),
                 clampedConfidence, autoAppliedKostenstelle, autoAppliedSachkonto);
@@ -520,6 +548,59 @@ public class BelegKiKostenkontoService {
     // Konversations-Bausteine
     // ---------------------------------------------------------------------
 
+    // Der erste Turn wird separat aufgebaut, damit Datei-Auswahl und Prompt
+    // ohne HTTP getestet werden koennen. Folgeturns enthalten nur Tool-Antworten.
+    ObjectNode buildInitialTurn(Beleg beleg) {
+        String text = buildInitialPrompt(beleg);
+        String dateiname = beleg.getGespeicherterDateiname();
+        if (dateiname == null || dateiname.isBlank()) {
+            return userTurn(text);
+        }
+        try {
+            Path basis = Path.of(uploadPath, "belege").toAbsolutePath().normalize();
+            Path datei = basis.resolve(dateiname).normalize();
+            if (!datei.startsWith(basis) || !Files.isRegularFile(datei)
+                    || !datei.toRealPath().startsWith(basis.toRealPath())) {
+                log.info("KI-Agent Beleg {}: Bild fehlt oder liegt ausserhalb des Belegordners — nur Text",
+                        beleg.getId());
+                return userTurn(text);
+            }
+            if (Files.size(datei) >= MAX_INLINE_BYTES) {
+                log.info("KI-Agent Beleg {}: Datei ist mindestens 8 MB gross — nur Text", beleg.getId());
+                return userTurn(text);
+            }
+            String lowerName = dateiname.toLowerCase(Locale.ROOT);
+            String mimeType = lowerName.endsWith(".pdf") ? "application/pdf" : Files.probeContentType(datei);
+            if (mimeType == null || (!mimeType.startsWith("image/") && !mimeType.equals("application/pdf"))) {
+                log.info("KI-Agent Beleg {}: Dateityp ist kein Bild oder PDF — nur Text", beleg.getId());
+                return userTurn(text);
+            }
+            return userTurnMitBild(text, datei, mimeType);
+        } catch (IOException | RuntimeException e) {
+            // Keine Dateipfade oder Datei-Inhalte im Log: der Text-Prompt bleibt nutzbar.
+            log.warn("KI-Agent Beleg {}: Datei konnte nicht gelesen werden ({}) — nur Text",
+                    beleg.getId(), e.getClass().getSimpleName());
+            return userTurn(text);
+        }
+    }
+
+    private ObjectNode userTurnMitBild(String text, Path datei, String mimeType) throws IOException {
+        byte[] bytes;
+        try (var input = Files.newInputStream(datei)) {
+            // Auch wenn die Datei zwischen Groessenpruefung und Lesen waechst,
+            // bleiben Speicherverbrauch und API-Anhang begrenzt.
+            bytes = input.readNBytes(MAX_INLINE_BYTES);
+        }
+        if (bytes.length >= MAX_INLINE_BYTES) {
+            throw new IOException("Datei ist mindestens 8 MB gross");
+        }
+        ObjectNode turn = userTurn(text);
+        ObjectNode inlineData = turn.withArray("parts").addObject().putObject("inline_data");
+        inlineData.put("mime_type", mimeType);
+        inlineData.put("data", Base64.getEncoder().encodeToString(bytes));
+        return turn;
+    }
+
     private ObjectNode userTurn(String text) {
         ObjectNode turn = objectMapper.createObjectNode();
         turn.put("role", "user");
@@ -651,7 +732,7 @@ public class BelegKiKostenkontoService {
                 - Beschreibung: %s
                 - Dokumenttyp: %s
                 - Original-Dateiname: %s
-
+                %s
                 Beginne jetzt mit den Tool-Aufrufen wie in der System-Instruktion beschrieben.
                 """.formatted(
                         nullToDash(lieferantName),
@@ -663,7 +744,56 @@ public class BelegKiKostenkontoService {
                         nullToDash(beleg.getMwstSatz() != null ? beleg.getMwstSatz().toPlainString() : null),
                         nullToDash(beleg.getBeschreibung()),
                         nullToDash(beleg.getDokumentTyp() != null ? beleg.getDokumentTyp().name() : null),
-                        nullToDash(beleg.getOriginalDateiname()));
+                        nullToDash(beleg.getOriginalDateiname()),
+                        buildPositionsPrompt(beleg));
+    }
+
+    private String buildPositionsPrompt(Beleg beleg) {
+        String json = beleg.getKiExtraktionJson();
+        if (json == null || json.isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            JsonNode positionen = root == null ? null : root.path("positionen");
+            if (positionen == null || !positionen.isArray()) {
+                return "";
+            }
+            StringBuilder zeilen = new StringBuilder();
+            int anzahl = 0;
+            for (JsonNode position : positionen) {
+                if (!position.isObject() || !position.hasNonNull("beschreibung")) {
+                    continue;
+                }
+                String beschreibung = safe(position.path("beschreibung").asText());
+                if (beschreibung.isBlank()) {
+                    continue;
+                }
+                if (beschreibung.length() > 120) {
+                    beschreibung = beschreibung.substring(0, 120);
+                }
+                zeilen.append("- ").append(positionsZahl(position.path("menge")))
+                        .append(" × ").append(beschreibung).append(" — ")
+                        .append(positionsZahl(position.path("betragBrutto"))).append('\n');
+                if (++anzahl >= MAX_PROMPT_POSITIONEN) {
+                    break;
+                }
+            }
+            return zeilen.isEmpty() ? "" : "\nAUSGELESENE POSITIONEN:\n" + zeilen;
+        } catch (IOException e) {
+            log.debug("KI-Agent Beleg {}: Positionsdaten sind nicht lesbar ({})",
+                    beleg.getId(), e.getClass().getSimpleName());
+            return "";
+        }
+    }
+
+    private static String positionsZahl(JsonNode wert) {
+        String text = safe(wert.asText(""));
+        try {
+            return new BigDecimal(text.replace(',', '.')).toPlainString().replace('.', ',');
+        } catch (NumberFormatException e) {
+            return "-";
+        }
     }
 
     // ---------------------------------------------------------------------

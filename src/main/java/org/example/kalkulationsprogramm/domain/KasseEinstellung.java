@@ -62,6 +62,28 @@ public class KasseEinstellung {
     @Column(name = "aktualisiert_am")
     private LocalDateTime aktualisiertAm;
 
+    // ===================== Angaben fuer den Steuerberater-Export (DATEV, V372) =====================
+
+    /** DATEV-Beraternummer fuer den EXTF-700-CSV-Export. */
+    @Column(name = "datev_beraternummer", length = 7)
+    private String datevBeraternummer;
+
+    /** DATEV-Mandantennummer fuer den EXTF-700-CSV-Export. */
+    @Column(name = "datev_mandantennummer", length = 5)
+    private String datevMandantennummer;
+
+    /** Startmonat des Wirtschaftsjahres (1-12, Standard Januar) -- bestimmt, in welches WJ ein Exportmonat faellt. */
+    @Column(name = "wirtschaftsjahr_beginn_monat", nullable = false)
+    private Integer wirtschaftsjahrBeginnMonat = 1;
+
+    /** Sachkonto-Nummer der Kasse -- Gegenkonto im DATEV-Export bei Barbuchungen. */
+    @Column(name = "kassenkonto_nummer", length = 8)
+    private String kassenkontoNummer = "1000";
+
+    /** Sachkonto-Nummer der Bank -- Gegenkonto im DATEV-Export bei Bankbuchungen. */
+    @Column(name = "bankkonto_nummer", length = 8)
+    private String bankkontoNummer = "1200";
+
     @PreUpdate
     @PrePersist
     void onSave() {

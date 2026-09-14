@@ -53,6 +53,9 @@ class BelegControllerTest {
     private BelegService belegService;
 
     @MockBean
+    private org.example.kalkulationsprogramm.service.KassenbuchungService kassenbuchungService;
+
+    @MockBean
     private MwstRechnerService mwstRechnerService;
 
     private UsernamePasswordAuthenticationToken testAuth() {

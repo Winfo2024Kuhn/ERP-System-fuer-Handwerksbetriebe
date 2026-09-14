@@ -240,6 +240,37 @@ public class Beleg {
     @Column(length = 1000)
     private String notiz;
 
+    // ===================== Kasse & Belege: Herkunft, Gegenpartei, KI-Rohwerte (V372) =====================
+
+    /** Wie der Beleg entstanden ist (Scan, System-Quittung, Ersatzbeleg, Umbuchung) -- steuert die Anzeige im Kassenbuch. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "quelle", nullable = false, length = 20)
+    private BelegQuelle quelle = BelegQuelle.SCAN;
+
+    /** Wer gezahlt hat bzw. wer bezahlt wurde -- Freitext, weil nicht jede Gegenpartei ein Lieferant im System ist. */
+    @Column(name = "gegenpartei", length = 120)
+    private String gegenpartei;
+
+    /** Verweist auf die Ausgangsrechnung, die dieser Beleg (z.B. eine Kundenzahlung per Überweisung) begleicht. */
+    @Column(name = "ausgangsrechnung_id")
+    private Long ausgangsrechnungId;
+
+    /** Rohwert der KI-Zahlungsart-Erkennung, bevor ZahlungsartMapper ihn auf eine Stammdaten-Bezeichnung abbildet. */
+    @Column(name = "ki_zahlungsart", length = 40)
+    private String kiZahlungsart;
+
+    /** Von der KI aus dem Belegfoto gelesenes Datum -- Vorschlag, bis der Buchhalter ihn beim Pruefen bestaetigt. */
+    @Column(name = "ki_belegdatum")
+    private LocalDate kiBelegdatum;
+
+    /** Von der KI aus dem Belegfoto gelesener Bruttobetrag -- Vorschlag, bis der Buchhalter ihn beim Pruefen bestaetigt. */
+    @Column(name = "ki_betrag_brutto", precision = 15, scale = 2)
+    private BigDecimal kiBetragBrutto;
+
+    /** Hinweistext der KI-Kostenkonto-Klassifikation, wenn kein eindeutiger Vorschlag moeglich war. */
+    @Column(name = "ki_kostenkonto_hinweis", length = 255)
+    private String kiKostenkontoHinweis;
+
     // ===================== Festschreibung (GoBD / § 146 Abs. 4 AO) =====================
 
     /**
