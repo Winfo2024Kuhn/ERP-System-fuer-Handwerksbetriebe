@@ -11,11 +11,15 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
 import type { ProjektDetail, ProjektDokument } from '../types';
-import { extractEmailAddress, isSingleEmailAddress } from '../lib/emailAddress';
+import { extractEmailAddress, isSingleEmailAddress, parseRecipientList } from '../lib/emailAddress';
 import { komprimiereBildFuerEmail, komprimiereBilderFuerEmail } from '../lib/bildKomprimierung';
 import { EmailRecipientInput } from './EmailRecipientInput';
 import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
 import { EmailZuordnungSearchModal, type EmailZuordnung } from './EmailZuordnungSearchModal';
+import DOMPurify from 'dompurify';
+import { useToast } from './ui/toast';
+import { useEmailDraft } from '../features/email/useEmailDraft';
+import { loadEmailDraft } from '../features/email/emailDraftPersistence';
 import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 
 // Interface für hochgeladene externe Dateien
@@ -71,6 +75,8 @@ const isPdfAttachment = (file: File): boolean =>
 
 export interface EmailComposeFormProps {
     onClose: () => void;
+    /** Registers a save guard for parent navigation; false keeps the editor open. */
+    onBeforeLeave?: (save: (() => Promise<boolean>) | null) => void;
     // For projects
     projektId?: number;
     projekt?: ProjektDetail;
@@ -185,6 +191,7 @@ export const anredeEnumToText = (anrede: string | undefined): string => {
 
 export function EmailComposeForm({
     onClose,
+    onBeforeLeave,
     projektId,
     projekt,
     anfrageId,
@@ -194,13 +201,22 @@ export function EmailComposeForm({
     initialSubject = '',
     initialBody = '',
     replyQuote,
-    replyEmailId,
+    replyEmailId: initialReplyEmailId,
     initialAttachments,
-    geschaeftsdokument = false,
+    geschaeftsdokument: initialGeschaeftsdokument = false,
     onSuccess,
     draftId: initialDraftId,
     zuordnungWaehlbar = false,
+    variant = 'default',
 }: EmailComposeFormProps) {
+    const inline = variant !== 'modal';
+    const toast = useToast();
+    const [replyEmailId, setReplyEmailId] = useState(initialReplyEmailId);
+    const [geschaeftsdokument, setGeschaeftsdokument] = useState(initialGeschaeftsdokument);
+    const [draftLoading, setDraftLoading] = useState(!!initialDraftId);
+    const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
+    const [loadAttempt, setLoadAttempt] = useState(0);
+    const [closing, setClosing] = useState(false);
     // Zuordnung: zu welchem Projekt / welcher Anfrage gehört die E-Mail?
     // Startwert kommt aus dem Kontext (Projekt-/Anfrage-Seite), kann im
     // Formular aber jederzeit über die Suche geändert werden.
@@ -310,18 +326,6 @@ export function EmailComposeForm({
     const [sending, setSending] = useState(false);
     const [beautifying, setBeautifying] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
-    // Draft auto-save
-    const [draftId, setDraftId] = useState<number | null>(initialDraftId ?? null);
-    const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [draftSaving, setDraftSaving] = useState(false);
-    // Erst speichern, wenn der User selbst etwas ändert. Sonst legt das Öffnen aus
-    // dem DocumentEditor (mit prefilled initialBody/Subject/Recipient) sofort einen
-    // Entwurf an, der beim Abbrechen im E-Mail-Center verbleibt.
-    const userInteracted = useRef<boolean>(!!initialDraftId);
-    const markDirty = useCallback(() => {
-        userInteracted.current = true;
-    }, []);
 
     // CC State
     const [ccRecipients, setCcRecipients] = useState<string[]>([]);
@@ -437,75 +441,94 @@ export function EmailComposeForm({
         setRecipient(val);
     };
 
-    // ═══════════════════════════════════════════════════════════════
-    // DRAFT AUTO-SAVE (2s Debounce)
-    // ═══════════════════════════════════════════════════════════════
-    const saveDraft = useCallback(async () => {
-        // Kein Speichern, solange der User keine eigene Eingabe gemacht hat
-        // (verhindert Phantom-Entwürfe beim Öffnen aus dem DocumentEditor).
-        if (!userInteracted.current) return;
-        const currentBody = editorRef.current?.innerHTML || body;
-        // Nur speichern wenn mindestens Empfänger, Betreff oder Body vorhanden
-        if (!recipient.trim() && !subject.trim() && !currentBody.trim()) return;
-
-        const draftData = {
-            recipient: recipient.trim(),
-            cc: ccRecipients.filter(c => c.trim()).join(', '),
-            subject: subject.trim(),
-            body: currentBody,
-            fromAddress: fromAddress || null,
+    const reportDraftError = useCallback((message: string) => {
+        setError(message);
+        toast.error(message);
+    }, [toast]);
+    const draftSnapshot = useMemo(() => ({
+        content: {
+            recipient: recipient.trim(), cc: ccRecipients.filter(c => c.trim()).join(', '),
+            subject: subject.trim(), body, fromAddress: fromAddress || null,
             replyEmailId: replyEmailId || null,
             projektId: !isAnfrageContext && entityId ? entityId : null,
             anfrageId: isAnfrageContext && entityId ? entityId : null,
-        };
+            geschaeftsdokument,
+        },
+        files: uploadedFiles.map(entry => entry.file),
+    }), [recipient, ccRecipients, subject, body, fromAddress, replyEmailId, isAnfrageContext,
+        entityId, geschaeftsdokument, uploadedFiles]);
+    const draft = useEmailDraft(draftSnapshot, initialDraftId,
+        !draftLoading && !draftLoadError && !komprimiereAnhaenge, reportDraftError);
+    const markDirty = draft.markDirty;
 
-        try {
-            setDraftSaving(true);
-            if (draftId) {
-                await fetch(`/api/emails/drafts/${draftId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(draftData),
-                });
-            } else {
-                const res = await fetch('/api/emails/drafts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(draftData),
-                });
-                if (res.ok) {
-                    const saved = await res.json();
-                    setDraftId(saved.id);
-                }
-            }
-        } catch (err) {
-            console.warn('Draft auto-save fehlgeschlagen:', err);
-        } finally {
-            setDraftSaving(false);
-        }
-    }, [recipient, subject, body, ccRecipients, fromAddress, replyEmailId, entityId, isAnfrageContext, draftId]);
-
-    // Debounced auto-save: bei jeder relevanten Änderung wird nach 2s gespeichert
     useEffect(() => {
-        if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-        draftSaveTimer.current = setTimeout(() => {
-            saveDraft();
-        }, 2000);
-        return () => {
-            if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-        };
-    }, [saveDraft]);
+        if (!initialDraftId) return;
+        let cancelled = false;
+        setDraftLoading(true);
+        setDraftLoadError(null);
+        void loadEmailDraft(initialDraftId).then(({ content, files }) => {
+            if (cancelled) return;
+            setRecipient(content.recipient ?? initialRecipient);
+            setSubject(content.subject ?? initialSubject);
+            const html = DOMPurify.sanitize(content.body ?? initialBody);
+            setBody(html);
+            const cc = parseRecipientList(content.cc).map(recipient => recipient.raw);
+            setCcRecipients(cc);
+            setShowCc(cc.length > 0);
+            setFromAddress(previous => content.fromAddress ?? previous);
+            setReplyEmailId(content.replyEmailId ?? initialReplyEmailId);
+            setGeschaeftsdokument(content.geschaeftsdokument ?? initialGeschaeftsdokument);
+            if (content.projektId) setZuordnung({ typ: 'PROJEKT', id: content.projektId, titel: '' });
+            else if (content.anfrageId) setZuordnung({ typ: 'ANFRAGE', id: content.anfrageId, titel: '' });
+            else if ('projektId' in content) setZuordnung(null);
+            setUploadedFiles(files.map(file => ({ file })));
+            empfaengerAutomatisch.current = false;
+            setDraftLoading(false);
+        }).catch((error: unknown) => {
+            if (cancelled) return;
+            const message = error instanceof Error ? error.message : 'Entwurf konnte nicht geladen werden.';
+            setDraftLoadError(message);
+            setDraftLoading(false);
+            reportDraftError(message);
+        });
+        return () => { cancelled = true; };
+    }, [initialDraftId, loadAttempt, initialRecipient, initialSubject, initialBody,
+        initialReplyEmailId, initialGeschaeftsdokument, reportDraftError]);
 
-    // Draft löschen (nach Send oder wenn User Entwurf verwirft)
-    const deleteDraft = useCallback(async () => {
-        if (!draftId) return;
+    // After restoring all attachments the editable element is mounted again.
+    useEffect(() => {
+        if (!draftLoading && initialDraftId && editorRef.current) editorRef.current.innerHTML = body;
+        // Only restoration may replace the editable DOM; keystrokes must retain their caret.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftLoading, initialDraftId]);
+
+    const flushDraft = draft.flush;
+    const saveBeforeLeave = useCallback(async () => {
+        if (sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || draftLoading) return false;
+        setClosing(true);
+        try { await flushDraft(); return true; }
+        catch { return false; }
+        finally { setClosing(false); }
+    }, [sending, closing, komprimiereAnhaenge, loadingEntityDokumentIds.size, draftLoading, flushDraft]);
+    const saveBeforeLeaveRef = useRef(saveBeforeLeave);
+    useEffect(() => { saveBeforeLeaveRef.current = saveBeforeLeave; }, [saveBeforeLeave]);
+    useEffect(() => {
+        onBeforeLeave?.(() => saveBeforeLeaveRef.current());
+        return () => onBeforeLeave?.(null);
+    }, [onBeforeLeave]);
+
+    const handleClose = async () => {
+        if (closing || sending || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0) return;
+        setClosing(true);
         try {
-            await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
-            setDraftId(null);
-        } catch (err) {
-            console.warn('Draft löschen fehlgeschlagen:', err);
-        }
-    }, [draftId]);
+            await draft.flush();
+            await draft.pause();
+            onClose();
+        } catch {
+            // flush already reports the failure; retain the complete local draft for retry.
+        } finally { setClosing(false); }
+    };
+
     const loadSignature = useCallback(async () => {
         try {
             const currentUser = getCurrentFrontendUser();
@@ -607,6 +630,8 @@ export function EmailComposeForm({
             // execCommand ist deprecated – Fallback ist der Browser-Default.
         }
 
+        if (initialDraftId) return;
+
         if (replyQuote) {
             // Antwort-Modus: Schreibbereich → Signatur → Zitat
             loadSignature().then(sig => {
@@ -652,9 +677,11 @@ export function EmailComposeForm({
             }
         }
 
-        loadFromAddresses();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // A restored business-document draft may select a different sender account after loading.
+    useEffect(() => { void loadFromAddresses(); }, [loadFromAddresses]);
 
     // Dateien des verknüpften Vorgangs laden – auch nach Wechsel der Zuordnung
     useEffect(() => {
@@ -881,12 +908,14 @@ export function EmailComposeForm({
         setError(null);
 
         try {
+            await draft.pause();
             const currentUser = getCurrentFrontendUser();
 
             // FormData für multipart request (mit Anhängen)
             const formData = new FormData();
 
             const dtoPayload = {
+                draftId: draft.getDraftId(),
                 // Leerer sender = Backend loest aus frontendUserId auf (zugewiesene Adresse).
                 sender: fromAddress || null,
                 recipients: [finalRecipient],
@@ -924,8 +953,8 @@ export function EmailComposeForm({
                 throw new Error('E-Mail senden fehlgeschlagen');
             }
 
-            // Draft nach erfolgreichem Senden löschen
-            await deleteDraft();
+            // The backend already deleted the draft immediately after successful SMTP delivery.
+            await draft.complete();
 
             // Check if the recipient email is new (not in known emails).
             // Beim Antworten steht im Feld `"Name" <adresse>` – verglichen und
@@ -949,6 +978,8 @@ export function EmailComposeForm({
         } catch (err) {
             console.error('E-Mail senden fehlgeschlagen:', err);
             setError('E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.');
+            toast.error('E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.');
+            draft.resume();
         } finally {
             setSending(false);
         }
@@ -990,10 +1021,20 @@ export function EmailComposeForm({
         onClose();
     };
 
+    if (draftLoading || draftLoadError) return (
+        <div className="flex h-full min-h-48 flex-col items-center justify-center gap-4 p-4" role={draftLoadError ? 'alert' : 'status'}>
+            {draftLoading ? <><Loader2 className="h-5 w-5 animate-spin" />Entwurf und Anhänge werden geladen…</> : <>
+                <p className="text-sm text-rose-700">{draftLoadError}</p>
+                <Button onClick={() => setLoadAttempt(value => value + 1)}>Erneut laden</Button>
+            </>}
+            <Button variant="outline" onClick={onClose}>Schließen</Button>
+        </div>
+    );
+
     return (
-        <div className="flex flex-col h-full bg-slate-50">
+        <div className="flex min-w-0 flex-col h-full bg-slate-50">
             {/* Header */}
-            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-rose-50 flex-shrink-0">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 bg-rose-50 flex-shrink-0">
                 <div className="flex min-w-0 items-center gap-3 flex-1">
                     <div className="w-11 h-11 rounded-full bg-white border border-rose-200 flex items-center justify-center shadow-sm flex-shrink-0">
                         <Mail className="w-5 h-5 text-rose-600" />
@@ -1009,7 +1050,8 @@ export function EmailComposeForm({
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={onClose}
+                        onClick={() => { void handleClose(); }}
+                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0}
                         aria-label="Fenster schließen"
                         className="text-slate-500 hover:text-slate-700"
                     >
@@ -1019,14 +1061,14 @@ export function EmailComposeForm({
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4" inert={sending || closing}>
                 {error && (
                     <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                         {error}
                     </div>
                 )}
 
-                <div className="mx-auto w-full max-w-5xl space-y-5">
+                <div className={inline ? "mx-auto w-full max-w-5xl space-y-3" : "mx-auto w-full max-w-5xl space-y-5"}>
                     {hasInitialAttachments && (
                         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1057,24 +1099,24 @@ export function EmailComposeForm({
                     )}
 
                     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                        <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3">
+                        <div className={inline ? "hidden" : "border-b border-slate-100 bg-slate-50/80 px-5 py-3"}>
                             <p className="text-sm font-semibold text-slate-900">E-Mail-Details</p>
                             <p className="text-xs text-slate-500 mt-1">Empfänger, Absender und Betreff in einer kompakten Übersicht.</p>
                         </div>
 
-                        <div className="p-5 flex flex-col gap-4">
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between gap-3">
-                                    <Label>Empfänger *</Label>
+                        <div className={inline ? "p-3 flex flex-col gap-2" : "p-5 flex flex-col gap-4"}>
+                            <div className={inline ? "grid grid-cols-[68px_minmax(0,1fr)] items-center gap-2" : "space-y-2"}>
+                                <div className={inline ? "flex flex-col items-start gap-0.5" : "flex items-center justify-between gap-3"}>
+                                    <Label>{inline ? 'An *' : 'Empfänger *'}</Label>
                                     {!showCc && (
                                         <Button
                                             type="button"
                                             variant="ghost"
                                             size="sm"
-                                            className="min-h-11 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3"
+                                            className={inline ? "h-6 min-h-6 px-1 text-xs text-rose-600" : "min-h-11 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3"}
                                             onClick={() => { setShowCc(true); setCcRecipients(['']); }}
                                         >
-                                            + CC hinzufügen
+                                            {inline ? '+ CC' : '+ CC hinzufügen'}
                                         </Button>
                                     )}
                                 </div>
@@ -1087,7 +1129,7 @@ export function EmailComposeForm({
                                 />
                             </div>
 
-                            <div className="space-y-2">
+                            <div className={inline ? "grid grid-cols-[68px_minmax(0,1fr)] items-center gap-2" : "space-y-2"}>
                                 <Label htmlFor={dokumentAbsender ? 'fromAddressFest' : undefined}>Von</Label>
                                 {dokumentAbsender ? (
                                     <>
@@ -1098,7 +1140,7 @@ export function EmailComposeForm({
                                             aria-describedby="fromAddressFestHinweis"
                                             className="bg-slate-50 text-slate-700"
                                         />
-                                        <p id="fromAddressFestHinweis" className="text-xs text-slate-500">
+                                        <p id="fromAddressFestHinweis" className={`text-xs text-slate-500 ${inline ? 'col-span-2' : ''}`}>
                                             Rechnungen, Angebote und Auftragsbestätigungen gehen fest über
                                             dieses Postfach raus, damit sie beim Kunden nicht im Spam landen.
                                             Der Absender lässt sich hier deshalb nicht ändern.
@@ -1115,7 +1157,7 @@ export function EmailComposeForm({
                                 )}
                             </div>
 
-                            <div className="space-y-2">
+                            <div className={inline ? "grid grid-cols-[68px_minmax(0,1fr)] items-center gap-2" : "space-y-2"}>
                                 <Label htmlFor="subject">Betreff</Label>
                                 <Input
                                     id="subject"
@@ -1129,11 +1171,11 @@ export function EmailComposeForm({
                             {/* Zuordnung: Projekt oder Anfrage verknüpfen.
                                 Entfällt, wenn direkt aus einem Projekt/einer Anfrage geschrieben wird. */}
                             {zuordnungWaehlbar && (
-                            <div className="space-y-2">
+                            <div className={inline ? "grid grid-cols-[68px_minmax(0,1fr)] items-center gap-2" : "space-y-2"}>
                                 <Label>Gehört zu</Label>
                                 {zuordnung ? (
-                                    <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white">
+                                    <div className={inline ? "flex min-w-0 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1" : "flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3"}>
+                                        <div className={inline ? "hidden" : "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white"}>
                                             {zuordnung.typ === 'PROJEKT'
                                                 ? <Briefcase className="h-4 w-4 text-rose-600" />
                                                 : <FileText className="h-4 w-4 text-rose-600" />}
@@ -1151,7 +1193,7 @@ export function EmailComposeForm({
                                             type="button"
                                             variant="ghost"
                                             size="sm"
-                                            className="min-h-11 text-xs text-rose-700 hover:bg-rose-100"
+                                            className={inline ? "h-8 min-h-8 text-xs text-rose-700" : "min-h-11 text-xs text-rose-700 hover:bg-rose-100"}
                                             onClick={() => { markDirty(); setShowZuordnungSuche(true); }}
                                         >
                                             Ändern
@@ -1164,7 +1206,7 @@ export function EmailComposeForm({
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="min-h-11 text-slate-500 hover:text-slate-700"
+                                                className={inline ? "h-8 min-h-8 text-slate-500" : "min-h-11 text-slate-500 hover:text-slate-700"}
                                                 onClick={() => { markDirty(); setZuordnung(null); }}
                                                 aria-label="Verknüpfung entfernen"
                                             >
@@ -1177,13 +1219,13 @@ export function EmailComposeForm({
                                         type="button"
                                         variant="outline"
                                         onClick={() => setShowZuordnungSuche(true)}
-                                        className="min-h-11 w-full justify-start border-rose-200 text-rose-700 hover:bg-rose-50"
+                                        className={inline ? "h-9 min-h-9 w-full justify-start border-rose-200 text-rose-700 text-xs" : "min-h-11 w-full justify-start border-rose-200 text-rose-700 hover:bg-rose-50"}
                                     >
                                         <Link2 className="mr-2 h-4 w-4" />
                                         Projekt oder Anfrage suchen
                                     </Button>
                                 )}
-                                <p className="text-xs text-slate-500">
+                                <p className={inline ? "hidden" : "text-xs text-slate-500"}>
                                     Damit die E-Mail später beim richtigen Vorgang auftaucht.
                                 </p>
                             </div>
@@ -1199,6 +1241,7 @@ export function EmailComposeForm({
                                             variant="ghost"
                                             size="sm"
                                             onClick={() => {
+                                                markDirty();
                                                 setShowCc(false);
                                                 setCcRecipients([]);
                                             }}
@@ -1242,6 +1285,31 @@ export function EmailComposeForm({
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    {/* Text Editor */}
+                    <div className={inline ? "rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col" : "rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-[320px]"}>
+                        <div className={inline ? "border-b border-slate-200 bg-slate-50 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2" : "border-b border-slate-200 bg-slate-50 px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"}>
+                            <div>
+                                <Label className="text-slate-900">Nachricht</Label>
+                                <p className={inline ? "hidden" : "text-xs text-slate-500 mt-1"}>Formulieren, überarbeiten und anschließend direkt versenden.</p>
+                            </div>
+                            <AiButton
+                                onClick={handleBeautify}
+                                isLoading={beautifying}
+                                label="KI-Optimierung"
+                            />
+                        </div>
+                        <div className={inline ? "flex-1 p-2 bg-white" : "flex-1 p-4 bg-white"}>
+                            <div
+                                ref={editorRef}
+                                className={`email-compose-editor h-full ${inline ? 'min-h-[200px] p-3' : 'min-h-[240px] p-4'} rounded-xl border border-slate-200 outline-none overflow-auto focus-within:border-rose-300 [&_p]:min-h-[1.25em] [&_p]:my-0 [&>p+p]:mt-2 [&>div+p]:mt-2 [&>p+div]:mt-2`}
+                                role="textbox" aria-label="Nachricht" aria-multiline="true"
+                                contentEditable
+                                suppressContentEditableWarning
+                                onInput={() => { markDirty(); setBody(editorRef.current?.innerHTML || ''); }}
+                            />
                         </div>
                     </div>
 
@@ -1302,14 +1370,14 @@ export function EmailComposeForm({
                     )}
 
                     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                        <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3">
+                        <div className={inline ? "border-b border-slate-100 bg-slate-50/80 px-3 py-2" : "border-b border-slate-100 bg-slate-50/80 px-5 py-3"}>
                             <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
                                 <Upload className="w-4 h-4 text-rose-600" />
                                 Anhänge
                             </p>
-                            <p className="text-xs text-slate-500 mt-1">Zusätzliche Dateien per Klick oder Drag & Drop anhängen.</p>
+                            <p className={inline ? "hidden" : "text-xs text-slate-500 mt-1"}>Zusätzliche Dateien per Klick oder Drag & Drop anhängen.</p>
                         </div>
-                        <div className="p-5 space-y-3">
+                        <div className={inline ? "p-3 space-y-2" : "p-5 space-y-3"}>
                             {entityId && (
                                 <Button
                                     type="button"
@@ -1378,9 +1446,9 @@ export function EmailComposeForm({
                                     </>
                                 ) : (
                                     <>
-                                        <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+                                        <Upload className={inline ? "hidden" : "w-8 h-8 mx-auto text-slate-400 mb-2"} />
                                         <p className="text-sm font-medium text-slate-700">Dateien hier ablegen oder klicken</p>
-                                        <p className="text-xs text-slate-500 mt-1">PDFs, Bilder und weitere Dokumente werden direkt als Anhang hinzugefügt. Große Fotos verkleinern wir automatisch.</p>
+                                        <p className={inline ? "hidden" : "text-xs text-slate-500 mt-1"}>PDFs, Bilder und weitere Dokumente werden direkt als Anhang hinzugefügt. Große Fotos verkleinern wir automatisch.</p>
                                     </>
                                 )}
                             </div>
@@ -1393,7 +1461,7 @@ export function EmailComposeForm({
                             />
 
                             <div className="space-y-1">
-                                <div className="flex items-center justify-between text-xs">
+                                <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
                                     <span className={attachmentLimitExceeded ? 'font-medium text-red-600' : 'text-slate-500'}>
                                         {formatFileSize(attachmentBytes)} von {formatFileSize(MAX_ATTACHMENT_BYTES)}
                                     </span>
@@ -1459,45 +1527,24 @@ export function EmailComposeForm({
                         </div>
                     </div>
 
-                    {/* Text Editor */}
-                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-[320px]">
-                        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <Label className="text-slate-900">Nachricht</Label>
-                                <p className="text-xs text-slate-500 mt-1">Formulieren, überarbeiten und anschließend direkt versenden.</p>
-                            </div>
-                            <AiButton
-                                onClick={handleBeautify}
-                                isLoading={beautifying}
-                                label="KI-Optimierung"
-                            />
-                        </div>
-                        <div className="flex-1 p-4 bg-white">
-                            <div
-                                ref={editorRef}
-                                className="email-compose-editor h-full min-h-[240px] rounded-xl border border-slate-200 p-4 outline-none overflow-auto focus-within:border-rose-300 [&_p]:min-h-[1.25em] [&_p]:my-0 [&>p+p]:mt-2 [&>div+p]:mt-2 [&>p+div]:mt-2"
-                                contentEditable
-                                suppressContentEditableWarning
-                                onInput={() => { markDirty(); setBody(editorRef.current?.innerHTML || ''); }}
-                            />
-                        </div>
-                    </div>
+
 
                 </div>
             </div>
 
             {/* Footer – immer sichtbar, damit "E-Mail senden" nie verdeckt wird */}
-            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between flex-shrink-0 relative z-10">
-                <span className="text-xs text-slate-400">
-                    {draftSaving ? 'Entwurf wird gespeichert…' : draftId ? 'Entwurf gespeichert' : ''}
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2 flex-shrink-0 relative z-10">
+                <span role="status" className={`text-xs ${draft.status === 'error' ? 'text-rose-700' : 'text-slate-500'}`}>
+                    {draft.label}
+                    {draft.status === 'error' && <button className="ml-2 underline" onClick={() => { void draft.flush().catch(() => undefined); }}>Erneut speichern</button>}
                 </span>
                 <div className="flex gap-3">
-                    <Button variant="outline" onClick={onClose} disabled={sending}>
-                        Schließen
+                    <Button variant="outline" onClick={() => { void handleClose(); }} disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0}>
+                        {closing ? 'Wird gespeichert…' : 'Schließen'}
                     </Button>
                     <Button
                         onClick={handleSend}
-                        disabled={sending || !recipient.trim() || !subject.trim() || attachmentLimitExceeded}
+                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || !recipient.trim() || !subject.trim() || attachmentLimitExceeded}
                         className="bg-rose-600 hover:bg-rose-700 text-white"
                     >
                         {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}

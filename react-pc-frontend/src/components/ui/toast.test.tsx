@@ -91,7 +91,7 @@ describe('Toast', () => {
 });
 
 
-describe('Reservierte Meldungsfläche', () => {
+describe('Schwebende Meldungen', () => {
     it('behält auch acht Meldungen in einer begrenzten scrollbaren Fläche erreichbar', async () => {
         render(<ToastProvider><TestComponent /></ToastProvider>);
         await act(async () => { for (let i = 0; i < 8; i++) screen.getByText('Error').click(); });
@@ -113,39 +113,30 @@ describe('Reservierte Meldungsfläche', () => {
         expect(geladen).toHaveBeenCalledTimes(1);
     });
 
-    it('reserviert gemessene Höhe, reagiert auf Resize und räumt im StrictMode auf', async () => {
-        let height = 80;
-        const disconnect = vi.spyOn(ResizeObserver.prototype, 'disconnect');
-        const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height } as DOMRect));
-        document.documentElement.style.setProperty('--pc-toast-height', '17px');
+    it('verändert auch im StrictMode keine globale Layout-Höhe', async () => {
         const { unmount } = render(<StrictMode><ToastProvider><TestComponent /></ToastProvider></StrictMode>);
         await act(async () => { screen.getByText('Error').click(); });
-        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('80px');
-        height = 120;
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('');
         act(() => window.dispatchEvent(new Event('resize')));
-        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('120px');
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('');
         unmount();
-        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('17px');
-        expect(disconnect).toHaveBeenCalled();
-        document.documentElement.style.removeProperty('--pc-toast-height');
-        bounds.mockRestore(); disconnect.mockRestore();
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('');
     });
 });
 
-it('gibt die Meldungsfläche nach Ablauf frei und beendet Timer beim Unmount', async () => {
+it('blendet Meldungen nach Ablauf aus und beendet Timer beim Unmount', async () => {
     vi.useFakeTimers();
-    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 80 } as DOMRect);
     const { unmount } = render(<ToastProvider><TestComponent /></ToastProvider>);
     try {
         act(() => screen.getByText('Error').click());
-        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('80px');
+        expect(screen.getByRole('alert')).toBeVisible();
         act(() => vi.advanceTimersByTime(5000));
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('0px');
+        expect(screen.getByTestId('toast-container')).not.toBeVisible();
         act(() => screen.getByText('Error').click());
         unmount();
         expect(vi.getTimerCount()).toBe(0);
     } finally {
-        unmount(); bounds.mockRestore(); vi.useRealTimers();
+        unmount(); vi.useRealTimers();
     }
 });

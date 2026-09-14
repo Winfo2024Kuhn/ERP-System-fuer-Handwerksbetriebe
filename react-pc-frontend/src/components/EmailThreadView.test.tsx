@@ -83,6 +83,22 @@ describe('EmailThreadView', () => {
         expect(screen.getByText(/Hallo, ich hätte Interesse/)).toBeInTheDocument();
     });
 
+    it('bildet den kompakten Ausschnitt aus dem neuen Inhalt statt einem bereits zitierten Server-Snippet', () => {
+        const thread = makeThread({ focusedEmailId: 0 });
+        thread.emails[0].snippet = 'Alter Text mit alter Signatur';
+        thread.emails[0].htmlBody = '<p>Passt, danke.</p><p>Aktuelle Signatur</p>'
+            + '<div>Am 8. September 2026 schrieb test@example.com:</div>'
+            + '<blockquote type="cite">Alter Text mit alter Signatur</blockquote><p>Neue Ergänzung</p>';
+        render(<EmailThreadView thread={thread} />);
+        const bubble = screen.getByRole('button', { name: 'Nachricht von Max Mustermann öffnen' });
+        expect(bubble).toHaveTextContent('Passt, danke. Aktuelle Signatur Neue Ergänzung');
+        expect(bubble).not.toHaveTextContent('Alter Text');
+        expect(bubble).not.toHaveTextContent('Am 8. September');
+        fireEvent.keyDown(bubble, { key: ' ' });
+        expect(screen.getByRole('button', { name: 'Nachricht von Max Mustermann einklappen' }))
+            .toHaveAttribute('aria-expanded', 'true');
+    });
+
     it('fokussierte E-Mail ist automatisch expandiert', () => {
         const thread = makeThread();
         render(<EmailThreadView thread={thread} />);

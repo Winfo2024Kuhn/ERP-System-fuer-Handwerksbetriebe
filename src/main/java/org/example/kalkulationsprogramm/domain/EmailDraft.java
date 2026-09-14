@@ -1,6 +1,11 @@
 package org.example.kalkulationsprogramm.domain;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -54,6 +59,13 @@ public class EmailDraft {
 
     /** Zugeordnete Anfrage */
     private Long anfrageId;
+
+    @Column(nullable = false)
+    private boolean geschaeftsdokument;
+
+    @OneToMany(mappedBy = "draft", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
+    private List<EmailDraftAttachment> attachments = new ArrayList<>();
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

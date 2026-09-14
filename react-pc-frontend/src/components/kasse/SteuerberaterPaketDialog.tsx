@@ -153,7 +153,7 @@ export function SteuerberaterPaketDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="steuerberater-paket-titel"
-        className="flex max-h-[calc(100vh-var(--pc-toast-height,0px)-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
       >
         <div className="flex items-start justify-between border-b border-slate-200 bg-rose-50 px-6 py-4">
           <div>

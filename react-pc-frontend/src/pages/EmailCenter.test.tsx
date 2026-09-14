@@ -248,10 +248,11 @@ describe('EmailCenter', () => {
 
             // Select email to show detail pane
             await user.click(screen.getByText('Angebot für Treppe'));
-            await waitFor(() => expect(screen.getByRole('button', { name: /Zuordnen/ })).toBeInTheDocument());
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Zuordnen' })).toBeInTheDocument());
 
             // Open assign modal
-            await user.click(screen.getByRole('button', { name: /Zuordnen/ }));
+            await user.click(screen.getByRole('menuitem', { name: 'Zuordnen' }));
             await waitFor(() => expect(screen.getByText('E-Mail zuordnen')).toBeInTheDocument());
 
             // Type in manual search
@@ -295,9 +296,10 @@ describe('EmailCenter', () => {
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
 
             await user.click(screen.getByText('Angebot für Treppe'));
-            await waitFor(() => expect(screen.getByRole('button', { name: /Zuordnen/ })).toBeInTheDocument());
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Zuordnen' })).toBeInTheDocument());
 
-            await user.click(screen.getByRole('button', { name: /Zuordnen/ }));
+            await user.click(screen.getByRole('menuitem', { name: 'Zuordnen' }));
             await waitFor(() => expect(screen.getByText('E-Mail zuordnen')).toBeInTheDocument());
 
             // Switch to Anfrage tab (inside the modal, find by exact text match)
@@ -339,9 +341,10 @@ describe('EmailCenter', () => {
             await waitFor(() => expect(screen.getByText('Angebot für Treppe')).toBeInTheDocument());
 
             await user.click(screen.getByText('Angebot für Treppe'));
-            await waitFor(() => expect(screen.getByRole('button', { name: /Zuordnen/ })).toBeInTheDocument());
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Zuordnen' })).toBeInTheDocument());
 
-            await user.click(screen.getByRole('button', { name: /Zuordnen/ }));
+            await user.click(screen.getByRole('menuitem', { name: 'Zuordnen' }));
             await waitFor(() => expect(screen.getByText('E-Mail zuordnen')).toBeInTheDocument());
 
             // Don't type anything – no search API call should be made
@@ -364,14 +367,8 @@ describe('EmailCenter', () => {
             // Select email to show detail pane
             await user.click(screen.getByText('Angebot für Treppe'));
 
-            // Wait for detail pane with spam button (title="Als Spam markieren")
-            await waitFor(() => {
-                expect(screen.getAllByTitle('Als Spam markieren').length).toBeGreaterThan(0);
-            });
-
-            // Spam-Button im Detail-Header anklicken – nutzt mark-spam (lernt das Spam-Modell)
-            const spamButtons = screen.getAllByTitle('Als Spam markieren');
-            await user.click(spamButtons[spamButtons.length - 1]);
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await user.click(await screen.findByRole('menuitem', { name: 'Als Spam markieren' }));
 
             // Email should be optimistically removed
             await waitFor(() => {
