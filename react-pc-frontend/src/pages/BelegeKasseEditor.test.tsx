@@ -10,7 +10,7 @@ vi.mock('../components/layout/PageLayout', () => ({ PageLayout: ({ children, act
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('prüft den ganzen Beleg vor dem Speichern und übergibt Kommawerte numerisch', async () => {
     const writes: Record<string, unknown>[] = [];
-    const beleg = { id: 1, belegNummer: 'TEST-BELEG', belegKategorie: 'SONSTIGER_BELEG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 0, betragNetto: 10, mwstSatz: 19, kostenstellenSplits: [] };
+    const beleg = { id: 1, belegNummer: 'TEST-BELEG', belegKategorie: 'SONSTIGER_BELEG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 0, betragNetto: 10, mwstSatz: 19, zahlungsart: 'Bar', kostenstellenSplits: [] };
     vi.stubGlobal('fetch', vi.fn(async (url, init) => { if (init?.method === 'PUT') {
         writes.push(JSON.parse(init.body));
         return { ok: true, json: async () => beleg };
@@ -48,7 +48,7 @@ it('prüft den ganzen Beleg vor dem Speichern und übergibt Kommawerte numerisch
 });
 it('bucht bei Unterdeckung keine Vorab-Einlage für einen geänderten oder ungültigen Entwurf', async () => {
     const writes: string[] = [];
-    const beleg = { id: 2, belegNummer: 'TEST-KASSE', belegKategorie: 'KASSE_AUSGABE', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 20, kostenstellenSplits: [] };
+    const beleg = { id: 2, belegNummer: 'TEST-KASSE', belegKategorie: 'KASSE_AUSGABE', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 20, zahlungsart: 'Bar', kostenstellenSplits: [] };
     vi.stubGlobal('fetch', vi.fn(async (url, init) => {
         if (init?.method) {
             writes.push(init.method);
