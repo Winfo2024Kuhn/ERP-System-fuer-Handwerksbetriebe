@@ -2,6 +2,7 @@
 
 Issue: #155 — https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues/155
 Feature-Branch: feature/kasse-belege
+Status: Alle 17 Implementierungsaufgaben abgeschlossen und durch die Abschnittsprüfungen abgenommen. Aktuelle Nachweise und Nutzerkorrekturen stehen im Kontext-Log.
 Kontext-Log: docs/superpowers/plans/2026-09-09-kasse-belege-log.md
 
 Spec: `docs/superpowers/specs/2026-09-09-kasse-belege.md` (inklusive der sechs

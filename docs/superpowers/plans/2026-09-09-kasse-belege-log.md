@@ -888,3 +888,54 @@ Abschnitt 3 abgenommen (Sol, GELB, keine offenen Blocker).
   Designstub. Bericht: ../reviews/2026-09-14-kasse-belege-abschnitt3.md.
 - Abschnitt 4 startet auf 7dc3bd4a: Task14 Luna, Task15 Terra; beide erhalten
   nur ihren Task, gezielte Tests und getrennte Browserports 5206/5207.
+
+### Abschnitt 4 und abschließender Zielabgleich
+
+- Task14 (Luna): af5ad8d0, 7267acc5, b22349dd; fünf DATEV-Einstellungen,
+  Gehaltsauszahlung unter Einstellungen, Ziffernvalidierung und eigener
+  scrollbarer Formularbereich mit separatem Footer. Zieltests zunächst grün.
+- Task15 (Terra): 217eaf70, c7b4a77b, cbed7b4f; Vorprüfung, ZIP-Download
+  und Mailanhang. Beleglink öffnet den tatsächlichen Prüfdialog. Monat/Jahr
+  im Mailtext und Betreff sind an den Anhang gebunden. Nach fehlgeschlagener
+  Vorprüfung werden keine veralteten Ergebnisse für den Export verwendet.
+  Zielnachweis: neun Browserfälle, Lint/Build grün. E-Mail nur gestubbt.
+- Backend-Nachbesserung 9493d92b (Terra): Vorprüfung respektiert Zahlungsart-
+  Ausnahmen für Privat-/Transferbuchungen, PUT validiert DATEV-Kennungen wie
+  der Writer, interne ZIP-Dateinamen verwenden YYYY-MM. 37 Zieltests grün.
+- Zielprüfung fand die noch fehlende Detailinitialisierung für fertig erkannte
+  Belege: 59d41bc2/5cd749e6 (Terra) laden das Detail einmal, erhalten Zahlungs-
+  status, Datum und Splits und schützen Eingaben während verzögerter Antwort.
+  Einfache Zuordnung lässt sich durch [] tatsächlich entfernen. Eigene
+  Regressionen prüfen die resultierenden PUT-Werte, nicht bloß Abrufe.
+- 7031c84f zeigt die Rechnungsverknüpfung aus dem geladenen Detail. Die
+  vorhandene Rechnungsübersicht ist der ausdrücklich erlaubte Plan-Fallback.
+- Finaler Sol-Lauf: Backend 3070 Tests ohne Fehler, 17 bedingte Skips; PC
+  1445 Units, Lint/Build grün, nach letzten Fixes 11 Zielunits grün; Mobile
+  217 Units, Build und 17 E2E grün. PC-Voll-E2E zunächst 549/552; Detailstub
+  der drei übrigen Fälle korrigiert, danach nur Header-Überlappung in zwei
+  kleineren Desktopgrößen offen. Luna korrigiert diese lokal, Sol prüft gezielt.
+
+Zielabgleich: alle 17 geplanten Aufgaben umgesetzt, keine fachfremde
+Funktionalität hinzugefügt. Shared Select und Lieferantensuche sind für die
+zugesagten Gruppen-/Vorschlagsabläufe angepasst; Migration ist ausschließlich
+V375 (ursprüngliche V372 wegen main-Kollision umnummeriert).
+
+### Abschlussprüfung bestanden
+
+Abschnitt 4: Sol GELB, keine offenen Blocker. a2efed01 behebt die tatsächliche
+Header-Überlappung; eigener Sol-Nachweis Systemeingaben/Einstellungen 6/6
+auf allen drei Desktopgrößen. Lint und Build auf finalem Produkt-HEAD erneut
+grün. PC insgesamt 552 E2E-Fälle durch Vollsuite und gezielte Nachprüfungen
+abgedeckt; Mobile 17/17. Backend 3070 Tests, null Fehler, 17 bedingte Skips.
+PC-Voll-Units 1445 plus abschließende neue Regressionen in 11 grünen
+Seiten-Tests; Mobile 217 Units. Bericht: ../reviews/2026-09-14-kasse-belege-abschnitt4.md.
+
+Nur nicht blockierende Hinweise bleiben: programmatische Labels sowie
+Escape/Fokusfang des Paketdialogs und ein ungültiges Dummy-Bild im
+Beleg-Designstub. Keine weitere Stilrunde gemäß Nutzerentscheidung.
+Alle 17 Tasks in vier Abschnitten sind umgesetzt und abgenommen.
+Eigene Test-/Buildartefakte werden entfernt und Graphify abschließend
+aktualisiert; anschließend PR zu Issue #155 über GitHub-MCP.
+
+Graphify abschließend erfolgreich: 16103 Knoten, 55541 Kanten,
+584 Communities. Eigene Build-/Testartefakte entfernt; git diff --check sauber.
