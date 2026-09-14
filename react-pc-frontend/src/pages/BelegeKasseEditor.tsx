@@ -145,6 +145,18 @@ export default function BelegeKasseEditor() {
         loadZahlungsarten();
     }, [loadBelege, loadSachkonten, loadZahlungsarten]);
 
+    // Ein offener Punkt aus dem Steuerberater-Paket landet direkt in der
+    // vorhandenen Belegprüfung. Nach dem Öffnen entfernen wir den Parameter,
+    // damit der Dialog nach einem bewussten Schließen nicht erneut aufgeht.
+    useEffect(() => {
+        const belegId = Number(new URLSearchParams(window.location.search).get('belegId'));
+        if (!Number.isInteger(belegId) || belegId <= 0) return;
+        const beleg = belege.find(item => item.id === belegId);
+        if (!beleg) return;
+        setEditing(beleg);
+        window.history.replaceState(null, '', window.location.pathname);
+    }, [belege]);
+
     useEffect(() => {
         if (activeTab === 'kasse') loadKassenbuch();
         if (activeTab === 'auswertung') loadAuswertung();

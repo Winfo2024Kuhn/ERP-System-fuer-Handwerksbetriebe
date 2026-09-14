@@ -26,6 +26,8 @@ interface Vorpruefung {
 export interface SteuerberaterPaketAnhang {
   dateiname: string;
   blob: Blob;
+  jahr: number;
+  monat: number;
 }
 
 export function SteuerberaterPaketDialog({
@@ -70,6 +72,7 @@ export function SteuerberaterPaketDialog({
     if (!offen) return;
     let cancelled = false;
     setLoading(true);
+    setPruefung(null);
     fetch(
       `/api/buchhaltung/steuerberater/vorpruefung?jahr=${jahr}&monat=${monat}`,
     )
@@ -82,12 +85,14 @@ export function SteuerberaterPaketDialog({
         if (!cancelled) setPruefung(data);
       })
       .catch((error) => {
-        if (!cancelled)
+        if (!cancelled) {
+          setPruefung(null);
           toast.error(
             error instanceof Error
               ? error.message
               : "Vorprüfung konnte nicht geladen werden.",
           );
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -114,7 +119,7 @@ export function SteuerberaterPaketDialog({
       const dateiname =
         /filename="?([^";]+)"?/i.exec(header)?.[1] ||
         `${jahr}-${String(monat).padStart(2, "0")}_Kasse.zip`;
-      const anhang = { dateiname, blob: await response.blob() };
+      const anhang = { dateiname, blob: await response.blob(), jahr, monat };
       if (ziel === "mail") {
         onEmailPaket(anhang);
         onClose();
@@ -269,7 +274,7 @@ export function SteuerberaterPaketDialog({
             )}
             <Button
               variant="outline"
-              disabled={loading || creating !== null}
+              disabled={loading || !pruefung || creating !== null}
               onClick={() => ladePaket(trotzdem, "mail")}
             >
               <Mail className="mr-2 h-4 w-4" />
@@ -278,7 +283,7 @@ export function SteuerberaterPaketDialog({
                 : "Per E-Mail an den Steuerberater"}
             </Button>
             <Button
-              disabled={loading || creating !== null}
+              disabled={loading || !pruefung || creating !== null}
               onClick={() => ladePaket(trotzdem, "download")}
               className="bg-rose-600 text-white hover:bg-rose-700"
             >

@@ -62,7 +62,7 @@ interface SteuerberaterBelegExportModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess?: () => void;
-    anhang?: { dateiname: string; blob: Blob } | null;
+    anhang?: { dateiname: string; blob: Blob; jahr: number; monat: number } | null;
 }
 
 const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
@@ -226,6 +226,8 @@ export function SteuerberaterBelegExportModal({
     const [loadingSteuerberater, setLoadingSteuerberater] = useState(false);
     const [entries, setEntries] = useState<ExportEntry[]>([]);
     const [loadingEntries, setLoadingEntries] = useState(false);
+    const paketMonat = anhang?.monat ?? monat;
+    const paketJahr = anhang?.jahr ?? jahr;
 
     const editorRef = useRef<HTMLDivElement>(null);
     const signatureRef = useRef<string>('');
@@ -283,7 +285,7 @@ export function SteuerberaterBelegExportModal({
     }, [isOpen, dateRange.von, dateRange.bis, anhang]);
 
     const generateEmailBody = useCallback((sig: string, anredeZeile: string) => {
-        const monatName = MONATSNAMEN[monat - 1] || '';
+        const monatName = MONATSNAMEN[paketMonat - 1] || '';
 
         const headerCells = [
             'Datum', 'Beleg-Nr', 'Lieferant', 'Art',
@@ -384,7 +386,7 @@ ${tableHtml}
 
 ${sig}
 `;
-    }, [entries, monat, jahr]);
+    }, [entries, paketMonat, jahr]);
 
     const loadSignature = useCallback(async (): Promise<string> => {
         try {
@@ -419,7 +421,7 @@ ${sig}
         }
         let cancelled = false;
         setLoadingSteuerberater(true);
-        const monatName = MONATSNAMEN[monat - 1] || '';
+        const monatName = MONATSNAMEN[paketMonat - 1] || '';
 
         Promise.all([
             fetch('/api/firma/steuerberater').then(r => r.ok ? r.json() : []),
@@ -431,8 +433,8 @@ ${sig}
             const firmenname = (firma && typeof firma === 'object' && firma.firmenname)
                 ? String(firma.firmenname).trim() : '';
             setSubject(firmenname
-                ? `Belegaufstellung Kasse ${monatName} ${jahr} - ${firmenname}`
-                : `Belegaufstellung Kasse ${monatName} ${jahr}`);
+                ? `Belegaufstellung Kasse ${monatName} ${paketJahr} - ${firmenname}`
+                : `Belegaufstellung Kasse ${monatName} ${paketJahr}`);
             signatureRef.current = sig;
             setSteuerberaterListe(sbListe);
 
@@ -450,7 +452,7 @@ ${sig}
             setLoadingSteuerberater(false);
         });
         return () => { cancelled = true; };
-    }, [isOpen, monat, jahr, loadSignature]);
+    }, [isOpen, monat, jahr, paketMonat, paketJahr, loadSignature]);
 
     useEffect(() => {
         if (!selectedSteuerberater) return;
@@ -484,11 +486,11 @@ ${sig}
             : 'Sehr geehrte Damen und Herren,';
 
         const body = anhang
-            ? `<p>${anredeZeile}</p><p>anbei die Kassenunterlagen für ${MONATSNAMEN[monat - 1]} ${jahr} als ZIP-Datei. Sie enthält das Kassenbuch als PDF, die Buchungen als DATEV-Datei, die Belegliste und alle Belegbilder.</p><p>Mit freundlichen Grüßen,</p>${signatureRef.current}`
+            ? `<p>${anredeZeile}</p><p>anbei die Kassenunterlagen für ${MONATSNAMEN[paketMonat - 1]} ${paketJahr} als ZIP-Datei. Sie enthält das Kassenbuch als PDF, die Buchungen als DATEV-Datei, die Belegliste und alle Belegbilder.</p><p>Mit freundlichen Grüßen,</p>${signatureRef.current}`
             : generateEmailBody(signatureRef.current, anredeZeile);
         if (editorRef.current) editorRef.current.innerHTML = body;
         lastRenderedKeyRef.current = key;
-    }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, entriesFingerprint, loadingEntries, generateEmailBody, anhang]);
+    }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, entriesFingerprint, loadingEntries, generateEmailBody, anhang, paketMonat, paketJahr]);
 
     const jahre: number[] = [];
     for (let j = heute.getFullYear() + 1; j >= heute.getFullYear() - 5; j--) jahre.push(j);
@@ -581,17 +583,19 @@ ${sig}
                         <div className="space-y-1">
                             <Label>Monat</Label>
                             <Select
-                                value={String(monat)}
+                                value={String(paketMonat)}
                                 onChange={v => setMonat(Number(v))}
                                 options={MONATSNAMEN.map((label, i) => ({ value: String(i + 1), label }))}
+                                disabled={Boolean(anhang)}
                             />
                         </div>
                         <div className="space-y-1">
                             <Label>Jahr</Label>
                             <Select
-                                value={String(jahr)}
+                                value={String(paketJahr)}
                                 onChange={v => setJahr(Number(v))}
                                 options={jahre.map(j => ({ value: String(j), label: String(j) }))}
+                                disabled={Boolean(anhang)}
                             />
                         </div>
                     </div>
