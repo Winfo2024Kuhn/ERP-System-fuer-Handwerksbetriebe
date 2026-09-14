@@ -205,7 +205,8 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     };
 
     const pruefeEntwurf = () => {
-        if (!form.zahlungsart) { setValidationHint('Bitte wählen Sie aus, wie bezahlt wurde.'); return null; }
+        const zahlungsartIstOptional = beleg.istUmbuchung || beleg.belegKategorie === 'PRIVATEINLAGE' || beleg.belegKategorie === 'PRIVATENTNAHME';
+        if (!form.zahlungsart && !zahlungsartIstOptional) { setValidationHint('Bitte wählen Sie aus, wie bezahlt wurde.'); return null; }
         const numbers = validateNumberDrafts({ betragBrutto: form.betragBrutto, betragNetto: form.betragNetto, mwstSatz: form.mwstSatz }, {
             betragBrutto: { label: 'Betrag', required: true, maxDecimalPlaces: 2 },
             betragNetto: { label: 'Netto', maxDecimalPlaces: 2 },
