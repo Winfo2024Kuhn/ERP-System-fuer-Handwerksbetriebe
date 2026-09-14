@@ -125,6 +125,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     }, [toast]);
     const [saving, setSaving] = useState(false);
     const [lieferantPicker, setLieferantPicker] = useState(false);
+    const [lieferantStartsuche, setLieferantStartsuche] = useState('');
     // Seltene Felder (Beleg-Nr., Netto, MwSt-Satz, Zahlungsart, Lieferant, Notiz)
     // sind eingeklappt. Sie standen bisher gleichberechtigt neben Betrag und
     // Datum — dadurch sahen alle 12 Felder gleich wichtig aus und der Dialog
@@ -501,8 +502,8 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                         <section>
                             <h3 className="text-base font-bold text-slate-900">Von wem war der Beleg?</h3>
                             <p className="mt-1 text-sm text-slate-600">Wählen Sie den passenden Lieferanten.</p>
-                            <div className="mt-3 flex items-center gap-2"><input type="text" readOnly value={form.lieferantName} placeholder="Kein Lieferant" className={`${inputCls} bg-slate-50`} /><Button variant="outline" type="button" onClick={() => setLieferantPicker(true)}><Truck className="mr-2 h-4 w-4" />Wählen</Button></div>
-                            {detailBeleg.kiVorgeschlagenerLieferant && detailBeleg.kiVorgeschlagenerLieferant !== form.lieferantName && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Am Handy gewählt: {form.lieferantName || 'kein Lieferant'}. Die KI hat gelesen: {detailBeleg.kiVorgeschlagenerLieferant}. <Button type="button" size="sm" variant="outline" className="ml-2 border-amber-300 text-amber-900" onClick={async () => { const name = detailBeleg.kiVorgeschlagenerLieferant!; try { const response = await fetch(`/api/lieferanten?size=100&q=${encodeURIComponent(name)}`); const data = response.ok ? await response.json() : null; const treffer = data?.lieferanten?.find((l: LieferantSuchErgebnis) => l.lieferantenname === name); if (treffer) { update('lieferantId', treffer.id); update('lieferantName', treffer.lieferantenname); } else setLieferantPicker(true); } catch { setLieferantPicker(true); } }}>Übernehmen</Button></div>}
+                            <div className="mt-3 flex items-center gap-2"><input type="text" readOnly value={form.lieferantName} placeholder="Kein Lieferant" className={`${inputCls} bg-slate-50`} /><Button variant="outline" type="button" onClick={() => { setLieferantStartsuche(''); setLieferantPicker(true); }}><Truck className="mr-2 h-4 w-4" />Wählen</Button></div>
+                            {detailBeleg.kiVorgeschlagenerLieferant && detailBeleg.kiVorgeschlagenerLieferant !== form.lieferantName && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Am Handy gewählt: {form.lieferantName || 'kein Lieferant'}. Die KI hat gelesen: {detailBeleg.kiVorgeschlagenerLieferant}. <Button type="button" size="sm" variant="outline" className="ml-2 border-amber-300 text-amber-900" onClick={async () => { const name = detailBeleg.kiVorgeschlagenerLieferant!; try { const response = await fetch(`/api/lieferanten?size=100&q=${encodeURIComponent(name)}`); const data = response.ok ? await response.json() : null; const treffer = data?.lieferanten?.find((l: LieferantSuchErgebnis) => l.lieferantenname === name); if (treffer) { update('lieferantId', treffer.id); update('lieferantName', treffer.lieferantenname); } else { setLieferantStartsuche(name); setLieferantPicker(true); } } catch { setLieferantStartsuche(name); setLieferantPicker(true); } }}>Übernehmen</Button></div>}
                         </section>
 
                         {/* ---------- Alles Seltene eingeklappt (Progressive Disclosure) ---------- */}
@@ -637,11 +638,13 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
             {lieferantPicker && (
                 <LieferantSearchModal
                     isOpen={lieferantPicker}
-                    onClose={() => setLieferantPicker(false)}
+                    initialSearch={lieferantStartsuche}
+                    onClose={() => { setLieferantPicker(false); setLieferantStartsuche(''); }}
                     currentLieferantId={form.lieferantId ?? undefined}
                     onSelect={(l: LieferantSuchErgebnis) => {
                         update('lieferantId', l.id);
                         update('lieferantName', l.lieferantenname);
+                        setLieferantStartsuche('');
                     }}
                 />
             )}
