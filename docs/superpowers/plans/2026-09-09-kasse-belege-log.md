@@ -847,3 +847,44 @@ Abschnitt 3 folgt mit Tasks 8, 12 und 13, danach Abschnitt 4 mit 14 und 15.
 Modellvorgabe des Nutzers zum Tokensparen: Coding mit Terra oder Luna,
 Reviews mit Sol, ausschließlich der Hauptagent bleibt Astra. Agenten erhalten
 nur ihren Task und notwendige Schnittstellen; keine doppelten Prüfungen.
+
+### Abschnitt 3 — Tasks integriert, gemeinsame Prüfung läuft
+
+- Basis: ae43e8cc (Abschnitt 2), Issue #155 nachgetragen.
+- Task 8, Terra, 75ac6820: ZIP mit Vorprüfung, PDF, DATEV, Belegliste,
+  Originaldateien und LIESMICH; zwei Batch-Abfragen vermeiden N+1.
+  Fokuslauf: 23 Tests grün (2 Service, 2 Controller, 19 DATEV). Danach
+  Dateityp-Whitelist und Batch-Assertion ergänzt; integrierte Suite prüft diese.
+- Task 12, Terra, 3c306e46: sechs Buchungsarten im zentralen Dialog,
+  Multipart-Upload, Rechnungsauswahl, Ersatzbeleg und Unterdeckungsauflösung.
+  Fokuslauf: 15 Unit-Tests, 9 E2E, Lint/Build grün.
+- Task 13, Terra, c4257111: Prüfreihenfolge, Zahlungsart/Zahlstatus,
+  Vorschlagschips, Lieferantenkonflikt, gruppierte Konten, Split-Erhaltung.
+  Fokuslauf: 32 Unit-Tests, 3 E2E, Lint/Build grün.
+- Alle drei per --no-ff integriert, HEAD 904edfa4. Ein Sol-Agent prüft Code
+  und Design nacheinander einschließlich integrierter vollständiger Suiten.
+  Keine Maven-/E2E-Konkurrenz; kein zusätzlicher Review-and-ship-Gate.
+
+Erste gemeinsame Reviewrunde Abschnitt 3:
+- Backend vollständig: 3068 Tests, keine Fehler. PC-Lint/Build grün.
+- PC-Units zunächst 2/1441 rot wegen fehlender Zahlungsart in alten Fixtures;
+  4d7607d5 ergänzt Fixtures und erhält Bearbeitung alter Privat-/Transferbelege.
+  Zielnachweis: 20 Tests grün.
+- PC-E2E zunächst 537 grün, 3 rot wegen ausgeblendeter einzelner komplexer
+  Kostenaufteilung. c847a273 erhält den erweiterten Editor auch bei einem
+  unvollständigen oder komplexen Split. Zielnachweis: 10 Units, 6 E2E grün.
+- Noch in derselben initialen Reviewrunde gebündelt: KI-Lieferantennamen
+  als Suchvorbelegung übernehmen; wirkungsloses Startjahr bei einjähriger
+  100%-Zuordnung darf nicht unnötig in den erweiterten Modus wechseln.
+- Sol hat die übrige statische Prüfung ohne weitere rote Befunde beendet.
+
+Abschnitt 3 abgenommen (Sol, GELB, keine offenen Blocker).
+- 00b7b708 behebt KI-Suchvorbelegung und einfachen Modus nach Reload.
+- Zweite gezielte Nachprüfung fand noch einen alten Shortcut-Schritt in
+  systemeingaben-task-10; ad06b7be stellt ihn auf den neuen Dialog um.
+- Eigener Sol-Nachweis: 10 gezielte Units, Beleg-Prüfung 3/3 und
+  Systemeingaben 3/3 E2E grün; alle initial roten Fälle nachgewiesen behoben.
+- Ein nicht blockierender Hinweis betrifft ein ungültiges Dummy-Bild im
+  Designstub. Bericht: ../reviews/2026-09-14-kasse-belege-abschnitt3.md.
+- Abschnitt 4 startet auf 7dc3bd4a: Task14 Luna, Task15 Terra; beide erhalten
+  nur ihren Task, gezielte Tests und getrennte Browserports 5206/5207.
