@@ -31,9 +31,8 @@ it('lädt den aktuellen Stand nur einmal und zeigt ihn einmal mit Mindestbestand
     const anzeige = screen.getByTestId('kasse-jetzt').parentElement!;
     expect(within(anzeige).getByText(/Mindestbestand: 50,00 €/)).toBeVisible();
     expect(within(anzeige).getByText(/unter Mindestbestand/)).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Bank → Kasse', exact: true }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Betrag (€)' }), { target: { value: '10' } });
-    expect(within(screen.getByRole('dialog')).getByText('30,00 €')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Neue Buchung', exact: true }));
+    expect(within(screen.getByRole('dialog')).getByText('Geld von der Bank geholt')).toBeVisible();
     expect(fetch).toHaveBeenCalledTimes(1);
 });
 

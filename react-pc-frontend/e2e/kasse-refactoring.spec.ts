@@ -195,12 +195,10 @@ test('Belege & Kasse: vier Tabs, Journal, Pruefen-Dialog und Shortcuts bleiben b
     await expect(page.getByText('Bestand am Ende')).toBeVisible();
     await expect(page.getByText('250,00 €').first()).toBeVisible();
 
-    // Die vier Shortcut-Knoepfe aus KasseShortcuts (jetzt via NeueBuchungDialog
-    // + KasseEinstellungenDialog verkabelt) sind sichtbar.
-    await expect(page.getByRole('button', { name: /Bank → Kasse/ })).toBeVisible();
+    // Die bisherigen Einzelaktionen sind im zentralen Buchungsdialog. Das
+    // Ehegattengehalt bleibt bis Task 14 noch als eigener Shortcut bestehen.
+    await expect(page.getByRole('button', { name: 'Neue Buchung', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /Ehegattengehalt/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Privateinlage/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Privatentnahme/ })).toBeVisible();
     await designPruefung(page, info, 'kasse-refactoring-kassenbuch', { primaerAktion: hochladenButton });
 
     // Prüfen-Dialog: oeffnet sich per Klick auf eine Belegzeile im Kassenbuch-

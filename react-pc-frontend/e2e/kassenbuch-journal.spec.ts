@@ -134,6 +134,12 @@ async function stub(page: Page, saldo = { saldo: 777, mindestbestand: 50 }) {
             saldo.saldo += route.request().postDataJSON().betrag;
             return json(route, {});
         }
+        if (path === '/api/buchhaltung/kassenbuch/buchungen' && method === 'POST') {
+            const raw = route.request().postData() ?? '';
+            const betrag = Number(/"betragBrutto"\s*:\s*([\d.]+)/.exec(raw)?.[1] ?? 0);
+            if (/"art"\s*:\s*"VON_BANK_GEHOLT"/.test(raw)) saldo.saldo += betrag;
+            return json(route, { id: 999 });
+        }
         if (path === '/api/buchhaltung/kasse/einstellung') {
             return json(route, KASSE_EINSTELLUNG);
         }
@@ -257,10 +263,10 @@ test('ein gemeinsamer Kassenstand warnt und aktualisiert sich nach einer Bank-Ab
     await expect(anzeige.getByText('unter Mindestbestand', { exact: true })).toBeVisible();
     await stand.scrollIntoViewIfNeeded();
     await designPruefung(page, info, 'kassenbuch-journal-mindestbestand');
-    await page.getByRole('button', { name: 'Bank → Kasse', exact: true }).click();
+    await page.getByRole('button', { name: 'Neue Buchung', exact: true }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: /^Geld von der Bank geholt/ }).click();
     await dialog.getByRole('textbox', { name: 'Betrag (€)', exact: true }).fill('40');
-    await expect(dialog.getByText('60,00 €', { exact: true })).toBeVisible();
     expect(anfragen.saldoAbrufe).toBe(1);
     await designPruefung(page, info, 'kassenbuch-journal-gemeinsamer-stand-dialog');
     await dialog.getByRole('button', { name: 'Buchen', exact: true }).click();

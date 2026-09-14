@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-    Banknote, ArrowDownToLine, ArrowUpFromLine, UserSquare2,
-    Settings, Coins, AlertTriangle,
-} from 'lucide-react';
+import { UserSquare2, Settings, Coins, AlertTriangle, Plus } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useToast } from '../ui/toast';
 import type { Sachkonto } from '../../types';
 import { formatEuro } from './belegFormat';
-import { BankAbhebungModal, EinfacheKasseModal, LohnZahlungModal, type SaldoInfo } from './NeueBuchungDialog';
+import { LohnZahlungModal, NeueBuchungDialog, type SaldoInfo } from './NeueBuchungDialog';
 import { KasseEinstellungenDialog } from './KasseEinstellungenDialog';
 
-// Saldo-Bar + 4 Shortcut-Buttons + Settings (Issue #59).
+// Saldo-Bar + zentraler Buchungsdialog + Settings (Issue #59).
 //
-// Die Komponente kapselt alle vier Buchungs-Modale (Bank-Abhebung,
-// Ehegattengehalt, Privateinlage, Privatentnahme) plus das Settings-Modal.
+// Die Komponente kapselt den zentralen Buchungsdialog, Ehegattengehalt und
+// das Settings-Modal.
 // Sie ruft `onChanged()` nach erfolgreicher Buchung auf, damit der Parent
 // die Beleg-Liste und den Kassenbuch-View neu lädt.
 
@@ -30,7 +27,7 @@ export function KasseShortcuts({ sachkonten, onChanged, saldo: gemeinsamerSaldo,
     const externGeladen = gemeinsamerSaldo !== undefined;
     const [eigenerSaldo, setSaldo] = useState<SaldoInfo | null>(null);
     const saldo = externGeladen ? gemeinsamerSaldo : eigenerSaldo;
-    const [openModal, setOpenModal] = useState<null | 'bank' | 'lohn' | 'einlage' | 'entnahme' | 'settings'>(null);
+    const [openModal, setOpenModal] = useState<null | 'buchung' | 'lohn' | 'settings'>(null);
     const toast = useToast();
 
     const loadSaldo = useCallback(async () => {
@@ -95,25 +92,14 @@ export function KasseShortcuts({ sachkonten, onChanged, saldo: gemeinsamerSaldo,
                 </div>}
 
                 <div className="flex flex-wrap items-center gap-2 ml-auto">
-                    <Button variant="outline" size="sm" onClick={() => setOpenModal('bank')}
-                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                        title="Bargeld von der Bank in die Kasse legen">
-                        <Banknote className="w-4 h-4 mr-2" /> Bank → Kasse
+                    <Button size="sm" onClick={() => setOpenModal('buchung')}
+                        className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700">
+                        <Plus className="w-4 h-4 mr-2" /> Neue Buchung
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setOpenModal('lohn')}
                         className="border-rose-300 text-rose-700 hover:bg-rose-50"
                         title="Ehegattengehalt aus der Kasse auszahlen">
                         <UserSquare2 className="w-4 h-4 mr-2" /> Ehegattengehalt
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setOpenModal('einlage')}
-                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                        title="Privates Geld in die Firma einlegen">
-                        <ArrowDownToLine className="w-4 h-4 mr-2" /> Privateinlage
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setOpenModal('entnahme')}
-                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                        title="Bargeld aus der Firma ins Private nehmen">
-                        <ArrowUpFromLine className="w-4 h-4 mr-2" /> Privatentnahme
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => setOpenModal('settings')}
                         className="text-rose-700 hover:bg-rose-100"
@@ -123,36 +109,16 @@ export function KasseShortcuts({ sachkonten, onChanged, saldo: gemeinsamerSaldo,
                 </div>
             </div>
 
-            {openModal === 'bank' && (
-                <BankAbhebungModal
+            {openModal === 'buchung' && (
+                <NeueBuchungDialog
+                    offen
+                    sachkonten={sachkonten}
                     onClose={() => setOpenModal(null)}
-                    onSuccess={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
-                    onError={(m) => showToast('err', m)}
-                    saldo={saldo}
+                    onGebucht={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
                 />
             )}
             {openModal === 'lohn' && (
                 <LohnZahlungModal
-                    onClose={() => setOpenModal(null)}
-                    onSuccess={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
-                    onError={(m) => showToast('err', m)}
-                />
-            )}
-            {openModal === 'einlage' && (
-                <EinfacheKasseModal
-                    titel="Privateinlage buchen"
-                    endpoint="/api/buchhaltung/kasse/privateinlage"
-                    defaultBeschreibung="Privateinlage"
-                    onClose={() => setOpenModal(null)}
-                    onSuccess={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
-                    onError={(m) => showToast('err', m)}
-                />
-            )}
-            {openModal === 'entnahme' && (
-                <EinfacheKasseModal
-                    titel="Privatentnahme buchen"
-                    endpoint="/api/buchhaltung/kasse/privatentnahme"
-                    defaultBeschreibung="Privatentnahme"
                     onClose={() => setOpenModal(null)}
                     onSuccess={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
                     onError={(m) => showToast('err', m)}
