@@ -95,6 +95,7 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
 
     return (
         <ModalShell title="Kassen-Einstellungen" onClose={onClose} wide>
+            <div className="pb-20">
             <h3 className="font-semibold text-slate-900 mb-2 text-sm">Mindestbestand der Kasse</h3>
             <FieldRow label="Mindestbestand (€)">
                 <DecimalInput aria-label="Mindestbestand (€)" value={drafts.minimum} onChange={value => setDrafts(d => ({ ...d, minimum: value }))} className={modalInputCls} />
@@ -170,6 +171,7 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
                 </>
             )}
             {onPayOnce && <Button type="button" variant="outline" size="sm" onClick={onPayOnce} className="mb-1 border-rose-300 text-rose-700 hover:bg-rose-50"><WalletCards className="mr-2 h-4 w-4" />Jetzt einmalig auszahlen</Button>}
+            </div>
 
             <ModalFooter onClose={onClose} onSubmit={submit} saving={saving} label="Speichern" />
         </ModalShell>
