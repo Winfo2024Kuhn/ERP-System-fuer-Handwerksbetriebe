@@ -464,6 +464,11 @@ public class BelegService {
                 beleg.setKostenstelle(ks);
             }
         }
+        if (!beleg.istKostenrelevant()
+                && ((req.getKostenstelleId() != null && req.getKostenstelleId() > 0)
+                || (req.getKostenstellenSplits() != null && !req.getKostenstellenSplits().isEmpty()))) {
+            throw new IllegalArgumentException("Dieser Kassenvorgang kann keiner Kostenstelle zugeordnet werden");
+        }
 
         // Kasse-Mindestbestand-Pruefung: nur wenn der Beleg nach dem Update
         // VALIDIERT ist UND eine Bar-Kategorie hat. Wir vergleichen den

@@ -106,6 +106,9 @@ public class KassenbuchungService {
                          Mitarbeiter ersteller, BelegDto.UmbuchungCreateRequest legacy) {
         Art art = validiere(req, datei);
         Ableitung ableitung = leiteAb(art, Boolean.TRUE.equals(req.getKeinBelegVorhanden()));
+        if (ableitung.umbuchung() && req.getKostenstelleId() != null) {
+            throw new IllegalArgumentException("Kassen-Umbuchungen koennen keiner Kostenstelle zugeordnet werden");
+        }
         Sachkonto konto = legacy == null ? ladeKonto(req, art, ableitung)
                 : legacy.getSachkontoId() == null ? null
                 : sachkontoRepository.findById(legacy.getSachkontoId()).orElse(null);
