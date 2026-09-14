@@ -5,6 +5,7 @@ describe('istEinfacheKostenstellenZuordnung', () => {
     it('lässt nur einen unveränderten 100-Prozent-Split in der einfachen Auswahl zu', () => {
         expect(istEinfacheKostenstellenZuordnung([])).toBe(true);
         expect(istEinfacheKostenstellenZuordnung([{ kostenstelleId: 4, prozent: 100, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: null }])).toBe(true);
+        expect(istEinfacheKostenstellenZuordnung([{ kostenstelleId: 4, prozent: 100, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: 2026 }])).toBe(true);
     });
 
     it('zeigt einen einzelnen unvollständigen Split weiter im Editor, damit er nicht verloren geht', () => {

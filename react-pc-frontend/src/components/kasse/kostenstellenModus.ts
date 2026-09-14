@@ -9,6 +9,5 @@ export function istEinfacheKostenstellenZuordnung(splits: KostenstellenSplit[]):
         && Number(split.prozent) === 100
         && split.absoluterBetrag == null
         && split.streckungJahre === 1
-        && split.streckungStartJahr == null
         && !split.beschreibung;
 }
