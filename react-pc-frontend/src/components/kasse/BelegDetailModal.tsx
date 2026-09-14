@@ -24,6 +24,7 @@ import { formatDecimalInput, validateDecimalInput } from '../../lib/numberInput'
 import { validateKostenstellenSplits } from '../../features/finanzen/kostenstellenDrafts';
 import { validateNumberDrafts } from '../../lib/numberDrafts';
 import { fragtNachZahlung, folgeSatz, giltAlsBezahlt, kategorieAusZahlungsart } from './zahlungsartRegeln';
+import { istEinfacheKostenstellenZuordnung } from './kostenstellenModus';
 
 // Task 9 (reine Verschiebung, kein Verhalten geaendert): heutiger
 // BelegDetailModal aus BelegeKasseEditor.tsx (Zeilen 1160-2137) samt
@@ -99,17 +100,22 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     const [zeigeVerwerfen, setZeigeVerwerfen] = useState(false);
     const [splits, setSplits] = useState<KostenstellenSplit[]>(beleg.kostenstellenSplits ?? []);
     const [kostenstellen, setKostenstellen] = useState<{ id: number; bezeichnung: string; nummer?: string | null }[]>([]);
-    const [mehrereKostenstellen, setMehrereKostenstellen] = useState(() => (beleg.kostenstellenSplits?.length ?? 0) > 1);
+    const [mehrereKostenstellen, setMehrereKostenstellen] = useState(() => !istEinfacheKostenstellenZuordnung(beleg.kostenstellenSplits ?? []));
     const [kostenstelleId, setKostenstelleId] = useState<number | null>(() => {
         const erster = beleg.kostenstellenSplits?.[0];
-        return erster && beleg.kostenstellenSplits?.length === 1 && Number(erster.prozent) === 100 ? erster.kostenstelleId : null;
+        return erster && istEinfacheKostenstellenZuordnung(beleg.kostenstellenSplits ?? []) ? erster.kostenstelleId : null;
     });
     const [bezahlt, setBezahlt] = useState(beleg.eingangsrechnungBezahlt ?? false);
     const [bezahltAm, setBezahltAm] = useState(beleg.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
     // Wenn das Detail nachgeladen wird (TEILWEISE), beziehen wir die Splits
     // aus dem frischen DTO — die Listen-Query liefert sie ggf. nicht mit.
     useEffect(() => {
-        if (detailBeleg.kostenstellenSplits) setSplits(detailBeleg.kostenstellenSplits);
+        if (!detailBeleg.kostenstellenSplits) return;
+        const neueSplits = detailBeleg.kostenstellenSplits;
+        const einfach = istEinfacheKostenstellenZuordnung(neueSplits);
+        setSplits(neueSplits);
+        setMehrereKostenstellen(!einfach);
+        setKostenstelleId(einfach ? neueSplits[0]?.kostenstelleId ?? null : null);
     }, [detailBeleg]);
     useEffect(() => {
         fetch('/api/bestellungen-uebersicht/kostenstellen')
