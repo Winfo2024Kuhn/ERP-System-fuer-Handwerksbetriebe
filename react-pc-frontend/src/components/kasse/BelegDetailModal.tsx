@@ -56,6 +56,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     const detailsBereit = useRef(false);
     const formularBearbeitet = useRef(false);
     const splitsBearbeitet = useRef(false);
+    const zahlungBearbeitet = useRef(false);
     // Bewusst nur diese drei Werte als Abhaengigkeit: eine neue `beleg`-Identitaet
     // bei sonst gleichen Werten wuerde das Polling sonst unnoetig neu starten.
     const belegId = beleg.id;
@@ -79,8 +80,10 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                         const einfach = istEinfacheKostenstellenZuordnung(neueSplits);
                         setSplits(neueSplits); setMehrereKostenstellen(!einfach); setKostenstelleId(einfach ? neueSplits[0]?.kostenstelleId ?? null : null);
                     }
-                    setBezahlt(data.eingangsrechnungBezahlt ?? false);
-                    setBezahltAm(data.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
+                    if (!zahlungBearbeitet.current) {
+                        setBezahlt(data.eingangsrechnungBezahlt ?? false);
+                        setBezahltAm(data.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
+                    }
                 }
                 if (kiOffen(data.kiAnalyseStatus)) timer = setTimeout(lade, 4000);
             } catch (e) {
@@ -474,9 +477,9 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                         {fragtNachZahlung(form.zahlungsart, beleg.dokumentTyp) ? <section>
                             <h3 className="text-base font-bold text-slate-900">Ist die Rechnung schon bezahlt?</h3>
                             <p className="mt-1 text-sm text-slate-600">So bleibt offen, ob die Rechnung noch bezahlt werden muss.</p>
-                            <label className="mt-3 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={bezahlt} onChange={() => setBezahlt(true)} /> Ja, bezahlt am …</label>
-                            {bezahlt && <div className="mt-2 max-w-xs"><DatePicker aria-label="Bezahlt am" value={bezahltAm} onChange={setBezahltAm} /></div>}
-                            <label className="mt-2 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={!bezahlt} onChange={() => setBezahlt(false)} /> Nein, noch nicht bezahlt</label>
+                            <label className="mt-3 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={bezahlt} onChange={() => { zahlungBearbeitet.current = true; setBezahlt(true); }} /> Ja, bezahlt am …</label>
+                            {bezahlt && <div className="mt-2 max-w-xs"><DatePicker aria-label="Bezahlt am" value={bezahltAm} onChange={value => { zahlungBearbeitet.current = true; setBezahltAm(value); }} /></div>}
+                            <label className="mt-2 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={!bezahlt} onChange={() => { zahlungBearbeitet.current = true; setBezahlt(false); }} /> Nein, noch nicht bezahlt</label>
                             {beleg.eingangsrechnungId && <a className="mt-3 inline-block text-sm font-medium text-rose-700 hover:underline" target="_blank" rel="noreferrer" href={`/rechnungen?dokument=${encodeURIComponent(String(beleg.eingangsrechnungId))}`}>Zur Eingangsrechnung</a>}
                         </section> : giltAlsBezahlt(form.zahlungsart) && <p className="text-sm text-slate-600">Bar und EC-Karte gelten als sofort bezahlt.</p>}
                         <section>
