@@ -17,12 +17,15 @@ import { validateNumberDrafts } from '../lib/numberDrafts';
 // API Types
 interface AusgangsrechnungDto {
     id: number;
+    storniert?: boolean;
+    storno?: boolean;
+    editorUrl?: string;
     dokumentid: string;
     geschaeftsdokumentart: string;
     rechnungsdatum: string | null;
     faelligkeitsdatum: string | null;
     bruttoBetrag: number | null;
-    bezahlt: boolean;
+    bezahlt: boolean | null;
     originalDateiname: string;
     pdfUrl: string | null;
     projektId: number | null;
@@ -226,8 +229,9 @@ export default function RechnungsuebersichtEditor() {
 
     const ausgangKpi = useMemo(() => {
         const bezahlt = ausgangsrechnungen.filter(r => r.bezahlt).length;
-        const offen = ausgangsrechnungen.length - bezahlt;
-        const offenSumme = ausgangsrechnungen.filter(r => !r.bezahlt).reduce((sum, r) => sum + (r.bruttoBetrag || 0), 0);
+        const offeneRechnungen = ausgangsrechnungen.filter(r => r.bezahlt === false && !r.storniert && !r.storno);
+        const offen = offeneRechnungen.length;
+        const offenSumme = offeneRechnungen.reduce((sum, r) => sum + (r.bruttoBetrag || 0), 0);
         return { bezahlt, offen, offenSumme };
     }, [ausgangsrechnungen]);
 
@@ -299,7 +303,8 @@ export default function RechnungsuebersichtEditor() {
             });
 
             if (!response.ok) {
-                throw new Error('Export fehlgeschlagen');
+                const error = await response.json().catch(() => null);
+                throw new Error(error?.message || 'Export fehlgeschlagen');
             }
 
             const blob = await response.blob();
@@ -313,7 +318,7 @@ export default function RechnungsuebersichtEditor() {
             URL.revokeObjectURL(url);
         } catch (err) {
             console.error('Export-Fehler:', err);
-            toast.error('Fehler beim Erstellen der PDF-Datei.');
+            toast.error(err instanceof Error ? err.message : 'Fehler beim Erstellen der PDF-Datei.');
         } finally {
             setExporting(false);
         }
@@ -592,7 +597,7 @@ export default function RechnungsuebersichtEditor() {
                                             <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Rechnungsnr.</th>
                                             <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Datum</th>
                                             <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Betrag</th>
-                                            <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Bezahlt</th>
+                                            <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
                                             <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Dokument</th>
                                         </tr>
                                     </thead>
@@ -614,7 +619,14 @@ export default function RechnungsuebersichtEditor() {
                                                     {r.projektKunde || '–'}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-slate-900 font-medium">
-                                                    {r.dokumentid || '–'}
+                                                    {r.editorUrl ? (
+                                                        <a href={r.editorUrl} target="_blank" rel="noopener noreferrer"
+                                                            aria-label={`${r.dokumentid} im Dokumenteditor öffnen`}
+                                                            className="text-rose-600 hover:underline">
+                                                            {r.dokumentid || '–'}
+                                                        </a>
+                                                    ) : r.dokumentid || '–'}
+                                                    <div className="text-xs font-normal text-slate-500">{r.geschaeftsdokumentart}</div>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                                                     {formatDate(r.rechnungsdatum)}
@@ -623,7 +635,15 @@ export default function RechnungsuebersichtEditor() {
                                                     {r.bruttoBetrag != null ? `${formatEuro(r.bruttoBetrag)} €` : '–'}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
-                                                    {r.bezahlt ? (
+                                                    {r.storniert || r.storno ? (
+                                                        <span className="inline-flex px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
+                                                            {r.storniert ? 'Storniert' : 'Storno'}
+                                                        </span>
+                                                    ) : r.bezahlt == null ? (
+                                                        <span className="inline-flex px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium" title="Für diese Rechnung ist noch kein Zahlungsstatus hinterlegt.">
+                                                            Unbekannt
+                                                        </span>
+                                                    ) : r.bezahlt ? (
                                                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
                                                             <Check className="w-3 h-3" /> Ja
                                                         </span>

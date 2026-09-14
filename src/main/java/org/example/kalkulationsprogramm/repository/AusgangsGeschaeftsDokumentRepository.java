@@ -136,4 +136,19 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
             "ORDER BY d.geaendertAm DESC")
     List<String> findRechnungsadresseOverridesByAnfrageId(
             @org.springframework.data.repository.query.Param("anfrageId") Long anfrageId);
+
+    /** Buchhaltungsübersicht: keine Entwürfe/Angebote, Beziehungen ohne N+1 laden. */
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"projekt", "kunde", "anfrage", "anfrage.projekt"})
+    @Query("""
+            SELECT d FROM AusgangsGeschaeftsDokument d
+            WHERE d.typ IN :typen
+              AND (d.gebucht = true OR d.versandDatum IS NOT NULL OR d.storniert = true)
+              AND (:start IS NULL OR d.datum >= :start)
+              AND (:end IS NULL OR d.datum <= :end)
+            ORDER BY d.datum DESC, d.id DESC
+            """)
+    List<AusgangsGeschaeftsDokument> findRechnungenFuerUebersicht(
+            @org.springframework.data.repository.query.Param("typen") java.util.Set<AusgangsGeschaeftsDokumentTyp> typen,
+            @org.springframework.data.repository.query.Param("start") java.time.LocalDate start,
+            @org.springframework.data.repository.query.Param("end") java.time.LocalDate end);
 }

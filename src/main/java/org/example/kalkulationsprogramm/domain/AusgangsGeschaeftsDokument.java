@@ -93,6 +93,9 @@ public class AusgangsGeschaeftsDokument {
     @Column(columnDefinition = "LONGTEXT")
     private String positionenJson;
 
+    /** Archivierte PDF, auch für Stornos und Rechnungen ohne Projekt. */
+    private String pdfDateiname;
+
     // --- Buchhaltungs-Status ---
 
     /**

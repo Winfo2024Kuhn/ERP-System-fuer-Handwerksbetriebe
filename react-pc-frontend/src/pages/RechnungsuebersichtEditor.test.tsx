@@ -52,3 +52,27 @@ it('übernimmt bei erneutem Upload mit nicht erkanntem Betrag keinen alten Entwu
  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
  expect(await openFile()).toHaveValue('');fireEvent.click(screen.getByRole('button',{name:/speichern/i}));expect(imports).toBe(1);
 });
+
+it('zeigt Storno und storniertes Original ohne offene Zahlung und öffnet den Dokumenteditor', async () => {
+    const rechnungen = [
+        { id: 41, dokumentid: 'RE-2026/09/00001', geschaeftsdokumentart: 'Rechnung', rechnungsdatum: '2026-09-10', bruttoBetrag: 119, bezahlt: false, storniert: true, storno: false, editorUrl: '/dokument-editor?dokumentId=41&dokumentTyp=RECHNUNG' },
+        { id: 42, dokumentid: 'ST-2026/09/00001', geschaeftsdokumentart: 'Stornorechnung', rechnungsdatum: '2026-09-13', bruttoBetrag: -119, bezahlt: false, storniert: false, storno: true, editorUrl: '/dokument-editor?dokumentId=42&dokumentTyp=STORNO' },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async (url) => ({ ok: true, json: async () => String(url).includes('/ausgang') ? rechnungen : [] })));
+    render(<ToastProvider><RechnungsuebersichtEditor /></ToastProvider>);
+    await screen.findByText('ST-2026/09/00001');
+    expect(screen.getByText('Storniert')).toBeInTheDocument();
+    expect(screen.getByText('Storno')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'ST-2026/09/00001 im Dokumenteditor öffnen' })).toHaveAttribute('href', '/dokument-editor?dokumentId=42&dokumentTyp=STORNO');
+    expect(screen.queryByText('Offen', { selector: 'span' })).not.toBeInTheDocument();
+});
+
+it('bezeichnet fehlenden Zahlungsstatus als unbekannt statt als offene Forderung', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) => ({ ok: true, json: async () => String(url).includes('/ausgang') ? [
+        { id: 43, dokumentid: 'RE-43', geschaeftsdokumentart: 'Rechnung', bruttoBetrag: 119, bezahlt: null },
+    ] : [] })));
+    render(<ToastProvider><RechnungsuebersichtEditor /></ToastProvider>);
+    await screen.findByText('RE-43');
+    expect(screen.getByText('Unbekannt')).toBeInTheDocument();
+    expect(screen.queryByText('Offen', { selector: 'span' })).not.toBeInTheDocument();
+});

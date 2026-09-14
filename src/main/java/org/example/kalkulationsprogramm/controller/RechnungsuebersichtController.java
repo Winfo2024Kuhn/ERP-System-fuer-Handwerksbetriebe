@@ -18,13 +18,12 @@ import org.apache.pdfbox.multipdf.PDFMergerUtility;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
-import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
-import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
+import org.example.kalkulationsprogramm.dto.Rechnungsuebersicht.AusgangsrechnungDto;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -41,6 +40,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+import org.example.kalkulationsprogramm.service.RechnungsuebersichtService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,7 +60,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class RechnungsuebersichtController {
 
-    private final ProjektDokumentRepository projektDokumentRepository;
+    private final RechnungsuebersichtService rechnungsuebersichtService;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final LieferantenRepository lieferantenRepository;
@@ -65,7 +70,7 @@ public class RechnungsuebersichtController {
     @Value("${upload.path:uploads}")
     private String uploadPath;
 
-    // ==================== Ausgangsrechnungen (ProjektGeschaeftsdokument)
+    // ==================== Ausgangsrechnungen (AusgangsGeschaeftsDokument)
     // ====================
 
     /**
@@ -78,64 +83,7 @@ public class RechnungsuebersichtController {
             @RequestParam(required = false) Integer month,
             @RequestParam(required = false) String search) {
 
-        List<ProjektGeschaeftsdokument> rechnungen;
-
-        if (year != null && month != null) {
-            // Filter by year and month
-            YearMonth ym = YearMonth.of(year, month);
-            LocalDate start = ym.atDay(1);
-            LocalDate end = ym.atEndOfMonth();
-            rechnungen = projektDokumentRepository.findGeschaeftsdokumenteByRechnungsdatumBetween(start, end);
-        } else if (year != null) {
-            // Filter by year only
-            LocalDate start = LocalDate.of(year, 1, 1);
-            LocalDate end = LocalDate.of(year, 12, 31);
-            rechnungen = projektDokumentRepository.findGeschaeftsdokumenteByRechnungsdatumBetween(start, end);
-        } else {
-            // All invoices
-            rechnungen = projektDokumentRepository.findAllGeschaeftsdokumente().stream()
-                    .filter(g -> "Rechnung".equalsIgnoreCase(g.getGeschaeftsdokumentart())
-                            || g.getGeschaeftsdokumentart() != null
-                                    && g.getGeschaeftsdokumentart().toLowerCase().contains("rechnung"))
-                    .collect(Collectors.toList());
-        }
-
-        // Apply search filter if present
-        if (search != null && !search.isBlank()) {
-            String lowerSearch = search.toLowerCase();
-            rechnungen = rechnungen.stream()
-                    .filter(r -> matchesAusgangSearch(r, lowerSearch))
-                    .collect(Collectors.toList());
-        }
-
-        // Sort by rechnungsdatum descending
-        rechnungen.sort(Comparator.comparing(
-                ProjektGeschaeftsdokument::getRechnungsdatum,
-                Comparator.nullsLast(Comparator.reverseOrder())));
-
-        List<AusgangsrechnungDto> dtos = rechnungen.stream()
-                .map(this::toAusgangsrechnungDto)
-                .collect(Collectors.toList());
-
-        return ResponseEntity.ok(dtos);
-    }
-
-    private boolean matchesAusgangSearch(ProjektGeschaeftsdokument r, String search) {
-        if (r.getDokumentid() != null && r.getDokumentid().toLowerCase().contains(search))
-            return true;
-        if (r.getRechnungsdatum() != null && r.getRechnungsdatum().toString().contains(search))
-            return true;
-        if (r.getBruttoBetrag() != null && String.valueOf(r.getBruttoBetrag()).contains(search))
-            return true;
-
-        if (r.getProjekt() != null) {
-            if (r.getProjekt().getAuftragsnummer() != null
-                    && r.getProjekt().getAuftragsnummer().toLowerCase().contains(search))
-                return true;
-            if (r.getProjekt().getKunde() != null && r.getProjekt().getKunde().toLowerCase().contains(search))
-                return true;
-        }
-        return false;
+        return ResponseEntity.ok(rechnungsuebersichtService.getAusgangsrechnungen(year, month, search));
     }
 
     // ==================== Eingangsrechnungen (LieferantGeschaeftsdokument)
@@ -214,35 +162,20 @@ public class RechnungsuebersichtController {
      * Akzeptiert separate Listen für Ausgangs- und Eingangsrechnungen.
      */
     @PostMapping("/merge-pdf")
-    public ResponseEntity<byte[]> mergePdfs(@RequestBody MergePdfRequest request) {
+    public ResponseEntity<?> mergePdfs(@Valid @RequestBody MergePdfRequest request) {
         log.info("[merge-pdf] Request received: ausgangIds={}, eingangIds={}",
                 request.getAusgangIds(), request.getEingangIds());
+        List<RandomAccessReadBuffer> buffers = new ArrayList<>();
         try {
             PDFMergerUtility merger = new PDFMergerUtility();
-            List<RandomAccessReadBuffer> buffers = new ArrayList<>();
 
-            // Ausgangsrechnungen hinzufügen
+            // Die Auswahl enthält IDs aus AusgangsGeschaeftsDokument.
             if (request.getAusgangIds() != null) {
                 for (Long id : request.getAusgangIds()) {
-                    log.info("[merge-pdf] Looking up Ausgangsrechnung ID={}", id);
-                    var dokOpt = projektDokumentRepository.findById(id);
-                    if (dokOpt.isPresent()) {
-                        var dok = dokOpt.get();
-                        log.info("[merge-pdf] Found document type={}", dok.getClass().getSimpleName());
-                        if (dok instanceof ProjektGeschaeftsdokument gd) {
-                            Path pdfPath = resolveProjektDokumentPath(gd);
-                            log.info("[merge-pdf] Resolved path={}, exists={}", pdfPath,
-                                    pdfPath != null && Files.exists(pdfPath));
-                            if (pdfPath != null && Files.exists(pdfPath)) {
-                                byte[] pdfBytes = Files.readAllBytes(pdfPath);
-                                RandomAccessReadBuffer buffer = new RandomAccessReadBuffer(pdfBytes);
-                                buffers.add(buffer);
-                                merger.addSource(buffer);
-                            }
-                        }
-                    } else {
-                        log.warn("[merge-pdf] Ausgangsrechnung ID={} not found", id);
-                    }
+                    byte[] pdfBytes = rechnungsuebersichtService.readAusgangsPdf(id);
+                    RandomAccessReadBuffer buffer = new RandomAccessReadBuffer(pdfBytes);
+                    buffers.add(buffer);
+                    merger.addSource(buffer);
                 }
             }
 
@@ -283,14 +216,6 @@ public class RechnungsuebersichtController {
             merger.setDestinationStream(outputStream);
             merger.mergeDocuments(null);
 
-            // Close buffers
-            for (RandomAccessReadBuffer buffer : buffers) {
-                try {
-                    buffer.close();
-                } catch (IOException ignored) {
-                }
-            }
-
             // Generate filename
             String filename = "Rechnungen_" + LocalDate.now() + ".pdf";
 
@@ -299,33 +224,20 @@ public class RechnungsuebersichtController {
                     .contentType(MediaType.APPLICATION_PDF)
                     .body(outputStream.toByteArray());
 
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(Map.of("message",
+                    e.getReason() == null ? "Die ausgewählte Rechnung ist nicht verfügbar." : e.getReason()));
         } catch (Exception e) {
             log.error("Fehler beim Zusammenführen der PDFs", e);
             return ResponseEntity.internalServerError().build();
+        } finally {
+            for (var buffer : buffers) {
+                try { buffer.close(); } catch (IOException ignored) { }
+            }
         }
     }
 
     // ==================== Hilfsmethoden ====================
-
-    private Path resolveProjektDokumentPath(ProjektGeschaeftsdokument dok) {
-        if (dok.getGespeicherterDateiname() != null) {
-            // Priority 1: Check root upload path
-            Path rootPath = Path.of(uploadPath, dok.getGespeicherterDateiname());
-            if (Files.exists(rootPath)) {
-                return rootPath;
-            }
-
-            // Priority 2: Check attachments/ (flat)
-            Path attachmentsPath = Path.of(uploadPath, "attachments", dok.getGespeicherterDateiname());
-            if (Files.exists(attachmentsPath)) {
-                return attachmentsPath;
-            }
-
-            return rootPath; // Return standard path (even if missing) so logic downstream fails naturally or
-                             // logs it
-        }
-        return null;
-    }
 
     private Path resolveLieferantDokumentPath(LieferantDokument dok) {
         if (dok.getGespeicherterDateiname() != null) {
@@ -361,32 +273,6 @@ public class RechnungsuebersichtController {
                     dok.getAttachment().getStoredFilename());
         }
         return null;
-    }
-
-    private AusgangsrechnungDto toAusgangsrechnungDto(ProjektGeschaeftsdokument gd) {
-        AusgangsrechnungDto dto = new AusgangsrechnungDto();
-        dto.id = gd.getId();
-        dto.dokumentid = gd.getDokumentid();
-        dto.geschaeftsdokumentart = gd.getGeschaeftsdokumentart();
-        dto.rechnungsdatum = gd.getRechnungsdatum();
-        dto.faelligkeitsdatum = gd.getFaelligkeitsdatum();
-        dto.bruttoBetrag = gd.getBruttoBetrag() != null ? gd.getBruttoBetrag().doubleValue() : null;
-        dto.bezahlt = Boolean.TRUE.equals(gd.isBezahlt());
-        dto.originalDateiname = gd.getOriginalDateiname();
-
-        // PDF-URL
-        if (gd.getGespeicherterDateiname() != null) {
-            dto.pdfUrl = "/api/dokumente/" + gd.getGespeicherterDateiname();
-        }
-
-        // Projekt-Info
-        if (gd.getProjekt() != null) {
-            dto.projektId = gd.getProjekt().getId();
-            dto.projektAuftragsnummer = gd.getProjekt().getAuftragsnummer();
-            dto.projektKunde = gd.getProjekt().getKunde();
-        }
-
-        return dto;
     }
 
     private EingangsrechnungDto toEingangsrechnungDto(LieferantGeschaeftsdokument gd) {
@@ -433,21 +319,6 @@ public class RechnungsuebersichtController {
 
     // ==================== DTOs ====================
 
-    public static class AusgangsrechnungDto {
-        public Long id;
-        public String dokumentid;
-        public String geschaeftsdokumentart;
-        public LocalDate rechnungsdatum;
-        public LocalDate faelligkeitsdatum;
-        public Double bruttoBetrag;
-        public boolean bezahlt;
-        public String originalDateiname;
-        public String pdfUrl;
-        public Long projektId;
-        public String projektAuftragsnummer;
-        public String projektKunde;
-    }
-
     public static class EingangsrechnungDto {
         public Long id;
         public Long dokumentId;
@@ -467,8 +338,10 @@ public class RechnungsuebersichtController {
     @lombok.NoArgsConstructor
     @lombok.AllArgsConstructor
     public static class MergePdfRequest {
-        private List<Long> ausgangIds;
-        private List<Long> eingangIds;
+        @Size(max = 500)
+        private List<@NotNull @Positive Long> ausgangIds;
+        @Size(max = 500)
+        private List<@NotNull @Positive Long> eingangIds;
     }
 
     // ==================== MANUELLER UPLOAD (RECHNUNGSÜBERSICHT)
