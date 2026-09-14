@@ -308,6 +308,7 @@ public class AusgangsGeschaeftsDokumentService {
         // Dokumentnummer generieren
         dokument.setDokumentNummer(generiereNummer(dokument.getTyp()));
 
+        normalisiereStornobetraege(dokument);
         AusgangsGeschaeftsDokument saved = dokumentRepository.save(dokument);
 
         // Projekt-Preis aktualisieren
@@ -404,6 +405,13 @@ public class AusgangsGeschaeftsDokumentService {
         return created.getDokumentNummer();
     }
 
+    private void normalisiereStornobetraege(AusgangsGeschaeftsDokument dokument) {
+        if (dokument.getTyp() == AusgangsGeschaeftsDokumentTyp.STORNO) {
+            dokument.setBetragNetto(DokumentBetragsvorzeichen.alsMinderung(dokument.getBetragNetto()));
+            dokument.setBetragBrutto(DokumentBetragsvorzeichen.alsMinderung(dokument.getBetragBrutto()));
+        }
+    }
+
     /**
      * Gibt die Anfragesnummer (= dokumentNummer des ANFRAGE-Dokuments) zurück, falls vorhanden.
      */
@@ -459,6 +467,7 @@ public class AusgangsGeschaeftsDokumentService {
             dokument.setBetragBrutto(dokument.getBetragNetto().add(mwst).setScale(2, RoundingMode.HALF_UP));
         }
 
+        normalisiereStornobetraege(dokument);
         AusgangsGeschaeftsDokument saved = dokumentRepository.save(dokument);
 
         // Projekt-Preis aktualisieren
@@ -708,9 +717,9 @@ public class AusgangsGeschaeftsDokumentService {
         storno.setKunde(original.getKunde());
         storno.setRechnungsadresseOverride(original.getRechnungsadresseOverride());
 
-        // Beträge vom Original negieren (Stornorechnung = Gutschrift)
-        storno.setBetragNetto(original.getBetragNetto() != null ? original.getBetragNetto().negate() : null);
-        storno.setBetragBrutto(original.getBetragBrutto() != null ? original.getBetragBrutto().negate() : null);
+        // Stornos mindern den Umsatz unabhängig vom Vorzeichen des Originals.
+        storno.setBetragNetto(DokumentBetragsvorzeichen.alsMinderung(original.getBetragNetto()));
+        storno.setBetragBrutto(DokumentBetragsvorzeichen.alsMinderung(original.getBetragBrutto()));
         storno.setMwstSatz(original.getMwstSatz());
 
         // Inhalt und Positionen vom Original übernehmen für PDF-Generierung

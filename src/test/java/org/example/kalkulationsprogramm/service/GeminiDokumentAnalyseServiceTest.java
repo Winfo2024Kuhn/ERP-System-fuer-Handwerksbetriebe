@@ -1099,6 +1099,39 @@ class GeminiDokumentAnalyseServiceTest {
             verifyNoInteractions(eventPublisher);
         }
 
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.CsvSource({
+                "GUTSCHRIFT, GUTSCHRIFT, GU-2026-001",
+                "GUTSCHRIFT, RECHNUNG, GU-2026-001",
+                "SONSTIG, GUTSCHRIFT, RE-2026-001-KORR"
+        })
+        void speichertErneutAnalysierteKiGutschriftMitNegativenBetraegen(
+                LieferantDokumentTyp gespeicherterTyp, String erkannterTyp, String nummer) throws Exception {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(1L);
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(501L);
+            dokument.setTyp(gespeicherterTyp);
+            dokument.setLieferant(lieferant);
+            dokument.setOriginalDateiname(DATEINAME);
+            dokument.setGespeicherterDateiname(DATEINAME);
+            stelleKiAntwortBereit(dokument, """
+                    {"dokumentTyp":"%s", "dokumentNummer":"%s",
+                     "betragNetto":100.00, "betragBrutto":119.00, "confidence":0.95}
+                    """.formatted(erkannterTyp, nummer));
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            assertThat(result).isNotNull();
+            assertThat(dokument.getTyp()).isEqualTo(LieferantDokumentTyp.GUTSCHRIFT);
+            assertThat(result.getBetragNetto()).isEqualByComparingTo("-100.00");
+            assertThat(result.getBetragBrutto()).isEqualByComparingTo("-119.00");
+            ArgumentCaptor<LieferantGeschaeftsdokument> gespeichert =
+                    ArgumentCaptor.forClass(LieferantGeschaeftsdokument.class);
+            verify(lieferantGeschaeftsdokumentRepository).saveAndFlush(gespeichert.capture());
+            assertThat(gespeichert.getValue().getBetragBrutto()).isEqualByComparingTo("-119.00");
+        }
+
         /**
          * Stellt Repository- und API-Antworten so bereit, dass
          * {@code analysiereDokument()} den KI-Zweig durchlaeuft: kein
@@ -1139,6 +1172,44 @@ class GeminiDokumentAnalyseServiceTest {
             var feld = GeminiDokumentAnalyseService.class.getDeclaredField(feldName);
             feld.setAccessible(true);
             feld.set(target, wert);
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "GUTSCHRIFT, RECHNUNG, -119.00, true",
+            "GUTSCHRIFT, RECHNUNG, 119.00, true",
+            "GUTSCHRIFT, RECHNUNG, -120.00, false",
+            "RECHNUNG, AUFTRAGSBESTAETIGUNG, -119.00, false"
+    })
+    void verknuepftGutschriftMitPositiverRechnungNachBetrag(
+            LieferantDokumentTyp typ, LieferantDokumentTyp vorgaengerTyp,
+            BigDecimal brutto, boolean erwartetVerknuepft) {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+        LieferantDokument dokument = new LieferantDokument();
+        dokument.setId(2L);
+        dokument.setLieferant(lieferant);
+        dokument.setTyp(typ);
+        LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
+        daten.setBetragBrutto(brutto);
+        daten.setDokumentDatum(LocalDate.of(2026, 9, 14));
+        dokument.setGeschaeftsdaten(daten);
+        LieferantDokument rechnung = new LieferantDokument();
+        rechnung.setId(3L);
+        rechnung.setLieferant(lieferant);
+        rechnung.setTyp(vorgaengerTyp);
+        LieferantGeschaeftsdokument rechnungsdaten = new LieferantGeschaeftsdokument();
+        rechnungsdaten.setBetragBrutto(new BigDecimal("119.00"));
+        rechnungsdaten.setDokumentDatum(LocalDate.of(2026, 9, 10));
+        rechnung.setGeschaeftsdaten(rechnungsdaten);
+
+        service.performRelink(dokument, java.util.List.of(rechnung));
+
+        if (erwartetVerknuepft) {
+            assertThat(dokument.getVerknuepfteDokumente()).containsExactly(rechnung);
+        } else {
+            assertThat(dokument.getVerknuepfteDokumente()).isEmpty();
         }
     }
 
