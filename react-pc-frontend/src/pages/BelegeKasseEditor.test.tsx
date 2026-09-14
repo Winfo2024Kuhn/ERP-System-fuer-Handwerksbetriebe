@@ -11,12 +11,14 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('prüft den ganzen Beleg vor dem Speichern und übergibt Kommawerte numerisch', async () => {
     const writes: Record<string, unknown>[] = [];
     const beleg = { id: 1, belegNummer: 'TEST-BELEG', belegKategorie: 'SONSTIGER_BELEG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 0, betragNetto: 10, mwstSatz: 19, zahlungsart: 'Bar', kostenstellenSplits: [] };
-    vi.stubGlobal('fetch', vi.fn(async (url, init) => { if (init?.method === 'PUT') {
+    const fetchMock = vi.fn(async (url, init) => { if (init?.method === 'PUT') {
         writes.push(JSON.parse(init.body));
         return { ok: true, json: async () => beleg };
-    } return { ok: true, json: async () => String(url) === '/api/buchhaltung/belege' ? [beleg] : [] }; }));
+    } return { ok: true, json: async () => String(url) === '/api/buchhaltung/belege' ? [beleg] : String(url).endsWith('/belege/1') ? beleg : [] }; });
+    vi.stubGlobal('fetch', fetchMock);
     render(<ToastProvider><BelegeKasseEditor /></ToastProvider>);
     fireEvent.click(await screen.findByRole('button', { name: /TEST-BELEG/ }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/buchhaltung/belege/1'));
     const amount = screen.getByRole('textbox', { name: 'Betrag (€)' });
     expect(amount).toHaveValue('0');
     fireEvent.focus(amount);
@@ -49,15 +51,17 @@ it('prüft den ganzen Beleg vor dem Speichern und übergibt Kommawerte numerisch
 it('bucht bei Unterdeckung keine Vorab-Einlage für einen geänderten oder ungültigen Entwurf', async () => {
     const writes: string[] = [];
     const beleg = { id: 2, belegNummer: 'TEST-KASSE', belegKategorie: 'KASSE_AUSGABE', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 20, zahlungsart: 'Bar', kostenstellenSplits: [] };
-    vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+    const fetchMock = vi.fn(async (url, init) => {
         if (init?.method) {
             writes.push(init.method);
             return { ok: false, status: 409, json: async () => ({ projizierterSaldo: -20, mindestbestand: 0, message: 'Kasse reicht nicht.' }) };
         }
-        return { ok: true, json: async () => String(url) === '/api/buchhaltung/belege' ? [beleg] : String(url).endsWith('/saldo') ? { saldo: 0, mindestbestand: 0 } : [] };
-    }));
+        return { ok: true, json: async () => String(url) === '/api/buchhaltung/belege' ? [beleg] : String(url).endsWith('/belege/2') ? beleg : String(url).endsWith('/saldo') ? { saldo: 0, mindestbestand: 0 } : [] };
+    });
+    vi.stubGlobal('fetch', fetchMock);
     render(<ToastProvider><BelegeKasseEditor /></ToastProvider>);
     fireEvent.click(await screen.findByRole('button', { name: /TEST-KASSE/ }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/buchhaltung/belege/2'));
     fireEvent.click(screen.getByRole('button', { name: 'Prüfen & Übernehmen' }));
     await screen.findByRole('button', { name: /Privateinlage in Höhe/ });
     expect(writes).toEqual(['PUT']);
