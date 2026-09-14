@@ -33,7 +33,7 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
 
     if (!einstellung) {
         return (
-            <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label="Kassen-Einstellungen" className="w-full max-w-xl">
+            <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label="Kassen-Einstellungen" className="w-full max-w-xl h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] overflow-hidden">
                 <DialogHeader><DialogTitle>Kassen-Einstellungen</DialogTitle></DialogHeader>
                 <div className="py-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-rose-500" /></div>
             </Dialog>
@@ -99,9 +99,9 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
     };
 
     return (
-            <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label="Kassen-Einstellungen" className="w-full max-w-xl">
+            <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label="Kassen-Einstellungen" className="w-full max-w-xl h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] overflow-hidden">
                 <DialogHeader><DialogTitle>Kassen-Einstellungen</DialogTitle></DialogHeader>
-                <div className="min-h-0 flex-1 overflow-y-auto p-1 -mx-1">
+                <div className="min-h-0 flex-1 shrink overflow-y-auto overflow-x-hidden p-1 -mx-1 mt-2">
             <h3 className="font-semibold text-slate-900 mb-2 text-sm">Mindestbestand der Kasse</h3>
             <FieldRow label="Mindestbestand (€)">
                 <DecimalInput aria-label="Mindestbestand (€)" value={drafts.minimum} onChange={value => setDrafts(d => ({ ...d, minimum: value }))} className={modalInputCls} />
