@@ -55,6 +55,7 @@ public class SteuerberaterExportService {
         List<Beleg> belege = belege(jahr, monat);
         KasseEinstellung einstellung = einstellung();
         String firma = firmeninformationRepository.findFirmeninformation().map(Firmeninformation::getFirmenname).orElse("Betrieb");
+        String exportMonat = String.format("%04d-%02d", jahr, monat);
         String prefix = String.format("%04d-%02d_Kasse_%s/", jahr, monat, dateiname(firma, "Betrieb", 120));
         Map<Long, List<BelegKostenstellenAnteil>> splits = belegKostenstellenAnteilRepository.findByBelegIds(ids(belege)).stream()
                 .collect(Collectors.groupingBy(a -> a.getBeleg().getId()));
@@ -63,11 +64,11 @@ public class SteuerberaterExportService {
         Path pdf = null;
         try (ByteArrayOutputStream bytes = new ByteArrayOutputStream(); ZipOutputStream zip = new ZipOutputStream(bytes, StandardCharsets.UTF_8)) {
             pdf = belegeKasseExportPdfService.generatePdf(jahr, monat, ersteller, true);
-            write(zip, prefix + "01_Kassenbuch_" + jahr + "-" + monat + ".pdf", Files.readAllBytes(pdf));
+            write(zip, prefix + "01_Kassenbuch_" + exportMonat + ".pdf", Files.readAllBytes(pdf));
             KasseDatevExportService.Parameter parameter = new KasseDatevExportService.Parameter(YearMonth.of(jahr, monat), belege, splits,
                     einstellung, "Export", firma, java.time.LocalDateTime.now(), trotzdem);
-            write(zip, prefix + "02_Buchungen_DATEV_" + jahr + "-" + monat + ".csv", datevExportService.erzeugeCsvBytes(parameter));
-            write(zip, prefix + "03_Eingangsrechnungen_" + jahr + "-" + monat + ".csv", eingangsrechnungen(belege, dokumente).getBytes(StandardCharsets.UTF_8));
+            write(zip, prefix + "02_Buchungen_DATEV_" + exportMonat + ".csv", datevExportService.erzeugeCsvBytes(parameter));
+            write(zip, prefix + "03_Eingangsrechnungen_" + exportMonat + ".csv", eingangsrechnungen(belege, dokumente).getBytes(StandardCharsets.UTF_8));
             List<String> fehlende = new ArrayList<>();
             for (Beleg beleg : belege) kopiereBeleg(zip, prefix, beleg, fehlende);
             write(zip, prefix + "LIESMICH.txt", liesmich(einstellung, pruefung, trotzdem, fehlende).getBytes(StandardCharsets.UTF_8));
@@ -82,7 +83,11 @@ public class SteuerberaterExportService {
     private List<Beleg> belege(int jahr, int monat) { YearMonth ym = YearMonth.of(jahr, monat); return belegRepository.findGeprueftImZeitraumNachNummer(ym.atDay(1), ym.atEndOfMonth()); }
     private KasseEinstellung einstellung() { return kasseEinstellungRepository.findSingleton().orElseGet(KasseEinstellung::new); }
     private Optional<SteuerberaterPaketDto.OffenerPunkt> offenerPunkt(Beleg b) {
-        boolean konto = b.getSachkonto() == null, zahlungsart = fehlend(b.getZahlungsart());
+        boolean konto = b.getSachkonto() == null;
+        boolean zahlungsart = fehlend(b.getZahlungsart())
+                && !Boolean.TRUE.equals(b.getIstUmbuchung())
+                && b.getBelegKategorie() != BelegKategorie.PRIVATEINLAGE
+                && b.getBelegKategorie() != BelegKategorie.PRIVATENTNAHME;
         if (!konto && !zahlungsart) return Optional.empty();
         String fehlt = konto && zahlungsart ? "Konto und Zahlungsart fehlen" : konto ? "Konto fehlt" : "Zahlungsart fehlt";
         String bezeichnung = b.getLieferant() == null ? b.getBeschreibung() : b.getLieferant().getLieferantenname();

@@ -218,8 +218,8 @@ public class KasseShortcutController {
     }
 
     private static void validateDatevNummer(String wert, int maxLaenge, String feldname) {
-        if (wert != null && wert.length() > maxLaenge) {
-            throw new IllegalArgumentException(feldname + " darf hoechstens " + maxLaenge + " Zeichen haben");
+        if (wert != null && !wert.isEmpty() && (!wert.matches("\\d+") || wert.length() > maxLaenge)) {
+            throw new IllegalArgumentException(feldname + " darf nur Ziffern enthalten und hoechstens " + maxLaenge + " Zeichen haben");
         }
     }
 
