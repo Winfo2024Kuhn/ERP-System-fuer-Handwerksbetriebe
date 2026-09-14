@@ -52,10 +52,16 @@ test('Kassen-Einstellungen zeigen DATEV-Daten, prüfen Konten und öffnen Auszah
     await expect(page.getByRole('textbox', { name: 'Kassenkonto' })).toHaveValue('1000');
     await expect(page.getByRole('textbox', { name: 'Bankkonto' })).toHaveValue('1200');
     const speichern = page.getByRole('button', { name: 'Speichern', exact: true });
-    await speichern.scrollIntoViewIfNeeded();
+    await expect(speichern).toBeInViewport();
     await designPruefung(page, info, 'kasse-einstellungen-dialog', { primaerAktion: speichern });
+    await page.getByRole('textbox', { name: 'Tag des Monats (1–28)' }).scrollIntoViewIfNeeded();
     await expect(speichern).toBeInViewport();
 
+    await page.getByRole('textbox', { name: 'Beraternummer' }).fill('ABC');
+    await expect(page.getByText('Bitte nur Ziffern, höchstens 7 Stellen.')).toBeVisible();
+    await speichern.click();
+    expect(writes).toHaveLength(0);
+    await page.getByRole('textbox', { name: 'Beraternummer' }).fill('1234567');
     await page.getByRole('textbox', { name: 'Kassenkonto' }).fill('12x');
     await expect(page.getByText('Bitte nur Ziffern, höchstens 8 Stellen.')).toBeVisible();
     await page.getByRole('button', { name: 'Speichern', exact: true }).click();

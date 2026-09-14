@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Loader2, WalletCards } from 'lucide-react';
 import { Button } from '../ui/button';
+import { Dialog, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Select } from '../ui/select-custom';
 import { DecimalInput } from '../ui/decimal-input';
 import { formatDecimalInput } from '../../lib/numberInput';
 import { validateNumberDrafts } from '../../lib/numberDrafts';
 import type { KasseEinstellung, Sachkonto } from '../../types';
 import { modalInputCls } from './belegFormat';
-import { FieldRow, ModalFooter, ModalShell } from './NeueBuchungDialog';
+import { FieldRow, ModalFooter } from './NeueBuchungDialog';
 
 export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError, onPayOnce }: {
     sachkonten: Sachkonto[];
@@ -32,9 +33,10 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
 
     if (!einstellung) {
         return (
-            <ModalShell title="Kassen-Einstellungen" onClose={onClose}>
+            <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label="Kassen-Einstellungen" className="w-full max-w-xl">
+                <DialogHeader><DialogTitle>Kassen-Einstellungen</DialogTitle></DialogHeader>
                 <div className="py-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-rose-500" /></div>
-            </ModalShell>
+            </Dialog>
         );
     }
 
@@ -47,8 +49,11 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
 
     const privatSachkonten = sachkonten.filter(s => s.kontoTyp === 'PRIVAT').sort((a, b) => a.sortierung - b.sortierung);
     const kontoUngueltig = (wert: string | null | undefined) => Boolean(wert && (!/^\d+$/.test(wert) || wert.length > 8));
+    const datevUngueltig = (wert: string | null | undefined, max: number) => Boolean(wert && (!/^\d+$/.test(wert) || wert.length > max));
     const kassenkontoUngueltig = kontoUngueltig(einstellung.kassenkontoNummer);
     const bankkontoUngueltig = kontoUngueltig(einstellung.bankkontoNummer);
+    const beraternummerUngueltig = datevUngueltig(einstellung.datevBeraternummer, 7);
+    const mandantennummerUngueltig = datevUngueltig(einstellung.datevMandantennummer, 5);
 
     const submit = async () => {
         const activeDrafts = einstellung.ehegattengehaltAktiv ? drafts : { ...drafts, betrag: '', tag: '' };
@@ -59,7 +64,7 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
         });
         if (!result.valid) { onError(result.message); return; }
         if (einstellung.ehegattengehaltAktiv && result.values.betrag! <= 0) { onError('Bitte einen positiven monatlichen Betrag eingeben.'); return; }
-        if (kassenkontoUngueltig || bankkontoUngueltig) return;
+        if (kassenkontoUngueltig || bankkontoUngueltig || beraternummerUngueltig || mandantennummerUngueltig) return;
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/einstellung', {
@@ -94,8 +99,9 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
     };
 
     return (
-        <ModalShell title="Kassen-Einstellungen" onClose={onClose} wide>
-            <div className="pb-20">
+            <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label="Kassen-Einstellungen" className="w-full max-w-xl">
+                <DialogHeader><DialogTitle>Kassen-Einstellungen</DialogTitle></DialogHeader>
+                <div className="min-h-0 flex-1 overflow-y-auto p-1 -mx-1">
             <h3 className="font-semibold text-slate-900 mb-2 text-sm">Mindestbestand der Kasse</h3>
             <FieldRow label="Mindestbestand (€)">
                 <DecimalInput aria-label="Mindestbestand (€)" value={drafts.minimum} onChange={value => setDrafts(d => ({ ...d, minimum: value }))} className={modalInputCls} />
@@ -125,9 +131,11 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
             <p className="text-xs text-slate-500 mb-3">Diese Angaben stehen in der DATEV-Datei, die dein Steuerberater bekommt. Wenn du sie nicht kennst, frag ihn — der Export geht auch ohne.</p>
             <FieldRow label="Beraternummer">
                 <input aria-label="Beraternummer" type="text" maxLength={7} placeholder="z.B. 1234567" value={einstellung.datevBeraternummer ?? ''} onChange={e => update('datevBeraternummer', e.target.value)} className={modalInputCls} />
+                {beraternummerUngueltig && <p className="mt-1 text-xs text-amber-900">Bitte nur Ziffern, höchstens 7 Stellen.</p>}
             </FieldRow>
             <FieldRow label="Mandantennummer">
                 <input aria-label="Mandantennummer" type="text" maxLength={5} placeholder="z.B. 54321" value={einstellung.datevMandantennummer ?? ''} onChange={e => update('datevMandantennummer', e.target.value)} className={modalInputCls} />
+                {mandantennummerUngueltig && <p className="mt-1 text-xs text-amber-900">Bitte nur Ziffern, höchstens 5 Stellen.</p>}
             </FieldRow>
             <FieldRow label="Wirtschaftsjahr beginnt im">
                 <Select aria-label="Wirtschaftsjahr beginnt im" value={String(einstellung.wirtschaftsjahrBeginnMonat ?? 1)} onChange={v => update('wirtschaftsjahrBeginnMonat', Number(v))} options={MONATE.map((label, index) => ({ value: String(index + 1), label }))} />
@@ -171,10 +179,10 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
                 </>
             )}
             {onPayOnce && <Button type="button" variant="outline" size="sm" onClick={onPayOnce} className="mb-1 border-rose-300 text-rose-700 hover:bg-rose-50"><WalletCards className="mr-2 h-4 w-4" />Jetzt einmalig auszahlen</Button>}
-            </div>
+                </div>
 
-            <ModalFooter onClose={onClose} onSubmit={submit} saving={saving} label="Speichern" />
-        </ModalShell>
+                <ModalFooter onClose={onClose} onSubmit={submit} saving={saving} label="Speichern" />
+            </Dialog>
     );
 }
 
