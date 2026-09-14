@@ -116,6 +116,23 @@ class BelegServiceKasseValidationTest {
     }
 
     @Test
+    @DisplayName("updateBeleg: Kassen-Umbuchung kann keine Kostenstelle erhalten")
+    void updateBeleg_kassenUmbuchungMitKostenstelle_wirftException() {
+        Beleg vorher = bar(BelegStatus.NEU, BelegKategorie.PRIVATEINLAGE, "100.00");
+        vorher.setIstUmbuchung(true);
+        given(belegRepository.findById(1L)).willReturn(Optional.of(vorher));
+
+        BelegDto.UpdateRequest req = new BelegDto.UpdateRequest();
+        req.setKostenstelleId(7L);
+
+        assertThatThrownBy(() -> service.updateBeleg(1L, req, mitarbeiter()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("keiner Kostenstelle");
+        verify(belegRepository, never()).save(any());
+        verify(belegKostenstellenAnteilRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("updateBeleg: Wechsel auf Nicht-Bar-Kategorie -> keine Unterdeckung moeglich")
     void updateBeleg_wechselAufNichtBar_keinePruefung() {
         Beleg vorher = bar(BelegStatus.NEU, BelegKategorie.KASSE_AUSGABE, "1000.00");

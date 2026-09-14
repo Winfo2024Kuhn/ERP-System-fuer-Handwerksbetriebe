@@ -23,7 +23,11 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
     @Query("SELECT b FROM Beleg b "
            + "LEFT JOIN FETCH b.lieferant "
            + "LEFT JOIN FETCH b.kostenstelle "
+           + "LEFT JOIN b.sachkonto sk "
            + "WHERE b.status <> org.example.kalkulationsprogramm.domain.BelegStatus.VERWORFEN "
+           + "  AND (b.istUmbuchung = false OR b.istUmbuchung IS NULL) "
+           + "  AND b.belegKategorie NOT IN (org.example.kalkulationsprogramm.domain.BelegKategorie.PRIVATEINLAGE, org.example.kalkulationsprogramm.domain.BelegKategorie.PRIVATENTNAHME) "
+           + "  AND (b.belegKategorie <> org.example.kalkulationsprogramm.domain.BelegKategorie.KASSE_AUSGABE OR sk.id IS NULL OR sk.nummer <> '4120') "
            + "  AND b.kostenstelle IS NULL "
            + "  AND NOT EXISTS (SELECT a.id FROM BelegKostenstellenAnteil a WHERE a.beleg = b) "
            + "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b) "
@@ -82,8 +86,11 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
      * + Lieferantenrechnung derselben Ausgabe). Gleiche Bedingung wie in
      * {@code BelegKostenstellenAnteilRepository#findByKostenstelleIdEager}.
      */
-    @Query("SELECT b FROM Beleg b JOIN FETCH b.kostenstelle ks " +
+    @Query("SELECT b FROM Beleg b JOIN FETCH b.kostenstelle ks LEFT JOIN b.sachkonto sk " +
            "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
+           "  AND (b.istUmbuchung = false OR b.istUmbuchung IS NULL) " +
+           "  AND b.belegKategorie NOT IN (org.example.kalkulationsprogramm.domain.BelegKategorie.PRIVATEINLAGE, org.example.kalkulationsprogramm.domain.BelegKategorie.PRIVATENTNAHME) " +
+           "  AND (b.belegKategorie <> org.example.kalkulationsprogramm.domain.BelegKategorie.KASSE_AUSGABE OR sk.id IS NULL OR sk.nummer <> '4120') " +
            "  AND ks.istFixkosten = true " +
            "  AND b.belegDatum BETWEEN :von AND :bis " +
            "  AND b.betragBrutto IS NOT NULL " +

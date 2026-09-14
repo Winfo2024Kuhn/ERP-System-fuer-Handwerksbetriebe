@@ -190,6 +190,17 @@ class KassenbuchungServiceTest {
         verifyNoInteractions(schutz, saldo, belege, pdf);
     }
 
+    @Test void umbuchungMitKostenstelleWirdVorDemSpeichernAbgewiesen() {
+        var req = request("EIGENES_GELD_EINGELEGT");
+        req.setKostenstelleId(9L);
+
+        assertThatThrownBy(() -> service.buche(req, null, ersteller))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("keiner Kostenstelle");
+
+        verifyNoInteractions(konten, kostenstellen, schutz, saldo, belege, pdf, audit);
+    }
+
     @Test void kostenstelleErhaeltVollenNettoAnteilUndRechnungWirdBezahlt() throws Exception {
         var req = request("GELD_EINGENOMMEN");
         req.setKostenstelleId(9L);

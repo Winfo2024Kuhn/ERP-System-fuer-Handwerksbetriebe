@@ -83,7 +83,11 @@ public interface BelegKostenstellenAnteilRepository extends JpaRepository<BelegK
     @Query("SELECT a FROM BelegKostenstellenAnteil a "
             + "JOIN FETCH a.kostenstelle ks "
             + "JOIN FETCH a.beleg b "
+            + "LEFT JOIN b.sachkonto sk "
             + "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT "
+            + "AND (b.istUmbuchung = false OR b.istUmbuchung IS NULL) "
+            + "AND b.belegKategorie NOT IN (org.example.kalkulationsprogramm.domain.BelegKategorie.PRIVATEINLAGE, org.example.kalkulationsprogramm.domain.BelegKategorie.PRIVATENTNAHME) "
+            + "AND (b.belegKategorie <> org.example.kalkulationsprogramm.domain.BelegKategorie.KASSE_AUSGABE OR sk.id IS NULL OR sk.nummer <> '4120') "
             + "AND ks.istFixkosten = true "
             // Gleicher Ausschluss wie in BelegRepository#findValidierteFixkostenBelegeImZeitraum:
             // Belege mit Lieferanten-Dokument laufen schon ueber

@@ -186,6 +186,20 @@ class BestellungsUebersichtControllerBelegZuordnungTest {
         verify(belegRepository).save(beleg);
     }
 
+    @Test
+    void kassenUmbuchungKannNichtKostenstelleZugeordnetWerden() {
+        autorisiereBearbeitung();
+        Beleg beleg = beleg(17L);
+        beleg.setIstUmbuchung(true);
+        when(belegRepository.findById(17L)).thenReturn(Optional.of(beleg));
+
+        var response = controller.zuordnenBelegKostenstellen(requestMitKostenstelle(17L, 5L), null, null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(dokumentRepository, kostenstelleRepository, belegKostenstellenAnteilRepository);
+        verify(belegRepository, never()).save(any());
+    }
+
     private void autorisiereBearbeitung() {
         Mitarbeiter caller = new Mitarbeiter();
         when(belegService.findCaller(isNull(), isNull())).thenReturn(caller);
