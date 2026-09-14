@@ -220,6 +220,20 @@ public class Beleg {
     @Column(name = "ist_umbuchung", nullable = false)
     private Boolean istUmbuchung = false;
 
+    /**
+     * Umbuchungen und private Einlagen/Entnahmen bilden zwar den tatsaechlichen
+     * Bargeldfluss im Kassenbuch ab, sind aber keine betrieblichen Kosten.
+     */
+    @Transient
+    public boolean istKostenrelevant() {
+        return !Boolean.TRUE.equals(istUmbuchung)
+                && belegKategorie != BelegKategorie.PRIVATEINLAGE
+                && belegKategorie != BelegKategorie.PRIVATENTNAHME
+                && !(belegKategorie == BelegKategorie.KASSE_AUSGABE
+                && sachkonto != null
+                && "4120".equals(sachkonto.getNummer()));
+    }
+
     @Column(name = "mime_type", length = 120)
     private String mimeType;
 
