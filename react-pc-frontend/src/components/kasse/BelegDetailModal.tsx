@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight, FileText,
     Loader2, Lock, Receipt, Save, Trash2, Truck, Undo2,
@@ -53,15 +53,14 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     // Sonst wuerde eine spaet eintreffende KI-Antwort die Eingaben ueberschreiben,
     // die der Buchhalter waehrenddessen getippt hat.
     const [detailBeleg, setDetailBeleg] = useState<Beleg>(beleg);
+    const detailsBereit = useRef(false);
+    const formularBearbeitet = useRef(false);
+    const splitsBearbeitet = useRef(false);
     // Bewusst nur diese drei Werte als Abhaengigkeit: eine neue `beleg`-Identitaet
     // bei sonst gleichen Werten wuerde das Polling sonst unnoetig neu starten.
     const belegId = beleg.id;
-    const belegAufteilungsModus = beleg.aufteilungsModus;
-    const belegKiStatus = beleg.kiAnalyseStatus;
     useEffect(() => {
         const kiOffen = (status?: Beleg['kiAnalyseStatus']) => status === 'PENDING' || status === 'LAEUFT';
-        if (belegAufteilungsModus !== 'TEILWEISE' && !kiOffen(belegKiStatus)) return;
-
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -70,8 +69,19 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                 const res = await fetch(`/api/buchhaltung/belege/${belegId}`);
                 if (!res.ok) return;
                 const data: Beleg = await res.json();
-                if (cancelled) return;
+                if (cancelled || data.id !== belegId) return;
                 setDetailBeleg(data);
+                if (!detailsBereit.current) {
+                    detailsBereit.current = true;
+                    if (!formularBearbeitet.current) setForm(f => ({ ...f, zahlungsart: data.zahlungsart ?? '', lieferantId: data.lieferantId ?? null, lieferantName: data.lieferantName ?? '', sachkontoId: data.sachkontoId ?? null }));
+                    if (!splitsBearbeitet.current) {
+                        const neueSplits = data.kostenstellenSplits ?? [];
+                        const einfach = istEinfacheKostenstellenZuordnung(neueSplits);
+                        setSplits(neueSplits); setMehrereKostenstellen(!einfach); setKostenstelleId(einfach ? neueSplits[0]?.kostenstelleId ?? null : null);
+                    }
+                    setBezahlt(data.eingangsrechnungBezahlt ?? false);
+                    setBezahltAm(data.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
+                }
                 if (kiOffen(data.kiAnalyseStatus)) timer = setTimeout(lade, 4000);
             } catch (e) {
                 console.error('Beleg-Detail laden fehlgeschlagen', e);
@@ -80,7 +90,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
         lade();
 
         return () => { cancelled = true; if (timer) clearTimeout(timer); };
-    }, [belegId, belegAufteilungsModus, belegKiStatus]);
+    }, [belegId]);
 
     const [form, setForm] = useState({
         belegKategorie: beleg.belegKategorie,
@@ -107,16 +117,6 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     });
     const [bezahlt, setBezahlt] = useState(beleg.eingangsrechnungBezahlt ?? false);
     const [bezahltAm, setBezahltAm] = useState(beleg.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
-    // Wenn das Detail nachgeladen wird (TEILWEISE), beziehen wir die Splits
-    // aus dem frischen DTO — die Listen-Query liefert sie ggf. nicht mit.
-    useEffect(() => {
-        if (!detailBeleg.kostenstellenSplits) return;
-        const neueSplits = detailBeleg.kostenstellenSplits;
-        const einfach = istEinfacheKostenstellenZuordnung(neueSplits);
-        setSplits(neueSplits);
-        setMehrereKostenstellen(!einfach);
-        setKostenstelleId(einfach ? neueSplits[0]?.kostenstelleId ?? null : null);
-    }, [detailBeleg]);
     useEffect(() => {
         fetch('/api/bestellungen-uebersicht/kostenstellen')
             .then(r => r.ok ? r.json() : [])
@@ -175,8 +175,10 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
         return saldoInfo.saldo - alt + neu;
     }, [saldoInfo, form.belegKategorie, form.betragBrutto, beleg.status, beleg.belegKategorie, beleg.betragBrutto]);
 
-    const update = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
+    const update = <K extends keyof typeof form>(k: K, v: typeof form[K]) => {
+        formularBearbeitet.current = true;
         setForm(f => ({ ...f, [k]: v }));
+    };
 
     // Wie viele der eingeklappten Felder sind belegt? Steht als Hinweis am
     // zugeklappten "Mehr Details"-Knopf, damit gefuellte Werte nicht unsichtbar
@@ -212,6 +214,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     };
 
     const pruefeEntwurf = () => {
+        if (!detailsBereit.current) { setValidationHint('Belegdetails werden noch geladen. Bitte kurz warten.'); return null; }
         const zahlungsartIstOptional = beleg.istUmbuchung || beleg.belegKategorie === 'PRIVATEINLAGE' || beleg.belegKategorie === 'PRIVATENTNAHME';
         if (!form.zahlungsart && !zahlungsartIstOptional) { setValidationHint('Bitte wählen Sie aus, wie bezahlt wurde.'); return null; }
         const numbers = validateNumberDrafts({ betragBrutto: form.betragBrutto, betragNetto: form.betragNetto, mwstSatz: form.mwstSatz }, {
@@ -220,8 +223,8 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
             mwstSatz: { label: 'MwSt-Satz', min: 0, max: 100, maxDecimalPlaces: 2 },
         });
         if (!numbers.valid) { setValidationHint(numbers.message); return null; }
-        const einfacheSplits = !mehrereKostenstellen && kostenstelleId != null
-            ? [{ kostenstelleId, prozent: 100, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: null }] as KostenstellenSplit[] : splits;
+        const einfacheSplits = !mehrereKostenstellen
+            ? kostenstelleId == null ? [] : [{ kostenstelleId, prozent: 100, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: null }] as KostenstellenSplit[] : splits;
         const splitResult = validateKostenstellenSplits(einfacheSplits);
         if (!splitResult.valid) { setValidationHint(splitResult.message); return null; }
         return { values: numbers.values, splits: splitResult.splits };
@@ -493,9 +496,9 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                         <section>
                             <h3 className="text-base font-bold text-slate-900">Für welche Baustelle / welchen Bereich?</h3>
                             <p className="mt-1 text-sm text-slate-600">Ordnen Sie den Betrag einer Baustelle oder einem Bereich zu.</p>
-                            <div className="mt-3"><VorschlagsChip vorschlag={detailBeleg.vorschlagKostenstelle} aktuelleId={kostenstelleId} onUebernehmen={id => { setKostenstelleId(id); setMehrereKostenstellen(false); }} was="Baustelle" /></div>
-                            {mehrereKostenstellen ? <KostenstellenSplitsEditor splits={splits} onChange={setSplits} defaultStartJahr={form.belegDatum ? new Date(form.belegDatum).getFullYear() : new Date().getFullYear()} /> : <>
-                                <div className="mt-3"><Select aria-label="Baustelle oder Bereich" value={kostenstelleId == null ? '' : String(kostenstelleId)} onChange={v => setKostenstelleId(v ? Number(v) : null)} options={[{ value: '', label: '– keine Zuordnung –' }, ...kostenstellen.map(k => ({ value: String(k.id), label: `${k.nummer ? `${k.nummer} ` : ''}${k.bezeichnung}` }))]} /></div>
+                            <div className="mt-3"><VorschlagsChip vorschlag={detailBeleg.vorschlagKostenstelle} aktuelleId={kostenstelleId} onUebernehmen={id => { splitsBearbeitet.current = true; setKostenstelleId(id); setMehrereKostenstellen(false); }} was="Baustelle" /></div>
+                            {mehrereKostenstellen ? <KostenstellenSplitsEditor splits={splits} onChange={next => { splitsBearbeitet.current = true; setSplits(next); }} defaultStartJahr={form.belegDatum ? new Date(form.belegDatum).getFullYear() : new Date().getFullYear()} /> : <>
+                                <div className="mt-3"><Select aria-label="Baustelle oder Bereich" value={kostenstelleId == null ? '' : String(kostenstelleId)} onChange={v => { splitsBearbeitet.current = true; setKostenstelleId(v ? Number(v) : null); }} options={[{ value: '', label: '– keine Zuordnung –' }, ...kostenstellen.map(k => ({ value: String(k.id), label: `${k.nummer ? `${k.nummer} ` : ''}${k.bezeichnung}` }))]} /></div>
                                 <Button type="button" variant="outline" size="sm" className="mt-3 border-rose-300 text-rose-700" onClick={() => setMehrereKostenstellen(true)}>Auf mehrere aufteilen</Button>
                             </>}
                         </section>
