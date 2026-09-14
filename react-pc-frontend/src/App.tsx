@@ -29,6 +29,7 @@ import MietabrechnungEditor from './pages/MietabrechnungEditor';
 import BenutzerEditor from './pages/BenutzerEditor';
 import MitarbeiterEditor from './pages/MitarbeiterEditor';
 import ZeiterfassungKalender from './pages/ZeiterfassungKalender';
+import Monatsabschluss from './pages/Monatsabschluss';
 import ZeiterfassungAuswertung from './pages/ZeiterfassungAuswertung';
 import ZeiterfassungZeitkonten from './pages/ZeiterfassungZeitkonten';
 import ZeiterfassungFeiertage from './pages/ZeiterfassungFeiertage';
@@ -103,6 +104,7 @@ export default function App() {
                 <Route path="/benutzer" element={<RequireAdmin><ErrorBoundary><BenutzerEditor /></ErrorBoundary></RequireAdmin>} />
 
                 {/* Zeiterfassung & Admin */}
+                <Route path="/monatsabschluss" element={<ErrorBoundary><Monatsabschluss /></ErrorBoundary>} />
                 <Route path="/zeitbuchungen" element={<ErrorBoundary><ZeiterfassungKalender /></ErrorBoundary>} />
                 <Route path="/auswertung" element={<ErrorBoundary><ZeiterfassungAuswertung /></ErrorBoundary>} />
                 <Route path="/steuerberater" element={<ErrorBoundary><ZeiterfassungSteuerberater /></ErrorBoundary>} />

@@ -247,4 +247,55 @@ class ZeitverwaltungControllerTest {
                 // Soll 4 / Ist 4 -> netto 0, keine Phantom-Ueberstunden mehr.
                 .andExpect(jsonPath("$.differenz").value(0.00));
     }
+
+    @Test
+    void updateBuchung_Gibt409WennMonatFestgeschrieben() throws Exception {
+        Mitarbeiter m = new Mitarbeiter();
+        m.setId(1L);
+        Zeitbuchung b = new Zeitbuchung();
+        b.setId(100L);
+        b.setMitarbeiter(m);
+        b.setStartZeit(LocalDateTime.of(2025, 1, 15, 8, 0));
+
+        given(mitarbeiterRepository.findById(1L)).willReturn(Optional.of(m));
+        given(zeitbuchungRepository.findById(100L)).willReturn(Optional.of(b));
+        given(monatsSaldoService.isMonatFestgeschrieben(1L, 2025, 1)).willReturn(true);
+
+        mockMvc.perform(put("/api/zeitverwaltung/buchungen/100")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aenderungsgrund\":\"Test\",\"bearbeiterId\":1,\"notiz\":\"Korrektur\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
+    }
+
+    @Test
+    void deleteBuchung_Gibt409WennMonatFestgeschrieben() throws Exception {
+        Mitarbeiter m = new Mitarbeiter();
+        m.setId(1L);
+        Zeitbuchung b = new Zeitbuchung();
+        b.setId(100L);
+        b.setMitarbeiter(m);
+        b.setStartZeit(LocalDateTime.of(2025, 1, 15, 8, 0));
+
+        given(zeitbuchungRepository.findById(100L)).willReturn(Optional.of(b));
+        given(monatsSaldoService.isMonatFestgeschrieben(1L, 2025, 1)).willReturn(true);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/zeitverwaltung/buchungen/100"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
+    }
+
+    @Test
+    void createBuchung_Gibt409WennMonatFestgeschrieben() throws Exception {
+        Mitarbeiter m = new Mitarbeiter();
+        m.setId(1L);
+        given(mitarbeiterRepository.findById(1L)).willReturn(Optional.of(m));
+        given(monatsSaldoService.isMonatFestgeschrieben(1L, 2025, 1)).willReturn(true);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/zeitverwaltung/buchungen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mitarbeiterId\":1,\"projektId\":-1,\"typ\":\"PAUSE\",\"startZeit\":\"2025-01-15T12:00:00\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
+    }
 }

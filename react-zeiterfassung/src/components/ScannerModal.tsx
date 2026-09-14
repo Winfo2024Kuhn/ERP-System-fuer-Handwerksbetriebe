@@ -1,3 +1,4 @@
+import { useToast, mobileOverlayStyle } from './ui/toast'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Camera, { type CameraHandle } from './Camera'
 import { X, Loader2, Check, ArrowRight, Plus, Trash2, Layers, Wand2, ScanLine } from 'lucide-react'
@@ -76,6 +77,7 @@ function solveHomography(srcPts: Point[], dstPts: Point[]) {
 }
 
 export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
+    const toast = useToast()
     const webcamRef = useRef<CameraHandle>(null)
     const [step, setStep] = useState<'CAMERA' | 'CROP' | 'PREVIEW'>('CAMERA')
     const [isProcessing, setIsProcessing] = useState(false)
@@ -549,7 +551,7 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
 
         } catch (e) {
             console.error("Crop failed", e);
-            alert("Fehler beim Verarbeiten. Bitte erneut versuchen.");
+            toast.error("Fehler beim Verarbeiten. Bitte erneut versuchen.");
             setIsProcessing(false);
         }
     };
@@ -647,7 +649,7 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
 
         } catch (e) {
             console.error("PDF Generation failed", e);
-            alert("Fehler beim Erstellen des PDFs");
+            toast.error("Fehler beim Erstellen des PDFs");
         } finally {
             setIsProcessing(false);
         }
@@ -669,7 +671,7 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
     const MAG_RADIUS = MAG_SIZE / 2;
 
     return (
-        <div className="fixed inset-0 bg-black z-50 flex flex-col safe-area-top safe-area-bottom select-none touch-none">
+        <div style={mobileOverlayStyle} className="fixed inset-0 bg-black z-50 flex flex-col safe-area-top safe-area-bottom select-none touch-none">
             {/* Header */}
             <div className="flex justify-between items-center p-4 bg-black/80 text-white z-10">
                 <button onClick={onClose}><X /></button>
@@ -708,11 +710,11 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
                             onError={(err) => {
                                 const msg = err instanceof Error ? err.message : String(err)
                                 const isPermission = /denied|not allowed|notallowed/i.test(msg)
-                                setCameraError(
-                                    isPermission
+                                const message = isPermission
                                         ? 'Kein Zugriff auf die Kamera. Bitte in den iOS-Einstellungen unter Safari → Kamera erlauben und die App neu starten.'
                                         : `Kamera konnte nicht gestartet werden: ${msg}`
-                                )
+                                setCameraError(message)
+                                toast.error(message)
                             }}
                         />
 

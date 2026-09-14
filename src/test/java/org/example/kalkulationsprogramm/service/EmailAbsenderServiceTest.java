@@ -113,4 +113,67 @@ class EmailAbsenderServiceTest {
 
         assertThat(adressen).containsExactly("erika@musterfrau.de", "max@mustermann.de");
     }
+
+    @Test
+    void getPrioritizedFromAddresses_ohneUserLiefertAktiveAdressen() {
+        EmailAbsender a1 = new EmailAbsender();
+        a1.setEmailAdresse("info@handwerk.de");
+        EmailAbsender a2 = new EmailAbsender();
+        a2.setEmailAdresse("max@mustermann.de");
+
+        when(repository.findByAktivTrueOrderBySortierungAscIdAsc())
+                .thenReturn(List.of(a1, a2));
+
+        List<String> result = service.getPrioritizedFromAddresses(null);
+
+        assertThat(result).containsExactly("info@handwerk.de", "max@mustermann.de");
+    }
+
+    @Test
+    void getPrioritizedFromAddresses_mitUserStelltAdresseAnDenAnfangUndDedupliziert() {
+        var profileRepo = mock(org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository.class);
+        EmailAbsenderService customService = new EmailAbsenderService(repository, profileRepo);
+
+        EmailAbsender a1 = new EmailAbsender();
+        a1.setEmailAdresse("info@handwerk.de");
+        EmailAbsender a2 = new EmailAbsender();
+        a2.setEmailAdresse("max@mustermann.de");
+        EmailAbsender a3 = new EmailAbsender();
+        a3.setEmailAdresse("kontakt@handwerk.de");
+
+        when(repository.findByAktivTrueOrderBySortierungAscIdAsc())
+                .thenReturn(List.of(a1, a2, a3));
+
+        EmailAbsender userAbsender = new EmailAbsender();
+        userAbsender.setEmailAdresse("max@mustermann.de");
+        var profile = new org.example.kalkulationsprogramm.domain.FrontendUserProfile();
+        profile.setEmailAbsender(userAbsender);
+
+        when(profileRepo.findById(10L)).thenReturn(Optional.of(profile));
+
+        List<String> result = customService.getPrioritizedFromAddresses(10L);
+
+        assertThat(result).containsExactly("max@mustermann.de", "info@handwerk.de", "kontakt@handwerk.de");
+    }
+
+    @Test
+    void getPrioritizedFromAddresses_mitUserOhneAbsenderBelassenReihenfolge() {
+        var profileRepo = mock(org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository.class);
+        EmailAbsenderService customService = new EmailAbsenderService(repository, profileRepo);
+
+        EmailAbsender a1 = new EmailAbsender();
+        a1.setEmailAdresse("info@handwerk.de");
+
+        when(repository.findByAktivTrueOrderBySortierungAscIdAsc())
+                .thenReturn(List.of(a1));
+
+        var profile = new org.example.kalkulationsprogramm.domain.FrontendUserProfile();
+        profile.setEmailAbsender(null);
+
+        when(profileRepo.findById(10L)).thenReturn(Optional.of(profile));
+
+        List<String> result = customService.getPrioritizedFromAddresses(10L);
+
+        assertThat(result).containsExactly("info@handwerk.de");
+    }
 }

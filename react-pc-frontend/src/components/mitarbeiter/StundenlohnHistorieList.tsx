@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2, Save, X, Edit2, Euro } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
+import { DecimalInput } from '../ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../../lib/numberInput';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { DatePicker } from '../ui/datepicker';
@@ -19,8 +21,9 @@ interface StundenlohnEintrag {
 export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeiterId: number; onChange?: () => void }) {
     const toast = useToast();
     const confirmDialog = useConfirm();
+    const showError = toast.error;
     const [eintraege, setEintraege] = useState<StundenlohnEintrag[]>([]);
-    const [editing, setEditing] = useState<StundenlohnEintrag | null>(null);
+    const [editing, setEditing] = useState<(Omit<StundenlohnEintrag, 'stundenlohn'> & { stundenlohn: string }) | null>(null);
     const [loading, setLoading] = useState(false);
 
     const load = useCallback(async () => {
@@ -28,10 +31,13 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
         try {
             const res = await fetch(`/api/mitarbeiter/${encodeURIComponent(String(mitarbeiterId))}/stundenlohn-historie`);
             if (res.ok) setEintraege(await res.json());
+            else showError('Stundenlohn-Verlauf konnte nicht geladen werden.');
+        } catch {
+            showError('Stundenlohn-Verlauf konnte nicht geladen werden.');
         } finally {
             setLoading(false);
         }
-    }, [mitarbeiterId]);
+    }, [mitarbeiterId, showError]);
 
     useEffect(() => {
         void load();
@@ -39,8 +45,9 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
 
     const save = async () => {
         if (!editing) return;
-        if (!editing.stundenlohn || Number.isNaN(Number(editing.stundenlohn))) {
-            toast.error('Bitte einen Stundenlohn eintragen.');
+        const parsed = validateDecimalInput(editing.stundenlohn, { label: 'Stundenlohn', required: true, min: 0 });
+        if (!parsed.valid || parsed.value === null) {
+            toast.error(!parsed.valid ? parsed.message : 'Bitte einen Stundenlohn eintragen.');
             return;
         }
         if (!editing.gueltigAb) {
@@ -51,20 +58,24 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
             ? `/api/mitarbeiter/stundenlohn-historie/${encodeURIComponent(String(editing.id))}`
             : `/api/mitarbeiter/${encodeURIComponent(String(mitarbeiterId))}/stundenlohn-historie`;
         const method = editing.id ? 'PUT' : 'POST';
-        const res = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(editing),
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            toast.error(err.message ?? 'Speichern fehlgeschlagen.');
-            return;
+        try {
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...editing, stundenlohn: parsed.value }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.message ?? 'Speichern fehlgeschlagen.');
+                return;
+            }
+            setEditing(null);
+            await load();
+            onChange?.();
+            toast.success('Stundenlohn gespeichert.');
+        } catch {
+            toast.error('Stundenlohn konnte nicht gespeichert werden.');
         }
-        setEditing(null);
-        await load();
-        onChange?.();
-        toast.success('Stundenlohn gespeichert.');
     };
 
     const remove = async (id: number) => {
@@ -75,9 +86,14 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
             variant: 'danger',
         });
         if (!ok) return;
-        await fetch(`/api/mitarbeiter/stundenlohn-historie/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
-        await load();
-        onChange?.();
+        try {
+            const res = await fetch(`/api/mitarbeiter/stundenlohn-historie/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
+            if (!res.ok) { toast.error('Stundenlohn konnte nicht gelöscht werden.'); return; }
+            await load();
+            onChange?.();
+        } catch {
+            toast.error('Stundenlohn konnte nicht gelöscht werden.');
+        }
     };
 
     const heute = new Date().toISOString().slice(0, 10);
@@ -107,7 +123,7 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
                         <div>
                             <p className="text-xs text-rose-700 font-semibold uppercase tracking-wide">Aktuell gültig</p>
                             <p className="text-lg font-bold text-slate-900">
-                                {Number(aktuellEintrag.stundenlohn).toFixed(2)} € pro Stunde
+                                {Number(aktuellEintrag.stundenlohn).toLocaleString('de-DE', { minimumFractionDigits: 2 })} € pro Stunde
                             </p>
                             <p className="text-xs text-slate-500">seit {aktuellEintrag.gueltigAb}</p>
                         </div>
@@ -132,10 +148,10 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
                         {!loading && eintraege.map(e => (
                             <tr key={e.id} className="border-t border-slate-100 hover:bg-slate-50">
                                 <td className="px-4 py-2 font-medium text-slate-900">{e.gueltigAb}</td>
-                                <td className="px-4 py-2 text-right tabular-nums">{Number(e.stundenlohn).toFixed(2)} €</td>
+                                <td className="px-4 py-2 text-right tabular-nums">{Number(e.stundenlohn).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €</td>
                                 <td className="px-4 py-2 text-slate-500 max-w-md truncate">{e.bemerkung ?? '—'}</td>
                                 <td className="px-4 py-2 text-right">
-                                    <Button variant="ghost" size="sm" onClick={() => setEditing({ ...e })}><Edit2 className="w-4 h-4" /></Button>
+                                    <Button variant="ghost" size="sm" onClick={() => setEditing({ ...e, stundenlohn: formatDecimalInput(Number(e.stundenlohn)) })}><Edit2 className="w-4 h-4" /></Button>
                                     <Button variant="ghost" size="sm" onClick={() => e.id && remove(e.id)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></Button>
                                 </td>
                             </tr>
@@ -161,7 +177,7 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
                             </div>
                             <div className="space-y-1.5">
                                 <Label>Brutto-Stundenlohn (€) *</Label>
-                                <Input type="number" step="0.01" min={0} value={editing.stundenlohn} onChange={e => setEditing({ ...editing, stundenlohn: e.target.value })} />
+                                <DecimalInput aria-label="Brutto-Stundenlohn (€)" required min={0} value={editing.stundenlohn} onChange={draft => setEditing({ ...editing, stundenlohn: draft })} />
                             </div>
                             <div className="space-y-1.5">
                                 <Label>Bemerkung (optional)</Label>

@@ -146,3 +146,78 @@ test('Sachkonto-Dropdown klappt am unteren Bildschirmrand nach oben auf', async 
         'Panel soll oberhalb des Ausloesers enden (Hochklappen statt Abschneiden am unteren Rand)',
     ).toBeLessThanOrEqual(ausloeserRahmen.y);
 });
+
+
+test('Gruppierte Pflichtauswahl ist per Tastatur bedienbar und überspringt gesperrte Optionen', async ({ page }) => {
+    await stub(page, SACHKONTEN);
+    await page.goto('/belege-kasse');
+    await expect(page.getByText(BELEG.belegNummer, { exact: true })).toBeVisible();
+
+    // Noch kein produktiver Aufrufer kombiniert Gruppe, disabled und required.
+    // Die echte Komponente läuft deshalb in einem reinen Browser-Testformular.
+    await page.evaluate(async () => {
+        const reactPath = '/node_modules/.vite/deps/react.js';
+        const clientPath = '/node_modules/.vite/deps/react-dom_client.js';
+        const selectPath = '/src/components/ui/select-custom.tsx';
+        const React: typeof import('react') = (await import(reactPath)).default;
+        const client: typeof import('react-dom/client') = (await import(clientPath)).default;
+        const { Select } = await import(selectPath);
+        const app = document.getElementById('root');
+        if (app) app.hidden = true;
+        const host = document.createElement('div');
+        host.style.cssText = 'margin: 24px; max-width: 320px;';
+        document.body.append(host);
+
+        const options = [
+            { value: 'werkzeug', label: 'Werkzeug', gruppe: 'Ausgaben' },
+            { value: 'auftrag', label: 'Auftrag', gruppe: 'Einnahmen' },
+            { value: 'gesperrt', label: 'Gesperrtes Konto', gruppe: 'Ausgaben', disabled: true },
+            { value: 'material', label: 'Material', gruppe: 'Ausgaben' },
+            { value: '', label: 'Bitte Konto wählen' },
+        ];
+        function Testformular() {
+            const [value, setValue] = React.useState('');
+            const [saved, setSaved] = React.useState('');
+            return React.createElement('form', {
+                onSubmit: (event: React.FormEvent) => {
+                    event.preventDefault();
+                    setSaved(value);
+                },
+            },
+            React.createElement(Select, { options, value, onChange: setValue, required: true, name: 'konto', 'aria-label': 'Testkonto' }),
+            React.createElement('button', { type: 'submit' }, 'Auswahl speichern'),
+            React.createElement('p', { role: 'status' }, saved ? `Gespeichert: ${saved}` : 'Noch nicht gespeichert'));
+        }
+        client.createRoot(host).render(React.createElement(Testformular));
+    });
+
+    const trigger = page.getByRole('combobox', { name: 'Testkonto' });
+    await page.getByRole('button', { name: 'Auswahl speichern' }).click();
+    await expect(page.getByRole('status')).toHaveText('Noch nicht gespeichert');
+    await expect(page.getByRole('alert')).toHaveText('Bitte Testkonto auswählen.');
+    await expect(trigger).toHaveAttribute('aria-invalid', 'true');
+    await expect(trigger).toBeFocused();
+
+    await trigger.press('ArrowDown');
+    const listbox = page.getByRole('listbox', { name: 'Testkonto' });
+    await expect(listbox.getByRole('group', { name: 'Ausgaben' }).getByRole('option')).toHaveText([
+        'Werkzeug', 'Gesperrtes Konto', 'Material',
+    ]);
+    await expect(listbox.getByRole('group', { name: 'Einnahmen' }).getByRole('option')).toHaveText(['Auftrag']);
+    await expect(listbox.getByRole('option')).toHaveText([
+        'Bitte Konto wählen', 'Werkzeug', 'Gesperrtes Konto', 'Material', 'Auftrag',
+    ]);
+    await expect(listbox.getByRole('option', { name: 'Gesperrtes Konto' })).toHaveAttribute('aria-disabled', 'true');
+    await trigger.press('ArrowDown');
+    await trigger.press('ArrowDown');
+    const materialId = await listbox.getByRole('option', { name: 'Material', exact: true }).getAttribute('id');
+    await expect(trigger).toHaveAttribute('aria-activedescendant', materialId!);
+    await trigger.press('Enter');
+    await expect(listbox).toBeHidden();
+    await expect(trigger).toHaveText('Material');
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole('alert')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Auswahl speichern' }).click();
+    await expect(page.getByRole('status')).toHaveText('Gespeichert: material');
+});

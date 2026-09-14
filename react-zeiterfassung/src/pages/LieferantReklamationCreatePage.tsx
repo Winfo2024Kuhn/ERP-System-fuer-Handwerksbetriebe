@@ -1,3 +1,4 @@
+import { useToast } from '../components/ui/toast'
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, Plus, X, FileText, Camera, AlertTriangle, Loader2 } from 'lucide-react'
@@ -24,6 +25,7 @@ const RECENT_LIMIT = 5
 
 export default function LieferantReklamationCreatePage() {
     const { lieferantId } = useParams()
+    const toast = useToast()
     const navigate = useNavigate()
     const [loading, setLoading] = useState(false)
     const [recentLieferscheine, setRecentLieferscheine] = useState<LieferscheinResult[]>([])
@@ -43,6 +45,7 @@ export default function LieferantReklamationCreatePage() {
             try {
                 const token = localStorage.getItem('zeiterfassung_token')
                 const res = await fetch(`/api/lieferanten/${lieferantId}/dokumente?typ=LIEFERSCHEIN&token=${token}`)
+                if (!res.ok) throw new Error('Lieferscheine konnten nicht geladen werden.')
                 if (res.ok) {
                     const data: LieferantDokumentApi[] = await res.json()
                     const mapped: LieferscheinResult[] = data.slice(0, RECENT_LIMIT).map(d => ({
@@ -55,11 +58,12 @@ export default function LieferantReklamationCreatePage() {
                 }
             } catch (err) {
                 console.error('Lieferscheine laden fehlgeschlagen', err)
+                toast.error('Lieferscheine konnten nicht geladen werden.')
             }
             setRecentLoading(false)
         }
         if (lieferantId) loadRecent()
-    }, [lieferantId])
+    }, [lieferantId, toast])
 
     const handleAddImage = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
@@ -74,13 +78,14 @@ export default function LieferantReklamationCreatePage() {
 
     const handleSubmit = async () => {
         if (!beschreibung && images.length === 0) {
-            alert("Bitte geben Sie eine Beschreibung ein oder fügen Sie Bilder hinzu.")
+            toast.error("Bitte geben Sie eine Beschreibung ein oder fügen Sie Bilder hinzu.")
             return
         }
 
         setLoading(true)
         const token = localStorage.getItem('zeiterfassung_token')
 
+        let createdReklamationId: number | null = null
         try {
             // 1. Create Reclamation
             const res = await fetch(`/api/reklamationen/lieferant/${lieferantId}?token=${token}`, {
@@ -95,25 +100,32 @@ export default function LieferantReklamationCreatePage() {
 
             if (!res.ok) throw new Error('Fehler beim Erstellen der Reklamation')
             const reklamation = await res.json()
+            createdReklamationId = reklamation.id
 
             // 2. Upload Images
             for (const image of images) {
                 const formData = new FormData()
                 formData.append('datei', image)
 
-                await fetch(`/api/reklamationen/${reklamation.id}/bilder?token=${token}`, {
+                const upload = await fetch(`/api/reklamationen/${reklamation.id}/bilder?token=${token}`, {
                     method: 'POST',
                     body: formData
                 })
+                if (!upload.ok) throw new Error('Bilder konnten nicht vollständig hochgeladen werden.')
             }
 
             if (token) NotificationService.onReklamationCreated(token)
-            alert('Reklamation erfolgreich erstellt')
+            toast.success('Reklamation erfolgreich erstellt')
             navigate(`/lieferanten/${lieferantId}/reklamationen`)
 
         } catch (err) {
             console.error(err)
-            alert('Fehler beim Speichern der Reklamation')
+            if (createdReklamationId !== null) {
+                toast.error('Reklamation erstellt, Bilder konnten nicht vollständig hochgeladen werden. Fehlende Bilder hier erneut hinzufügen.')
+                navigate(`/reklamationen/${createdReklamationId}`)
+            } else {
+                toast.error('Fehler beim Speichern der Reklamation')
+            }
         }
         setLoading(false)
     }
@@ -219,7 +231,7 @@ export default function LieferantReklamationCreatePage() {
                 <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                            <Camera className="w-5 h-5 text-blue-500" />
+                            <Camera className="w-5 h-5 text-slate-500" />
                             Bilder ({images.length})
                         </h3>
                         <button

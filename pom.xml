@@ -75,7 +75,7 @@
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
-            <version>9.37.3</version>
+            <version>9.37.4</version>
         </dependency>
 
         <!-- Web Push Notifications (VAPID) for iOS PWA lock screen support -->
@@ -87,7 +87,7 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.78.1</version>
+            <version>1.84</version>
         </dependency>
 
         <dependency>
@@ -128,7 +128,7 @@
         <dependency>
             <groupId>com.sun.mail</groupId>
             <artifactId>jakarta.mail</artifactId>
-            <version>2.0.1</version>
+            <version>2.0.2</version>
         </dependency>
         <dependency>
             <groupId>com.sun.activation</groupId>
@@ -138,7 +138,7 @@
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
-            <version>1.17.2</version>
+            <version>1.23.1</version>
         </dependency>
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
@@ -277,7 +277,7 @@
                     <dependency>
                         <groupId>org.mariadb.jdbc</groupId>
                         <artifactId>mariadb-java-client</artifactId>
-                        <version>3.4.1</version>
+                        <version>3.4.3</version>
                     </dependency>
                     <dependency>
                         <groupId>com.mysql</groupId>
@@ -285,6 +285,36 @@
                         <version>8.4.0</version>
                     </dependency>
                 </dependencies>
+            </plugin>
+
+            <!-- Maven Assembly Plugin: erzeugt auf Zuruf (mvn assembly:single, siehe
+                 rag-index.cmd/.sh) einen Fat-Jar fuer den StandaloneRagIndexer, der per
+                 "java -cp" ohne Spring-Boot-Loader laufen muss.
+                 WICHTIG: KEINE <executions> mit Phasen-Bindung hier! Das single-Goal haengt
+                 sonst wieder automatisch an "package" und laeuft bei jedem "mvn package"
+                 (z.B. im Produktions-Update-Skript deployment/scripts/update-production.ps1)
+                 zusaetzlich zum spring-boot-maven-plugin. Der so erzeugte
+                 *-jar-with-dependencies.jar landet in target/ mit einem juengeren
+                 Zeitstempel als der eigentliche Boot-Jar, das Update-Skript waehlt dann
+                 faelschlich diesen Jar zum Deployen aus - und er startet nicht, weil der
+                 Assembly-Plugin-Merge Dateien wie META-INF/spring.factories nicht
+                 zusammenfuehrt, sondern nur eine Kopie behaelt (siehe Vorfall 11.09.2026:
+                 Server ging nach Update-Skript nicht mehr hoch). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>org.example.kalkulationsprogramm.KalkulationsprogrammApplication</mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                    <appendAssemblyId>true</appendAssemblyId>
+                </configuration>
             </plugin>
         </plugins>
     </build>

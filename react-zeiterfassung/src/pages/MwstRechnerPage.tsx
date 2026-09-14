@@ -1,3 +1,6 @@
+import { DecimalInput } from '../components/ui/decimal-input'
+import { validateDecimalInput, formatDecimalInput } from '../lib/numberInput'
+import { useToast } from '../components/ui/toast'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Calculator, Loader2, AlertCircle } from 'lucide-react'
@@ -17,6 +20,7 @@ interface Ergebnis {
 const EUR = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' })
 
 export default function MwstRechnerPage() {
+    const toast = useToast()
     const navigate = useNavigate()
     const token = typeof window !== 'undefined' ? localStorage.getItem('zeiterfassung_token') : null
     const [netto, setNetto] = useState('')
@@ -26,22 +30,18 @@ export default function MwstRechnerPage() {
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
 
-    const parseInput = (v: string): number | null => {
-        const cleaned = v.replace(/\s/g, '').replace(',', '.')
-        if (!cleaned) return null
-        const n = Number(cleaned)
-        return Number.isFinite(n) ? n : null
-    }
-
     const handleBerechnen = async () => {
         setError(null)
         setErgebnis(null)
-        const nettoNum = parseInput(netto)
-        const bruttoNum = parseInput(brutto)
-        const satzNum = parseInput(satz)
+        const values = [validateDecimalInput(netto, { label: 'Netto', min: -1_000_000_000, max: 1_000_000_000 }), validateDecimalInput(brutto, { label: 'Brutto', min: -1_000_000_000, max: 1_000_000_000 }), validateDecimalInput(satz, { label: 'MwSt-Satz', min: 0, max: 100 })]
+        for (const value of values) {
+            if (!value.valid) { setError(value.message); toast.error(value.message); return }
+        }
+        const [nettoNum, bruttoNum, satzNum] = values.map(value => value.valid ? value.value : null)
         const gesetzt = [nettoNum, bruttoNum, satzNum].filter(v => v != null).length
         if (gesetzt < 2) {
             setError('Bitte zwei Werte ausfüllen (Netto + Satz, Brutto + Satz oder Netto + Brutto).')
+            toast.error('Bitte zwei Werte ausfüllen (Netto + Satz, Brutto + Satz oder Netto + Brutto).')
             return
         }
         setLoading(true)
@@ -62,9 +62,11 @@ export default function MwstRechnerPage() {
             setErgebnis(data)
             setNetto(data.netto.toFixed(2).replace('.', ','))
             setBrutto(data.brutto.toFixed(2).replace('.', ','))
-            setSatz(String(data.satzProzent))
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Berechnung fehlgeschlagen')
+            setSatz(formatDecimalInput(data.satzProzent))
+        } catch {
+            const message = 'Berechnung fehlgeschlagen. Bitte Eingaben prüfen oder später erneut versuchen.'
+            setError(message)
+            toast.error(message)
         } finally {
             setLoading(false)
         }
@@ -143,7 +145,7 @@ export default function MwstRechnerPage() {
                 {ergebnis && (
                     <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
                         <ResultRow label="Netto" value={EUR.format(ergebnis.netto)} />
-                        <ResultRow label={`MwSt (${ergebnis.satzProzent}%)`} value={EUR.format(ergebnis.mwstBetrag)} />
+                        <ResultRow label={`MwSt (${formatDecimalInput(ergebnis.satzProzent)}%)`} value={EUR.format(ergebnis.mwstBetrag)} />
                         <ResultRow label="Brutto" value={EUR.format(ergebnis.brutto)} accent />
                     </div>
                 )}
@@ -161,16 +163,15 @@ function EingabeFeld({ label, suffix, value, onChange }: {
     return (
         <label className="block">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-            <div className="mt-1 flex items-center gap-2 bg-white border-2 border-slate-200 rounded-xl px-3 py-3 focus-within:border-rose-500">
-                <input
-                    type="text"
-                    inputMode="decimal"
+            <div className="relative mt-1">
+                <DecimalInput
+                    aria-label={label}
                     value={value}
-                    onChange={(e) => onChange(e.target.value)}
+                    onChange={onChange}
                     placeholder="0,00"
-                    className="flex-1 bg-transparent outline-none text-lg tabular-nums"
+                    className="pr-12 text-lg tabular-nums"
                 />
-                <span className="text-slate-500 font-semibold">{suffix}</span>
+                <span className="pointer-events-none absolute right-4 top-3 text-slate-500 font-semibold">{suffix}</span>
             </div>
         </label>
     )

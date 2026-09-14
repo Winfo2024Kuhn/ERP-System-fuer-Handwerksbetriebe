@@ -18,11 +18,11 @@
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.3",
     "jscanify": "1.4.2",
-    "jspdf": "^3.0.4",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.10.1",
+    "react-router-dom": "^7.18.3",
     "tailwindcss": "^4.1.17",
     "vite-plugin-pwa": "^1.2.0"
   },
@@ -37,7 +37,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-basic-ssl": "^2.1.0",
     "@vitejs/plugin-react": "^5.1.1",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -46,7 +46,7 @@
     "jsdom": "^28.1.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4",
-    "vitest": "^4.0.18"
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
   }
 }

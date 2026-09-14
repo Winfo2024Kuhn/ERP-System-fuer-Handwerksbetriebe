@@ -1263,7 +1263,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         </div>
                         <div>
                             <p className="font-semibold text-slate-900">Abwesenheit beantragen</p>
-                            <p className="text-sm text-slate-500">Urlaub, Krankheit, Fortbildung</p>
+                            <p className="text-sm text-slate-500">Urlaub, Zeitausgleich, Krankheit</p>
                         </div>
                     </button>}
 

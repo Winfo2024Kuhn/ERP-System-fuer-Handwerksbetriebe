@@ -140,6 +140,15 @@ public class ZeitverwaltungController {
         Zeitbuchung buchung = zeitbuchungRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Buchung nicht gefunden: " + id));
 
+        if (buchung.getStartZeit() != null && buchung.getMitarbeiter() != null) {
+            int jahr = buchung.getStartZeit().getYear();
+            int monat = buchung.getStartZeit().getMonthValue();
+            if (monatsSaldoService.isMonatFestgeschrieben(buchung.getMitarbeiter().getId(), jahr, monat)) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                        .body(Map.of("error", "Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
+            }
+        }
+
         // Änderungen anwenden
         if (data.containsKey("startZeit")) {
             buchung.setStartZeit(LocalDateTime.parse((String) data.get("startZeit")));
@@ -270,6 +279,15 @@ public class ZeitverwaltungController {
         if (buchung != null) {
             mitarbeiterId = buchung.getMitarbeiter().getId();
             startZeit = buchung.getStartZeit();
+
+            if (startZeit != null && mitarbeiterId != null) {
+                int jahr = startZeit.getYear();
+                int monat = startZeit.getMonthValue();
+                if (monatsSaldoService.isMonatFestgeschrieben(mitarbeiterId, jahr, monat)) {
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                            .body(Map.of("error", "Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
+                }
+            }
             if (bearbeiter != null) {
                 // WICHTIG: Erst Version erhöhen, dann Storno-Audit!
                 buchung.markiereAlsGeaendert(bearbeiter);
@@ -410,6 +428,15 @@ public class ZeitverwaltungController {
             BigDecimal stunden = BigDecimal.valueOf(dauer.toMinutes())
                     .divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
             buchung.setAnzahlInStunden(stunden);
+        }
+
+        if (buchung.getStartZeit() != null && buchung.getMitarbeiter() != null) {
+            int jahr = buchung.getStartZeit().getYear();
+            int monat = buchung.getStartZeit().getMonthValue();
+            if (monatsSaldoService.isMonatFestgeschrieben(buchung.getMitarbeiter().getId(), jahr, monat)) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                        .body(Map.of("error", "Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
+            }
         }
 
         Zeitbuchung saved = zeitbuchungRepository.save(buchung);

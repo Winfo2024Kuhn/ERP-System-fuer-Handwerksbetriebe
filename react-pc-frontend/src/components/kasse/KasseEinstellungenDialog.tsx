@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Select } from '../ui/select-custom';
+import { DecimalInput } from '../ui/decimal-input';
+import { formatDecimalInput } from '../../lib/numberInput';
+import { validateNumberDrafts } from '../../lib/numberDrafts';
 import type { KasseEinstellung, Sachkonto } from '../../types';
 import { modalInputCls } from './belegFormat';
 import { FieldRow, ModalFooter, ModalShell } from './NeueBuchungDialog';
-
-// Task 9 (reine Verschiebung, kein Verhalten geaendert): heutiges
-// KasseSettingsModal (KasseShortcuts.tsx:517-641) plus defaultEinstellung.
-// KasseShortcuts.tsx importiert und ruft es wie bisher auf.
 
 export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError }: {
     sachkonten: Sachkonto[];
@@ -17,11 +16,15 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
 }) {
     const [einstellung, setEinstellung] = useState<KasseEinstellung | null>(null);
     const [saving, setSaving] = useState(false);
+    const [drafts, setDrafts] = useState({ minimum: '0', betrag: '', tag: '' });
 
     useEffect(() => {
         fetch('/api/buchhaltung/kasse/einstellung')
             .then(r => r.ok ? r.json() : null)
-            .then((e: KasseEinstellung | null) => setEinstellung(e ?? defaultEinstellung()))
+            .then((e: KasseEinstellung | null) => {
+                const value = e ?? defaultEinstellung(); setEinstellung(value);
+                setDrafts({ minimum: formatDecimalInput(value.mindestbestand ?? 0), betrag: value.ehegattengehaltBetrag == null ? '' : formatDecimalInput(value.ehegattengehaltBetrag), tag: value.ehegattengehaltTag == null ? '' : String(value.ehegattengehaltTag) });
+            })
             .catch(() => setEinstellung(defaultEinstellung()));
     }, []);
 
@@ -39,16 +42,24 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
     const privatSachkonten = sachkonten.filter(s => s.kontoTyp === 'PRIVAT').sort((a, b) => a.sortierung - b.sortierung);
 
     const submit = async () => {
+        const activeDrafts = einstellung.ehegattengehaltAktiv ? drafts : { ...drafts, betrag: '', tag: '' };
+        const result = validateNumberDrafts(activeDrafts, {
+            minimum: { label: 'Mindestbestand', required: true, min: 0, maxDecimalPlaces: 2 },
+            betrag: { label: 'Monatlicher Betrag', required: einstellung.ehegattengehaltAktiv, min: 0, maxDecimalPlaces: 2 },
+            tag: { label: 'Tag des Monats', required: einstellung.ehegattengehaltAktiv, integer: true, min: 1, max: 28 },
+        });
+        if (!result.valid) { onError(result.message); return; }
+        if (einstellung.ehegattengehaltAktiv && result.values.betrag! <= 0) { onError('Bitte einen positiven monatlichen Betrag eingeben.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/einstellung', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    mindestbestand: einstellung.mindestbestand ?? 0,
+                    mindestbestand: result.values.minimum,
                     ehegattengehaltAktiv: einstellung.ehegattengehaltAktiv,
-                    ehegattengehaltBetrag: einstellung.ehegattengehaltBetrag ?? null,
-                    ehegattengehaltTag: einstellung.ehegattengehaltTag ?? null,
+                    ehegattengehaltBetrag: einstellung.ehegattengehaltAktiv ? result.values.betrag : einstellung.ehegattengehaltBetrag ?? null,
+                    ehegattengehaltTag: einstellung.ehegattengehaltAktiv ? result.values.tag : einstellung.ehegattengehaltTag ?? null,
                     ehegattengehaltEmpfaengerName: einstellung.ehegattengehaltEmpfaengerName ?? null,
                     privateinlageSachkontoId: einstellung.privateinlageSachkontoId ?? null,
                 }),
@@ -71,9 +82,7 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
         <ModalShell title="Kassen-Einstellungen" onClose={onClose} wide>
             <h3 className="font-semibold text-slate-900 mb-2 text-sm">Mindestbestand der Kasse</h3>
             <FieldRow label="Mindestbestand (€)">
-                <input type="number" step="0.01" value={einstellung.mindestbestand ?? 0}
-                    onChange={e => update('mindestbestand', Number(e.target.value))}
-                    className={modalInputCls} />
+                <DecimalInput aria-label="Mindestbestand (€)" value={drafts.minimum} onChange={value => setDrafts(d => ({ ...d, minimum: value }))} className={modalInputCls} />
             </FieldRow>
             <p className="text-xs text-slate-500 mb-4">
                 Buchungen, die den Kassenstand unter diesen Wert fallen lassen würden, werden geblockt.
@@ -114,14 +123,10 @@ export function KasseEinstellungenDialog({ sachkonten, onClose, onSaved, onError
                             className={modalInputCls} placeholder="z.B. Diana Mustermann" />
                     </FieldRow>
                     <FieldRow label="Monatlicher Betrag (€)">
-                        <input type="number" step="0.01" value={einstellung.ehegattengehaltBetrag ?? ''}
-                            onChange={e => update('ehegattengehaltBetrag', e.target.value === '' ? null : Number(e.target.value))}
-                            className={modalInputCls} />
+                        <DecimalInput aria-label="Monatlicher Betrag (€)" value={drafts.betrag} onChange={value => setDrafts(d => ({ ...d, betrag: value }))} className={modalInputCls} />
                     </FieldRow>
                     <FieldRow label="Tag des Monats (1–28)">
-                        <input type="number" min={1} max={28} value={einstellung.ehegattengehaltTag ?? ''}
-                            onChange={e => update('ehegattengehaltTag', e.target.value === '' ? null : Number(e.target.value))}
-                            className={modalInputCls} />
+                        <DecimalInput aria-label="Tag des Monats (1–28)" value={drafts.tag} onChange={value => setDrafts(d => ({ ...d, tag: value }))} className={modalInputCls} />
                     </FieldRow>
                 </>
             )}

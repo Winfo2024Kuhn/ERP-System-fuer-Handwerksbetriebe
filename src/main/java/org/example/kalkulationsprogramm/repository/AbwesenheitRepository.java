@@ -32,6 +32,12 @@ public interface AbwesenheitRepository extends JpaRepository<Abwesenheit, Long> 
                         @Param("von") LocalDate von,
                         @Param("bis") LocalDate bis);
 
+        @Query("SELECT a FROM Abwesenheit a WHERE a.mitarbeiter.id IN :mitarbeiterIds AND a.datum >= :von AND a.datum <= :bis ORDER BY a.datum ASC")
+        List<Abwesenheit> findByMitarbeiterIdInAndDatumBetween(
+                        @Param("mitarbeiterIds") Collection<Long> mitarbeiterIds,
+                        @Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis);
+
         /**
          * Findet Abwesenheiten eines Mitarbeiters nach Typ.
          */
@@ -122,4 +128,19 @@ public interface AbwesenheitRepository extends JpaRepository<Abwesenheit, Long> 
                         @Param("von") LocalDate von,
                         @Param("bis") LocalDate bis,
                         @Param("ausgeschlossen") Collection<LangzeitkrankmeldungPhaseTyp> ausgeschlossen);
+        /** Aggregierte Abschlussdetails; LEFT JOIN bewahrt Abwesenheiten ohne Krankheitsphase. */
+        interface StundenNachTypUndPhase {
+                AbwesenheitsTyp getTyp();
+                LangzeitkrankmeldungPhaseTyp getPhaseTyp();
+                java.math.BigDecimal getStunden();
+        }
+
+        @Query("SELECT a.typ AS typ, p.typ AS phaseTyp, SUM(a.stunden) AS stunden "
+                        + "FROM Abwesenheit a LEFT JOIN a.langzeitkrankmeldungPhase p "
+                        + "WHERE a.mitarbeiter.id = :mitarbeiterId AND a.datum >= :von AND a.datum <= :bis "
+                        + "GROUP BY a.typ, p.typ")
+        List<StundenNachTypUndPhase> sumStundenNachTypUndPhase(
+                        @Param("mitarbeiterId") Long mitarbeiterId,
+                        @Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis);
 }

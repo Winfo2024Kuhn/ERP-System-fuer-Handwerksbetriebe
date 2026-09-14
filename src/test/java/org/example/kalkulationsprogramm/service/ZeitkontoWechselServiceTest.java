@@ -146,6 +146,24 @@ class ZeitkontoWechselServiceTest {
         assertTrue(result.hinweis().contains("bisherigen Stunden bleiben erhalten"));
         verifyNoInteractions(zeitkontoService);
     }
+    @Test void geschaeftsfuehrerGiltOhneArbeitszeitVersionAlsEingerichtet() {
+        mitarbeiter(); mensch.setFuehrtZeitkonto(true); mensch.setIstGeschaeftsfuehrer(true);
+        var result = service.status(1L);
+        assertTrue(result.istGeschaeftsfuehrer());
+        // Vertrag, auf den der MitarbeiterEditor baut: eingerichtet ist fuer die
+        // Geschaeftsfuehrung immer true, aktuell bleibt ohne Version null.
+        assertTrue(result.eingerichtet());
+        assertNull(result.aktuell());
+        assertTrue(result.hinweis().contains("nicht erforderlich"));
+    }
+    @Test void ohneGeschaeftsfuehrungBleibtFehlendeArbeitszeitNichtEingerichtet() {
+        mitarbeiter(); mensch.setFuehrtZeitkonto(true);
+        var result = service.status(1L);
+        assertFalse(result.istGeschaeftsfuehrer());
+        assertFalse(result.eingerichtet());
+        assertNull(result.aktuell());
+        assertTrue(result.hinweis().contains("zuerst die Arbeitszeit einrichten"));
+    }
     @Test void doppelteMitarbeiterauswahlWirdAtomarAbgelehnt() {
         var a = new ZeitkontoWechselErgebnisDto.Auswahl(1L, request);
         assertThrows(ResponseStatusException.class, () -> service.mehrere(new ZeitkontoWechselErgebnisDto.Mehrere(List.of(a, a))));

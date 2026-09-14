@@ -1,3 +1,4 @@
+import { useToast } from '../components/ui/toast'
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw } from 'lucide-react'
@@ -33,6 +34,7 @@ type Step = 'projekt' | 'kategorie' | 'arbeitsgang'
 
 export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
     void props
+    const toast = useToast()
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const isSwitching = searchParams.get('switching') === 'true'
@@ -245,7 +247,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                 // Server responded with error - DO NOT queue offline, it might be "already running"
                 const errorData = await res.json().catch(() => ({}))
                 console.error('Server error:', errorData.error || res.status)
-                alert(errorData.error || 'Fehler beim Starten der Buchung')
+                toast.error(errorData.error || 'Fehler beim Starten der Buchung')
                 setStarting(false)
                 return // Don't navigate, don't queue
             }
@@ -280,7 +282,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
             } else {
                 // Some other error - don't queue
                 console.error('Unerwarteter Fehler:', err)
-                alert('Fehler beim Starten der Buchung')
+                toast.error('Fehler beim Starten der Buchung')
                 setStarting(false)
                 return
             }

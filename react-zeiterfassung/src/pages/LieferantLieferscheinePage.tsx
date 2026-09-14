@@ -1,3 +1,4 @@
+import { useToast, mobileOverlayStyle } from '../components/ui/toast'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
@@ -52,6 +53,7 @@ interface MultiInvoiceResponse {
 }
 
 export default function LieferantLieferscheinePage() {
+    const toast = useToast()
     const navigate = useNavigate()
     const { lieferantId } = useParams()
     const [lieferant, setLieferant] = useState<Lieferant | null>(null)
@@ -107,20 +109,21 @@ export default function LieferantLieferscheinePage() {
         // Lieferant + Dokumente parallel laden – Liste ist der kritische Pfad,
         // Name ist nur kosmetisch und blockiert nichts mehr.
         const liefPromise = fetch(`/api/lieferanten/${lieferantId}?token=${token}`)
-            .then(res => res.ok ? res.json() : null)
+            .then(res => { if (!res.ok) throw new Error('Lieferant konnte nicht geladen werden.'); return res.json() })
             .then(data => {
                 if (data) setLieferant({ id: data.id, lieferantenname: data.lieferantenname })
             })
-            .catch(err => console.error('Lieferant laden fehlgeschlagen', err))
+            .catch(err => { console.error('Lieferant laden fehlgeschlagen', err); toast.error('Lieferant konnte nicht geladen werden.') })
 
         const docPromise = fetch(`/api/lieferanten/${lieferantId}/dokumente?typ=LIEFERSCHEIN&token=${token}`)
-            .then(res => res.ok ? res.json() : [])
+            .then(res => { if (!res.ok) throw new Error('Lieferscheine konnten nicht geladen werden.'); return res.json() })
             .then(data => {
                 setLieferscheine(data)
                 setLoading(false) // Liste ist da → UI kann rendern
             })
             .catch(err => {
                 console.error('Lieferscheine laden fehlgeschlagen', err)
+                toast.error('Lieferscheine konnten nicht geladen werden.')
                 setLoading(false)
             })
 
@@ -179,14 +182,14 @@ export default function LieferantLieferscheinePage() {
                     })
                     setVerifying(true)
                 } else {
-                    alert('Keine Daten erkannt.')
+                    toast.error('Keine Daten erkannt.')
                 }
             } else {
-                alert('Fehler bei der Analyse.')
+                toast.error('Fehler bei der Analyse.')
             }
         } catch (err) {
             console.error(err)
-            alert('Netzwerkfehler.')
+            toast.error('Netzwerkfehler.')
         } finally {
             setAnalyzing(false)
             if (fileInputRef.current) fileInputRef.current.value = ''
@@ -215,11 +218,11 @@ export default function LieferantLieferscheinePage() {
                 loadData() // Reload list
             } else {
                 const err = await res.json()
-                alert(`Fehler beim Speichern: ${err.message || 'Unbekannt'}`)
+                toast.error(`Fehler beim Speichern: ${err.message || 'Unbekannt'}`)
             }
         } catch (err) {
             console.error(err)
-            alert('Fehler beim Speichern.')
+            toast.error('Fehler beim Speichern.')
         } finally {
             setAnalyzing(false)
         }
@@ -255,9 +258,9 @@ export default function LieferantLieferscheinePage() {
 
     if (verifying) {
         return (
-            <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col safe-area-top safe-area-bottom overflow-auto">
+            <div style={mobileOverlayStyle} className="fixed inset-0 bg-slate-50 z-50 flex flex-col safe-area-top safe-area-bottom overflow-hidden">
                 {/* Header */}
-                <div className="bg-white border-b border-slate-200 p-4 sticky top-0 z-10 flex items-center justify-between">
+                <div className="bg-white border-b border-slate-200 p-4 shrink-0 z-10 flex items-center justify-between">
                     <button onClick={() => setVerifying(false)} className="p-2 hover:bg-slate-100 rounded-full">
                         <X className="w-6 h-6 text-slate-500" />
                     </button>
@@ -265,7 +268,7 @@ export default function LieferantLieferscheinePage() {
                     <div className="w-10"></div>
                 </div>
 
-                <div className="p-4 space-y-4 flex-1">
+                <div className="min-h-0 overflow-auto p-4 space-y-4 flex-1">
                     {previewUrl && (previewIsPdf || previewIsImage) && (
                         <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-200 shadow-sm">
                             {previewIsPdf ? (
@@ -341,7 +344,7 @@ export default function LieferantLieferscheinePage() {
                     </div>
                 </div>
 
-                <div className="p-4 bg-white border-t border-slate-200 sticky bottom-0">
+                <div className="p-4 shrink-0 bg-white border-t border-slate-200">
                     <button
                         onClick={saveVerifiedDocument}
                         disabled={analyzing}
@@ -468,7 +471,7 @@ export default function LieferantLieferscheinePage() {
 
             {/* Analysis Loading Overlay */}
             {analyzing && !verifying && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div style={mobileOverlayStyle} className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
                     <div className="bg-white p-6 rounded-2xl flex flex-col items-center gap-4 animate-in fade-in zoom-in">
                         <Loader2 className="w-10 h-10 text-rose-600 animate-spin" />
                         <p className="font-medium text-slate-900">Analysiere Dokument...</p>

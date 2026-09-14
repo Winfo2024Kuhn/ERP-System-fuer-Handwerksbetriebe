@@ -222,9 +222,7 @@ public class AutoMahnVersandService
     private static boolean istOriginalRechnungOhneMahnstufe(ProjektGeschaeftsdokument dok)
     {
         if (dok.getMahnstufe() != null) return false;
-        String art = dok.getGeschaeftsdokumentart();
-        return art != null && art.toLowerCase(Locale.GERMAN).contains("rechnung")
-                && !art.toLowerCase(Locale.GERMAN).contains("mahn");
+        return DateiSpeicherService.istMahnfaehigeRechnung(dok.getGeschaeftsdokumentart());
     }
 
     /**

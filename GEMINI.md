@@ -47,6 +47,13 @@ Das ERP ermöglicht Handwerksbetrieben den einfachen Sprung ins digitale Zeitalt
 1. **API-Keys & Secrets:** NIEMALS in Code oder Commits schreiben. Ausschließlich in `application-local.properties` (gitignored). Vor jedem Commit `git diff --staged` prüfen.
 2. **Datenschutz (DSGVO):** Nutzer-, Mitarbeiter- und Zeitdaten sind personenbezogen. In Tests NUR Dummy-Daten verwenden (`Max Mustermann`, `test@example.com`). Logs anonymisieren.
 3. **Sperrzone für Commits:** `application-local.properties`, `*.env`, `uploads/`, `*.key/pem/p12`.
+4. **CodeQL & Injection-Prävention (dauerhafte Pflicht):**
+   - **ReDoS:** Keine verschachtelten Wiederholungen `(\w+.*)*`. In Java possessive Quantifizierer (`*+`, `++`) oder atomare Gruppen `(?>...)` nutzen.
+   - **Path Traversal:** Niemals `MultipartFile.getOriginalFilename()` ungeprüft in Pfade/Files einsetzen. Bereinigen mit `Path.of(name).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_")` und prüfen mit `.normalize()` und `dst.startsWith(baseDir)`. E-Mail-Anhänge in `EmailService` als In-Memory-Bytes (`ByteArrayDataSource`) übertragen.
+   - **Spring CSRF:** Niemals `.csrf(csrf -> csrf.disable())` aufrufen. Wenn Endpoints ausgenommen werden müssen, immer `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))` verwenden.
+   - **HTML Tag-Stripping:** Niemals einfaches `.replace(/<[^>]*>/g, '')` nutzen. Immer die Fixpunktschleife `stripHtmlTags()` aus `src/lib/htmlSanitizer.ts` verwenden.
+   - **Entity Unescaping:** Niemals sequentiell mit mehreren `.replace()` entpacken. Immer `unescapeHtmlEntities()` aus `src/lib/htmlSanitizer.ts` (Single-Pass) verwenden.
+   - **DOM-XSS:** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `src/lib/htmlSanitizer.ts` absichern.
 
 ---
 
@@ -77,6 +84,15 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   - `<DetailLayout>` → `src/components/DetailLayout.tsx`
 - **Sicherheit:** Kein `dangerouslySetInnerHTML` ohne Sanitizing.
 
+### End-to-End-Tests (dauerhafte Nutzervorgabe vom 10.09.2026)
+- **Immer wenn End-to-End-Tests fehlen:** Für jedes neue Feature, jeden neuen Benutzer-Workflow, jede neue Seite oder signifikante Verhaltensänderung (Desktop in `react-pc-frontend/e2e/` und Mobile in `react-zeiterfassung/e2e/`) MÜSSEN vollständige Playwright End-to-End-Tests geschrieben bzw. ergänzt werden.
+- Vor dem Commit immer die E2E-Tests ausführen (`npm run test:e2e`).
+
+### 🟢 Alle Tests & Linting MÜSSEN immer grün sein (dauerhafte Nutzervorgabe vom 11.09.2026)
+- **100% grüne Tests und fehlerfreies Linting:** Alle Tests (Backend: `./mvnw test`, Frontend Unit: `npm test` und E2E: `npm run test:e2e`) sowie Linter (`npm run lint`) MÜSSEN ausnahmslos fehlerfrei durchlaufen.
+- Niemals fehlschlagende Tests oder Linter-Fehler überspringen, ignorieren, auskommentieren oder ungelöst lassen. Vor jedem Commit, Push oder PR muss alles vollständig grün sein.
+- **Review & Ship Pflicht:** Am Ende jeder Aufgabe immer `/review-and-ship` ausführen.
+
 ---
 
 ## 🚀 Build & Run (Quickstart)
@@ -90,6 +106,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run build     # Produktions-Build
   npm run lint      # Linter
   npm test          # Vitest Testsuite
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 - **Frontend Zeiterfassung (Mobile):**
   ```bash
@@ -97,6 +114,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   npm run dev
   npm run build
   npm test
+  npm run test:e2e  # Playwright E2E-Tests
   ```
 
 ---
@@ -105,12 +123,16 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 Am Ende jeder Aufgabe:
 1. Tests ausführen:
    - Backend: `./mvnw test`
-   - Frontend: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend Unit: `npm test` im jeweiligen Frontend-Ordner
+   - Frontend E2E: `npm run test:e2e` im jeweiligen Frontend-Ordner
 2. Builds prüfen:
    - `npm run build` in betroffenen Frontend-Verzeichnissen
-3. Diff prüfen:
+3. Sub-Agent Code-Review:
+   - Ein Sub-Agent mit leerem Kontextfenster (`erp-code-reviewer`) prüft die Änderungen und liefert eine Ampel-Bewertung (🟢/🟡/🔴).
+4. Diff prüfen:
    - `git status` und `git diff` prüfen.
    - Nur Dateien stagen, die für diese Aufgabe geändert wurden (keine Fremdänderungen).
    - `git diff --staged` auf versehentlich committete Secrets oder Logs prüfen.
-4. Graphify synchronisieren:
+5. Graphify synchronisieren:
    - `./graphify update .`
+

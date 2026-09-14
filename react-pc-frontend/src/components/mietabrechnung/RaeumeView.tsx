@@ -3,6 +3,10 @@ import { type Raum, type Verbraucher, type Zaehlerstand } from './types';
 import { MietabrechnungService } from './MietabrechnungService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Input } from '../ui/input';
+import { DecimalInput } from '../ui/decimal-input';
+import { formatDecimalInput } from '../../lib/numberInput';
+import { validateNumberDrafts } from '../../lib/numberDrafts';
+import { Building2, Plus, Pencil, Trash2 } from 'lucide-react';
 import { Label } from '../ui/label';
 import { Select } from '../ui/select-custom';
 import { DatePicker } from '../ui/datepicker';
@@ -18,6 +22,9 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
     const confirmDialog = useConfirm();
     const [raeume, setRaeume] = useState<Raum[]>([]);
     const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [flaeche, setFlaeche] = useState('0');
+    const [meterDraft, setMeterDraft] = useState({ jahr: '', stand: '0', verbrauch: '' });
 
     // Modal States
     const [roomModalOpen, setRoomModalOpen] = useState(false);
@@ -47,8 +54,8 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                 return { ...r, verbraucher: consumersWithMeters };
             }));
             setRaeume(enriched);
-        } catch (err) {
-            console.error(err);
+        } catch {
+            toast.error('Räume und Zähler konnten nicht geladen werden.');
         } finally {
             setLoading(false);
         }
@@ -56,26 +63,33 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
 
     // --- Room Handlers ---
     const handleNewRoom = () => {
+        setFlaeche('0');
         setEditingRoom({ id: 0, mietobjektId, name: '', beschreibung: '', flaecheQuadratmeter: 0 });
         setRoomModalOpen(true);
     };
     const handleEditRoom = (r: Raum) => {
         setEditingRoom(r);
+        setFlaeche(r.flaecheQuadratmeter == null ? '' : formatDecimalInput(r.flaecheQuadratmeter));
         setRoomModalOpen(true);
     };
     const saveRoom = async (e: FormEvent) => {
         e.preventDefault();
-        if (!editingRoom) return;
+        if (!editingRoom || saving) return;
+        const parsed = validateNumberDrafts({ flaeche }, { flaeche: { label: 'Fläche', required: true, maxDecimalPlaces: 2 } });
+        if (!parsed.valid) { toast.error(parsed.message); return; }
+        if (!editingRoom.name.trim()) { toast.error('Bitte eine Raumbezeichnung eingeben.'); return; }
+        const payload = { ...editingRoom, flaecheQuadratmeter: parsed.values.flaeche! };
+        setSaving(true);
         try {
-            if (editingRoom.id === 0) await MietabrechnungService.createRaum(mietobjektId, editingRoom);
-            else await MietabrechnungService.updateRaum(editingRoom.id, editingRoom);
+            if (editingRoom.id === 0) await MietabrechnungService.createRaum(mietobjektId, payload);
+            else await MietabrechnungService.updateRaum(editingRoom.id, payload);
             setRoomModalOpen(false);
-            loadData();
-        } catch { toast.error('Fehler beim Speichern'); }
+            toast.success('Raum gespeichert.'); await loadData();
+        } catch { toast.error('Raum konnte nicht gespeichert werden.'); } finally { setSaving(false); }
     };
     const deleteRoom = async (id: number) => {
         if (!await confirmDialog({ title: 'Raum löschen', message: 'Raum und alle Verbraucher löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try { await MietabrechnungService.deleteRaum(id); loadData(); } catch { toast.error('Fehler'); }
+        try { await MietabrechnungService.deleteRaum(id); loadData(); } catch { toast.error('Raum konnte nicht gelöscht werden.'); }
     };
 
     // --- Consumer Handlers ---
@@ -89,21 +103,24 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
     };
     const saveConsumer = async (e: FormEvent) => {
         e.preventDefault();
-        if (!editingConsumer) return;
+        if (!editingConsumer || saving) return;
+        if (!editingConsumer.name.trim()) { toast.error('Bitte eine Zählerbezeichnung eingeben.'); return; }
+        setSaving(true);
         try {
             if (editingConsumer.id === 0) await MietabrechnungService.createVerbraucher(editingConsumer.raumId, editingConsumer);
             else await MietabrechnungService.updateVerbraucher(editingConsumer.id, editingConsumer);
             setConsumerModalOpen(false);
-            loadData();
-        } catch { toast.error('Fehler'); }
+            toast.success('Zähler gespeichert.'); await loadData();
+        } catch { toast.error('Zähler konnte nicht gespeichert werden.'); } finally { setSaving(false); }
     };
     const deleteConsumer = async (id: number) => {
         if (!await confirmDialog({ title: 'Verbraucher löschen', message: 'Verbraucher löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try { await MietabrechnungService.deleteVerbraucher(id); loadData(); } catch { toast.error('Fehler'); }
+        try { await MietabrechnungService.deleteVerbraucher(id); loadData(); } catch { toast.error('Zähler konnte nicht gelöscht werden.'); }
     };
 
     // --- Meter Handlers ---
     const handleNewMeter = (consumerId: number) => {
+        setMeterDraft({ jahr: String(new Date().getFullYear()), stand: '0', verbrauch: '' });
         setActiveConsumerId(consumerId);
         setEditingMeter({ id: 0, verbrauchsgegenstandId: consumerId, abrechnungsJahr: new Date().getFullYear(), stichtag: `${new Date().getFullYear()}-12-31`, stand: 0, kommentar: '' });
         setMeterModalOpen(true);
@@ -111,26 +128,30 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
     const saveMeter = async (e: FormEvent) => {
         e.preventDefault();
         const cid = activeConsumerId || editingMeter?.verbrauchsgegenstandId;
-        if (!editingMeter || !cid) return;
-
+        if (!editingMeter || !cid || saving) return;
+        const parsed = validateNumberDrafts(meterDraft, { jahr: { label: 'Abrechnungsjahr', required: true, integer: true, min: 1, max: 9999 }, stand: { label: 'Zählerstand', required: true, maxDecimalPlaces: 4 }, verbrauch: { label: 'Verbrauch', maxDecimalPlaces: 4 } });
+        if (!parsed.valid) { toast.error(parsed.message); return; }
+        if (!editingMeter.stichtag) { toast.error('Bitte einen Stichtag wählen.'); return; }
+        setSaving(true);
         try {
             // Ensure verbrauchsgegenstandId is set correctly
-            const meterToSave = { ...editingMeter, verbrauchsgegenstandId: cid };
+            const meterToSave = { ...editingMeter, verbrauchsgegenstandId: cid, abrechnungsJahr: parsed.values.jahr!, stand: parsed.values.stand!, verbrauch: parsed.values.verbrauch ?? undefined };
 
             if (editingMeter.id === 0) await MietabrechnungService.createZaehlerstand(cid, meterToSave);
             else await MietabrechnungService.updateZaehlerstand(editingMeter.id, meterToSave);
 
             setMeterModalOpen(false);
-            loadData();
+            toast.success('Zählerstand gespeichert.'); await loadData();
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Unbekannt';
             console.error(err);
-            toast.error('Fehler beim Speichern des Zählerstands: ' + message);
-        }
+            toast.error('Zählerstand konnte nicht gespeichert werden: ' + message);
+        } finally { setSaving(false); }
     };
 
     const handleEditMeter = (m: Zaehlerstand) => {
         setEditingMeter(m);
+        setMeterDraft({ jahr: String(m.abrechnungsJahr), stand: formatDecimalInput(m.stand), verbrauch: m.verbrauch == null ? '' : formatDecimalInput(m.verbrauch) });
         setActiveConsumerId(m.verbrauchsgegenstandId || null);
         setMeterModalOpen(true);
     };
@@ -140,7 +161,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
         try {
             await MietabrechnungService.deleteZaehlerstand(id);
             loadData();
-        } catch { toast.error('Fehler beim Löschen'); }
+        } catch { toast.error('Zählerstand konnte nicht gelöscht werden.'); }
     };
 
     return (
@@ -163,11 +184,11 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                         <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
                             <div>
                                 <h4 className="font-bold text-slate-900 text-lg flex items-center gap-2">
-                                    <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5" /></svg>
+                                    <Building2 className="w-5 h-5 text-slate-400" />
                                     {room.name}
                                 </h4>
                                 <div className="flex items-center gap-3 text-sm text-slate-500 mt-0.5">
-                                    <span className="bg-white px-2 py-0.5 rounded border border-slate-200 shadow-sm font-mono text-xs">{room.flaecheQuadratmeter} m²</span>
+                                    <span className="bg-white px-2 py-0.5 rounded border border-slate-200 shadow-sm font-mono text-xs">{room.flaecheQuadratmeter == null ? '–' : formatDecimalInput(room.flaecheQuadratmeter)} m²</span>
                                     {room.beschreibung && <span>&bull; {room.beschreibung}</span>}
                                 </div>
                             </div>
@@ -183,7 +204,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                                     Verbraucher & Zähler
                                 </h5>
                                 <button onClick={() => handleNewConsumer(room.id)} className="text-xs font-bold text-rose-600 hover:text-rose-700 uppercase tracking-wide border border-rose-100 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1">
-                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    <Plus className="w-3 h-3" />
                                     Zähler hinzufügen
                                 </button>
                             </div>
@@ -192,7 +213,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                                     <div key={consumer.id} className="group/consumer border border-slate-100 rounded-lg p-4 hover:border-rose-200 hover:shadow-sm transition-all bg-white relative">
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex items-center gap-3">
-                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${consumer.verbrauchsart === 'WASSER' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${consumer.verbrauchsart === 'WASSER' ? 'bg-slate-50 text-slate-600 border-slate-200' :
                                                         consumer.verbrauchsart === 'STROM' ? 'bg-yellow-50 text-yellow-600 border-yellow-100' :
                                                             consumer.verbrauchsart === 'HEIZUNG' ? 'bg-orange-50 text-orange-600 border-orange-100' :
                                                                 'bg-slate-50 text-slate-600 border-slate-100'
@@ -209,8 +230,8 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                                                 </div>
                                             </div>
                                             <div className="flex gap-1 opacity-0 group-hover/consumer:opacity-100 transition-opacity absolute top-2 right-2 bg-white shadow-sm border border-slate-100 rounded p-1">
-                                                <button onClick={() => handleEditConsumer(consumer)} className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                                                <button onClick={() => deleteConsumer(consumer.id)} className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                                <button aria-label="Zähler bearbeiten" onClick={() => handleEditConsumer(consumer)} className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50"><Pencil className="w-4 h-4" /></button>
+                                                <button aria-label="Zähler löschen" onClick={() => deleteConsumer(consumer.id)} className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
                                             </div>
                                         </div>
 
@@ -218,7 +239,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                                             <div className="flex justify-between items-center mb-2">
                                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Erfasste Stände</span>
                                                 <button onClick={() => handleNewMeter(consumer.id)} className="text-xs text-rose-600 font-bold hover:text-rose-700 hover:underline flex items-center gap-0.5">
-                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                    <Plus className="w-3 h-3" />
                                                     Stand
                                                 </button>
                                             </div>
@@ -228,13 +249,13 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                                                         <div key={m.id} className="flex items-center justify-between text-xs group/meter hover:bg-white hover:shadow-sm p-1 rounded transition-colors cursor-default">
                                                             <div className="flex items-center gap-2">
                                                                 <span className="font-bold text-slate-400 w-8">{m.abrechnungsJahr}</span>
-                                                                <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono text-slate-900 font-medium">{m.stand}</span>
+                                                                <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono text-slate-900 font-medium">{formatDecimalInput(m.stand)}</span>
                                                             </div>
                                                             <div className="flex gap-2">
-                                                                {m.verbrauch != null && <span className="text-slate-500 text-[10px] bg-slate-100 px-1 rounded flex items-center">Ø {m.verbrauch}</span>}
+                                                                {m.verbrauch != null && <span className="text-slate-500 text-[10px] bg-slate-100 px-1 rounded flex items-center">Ø {formatDecimalInput(m.verbrauch)}</span>}
                                                                 <div className="flex gap-1 opacity-0 group-hover/meter:opacity-100 transition-opacity">
-                                                                    <button onClick={() => handleEditMeter(m)} className="text-slate-400 hover:text-rose-600"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                                                                    <button onClick={() => deleteMeter(m.id)} className="text-slate-400 hover:text-red-600"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                                                    <button aria-label="Zählerstand bearbeiten" onClick={() => handleEditMeter(m)} className="text-slate-400 hover:text-rose-600"><Pencil className="w-3 h-3" /></button>
+                                                                    <button aria-label="Zählerstand löschen" onClick={() => deleteMeter(m.id)} className="text-slate-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -259,7 +280,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
                 {raeume.length === 0 && (
                     <div className="text-center py-12 text-slate-400 bg-white rounded-xl border border-dashed border-slate-300">
                         <div className="mb-4 text-slate-200">
-                            <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5" /></svg>
+                            <Building2 className="w-16 h-16 mx-auto" />
                         </div>
                         <h3 className="text-lg font-medium text-slate-900">Noch keine Räume angelegt</h3>
                         <p className="text-sm text-slate-500 mt-1 mb-4">Erstellen Sie den ersten Raum, um Zähler und Flächen zu verwalten.</p>
@@ -271,61 +292,61 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
             </div>
 
             {/* Room Modal */}
-            <Dialog open={roomModalOpen} onOpenChange={setRoomModalOpen}>
-                <DialogContent>
+            <Dialog open={roomModalOpen} onOpenChange={open => { if (!saving) setRoomModalOpen(open); }} aria-label="Raum bearbeiten" className="w-full max-w-xl">
+                <DialogContent className="overflow-y-auto">
                     <DialogHeader><DialogTitle>{editingRoom?.id === 0 ? 'Neuer Raum' : 'Raum bearbeiten'}</DialogTitle></DialogHeader>
                     {editingRoom && (
-                        <form onSubmit={saveRoom} className="space-y-4">
-                            <div className="space-y-2"><Label>Bezeichnung</Label><Input value={editingRoom.name} onChange={e => setEditingRoom({ ...editingRoom, name: e.target.value })} placeholder="z.B. Wohnzimmer, Küche" required /></div>
-                            <div className="space-y-2"><Label>Beschreibung</Label><Input value={editingRoom.beschreibung} onChange={e => setEditingRoom({ ...editingRoom, beschreibung: e.target.value })} placeholder="Optional, z.B. EG Links" /></div>
-                            <div className="space-y-2"><Label>Fläche (m²)</Label><Input type="number" step="0.01" value={editingRoom.flaecheQuadratmeter} onChange={e => setEditingRoom({ ...editingRoom, flaecheQuadratmeter: parseFloat(e.target.value) || 0 })} /></div>
-                            <DialogFooter><button type="button" onClick={() => setRoomModalOpen(false)} className="btn-secondary">Abbrechen</button><button type="submit" className="bg-rose-600 text-white hover:bg-rose-700 px-4 py-2 rounded-md font-medium text-sm">Speichern</button></DialogFooter>
+                        <form noValidate onSubmit={saveRoom} className="space-y-4">
+                            <div className="space-y-2"><Label>Bezeichnung</Label><Input aria-label="Bezeichnung" value={editingRoom.name} onChange={e => setEditingRoom({ ...editingRoom, name: e.target.value })} placeholder="z.B. Wohnzimmer, Küche" required /></div>
+                            <div className="space-y-2"><Label>Beschreibung</Label><Input aria-label="Beschreibung" value={editingRoom.beschreibung} onChange={e => setEditingRoom({ ...editingRoom, beschreibung: e.target.value })} placeholder="Optional, z.B. EG Links" /></div>
+                            <div className="space-y-2"><Label>Fläche (m²)</Label><DecimalInput aria-label="Fläche (m²)" required value={flaeche} onChange={setFlaeche} /></div>
+                            <DialogFooter><button type="button" onClick={() => setRoomModalOpen(false)} disabled={saving} className="border border-rose-300 text-rose-700 hover:bg-rose-50 px-4 py-2 rounded-lg text-sm">Abbrechen</button><button type="submit" disabled={saving} className="bg-rose-600 text-white hover:bg-rose-700 px-4 py-2 rounded-md font-medium text-sm">Speichern</button></DialogFooter>
                         </form>
                     )}
                 </DialogContent>
             </Dialog>
 
             {/* Consumer Modal */}
-            <Dialog open={consumerModalOpen} onOpenChange={setConsumerModalOpen}>
-                <DialogContent>
+            <Dialog open={consumerModalOpen} onOpenChange={open => { if (!saving) setConsumerModalOpen(open); }} aria-label="Zähler bearbeiten" className="w-full max-w-xl">
+                <DialogContent className="overflow-y-auto">
                     <DialogHeader><DialogTitle>Verbraucher / Zähler</DialogTitle></DialogHeader>
                     {editingConsumer && (
-                        <form onSubmit={saveConsumer} className="space-y-4">
-                            <div className="space-y-2"><Label>Bezeichnung</Label><Input value={editingConsumer.name} onChange={e => setEditingConsumer({ ...editingConsumer, name: e.target.value })} placeholder="z.B. Hauptwasserzähler" required /></div>
+                        <form noValidate onSubmit={saveConsumer} className="space-y-4">
+                            <div className="space-y-2"><Label>Bezeichnung</Label><Input aria-label="Bezeichnung" value={editingConsumer.name} onChange={e => setEditingConsumer({ ...editingConsumer, name: e.target.value })} placeholder="z.B. Hauptwasserzähler" required /></div>
                             <div className="space-y-2"><Label>Art</Label>
-                                <Select value={editingConsumer.verbrauchsart} onChange={val => setEditingConsumer({ ...editingConsumer, verbrauchsart: val as Verbraucher['verbrauchsart'] })} options={[{ value: 'WASSER', label: 'Wasser' }, { value: 'STROM', label: 'Strom' }, { value: 'HEIZUNG', label: 'Heizung' }, { value: 'GAS', label: 'Gas' }, { value: 'SONSTIGES', label: 'Sonstiges' }]} />
+                                <Select aria-label="Art" value={editingConsumer.verbrauchsart} onChange={val => setEditingConsumer({ ...editingConsumer, verbrauchsart: val as Verbraucher['verbrauchsart'] })} options={[{ value: 'WASSER', label: 'Wasser' }, { value: 'STROM', label: 'Strom' }, { value: 'HEIZUNG', label: 'Heizung' }, { value: 'GAS', label: 'Gas' }, { value: 'SONSTIGES', label: 'Sonstiges' }]} />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2"><Label>Einheit</Label><Input value={editingConsumer.einheit} onChange={e => setEditingConsumer({ ...editingConsumer, einheit: e.target.value })} placeholder="m³, kWh..." /></div>
-                                <div className="space-y-2"><Label>Seriennummer</Label><Input value={editingConsumer.seriennummer} onChange={e => setEditingConsumer({ ...editingConsumer, seriennummer: e.target.value })} /></div>
+                                <div className="space-y-2"><Label>Einheit</Label><Input aria-label="Einheit" value={editingConsumer.einheit} onChange={e => setEditingConsumer({ ...editingConsumer, einheit: e.target.value })} placeholder="m³, kWh..." /></div>
+                                <div className="space-y-2"><Label>Seriennummer</Label><Input aria-label="Seriennummer" value={editingConsumer.seriennummer} onChange={e => setEditingConsumer({ ...editingConsumer, seriennummer: e.target.value })} /></div>
                             </div>
-                            <DialogFooter><button type="button" onClick={() => setConsumerModalOpen(false)} className="btn-secondary">Abbrechen</button><button type="submit" className="bg-rose-600 text-white hover:bg-rose-700 px-4 py-2 rounded-md font-medium text-sm">Speichern</button></DialogFooter>
+                            <DialogFooter><button type="button" onClick={() => setConsumerModalOpen(false)} disabled={saving} className="border border-rose-300 text-rose-700 hover:bg-rose-50 px-4 py-2 rounded-lg text-sm">Abbrechen</button><button type="submit" disabled={saving} className="bg-rose-600 text-white hover:bg-rose-700 px-4 py-2 rounded-md font-medium text-sm">Speichern</button></DialogFooter>
                         </form>
                     )}
                 </DialogContent>
             </Dialog>
 
             {/* Meter Modal */}
-            <Dialog open={meterModalOpen} onOpenChange={setMeterModalOpen}>
-                <DialogContent>
+            <Dialog open={meterModalOpen} onOpenChange={open => { if (!saving) setMeterModalOpen(open); }} aria-label="Zählerstand erfassen" className="w-full max-w-xl">
+                <DialogContent className="overflow-y-auto">
                     <DialogHeader><DialogTitle>Zählerstand erfassen</DialogTitle></DialogHeader>
                     {editingMeter && (
-                        <form onSubmit={saveMeter} className="space-y-4">
+                        <form noValidate onSubmit={saveMeter} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2"><Label>Abrechnungsjahr</Label><Input type="number" value={editingMeter.abrechnungsJahr} onChange={e => setEditingMeter({ ...editingMeter, abrechnungsJahr: parseInt(e.target.value) || 0 })} /></div>
-                                <div className="space-y-2"><Label>Stichtag</Label><DatePicker value={editingMeter.stichtag} onChange={value => setEditingMeter({ ...editingMeter, stichtag: value })} placeholder="Stichtag wählen" /></div>
+                                <div className="space-y-2"><Label>Abrechnungsjahr</Label><DecimalInput aria-label="Abrechnungsjahr" integer required min={1} max={9999} value={meterDraft.jahr} onChange={jahr => setMeterDraft({ ...meterDraft, jahr })} /></div>
+                                <div className="space-y-2"><Label>Stichtag</Label><DatePicker aria-label="Stichtag" required value={editingMeter.stichtag} onChange={value => setEditingMeter({ ...editingMeter, stichtag: value })} placeholder="Stichtag wählen" /></div>
                             </div>
                             <div className="space-y-2">
-                                <Label>Zählerstand ({editingMeter.stand})</Label>
-                                <Input type="number" step="0.001" value={editingMeter.stand} onChange={e => setEditingMeter({ ...editingMeter, stand: parseFloat(e.target.value) || 0 })} required className="text-lg font-mono font-bold" />
+                                <Label>Zählerstand</Label>
+                                <DecimalInput aria-label="Zählerstand" value={meterDraft.stand} onChange={stand => setMeterDraft({ ...meterDraft, stand })} required className="text-lg font-semibold" />
                             </div>
                             <div className="space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                <Label className="text-slate-700">Verbrauch (Optional)</Label>
-                                <div className="text-xs text-slate-500 mb-2">Wird normalerweise automatisch aus der Differenz zum Vorjahr berechnet. Nur ausfüllen, wenn manueller Override nötig ist.</div>
-                                <Input type="number" step="0.001" value={editingMeter.verbrauch || ''} onChange={e => setEditingMeter({ ...editingMeter, verbrauch: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="Automatisch berechnet" />
+                                <Label className="text-slate-700">Verbrauch (optional)</Label>
+                                <div className="text-xs text-slate-500 mb-2">Wird normalerweise automatisch aus der Differenz zum Vorjahr berechnet. Nur ausfüllen, wenn ein abweichender Verbrauch eingetragen werden soll.</div>
+                                <DecimalInput aria-label="Verbrauch (optional)" value={meterDraft.verbrauch} onChange={verbrauch => setMeterDraft({ ...meterDraft, verbrauch })} placeholder="Automatisch berechnet" />
                             </div>
-                            <div className="space-y-2"><Label>Kommentar</Label><Input value={editingMeter.kommentar} onChange={e => setEditingMeter({ ...editingMeter, kommentar: e.target.value })} placeholder="z.B. Zählerwechsel" /></div>
-                            <DialogFooter><button type="button" onClick={() => setMeterModalOpen(false)} className="btn-secondary">Abbrechen</button><button type="submit" className="bg-rose-600 text-white hover:bg-rose-700 px-4 py-2 rounded-md font-medium text-sm">Speichern</button></DialogFooter>
+                            <div className="space-y-2"><Label>Kommentar</Label><Input aria-label="Kommentar" value={editingMeter.kommentar} onChange={e => setEditingMeter({ ...editingMeter, kommentar: e.target.value })} placeholder="z.B. Zählerwechsel" /></div>
+                            <DialogFooter><button type="button" onClick={() => setMeterModalOpen(false)} disabled={saving} className="border border-rose-300 text-rose-700 hover:bg-rose-50 px-4 py-2 rounded-lg text-sm">Abbrechen</button><button type="submit" disabled={saving} className="bg-rose-600 text-white hover:bg-rose-700 px-4 py-2 rounded-md font-medium text-sm">Speichern</button></DialogFooter>
                         </form>
                     )}
                 </DialogContent>

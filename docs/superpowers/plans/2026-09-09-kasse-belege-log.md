@@ -546,3 +546,81 @@ Hinweise (nicht blockierend, 🟡):
   endlos alle 3s. Ein Abbruch nach N Versuchen waere freundlicher.
 - Die Doku-Dateien beschreiben den Zielzustand nach Abschnitt 4 im Praesens.
   Vom Plan (Zeile 224-235) ausdruecklich so gewollt, deshalb nur als Hinweis.
+
+
+## Main-Integration vor Fortsetzung (Orchestrator, 14.09.2026)
+
+Branch: feature/kasse-belege
+Ausgangsstand: 9633d132
+Eingehender Main-Stand: 6cc3e3d9 (origin/main, frisch gefetcht)
+Nutzerauftrag: zuerst main in diesen Feature-Branch mergen, danach weiterarbeiten.
+
+- Drei Textkonflikte in KasseShortcuts, BelegeKasseEditor und select-custom
+  aufgeloest. Die Auslagerungen aus Abschnitt 1 bleiben erhalten; die neuen
+  DecimalInput-/Geldpruefungen, Datumswaehler, gemeinsamen Dialoge und Toasts
+  aus main sind in die jeweils ausgelagerten Komponenten uebertragen.
+- Select kombiniert Tastatur/ARIA/Pflichtfeld-/Disabled-Verhalten aus main mit
+  Gruppen, langen Beschriftungen und adaptiver Breite aus Abschnitt 1.
+  Tastaturreihenfolge entspricht der sichtbaren Gruppenreihenfolge; drei
+  Integrationstests ergaenzt. Alter irrefuehrender jest-dom-Kommentar entfernt.
+- Versionskonflikt: main belegt V372 bis V374. Die noch nicht nach main
+  integrierte Kasse-Migration wurde OHNE SQL-Inhaltsaenderung von
+  V372__kasse_buchungen_und_export.sql nach V375__kasse_buchungen_und_export.sql
+  umbenannt. Verweise in alten Plan-/Logabschnitten meinen jetzt V375.
+  Neuer Test gegen doppelte Flyway-Versionen zuerst rot mit Duplikat 372,
+  dann gruen. Sauber gebautes JAR enthaelt nur V375 fuer Kasse und keine
+  doppelte Migrationsversion.
+- Vollstaendige Checks: Backend 2892 Tests, 0 Failures/Errors, 17 durch
+  bestehende Testbedingungen uebersprungen; clean package erfolgreich.
+  PC: 125 Dateien / 1404 Tests, Lint, Build und 510 Playwright-Faelle gruen.
+  Mobile: 22 Dateien / 217 Tests, Lint, Build und 17 Playwright-Faelle gruen.
+  PC-Playwright auf 1440x900, 1536x960 und 1920x1080. Screenshots des offenen
+  Konto-Dropdowns und Belegdialogs visuell geprueft.
+- Graphify aktualisiert: 15734 Knoten / 53927 Kanten. Bestehende
+  Parser-Warnung in TiptapEditor.tsx:930, TypeScript-Build ist gruen.
+- Build-Artefakte gemaess Plan auf den gemergten Index-Stand zurueckgesetzt.
+  Vorhandene previewConfig.json und mobile test-results bleiben erhalten
+  (durch neue Ignore-Regeln aus main jetzt ignoriert).
+- Review durch Claude erp-code-reviewer laeuft; Ergebnis folgt unten.
+
+Fuer die anschliessende Fortsetzung:
+- Abschnitt 1 hat weiterhin die zwei protokollierten blockierenden Befunde:
+  fehlende DATEV-Felder beim Speichern erhalten und die pauschale Behauptung
+  einer DB-erzwungenen Datei fuer jede Buchung korrigieren.
+- Task 7 darf den inzwischen auf main eingefuehrten DatevExportService fuer
+  LODAS nicht ersetzen. Kassen-Buchungsstapel bekommen einen fachlich eigenen
+  Servicenamen (KasseDatevExportService); Task 8 muss diesen konsumieren.
+- Die alte Test-Baseline mit vier Errors ist durch main ueberholt; aktueller
+  Stand ist ohne Testfehler. Keine roten Tests als Baseline akzeptieren.
+
+
+### Merge-Review: Nachbesserung der Auswahlliste
+
+- Erstes Claude-Review: keine kritischen Integrationsfehler, gelb wegen
+  semantischer Gruppen und fehlendem kombinierten Tastatur-E2E.
+- Gruppen sind jetzt role=group mit aria-label; visuelle Ueberschriften
+  aria-hidden. Stabile Gruppenschluessel, globale Tastaturindizes und
+  Reihenfolge bleiben erhalten. Zwei Gruppen-Tests erst rot, danach gruen.
+- Browser-Test ergaenzt: echte Select-Komponente prueft leere Pflichtauswahl,
+  Gruppenreihenfolge, Ueberspringen gesperrter Optionen, Enter-Auswahl und
+  Absenden. Alle drei Bildschirmgroessen bestehen diesen Ablauf.
+- Nach der Nachbesserung erneut: PC 1404/1404 Unit-Tests, Lint, Build,
+  typecheck:e2e und komplette 513/513 Playwright-Faelle gruen.
+- Matcher-Hinweis explizit aufgeloest: jest-dom-Matcher funktionieren im
+  aktuellen Stand, belegt durch die 18 Select-Tests und die volle Suite.
+  Die alte Behauptung im Task-10-Log ist veraltet; schon der urspruengliche
+  Abschnitt-1-Reviewer hatte sie widerlegt.
+- Graphify nach dem Review-Fix erneut synchronisiert: 15737 Knoten,
+  53930 Kanten. Abschliessendes Claude-Re-Review laeuft.
+
+
+### Merge-Integration abgeschlossen
+
+- Letzter Review-Punkt: ungruppierte Optionen wieder ohne zusaetzlichen
+  DOM-Wrapper als keyed Fragment rendern. Claude-Nachpruefung: GRUEN,
+  keine kritischen Befunde oder Warnungen (nur optionale Hinweise).
+- Exakt dieser finale Stand: erneut 1404 PC-Unit-Tests, Lint, Build und
+  513 Playwright-Faelle gruen; Backend/Mobile unveraendert seit ihren oben
+  protokollierten gruenen Gesamtlaeufen. Graphify abschliessend erneut
+  aufgerufen, keine weitere Topologieaenderung.
+- Merge-Commit folgt auf 9633d132 und nimmt 6cc3e3d9 als zweiten Parent auf.

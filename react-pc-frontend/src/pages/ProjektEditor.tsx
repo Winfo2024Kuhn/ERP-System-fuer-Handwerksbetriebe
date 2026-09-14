@@ -1213,89 +1213,89 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 dass "Tagebuch" allein zweizeilig umbricht und die Trennlinie
                 mitten in der Karte schwebt (gemessener Vorschlag des
                 Design-Reviewers). */}
-            <div className="flex flex-wrap min-w-0 gap-1 mb-6 border-b border-slate-200 pb-2">
+            <div className="flex flex-wrap min-w-0 gap-0.5 2xl:gap-1 mb-6 border-b border-slate-200 pb-2">
                 <button
                     onClick={() => setActiveTab('zeiten')}
                     className={cn(
-                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'zeiten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <Clock className="w-4 h-4 inline-block mr-2" />
+                    <Clock className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Zeiten ({projekt.zeiten?.length || 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('materialkosten')}
                     className={cn(
-                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'materialkosten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <Euro className="w-4 h-4 inline-block mr-2" />
+                    <Euro className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Material ({projekt.materialkosten?.length || 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('emails')}
                     className={cn(
-                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'emails'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <Mail className="w-4 h-4 inline-block mr-2" />
+                    <Mail className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     E-Mails ({projekt.emails?.length || 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
                     className={cn(
-                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'geschaeftsdokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <FileText className="w-4 h-4 inline-block mr-2" />
+                    <FileText className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Geschäftsdokumente ({ausgangsDokumente.length + eingangsrechnungen.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('dokumente')}
                     className={cn(
-                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'dokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <FolderOpen className="w-4 h-4 inline-block mr-2" />
+                    <FolderOpen className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Dateien ({dokumenteCount})
                 </button>
                 <button
                     onClick={() => setActiveTab('beschreibung')}
                     className={cn(
-                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'beschreibung'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <FileText className="w-4 h-4 inline-block mr-2" />
+                    <FileText className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Beschreibung
                 </button>
                 <button
                     onClick={() => setActiveTab('notizen')}
                     className={cn(
-                        "px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'notizen'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <StickyNote className="w-4 h-4 inline-block mr-2" />
+                    <StickyNote className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Tagebuch ({notizen.length})
                 </button>
             </div>

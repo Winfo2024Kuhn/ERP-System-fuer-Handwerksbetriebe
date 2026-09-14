@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
+import { useToast } from '../ui/toast';
 import type { Sachkonto } from '../../types';
 import { formatEuro } from './belegFormat';
 import { BankAbhebungModal, EinfacheKasseModal, LohnZahlungModal, type SaldoInfo } from './NeueBuchungDialog';
@@ -25,7 +26,7 @@ interface KasseShortcutsProps {
 export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
     const [saldo, setSaldo] = useState<SaldoInfo | null>(null);
     const [openModal, setOpenModal] = useState<null | 'bank' | 'lohn' | 'einlage' | 'entnahme' | 'settings'>(null);
-    const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+    const toast = useToast();
 
     const loadSaldo = useCallback(async () => {
         try {
@@ -51,19 +52,12 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
         return () => { cancelled = true; };
     }, []);
 
-    // Toast nach 4s automatisch ausblenden — kein alert(), kein blocking dialog.
-    useEffect(() => {
-        if (!toast) return;
-        const t = setTimeout(() => setToast(null), 4000);
-        return () => clearTimeout(t);
-    }, [toast]);
-
     const refreshAlles = useCallback(() => {
         loadSaldo();
         onChanged();
     }, [loadSaldo, onChanged]);
 
-    const showToast = (kind: 'ok' | 'err', text: string) => setToast({ kind, text });
+    const showToast = (kind: 'ok' | 'err', text: string) => kind === 'ok' ? toast.success(text) : toast.error(text);
 
     const saldoUnterMindestbestand = saldo != null && saldo.saldo < saldo.mindestbestand;
 
@@ -167,15 +161,6 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
                 />
             )}
 
-            {toast && (
-                <div className={`mt-3 text-sm px-3 py-2 rounded-lg border ${
-                    toast.kind === 'ok'
-                        ? 'bg-rose-50 border-rose-200 text-rose-800'
-                        : 'bg-red-50 border-red-200 text-red-800'
-                }`}>
-                    {toast.text}
-                </div>
-            )}
         </Card>
     );
 }

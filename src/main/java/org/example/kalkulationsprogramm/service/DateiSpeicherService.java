@@ -12,6 +12,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -1652,8 +1653,22 @@ public class DateiSpeicherService {
         return trimmed.isEmpty() ? "Rechnung" : trimmed;
     }
 
+    public static final Set<String> MAHNBARE_RECHNUNGSARTEN = Set.of(
+            "rechnung",
+            "teilrechnung",
+            "abschlagsrechnung",
+            "schlussrechnung"
+    );
+
+    public static boolean istMahnfaehigeRechnung(String art) {
+        if (art == null) {
+            return false;
+        }
+        return MAHNBARE_RECHNUNGSARTEN.contains(art.trim().toLowerCase(Locale.GERMAN));
+    }
+
     private boolean istRechnung(String art) {
-        return art != null && "rechnung".equalsIgnoreCase(art);
+        return istMahnfaehigeRechnung(art);
     }
 
     private boolean istMahnung(String art) {

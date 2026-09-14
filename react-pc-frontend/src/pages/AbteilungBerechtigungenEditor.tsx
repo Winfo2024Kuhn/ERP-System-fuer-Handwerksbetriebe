@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -31,13 +31,16 @@ const DOKUMENT_TYP_LABELS: Record<string, string> = {
 
 export default function AbteilungBerechtigungenEditor() {
     const toast = useToast();
+    // Stabile Referenz, damit loadBerechtigungen keine wechselnde Abhaengigkeit bekommt.
+    const toastRef = useRef(toast);
+    toastRef.current = toast;
     const [loadError, setLoadError] = useState(false);
     const [berechtigungen, setBerechtigungen] = useState<AbteilungBerechtigung[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState<number | null>(null);
     const [saveSuccess, setSaveSuccess] = useState<number | null>(null);
 
-    const loadBerechtigungen = async () => {
+    const loadBerechtigungen = useCallback(async () => {
         setLoading(true);
         setLoadError(false);
         try {
@@ -47,15 +50,14 @@ export default function AbteilungBerechtigungenEditor() {
             setBerechtigungen(data.map((abt: AbteilungBerechtigung) => ({ ...abt, darfMonatAbschliessen: abt.darfMonatAbschliessen === true })));
         } catch (err) {
             setLoadError(true);
-            toast.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht geladen werden.');
+            toastRef.current.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht geladen werden.');
         }
         setLoading(false);
-    };
+    }, []);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         loadBerechtigungen();
-    }, []);
+    }, [loadBerechtigungen]);
 
     const handleToggle = (abteilungId: number, typ: string, field: 'darfSehen' | 'darfScannen') => {
         setBerechtigungen(prev => prev.map(abt => {

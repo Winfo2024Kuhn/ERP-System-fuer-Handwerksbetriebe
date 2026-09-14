@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailBlacklistEntry;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -49,9 +51,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.mock.web.MockMultipartFile;
+import java.nio.charset.StandardCharsets;
 
 @WebMvcTest(UnifiedEmailController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -62,6 +68,9 @@ class UnifiedEmailControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @org.springframework.boot.test.mock.mockito.SpyBean
+    private UnifiedEmailController unifiedEmailController;
 
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;
@@ -752,6 +761,343 @@ class UnifiedEmailControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.kundeId").value(5))
                     .andExpect(jsonPath("$.kundeName").value("Früher Kunde"));
+        }
+    }
+
+    @Nested
+    @DisplayName("From-Addresses Endpoint Tests")
+    class FromAddressesTests {
+        @Test
+        @DisplayName("GET /api/emails/from-addresses liefert aktive Absender ohne PathVariable-Fehler")
+        void getFromAddresses_liefertAktiveAbsender() throws Exception {
+            given(emailAbsenderService.getPrioritizedFromAddresses(isNull()))
+                    .willReturn(List.of("info@example.com", "buchhaltung@example.com"));
+
+            mockMvc.perform(get("/api/emails/from-addresses"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0]").value("info@example.com"))
+                    .andExpect(jsonPath("$[1]").value("buchhaltung@example.com"));
+        }
+
+        @Test
+        @DisplayName("GET /api/emails/from-addresses delegiert frontendUserId an Service")
+        void getFromAddresses_delegiertFrontendUserId() throws Exception {
+            given(emailAbsenderService.getPrioritizedFromAddresses(42L))
+                    .willReturn(List.of("user@example.com", "info@example.com"));
+
+            mockMvc.perform(get("/api/emails/from-addresses?frontendUserId=42"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0]").value("user@example.com"))
+                    .andExpect(jsonPath("$[1]").value("info@example.com"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Attachment Download Tests")
+    class AttachmentDownloadTests {
+        @Test
+        @DisplayName("downloadAttachment bereinigt CRLF aus MIME-Type")
+        void downloadAttachment_bereinigtCrlfAusMimeType() throws Exception {
+            java.nio.file.Path tempDir = java.nio.file.Path.of("target/test-attachments");
+            java.nio.file.Files.createDirectories(tempDir);
+            java.nio.file.Path dummyFile = tempDir.resolve("test-crlf.pdf");
+            java.nio.file.Files.writeString(dummyFile, "%PDF-1.4 dummy");
+
+            Email email = createTestEmail(200L, "Test", "absender@example.com");
+            EmailAttachment att = new EmailAttachment();
+            att.setId(501L);
+            att.setEmail(email);
+            att.setOriginalFilename("beleg.pdf");
+            att.setStoredFilename("test-crlf.pdf");
+            att.setMimeType("application/pdf;\r\n name=\"beleg.pdf\"");
+            email.setAttachments(List.of(att));
+
+            given(emailRepository.findById(200L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(get("/api/emails/200/attachments/501"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/pdf"));
+        }
+
+        @Test
+        @DisplayName("downloadAttachment kodiert Nicht-ASCII Unicode im Content-Disposition Header (RFC 5987)")
+        void downloadAttachment_kodiertNichtAsciiDateinamen() throws Exception {
+            java.nio.file.Path tempDir = java.nio.file.Path.of("target/test-attachments");
+            java.nio.file.Files.createDirectories(tempDir);
+            java.nio.file.Path dummyFile = tempDir.resolve("test-unicode.pdf");
+            java.nio.file.Files.writeString(dummyFile, "%PDF-1.4 dummy");
+
+            Email email = createTestEmail(201L, "Test", "absender@example.com");
+            EmailAttachment att = new EmailAttachment();
+            att.setId(502L);
+            att.setEmail(email);
+            att.setOriginalFilename("Lebenslauf JAVİD MEHRDAD_Überweisung.pdf");
+            att.setStoredFilename("test-unicode.pdf");
+            att.setMimeType("application/pdf");
+            email.setAttachments(List.of(att));
+
+            given(emailRepository.findById(201L)).willReturn(Optional.of(email));
+
+            var result = mockMvc.perform(get("/api/emails/201/attachments/502"))
+                    .andExpect(status().isOk())
+                    .andReturn();
+
+            String disposition = result.getResponse().getHeader(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION);
+            org.junit.jupiter.api.Assertions.assertNotNull(disposition);
+            org.junit.jupiter.api.Assertions.assertTrue(disposition.contains("filename*="));
+        }
+    }
+
+    @Nested
+    @DisplayName("Email Send Attachment & Upload Limit Tests")
+    class EmailSendAttachmentTests {
+
+        @Test
+        @DisplayName("sendEmail lehnt Anhang ab, der 15 MB Einzelgrenze überschreitet (HTTP 400)")
+        void sendEmail_lehntUebergrossenEinzelanhangAb() throws Exception {
+            MockMultipartFile dtoPart = new MockMultipartFile("dto", "", "application/json",
+                    """
+                    {
+                        "recipients": ["empfaenger@example.com"],
+                        "subject": "Großer Anhang Test",
+                        "body": "Hallo"
+                    }
+                    """.getBytes(StandardCharsets.UTF_8));
+
+            MockMultipartFile oversizedFile = new MockMultipartFile("attachments", "riesig.zip", "application/zip", new byte[10]) {
+                @Override
+                public long getSize() {
+                    return 16 * 1024 * 1024L; // 16 MB
+                }
+            };
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dtoPart)
+                            .file(oversizedFile))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("15 MB")));
+        }
+
+        @Test
+        @DisplayName("sendEmail lehnt Anhänge ab, deren Summe 25 MB übersteigt (HTTP 400)")
+        void sendEmail_lehntUebergrosseGesamtAnhaengeAb() throws Exception {
+            MockMultipartFile dtoPart = new MockMultipartFile("dto", "", "application/json",
+                    """
+                    {
+                        "recipients": ["empfaenger@example.com"],
+                        "subject": "Summen-Test",
+                        "body": "Hallo"
+                    }
+                    """.getBytes(StandardCharsets.UTF_8));
+
+            MockMultipartFile file1 = new MockMultipartFile("attachments", "teil1.zip", "application/zip", new byte[10]) {
+                @Override
+                public long getSize() {
+                    return 14 * 1024 * 1024L;
+                }
+            };
+            MockMultipartFile file2 = new MockMultipartFile("attachments", "teil2.zip", "application/zip", new byte[10]) {
+                @Override
+                public long getSize() {
+                    return 12 * 1024 * 1024L;
+                }
+            };
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dtoPart)
+                            .file(file1)
+                            .file(file2))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("25 MB")));
+        }
+
+        @Test
+        @DisplayName("replyToEmail lehnt Anhang ab, der 15 MB Einzelgrenze überschreitet (HTTP 400)")
+        void replyToEmail_lehntUebergrossenEinzelanhangAb() throws Exception {
+            Email parent = createTestEmail(300L, "Parent", "kunde@example.com");
+            given(emailRepository.findById(300L)).willReturn(Optional.of(parent));
+
+            MockMultipartFile dtoPart = new MockMultipartFile("dto", "", "application/json",
+                    """
+                    {
+                        "recipients": ["kunde@example.com"],
+                        "subject": "Re: Antwort",
+                        "body": "Hallo"
+                    }
+                    """.getBytes(StandardCharsets.UTF_8));
+
+            MockMultipartFile oversizedFile = new MockMultipartFile("attachments", "riesig.zip", "application/zip", new byte[10]) {
+                @Override
+                public long getSize() {
+                    return 16 * 1024 * 1024L; // 16 MB
+                }
+            };
+
+            mockMvc.perform(multipart("/api/emails/300/reply")
+                            .file(dtoPart)
+                            .file(oversizedFile))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("15 MB")));
+        }
+
+        @Test
+        @DisplayName("replyToEmail lehnt Anhänge ab, deren Summe 25 MB übersteigt (HTTP 400)")
+        void replyToEmail_lehntUebergrosseGesamtAnhaengeAb() throws Exception {
+            Email parent = createTestEmail(301L, "Parent", "kunde@example.com");
+            given(emailRepository.findById(301L)).willReturn(Optional.of(parent));
+
+            MockMultipartFile dtoPart = new MockMultipartFile("dto", "", "application/json",
+                    """
+                    {
+                        "recipients": ["kunde@example.com"],
+                        "subject": "Re: Antwort",
+                        "body": "Hallo"
+                    }
+                    """.getBytes(StandardCharsets.UTF_8));
+
+            MockMultipartFile file1 = new MockMultipartFile("attachments", "teil1.zip", "application/zip", new byte[10]) {
+                @Override
+                public long getSize() {
+                    return 14 * 1024 * 1024L;
+                }
+            };
+            MockMultipartFile file2 = new MockMultipartFile("attachments", "teil2.zip", "application/zip", new byte[10]) {
+                @Override
+                public long getSize() {
+                    return 12 * 1024 * 1024L;
+                }
+            };
+
+            mockMvc.perform(multipart("/api/emails/301/reply")
+                            .file(dtoPart)
+                            .file(file1)
+                            .file(file2))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("25 MB")));
+        }
+
+        @Test
+        @DisplayName("sendEmail übernimmt echten dateityp des ProjektDokuments (PNG) statt pauschal PDF")
+        void sendEmail_uebernimmtEchtenDateitypVonProjektDokument() throws Exception {
+            MockMultipartFile dtoPart = new MockMultipartFile("dto", "", "application/json",
+                    """
+                    {
+                        "sender": "absender@example.com",
+                        "recipients": ["kunde@example.com"],
+                        "subject": "Plan als Bild",
+                        "body": "Hier ist der Plan"
+                    }
+                    """.getBytes(StandardCharsets.UTF_8));
+
+            MockMultipartFile dokIdPart = new MockMultipartFile("dokumentId", "", "text/plain", "777".getBytes(StandardCharsets.UTF_8));
+
+            org.example.kalkulationsprogramm.domain.ProjektDokument dok = new org.example.kalkulationsprogramm.domain.ProjektDokument();
+            dok.setId(777L);
+            dok.setOriginalDateiname("zeichnung.png");
+            dok.setGespeicherterDateiname("zeichnung_123.png");
+            dok.setDateityp("image/png");
+
+            given(projektDokumentRepository.findById(777L)).willReturn(Optional.of(dok));
+
+            org.springframework.core.io.ByteArrayResource res = new org.springframework.core.io.ByteArrayResource(new byte[]{1, 2, 3}) {
+                @Override
+                public String getFilename() {
+                    return "zeichnung_123.png";
+                }
+            };
+            given(dateiSpeicherService.ladeDokumentAlsResource("zeichnung_123.png")).willReturn(res);
+
+            org.example.kalkulationsprogramm.service.SystemSettingsService.MailKonto konto =
+                    new org.example.kalkulationsprogramm.service.SystemSettingsService.MailKonto(
+                            "mail.example.com", 587, "user", "pass", "absender@example.com", "Firma");
+            given(systemSettingsService.getStandardMailKonto()).willReturn(konto);
+            given(emailAbsenderService.findActiveEmailAddresses()).willReturn(List.of("absender@example.com"));
+            org.example.kalkulationsprogramm.domain.EmailAbsender absender = new org.example.kalkulationsprogramm.domain.EmailAbsender();
+            absender.setEmailAdresse("absender@example.com");
+            given(emailAbsenderService.findFirstActive()).willReturn(Optional.of(absender));
+            given(emailAbsenderService.findAnzeigenameFuerAdresse(any())).willReturn(Optional.of("Firma"));
+
+            org.mockito.Mockito.doReturn("msg-id-777").when(unifiedEmailController).sendeSmtpMail(
+                    any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dtoPart)
+                            .file(dokIdPart))
+                    .andExpect(status().isOk());
+
+            // 1. Prüfe, dass das gespeicherte EmailAttachment den Typ "image/png" hat (nicht pauschal "application/pdf")
+            org.mockito.ArgumentCaptor<Email> emailCaptor = org.mockito.ArgumentCaptor.forClass(Email.class);
+            verify(emailRepository).save(emailCaptor.capture());
+            Email saved = emailCaptor.getValue();
+            org.junit.jupiter.api.Assertions.assertNotNull(saved.getAttachments());
+            org.junit.jupiter.api.Assertions.assertEquals(1, saved.getAttachments().size());
+            org.junit.jupiter.api.Assertions.assertEquals("image/png", saved.getAttachments().get(0).getMimeType());
+
+            // 2. Prüfe, dass der SMTP-Versand ebenfalls "image/png" als Attachment-Typ erhalten hat
+            @SuppressWarnings("unchecked")
+            org.mockito.ArgumentCaptor<List<org.example.email.EmailService.Attachment>> attachCaptor =
+                    org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(unifiedEmailController).sendeSmtpMail(
+                    any(), any(), any(), any(), any(), any(), attachCaptor.capture());
+            List<org.example.email.EmailService.Attachment> sentAttachments = attachCaptor.getValue();
+            org.junit.jupiter.api.Assertions.assertEquals(1, sentAttachments.size());
+            org.junit.jupiter.api.Assertions.assertEquals("image/png", sentAttachments.get(0).mimeType());
+        }
+
+        @Test
+        @DisplayName("sendEmail fällt bei Dokument ohne dateityp auf application/octet-stream zurück")
+        void sendEmail_faelltBeiFehlendemDateitypAufOctetStreamZurueck() throws Exception {
+            MockMultipartFile dtoPart = new MockMultipartFile("dto", "", "application/json",
+                    """
+                    {
+                        "sender": "absender@example.com",
+                        "recipients": ["kunde@example.com"],
+                        "subject": "CAD-Datei",
+                        "body": "Hier ist die Datei"
+                    }
+                    """.getBytes(StandardCharsets.UTF_8));
+
+            MockMultipartFile dokIdPart = new MockMultipartFile("dokumentId", "", "text/plain", "888".getBytes(StandardCharsets.UTF_8));
+
+            org.example.kalkulationsprogramm.domain.ProjektDokument dok = new org.example.kalkulationsprogramm.domain.ProjektDokument();
+            dok.setId(888L);
+            dok.setOriginalDateiname("modell.xyz");
+            dok.setGespeicherterDateiname("modell_888.xyz");
+            dok.setDateityp(null); // kein dateityp hinterlegt
+
+            given(projektDokumentRepository.findById(888L)).willReturn(Optional.of(dok));
+
+            org.springframework.core.io.ByteArrayResource res = new org.springframework.core.io.ByteArrayResource(new byte[]{4, 5, 6}) {
+                @Override
+                public String getFilename() {
+                    return "modell_888.xyz";
+                }
+            };
+            given(dateiSpeicherService.ladeDokumentAlsResource("modell_888.xyz")).willReturn(res);
+
+            org.example.kalkulationsprogramm.service.SystemSettingsService.MailKonto konto =
+                    new org.example.kalkulationsprogramm.service.SystemSettingsService.MailKonto(
+                            "mail.example.com", 587, "user", "pass", "absender@example.com", "Firma");
+            given(systemSettingsService.getStandardMailKonto()).willReturn(konto);
+            given(emailAbsenderService.findActiveEmailAddresses()).willReturn(List.of("absender@example.com"));
+            org.example.kalkulationsprogramm.domain.EmailAbsender absender = new org.example.kalkulationsprogramm.domain.EmailAbsender();
+            absender.setEmailAdresse("absender@example.com");
+            given(emailAbsenderService.findFirstActive()).willReturn(Optional.of(absender));
+            given(emailAbsenderService.findAnzeigenameFuerAdresse(any())).willReturn(Optional.of("Firma"));
+
+            org.mockito.Mockito.doReturn("msg-id-888").when(unifiedEmailController).sendeSmtpMail(
+                    any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dtoPart)
+                            .file(dokIdPart))
+                    .andExpect(status().isOk());
+
+            org.mockito.ArgumentCaptor<Email> emailCaptor = org.mockito.ArgumentCaptor.forClass(Email.class);
+            verify(emailRepository).save(emailCaptor.capture());
+            Email saved = emailCaptor.getValue();
+            org.junit.jupiter.api.Assertions.assertNotNull(saved.getAttachments());
+            org.junit.jupiter.api.Assertions.assertEquals("application/octet-stream", saved.getAttachments().get(0).getMimeType());
         }
     }
 }

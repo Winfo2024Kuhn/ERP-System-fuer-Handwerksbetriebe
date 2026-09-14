@@ -677,7 +677,7 @@ public class NotificationController {
         }
 
         private String monatsabschlussLink(int jahr, int monat) {
-                return "/zeitbuchungen?jahr=" + jahr + "&monat=" + monat;
+                return "/monatsabschluss?jahr=" + jahr + "&monat=" + monat;
         }
 
         // ---- Helper ----

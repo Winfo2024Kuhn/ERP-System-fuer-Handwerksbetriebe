@@ -77,7 +77,11 @@ export function DocumentEditorHeader({
                     <X className="w-4 h-4 text-slate-400" />
                 </button>
                 <div className="h-4 w-px bg-slate-200 flex-shrink-0" />
-                <h1 className="text-sm font-bold text-slate-800 truncate">
+                <h1
+                    className="text-sm font-bold text-slate-800 truncate"
+                    title={dokumentNummer || 'Neues Dokument'}
+                    data-kuerzung-erlaubt="true"
+                >
                     {dokumentNummer || 'Neues Dokument'}
                 </h1>
                 {/* Status badges */}
@@ -98,7 +102,11 @@ export function DocumentEditorHeader({
                         Ungespeichert
                     </span>
                 )}
-                <span className="text-[11px] text-slate-400 truncate hidden lg:block">
+                <span
+                    className="text-[11px] text-slate-400 truncate hidden lg:block"
+                    title={kontextInfo}
+                    data-kuerzung-erlaubt="true"
+                >
                     {kontextInfo}
                 </span>
             </div>

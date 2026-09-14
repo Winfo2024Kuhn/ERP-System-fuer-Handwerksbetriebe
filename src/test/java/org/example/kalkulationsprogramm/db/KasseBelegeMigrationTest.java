@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Fuehrt die echten ALTER-/INSERT-/UPDATE-Anweisungen aus V372 auf isoliertem
+ * Fuehrt die echten ALTER-/INSERT-/UPDATE-Anweisungen aus V375 auf isoliertem
  * H2 (MySQL-Kompatibilitaet) aus. Die MySQL-eigene
  * {@code SET @var = IF(...); PREPARE ... FROM @s; EXECUTE ...}-Steuerung
  * versteht H2 nicht -- deshalb werden die eigentlichen SQL-Anweisungen per
@@ -26,12 +26,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class KasseBelegeMigrationTest {
 
     @Test
+    void migrationsversionenSindEindeutig() throws Exception {
+        var migrationDir = java.nio.file.Path.of("src/main/resources/db/migration");
+        try (var files = java.nio.file.Files.list(migrationDir)) {
+            var versions = files.map(path -> path.getFileName().toString())
+                    .filter(name -> name.matches("V[0-9][0-9._]*__.*\\.sql"))
+                    .map(name -> org.flywaydb.core.api.MigrationVersion.fromVersion(
+                            name.substring(1, name.indexOf("__"))))
+                    .toList();
+            assertThat(versions).as("Flyway darf jede Migrationsversion nur einmal finden")
+                    .doesNotHaveDuplicates();
+        }
+    }
+
+    @Test
     void alterSpaltenBackfillUndSeedLaufenIdempotentUndErwartungsgemaess() throws Exception {
         try (Connection c = DriverManager.getConnection(
                 "jdbc:h2:mem:kasseBelege;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "")) {
             Statement s = c.createStatement();
 
-            // Minimal-Tabellen, wie sie vor V372 im Schema stehen.
+            // Minimal-Tabellen, wie sie vor V375 im Schema stehen.
             s.execute("CREATE TABLE beleg (id BIGINT PRIMARY KEY, zahlungsart VARCHAR(40), " +
                     "ist_umbuchung BOOLEAN NOT NULL DEFAULT FALSE)");
             s.execute("CREATE TABLE kasse_einstellung (id BIGINT PRIMARY KEY)");
@@ -43,7 +57,7 @@ public class KasseBelegeMigrationTest {
                     "('Bar', TRUE, 10), ('EC-Karte', TRUE, 20), ('Überweisung', TRUE, 30)");
             s.executeUpdate("INSERT INTO kasse_einstellung (id) VALUES (1)");
 
-            String schema = migration("V372__kasse_buchungen_und_export.sql");
+            String schema = migration("V375__kasse_buchungen_und_export.sql");
 
             // 1) ALTER-/FK-Anweisungen aus ihren String-Literalen ziehen und einmalig ausfuehren
             //    (die MySQL-Idempotenz-Pruefung selbst ist auf H2 nicht ausfuehrbar -- die

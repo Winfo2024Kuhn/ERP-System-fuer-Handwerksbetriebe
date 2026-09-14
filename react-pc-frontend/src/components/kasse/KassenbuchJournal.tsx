@@ -1,5 +1,6 @@
 import { ArrowRight, Coins, Loader2, Search } from 'lucide-react';
 import { Button } from '../ui/button';
+import { DatePicker } from '../ui/datepicker';
 import { Card } from '../ui/card';
 import type { KassenBewegung, Kassenbuch } from '../../types';
 import { KassenbuchAbschlussLeiste } from './KassenbuchAbschlussLeiste';
@@ -293,10 +294,10 @@ function KassenbuchFilter({ von, bis, onVonChange, onBisChange, search, onSearch
     return (
         <Card className="p-4 flex flex-wrap items-end gap-3">
             <Field label="Von">
-                <input type="date" value={von} onChange={e => onVonChange(e.target.value)} className={inputCls} />
+                <DatePicker aria-label="Von" value={von} onChange={onVonChange} />
             </Field>
             <Field label="Bis">
-                <input type="date" value={bis} onChange={e => onBisChange(e.target.value)} className={inputCls} />
+                <DatePicker aria-label="Bis" value={bis} onChange={onBisChange} />
             </Field>
             <div className="flex items-center gap-2 pb-0.5">
                 <Button variant="outline" size="sm" onClick={dieserMonat}

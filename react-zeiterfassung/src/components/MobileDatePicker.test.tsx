@@ -87,3 +87,41 @@ describe('MobileDatePicker', () => {
         expect(hiddenInput).toBeInTheDocument();
     });
 });
+
+it('begrenzt Tage und Heute und stellt Fokus nach Auswahl wieder her', async () => {
+ const user = userEvent.setup(); const changed = vi.fn()
+ render(<MobileDatePicker label="Datum" value="2020-01-15" min="2020-01-10" max="2020-01-20" onChange={changed}/>)
+ await user.click(screen.getByRole('button', {name:'Datum'}))
+ expect(screen.getByRole('button', {name:'Heute'})).toBeDisabled()
+ expect(screen.getByRole('button', {name:'09.01.2020'})).toBeDisabled()
+ expect(screen.getByRole('button', {name:'21.01.2020'})).toBeDisabled()
+ await user.click(screen.getByRole('button', {name:'10.01.2020'}))
+ expect(changed).toHaveBeenCalledExactlyOnceWith('2020-01-10')
+ expect(screen.getByRole('button', {name:'Datum'})).toHaveFocus()
+})
+it.each(['', '2020-01-09', '2020-01-21', '2020-02-31'])('blockiert ungültigen Pflichtwert %s systemeigen', async value => {
+ const user = userEvent.setup(); const submit = vi.fn(e=>e.preventDefault())
+ render(<form onSubmit={submit}><MobileDatePicker label="Datum" value={value} required min="2020-01-10" max="2020-01-20" onChange={()=>{}}/><button>Speichern</button></form>)
+ await user.click(screen.getByText('Speichern'))
+ expect(submit).not.toHaveBeenCalled()
+ expect(screen.getByRole('alert')).toHaveTextContent(/Datum/)
+})
+it('schließt per Escape und erhält die Auswahl', async () => {
+ const user=userEvent.setup(); const changed=vi.fn()
+ render(<MobileDatePicker label="Datum" value="2020-01-15" onChange={changed}/>)
+ await user.click(screen.getByRole('button',{name:'Datum'}))
+ await user.keyboard('{Escape}')
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+ expect(changed).not.toHaveBeenCalled()
+ expect(screen.getByRole('button',{name:'Datum'})).toHaveFocus()
+})
+
+it('gibt beim Tippen auf den Hintergrund den Fokus zurück', async () => {
+    const user = userEvent.setup()
+    render(<MobileDatePicker label="Datum" value="2020-01-15" onChange={() => {}} />)
+    const trigger = screen.getByRole('button', { name: 'Datum' })
+    await user.click(trigger)
+    await user.click(screen.getByRole('dialog').parentElement!)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+})

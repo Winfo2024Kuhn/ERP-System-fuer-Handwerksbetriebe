@@ -83,7 +83,7 @@ class NotificationControllerTest {
         given(monatsSaldoRepository.findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1))).willReturn(List.of(month));
         var summary = controller.getSummary(999L, auth);
         assertThat(summary.categories()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).singleElement()
-                .satisfies(c -> { assertThat(c.count()).isEqualTo(3); assertThat(c.link()).isEqualTo("/zeitbuchungen?jahr=2026&monat=8"); });
+                .satisfies(c -> { assertThat(c.count()).isEqualTo(3); assertThat(c.link()).isEqualTo("/monatsabschluss?jahr=2026&monat=8"); });
         assertThat(summary.recentItems()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).hasSize(1);
         org.mockito.Mockito.verify(monatsSaldoRepository).findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1));
     }

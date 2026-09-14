@@ -9,13 +9,20 @@ import { LieferantSearchModal, type LieferantSuchErgebnis } from '../LieferantSe
 import { KostenstellenSplitsEditor, type KostenstellenSplit } from './KostenstellenSplitsEditor';
 import { StornoDialog } from './StornoDialog';
 import { VerwerfenDialog } from './VerwerfenDialog';
-import { nettoAusBrutto, schluesseleAuf, zuZahl } from '../../lib/mwst';
+import { nettoAusBrutto, schluesseleAuf } from '../../lib/mwst';
 import type { Beleg, BelegKategorie, Sachkonto, Zahlungsart } from '../../types';
 import {
     KATEGORIE_LABELS, buildSachkontoOptions, buildZahlungsartOptions,
     formatDateTime, formatEuro, gesperrtCls, inputCls,
 } from './belegFormat';
 import { VorschlagsChip } from './VorschlagsChip';
+import { Dialog } from '../ui/dialog';
+import { DecimalInput } from '../ui/decimal-input';
+import { DatePicker } from '../ui/datepicker';
+import { useToast } from '../ui/toast';
+import { formatDecimalInput, validateDecimalInput } from '../../lib/numberInput';
+import { validateKostenstellenSplits } from '../../features/finanzen/kostenstellenDrafts';
+import { validateNumberDrafts } from '../../lib/numberDrafts';
 
 // Task 9 (reine Verschiebung, kein Verhalten geaendert): heutiger
 // BelegDetailModal aus BelegeKasseEditor.tsx (Zeilen 1160-2137) samt
@@ -31,6 +38,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     onSaved: (b: Beleg) => void;
     onDeleted: (id: number) => void;
 }) {
+    const toast = useToast();
     // Detail-Beleg nachladen. Zwei Gruende:
     //  (a) Issue #58: Die Listen-Query liefert positionen[] aus Performance-
     //      Gruenden nicht — der Aufteilungs-Bereich braucht sie aber.
@@ -43,21 +51,26 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     // Sonst wuerde eine spaet eintreffende KI-Antwort die Eingaben ueberschreiben,
     // die der Buchhalter waehrenddessen getippt hat.
     const [detailBeleg, setDetailBeleg] = useState<Beleg>(beleg);
+    // Bewusst nur diese drei Werte als Abhaengigkeit: eine neue `beleg`-Identitaet
+    // bei sonst gleichen Werten wuerde das Polling sonst unnoetig neu starten.
+    const belegId = beleg.id;
+    const belegAufteilungsModus = beleg.aufteilungsModus;
+    const belegKiStatus = beleg.kiAnalyseStatus;
     useEffect(() => {
-        const kiOffen = (b: Beleg) => b.kiAnalyseStatus === 'PENDING' || b.kiAnalyseStatus === 'LAEUFT';
-        if (beleg.aufteilungsModus !== 'TEILWEISE' && !kiOffen(beleg)) return;
+        const kiOffen = (status?: Beleg['kiAnalyseStatus']) => status === 'PENDING' || status === 'LAEUFT';
+        if (belegAufteilungsModus !== 'TEILWEISE' && !kiOffen(belegKiStatus)) return;
 
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
 
         const lade = async () => {
             try {
-                const res = await fetch(`/api/buchhaltung/belege/${beleg.id}`);
+                const res = await fetch(`/api/buchhaltung/belege/${belegId}`);
                 if (!res.ok) return;
                 const data: Beleg = await res.json();
                 if (cancelled) return;
                 setDetailBeleg(data);
-                if (kiOffen(data)) timer = setTimeout(lade, 4000);
+                if (kiOffen(data.kiAnalyseStatus)) timer = setTimeout(lade, 4000);
             } catch (e) {
                 console.error('Beleg-Detail laden fehlgeschlagen', e);
             }
@@ -65,16 +78,16 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
         lade();
 
         return () => { cancelled = true; if (timer) clearTimeout(timer); };
-    }, [beleg.id, beleg.aufteilungsModus, beleg.kiAnalyseStatus]);
+    }, [belegId, belegAufteilungsModus, belegKiStatus]);
 
     const [form, setForm] = useState({
         belegKategorie: beleg.belegKategorie,
         belegDatum: beleg.belegDatum ?? '',
         belegNummer: beleg.belegNummer ?? '',
         beschreibung: beleg.beschreibung ?? '',
-        betragNetto: beleg.betragNetto ?? '',
-        betragBrutto: beleg.betragBrutto ?? '',
-        mwstSatz: beleg.mwstSatz ?? '',
+        betragNetto: beleg.betragNetto == null ? '' : formatDecimalInput(beleg.betragNetto),
+        betragBrutto: beleg.betragBrutto == null ? '' : formatDecimalInput(beleg.betragBrutto),
+        mwstSatz: beleg.mwstSatz == null ? '' : formatDecimalInput(beleg.mwstSatz),
         zahlungsart: beleg.zahlungsart ?? '',
         lieferantId: beleg.lieferantId ?? null as number | null,
         lieferantName: beleg.lieferantName ?? '',
@@ -102,13 +115,14 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     // zeigt der zugeklappte Knopf, wie viele Felder belegt sind.
     const [mehrDetails, setMehrDetails] = useState(false);
     const [saldoInfo, setSaldoInfo] = useState<{ saldo: number; mindestbestand: number } | null>(null);
-    const [konflikt, setKonflikt] = useState<{ projizierterSaldo: number; mindestbestand: number; message: string } | null>(null);
-    // Inline-Validierungs-Hinweis statt blocking alert(), gemäß Toast-Pattern
-    // im restlichen Modul (siehe KasseShortcuts.tsx). Nach 4s ausblenden.
-    const [validationHint, setValidationHint] = useState<string | null>(null);
+    const [konflikt, setKonflikt] = useState<{ projizierterSaldo: number; mindestbestand: number; message: string; entwurf: string } | null>(null);
+    // Validierungsfehler als Toast und zusätzlich am Formular anzeigen.
+    // Den Hinweis am Formular nach 4s ausblenden.
+    const [validationHint, setValidationHintState] = useState<string | null>(null);
+    const setValidationHint = (message: string | null) => { setValidationHintState(message); if (message) toast.error(message); };
     useEffect(() => {
         if (!validationHint) return;
-        const t = setTimeout(() => setValidationHint(null), 4000);
+        const t = setTimeout(() => setValidationHintState(null), 4000);
         return () => clearTimeout(t);
     }, [validationHint]);
 
@@ -128,8 +142,9 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     // Live-Projektion: wie sieht der Saldo nach Validierung dieses Belegs aus?
     const projektion = useMemo(() => {
         if (!saldoInfo) return null;
-        const brutto = Number(form.betragBrutto);
-        if (!Number.isFinite(brutto) || brutto <= 0) return null;
+        const checked = validateNumberDrafts({ brutto: form.betragBrutto }, { brutto: { label: 'Betrag', required: true, maxDecimalPlaces: 2 } });
+        if (!checked.valid || checked.values.brutto! <= 0) return null;
+        const brutto = checked.values.brutto!;
         const alt = beleg.status === 'VALIDIERT' && beleg.betragBrutto != null
             ? (beleg.belegKategorie === 'KASSE_AUSGABE' || beleg.belegKategorie === 'PRIVATENTNAHME'
                 ? -beleg.betragBrutto : beleg.betragBrutto) : 0;
@@ -156,10 +171,10 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     // src/utils/mwst.ts — dort ist sie einzeln testbar, was bei Geldbetraegen
     // die Stelle ist, an der sich ein Rundungsfehler am teuersten raecht.
     const aufschluesselung = (() => {
-        const brutto = zuZahl(form.betragBrutto as string | number);
-        const satz = zuZahl(form.mwstSatz as string | number);
-        if (brutto === null || satz === null) return null;
-        return schluesseleAuf(brutto, satz);
+        const checked = validateNumberDrafts({ brutto: form.betragBrutto, satz: form.mwstSatz }, {
+            brutto: { label: 'Betrag', required: true, maxDecimalPlaces: 2 }, satz: { label: 'MwSt-Satz', required: true, min: 0, max: 100, maxDecimalPlaces: 2 },
+        });
+        return checked.valid ? schluesseleAuf(checked.values.brutto!, checked.values.satz!) : null;
     })();
     const berechnetesNetto = aufschluesselung?.netto ?? null;
     const berechneteMwst = aufschluesselung?.mwst ?? null;
@@ -167,36 +182,28 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     // Setzt MwSt-Satz und rechnet das Netto passend aus. Ohne gueltiges Brutto
     // wird nur der Satz gesetzt — sonst schrieben wir NaN ins Netto-Feld.
     const setzeMwstSatz = (satz: number) => {
-        setForm(f => {
-            const brutto = zuZahl(f.betragBrutto as string | number);
-            const netto = brutto === null ? null : nettoAusBrutto(brutto, satz);
-            if (netto === null) {
-                return { ...f, mwstSatz: satz as never };
-            }
-            return { ...f, mwstSatz: satz as never, betragNetto: netto as never };
+        const checked = validateNumberDrafts({ brutto: form.betragBrutto }, { brutto: { label: 'Betrag', required: true, maxDecimalPlaces: 2 } });
+        const netto = checked.valid ? nettoAusBrutto(checked.values.brutto!, satz) : null;
+        setForm(f => ({ ...f, mwstSatz: formatDecimalInput(satz),
+            ...(netto !== null && Number.isFinite(netto) ? { betragNetto: formatDecimalInput(netto) } : {}),
+        }));
+    };
+
+    const pruefeEntwurf = () => {
+        const numbers = validateNumberDrafts({ betragBrutto: form.betragBrutto, betragNetto: form.betragNetto, mwstSatz: form.mwstSatz }, {
+            betragBrutto: { label: 'Betrag', required: true, maxDecimalPlaces: 2 },
+            betragNetto: { label: 'Netto', maxDecimalPlaces: 2 },
+            mwstSatz: { label: 'MwSt-Satz', min: 0, max: 100, maxDecimalPlaces: 2 },
         });
+        if (!numbers.valid) { setValidationHint(numbers.message); return null; }
+        const splitResult = validateKostenstellenSplits(splits);
+        if (!splitResult.valid) { setValidationHint(splitResult.message); return null; }
+        return { values: numbers.values, splits: splitResult.splits };
     };
 
     const save = async (alsValidiert: boolean) => {
-        // Splits-Vorab-Validierung: Summe Prozent <= 100 + jeder Eintrag hat
-        // genau eines von Prozent/Absolut. Verhindert HTTP 400 Round-trip.
-        const prozentSumme = splits.reduce((acc, s) => acc + (s.prozent ?? 0), 0);
-        if (prozentSumme > 100) {
-            setValidationHint(`Summe der Kostenstellen-Prozente ist ${prozentSumme}% — darf nicht über 100% liegen.`);
-            return;
-        }
-        for (const s of splits) {
-            if (!s.kostenstelleId) {
-                setValidationHint('Jeder Split braucht eine Kostenstelle.');
-                return;
-            }
-            const hatProzent = s.prozent != null;
-            const hatAbsolut = s.absoluterBetrag != null;
-            if (hatProzent === hatAbsolut) {
-                setValidationHint('Pro Split-Eintrag genau EINES von Prozent ODER absolutem Betrag setzen.');
-                return;
-            }
-        }
+        const checked = pruefeEntwurf();
+        if (!checked) return;
         setValidationHint(null);
 
         setSaving(true);
@@ -208,14 +215,14 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                 belegDatum: form.belegDatum || null,
                 belegNummer: form.belegNummer || null,
                 beschreibung: form.beschreibung || null,
-                betragNetto: form.betragNetto === '' ? null : Number(form.betragNetto),
-                betragBrutto: form.betragBrutto === '' ? null : Number(form.betragBrutto),
-                mwstSatz: form.mwstSatz === '' ? null : Number(form.mwstSatz),
+                betragNetto: checked.values.betragNetto,
+                betragBrutto: checked.values.betragBrutto,
+                mwstSatz: checked.values.mwstSatz,
                 zahlungsart: form.zahlungsart || null,
                 lieferantId: form.lieferantId,
                 sachkontoId: form.sachkontoId,
                 notiz: form.notiz || null,
-                kostenstellenSplits: splits.map(s => ({
+                kostenstellenSplits: checked.splits.map(s => ({
                     kostenstelleId: s.kostenstelleId,
                     prozent: s.prozent,
                     absoluterBetrag: s.absoluterBetrag,
@@ -240,14 +247,15 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                     projizierterSaldo: Number(body409.projizierterSaldo),
                     mindestbestand: Number(body409.mindestbestand),
                     message: body409.message ?? 'Kasse würde unter Mindestbestand fallen',
+                    entwurf: JSON.stringify({ form, splits }),
                 });
                 return;
             }
             const body400 = await res.json().catch(() => null);
-            alert(body400?.message ?? 'Speichern fehlgeschlagen');
+            toast.error(body400?.message ?? 'Speichern fehlgeschlagen');
         } catch (e) {
             console.error(e);
-            alert('Netzwerkfehler');
+            toast.error('Netzwerkfehler');
         } finally {
             setSaving(false);
         }
@@ -256,7 +264,8 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     // 1-Klick-Loesung bei 409: vorab eine Privateinlage in der benoetigten
     // Hoehe buchen und dann nochmal speichern.
     const loeseUnterdeckung = async () => {
-        if (!konflikt) return;
+        if (!konflikt || !pruefeEntwurf()) return;
+        if (konflikt.entwurf !== JSON.stringify({ form, splits })) { await save(true); return; }
         const benoetigt = Math.max(0, konflikt.mindestbestand - konflikt.projizierterSaldo);
         if (benoetigt <= 0) {
             setKonflikt(null);
@@ -275,11 +284,13 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                 }),
             });
             if (!res.ok) {
-                alert('Vorab-Einlage fehlgeschlagen');
+                toast.error('Vorab-Einlage fehlgeschlagen');
                 return;
             }
             setKonflikt(null);
             await save(true);
+        } catch {
+            toast.error('Die Vorab-Einlage konnte nicht gespeichert werden.');
         } finally {
             setSaving(false);
         }
@@ -301,13 +312,8 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
         ? detailBeleg.kiVorgeschlagenerLieferant : null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="beleg-detail-titel"
-                className="bg-white rounded-xl shadow-2xl w-full max-w-[98vw] max-h-[95vh] flex flex-col overflow-hidden"
-            >
+        <Dialog open onOpenChange={open => { if (!open) { if (lieferantPicker) setLieferantPicker(false); else onClose(); } }} aria-label="Beleg prüfen" className="w-[98vw] max-w-[98vw] p-0 overflow-hidden">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-[98vw] max-h-[95vh] flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Receipt className="w-5 h-5 text-rose-600" />
@@ -321,7 +327,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                             <p className="text-xs text-slate-500">Hochgeladen {formatDateTime(beleg.uploadDatum)} {beleg.uploadedByName ? `von ${beleg.uploadedByName}` : ''}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
+
                 </div>
 
                 <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-0 min-h-0">
@@ -382,16 +388,15 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
 
                         <div className="grid grid-cols-2 gap-3">
                             <Field label="Betrag (€)">
-                                <input type="number" step="0.01" value={form.betragBrutto}
-                                    onChange={e => update('betragBrutto', e.target.value as never)}
+                                <DecimalInput aria-label="Betrag (€)" value={form.betragBrutto}
+                                    onChange={value => update('betragBrutto', value)}
                                     disabled={istFestgeschrieben}
                                     className={`${inputCls} ${gesperrtCls} text-lg font-semibold tabular-nums`} />
                             </Field>
                             <Field label="Beleg-Datum">
-                                <input type="date" value={form.belegDatum}
-                                    onChange={e => update('belegDatum', e.target.value)}
-                                    disabled={istFestgeschrieben}
-                                    className={`${inputCls} ${gesperrtCls}`} />
+                                <DatePicker aria-label="Beleg-Datum" value={form.belegDatum}
+                                    onChange={value => update('belegDatum', value)}
+                                    disabled={istFestgeschrieben} />
                             </Field>
                         </div>
 
@@ -401,7 +406,8 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">MwSt</span>
                             {[19, 7, 0].map(satz => {
-                                const aktiv = Number(form.mwstSatz) === satz && form.mwstSatz !== '';
+                                const checked = validateDecimalInput(form.mwstSatz, { label: 'MwSt-Satz' });
+                                const aktiv = checked.valid && checked.value === satz;
                                 return (
                                     <button key={satz} type="button" onClick={() => setzeMwstSatz(satz)}
                                         aria-pressed={aktiv}
@@ -491,14 +497,14 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                                             />
                                         </Field>
                                         <Field label="Netto (€)">
-                                            <input type="number" step="0.01" value={form.betragNetto}
-                                                onChange={e => update('betragNetto', e.target.value as never)}
+                                            <DecimalInput aria-label="Netto (€)" value={form.betragNetto}
+                                                onChange={value => update('betragNetto', value)}
                                                 disabled={istFestgeschrieben}
                                                 className={`${inputCls} ${gesperrtCls}`} />
                                         </Field>
                                         <Field label="MwSt-Satz (%)">
-                                            <input type="number" step="0.1" value={form.mwstSatz}
-                                                onChange={e => update('mwstSatz', e.target.value as never)}
+                                            <DecimalInput aria-label="MwSt-Satz (%)" value={form.mwstSatz}
+                                                onChange={value => update('mwstSatz', value)}
                                                 disabled={istFestgeschrieben}
                                                 className={`${inputCls} ${gesperrtCls}`} />
                                         </Field>
@@ -585,7 +591,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                             {validationHint}
                         </div>
                     )}
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center justify-end gap-3">
                         {/* Fest gebuchte Belege lassen sich nicht mehr verwerfen —
                             an ihre Stelle tritt die Gegenbuchung. Bereits
                             stornierte Belege bieten gar nichts mehr an. */}
@@ -660,7 +666,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                     }}
                 />
             )}
-        </div>
+        </Dialog>
     );
 }
 

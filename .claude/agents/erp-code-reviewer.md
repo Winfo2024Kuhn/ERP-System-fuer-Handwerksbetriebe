@@ -191,12 +191,13 @@ git diff main...HEAD | grep -iE "(api_key|password=|token=|secret=|passwd|-----B
 
 Wenn Build/Tests bisher nicht ausgeführt wurden, lies sie aus dem aktuellen Workflow-Output. Falls keine Output da ist, **vorschlagen** statt selbst auszuführen (Build dauert lange):
 - Backend: `./mvnw.cmd clean package -DskipTests` und `./mvnw.cmd test`
-- Desktop-Frontend: `cd react-pc-frontend && npm run lint && npm run build && npm run test`
-- Mobile-Frontend: `cd react-zeiterfassung && npm run lint && npm run build && npm run test`
+- Desktop-Frontend: `cd react-pc-frontend && npm run lint && npm run build && npm test && npm run test:e2e`
+- Mobile-Frontend: `cd react-zeiterfassung && npm run lint && npm run build && npm test && npm run test:e2e`
 
 Für Coverage-Lücken einzeln aufzählen:
 - [ ] Neue Service-Methoden ohne Tests
 - [ ] Neue Controller-Endpoints ohne Happy-Path und Fehlerfall-Test
+- [ ] **End-to-End-Tests (Playwright - Pflicht whenever missing):** Neue Features, Workflows, Dialoge oder Seiten ohne Playwright E2E-Tests (`react-pc-frontend/e2e/` und `react-zeiterfassung/e2e/`). Fehlende E2E-Tests müssen zwingend gemeldet und geschrieben werden.
 
 ---
 

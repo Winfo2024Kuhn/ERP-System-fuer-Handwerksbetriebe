@@ -40,8 +40,8 @@ describe('ZeiterfassungZeitkonten Task 9b', () => {
     it('behält Vorlage, Versionsstand und abweichende Stunden für die Übernahme bei', async () => {
         const user = userEvent.setup(); renderSeite(); await screen.findByText('Max Mustermann');
         await user.click(screen.getByRole('button', { name: /Arbeitszeit ändern/i }));
-        await user.clear(screen.getByRole('spinbutton', { name: 'Freitag Stunden' }));
-        await user.type(screen.getByRole('spinbutton', { name: 'Freitag Stunden' }), '6');
+        await user.clear(screen.getByRole('textbox', { name: 'Freitag Stunden' }));
+        await user.type(screen.getByRole('textbox', { name: 'Freitag Stunden' }), '6');
         await user.click(screen.getByRole('button', { name: 'Vorschau laden' }));
         await screen.findByText('Abgeschlossen · unverändert');
         await user.click(screen.getByRole('button', { name: 'Übernehmen' }));

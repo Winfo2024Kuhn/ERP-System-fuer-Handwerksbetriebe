@@ -342,6 +342,7 @@ function App() {
         <Route path="/reklamationen/:id" element={<LieferantReklamationDetailPage />} />
         <Route path="/mitarbeiter" element={<Navigate to="/" replace />} /> {/* Legacy redirect */}
         <Route path="/urlaub" element={<UrlaubsantragPage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
+        <Route path="/zeitausgleich" element={<Navigate to="/urlaub?typ=ZEITAUSGLEICH" replace />} />
         <Route path="/abwesenheit" element={<UrlaubsantragPage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
         <Route path="/abwesenheiten" element={<AbwesenheitenPage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />
         <Route path="/salden" element={<SaldenPage mitarbeiter={mitarbeiter} syncStatus={syncStatus} onSync={syncData} />} />

@@ -590,6 +590,94 @@ class DateiSpeicherServiceTest {
     }
 
     @Test
+    void speichertMahnungMitReferenzAbschlagsrechnung() throws IOException {
+        ServiceSetup setup = createMahnungService();
+        Projekt projekt = new Projekt();
+        projekt.setId(1L);
+        when(setup.projektRepository.findById(1L)).thenReturn(Optional.of(projekt));
+
+        ProjektGeschaeftsdokument referenz = new ProjektGeschaeftsdokument();
+        referenz.setId(43L);
+        referenz.setProjekt(projekt);
+        referenz.setDokumentid("AR-2026/08/00036");
+        referenz.setGeschaeftsdokumentart("Abschlagsrechnung");
+        referenz.setBruttoBetrag(BigDecimal.valueOf(1500.00));
+        referenz.setRechnungsdatum(LocalDate.of(2026, 8, 1));
+
+        when(setup.dokumentRepository.findById(43L)).thenReturn(Optional.of(referenz));
+        when(setup.dokumentRepository.findByProjektId(1L)).thenReturn(List.of(referenz));
+        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Path zugferdTmp = Files.createTempFile("zugferd-mahnung-ar", ".pdf");
+        Files.writeString(zugferdTmp, "dummy");
+
+        ZugferdDaten daten = new ZugferdDaten();
+        daten.setGeschaeftsdokumentart("Mahnung");
+        daten.setReferenzDokumentId(43L);
+        daten.setMahnstufe("ZAHLUNGSERINNERUNG");
+        daten.setFaelligkeitsdatum(LocalDate.of(2026, 9, 20));
+        daten.setRechnungsdatum(LocalDate.of(2026, 9, 1));
+
+        ProjektGeschaeftsdokument gespeichert = setup.service.speichereZugferdDatei(zugferdTmp, "mahnung-ar.pdf", 1L, daten);
+
+        assertNotNull(gespeichert);
+        assertSame(referenz, gespeichert.getReferenzDokument());
+        assertEquals("AR-2026/08/00036", gespeichert.getDokumentid());
+        assertEquals(Mahnstufe.ZAHLUNGSERINNERUNG, gespeichert.getMahnstufe());
+    }
+
+    @Test
+    void speichertMahnungMitReferenzStornorechnungWirftException() throws IOException {
+        ServiceSetup setup = createMahnungService();
+        Projekt projekt = new Projekt();
+        projekt.setId(1L);
+        when(setup.projektRepository.findById(1L)).thenReturn(Optional.of(projekt));
+
+        ProjektGeschaeftsdokument referenz = new ProjektGeschaeftsdokument();
+        referenz.setId(44L);
+        referenz.setProjekt(projekt);
+        referenz.setDokumentid("SR-2026/08/00001");
+        referenz.setGeschaeftsdokumentart("Stornorechnung");
+        referenz.setBruttoBetrag(BigDecimal.valueOf(-1500.00));
+        referenz.setRechnungsdatum(LocalDate.of(2026, 8, 1));
+
+        when(setup.dokumentRepository.findById(44L)).thenReturn(Optional.of(referenz));
+
+        Path zugferdTmp = Files.createTempFile("zugferd-mahnung-sr", ".pdf");
+        Files.writeString(zugferdTmp, "dummy");
+
+        ZugferdDaten daten = new ZugferdDaten();
+        daten.setGeschaeftsdokumentart("Mahnung");
+        daten.setReferenzDokumentId(44L);
+        daten.setMahnstufe("ZAHLUNGSERINNERUNG");
+        daten.setFaelligkeitsdatum(LocalDate.of(2026, 9, 20));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> setup.service.speichereZugferdDatei(zugferdTmp, "mahnung-sr.pdf", 1L, daten));
+        assertTrue(ex.getMessage().contains("Mahnung muss sich auf eine Rechnung beziehen."));
+    }
+
+    @Test
+    void istMahnfaehigeRechnungPrueftWhitelistKorrekt() {
+        assertTrue(DateiSpeicherService.istMahnfaehigeRechnung("Rechnung"));
+        assertTrue(DateiSpeicherService.istMahnfaehigeRechnung("rechnung"));
+        assertTrue(DateiSpeicherService.istMahnfaehigeRechnung("Teilrechnung"));
+        assertTrue(DateiSpeicherService.istMahnfaehigeRechnung("Abschlagsrechnung"));
+        assertTrue(DateiSpeicherService.istMahnfaehigeRechnung("Schlussrechnung"));
+        assertTrue(DateiSpeicherService.istMahnfaehigeRechnung(" Schlussrechnung "));
+
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung("Stornorechnung"));
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung("stornorechnung"));
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung("Gutschrift"));
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung("Angebot"));
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung("Auftragsbestaetigung"));
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung("Mahnung"));
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung(null));
+        assertFalse(DateiSpeicherService.istMahnfaehigeRechnung(""));
+    }
+
+    @Test
     void speichertMahnungMitUngueltigerStufeSetztStandard() throws IOException {
         ServiceSetup setup = createMahnungService();
         Projekt projekt = new Projekt();

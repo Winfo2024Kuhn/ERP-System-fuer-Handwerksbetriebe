@@ -3,6 +3,9 @@ import { Building2, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Do
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { ColorInput } from '../components/ui/color-input';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
@@ -50,6 +53,17 @@ interface Firmeninformation {
     bgSatzOverride?: number | null;
     bgSatzEffektiv?: number | null;
 }
+
+type FirmenZahlenFeld = 'tageBisZahlungserinnerung' | 'tageBisErsteMahnung' | 'tageBisZweiteMahnung' | 'mahnverfahrenNeuesZahlungszielTage' | 'bgSatzOverride';
+type FirmenEntwurf = Omit<Firmeninformation, FirmenZahlenFeld> & Record<FirmenZahlenFeld, string>;
+const firmenEntwurf = (firma: Firmeninformation): FirmenEntwurf => ({
+    ...firma,
+    tageBisZahlungserinnerung: formatDecimalInput(firma.tageBisZahlungserinnerung ?? 7),
+    tageBisErsteMahnung: formatDecimalInput(firma.tageBisErsteMahnung ?? 7),
+    tageBisZweiteMahnung: formatDecimalInput(firma.tageBisZweiteMahnung ?? 7),
+    mahnverfahrenNeuesZahlungszielTage: formatDecimalInput(firma.mahnverfahrenNeuesZahlungszielTage ?? 7),
+    bgSatzOverride: firma.bgSatzOverride == null ? '' : formatDecimalInput(firma.bgSatzOverride),
+});
 
 interface GewerkOption {
     id: number;
@@ -138,7 +152,7 @@ type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 // --- Mahnverfahren-Zeitstrahl (lokale Bausteine, nur in dieser Seite verwendet) ---
 
-const MAHN_DEFAULT_TAGE = 7;
+
 
 /** Eine Station auf dem Zeitstrahl: Kreis-Marker mit Icon, Label daneben (mobil) bzw. darunter (Desktop). */
 function ZeitstrahlStation({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
@@ -153,7 +167,7 @@ function ZeitstrahlStation({ icon: Icon, label }: { icon: LucideIcon; label: str
 }
 
 /** Verbindung zwischen zwei Stationen mit Tage-Eingabefeld: mobil vertikal, ab md horizontal. */
-function ZeitstrahlAbstand({ value, onChange, beschriftung }: { value: number; onChange: (tage: number) => void; beschriftung: string }) {
+function ZeitstrahlAbstand({ value, onChange, beschriftung }: { value: string; onChange: (tage: string) => void; beschriftung: string }) {
     return (
         <div className="flex md:flex-1 md:flex-col">
             {/* Verbindungslinie: mobil senkrecht unter dem Kreis, ab md waagerecht auf Kreis-Mitte */}
@@ -161,11 +175,12 @@ function ZeitstrahlAbstand({ value, onChange, beschriftung }: { value: number; o
                 <div className="min-h-[3.5rem] w-px bg-rose-200 md:h-px md:min-h-0 md:w-full" />
             </div>
             <div className="flex items-center gap-2 py-3 md:mt-2 md:flex-col md:gap-1 md:px-2 md:py-0">
-                <Input
-                    type="number"
+                <DecimalInput
+                    aria-label={beschriftung}
+                    required integer
                     min={1}
                     value={value}
-                    onChange={e => onChange(parseInt(e.target.value) || MAHN_DEFAULT_TAGE)}
+                    onChange={onChange}
                     className="w-20 text-center"
                 />
                 <span className="text-xs text-slate-500 md:text-center">{beschriftung}</span>
@@ -177,13 +192,14 @@ function ZeitstrahlAbstand({ value, onChange, beschriftung }: { value: number; o
 export default function FirmaEditor() {
     const toast = useToast();
     const confirmDialog = useConfirm();
+    const showError = toast.error;
     const [activeTab, setActiveTab] = useState<ActiveTab>('firma');
     const [sbSubTab, setSbSubTab] = useState<SteuerberaterSubTab>('kontakte');
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 
     // Firmeninformation State
-    const [firma, setFirma] = useState<Firmeninformation | null>(null);
+    const [firma, setFirma] = useState<FirmenEntwurf | null>(null);
 
     // Steuerberater State
     const [steuerberater, setSteuerberater] = useState<SteuerberaterKontakt[]>([]);
@@ -211,49 +227,57 @@ export default function FirmaEditor() {
     const loadFirma = useCallback(async () => {
         try {
             const res = await fetch('/api/firma');
+            if (!res.ok) throw new Error('Firmendaten konnten nicht geladen werden.');
             if (res.ok) {
-                setFirma(await res.json());
+                setFirma(firmenEntwurf(await res.json()));
             }
         } catch (e) {
             console.error('Fehler beim Laden der Firmendaten', e);
+            showError('Firmendaten konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
     // Load Gewerke (fuer Auswahl im Firma-Tab)
     const loadGewerke = useCallback(async () => {
         try {
             const res = await fetch('/api/lohn-stammdaten/gewerke?nurAktive=true');
+            if (!res.ok) throw new Error('Gewerke konnten nicht geladen werden.');
             if (res.ok) {
                 setGewerke(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der Gewerke', e);
+            showError('Gewerke konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
     // Load Steuerberater
     const loadSteuerberater = useCallback(async () => {
         try {
             const res = await fetch('/api/firma/steuerberater');
+            if (!res.ok) throw new Error('Steuerberater konnten nicht geladen werden.');
             if (res.ok) {
                 setSteuerberater(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der Steuerberater', e);
+            showError('Steuerberater konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
     // Load E-Mail-Absender
     const loadAbsender = useCallback(async () => {
         try {
             const res = await fetch('/api/firma/email-absender');
+            if (!res.ok) throw new Error('Absender konnten nicht geladen werden.');
             if (res.ok) {
                 setAbsenderListe(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der Absender', e);
+            showError('Absender konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
     // Load Meta (Years)
     const loadMeta = useCallback(async () => {
@@ -263,6 +287,7 @@ export default function FirmaEditor() {
                 fetch('/api/bwa/jahre')
             ]);
             
+            if (!lohnJahreRes.ok || !bwaJahreRes.ok) throw new Error('Abrechnungsjahre konnten nicht geladen werden.');
             const jahreSet = new Set<number>();
             jahreSet.add(new Date().getFullYear());
 
@@ -278,8 +303,9 @@ export default function FirmaEditor() {
             setVerfuegbareJahre(Array.from(jahreSet).sort((a, b) => b - a));
         } catch (e) {
             console.error('Fehler beim Laden der Jahre', e);
+            showError('Abrechnungsjahre konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
     // Load Lohnabrechnungen List
     const loadLohnabrechnungen = useCallback(async () => {
@@ -289,25 +315,29 @@ export default function FirmaEditor() {
                 url = `/api/lohnabrechnungen/steuerberater/${selectedSbFilter}/jahr/${selectedJahr}`;
             }
             const res = await fetch(url);
+            if (!res.ok) throw new Error('Lohnabrechnungen konnten nicht geladen werden.');
             if (res.ok) {
                 setLohnabrechnungen(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der Lohnabrechnungen', e);
+            showError('Lohnabrechnungen konnten nicht geladen werden.');
         }
-    }, [selectedJahr, selectedSbFilter]);
+    }, [selectedJahr, selectedSbFilter, showError]);
 
     // Load BWA List
     const loadBwaListe = useCallback(async () => {
         try {
             const res = await fetch(`/api/bwa/jahr/${selectedJahr}`);
+            if (!res.ok) throw new Error('Auswertungen konnten nicht geladen werden.');
             if (res.ok) {
                 setBwaListe(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der BWA-Liste', e);
+            showError('Auswertungen konnten nicht geladen werden.');
         }
-    }, [selectedJahr]);
+    }, [selectedJahr, showError]);
 
     useEffect(() => {
         if (activeTab === 'steuerberater') {
@@ -392,18 +422,34 @@ export default function FirmaEditor() {
     // Save Firmeninformation
     const saveFirma = async () => {
         if (!firma) return;
+        const { tageBisZahlungserinnerung, tageBisErsteMahnung, tageBisZweiteMahnung, mahnverfahrenNeuesZahlungszielTage, bgSatzOverride, ...rest } = firma;
+        const zahlen = { tageBisZahlungserinnerung, tageBisErsteMahnung, tageBisZweiteMahnung, mahnverfahrenNeuesZahlungszielTage, bgSatzOverride };
+        const labels: Record<FirmenZahlenFeld, string> = { tageBisZahlungserinnerung: 'Tage nach Fälligkeit', tageBisErsteMahnung: 'Tage nach der Zahlungserinnerung', tageBisZweiteMahnung: 'Tage nach der 1. Mahnung', mahnverfahrenNeuesZahlungszielTage: 'Neues Zahlungsziel', bgSatzOverride: 'Tatsächlicher BG-Satz' };
+        const payload: Partial<Firmeninformation> = { ...rest };
+        for (const key of Object.keys(zahlen) as FirmenZahlenFeld[]) {
+            const optional = key === 'bgSatzOverride';
+            const result = validateDecimalInput(zahlen[key], { label: labels[key], required: !optional, integer: !optional, min: optional ? 0 : 1, ...(optional ? { max: 100 } : {}) });
+            if (!result.valid) { toast.error(result.message); return; }
+            if (key === 'bgSatzOverride') payload[key] = result.value;
+            else if (result.value !== null) payload[key] = result.value;
+        }
+        if (firma.firmenfarbe && !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(firma.firmenfarbe)) { toast.error('Bitte eine gültige Firmenfarbe eingeben, z. B. #500010.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/firma', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(firma)
+                body: JSON.stringify(payload)
             });
             if (res.ok) {
-                setFirma(await res.json());
+                setFirma(firmenEntwurf(await res.json()));
+                toast.success('Firmendaten gespeichert.');
+            } else {
+                toast.error('Firmendaten konnten nicht gespeichert werden.');
             }
         } catch (e) {
             console.error('Fehler beim Speichern', e);
+            toast.error('Firmendaten konnten nicht gespeichert werden.');
         } finally {
             setSaving(false);
         }
@@ -451,10 +497,12 @@ export default function FirmaEditor() {
     const deleteSteuerberater = async (id: number) => {
         if (!await confirmDialog({ title: 'Steuerberater löschen', message: 'Steuerberater wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
-            await fetch(`/api/firma/steuerberater/${id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/firma/steuerberater/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Steuerberater konnte nicht gelöscht werden.');
             await loadSteuerberater();
         } catch (e) {
             console.error('Fehler beim Löschen', e);
+            toast.error('Steuerberater konnte nicht gelöscht werden.');
         }
     };
 
@@ -764,14 +812,14 @@ export default function FirmaEditor() {
                                     <div>
                                         <Label>Firmenfarbe</Label>
                                         <div className="flex items-center gap-2">
-                                            <input
-                                                type="color"
+                                            <ColorInput
                                                 aria-label="Firmenfarbe wählen"
                                                 value={/^#[0-9a-fA-F]{6}$/.test(firma.firmenfarbe || '') ? firma.firmenfarbe : '#500010'}
-                                                onChange={e => setFirma({ ...firma, firmenfarbe: e.target.value })}
+                                                onChange={value => setFirma({ ...firma, firmenfarbe: value })}
                                                 className="h-9 w-12 rounded border border-slate-200 bg-white p-1 cursor-pointer"
                                             />
                                             <Input
+                                                aria-label="Firmenfarbe als Hex-Wert"
                                                 value={firma.firmenfarbe || ''}
                                                 onChange={e => setFirma({ ...firma, firmenfarbe: e.target.value })}
                                                 placeholder="#500010"
@@ -870,19 +918,19 @@ export default function FirmaEditor() {
                                     <div className="flex flex-col pt-2 md:flex-row md:items-start">
                                         <ZeitstrahlStation icon={CalendarClock} label="Rechnung fällig" />
                                         <ZeitstrahlAbstand
-                                            value={firma.tageBisZahlungserinnerung || MAHN_DEFAULT_TAGE}
+                                            value={firma.tageBisZahlungserinnerung}
                                             onChange={tage => setFirma({ ...firma, tageBisZahlungserinnerung: tage })}
                                             beschriftung="Tage nach Fälligkeit"
                                         />
                                         <ZeitstrahlStation icon={BellRing} label="Zahlungserinnerung" />
                                         <ZeitstrahlAbstand
-                                            value={firma.tageBisErsteMahnung || MAHN_DEFAULT_TAGE}
+                                            value={firma.tageBisErsteMahnung}
                                             onChange={tage => setFirma({ ...firma, tageBisErsteMahnung: tage })}
                                             beschriftung="Tage nach der Zahlungserinnerung"
                                         />
                                         <ZeitstrahlStation icon={Mail} label="1. Mahnung" />
                                         <ZeitstrahlAbstand
-                                            value={firma.tageBisZweiteMahnung || MAHN_DEFAULT_TAGE}
+                                            value={firma.tageBisZweiteMahnung}
                                             onChange={tage => setFirma({ ...firma, tageBisZweiteMahnung: tage })}
                                             beschriftung="Tage nach der 1. Mahnung"
                                         />
@@ -892,11 +940,12 @@ export default function FirmaEditor() {
                                     {/* Neues Zahlungsziel auf der Mahnung */}
                                     <div>
                                         <Label>Neues Zahlungsziel auf der Mahnung (Tage)</Label>
-                                        <Input
-                                            type="number"
+                                        <DecimalInput
+                                            aria-label="Neues Zahlungsziel auf der Mahnung (Tage)"
+                                            required integer
                                             min={1}
-                                            value={firma.mahnverfahrenNeuesZahlungszielTage || MAHN_DEFAULT_TAGE}
-                                            onChange={e => setFirma({ ...firma, mahnverfahrenNeuesZahlungszielTage: parseInt(e.target.value) || MAHN_DEFAULT_TAGE })}
+                                            value={firma.mahnverfahrenNeuesZahlungszielTage}
+                                            onChange={value => setFirma({ ...firma, mahnverfahrenNeuesZahlungszielTage: value })}
                                             className="w-24"
                                         />
                                         <p className="mt-1 text-xs text-slate-500">
@@ -1093,10 +1142,10 @@ export default function FirmaEditor() {
                                                                 {la.monat}/{la.jahr}
                                                             </span>
                                                             {la.bruttolohn && (
-                                                                <span>• Brutto: {la.bruttolohn.toFixed(2)} €</span>
+                                                                <span>• Brutto: {la.bruttolohn.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
                                                             )}
                                                             {la.nettolohn && (
-                                                                <span>• Netto: {la.nettolohn.toFixed(2)} €</span>
+                                                                <span>• Netto: {la.nettolohn.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
                                                             )}
                                                         </div>
                                                     </div>
@@ -1171,7 +1220,7 @@ export default function FirmaEditor() {
                                                     <div className="flex justify-between">
                                                         <span className="text-slate-500">Gemeinkosten:</span>
                                                         <span className="font-medium text-slate-900">
-                                                            {(bwa.gesamtGemeinkosten || 0).toFixed(2)} €
+                                                            {(bwa.gesamtGemeinkosten || 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
                                                         </span>
                                                     </div>
                                                 </div>
@@ -1324,20 +1373,20 @@ export default function FirmaEditor() {
                                 <div>
                                     <Label>BG-Satz (Vorschlag)</Label>
                                     <Input
-                                        value={firma.bgSatzVorschlag != null ? `${Number(firma.bgSatzVorschlag).toFixed(2)} %` : ''}
+                                        value={firma.bgSatzVorschlag != null ? `${Number(firma.bgSatzVorschlag).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : ''}
                                         disabled
                                         placeholder="—"
                                     />
                                 </div>
                                 <div>
                                     <Label>Tatsächlicher BG-Satz (aus Bescheid)</Label>
-                                    <Input
-                                        type="number"
-                                        step="0.01"
+                                    <DecimalInput
+                                        aria-label="Tatsächlicher BG-Satz (aus Bescheid)"
                                         min={0}
+                                        max={100}
                                         value={firma.bgSatzOverride ?? ''}
-                                        onChange={e => setFirma({ ...firma, bgSatzOverride: e.target.value === '' ? null : parseFloat(e.target.value) })}
-                                        placeholder={firma.bgSatzVorschlag != null ? `Standard ${Number(firma.bgSatzVorschlag).toFixed(2)} %` : 'optional'}
+                                        onChange={value => setFirma({ ...firma, bgSatzOverride: value })}
+                                        placeholder={firma.bgSatzVorschlag != null ? `Standard ${Number(firma.bgSatzVorschlag).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : 'optional'}
                                     />
                                     <p className="text-xs text-slate-500 mt-1">Leer lassen, um den Standard-Satz zu nutzen.</p>
                                 </div>

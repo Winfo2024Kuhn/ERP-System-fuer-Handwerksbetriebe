@@ -158,7 +158,10 @@ test.describe('DocumentEditorPage - Sperr-Fundament', () => {
         await stubbeDatensatzLock(page, 'fehler');
         await oeffneSeite(page);
 
-        await expect(page.getByRole('alert')).toContainText(LOCK_FEHLER_TEXT);
+        // Fehler-Toasts tragen seit Abschnitt 4 ebenfalls role="alert"; hier ist
+        // ausdruecklich der Hinweis AUF DER SEITE gemeint, der Toast wird eine
+        // Zeile weiter unten eigens geprueft.
+        await expect(page.locator('[role="alert"]:not([data-pc-toasts] *)')).toContainText(LOCK_FEHLER_TEXT);
         await expect(page.getByTestId('toast-container')).toContainText(LOCK_FEHLER_TEXT);
         // Derselbe Wortlaut steht doppelt im Dokument -- einmal auf der Seite, einmal im Toast.
         await expect(page.getByText(LOCK_FEHLER_TEXT)).toHaveCount(2);

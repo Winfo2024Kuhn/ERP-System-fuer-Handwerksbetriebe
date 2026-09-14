@@ -1,4 +1,5 @@
 import createDOMPurify from 'dompurify';
+import { stripHtmlTags, unescapeHtmlEntities } from '../../lib/htmlSanitizer';
 
 /**
  * Genau die Tags, die die Website in sanitizePostContent zulaesst
@@ -132,13 +133,9 @@ const LISTENPUNKT_MUSTER = /<li[^>]*>([\s\S]*?)<\/li>/gi;
  * (aus dem maskierten "&amp;lt;" wuerde sonst faelschlich "<" statt "&lt;").
  */
 function wandleInlineInhaltZurueck(html: string): string {
-    return html
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]+>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&');
+    const mitUmbruechen = html.replace(/<br\s*\/?>/gi, '\n');
+    const ohneTags = stripHtmlTags(mitUmbruechen);
+    return unescapeHtmlEntities(ohneTags);
 }
 
 /**
@@ -177,14 +174,9 @@ const STANDARD_LAENGE = 160;
  * Tags raus, Leerraum zusammenfalten, an der Wortgrenze kuerzen.
  */
 export function leiteKurzbeschreibungAb(html: string, maxLaenge = STANDARD_LAENGE): string {
-    const text = html
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/\s+/g, ' ')
-        .trim();
+    const ohneTags = stripHtmlTags(html, ' ');
+    const entpackt = unescapeHtmlEntities(ohneTags);
+    const text = entpackt.replace(/\s+/g, ' ').trim();
 
     if (text.length <= maxLaenge) return text;
 

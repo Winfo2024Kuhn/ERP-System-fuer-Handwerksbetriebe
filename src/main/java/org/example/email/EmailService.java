@@ -38,7 +38,23 @@ public class EmailService {
      * file on disk.  Temporary file names are implementation details and must
      * never be exposed in MIME headers.
      */
-    public record Attachment(File file, String filename, String mimeType) {
+    public record Attachment(byte[] data, String filename, String mimeType, File file) {
+        public Attachment(byte[] data, String filename, String mimeType) {
+            this(data, filename, mimeType, null);
+        }
+
+        public Attachment(File file, String filename, String mimeType) {
+            this(readBytesSafely(file), filename, mimeType, file);
+        }
+
+        private static byte[] readBytesSafely(File file) {
+            if (file == null || !file.exists()) return new byte[0];
+            try {
+                return java.nio.file.Files.readAllBytes(file.toPath());
+            } catch (Exception e) {
+                return new byte[0];
+            }
+        }
     }
 
     /**
@@ -548,18 +564,25 @@ public class EmailService {
         // Add multiple attachments
         if (attachments != null) {
             for (Attachment attachment : attachments) {
-                if (attachment != null && attachment.file() != null && attachment.file().exists()) {
-                    File attachFile = attachment.file();
-                    MimeBodyPart attachmentPart = new MimeBodyPart();
-                    attachmentPart.attachFile(attachFile);
-                    attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
-                    attachmentPart.setFileName(attachment.filename() != null && !attachment.filename().isBlank()
-                            ? attachment.filename()
-                            : attachFile.getName());
-                    if (attachment.mimeType() != null && !attachment.mimeType().isBlank()) {
-                        attachmentPart.setHeader("Content-Type", attachment.mimeType());
+                if (attachment != null) {
+                    byte[] data = attachment.data();
+                    if ((data == null || data.length == 0) && attachment.file() != null) {
+                        data = Attachment.readBytesSafely(attachment.file());
                     }
-                    mixed.addBodyPart(attachmentPart);
+                    if (data != null && data.length > 0) {
+                        MimeBodyPart attachmentPart = new MimeBodyPart();
+                        String ctype = (attachment.mimeType() != null && !attachment.mimeType().isBlank())
+                                ? attachment.mimeType()
+                                : "application/octet-stream";
+                        attachmentPart.setDataHandler(new DataHandler(new ByteArrayDataSource(data, ctype)));
+                        attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
+                        String rawName = (attachment.filename() != null && !attachment.filename().isBlank())
+                                ? attachment.filename()
+                                : (attachment.file() != null ? attachment.file().getName() : "attachment");
+                        String safeName = java.nio.file.Path.of(rawName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
+                        attachmentPart.setFileName(safeName);
+                        mixed.addBodyPart(attachmentPart);
+                    }
                 }
             }
         }

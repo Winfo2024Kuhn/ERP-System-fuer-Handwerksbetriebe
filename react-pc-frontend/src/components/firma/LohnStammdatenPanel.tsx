@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2, Save, X, Edit2, HeartPulse, Percent, Hammer } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
+import { DecimalInput } from '../ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../../lib/numberInput';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select } from '../ui/select-custom';
@@ -58,28 +60,44 @@ const labelForSatzTyp = (typ: string) => SV_SATZ_TYPEN.find(t => t.value === typ
 export function LohnStammdatenPanel() {
     const toast = useToast();
     const confirmDialog = useConfirm();
+    const showError = toast.error;
     const [subTab, setSubTab] = useState<SubTab>('krankenkassen');
 
     const [krankenkassen, setKrankenkassen] = useState<KrankenkasseDto[]>([]);
     const [svSaetze, setSvSaetze] = useState<SvSatzDto[]>([]);
     const [gewerke, setGewerke] = useState<GewerkDto[]>([]);
 
-    const [editingKK, setEditingKK] = useState<KrankenkasseDto | null>(null);
-    const [editingSv, setEditingSv] = useState<SvSatzDto | null>(null);
-    const [editingGewerk, setEditingGewerk] = useState<GewerkDto | null>(null);
+    const [editingKK, setEditingKK] = useState<(Omit<KrankenkasseDto, 'zusatzbeitragProzent'> & { zusatzbeitragProzent: string }) | null>(null);
+    const [editingSv, setEditingSv] = useState<(Omit<SvSatzDto, 'prozent'> & { prozent: string }) | null>(null);
+    const [editingGewerk, setEditingGewerk] = useState<(Omit<GewerkDto, 'bgSatzProzent'> & { bgSatzProzent: string }) | null>(null);
 
     const loadKrankenkassen = useCallback(async () => {
-        const res = await fetch('/api/lohn-stammdaten/krankenkassen');
-        if (res.ok) setKrankenkassen(await res.json());
-    }, []);
+        try {
+            const res = await fetch('/api/lohn-stammdaten/krankenkassen');
+            if (!res.ok) { showError('Krankenkassen konnten nicht geladen werden.'); return; }
+            if (res.ok) setKrankenkassen(await res.json());
+        } catch {
+            showError('Krankenkassen konnten nicht geladen werden.');
+        }
+    }, [showError]);
     const loadSvSaetze = useCallback(async () => {
-        const res = await fetch('/api/lohn-stammdaten/sv-saetze');
-        if (res.ok) setSvSaetze(await res.json());
-    }, []);
+        try {
+            const res = await fetch('/api/lohn-stammdaten/sv-saetze');
+            if (!res.ok) { showError('SV-Sätze konnten nicht geladen werden.'); return; }
+            if (res.ok) setSvSaetze(await res.json());
+        } catch {
+            showError('SV-Sätze konnten nicht geladen werden.');
+        }
+    }, [showError]);
     const loadGewerke = useCallback(async () => {
-        const res = await fetch('/api/lohn-stammdaten/gewerke');
-        if (res.ok) setGewerke(await res.json());
-    }, []);
+        try {
+            const res = await fetch('/api/lohn-stammdaten/gewerke');
+            if (!res.ok) { showError('Gewerke konnten nicht geladen werden.'); return; }
+            if (res.ok) setGewerke(await res.json());
+        } catch {
+            showError('Gewerke konnten nicht geladen werden.');
+        }
+    }, [showError]);
 
     useEffect(() => {
         // Initial alle drei Listen laden - die Datenmengen sind klein (< 50 Zeilen je
@@ -93,79 +111,112 @@ export function LohnStammdatenPanel() {
     // ---------- Krankenkasse Save/Delete ----------
     const saveKK = async () => {
         if (!editingKK) return;
+        const parsed = validateDecimalInput(editingKK.zusatzbeitragProzent, { label: 'Zusatzbeitrag in %', required: true, min: 0, max: 100 });
+        if (!parsed.valid || parsed.value === null) { toast.error(!parsed.valid ? parsed.message : 'Bitte Prozentwert eingeben.'); return; }
         if (!editingKK.name?.trim()) {
             toast.error('Bitte den Namen der Krankenkasse eintragen.');
             return;
         }
         const url = editingKK.id ? `/api/lohn-stammdaten/krankenkassen/${encodeURIComponent(String(editingKK.id))}` : '/api/lohn-stammdaten/krankenkassen';
         const method = editingKK.id ? 'PUT' : 'POST';
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editingKK) });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            toast.error(err.message ?? 'Speichern fehlgeschlagen.');
-            return;
+        try {
+            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...editingKK, zusatzbeitragProzent: parsed.value }) });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.message ?? 'Speichern fehlgeschlagen.');
+                return;
+            }
+            setEditingKK(null);
+            await loadKrankenkassen();
+            toast.success('Krankenkasse gespeichert.');
+        } catch {
+            toast.error('Krankenkasse konnte nicht gespeichert werden.');
         }
-        setEditingKK(null);
-        await loadKrankenkassen();
-        toast.success('Krankenkasse gespeichert.');
     };
     const deleteKK = async (id: number) => {
         const ok = await confirmDialog({ title: 'Krankenkasse löschen?', message: 'Mitarbeiter-Zuordnungen werden auf "keine" gesetzt.', confirmLabel: 'Löschen', variant: 'danger' });
         if (!ok) return;
-        await fetch(`/api/lohn-stammdaten/krankenkassen/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
-        await loadKrankenkassen();
+        try {
+            const res = await fetch(`/api/lohn-stammdaten/krankenkassen/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
+            if (!res.ok) { toast.error('Krankenkasse konnte nicht gelöscht werden.'); return; }
+            await loadKrankenkassen();
+        } catch {
+            toast.error('Krankenkasse konnte nicht gelöscht werden.');
+        }
     };
 
     // ---------- SvSatz Save/Delete ----------
     const saveSv = async () => {
         if (!editingSv) return;
+        const parsed = validateDecimalInput(editingSv.prozent, { label: 'Prozent', required: true, min: 0, max: 100 });
+        if (!parsed.valid || parsed.value === null) { toast.error(!parsed.valid ? parsed.message : 'Bitte Prozentwert eingeben.'); return; }
         if (!editingSv.satzTyp || !editingSv.gueltigAb) {
             toast.error('Bitte Typ und Gültig-ab-Datum auswählen.');
             return;
         }
         const url = editingSv.id ? `/api/lohn-stammdaten/sv-saetze/${encodeURIComponent(String(editingSv.id))}` : '/api/lohn-stammdaten/sv-saetze';
         const method = editingSv.id ? 'PUT' : 'POST';
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editingSv) });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            toast.error(err.message ?? 'Speichern fehlgeschlagen.');
-            return;
+        try {
+            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...editingSv, prozent: parsed.value }) });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.message ?? 'Speichern fehlgeschlagen.');
+                return;
+            }
+            setEditingSv(null);
+            await loadSvSaetze();
+            toast.success('SV-Satz gespeichert.');
+        } catch {
+            toast.error('SV-Satz konnte nicht gespeichert werden.');
         }
-        setEditingSv(null);
-        await loadSvSaetze();
-        toast.success('SV-Satz gespeichert.');
     };
     const deleteSv = async (id: number) => {
         const ok = await confirmDialog({ title: 'SV-Satz löschen?', message: 'Diesen Satz wirklich entfernen?', confirmLabel: 'Löschen', variant: 'danger' });
         if (!ok) return;
-        await fetch(`/api/lohn-stammdaten/sv-saetze/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
-        await loadSvSaetze();
+        try {
+            const res = await fetch(`/api/lohn-stammdaten/sv-saetze/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
+            if (!res.ok) { toast.error('SV-Satz konnte nicht gelöscht werden.'); return; }
+            await loadSvSaetze();
+        } catch {
+            toast.error('SV-Satz konnte nicht gelöscht werden.');
+        }
     };
 
     // ---------- Gewerk Save/Delete ----------
     const saveGewerk = async () => {
         if (!editingGewerk) return;
+        const parsed = validateDecimalInput(editingGewerk.bgSatzProzent, { label: 'BG-Beitragssatz in %', required: true, min: 0, max: 100 });
+        if (!parsed.valid || parsed.value === null) { toast.error(!parsed.valid ? parsed.message : 'Bitte Prozentwert eingeben.'); return; }
         if (!editingGewerk.name?.trim() || !editingGewerk.bgName?.trim()) {
             toast.error('Name und Berufsgenossenschaft sind Pflicht.');
             return;
         }
         const url = editingGewerk.id ? `/api/lohn-stammdaten/gewerke/${encodeURIComponent(String(editingGewerk.id))}` : '/api/lohn-stammdaten/gewerke';
         const method = editingGewerk.id ? 'PUT' : 'POST';
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editingGewerk) });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            toast.error(err.message ?? 'Speichern fehlgeschlagen.');
-            return;
+        try {
+            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...editingGewerk, bgSatzProzent: parsed.value }) });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.message ?? 'Speichern fehlgeschlagen.');
+                return;
+            }
+            setEditingGewerk(null);
+            await loadGewerke();
+            toast.success('Gewerk gespeichert.');
+        } catch {
+            toast.error('Gewerk konnte nicht gespeichert werden.');
         }
-        setEditingGewerk(null);
-        await loadGewerke();
-        toast.success('Gewerk gespeichert.');
     };
     const deleteGewerk = async (id: number) => {
         const ok = await confirmDialog({ title: 'Gewerk löschen?', message: 'Dieses Gewerk wirklich entfernen?', confirmLabel: 'Löschen', variant: 'danger' });
         if (!ok) return;
-        await fetch(`/api/lohn-stammdaten/gewerke/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
-        await loadGewerke();
+        try {
+            const res = await fetch(`/api/lohn-stammdaten/gewerke/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
+            if (!res.ok) { toast.error('Gewerk konnte nicht gelöscht werden.'); return; }
+            await loadGewerke();
+        } catch {
+            toast.error('Gewerk konnte nicht gelöscht werden.');
+        }
     };
 
     return (
@@ -207,7 +258,7 @@ export function LohnStammdatenPanel() {
                                     <tr key={k.id} className="border-t border-slate-100 hover:bg-slate-50">
                                         <td className="px-4 py-2 font-medium text-slate-900">{k.name}</td>
                                         <td className="px-4 py-2 text-slate-600">{k.kuerzel ?? '—'}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums">{Number(k.zusatzbeitragProzent).toFixed(2)} %</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{Number(k.zusatzbeitragProzent).toLocaleString('de-DE', { minimumFractionDigits: 2 })} %</td>
                                         <td className="px-4 py-2 text-slate-600">{k.gueltigAb ?? '—'}</td>
                                         <td className="px-4 py-2 text-center">
                                             <span className={cn('inline-block px-2 py-0.5 text-xs rounded', k.aktiv ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500')}>
@@ -215,7 +266,7 @@ export function LohnStammdatenPanel() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-right">
-                                            <Button variant="ghost" size="sm" onClick={() => setEditingKK({ ...k })}><Edit2 className="w-4 h-4" /></Button>
+                                            <Button variant="ghost" size="sm" onClick={() => setEditingKK({ ...k, zusatzbeitragProzent: formatDecimalInput(Number(k.zusatzbeitragProzent)) })}><Edit2 className="w-4 h-4" /></Button>
                                             <Button variant="ghost" size="sm" onClick={() => k.id && deleteKK(k.id)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></Button>
                                         </td>
                                     </tr>
@@ -252,11 +303,11 @@ export function LohnStammdatenPanel() {
                                 {svSaetze.map(s => (
                                     <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50">
                                         <td className="px-4 py-2 font-medium text-slate-900">{labelForSatzTyp(s.satzTyp)}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums">{Number(s.prozent).toFixed(2)} %</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{Number(s.prozent).toLocaleString('de-DE', { minimumFractionDigits: 2 })} %</td>
                                         <td className="px-4 py-2 text-slate-600">{s.gueltigAb}</td>
                                         <td className="px-4 py-2 text-slate-500 max-w-md truncate">{s.beschreibung}</td>
                                         <td className="px-4 py-2 text-right">
-                                            <Button variant="ghost" size="sm" onClick={() => setEditingSv({ ...s })}><Edit2 className="w-4 h-4" /></Button>
+                                            <Button variant="ghost" size="sm" onClick={() => setEditingSv({ ...s, prozent: formatDecimalInput(Number(s.prozent)) })}><Edit2 className="w-4 h-4" /></Button>
                                             <Button variant="ghost" size="sm" onClick={() => s.id && deleteSv(s.id)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></Button>
                                         </td>
                                     </tr>
@@ -294,14 +345,14 @@ export function LohnStammdatenPanel() {
                                     <tr key={g.id} className="border-t border-slate-100 hover:bg-slate-50">
                                         <td className="px-4 py-2 font-medium text-slate-900">{g.name}</td>
                                         <td className="px-4 py-2 text-slate-600">{g.bgName}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums">{Number(g.bgSatzProzent).toFixed(2)} %</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{Number(g.bgSatzProzent).toLocaleString('de-DE', { minimumFractionDigits: 2 })} %</td>
                                         <td className="px-4 py-2 text-center">
                                             <span className={cn('inline-block px-2 py-0.5 text-xs rounded', g.aktiv ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500')}>
                                                 {g.aktiv ? 'aktiv' : 'inaktiv'}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-right">
-                                            <Button variant="ghost" size="sm" onClick={() => setEditingGewerk({ ...g })}><Edit2 className="w-4 h-4" /></Button>
+                                            <Button variant="ghost" size="sm" onClick={() => setEditingGewerk({ ...g, bgSatzProzent: formatDecimalInput(Number(g.bgSatzProzent)) })}><Edit2 className="w-4 h-4" /></Button>
                                             <Button variant="ghost" size="sm" onClick={() => g.id && deleteGewerk(g.id)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></Button>
                                         </td>
                                     </tr>
@@ -325,7 +376,7 @@ export function LohnStammdatenPanel() {
                         <Input value={editingKK.kuerzel ?? ''} onChange={e => setEditingKK({ ...editingKK, kuerzel: e.target.value })} />
                     </Field>
                     <Field label="Zusatzbeitrag in %">
-                        <Input type="number" step="0.01" value={editingKK.zusatzbeitragProzent} onChange={e => setEditingKK({ ...editingKK, zusatzbeitragProzent: e.target.value })} />
+                        <DecimalInput aria-label="Zusatzbeitrag in %" required min={0} max={100} value={editingKK.zusatzbeitragProzent} onChange={draft => setEditingKK({ ...editingKK, zusatzbeitragProzent: draft })} />
                     </Field>
                     <Field label="Gültig ab (Datum)">
                         <DatePicker value={editingKK.gueltigAb ?? ''} onChange={v => setEditingKK({ ...editingKK, gueltigAb: v })} />
@@ -348,7 +399,7 @@ export function LohnStammdatenPanel() {
                         <Select value={editingSv.satzTyp} onChange={v => setEditingSv({ ...editingSv, satzTyp: v })} options={SV_SATZ_TYPEN} />
                     </Field>
                     <Field label="Prozent *">
-                        <Input type="number" step="0.01" value={editingSv.prozent} onChange={e => setEditingSv({ ...editingSv, prozent: e.target.value })} />
+                        <DecimalInput aria-label="Prozent" required min={0} max={100} value={editingSv.prozent} onChange={draft => setEditingSv({ ...editingSv, prozent: draft })} />
                     </Field>
                     <Field label="Gültig ab *">
                         <DatePicker value={editingSv.gueltigAb} onChange={v => setEditingSv({ ...editingSv, gueltigAb: v })} />
@@ -368,7 +419,7 @@ export function LohnStammdatenPanel() {
                         <Input value={editingGewerk.bgName} onChange={e => setEditingGewerk({ ...editingGewerk, bgName: e.target.value })} />
                     </Field>
                     <Field label="BG-Beitragssatz in %">
-                        <Input type="number" step="0.01" value={editingGewerk.bgSatzProzent} onChange={e => setEditingGewerk({ ...editingGewerk, bgSatzProzent: e.target.value })} />
+                        <DecimalInput aria-label="BG-Beitragssatz in %" required min={0} max={100} value={editingGewerk.bgSatzProzent} onChange={draft => setEditingGewerk({ ...editingGewerk, bgSatzProzent: draft })} />
                     </Field>
                     <Field label="Bemerkung">
                         <Input value={editingGewerk.bemerkung ?? ''} onChange={e => setEditingGewerk({ ...editingGewerk, bemerkung: e.target.value })} />

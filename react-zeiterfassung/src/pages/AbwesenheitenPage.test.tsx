@@ -1,3 +1,4 @@
+import { ToastProvider } from '../components/ui/toast'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -60,7 +61,7 @@ function buildFetchMock({ antraege = [], langzeit = {}, langzeitError = false }:
 const renderPage = () =>
     render(
         <MemoryRouter>
-            <AbwesenheitenPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} />
+            <ToastProvider><AbwesenheitenPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} /></ToastProvider>
         </MemoryRouter>,
     )
 

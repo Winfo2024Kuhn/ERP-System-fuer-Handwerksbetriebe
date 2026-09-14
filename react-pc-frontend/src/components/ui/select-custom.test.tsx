@@ -3,17 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { Select } from './select-custom';
 
-// Hinweis: Diese Datei nutzt bewusst KEINE @testing-library/jest-dom-Matcher
-// (toBeInTheDocument/toHaveClass/toHaveAttribute/...) -- in dieser Umgebung
-// registriert `@testing-library/jest-dom/vitest` (importiert ueber
-// src/setupTests.ts) seine Matcher nachweislich nicht auf der vom Testfile
-// verwendeten `expect`-Instanz (reproduziert auch an einer unveraenderten
-// Datei, src/components/ui/button.test.tsx: "Invalid Chai property:
-// toBeInTheDocument"/"toBeDisabled", stabil bei mehrfachem Lauf). Vorbestehend,
-// nicht Teil dieses Tasks (select-custom.tsx/.test.tsx/dropdown-breite.spec.ts)
-// -- siehe Kontext-Log-Bedenken. Alle Zusicherungen hier pruefen dieselbe
-// Sache ueber native DOM-Eigenschaften bzw. eingebaute vitest/chai-Matcher.
-
 const defaultOptions = [
     { value: 'opt1', label: 'Option 1' },
     { value: 'opt2', label: 'Option 2' },
@@ -95,8 +84,10 @@ describe('Select', () => {
         ];
         render(<Select options={gruppierteOptionen} value="" onChange={() => {}} />);
         await user.click(screen.getByText('Bitte wählen...'));
-        const ueberschriften = screen.getAllByRole('presentation');
-        expect(ueberschriften.map(el => el.textContent)).toEqual(['Aufwand', 'Ertrag']);
+        const gruppen = screen.getAllByRole('group');
+        expect(gruppen.map(el => el.getAttribute('aria-label'))).toEqual(['Aufwand', 'Ertrag']);
+        expect(screen.getByRole('group', { name: 'Aufwand' }).querySelectorAll('[role=option]')).toHaveLength(2);
+        expect(screen.getByText('Aufwand').getAttribute('aria-hidden')).toBe('true');
     });
 
     it('zeigt Optionen ohne Gruppe ohne Überschrift ganz oben', async () => {
@@ -107,8 +98,9 @@ describe('Select', () => {
         ];
         render(<Select options={gemischteOptionen} value="" onChange={() => {}} />);
         await user.click(screen.getByText('– kein Konto –'));
-        expect(screen.getAllByRole('presentation')).toHaveLength(1);
-        expect(screen.getByRole('presentation').textContent).toBe('Aufwand');
+        expect(screen.getAllByRole('group')).toHaveLength(1);
+        expect(screen.getByRole('group', { name: 'Aufwand' })).toBeTruthy();
+        expect(screen.getByRole('option', { name: '– kein Konto –' }).closest('[role=group]')).toBeNull();
     });
 
     it('jede Option trägt ein title mit dem vollen Label', async () => {
@@ -127,5 +119,75 @@ describe('Select', () => {
         expect(screen.queryByRole('listbox')).toBeTruthy();
         await user.keyboard('{Escape}');
         expect(screen.queryByRole('listbox')).toBeNull();
+    });
+});
+
+describe('Select Tastatur und Pflichtwert', () => {
+    it('ist beschriftet, überspringt gesperrte Optionen und schließt mit Escape', async () => {
+        const user = userEvent.setup(); const changed = vi.fn();
+        render(<Select aria-label="Abteilung" options={[{value:'a',label:'A',disabled:true},{value:'b',label:'B'},{value:'c',label:'C'}]} value="" onChange={changed} />);
+        await user.tab(); expect(screen.getByRole('combobox')).toHaveFocus();
+        await user.keyboard('{ArrowDown}{Enter}'); expect(changed).toHaveBeenCalledWith('b');
+        await user.keyboard('{ArrowDown}{Escape}'); expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+        expect(screen.getByRole('combobox')).toHaveFocus();
+    });
+    it('blockiert ein Formular ohne Pflichtauswahl mit eigener Fehlermeldung', async () => {
+        const user = userEvent.setup(); const submit = vi.fn(e => e.preventDefault());
+        render(<form onSubmit={submit}><Select aria-label="Abteilung" required options={defaultOptions} value="" onChange={vi.fn()} /><button>Speichern</button></form>);
+        await user.click(screen.getByText('Speichern')); expect(submit).not.toHaveBeenCalled();
+        expect(screen.getByRole('alert')).toHaveTextContent('Abteilung');
+    });
+});
+
+
+describe('Select zusammengeführte Gruppenbedienung', () => {
+    const options = [
+        { value: 'a1', label: 'Aufwand A', gruppe: 'Aufwand' },
+        { value: 'e1', label: 'Ertrag A', gruppe: 'Ertrag' },
+        { value: 'a2', label: 'Gesperrter Aufwand', gruppe: 'Aufwand', disabled: true },
+        { value: 'a3', label: 'Aufwand B', gruppe: 'Aufwand' },
+        { value: 'none', label: 'Kein Konto' },
+    ];
+
+    it('folgt der sichtbaren Gruppenreihenfolge und überspringt gesperrte Optionen', async () => {
+        const user = userEvent.setup();
+        const changed = vi.fn();
+        render(<Select aria-label="Konto" options={options} value="" onChange={changed} />);
+        const trigger = screen.getByRole('combobox', { name: 'Konto' });
+        await user.tab();
+        await user.keyboard('{ArrowDown}');
+        expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
+            'Kein Konto', 'Aufwand A', 'Gesperrter Aufwand', 'Aufwand B', 'Ertrag A',
+        ]);
+        expect(trigger.getAttribute('aria-activedescendant')).toBe(screen.getByRole('option', { name: 'Kein Konto' }).id);
+        await user.keyboard('{ArrowDown}{ArrowDown}');
+        expect(trigger.getAttribute('aria-activedescendant')).toBe(screen.getByRole('option', { name: 'Aufwand B' }).id);
+        await user.keyboard('{Enter}');
+        expect(changed).toHaveBeenCalledWith('a3');
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('listbox')).toBeNull();
+    });
+
+    it('verhindert Mausauswahl gesperrter Gruppeneinträge', async () => {
+        const user = userEvent.setup();
+        const changed = vi.fn();
+        render(<Select options={options} value="" onChange={changed} />);
+        await user.click(screen.getByRole('combobox'));
+        const locked = screen.getByRole('option', { name: 'Gesperrter Aufwand' });
+        expect(locked.getAttribute('aria-disabled')).toBe('true');
+        await user.click(locked);
+        expect(changed).not.toHaveBeenCalled();
+        expect(screen.queryByRole('listbox')).toBeTruthy();
+    });
+
+    it('unterstützt Home und End über Gruppengrenzen hinweg', async () => {
+        const user = userEvent.setup();
+        const changed = vi.fn();
+        render(<Select options={options} value="" onChange={changed} />);
+        await user.click(screen.getByRole('combobox'));
+        await user.keyboard('{End}{Enter}');
+        expect(changed).toHaveBeenLastCalledWith('e1');
+        await user.keyboard('{ArrowDown}{End}{Home}{Enter}');
+        expect(changed).toHaveBeenLastCalledWith('none');
     });
 });

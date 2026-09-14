@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Loader2, X } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { DatePicker } from '../ui/datepicker';
+import { DecimalInput } from '../ui/decimal-input';
+import { Dialog, DialogHeader, DialogTitle } from '../ui/dialog';
+import { formatDecimalInput } from '../../lib/numberInput';
+import { validateMoneyDraft } from '../../features/finanzen/moneyDrafts';
 import type { KasseEinstellung } from '../../types';
 import { formatEuro, modalInputCls } from './belegFormat';
-
-// Task 9 (reine Verschiebung, kein Verhalten geaendert): die vier
-// Buchungs-Modale aus KasseShortcuts.tsx (BankAbhebungModal 216-291,
-// EinfacheKasseModal 295-408, LohnZahlungModal 414-513) samt ModalShell,
-// FieldRow, ModalFooter. KasseShortcuts.tsx importiert sie und ruft sie wie
-// bisher auf.
 
 export interface SaldoInfo {
     saldo: number;
@@ -32,15 +30,15 @@ export function BankAbhebungModal({ onClose, onSuccess, onError, saldo }: {
     const [beschreibung, setBeschreibung] = useState<string>('');
     const [saving, setSaving] = useState(false);
 
-    const projSaldo = saldo && betrag !== '' && !Number.isNaN(Number(betrag))
-        ? saldo.saldo + Number(betrag) : null;
+    const parsed = validateMoneyDraft(betrag);
+    const projSaldo = saldo && parsed.valid && parsed.value! > 0 ? saldo.saldo + parsed.value! : null;
 
     const submit = async () => {
-        const b = Number(betrag);
-        if (!betrag || !Number.isFinite(b) || b <= 0) {
-            onError('Bitte einen positiven Betrag eingeben.');
-            return;
-        }
+        const result = validateMoneyDraft(betrag);
+        if (!result.valid) { onError(result.message); return; }
+        const b = result.value!;
+        if (b <= 0) { onError('Bitte einen positiven Betrag eingeben.'); return; }
+        if (!datum) { onError('Bitte ein Buchungsdatum wählen.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/bank-abhebung', {
@@ -68,12 +66,12 @@ export function BankAbhebungModal({ onClose, onSuccess, onError, saldo }: {
                 Bargeld, das du gerade bei der Bank geholt hast — wird als Kassen-Eingang gebucht.
             </p>
             <FieldRow label="Betrag (€)">
-                <input type="number" step="0.01" value={betrag}
-                    onChange={e => setBetrag(e.target.value)}
+                <DecimalInput aria-label="Betrag (€)" value={betrag}
+                    onChange={setBetrag}
                     className={modalInputCls} autoFocus />
             </FieldRow>
             <FieldRow label="Datum">
-                <DatePicker value={datum} onChange={setDatum} />
+                <DatePicker aria-label="Buchungsdatum" value={datum} onChange={setDatum} />
             </FieldRow>
             <FieldRow label="Beleg-Nr. (optional)">
                 <input type="text" value={belegNr}
@@ -111,14 +109,14 @@ export function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClo
     const [datum, setDatum] = useState<string>(todayIso());
     const [beschreibung, setBeschreibung] = useState<string>(defaultBeschreibung);
     const [saving, setSaving] = useState(false);
-    const [konflikt, setKonflikt] = useState<{ projizierterSaldo: number; mindestbestand: number; message: string } | null>(null);
+    const [konflikt, setKonflikt] = useState<{ projizierterSaldo: number; mindestbestand: number; message: string; betrag: number; datum: string } | null>(null);
 
     const submit = async (): Promise<void> => {
-        const b = Number(betrag);
-        if (!betrag || !Number.isFinite(b) || b <= 0) {
-            onError('Bitte einen positiven Betrag eingeben.');
-            return;
-        }
+        const result = validateMoneyDraft(betrag);
+        if (!result.valid) { onError(result.message); return; }
+        const b = result.value!;
+        if (b <= 0) { onError('Bitte einen positiven Betrag eingeben.'); return; }
+        if (!datum) { onError('Bitte ein Buchungsdatum wählen.'); return; }
         setSaving(true);
         setKonflikt(null);
         try {
@@ -136,8 +134,9 @@ export function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClo
                 setKonflikt({
                     projizierterSaldo: Number(body.projizierterSaldo),
                     mindestbestand: Number(body.mindestbestand),
-                    message: body.message ?? 'Kasse würde unter Mindestbestand fallen',
+                    message: body.message ?? 'Kasse würde unter Mindestbestand fallen', betrag: b, datum,
                 });
+                onError(body.message ?? 'Kasse würde unter Mindestbestand fallen');
                 return;
             }
             const body = await res.json().catch(() => null);
@@ -154,6 +153,11 @@ export function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClo
     // dann den Original-Versuch wiederholen.
     const loeseUnterdeckung = async () => {
         if (!konflikt) return;
+        const parsed = validateMoneyDraft(betrag);
+        if (!parsed.valid) { onError(parsed.message); return; }
+        if (parsed.value! <= 0 || !datum) { onError('Bitte einen positiven Betrag und ein Buchungsdatum eingeben.'); return; }
+        // Bei geändertem Entwurf erst dessen aktuellen Konflikt vom Server prüfen.
+        if (konflikt.betrag !== parsed.value || konflikt.datum !== datum) { await submit(); return; }
         const benoetigt = Math.max(0, konflikt.mindestbestand - konflikt.projizierterSaldo);
         if (benoetigt <= 0) {
             setKonflikt(null);
@@ -172,7 +176,7 @@ export function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClo
             }
             setKonflikt(null);
             await submit();
-        } finally {
+        } catch { onError('Vorab-Einlage konnte nicht gebucht werden.'); } finally {
             setSaving(false);
         }
     };
@@ -180,12 +184,12 @@ export function EinfacheKasseModal({ titel, endpoint, defaultBeschreibung, onClo
     return (
         <ModalShell title={titel} onClose={onClose}>
             <FieldRow label="Betrag (€)">
-                <input type="number" step="0.01" value={betrag}
-                    onChange={e => setBetrag(e.target.value)}
+                <DecimalInput aria-label="Betrag (€)" value={betrag}
+                    onChange={setBetrag}
                     className={modalInputCls} autoFocus />
             </FieldRow>
             <FieldRow label="Datum">
-                <DatePicker value={datum} onChange={setDatum} />
+                <DatePicker aria-label="Buchungsdatum" value={datum} onChange={setDatum} />
             </FieldRow>
             <FieldRow label="Beschreibung (optional)">
                 <input type="text" value={beschreibung}
@@ -236,7 +240,7 @@ export function LohnZahlungModal({ onClose, onSuccess, onError }: {
             .then((e: KasseEinstellung | null) => {
                 if (!e) return;
                 setEinstellung(e);
-                if (e.ehegattengehaltBetrag) setBetrag(String(e.ehegattengehaltBetrag));
+                if (e.ehegattengehaltBetrag) setBetrag(formatDecimalInput(e.ehegattengehaltBetrag));
                 if (e.ehegattengehaltEmpfaengerName) setEmpfaenger(e.ehegattengehaltEmpfaengerName);
             })
             .catch(err => console.error(err));
@@ -246,14 +250,17 @@ export function LohnZahlungModal({ onClose, onSuccess, onError }: {
             .catch(err => console.error(err));
     }, []);
 
-    const b = Number(betrag);
-    const valid = Number.isFinite(b) && b > 0;
+    const parsed = validateMoneyDraft(betrag);
+    const b = parsed.valid ? parsed.value! : 0;
+    const valid = parsed.valid && b > 0;
     const projSaldo = saldo && valid ? saldo.saldo - b : null;
     const benoetigteEinlage = projSaldo != null && saldo
         ? Math.max(0, saldo.mindestbestand - projSaldo) : 0;
 
     const submit = async () => {
+        if (!parsed.valid) { onError(parsed.message); return; }
         if (!valid) { onError('Bitte einen positiven Betrag eingeben.'); return; }
+        if (!datum) { onError('Bitte ein Buchungsdatum wählen.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/buchhaltung/kasse/lohn-zahlung', {
@@ -293,11 +300,11 @@ export function LohnZahlungModal({ onClose, onSuccess, onError }: {
                     className={modalInputCls} placeholder="z.B. Diana Mustermann" />
             </FieldRow>
             <FieldRow label="Monat (zur Notiz)">
-                <DatePicker value={datum} onChange={setDatum} />
+                <DatePicker aria-label="Buchungsdatum" value={datum} onChange={setDatum} />
             </FieldRow>
             <FieldRow label="Betrag (€)">
-                <input type="number" step="0.01" value={betrag}
-                    onChange={e => setBetrag(e.target.value)}
+                <DecimalInput aria-label="Betrag (€)" value={betrag}
+                    onChange={setBetrag}
                     className={modalInputCls} autoFocus />
             </FieldRow>
 
@@ -328,24 +335,10 @@ function ModalShell({ title, onClose, wide, children }: {
     children: React.ReactNode;
 }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="neue-buchung-titel"
-                className={`bg-white rounded-xl shadow-2xl w-full ${wide ? 'max-w-xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}
-            >
-                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <h2 id="neue-buchung-titel" className="font-semibold text-slate-900">{title}</h2>
-                    <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-full">
-                        <X className="w-4 h-4 text-slate-500" />
-                    </button>
-                </div>
-                <div className="p-4 overflow-auto">
-                    {children}
-                </div>
-            </div>
-        </div>
+        <Dialog open onOpenChange={open => { if (!open) onClose(); }} aria-label={title} className={`w-full ${wide ? 'max-w-xl' : 'max-w-md'}`}>
+            <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+            <div className="mt-4 overflow-y-auto min-h-0 p-1 -mx-1">{children}</div>
+        </Dialog>
     );
 }
 

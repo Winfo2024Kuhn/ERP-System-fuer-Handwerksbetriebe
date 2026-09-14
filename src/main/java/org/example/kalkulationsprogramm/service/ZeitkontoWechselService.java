@@ -43,11 +43,13 @@ public class ZeitkontoWechselService {
         LocalDate heute = LocalDate.now();
         ZeitkontoVersionDto aktuell = historie.stream().filter(v -> !v.gueltigVon().isAfter(heute)
                 && (v.gueltigBis() == null || !v.gueltigBis().isBefore(heute))).findFirst().orElse(null);
+        boolean istGf = Boolean.TRUE.equals(m.getIstGeschaeftsfuehrer());
         boolean aktiv = Boolean.TRUE.equals(m.getFuehrtZeitkonto());
         String hinweis = !aktiv ? "Arbeitszeit erfassen ist ausgeschaltet. Die bisherigen Stunden bleiben erhalten."
+                : istGf ? "Geschäftsführung: Arbeitszeit kann optional hinterlegt werden, ist für die Zeiterfassung jedoch nicht erforderlich."
                 : aktuell == null ? "Bitte zuerst die Arbeitszeit einrichten." : null;
         return new ZeitkontoStatusDto(id, m.getVersion(), m.getVorname() + " " + m.getNachname(),
-                aktiv, aktuell != null, hinweis, aktuell,
+                aktiv, istGf, aktuell != null || istGf, hinweis, aktuell,
                 historie.isEmpty() ? null : historie.get(historie.size() - 1), historie);
     }
 

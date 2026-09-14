@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Printer } from 'lucide-react';
+import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -31,6 +32,26 @@ const ZOOM_STEP = 0.25;
 
 function clampZoom(z: number): number {
     return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
+}
+
+async function isPdfBlob(blob: Blob): Promise<boolean> {
+    try {
+        if (!blob || blob.size < 5) return false;
+        const headerBuffer = await blob.slice(0, 5).arrayBuffer();
+        const header = new TextDecoder('latin1').decode(headerBuffer);
+        return header.startsWith('%PDF-');
+    } catch {
+        return false;
+    }
+}
+
+function buildSafePdfIframeSrc(rawUrl?: string | null): string | undefined {
+    const safeUrl = toSafeResourceUrl(rawUrl);
+    if (!safeUrl || !safeUrl.startsWith('blob:')) {
+        return undefined;
+    }
+
+    return `${safeUrl}#toolbar=0&navpanes=0&view=FitH`;
 }
 
 /** Aufräumfrist, falls der Browser kein `afterprint` meldet – großzügig, damit niemand mitten im Druckdialog abgeschnitten wird. */
@@ -85,9 +106,12 @@ function openPrintFrame(src: string, ownsUrl: boolean): void {
             cleanup();
         }
     };
-    frame.onerror = cleanup;
-
-    frame.src = src;
+    const safeSrc = toSafeResourceUrl(src);
+    if (!safeSrc) {
+        cleanup();
+        return;
+    }
+    frame.src = safeSrc;
     document.body.appendChild(frame);
     // Bewusst schon hier scharfstellen: Bleibt `onload` aus (z.B. Content-Disposition
     // "attachment" oder ein geblockter Frame), gäbe es sonst nie ein Aufräumen.
@@ -211,6 +235,9 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
             // Umweg über den Blob, damit dieselben Bytes auch zum Drucken zur Verfügung
             // stehen – PDF.js übernimmt den ArrayBuffer und leert ihn dabei.
             const blob = await response.blob();
+            if (!(await isPdfBlob(blob))) {
+                throw new Error('Geladene Datei ist kein gültiges PDF-Dokument.');
+            }
             const data = await blob.arrayBuffer();
             pdfBlobRef.current = { src: pdfUrl, blob };
             setReadySrc(pdfUrl);
@@ -297,7 +324,15 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
         pdfBlobRef.current = null;
         setReadySrc(null);
         fetch(url)
-            .then(res => res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`)))
+            .then(async res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const blob = await res.blob();
+                const isValidPdf = await isPdfBlob(blob);
+                if (!isValidPdf) {
+                    throw new Error('Geladene Datei ist kein gültiges PDF-Dokument.');
+                }
+                return blob;
+            })
             .then(blob => {
                 if (cancelled) return;
                 createdUrl = URL.createObjectURL(blob);
@@ -349,6 +384,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
     );
 
     if (useFallback) {
+        const iframeSrc = fallbackBlobUrl ? buildSafePdfIframeSrc(fallbackBlobUrl) : undefined;
         return (
             <div className="relative w-full h-full">
                 {showPrintButton && (
@@ -356,12 +392,21 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
                         <div className={toolbarPillClass}>{printButton}</div>
                     </div>
                 )}
-                <iframe
-                    src={`${fallbackBlobUrl ?? url}#toolbar=0&navpanes=0&view=FitH`}
-                    className={className || "w-full h-[70vh] rounded-lg border border-slate-200"}
-                    style={{ background: 'white' }}
-                    title="PDF Vorschau"
-                />
+                {iframeSrc ? (
+                    <iframe
+                        src={iframeSrc}
+                        className={className || "w-full h-[70vh] rounded-lg border border-slate-200"}
+                        style={{ background: 'white' }}
+                        title="PDF Vorschau"
+                    />
+                ) : (
+                    <div
+                        className={className || "w-full h-[70vh] rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 bg-white text-sm"}
+                        data-testid="pdf-fallback-error"
+                    >
+                        PDF konnte nicht geladen werden.
+                    </div>
+                )}
             </div>
         );
     }

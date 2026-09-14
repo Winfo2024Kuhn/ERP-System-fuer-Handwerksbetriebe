@@ -2187,4 +2187,17 @@ class AusgangsGeschaeftsDokumentServiceTest {
             return null;
         }
     }
+
+    @Test
+    void speichertStornoPdfAmAusgangsdokumentOhneOffenenPosten(@org.junit.jupiter.api.io.TempDir java.nio.file.Path uploads) throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "dokumentenSpeicherplatz", uploads);
+        var storno = new AusgangsGeschaeftsDokument();
+        storno.setId(42L); storno.setTyp(AusgangsGeschaeftsDokumentTyp.STORNO);
+        storno.setDokumentNummer("ST-42"); storno.setGebucht(true);
+        when(dokumentRepository.findById(42L)).thenReturn(Optional.of(storno));
+        String dateiname = service.speicherePdfFuerDokument(42L, new byte[]{1, 2, 3});
+        assertThat(storno.getPdfDateiname()).isEqualTo(dateiname);
+        assertThat(java.nio.file.Files.readAllBytes(uploads.resolve(dateiname))).containsExactly(1, 2, 3);
+        verify(dokumentRepository).save(storno);
+    }
 }

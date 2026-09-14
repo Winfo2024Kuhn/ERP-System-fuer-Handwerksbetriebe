@@ -118,6 +118,48 @@ class ZeiterfassungApiServiceZeitkontoTest {
     }
 
     @Test
+    void geschaeftsfuehrungBekommtWeederSollNochGesamtsaldo() {
+        leseZugang();
+        mitarbeiter.setIstGeschaeftsfuehrer(true);
+        when(monatsSaldoService.getOrBerechne(eq(1L), eq(2020), anyInt())).thenReturn(monat(false));
+
+        Map<String, Object> result = service.getSaldo(TOKEN, 2020, 10, false);
+
+        // Die Geschaeftsfuehrung erfasst Projektzeiten ohne Arbeitszeitkonto:
+        // Soll, Differenz, Monatsabschluss und Gesamtsaldo entfallen komplett.
+        assertThat(teil(result, "monat")).containsEntry("istStunden", new BigDecimal("168"))
+                .doesNotContainKeys("sollStunden", "differenz", "festgeschrieben");
+        assertThat(teil(result, "urlaub")).containsKeys("genommen", "geplant")
+                .doesNotContainKeys("jahresanspruch", "verbleibend", "korrektur");
+        assertThat(result).doesNotContainKey("gesamt");
+    }
+
+    @Test
+    void ohneGeschaeftsfuehrungBleibenSollUndGesamtsaldoErhalten() {
+        leseZugang();
+        when(monatsSaldoService.getOrBerechne(eq(1L), eq(2020), anyInt())).thenReturn(monat(true));
+
+        Map<String, Object> result = service.getSaldo(TOKEN, 2020, 10, false);
+
+        assertThat(teil(result, "monat")).containsKeys("sollStunden", "differenz", "festgeschrieben");
+        assertThat(teil(result, "urlaub")).containsKeys("jahresanspruch", "verbleibend", "korrektur");
+        assertThat(result).containsKey("gesamt");
+    }
+
+    @Test
+    void buchungszeitfensterMeldetGeschaeftsfuehrungAlsEingerichtet() {
+        leseZugang();
+        mitarbeiter.setIstGeschaeftsfuehrer(true);
+
+        assertThat(service.getBuchungszeitfenster(TOKEN))
+                .containsEntry("fuehrtZeitkonto", true)
+                .containsEntry("istGeschaeftsfuehrer", true)
+                .containsEntry("kontenGefuehrt", false)
+                .containsEntry("eingerichtet", true)
+                .containsEntry("hinweis", "Als Geschäftsführung erfassen Sie Projektzeiten ohne Arbeitszeitkonto.");
+    }
+
+    @Test
     void festerRandmonatWirdNichtAnteiligNeuBerechnet() {
         leseZugang();
         mitarbeiter.setEintrittsdatum(LocalDate.of(2020, 10, 15));

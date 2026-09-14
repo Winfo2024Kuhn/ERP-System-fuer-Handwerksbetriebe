@@ -238,6 +238,10 @@ public class EmailImportService {
                                 " (Betreff: '{}', Von: '{}'): {} – {}",
                                 folderName, msgSubject, msgFrom,
                                 e.getClass().getSimpleName(), e.getMessage());
+                        if (isFolderOrStoreClosed(e, folder)) {
+                            log.warn("[EmailImport] Verbindung oder Ordner '{}' wurde getrennt/geschlossen. Breche weiteren Import in diesem Ordner ab.", folderName);
+                            break;
+                        }
                     }
                 }
 
@@ -257,6 +261,20 @@ public class EmailImportService {
             log.warn("[EmailImport] Ordner '{}' nicht verfügbar: {}", folderName, e.getMessage());
             return 0;
         }
+    }
+
+    static boolean isFolderOrStoreClosed(Throwable t, Folder folder) {
+        if (folder != null && !folder.isOpen()) {
+            return true;
+        }
+        Throwable curr = t;
+        while (curr != null) {
+            if (curr instanceof jakarta.mail.FolderClosedException || curr instanceof jakarta.mail.StoreClosedException) {
+                return true;
+            }
+            curr = curr.getCause();
+        }
+        return false;
     }
 
     /**

@@ -9,13 +9,15 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
+import { DatePicker } from '../components/ui/datepicker';
+import { useToast } from '../components/ui/toast';
 import { SteuerberaterBelegExportModal } from '../components/SteuerberaterBelegExportModal';
 import { KassenbuchTab } from '../components/kasse/KassenbuchTab';
 import { BelegDetailModal } from '../components/kasse/BelegDetailModal';
 import { KpiTile } from '../components/kasse/KassenbuchJournal';
 import {
     KATEGORIE_FARBE, KATEGORIE_LABELS, KI_LABEL,
-    formatDate, formatEuro, inputCls, isoDatum,
+    formatDate, formatEuro, isoDatum,
 } from '../components/kasse/belegFormat';
 import type {
     Auswertung, AuswertungZeile, Beleg, Kassenbuch, Sachkonto, SachkontoTyp, Zahlungsart,
@@ -30,6 +32,7 @@ import type {
 type Tab = 'eingang' | 'alle' | 'kasse' | 'auswertung';
 
 export default function BelegeKasseEditor() {
+    const toast = useToast();
     const [activeTab, setActiveTab] = useState<Tab>('eingang');
     const [belege, setBelege] = useState<Beleg[]>([]);
     const [loading, setLoading] = useState(true);
@@ -162,13 +165,13 @@ export default function BelegeKasseEditor() {
             const res = await fetch('/api/buchhaltung/belege', { method: 'POST', body: fd });
             if (!res.ok) {
                 const msg = await res.text().catch(() => '');
-                alert('Upload fehlgeschlagen: ' + msg);
+                toast.error('Upload fehlgeschlagen: ' + msg);
             } else {
                 await loadBelege();
             }
         } catch (err) {
             console.error(err);
-            alert('Netzwerkfehler beim Upload');
+            toast.error('Netzwerkfehler beim Upload');
         } finally {
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -416,7 +419,7 @@ function MonatsExportModal({ onClose }: { onClose: () => void }) {
                             </p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full">
+                    <button aria-label="Export schließen" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full">
                         <X className="w-5 h-5 text-slate-500" />
                     </button>
                 </div>
@@ -605,10 +608,10 @@ function AuswertungView({ auswertung, loading, von, bis, onVonChange, onBisChang
         <div className="space-y-4">
             <Card className="p-4 flex flex-wrap items-end gap-3">
                 <Field label="Von">
-                    <input type="date" value={von} onChange={e => onVonChange(e.target.value)} className={inputCls} />
+                    <DatePicker aria-label="Von" value={von} onChange={onVonChange} />
                 </Field>
                 <Field label="Bis">
-                    <input type="date" value={bis} onChange={e => onBisChange(e.target.value)} className={inputCls} />
+                    <DatePicker aria-label="Bis" value={bis} onChange={onBisChange} />
                 </Field>
                 <Button onClick={onReload} disabled={loading}>
                     {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}

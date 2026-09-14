@@ -1,4 +1,5 @@
 import type { Artikel } from '../../types';
+import { stripHtmlTags } from '../../lib/htmlSanitizer';
 
 /**
  * Kundentext einer Materialposition: der Text, den der Kunde auf PDF, Rechnung
@@ -159,7 +160,7 @@ const escape = (text: string): string =>
  */
 export function hatKundentext(html?: string | null): boolean {
     if (!html) return false;
-    return html.replace(/<[^>]*>/g, '')
+    return stripHtmlTags(html)
         .replace(/&nbsp;/gi, ' ')
         .replace(/\u00a0/g, ' ')
         .trim().length > 0;
