@@ -31,18 +31,18 @@ class SteuerberaterExportServiceTest {
         Files.writeString(uploads.resolve("belege/bezahlt.pdf"), "pdf");
         Files.writeString(uploads.resolve("belege/offen.jpg"), "jpg");
         SteuerberaterExportService service = service(List.of(bezahlt, offen, fehlt));
-        LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument(); daten.setBezahlt(true); daten.setBezahltAm(LocalDate.of(2026, 2, 12));
+        LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument(); daten.setBezahlt(true); daten.setBezahltAm(LocalDate.of(2026, 9, 12));
         LieferantDokument dokument = new LieferantDokument(); dokument.setGeschaeftsdaten(daten);
         when(lieferantDokumente.findByBelegIds(any())).thenReturn(List.of(verknuepfung(bezahlt, dokument)));
 
-        Map<String, String> entries = unzip(service.erzeugeZip(2026, 2, new Mitarbeiter(), true));
+        Map<String, String> entries = unzip(service.erzeugeZip(2026, 9, new Mitarbeiter(), true));
 
-        assertThat(entries.keySet()).anyMatch(n -> n.endsWith("01_Kassenbuch_2026-2.pdf"));
-        assertThat(entries.keySet()).anyMatch(n -> n.endsWith("02_Buchungen_DATEV_2026-2.csv"));
-        String rechnungen = entries.entrySet().stream().filter(e -> e.getKey().endsWith("03_Eingangsrechnungen_2026-2.csv")).findFirst().orElseThrow().getValue();
-        assertThat(rechnungen).contains("12.02.2026", "offen");
-        assertThat(entries.keySet()).anyMatch(n -> n.contains("04_Belege/0001_2026-02-10_Musterbaustoffe_GmbH.pdf"));
-        assertThat(entries.keySet()).anyMatch(n -> n.contains("04_Belege/0002_2026-02-10_Musterbaustoffe_GmbH.jpg"));
+        assertThat(entries.keySet()).anyMatch(n -> n.endsWith("01_Kassenbuch_2026-09.pdf"));
+        assertThat(entries.keySet()).anyMatch(n -> n.endsWith("02_Buchungen_DATEV_2026-09.csv"));
+        String rechnungen = entries.entrySet().stream().filter(e -> e.getKey().endsWith("03_Eingangsrechnungen_2026-09.csv")).findFirst().orElseThrow().getValue();
+        assertThat(rechnungen).contains("12.09.2026", "offen");
+        assertThat(entries.keySet()).anyMatch(n -> n.contains("04_Belege/0001_2026-09-10_Musterbaustoffe_GmbH.pdf"));
+        assertThat(entries.keySet()).anyMatch(n -> n.contains("04_Belege/0002_2026-09-10_Musterbaustoffe_GmbH.jpg"));
         assertThat(entries.entrySet().stream().filter(e -> e.getKey().endsWith("LIESMICH.txt")).findFirst().orElseThrow().getValue()).contains("Fehlende Dateien", "fehlt.png");
         verify(anteile).findByBelegIds(List.of(1L, 2L, 3L));
         verify(lieferantDokumente).findByBelegIds(List.of(1L, 2L, 3L));
@@ -64,6 +64,19 @@ class SteuerberaterExportServiceTest {
         assertThat(result.isMandantennummerFehlt()).isFalse();
     }
 
+    @Test
+    void vorpruefungErlaubtLeereZahlungsartBeiEigenenUndUmbuchungen() {
+        Beleg eigeneEinlage = beleg(1L, "a.pdf", "Musterbaustoffe GmbH"); eigeneEinlage.setBelegKategorie(BelegKategorie.PRIVATEINLAGE); eigeneEinlage.setZahlungsart("");
+        Beleg eigeneEntnahme = beleg(2L, "b.pdf", "Musterbaustoffe GmbH"); eigeneEntnahme.setBelegKategorie(BelegKategorie.PRIVATENTNAHME); eigeneEntnahme.setZahlungsart(" ");
+        Beleg umbuchung = beleg(3L, "c.pdf", "Musterbaustoffe GmbH"); umbuchung.setIstUmbuchung(true); umbuchung.setZahlungsart(null);
+        Beleg normal = beleg(4L, "d.pdf", "Musterbaustoffe GmbH"); normal.setZahlungsart("");
+
+        SteuerberaterPaketDto.Vorpruefung result = service(List.of(eigeneEinlage, eigeneEntnahme, umbuchung, normal)).pruefe(2026, 9);
+
+        assertThat(result.getOffenePunkte()).extracting(SteuerberaterPaketDto.OffenerPunkt::getBelegId).containsExactly(4L);
+        assertThat(result.getOffenePunkte()).extracting(SteuerberaterPaketDto.OffenerPunkt::getWasFehlt).containsExactly("Zahlungsart fehlt");
+    }
+
     private BelegKostenstellenAnteilRepository anteile;
     private LieferantDokumentRepository lieferantDokumente;
 
@@ -83,7 +96,7 @@ class SteuerberaterExportServiceTest {
     }
 
     private static Beleg beleg(Long id, String datei, String lieferantName) {
-        Beleg b = new Beleg(); b.setId(id); b.setBelegDatum(LocalDate.of(2026, 2, 10)); b.setLaufendeNummer(id); b.setGespeicherterDateiname(datei); b.setOriginalDateiname(datei); b.setBetragNetto(BigDecimal.TEN); b.setBetragBrutto(new BigDecimal("11.90")); b.setMwstSatz(new BigDecimal("19")); b.setZahlungsart("Bar"); b.setBeschreibung("Material"); b.setBelegKategorie(BelegKategorie.KASSE_AUSGABE);
+        Beleg b = new Beleg(); b.setId(id); b.setBelegDatum(LocalDate.of(2026, 9, 10)); b.setLaufendeNummer(id); b.setGespeicherterDateiname(datei); b.setOriginalDateiname(datei); b.setBetragNetto(BigDecimal.TEN); b.setBetragBrutto(new BigDecimal("11.90")); b.setMwstSatz(new BigDecimal("19")); b.setZahlungsart("Bar"); b.setBeschreibung("Material"); b.setBelegKategorie(BelegKategorie.KASSE_AUSGABE);
         Sachkonto konto = new Sachkonto(); konto.setNummer("4930"); b.setSachkonto(konto); Lieferanten l = new Lieferanten(); l.setLieferantenname(lieferantName); b.setLieferant(l); return b;
     }
     private static LieferantDokument verknuepfung(Beleg b, LieferantDokument d) { d.setBeleg(b); return d; }

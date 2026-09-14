@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -343,5 +344,19 @@ class KasseShortcutControllerTest {
                 .andExpect(jsonPath("$.kassenkontoNummer").value("001001"))
                 .andExpect(jsonPath("$.bankkontoNummer").value("001201"))
                 .andExpect(jsonPath("$.wirtschaftsjahrBeginnMonat").value(4));
+    }
+
+    @Test
+    void putEinstellungLehntBuchstabenInDatevNummernAb() throws Exception {
+        mockAuth(true, true);
+        KasseEinstellung k = new KasseEinstellung(); k.setId(1L);
+        given(kasseEinstellungRepository.findSingleton()).willReturn(Optional.of(k));
+        given(kasseEinstellungRepository.save(any(KasseEinstellung.class))).willAnswer(inv -> inv.getArgument(0));
+        for (String body : List.of(
+                "{\"datevBeraternummer\":\"12A\",\"ehegattengehaltAktiv\":false}",
+                "{\"datevMandantennummer\":\"4B\",\"ehegattengehaltAktiv\":false}")) {
+            mockMvc.perform(put("/api/buchhaltung/kasse/einstellung").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
     }
 }
