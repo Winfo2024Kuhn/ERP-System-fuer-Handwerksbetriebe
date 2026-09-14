@@ -1,73 +1,74 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-import org.example.kalkulationsprogramm.domain.EmailDraft;
-import org.example.kalkulationsprogramm.repository.EmailDraftRepository;
+import org.example.kalkulationsprogramm.dto.Email.EmailDraftDto;
+import org.example.kalkulationsprogramm.service.EmailDraftService;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/emails/drafts")
 @RequiredArgsConstructor
 public class EmailDraftController {
-
-    private final EmailDraftRepository draftRepository;
+    private final EmailDraftService service;
 
     @GetMapping
-    public List<EmailDraft> getAllDrafts() {
-        return draftRepository.findAllByOrderByUpdatedAtDesc();
-    }
+    public List<EmailDraftDto> getAllDrafts() { return service.list(); }
 
     @GetMapping("/count")
-    public Map<String, Long> getDraftCount() {
-        return Map.of("count", draftRepository.count());
+    public Map<String, Long> getDraftCount() { return Map.of("count", service.count()); }
+
+    @GetMapping("/{id}")
+    public EmailDraftDto getDraft(@PathVariable Long id) { return service.get(id); }
+
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    public EmailDraftDto createDraft(@RequestBody EmailDraftDto draft) { return service.save(null, draft, null); }
+
+    @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public EmailDraftDto updateDraft(@PathVariable Long id, @RequestBody EmailDraftDto draft) {
+        return service.save(id, draft, null);
     }
 
-    @PostMapping
-    @Transactional
-    public ResponseEntity<EmailDraft> createDraft(@RequestBody EmailDraft draft) {
-        draft.setId(null); // enforce new
-        EmailDraft saved = draftRepository.save(draft);
-        return ResponseEntity.ok(saved);
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public EmailDraftDto createWithAttachments(@RequestPart("dto") EmailDraftDto draft,
+            @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) {
+        return service.save(null, draft, attachments == null ? List.of() : attachments);
     }
 
-    @PutMapping("/{id}")
-    @Transactional
-    public ResponseEntity<EmailDraft> updateDraft(@PathVariable Long id, @RequestBody EmailDraft draft) {
-        EmailDraft existing = draftRepository.findById(id).orElse(null);
-        if (existing == null) {
-            return ResponseEntity.notFound().build();
-        }
-        existing.setRecipient(draft.getRecipient());
-        existing.setCc(draft.getCc());
-        existing.setSubject(draft.getSubject());
-        existing.setBody(draft.getBody());
-        existing.setFromAddress(draft.getFromAddress());
-        existing.setReplyEmailId(draft.getReplyEmailId());
-        existing.setProjektId(draft.getProjektId());
-        existing.setAnfrageId(draft.getAnfrageId());
-        return ResponseEntity.ok(draftRepository.save(existing));
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public EmailDraftDto updateWithAttachments(@PathVariable Long id, @RequestPart("dto") EmailDraftDto draft,
+            @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) {
+        return service.save(id, draft, attachments == null ? List.of() : attachments);
+    }
+
+    @GetMapping("/{id}/attachments/{attachmentId}")
+    public ResponseEntity<byte[]> download(@PathVariable Long id, @PathVariable Long attachmentId) {
+        var file = service.download(id, attachmentId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(file.filename(), StandardCharsets.UTF_8).build().toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(file.data());
     }
 
     @DeleteMapping("/{id}")
-    @Transactional
     public ResponseEntity<Void> deleteDraft(@PathVariable Long id) {
-        if (!draftRepository.existsById(id)) {
-            return ResponseEntity.notFound().build();
-        }
-        draftRepository.deleteById(id);
+        service.delete(id);
         return ResponseEntity.ok().build();
     }
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> draftError(org.springframework.web.server.ResponseStatusException error) {
+        return ResponseEntity.status(error.getStatusCode())
+                .body(Map.of("message", error.getReason() == null ? "Entwurf konnte nicht verarbeitet werden." : error.getReason()));
+    }
+
 }

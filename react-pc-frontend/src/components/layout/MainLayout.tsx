@@ -1,11 +1,13 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { RibbonNavigation } from './RibbonNav';
 import { MobileBottomNav } from './MobileBottomNav';
 import { KiHilfeChat } from '../KiHilfeChat';
 
 export function MainLayout() {
+  const { pathname } = useLocation();
+  const isEmailCenter = pathname === '/emails' || pathname.startsWith('/emails/');
   return (
-    <div className="bg-slate-50 flex flex-col overflow-hidden" style={{ height: 'calc(100dvh - var(--pc-toast-height, 0px))' }}>
+    <div className="h-dvh bg-slate-50 flex flex-col overflow-hidden">
       {/* Desktop Navigation - hidden on mobile */}
       <div className="hidden md:block">
         <RibbonNavigation />
@@ -20,7 +22,9 @@ export function MainLayout() {
         die Design-Pruefung (keinHorizontalerUeberlauf misst main, siehe
         e2e/hilfen/design.ts).
       */}
-      <main className="flex-1 w-full px-4 md:px-8 pt-4 md:pt-8 pb-20 md:pb-8 overflow-y-auto overflow-x-auto relative">
+      <main className={isEmailCenter
+        ? "flex-1 min-h-0 w-full overflow-hidden relative"
+        : "flex-1 w-full px-4 md:px-8 pt-4 md:pt-8 pb-20 md:pb-8 overflow-y-auto overflow-x-auto relative"}>
         <Outlet />
       </main>
 

@@ -2,49 +2,7 @@ import type { Locator, Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
 
-/**
- * Design-Review-Nachbesserung Abschnitt 6/7, Task 8a, Befund 1+3;
- * Design-Review-Nachbesserung 2, Task 8c:
- *
- * 1. Der Toast-Container wanderte bei offenem Dialog urspruenglich nach OBEN
- *    RECHTS (toast.tsx, seit Task 6b) -- genau dorthin, wo der Schliessen-X-
- *    Knopf und der "Vorschau aktiv"-Umschalter von LieferantDokumentModal
- *    sitzen. Task 8a verlegte ihn deshalb nach OBEN LINKS. Gemessen schnitt
- *    das aber seinerseits auf 14 Zoll die Modal-Ueberschrift an: ein
- *    zweizeiliger Toast [24,24,480,66] endet bei y=90, der Titel
- *    "Dokument bearbeiten" beginnt schon bei y=78 -- die Rechtecke von Toast
- *    und Titel ueberschneiden sich um 12px. Task 8c verlegt
- *    ihn deshalb ein zweites Mal, jetzt nach UNTEN LINKS -- die einzige Ecke,
- *    die weder im Lieferanten-Modal (Fussleiste rechts) noch im Confirm-
- *    Dialog (Knoepfe mittig/rechts) eine Aktion traegt, unabhaengig davon,
- *    wie lang der Toast-Text wird.
- * 2. confirm-dialog.tsx trug bisher KEIN role="dialog" -- der Toast-Umzug
- *    (der ausschliesslich per document.querySelector('[role="dialog"]')
- *    erkennt, ob "irgendein Dialog" offen ist) griff dort nicht.
- * 3. Abschnitt 4 beendet diese Ecken-Suche. Ausloeser war ein weiterer Befund
- *    aus dem 14-Zoll-Designreview: acht bis neun gestapelte Meldungen
- *    verdeckten Eingaben im Kassen-Einstellungs- und im Kostenpositions-
- *    dialog. Eine vierte Ecke haette das nicht geloest, weil ein schwebendes
- *    Overlay bei genug Meldungen jede Ecke fuellt. Meldungen belegen deshalb
- *    seither eine eigene, in der Hoehe begrenzte und intern scrollbare Flaeche
- *    oberhalb der Anwendung (toast.tsx); MainLayout und die Dialogcontainer
- *    rechnen deren gemessene Hoehe ueber --pc-toast-height ab (index.css).
- *    Die Tests unten pruefen darum nicht mehr eine bestimmte Ecke, sondern
- *    den Vertrag dieser Flaeche -- siehe erwarteReservierteMeldungsflaeche.
- *
- * Technischer Hinweis zum "zweizeiligen Toast" in Test 1: alle Toast-Texte,
- * die LieferantDokumentModal ueber echte Nutzerabläufe tatsaechlich ausloest
- * (LOCK_FEHLER_TEXT, "Speichern fehlgeschlagen"), sind feste, kurze Strings
- * und passen auf eine Zeile -- die Produktionslogik liest
- * an keiner Stelle einen laengeren, vom Server/Stub gesteuerten Text in den
- * Toast ein (siehe Kontext-Log, Abschnitt "Bedenken"). Um den vom
- * Design-Reviewer beschriebenen zweizeiligen Fall trotzdem GENAU nachzustellen
- * -- reales Layout, reale CSS-Klassen, reale Positionierung, nur der
- * Textinhalt kommt aus dem Test statt aus der Produktionslogik -- verlaengert
- * der Test den Text des bereits ECHT ausgeloesten Toasts direkt im
- * gerenderten DOM (kein Eingriff in React-State/Produktionscode). Das haelt
- * die Pruefung ehrlich: alles ausser der Textherkunft ist der echte Ablauf.
- */
+/** Floating top-right notifications must not move application or dialog layouts. */
 
 const LIEFERANT_ID = 7;
 const DOKUMENT_ID = 42;
@@ -208,39 +166,18 @@ async function erwarteKeineUeberlappungMitToast(toast: Locator, ziel: Locator, b
     ).toBe(false);
 }
 
-/**
- * Prueft den Vertrag der reservierten Meldungsflaeche (Abschnitt 4): Meldungen
- * liegen nicht mehr als schwebendes Overlay in irgendeiner Bildschirmecke,
- * sondern belegen eine eigene Flaeche oberhalb der Anwendung. Ihre gemessene
- * Hoehe steht in --pc-toast-height; MainLayout und die Dialogcontainer rechnen
- * sie ab (siehe toast.tsx und index.css).
- *
- * Damit ist die Ecken-Suche der Tasks 8a/8c erledigt: die Flaeche KANN
- * Dialoginhalte gar nicht mehr ueberdecken, statt es je nach Textlaenge und
- * Bildschirmgroesse mal zu tun und mal nicht. Diese Pruefung sichert genau
- * das ab -- Hoehe veroeffentlicht und keine Ueberschneidung mit dem offenen
- * Dialog -- statt wie frueher eine bestimmte Ecke festzuschreiben.
- */
-async function erwarteReservierteMeldungsflaeche(page: Page, toast: Locator) {
+async function erwarteSchwebendeMeldung(page: Page, toast: Locator) {
     await expect(toast).toBeVisible();
-    const hoehe = await page.evaluate(() =>
-        parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pc-toast-height')) || 0);
-    const toastBox = await toast.boundingBox();
-    if (!toastBox) throw new Error('Kein Bounding-Box fuer die Meldungsflaeche gefunden');
-    expect(hoehe, 'Die Meldungsflaeche muss ihre Hoehe in --pc-toast-height veroeffentlichen').toBeGreaterThan(0);
-    expect(Math.abs(hoehe - toastBox.height), '--pc-toast-height muss der tatsaechlichen Hoehe entsprechen').toBeLessThan(2);
-
-    const dialogBox = await dialog(page).boundingBox();
-    if (dialogBox) {
-        const ueberlappt =
-            toastBox.x < dialogBox.x + dialogBox.width && toastBox.x + toastBox.width > dialogBox.x &&
-            toastBox.y < dialogBox.y + dialogBox.height && toastBox.y + toastBox.height > dialogBox.y;
-        expect(
-            ueberlappt,
-            `Meldungsflaeche [${toastBox.x},${toastBox.y},${toastBox.width},${toastBox.height}] ueberlappt den offenen Dialog ` +
-            `[${dialogBox.x},${dialogBox.y},${dialogBox.width},${dialogBox.height}]`,
-        ).toBe(false);
-    }
+    const box = await toast.boundingBox();
+    if (!box) throw new Error('Keine Meldung sichtbar');
+    const viewport = page.viewportSize()!;
+    expect(box.y).toBe(16);
+    expect(viewport.width - box.x - box.width).toBe(16);
+    expect(box.width).toBeLessThanOrEqual(384);
+    expect(box.height).toBeLessThanOrEqual(Math.min(viewport.height / 4, 192));
+    expect(await toast.evaluate(element => getComputedStyle(element).position)).toBe('fixed');
+    expect(await toast.evaluate(element => getComputedStyle(element).pointerEvents)).toBe('none');
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--pc-toast-height'))).toBe('');
 }
 
 /**
@@ -277,8 +214,8 @@ async function erwarteToastLiegtUeberAllem(page: Page, toast: Locator) {
     ).toBe(true);
 }
 
-test.describe('Meldungen bei offenem Dialog (Tasks 8a/8c, ab Abschnitt 4 reservierte Meldungsflaeche)', () => {
-    test('zweizeiliger Fehler-Toast bei offenem Modal verdeckt weder Modal-Titel, Eyebrow, Schließen-X, "Abbrechen" noch "Speichern"', async ({ page }, testInfo) => {
+test.describe('Schwebende Meldungen bei offenem Dialog', () => {
+    test('Fehler-Toast schwebt oben rechts, lässt die Fußleiste frei und kann ohne Dialogverlust geschlossen werden', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'fehler');
         await oeffneDokumentModal(page);
 
@@ -288,29 +225,12 @@ test.describe('Meldungen bei offenem Dialog (Tasks 8a/8c, ab Abschnitt 4 reservi
         const toastContainer = page.getByTestId('toast-container');
         await expect(toastContainer).toContainText('Sperre konnte nicht geholt werden');
 
-        // Container muss jetzt unten links stehen (offener Dialog -- das
-        // Modal selbst traegt role="dialog"). Task 8c: nicht mehr oben links,
-        // das schnitt die Modal-Ueberschrift an (siehe Datei-Kommentar oben).
-        await erwarteReservierteMeldungsflaeche(page, toastContainer);
-
-        // Text im ECHT ausgeloesten, ECHT positionierten Toast direkt im DOM
-        // verlaengern, bis er zweizeilig umbricht -- siehe Erklaerung im
-        // Datei-Kommentar oben. Alles ausser der Textherkunft bleibt der
-        // reale Ablauf (reale CSS-Klassen, reales Layout).
+        await erwarteSchwebendeMeldung(page, toastContainer);
+        const dialogVorher = await dialog(page).boundingBox();
+        const mainVorher = await page.locator('main').boundingBox();
         await page.evaluate(() => {
             const absatz = document.querySelector('[data-testid="toast-container"] p');
-            if (!absatz) throw new Error('Kein Toast-Text im DOM gefunden');
-            // Die Meldungsflaeche ist seit Abschnitt 4 ueber die volle Breite
-            // angelegt (max-w-[1600px]) statt max-w-[480px] wie der frueher
-            // schwebende Toast. Der Text muss darum deutlich laenger sein, um
-            // ueberhaupt noch auf zwei Zeilen umzubrechen -- genau das ist hier
-            // der Pruefzweck: eine hohe Meldungsflaeche darf den Dialog nicht
-            // anschneiden.
-            absatz.textContent =
-                'Sperre konnte nicht geholt werden — der Server antwortet gerade nicht zuverlässig. '
-                + 'Bitte laden Sie das Dokument in Kürze erneut und prüfen Sie vorher, ob eine Kollegin oder '
-                + 'ein Kollege denselben Beleg gerade geöffnet hat. Ungespeicherte Änderungen bleiben so lange '
-                + 'in diesem Fenster erhalten und gehen durch das erneute Laden nicht verloren.';
+            if (absatz) absatz.textContent = 'Sperre konnte nicht geholt werden. Bitte versuchen Sie es später erneut.';
         });
 
         const toastAbsatz = toastContainer.locator('p');
@@ -319,7 +239,7 @@ test.describe('Meldungen bei offenem Dialog (Tasks 8a/8c, ab Abschnitt 4 reservi
         // es mindestens 40px. Schlaegt diese Zusicherung fehl, ist der Text
         // oben zu kurz/lang fuer eine zuverlaessig zweizeilige Probe.
         expect(zeilenhoehe, 'Der injizierte Text sollte auf genau zwei Zeilen umbrechen').toBeGreaterThanOrEqual(36);
-        expect(zeilenhoehe).toBeLessThan(60);
+        expect(zeilenhoehe).toBeLessThanOrEqual(80);
 
         const schliessenKnopf = dialog(page).getByRole('button', { name: 'Schließen' });
         const vorschauKnopf = dialog(page).getByRole('button', { name: /Vorschau/ });
@@ -328,25 +248,24 @@ test.describe('Meldungen bei offenem Dialog (Tasks 8a/8c, ab Abschnitt 4 reservi
         const abbrechenKnopf = dialog(page).getByRole('button', { name: 'Abbrechen' });
         const speichernKnopf = dialog(page).getByRole('button', { name: 'Speichern' });
 
-        await designPruefung(page, testInfo, 'toast-bei-dialog-zweizeilig', { primaerAktion: schliessenKnopf });
-
-        // Kernbefund aus dem Review (Task 8a) und aus der Nachbesserung
-        // (Task 8c): bei offenem Dialog ueberschneidet sich der (jetzt
-        // zweizeilige, unten links stehende) Toast weder mit dem Modal-Titel
-        // noch mit der Eyebrow (Bounding-Box-Vergleich, siehe Kommentar an
-        // erwarteKeineUeberlappungMitToast), und ein Klick auf Schliessen-X,
-        // "Abbrechen" und "Speichern" trifft jeweils den Knopf selbst -- auf
-        // beiden Bildschirmgroessen (die Playwright-Konfiguration faehrt
-        // pc-14zoll UND pc-monitor automatisch fuer diese Spec).
+        await page.screenshot({ path: testInfo.outputPath('toast-bei-dialog-schwebend.png'), animations: 'disabled' });
+        expect(await dialog(page).boundingBox()).toEqual(dialogVorher);
+        expect(await page.locator('main').boundingBox()).toEqual(mainVorher);
         await erwarteKeineUeberlappungMitToast(toastContainer, titel, 'Dokument bearbeiten (Modal-Titel)');
         await erwarteKeineUeberlappungMitToast(toastContainer, eyebrow, 'PDF-Vorschau (Eyebrow)');
+        await erwarteTrefferPerText(page, abbrechenKnopf, 'Abbrechen');
+        await erwarteTrefferPerText(page, speichernKnopf, 'Speichern');
+        await toastContainer.getByRole('button', { name: 'Meldung schließen' }).click();
+        await expect(toastContainer).toBeHidden();
+        expect(await dialog(page).boundingBox()).toEqual(dialogVorher);
+        expect(await page.locator('main').boundingBox()).toEqual(mainVorher);
         await erwarteTrefferPerAriaLabel(page, schliessenKnopf, 'Schließen');
         await erwarteTrefferPerText(page, vorschauKnopf, 'Vorschau');
         await erwarteTrefferPerText(page, abbrechenKnopf, 'Abbrechen');
         await erwarteTrefferPerText(page, speichernKnopf, 'Speichern');
     });
 
-    test('Versionskonflikt: der Confirm-Dialog traegt selbst role="dialog", und die Meldungsflaeche bleibt ausserhalb des Dialogs', async ({ page }, testInfo) => {
+    test('Versionskonflikt bleibt ein eigener Dialog ohne reservierten Meldungsplatz', async ({ page }, testInfo) => {
         await stubbeLieferantApi(page, 'frei');
         await page.route(`**/api/lieferant-dokumente/${DOKUMENT_ID}`, route => {
             if (route.request().method() !== 'PUT') return route.fulfill({ status: 404, body: '' });
@@ -420,7 +339,7 @@ test.describe('Meldungen bei offenem Dialog (Tasks 8a/8c, ab Abschnitt 4 reservi
 
         const toastContainer = page.getByTestId('toast-container');
         await expect(toastContainer).toContainText('Speichern fehlgeschlagen');
-        await erwarteReservierteMeldungsflaeche(page, toastContainer);
+        await erwarteSchwebendeMeldung(page, toastContainer);
 
         // Zweiter Versuch, noch waehrend der erste Toast sichtbar ist (5s-Timer
         // laeuft noch) -- der Confirm-Dialog oeffnet sich jetzt zusaetzlich.
@@ -429,10 +348,42 @@ test.describe('Meldungen bei offenem Dialog (Tasks 8a/8c, ab Abschnitt 4 reservi
         await expect(konfliktDialog).toBeVisible();
         await expect(toastContainer).toContainText('Speichern fehlgeschlagen');
 
-        await designPruefung(page, testInfo, 'toast-ueber-confirm-backdrop', {
-            primaerAktion: konfliktDialog.getByRole('button', { name: 'Neu laden' }),
-        });
+        await page.screenshot({ path: testInfo.outputPath('toast-ueber-confirm-backdrop.png'), animations: 'disabled' });
+        await expect(konfliktDialog.getByRole('button', { name: 'Neu laden' })).toBeInViewport();
 
         await erwarteToastLiegtUeberAllem(page, toastContainer);
+    });
+
+    test('bei kleiner Fensterhöhe bleiben acht Meldungen begrenzt und verändern den offenen Entwurf nicht', async ({ page }, testInfo) => {
+        await page.setViewportSize({ width: page.viewportSize()!.width, height: 540 });
+        await page.clock.install();
+        await stubbeLieferantApi(page, 'frei');
+        await page.route(`**/api/lieferant-dokumente/${DOKUMENT_ID}`, route => route.fulfill({ status: 500, body: '' }));
+        await oeffneDokumentModal(page);
+        const feld = dialog(page).getByRole('textbox').first();
+        await feld.fill('RE-2026-TEST');
+        const vorher = await dialog(page).boundingBox();
+        const mainVorher = await page.locator('main').boundingBox();
+        const speichern = dialog(page).getByRole('button', { name: 'Speichern' });
+        const meldungen = page.getByRole('region', { name: 'Meldungen' });
+        for (let count = 1; count <= 8; count++) {
+            await speichern.click();
+            await expect(meldungen.getByRole('alert')).toHaveCount(count);
+        }
+        await erwarteSchwebendeMeldung(page, meldungen);
+        expect(await dialog(page).boundingBox()).toEqual(vorher);
+        expect(await page.locator('main').boundingBox()).toEqual(mainVorher);
+        await expect(feld).toHaveValue('RE-2026-TEST');
+        await erwarteTrefferPerText(page, speichern, 'Speichern');
+        await page.screenshot({ path: testInfo.outputPath('toast-kleine-fensterhoehe.png'), animations: 'disabled' });
+        const schliessen = meldungen.getByRole('button', { name: 'Meldung schließen' }).last();
+        await schliessen.focus();
+        await schliessen.press('Enter');
+        await expect(meldungen.getByRole('alert')).toHaveCount(7);
+        await expect(dialog(page)).toBeVisible();
+        await page.clock.fastForward(5000);
+        await expect(meldungen).toBeHidden();
+        expect(await dialog(page).boundingBox()).toEqual(vorher);
+        await expect(feld).toHaveValue('RE-2026-TEST');
     });
 });

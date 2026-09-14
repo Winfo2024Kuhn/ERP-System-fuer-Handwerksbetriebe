@@ -22,6 +22,9 @@ public class ProjektEmailDto {
     private String benutzer;
     private Long frontendUserId;
 
+    /** Entwurf, der nach bestätigtem SMTP-Versand serverseitig gelöscht wird. */
+    private Long draftId;
+
     // Felder für E-Mail-Versand
     private String sender;
     private String body;

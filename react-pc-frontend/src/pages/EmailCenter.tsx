@@ -1,33 +1,28 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { EmailNavigationGuard } from '../features/email/EmailNavigationGuard';
+import { getThreadPreview } from '../features/email/threadQuotes';
+import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
+import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
+import { AssignModal } from '../features/email/EmailAssignmentDialog';
+import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
+import { getSenderName, getDisplayName, isImageAttachment, type EmailItem, type FolderType } from '../features/email/emailCenterModel';
+import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
     Mail,
     RefreshCw,
     Trash2,
     Inbox,
-    Send,
-    AlertCircle,
     Paperclip,
-    Clock,
     Download,
     FolderPlus,
     Search,
-    Briefcase,
-    FileText,
-    ChevronDown,
-    ChevronRight,
     File,
-    PenSquare,
     FileEdit,
     ShieldAlert,
     ShieldCheck,
     ShieldX,
-    Settings,
     Star,
-    Package,
-    Reply,
-    Forward,
     Newspaper,
     Globe,
     X,
@@ -39,9 +34,6 @@ import {
     ArrowDownAZ,
     ArrowUpAZ,
     CheckCircle2,
-    Calculator,
-    PanelLeftClose,
-    PanelLeftOpen
 } from 'lucide-react';
 import {
     DndContext,
@@ -50,7 +42,6 @@ import {
     useSensor,
     useSensors,
     useDraggable,
-    useDroppable,
     type DragStartEvent,
     type DragEndEvent
 } from '@dnd-kit/core';
@@ -67,305 +58,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { EmailThreadView } from '../components/EmailThreadView';
 import type { EmailThread } from '../components/EmailThreadView';
-import { EmailRecipientDropdown } from '../components/EmailRecipientDropdown';
 
-
-/** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
-interface EmailAttachment {
-    id: number;
-    originalFilename?: string;
-    filename?: string;
-    storedFilename?: string;
-    mimeType?: string;
-    fileSize?: number;
-    contentId?: string;
-    inline?: boolean;
-}
-
-/** Prüft ob ein Dateiname auf ein gängiges Bildformat hindeutet. */
-function isImageAttachment(filename: string): boolean {
-    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(filename);
-}
-
-
-interface EmailItem {
-    id: number;
-    type: string;
-    containerId?: number;
-    direction: 'IN' | 'OUT';
-    subject?: string;
-    sender?: string;
-    fromAddress?: string;
-    body?: string;
-    htmlBody?: string;
-    sentAt?: string;
-    attachments?: EmailAttachment[];
-    replies?: EmailItem[];
-    zuordnungTyp?: string;
-    projektName?: string;
-    anfrageName?: string;
-    lieferantName?: string;
-    kundeName?: string;
-    isRead?: boolean;
-    recipient?: string;
-    cc?: string;
-    spamScore?: number;
-    // Assignment IDs
-    projektId?: number;
-    anfrageId?: number;
-    lieferantId?: number;
-    kundeId?: number;
-    // Computed folder from backend
-    folder?: FolderType;
-    // Thread-Informationen
-    parentEmailId?: number;   // null/undefined = Thread-Wurzel
-    replyCount?: number;      // Anzahl direkter Antworten
-    /** Backend-berechnete jüngste Aktivität im gesamten Thread (für Sortierung). */
-    threadLastActivityAt?: string;
-    isStarred?: boolean;
-}
-
-// Folder Types
-type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'tax-advisors' | 'unassigned';
-
-
-
-
-const getSenderName = (email: EmailItem) => {
-    // Explizit zugeordneter Lieferant gewinnt – das ist ein bewusst gesetzter FK.
-    if (email.lieferantId && email.lieferantName) return email.lieferantName;
-    if (email.kundeName) return email.kundeName;
-    if (email.lieferantName) return email.lieferantName;
-    if (email.projektName) return email.projektName;
-    if (email.anfrageName) return email.anfrageName;
-    if (email.fromAddress) return extractDisplayName(email.fromAddress);
-    return email.sender || 'Unbekannt';
-};
-
-const getRecipientName = (email: EmailItem) => extractDisplayName(email.recipient);
-
-const getDisplayName = (email: EmailItem) => {
-    if (email.kundeName) return email.kundeName;
-    if (email.lieferantName) return email.lieferantName;
-    if (email.projektName) return email.projektName;
-    if (email.anfrageName) return email.anfrageName;
-
-    if (email.direction === 'OUT') {
-        const parsed = parseRecipientList(email.recipient);
-        if (parsed.length > 1) {
-            return `${parsed[0].displayName} (+${parsed.length - 1})`;
-        }
-        return getRecipientName(email);
-    }
-
-    // Bei eingehenden E-Mails: Wenn fromAddress eine eigene Firmenadresse ist (z.B. versehentliche Selbst-Antwort),
-    // lieber den Kunden-Empfänger anzeigen
-    const fromClean = extractEmailAddress(email.fromAddress).toLowerCase();
-    const isFromSelf = fromClean.includes('bauschlosserei') || fromClean.includes('t-online.de') || fromClean.includes('kuhn');
-    if (isFromSelf && email.recipient) {
-        const recip = getRecipientName(email);
-        if (recip && recip !== 'Unbekannt') return recip;
-    }
-
-    return getSenderName(email);
-};
-
-
-// Assignment Modal Component
-interface AssignModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onAssign: (type: 'projekt' | 'anfrage', targetId: number) => Promise<void>;
-    emailSubject: string;
-    emailId?: number;
-}
-
-interface EntityOption {
-    id: number;
-    name: string;
-    type: string;
-    projektNummer?: string;
-    anfrageNummer?: string;
-}
-
-function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: AssignModalProps) {
-    const toast = useToast();
-    const [searchType, setSearchType] = useState<'projekt' | 'anfrage'>('projekt');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [results, setResults] = useState<{ id: number; bauvorhaben?: string; name?: string; kunde?: string }[]>([]);
-    const [suggestions, setSuggestions] = useState<{ projekte: EntityOption[], anfragen: EntityOption[] }>({ projekte: [], anfragen: [] });
-    const [loading, setLoading] = useState(false);
-    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-    const [assigning, setAssigning] = useState(false);
-
-    // Load suggestions when modal opens
-    useEffect(() => {
-        if (isOpen && emailId) {
-            setLoadingSuggestions(true);
-            fetch(`/api/emails/${emailId}/possible-assignments`)
-                .then(res => res.json())
-                .then(data => {
-                    setSuggestions({
-                        projekte: data.projekte || [],
-                        anfragen: data.anfragen || []
-                    });
-                })
-                .catch(err => console.error('Failed to load suggestions:', err))
-                .finally(() => setLoadingSuggestions(false));
-        }
-    }, [isOpen, emailId]);
-
-    useEffect(() => {
-        if (!isOpen) {
-            setSearchQuery('');
-            setResults([]);
-        }
-    }, [isOpen]);
-
-    const fetchResults = useCallback(async () => {
-        if (!searchQuery.trim()) {
-            setResults([]);
-            setLoading(false);
-            return;
-        }
-        setLoading(true);
-        try {
-            const endpoint = searchType === 'projekt'
-                ? `/api/projekte/suche?q=${encodeURIComponent(searchQuery)}`
-                : `/api/anfragen?q=${encodeURIComponent(searchQuery)}`;
-            const res = await fetch(endpoint);
-            if (res.ok) {
-                setResults(await res.json());
-            }
-        } catch (err) {
-            console.error('Search failed:', err);
-        } finally {
-            setLoading(false);
-        }
-    }, [searchQuery, searchType]);
-
-    useEffect(() => {
-        const timeout = setTimeout(fetchResults, 300);
-        return () => clearTimeout(timeout);
-    }, [fetchResults]);
-
-    const handleSelect = async (type: 'projekt' | 'anfrage', id: number) => {
-        setAssigning(true);
-        try {
-            await onAssign(type, id);
-            onClose();
-        } catch {
-            toast.error('Zuordnung fehlgeschlagen');
-        } finally {
-            setAssigning(false);
-        }
-    };
-
-    const currentSuggestions = searchType === 'projekt' ? suggestions.projekte : suggestions.anfragen;
-    const hasSuggestions = currentSuggestions.length > 0;
-
-    return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-lg">
-                <DialogHeader>
-                    <DialogTitle>E-Mail zuordnen</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                    <p className="text-sm text-slate-600 truncate">"{emailSubject}"</p>
-
-                    <div className="flex gap-2">
-                        <Button
-                            variant={searchType === 'projekt' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setSearchType('projekt')}
-                            className={searchType === 'projekt' ? 'bg-rose-600 hover:bg-rose-700' : ''}
-                        >
-                            <Briefcase className="w-4 h-4 mr-1" />
-                            Projekt
-                            {suggestions.projekte.length > 0 && (
-                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.projekte.length}</span>
-                            )}
-                        </Button>
-                        <Button
-                            variant={searchType === 'anfrage' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setSearchType('anfrage')}
-                            className={searchType === 'anfrage' ? 'bg-rose-600 hover:bg-rose-700' : ''}
-                        >
-                            <FileText className="w-4 h-4 mr-1" />
-                            Anfrage
-                            {suggestions.anfragen.length > 0 && (
-                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.anfragen.length}</span>
-                            )}
-                        </Button>
-                    </div>
-
-                    {/* Suggestions Section */}
-                    {loadingSuggestions ? (
-                        <div className="text-center text-slate-500 py-2">
-                            <RefreshCw className="w-4 h-4 animate-spin mx-auto" />
-                            <p className="text-xs mt-1">Lade Vorschläge...</p>
-                        </div>
-                    ) : hasSuggestions && (
-                        <div className="space-y-1">
-                            <p className="text-xs font-medium text-rose-600">Vorschläge (passende E-Mail-Adresse):</p>
-                            {currentSuggestions.map((item) => (
-                                <button
-                                    key={`suggestion-${item.id}`}
-                                    onClick={() => handleSelect(searchType, item.id)}
-                                    disabled={assigning}
-                                    className="w-full text-left p-3 rounded-lg bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200"
-                                >
-                                    <p className="font-medium text-slate-900">
-                                        {item.projektNummer && <span className="text-rose-600 mr-2">{item.projektNummer}</span>}
-                                        {item.anfrageNummer && <span className="text-rose-600 mr-2">{item.anfrageNummer}</span>}
-                                        {item.name}
-                                    </p>
-                                    <p className="text-xs text-rose-600 flex items-center gap-1">
-                                        <Star className="w-3 h-3 fill-rose-500 text-rose-500" />
-                                        Empfohlen
-                                    </p>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Manual Search Section */}
-                    <div className="pt-2 border-t border-slate-200">
-                        <p className="text-xs text-slate-500 mb-2">Oder manuell suchen:</p>
-                        <Input
-                            placeholder={`${searchType === 'projekt' ? 'Projekt' : 'Anfrage'} suchen...`}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="border-slate-200"
-                        />
-                    </div>
-
-                    <div className="max-h-40 overflow-auto space-y-1">
-                        {loading ? (
-                            <p className="text-center text-slate-500 py-4">Suche...</p>
-                        ) : results.length === 0 && searchQuery ? (
-                            <p className="text-center text-slate-500 py-4">Keine Ergebnisse</p>
-                        ) : (
-                            results.map((item: { id: number; bauvorhaben?: string; name?: string; kunde?: string; kundenName?: string; anfragesnummer?: string }) => (
-                                <button
-                                    key={item.id}
-                                    onClick={() => handleSelect(searchType, item.id)}
-                                    disabled={assigning}
-                                    className="w-full text-left p-3 rounded-lg hover:bg-rose-50 transition-colors border border-slate-200"
-                                >
-                                    <p className="font-medium text-slate-900">{item.bauvorhaben || item.name || item.kundenName}</p>
-                                    {(item.kunde || item.kundenName) && <p className="text-sm text-slate-500">{item.kunde || item.kundenName}</p>}
-                                    {item.anfragesnummer && <p className="text-xs text-slate-400">{item.anfragesnummer}</p>}
-                                </button>
-                            ))
-                        )}
-                    </div>
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-}
 
 // Main EmailCenter Component
 const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'tax-advisors', 'unassigned'];
@@ -373,101 +66,6 @@ const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam',
 // ─────────────────────────────────────────────────────────────
 // DnD helper components (Drag & Drop für Ordner-Verschieben)
 // ─────────────────────────────────────────────────────────────
-
-interface DroppableFolderButtonProps {
-    folderId: FolderType;
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    count?: number;
-    isActive: boolean;
-    onClick: () => void;
-    /** wenn true, ist dies ein gültiges Drop-Ziel (inbox/trash/spam/newsletter) */
-    droppable: boolean;
-    /** wenn true, läuft gerade ein Drag – Non-Drop-Ordner werden dann visuell ausgegraut */
-    dragActive: boolean;
-    countVariant?: 'rose' | 'amber' | 'slate';
-    collapsed?: boolean;
-}
-
-function DroppableFolderButton({
-    folderId,
-    icon: Icon,
-    label,
-    count,
-    isActive,
-    onClick,
-    droppable,
-    dragActive,
-    countVariant = 'slate',
-    collapsed = false,
-}: DroppableFolderButtonProps) {
-    const { isOver, setNodeRef } = useDroppable({
-        id: `folder-${folderId}`,
-        disabled: !droppable,
-        data: { folderId }
-    });
-
-    const readOnlyDuringDrag = dragActive && !droppable;
-
-    if (collapsed) {
-        return (
-            <button
-                ref={setNodeRef}
-                onClick={onClick}
-                title={`${label}${count ? ` (${count})` : ''}`}
-                className={cn(
-                    "relative w-10 h-10 mx-auto flex items-center justify-center rounded-xl transition-all duration-200 cursor-pointer",
-                    isActive
-                        ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-                    isOver && droppable && "bg-rose-100 text-rose-800 ring-2 ring-rose-400 shadow-lg",
-                    readOnlyDuringDrag && "opacity-40 cursor-not-allowed"
-                )}
-            >
-                <Icon className="w-4 h-4" />
-                {count != null && count > 0 && (
-                    <span className={cn(
-                        "absolute -top-1 -right-1 text-[9px] font-bold px-1 py-0.2 rounded-full min-w-[1rem] text-center tabular-nums leading-tight shadow-xs",
-                        countVariant === 'rose' && "bg-rose-500 text-white",
-                        countVariant === 'amber' && "bg-amber-500 text-white",
-                        countVariant === 'slate' && "bg-slate-200 text-slate-700"
-                    )}>
-                        {count > 99 ? '99+' : count}
-                    </span>
-                )}
-            </button>
-        );
-    }
-
-    return (
-        <button
-            ref={setNodeRef}
-            onClick={onClick}
-            title={readOnlyDuringDrag ? 'Automatisch zugeordnet – Drag & Drop nicht möglich' : undefined}
-            className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
-                isActive
-                    ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                    : "text-slate-700 hover:bg-slate-50",
-                isOver && droppable && "bg-rose-100 text-rose-800 ring-2 ring-rose-400 ring-offset-2 ring-offset-slate-50 shadow-lg",
-                readOnlyDuringDrag && "opacity-40 cursor-not-allowed"
-            )}
-        >
-            <Icon className="w-4 h-4" />
-            <span className="flex-1 text-left">{label}</span>
-            {count != null && count > 0 && (
-                <span className={cn(
-                    "text-xs font-semibold px-2 py-0.5 rounded-full min-w-[1.25rem] text-center tabular-nums",
-                    countVariant === 'rose' && (isActive ? "bg-rose-200 text-rose-800" : "bg-rose-100 text-rose-700"),
-                    countVariant === 'amber' && "bg-amber-100 text-amber-700",
-                    countVariant === 'slate' && "bg-slate-100 text-slate-600"
-                )}>
-                    {count}
-                </span>
-            )}
-        </button>
-    );
-}
 
 interface DraggableEmailWrapperProps {
     emailId: number;
@@ -497,11 +95,26 @@ function DraggableEmailWrapper({ emailId, disabled, children }: DraggableEmailWr
 }
 
 export default function EmailCenter() {
+    const hasDataRouter = useContext(UNSAFE_DataRouterContext) !== null;
     const toast = useToast();
     const confirmDialog = useConfirm();
     const { folder: folderParam, emailId: emailIdParam } = useParams<{ folder?: string; emailId?: string }>();
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
+
+    const beforeLeaveComposer = useRef<(() => Promise<boolean>) | null>(null);
+    const leavingComposer = useRef(false);
+    const registerBeforeLeave = useCallback((save: (() => Promise<boolean>) | null) => {
+        beforeLeaveComposer.current = save;
+    }, []);
+    const persistComposer = useCallback(async () => {
+        if (!beforeLeaveComposer.current) return true;
+        if (leavingComposer.current) return false;
+        leavingComposer.current = true;
+        try { return await beforeLeaveComposer.current(); }
+        finally { leavingComposer.current = false; }
+    }, []);
+    const [composerVersion, setComposerVersion] = useState(0);
 
     // Derive activeFolder from URL param
     const activeFolder: FolderType = VALID_FOLDERS.includes(folderParam as FolderType)
@@ -509,9 +122,10 @@ export default function EmailCenter() {
         : 'inbox';
 
     // Navigate helper: updates URL (which drives activeFolder)
-    const setActiveFolder = useCallback((folder: FolderType) => {
+    const setActiveFolder = useCallback(async (folder: FolderType) => {
+        if (!await persistComposer()) return;
         navigate(`/emails/${folder}`, { replace: false });
-    }, [navigate]);
+    }, [navigate, persistComposer]);
 
     // State
     const [emails, setEmails] = useState<EmailItem[]>([]);
@@ -547,6 +161,8 @@ export default function EmailCenter() {
         return clean.includes('bauschlosserei-kuhn') || clean.startsWith('info-bauschlosserei');
     }, [ownAddresses]);
 
+    const { ref: mailLayoutRef, width: availableWidth } = useEmailPaneWidth();
+
     // Resizable Spalten & Einklappen (im localStorage gemerkt)
     const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
         const saved = localStorage.getItem('email_center_sidebar_width');
@@ -570,6 +186,10 @@ export default function EmailCenter() {
         return localStorage.getItem('email_center_sidebar_collapsed') === 'true';
     });
 
+    // Alte Einstellungen dürfen den Lesebereich beim Fensterwechsel nicht verdrängen.
+    const effectiveSidebarWidth = isSidebarCollapsed ? 56 : Math.min(sidebarWidth, Math.max(180, availableWidth * 0.2));
+    const effectiveListWidth = Math.min(listWidth, Math.max(280, availableWidth - effectiveSidebarWidth - 468));
+
     const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
     const [isDraggingList, setIsDraggingList] = useState(false);
 
@@ -585,7 +205,7 @@ export default function EmailCenter() {
         e.preventDefault();
         setIsDraggingSidebar(true);
         const startX = e.clientX;
-        const startWidth = sidebarWidth;
+        const startWidth = effectiveSidebarWidth;
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'col-resize';
 
@@ -606,13 +226,13 @@ export default function EmailCenter() {
 
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
-    }, [sidebarWidth]);
+    }, [effectiveSidebarWidth]);
 
     const handleListResizeStart = useCallback((e: React.PointerEvent) => {
         e.preventDefault();
         setIsDraggingList(true);
         const startX = e.clientX;
-        const startWidth = listWidth;
+        const startWidth = effectiveListWidth;
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'col-resize';
 
@@ -633,7 +253,7 @@ export default function EmailCenter() {
 
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
-    }, [listWidth]);
+    }, [effectiveListWidth]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isGlobalSearch, setIsGlobalSearch] = useState(false);
     const [globalSearchResults, setGlobalSearchResults] = useState<EmailItem[]>([]);
@@ -648,7 +268,7 @@ export default function EmailCenter() {
     const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const lastSelectedIdRef = useRef<number | null>(null);
-    const deepLinkFolderSwitchRef = useRef(false);
+    const selectionVersionRef = useRef(0);
 
     // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background
     const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; hasMore: boolean; timestamp: number }>>(new Map());
@@ -664,8 +284,9 @@ export default function EmailCenter() {
     useEffect(() => {
         const currentId = selectedEmail?.id ?? null;
         if (prevSelectedRef.current !== currentId) {
+            const previousId = prevSelectedRef.current;
             prevSelectedRef.current = currentId;
-            if (currentId === null && emailIdParam) {
+            if (currentId === null && emailIdParam && Number(emailIdParam) === previousId) {
                 navigate(`/emails/${activeFolder}`, { replace: true });
             }
         }
@@ -684,7 +305,6 @@ export default function EmailCenter() {
     });
     // Gesamt-Counts pro Ordner (fuer Footer "X von Y")
     const [folderTotals, setFolderTotals] = useState<Record<string, number>>({});
-    const [expandedFilters, setExpandedFilters] = useState(true);
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
     // Sentinel fuer Infinite Scroll am Ende der Email-Liste
     const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -725,7 +345,9 @@ export default function EmailCenter() {
     }, [selectedEmailId]);
 
     // Action Handlers
-    const handleComposeNew = () => {
+    const handleComposeNew = async () => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         setSelectedEmail(null);
         setReplyToEmail(null);
         setReplyToEmailId(undefined);
@@ -736,6 +358,8 @@ export default function EmailCenter() {
     };
 
     const handleReply = async (email: EmailItem, replyId?: number) => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         // List DTO has truncated body/no htmlBody – fetch full email for quote
         let fullEmail = email;
         if (!email.htmlBody) {
@@ -763,6 +387,8 @@ export default function EmailCenter() {
     };
 
     const handleForward = async (email: EmailItem) => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         let fullEmail = email;
         if (!email.htmlBody) {
             try {
@@ -837,7 +463,9 @@ export default function EmailCenter() {
     }, []);
 
     // Draft öffnen = Compose-Form mit Draft-Daten
-    const handleOpenDraft = (draft: DraftItem) => {
+    const handleOpenDraft = async (draft: DraftItem) => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         setSelectedEmail(null);
         setReplyToEmail(null);
         setReplyToEmailId(draft.replyEmailId || undefined);
@@ -1147,61 +775,39 @@ export default function EmailCenter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Deep-link: auto-select email from URL param /emails/:folder/:emailId
+    // The route identifies the view and the selected message independently.
+    // Loading a message must never replace a virtual folder or a search context.
     useEffect(() => {
-        if (!emailIdParam || emails.length === 0) return;
+        if (!emailIdParam) return;
         const emailId = Number(emailIdParam);
-        if (isNaN(emailId)) return;
-
-        const found = emails.find(e => e.id === emailId);
-        if (found) {
-            // Switch folder if the email belongs to a different one
-            if (activeFolder !== 'tax-advisors' && found.folder && found.folder !== activeFolder) {
-                deepLinkFolderSwitchRef.current = true;
-                setActiveFolder(found.folder);
-            }
-            setSelectedEmail(found);
-            setSelectedIds(new Set([found.id]));
-            if (!found.isRead) {
-                fetch(`/api/emails/${found.id}/mark-read`, { method: 'POST' })
-                    .then(() => {
-                        setEmails(prev => prev.map(e => e.id === found.id ? { ...e, isRead: true } : e));
-                        loadStats();
-                        refreshNotifications();
-                    })
-                    .catch(err => console.error('Failed to mark as read:', err));
-            }
-        } else {
-            // Nicht fetchen wenn die Email gerade optimistisch entfernt wird (Spam, Löschen, Blockieren)
-            if (pendingRemovalsRef.current.has(emailId)) return;
-            // Email not in current folder - try fetching it directly (cross-folder deep-link)
-            fetch(`/api/emails/${emailId}`)
-                .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
-                .then((email: EmailItem) => {
-                    // Switch folder if the email belongs to a different one
-                    if (activeFolder !== 'tax-advisors' && email.folder && email.folder !== activeFolder) {
-                        deepLinkFolderSwitchRef.current = true;
-                        setActiveFolder(email.folder);
-                    }
-                    setSelectedEmail(email);
-                    setSelectedIds(new Set([email.id]));
-                    if (!email.isRead) {
-                        fetch(`/api/emails/${email.id}/mark-read`, { method: 'POST' })
-                            .then(() => { loadStats(); refreshNotifications(); })
-                            .catch(err => console.error('Failed to mark as read:', err));
-                    }
-                })
-                .catch(() => { /* email not found, ignore */ });
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [emails, emailIdParam]);
+        if (!Number.isSafeInteger(emailId) || emailId <= 0 || pendingRemovalsRef.current.has(emailId)) return;
+        const controller = new AbortController();
+        const selectionVersion = selectionVersionRef.current;
+        fetch(`/api/emails/${emailId}`, { signal: controller.signal })
+            .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
+            .then((email: EmailItem) => {
+                if (controller.signal.aborted || pendingRemovalsRef.current.has(emailId)
+                    || selectionVersionRef.current !== selectionVersion) return;
+                setSelectedEmail(email);
+                setSelectedIds(new Set([email.id]));
+                if (!email.isRead) {
+                    fetch(`/api/emails/${email.id}/mark-read`, { method: 'POST' })
+                        .then(res => {
+                            if (!res.ok) return;
+                            setEmails(prev => prev.map(item => item.id === email.id ? { ...item, isRead: true } : item));
+                            setGlobalSearchResults(prev => prev.map(item => item.id === email.id ? { ...item, isRead: true } : item));
+                            loadStats();
+                            refreshNotifications();
+                        })
+                        .catch(err => console.error('Failed to mark as read:', err));
+                }
+            })
+            .catch(() => { /* keep an already selected list entry if detail loading fails */ });
+        return () => controller.abort();
+    }, [emailIdParam, activeFolder, loadStats]);
 
     useEffect(() => {
-        if (deepLinkFolderSwitchRef.current) {
-            deepLinkFolderSwitchRef.current = false;
-            return;
-        }
-        if (!isComposing) {
+        if (!isComposing && !emailIdParam) {
             setSelectedEmail(null);
             setSelectedIds(new Set());
             lastSelectedIdRef.current = null;
@@ -1211,6 +817,8 @@ export default function EmailCenter() {
 
     // Handlers
     const handleEmailClick = async (e: React.MouseEvent, email: EmailItem) => {
+        if (!await persistComposer()) return;
+        selectionVersionRef.current += 1;
         if (isComposing) {
             // Entwurf wird automatisch gespeichert – kein Bestätigungsdialog nötig
             setIsComposing(false);
@@ -1567,7 +1175,6 @@ export default function EmailCenter() {
     );
     const [dragActiveEmail, setDragActiveEmail] = useState<EmailItem | null>(null);
     const [dragCount, setDragCount] = useState(0);
-    const [moveMenuAt, setMoveMenuAt] = useState<'detail' | 'bulk' | null>(null);
 
     const handleDragStart = (e: DragStartEvent) => {
         const data = e.active.data.current as { emailId?: number } | undefined;
@@ -2046,7 +1653,8 @@ export default function EmailCenter() {
                 <EmailComposeForm
                     // Neu mounten, wenn ein anderer Entwurf/eine andere Antwort geöffnet wird –
                     // sonst bleiben Empfänger, Betreff und Zuordnung des vorherigen stehen.
-                    key={activeDraftId ?? replyToEmailId ?? 'neu'}
+                    key={`${composerVersion}-${activeDraftId ?? replyToEmailId ?? 'neu'}`}
+                    onBeforeLeave={registerBeforeLeave}
                     onClose={handleComposeClose}
                     onSuccess={handleComposeSuccess}
                     initialRecipient={initialRecipient}
@@ -2208,256 +1816,21 @@ export default function EmailCenter() {
         if (selectedEmail) {
             return (
                 <>
-                    {/* Header */}
-                    <div className="p-6 border-b border-slate-200">
-                        <div className="flex flex-wrap lg:flex-nowrap items-start justify-between gap-4">
-                            <div className="flex-1 min-w-[220px]">
-                                <div className="flex items-center gap-3 text-sm text-slate-600">
-                                    <div className={cn(
-                                        "w-9 h-9 rounded-full flex items-center justify-center text-white font-medium text-sm shadow-sm shrink-0",
-                                        selectedEmail.direction === 'IN' ? "bg-rose-500" : "bg-emerald-500"
-                                    )}>
-                                        {(selectedEmail.direction === 'OUT'
-                                            ? (getRecipientName(selectedEmail).charAt(0) || 'A')
-                                            : (getDisplayName(selectedEmail).charAt(0) || 'V')
-                                        ).toUpperCase()}
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-baseline gap-2 flex-wrap">
-                                            <p className="font-semibold text-slate-900 truncate">
-                                                {selectedEmail.direction === 'OUT' ? 'Gesendet an:' : getSenderName(selectedEmail)}
-                                            </p>
-                                            <p className="text-slate-400 font-normal text-xs truncate" title={selectedEmail.fromAddress}>
-                                                {selectedEmail.direction === 'OUT'
-                                                    ? `(von: ${selectedEmail.fromAddress || 'mir'})`
-                                                    : `<${selectedEmail.fromAddress || ''}>`}
-                                            </p>
-                                        </div>
-                                        <div className="mt-0.5 max-w-full">
-                                            <EmailRecipientDropdown
-                                                recipients={selectedEmail.recipient}
-                                                cc={selectedEmail.cc}
-                                                label={selectedEmail.direction === 'OUT' ? '' : 'An:'}
-                                                className="text-xs"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {selectedEmail.sentAt ? (
-                                        <>
-                                            {new Date(selectedEmail.sentAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(selectedEmail.sentAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                                        </>
-                                    ) : ''}
-                                </p>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center flex-wrap gap-1.5 shrink-0 justify-end">
-                                {activeFolder === 'trash' && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleMoveToFolder('inbox', [selectedEmail.id])}
-                                        className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-400"
-                                        title="E-Mail aus Papierkorb wiederherstellen"
-                                    >
-                                        <RotateCcw className="w-4 h-4" />
-                                        Wiederherstellen
-                                    </Button>
-                                )}
-                                {/* Verschieben nach – Dropdown (im Gesendet-Ordner ausgeblendet) */}
-                                {activeFolder !== 'sent' && (
-                                    <div className="relative">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => setMoveMenuAt(moveMenuAt === 'detail' ? null : 'detail')}
-                                            className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1"
-                                            title="Verschieben nach..."
-                                        >
-                                            <FolderInput className="w-4 h-4" />
-                                            <ChevronDown className="w-3 h-3" />
-                                        </Button>
-                                        {moveMenuAt === 'detail' && (
-                                            <>
-                                                <div
-                                                    className="fixed inset-0 z-40"
-                                                    onClick={() => setMoveMenuAt(null)}
-                                                />
-                                                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 p-1.5 z-50 min-w-[200px]">
-                                                    <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                        <FolderInput className="w-3 h-3" />
-                                                        Verschieben nach
-                                                    </div>
-                                                    {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
-                                                        <button
-                                                            key={t.id}
-                                                            onClick={() => {
-                                                                setMoveMenuAt(null);
-                                                                handleMoveToFolder(t.id, [selectedEmail.id]);
-                                                            }}
-                                                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
-                                                        >
-                                                            <t.icon className="w-4 h-4 text-rose-500" />
-                                                            {t.label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                                {activeFolder === 'spam' ? (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleMarkNotSpam()}
-                                        className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
-                                        title="Kein Spam"
-                                    >
-                                        <ShieldCheck className="w-4 h-4" />
-                                    </Button>
-                                ) : activeFolder === 'newsletter' ? (
-                                    <>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleMarkSpam()}
-                                            className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                            title="Ist Spam"
-                                        >
-                                            <ShieldX className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleMarkNotNewsletter()}
-                                            className="text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                                            title="Kein Newsletter – in Posteingang"
-                                        >
-                                            <Inbox className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleConfirmNewsletter()}
-                                            className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
-                                            title="Newsletter bestätigen"
-                                        >
-                                            <CheckCircle2 className="w-4 h-4" />
-                                        </Button>
-                                    </>
-                                ) : activeFolder !== 'trash' && activeFolder !== 'sent' && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleMarkSpam()}
-                                        className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                        title="Als Spam markieren"
-                                    >
-                                        <ShieldX className="w-4 h-4" />
-                                    </Button>
-                                )}
-                                {activeFolder !== 'sent' && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleBlockSender()}
-                                        className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                        title="Absender sperren"
-                                    >
-                                        <ShieldAlert className="w-4 h-4" />
-                                    </Button>
-                                )}
-                                {(activeFolder === 'spam' || activeFolder === 'newsletter') && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleMoveToFolder('inbox', [selectedEmail.id])}
-                                        className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                        title="In Posteingang verschieben (kein Spam)"
-                                    >
-                                        <Inbox className="w-4 h-4" /> Kein Spam
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => handleToggleStar(selectedEmail.id, e)}
-                                    className={cn(
-                                        "transition-colors",
-                                        selectedEmail.isStarred
-                                            ? "text-amber-500 hover:text-amber-600 hover:bg-amber-50"
-                                            : "text-slate-400 hover:text-amber-500 hover:bg-amber-50"
-                                    )}
-                                    title={selectedEmail.isStarred ? 'Markierung entfernen' : 'Markieren'}
-                                >
-                                    <Star className={cn("w-4 h-4", selectedEmail.isStarred && "fill-amber-400")} />
-                                </Button>
-                                {activeFolder !== 'trash' && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleReply(selectedEmail)}
-                                        className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                    >
-                                        <Reply className="w-4 h-4" /> Antworten
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleForward(selectedEmail)}
-                                    className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                >
-                                    <Forward className="w-4 h-4" /> Weiterleiten
-                                </Button>
-                                {/* Download all attachments as ZIP */}
-                                {selectedEmail.attachments && selectedEmail.attachments.filter(a => !a.inline).length > 1 && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => {
-                                            const a = document.createElement('a');
-                                            a.href = `/api/emails/${selectedEmail.id}/attachments/download-all`;
-                                            a.download = '';
-                                            a.click();
-                                        }}
-                                        className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1.5"
-                                        title="Alle Anhänge als ZIP herunterladen"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                        <span className="text-xs">ZIP</span>
-                                    </Button>
-                                )}
-                                {activeFolder !== 'sent' && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setShowAssignModal(true)}
-                                        className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                    >
-                                        <FolderPlus className="w-4 h-4" />
-                                        Zuordnen
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => handleDelete(e, selectedEmail)}
-                                    className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                    title={activeFolder === 'trash' ? 'Endgültig löschen' : 'In Papierkorb'}
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
-                            </div>
-                        </div>
-                        <h2 className="text-xl font-bold text-slate-900 mt-4 break-words">
-                            {selectedEmail.subject || '(Kein Betreff)'}
-                        </h2>
-                    </div>
+                    <EmailDetailHeader
+                        email={selectedEmail}
+                        folder={activeFolder}
+                        onReply={() => handleReply(selectedEmail)}
+                        onForward={() => handleForward(selectedEmail)}
+                        onAssign={() => setShowAssignModal(true)}
+                        onStar={() => handleToggleStar(selectedEmail.id)}
+                        onDelete={() => handleDelete(null, selectedEmail)}
+                        onMove={(target) => handleMoveToFolder(target, [selectedEmail.id])}
+                        onSpam={handleMarkSpam}
+                        onNotSpam={handleMarkNotSpam}
+                        onBlock={handleBlockSender}
+                        onNotNewsletter={handleMarkNotNewsletter}
+                        onConfirmNewsletter={handleConfirmNewsletter}
+                    />
 
                     {/* Thread-Verlauf */}
                     {threadLoading ? (
@@ -2541,260 +1914,26 @@ export default function EmailCenter() {
     };
 
     return (
+        <>
+        {hasDataRouter && <EmailNavigationGuard active={isComposing} persist={persistComposer} />}
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex bg-slate-100 overflow-hidden -m-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)]">
-            {/* Left Sidebar - Folders */}
-            <div
-                style={{ width: isSidebarCollapsed ? 56 : sidebarWidth }}
-                className={cn(
-                    "bg-slate-50/80 border-r border-slate-200/80 flex flex-col shrink-0 overflow-hidden",
-                    !isDraggingSidebar && "transition-[width] duration-150",
-                    isSidebarCollapsed ? "w-14 items-center" : ""
-                )}
-            >
-                {/* Header */}
-                {!isSidebarCollapsed ? (
-                    <div className="p-2 border-b border-slate-200/80 bg-white space-y-1 shrink-0 w-full">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="font-bold text-slate-900 text-sm leading-tight">E-Mail Center</h2>
-                                <p className="text-[10px] text-slate-400 leading-tight">Postfach verwalten</p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={toggleSidebar}
-                                className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                                title="Ordnerleiste einklappen"
-                            >
-                                <PanelLeftClose className="w-4 h-4" />
-                            </button>
-                        </div>
-                        <Button
-                            onClick={handleComposeNew}
-                            className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200/50 gap-2 h-8 font-semibold text-xs"
-                        >
-                            <PenSquare className="w-4 h-4" />
-                            Neue E-Mail
-                        </Button>
-                    </div>
-                ) : (
-                    <div className="p-2 border-b border-slate-200/80 bg-white flex flex-col items-center gap-2 shrink-0 w-full">
-                        <button
-                            type="button"
-                            onClick={toggleSidebar}
-                            className="p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                            title="Ordnerleiste ausklappen"
-                        >
-                            <PanelLeftOpen className="w-4 h-4 text-rose-600" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleComposeNew}
-                            className="w-8 h-8 rounded-lg bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-sm shadow-rose-200 transition-transform active:scale-95 cursor-pointer"
-                            title="Neue E-Mail schreiben"
-                        >
-                            <PenSquare className="w-4 h-4" />
-                        </button>
-                    </div>
-                )}
-
-                {/* Folders */}
-                <div className="flex-1 overflow-hidden p-2 space-y-0.5">
-                    {/* ═══ ORDNER (Drag & Drop Drop-Ziele) ═══ */}
-                    {!isSidebarCollapsed && (
-                        <div className="px-3 py-1 flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordner</span>
-                            <span className="text-[9px] text-slate-300 font-medium">· Drag &amp; Drop</span>
-                        </div>
-                    )}
-
-                    <DroppableFolderButton
-                        folderId="inbox"
-                        icon={Inbox}
-                        label="Posteingang"
-                        count={folderCounts.inbox}
-                        isActive={activeFolder === 'inbox'}
-                        onClick={() => setActiveFolder('inbox')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                        countVariant="rose"
-                        collapsed={isSidebarCollapsed}
-                    />
-                    <DroppableFolderButton
-                        folderId="trash"
-                        icon={Trash2}
-                        label="Papierkorb"
-                        count={folderCounts.trash}
-                        isActive={activeFolder === 'trash'}
-                        onClick={() => setActiveFolder('trash')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                        collapsed={isSidebarCollapsed}
-                    />
-                    <DroppableFolderButton
-                        folderId="spam"
-                        icon={ShieldAlert}
-                        label="Spam"
-                        count={folderCounts.spam}
-                        isActive={activeFolder === 'spam'}
-                        onClick={() => setActiveFolder('spam')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                        collapsed={isSidebarCollapsed}
-                    />
-                    <DroppableFolderButton
-                        folderId="newsletter"
-                        icon={Newspaper}
-                        label="Newsletter"
-                        count={folderCounts.newsletter}
-                        isActive={activeFolder === 'newsletter'}
-                        onClick={() => setActiveFolder('newsletter')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                        collapsed={isSidebarCollapsed}
-                    />
-
-                    <div className="h-px bg-slate-200 my-1.5" />
-
-                    <DroppableFolderButton
-                        folderId="sent"
-                        icon={Send}
-                        label="Gesendet"
-                        isActive={activeFolder === 'sent'}
-                        onClick={() => setActiveFolder('sent')}
-                        droppable={false}
-                        dragActive={dragActiveEmail !== null}
-                        collapsed={isSidebarCollapsed}
-                    />
-                    <DroppableFolderButton
-                        folderId="drafts"
-                        icon={FileEdit}
-                        label="Entwürfe"
-                        count={folderCounts.drafts}
-                        isActive={activeFolder === 'drafts'}
-                        onClick={() => setActiveFolder('drafts')}
-                        droppable={false}
-                        dragActive={dragActiveEmail !== null}
-                        collapsed={isSidebarCollapsed}
-                    />
-                    <DroppableFolderButton
-                        folderId="starred"
-                        icon={Star}
-                        label="Markiert"
-                        count={folderCounts.starred}
-                        isActive={activeFolder === 'starred'}
-                        onClick={() => setActiveFolder('starred')}
-                        droppable={false}
-                        dragActive={dragActiveEmail !== null}
-                        countVariant="amber"
-                        collapsed={isSidebarCollapsed}
-                    />
-
-                    <div className="h-px bg-slate-200 my-1.5" />
-
-                    {/* ═══ ZUGEORDNET (read-only, auto-assigned) ═══ */}
-                    {!isSidebarCollapsed ? (
-                        <div className="px-3 py-1 flex items-center justify-between" title="Werden automatisch zugeordnet – kein Drag & Drop möglich">
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Zugeordnet</span>
-                                <span className="text-[9px] text-slate-300 font-medium">· automatisch</span>
-                            </div>
-                            <button onClick={() => setExpandedFilters(!expandedFilters)} className="cursor-pointer p-0.5 rounded hover:bg-slate-100 transition-colors">
-                                {expandedFilters ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="h-px bg-slate-200 my-1.5 w-8 mx-auto" />
-                    )}
-
-                    {expandedFilters && (
-                        <>
-                            <DroppableFolderButton
-                                folderId="unassigned"
-                                icon={AlertCircle}
-                                label="Nicht zugeordnet"
-                                count={folderCounts.unassigned}
-                                isActive={activeFolder === 'unassigned'}
-                                onClick={() => setActiveFolder('unassigned')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                                countVariant="amber"
-                            />
-                            <DroppableFolderButton
-                                folderId="projects"
-                                icon={Briefcase}
-                                label="Projekte"
-                                count={folderCounts.projects}
-                                isActive={activeFolder === 'projects'}
-                                onClick={() => setActiveFolder('projects')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                            />
-                            <DroppableFolderButton
-                                folderId="offers"
-                                icon={FileText}
-                                label="Anfragen"
-                                count={folderCounts.offers}
-                                isActive={activeFolder === 'offers'}
-                                onClick={() => setActiveFolder('offers')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                            />
-                            <DroppableFolderButton
-                                folderId="suppliers"
-                                icon={Package}
-                                label="Lieferanten"
-                                count={folderCounts.suppliers}
-                                isActive={activeFolder === 'suppliers'}
-                                onClick={() => setActiveFolder('suppliers')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                            />
-                            <DroppableFolderButton
-                                folderId="tax-advisors"
-                                icon={Calculator}
-                                label="Steuerberater"
-                                count={folderCounts.taxAdvisors}
-                                isActive={activeFolder === 'tax-advisors'}
-                                onClick={() => setActiveFolder('tax-advisors')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                            />
-                        </>
-                    )}
-
-                    <div className="h-px bg-slate-200 my-1.5" />
-
-                    {/* Settings Button */}
-                    {!isSidebarCollapsed ? (
-                        <button
-                            onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
-                            className={cn(
-                                "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
-                                showSettings
-                                    ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                                    : "text-slate-700 hover:bg-slate-50"
-                            )}
-                        >
-                            <Settings className="w-4 h-4" />
-                            <span className="flex-1 text-left">Einstellungen</span>
-                        </button>
-                    ) : (
-                        <button
-                            onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
-                            title="Einstellungen"
-                            className={cn(
-                                "w-10 h-10 mx-auto flex items-center justify-center rounded-xl transition-all duration-200 cursor-pointer",
-                                showSettings
-                                    ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                            )}
-                        >
-                            <Settings className="w-4 h-4" />
-                        </button>
-                    )}
-                </div>
-            </div>
+        <div ref={mailLayoutRef} className="flex h-full min-h-0 w-full min-w-0 bg-slate-100 overflow-hidden">
+            <EmailFolderSidebar
+                width={effectiveSidebarWidth}
+                collapsed={isSidebarCollapsed}
+                resizing={isDraggingSidebar}
+                activeFolder={activeFolder}
+                counts={folderCounts}
+                dragActive={dragActiveEmail !== null}
+                showSettings={showSettings}
+                onToggle={toggleSidebar}
+                onCompose={handleComposeNew}
+                onSelect={setActiveFolder}
+                onSettings={async () => {
+                    if (!await persistComposer()) return;
+                    setShowSettings(true); setSelectedEmail(null);
+                }}
+            />
 
             {/* Splitter 1: Sidebar Resizer */}
             {!isSidebarCollapsed && (
@@ -2812,7 +1951,7 @@ export default function EmailCenter() {
 
             {/* Middle List - Email List */}
             <div
-                style={{ width: `${listWidth}px` }}
+                style={{ width: effectiveListWidth }}
                 className="bg-white border-r border-slate-200 flex flex-col shrink-0 min-w-[280px]"
             >
                 {/* Ordner-Header mit "Alle gelesen"-Button */}
@@ -3051,7 +2190,7 @@ export default function EmailCenter() {
                                         {email.subject || '(Kein Betreff)'}
                                     </p>
                                     <p className="text-xs text-slate-400 line-clamp-2">
-                                        {(email.body || '...').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 150)}
+                                        {getThreadPreview(email.htmlBody || email.body || '') || 'Kein neuer Nachrichtentext'}
                                     </p>
 
                                     {/* Badges */}
@@ -3164,7 +2303,7 @@ export default function EmailCenter() {
             </div>
 
             {/* Right Pane - Preview/Compose */}
-            <div className="flex-1 bg-slate-50 flex flex-col min-w-0 overflow-hidden">
+            <div role="region" aria-label="E-Mail lesen und schreiben" className="flex-1 bg-slate-50 flex flex-col min-h-0 min-w-0 overflow-hidden">
                 {renderRightPane()}
             </div>
 
@@ -3259,7 +2398,6 @@ export default function EmailCenter() {
             ) : null}
         </DragOverlay>
         </DndContext>
+        </>
     );
 }
-
-

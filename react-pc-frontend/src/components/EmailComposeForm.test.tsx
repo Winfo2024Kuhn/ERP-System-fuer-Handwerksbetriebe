@@ -1,4 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { ToastProvider } from './ui/toast';
+const render = (ui: ReactElement) => rtlRender(<ToastProvider>{ui}</ToastProvider>);
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EmailComposeForm, MAX_ATTACHMENT_BYTES } from './EmailComposeForm';
@@ -398,6 +401,21 @@ describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
         const vonFeld = await screen.findByDisplayValue('rechnungen@musterfirma-beispiel.de');
         expect(vonFeld).toHaveAttribute('readonly');
         expect(screen.getByText(/lässt sich hier deshalb nicht ändern/i)).toBeInTheDocument();
+    });
+
+    it('lädt beim Wiederöffnen eines Geschäftsdokument-Entwurfs den festen Absender nach', async () => {
+        dokumentAbsenderAntwort = { aktiv: true, address: 'rechnungen@example.com' };
+        const fallback = mockFetch();
+        vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input) === '/api/emails/drafts/42' && !init?.method) return Promise.resolve(jsonResponse({
+                id: 42, subject: 'Rechnung Entwurf', recipient: BEKANNTE_ADRESSE, body: '<p>Rechnung</p>',
+                geschaeftsdokument: true, attachments: [],
+            }));
+            return fallback(input, init);
+        });
+        render(<EmailComposeForm onClose={() => {}} draftId={42} />);
+        expect(await screen.findByDisplayValue('rechnungen@example.com')).toHaveAttribute('readonly');
+        expect(screen.getByText(/lässt sich hier deshalb nicht ändern/i)).toHaveClass('col-span-2');
     });
 
     it('laesst die freie Auswahl, solange kein eigenes Postfach eingerichtet ist', async () => {

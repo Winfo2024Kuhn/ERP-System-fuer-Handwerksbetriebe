@@ -107,6 +107,8 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     await page.getByRole('button', { name: 'Zählung festhalten' }).click();
     await expect.poll(() => writes.length).toBe(3);
     await page.getByTitle('Mindestbestand & Automatik einstellen').click();
+    await uebergaengeAusklingenLassen(page);
+    const settingsBeforeNotices = await page.getByRole('dialog', { name: 'Kassen-Einstellungen' }).boundingBox();
     const minimum = page.getByRole('textbox', { name: 'Mindestbestand (€)' });
     await minimum.fill('0');
     await page.getByRole('button', { name: 'Speichern', exact: true }).focus();
@@ -124,7 +126,10 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     const settings = page.getByRole('dialog', { name: 'Kassen-Einstellungen' });
     const noticeBounds = await notices.boundingBox();
     const dialogBounds = await settings.boundingBox();
-    expect(noticeBounds!.y + noticeBounds!.height).toBeLessThanOrEqual(dialogBounds!.y);
+    expect(noticeBounds!.y).toBe(16);
+    expect(noticeBounds!.x + noticeBounds!.width).toBe(page.viewportSize()!.width - 16);
+    expect(Math.abs(dialogBounds!.y - settingsBeforeNotices!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(dialogBounds!.height - settingsBeforeNotices!.height)).toBeLessThanOrEqual(1);
     expect(noticeBounds!.height).toBeLessThanOrEqual(Math.min(page.viewportSize()!.height * 0.25, 192));
     expect(await notices.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
     await settings.getByRole('button', { name: 'Fenster schließen', exact: true }).focus();

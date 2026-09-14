@@ -59,7 +59,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.springframework.mock.web.MockMultipartFile;
 import java.nio.charset.StandardCharsets;
 
-@WebMvcTest(UnifiedEmailController.class)
+@WebMvcTest({UnifiedEmailController.class, EmailDraftController.class})
+@org.springframework.context.annotation.Import(org.example.kalkulationsprogramm.service.EmailDraftService.class)
 @AutoConfigureMockMvc(addFilters = false)
 @org.springframework.test.context.TestPropertySource(properties = {
         "file.mail-attachment-dir=target/test-attachments"
@@ -74,6 +75,8 @@ class UnifiedEmailControllerTest {
 
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
+    @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
     @MockBean private ProjektRepository projektRepository;
     @MockBean private AnfrageRepository anfrageRepository;
     @MockBean private LieferantenRepository lieferantenRepository;
@@ -107,6 +110,94 @@ class UnifiedEmailControllerTest {
         email.setZuordnungTyp(EmailZuordnungTyp.KEINE);
         email.setAttachments(Collections.emptyList());
         return email;
+    }
+
+    @Test
+    void successfulDraftSendDeletesDraftOnServerAfterSmtp() throws Exception {
+        prepareDraftSend();
+        org.example.kalkulationsprogramm.domain.EmailDraft draft = new org.example.kalkulationsprogramm.domain.EmailDraft();
+        draft.setId(42L);
+        given(emailDraftRepository.findById(42L)).willReturn(Optional.of(draft));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            given(emailDraftRepository.findById(42L)).willReturn(Optional.empty()); return null;
+        }).when(emailDraftRepository).delete(draft);
+        org.mockito.Mockito.doReturn("sent-message").when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        mockMvc.perform(multipart("/api/emails/send").file(draftSendPart()))
+                .andExpect(status().isOk());
+        // Observable contract: the sent draft must no longer be returned by the server.
+        mockMvc.perform(get("/api/emails/drafts/42")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void smtpFailureKeepsDraftAvailable() throws Exception {
+        prepareDraftSend();
+        storedDraft(null);
+        org.mockito.Mockito.doThrow(new java.io.IOException("SMTP unavailable"))
+                .when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        mockMvc.perform(multipart("/api/emails/send").file(draftSendPart()))
+                .andExpect(status().isInternalServerError());
+        mockMvc.perform(get("/api/emails/drafts/42")).andExpect(status().isOk());
+        verify(emailDraftRepository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @Test
+    void successfulReplyDeletesOnlyItsLinkedDraft() throws Exception {
+        prepareDraftSend();
+        storedDraft(7L);
+        given(emailRepository.findById(7L)).willReturn(Optional.of(createTestEmail(7L, "Original", "test@example.com")));
+        org.mockito.Mockito.doReturn("reply-message").when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/emails/drafts/42")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void laterArchivingFailureCannotKeepAnAlreadySentDraft() throws Exception {
+        prepareDraftSend();
+        storedDraft(null);
+        org.mockito.Mockito.doReturn("sent-message").when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        given(emailRepository.saveAndFlush(any())).willThrow(new IllegalStateException("Archive failed"));
+        mockMvc.perform(multipart("/api/emails/send").file(draftSendPart())).andExpect(status().isInternalServerError());
+        mockMvc.perform(get("/api/emails/drafts/42")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void absentDraftIsRejectedBeforeSending() throws Exception {
+        mockMvc.perform(multipart("/api/emails/send").file(draftSendPart())).andExpect(status().isNotFound());
+        verify(unifiedEmailController, org.mockito.Mockito.never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void replyDraftCannotBeSentAgainstAnotherThread() throws Exception {
+        storedDraft(8L);
+        given(emailRepository.findById(7L)).willReturn(Optional.of(createTestEmail(7L, "Original", "test@example.com")));
+        mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart())).andExpect(status().isBadRequest());
+        verify(unifiedEmailController, org.mockito.Mockito.never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        verify(emailDraftRepository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    private void storedDraft(Long replyEmailId) {
+        org.example.kalkulationsprogramm.domain.EmailDraft draft = new org.example.kalkulationsprogramm.domain.EmailDraft();
+        draft.setId(42L);
+        draft.setReplyEmailId(replyEmailId);
+        given(emailDraftRepository.findById(42L)).willReturn(Optional.of(draft));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            given(emailDraftRepository.findById(42L)).willReturn(Optional.empty()); return null;
+        }).when(emailDraftRepository).delete(draft);
+    }
+
+    private MockMultipartFile draftSendPart() {
+        return new MockMultipartFile("dto", "", "application/json", "{\"draftId\":42,\"sender\":\"absender@example.com\",\"recipients\":[\"test@example.com\"],\"subject\":\"Plan\",\"body\":\"Hallo\"}".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void prepareDraftSend() {
+        given(systemSettingsService.getStandardMailKonto()).willReturn(new org.example.kalkulationsprogramm.service.SystemSettingsService.MailKonto(
+                "mail.example.com", 587, "user", "pass", "absender@example.com", "Firma"));
+        given(systemSettingsService.getSmtpHost()).willReturn("mail.example.com");
+        given(systemSettingsService.getSmtpPort()).willReturn(587);
+        given(systemSettingsService.getSmtpUsername()).willReturn("user");
+        given(systemSettingsService.getSmtpPassword()).willReturn("pass");
+        given(emailAbsenderService.findActiveEmailAddresses()).willReturn(List.of("absender@example.com"));
+        given(emailAbsenderService.findAnzeigenameFuerAdresse(any())).willReturn(Optional.of("Firma"));
     }
 
     // ═══════════════════════════════════════════════════════════════

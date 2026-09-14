@@ -528,6 +528,69 @@ test.describe('keinTextLaeuftUeber ignoriert gewollte Kuerzungen (Abschnitt 10, 
 // Formularbereich herausgescrollte Felder hatten weiterhin ihr volles
 // Rechteck, ihr sichtbarer Anteil war 0px.
 test.describe('keineUeberschneidungen (Abschnitt 10)', () => {
+    test('schwebende PC-Meldung darf App-Aktion überlagern und ihren eigenen Schließen-Knopf enthalten', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                button { width: 80px; height: 32px; }
+                .app { position: absolute; right: 16px; top: 16px; }
+                [data-pc-toasts] { position: fixed; right: 16px; top: 16px; width: 300px; z-index: 10010; }
+                [role="alert"] { padding: 8px; height: 50px; background: mistyrose; }
+            </style>
+            <button class="app">Speichern</button>
+            <div data-pc-toasts><div role="alert">Fehler <button>Schließen</button></div></div>
+        `);
+        await keineUeberschneidungen(page);
+    });
+
+    test('kollidierende Toast-Karten bleiben ein Fehler, auch wenn eine die andere vollständig bedeckt', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                [data-pc-toasts] { position: fixed; right: 16px; top: 16px; width: 300px; height: 150px; }
+                [role="alert"] { position: absolute; width: 280px; height: 100px; background: mistyrose; }
+                [role="status"] { position: absolute; top: 10px; left: 10px; width: 180px; height: 60px; }
+            </style>
+            <div data-pc-toasts><div role="alert">Fehler</div><div role="status">Gespeichert</div></div>
+        `);
+        await expect(keineUeberschneidungen(page)).rejects.toThrow(/Fehler.*Gespeichert/);
+    });
+
+    test('kollidierende Knöpfe innerhalb derselben Toast-Karte bleiben ein Fehler', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                [data-pc-toasts] { position: fixed; right: 16px; top: 16px; width: 300px; height: 100px; }
+                [role="alert"] { position: relative; height: 100px; }
+                button { position: absolute; top: 30px; left: 20px; width: 100px; height: 40px; }
+            </style>
+            <div data-pc-toasts><div role="alert">Fehler<button>Schließen</button><button>Wiederholen</button></div></div>
+        `);
+        await expect(keineUeberschneidungen(page)).rejects.toThrow(/Schließen.*Wiederholen/);
+    });
+
+    test('App-Kollisionen bleiben bei sichtbarer schwebender Meldung ein Fehler', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                button { position: absolute; left: 10px; top: 10px; width: 100px; height: 40px; }
+                button + button { left: 60px; }
+                [data-pc-toasts] { position: fixed; right: 16px; top: 16px; }
+            </style>
+            <button>Speichern</button><button>Abbrechen</button>
+            <div data-pc-toasts><div role="status">Gespeichert</div></div>
+        `);
+        await expect(keineUeberschneidungen(page)).rejects.toThrow(/Speichern.*Abbrechen/);
+    });
+
+    test('ein Marker ohne feste Position erhält keine Ausnahme', async ({ page }) => {
+        await page.setContent(`
+            <style>
+                button { position: fixed; top: 20px; left: 20px; width: 100px; height: 40px; }
+                [data-pc-toasts] { position: absolute; top: 0; left: 0; width: 300px; height: 100px; }
+                [role="alert"] { width: 300px; height: 100px; }
+            </style>
+            <button>Speichern</button><div data-pc-toasts><div role="alert">Fehler</div></div>
+        `);
+        await expect(keineUeberschneidungen(page)).rejects.toThrow();
+    });
+
     test('zwei echt ueberlappende Knoepfe loesen weiterhin aus', async ({ page }) => {
         await page.setContent(`
             <style>

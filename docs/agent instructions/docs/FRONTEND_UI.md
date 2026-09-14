@@ -103,7 +103,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 ### Gemeinsame Zahlenprüfung und Meldungsfläche
 
 - PC: `lib/numberDrafts.ts` prüft mehrere Zahlenentwürfe vollständig vor der ersten Aktion. Fachliche Geldregeln liegen in `features/finanzen/moneyDrafts.ts`; keine Kopien in Seiten anlegen. Zulässige Genauigkeit folgt dem API-/Datenbankvertrag. Fehlende gespeicherte Zahlen ergeben einen leeren Entwurf, keinen erfundenen Nullwert.
-- PC-Toasts reservieren eine begrenzte Fläche über der Anwendung (`--pc-toast-height`). `MainLayout` und der gemeinsame `Dialog` berücksichtigen diese. Eigene feste Dialogcontainer mit direktem `role="dialog"`/`aria-modal="true"`-Kind werden zentral berücksichtigt; nötige weitere Overlaycontainer können `data-app-overlay-container` verwenden. Neue Dialoge bevorzugt mit dem gemeinsamen `Dialog` bauen und dessen Fokusverhalten wiederverwenden.
+- PC-Toasts schweben auf Nutzerwunsch vom 14.09.2026 als kompakte Meldungen oben rechts über der Anwendung. Sie reservieren keinen Platz und verschieben weder Anwendung noch Dialoge. Nur die Meldungskarten nehmen Zeigerereignisse an; der begrenzte Meldungsstapel bleibt scrollbar. Neue Dialoge bevorzugt mit dem gemeinsamen `Dialog` bauen und dessen Fokusverhalten wiederverwenden.
 - Mobile: eigene feste Overlays verwenden `mobileOverlayStyle` aus `components/ui/toast.tsx`. Die Höhe der Meldungsfläche wird zentral gemessen. Mehrere Meldungen, kleine verbleibende Dialoghöhe, erreichbare letzte Eingaben und Speichern gemeinsam prüfen.
 - Toasts dürfen auch bei offenem Dialog per Tastatur erreichbar sein. Dabei bleibt der übrige Seitenhintergrund gesperrt; Escape aus der Meldungsfläche darf keinen ungespeicherten Dialog verwerfen.
 

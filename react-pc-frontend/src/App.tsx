@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Outlet, Navigate, Route } from 'react-router-dom';
 import { MainLayout } from './components/layout/MainLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
@@ -54,14 +54,10 @@ import WebsiteEditor from './pages/WebsiteEditor';
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
 installSessionInterceptor();
 
-export default function App() {
-  return (
-    <ToastProvider>
-      <ConfirmProvider>
-        <AuthProvider>
-          <BrowserRouter>
-            <SessionGuard />
-            <Routes>
+// Data router preserves the route tree and lets editors await saving before navigation.
+const router = createBrowserRouter(createRoutesFromElements(
+  <Route element={<><SessionGuard /><Outlet /></>}>
+
               {/* Public pages */}
               <Route path="/login" element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
 
@@ -118,8 +114,16 @@ export default function App() {
 
                 <Route path="*" element={<Navigate to="/projekte" replace />} />
               </Route>
-            </Routes>
-          </BrowserRouter>
+
+  </Route>
+));
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <ConfirmProvider>
+        <AuthProvider>
+          <RouterProvider router={router} />
         </AuthProvider>
       </ConfirmProvider>
     </ToastProvider>

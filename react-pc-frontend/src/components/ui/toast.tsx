@@ -22,13 +22,7 @@ const colors = {
     info: 'border-slate-200 bg-slate-50 text-slate-800',
 };
 
-/**
- * Meldungen belegen eine eigene, begrenzte Fläche oberhalb der Anwendung.
- * MainLayout und die semantischen Dialogcontainer berücksichtigen deren
- * gemessene Höhe über --pc-toast-height (siehe index.css). Auch bei vielen
- * Meldungen bleibt der Rest der Oberfläche bedienbar; ältere Meldungen sind
- * innerhalb dieser Fläche erreichbar und werden nicht still verworfen.
- */
+/** Floating notifications do not change application or dialog geometry. */
 export function ToastProvider({ children }: { children: ReactNode }) {
     const [messages, setMessages] = useState<Toast[]>([]);
     const noticeRef = useRef<HTMLDivElement>(null);
@@ -36,23 +30,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
     useLayoutEffect(() => {
-        const style = document.documentElement.style;
-        const previous = style.getPropertyValue('--pc-toast-height');
-        return () => {
-            if (previous) style.setProperty('--pc-toast-height', previous);
-            else style.removeProperty('--pc-toast-height');
-        };
-    }, []);
-
-    useLayoutEffect(() => {
         const panel = noticeRef.current;
-        const measure = () => document.documentElement.style.setProperty('--pc-toast-height', `${messages.length ? panel?.getBoundingClientRect().height ?? 0 : 0}px`);
-        measure();
         if (panel) panel.scrollTop = panel.scrollHeight;
-        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-        if (panel) observer?.observe(panel);
-        window.addEventListener('resize', measure);
-        return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
     }, [messages.length]);
 
     const dismiss = useCallback((id: number) => {
@@ -80,11 +59,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return <ToastContext.Provider value={api}>
         <div ref={noticeRef} data-testid="toast-container" data-pc-toasts role="region" aria-label="Meldungen" tabIndex={messages.length ? 0 : -1}
             hidden={!messages.length}
-            className={messages.length ? 'relative z-[10010] max-h-[min(25dvh,12rem)] overflow-y-auto bg-slate-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-rose-500' : 'hidden'}>
-            <div className="mx-auto flex max-w-[1600px] flex-col gap-2">
+            className={messages.length ? 'pointer-events-none fixed right-4 top-4 z-[10010] max-h-[min(25dvh,12rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-xl focus:outline-none focus:ring-2 focus:ring-inset focus:ring-rose-500' : 'hidden'}>
+            <div className="flex flex-col gap-2">
                 {messages.map(({ id, type, message }) => {
                     const Icon = icons[type];
-                    return <div key={id} role={type === 'error' || type === 'warning' ? 'alert' : 'status'} className={`flex items-start gap-3 rounded-xl border px-4 py-3 shadow-sm ${colors[type]}`}>
+                    return <div key={id} role={type === 'error' || type === 'warning' ? 'alert' : 'status'} className={`pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg ${colors[type]}`}>
                         <Icon aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
                         <p className="min-w-0 flex-1 break-words text-sm font-medium">{message}</p>
                         <button type="button" aria-label="Meldung schließen" onClick={() => dismiss(id)} className="shrink-0 rounded-md p-1 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-rose-500">

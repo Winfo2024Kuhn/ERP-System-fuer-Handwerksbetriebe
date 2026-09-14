@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
 import { klartextGrund } from '../lib/zustellGrund';
 import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { cn } from '../lib/utils';
+import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailContentFrame } from './EmailContentFrame';
 import { EmailRecipientDropdown } from './EmailRecipientDropdown';
 
@@ -208,10 +209,10 @@ function SkeletonBubble({ alignRight }: { alignRight: boolean }) {
 
 function DaySeparator({ label }: { label: string }) {
     return (
-        <div className="flex items-center gap-3 my-5">
+        <div className="flex items-center gap-2 my-3">
             <div className="flex-1 h-px bg-slate-200" />
             <span className="px-3 py-1 rounded-full bg-white border border-slate-200
-                             text-xs font-medium text-slate-500 shadow-sm whitespace-nowrap">
+                             text-xs font-medium text-slate-500 shadow-sm text-center">
                 {label}
             </span>
             <div className="flex-1 h-px bg-slate-200" />
@@ -237,6 +238,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
     const [expanded, setExpanded] = useState(isFocused);
     const bubbleRef = useRef<HTMLDivElement>(null);
     const isOut = entry.direction === 'OUT';
+    const preview = useMemo(() => getThreadPreview(entry.htmlBody || entry.snippet || ''), [entry.htmlBody, entry.snippet]);
 
     useEffect(() => {
         if (isFocused && bubbleRef.current) {
@@ -269,8 +271,15 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                     role="button"
                     tabIndex={0}
                     onClick={() => setExpanded(false)}
-                    onKeyDown={e => e.key === 'Enter' && setExpanded(false)}
-                    className="flex items-start gap-3 px-5 py-4 cursor-pointer
+                    onKeyDown={e => {
+                        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault();
+                            setExpanded(false);
+                        }
+                    }}
+                    aria-expanded={true}
+                    aria-label={`Nachricht von ${fromName} einklappen`}
+                    className="flex items-start gap-2 px-3 py-3 cursor-pointer
                                hover:bg-slate-50 transition-colors duration-150
                                focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                 >
@@ -285,15 +294,15 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
 
                     {/* Absender + Meta */}
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-0.5">
-                            <p className="font-semibold text-slate-900 truncate text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-0.5">
+                            <p className="font-semibold text-slate-900 min-w-0 break-words text-sm">
                                 {fromName}
                             </p>
-                            <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
-                                {formatDateTime(entry.sentAt)}
-                            </span>
+                            <time dateTime={entry.sentAt} title={formatDateTime(entry.sentAt)} className="text-xs text-slate-400 whitespace-nowrap tabular-nums">
+                                {formatTime(entry.sentAt)}
+                            </time>
                         </div>
-                        <div className="text-xs text-slate-500 space-y-0.5">
+                        <div className="text-xs text-slate-500 space-y-0.5 [overflow-wrap:anywhere]">
                             {isOut ? (
                                 <p><span className="text-slate-400">Von:</span> {fromName} &lt;{fromEmail}&gt;</p>
                             ) : (
@@ -387,7 +396,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
             )}
 
             {/* Bubble */}
-            <div className={cn('flex flex-col max-w-[72%]', isOut ? 'items-end' : 'items-start')}>
+            <div className={cn('flex min-w-0 flex-col max-w-[88%] xl:max-w-[80%]', isOut ? 'items-end' : 'items-start')}>
                 {showSenderName && (
                     <p className={cn('text-xs font-semibold mb-1 px-1', isOut ? 'text-emerald-700' : 'text-rose-700')}>
                         {fromName}
@@ -398,7 +407,14 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                     role="button"
                     tabIndex={0}
                     onClick={() => setExpanded(true)}
-                    onKeyDown={e => e.key === 'Enter' && setExpanded(true)}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setExpanded(true);
+                        }
+                    }}
+                    aria-expanded={false}
+                    aria-label={`Nachricht von ${fromName} öffnen`}
                     className={cn(
                         'text-left rounded-2xl px-4 py-2.5 shadow-sm cursor-pointer w-full',
                         'transition-colors duration-200',
@@ -414,8 +430,8 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                             Weitergeleitet
                         </p>
                     )}
-                    <p className="text-sm text-slate-700 line-clamp-2 leading-relaxed">
-                        {entry.snippet || <span className="italic text-slate-400">Kein Inhalt</span>}
+                    <p className="text-sm text-slate-700 line-clamp-3 leading-relaxed [overflow-wrap:anywhere]">
+                        {preview || <span className="italic text-slate-400">Kein neuer Text</span>}
                     </p>
 
                     <div className="flex items-center justify-between gap-2 mt-1.5">
@@ -561,7 +577,7 @@ export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDra
 
     if (loading) {
         return (
-            <div className="flex-1 overflow-auto bg-slate-50 px-5 py-5 space-y-3">
+            <div className="flex-1 min-h-0 overflow-auto bg-slate-50 px-3 py-3 space-y-3">
                 <SkeletonBubble alignRight={false} />
                 <SkeletonBubble alignRight={true} />
                 <SkeletonBubble alignRight={false} />
@@ -570,7 +586,7 @@ export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDra
     }
 
     return (
-        <div className="flex-1 overflow-auto bg-slate-50 px-5 py-5">
+        <div className="flex-1 min-h-0 overflow-auto bg-slate-50 px-3 py-3">
             {regularEmails.map((entry, idx) => {
                 const prev = idx > 0 ? regularEmails[idx - 1] : null;
                 const showDaySeparator = !prev || getDayString(entry.sentAt) !== getDayString(prev.sentAt);

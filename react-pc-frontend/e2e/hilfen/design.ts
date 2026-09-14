@@ -46,6 +46,7 @@ interface DesignPruefungOptionen {
 }
 
 interface Rahmen {
+    domIndex: number;
     beschreibung: string;
     x: number;
     y: number;
@@ -54,6 +55,9 @@ interface Rahmen {
     fest: boolean;
     /** Hat einen Vorfahren mit position: sticky (z.B. RibbonNav) -- siehe keineUeberschneidungen. */
     sticky: boolean;
+    /** Only the explicitly marked, fixed PC notification layer may float over app controls. */
+    toastLayer: boolean;
+    toastAncestors: number[];
 }
 
 /** Screenshot + automatische Checks fuer den aktuellen Zustand der Seite. */
@@ -383,10 +387,10 @@ export async function keinTextGekuerzt(page: Page): Promise<void> {
  * Keine zwei sichtbaren interaktiven Elemente ueberlappen sich.
  *
  * Bei offenem Dialog zaehlt der verdeckte Hintergrund nicht -- der ist
- * absichtlich weg. Fest positionierte Elemente (Toasts) zaehlen dagegen
- * IMMER, weil sie ueber dem Dialog liegen und dessen Knoepfe verdecken
- * koennen. Verschachtelte Elemente (Knopf im Link) gelten nicht als
- * Ueberschneidung.
+ * absichtlich weg. Die ausdrücklich schwebende PC-Meldungsfläche wird als
+ * eigene Ebene geprüft: ihre Überlagerung der Anwendung ist gewollt, zwei
+ * kollidierende Meldungen oder Bedienelemente in dieser Ebene dagegen nicht.
+ * Andere fest positionierte Elemente bleiben Teil der normalen Prüfung.
  *
  * Nachtrag Abschnitt 10 (Design-Review Abschnitt 9/10b, 18 rote Faelle bei
  * 1536 x 960): die Pruefung nahm bisher getBoundingClientRect() roh. Ein
@@ -453,7 +457,8 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             return { x: links, y: oben, breite: rechts - links, hoehe: unten - oben };
         };
 
-        for (const el of Array.from(document.querySelectorAll<HTMLElement>(selektor))) {
+        const elements = Array.from(document.querySelectorAll<HTMLElement>(selektor));
+        for (const [domIndex, el] of elements.entries()) {
             const stil = getComputedStyle(el);
             if (stil.visibility === 'hidden' || stil.display === 'none' || Number(stil.opacity) === 0) continue;
             const sichtbar = sichtbaresRechteck(el);
@@ -463,7 +468,17 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             if (dialog && !dialog.contains(el) && !fest) continue;
             if (el === dialog) continue;
             const rolle = el.getAttribute('role');
+            const toastRoot = el.closest('[data-pc-toasts]');
+            const toastLayer = !!toastRoot && getComputedStyle(toastRoot).position === 'fixed';
+            const toastAncestors: number[] = [];
+            if (toastLayer) {
+                for (let parent = el.parentElement; parent && parent !== toastRoot; parent = parent.parentElement) {
+                    const index = elements.indexOf(parent);
+                    if (index >= 0) toastAncestors.push(index);
+                }
+            }
             ergebnis.push({
+                domIndex, toastLayer, toastAncestors,
                 beschreibung: `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${rolle ? '[' + rolle + ']' : ''} "${(el.textContent ?? '').trim().slice(0, 30)}"`,
                 x: sichtbar.x, y: sichtbar.y, breite: sichtbar.breite, hoehe: sichtbar.hoehe, fest,
                 sticky: istSticky(el),
@@ -477,6 +492,12 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
         for (let j = i + 1; j < rahmen.length; j++) {
             const a = rahmen[i];
             const b = rahmen[j];
+            // User-selected floating notifications may cover the app. Only skip
+            // comparisons across that exact layer, never all fixed elements.
+            if (a.toastLayer !== b.toastLayer) continue;
+            // A toast contains its own dismiss button. Actual DOM ancestry is
+            // required; overlapping sibling cards/buttons must still fail.
+            if (a.toastLayer && (a.toastAncestors.includes(b.domIndex) || b.toastAncestors.includes(a.domIndex))) continue;
             const ueberlappt =
                 a.x < b.x + b.breite && a.x + a.breite > b.x &&
                 a.y < b.y + b.hoehe && a.y + a.hoehe > b.y;

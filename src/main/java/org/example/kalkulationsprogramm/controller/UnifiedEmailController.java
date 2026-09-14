@@ -75,6 +75,7 @@ import lombok.extern.slf4j.Slf4j;
 public class UnifiedEmailController {
 
     private final EmailRepository emailRepository;
+    private final org.example.kalkulationsprogramm.service.EmailDraftService emailDraftService;
     private final SentMailArchiver sentMailArchiver;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
@@ -1420,6 +1421,7 @@ public class UnifiedEmailController {
             @RequestPart(value = "attachments", required = false) MultipartFile[] attachments,
             @RequestPart(value = "dokumentId", required = false) String dokumentIdStr) {
 
+        emailDraftService.validateForSending(dto.getDraftId(), null);
         try {
             // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)
             long totalAttachmentsSize = 0L;
@@ -1624,6 +1626,9 @@ public class UnifiedEmailController {
                     htmlBody,
                     attachmentsForEmail);
 
+            // A lost browser response must never leave an already-sent draft behind.
+            emailDraftService.deleteAfterSuccessfulSend(dto.getDraftId());
+
             // Email-Entität speichern
             Email email = new Email();
             email.setMessageId(messageId);
@@ -1745,6 +1750,7 @@ public class UnifiedEmailController {
         if (parentEmail == null) {
             return ResponseEntity.notFound().build();
         }
+        emailDraftService.validateForSending(dto.getDraftId(), emailId);
 
         try {
             // E-Mail senden via SMTP – Zugangsdaten zur Laufzeit aus System-Setup (DB) lesen,
@@ -1822,6 +1828,9 @@ public class UnifiedEmailController {
                     dto.getSubject(),
                     htmlBody,
                     attachmentsForEmail);
+
+            // A lost browser response must never leave an already-sent draft behind.
+            emailDraftService.deleteAfterSuccessfulSend(dto.getDraftId());
 
             // Email-Entität speichern
             Email email = new Email();
