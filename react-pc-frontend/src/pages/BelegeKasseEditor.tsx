@@ -12,6 +12,7 @@ import { Select } from '../components/ui/select-custom';
 import { DatePicker } from '../components/ui/datepicker';
 import { useToast } from '../components/ui/toast';
 import { SteuerberaterBelegExportModal } from '../components/SteuerberaterBelegExportModal';
+import { SteuerberaterPaketDialog, type SteuerberaterPaketAnhang } from '../components/kasse/SteuerberaterPaketDialog';
 import { KassenbuchTab } from '../components/kasse/KassenbuchTab';
 import { BelegDetailModal } from '../components/kasse/BelegDetailModal';
 import { KpiTile } from '../components/kasse/KassenbuchJournal';
@@ -61,6 +62,8 @@ export default function BelegeKasseEditor() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [monatsExportOpen, setMonatsExportOpen] = useState(false);
     const [steuerberaterEmailOpen, setSteuerberaterEmailOpen] = useState(false);
+    const [steuerberaterPaketOpen, setSteuerberaterPaketOpen] = useState(false);
+    const [steuerberaterPaketAnhang, setSteuerberaterPaketAnhang] = useState<SteuerberaterPaketAnhang | null>(null);
 
     const loadBelege = useCallback(async () => {
         setLoading(true);
@@ -229,10 +232,10 @@ export default function BelegeKasseEditor() {
                             Monats-Export (PDF)
                         </Button>
                     )}
-                    <Button variant="outline" onClick={() => setSteuerberaterEmailOpen(true)}
-                            title="Belegaufstellung als HTML-Tabelle per E-Mail an den Steuerberater">
+                    <Button variant="outline" onClick={() => setSteuerberaterPaketOpen(true)}
+                            title="Kassenunterlagen für den Steuerberater zusammenstellen">
                         <FileText className="w-4 h-4 mr-2" />
-                        Belegliste per E-Mail
+                        Für den Steuerberater
                     </Button>
                     <input
                         ref={fileInputRef}
@@ -366,7 +369,13 @@ export default function BelegeKasseEditor() {
 
             <SteuerberaterBelegExportModal
                 isOpen={steuerberaterEmailOpen}
-                onClose={() => setSteuerberaterEmailOpen(false)}
+                onClose={() => { setSteuerberaterEmailOpen(false); setSteuerberaterPaketAnhang(null); }}
+                anhang={steuerberaterPaketAnhang}
+            />
+            <SteuerberaterPaketDialog
+                offen={steuerberaterPaketOpen}
+                onClose={() => setSteuerberaterPaketOpen(false)}
+                onEmailPaket={anhang => { setSteuerberaterPaketAnhang(anhang); setSteuerberaterEmailOpen(true); }}
             />
         </PageLayout>
     );
