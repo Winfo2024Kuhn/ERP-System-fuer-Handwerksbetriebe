@@ -32,6 +32,12 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
                 body = [{ analyzeResponse: { betragBrutto: 0, dokumentTyp: 'RECHNUNG', dokumentDatum: '2026-09-09', lieferantName: 'Testlieferant' } }];
             else if (path.endsWith('/import-upload'))
                 writes.push({ path, body: {} });
+            else if (path === '/api/buchhaltung/kassenbuch/buchungen') {
+                const daten = route.request().postData() ?? '';
+                const json = daten.match(/\r?\n\r?\n({.*})\r?\n--/)?.[1] ?? '{}';
+                writes.push({ path, body: JSON.parse(json) });
+                body = beleg;
+            }
             else {
                 writes.push({ path, body: route.request().postDataJSON() });
                 body = beleg;
@@ -74,7 +80,8 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     await save.click();
     await expect.poll(() => writes[0]?.body.betragBrutto).toBe(12.5);
     await page.getByRole('button', { name: 'Kassenbuch', exact: true }).click();
-    await page.getByRole('button', { name: 'Privateinlage', exact: true }).click();
+    await page.getByRole('button', { name: 'Neue Buchung', exact: true }).click();
+    await page.getByRole('button', { name: /Eigenes Geld eingelegt/ }).click();
     const cash = page.getByRole('textbox', { name: 'Betrag (€)', exact: true });
     await cash.fill('12,501');
     await page.getByRole('button', { name: /buchen/i }).last().click();
