@@ -480,7 +480,7 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                             <label className="mt-3 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={bezahlt} onChange={() => { zahlungBearbeitet.current = true; setBezahlt(true); }} /> Ja, bezahlt am …</label>
                             {bezahlt && <div className="mt-2 max-w-xs"><DatePicker aria-label="Bezahlt am" value={bezahltAm} onChange={value => { zahlungBearbeitet.current = true; setBezahltAm(value); }} /></div>}
                             <label className="mt-2 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={!bezahlt} onChange={() => { zahlungBearbeitet.current = true; setBezahlt(false); }} /> Nein, noch nicht bezahlt</label>
-                            {beleg.eingangsrechnungId && <a className="mt-3 inline-block text-sm font-medium text-rose-700 hover:underline" target="_blank" rel="noreferrer" href={`/rechnungen?dokument=${encodeURIComponent(String(beleg.eingangsrechnungId))}`}>Zur Eingangsrechnung</a>}
+                            {detailBeleg.eingangsrechnungId && <a className="mt-3 inline-block text-sm font-medium text-rose-700 hover:underline" target="_blank" rel="noreferrer" href="/rechnungsuebersicht">Zur Eingangsrechnung</a>}
                         </section> : giltAlsBezahlt(form.zahlungsart) && <p className="text-sm text-slate-600">Bar und EC-Karte gelten als sofort bezahlt.</p>}
                         <section>
                             <h3 className="text-base font-bold text-slate-900">Wofür war das?</h3>

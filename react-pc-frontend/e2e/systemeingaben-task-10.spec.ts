@@ -15,6 +15,8 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
             body = { id: 1, username: 'test', email: 'test@example.com', vorname: 'Max', nachname: 'Mustermann', admin: true, roles: ['ADMIN'], requiresInitialSetup: false };
         if (path === '/api/buchhaltung/belege')
             body = [beleg];
+        if (path === '/api/buchhaltung/belege/1')
+            body = beleg;
         if (path === '/api/bestellungen-uebersicht/kostenstellen')
             body = [{ id: 1, bezeichnung: 'Testwerkstatt' }];
         if (path === '/api/buchhaltung/kasse/saldo')
