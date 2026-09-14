@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { UserSquare2, Settings, Coins, AlertTriangle, Plus } from 'lucide-react';
+import { Settings, Coins, AlertTriangle, Plus } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useToast } from '../ui/toast';
@@ -96,11 +96,6 @@ export function KasseShortcuts({ sachkonten, onChanged, saldo: gemeinsamerSaldo,
                         className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700">
                         <Plus className="w-4 h-4 mr-2" /> Neue Buchung
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => setOpenModal('lohn')}
-                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                        title="Ehegattengehalt aus der Kasse auszahlen">
-                        <UserSquare2 className="w-4 h-4 mr-2" /> Ehegattengehalt
-                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => setOpenModal('settings')}
                         className="text-rose-700 hover:bg-rose-100"
                         title="Mindestbestand & Automatik einstellen">
@@ -130,6 +125,7 @@ export function KasseShortcuts({ sachkonten, onChanged, saldo: gemeinsamerSaldo,
                     onClose={() => setOpenModal(null)}
                     onSaved={() => { setOpenModal(null); refreshAlles(); showToast('ok', 'Einstellungen gespeichert'); }}
                     onError={(m) => showToast('err', m)}
+                    onPayOnce={() => setOpenModal('lohn')}
                 />
             )}
 

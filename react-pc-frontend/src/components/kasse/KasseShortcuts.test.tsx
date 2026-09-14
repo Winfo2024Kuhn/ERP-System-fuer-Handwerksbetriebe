@@ -44,9 +44,11 @@ it('prüft alle Einstellungen vor dem Speichern und erhält Nichtnullwerte', asy
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes[0].body).toMatchObject({ mindestbestand: 0, ehegattengehaltBetrag: 12.5, ehegattengehaltTag: 28 });
 });
-it('prüft Ehegattengehalt vor der ersten Buchung', async () => {
+it('öffnet Ehegattengehalt aus den Kassen-Einstellungen', async () => {
     render(<ToastProvider><KasseShortcuts sachkonten={[]} onChanged={() => { }}/></ToastProvider>);
-    fireEvent.click(screen.getByRole('button', { name: 'Ehegattengehalt', exact: true }));
+    fireEvent.click(screen.getByTitle('Mindestbestand & Automatik einstellen'));
+    await screen.findByRole('heading', { name: 'Für den Steuerberater' });
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt einmalig auszahlen/ }));
     const input = await screen.findByRole('textbox', { name: 'Betrag (€)' });
     await waitFor(() => expect(input).toHaveValue('12,5'));
     fireEvent.change(input, { target: { value: '12,501' } });
