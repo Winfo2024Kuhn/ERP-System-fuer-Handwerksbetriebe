@@ -1103,14 +1103,19 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
-            // Dokumenttyp aktualisieren falls erkannt (auch SONSTIG überschreiben)
-            if (geschaeftsdaten.getDokumentNummer() != null &&
-                    (freshDokument.getTyp() == null || freshDokument.getTyp() == LieferantDokumentTyp.SONSTIG)) {
-                LieferantDokumentTyp erkannterTyp = erkenneTypAusNummer(geschaeftsdaten.getDokumentNummer());
+            // Erkannter Belegtyp hat Vorrang vor der bloßen Nummernheuristik.
+            // Einen bereits festgelegten fachlichen Typ bei Reanalyse beibehalten.
+            if (freshDokument.getTyp() == null || freshDokument.getTyp() == LieferantDokumentTyp.SONSTIG) {
+                LieferantDokumentTyp erkannterTyp = geschaeftsdaten.getDetectedTyp();
+                if (erkannterTyp == null) {
+                    erkannterTyp = erkenneTypAusNummer(geschaeftsdaten.getDokumentNummer());
+                }
                 if (erkannterTyp != null) {
                     freshDokument.setTyp(erkannterTyp);
                 }
             }
+
+            DokumentBetragsvorzeichen.normalisiereGutschrift(geschaeftsdaten, freshDokument.getTyp());
 
             // Automatische Verknüpfung
             automatischeVerknuepfung(freshDokument, geschaeftsdaten);
@@ -1943,8 +1948,13 @@ public class GeminiDokumentAnalyseService {
                 java.math.BigDecimal kandBrutto = kandidat.getGeschaeftsdaten().getBetragBrutto();
                 java.time.LocalDate kandDatum = kandidat.getGeschaeftsdaten().getDokumentDatum();
 
-                // Brutto muss gleich sein
-                if (kandBrutto == null || meinBrutto.compareTo(kandBrutto) != 0)
+                // Gutschriften mindern die positive Rechnung; die Betragsgröße muss übereinstimmen.
+                if (kandBrutto == null)
+                    continue;
+                boolean gleicherBetrag = dokument.getTyp() == LieferantDokumentTyp.GUTSCHRIFT
+                        ? meinBrutto.abs().compareTo(kandBrutto.abs()) == 0
+                        : meinBrutto.compareTo(kandBrutto) == 0;
+                if (!gleicherBetrag)
                     continue;
 
                 // Datum muss innerhalb ±1 Monat liegen
