@@ -1,96 +1,43 @@
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { Button } from '../ui/button';
-import type { Beleg, Sachkonto } from '../../types';
-import { sicherheitsText } from './belegFormat';
+import type { BelegVorschlag } from '../../types';
 
-// Task 9 (reine Verschiebung, kein Verhalten geaendert): heutige
-// KiVorschlagKarte aus BelegeKasseEditor.tsx (Zeilen 1911-1997), Props
-// unveraendert.
+interface VorschlagsChipProps {
+    vorschlag: BelegVorschlag | null | undefined;
+    hinweis?: string | null;
+    aktuelleId: number | null;
+    onUebernehmen: (id: number) => void;
+    was: 'Konto' | 'Baustelle';
+}
 
-/**
- * Zeigt, was der KI-Kostenkonto-Agent vorgeschlagen hat: Konto, Begründung und
- * wie sicher er sich ist — mit einem Klick übernehmbar.
- *
- * Hintergrund: Der Server liefert diese Felder schon lange mit (siehe
- * BelegDto.Response), das UI hat sie bisher aber komplett verworfen. Der
- * Buchhalter sah nur den Status "KI fertig" neben einem leeren Konto-Feld und
- * musste jeden Beleg von Hand einordnen, obwohl die KI die Antwort inklusive
- * Begründung längst geliefert hatte.
- */
-export function VorschlagsChip({ beleg, sachkonten, aktuellesSachkontoId, onUebernehmen }: {
-    beleg: Beleg;
-    sachkonten: Sachkonto[];
-    aktuellesSachkontoId: number | null;
-    onUebernehmen: (sachkontoId: number) => void;
-}) {
-    const vorschlagId = beleg.kiVorgeschlagenerSachkontoId;
-    const begruendung = beleg.kiKostenkontoBegruendung;
+const QUELLE: Record<BelegVorschlag['quelle'], string> = {
+    KI: 'Die KI schlägt vor',
+    HISTORIE: 'Beim letzten Mal bei diesem Lieferanten',
+    LIEFERANT_STANDARD: 'Beim Lieferanten hinterlegt',
+};
 
-    // Ohne Konto-Vorschlag gibt es nichts zu übernehmen. Eine reine Begründung
-    // ohne Konto ("ich konnte es nicht zuordnen") zeigen wir trotzdem an — das
-    // erklärt dem Buchhalter, warum das Feld leer geblieben ist.
-    if (vorschlagId == null && !begruendung) return null;
-
-    // Der Vorschlag ist nur wählbar, wenn das Konto auch wirklich in den
-    // aktiven Stammdaten steht — sonst hätte der Select-Wert keinen Eintrag
-    // und das Feld sähe nach dem Übernehmen wieder leer aus.
-    const vorschlagKonto = vorschlagId != null
-        ? sachkonten.find(s => s.id === vorschlagId) ?? null
-        : null;
-    const bereitsUebernommen = vorschlagId != null && aktuellesSachkontoId === vorschlagId;
-    const sicherheit = sicherheitsText(beleg.kiKostenkontoConfidence);
-
-    return (
-        <div className="border border-rose-200 bg-rose-50/60 rounded-lg p-3 space-y-2">
-            <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-rose-600 shrink-0" aria-hidden />
-                <span className="text-xs font-semibold uppercase tracking-wide text-rose-700">
-                    Das schlägt die KI vor
-                </span>
-            </div>
-
-            {vorschlagKonto ? (
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-900">
-                            {vorschlagKonto.nummer ? `${vorschlagKonto.nummer} ` : ''}{vorschlagKonto.bezeichnung}
-                        </div>
-                        <div className={`text-xs ${sicherheit.cls}`}>{sicherheit.text}</div>
-                    </div>
-                    {bereitsUebernommen ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 shrink-0">
-                            <CheckCircle2 className="w-4 h-4" aria-hidden /> übernommen
-                        </span>
-                    ) : (
-                        <Button size="sm" type="button" variant="outline"
-                            className="border-rose-300 text-rose-700 hover:bg-rose-50 shrink-0"
-                            onClick={() => onUebernehmen(vorschlagKonto.id)}>
-                            Konto übernehmen
-                        </Button>
-                    )}
+/** Zeigt einen nachvollziehbaren Vorschlag und übernimmt ihn nur auf ausdrücklichen Klick. */
+export function VorschlagsChip({ vorschlag, hinweis, aktuelleId, onUebernehmen, was }: VorschlagsChipProps) {
+    if (!vorschlag && !hinweis) return null;
+    if (!vorschlag) return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        <span className="font-medium">Kein Vorschlag:</span> {hinweis}
+    </div>;
+    const uebernommen = aktuelleId === vorschlag.id;
+    return <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-3">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-rose-700">
+                    <Sparkles className="h-4 w-4 shrink-0" aria-hidden /> {QUELLE[vorschlag.quelle]}
                 </div>
-            ) : vorschlagId != null ? (
-                // Vorschlag zeigt auf ein Konto, das nicht (mehr) aktiv ist.
-                <p className="text-sm text-slate-700">
-                    Vorgeschlagenes Konto ist nicht mehr aktiv – bitte von Hand wählen.
+                <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+                    {vorschlag.nummer ? `${vorschlag.nummer} ` : ''}{vorschlag.bezeichnung}
                 </p>
-            ) : (
-                <p className="text-sm text-slate-700">
-                    Die KI konnte kein Konto sicher zuordnen – bitte von Hand wählen.
-                </p>
-            )}
-
-            {begruendung && (
-                <p className="text-xs text-slate-600 leading-relaxed">
-                    <span className="font-medium text-slate-700">Warum: </span>{begruendung}
-                </p>
-            )}
-
-            {beleg.kiVorgeschlagenerKostenstelleBezeichnung && (
-                <p className="text-xs text-slate-500">
-                    Vorgeschlagener Kostenbereich: {beleg.kiVorgeschlagenerKostenstelleBezeichnung}
-                </p>
-            )}
+                {vorschlag.begruendung && <p className="mt-1 text-xs leading-relaxed text-slate-600">{vorschlag.begruendung}</p>}
+            </div>
+            {uebernommen ? <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700">
+                <CheckCircle2 className="h-4 w-4" aria-hidden /> übernommen
+            </span> : <Button type="button" size="sm" variant="outline" className="shrink-0 border-rose-300 text-rose-700 hover:bg-rose-50"
+                onClick={() => onUebernehmen(vorschlag.id)}>{was} übernehmen</Button>}
         </div>
-    );
+    </div>;
 }

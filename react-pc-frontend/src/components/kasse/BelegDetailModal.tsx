@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, FileText,
-    Loader2, Lock, Receipt, Save, Trash2, Truck, Undo2, X,
+    AlertCircle, CheckCircle2, ChevronDown, ChevronRight, FileText,
+    Loader2, Lock, Receipt, Save, Trash2, Truck, Undo2,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Select } from '../ui/select-custom';
@@ -12,7 +12,7 @@ import { VerwerfenDialog } from './VerwerfenDialog';
 import { nettoAusBrutto, schluesseleAuf } from '../../lib/mwst';
 import type { Beleg, BelegKategorie, Sachkonto, Zahlungsart } from '../../types';
 import {
-    KATEGORIE_LABELS, buildSachkontoOptions, buildZahlungsartOptions,
+    buildSachkontoOptions, buildZahlungsartOptions,
     formatDateTime, formatEuro, gesperrtCls, inputCls,
 } from './belegFormat';
 import { VorschlagsChip } from './VorschlagsChip';
@@ -23,6 +23,7 @@ import { useToast } from '../ui/toast';
 import { formatDecimalInput, validateDecimalInput } from '../../lib/numberInput';
 import { validateKostenstellenSplits } from '../../features/finanzen/kostenstellenDrafts';
 import { validateNumberDrafts } from '../../lib/numberDrafts';
+import { fragtNachZahlung, folgeSatz, giltAlsBezahlt, kategorieAusZahlungsart } from './zahlungsartRegeln';
 
 // Task 9 (reine Verschiebung, kein Verhalten geaendert): heutiger
 // BelegDetailModal aus BelegeKasseEditor.tsx (Zeilen 1160-2137) samt
@@ -97,11 +98,25 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     const [zeigeStorno, setZeigeStorno] = useState(false);
     const [zeigeVerwerfen, setZeigeVerwerfen] = useState(false);
     const [splits, setSplits] = useState<KostenstellenSplit[]>(beleg.kostenstellenSplits ?? []);
+    const [kostenstellen, setKostenstellen] = useState<{ id: number; bezeichnung: string; nummer?: string | null }[]>([]);
+    const [mehrereKostenstellen, setMehrereKostenstellen] = useState(() => (beleg.kostenstellenSplits?.length ?? 0) > 1);
+    const [kostenstelleId, setKostenstelleId] = useState<number | null>(() => {
+        const erster = beleg.kostenstellenSplits?.[0];
+        return erster && beleg.kostenstellenSplits?.length === 1 && Number(erster.prozent) === 100 ? erster.kostenstelleId : null;
+    });
+    const [bezahlt, setBezahlt] = useState(beleg.eingangsrechnungBezahlt ?? false);
+    const [bezahltAm, setBezahltAm] = useState(beleg.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
     // Wenn das Detail nachgeladen wird (TEILWEISE), beziehen wir die Splits
     // aus dem frischen DTO — die Listen-Query liefert sie ggf. nicht mit.
     useEffect(() => {
         if (detailBeleg.kostenstellenSplits) setSplits(detailBeleg.kostenstellenSplits);
     }, [detailBeleg]);
+    useEffect(() => {
+        fetch('/api/bestellungen-uebersicht/kostenstellen')
+            .then(r => r.ok ? r.json() : [])
+            .then(data => setKostenstellen(Array.isArray(data) ? data : []))
+            .catch(() => toast.error('Baustellen und Bereiche konnten nicht geladen werden.'));
+    }, [toast]);
     const [saving, setSaving] = useState(false);
     const [lieferantPicker, setLieferantPicker] = useState(false);
     // Seltene Felder (Beleg-Nr., Netto, MwSt-Satz, Zahlungsart, Lieferant, Notiz)
@@ -190,13 +205,16 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     };
 
     const pruefeEntwurf = () => {
+        if (!form.zahlungsart) { setValidationHint('Bitte wählen Sie aus, wie bezahlt wurde.'); return null; }
         const numbers = validateNumberDrafts({ betragBrutto: form.betragBrutto, betragNetto: form.betragNetto, mwstSatz: form.mwstSatz }, {
             betragBrutto: { label: 'Betrag', required: true, maxDecimalPlaces: 2 },
             betragNetto: { label: 'Netto', maxDecimalPlaces: 2 },
             mwstSatz: { label: 'MwSt-Satz', min: 0, max: 100, maxDecimalPlaces: 2 },
         });
         if (!numbers.valid) { setValidationHint(numbers.message); return null; }
-        const splitResult = validateKostenstellenSplits(splits);
+        const einfacheSplits = !mehrereKostenstellen && kostenstelleId != null
+            ? [{ kostenstelleId, prozent: 100, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: null }] as KostenstellenSplit[] : splits;
+        const splitResult = validateKostenstellenSplits(einfacheSplits);
         if (!splitResult.valid) { setValidationHint(splitResult.message); return null; }
         return { values: numbers.values, splits: splitResult.splits };
     };
@@ -209,8 +227,13 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
         setSaving(true);
         setKonflikt(null);
         try {
+            const richtungAusgabe = beleg.belegKategorie !== 'KASSE_EINNAHME';
+            const abgeleiteteKategorie = (beleg.belegKategorie === 'PRIVATEINLAGE' || beleg.belegKategorie === 'PRIVATENTNAHME' || beleg.istUmbuchung)
+                ? beleg.belegKategorie : kategorieAusZahlungsart(form.zahlungsart, richtungAusgabe) ?? form.belegKategorie;
+            const zahlungSichtbar = fragtNachZahlung(form.zahlungsart, beleg.dokumentTyp);
+            const sofortBezahlt = giltAlsBezahlt(form.zahlungsart);
             const body = {
-                belegKategorie: form.belegKategorie,
+                belegKategorie: abgeleiteteKategorie,
                 status: alsValidiert ? 'VALIDIERT' : undefined,
                 belegDatum: form.belegDatum || null,
                 belegNummer: form.belegNummer || null,
@@ -219,6 +242,8 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                 betragBrutto: checked.values.betragBrutto,
                 mwstSatz: checked.values.mwstSatz,
                 zahlungsart: form.zahlungsart || null,
+                zahlungsstatus: zahlungSichtbar || sofortBezahlt ? (sofortBezahlt || bezahlt ? 'BEZAHLT' : 'OFFEN') : undefined,
+                bezahltAm: zahlungSichtbar || sofortBezahlt ? (sofortBezahlt || bezahlt ? bezahltAm : null) : undefined,
                 lieferantId: form.lieferantId,
                 sachkontoId: form.sachkontoId,
                 notiz: form.notiz || null,
@@ -306,11 +331,6 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     const istGegenbuchung = (detailBeleg.stornoFuerBelegId ?? beleg.stornoFuerBelegId) != null;
     const laufendeNummer = detailBeleg.laufendeNummer ?? beleg.laufendeNummer ?? null;
 
-    // detailBeleg statt beleg: waehrend die KI noch laeuft, pollen wir nach —
-    // der Lieferant-Vorschlag soll im offenen Dialog nachtraeglich erscheinen.
-    const kiVorschlag = detailBeleg.kiVorgeschlagenerLieferant && !form.lieferantName
-        ? detailBeleg.kiVorgeschlagenerLieferant : null;
-
     return (
         <Dialog open onOpenChange={open => { if (!open) { if (lieferantPicker) setLieferantPicker(false); else onClose(); } }} aria-label="Beleg prüfen" className="w-[98vw] max-w-[98vw] p-0 overflow-hidden">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-[98vw] max-h-[95vh] flex flex-col overflow-hidden">
@@ -332,12 +352,12 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
 
                 <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-0 min-h-0">
                     {/* Vorschau */}
-                    <div className="lg:col-span-2 bg-slate-100 flex flex-col items-stretch p-4 border-r border-slate-200 overflow-auto">
+                    <div className="lg:col-span-1 bg-slate-100 flex flex-col items-stretch p-4 border-r border-slate-200 overflow-auto">
                         <BelegPreview belegId={beleg.id} mimeType={beleg.mimeType} originalDateiname={beleg.originalDateiname} />
                     </div>
 
                     {/* Form */}
-                    <div className="lg:col-span-1 overflow-auto p-6 space-y-5">
+                    <div className="lg:col-span-2 overflow-auto p-6 space-y-5">
                         {/* Festschreibungs-Hinweis ganz oben: er erklaert, warum
                             gleich mehrere Felder nicht mehr bedienbar sind. Ohne
                             ihn wirken die gesperrten Felder wie ein Fehler. */}
@@ -377,28 +397,24 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                             </div>
                         ) : null}
 
-                        <VorschlagsChip
-                            beleg={detailBeleg}
-                            sachkonten={sachkonten}
-                            aktuellesSachkontoId={form.sachkontoId}
-                            onUebernehmen={id => update('sachkontoId', id)}
-                        />
-
-                        {/* ---------- Das Wichtigste: was, wie viel, wann, wofür ---------- */}
-
+                        <section>
+                            <h3 className="text-base font-bold text-slate-900">Wie viel und wann?</h3>
+                            <p className="mt-1 text-sm text-slate-600">Prüfen Sie Betrag und Datum auf dem Beleg.</p>
                         <div className="grid grid-cols-2 gap-3">
                             <Field label="Betrag (€)">
-                                <DecimalInput aria-label="Betrag (€)" value={form.betragBrutto}
+                                <div className="flex items-center gap-2"><DecimalInput aria-label="Betrag (€)" value={form.betragBrutto}
                                     onChange={value => update('betragBrutto', value)}
                                     disabled={istFestgeschrieben}
                                     className={`${inputCls} ${gesperrtCls} text-lg font-semibold tabular-nums`} />
+                                    {detailBeleg.kiBetragBrutto === Number(form.betragBrutto.replace(',', '.')) && <KiBadge />}</div>
                             </Field>
                             <Field label="Beleg-Datum">
-                                <DatePicker aria-label="Beleg-Datum" value={form.belegDatum}
+                                <div className="flex items-center gap-2"><DatePicker aria-label="Beleg-Datum" value={form.belegDatum}
                                     onChange={value => update('belegDatum', value)}
-                                    disabled={istFestgeschrieben} />
+                                    disabled={istFestgeschrieben} />{detailBeleg.kiBelegdatum === form.belegDatum && <KiBadge />}</div>
                             </Field>
                         </div>
+                        </section>
 
                         {/* MwSt per Klick statt Kopfrechnen. Der Klick setzt Satz UND Netto —
                             bewusst als ausdrueckliche Nutzer-Aktion, damit sich Betraege auf
@@ -436,29 +452,51 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                                 className={`${inputCls} ${gesperrtCls}`} />
                         </Field>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Wo gezahlt</label>
+                        <section>
+                            <h3 className="text-base font-bold text-slate-900">Wie wurde bezahlt?</h3>
+                            <p className="mt-1 text-sm text-slate-600">Die Auswahl legt fest, wo die Buchung landet.</p>
+                            <div className="mt-3 flex items-center gap-2"><Select value={form.zahlungsart} onChange={v => update('zahlungsart', v)} required aria-label="Wie wurde bezahlt?"
+                                disabled={istFestgeschrieben} options={buildZahlungsartOptions(zahlungsarten, form.zahlungsart)} />
+                                {detailBeleg.kiZahlungsart === form.zahlungsart && <KiBadge text="von KI erkannt" />}</div>
+                            <p className="mt-2 text-sm text-slate-600">{folgeSatz(form.zahlungsart)}</p>
+                        </section>
+                        {fragtNachZahlung(form.zahlungsart, beleg.dokumentTyp) ? <section>
+                            <h3 className="text-base font-bold text-slate-900">Ist die Rechnung schon bezahlt?</h3>
+                            <p className="mt-1 text-sm text-slate-600">So bleibt offen, ob die Rechnung noch bezahlt werden muss.</p>
+                            <label className="mt-3 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={bezahlt} onChange={() => setBezahlt(true)} /> Ja, bezahlt am …</label>
+                            {bezahlt && <div className="mt-2 max-w-xs"><DatePicker aria-label="Bezahlt am" value={bezahltAm} onChange={setBezahltAm} /></div>}
+                            <label className="mt-2 flex items-center gap-2 text-sm text-slate-800"><input type="radio" checked={!bezahlt} onChange={() => setBezahlt(false)} /> Nein, noch nicht bezahlt</label>
+                            {beleg.eingangsrechnungId && <a className="mt-3 inline-block text-sm font-medium text-rose-700 hover:underline" target="_blank" rel="noreferrer" href={`/rechnungen?dokument=${encodeURIComponent(String(beleg.eingangsrechnungId))}`}>Zur Eingangsrechnung</a>}
+                        </section> : giltAlsBezahlt(form.zahlungsart) && <p className="text-sm text-slate-600">Bar und EC-Karte gelten als sofort bezahlt.</p>}
+                        <section>
+                            <h3 className="text-base font-bold text-slate-900">Wofür war das?</h3>
+                            <p className="mt-1 text-sm text-slate-600">Wählen Sie das passende Konto.</p>
+                            <div className="mt-3"><VorschlagsChip vorschlag={detailBeleg.vorschlagSachkonto} hinweis={detailBeleg.kiKostenkontoHinweis} aktuelleId={form.sachkontoId} onUebernehmen={id => update('sachkontoId', id)} was="Konto" /></div>
+                            <div className="mt-3">
                                 <Select
-                                    value={form.belegKategorie}
-                                    onChange={v => update('belegKategorie', v as BelegKategorie)}
-                                    disabled={istFestgeschrieben}
-                                    options={(Object.entries(KATEGORIE_LABELS) as [BelegKategorie, string][])
-                                        .map(([k, label]) => ({ value: k, label }))}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1 inline-flex items-center gap-1">
-                                    <BookOpen className="w-3 h-3" /> Konto / Wofür?
-                                </label>
-                                <Select
+                                    aria-label="Konto"
                                     value={form.sachkontoId != null ? String(form.sachkontoId) : ''}
                                     onChange={v => update('sachkontoId', v ? Number(v) : null)}
                                     placeholder="– kein Konto zugewiesen –"
                                     options={buildSachkontoOptions(sachkonten)}
                                 />
                             </div>
-                        </div>
+                        </section>
+                        <section>
+                            <h3 className="text-base font-bold text-slate-900">Für welche Baustelle / welchen Bereich?</h3>
+                            <p className="mt-1 text-sm text-slate-600">Ordnen Sie den Betrag einer Baustelle oder einem Bereich zu.</p>
+                            <div className="mt-3"><VorschlagsChip vorschlag={detailBeleg.vorschlagKostenstelle} aktuelleId={kostenstelleId} onUebernehmen={id => { setKostenstelleId(id); setMehrereKostenstellen(false); }} was="Baustelle" /></div>
+                            {mehrereKostenstellen ? <KostenstellenSplitsEditor splits={splits} onChange={setSplits} defaultStartJahr={form.belegDatum ? new Date(form.belegDatum).getFullYear() : new Date().getFullYear()} /> : <>
+                                <div className="mt-3"><Select aria-label="Baustelle oder Bereich" value={kostenstelleId == null ? '' : String(kostenstelleId)} onChange={v => setKostenstelleId(v ? Number(v) : null)} options={[{ value: '', label: '– keine Zuordnung –' }, ...kostenstellen.map(k => ({ value: String(k.id), label: `${k.nummer ? `${k.nummer} ` : ''}${k.bezeichnung}` }))]} /></div>
+                                <Button type="button" variant="outline" size="sm" className="mt-3 border-rose-300 text-rose-700" onClick={() => setMehrereKostenstellen(true)}>Auf mehrere aufteilen</Button>
+                            </>}
+                        </section>
+                        <section>
+                            <h3 className="text-base font-bold text-slate-900">Von wem war der Beleg?</h3>
+                            <p className="mt-1 text-sm text-slate-600">Wählen Sie den passenden Lieferanten.</p>
+                            <div className="mt-3 flex items-center gap-2"><input type="text" readOnly value={form.lieferantName} placeholder="Kein Lieferant" className={`${inputCls} bg-slate-50`} /><Button variant="outline" type="button" onClick={() => setLieferantPicker(true)}><Truck className="mr-2 h-4 w-4" />Wählen</Button></div>
+                            {detailBeleg.kiVorgeschlagenerLieferant && detailBeleg.kiVorgeschlagenerLieferant !== form.lieferantName && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Am Handy gewählt: {form.lieferantName || 'kein Lieferant'}. Die KI hat gelesen: {detailBeleg.kiVorgeschlagenerLieferant}. <Button type="button" size="sm" variant="outline" className="ml-2 border-amber-300 text-amber-900" onClick={async () => { const name = detailBeleg.kiVorgeschlagenerLieferant!; try { const response = await fetch(`/api/lieferanten?size=100&q=${encodeURIComponent(name)}`); const data = response.ok ? await response.json() : null; const treffer = data?.lieferanten?.find((l: LieferantSuchErgebnis) => l.lieferantenname === name); if (treffer) { update('lieferantId', treffer.id); update('lieferantName', treffer.lieferantenname); } else setLieferantPicker(true); } catch { setLieferantPicker(true); } }}>Übernehmen</Button></div>}
+                        </section>
 
                         {/* ---------- Alles Seltene eingeklappt (Progressive Disclosure) ---------- */}
 
@@ -487,15 +525,6 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                                                 disabled={istFestgeschrieben}
                                                 className={`${inputCls} ${gesperrtCls}`} />
                                         </Field>
-                                        <Field label="Zahlungsart">
-                                            <Select
-                                                value={form.zahlungsart}
-                                                onChange={v => update('zahlungsart', v)}
-                                                placeholder="– bitte wählen –"
-                                                disabled={istFestgeschrieben}
-                                                options={buildZahlungsartOptions(zahlungsarten, form.zahlungsart)}
-                                            />
-                                        </Field>
                                         <Field label="Netto (€)">
                                             <DecimalInput aria-label="Netto (€)" value={form.betragNetto}
                                                 onChange={value => update('betragNetto', value)}
@@ -510,24 +539,6 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                                         </Field>
                                     </div>
 
-                                    <Field label="Lieferant (optional)">
-                                        <div className="flex items-center gap-2">
-                                            <input type="text" readOnly
-                                                value={form.lieferantName || (kiVorschlag ? `KI-Vorschlag: ${kiVorschlag}` : '')}
-                                                placeholder="Kein Lieferant – z.B. bei Kassen-Einnahme"
-                                                className={`${inputCls} bg-slate-50`} />
-                                            <Button variant="outline" type="button" onClick={() => setLieferantPicker(true)}>
-                                                <Truck className="w-4 h-4 mr-2" />
-                                                Wählen
-                                            </Button>
-                                            {form.lieferantId && (
-                                                <Button variant="ghost" type="button"
-                                                    onClick={() => { update('lieferantId', null); update('lieferantName', ''); }}>
-                                                    <X className="w-4 h-4" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </Field>
 
                                     <Field label="Notiz">
                                         <textarea rows={2} value={form.notiz}
@@ -542,14 +553,6 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
                             <AufteilungsSektion beleg={detailBeleg} />
                         )}
 
-                        {/* Issue #60: Kostenstellen-Splits — mehrere Kostenstellen pro Beleg */}
-                        <KostenstellenSplitsEditor
-                            splits={splits}
-                            onChange={setSplits}
-                            defaultStartJahr={form.belegDatum
-                                ? new Date(form.belegDatum).getFullYear()
-                                : new Date().getFullYear()}
-                        />
 
                         {/* Live-Saldo-Vorschau + 409-Konflikt-Dialog */}
                         {saldoInfo && (
@@ -763,6 +766,10 @@ function AufteilungsSektion({ beleg }: { beleg: Beleg }) {
             </div>
         </div>
     );
+}
+
+function KiBadge({ text = 'von KI gelesen' }: { text?: string }) {
+    return <span className="shrink-0 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-800">{text}</span>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
