@@ -657,3 +657,193 @@ Task17 beschreibt bewusst den Zielzustand, bestehende PUT-Clear-Semantik
 bleibt erhalten, DATEV-Null-Erhalt ist die dokumentierte Kompatibilitaets-
 ausnahme fuer alte Dialoge. Test-Artefakte aufgeraumt. Abschnitt 1 kann
 als Basis fuer die sechs Tasks von Abschnitt 2 verwendet werden.
+
+
+## Abschnitt 2 — Integration in Arbeit (14.09.2026)
+
+Basis: 16747d78 (Abschnitt 1 gruen, gepusht). Isolierte Worktrees fuer Tasks
+3/4/5/6/11 unter /Users/marvinkuhn/GitHub/wt, Task7 im Hauptcheckout.
+Subagenten committen nicht; gemeinsamer Review und Volltests vor dem Rundencommit.
+
+- Task3: sechs Buchungsarten, multipart API, offene Kundenrechnungen und
+  Legacy-Umbuchungsadapter. Zielgate 100 Tests gruen. RED-Tests vor Umsetzung.
+  Zusatzadapter erhaelt Kontowahl/Zahlungsart alter Clients; neue Kacheln
+  verwenden die festen Konten. Finale Dateien ins Hauptcheckout uebernommen.
+- Task4: unveraenderte KI-Lesung getrennt von Stammdatenzuordnung, gemeinsamer
+  ZahlungsartMapper, Bezahlt-Hinweis aus Rohzahlungsart oder explizitem KI-Flag.
+  20 erwartete RED-Failures, dann 45 Tests gruen. Zwei alte Supplier-Erwartungen
+  angepasst, da der freigegebene Task ausdruecklich Rohlesung fordert.
+- Task5: detail-only Vorschlaege (KI, Lieferantenstandard, letzte20 gepruefte),
+  Zahlungsstatus und Datum mit Audit. 76 Tests gruen; Zahlungsstatus6,
+  Vorschlaege7, DTO2 RED-Failures vor Implementierung. Bestandsassertions
+  unveraendert; nur DI-Verkabelung ergaenzt.
+- Task6: konkrete Abbruchhinweise, Originalbild/PDF im ersten Turn unter8MiB,
+  sichere Text-Fallbacks, maximal15 optionale Positionszeilen. 46 Tests gruen;
+  vorher10 Hinweis- und3 Prompt-RED-Failures. Bestehende Baustelle bleibt
+  natuerlich erhalten (Planwiderspruch zu pauschaler Null-Assertion).
+  AnalyzeResponse liefert noch keine Positionsliste; Consumer nutzt sie,
+  sofern sie im gespeicherten JSON vorhanden ist.
+- Task7: eigener KasseDatevExportService, Wirtschaftsjahr und numerische
+  Kontenableitung. 35 Tests gruen, Golden-Datei UTF8, ExportWindows1252.
+  Absichtlich verschobene Belegdatum-Spalte macht Golden-Test rot; danach
+  Writer zurueckgesetzt und Gate wieder gruen.
+
+### Belegte Integrationskorrekturen gegenueber dem historischen Plan
+
+- berechneterBetrag der Kostenstellenanteile ist NETTO (Entity.berechneAnteil),
+  nicht wie Task7 annimmt Brutto. Writer rechnet anteilig auf Brutto hoch und
+  rundet kumuliert, sodass kein Cent verschwindet. Nicht zugeordnete Reste
+  bleiben ohne KOST1 sichtbar; ungueltige Ueberverteilung wird abgewiesen.
+  Bei Mischbons wird nur der Firmenanteil verteilt, der private Rest separat
+  auf1800 ohne Steuer/Kostenstelle exportiert. Regressionsfaelle vorhanden.
+- Storno dreht die Kategorie um, aber nicht die Steuerart des Originals.
+  DATEV behaelt deshalb Vorsteuer bzw.Umsatzsteuer bei Gegenrichtung bei.
+  Private Stornos ohne Konto behalten den Standard des Originals1800/1810.
+- V375 backfillte alte istUmbuchung-Stornos auf TRANSFER. Vorhandene
+  Aufwand-/Ertragskonten zeigen dabei den echten Ursprung; Export verwendet
+  sie statt faelschlich Bank1200. Zwei RED-Faelle, danach gruen.
+- Neue Stornos uebernehmen Herkunft, Gegenpartei, Aufteilungsmodus und die
+  drei Firmenbetraege; Bar mit Gegenrichtung, Nichtbar mit Negation wie die
+  vorhandenen Gesamtbetraege. 9 erwartete RED-Failures, dann23 Tests gruen.
+- BelegControllerTest um KassenbuchungService-Mock ergaenzt (nur Verkabelung).
+
+Gemeinsame Backend-/Frontend-Vollpruefung und Claude-Review folgen.
+
+### Abschnitt2 — gemeinsames Backend-Gate
+
+- Erster Gesamtlauf:3053Tests,0Failures,1Error (ueberfluessiger Stub im
+  neu ergaenzten reinen DTO-Test). Stub lokal auf den gebrauchten Lookup
+  begrenzt, keine Assertion abgeschwaecht.
+- Abschliessend ./mvnw -B package:3053Tests,0Failures/Errors,17bestehende
+  bedingteSkips, JAR+Repackage erfolgreich. Log:/tmp/kasse-section2-backend-green.log.
+- Zahlungsstatus-Integration: OFFEN loescht bereitsGezahlt(KI), weil die
+  Repositoryabfrage beides beruecksichtigt. DTO zeigt bezahlt OR bereitsGezahlt.
+  Zwei Regressionen vor Fix rot, danach gruen. Manuelle Entscheidung samt
+  Ruecknahme des KI-Flags wird protokolliert.
+
+### Task11 — Journal und Hilfe integriert
+
+Journal mit7Spalten, serverseitigen Bestaenden, Storno-Badges und Auswahl;
+Handwerkerlabels fuer Privatbewegungen, Erklaerkasten mit gespeichertem
+Zustand und Hilfe-Dialog plus docs/KASSE_ANLEITUNG.md. Dokumentierter Grund
+fuer zwei Textfassungen: keine Markdownroute/Dokuserver im Programm.
+
+10Unit-Tests gruen, davor RED fuer Journalaufbereitung und Wording.
+Gezielte UI-RED mit fehlenden7Spalten beobachtet. Anschliessend12/12E2E
+auf3Bildschirmgroessen, Lint/Build/E2ETypecheck gruen. Screenshotpruefungen
+mit echten Tabellenzeilen, langenWoertern und Anfang/Ende des Hilfedialogs.
+Finale E2E-Scrollpruefungen nach Produktcodeintegration nachgezogen.
+Gesamtfrontend:126Dateien/1414Tests gruen, Lint/Build gruen. Gemeinsame
+Playwright-Vollsuite und Claude-Review laufen.
+
+Gemeinsame PC-Playwright-Vollsuite:522/522gruen auf1440x900,1536x960 und
+1920x1080 (2,3Minuten). Log:/tmp/kasse-section2-pc-e2e.log. Backend und
+Frontendprodukte unveraendert seit den gruenen Gesamtlaeufen. Claude-Review
+steht noch aus; noch kein Rundencommit.
+
+### Abschnitt2 — Claude-Review1: GELB (keine kritischen Befunde)
+
+Alle38betroffenen Dateien gelesen; Tests/Builds/DI/Query/Datei-Sicherheit/
+DATEV-Summen/Handwerkerlayout positiv bestaetigt. Fuenf Warnungen werden
+vor dem Rundencommit behoben (keine Ausnahmefreigabe angefragt):
+1. Mahnungen/Erinnerungen vor Limit aus offenerRechnungsauswahl filtern.
+2. Kundenrechnung nach Storno der zugeordneten Barzahlung wieder oeffnen.
+3. Gewaehlten Lieferantennamen in PC-Listentitel vor KI/Filename priorisieren.
+4. DATEV-Golden per .gitattributes text eol=crlf plattformstabil halten.
+5. Doppelten grossen Kassenstand/Fetch durch gemeinsam genutzten aktuellen
+   Stand mit Mindestbestandwarnung ersetzen.
+
+Zusaetzliche kleine Hinweise: leererDATEVExport markiert Festschreibung0
+(statt vacuous allMatch1), firmenname bleibt aus Vertragsgruenden im
+Parameterrecord und wird als nicht fuerEXTF verwendetes Paketmetadatum
+dokumentiert. PDF-interner IO-Fehler vorRueckgabe wurde als geringfuegiger
+bestehender Nichtblocker eingeordnet; kein DB-Eintrag/Datenverlust, nur
+moegliche verwaisteDatei. Bericht:/tmp/kasse-section2-review.log.
+
+### Abschnitt2 — Review-Nachbesserungen
+
+- OffeneRechnungen: gemeinsames istZuordenbareRechnung-Praedikat vor
+  Sortierung/Limit. RED1Failure, dann60Service/ControllerTests gruen.
+- Storno verknuepfterKassen-Einnahme oeffnet bezahlteKundenrechnung wieder,
+  kopiert Rechnungsreferenz und protokolliert ID+Statuswechsel. RED5Failures,
+  danach49Service/ControllerTests gruen. GanzeBackendpackage danach3062Tests
+  ohneFailures/Errors,17bestehendeSkips gruen.
+- Golden-Datei per text eol=crlf abgesichert. IsolierterGitindex mit
+  Windows-add(core.autocrlf=true) und Unix-checkout(false) getestet:
+  Dateibytes inklusiveCRLF identisch.
+- LeererDATEVExport hat Festschreibung0; neuerTest erstrot, danach19WriterTests
+  gruen. firmenname bleibt wegen vereinbarterSchnittstelle im Record.
+- Gewaehlter Lieferant steht im Beleglistentitel vorKI-Rohname/Filename.
+- Ein gemeinsamer aktuellerKassenstand aus KassenbuchTab fuer Shortcuts und
+  Journal, genau1Abruf, eineGrosszahl imJournal samtMindestbestandwarnung.
+  StandaloneShortcuts bleibenkompatibel. aria-controls-Ziel existiert nun
+  auchzugeklappt. 5Review-Regressionsfaelle erstrot, dann26gezielteUnits,
+  18E2E (3Groessen), Lint/Build/Typecheckgruen. Screenshots zeigen Warnung,
+  AktualisierungnachBuchung undgewaehltenLieferantentitel.
+- GesamtePC-Units aufintegriertemFixstand:127Dateien/1422Tests gruen,
+  Lint/Buildgruen. FinalePlaywrightVollsuite folgt nach Backend-Locksicherung.
+- Zusaetzliche konkrete Luecke: paralleleZahlungserfassungen derselben
+  Kundenrechnung werden jetzt mit pessimistischemRechnungslookup abgesichert;
+  echter2Transaktionen-Regressionstest inArbeit. KeineMigrationnoetig.
+
+### Abschnitt2 — finaler Backendstand und externer Review-Block
+
+- Rechnungslookup sperrt konkreten ProjektGeschaeftsdokument-Untertyp per
+  PESSIMISTIC_WRITE innerhalb der Buchungstransaktion. OhneLock kamzweiter
+  Leser sofortdurch(RED); ein polymorpherLEFTJOIN-Lock wartetezwar, lieferte
+  aberaltenChildStatus(RED). GezielterINNERJOIN-Lock wartetundliestnachCommit
+  bezahlt=true(GREEN). EchterH2-Test mit2Transaktionen; MySQLParalleltest
+  nichtausgefuehrt. NeueMethode findGeschaeftsdokumentByIdForUpdate, Fehler
+  fuerfalschenUntertypvsnichtvorhandeneIDbleibenunveraendert.
+- Task3-Endgate105Testsgruen. Integriertes ./mvnw -B package aufaktuellem
+  Stand:3064Tests,0Failures/Errors,17bestehendebedingteSkips,Buildgruen.
+  /tmp/kasse-section2-review-backend-final.log.
+- ErneuterClaudeReview20:02MESZ vomAnbieterabgewiesen:
+  "You've hit your monthly spend limit"; Ausgabe nenntReset23:50Europe/Berlin.
+  Log:/tmp/kasse-section2-review-final.log. Prompt fuer Wiederaufnahme:
+  /tmp/kasse-section2-rereview-prompt.txt.
+- Letzte tatsaechlicheReviewerAmpel bleibt GELB aus /tmp/kasse-section2-review.log.
+  Alle5Warnungen implementiert undgetestet, unabhaengigeNachpruefungfehlt.
+  review-and-ship verbietetCommit ohneGRUEN undCodexFallback; parallele-runden
+  erlaubt naechsteRundeerstbeiGRUEN. Daher keinAbschnitt2-Commit/Push und
+  Tasks8/12/13/14/15 nochNICHT begonnen. KeineFreigabeunterstellt.
+- mainMerge97f624cc undAbschnitt1Fix16747d78 sindbereitsgepusht. Alle
+  Abschnitt2-Dateien stehenintegriertimHauptcheckout, Agentworktreesbleiben
+  zurNachvollziehbarkeit erhalten. ExpliziteDateiliste steht unter
+  /tmp/kasse-section2-integrated-files.json, RootDatev/.gitattributes/Log
+  zusaetzlich in gitstatus sichtbar. FinalePC-E2E+GraphUpdate laufennoch.
+
+Der vollstaendige ersteClaude-Bericht ist jetzt dauerhaft dokumentiert:
+`docs/superpowers/reviews/2026-09-14-kasse-belege-abschnitt2.md`. Er bewertet
+den StandVORNachbesserungen, keineVerwechslungmitnochfehlenderGruenfreigabe.
+
+### Abschnitt2 — sicherer Uebergabestand 14.09.2026,20:05MESZ
+
+Finale Checks auf dem integrierten Code:
+- Backend:3064Tests,0Failures/Errors,17bedingteBestands-Skips; packagegruen.
+- PC:127Dateien/1422UnitTests, Lint/Build/E2E-Typecheckgruen.
+- FinalePC-PlaywrightVollsuite:528/528auf3Bildschirmgroessen gruen(2,3Minuten),
+  Log:/tmp/kasse-section2-review-pc-e2e.log.
+- Graphify einmalamEnde aktualisiert:15999Knoten,55203Kanten,593Communities.
+  BekannteParserwarnung TiptapEditor.tsx:930unveraendert; TypeScriptBuildgruen.
+- EigeneTest-/Buildartefakte entfernt, gitdiff--checksauber.
+
+Offen: Claude-Nachpruefung nach Verfuegbarkeit des Kontingents wiederholen.
+KeineGruenfreigabeerfunden, keinAbschnitt2Commit/Push. Danach Abschnitt2
+committen/pushen und Abschnitt3 mitTasks8,12,13; Abschnitt4 mitTasks14,15.
+AlleTaskbriefings stehenimfreigegebenenPlan. OriginalesDatevExportService
+bleibtLODAS; Task8mussKasseDatevExportServicekonsumieren. Der aktuelle
+Rechnungslookup ist findGeschaeftsdokumentByIdForUpdate, nichtder verworfene
+polymorpheBasislookup. VorhandeneWorktrees enthaltenSicherheitskopien;
+Hauptcheckout ist der zusammengefuehrte, massgeblicheStand.
+
+### Fortsetzung nach ausdrücklicher Nutzerkorrektur
+
+Der Nutzer verlangt loese-problem statt review-and-ship. Damit ist Abschnitt 2
+mit der vorhandenen gelben Bewertung abgenommen; alle fünf Befunde wurden
+behoben und die oben dokumentierten vollständigen Prüfungen bestanden.
+Eine zusätzliche grüne Claude-Freigabe ist keine Voraussetzung mehr.
+Abschnitt 3 folgt mit Tasks 8, 12 und 13, danach Abschnitt 4 mit 14 und 15.
+Modellvorgabe des Nutzers zum Tokensparen: Coding mit Terra oder Luna,
+Reviews mit Sol, ausschließlich der Hauptagent bleibt Astra. Agenten erhalten
+nur ihren Task und notwendige Schnittstellen; keine doppelten Prüfungen.

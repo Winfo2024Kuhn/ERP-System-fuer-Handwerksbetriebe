@@ -8,9 +8,11 @@ import org.example.kalkulationsprogramm.domain.BelegKiAnalyseStatus;
 import org.example.kalkulationsprogramm.domain.BelegStatus;
 import org.example.kalkulationsprogramm.domain.KassenbuchMonatsabschluss;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.KassenbuchAbschlussDto;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.example.kalkulationsprogramm.repository.KassenbuchMonatsabschlussRepository;
+import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +61,7 @@ public class KassenbuchAbschlussService {
     private final KassenbuchMonatsabschlussRepository abschlussRepository;
     private final BelegAuditService auditService;
     private final KasseSaldoService kasseSaldoService;
+    private final ProjektDokumentRepository projektDokumentRepository;
 
     // ===================== Vorschau =====================
 
@@ -266,6 +269,10 @@ public class KassenbuchAbschlussService {
         storno.setStornoFuerBelegId(original.getId());
         storno.setStornoGrund(grund);
         storno.setBelegNummer(original.getBelegNummer());
+        storno.setQuelle(original.getQuelle());
+        storno.setGegenpartei(original.getGegenpartei());
+        storno.setAusgangsrechnungId(original.getAusgangsrechnungId());
+        storno.setAufteilungsModus(original.getAufteilungsModus());
         storno.setZahlungsart(original.getZahlungsart());
         storno.setMwstSatz(original.getMwstSatz());
         storno.setSachkonto(original.getSachkonto());
@@ -278,10 +285,16 @@ public class KassenbuchAbschlussService {
             storno.setBelegKategorie(gegenrichtung(originalKategorie));
             storno.setBetragBrutto(nullSafe(original.getBetragBrutto()));
             storno.setBetragNetto(original.getBetragNetto());
+            storno.setBetragFirmaBrutto(original.getBetragFirmaBrutto());
+            storno.setBetragFirmaNetto(original.getBetragFirmaNetto());
+            storno.setBetragFirmaMwst(original.getBetragFirmaMwst());
         } else {
             storno.setBelegKategorie(originalKategorie);
             storno.setBetragBrutto(negiere(original.getBetragBrutto()));
             storno.setBetragNetto(negiere(original.getBetragNetto()));
+            storno.setBetragFirmaBrutto(negiere(original.getBetragFirmaBrutto()));
+            storno.setBetragFirmaNetto(negiere(original.getBetragFirmaNetto()));
+            storno.setBetragFirmaMwst(negiere(original.getBetragFirmaMwst()));
         }
 
         // Eine stornierte Einnahme nimmt Geld aus der Kasse. Das darf den
@@ -300,9 +313,20 @@ public class KassenbuchAbschlussService {
         original.setStornoGrund(grund);
         belegRepository.save(original);
 
+        String auditGrund = grund;
+        if (originalKategorie == BelegKategorie.KASSE_EINNAHME && original.getAusgangsrechnungId() != null) {
+            var dokument = projektDokumentRepository.findById(original.getAusgangsrechnungId()).orElse(null);
+            if (dokument instanceof ProjektGeschaeftsdokument rechnung && rechnung.isBezahlt()) {
+                rechnung.setBezahlt(false);
+                projektDokumentRepository.save(rechnung);
+                auditGrund += " Kundenrechnung ID " + rechnung.getId()
+                        + ": bezahlt von ja auf nein zurückgesetzt (Barzahlung storniert).";
+            }
+        }
+
         auditService.protokolliereStornoErfassung(storno, bearbeiter,
                 "Gegenbuchung zu Beleg Nr. " + original.getLaufendeNummer() + ": " + grund, ipAdresse);
-        auditService.protokolliereStornierung(original, bearbeiter, grund, ipAdresse);
+        auditService.protokolliereStornierung(original, bearbeiter, auditGrund, ipAdresse);
 
         log.info("Beleg {} (Nr. {}) storniert durch Gegenbuchung {} -- {}",
                 original.getId(), original.getLaufendeNummer(), storno.getId(), grund);

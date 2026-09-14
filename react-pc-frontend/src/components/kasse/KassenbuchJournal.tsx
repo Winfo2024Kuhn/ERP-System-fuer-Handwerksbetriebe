@@ -1,18 +1,17 @@
-import { ArrowRight, Coins, Loader2, Search } from 'lucide-react';
+import { AlertTriangle, Coins, Loader2, Search } from 'lucide-react';
 import { Button } from '../ui/button';
 import { DatePicker } from '../ui/datepicker';
 import { Card } from '../ui/card';
-import type { KassenBewegung, Kassenbuch } from '../../types';
+import { Input } from '../ui/input';
+import type { Kassenbuch } from '../../types';
+import type { SaldoInfo } from './NeueBuchungDialog';
 import { KassenbuchAbschlussLeiste } from './KassenbuchAbschlussLeiste';
-import { KATEGORIE_FARBE, KATEGORIE_LABELS, formatDate, formatEuro, inputCls, isoDatum } from './belegFormat';
+import { formatDate, formatEuro, isoDatum } from './belegFormat';
+import { baueJournal, journalKategorieLabel, type JournalZeile } from './journalSaldo';
 
-// Task 9 (reine Verschiebung, kein Verhalten geaendert): heutiger
-// KassenbuchView + TKontoZeile + KassenbuchFilter + KpiTile aus
-// BelegeKasseEditor.tsx. Das T-Konto bleibt inhaltlich unveraendert stehen
-// und wird erst in Task 11 ersetzt.
-
-export function KassenbuchJournal({ kassenbuch, loading, von, bis, onVonChange, onBisChange, search, onSearchChange, onSelectBeleg, onGeaendert }: {
+export function KassenbuchJournal({ kassenbuch, saldo, loading, von, bis, onVonChange, onBisChange, search, onSearchChange, onSelectBeleg, onGeaendert }: {
     kassenbuch: Kassenbuch | null;
+    saldo: SaldoInfo | null;
     loading: boolean;
     von: string;
     bis: string;
@@ -23,247 +22,106 @@ export function KassenbuchJournal({ kassenbuch, loading, von, bis, onVonChange, 
     onSelectBeleg: (id: number) => void;
     onGeaendert: () => void;
 }) {
-    const filterLeiste = (
-        <KassenbuchFilter
-            von={von} bis={bis} onVonChange={onVonChange} onBisChange={onBisChange}
-            search={search} onSearchChange={onSearchChange}
-        />
-    );
+    const unterMindestbestand = saldo != null && saldo.saldo < saldo.mindestbestand;
+    const filterLeiste = <KassenbuchFilter von={von} bis={bis} onVonChange={onVonChange}
+        onBisChange={onBisChange} search={search} onSearchChange={onSearchChange} />;
+    if (loading) return <div className="space-y-4">{filterLeiste}
+        <div className="flex items-center justify-center gap-2 py-16 text-slate-600" role="status">
+            <Loader2 className="h-6 w-6 motion-safe:animate-spin text-rose-500" aria-hidden /> Kassenbuch wird geladen…
+        </div>
+    </div>;
+    if (!kassenbuch) return <div className="space-y-4">{filterLeiste}
+        <Card className="p-12 text-center text-slate-500"><Coins className="w-12 h-12 mx-auto mb-3 opacity-30" aria-hidden />
+            <p>Kassenbuch konnte nicht geladen werden.</p></Card>
+    </div>;
 
-    if (loading) {
-        return (
-            <div className="space-y-4">
-                {filterLeiste}
-                <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-rose-500" /></div>
-            </div>
-        );
-    }
-    if (!kassenbuch) {
-        return (
-            <div className="space-y-4">
-                {filterLeiste}
-                <Card className="p-12 text-center text-slate-500"><Coins className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>Kassenbuch konnte nicht geladen werden.</p></Card>
-            </div>
-        );
-    }
-
-    // Die Nummer kommt jetzt vom Server und haengt dauerhaft am Beleg: sie
-    // wird beim Monatsabschluss vergeben und aendert sich nie wieder. Solange
-    // der Monat offen ist, gibt es noch keine — dann zeigen wir eine
-    // vorlaeufige Position im Zeitraum, deutlich als solche markiert.
-    //
-    // Vorher wurde hier durchgezaehlt. Das sah aus wie eine Belegnummer, sprang
-    // aber bei jedem Zeitraumwechsel auf voellig andere Werte.
-    const nummeriert = kassenbuch.bewegungen.map((b, i) => ({
-        ...b,
-        anzeigeNummer: b.laufendeNummer ?? null,
-        vorlaeufigeNummer: i + 1,
-    }));
-
-    const term = search.trim().toLowerCase();
-    const sichtbar = term
-        ? nummeriert.filter(b =>
-            b.beschreibung?.toLowerCase().includes(term)
-            || b.lieferantName?.toLowerCase().includes(term)
-            || KATEGORIE_LABELS[b.kategorie].toLowerCase().includes(term))
-        : nummeriert;
-
-    // T-Konto: Soll-Seite = Geld rein (Einnahmen + Privateinlagen),
-    // Haben-Seite = Geld raus (Ausgaben + Privatentnahmen). Sortierung folgt
-    // der Server-Reihenfolge (chronologisch). 0,00-€-Bewegungen (pathologisch
-    // aber moeglich) landen auf der Eingang-Seite, damit nichts stillschweigend
-    // verschwindet — Summenfuss-Konsistenz bleibt.
-    const eingaenge = sichtbar.filter(b => b.betrag >= 0);
-    const ausgaenge = sichtbar.filter(b => b.betrag < 0);
-    const summeEingang = kassenbuch.summeEinnahmen + kassenbuch.summePrivateinlagen;
-    const summeAusgang = kassenbuch.summeAusgaben + kassenbuch.summePrivatentnahmen;
-
+    const zeilen = baueJournal(kassenbuch.bewegungen, search);
+    const summeEinnahmen = kassenbuch.summeEinnahmen + kassenbuch.summePrivateinlagen;
+    const summeAusgaben = kassenbuch.summeAusgaben + kassenbuch.summePrivatentnahmen;
     return (
-        <div className="space-y-4">
-            <KassenbuchAbschlussLeiste
-                letzterAbschluss={kassenbuch.letzterAbschluss ?? null}
-                offeneBewegungen={kassenbuch.offeneBewegungen ?? 0}
-                onGeaendert={onGeaendert}
-            />
-
+        <div className="min-w-0 space-y-4">
+            <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(12rem,1fr)_minmax(0,3fr)] xl:items-center">
+                <div className="min-w-0 px-1">
+                    <p className="text-sm font-medium text-slate-500">Kasse jetzt</p>
+                    <p className={`text-3xl font-bold tabular-nums ${unterMindestbestand ? 'text-red-700' : 'text-slate-900'}`} data-testid="kasse-jetzt">
+                        {saldo == null ? '–' : `${formatEuro(saldo.saldo)} €`}
+                    </p>
+                    {saldo && <p className="mt-1 text-xs text-slate-500">Mindestbestand: {formatEuro(saldo.mindestbestand)} €</p>}
+                    {unterMindestbestand && <p className="mt-2 inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                        <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden /> unter Mindestbestand
+                    </p>}
+                </div>
+                <div className="min-w-0"><KassenbuchAbschlussLeiste
+                    letzterAbschluss={kassenbuch.letzterAbschluss ?? null}
+                    offeneBewegungen={kassenbuch.offeneBewegungen ?? 0} onGeaendert={onGeaendert} /></div>
+            </div>
             {filterLeiste}
-
-            {term && (
-                // Die Summen unten kommen vom Server und gelten fuer den ganzen
-                // Zeitraum. Ohne diesen Hinweis wirkte es, als passten Zeilen und
-                // Summen nicht zusammen.
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 flex items-start gap-2">
-                    <Search className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
-                    <span>
-                        Suche aktiv – es werden <strong>{sichtbar.length} von {nummeriert.length}</strong> Zeilen gezeigt.
-                        Summen und Saldo unten gelten weiterhin für den ganzen Zeitraum.
-                    </span>
+            {search.trim() && <div className="flex min-w-0 items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <Search className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
+                <p className="min-w-0 break-words">Suche aktiv – es werden <strong>{zeilen.length} von {kassenbuch.bewegungen.length}</strong> Zeilen gezeigt.
+                    {' '}Summen und Bestände gelten weiterhin für den ganzen Zeitraum.</p>
+            </div>}
+            <Card className="min-w-0">
+                <div className="border-b border-slate-200 px-4 py-3">
+                    <h2 className="text-base font-semibold text-slate-900">Barbewegungen</h2>
+                    <p className="text-xs text-slate-500">{formatDate(von)} – {formatDate(bis)} · {kassenbuch.bewegungen.length} Buchungen</p>
                 </div>
-            )}
-            <Card className="overflow-hidden">
-                {/* Konto-Kopf */}
-                <div className="border-b-2 border-slate-800 bg-slate-50/60 px-6 py-3 text-center">
-                    <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 font-semibold">Kasse · Bargeldkonto</div>
-                    <div className="text-lg font-bold text-slate-900 mt-0.5">Bar-Bewegungen</div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                        {formatDate(von)} – {formatDate(bis)} · {nummeriert.length} Buchungen
-                    </div>
+                <div className="min-w-0 overflow-auto max-h-[65vh] rounded-t-lg">
+                    <table aria-label="Kassenbuch" className="w-full table-fixed text-sm">
+                        <colgroup><col className="w-[5%]" /><col className="w-[10%]" /><col className="w-[32%]" />
+                            <col className="w-[11%]" /><col className="w-[13%]" /><col className="w-[13%]" /><col className="w-[16%]" /></colgroup>
+                        <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600">
+                            <tr>{['Nr.', 'Datum', 'Was', 'Beleg', 'Einnahme', 'Ausgabe', 'Bestand danach'].map((titel, i) =>
+                                <th key={titel} scope="col" className={`px-3 py-3 font-semibold ${i >= 4 ? 'text-right' : 'text-left'}`}>{titel}</th>)}</tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {zeilen.map(zeile => <JournalBuchung key={zeile.belegId} zeile={zeile} onOeffnen={() => onSelectBeleg(zeile.belegId)} />)}
+                            {zeilen.length === 0 && <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                                {search.trim() ? 'Keine passenden Buchungen gefunden.' : 'Keine Barbewegungen in diesem Zeitraum.'}
+                            </td></tr>}
+                        </tbody>
+                    </table>
                 </div>
-
-                {/* Spaltenköpfe */}
-                <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="px-6 py-3 border-r-2 border-slate-800 bg-emerald-50/40">
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-sm font-bold text-emerald-800 uppercase tracking-wider">Eingang</span>
-                            <span className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider">Soll</span>
-                        </div>
-                        <div className="text-xs text-slate-500 mt-0.5">Einnahmen + Privateinlagen</div>
-                    </div>
-                    <div className="px-6 py-3 bg-amber-50/40">
-                        <div className="flex items-baseline gap-2 justify-end">
-                            <span className="text-[10px] text-amber-700 font-medium uppercase tracking-wider">Haben</span>
-                            <span className="text-sm font-bold text-amber-800 uppercase tracking-wider">Ausgang</span>
-                        </div>
-                        <div className="text-xs text-slate-500 mt-0.5 text-right">Ausgaben + Privatentnahmen</div>
-                    </div>
-                </div>
-
-                {/* Buchungsspalten */}
-                <div className="grid grid-cols-2 min-h-[420px]">
-                    {/* Eingang / Soll */}
-                    <div className="border-r-2 border-slate-800 divide-y divide-slate-100">
-                        {eingaenge.length === 0 ? (
-                            <div className="px-6 py-10 text-center text-slate-400 text-sm">
-                                {term ? 'Keine Treffer.' : 'Keine Eingänge in diesem Zeitraum.'}
-                            </div>
-                        ) : eingaenge.map(bew => (
-                            <TKontoZeile key={`in-${bew.belegId}`} bew={bew} side="eingang" onClick={() => onSelectBeleg(bew.belegId)} />
-                        ))}
-                    </div>
-                    {/* Ausgang / Haben */}
-                    <div className="divide-y divide-slate-100">
-                        {ausgaenge.length === 0 ? (
-                            <div className="px-6 py-10 text-center text-slate-400 text-sm">
-                                {term ? 'Keine Treffer.' : 'Keine Ausgänge in diesem Zeitraum.'}
-                            </div>
-                        ) : ausgaenge.map(bew => (
-                            <TKontoZeile key={`out-${bew.belegId}`} bew={bew} side="ausgang" onClick={() => onSelectBeleg(bew.belegId)} />
-                        ))}
-                    </div>
-                </div>
-
-                {/* Doppelstrich nach Buchhalter-Tradition */}
-                <div className="border-t-2 border-slate-800" />
-                <div className="border-t border-slate-800 mt-[3px]" />
-
-                {/* Summenfuß */}
-                <div className="grid grid-cols-2 bg-slate-50">
-                    <div className="px-6 py-3 border-r-2 border-slate-800 flex items-baseline justify-between">
-                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Summe Eingang</span>
-                        <span className="text-xl font-bold text-emerald-700 tabular-nums">{formatEuro(summeEingang)} €</span>
-                    </div>
-                    <div className="px-6 py-3 flex items-baseline justify-between">
-                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Summe Ausgang</span>
-                        <span className="text-xl font-bold text-amber-700 tabular-nums">{formatEuro(summeAusgang)} €</span>
-                    </div>
-                </div>
-
-                {/* Saldo-Zeile */}
-                <div className="bg-rose-50/60 border-t border-rose-200 px-6 py-3">
-                    <div className="flex items-baseline justify-between max-w-2xl mx-auto gap-4">
-                        <div>
-                            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Anfangsbestand</div>
-                            <div className="text-sm text-slate-600 tabular-nums">{formatEuro(kassenbuch.saldoStart)} €</div>
-                        </div>
-                        <ArrowRight className="w-5 h-5 text-slate-300 shrink-0" aria-hidden />
-                        <div className="text-right">
-                            <div className="text-[10px] uppercase tracking-wider text-rose-600 font-semibold">Neuer Saldo</div>
-                            <div className="text-2xl font-bold text-rose-700 tabular-nums">{formatEuro(kassenbuch.saldoEnde)} €</div>
-                        </div>
-                    </div>
-                </div>
+                <dl className="grid grid-cols-2 gap-4 border-t border-slate-200 bg-slate-50 p-4 lg:grid-cols-4 rounded-b-lg">
+                    <div className="min-w-0"><dt className="text-xs font-medium text-slate-500">Summe Einnahmen</dt>
+                        <dd className="mt-1 text-lg font-semibold tabular-nums text-emerald-700">{formatEuro(summeEinnahmen)} €</dd></div>
+                    <div className="min-w-0"><dt className="text-xs font-medium text-slate-500">Summe Ausgaben</dt>
+                        <dd className="mt-1 text-lg font-semibold tabular-nums text-amber-700">{formatEuro(summeAusgaben)} €</dd></div>
+                    <div className="min-w-0"><dt className="text-xs font-medium text-slate-500">Anfangsbestand</dt>
+                        <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-700">{formatEuro(kassenbuch.saldoStart)} €</dd></div>
+                    <div className="min-w-0"><dt className="text-xs font-medium text-slate-500">Bestand am Ende</dt>
+                        <dd data-testid="bestand-am-ende" className="mt-1 text-lg font-bold tabular-nums text-slate-900">{formatEuro(kassenbuch.saldoEnde)} €</dd></div>
+                </dl>
             </Card>
         </div>
     );
 }
 
-function TKontoZeile({ bew, side, onClick }: {
-    bew: KassenBewegung & { anzeigeNummer: number | null; vorlaeufigeNummer: number };
-    side: 'eingang' | 'ausgang';
-    onClick: () => void;
-}) {
-    const istPrivat = bew.kategorie === 'PRIVATENTNAHME' || bew.kategorie === 'PRIVATEINLAGE';
-    const betragColor = side === 'eingang'
-        ? (istPrivat ? 'text-lime-700' : 'text-emerald-700')
-        : (istPrivat ? 'text-fuchsia-700' : 'text-amber-700');
-    const hoverBg = side === 'eingang' ? 'hover:bg-emerald-50/40' : 'hover:bg-amber-50/40';
-    const istStorno = bew.stornoFuerBelegId != null;
-    const wurdeStorniert = bew.storniertDurchBelegId != null;
-    return (
-        <button type="button" onClick={onClick}
-            className={`w-full text-left px-6 py-2.5 cursor-pointer ${hoverBg} focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-inset`}>
-            <div className="flex items-baseline justify-between gap-3">
-                <div className="flex items-baseline gap-3 min-w-0 flex-1">
-                    {/* Feste Belegnummer, sobald der Monat abgeschlossen ist.
-                        Vorher nur eine vorlaeufige Position, in Klammern, damit
-                        sie niemand fuer die endgueltige Nummer haelt. */}
-                    <span
-                        className={`text-xs tabular-nums w-8 shrink-0 text-right ${
-                            bew.anzeigeNummer != null ? 'text-slate-600 font-semibold' : 'text-slate-300'
-                        }`}
-                        title={bew.anzeigeNummer != null
-                            ? `Feste Belegnummer ${bew.anzeigeNummer}`
-                            : 'Vorläufige Position – die feste Nummer kommt mit dem Monatsabschluss'}
-                    >
-                        {bew.anzeigeNummer ?? `(${bew.vorlaeufigeNummer})`}
-                    </span>
-                    <span className="text-xs text-slate-500 tabular-nums w-20 shrink-0">{formatDate(bew.datum)}</span>
-                    <div className="min-w-0 flex-1">
-                        <div className={`text-sm font-medium truncate ${wurdeStorniert ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                            {bew.beschreibung || '–'}
-                            {bew.lieferantName && <span className="ml-2 text-slate-400 font-normal">({bew.lieferantName})</span>}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1 mt-1">
-                            <span className={`text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded ${KATEGORIE_FARBE[bew.kategorie]}`}>
-                                {KATEGORIE_LABELS[bew.kategorie]}
-                            </span>
-                            {/* Gegenkonto gehoert auf den Kassenbuch-Ausdruck und
-                                damit auch auf den Bildschirm — fehlt es, sieht der
-                                Buchhalter sofort, wo noch Arbeit liegt. */}
-                            {bew.sachkontoNummer && (
-                                <span className="text-[10px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-100">
-                                    Konto {bew.sachkontoNummer}
-                                </span>
-                            )}
-                            {/* Storno-Markierung mit Text, nicht nur Durchstreichung:
-                                Farbe und Linie allein tragen die Aussage nicht. */}
-                            {wurdeStorniert && (
-                                <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
-                                    Storniert
-                                </span>
-                            )}
-                            {istStorno && (
-                                <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
-                                    Gegenbuchung
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                <div className="shrink-0 text-right">
-                    <div className={`text-base font-semibold tabular-nums ${betragColor}`}>
-                        {formatEuro(Math.abs(bew.betrag))} €
-                    </div>
-                    {/* Laufender Kassenstand nach dieser Buchung. Der Server rechnet
-                        ihn laengst mit (saldoNachher) — angezeigt wurde er nie.
-                        Genau das braucht man beim Nachzaehlen der Kasse. */}
-                    <div className="text-[11px] text-slate-400 tabular-nums">
-                        Stand {formatEuro(bew.saldoNachher)} €
-                    </div>
-                </div>
+function JournalBuchung({ zeile, onOeffnen }: { zeile: JournalZeile; onOeffnen: () => void }) {
+    const storniert = zeile.storniertDurchBelegId != null;
+    return <tr onClick={onOeffnen} className="cursor-pointer hover:bg-rose-50/50 focus-within:bg-rose-50/50">
+        <td className="px-3 py-3 align-top tabular-nums text-xs text-slate-600" title={zeile.anzeigeNummer != null
+            ? `Feste Belegnummer ${zeile.anzeigeNummer}` : 'Vorläufige Position – die feste Nummer kommt mit dem Monatsabschluss'}>
+            {zeile.anzeigeNummer ?? `(${zeile.vorlaeufigeNummer})`}</td>
+        <td className="px-3 py-3 align-top tabular-nums text-xs text-slate-500">{formatDate(zeile.datum)}</td>
+        <td className="min-w-0 px-3 py-3 align-top">
+            <button type="button" onClick={event => { event.stopPropagation(); onOeffnen(); }}
+                className={`block w-full min-w-0 break-words rounded text-left font-medium hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${storniert ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                {zeile.beschreibung || 'Buchung öffnen'}
+            </button>
+            {zeile.lieferantName && <p className="min-w-0 break-words text-xs text-slate-500 mt-1">{zeile.lieferantName}</p>}
+            <div className="min-w-0 flex flex-wrap gap-1 mt-2">
+                <span className="min-w-0 break-words rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">{journalKategorieLabel(zeile.kategorie)}</span>
+                {zeile.sachkontoNummer && <span className="min-w-0 break-words rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">Konto {zeile.sachkontoNummer}</span>}
+                {storniert && <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-700">Storniert</span>}
+                {zeile.stornoFuerBelegId != null && <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-700">Gegenbuchung</span>}
             </div>
-        </button>
-    );
+        </td>
+        <td className="px-3 py-3 align-top text-xs text-rose-700">Beleg #{zeile.belegId}</td>
+        <td className="px-3 py-3 align-top text-right tabular-nums text-emerald-700">{zeile.einnahme != null ? `${formatEuro(zeile.einnahme)} €` : '–'}</td>
+        <td className="px-3 py-3 align-top text-right tabular-nums text-amber-700">{zeile.ausgabe != null ? `${formatEuro(zeile.ausgabe)} €` : '–'}</td>
+        <td className="px-3 py-3 align-top text-right tabular-nums text-slate-700">{formatEuro(zeile.saldoNachher)} €</td>
+    </tr>;
 }
 
 /**
@@ -299,7 +157,7 @@ function KassenbuchFilter({ von, bis, onVonChange, onBisChange, search, onSearch
             <Field label="Bis">
                 <DatePicker aria-label="Bis" value={bis} onChange={onBisChange} />
             </Field>
-            <div className="flex items-center gap-2 pb-0.5">
+            <div className="flex flex-wrap items-center gap-2 pb-0.5">
                 <Button variant="outline" size="sm" onClick={dieserMonat}
                     className="border-rose-300 text-rose-700 hover:bg-rose-50">Dieser Monat</Button>
                 <Button variant="outline" size="sm" onClick={letzterMonat}
@@ -310,12 +168,12 @@ function KassenbuchFilter({ von, bis, onVonChange, onBisChange, search, onSearch
             <div className="relative flex-1 min-w-[14rem]">
                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Suche</label>
                 <Search className="absolute left-3 top-[2.15rem] w-4 h-4 text-slate-400" aria-hidden />
-                <input
+                <Input
                     type="text"
                     value={search}
                     onChange={e => onSearchChange(e.target.value)}
                     placeholder="Beschreibung, Lieferant, Art…"
-                    className={`${inputCls} pl-10`}
+                    className="pl-10"
                 />
             </div>
         </Card>

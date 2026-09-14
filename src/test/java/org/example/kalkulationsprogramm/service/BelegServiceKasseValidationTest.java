@@ -72,6 +72,9 @@ class BelegServiceKasseValidationTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "vorschlagService",
+                new BelegVorschlagService(belegRepository, sachkontoRepository, kostenstelleRepository));
+
         org.mockito.Mockito.lenient()
                 .when(belegRepository.save(any(Beleg.class)))
                 .thenAnswer(inv -> inv.getArgument(0));

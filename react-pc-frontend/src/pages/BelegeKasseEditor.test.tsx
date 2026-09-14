@@ -69,3 +69,18 @@ it('bucht bei Unterdeckung keine Vorab-Einlage für einen geänderten oder ungü
     fireEvent.click(screen.getByRole('button', { name: /Privateinlage in Höhe/ }));
     await waitFor(() => expect(writes).toEqual(['PUT', 'PUT']));
 });
+
+it.each([
+    ['RE-MUSTER-1', 'Musterbaustoffe GmbH', 'KI-Musterbetrieb', 'RE-MUSTER-1'],
+    [null, 'Musterbaustoffe GmbH', null, 'Musterbaustoffe GmbH'],
+    [null, 'Musterbaustoffe GmbH', 'KI-Musterbetrieb', 'Musterbaustoffe GmbH'],
+    [null, null, 'KI-Musterbetrieb', 'KI-Musterbetrieb'],
+    [null, null, null, 'quittung-muster.jpg'],
+])('zeigt im Belegtitel bestätigte Daten vor KI und Dateiname (%s, %s, %s)', async (belegNummer, lieferantName, kiVorgeschlagenerLieferant, titel) => {
+    const beleg = { id: 7, belegNummer, lieferantName, kiVorgeschlagenerLieferant, originalDateiname: 'quittung-muster.jpg',
+        belegKategorie: 'KASSE_AUSGABE', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', betragBrutto: 20 };
+    vi.stubGlobal('fetch', vi.fn(async url => ({ ok: true, json: async () => String(url) === '/api/buchhaltung/belege' ? [beleg] : [] })));
+    render(<ToastProvider><BelegeKasseEditor /></ToastProvider>);
+    const zeile = await screen.findByRole('button', { name: /Zu prüfen/ });
+    expect(zeile.querySelector('.font-semibold')).toHaveTextContent(titel);
+});

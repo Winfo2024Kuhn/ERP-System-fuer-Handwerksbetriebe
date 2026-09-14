@@ -5,3 +5,6 @@
 # daraus. Ohne diese Regel zeigt der Diff die Datei bei jedem Build komplett als
 # geaendert, statt nur der ausgetauschten Bundle-Namen.
 src/main/resources/static/index.html text eol=lf
+
+# DATEV-Golden-Dateien werden als kompletter CSV-Text inklusive CRLF verglichen.
+src/test/resources/datev/*.csv text eol=crlf

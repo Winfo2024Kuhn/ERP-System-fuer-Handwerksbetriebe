@@ -5,9 +5,9 @@ import { designPruefung } from './hilfen/design';
 /**
  * Task 9 (Plan "Kasse & Belege", Abschnitt 1): reines Refactoring von
  * BelegeKasseEditor.tsx und KasseShortcuts.tsx in einzelne Komponenten-
- * Dateien -- ohne jede Verhaltensaenderung. Diese Spec ist der end-to-end-
- * Beweis dafuer: derselbe Ablauf, dieselben Texte, dieselben Klassen wie vor
- * der Aufteilung.
+ * Dateien. Diese Spec sichert die weiterhin bedienbaren Ablaeufe nach der
+ * Aufteilung. Task 11 ersetzt die zweigeteilte Kontodarstellung durch ein
+ * chronologisches Journal; die entsprechenden Erwartungen sind mitgezogen.
  *
  * Gestubbt nach dem Muster aus monatsabschluss-task9.spec.ts (ein
  * Catch-all `page.route('**\/api/**')` mit Pfad-Weiche, Default-Antwort
@@ -162,7 +162,7 @@ async function stub(page: Page) {
     });
 }
 
-test('Belege & Kasse bleibt nach der Verschiebung unveraendert: vier Tabs, Kassenbuch, Pruefen-Dialog, Shortcuts', async ({ page }, info) => {
+test('Belege & Kasse: vier Tabs, Journal, Pruefen-Dialog und Shortcuts bleiben bedienbar', async ({ page }, info) => {
     await stub(page);
     await page.goto('/belege-kasse');
 
@@ -188,12 +188,11 @@ test('Belege & Kasse bleibt nach der Verschiebung unveraendert: vier Tabs, Kasse
     await expect(page.getByRole('button', { name: /quittung-baumarkt\.jpg/ })).toBeVisible();
     await designPruefung(page, info, 'kasse-refactoring-eingang', { primaerAktion: hochladenButton });
 
-    // Kassenbuch-Tab: KassenbuchJournal (heutiger KassenbuchView) zeigt
-    // weiterhin "Eingang"/"Ausgang" und den Saldo -- inhaltlich unveraendert.
+    // Kassenbuch-Tab: seit Task 11 als chronologisches Journal mit Beständen.
     await tabKasse.click();
-    await expect(page.getByText('Eingang', { exact: true })).toBeVisible();
-    await expect(page.getByText('Ausgang', { exact: true })).toBeVisible();
-    await expect(page.getByText('Neuer Saldo')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Einnahme', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Ausgabe', exact: true })).toBeVisible();
+    await expect(page.getByText('Bestand am Ende')).toBeVisible();
     await expect(page.getByText('250,00 €').first()).toBeVisible();
 
     // Die vier Shortcut-Knoepfe aus KasseShortcuts (jetzt via NeueBuchungDialog
@@ -205,7 +204,7 @@ test('Belege & Kasse bleibt nach der Verschiebung unveraendert: vier Tabs, Kasse
     await designPruefung(page, info, 'kasse-refactoring-kassenbuch', { primaerAktion: hochladenButton });
 
     // Prüfen-Dialog: oeffnet sich per Klick auf eine Belegzeile im Kassenbuch-
-    // Journal (T-Konto-Zeile) und zeigt denselben Titel wie vorher.
+    // Journal und zeigt denselben Titel wie vorher.
     await page.getByRole('button', { name: /Werkzeugkauf Baumarkt/ }).first().click();
     const modalTitel = page.getByRole('heading', { name: 'Beleg prüfen & validieren', exact: true });
     await expect(modalTitel).toBeVisible();

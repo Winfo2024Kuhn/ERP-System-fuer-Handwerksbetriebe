@@ -2,6 +2,8 @@ package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
+import org.example.kalkulationsprogramm.domain.BelegQuelle;
+import org.example.kalkulationsprogramm.domain.KasseEinstellung;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.domain.SachkontoTyp;
 import org.junit.jupiter.api.DisplayName;
@@ -110,6 +112,51 @@ class BuchungssatzAbleitungTest {
         b.setBelegKategorie(kategorie);
         b.setSachkonto(sachkonto);
         return b;
+    }
+
+    @Test
+    void datevKontenFuerAlleKategorienUndTransfers() {
+        KasseEinstellung e = new KasseEinstellung();
+        for (BelegKategorie k : BelegKategorie.values()) {
+            Beleg b = beleg(k, sachkonto("4930", "Musterkonto", SachkontoTyp.AUFWAND));
+            var konten = BuchungssatzAbleitung.ableitenKonten(b, e);
+            if (!k.istKassenBewegung()) {
+                assertThat(konten.sollKontoNr()).isNull();
+                assertThat(konten.habenKontoNr()).isNull();
+            } else {
+                assertThat(konten.sollKontoNr()).isEqualTo(k.istAusgang() ? "4930" : "1000");
+                assertThat(konten.habenKontoNr()).isEqualTo(k.istAusgang() ? "1000" : "4930");
+            }
+        }
+        e.setKassenkontoNummer("1600"); e.setBankkontoNummer("1210");
+        Beleg b = beleg(BelegKategorie.KASSE_EINNAHME, null); b.setQuelle(BelegQuelle.TRANSFER);
+        assertThat(BuchungssatzAbleitung.ableitenKonten(b, e)).isEqualTo(new BuchungssatzAbleitung.Konten("1600", "1210"));
+        b.setBelegKategorie(BelegKategorie.KASSE_AUSGABE);
+        assertThat(BuchungssatzAbleitung.ableitenKonten(b, e)).isEqualTo(new BuchungssatzAbleitung.Konten("1210", "1600"));
+    }
+
+    @Test
+    void datevFehlendeKontenUndPrivateDefaults() {
+        assertThat(BuchungssatzAbleitung.ableitenKonten(beleg(BelegKategorie.PRIVATEINLAGE, null), null))
+                .isEqualTo(new BuchungssatzAbleitung.Konten("1000", "1810"));
+        assertThat(BuchungssatzAbleitung.ableitenKonten(beleg(BelegKategorie.PRIVATENTNAHME, null), null))
+                .isEqualTo(new BuchungssatzAbleitung.Konten("1800", "1000"));
+        assertThat(BuchungssatzAbleitung.ableitenKonten(beleg(BelegKategorie.KASSE_AUSGABE, null), null))
+                .isEqualTo(new BuchungssatzAbleitung.Konten(null, "1000"));
+        assertThat(BuchungssatzAbleitung.ableitenKonten(beleg(BelegKategorie.KASSE_EINNAHME, null), null))
+                .isEqualTo(new BuchungssatzAbleitung.Konten("1000", null));
+    }
+
+    @Test
+    void privateGegenbuchungVerwendetDasKontoDesOriginals() {
+        Beleg stornoEinlage = beleg(BelegKategorie.PRIVATENTNAHME, null);
+        stornoEinlage.setStornoFuerBelegId(10L);
+        assertThat(BuchungssatzAbleitung.ableitenKonten(stornoEinlage, null))
+                .isEqualTo(new BuchungssatzAbleitung.Konten("1810", "1000"));
+        Beleg stornoEntnahme = beleg(BelegKategorie.PRIVATEINLAGE, null);
+        stornoEntnahme.setStornoFuerBelegId(11L);
+        assertThat(BuchungssatzAbleitung.ableitenKonten(stornoEntnahme, null))
+                .isEqualTo(new BuchungssatzAbleitung.Konten("1000", "1800"));
     }
 
     private static Sachkonto sachkonto(String nummer, String bezeichnung, SachkontoTyp typ) {

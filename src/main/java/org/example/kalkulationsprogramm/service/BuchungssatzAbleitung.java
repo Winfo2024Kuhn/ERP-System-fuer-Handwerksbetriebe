@@ -2,7 +2,10 @@ package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
+import org.example.kalkulationsprogramm.domain.BelegQuelle;
+import org.example.kalkulationsprogramm.domain.KasseEinstellung;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
+import org.example.kalkulationsprogramm.domain.SachkontoTyp;
 
 /**
  * Doppik-Variante A: das Beleg-Modell behaelt genau EIN {@code Sachkonto},
@@ -70,6 +73,38 @@ public final class BuchungssatzAbleitung {
                     new Buchungssatz(UNKLAR, UNKLAR);
         };
     }
+
+    /** Kontonummern statt Labels für den DATEV-Buchungsstapel. */
+    public static Konten ableitenKonten(Beleg beleg, KasseEinstellung einstellung) {
+        if (beleg == null || beleg.getBelegKategorie() == null) return new Konten(null, null);
+        String kasse = kontoOderStandard(einstellung == null ? null : einstellung.getKassenkontoNummer(), "1000");
+        String bank = kontoOderStandard(einstellung == null ? null : einstellung.getBankkontoNummer(), "1200");
+        String konto = beleg.getSachkonto() == null ? null : kontoOderStandard(beleg.getSachkonto().getNummer(), null);
+        boolean transfer = istDatevTransfer(beleg);
+        boolean storno = beleg.getStornoFuerBelegId() != null;
+        return switch (beleg.getBelegKategorie()) {
+            case KASSE_EINNAHME -> new Konten(kasse, transfer ? bank : konto);
+            case KASSE_AUSGABE -> new Konten(transfer ? bank : konto, kasse);
+            case PRIVATEINLAGE -> new Konten(kasse, kontoOderStandard(konto, storno ? "1800" : "1810"));
+            case PRIVATENTNAHME -> new Konten(kontoOderStandard(konto, storno ? "1810" : "1800"), kasse);
+            default -> new Konten(null, null);
+        };
+    }
+
+    static boolean istDatevTransfer(Beleg beleg) {
+        if (beleg.getQuelle() != BelegQuelle.TRANSFER) return false;
+        // V375 setzte auch alte Gegenbuchungen (istUmbuchung) auf TRANSFER.
+        // Ein übernommenes Aufwand-/Ertragskonto belegt ihren echten Ursprung.
+        Sachkonto konto = beleg.getSachkonto();
+        return beleg.getStornoFuerBelegId() == null || konto == null
+                || (konto.getKontoTyp() != SachkontoTyp.AUFWAND && konto.getKontoTyp() != SachkontoTyp.ERTRAG);
+    }
+
+    private static String kontoOderStandard(String konto, String standard) {
+        return konto == null || konto.isBlank() ? standard : konto.trim();
+    }
+
+    public record Konten(String sollKontoNr, String habenKontoNr) { }
 
     private static String sachkontoLabel(Sachkonto sk) {
         if (sk == null) return UNKLAR;

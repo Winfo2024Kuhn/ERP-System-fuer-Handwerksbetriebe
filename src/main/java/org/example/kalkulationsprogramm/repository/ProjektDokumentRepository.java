@@ -3,9 +3,12 @@ package org.example.kalkulationsprogramm.repository;
 import java.util.List;
 import java.util.Optional;
 
+import jakarta.persistence.LockModeType;
+
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,6 +16,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument, Long> {
   List<ProjektDokument> findByProjektId(Long projektId);
+
+  /**
+   * Serialisiert Zahlungen derselben Rechnung bis zum Commit der Buchung.
+   * Der konkrete Untertyp lädt die bezahlte Rechnungszeile über einen INNER JOIN.
+   * Beim polymorphen Basis-Lookup mit LEFT JOIN kann die Childzeile trotz
+   * Lock-Wartezeit noch den alten Zahlungsstatus liefern (H2-Regressionstest).
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE g.id = :id")
+  Optional<ProjektGeschaeftsdokument> findGeschaeftsdokumentByIdForUpdate(@Param("id") Long id);
 
   @Query("SELECT g FROM ProjektGeschaeftsdokument g")
   List<ProjektGeschaeftsdokument> findAllGeschaeftsdokumente();

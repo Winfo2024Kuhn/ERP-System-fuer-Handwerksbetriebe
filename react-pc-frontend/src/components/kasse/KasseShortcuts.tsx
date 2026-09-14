@@ -21,10 +21,15 @@ import { KasseEinstellungenDialog } from './KasseEinstellungenDialog';
 interface KasseShortcutsProps {
     sachkonten: Sachkonto[];
     onChanged: () => void;
+    /** Im Kassenbuch kommt der Stand aus dem gemeinsamen Abruf im Tab. */
+    saldo?: SaldoInfo | null;
+    zeigeSaldo?: boolean;
 }
 
-export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
-    const [saldo, setSaldo] = useState<SaldoInfo | null>(null);
+export function KasseShortcuts({ sachkonten, onChanged, saldo: gemeinsamerSaldo, zeigeSaldo = true }: KasseShortcutsProps) {
+    const externGeladen = gemeinsamerSaldo !== undefined;
+    const [eigenerSaldo, setSaldo] = useState<SaldoInfo | null>(null);
+    const saldo = externGeladen ? gemeinsamerSaldo : eigenerSaldo;
     const [openModal, setOpenModal] = useState<null | 'bank' | 'lohn' | 'einlage' | 'entnahme' | 'settings'>(null);
     const toast = useToast();
 
@@ -40,6 +45,7 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
     // Initial-Load via async-Wrapper, damit der set-state-in-effect-Lint
     // nicht anschlägt — Standard-Pattern für „fetch on mount".
     useEffect(() => {
+        if (externGeladen) return;
         let cancelled = false;
         (async () => {
             try {
@@ -50,12 +56,12 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
             }
         })();
         return () => { cancelled = true; };
-    }, []);
+    }, [externGeladen]);
 
     const refreshAlles = useCallback(() => {
-        loadSaldo();
+        if (!externGeladen) void loadSaldo();
         onChanged();
-    }, [loadSaldo, onChanged]);
+    }, [externGeladen, loadSaldo, onChanged]);
 
     const showToast = (kind: 'ok' | 'err', text: string) => kind === 'ok' ? toast.success(text) : toast.error(text);
 
@@ -64,7 +70,7 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
     return (
         <Card className="p-4 bg-gradient-to-r from-rose-50 to-white border-rose-200">
             <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-3 mr-4">
+                {zeigeSaldo && <div className="flex items-center gap-3 mr-4">
                     <div className="bg-rose-100 text-rose-700 rounded-lg p-2">
                         <Coins className="w-5 h-5" />
                     </div>
@@ -86,7 +92,7 @@ export function KasseShortcuts({ sachkonten, onChanged }: KasseShortcutsProps) {
                             )}
                         </div>
                     </div>
-                </div>
+                </div>}
 
                 <div className="flex flex-wrap items-center gap-2 ml-auto">
                     <Button variant="outline" size="sm" onClick={() => setOpenModal('bank')}

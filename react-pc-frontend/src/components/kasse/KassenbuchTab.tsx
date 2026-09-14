@@ -1,11 +1,10 @@
+import { useEffect, useState } from 'react';
+import { useToast } from '../ui/toast';
+import type { SaldoInfo } from './NeueBuchungDialog';
 import type { Kassenbuch, Sachkonto } from '../../types';
 import { KasseShortcuts } from './KasseShortcuts';
 import { KassenbuchJournal } from './KassenbuchJournal';
-
-// Task 9 (reine Verschiebung, kein Verhalten geaendert): neu zusammengesetzt
-// aus dem activeTab === 'kasse'-Ast der Seite (BelegeKasseEditor.tsx:530-548).
-// Rendert KasseShortcuts und KassenbuchJournal und bekommt alle Werte per
-// Props -- gleiche Reihenfolge, gleiche Klassen, gleiche Aufrufe wie vorher.
+import { KasseErklaerkasten } from './KasseErklaerkasten';
 
 export function KassenbuchTab({
     sachkonten,
@@ -32,14 +31,44 @@ export function KassenbuchTab({
     onSelectBeleg: (id: number) => void;
     onGeaendert: () => void;
 }) {
+    const [saldo, setSaldo] = useState<SaldoInfo | null>(null);
+    const toast = useToast();
+    useEffect(() => {
+        // Erst nach dem Journal-Abruf laden: so entsteht beim Oeffnen nicht
+        // ein zweiter Abruf, sobald die zuvor leere Liste angekommen ist.
+        if (kassenLoading || !kassenbuch) return;
+        let abgebrochen = false;
+        void (async () => {
+            try {
+                const antwort = await fetch('/api/buchhaltung/kasse/saldo');
+                if (!antwort.ok) throw new Error('Kassenstand nicht verfügbar');
+                const daten: SaldoInfo = await antwort.json();
+                if (!Number.isFinite(daten.saldo) || !Number.isFinite(daten.mindestbestand)) {
+                    throw new Error('Kassenstand oder Mindestbestand fehlt');
+                }
+                if (!abgebrochen) setSaldo(daten);
+            } catch {
+                if (!abgebrochen) {
+                    setSaldo(null);
+                    toast.error('Der aktuelle Kassenstand konnte nicht geladen werden.');
+                }
+            }
+        })();
+        return () => { abgebrochen = true; };
+    }, [kassenbuch, kassenLoading, toast]);
+
     return (
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
+            <KasseErklaerkasten />
             <KasseShortcuts
                 sachkonten={sachkonten}
+                saldo={saldo}
+                zeigeSaldo={false}
                 onChanged={onGeaendert}
             />
             <KassenbuchJournal
                 kassenbuch={kassenbuch}
+                saldo={saldo}
                 loading={kassenLoading}
                 von={kasseVon}
                 bis={kasseBis}

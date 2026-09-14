@@ -49,6 +49,7 @@ public class BelegController {
 
     private final BelegService belegService;
     private final MwstRechnerService mwstRechnerService;
+    private final org.example.kalkulationsprogramm.service.KassenbuchungService kassenbuchungService;
 
     // ===================== Helpers =====================
 
@@ -253,7 +254,15 @@ public class BelegController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         try {
-            Beleg b = belegService.createUmbuchung(req, caller);
+            // Kompatibler Alias: Kassenbewegungen nutzen denselben Schreibpfad wie
+            // die Kacheln. Bank und Kreditkarte bleiben im bisherigen Dienst.
+            boolean kassenbewegung = req != null && req.getBelegKategorie() != null
+                    && switch (req.getBelegKategorie()) {
+                        case "KASSE_EINNAHME", "KASSE_AUSGABE", "PRIVATEINLAGE", "PRIVATENTNAHME" -> true;
+                        default -> false;
+                    };
+            Beleg b = kassenbewegung ? kassenbuchungService.bucheUmbuchung(req, caller)
+                    : belegService.createUmbuchung(req, caller);
             return ResponseEntity.ok(belegService.toDto(b));
         } catch (org.example.kalkulationsprogramm.service.KassenbuchGesperrtException e) {
             return gesperrt(e);

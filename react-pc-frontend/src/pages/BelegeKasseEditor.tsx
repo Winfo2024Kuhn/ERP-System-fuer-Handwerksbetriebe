@@ -510,7 +510,7 @@ function BelegRow({ beleg, onClick }: { beleg: Beleg; onClick: () => void }) {
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-semibold text-slate-900 truncate">
-                        {beleg.belegNummer || beleg.kiVorgeschlagenerLieferant || beleg.originalDateiname || `Beleg #${beleg.id}`}
+                        {beleg.belegNummer || beleg.lieferantName || beleg.kiVorgeschlagenerLieferant || beleg.originalDateiname || `Beleg #${beleg.id}`}
                     </span>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${KATEGORIE_FARBE[beleg.belegKategorie]}`}>
                         {KATEGORIE_LABELS[beleg.belegKategorie]}

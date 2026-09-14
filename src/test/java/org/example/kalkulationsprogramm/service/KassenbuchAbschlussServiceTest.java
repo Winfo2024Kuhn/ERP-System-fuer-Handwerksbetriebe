@@ -2,18 +2,26 @@ package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegAudit;
+import org.example.kalkulationsprogramm.domain.BelegAufteilungsModus;
+import org.example.kalkulationsprogramm.domain.BelegQuelle;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
 import org.example.kalkulationsprogramm.domain.BelegStatus;
 import org.example.kalkulationsprogramm.domain.KassenbuchMonatsabschluss;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.KassenbuchAbschlussDto;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.example.kalkulationsprogramm.repository.KassenbuchMonatsabschlussRepository;
+import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -29,6 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -51,6 +61,7 @@ class KassenbuchAbschlussServiceTest {
     @Mock private KassenbuchMonatsabschlussRepository abschlussRepository;
     @Mock private BelegAuditService auditService;
     @Mock private KasseSaldoService kasseSaldoService;
+    @Mock private ProjektDokumentRepository projektDokumentRepository;
 
     @InjectMocks private KassenbuchAbschlussService service;
 
@@ -325,6 +336,168 @@ class KassenbuchAbschlussServiceTest {
         assertThatThrownBy(() -> service.storniere(5L, "  ", maxMustermann, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("warum");
+    }
+
+    @ParameterizedTest
+    @EnumSource(BelegQuelle.class)
+    @DisplayName("Storno behaelt die Herkunft fuer die richtige DATEV-Kontierung")
+    void stornoBewahrtOriginalQuelle(BelegQuelle quelle) {
+        Beleg original = beleg(51L, BelegKategorie.KASSE_AUSGABE, "119.00");
+        original.setQuelle(quelle);
+        original.setGegenpartei("Musterbetrieb GmbH");
+        bereiteStornoVor(original);
+
+        Beleg storno = service.storniere(51L, "Doppelt erfasst", maxMustermann, null);
+
+        assertThat(storno.getQuelle()).isEqualTo(quelle);
+        assertThat(storno.getGegenpartei()).isEqualTo("Musterbetrieb GmbH");
+        assertThat(storno.getBelegKategorie()).isEqualTo(BelegKategorie.KASSE_EINNAHME);
+        assertThat(original.getQuelle()).isEqualTo(quelle);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "KASSE_AUSGABE,KASSE_EINNAHME,119.00,100.00,35.70,30.00,5.70",
+            "KASSE_EINNAHME,KASSE_AUSGABE,119.00,100.00,35.70,30.00,5.70",
+            "BANK,BANK,-119.00,-100.00,-35.70,-30.00,-5.70",
+            "KREDITKARTE,KREDITKARTE,-119.00,-100.00,-35.70,-30.00,-5.70"
+    })
+    @DisplayName("Storno eines Mischbelegs kehrt nur den urspruenglichen Firmenanteil um")
+    void stornoBewahrtFirmenanteilMitRichtigemVorzeichen(BelegKategorie originalKategorie,
+            BelegKategorie stornoKategorie, String brutto, String netto,
+            String firmaBrutto, String firmaNetto, String firmaMwst) {
+        Beleg original = beleg(51L, originalKategorie, "119.00");
+        original.setBetragNetto(new BigDecimal("100.00"));
+        original.setAufteilungsModus(BelegAufteilungsModus.TEILWEISE);
+        original.setBetragFirmaBrutto(new BigDecimal("35.70"));
+        original.setBetragFirmaNetto(new BigDecimal("30.00"));
+        original.setBetragFirmaMwst(new BigDecimal("5.70"));
+        bereiteStornoVor(original);
+
+        Beleg storno = service.storniere(51L, "Doppelt erfasst", maxMustermann, null);
+
+        assertThat(storno.getAufteilungsModus()).isEqualTo(BelegAufteilungsModus.TEILWEISE);
+        assertThat(storno.getBelegKategorie()).isEqualTo(stornoKategorie);
+        assertThat(storno.getBetragBrutto()).isEqualByComparingTo(brutto);
+        assertThat(storno.getBetragNetto()).isEqualByComparingTo(netto);
+        assertThat(storno.getBuchungsbetragBrutto()).isEqualByComparingTo(firmaBrutto);
+        assertThat(storno.getBuchungsbetragNetto()).isEqualByComparingTo(firmaNetto);
+        assertThat(storno.getBetragFirmaMwst()).isEqualByComparingTo(firmaMwst);
+        assertThat(original.getBetragBrutto()).isEqualByComparingTo("119.00");
+        assertThat(original.getBetragNetto()).isEqualByComparingTo("100.00");
+        assertThat(original.getBetragFirmaBrutto()).isEqualByComparingTo("35.70");
+        assertThat(original.getBetragFirmaNetto()).isEqualByComparingTo("30.00");
+        assertThat(original.getBetragFirmaMwst()).isEqualByComparingTo("5.70");
+    }
+
+    @Test
+    @DisplayName("Fehlende Netto- und Steuerwerte im Firmenanteil bleiben auch beim Storno leer")
+    void stornoErfindetKeineFehlendenFirmenbetraege() {
+        Beleg original = beleg(51L, BelegKategorie.BANK, "119.00");
+        original.setAufteilungsModus(BelegAufteilungsModus.TEILWEISE);
+        original.setBetragFirmaBrutto(new BigDecimal("35.70"));
+        bereiteStornoVor(original);
+
+        Beleg storno = service.storniere(51L, "Doppelt erfasst", maxMustermann, null);
+
+        assertThat(storno.getBuchungsbetragBrutto()).isEqualByComparingTo("-35.70");
+        assertThat(storno.getBuchungsbetragNetto()).isEqualByComparingTo("-35.70");
+        assertThat(storno.getBetragFirmaNetto()).isNull();
+        assertThat(storno.getBetragFirmaMwst()).isNull();
+    }
+
+    @Test
+    @DisplayName("Storno einer Barzahlung macht die verknuepfte Kundenrechnung wieder offen und protokolliert es")
+    void stornoBarzahlungOeffnetKundenrechnungWieder() {
+        Beleg original = beleg(51L, BelegKategorie.KASSE_EINNAHME, "119.00");
+        original.setAusgangsrechnungId(61L);
+        bereiteStornoVor(original);
+        ProjektGeschaeftsdokument rechnung = bezahlteKundenrechnung();
+        given(projektDokumentRepository.findById(61L)).willReturn(Optional.of(rechnung));
+
+        Beleg storno = service.storniere(51L, "Zahlung falsch erfasst", maxMustermann, null);
+
+        assertThat(storno.getAusgangsrechnungId()).isEqualTo(61L);
+        assertThat(original.getAusgangsrechnungId()).isEqualTo(61L);
+        assertThat(rechnung.isBezahlt()).isFalse();
+        verify(projektDokumentRepository).save(rechnung);
+        ArgumentCaptor<String> grund = ArgumentCaptor.forClass(String.class);
+        verify(auditService).protokolliereStornierung(eq(original), eq(maxMustermann), grund.capture(), isNull());
+        assertThat(grund.getValue()).contains("Zahlung falsch erfasst", "Kundenrechnung ID 61", "bezahlt", "nein");
+    }
+
+    @Test
+    @DisplayName("Storno ohne Rechnungsverknuepfung veraendert keine Kundenrechnung")
+    void stornoOhneRechnungLaesstZahlungsstatusUnberuehrt() {
+        Beleg original = beleg(51L, BelegKategorie.KASSE_EINNAHME, "119.00");
+        bereiteStornoVor(original);
+
+        Beleg storno = service.storniere(51L, "Doppelt erfasst", maxMustermann, null);
+
+        assertThat(storno.getAusgangsrechnungId()).isNull();
+        org.mockito.Mockito.verifyNoInteractions(projektDokumentRepository);
+        verify(auditService).protokolliereStornierung(original, maxMustermann, "Doppelt erfasst", null);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = BelegKategorie.class,
+            names = {"BANK", "KASSE_AUSGABE", "KREDITKARTE", "SONSTIGER_BELEG"})
+    @DisplayName("Storno anderer Kategorien uebernimmt die Rechnungsreferenz ohne eine Rechnung wieder zu oeffnen")
+    void stornoAndererKategorieOeffnetKeineRechnung(BelegKategorie kategorie) {
+        Beleg original = beleg(51L, kategorie, "119.00");
+        original.setAusgangsrechnungId(61L);
+        bereiteStornoVor(original);
+
+        Beleg storno = service.storniere(51L, "Doppelt erfasst", maxMustermann, null);
+
+        assertThat(storno.getAusgangsrechnungId()).isEqualTo(61L);
+        org.mockito.Mockito.verifyNoInteractions(projektDokumentRepository);
+        verify(auditService).protokolliereStornierung(original, maxMustermann, "Doppelt erfasst", null);
+    }
+
+    @Test
+    @DisplayName("Schon offene Kundenrechnung bleibt beim Storno offen ohne erneute Statusaenderung")
+    void stornoBereitsOffenerRechnungAendertStatusNichtErneut() {
+        Beleg original = beleg(51L, BelegKategorie.KASSE_EINNAHME, "119.00");
+        original.setAusgangsrechnungId(61L);
+        bereiteStornoVor(original);
+        ProjektGeschaeftsdokument rechnung = bezahlteKundenrechnung();
+        rechnung.setBezahlt(false);
+        given(projektDokumentRepository.findById(61L)).willReturn(Optional.of(rechnung));
+
+        service.storniere(51L, "Doppelt erfasst", maxMustermann, null);
+
+        assertThat(rechnung.isBezahlt()).isFalse();
+        verify(projektDokumentRepository, never()).save(any());
+        verify(auditService).protokolliereStornierung(original, maxMustermann, "Doppelt erfasst", null);
+    }
+
+    private static ProjektGeschaeftsdokument bezahlteKundenrechnung() {
+        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
+        rechnung.setId(61L);
+        rechnung.setDokumentid("R-MUSTER-61");
+        rechnung.setGeschaeftsdokumentart("Rechnung");
+        rechnung.setBezahlt(true);
+        return rechnung;
+    }
+
+    private void bereiteStornoVor(Beleg original) {
+        original.setFestgeschrieben(true);
+        given(belegRepository.findById(original.getId())).willReturn(Optional.of(original));
+        LocalDate heute = LocalDate.now();
+        given(abschlussRepository.existsByJahrAndMonat(heute.getYear(), heute.getMonthValue()))
+                .willReturn(false);
+        given(belegRepository.saveAndFlush(any())).willAnswer(i -> {
+            Beleg storno = i.getArgument(0);
+            storno.setId(77L);
+            return storno;
+        });
+        if (original.getBelegKategorie().istKassenBewegung()) {
+            BelegKategorie gegenrichtung = original.getBelegKategorie() == BelegKategorie.KASSE_AUSGABE
+                    ? BelegKategorie.KASSE_EINNAHME : BelegKategorie.KASSE_AUSGABE;
+            given(kasseSaldoService.projiziereSaldo(null, null, gegenrichtung, new BigDecimal("119.00")))
+                    .willReturn(new BigDecimal("500.00"));
+        }
     }
 
     // ===================== Hilfen =====================

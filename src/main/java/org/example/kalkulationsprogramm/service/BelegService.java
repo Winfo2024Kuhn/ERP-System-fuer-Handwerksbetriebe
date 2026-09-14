@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
@@ -86,6 +87,8 @@ public class BelegService {
     private final BelegAuditService auditService;
     private final KassenbuchSchreibschutz schreibschutz;
     private final org.example.kalkulationsprogramm.repository.KassenbuchMonatsabschlussRepository monatsabschlussRepository;
+
+    private final BelegVorschlagService vorschlagService;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
@@ -311,6 +314,11 @@ public class BelegService {
             return null;
         }
 
+        if (req.getZahlungsstatus() != null
+                && !Set.of("BEZAHLT", "OFFEN").contains(req.getZahlungsstatus())) {
+            throw new IllegalArgumentException("Zahlungsstatus muss BEZAHLT oder OFFEN sein.");
+        }
+
         // Festgeschriebene Belege sind in ihrem Kern unveraenderlich. Was der
         // Aufrufer trotzdem daran drehen wollte, wird hier abgewiesen --
         // bevor irgendein Feld angefasst ist.
@@ -401,6 +409,28 @@ public class BelegService {
         if (req.getZahlungsart() != null) {
             merke(aenderungen, "Zahlungsart", beleg.getZahlungsart(), req.getZahlungsart());
             beleg.setZahlungsart(req.getZahlungsart());
+        }
+        // Die Entscheidung im Pruef-Dialog ist massgeblich und ueberschreibt,
+        // was KI oder Lieferanten-Vorauskasse vorher gesetzt haben.
+        if (req.getZahlungsstatus() != null) {
+            lieferantDokumentRepository.findByBelegId(id)
+                    .map(d -> d.getGeschaeftsdaten())
+                    .ifPresent(rechnung -> {
+                        boolean bezahlt = "BEZAHLT".equals(req.getZahlungsstatus());
+                        LocalDate bezahltAm = bezahlt
+                                ? (req.getBezahltAm() != null ? req.getBezahltAm() : LocalDate.now())
+                                : null;
+                        merke(aenderungen, "Bezahlt", rechnung.getBezahlt(), bezahlt);
+                        merke(aenderungen, "Bezahlt am", rechnung.getBezahltAm(), bezahltAm);
+                        // Die Offene-Posten-Abfrage berücksichtigt auch dieses
+                        // KI-Flag. Nach manueller Entscheidung zählt nur bezahlt.
+                        merke(aenderungen, "Bereits gezahlt (KI)", rechnung.getBereitsGezahlt(), false);
+                        rechnung.setBereitsGezahlt(false);
+                        rechnung.setBezahlt(bezahlt);
+                        rechnung.setBezahltAm(bezahltAm);
+                        // Beide Entitaeten sind in dieser Transaktion verwaltet;
+                        // JPA schreibt auch die Geschaeftsdaten beim Commit.
+                    });
         }
         if (req.getNotiz() != null) {
             merke(aenderungen, "Notiz", beleg.getNotiz(), req.getNotiz());
@@ -1056,15 +1086,28 @@ public class BelegService {
         // ist aber bei Listings ein N+1. Bei groesseren Datenmengen sollte das Repository
         // alle eingangsrechnungIds in einer Query nachladen — vorerst akzeptabel, weil
         // Belege seitenweise + chronologisch gefiltert werden (Eingang/Alle/Privat etc.).
-        Long eingangsrechnungId = null;
+        LieferantGeschaeftsdokument eingangsrechnung = null;
         if (b.getDokumentTyp() == LieferantDokumentTyp.RECHNUNG
                 || b.getDokumentTyp() == LieferantDokumentTyp.GUTSCHRIFT) {
-            eingangsrechnungId = lieferantDokumentRepository.findByBelegId(b.getId())
-                    .map(d -> d.getGeschaeftsdaten() != null ? d.getGeschaeftsdaten().getId() : null)
+            eingangsrechnung = lieferantDokumentRepository.findByBelegId(b.getId())
+                    .map(d -> d.getGeschaeftsdaten())
                     .orElse(null);
         }
+        // Vorschlaege nur in der Detail-Sicht ermitteln: Lieferanten-Historie
+        // und Stammdaten-Lookups wuerden sonst N+1-Queries in listBelege erzeugen.
+        BelegVorschlagService.Vorschlaege vorschlaege = mitPositionen
+                ? vorschlagService.ermittle(b) : new BelegVorschlagService.Vorschlaege(null, null);
         return BelegDto.Response.builder()
                 .id(b.getId())
+                .quelle(b.getQuelle() != null ? b.getQuelle().name() : null)
+                .gegenpartei(b.getGegenpartei())
+                .ausgangsrechnungId(b.getAusgangsrechnungId())
+                .kiZahlungsart(b.getKiZahlungsart())
+                .kiBelegdatum(b.getKiBelegdatum())
+                .kiBetragBrutto(b.getKiBetragBrutto())
+                .kiKostenkontoHinweis(b.getKiKostenkontoHinweis())
+                .vorschlagSachkonto(toVorschlagDto(vorschlaege.sachkonto()))
+                .vorschlagKostenstelle(toVorschlagDto(vorschlaege.kostenstelle()))
                 .belegKategorie(b.getBelegKategorie() != null ? b.getBelegKategorie().name() : null)
                 .dokumentTyp(b.getDokumentTyp() != null ? b.getDokumentTyp().name() : null)
                 .istUmbuchung(Boolean.TRUE.equals(b.getIstUmbuchung()))
@@ -1116,7 +1159,11 @@ public class BelegService {
                 .validiertVonId(b.getValidiertVon() != null ? b.getValidiertVon().getId() : null)
                 .validiertVonName(mitarbeiterName(b.getValidiertVon()))
                 .notiz(b.getNotiz())
-                .eingangsrechnungId(eingangsrechnungId)
+                .eingangsrechnungId(eingangsrechnung != null ? eingangsrechnung.getId() : null)
+                .eingangsrechnungBezahlt(eingangsrechnung != null
+                        ? Boolean.TRUE.equals(eingangsrechnung.getBezahlt())
+                            || Boolean.TRUE.equals(eingangsrechnung.getBereitsGezahlt()) : null)
+                .eingangsrechnungBezahltAm(eingangsrechnung != null ? eingangsrechnung.getBezahltAm() : null)
                 .aufteilungsModus(b.getAufteilungsModus() != null ? b.getAufteilungsModus().name() : null)
                 .betragFirmaNetto(b.getBetragFirmaNetto())
                 .betragFirmaBrutto(b.getBetragFirmaBrutto())
@@ -1138,6 +1185,17 @@ public class BelegService {
                 .storniertAm(b.getStorniertAm())
                 .stornoGrund(b.getStornoGrund())
                 .dateiHash(b.getDateiHash())
+                .build();
+    }
+
+    private BelegDto.VorschlagDto toVorschlagDto(BelegVorschlagService.Vorschlag vorschlag) {
+        if (vorschlag == null) return null;
+        return BelegDto.VorschlagDto.builder()
+                .id(vorschlag.id())
+                .nummer(vorschlag.nummer())
+                .bezeichnung(vorschlag.bezeichnung())
+                .quelle(vorschlag.quelle().name())
+                .begruendung(vorschlag.begruendung())
                 .build();
     }
 
