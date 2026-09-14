@@ -339,6 +339,10 @@ public class BestellungsUebersichtController {
         if (beleg == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Beleg nicht gefunden"));
         }
+        if (!beleg.istKostenrelevant()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Dieser Kassenvorgang kann keiner Kostenstelle zugeordnet werden"));
+        }
         if (dokumentRepository.findByBelegId(beleg.getId()).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "Dieser Beleg ist bereits als Lieferanten-Dokument erfasst"));

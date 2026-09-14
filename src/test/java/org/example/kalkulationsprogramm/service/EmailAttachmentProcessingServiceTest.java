@@ -80,6 +80,43 @@ class EmailAttachmentProcessingServiceTest {
         return att;
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "GUTSCHRIFT, 100.00, 119.00, -100.00, -119.00",
+            "GUTSCHRIFT, -100.00, -119.00, -100.00, -119.00",
+            "GUTSCHRIFT, -100.00, 119.00, -100.00, -119.00",
+            "GUTSCHRIFT, 0, 0, 0, 0",
+            "GUTSCHRIFT, , 119.00, , -119.00",
+            "RECHNUNG, 100.00, 119.00, 100.00, 119.00"
+    })
+    void speichertGutschriftenUnabhaengigVomKiVorzeichenAlsMinderung(
+            LieferantDokumentTyp typ, java.math.BigDecimal netto, java.math.BigDecimal brutto,
+            java.math.BigDecimal erwartetNetto, java.math.BigDecimal erwartetBrutto) throws IOException {
+        Lieferanten lieferant = erstelleLieferant(10L);
+        Email email = erstelleEmailMitLieferant(1L, lieferant);
+        EmailAttachment attachment = erstellePdfAttachment("beleg.pdf");
+        attachment.setEmail(email);
+        email.getAttachments().add(attachment);
+        Files.write(tempDir.resolve(attachment.getStoredFilename()), new byte[]{0x25, 0x50, 0x44, 0x46});
+        LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
+        daten.setDokumentNummer("BELEG-2026-001");
+        daten.setDetectedTyp(typ);
+        daten.setBetragNetto(netto);
+        daten.setBetragBrutto(brutto);
+        when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
+        when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("beleg.pdf"))).thenReturn(daten);
+        when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
+        when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> {
+            LieferantDokument gespeichert = inv.getArgument(0);
+            assertThat(gespeichert.getTyp()).isEqualTo(typ);
+            assertThat(gespeichert.getGeschaeftsdaten().getBetragNetto()).isEqualTo(erwartetNetto);
+            assertThat(gespeichert.getGeschaeftsdaten().getBetragBrutto()).isEqualTo(erwartetBrutto);
+            return gespeichert;
+        });
+
+        assertThat(service.processLieferantAttachments(email)).isEqualTo(1);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 2.4.1 Verarbeitet PDF-Anhänge mit Lieferant-Zuordnung
     // ═══════════════════════════════════════════════════════════════

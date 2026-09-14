@@ -4,9 +4,12 @@ import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegAufteilungsModus;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
 import org.example.kalkulationsprogramm.domain.BelegKiAnalyseStatus;
+import org.example.kalkulationsprogramm.domain.BelegKostenstellenAnteil;
 import org.example.kalkulationsprogramm.domain.BelegStatus;
 import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.KostenstellenTyp;
+import org.example.kalkulationsprogramm.domain.Sachkonto;
+import org.example.kalkulationsprogramm.domain.SachkontoTyp;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
@@ -41,6 +44,8 @@ class BelegRepositoryFixkostenTest {
     @Autowired private KostenstelleRepository kostenstelleRepository;
     @Autowired private LieferantDokumentRepository lieferantDokumentRepository;
     @Autowired private LieferantenRepository lieferantenRepository;
+    @Autowired private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    @Autowired private SachkontoRepository sachkontoRepository;
 
     @Test
     @DisplayName("Validierter Fixkosten-Beleg im Zeitraum wird geliefert")
@@ -48,6 +53,73 @@ class BelegRepositoryFixkostenTest {
         saveBeleg(saveKostenstelle("Telefon", true), BelegStatus.VALIDIERT, LocalDate.of(2024, 6, 15));
 
         assertThat(belegRepository.findValidierteFixkostenBelegeImZeitraum(VON, BIS)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Kassen-Umbuchungen und Privateinlagen zaehlen trotz alter Kostenstelle nicht als Fixkosten")
+    void kassenUmbuchungenUndPrivateinlagenWerdenNichtAlsFixkostenGeliefert() {
+        Kostenstelle kostenstelle = saveKostenstelle("Werkstatt", true);
+        Beleg umbuchung = saveBeleg(kostenstelle, BelegStatus.VALIDIERT, LocalDate.of(2024, 6, 15));
+        umbuchung.setIstUmbuchung(true);
+        belegRepository.saveAndFlush(umbuchung);
+
+        Beleg privateinlage = saveBeleg(kostenstelle, BelegStatus.VALIDIERT, LocalDate.of(2024, 6, 16));
+        privateinlage.setBelegKategorie(BelegKategorie.PRIVATEINLAGE);
+        belegRepository.saveAndFlush(privateinlage);
+
+        assertThat(belegRepository.findValidierteFixkostenBelegeImZeitraum(VON, BIS)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Nur kostenrelevante Belege erscheinen zur Kostenstellen-Zuordnung")
+    void nurKostenrelevanteBelegeErscheinenZurKostenstellenZuordnung() {
+        Beleg normalerKostenbeleg = saveUnzugeordnetenBeleg(BelegKategorie.KASSE_AUSGABE, false);
+        saveUnzugeordnetenBeleg(BelegKategorie.KASSE_AUSGABE, true);
+        saveUnzugeordnetenBeleg(BelegKategorie.PRIVATEINLAGE, false);
+        Beleg kassenLohn = saveUnzugeordnetenBeleg(BelegKategorie.KASSE_AUSGABE, false);
+        kassenLohn.setSachkonto(saveSachkonto("4120"));
+        belegRepository.saveAndFlush(kassenLohn);
+        Beleg andereKategorieAuf4120 = saveUnzugeordnetenBeleg(BelegKategorie.KASSE_EINNAHME, false);
+        andereKategorieAuf4120.setSachkonto(saveSachkonto("4120-Einnahme"));
+        andereKategorieAuf4120.getSachkonto().setNummer("4120");
+        sachkontoRepository.saveAndFlush(andereKategorieAuf4120.getSachkonto());
+        belegRepository.saveAndFlush(andereKategorieAuf4120);
+
+        assertThat(belegRepository.findNichtEmailImportierteOhneKostenstellenZuordnung())
+                .extracting(Beleg::getId)
+                .containsExactlyInAnyOrder(normalerKostenbeleg.getId(), andereKategorieAuf4120.getId());
+    }
+
+    @Test
+    @DisplayName("Kassen-Umbuchungen mit altem Split fliessen nicht in den Gemeinkostentopf")
+    void kassenUmbuchungMitAltemSplitWirdNichtAlsFixkostenGeliefert() {
+        Kostenstelle kostenstelle = saveKostenstelle("Werkstatt", true);
+        Beleg umbuchung = saveBeleg(kostenstelle, BelegStatus.VALIDIERT, LocalDate.of(2024, 6, 15));
+        umbuchung.setIstUmbuchung(true);
+        belegRepository.saveAndFlush(umbuchung);
+
+        BelegKostenstellenAnteil anteil = new BelegKostenstellenAnteil();
+        anteil.setBeleg(umbuchung);
+        anteil.setKostenstelle(kostenstelle);
+        anteil.setProzent(100);
+        anteil.setStreckungStartJahr(2024);
+        anteil.setStreckungJahre(1);
+        anteil.berechneAnteil(umbuchung.getBetragNetto(), umbuchung.getBetragBrutto());
+        belegKostenstellenAnteilRepository.saveAndFlush(anteil);
+
+        assertThat(belegKostenstellenAnteilRepository.findAktiveFixkostenAnteileImJahr(2024)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Kassen-Lohn auf 4120 erscheint trotz alter Kostenstelle nicht als Kosten")
+    void kassenLohnAuf4120WirdNichtAlsKostenGeliefert() {
+        Kostenstelle kostenstelle = saveKostenstelle("Werkstatt", true);
+        Beleg lohn = saveBeleg(kostenstelle, BelegStatus.VALIDIERT, LocalDate.of(2024, 6, 15));
+        lohn.setIstUmbuchung(false);
+        lohn.setSachkonto(saveSachkonto("4120"));
+        belegRepository.saveAndFlush(lohn);
+
+        assertThat(belegRepository.findValidierteFixkostenBelegeImZeitraum(VON, BIS)).isEmpty();
     }
 
     @Test
@@ -108,6 +180,28 @@ class BelegRepositoryFixkostenTest {
         b.setBetragNetto(new BigDecimal("100.00"));
         b.setBetragBrutto(new BigDecimal("119.00"));
         return belegRepository.saveAndFlush(b);
+    }
+
+    private Beleg saveUnzugeordnetenBeleg(BelegKategorie kategorie, boolean istUmbuchung) {
+        Beleg b = new Beleg();
+        b.setStatus(BelegStatus.VALIDIERT);
+        b.setBelegKategorie(kategorie);
+        b.setIstUmbuchung(istUmbuchung);
+        b.setKiAnalyseStatus(BelegKiAnalyseStatus.DONE);
+        b.setAufteilungsModus(BelegAufteilungsModus.VOLLSTAENDIG);
+        b.setBelegDatum(LocalDate.of(2024, 6, 15));
+        b.setUploadDatum(LocalDateTime.now());
+        b.setBetragNetto(new BigDecimal("100.00"));
+        b.setBetragBrutto(new BigDecimal("119.00"));
+        return belegRepository.saveAndFlush(b);
+    }
+
+    private Sachkonto saveSachkonto(String nummer) {
+        Sachkonto konto = new Sachkonto();
+        konto.setNummer(nummer);
+        konto.setBezeichnung("Testkonto " + nummer);
+        konto.setKontoTyp(SachkontoTyp.AUFWAND);
+        return sachkontoRepository.saveAndFlush(konto);
     }
 
     private void saveLieferantDokumentZu(Beleg beleg) {

@@ -431,6 +431,7 @@ public class EmailAttachmentProcessingService {
                 typ = inferred;
         }
         dokument.setTyp(typ);
+        DokumentBetragsvorzeichen.normalisiereGutschrift(geschaeftsdaten, typ);
 
         // Daten verknüpfen
         if (geschaeftsdaten != null) {

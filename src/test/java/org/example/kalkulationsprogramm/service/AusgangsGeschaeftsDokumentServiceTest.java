@@ -1524,6 +1524,37 @@ class AusgangsGeschaeftsDokumentServiceTest {
         }
     }
 
+    @Test
+    void direktErstelltesStornoSpeichertNegativeBetraege() {
+        AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+        dto.setTyp(AusgangsGeschaeftsDokumentTyp.STORNO);
+        dto.setBetragNetto(new BigDecimal("100.00"));
+        mockCounterForNummer();
+        when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+        assertThat(result.getBetragNetto()).isEqualByComparingTo("-100.00");
+        assertThat(result.getBetragBrutto()).isEqualByComparingTo("-119.00");
+    }
+
+    @Test
+    void aktualisiertesStornoBehaeltNegativeBetraege() {
+        AusgangsGeschaeftsDokument dokument = new AusgangsGeschaeftsDokument();
+        dokument.setId(1L);
+        dokument.setTyp(AusgangsGeschaeftsDokumentTyp.STORNO);
+        dokument.setMwstSatz(new BigDecimal("0.19"));
+        AusgangsGeschaeftsDokumentUpdateDto dto = new AusgangsGeschaeftsDokumentUpdateDto();
+        dto.setBetragNetto(new BigDecimal("100.00"));
+        when(dokumentRepository.findById(1L)).thenReturn(Optional.of(dokument));
+        when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AusgangsGeschaeftsDokument result = service.aktualisieren(1L, dto);
+
+        assertThat(result.getBetragNetto()).isEqualByComparingTo("-100.00");
+        assertThat(result.getBetragBrutto()).isEqualByComparingTo("-119.00");
+    }
+
     @Nested
     class Stornieren {
 
@@ -1550,6 +1581,30 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(storno.getBetragNetto()).isEqualByComparingTo(new BigDecimal("-1000.00"));
             assertThat(storno.getBetragBrutto()).isEqualByComparingTo(new BigDecimal("-1190.00"));
             assertThat(storno.isGebucht()).isTrue();
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.CsvSource({
+                "1000.00, 1190.00", "-1000.00, -1190.00", "-1000.00, 1190.00"
+        })
+        void speichertStornoImmerMitNegativemNettoUndBrutto(BigDecimal netto, BigDecimal brutto) {
+            AusgangsGeschaeftsDokument original = new AusgangsGeschaeftsDokument();
+            original.setId(1L);
+            original.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            original.setDokumentNummer("RE-2026-001");
+            original.setBetragNetto(netto);
+            original.setBetragBrutto(brutto);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(original));
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
+
+            AusgangsGeschaeftsDokument storno = service.stornieren(1L);
+
+            assertThat(storno.getBetragNetto()).isEqualByComparingTo("-1000.00");
+            assertThat(storno.getBetragBrutto()).isEqualByComparingTo("-1190.00");
+            assertThat(original.getBetragNetto()).isEqualTo(netto);
+            assertThat(original.getBetragBrutto()).isEqualTo(brutto);
         }
 
         @Test
