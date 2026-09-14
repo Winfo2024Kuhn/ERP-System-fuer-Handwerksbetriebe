@@ -67,7 +67,7 @@ export const SACHKONTO_TYP_LABEL: Record<SachkontoTyp, string> = {
 // kann. Reihenfolge: Aufwand, Ertrag, Privat, Neutral – innerhalb sortiert nach
 // `sortierung`. Der fuehrende Leer-Eintrag erlaubt das aktive Abwaehlen eines
 // Kontos.
-export function buildSachkontoOptions(sachkonten: Sachkonto[]): { value: string; label: string }[] {
+export function buildSachkontoOptions(sachkonten: Sachkonto[]): { value: string; label: string; gruppe?: string }[] {
     const order: SachkontoTyp[] = ['AUFWAND', 'ERTRAG', 'PRIVAT', 'NEUTRAL'];
     const grouped = order.flatMap(typ =>
         sachkonten
@@ -75,7 +75,8 @@ export function buildSachkontoOptions(sachkonten: Sachkonto[]): { value: string;
             .sort((a, b) => a.sortierung - b.sortierung)
             .map(s => ({
                 value: String(s.id),
-                label: `${SACHKONTO_TYP_LABEL[typ]} · ${s.nummer ? `${s.nummer} ` : ''}${s.bezeichnung}`,
+                label: `${s.nummer ? `${s.nummer} ` : ''}${s.bezeichnung}`,
+                gruppe: SACHKONTO_TYP_LABEL[typ],
             }))
     );
     return [{ value: '', label: '– kein Konto –' }, ...grouped];

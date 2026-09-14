@@ -65,10 +65,10 @@ describe('buildSachkontoOptions', () => {
 
         expect(options[0]).toEqual({ value: '', label: '– kein Konto –' });
         expect(options.map(o => o.value)).toEqual(['', '1', '2', '3', '4']);
-        expect(options[1].label).toContain('Aufwand');
-        expect(options[2].label).toContain('Ertrag');
-        expect(options[3].label).toContain('Privat');
-        expect(options[4].label).toContain('Neutral');
+        expect(options[1]).toMatchObject({ label: 'Buerobedarf', gruppe: 'Aufwand' });
+        expect(options[2]).toMatchObject({ label: 'Erloese', gruppe: 'Ertrag' });
+        expect(options[3]).toMatchObject({ label: 'Privatentnahme', gruppe: 'Privat' });
+        expect(options[4]).toMatchObject({ label: 'Durchlaufposten', gruppe: 'Neutral' });
     });
 
     it('sortiert innerhalb einer Gruppe nach `sortierung`', () => {
