@@ -79,6 +79,7 @@ package-lock.json
 **/graphify-out/cache/
 **/graphify-out/manifest.json
 **/graphify-out/.graphify_*
+**/graphify-out/.rebuild.lock
 # graph.html ist eine aus graph.json abgeleitete Visualisierung (~800 KB, wird
 # bei jedem Lauf komplett neu geschrieben) -> kein Mehrwert in der Historie.
 **/graphify-out/graph.html
@@ -112,3 +113,20 @@ db-ops/
 
 # React Component Preview
 previewConfig.json
+
+# Lokal erzeugte Skill-Aliase: die eigentlichen Workflows unter .agents/skills
+# bleiben versioniert; diese source-command-Kopien enthalten keinen neuen Workflow.
+/.agents/skills/source-command-*/
+
+# Maschinengebundene Hook-Konfiguration (Windows-Pfade und lokale Tool-Hooks).
+# Portable Projekt-Agenten und die gemeinsame MCP-Konfiguration bleiben versioniert.
+/.codex/hooks.json
+/.codex/hooks/
+
+# Lokale Alt-Builds; die aktuellen, von static/index.html referenzierten Assets
+# werden weiterhin zusammen mit Frontend-Änderungen eingecheckt.
+/src/main/resources/static/assets/index-BD0n02sF.css
+/src/main/resources/static/assets/index-kgi4Icbh.js
+
+# Unter macOS/Linux von Windows-UNC-Pfadtests erzeugtes lokales Verzeichnis.
+/\\\\server\\share/
