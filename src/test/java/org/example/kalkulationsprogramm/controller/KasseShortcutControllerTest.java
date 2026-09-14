@@ -292,4 +292,56 @@ class KasseShortcutControllerTest {
                 .andExpect(jsonPath("$.ehegattengehaltAktiv").value(true))
                 .andExpect(jsonPath("$.ehegattengehaltEmpfaengerName").value("Diana Mustermann"));
     }
+
+    @Test
+    void putEinstellungOhneDatevFelderErhaeltGespeicherteAngaben() throws Exception {
+        mockAuth(true, true);
+        KasseEinstellung k = new KasseEinstellung();
+        k.setId(1L);
+        k.setDatevBeraternummer("0123456");
+        k.setDatevMandantennummer("01234");
+        k.setKassenkontoNummer("1000");
+        k.setBankkontoNummer("1200");
+        k.setWirtschaftsjahrBeginnMonat(7);
+        given(kasseEinstellungRepository.findSingleton()).willReturn(Optional.of(k));
+        given(kasseEinstellungRepository.save(any(KasseEinstellung.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(put("/api/buchhaltung/kasse/einstellung")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mindestbestand\":75,\"ehegattengehaltAktiv\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mindestbestand").value(75))
+                .andExpect(jsonPath("$.datevBeraternummer").value("0123456"))
+                .andExpect(jsonPath("$.datevMandantennummer").value("01234"))
+                .andExpect(jsonPath("$.kassenkontoNummer").value("1000"))
+                .andExpect(jsonPath("$.bankkontoNummer").value("1200"))
+                .andExpect(jsonPath("$.wirtschaftsjahrBeginnMonat").value(7));
+    }
+
+    @Test
+    void putEinstellungUebernimmtExpliziteDatevAngabenUndLeereNummern() throws Exception {
+        mockAuth(true, true);
+        KasseEinstellung k = new KasseEinstellung();
+        k.setId(1L);
+        k.setDatevBeraternummer("1234567");
+        k.setDatevMandantennummer("12345");
+        given(kasseEinstellungRepository.findSingleton()).willReturn(Optional.of(k));
+        given(kasseEinstellungRepository.save(any(KasseEinstellung.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(put("/api/buchhaltung/kasse/einstellung")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"datevBeraternummer":"","datevMandantennummer":"",
+                                 "kassenkontoNummer":"001001","bankkontoNummer":"001201",
+                                 "wirtschaftsjahrBeginnMonat":4,"ehegattengehaltAktiv":false}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.datevBeraternummer").value(""))
+                .andExpect(jsonPath("$.datevMandantennummer").value(""))
+                .andExpect(jsonPath("$.kassenkontoNummer").value("001001"))
+                .andExpect(jsonPath("$.bankkontoNummer").value("001201"))
+                .andExpect(jsonPath("$.wirtschaftsjahrBeginnMonat").value(4));
+    }
 }

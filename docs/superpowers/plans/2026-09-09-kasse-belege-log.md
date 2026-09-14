@@ -624,3 +624,36 @@ Fuer die anschliessende Fortsetzung:
   protokollierten gruenen Gesamtlaeufen. Graphify abschliessend erneut
   aufgerufen, keine weitere Topologieaenderung.
 - Merge-Commit folgt auf 9633d132 und nimmt 6cc3e3d9 als zweiten Parent auf.
+
+
+## Abschnitt 1 — beide blockierenden Review-Befunde nachgebessert (14.09.2026)
+
+Basis: Merge-Commit 97f624cc, bereits nach origin/feature/kasse-belege gepusht.
+
+- KasseShortcutController uebernimmt die vier DATEV-Stringfelder nur noch,
+  wenn der Request sie nicht als null liefert. Fehlende Angaben erhalten
+  die gespeicherten Werte inklusive Kontonummern-Defaults; explizite
+  Leerstrings bleiben zum Leeren moeglich. Bestehende Validierung unveraendert.
+- Zwei HTTP-Regressionstests: bisheriger Dialog-Payload ohne DATEV-Felder
+  erhaelt alle vier Strings und WJ-Beginn, explizite Angaben/Leerstrings
+  werden weiterhin uebernommen, fuehrende Nullen bleiben erhalten.
+  Vor Fix: 14 Tests, 1 Failure (Beraternummer erwartet 0123456, tatsaechlich null).
+- Verfahrensdokumentation korrigiert: Datenbank-Dateipflicht auf Foto/Upload
+  beschraenkt; Programmerzeugung der Quittungen/Ersatzbelege separat benannt;
+  Ausnahmen fuer Umbuchungen und bestehende Schnellbuchungen ohne Datei
+  ausdruecklich dokumentiert. Grundlage: V304 CHECK ist_umbuchung=1 OR
+  gespeicherter_dateiname IS NOT NULL. Keine Migration geaendert.
+- Ganzer Backend-Lauf: 2894 Tests, 0 Failures, 0 Errors, 17 bestehende
+  bedingte Skips; package erfolgreich. Frontend seit gruenem Merge-Lauf
+  unveraendert. Graphify aktualisiert (15739 Knoten, 53940 Kanten).
+- Claude-Review dieser Nachbesserungen laeuft; Ergebnis folgt.
+
+
+### Abschnitt 1 — Nachpruefung abgeschlossen
+
+Claude-Nachpruefung: GRUEN, keine kritischen Befunde oder Warnungen.
+Zusaetzliche Hinweise wurden anhand des freigegebenen Plans eingeordnet:
+Task17 beschreibt bewusst den Zielzustand, bestehende PUT-Clear-Semantik
+bleibt erhalten, DATEV-Null-Erhalt ist die dokumentierte Kompatibilitaets-
+ausnahme fuer alte Dialoge. Test-Artefakte aufgeraumt. Abschnitt 1 kann
+als Basis fuer die sechs Tasks von Abschnitt 2 verwendet werden.

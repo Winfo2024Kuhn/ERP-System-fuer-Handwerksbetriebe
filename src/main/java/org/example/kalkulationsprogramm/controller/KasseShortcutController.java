@@ -203,10 +203,12 @@ public class KasseShortcutController {
             validateDatevNummer(req.datevMandantennummer(), 5, "Die Mandantennummer");
             validateKontonummer(req.kassenkontoNummer(), "Das Kassenkonto");
             validateKontonummer(req.bankkontoNummer(), "Das Bankkonto");
-            k.setDatevBeraternummer(req.datevBeraternummer());
-            k.setDatevMandantennummer(req.datevMandantennummer());
-            k.setKassenkontoNummer(req.kassenkontoNummer());
-            k.setBankkontoNummer(req.bankkontoNummer());
+            // Bestehende Dialoge senden die DATEV-Felder noch nicht mit.
+            // Fehlende Angaben erhalten; ein expliziter Leerstring leert das Feld.
+            if (req.datevBeraternummer() != null) k.setDatevBeraternummer(req.datevBeraternummer());
+            if (req.datevMandantennummer() != null) k.setDatevMandantennummer(req.datevMandantennummer());
+            if (req.kassenkontoNummer() != null) k.setKassenkontoNummer(req.kassenkontoNummer());
+            if (req.bankkontoNummer() != null) k.setBankkontoNummer(req.bankkontoNummer());
 
             KasseEinstellung gespeichert = kasseEinstellungRepository.save(k);
             return ResponseEntity.ok(toEinstellungDto(gespeichert));

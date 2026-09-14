@@ -75,10 +75,11 @@ public class VerfahrensdokumentationService {
         s.append("   Privateinlage, Geld zwischen Kasse und Bank), erzeugt das Programm\n");
         s.append("   stattdessen einen Ersatzbeleg. Beide tragen Ersteller, Zeitpunkt und einen\n");
         s.append("   Fingerabdruck (SHA-256) wie jede andere Beleg-Datei.\n\n");
-        s.append("Ohne Beleg gibt es keine Buchung: Jede Zeile im Kassenbuch hat eine Datei –\n");
-        s.append("bei a) und b) das Foto oder den Upload, bei c) die vom Programm selbst\n");
-        s.append("erzeugte Quittung oder der Ersatzbeleg. Das ist auf Datenbankebene erzwungen;\n");
-        s.append("eine belegfreie Buchung kann in diesem System nicht entstehen.\n\n");
+        s.append("Bei a) und b) verlangt die Datenbank eine Datei zum Beleg: das Foto oder\n");
+        s.append("den Upload. Bei c) erstellt das Programm die Quittung oder den Ersatzbeleg.\n");
+        s.append("Die Datenbank erlaubt für Umbuchungen ausdrücklich Ausnahmen von der\n");
+        s.append("Dateipflicht. Ältere Schnellbuchungen können deshalb ohne Datei vorliegen;\n");
+        s.append("sie werden durch die neue Belegerzeugung nicht nachträglich ergänzt.\n\n");
 
         abschnitt(s, "2. WAS MIT DEM BELEG PASSIERT");
         s.append("Schritt 1 – Automatische Vorerfassung\n");
