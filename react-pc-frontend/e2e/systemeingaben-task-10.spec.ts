@@ -7,7 +7,7 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     }[] = [];
     const native: string[] = [];
     page.on('dialog', async (d) => { native.push(d.type()); await d.dismiss(); });
-    const beleg = { id: 1, belegNummer: 'TEST-BELEG', belegKategorie: 'SONSTIGER_BELEG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 0, betragNetto: 10, mwstSatz: 19, kostenstellenSplits: [{ kostenstelleId: 1, prozent: 0, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: 2026 }] };
+    const beleg = { id: 1, belegNummer: 'TEST-BELEG', belegKategorie: 'SONSTIGER_BELEG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 0, betragNetto: 10, mwstSatz: 19, zahlungsart: 'Bar', kostenstellenSplits: [{ kostenstelleId: 1, prozent: 0, absoluterBetrag: null, streckungJahre: 1, streckungStartJahr: 2026 }] };
     await page.route('**/api/**', async (route) => {
         const path = new URL(route.request().url()).pathname;
         let body: unknown = [];
