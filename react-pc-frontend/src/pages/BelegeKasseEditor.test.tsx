@@ -117,6 +117,15 @@ it('behält eine vor der verzögerten Detailantwort gewählte Zahlung bei', asyn
     await waitFor(() => expect(screen.getByRole('radio', { name: /Ja, bezahlt/ })).toBeChecked());
 });
 
+it('zeigt die Detail-Verknüpfung zur Eingangsrechnungsübersicht erst nach dem Nachladen', async () => {
+    const liste = { id: 34, belegNummer: 'DETAIL-LINK', belegKategorie: 'BANK', dokumentTyp: 'RECHNUNG', status: 'NEU', kiAnalyseStatus: 'DONE', uploadDatum: '2026-09-09T10:00:00', belegDatum: '2026-09-09', betragBrutto: 50, zahlungsart: 'Überweisung', kostenstellenSplits: [] };
+    vi.stubGlobal('fetch', vi.fn(async url => ({ ok: true, json: async () => String(url) === '/api/buchhaltung/belege' ? [liste] : String(url).endsWith('/belege/34') ? { ...liste, eingangsrechnungId: 77 } : [] })));
+    render(<ToastProvider><BelegeKasseEditor /></ToastProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: /DETAIL-LINK/ }));
+    const link = await screen.findByRole('link', { name: 'Zur Eingangsrechnung' });
+    expect(link).toHaveAttribute('href', '/rechnungsuebersicht');
+});
+
 it.each([
     ['RE-MUSTER-1', 'Musterbaustoffe GmbH', 'KI-Musterbetrieb', 'RE-MUSTER-1'],
     [null, 'Musterbaustoffe GmbH', null, 'Musterbaustoffe GmbH'],
