@@ -1463,6 +1463,33 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
         await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
     });
 
+    it('1b. Leistung über den Picker eingefügt heißt im Verlauf "Leistung eingefügt", nicht "Position eingefügt"', async () => {
+        // Nachbesserung (Code-Review): ausserhalb des Kategorie-Bestaetigungs-
+        // Dialogs (kein projektId hier) rief der Leistungs-Picker addBlock ohne
+        // die dritte, explizite Bezeichnung auf -- der generische Fallback
+        // benennt eine SERVICE-Einfuegung dann "Position eingefügt". Die
+        // Wortliste im Plan verlangt "Leistung eingefügt", unabhaengig vom Pfad.
+        const user = userEvent.setup();
+        const basis = mockFetch({ positionenJson: JSON.stringify({ blocks: BLOECKE, globalRabatt: 0 }) });
+        const DUMMY_LEISTUNG = {
+            id: 99, name: 'Dachrinne inspizieren', description: '', price: 42,
+            unit: { name: 'STUECK', anzeigename: 'Stk' },
+        };
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url === '/api/leistungen') return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([DUMMY_LEISTUNG]) });
+            return basis(url, init);
+        }) as unknown as ReturnType<typeof mockFetch>;
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        await ladenAbwarten();
+
+        await user.click(screen.getByRole('button', { name: 'Leistung' }));
+        await user.click(await screen.findByText('Dachrinne inspizieren'));
+
+        expect(rueckgaengigKnopf()).toHaveAttribute('title', 'Rückgängig: Leistung eingefügt (Strg+Z)');
+    });
+
     it('2. Tippen im selben Feld wird zu einem Schritt gebündelt', async () => {
         const user = userEvent.setup();
         const { container } = renderEditor();

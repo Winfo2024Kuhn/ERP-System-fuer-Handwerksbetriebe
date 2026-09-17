@@ -3886,7 +3886,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             fett: extractBoldFromHtml(descHtml),
                             leistungId: l.id,
                             kategorieId: l.folderId ?? undefined,
-                        });
+                        }, 'Leistung eingefügt');
                         setShowLeistungPicker(false);
                         if (!hasKategorie) {
                             toast.success(`Leistung „${l.name}“ eingefügt`);

@@ -49,7 +49,41 @@ test.describe('Dokument-Editor – Rückgängig & Wiederholen', () => {
         const mitteTB = tbBox.y + tbBox.height / 2;
         expect(Math.abs(mitteRG - mitteTB)).toBeLessThan(4);
 
+        // Zielfläche des Chevron-Knopfs (Dropdown-Auslöser) mindestens 24px breit.
+        const chevron = page.getByRole('button', { name: 'Liste der letzten Änderungen' });
+        const chevronBox = await chevron.boundingBox();
+        if (!chevronBox) throw new Error('Kein Bounding-Box für den Chevron-Knopf gefunden');
+        expect(chevronBox.width).toBeGreaterThanOrEqual(24);
+
         await designPruefung(page, testInfo, 'dokument-editor-rueckgaengig-kopfleiste', { primaerAktion: rueckgaengig });
+    });
+
+    test('Dokumentnummer wird durch die Verlauf-Knöpfe nicht abgeschnitten, auch nicht bei "Ungespeichert"', async ({ page }) => {
+        // Nachbesserung (Design-Review, 🔴): die Verlaufsgruppe drückt bei
+        // 1440px die linke Seite der Kopfleiste zusammen -- h1 (die
+        // Dokumentnummer) trägt data-kuerzung-erlaubt="true" und wird daher
+        // von der generischen Überlauf-Prüfung in design.ts NICHT erfasst.
+        // Diese Zusicherung schließt genau diese Lücke.
+        await stubbeDokumentEditorApi(page, { dokument: { positionenJson: DREI_POSITIONEN } });
+        await oeffneDokumentEditor(page);
+
+        const h1 = page.locator('h1');
+        await expect(h1).toHaveText('RE-2026/09/00001');
+
+        const keinUeberlauf = async () => {
+            const masse = await h1.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+            expect(
+                masse.scrollWidth,
+                `Dokumentnummer läuft über: scrollWidth ${masse.scrollWidth}px > clientWidth ${masse.clientWidth}px`,
+            ).toBeLessThanOrEqual(masse.clientWidth);
+        };
+        await keinUeberlauf();
+
+        // "Ungespeichert" ist der schlimmste Fall: ein Badge mehr in derselben
+        // Zeile, direkt links von der (nicht mehr sichtbaren) Kontextzeile.
+        await loeschKnopf(page, 'pos-1').click();
+        await expect(page.getByText(/^Ungespeichert$/)).toBeVisible();
+        await keinUeberlauf();
     });
 
     test('Löschen → Strg+Z → Strg+Y stellt die Position wieder her bzw. löscht erneut', async ({ page }) => {

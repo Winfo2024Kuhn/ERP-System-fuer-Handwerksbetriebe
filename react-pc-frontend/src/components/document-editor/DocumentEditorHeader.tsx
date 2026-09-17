@@ -86,7 +86,7 @@ export function DocumentEditorHeader({
                 </button>
                 <div className="h-4 w-px bg-slate-200 flex-shrink-0" />
                 <h1
-                    className="text-sm font-bold text-slate-800 truncate"
+                    className="text-sm font-bold text-slate-800 truncate flex-shrink-0"
                     title={dokumentNummer || 'Neues Dokument'}
                     data-kuerzung-erlaubt="true"
                 >
