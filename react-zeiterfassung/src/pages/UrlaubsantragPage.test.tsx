@@ -81,3 +81,16 @@ it('kann Zeitausgleich mit aktuellem Zeitkonto-Saldo auswählen und beantragen',
     expect(await screen.findByText('Dein Zeitausgleichsantrag wurde erfolgreich übermittelt.')).toBeInTheDocument()
 })
 
+
+vi.mock('../services/audioRecorderService', async () => {
+    const echt = await vi.importActual<typeof import('../services/audioRecorderService')>('../services/audioRecorderService')
+    return { ...echt, mikrofonWirdUnterstuetzt: () => true }
+})
+
+it('bietet am Bemerkungsfeld einen Diktier-Knopf an', async () => {
+    render(<MemoryRouter><ToastProvider><UrlaubsantragPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} /></ToastProvider></MemoryRouter>)
+
+    // Der feldName landet im aria-label — so ist belegt, dass die Seite ihn
+    // durchreicht und nicht den Standardwert "Text" stehen laesst.
+    expect(await screen.findByRole('button', { name: 'Bemerkung diktieren' })).toBeInTheDocument()
+})

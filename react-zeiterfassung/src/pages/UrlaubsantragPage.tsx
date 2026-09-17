@@ -1,4 +1,5 @@
 import MobileDatePicker from '../components/MobileDatePicker'
+import VoiceInputButton from '../components/VoiceInputButton'
 import { Select } from '../components/ui/select-custom'
 import { useToast, mobileOverlayStyle } from '../components/ui/toast'
 import { useState, useEffect } from 'react'
@@ -458,6 +459,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                         />
                                         <FileText className="absolute right-3 top-3 w-5 h-5 text-slate-300 pointer-events-none" />
                                     </div>
+                                    <VoiceInputButton className="mt-2" feldName="Bemerkung" wert={bemerkung} onErgebnis={setBemerkung} />
                                 </div>
                             </div>
 

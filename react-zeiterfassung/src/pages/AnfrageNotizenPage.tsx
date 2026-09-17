@@ -1,5 +1,6 @@
 import { useToast, mobileOverlayStyle } from '../components/ui/toast'
 import { useConfirm } from '../components/ui/confirm-dialog'
+import VoiceInputButton from '../components/VoiceInputButton'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
@@ -512,6 +513,7 @@ export default function AnfrageNotizenPage() {
                             onChange={(e) => setNeueNotiz(e.target.value)}
                             autoFocus
                         />
+                        <VoiceInputButton className="mt-2" feldName="Notiz" wert={neueNotiz} onErgebnis={setNeueNotiz} />
 
                         <div className="space-y-3 mt-4">
                             <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
