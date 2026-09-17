@@ -103,6 +103,16 @@ public class ZeiterfassungApiService {
     }
 
     /**
+     * Liefert ein einzelnes Projekt im selben Format wie {@link #getOpenProjekte},
+     * unabhängig davon, ob es abgeschlossen ist. Wird für Deep-Links aus der PWA
+     * (z.B. verknüpfter Auftrag im Kalender) gebraucht, wenn das Projekt nicht in
+     * der begrenzten Liste der offenen Projekte enthalten ist.
+     */
+    public Optional<Map<String, Object>> getProjektById(Long projektId) {
+        return projektRepository.findById(projektId).map(this::projektToSimpleMap);
+    }
+
+    /**
      * Gibt alle Produktkategorien mit vollem Pfad zurück.
      */
     @Transactional(readOnly = true)

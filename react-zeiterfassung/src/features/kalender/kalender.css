@@ -1,0 +1,18 @@
+/* Sanftes Einblenden beim Wechsel von Ansicht, Monat oder Woche – nur ohne Bewegungsreduzierung. */
+@media (prefers-reduced-motion: no-preference) {
+  .kalender-einblenden {
+    animation: kalender-einblenden 0.25s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  @keyframes kalender-einblenden {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

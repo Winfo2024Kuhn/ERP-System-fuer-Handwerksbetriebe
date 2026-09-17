@@ -486,7 +486,7 @@ export default function ProjektNotizenPage() {
                 >
                     <div
                         role="dialog" aria-modal="true" aria-label={editingNotiz ? 'Eintrag bearbeiten' : 'Neuer Eintrag'}
-                        className="bg-white rounded-t-2xl w-full max-w-lg max-h-full overflow-auto p-6 safe-area-bottom motion-safe:animate-slide-up"
+                        className="bg-white rounded-t-2xl w-full max-w-lg max-h-full overflow-auto p-6 motion-safe:animate-slide-up"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">

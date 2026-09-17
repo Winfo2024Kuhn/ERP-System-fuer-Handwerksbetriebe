@@ -560,7 +560,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
 
             {/* Start Button (only in step 3) - Fixed at bottom */}
             {step === 'arbeitsgang' && selectedArbeitsgang && hatEingerichtetesZeitkonto(zeitkontoStatus) && (
-                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 safe-area-bottom shadow-lg">
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 shadow-lg">
                     <button
                         onClick={handleStartTracking}
                         disabled={starting}

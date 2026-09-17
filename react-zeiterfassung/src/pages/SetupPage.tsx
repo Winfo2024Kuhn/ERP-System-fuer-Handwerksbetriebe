@@ -9,6 +9,10 @@ interface SetupPageProps {
 
 export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
     const [processing, setProcessing] = useState(false)
+    // Schlägt die Anmeldung fehl (ungültiger Token, Server nicht erreichbar), meldet
+    // App.tsx das über `error`. Der Spinner "Anmeldung wird verarbeitet..." darf dann
+    // nicht stehen bleiben – beim nächsten Versuch setzt App.tsx `error` wieder auf null.
+    const zeigeSpinner = processing && !error
     const [showManualInput, setShowManualInput] = useState(false)
     const [manualToken, setManualToken] = useState('')
     const [scanning, setScanning] = useState(false)
@@ -86,7 +90,7 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
         }
     }
 
-    if (processing) {
+    if (zeigeSpinner) {
         return (
             <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
                 <div className="w-12 h-12 border-4 border-rose-600 border-t-transparent rounded-full animate-spin mb-4"></div>

@@ -132,7 +132,7 @@ export default function LieferantReklamationCreatePage() {
     }
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 safe-area-top safe-area-bottom">
+        <div className="h-full flex flex-col bg-slate-50 safe-area-top">
             {/* Header */}
             <div className="bg-white border-b border-slate-200 px-4 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">

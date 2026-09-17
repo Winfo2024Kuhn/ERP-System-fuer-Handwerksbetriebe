@@ -284,7 +284,7 @@ export default function BelegPositionenAuswahlPage() {
                     </div>
 
                     {/* Sticky Footer mit Live-Summen + Save */}
-                    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg safe-area-bottom">
+                    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg">
                         <div className="px-4 py-3 grid grid-cols-3 gap-2 text-center">
                             <SummenBox label="Netto" value={fmt(liveSummen.netto)} />
                             <SummenBox label="MwSt" value={fmt(liveSummen.mwst)} />

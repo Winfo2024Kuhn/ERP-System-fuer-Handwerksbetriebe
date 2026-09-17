@@ -91,7 +91,7 @@ export function SupplierSelectionModal({ isOpen, onClose, onSelect, onBack }: Su
     const showEmpty = !loading && results.length === 0
 
     return (
-        <div className="fixed inset-0 bg-slate-50 z-[60] flex flex-col safe-area-top safe-area-bottom animate-in slide-in-from-bottom duration-200">
+        <div className="fixed inset-0 bg-slate-50 z-[60] flex flex-col safe-area-top animate-in slide-in-from-bottom duration-200">
             {/* Header */}
             <div className="bg-white border-b border-slate-200 px-4 py-4 flex items-center gap-3 shadow-sm z-10">
                 {onBack ? (

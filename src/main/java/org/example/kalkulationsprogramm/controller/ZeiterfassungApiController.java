@@ -212,6 +212,17 @@ public class ZeiterfassungApiController {
     }
 
     /**
+     * Gibt ein einzelnes Projekt zurück (auch abgeschlossene) – für Deep-Links
+     * aus der PWA, z.B. verknüpfter Auftrag im Kalender.
+     */
+    @GetMapping("/projekte/{projektId}")
+    public ResponseEntity<Map<String, Object>> getProjekt(@PathVariable Long projektId) {
+        return service.getProjektById(projektId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
      * Gibt alle Bilder (DokumentGruppe=BILDER) für ein Projekt zurück
      */
     @GetMapping("/projekte/{projektId}/bilder")

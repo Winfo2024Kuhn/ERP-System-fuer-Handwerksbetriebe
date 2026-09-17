@@ -15,7 +15,6 @@
   
   /* Safe area variables - fallback to 0 */
   --sat: env(safe-area-inset-top, 0px);
-  --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
 }
@@ -64,24 +63,22 @@ body,
    ("scroll edge effect"). Ohne Abstand nach oben sitzt die erste Textzeile
    genau in diesem Band und wirkt unscharf.
 
-   Diese Klassen haengen an rund 20 Stellen (Kopfleisten, Fusszeilen,
-   Bottom-Sheets). Sie ueberschreiben das padding der Tailwind-Klasse am
-   selben Element, weil ungelayerte Regeln in der Kaskade vor Tailwinds
-   Layer kommen. Der bisherige Sockel wird deshalb hier mitgegeben statt
-   verloren zu gehen:
+   Die Klasse haengt an den Kopfleisten. Sie ueberschreibt das padding der
+   Tailwind-Klasse am selben Element, weil ungelayerte Regeln in der Kaskade
+   vor Tailwinds Layer kommen. Der bisherige Sockel wird deshalb hier
+   mitgegeben statt verloren zu gehen:
 
      --sa-base-top     Standard 1rem  (entspricht dem ueblichen py-4)
-     --sa-base-bottom  Standard 2rem  (entspricht dem ueblichen pb-8)
 
    Weicht eine Stelle davon ab, setzt sie die Variable selbst, z. B.
-   class="[--sa-base-bottom:4rem]". */
+   class="[--sa-base-top:1.5rem]".
+
+   Nach unten gibt es bewusst KEINE Safe-Area (kein Sockel, kein Inset):
+   Fusszeilen, Bottom-Sheets und feste Aktionsleisten schliessen direkt mit
+   der Geraetekante ab und nutzen nur ihr eigenes Tailwind-Padding. */
 
 .safe-area-top {
   padding-top: calc(var(--sa-base-top, 1rem) + var(--sat));
-}
-
-.safe-area-bottom {
-  padding-bottom: calc(var(--sa-base-bottom, 2rem) + var(--sab));
 }
 
 /* Scrollbar verstecken für mobile */
