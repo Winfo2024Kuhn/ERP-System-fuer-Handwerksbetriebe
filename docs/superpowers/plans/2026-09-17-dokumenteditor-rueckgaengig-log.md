@@ -610,3 +610,324 @@ bekannten Dateipfaden gearbeitet, nicht die `graphify`-CLI aufgerufen. Das
 entspricht der dokumentierten Ausnahme ("Du kennst den exakten Dateipfad →
 Read direkt"), ist aber ein anderer Mechanismus als im Block oben behauptet.
 `./graphify update` wurde weiterhin nicht gefahren.
+
+## Abschnitt 2 — Review (Code-Reviewer)
+
+Zeit: 2026-09-17
+Stand: `feature/dokument-verlauf` @ dbc23315 (Merge 2ad2c1a5 von
+`verlauf/task-4-integration`; geprüfter Diff `f4576596..HEAD`, Commits
+9d3feb2f + 9a4b7cb0)
+**AMPEL: 🟡 — abgenommen, keine blockierenden Befunde.**
+
+**Gates (selbst gefahren, in `react-pc-frontend/`):**
+
+| Gate | Ergebnis | Baseline |
+|---|---|---|
+| `npm run lint` | exit 0 | grün |
+| `npx tsc -b` | exit 0 | grün |
+| `npm run test` (volle Suite) | exit 0, **141 Dateien / 1627 Tests grün** | 141 / 1609 → +18 Tests, keine neue Datei |
+| Backend | `git diff --name-only main...HEAD \| grep "^src/(main\|test)/java"` → leer, **kein Maven** | — |
+| E2E | nicht gefahren (Design-Reviewer, paralleler Worktree) | — |
+
+**Mutationsproben (5, alle restlos zurückgenommen, `git status --short` leer):**
+
+1. `istPhantomTiptapAenderung` → immer `false`: genau die 3 Phantom-Tests rot.
+2. Gegenrichtung `istPhantomTiptapAenderung` → immer `true` (echte Änderung
+   verschlucken): Fall 4 (Formatierung/Tippen) rot. Beide Richtungen des
+   Gates sind also testgedeckt, nicht nur die harmlose.
+3. `buendelSchluesselFuer` → immer `null`: Fälle 2 und 3 rot.
+4. `verlauf.leeren()` im Sperr-Effekt entfernt: Fall 9 rot.
+5. `removeBlock` an `verlauf.aendern` vorbei auf `setzeBlocks` umgebogen:
+   Fälle 1, 7, 9, 12, 13, 14 rot.
+
+**Eigene Zusatzproben** (temporäre Testdatei, nach dem Lauf gelöscht):
+erste Nutzeränderung direkt nach dem Fokussieren erzeugt einen Schritt ✓;
+nach Remount (Textbaustein gelöscht → Strg+Z → Editor neu gemountet) ist der
+Verlauf leer und die erste Änderung im neuen Editor erzeugt wieder einen
+Schritt ✓.
+
+**Geprüft und in Ordnung:**
+
+- **Wortliste vollständig verdrahtet:** Einfügen (Textbaustein/Leistung/
+  Stundensatz/Bauabschnitt/Trennlinie/Material/GAEB/Kategorie-Dialog — Material
+  und GAEB je als *ein* Schritt), Löschen (Root + Bauabschnitts-Kind), alle drei
+  Verschiebe-Wege, Titel/Menge/Einheit/Preis/Text/Formatierung/Bauabschnitts-
+  name, Wahlmodus, Auswahl speichern/auflösen/umbenennen, Rabatt, Datum,
+  Zahlungsziel, Rechnungsadresse, Balken.
+- **Automatik ohne Schritt:** im ganzen `index.tsx` gibt es nur noch **ein**
+  rohes `setBlocks(` — innerhalb von `setzeBlocks` selbst. Laden, CLOSURE-Sync,
+  Bezugsdatum-Reparatur, Standard-Textbausteine (beide zusätzlich mit
+  `verlauf.leeren()`) und `bumpDatumAufHeute` laufen ref-first.
+- **Signatur:** alle sechs Stellen auf `baueDokumentSignatur` (Ladebaseline mit
+  `geladenerBalken`/`loadedGlobalRabatt`, `handleSave` 2×, Change-Detection,
+  Auto-Save, `buchenUndSperren`), Dep-Listen um `globalRabatt`/`balkenAnzeigen`
+  erweitert, `adresseGeaendert || zahlungszielGeaendert` additiv erhalten. Die
+  zwei nun überflüssigen `setHasUnsavedChanges(true)` (Rabatt, Balken) sind weg
+  (7 → 5 Aufrufstellen), Fall 6 deckt das end-to-end ab.
+- **PR #161:** `handleSave` liest Adresse **und** Zahlungsziel aus Refs, setzt
+  `gespeichertesZahlungszielRef` nach Erfolg auf den gesendeten Wert. Damit
+  liefert die vergleichsbasierte Formel in `schreibeStand` beim Rückgängig eines
+  **bereits gespeicherten** Zahlungsziel-Schritts `true` → „Ungespeichert" →
+  Auto-Save greift; ein Rückgängig auf exakt den gespeicherten Stand löscht das
+  Flag korrekt. Die Abweichung (Nr. 3 im Task-4-Block) ist fachlich richtig und
+  besser als das im Auftrag vorgeschlagene unconditional-true.
+- **Sperre/Versand:** `verlauf.leeren()` im Sperr-Effekt (auch Soft-Lock),
+  `confirmExport` nach dem Download, `executePrint` nur im `shouldBook`-Zweig,
+  `EmailComposeModal.onSuccess` nur bei `!wasDraft` — alle drei im Erfolgspfad
+  vor dem `catch`. Abweichung Nr. 4 am Code gegengeprüft: es sind tatsächlich
+  Ein-Zeiler nach dem durch Fall 13 (PDF) getesteten Muster, an der richtigen
+  Stelle.
+- **Tastatur:** `einDialogOffen` bündelt alle Editor-Dialoge, `aktiv` zusätzlich
+  an `!isLocked`; `data-eigenes-rueckgaengig` an Adress-Textarea,
+  Bauabschnitts-Name und Auswahl-Name. Der Zahlungsziel-Chip-Popover aus PR #161
+  liegt **außerhalb** von `editorWurzelRef` — Strg+Z dort greift nicht ins
+  Dokument, obwohl er nicht in `einDialogOffen` steht.
+- **StrictMode:** `handleDragEnd` rechnet inkl. `validateRootReorder` vor dem
+  Schreiben, `toast.warning` liegt außerhalb jedes State-Updaters.
+- **Sicherheit/DSGVO:** kein Backend, keine neuen Regex/`innerHTML`/
+  `dangerouslySetInnerHTML`, Selektoren nur über konstante Feldnamen
+  (Block-Ids über `dataset`-Vergleich), Tests und E2E-Stubs ausschließlich
+  Dummy-Daten.
+
+**🟡 Hinweise (blockieren nicht):**
+
+1. `index.tsx:2272` — Einfügen über den Leistungs-Picker erzeugt (außerhalb des
+   Kategorie-Dialog-Pfads, d.h. ohne `projektId`/`folderId`) die Default-
+   Bezeichnung `Position eingefügt`; die verbindliche Wortliste nennt
+   `Leistung eingefügt`. Der Schritt selbst existiert, nur der Wortlaut weicht ab
+   — `Position` ist zu den Nachbarn (`Position gelöscht/verschoben`) sogar
+   konsistenter. Entscheidung liegt beim Nutzer/Orchestrator.
+2. `index.tsx:2038-2049` — `handleDragEnd` liest den Container noch aus dem
+   `blocks`-State (`findBlockContainer(blocks, …)`), rechnet danach aber auf
+   `blocksRef.current`. Heute folgenlos (Drag-Ende ist ein eigener Tick);
+   sauberer wäre auch hier `aktuelleBlocks`.
+3. Keine eigenen Tests für den Zahlungsziel-Rückgängig-Pfad (nur Rabatt, Fall 6)
+   und für die Verlauf-Neustarts bei E-Mail/Druck (Abweichungen 3 und 4). Beides
+   per Code-Review verifiziert, beides Nebenfälle — kein Nachbesserungsgrund.
+
+## Abschnitt 2 — Design-Review (Design-Reviewer)
+
+Zeit: 2026-09-17T21:05:00Z
+Worktree: /Users/marvinkuhn/dev/wt/verlauf-review-design (losgelöster HEAD, dbc23315)
+Status: fertig
+**Ampel: 🔴** (ein Blocker: Frage 6 auf 1440 px — neu abgeschnittene Dokumentnummer)
+
+### E2E
+
+`E2E_PORT=5192 npx playwright test --workers=1`, drei Größen (pc-14zoll 1440×900,
+pc-uebergang 1536×960, pc-monitor 1920×1080).
+
+- **Lauf 1 (maßgeblich): 666/666 grün, Exit 0, 8,8 min.** Baseline 627 + Zahlungsziel-Spec
+  (#161) + 15 neue Fälle der Rückgängig-Spec (5 × 3 Größen) = 666. Die fünf neuen Fälle
+  sind in allen drei Größen grün.
+- Lauf 2 (Wiederholung, um den Screenshot-Satz herzustellen): 664 grün, 2 rot —
+  beide Male `dokument-editor-tab-schliessen.spec.ts:63` (pc-14zoll + pc-monitor),
+  Meldung: `div.border-l…flex-shrink-0: 125px zu wenig Platz`. Das ist die
+  **Vorschau-Spalte während der 500-ms-Layout-Animation**, nicht der Endzustand.
+  Nachlauf desselben Falls einzeln: **6/6 grün** (je 1,5 s; die roten Läufe brachen
+  nach 432 ms ab, d.h. die Prüfung lief früher relativ zur noch laufenden Animation).
+- **Lauf 3 (Wiederherstellung des Screenshot-Satzes): wieder 666/666 grün, Exit 0, 8,9 min** —
+  derselbe Fall grün. Zwischenbilanz: 2 von 3 Vollläufen komplett grün, der eine rote
+  Fall in allen Nachläufen grün.
+  Nicht diesem Abschnitt zuzuschreiben: `transition-all duration-500 ease-in-out` und
+  die Spec sind vorbestehend, der Task-4-Commit hat an dem Div ausschließlich
+  `ref={editorWurzelRef}` ergänzt (git show 9d3feb2f, Zeile 1264/1265). Siehe Hinweis 7.
+
+### Die sechs Fragen je Screenshot und Größe
+
+**1. `dokument-editor-rueckgaengig-kopfleiste` (1440 / 1536 / 1920)** — Dokument frisch
+geöffnet, nichts zurückzunehmen.
+
+1. *Farben:* Deaktiviert vs. aktiv ist gemessen unterscheidbar — deaktiviertes Undo/Redo
+   2,00:1 zu Weiß, aktives 4,76:1 (slate-500). In `kopf-beide-aktiv` stehen beide Zustände
+   nebeneinander und sind auf einen Blick zu trennen. Rose bleibt Akzent (nur PDF-Knopf,
+   Positionsnummern, Gesamtsumme) — genau eine rosafarbene Primäraktion. ✓
+2. *Design-System:* Lucide `Undo2`/`Redo2`/`ChevronDown`, kein Emoji, kein handgemaltes
+   SVG, Systemschrift, `rounded-md` wie die Nachbarknöpfe, Trennstrich `w-px h-5
+   bg-slate-200` identisch zu den drei vorhandenen Gruppentrennern. ✓
+3. *Look-and-Feel:* Gleiche 28-px-Zeile wie die übrigen Werkzeugknöpfe, Mittenversatz
+   zu „Textbaustein" < 4 px (Spec sichert es zu). Auf 1920 wirkt das Paar nicht verwaist,
+   es gehört sichtbar zum Werkzeug-Block. ✓
+4. *UX:* `aria-label` + `title` an beiden Symbolknöpfen, `aria-expanded` am Pfeil;
+   der deaktivierte Zustand erklärt sich per Tooltip („Nichts zum Rückgängigmachen"). ✓
+   🟡 Der Chevron ist nur 16 × 28 px groß (unter den empfohlenen 24 px Zielgröße).
+5. *Auffindbarkeit:* Auf 1440 ohne Scrollen sichtbar, in der Kopfleiste links neben
+   „Textbaustein" — dort, wo Word/Excel es haben. ✓
+6. *Überschneidung:* Kein horizontaler Scroll, keine Überlappung (Prüfung grün).
+   **ABER auf 1440 neu abgeschnitten:** die Dokumentnummer steht als „RE-2026/09/…"
+   statt „RE-2026/09/00001", der Kontext als „Max Muster…". Gemessen: h1 clientWidth
+   110 px bei scrollWidth 134 px. DOM-Isolationsprobe (Verlaufsgruppe, exakt 76 px
+   breit, entfernt): **134/134 px, nicht mehr gekürzt.** Im Zustand „Ungespeichert"
+   sinkt die Nummer von 103 px auf 57 px („RE-20…"). 1536 und 1920: alles vollständig. 🔴
+
+**2. `dokument-editor-rueckgaengig-liste` (1440 / 1536 / 1920)** — Liste offen,
+drei gelöschte Positionen.
+
+1. *Farben:* Markiert `bg-rose-50 text-rose-700` gegen unmarkiert slate-700 auf Weiß —
+   Grenze „bis hierhin zurück" klar sichtbar. 🟡 Fußzeile slate-400 auf 10 px misst
+   **2,56:1** — die einzige Zeile, die erklärt, was ein Klick tut.
+2. *Design-System:* Klassen zeichengleich mit dem bestehenden `WahlpositionMenu`
+   (`bg-white rounded-xl border-slate-200 shadow-lg p-1 animate-in fade-in zoom-in-95`),
+   Portal + fixed wie dort. Kein Emoji, keine Fremdfarbe. ✓ 🟡 `animate-in` ohne
+   `motion-safe:` (wie im Vorbild; Design-Regel 11 verlangt das Gate).
+3. *Look-and-Feel:* 260 px breit, hängt bündig unter dem Pfeil, klappt bei Platzmangel
+   nach oben, schließt beim Scrollen. Ruhig. ✓
+4. *UX:* Fußzeile sagt die Wirkung an, Einzahl/Mehrzahl stimmt (eigene Probe:
+   „1 Schritt rückgängig machen" / „3 Schritte rückgängig machen"). Tastatur
+   ↑/↓/Pos1/Ende/Enter/Esc/Tab bedient. 🟡 Alle drei Zeilen lauten identisch
+   „Position gelöscht" — welche Position gemeint ist, steht nirgends.
+   🟡 Die Markierung verschiebt sich während der 150-ms-Öffnungsanimation ohne
+   Mausbewegung: 1440 und 1536 zeigen 2 von 3 markiert, obwohl die Spec zuvor den
+   dritten Eintrag überfahren und „3 Schritte" zugesichert hat; 1920 zeigt den
+   gemeinten Zustand. Nach abgewarteter Animation ist es in allen Größen korrekt.
+5. *Auffindbarkeit:* Chevron unmittelbar am Rückgängig-Knopf, Liste öffnet am Klickpunkt. ✓
+6. *Überschneidung:* Kein Überlauf, keine Überlappung; die Liste verdeckt nur
+   Dokumentfläche, nichts, was man zeitgleich braucht. ✓
+
+**3. `dokument-editor-rueckgaengig-gebucht` (1440 / 1536 / 1920)** — gebuchte Rechnung.
+
+1. *Farben:* Amber „Gebucht"-Chip als einzige Statusfarbe, sonst slate; keine
+   halbtoten Restknöpfe. ✓
+2. *Design-System:* Verlaufsgruppe samt Trennstrich vollständig weg — kein
+   verwaister Strich, kein Loch. ✓
+3. *Look-and-Feel:* Kopfleiste ruhiger als im Bearbeiten-Modus, Dokumentnummer
+   **vollständig** („RE-2026/09/00001") in allen drei Größen. ✓
+4. *UX:* Kein Knopf, der nichts tut — richtig für ein gesperrtes Dokument. ✓
+5. *Auffindbarkeit:* Entfällt bewusst. ✓
+6. *Überschneidung:* Keine. ✓
+
+**Eigene Probe (Playwright-Skript mit denselben Stubs, 1440 px), Bilder im
+Scratchpad** — Position löschen, Strg+Z, Strg+Y, Liste öffnen, drei Schritte auf
+einmal zurück:
+
+- `hervorhebung-300ms.png`: Der Rose-Ring um die wiederhergestellte Karte ist
+  vorhanden und deutlich (gemessen `rgba(244,63,94,0.3) 0 0 0 2px`, Ringpixel
+  1,55:1 gegen den normalen Kartenrand 1,23:1). Er **blendet über 200 ms ein**:
+  bei t≈0 ms erst 0,02 Alpha/0,14 px (auf einem Sofort-Screenshot unsichtbar),
+  ab t≈300 ms voll, nach 1,2 s wieder weg. Gulf of Evaluation erfüllt.
+- `formatierungsleiste-ganz.png`: Die Formatierungsleiste ohne ihre eigenen
+  Text-Pfeile wirkt **nicht** unfertig — sie beginnt sauber mit „Fett", der
+  zugehörige Trennstrich ist mitentfernt, keine Lücke, kein verwaistes Element.
+- `dropdown-drei-markiert.png` / `dropdown-einer-markiert.png`: Markierung und
+  Fußzeile stimmen überein, Einzahl/Mehrzahl korrekt.
+- Wording durchgesehen (`index.tsx:106-119`, `blockName`): „Position gelöscht",
+  „Menge geändert", „Preis geändert", „Leistung eingefügt", „Rabatt geändert",
+  „Balken eingeblendet" — Handwerker-Sprache, kein Buchhalter-Deutsch, kein Emoji.
+
+### 🛑 Blocker
+
+1. **Dokumentnummer auf 14 Zoll neu abgeschnitten.** `DocumentEditorHeader.tsx:88-94`
+   (h1) in Verbindung mit `:124-128` (Verlaufsgruppe, `flex-shrink-0`). Beleg oben.
+   Die automatische Prüfung schlägt nicht an, weil h1 und Kontextzeile
+   `data-kuerzung-erlaubt="true"` tragen — deshalb ist der Befund durch 666 grüne
+   Tests gerutscht. Nachweisbar sein muss: bei 1440 px und einer normalen Nummer
+   („RE-2026/09/00001") ist `h1.scrollWidth <= h1.clientWidth`, zugesichert in
+   `e2e/dokument-editor-rueckgaengig.spec.ts`. Billigster Weg: die Kontextzeile
+   (`kontextInfo`, heute `hidden lg:block`) erst ab `2xl` einblenden — sie steht
+   ohnehin wortgleich in der Fußleiste („Dachsanierung · KD K-4711").
+
+### 🟡 Hinweise (blockieren nicht)
+
+1. Fußzeile der Liste: slate-400 auf 10 px = 2,56:1. slate-500 und 11 px brächten
+   4,76:1 bei gleichem Erscheinungsbild.
+2. Drei identische Einträge „Position gelöscht" — ohne Positionsnummer/-titel ist
+   nicht erkennbar, welcher Schritt welcher ist.
+3. Markierung springt während der Öffnungsanimation (zoom-in-95) unter stehendem
+   Mauszeiger; sichtbar in den 1440-/1536-Screenshots.
+4. Chevron-Zielfläche 16 × 28 px, unter den empfohlenen 24 px.
+5. `TiptapEditor.tsx:404` (und die zweite Leiste ~:767): `title="Rükgängig (Ctrl+Z)"` —
+   Tippfehler, vorbestehend seit dem Initial-Commit, liegt aber genau in dem Block,
+   den dieser Abschnitt bedingt gemacht hat.
+6. Listen-Animation ohne `motion-safe:`-Gate (Design-Regel 11) — konsistent mit
+   `WahlpositionMenu`, deshalb nur Hinweis. Die neue Hervorhebung respektiert
+   `prefers-reduced-motion` vorbildlich.
+7. `dokument-editor-tab-schliessen.spec.ts:63` ist ein Zeitrennen gegen die
+   500-ms-Layout-Animation der Vorschau-Spalte (siehe E2E oben). Nicht durch diesen
+   Abschnitt verursacht, wird aber wiederkommen: `uebergaengeAusklingenLassen`
+   sieht eine Transition nicht, die im selben Frame erst startet.
+
+### Angeschaute Screenshots (alle mit dem Read-Tool geöffnet)
+
+Unter `/Users/marvinkuhn/dev/wt/verlauf-review-design/react-pc-frontend/test-results/design/`:
+
+- `dokument-editor-rueckgaengig-kopfleiste--pc-14zoll.png`
+- `dokument-editor-rueckgaengig-kopfleiste--pc-uebergang.png`
+- `dokument-editor-rueckgaengig-kopfleiste--pc-monitor.png`
+- `dokument-editor-rueckgaengig-liste--pc-14zoll.png`
+- `dokument-editor-rueckgaengig-liste--pc-uebergang.png`
+- `dokument-editor-rueckgaengig-liste--pc-monitor.png`
+- `dokument-editor-rueckgaengig-gebucht--pc-14zoll.png`
+- `dokument-editor-rueckgaengig-gebucht--pc-uebergang.png`
+- `dokument-editor-rueckgaengig-gebucht--pc-monitor.png`
+- `editor-seite-bearbeiten--pc-14zoll.png`
+- `editor-seite-gesperrt--pc-14zoll.png`
+- `editor-seite-lesen--pc-14zoll.png`
+- `dokument-editor-vor-schliessen--pc-14zoll.png`
+- `dokument-editor-ungespeichert-warnung--pc-14zoll.png`
+- `zahlungsziel-popover--pc-14zoll.png`
+
+Eigene Probe-Bilder (Scratchpad, `…/scratchpad/probe/bilder/` bzw. `…/scratchpad/crops/`):
+`hervorhebung-nach-strgz.png`, `hervorhebung-300ms.png`, `hervorhebung-300ms-karte2.png`,
+`kopf-beide-aktiv.png` (+ Zoom), `dropdown-drei-markiert.png`,
+`dropdown-einer-markiert.png`, `formatierungsleiste-ganz.png`,
+`kopf-14-links.png`, `liste-14.png`.
+
+### Aufgeräumt
+
+Kein Dev-Server und kein Browser bleibt zurück: Playwright startet und beendet den
+Vite-Server (Port 5192) selbst; `pgrep -fl "vite|esbuild|playwright"` auf
+`verlauf-review-design`/5192/5193 ist leer. Der Playwright-MCP-Browser wurde nicht
+gebraucht (ohne Backend lädt der Editor kein Dokument; die Interaktionsprobe lief
+stattdessen als Skript mit denselben `/api`-Stubs) und ist geschlossen.
+
+## Abschnitt 2 — Nachbesserung und Abnahme (Orchestrator)
+
+Zeit: 2026-09-17
+Stand: `feature/dokument-verlauf`, Nachbesserungs-Commit `d7664ad7`
+Ampel: 🟢 abgenommen
+
+**Warum der Orchestrator das selbst zu Ende gebracht hat (Vorgabe des Nutzers):**
+Der Befund ging zunächst per `SendMessage` an den Coding-Agenten von Task 4
+zurück — so steht es im Skill („Befund an denselben Coding-Agenten"). Der
+Agent schleppt dabei aber seinen kompletten bisherigen Verlauf mit (erster
+Lauf: 729k Tokens). Ergebnis: **780k Tokens für 27 Werkzeugaufrufe** in sechs
+Minuten, für eine Änderung von sechs Zeilen. Der Nutzer hat das gestoppt.
+Regel fürs nächste Mal: Eine Nachbesserung geht an einen **frischen** Agenten
+mit Befund und Dateipfaden — oder, wenn sie kleiner ist als ihr Briefing,
+macht sie der Orchestrator selbst. Den bestehenden Agenten nur dann wecken,
+wenn sein Zwischenstand wirklich gebraucht wird.
+Die Arbeit des gestoppten Agenten war vollständig, nur nicht committet; sie
+ist erhalten und im Commit enthalten.
+
+**Behoben:**
+- 🔴 Kopfleiste 1440 px: Die Dokumentnummer schrumpft nicht mehr mit
+  (`flex-shrink-0` am `h1`), die Kontextzeile kürzt sich stattdessen — sie
+  steht wortgleich in der Fußleiste. Zusicherung in
+  `e2e/dokument-editor-rueckgaengig.spec.ts`, auch im Zustand
+  „Ungespeichert".
+- 🟡 „Leistung eingefügt" statt „Position eingefügt" beim Leistungs-Picker.
+- 🟡 Dropdown-Fußzeile slate-500/11px (4,76:1 statt 2,56:1).
+- 🟡 Chevron-Zielfläche 24 px statt 16 px.
+- 🟡 Tippfehler „Rükgängig" in der Formatierungsleiste; der Test dazu prüft
+  jetzt den echten Wortlaut statt eines Strings, den es nie gab.
+
+**Gegenprobe zum Blocker (statt eines zweiten Design-Review-Laufs):**
+`flex-shrink-0` testweise entfernt ⇒ die neue E2E-Zusicherung wird rot
+(`scrollWidth 134 > clientWidth 110`); wieder eingesetzt ⇒ grün. Zusätzlich
+den Screenshot `dokument-editor-rueckgaengig-kopfleiste--pc-14zoll.png`
+angesehen: Nummer vollständig, Knöpfe links neben „Textbaustein", keine
+Überlappung. Ein kompletter zweiter Opus-Design-Review-Lauf (voriger:
+215k Tokens, 9 min E2E) wäre für einen maschinell geprüften Ein-Zeilen-Fix
+unverhältnismäßig gewesen.
+
+**Gates nach der Nachbesserung:** vitest 6 Dateien / 190 Tests grün · lint
+grün · tsc grün · vite build grün · E2E (Rückgängig-, Editor-Seite- und
+Zahlungsziel-Spec, drei Größen) 63/63 grün.
+
+**Offen gelassen (bewusst, im PR-Text vermerkt):** Schritte tragen keinen
+Positionstitel im Namen (Plan-Entscheidung, die Hervorhebung zeigt die
+Stelle); `animate-in` ohne `motion-safe:`-Gate wie beim bestehenden
+`WahlpositionMenu`; Screenshot-Zeitrennen gegen die 150-ms-Öffnungsanimation
+des Dropdowns; vorbestehendes Zeitrennen in
+`e2e/dokument-editor-tab-schliessen.spec.ts` (nicht von diesem Vorhaben
+verursacht).
