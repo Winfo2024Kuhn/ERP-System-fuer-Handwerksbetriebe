@@ -113,11 +113,19 @@ Die Konfiguration liest `E2E_PORT` (Standard 5173) und startet den Vite-Dev-Serv
 selbst auf genau diesem Port (`--strictPort`). Zwei Agenten auf demselben Port würden
 sich gegenseitig den falschen Code testen — deshalb je Agent ein eigener Port.
 
-**Zeiterfassung.** Hat noch keine Playwright-Konfiguration. Der erste Task, der dort
-`.tsx` ändert, legt sie an: `@playwright/test` als devDependency, `playwright.config.ts`
-mit dem Projekt `handy` (`devices['iPhone 15']`), `baseURL` auf den Vite-Server (der
-läuft dort per `@vitejs/plugin-basic-ssl` über **https** — `ignoreHTTPSErrors: true`
-setzen), Script `test:e2e`. Dieselbe Hilfsdatei wie in der PC-App daneben legen.
+**Zeiterfassung.** Hat `playwright.config.ts` mit dem Projekt `handy` (`devices['iPhone 15']`,
+https per `@vitejs/plugin-basic-ssl`, `ignoreHTTPSErrors: true`) und `e2e/hilfen/test.ts`
+(riegelt fremde Hosts ab); seit dem 17.09.2026 liegt auch `e2e/hilfen/design.ts` daneben
+(Kopie der PC-Hilfe, `designPruefung` funktioniert unverändert).
+Muster: `e2e/kalender-design.spec.ts`. Zwei Stolpersteine, die dort Zeit gekostet haben:
+
+- Die App läuft unter dem Basispfad `/zeiterfassung/`. `page.goto('/kalender')` landet
+  auf der Vite-Hinweisseite „did you mean to visit /zeiterfassung/kalender“, weil der
+  führende Schrägstrich die `baseURL` verwirft. Immer **relativ** navigieren:
+  `page.goto('kalender')`, `page.goto('kalender/termin/…')`.
+- Ein frisches `npm ci` in einem Worktree zieht eine andere Playwright-Version als der
+  Haupt-Checkout; die Browser im Cache passen dann nicht (`Executable doesn't exist
+  … chromium_headless_shell-<n>`). Vor dem ersten Lauf `npx playwright install chromium`.
 
 ## Wer prüft was
 

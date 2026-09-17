@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
+    "clsx": "^2.1.1",
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.3",
     "jscanify": "1.4.2",
@@ -23,7 +24,9 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.18.3",
+    "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.1.17",
+    "vaul": "^1.1.2",
     "vite-plugin-pwa": "^1.2.0"
   },
   "devDependencies": {
