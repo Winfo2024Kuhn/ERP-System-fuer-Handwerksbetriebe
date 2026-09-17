@@ -72,14 +72,15 @@ export async function starteAufnahme(): Promise<AufnahmeSitzung> {
         throw fehler
     }
 
-    const gewaehlterTyp = waehleMimeType()
     let chunks: Blob[] = []
     let recorder: MediaRecorder
     let mimeType: string
     let gestartetAm: number
     try {
-        // Zwischen dem erfolgreichen getUserMedia oben und hier kann noch einiges
-        // schiefgehen: der Konstruktor wirft NotSupportedError, weil
+        // Zwischen dem erfolgreichen getUserMedia oben und dem fertigen Recorder
+        // kann noch einiges schiefgehen: waehleMimeType() ruft
+        // MediaRecorder.isTypeSupported() auf, der Konstruktor wirft
+        // NotSupportedError, weil
         // isTypeSupported() nur den MIME-Typ prueft, nicht die tatsaechliche
         // Track-Konfiguration (Safari), start() wirft InvalidStateError/
         // SecurityError, oder MediaRecorder fehlt global komplett (altes iOS,
@@ -90,6 +91,12 @@ export async function starteAufnahme(): Promise<AufnahmeSitzung> {
         // das Entscheidung 1 verhindern soll. Deshalb hier freigeben und den
         // Originalfehler unveraendert weiterwerfen, statt ihn zu verschlucken
         // oder in einen eigenen Fehlertyp zu verpacken.
+        //
+        // waehleMimeType() steht bewusst INNERHALB des try. Nach Spec liefert
+        // isTypeSupported() nur einen Boolean und wirft nicht — aber die Zusage
+        // dieser Datei lautet, dass das Mikrofon nach getUserMedia auf KEINEM
+        // Pfad offen bleibt, und eine Zusage mit Ausnahme ist keine.
+        const gewaehlterTyp = waehleMimeType()
         recorder = new MediaRecorder(stream, gewaehlterTyp ? { mimeType: gewaehlterTyp } : undefined)
         mimeType = recorder.mimeType || gewaehlterTyp || 'audio/webm'
         recorder.ondataavailable = (event: BlobEvent) => {

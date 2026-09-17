@@ -180,3 +180,208 @@ Was gemacht wurde:
 Bedenken / Abweichungen vom Plan:
 - Bestätige unabhängig den bereits von Task 6 gemeldeten Befund: `superpowers:test-driven-development` ist in dieser Session nicht registriert (`Unknown skill`, auch ohne Namespace-Präfix probiert). Ebenso bestätigt: `handwerkerprogramm-design` OHNE Namespace-Präfix hat direkt funktioniert, entgegen der Behauptung in den Global Constraints der Plandatei (Zeile ~100), der unscoped Name scheitere. Beides deckt sich 1:1 mit dem Abschnitt-1-Block von Task 6 weiter oben — zwei unabhängige Bestätigungen für dieselben zwei Korrekturen an Plandatei/Auftragstext.
 - Inhaltlich keine Abweichung von Task 5: alle fünf Exports, die Steps-Reihenfolge und alle im Plan aufgezählten Testfälle sind wie beschrieben umgesetzt. Einzige nicht wörtliche Übernahme: die beiden Wrapper `leseMikrofonStatus`/`leseKameraStatus` sind im Plan als `async function` skizziert, delegieren bei mir aber lediglich per `return leseGeraeteStatus(...)` an die private Funktion — verhält sich identisch (kein doppeltes Promise-Wrapping), ist aber kürzer als eine eigene `await`-Zeile pro Wrapper.
+
+## Abschnitt 1 — Review (Abschnitts-Reviewer)
+
+Zeit: 2026-09-18T00:47:00Z
+Branch: feature/spracheingabe-zeiterfassung (gemergter Stand, 4 Merge-Commits d6c2acb0/975ab3f3/b011228a/2fcdd3c6)
+Commit(s): —
+Status: 🔴 — ein blockierender Befund (Task 3)
+
+Selbst gefahrene Gates:
+- Backend `./mvnw -B test`: 555 Testklassen, 3135 Tests, 0 Failures, 0 Errors, 17 Skipped, Exit 0 — exakt die Erwartung (Baseline 554/3126 + 1/9).
+- Frontend `npm test`: 25 Dateien, 261 Tests, alle grün, Exit 0 — exakt die Erwartung (22/217 + 15 + 19 + 10).
+- Frontend `npm run lint`: 0 Fehler, Exit 0.
+- `App.tsx` im Abschnitts-Diff nachweislich unangetastet (`git diff ca470a94..HEAD -- react-zeiterfassung/src/App.tsx` leer) — Task 6 hat sich korrekt darauf beschränkt, nur herauszulösen.
+
+🔴 Blockierend:
+- Task 3, `audioRecorderService.ts:63-86`: Wirft irgendetwas NACH dem erfolgreichen
+  `getUserMedia`, wird der Mikrofon-Stream nie freigegeben. Betrifft drei reale Pfade:
+  `new MediaRecorder(...)` wirft `NotSupportedError` (Zeile 76), `recorder.start()` wirft
+  (Zeile 85), und `MediaRecorder` global nicht vorhanden (altes iOS/Safari — `starteAufnahme()`
+  prüft `mikrofonWirdUnterstuetzt()` nicht selbst). Empirisch mit einer Wegwerf-Testdatei
+  belegt: Track bleibt in allen drei Fällen auf `'live'` statt `'ended'`. Genau das Symptom,
+  das Entscheidung 1 des Plans verhindern soll (oranger iOS-Aufnahmepunkt bleibt stehen).
+  Kein bestehender Test deckt diesen Pfad ab.
+
+🟡 Hinweise (blockieren nicht):
+- Task 1, `SpracheingabeServiceTest.java:112-117`: `fremderInhaltstypWirdAbgewiesen` prüft mit
+  einem LEEREN Stream — ein durchgelassener Inhaltstyp würde an „Die Aufnahme ist leer."
+  scheitern, ebenfalls `IllegalArgumentException`. Mutationsprobe (`image/png` in die Whitelist)
+  überlebt alle 9 Tests. Die Whitelist ist damit faktisch ungetestet.
+- Task 1, `SpracheingabeServiceTest.java:64/139-146`: Mutationsprobe „`antwort.body()` in die
+  `log.warn`-Zeile" überlebt alle 9 Tests. `Mockito.lenient()` sichert das NICHT ab — es
+  unterdrückt nur die `UnnecessaryStubbingException`. Die Selbstauskunft in diesem Log
+  (Task 1, „Test-Detail") ist insoweit zu korrigieren. Die Implementierung selbst ist korrekt.
+- Task 1: Mutationsprobe „Größenprüfung erst NACH dem Vollpuffern" überlebt — der
+  Streaming-Charakter der 10-MB-Grenze ist ungetestet. Implementierung korrekt
+  (`SpracheingabeService.java:198-213`, Abbruch in der Leseschleife).
+- Task 1: In `SYSTEM_ANWEISUNG` sind die Reintext-Verbotszeile („Keine Sternchen, keine Rauten,
+  keine HTML-Tags, keine Markdown-Syntax") und der Metallbau-Vokabelblock (Feuerverzinkung, VSG,
+  ESG …) ungetestet — beide Mutationen überleben. `HEB 200` trifft nur die Profile-Zeile.
+- Task 6: Mutationsprobe „`intervallId = null` weglassen" überlebt (9 von 10 gefangen). Harmlos.
+
+Geprüft und in Ordnung befunden:
+- Systemanweisung wörtlich identisch mit der Plan-Vorgabe (mechanischer Diff) — `[unverstaendlich]`,
+  Reintext-Regel und Metallbau-Vokabular sind alle drin.
+- DSGVO: einzige Log-Zeile des Backend-Dienstes enthält nur Status/Bytes/Inhaltstyp. Zusätzlich
+  geprüft, ob das Transkript über die Jackson-Parse-Ausnahme entkommen kann (Jackson 2.15.4 hat
+  `INCLUDE_SOURCE_IN_LOCATION` an): nicht ausnutzbar — abgeschnittenes JSON liefert
+  `JsonEOFException` ohne Quelltext-Auszug, gültiges Präfix parst durch. Keine Secrets im Diff,
+  keine `console.log` mit Nutzinhalt, nur Dummy-Daten in den Tests.
+- 10-MB-Grenze greift beim Lesen, nicht danach (an der Implementierung geprüft).
+- Task 5: 6 eigene Mutationsproben, alle gefangen. Kein Pfad behauptet je „erlaubt"/„blockiert",
+  wenn der Status nicht ermittelbar war.
+- Task 6: Kette 1:1 gegen `App.tsx:186-212` verglichen — Reihenfolge, Schlüssel
+  `zeiterfassung_token`, 5-Minuten-Intervall mit frisch gelesenem Token identisch. 9 von 10
+  eigenen Mutationsproben gefangen.
+
+## Abschnitt 1 — Task 3, Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-17T22:38:25Z
+Branch: sprach/task-3-audio-recorder
+Commit(s): 39a7ebf7 (auf cb612ee0, dem urspruenglichen Task-3-Commit)
+Status: fertig
+
+Befund (🔴, blockierend): Mikrofon-Stream blieb offen, wenn zwischen erfolgreichem
+`getUserMedia` und dem Zurückgeben der `AufnahmeSitzung` etwas wirft (Konstruktor
+`new MediaRecorder()` → `NotSupportedError`, `recorder.start()` →
+`InvalidStateError`/`SecurityError`, oder `MediaRecorder` fehlt global auf altem
+iOS) sowie gleiche Ursache in `stoppe()`, wenn `recorder.stop()` synchron wirft.
+
+Was gemacht wurde:
+- Testgetrieben nachgebessert: zuerst die drei geforderten Tests gegen den
+  unveränderten Code geschrieben, Rot verifiziert (`expected 'live' to be 'ended'`
+  in allen drei Fällen, exakt wie im Befund beschrieben), dann den Fix umgesetzt,
+  danach Grün verifiziert.
+- `starteAufnahme()`: der Block von `waehleMimeType()`-Ergebnis bis
+  `recorder.start()` steht jetzt in `try/catch`. Im `catch`: `gibMikrofonFrei(stream)`
+  aufrufen, dann den Originalfehler unverändert weiterwerfen (`throw fehler`, kein
+  eigener Fehlertyp). `recorder`, `mimeType`, `gestartetAm` dafür als `let` ohne
+  Initializer deklariert und im try-Block zugewiesen (gleiches Muster wie bereits
+  bei `stream` im ursprünglichen Code).
+- `stoppe()`: `recorder.stop()` steht jetzt in einem eigenen `try/catch` innerhalb
+  des Promise-Executors; im Fehlerfall `gibMikrofonFrei(stream)` **und** `reject(fehler)`
+  (Promise bekam dafür einen zweiten Parameter `reject`).
+- Drei neue Tests in `audioRecorderService.test.ts` (neue `describe`-Gruppe
+  "Mikrofon-Freigabe, wenn nach getUserMedia noch etwas wirft"): werfender
+  MediaRecorder-Konstruktor, werfendes `start()` (Subklasse von `FakeMediaRecorder`),
+  `MediaRecorder` global `undefined`. Jeder Test prüft sowohl `rejects.toBe(<Original-
+  fehlerobjekt>)` (bzw. bei Fall C nur `rejects.toThrow()`, da der Fehler dort aus der
+  JS-Runtime selbst kommt) als auch `readyState === 'ended'` auf dem per
+  `getUserMedia`-Mock erzeugten Fake-Stream.
+- Gates in diesem Worktree: `npx vitest run src/services/audioRecorderService.test.ts`
+  18/18 grün (15 vorher + 3 neu). Volles `npm test`: **23 Testdateien / 235 Tests**,
+  alle grün, Exit 0. `npm run lint` 0 Fehler, Exit 0. `npm run build` erfolgreich;
+  Artefakte danach per `git status` geprüft — keine Änderung, nichts zu verwerfen.
+
+Bedenken / Hinweis zu den Zahlen:
+- Die Abnahme-Vorgabe nannte als Vorher-Stand "25 Testdateien, 261 Tests". In diesem
+  Worktree zeigt `npm test` nur 23/235 (22/217-Ausgangsbasis + meine jetzt 18 Tests in
+  1 Datei). Das ist kein neuer Fehler: mein Branch wurde laut Auftrag zwar in den
+  Feature-Branch **hinein**gemerged, aber die Merges der drei anderen Abschnitt-1-Tasks
+  (1, 5, 6) kamen nicht in die **andere** Richtung zurück in dieses Worktree/diesen
+  Branch. Die genannten 25/261 sind vermutlich der Stand des Feature-Branchs nach allen
+  vier Merges, nicht der Stand, den ein einzelner Task-Branch isoliert zeigen kann. Bitte
+  beim finalen Zusammenführen gegenprüfen, nicht als Regression werten.
+- Inhaltlich keine weitere Abweichung; nur der genannte Befund behoben, sonst nichts
+  an Task 3 geändert.
+
+## Abschnitt 1 — Task 1, Nachbesserung (Coding-Agent)
+
+Zeit: 2026-09-17T22:41:11Z
+Branch: sprach/task-1-backend-service
+Commit(s): 62473742
+Status: fertig
+
+Was gemacht wurde:
+- Vier vom Review per Mutationsproben gefundene Testlücken in `SpracheingabeServiceTest.java` geschlossen. `SpracheingabeService.java` selbst **nicht geändert** (`git diff` bestätigt das) — der Reviewer hatte die Implementierung inhaltlich bereits als korrekt bestätigt, es fehlte nur der Regressionsschutz in den Tests.
+- `fremderInhaltstypWirdAbgewiesen`: nutzte bisher einen leeren Stream, wodurch die `IllegalArgumentException` auch bei durchgelassener Whitelist über die "Aufnahme ist leer"-Prüfung erklärbar war. Jetzt ein nicht-leerer Stream, zusätzlich Prüfung der konkreten Meldung ("Dieses Audioformat wird nicht unterstuetzt.").
+- `geminiFehlerAntwortLandetNichtInDerFehlermeldung`: `mockGeminiAntwort()` gibt jetzt den Mock zurück; Test ergänzt um `Mockito.verify(antwort, never()).body()` — pflichten fest, dass der Fehlerfall den Antwortkörper (das Transkript) nicht einmal liest, statt nur die Fehlermeldung zu prüfen.
+- Neuer Test `grenzeBrichtDasLesenSofortAbStattAllesVorherZuPuffern` mit einem neuen, byte-zählenden Fake-Stream (`ZaehlenderStrom`, liefert bis zu `MAX_AUDIO_BYTES + 5_000_000` Bytes): pflichtet fest, dass `leseHoechstens()` beim Überschreiten von `MAX_AUDIO_BYTES` sofort abbricht (gelesene Bytes bleiben deutlich unter dem Angebot), statt erst alles zu puffern und die Größe erst danach zu prüfen.
+- `systemanweisungEnthaeltDieKernregeln`: zwei weitere `contains()`-Zusicherungen für die Reintext-Verbotszeile ("Keine Sternchen, keine Rauten, keine HTML-Tags, keine Markdown-Syntax.") und den Metallbau-Vokabelblock ("Feuerverzinkung, Pulverbeschichtung, VSG, ESG, Schwerlastanker,") — beide vorher von keiner Zusicherung erfasst, `HEB 200` deckte nur die Profile-Zeile ab.
+- Jede neue/verschärfte Zusicherung per Mutationsprobe selbst verifiziert (Vorgabe der Nachbesserung): Whitelist-Bypass (`image/png` in `ERLAUBTE_INHALTSTYPEN` aufgenommen) → genau `fremderInhaltstypWirdAbgewiesen` rot; `antwort.body()` an die `log.warn`-Zeile angehängt → genau `geminiFehlerAntwortLandetNichtInDerFehlermeldung` rot (Mockito `NeverWantedButInvoked`); Größenprüfung in `leseHoechstens()` hinter die Leseschleife verschoben (erst puffern, dann prüfen) → genau der neue Streaming-Test rot (gelesene Bytes = 15.485.760 statt < 11.485.760); je eine der beiden neuen Systemanweisungs-Zeilen einzeln verändert → genau `systemanweisungEnthaeltDieKernregeln` rot, an der jeweils neuen Zeile. Nach jeder Probe zurückgesetzt, `git diff` auf `SpracheingabeService.java` danach leer.
+- `./mvnw -B test -Dtest=SpracheingabeServiceTest`: 10 Tests, 0 Failures, 0 Errors, Exit 0.
+- `./mvnw test` (voll): 3136 Tests, 0 Failures, 0 Errors, 17 Skipped, Exit 0, BUILD SUCCESS. Gegenüber dem in der Nachbesserungs-Anfrage genannten Zwischenstand (555 Testklassen/3135 Tests) exakt +1 Test (der neue Streaming-Test), keine Regression.
+
+Bedenken / Abweichungen vom Plan:
+- **Korrektur zu meinem eigenen Block vom 17.09.2026 22:13:53Z weiter oben in diesem Log** (Log ist append-only, deshalb hier als neuer Block statt Änderung): Dort hatte ich im Bedenken-Abschnitt sinngemäß behauptet, der `Mockito.lenient()`-Stub auf `antwort.body()` würde absichern, dass die Implementierung den Antwortkörper im Fehlerfall nie liest. Das ist falsch — `lenient()` unterdrückt ausschließlich Mockitos `UnnecessaryStubbingException`, wenn ein Stub ungenutzt bleibt. Es beweist nichts über das tatsächliche Verhalten des Dienstes; ein Mutant, der `antwort.body()` zusätzlich mitloggt, wäre mit der damaligen Testfassung nicht aufgefallen. Der tatsächliche Beweis ist die jetzt ergänzte `Mockito.verify(antwort, Mockito.never()).body()` (siehe oben und Mutationsprobe 2). Danke an den Review-Agenten für den präzisen Befund samt Belegen.
+- Keine sonstigen Abweichungen. Alle vier Befunde 1:1 wie im Nachbesserungsauftrag beschrieben umgesetzt und einzeln per Mutationsprobe bestätigt.
+
+## Abschnitt 1 — Nachprüfung der Nachbesserungen (Abschnitts-Reviewer)
+
+Zeit: 2026-09-18T01:31:00Z
+Branch: feature/spracheingabe-zeiterfassung (Merge-Commits adece6ab, f750d23b)
+Commit(s): —
+Status: 🟡 — beide Nachbesserungen belegt wirksam, Abschnitt 1 abgenommen
+
+Gates (selbst gefahren):
+- Backend `./mvnw -B test`: 555 Klassen, 3136 Tests, 0 Failures, 0 Errors, 17 Skipped, Exit 0 — Erwartung erfüllt (3135 + 1).
+- Frontend `npm test`: 25 Dateien, 264 Tests, Exit 0. `npm run lint`: 0 Fehler, Exit 0.
+- `SpracheingabeService.java` im Nachbesserungs-Commit nachweislich unverändert (`git diff 62473742^..HEAD -- src/main/java/` leer) — Nachbesserung 1 war rein testseitig, wie angegeben.
+
+🔴-Befund Task 3 (Stream-Freigabe) — erledigt. Mit derselben Wegwerf-Testdatei nachgestellt
+wie beim Erstbefund; alle drei ursprünglich belegten Pfade bringen den Track jetzt auf
+`'ended'`:
+- A werfender `MediaRecorder`-Konstruktor ✓
+- B werfendes `recorder.start()` ✓
+- C `MediaRecorder` global `undefined` ✓
+- zusätzlich geprüft: `stoppe()` mit synchron werfendem `recorder.stop()` gibt frei und
+  rejected ✓ (war Teil desselben Befunds)
+
+Vier Hinweise Task 1 — alle erledigt. Die fünf Mutationen, die vorher sämtlich überlebten,
+werden jetzt alle gefangen, jede mit genau einem Failure und jeweils vom thematisch
+zuständigen Test (kein Kollateraltreffer, keine Tautologie):
+- `antwort.body()` in die `log.warn`-Zeile → `geminiFehlerAntwortLandetNichtInDerFehlermeldung:232`
+- `"image/png"` in die Whitelist → `fremderInhaltstypWirdAbgewiesen:172`
+- Größenprüfung erst nach dem Vollpuffern → rot
+- Markdown-Verbotszeile aus `SYSTEM_ANWEISUNG` entfernt → rot
+- Metallbau-Vokabelblock aus `SYSTEM_ANWEISUNG` entfernt → rot
+
+🟡 Neu gefunden, blockiert nicht — `audioRecorderService.ts:75`:
+`const gewaehlterTyp = waehleMimeType()` steht weiterhin eine Zeile **oberhalb** des neuen
+try-Blocks. Wirft `MediaRecorder.isTypeSupported()` beim Aufruf, bleibt der Stream offen —
+empirisch belegt (Track bleibt `'live'`). Dieselbe Lücke wie A/B/C, nur eine Zeile höher.
+Nicht blockierend, weil `isTypeSupported()` laut Spec einen Boolean liefert und in keinem
+realen Browser wirft; A und C waren dagegen Safari- bzw. Alt-iOS-Realität. Behebung ist ein
+Einzeiler (try-Block eine Zeile früher beginnen lassen) und passt gut in einen späteren Task,
+der die Datei ohnehin anfasst.
+
+🟡 Randnotiz, gleiche Datei: In `recorder.onstop` wird erst `new Blob(chunks, …)` gebaut und
+danach `gibMikrofonFrei(stream)` gerufen. Umgekehrte Reihenfolge wäre robuster. Rein
+theoretisch, `new Blob()` wirft praktisch nie.
+
+## Abschnitt 1 — Orchestrator, Abnahme
+
+Ampel 🟡, Abschnitt abgenommen. Beide Nachbesserungen vom Reviewer
+nachgestellt und als wirksam belegt: die drei Stream-Pfade aus Task 3 bringen
+den Track jetzt auf `'ended'`, und alle fünf Mutationen bei Task 1, die beim
+ersten Durchgang überlebt hatten, werden gefangen — jede von genau einem Test.
+
+**Vom Orchestrator selbst nachgezogen (eine Zeile):**
+`react-zeiterfassung/src/services/audioRecorderService.ts` — der Aufruf
+`waehleMimeType()` stand weiterhin oberhalb des neuen `try`-Blocks. Er ruft
+`MediaRecorder.isTypeSupported()` auf; wirft der, bliebe der Stream offen.
+Der Reviewer hatte das als 🟡 eingestuft und vorgeschlagen, es einem späteren
+Task mitzugeben, "der die Datei ohnehin anfasst — Task 7".
+
+Diese Begründung trifft nicht zu: Task 7 legt ausschließlich
+`VoiceInputButton.tsx` an. Er baut auf `audioRecorderService.ts` auf, ändert
+sie aber nicht. Kein späterer Task im Plan fasst die Datei an — die Lücke wäre
+also nie geschlossen worden. Deshalb hier erledigt: Aufruf in den try-Block
+gezogen, Kommentar an den Blockanfang gesetzt und um die Begründung ergänzt.
+
+Nach Spec wirft `isTypeSupported()` nicht, das Risiko ist theoretisch. Die
+Datei sagt aber zu, dass das Mikrofon nach `getUserMedia` auf keinem Pfad
+offen bleibt — und eine Zusage mit Ausnahme ist keine.
+
+Stand nach Abschnitt 1:
+
+    Backend   555 Testklassen, 3136 Tests, 0 Failures, 0 Errors, 17 Skipped
+    Frontend  25 Testdateien, 264 Tests, alle grün
+    Lint      0 Fehler
+    Build     übersetzt, keine Artefakte im Commit
+
+Offen aus dem Review, bewusst nicht behoben: In `recorder.onstop` wird erst
+der Blob gebaut, dann freigegeben. Umgekehrt wäre robuster, ist aber rein
+theoretisch und ändert am Ergebnis nichts.
