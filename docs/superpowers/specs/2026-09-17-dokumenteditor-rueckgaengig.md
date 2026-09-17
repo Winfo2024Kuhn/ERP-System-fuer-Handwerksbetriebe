@@ -1,5 +1,7 @@
 # Spec: Rückgängig & Wiederholen im Dokumenteditor
 
+Issue: #160
+
 Status: Grundlage ist das mit dem Nutzer am 17.09.2026 abgeschlossene und
 freigegebene Brainstorming zu Rückgängig & Wiederholen im Dokumenteditor
 (nicht als eigene Brainstorming-Datei abgelegt, das Ergebnis ist unten
