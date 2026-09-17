@@ -119,6 +119,15 @@ Frontend-Bundle liegt wie üblich mit im Commit
   gegen die 500-ms-Animation der Vorschau-Spalte (nicht von diesem Vorhaben
   verursacht, in einem Lauf von dreien einmal aufgetreten).
 
+## Enthält außerdem: #161 (Zahlungsziel)
+
+Der Fix „Zahlungsziel speichern und vor langen Fristen nachfragen" (#161) wurde
+in diesen Feature-Branch gemergt, nicht direkt in `main` — er kommt also mit
+diesem PR mit: `ZahlungszielTageEingabe.tsx`, `SummenFooter.tsx`, die
+Zahlungsziel-Spec und die zugehörigen Änderungen an `handleSave`. Beides
+zusammen ist geprüft: Ein per Rückgängig zurückgenommenes Zahlungsziel wird
+korrekt als ungespeichert erkannt und gespeichert.
+
 Spec und Umsetzungsplan liegen unter `docs/superpowers/` im Repository.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
