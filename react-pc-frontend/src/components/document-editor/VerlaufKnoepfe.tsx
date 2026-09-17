@@ -218,6 +218,12 @@ export function VerlaufKnoepfe({
             >
                 <Undo2 className="w-3.5 h-3.5" />
             </Button>
+            {/* Bewusst ein rohes <button>, nicht die Button-Basis: dieser Knopf
+                braucht ein echtes DOM-Ref (Positionierung, Fokus nach Auswahl,
+                Aussenklick-Erkennung) -- Button (ui/button.tsx) ist kein
+                forwardRef und kann keins entgegennehmen. Gleiches Muster wie
+                der (ebenfalls ref'te) Trigger in WahlpositionMenu.tsx, dessen
+                disabled-Klassen aus demselben Grund hier stehen. */}
             <button
                 ref={pfeilRef}
                 type="button"
