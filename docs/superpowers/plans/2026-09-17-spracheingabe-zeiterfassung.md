@@ -1181,6 +1181,74 @@ schneiden, solange 1–7 oben eingehalten sind.
 (Frontend-Pfade relativ zu `react-zeiterfassung/`, Backend-Pfade relativ zu
 `src/main/java/org/example/kalkulationsprogramm/` bzw. `src/test/java/org/example/kalkulationsprogramm/`.)
 
+## Abschnittseinteilung
+
+Vom Orchestrator festgelegt. Datei-Disjunktheit wurde programmatisch geprüft:
+keine Datei kommt in mehr als einem Task vor, jeder Abschnitt ist in sich
+disjunkt.
+
+**Korrektur am Vorschlag des Grobplaners.** Die grobe Ebene schlug
+`{2, 4, 7}` als zweite Runde vor. Das verletzt Randbedingung 5 desselben
+Kapitels: Task 7 importiert `spracheingabeService.ts`, das erst Task 4
+anlegt. Lägen beide in derselben Runde, fände `tsc -b` im Worktree von
+Task 7 das Modul nicht — der Task wäre für sich nicht baubar und sein Agent
+könnte seine eigene Arbeit nicht prüfen. Task 7 bekommt deshalb eine eigene
+Runde. Kosten: ein zusätzlicher Review-Durchlauf. Nutzen: jeder Task-Branch
+bleibt für sich übersetzbar.
+
+| Abschnitt | Tasks | Worktree | Branch | Design-Review |
+| --- | --- | --- | --- | --- |
+| 1 | 1 — `SpracheingabeService` (Backend) | `/Users/marvinkuhn/dev/wt/sprach-task-1` | `sprach/task-1-backend-service` | nein |
+| 1 | 3 — `audioRecorderService.ts` | `/Users/marvinkuhn/dev/wt/sprach-task-3` | `sprach/task-3-audio-recorder` | nein |
+| 1 | 5 — `permissionStatusService.ts` | `/Users/marvinkuhn/dev/wt/sprach-task-5` | `sprach/task-5-permission-status` | nein |
+| 1 | 6 — `notificationBootstrap.ts` | `/Users/marvinkuhn/dev/wt/sprach-task-6` | `sprach/task-6-notification-bootstrap` | nein |
+| 2 | 2 — `SpracheingabeController` + Freischaltung | `/Users/marvinkuhn/dev/wt/sprach-task-2` | `sprach/task-2-backend-controller` | nein |
+| 2 | 4 — `spracheingabeService.ts` (Client) | `/Users/marvinkuhn/dev/wt/sprach-task-4` | `sprach/task-4-client-service` | nein |
+| 3 | 7 — `VoiceInputButton.tsx` | `/Users/marvinkuhn/dev/wt/sprach-task-7` | `sprach/task-7-voice-button` | nein |
+| 4 | 8 — `EinstellungenPage.tsx` | `/Users/marvinkuhn/dev/wt/sprach-task-8` | `sprach/task-8-einstellungen-seite` | **ja** |
+| 4 | 9 — `App.tsx` Route + keine Erstabfrage | `/Users/marvinkuhn/dev/wt/sprach-task-9` | `sprach/task-9-app-route` | **ja** |
+| 4 | 10 — Zahnrad im Dashboard-Kopf | `/Users/marvinkuhn/dev/wt/sprach-task-10` | `sprach/task-10-zahnrad` | **ja** |
+| 5 | 11 — Einbau Bautagebuch + Anfrage-Tagebuch | `/Users/marvinkuhn/dev/wt/sprach-task-11` | `sprach/task-11-tagebuecher` | **ja** |
+| 5 | 12 — Einbau Urlaubsantrag | `/Users/marvinkuhn/dev/wt/sprach-task-12` | `sprach/task-12-urlaub` | **ja** |
+| 5 | 13 — Einbau Reklamation | `/Users/marvinkuhn/dev/wt/sprach-task-13` | `sprach/task-13-reklamation` | **ja** |
+
+### Warum Abschnitt 1 vier Tasks hat
+
+Der Skill gibt maximal drei Tasks je Abschnitt vor. Abschnitt 1 hat vier.
+Begründete Ausnahme: Alle vier legen ausschließlich **neue** Dateien an,
+teilen nachweislich keine einzige Datei, und keiner verändert sichtbare
+Oberfläche. Die Regel begrenzt Merge-Risiko und Prüffläche — beides ist hier
+minimal. Die Alternative wäre ein fünfter Review-Durchlauf für einen Task,
+der aus zwei neuen Dateien besteht.
+
+### Design-Review je Abschnitt
+
+Abschnitt 1 bis 3 ändern **nichts Sichtbares**: neue Dienste, eine noch
+nirgends eingebundene Komponente. Reine Vorarbeit bekommt laut Skill keinen
+Design-Review, sonst prüft er eine Stunde lang, dass sich nichts geändert
+hat. Erst ab Abschnitt 4 gibt es eine im Browser ansteuerbare Oberfläche.
+
+### Abnahmeregel (Baseline auf dem unveränderten Feature-Branch)
+
+    Backend  ./mvnw test   554 Testklassen, 3126 Tests, 0 Failures, 0 Errors, 17 Skipped
+    Frontend npm test      22 Testdateien, 217 Tests, alle grün
+    Lint     npm run lint  0 Fehler
+
+Alles grün. Es gibt **keine** bekannten Vorschäden. Jeder Fehler ist neu.
+
+### Worktree-Einrichtung (macht der Orchestrator, nicht die Agenten)
+
+    git worktree add /Users/marvinkuhn/dev/wt/sprach-task-<n> -b sprach/task-<n>-<name> feature/spracheingabe-zeiterfassung
+    ln -s /Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/react-zeiterfassung/node_modules \
+          /Users/marvinkuhn/dev/wt/sprach-task-<n>/react-zeiterfassung/node_modules
+
+Der Symlink entfällt bei reinen Backend-Tasks (1 und 2).
+
+**Beim Aufräumen zwingend:** vor `git worktree remove` erst den
+`node_modules`-Symlink lösen (`rm` auf den Link, nicht `rm -rf` auf das
+Ziel). Sonst läuft das Entfernen durch den Verweis hindurch und leert das
+echte `node_modules` im Haupt-Checkout.
+
 ## Nicht Teil dieses Plans
 
 - `react-pc-frontend` — ausdrücklich außen vor.
