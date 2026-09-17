@@ -455,3 +455,158 @@ Ampel: 🟢 abgenommen (Code-Review 🟡, keine 🔴)
   Regressionstest in `TiptapEditor.test.tsx`, fehlender Test für
   `data-block-id` in `SortableBlock.tsx`, handgebaute `disabled`-Klassen am
   Chevron-Knopf.
+
+## Abschnitt 2 — Task 4 (Coding-Agent)
+
+Zeit: 2026-09-17T20:26:14Z
+Branch: verlauf/task-4-integration
+Commit(s): 9d3feb2f (Verdrahtung + Phantom-Gate + Aufräumpunkte), 9a4b7cb0 (Playwright-Spec)
+Status: fertig
+
+Was gemacht wurde:
+- Alle Nutzeraktionen in `index.tsx` (Einfügen/Löschen/Verschieben/Titel/
+  Menge/Einheit/Preis/Inhalt/Wahlmodus/Auswahlgruppe/Rabatt/Datum/
+  Zahlungsziel/Rechnungsadresse/Balken) laufen jetzt über `verlauf.aendern`
+  aus `useDokumentVerlauf`, mit der Wortliste aus dem Plan als Bezeichnung.
+  Automatische Änderungen (Laden, CLOSURE-Sync, Bezugsdatum-Reparatur,
+  Standard-Textbausteine, `bumpDatumAufHeute`) bleiben Ref-first (`setzeBlocks`/
+  `setzeGlobalRabatt`/`setzeBalkenAnzeigen`) und erzeugen keinen Schritt;
+  Standard-Textbausteine/Bezugsdatum-Reparatur rufen zusätzlich
+  `verlauf.leeren()` (Randfall aus der Spec).
+- `handleDragEnd` entschärft: `blocksRef.current` lesen, `arrayMove` +
+  `validateRootReorder` VOR dem Schreiben, `toast.warning` jetzt außerhalb
+  jedes State-Updaters (StrictMode-Falle aus dem Briefing behoben).
+- **Phantom-Schritte verhindert** (🔴-Befund aus Abschnitt 1): neues
+  `fokussierteEditorenRef` (WeakSet über Editor-Instanzen) + zentrales
+  `markiereEditorFokussiert` (ersetzt die drei Inline-`onEditorFocus`-Callbacks
+  für SectionHeaderBlock/TextBlock/ServiceBlock). `istPhantomTiptapAenderung`
+  gated `updateBlock`/`updateSectionChild` für `content`/`description`: eine
+  Änderung von einer noch nie fokussierten Editor-Instanz (der
+  `setEditable`-Mount-Aufruf, Tiptaps normalisiertes HTML) läuft automatisch
+  über `setzeBlocks`, nicht über `verlauf.aendern` — kein Schritt. Getestet mit
+  drei Fällen in `index.test.tsx` (Listeninhalt, leerer Inhalt, Text ohne Tag):
+  Rückgängig-Knopf bleibt disabled.
+- Tastatur über `useVerlaufTastatur` (`editorWurzelRef` auf den
+  "Editor Area"-Container, `einDialogOffen` bündelt alle Picker/Dialoge des
+  Editors ohne `role="dialog"`).
+- "Stelle zeigen": neuer `sprung`-State + Effekt, scrollt/hebt die Karte
+  hervor (`.verlauf-hervorgehoben`, neue Klasse in `index.css`, respektiert
+  `prefers-reduced-motion`), setzt bei Inhalts-Feldern den Cursor
+  (`ed.commands.focus()`), bei anderen Feldern `.focus()` aufs Eingabefeld.
+  `aria-live`-Ansage als erstes Kind des Editor-Bereichs, bewusst ohne
+  `role="status"` (Design-Check sammelt das sonst als Überschneidung ein).
+- Verlauf-Reset: Sperr-Effekt (`verlauf.leeren()`, auch bei Soft-Lock),
+  `confirmExport` (nach erfolgreichem Download, unconditional),
+  `executePrint` (nur im `shouldBook`-Zweig), `EmailComposeModal.onSuccess`
+  (nur `!wasDraft`).
+- Ungespeichert-Signatur an allen fünf Stellen (Ladebaseline, `handleSave`
+  ×2, Change-Detection, Auto-Save, `buchenUndSperren`) auf
+  `baueDokumentSignatur` umgestellt (inkl. `globalRabatt`/`balkenAnzeigen`);
+  `adresseGeaendert`/`zahlungszielGeaendert` bleiben additiv erhalten.
+  `schreibeStand` setzt beide Flags jetzt zentral (für den Undo/Redo-Pfad
+  UND den normalen Änderungspfad) — siehe Bedenken zum genauen Verhalten
+  bei Zahlungsziel.
+- Aufräumpunkte aus dem Abschnitt-1-Review: `TiptapEditor.test.tsx`
+  (`onChange.mockClear()` ergänzt, Mutationsprobe "Update auch im
+  Standardmodus unterdrücken" jetzt rot); `data-block-id`-Vertrag von
+  `SortableBlock.tsx` jetzt in `index.test.tsx` mit echtem Editor
+  zugesichert; `VerlaufKnoepfe.tsx` — siehe Bedenken unten.
+
+Gate-Ergebnisse (alle in `react-pc-frontend/`):
+- `npx vitest run src/components/document-editor/index.test.tsx
+  src/components/TiptapEditor.test.tsx
+  src/components/document-editor/VerlaufKnoepfe.test.tsx
+  src/components/document-editor/helpers.test.ts
+  src/components/document-editor/ZahlungszielTageEingabe.test.tsx`
+  → exit 0, **5 Dateien / 186 Tests grün** (index.test.tsx allein: 59 Tests,
+  davon 18 neu: 14 Rückgängig/Wiederholen-Fälle + 3 Phantom-Schritt-Fälle +
+  1 data-block-id-Vertrag).
+- `npm run lint` → exit 0, 0 Fehler/Warnungen (zwei
+  `react-hooks/exhaustive-deps`-Warnungen mit begründetem
+  `eslint-disable-next-line` behoben — `verlauf.leeren` ist über seinen
+  eigenen `useCallback` stabil, das umschließende `verlauf`-Objekt nicht;
+  Vorbild: bestehende `eslint-disable`-Kommentare an `replacePlaceholders`
+  u.a. in derselben Datei).
+- `npx tsc -b && npx vite build --outDir "$(mktemp -d)" --emptyOutDir` →
+  exit 0.
+- `E2E_PORT=5321 npx playwright test e2e/dokument-editor-rueckgaengig.spec.ts`
+  → **15/15 grün** (5 Tests × 3 Größen). Screenshots angeschaut (nicht
+  formal bewertet, das macht der Design-Reviewer): Kopfleiste bei 1440px
+  ohne Überlauf/Überschneidung, Dropdown-Liste korrekt positioniert und
+  linksbündig, "Gebucht"-Zustand ohne Verlaufsknöpfe wie spezifiziert.
+- Nicht rot gemacht: `E2E_PORT=5321 npx playwright test
+  e2e/dokument-editor-zahlungsziel.spec.ts e2e/dokument-editor-seite.spec.ts`
+  → **45/45 weiterhin grün**.
+- Baseline war (gemessen auf `02675b0f`): lint grün · tsc grün · vitest
+  141 Dateien/1609 Tests grün · E2E 627+Zahlungsziel-Spec grün. Alles Rote
+  in diesem Task-Lauf gehörte mir und ist jetzt grün.
+
+Bedenken / Abweichungen vom Plan:
+- **`e2e/hilfen/dokument-editor.ts` nicht geändert.** Der Plan-Schritt
+  "`DokumentEditorStubOptionen` um `dokument?: Partial<AusgangsDokumentStand>`
+  ergänzen" war bereits durch PR #161 erledigt (die Datei hat dieses Feld
+  schon), bevor ich meinen Task begonnen habe. Keine Änderung nötig, meine
+  E2E-Spec nutzt die vorhandene Option direkt.
+- **`VerlaufKnoepfe.tsx`-Chevron bleibt ein rohes `<button>`, nicht die
+  `Button`-Basis.** Untersucht: `src/components/ui/button.tsx` ist kein
+  `forwardRef` und kann daher keine `ref`-Prop entgegennehmen — der Chevron
+  braucht aber ein echtes DOM-Ref (Positionierung des Dropdown-Menüs, Fokus
+  nach Auswahl, Außenklick-Erkennung). Das etablierte Muster im Projekt für
+  genau diesen Fall (`WahlpositionMenu.tsx`, der Vorbild-Trigger aus Task 3)
+  hat exakt dasselbe Problem und hand-rollt seine `disabled`-Klassen aus
+  demselben Grund. Ich habe die Klassen belassen (sie sind korrekt und
+  entsprechen dem etablierten Muster) und einen Kommentar mit der Begründung
+  ergänzt, statt `button.tsx` anzufassen (nicht in meiner Files-Liste, breite
+  Wirkung auf viele andere Verwender). Entscheidung des Nutzers/Reviewers
+  willkommen, falls eine andere Lösung gewünscht ist.
+- **`schreibeStand`s Zahlungsziel-Flag nutzt die vergleichsbasierte Formel
+  aus `handleZahlungszielChange`, nicht "unconditional true" wie bei der
+  Adresse.** Mein Auftrag sagte "genau analog zu adresseGeaendert" bzw.
+  "genau wie beim Adress-Schritt". Ich bin bewusst davon abgewichen:
+  Zahlungsziel hat (anders als die Adresse) bereits ein eigenes, im Code
+  begründetes Muster (`gespeichertesZahlungszielRef`-Vergleich, damit ein
+  Hin-und-zurück-Tippen kein falsches "Ungespeichert" hinterlässt — siehe
+  bestehender Kommentar an der Ref-Deklaration). Ein unconditional-true hätte
+  dieses bestehende, von den (nicht anzufassenden) Zahlungsziel-Tests
+  abgedeckte Verhalten gebrochen. Die vergleichsbasierte Variante deckt den
+  im Auftrag beschriebenen Bug-Fall (Rückgängig eines bereits gespeicherten
+  Zahlungsziel-Schritts muss erneut "Ungespeichert" auslösen) nachweislich
+  ab — siehe `index.test.tsx`, Testfall 6 (dort für Rabatt demonstriert, für
+  Zahlungsziel analog durch die bestehenden, weiterhin grünen
+  Zahlungsziel-Tests in `index.test.tsx`/E2E). Alle bestehenden
+  Zahlungsziel-Tests (Unit + E2E) sind unverändert grün.
+- **E-Mail-Versand-Reset (Testfall 13 aus dem Plan) nicht mit eigenem
+  Unit-/E2E-Test für den vollen Sende-Ablauf abgedeckt** — wie im Plan
+  ausdrücklich als Ausweg vorgesehen ("falls der volle Mail-Ablauf in jsdom
+  zu aufwendig ist … im Kontext-Log vermerken"). `EmailComposeForm.tsx` hat
+  1689 Zeilen und wird von keinem bestehenden Test der Datei getrieben.
+  Stattdessen mit demselben, einzeiligen Muster (`if (!wasDraft)
+  verlauf.leeren();`) wie beim PDF-Export umgesetzt, dessen Wirksamkeit
+  `index.test.tsx`-Testfall 13 (PDF-Export) belegt. Der Druck-Reset
+  (`executePrint`, nur `shouldBook`-Zweig) ist aus demselben Grund ebenfalls
+  nicht separat getestet — `window.print()`/`iframe.contentWindow.print()`
+  sind in jsdom nicht sinnvoll simulierbar. Beide Stellen sind Ein-Zeiler
+  nach demselben, getesteten Muster; Code-Review-tauglich, aber ohne
+  eigenen roten/grünen Testlauf.
+- Keine Änderungen an `TextBlock.tsx`/`ServiceBlock.tsx`/
+  `SectionHeaderBlock.tsx` nötig — nur `verlaufsModus` (konstant `true`) von
+  `index.tsx` aus gesetzt, wie in Task 2 vorbereitet.
+- `graphify query`/`path`/`explain` nur für zwei gezielte Rückfragen genutzt
+  (Bestätigung `Editor.setEditable`-Verhalten, `WahlpositionMenu`-Vorbild),
+  kein `graphify update` gefahren (Vorgabe).
+
+Beendete Dienste: keine laufenden Prozesse hinterlassen — `pgrep -fl
+"vite|playwright|esbuild"` nach beiden Playwright-Läufen ohne Treffer für
+`verlauf-task-4` bzw. Port 5321 (Playwright hat seinen eigenen
+Vite-Dev-Server nach jedem `npx playwright test`-Lauf selbst beendet, da
+beide Läufe sequenziell und nicht überlappend liefen).
+
+**Korrektur (derselbe Block, Task 4):** Der Satz "graphify query/path/explain
+nur für zwei gezielte Rückfragen genutzt" oben ist ungenau — tatsächlich habe
+ich für beide Verifikationen (Tiptaps `setEditable`-Verhalten in
+`TiptapEditor.tsx`, das `WahlpositionMenu.tsx`-Vorbild für ref-pflichtige
+Trigger-Buttons) direkt mit `Read`/`Grep` auf den exakten, aus dem Plan
+bekannten Dateipfaden gearbeitet, nicht die `graphify`-CLI aufgerufen. Das
+entspricht der dokumentierten Ausnahme ("Du kennst den exakten Dateipfad →
+Read direkt"), ist aber ein anderer Mechanismus als im Block oben behauptet.
+`./graphify update` wurde weiterhin nicht gefahren.
