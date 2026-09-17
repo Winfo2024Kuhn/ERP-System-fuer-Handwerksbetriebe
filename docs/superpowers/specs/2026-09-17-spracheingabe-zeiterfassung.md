@@ -2,6 +2,8 @@
 
 Datum: 17.09.2026
 
+Issue: [#163](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/issues/163)
+
 Branch: `feature/spracheingabe-zeiterfassung` (Git-Worktree, abgezweigt von `main`)
 
 Status: Grundlage ist ein mit dem Nutzer abgeschlossenes Brainstorming zur
