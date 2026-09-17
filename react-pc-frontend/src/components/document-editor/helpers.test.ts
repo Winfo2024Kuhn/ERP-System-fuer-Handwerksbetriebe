@@ -42,7 +42,10 @@ import {
     parseBlocksAusPositionenJson,
     vergleicheLeistungen,
     formatiereDifferenzHinweis,
+    baueDokumentSignatur,
+    type DokumentSignaturDaten,
 } from './helpers';
+import { CLOSURE_BLOCK_ID } from './blockOps';
 import type { DocBlock } from './types';
 
 describe('extractBoldFromHtml', () => {
@@ -686,5 +689,59 @@ describe('parseBlocksAusPositionenJson', () => {
         ['Objekt ohne blocks', '{"globalRabatt":5}'],
     ])('liefert bei %s eine leere Liste statt zu werfen', (_bezeichnung, wert) => {
         expect(parseBlocksAusPositionenJson(wert as string | null | undefined)).toEqual([]);
+    });
+});
+
+/**
+ * Vergleichswert fuer "Ungespeichert" im Dokumenteditor (Task 1 des
+ * Rueckgaengig/Wiederholen-Vorhabens, Issue #160). Ersetzt fuenf identische
+ * `JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp })`-
+ * Aufrufe in index.tsx durch EINE Hilfsfunktion, die zusaetzlich globalRabatt
+ * und balkenAnzeigen einschliesst (die bisher NICHT in den Vergleich einflossen).
+ *
+ * DSGVO: ausschliesslich Dummy-Daten.
+ */
+describe('baueDokumentSignatur', () => {
+    const dummyBlock = (overrides: Partial<DocBlock> = {}): DocBlock => ({
+        id: 'a', type: 'SERVICE', title: 'Leistung A', quantity: 1, unit: 'Stk', price: 100, ...overrides,
+    });
+
+    const basisDaten = (overrides: Partial<DokumentSignaturDaten> = {}): DokumentSignaturDaten => ({
+        blocks: [dummyBlock()],
+        datum: '2026-09-01',
+        betreff: 'Sanierung Musterweg 1',
+        dokumentTyp: 'ANGEBOT',
+        globalRabatt: 0,
+        balkenAnzeigen: true,
+        ...overrides,
+    });
+
+    it('blendet einen Block mit CLOSURE_BLOCK_ID als id aus', () => {
+        const mitClosure = basisDaten({ blocks: [dummyBlock(), { id: CLOSURE_BLOCK_ID, type: 'SERVICE' }] });
+        expect(baueDokumentSignatur(mitClosure)).toBe(baueDokumentSignatur(basisDaten()));
+    });
+
+    it('blendet einen Block mit type CLOSURE aus, auch bei abweichender id', () => {
+        const mitClosure = basisDaten({ blocks: [dummyBlock(), { id: 'irgendwas', type: 'CLOSURE' }] });
+        expect(baueDokumentSignatur(mitClosure)).toBe(baueDokumentSignatur(basisDaten()));
+    });
+
+    it('liefert fuer gleiche Daten die gleiche Signatur', () => {
+        expect(baueDokumentSignatur(basisDaten())).toBe(baueDokumentSignatur(basisDaten()));
+    });
+
+    it('liefert fuer geaenderten globalRabatt eine andere Signatur', () => {
+        expect(baueDokumentSignatur(basisDaten({ globalRabatt: 5 })))
+            .not.toBe(baueDokumentSignatur(basisDaten()));
+    });
+
+    it('liefert fuer geaendertes balkenAnzeigen eine andere Signatur', () => {
+        expect(baueDokumentSignatur(basisDaten({ balkenAnzeigen: false })))
+            .not.toBe(baueDokumentSignatur(basisDaten()));
+    });
+
+    it('liefert fuer geaenderte blocks eine andere Signatur', () => {
+        expect(baueDokumentSignatur(basisDaten({ blocks: [dummyBlock({ title: 'Leistung B' })] })))
+            .not.toBe(baueDokumentSignatur(basisDaten()));
     });
 });
