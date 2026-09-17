@@ -530,3 +530,47 @@ Bedenken / Abweichungen vom Plan:
   Aenderung), nur fuer den Orchestrator vermerkt.
 - Sonst keine Abweichungen. Endpunkt-Vertrag (Statuscodes, Feldnamen `text` /
   `success` / `message`) 1:1 wie im Plan umgesetzt.
+
+## Abschluss — 18.09.2026, Orchestrator
+
+Alle 13 Tasks umgesetzt. Abschnitte 1 und 2 liefen wie geplant mit
+Coding-Agenten und Review; Tasks 7 bis 13 hat der Orchestrator auf Wunsch des
+Nutzers selbst gebaut, um Zeit zu sparen.
+
+Endstand:
+
+    Backend   559 Testklassen, 3147 Tests, 0 Failures, 0 Errors, 17 Skipped
+    Frontend  34 Testdateien, 346 Tests, alle gruen
+    Lint      0 Fehler
+    Build     uebersetzt, Artefakte einmal koordiniert am Ende erzeugt
+
+Mutationsproben insgesamt 19 gefahren, 19 gefangen.
+
+`main` wurde zweimal in den Feature-Branch geholt: einmal vor Abschnitt 1
+(PR #162 und der iOS-Safe-Area-Fix) und einmal am Ende (PWA-Feinschliff nach
+Simulator-Test). Der zweite Merge beruehrte alle vier Einbau-Seiten, das
+Dashboard und `App.tsx` — also genau die Dateien dieses Vorhabens. Er lief
+konfliktfrei, und alle Einbauten wurden danach einzeln nachgeprueft.
+
+### Bewusst nicht erledigt — offene Punkte fuer den Nutzer
+
+1. **Kein Review fuer Abschnitte 3 bis 5.** Der Nutzer hat entschieden, den
+   Review zu ueberspringen. In Abschnitt 1 hatte der Reviewer einen echten
+   Fehler gefunden, den kein Test gesehen haette (ein Mikrofon-Stream, der
+   auf einem Fehlerpfad offen blieb). Tasks 7 bis 13 hat niemand ausser dem
+   Orchestrator gesehen.
+2. **Kein Design-Review, kein Blick in den Browser.** Alle 346 Tests laufen
+   in jsdom. Ob das Zahnrad richtig sitzt, ob der Diktier-Knopf im Modal
+   ueberlaeuft, ob auf dem Handy etwas ueberlappt — ungeprueft. Der
+   Simulator-Test wurde begonnen, aber nicht zu Ende gefuehrt.
+3. **Der Gemini-Aufruf ist nie wirklich gelaufen.** Alle Tests arbeiten mit
+   einem gefaelschten HttpClient. Ob der Prompt das Gewuenschte liefert und
+   die Antwort korrekt ausgelesen wird, zeigt sich erst beim ersten echten
+   Diktat.
+4. **Die fuenf Playwright-E2E-Specs aus dem Plan fehlen**, darunter die, die
+   mitzaehlt, ob ungefragt nach der Benachrichtigungs-Erlaubnis gefragt wird.
+   Ersatzweise sichert `App.benachrichtigungen.test.ts` das strukturell ab —
+   das prueft Quelltext statt Verhalten und ist kein gleichwertiger Ersatz.
+5. **Der `?token=`-Query-Parameter** bleibt das Auth-Muster des neuen
+   Endpunkts, wie im ganzen Projekt. Tokens landen damit in Server-Logs und
+   im Browserverlauf. Eine projektweite Umstellung ist eine eigene Aufgabe.
