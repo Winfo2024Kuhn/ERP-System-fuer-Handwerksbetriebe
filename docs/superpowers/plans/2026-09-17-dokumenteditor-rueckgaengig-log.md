@@ -364,3 +364,94 @@ Bedenken / Abweichungen vom Plan:
   (`pgrep -fl "vite|vitest|playwright|esbuild" | grep verlauf-task-2` ohne
   Treffer) — nur Single-Shot-Kommandos (`vitest run`, `tsc -b`,
   `vite build`, `eslint`) ausgeführt, kein Watch-/Dev-Server gestartet.
+
+## Abschnitt 1 — Review (Abschnitts-Reviewer, loese-problem)
+
+Zeit: 2026-09-17T18:56:01Z
+Branch: feature/dokument-verlauf (gemergter Stand b966c741)
+Commit(s) geprüft: 9a263d93 (Task 1), f20c8739 (Task 2), f6316ba8 (Task 3)
+Status: fertig — **Ampel 🟡 (abgenommen)**
+
+Gates (selbst gefahren, Worktree /Users/marvinkuhn/dev/wt/verlauf-integration):
+- Backend: `git diff --name-only main...HEAD | grep "^src/(main|test)/java"` ohne
+  Treffer → keine Maven-Gates, wie im Plan vorgesehen.
+- `npm run lint` exit=0 · `npx tsc -b` exit=0
+- `npm run test` exit=0 — **140 Dateien / 1576 Tests grün**
+  (Baseline 133/1467 ⇒ +7 Dateien, +109 Tests; keine vorbestehenden und keine
+  neuen Fehler). E2E bewusst nicht gefahren (Design-Reviewer).
+
+Mutationsproben (alle danach restlos zurückgenommen, `git status --short` leer):
+- `MAX_SCHRITTE` 20→100 ⇒ genau `(c) kappt bei MAX_SCHRITTE` rot ✓
+- Bündel-Pause ignoriert ⇒ genau `(e) buendelt NICHT ausserhalb der Pause` rot ✓
+- `schrittAufnehmen` leert `wiederholbar` nicht ⇒ genau `(l)` rot ✓
+- `istLeer`-Guard entfernt ⇒ `(b)` rot ✓ (Hook-Tests bleiben grün, weil `aendern`
+  einen eigenen Guard hat — beide Ebenen sind getrennt abgesichert)
+- `data-block-id` am Kind-Wrapper in `SectionHeaderBlock` entfernt ⇒ rot ✓
+- `data-block-id` in `SortableBlock.tsx` entfernt ⇒ **nichts rot** (Lücke, 🟡)
+- `setzeInhaltVonAussen` unterdrückt das Update auch im Standardmodus ⇒
+  `tiptapVerlauf.test.ts` rot ✓, `TiptapEditor.test.tsx` bleibt grün (🟡, s.u.)
+
+Befunde:
+- **Keine 🔴.** Korrektheit, Sicherheit, DSGVO (nur Dummy-Daten), Architektur,
+  Dateigrenzen (jeder Task exakt innerhalb seiner `Files`-Liste) sind sauber.
+- 🟡 **Für Abschnitt 2 wichtig — die Anmerkung aus dem Task-2-Block trifft nicht
+  in allen Fällen zu.** Gemessen mit einem echten Tiptap in jsdom: der
+  `setEditable`-Effekt feuert beim Mount genau ein `onChange`, und der gemeldete
+  Wert ist Tiptaps **normalisiertes** HTML. Für `''` → `<p></p>`, `Nur Text ohne
+  Tag` → `<p>Nur Text…</p>`, `<ul><li>Punkt</li></ul>` →
+  `<ul><li><p>Punkt</p></li></ul>`, `text-align: center` → `…center;` weicht er
+  vom gespeicherten Wert ab. Der Verlaufskern fängt das dann **nicht** als
+  „keine Änderung“ ab (`feldAenderungen` sieht einen echten Diff) — Task 4 würde
+  beim Öffnen eines Dokuments Phantom-Schritte erzeugen. Empfehlung für
+  Abschnitt 2: `onChange` aus dem Editor erst nach der ersten echten
+  Nutzer-Interaktion in einen Verlaufsschritt überführen (z.B. Gate über
+  `onFocus`/`art`), nicht ungeprüft jeden Aufruf. Kein Fehler im hier gelieferten
+  Code — `index.tsx` ist unangetastet, nichts davon ist heute sichtbar.
+- 🟡 `TiptapEditor.test.tsx:28-35` (Standardmodus-Regression) ist tautologisch:
+  ohne `onChange.mockClear()` nach dem ersten `render` ist
+  `expect(onChange).toHaveBeenCalled()` schon durch den Mount-Aufruf erfüllt.
+  Belegt: mit Mutation bleibt der Test grün, mit einer zusätzlichen Zeile
+  `onChange.mockClear()` wird er rot. Die Zusicherung selbst ist über
+  `tiptapVerlauf.test.ts` abgedeckt, das Verhalten ist korrekt.
+- 🟡 `SortableBlock.tsx` trägt `data-block-id`, aber kein Test hält das fest
+  (für `SectionHeaderBlock` schon). Task 4 hängt an diesem DOM-Vertrag.
+- 🟡 Der Chevron-Knopf in `VerlaufKnoepfe.tsx:230-235` baut
+  `disabled:opacity-50 disabled:cursor-not-allowed` von Hand nach, statt über die
+  `Button`-Basis zu kommen (Plan-Vorgabe). Optisch identisch.
+- Geprüft und in Ordnung: beide Undo/Redo-Leisten (exportierte `TiptapToolbar`
+  **und** die interne Kopie) prüfen `typeof editor.commands.undo === 'function'`;
+  Verlaufskern (20er-Grenze, Bündelung inkl. Pause/Feldwechsel/nach Rückgängig,
+  Redo-Stapel-Verwurf, feldgenaues Zurücknehmen, Referenzgleichheit bei
+  Leer-Schritt); StrictMode (keine Seiteneffekte in State-Updatern, Listener
+  sauber ab-/angemeldet); Tastatur-Hook (`preventDefault` nur nach bestandener
+  Prüfung, alle modalen Dialoge des Editors tragen `aria-modal="true"`).
+
+## Abschnitt 1 — Abnahme (Orchestrator)
+
+Zeit: 2026-09-17
+Stand nach Merge: `feature/dokument-verlauf` @ 02675b0f
+Ampel: 🟢 abgenommen (Code-Review 🟡, keine 🔴)
+
+- Task-Branches konfliktfrei gemergt (`9a263d93`, `f20c8739`, `f6316ba8`).
+- **Design-Review wurde abgebrochen und zählt nicht zur Abnahme.** Begründung
+  des Nutzers: Abschnitt 1 verändert für den Nutzer nichts Sichtbares (alles
+  opt-in, `index.tsx` unangetastet) — dann gibt es auch nichts zu begutachten.
+  Die Regression fängt die volle E2E-Suite in Abschnitt 2, die ohnehin läuft.
+  Die Regel steht jetzt im Skill (`SKILL.md` Schritt 5.3 und
+  `references/fallstricke.md`).
+- **Fremder Stand hereingeholt:** PR #161 („Zahlungsziel speichern und vor
+  langen Fristen nachfragen") wurde vom Nutzer direkt in
+  `feature/dokument-verlauf` gemergt (Commit `02675b0f`, Fast-Forward, keine
+  Konflikte). Er ändert `index.tsx` (`handleSave` schickt jetzt
+  `zahlungszielTage`, neues Flag `zahlungszielGeaendert` analog zu
+  `adresseGeaendert`), `helpers.ts`, `TextBlock.tsx`, `SummenFooter.tsx`, bringt
+  die neue Komponente `ZahlungszielTageEingabe.tsx` und die Spec
+  `e2e/dokument-editor-zahlungsziel.spec.ts` mit.
+- **Neue Baseline für Abschnitt 2** (auf 02675b0f gemessen): lint grün · tsc
+  grün · vitest **141 Dateien / 1609 Tests** grün. E2E unverändert erwartet
+  (627 + die neue Zahlungsziel-Spec). Jeder Fehler ab hier ist neu.
+- Offene 🟡 aus dem Code-Review, die Abschnitt 2 miterledigt: Phantom-Schritte
+  durch das Mount-`onChange` (Tiptap normalisiert HTML), tautologischer
+  Regressionstest in `TiptapEditor.test.tsx`, fehlender Test für
+  `data-block-id` in `SortableBlock.tsx`, handgebaute `disabled`-Klassen am
+  Chevron-Knopf.
