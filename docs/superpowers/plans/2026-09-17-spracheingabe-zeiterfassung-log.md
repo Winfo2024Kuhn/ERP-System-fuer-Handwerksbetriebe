@@ -385,3 +385,148 @@ Stand nach Abschnitt 1:
 Offen aus dem Review, bewusst nicht behoben: In `recorder.onstop` wird erst
 der Blob gebaut, dann freigegeben. Umgekehrt wäre robuster, ist aber rein
 theoretisch und ändert am Ergebnis nichts.
+
+## Abschnitt 1 — Task 4 (Coding-Agent)
+
+Zeit: 2026-09-17T23:01:28Z
+Branch: sprach/task-4-client-service
+Commit(s): a389f6a3
+Status: fertig
+
+Was gemacht wurde:
+- `react-zeiterfassung/src/services/spracheingabeService.ts` neu angelegt:
+  `SpracheingabeFehler` (deutsche Klartext-Meldung + optionaler HTTP-`status`)
+  und `transkribiere(aufnahme, token, signal?)`.
+- Aufnahme geht als roher Request-Body (`body: aufnahme`), bewusst **kein**
+  FormData/Multipart — Abweichung A des Plans, als Kommentar im Dateikopf
+  festgehalten. `Content-Type`-Header = `aufnahme.type || 'audio/webm'`.
+- URL: `` `/api/spracheingabe/transkribieren?token=${encodeURIComponent(token)}` ``
+  — exakt wie im Plan vorgegeben.
+- Statusbehandlung exakt nach Endpunkt-Vertrag: 401/413/400+415 bekommen feste
+  deutsche Texte (Servertext wird hier ignoriert); 502 und alle sonstigen
+  `!res.ok`-Fälle nutzen die Servermeldung (`message`, getrimmt), wenn
+  vorhanden und nicht leer, sonst einen Standardtext. `AbortError` →
+  Zeitüberschreitungs-Text, `TypeError` (aus `fetch`) → Offline-Text. Leerer/
+  fehlender `text` in einer 200er-Antwort → eigener Fehler statt leerem String.
+- Kein `console.*`-Aufruf irgendwo in der Datei (DSGVO) — auch nicht für
+  technische Metadaten, da der Plan das für diesen Dienst nicht verlangt.
+- `spracheingabeService.test.ts`: 18 Tests (Erfolg, beide Sonderzeichen-/
+  Fallback-Fälle, alle sechs Vertrags-Statuscodes inkl. 415 und zwei
+  Servermeldung-Varianten, kaputtes/leeres JSON in Fehlerantworten, Abort/
+  Netzwerkfehler, Signal-Weitergabe, ein DSGVO-Test der prüft, dass weder Text
+  noch Servermeldung in console.log/warn/error auftauchen).
+- Mutationsprobe: 13 gezielt eingebaute Fehler (u.a. `encodeURIComponent`
+  entfernt, Content-Type-Fallback ignoriert `aufnahme.type`, FormData statt
+  rohem Blob, Signal nicht weitergegeben, 401/413-Texte vertauscht, 400/415-
+  Case entfernt, Servermeldung-Fallback bei 502 entfernt, `trim()` entfernt,
+  Abort-/TypeError-Erkennung je einzeln entfernt, leerer Text durchgelassen,
+  Text versehentlich geloggt) — alle 13 wurden von den neuen Tests rot
+  gemeldet, keine Mutation hat überlebt.
+- `npm test` (react-zeiterfassung, komplette Suite laut Abnahmeregel): 26
+  Testdateien, 282 Tests, grün, Exit 0 (Baseline 25/264 + meine 1 Datei/18
+  Tests — keine fremden Tests berührt). `npm run lint`: 0 Fehler, Exit 0.
+  `npm run build`: übersetzt; erzeugte Artefakte unter
+  `src/main/resources/static/zeiterfassung/` waren nach dem Build laut
+  `git status` unverändert (die neue Datei wird von noch keiner Seite
+  importiert, siehe Bedenken) und wurden zur Sicherheit trotzdem per
+  `git checkout --`/`git clean -fd` verworfen.
+
+Bedenken / Abweichungen vom Plan:
+- Die Interface-Signatur im Plan zeigt `constructor(message: string, readonly
+  status?: number)` (TS-Parameter-Property). Das lässt sich in diesem Projekt
+  nicht bauen: `tsconfig.app.json` hat `erasableSyntaxOnly: true`, und `tsc -b`
+  bricht mit TS1294 ab, weil eine Parameter-Property eine echte Zuweisung im
+  Konstruktor-Körper braucht, keine reine Typ-Löschung. Umgesetzt als
+  äquivalentes Ergebnis: `readonly status?: number` als normales Klassenfeld
+  deklariert und im Konstruktor-Body explizit zugewiesen
+  (`this.status = status`). Nach außen identisches Verhalten — `fehler.status`
+  funktioniert für Aufrufer (z.B. Task 7) genauso wie im Plan-Codeblock
+  gezeigt, nur die interne Schreibweise unterscheidet sich. Keine andere
+  Datei im Projekt nutzt Parameter-Properties, es ist also keine Lücke, die
+  nur diese Dateiträfe.
+- `spracheingabeService.ts` wird noch von keiner Seite importiert (Task 7
+  verdrahtet das). `npm run build` produziert deshalb keinen sichtbaren Diff
+  in `static/zeiterfassung/` — das ist kein Fehlschlag, sondern erwartetes
+  Tree-Shaking, da die Datei aktuell kein Teil des Bundle-Graphen ist.
+- Sonst keine Abweichungen. Endpunkt-Vertrag und Interface (Funktionssignatur,
+  Fehlerklasse, alle sechs Statuscode-Meldungen) 1:1 wie im Plan (Zeilen
+  558-615) umgesetzt.
+
+## Abschnitt 2 — Task 2 (Coding-Agent)
+
+Zeit: 2026-09-17T23:06:24Z
+Branch: sprach/task-2-backend-controller
+Commit(s): 371b4136
+Status: fertig
+
+Was gemacht wurde:
+- `SpracheingabeController` neu angelegt: `POST /api/spracheingabe/transkribieren`
+  im `?token=`-Muster von `PushSubscriptionController` (Mitarbeiter ueber
+  `mitarbeiterRepository.findByLoginToken`, 401 bei unbekanntem oder inaktivem
+  Mitarbeiter, sonst `spracheingabeService.transkribiere(anfrage.getInputStream(),
+  inhaltstyp)`). Drei `@ExceptionHandler`: `AufnahmeZuGross` -> 413,
+  `IllegalArgumentException` -> 400, `IllegalStateException` -> 502 (Antwort ohne
+  interne Details, `ex.getMessage()` nur im Server-Log). Alle drei Fehlerkoerper
+  im `Map.of("success", false, "message", ...)`-Schema, Vorbild
+  `BeitragKiController`, deckungsgleich mit dem Endpunkt-Vertrag.
+- Sicherheitsfreischaltung an beiden Stellen ergaenzt: `"/api/spracheingabe/**"`
+  in `SecurityConfig.ZEITERFASSUNG_PATHS` (mit Kommentarzeile im Stil der
+  Nachbareintraege) und `"/api/spracheingabe"` in
+  `ZeiterfassungSecurityFilter.ALLOWED_PATHS`. Neue Assertion in
+  `ZeiterfassungFilterChainMatcherTest.mobileKernpfadeSindErreichbar()`.
+- `SpracheingabeControllerTest` (9 Faelle): Erfolg, unbekannter Token, inaktiver
+  Mitarbeiter, alle drei Fehlerpfade (413/400/502, 502 zusaetzlich mit Test, dass
+  eine als Exception-Message untergeschobene Klardatenzeile NICHT in der Antwort
+  auftaucht), SQL-Injection- und XSS-Payload im Token (401, Repository bekommt
+  den String unveraendert), fehlender Content-Type-Header (Service bekommt
+  `null`, 400-Pfad greift).
+- Mutationsprobe (Vorgabe aus dem Auftrag, 5 Stellen): 502-Leak (`ex.getMessage()`
+  statt fester Text), Aktiv-Check entfernt, 413-Handler auf 400 umgestellt,
+  `@RequestHeader` mit `defaultValue` statt echtem `null`, und die
+  Sicherheits-Whitelist-Zeile in `SecurityConfig` (im TDD-Rotlauf vor der
+  Implementierung, s.u.). Alle 5 von 5 Mutationen wurden von genau dem dafuer
+  vorgesehenen Test gefangen, keine hat ueberlebt. Bei der Whitelist-Mutation
+  schlug ausschliesslich `mobileKernpfadeSindErreichbar()` mit der neuen
+  Assertionszeile fehl ("expected true but was false") - kein Nebenschauplatz.
+- TDD durchgehend eingehalten (Skill nicht verfuegbar, manuell): fuer die
+  Whitelist-Zeile zuerst Assertion ergaenzt -> rot mit erwarteter Begruendung ->
+  `SecurityConfig` geaendert -> gruen. Fuer den Controller zuerst
+  `SpracheingabeControllerTest` komplett geschrieben -> Compile-Fehler ("Symbol
+  nicht gefunden: Klasse SpracheingabeController") -> Controller implementiert ->
+  alle 9 Faelle gruen beim ersten Durchlauf.
+- Tests: `SpracheingabeControllerTest` + `ZeiterfassungFilterChainMatcherTest`
+  zusammen 15 Tests, 0 Failures, 0 Errors, Exit 0. Volle Suite zur Abnahme
+  gefahren: 3145 Tests, 0 Failures, 0 Errors, 17 Skipped, Exit 0 (Baseline nach
+  Abschnitt 1 war 3136 Tests - Differenz exakt die 9 neuen Faelle, keine
+  Testklasse verloren oder fremd veraendert).
+
+Bedenken / Abweichungen vom Plan:
+- `SpracheingabeService.AufnahmeZuGross` (Task 1, nicht meine Datei) hat einen
+  paketprivaten Konstruktor. Der Plan zeigt im Produces-Interface nur `{ ... }`
+  ohne Konstruktor-Sichtbarkeit, Task 1 hat sich fuer package-private
+  entschieden. Mein Controller-Test liegt im `controller`-Paket und kann die
+  Klasse deshalb nicht mit `new` instanziieren. Geloest ohne Task 1 anzufassen:
+  im Test per Reflection (`getDeclaredConstructor().setAccessible(true)`)
+  erzeugt, mit Javadoc-Kommentar an der Stelle begruendet. Falls ein spaeterer
+  Task denselben Typ ausserhalb von `service` werfen/faengen muss, trifft er auf
+  dieselbe Einschraenkung.
+- Der Plan-Wortlaut "`IllegalArgumentException` -> `400` + `ex.getMessage()`"
+  liess offen, ob der Body ein reiner String oder das `{success,message}`-Objekt
+  ist. Aufgeloest zugunsten des im selben Schritt zitierten Vorbilds
+  (`BeitragKiController.handleUngueltig`, welches exakt `Map.of("success", false,
+  "message", ex.getMessage())` zurueckgibt) - das ist zugleich die einzige
+  Lesart, die zum Endpunkt-Vertrag ("400 { \"success\": false, \"message\": ... }")
+  und zu Task 4's Client passt, der `data.message` aus der JSON-Antwort liest.
+- `ZeiterfassungSecurityFilter.ALLOWED_PATHS` hat laut Task-2-Files keine eigene
+  Testdatei (es existierte auch vorher keine `ZeiterfassungSecurityFilterTest`).
+  Die neue Zeile dort ist entsprechend nur durch die Matcher-Logik in
+  `SecurityConfig` indirekt/gar nicht automatisiert abgesichert - Regressionen
+  dort faellt laut Plan-Text ohnehin erst auf dem Geraet auf, nicht im Unit-Test.
+  Kein Fix meinerseits, nur Kenntlichmachung.
+- Nur am Rande, nicht mein Fund zum Beheben: Der Log-Block "Abschnitt 1 — Task 4"
+  (weiter oben in dieser Datei) ist nach der Abschnittstabelle oben
+  ("2 | 2, 4 | nein") vermutlich falsch beschriftet - Task 4 gehoert zu
+  Abschnitt 2, nicht 1. Nicht korrigiert (Log ist append-only, nicht meine
+  Aenderung), nur fuer den Orchestrator vermerkt.
+- Sonst keine Abweichungen. Endpunkt-Vertrag (Statuscodes, Feldnamen `text` /
+  `success` / `message`) 1:1 wie im Plan umgesetzt.

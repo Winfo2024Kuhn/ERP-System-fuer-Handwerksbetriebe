@@ -112,6 +112,31 @@ gemeldet. Bis das behoben ist: manuell nach TDD-Disziplin vorgehen — erst den
 Test schreiben, den roten Fehlschlag mit der erwarteten Begründung
 verifizieren, dann implementieren.
 
+**TypeScript: keine Parameter-Properties, keine Enums, keine Namespaces.**
+`erasableSyntaxOnly: true` steht in **allen** tsconfigs **beider** Frontends
+(`react-zeiterfassung/tsconfig.app.json:23` und `tsconfig.node.json:21`,
+ebenso im PC-Frontend). Damit bricht `tsc -b` bei allem ab, was nicht durch
+reines Löschen der Typen verschwindet. Praktisch heißt das:
+
+    // TS1294 — uebersetzt NICHT
+    class Fehler extends Error {
+        constructor(message: string, readonly status?: number) { super(message) }
+    }
+
+    // so stattdessen
+    class Fehler extends Error {
+        status?: number
+        constructor(message: string, status?: number) {
+            super(message)
+            this.status = status
+        }
+    }
+
+*(Am 18.09.2026 ergänzt. Der Task-4-Block dieses Plans zeigte die erste,
+nicht übersetzbare Form. Die Tests laufen trotzdem grün durch — Vitest
+transpiliert ohne Typprüfung —, erst `npm run build` bricht ab. Wer den
+Build als Fail-Fast-Prüfung überspringt, merkt es also nicht.)*
+
 **graphify steht in keinem Worktree zur Verfügung.** `graphify`, `graphify.cmd`
 und `.graphify-venv/` sind gitignored (`.gitignore:99,102,103`) und existieren
 nur im Haupt-Checkout. Ein per `git worktree add` angelegtes Arbeitsverzeichnis
