@@ -546,3 +546,28 @@ Assertions).
 Real passiert am 08.09.2026: 485 gemeldete Errors, nach sauberer Wiederholung
 exakt die vier bekannten. Der Reviewer hat es selbst erkannt und offengelegt —
 genau richtig, aber es kostet einen kompletten Suite-Lauf.
+
+### Design-Review nur bei sichtbarer Änderung, nicht bei „Frontend-Dateien geändert"
+
+**17.09.2026, vom Nutzer gestoppt.** Abschnitt 1 eines Vorhabens legte
+ausschließlich Vorarbeit an: neue Module, ein zuschaltbarer Modus im geteilten
+Texteditor, DOM-Marker in Karten, eine noch nirgends eingebundene Komponente.
+`index.tsx` blieb unangetastet, alle neuen Props waren opt-in — **für den
+Nutzer änderte sich nichts.** Trotzdem lief der Design-Reviewer an, weil die
+Regel bis dahin „nur wenn Frontend-Dateien geändert wurden" lautete. Er fuhr
+die komplette E2E-Suite (627 Tests über alle Seiten der Anwendung) und baute
+sich Wegwerf-Specs für Screenshots, um zu belegen, dass alles aussieht wie
+vorher. Der Nutzer sah einen Browser durch Kasse, Website und Monatsabschluss
+klicken und fragte zu Recht, was das mit Rückgängig zu tun habe.
+
+Fehlerbild: Der Design-Reviewer sucht nach einem Ablauf, den er anschauen kann,
+findet keinen, und weicht auf Regressionsbelege aus. Im Auftrag steht dann ein
+Satz wie „deine Regel ‚keine Spec ⇒ 🔴' gilt hier ausnahmsweise nicht" — das
+ist das Warnzeichen. Wer diese Ausnahme schreiben muss, braucht den Reviewer
+nicht.
+
+Regel: Design-Review nur, wenn der Abschnitt eine Oberfläche liefert, die man
+im Browser ansteuern kann. Reine Vorarbeit wird vom Code-Reviewer abgenommen;
+die Regression fängt die volle E2E-Suite des nächsten sichtbaren Abschnitts,
+die ohnehin läuft. Das spart einen kompletten Opus-Lauf plus E2E-Suite je
+Vorarbeits-Abschnitt.

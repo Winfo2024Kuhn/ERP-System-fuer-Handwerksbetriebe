@@ -108,8 +108,14 @@ Für jeden Abschnitt der Reihe nach:
    je Rolle für den ganzen Abschnitt:
    - `loese-problem-review` (Opus): Code, Korrektheit, Performance,
      Datenschutz, Sicherheit, volle Testsuiten, Mutationsproben. Immer.
-   - `loese-problem-design-review` (Opus): **nur wenn Frontend-Dateien
-     geändert wurden.** Playwright end-to-end im Browser, Screenshots in den
+   - `loese-problem-design-review` (Opus): **nur wenn der Abschnitt etwas
+     sichtbar verändert** — also eine Oberfläche, die man im Browser
+     ansteuern kann. Geänderte Frontend-Dateien allein reichen NICHT: reine
+     Vorarbeit (neue Module, zuschaltbare Props, DOM-Marker, noch nirgends
+     eingebundene Komponenten) bekommt keinen Design-Review, sonst prüft er
+     eine Stunde lang, dass sich nichts geändert hat. Die Regression fängt
+     die volle E2E-Suite des nächsten sichtbaren Abschnitts.
+     Playwright end-to-end im Browser, Screenshots in den
      festen Bildschirmgrößen, die sechs Design-/UX-Fragen. Läuft **parallel**
      zum Code-Reviewer in einem **eigenen Worktree** (`../wt/review-design`,
      legst du an, Junction auf `node_modules` nicht vergessen), weil dessen
