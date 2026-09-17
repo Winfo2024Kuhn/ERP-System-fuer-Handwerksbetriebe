@@ -73,29 +73,56 @@ export async function starteAufnahme(): Promise<AufnahmeSitzung> {
     }
 
     const gewaehlterTyp = waehleMimeType()
-    const recorder = new MediaRecorder(stream, gewaehlterTyp ? { mimeType: gewaehlterTyp } : undefined)
-    const mimeType = recorder.mimeType || gewaehlterTyp || 'audio/webm'
-
     let chunks: Blob[] = []
-    recorder.ondataavailable = (event: BlobEvent) => {
-        chunks.push(event.data)
+    let recorder: MediaRecorder
+    let mimeType: string
+    let gestartetAm: number
+    try {
+        // Zwischen dem erfolgreichen getUserMedia oben und hier kann noch einiges
+        // schiefgehen: der Konstruktor wirft NotSupportedError, weil
+        // isTypeSupported() nur den MIME-Typ prueft, nicht die tatsaechliche
+        // Track-Konfiguration (Safari), start() wirft InvalidStateError/
+        // SecurityError, oder MediaRecorder fehlt global komplett (altes iOS,
+        // starteAufnahme() prueft mikrofonWirdUnterstuetzt() bewusst nicht selbst).
+        // In jedem dieser Faelle ist bisher NIE eine AufnahmeSitzung entstanden,
+        // also koennten stoppe()/brichAb() nie aufgerufen werden und das Mikrofon
+        // bliebe offen — genau das Symptom (oranger iOS-Punkt bleibt haengen),
+        // das Entscheidung 1 verhindern soll. Deshalb hier freigeben und den
+        // Originalfehler unveraendert weiterwerfen, statt ihn zu verschlucken
+        // oder in einen eigenen Fehlertyp zu verpacken.
+        recorder = new MediaRecorder(stream, gewaehlterTyp ? { mimeType: gewaehlterTyp } : undefined)
+        mimeType = recorder.mimeType || gewaehlterTyp || 'audio/webm'
+        recorder.ondataavailable = (event: BlobEvent) => {
+            chunks.push(event.data)
+        }
+        gestartetAm = Date.now()
+        recorder.start()
+    } catch (fehler) {
+        gibMikrofonFrei(stream)
+        throw fehler
     }
-
-    const gestartetAm = Date.now()
-    recorder.start()
 
     let stoppenPromise: Promise<Blob> | null = null
 
     function stoppe(): Promise<Blob> {
         if (!stoppenPromise) {
-            stoppenPromise = new Promise<Blob>(resolve => {
+            stoppenPromise = new Promise<Blob>((resolve, reject) => {
                 recorder.onstop = () => {
                     const blob = new Blob(chunks, { type: mimeType })
                     gibMikrofonFrei(stream)
                     chunks = []
                     resolve(blob)
                 }
-                recorder.stop()
+                try {
+                    recorder.stop()
+                } catch (fehler) {
+                    // Z.B. wenn der Nutzer die Berechtigung mitten in der Aufnahme
+                    // entzogen hat und der Recorder schon von sich aus inactive
+                    // wurde: stop() wirft synchron, onstop feuert dann nie, also
+                    // muss das Freigeben hier explizit passieren.
+                    gibMikrofonFrei(stream)
+                    reject(fehler)
+                }
             })
         }
         return stoppenPromise
