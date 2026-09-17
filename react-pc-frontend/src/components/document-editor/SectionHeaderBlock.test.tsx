@@ -13,7 +13,12 @@ import { SectionHeaderBlock } from './SectionHeaderBlock';
 import type { DocBlock } from './types';
 
 vi.mock('@dnd-kit/core', () => ({ useDroppable: () => ({ setNodeRef: vi.fn(), isOver: false }) }));
-vi.mock('./ServiceBlock', () => ({ ServiceBlock: () => <div data-testid="service" /> }));
+vi.mock('./ServiceBlock', () => ({
+    ServiceBlock: ({ onUpdate, verlaufsModus }: { onUpdate: (id: string, updates: object, art?: string) => void; verlaufsModus?: boolean }) => (
+        <button data-testid="service" data-verlaufsmodus={String(!!verlaufsModus)}
+                onClick={() => onUpdate('k1', { title: 'neu' }, 'sonstiges')} />
+    ),
+}));
 
 const block: DocBlock = {
     id: 'sec', type: 'SECTION_HEADER', sectionLabel: 'Stahlbau',
@@ -43,5 +48,42 @@ describe('SectionHeaderBlock', () => {
         fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
 
         expect(screen.getByTestId('service')).toBeInTheDocument();
+    });
+});
+
+describe('SectionHeaderBlock Verlaufsmodus (DOM-Vertraege fuer "Stelle zeigen")', () => {
+    it('traegt data-block-id des Kindes am Kind-Wrapper', () => {
+        const { container } = render(<SectionHeaderBlock {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
+
+        expect(container.querySelector('[data-block-id="k1"]')).not.toBeNull();
+    });
+
+    it('traegt am Namensfeld data-verlauf-feld="sectionLabel" und data-eigenes-rueckgaengig="true" nach Klick zum Bearbeiten', () => {
+        render(<SectionHeaderBlock {...props} />);
+
+        // Das Namensfeld ist erst nach Klick ein <input> - vorher ein reiner Text.
+        fireEvent.click(screen.getByText('Stahlbau'));
+
+        const input = screen.getByPlaceholderText('z.B. Rohbauarbeiten, Stahlkonstruktion...');
+        expect(input).toHaveAttribute('data-verlauf-feld', 'sectionLabel');
+        expect(input).toHaveAttribute('data-eigenes-rueckgaengig', 'true');
+    });
+
+    it('reicht verlaufsModus an die Kind-ServiceBlocks durch', () => {
+        render(<SectionHeaderBlock {...props} verlaufsModus />);
+        fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
+
+        expect(screen.getByTestId('service')).toHaveAttribute('data-verlaufsmodus', 'true');
+    });
+
+    it('reicht die Aenderungsart eines Kindes an onUpdateChild durch', () => {
+        const onUpdateChild = vi.fn();
+        render(<SectionHeaderBlock {...props} onUpdateChild={onUpdateChild} />);
+        fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
+
+        fireEvent.click(screen.getByTestId('service'));
+
+        expect(onUpdateChild).toHaveBeenCalledWith('sec', 'k1', { title: 'neu' }, 'sonstiges');
     });
 });

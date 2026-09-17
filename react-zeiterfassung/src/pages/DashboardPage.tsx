@@ -997,7 +997,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             </header>
 
             {/* Main Content */}
-            <main className="flex-1 p-4 space-y-4 overflow-y-auto safe-area-bottom pb-16">
+            <main className="flex-1 p-4 space-y-4 overflow-y-auto safe-area-bottom [--sa-base-bottom:4rem]">
 
                 {/* Reparatur-Banner: zeigt Buchungen, die der Server abgelehnt hat */}
                 {failedEntries.length > 0 && (

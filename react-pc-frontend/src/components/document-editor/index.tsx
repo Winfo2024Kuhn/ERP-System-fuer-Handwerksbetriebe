@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Check, X } from 'lucide-react';
 import { useEditor } from '@tiptap/react';
 import { TiptapToolbar } from '../TiptapEditor';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
+import { useDokumentVerlauf, type DokumentStand, type VerlaufsZiel, type VerlaufsMeldung } from './useDokumentVerlauf';
+import { useVerlaufTastatur } from './useVerlaufTastatur';
 import {
     type AusgangsGeschaeftsDokument,
     type AusgangsGeschaeftsDokumentTyp,
@@ -72,7 +75,61 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis } from './helpers';
+
+/** Anzeigename fuer den Verlauf: "Position/Textbaustein/Bauabschnitt/Trennlinie/Abschluss". */
+function blockName(block: DocBlock | undefined): string {
+    switch (block?.type) {
+        case 'TEXT': return 'Textbaustein';
+        case 'SECTION_HEADER': return 'Bauabschnitt';
+        case 'SEPARATOR': return 'Trennlinie';
+        case 'CLOSURE': return 'Abschluss';
+        case 'SERVICE':
+        default:
+            return 'Position';
+    }
+}
+
+/** Welches Feld von `DocBlock` diese Aktualisierung betrifft -- die Block-Komponenten
+ *  schicken pro Aufruf immer genau eines (Task-2-Vertrag). */
+function verlaufsFeldVon(updates: Partial<DocBlock>): VerlaufsZiel['feld'] {
+    if (updates.title !== undefined) return 'title';
+    if (updates.quantity !== undefined) return 'quantity';
+    if (updates.unit !== undefined) return 'unit';
+    if (updates.price !== undefined) return 'price';
+    if (updates.content !== undefined) return 'content';
+    if (updates.description !== undefined) return 'description';
+    if (updates.sectionLabel !== undefined) return 'sectionLabel';
+    return undefined;
+}
+
+/** Wortliste (Plan Task 4): Bezeichnung eines Inhalts-Schritts in Handwerker-Sprache. */
+function bezeichnungFuerAenderung(updates: Partial<DocBlock>, art?: TiptapAenderungsArt): string {
+    const feld = verlaufsFeldVon(updates);
+    switch (feld) {
+        case 'title': return 'Titel geändert';
+        case 'quantity': return 'Menge geändert';
+        case 'unit': return 'Einheit geändert';
+        case 'price': return 'Preis geändert';
+        case 'content':
+        case 'description':
+            return art === 'tippen' ? 'Text geändert' : 'Formatierung geändert';
+        case 'sectionLabel': return 'Bauabschnitt umbenannt';
+        default: return 'Änderung';
+    }
+}
+
+/**
+ * Buendel-Schluessel fuer Inhalts-Aenderungen: gleicher Block + gleiches Feld
+ * buendelt, solange getippt wird. Formatierung, Einfuegen per Zwischenablage
+ * und Bilder (`art !== 'tippen'`) sind laut Spec immer ein eigener Schritt.
+ */
+function buendelSchluesselFuer(id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt): string | null {
+    const feld = verlaufsFeldVon(updates);
+    if (!feld) return null;
+    if ((feld === 'content' || feld === 'description') && art !== 'tippen') return null;
+    return `block:${id}:${feld}`;
+}
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
@@ -84,6 +141,7 @@ import { SeparatorBlock } from './SeparatorBlock';
 import { SectionHeaderBlock } from './SectionHeaderBlock';
 import { SortableBlock } from './SortableBlock';
 import { SummenFooter } from './SummenFooter';
+import { ZahlungszielTageEingabe } from './ZahlungszielTageEingabe';
 import { LivePreviewPanel } from './LivePreviewPanel';
 import { ExportWarningModal, UnsavedChangesModal, PrintOptionsModal, TextbausteinPickerModal, LeistungPickerModal, StundensatzPickerModal, AddTypeDialog } from './Modals';
 import { RabattDialog } from './RabattDialog';
@@ -93,6 +151,7 @@ import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
 import { useToast } from '../ui/toast';
+import { useConfirm } from '../ui/confirm-dialog';
 import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
 import { useKonfliktMeldung } from '../lock/useKonfliktMeldung';
 
@@ -169,6 +228,7 @@ function RechnungsadresseBlock({
                     id="rechnungsadresse-eingabe"
                     ref={textareaRef}
                     value={draft}
+                    data-eigenes-rueckgaengig="true"
                     onChange={(e) => {
                         setDraft(e.target.value);
                         e.target.style.height = 'auto';
@@ -229,6 +289,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     ref
 ) {
     const toast = useToast();
+    // Rueckfrage bei langen Zahlungszielen, siehe handleZahlungszielChange.
+    const confirm = useConfirm();
     // Fuer das Zurueckschreiben der beim Anlegen vergebenen Id in die URL
     // (syncDocumentIdInUrl) -- MUSS ueber den Router laufen, nicht per
     // window.history.replaceState, sonst bekommt die Seite (liest dokumentId
@@ -256,6 +318,17 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     const datumRef = useRef(datum);
     useEffect(() => { datumRef.current = datum; }, [datum]);
     const [blocks, setBlocks] = useState<DocBlock[]>([]);
+    // Synchroner Spiegel + Ref-first-Setter (Vorbild datumRef/kontextDatenRef
+    // unten): der Dokumentverlauf liest den Stand synchron aus Refs, bevor der
+    // naechste Render passiert. Ab hier schreibt niemand mehr direkt setBlocks --
+    // entweder ueber verlauf.aendern (Nutzeraktionen) oder ueber setzeBlocks mit
+    // einem aus blocksRef.current berechneten Wert (automatische Aenderungen).
+    const blocksRef = useRef(blocks);
+    useLayoutEffect(() => { blocksRef.current = blocks; }, [blocks]);
+    const setzeBlocks = useCallback((neu: DocBlock[]) => {
+        blocksRef.current = neu;
+        setBlocks(neu);
+    }, []);
     const [kontextDaten, setKontextDaten] = useState<KontextDaten>({});
     // Gleicher Grund wie bei `datumRef`: `handleSave` haengt `kontextDaten` nicht
     // in seiner useCallback-Dep-Liste. Eine reine Adressaenderung beruehrt keine
@@ -285,6 +358,25 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // Oeffnen als geaendert melden. Stattdessen ein eigenes Flag, das additiv
     // in Dirty-Check und Auto-Save einfliesst und beim Speichern zuruecksetzt.
     const [adresseGeaendert, setAdresseGeaendert] = useState(false);
+    // Gleicher Grund beim Zahlungsziel: ohne eigenen Wert im Dokument zeigt der
+    // Editor den Kunden-Standard bzw. DEFAULT_ZAHLUNGSZIEL_TAGE an, und diese
+    // Werte kommen erst nach dem Laden asynchron an. In der Signatur wuerden
+    // frisch geladene und neue Dokumente sofort als geaendert gelten.
+    const [zahlungszielGeaendert, setZahlungszielGeaendert] = useState(false);
+    // Bezugswert dafuer: das zuletzt geladene bzw. gespeicherte Zahlungsziel.
+    // Solange nichts als geaendert markiert ist, ist der angezeigte Wert genau
+    // dieser Stand; danach friert er ein, bis wieder gespeichert wurde. Ohne
+    // ihn bliebe ein Hin-und-Zurueck-Tippen im Feld (14 -> 1 -> 14) als
+    // Aenderung stehen -- samt Auto-Save, der ein noch nie gespeichertes
+    // Dokument allein deswegen anlegen wuerde.
+    const gespeichertesZahlungszielRef = useRef<number | undefined>(undefined);
+    useEffect(() => {
+        if (!zahlungszielGeaendert) gespeichertesZahlungszielRef.current = kontextDaten.zahlungsziel;
+    }, [kontextDaten.zahlungsziel, zahlungszielGeaendert]);
+    // Sticky wie `adresseUserEditedRef`: hat der Nutzer das Zahlungsziel einmal
+    // angefasst, darf ein spaeter eintreffender Kontext-Load es nicht mehr
+    // ueberschreiben (siehe loadKontext).
+    const zahlungszielUserEditedRef = useRef(false);
 
     // Vorlagen
     const [textbausteine, setTextbausteine] = useState<TextbausteinApiDto[]>([]);
@@ -336,9 +428,23 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     const setEditorRef = useCallback((editorKey: string, editor: EditorInstance | null) => {
         editorRefs.current[editorKey] = editor;
     }, []);
+    // Editor-Instanzen, die der Nutzer wirklich fokussiert hat (echte
+    // Interaktion) -- siehe istPhantomTiptapAenderung weiter unten. Ein
+    // WeakSet haengt an der Editor-INSTANZ (Objekt-Identitaet), nicht an
+    // einem Key, weil derselbe Aufruf (onEditorFocus) fuer content- und
+    // description-Editoren identisch aussieht und nur die Instanz sie
+    // unterscheidet. Deklaration hier (vor isLocked), Verwendung erst nach
+    // dessen Berechnung -- siehe markiereEditorFokussiert dort.
+    const fokussierteEditorenRef = useRef<WeakSet<NonNullable<EditorInstance>>>(new WeakSet());
 
     // Global Rabatt
     const [globalRabatt, setGlobalRabatt] = useState<number>(0);
+    const globalRabattRef = useRef(globalRabatt);
+    useLayoutEffect(() => { globalRabattRef.current = globalRabatt; }, [globalRabatt]);
+    const setzeGlobalRabatt = useCallback((neu: number) => {
+        globalRabattRef.current = neu;
+        setGlobalRabatt(neu);
+    }, []);
     const [showRabattDialog, setShowRabattDialog] = useState(false);
 
     // Id der Leistung, von der aus der Alternativ-Dialog geoeffnet wurde (null = zu).
@@ -369,6 +475,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
      * positionenJson, Standard an — Bestandsrechnungen sehen aus wie bisher.
      */
     const [balkenAnzeigen, setBalkenAnzeigen] = useState<boolean>(true);
+    const balkenAnzeigenRef = useRef(balkenAnzeigen);
+    useLayoutEffect(() => { balkenAnzeigenRef.current = balkenAnzeigen; }, [balkenAnzeigen]);
+    const setzeBalkenAnzeigen = useCallback((neu: boolean) => {
+        balkenAnzeigenRef.current = neu;
+        setBalkenAnzeigen(neu);
+    }, []);
     // Detaillierte Abrechnungspositionen für die ClosureBlock-Anzeige
     const [abrechnungsPositionen, setAbrechnungsPositionen] = useState<Array<{
         dokumentNummer: string;
@@ -457,6 +569,88 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     );
     const currentDokumentTyp = dokument?.typ ?? dokumentTyp;
     const showFinalizationPrompt = invoiceTypes.includes(currentDokumentTyp);
+
+    // --- Rückgängig & Wiederholen ---
+    const leseStand = useCallback((): DokumentStand => ({
+        blocks: blocksRef.current,
+        globalRabatt: globalRabattRef.current,
+        datum: datumRef.current,
+        zahlungsziel: kontextDatenRef.current.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
+        rechnungsadresse: kontextDatenRef.current.rechnungsadresse ?? '',
+        balkenAnzeigen: balkenAnzeigenRef.current,
+    }), []);
+
+    const schreibeStand = useCallback((werte: Partial<DokumentStand>) => {
+        if (werte.blocks !== undefined) setzeBlocks(werte.blocks);
+        if (werte.globalRabatt !== undefined) setzeGlobalRabatt(werte.globalRabatt);
+        if (werte.balkenAnzeigen !== undefined) setzeBalkenAnzeigen(werte.balkenAnzeigen);
+        if (werte.datum !== undefined) {
+            datumRef.current = werte.datum;
+            setDatum(werte.datum);
+        }
+        if (werte.zahlungsziel !== undefined || werte.rechnungsadresse !== undefined) {
+            const naechste: KontextDaten = { ...kontextDatenRef.current };
+            if (werte.zahlungsziel !== undefined) {
+                naechste.zahlungsziel = werte.zahlungsziel;
+                // Sticky wie bei der Adresse: ein spaeter eintreffender
+                // Kontext-Load darf ein per Rueckgaengig/Wiederholen gesetztes
+                // Zahlungsziel nicht mehr ueberschreiben. Vergleich gegen den
+                // zuletzt GESPEICHERTEN Wert (nicht unconditional true) --
+                // dieselbe Formel wie in handleZahlungszielChange, damit ein
+                // Rueckgaengig, das exakt auf dem gespeicherten Stand landet,
+                // "Ungespeichert" korrekt wieder loescht (und ein zweites
+                // Rueckgaengig, das DAVON abweicht, es korrekt wieder setzt --
+                // sonst wuerde die zurueckgenommene Aenderung nie gespeichert).
+                zahlungszielUserEditedRef.current = true;
+                setZahlungszielGeaendert(werte.zahlungsziel !== (gespeichertesZahlungszielRef.current ?? DEFAULT_ZAHLUNGSZIEL_TAGE));
+            }
+            if (werte.rechnungsadresse !== undefined) {
+                naechste.rechnungsadresse = werte.rechnungsadresse;
+                // Bewusste Spec-Entscheidung (Abschnitt "Rechnungsadresse"):
+                // gleicher sichtbarer Stand, kein Sonderpfad zum Zuruecksetzen
+                // des Overrides -- unconditional true, wie beim normalen Edit.
+                adresseUserEditedRef.current = true;
+                setAdresseGeaendert(true);
+            }
+            kontextDatenRef.current = naechste;
+            setKontextDaten(naechste);
+        }
+    }, [setzeBlocks, setzeGlobalRabatt, setzeBalkenAnzeigen]);
+
+    const verlauf = useDokumentVerlauf({ leseStand, schreibeStand, gesperrt: isLocked });
+
+    /**
+     * Ersetzt die bisherigen Inline-`onEditorFocus`-Callbacks: markiert die
+     * fokussierte Editor-Instanz als "vom Nutzer beruehrt" (siehe
+     * istPhantomTiptapAenderung) und spiegelt sie weiterhin in die globale
+     * Toolbar (activeEditor).
+     */
+    const markiereEditorFokussiert = useCallback((editor: EditorInstance | null) => {
+        if (editor) fokussierteEditorenRef.current.add(editor);
+        setActiveEditor(isLocked ? null : editor);
+    }, [isLocked]);
+
+    /**
+     * Befund aus dem Abschnitt-1-Review: der setEditable-Effekt in
+     * TiptapEditor.tsx feuert beim Mounten EIN onChange mit Tiptaps
+     * normalisiertem HTML (z.B. '' -> '<p></p>'), bevor der Nutzer irgendetwas
+     * getan hat. Ohne dieses Gate waere das schon beim blossen Oeffnen eines
+     * Dokuments ein Verlaufsschritt, den niemand ausgeloest hat. Gate ueber
+     * den Fokus: nur eine Editor-Instanz, die der Nutzer nachweislich
+     * fokussiert hat (siehe markiereEditorFokussiert), darf einen Schritt
+     * erzeugen -- alles andere (Mount-Aufruf, ein spaeterer erneuter
+     * setEditable-Trigger vor dem ersten Fokus) laeuft automatisch durch.
+     * Betrifft nur content/description (die einzigen Tiptap-Felder); alle
+     * anderen Felder (title/quantity/...) sind normale kontrollierte Inputs
+     * ohne dieses Mount-Verhalten.
+     */
+    const istPhantomTiptapAenderung = useCallback((id: string, updates: Partial<DocBlock>): boolean => {
+        const feld = updates.content !== undefined ? 'content' : updates.description !== undefined ? 'description' : null;
+        if (!feld) return false;
+        const editorKey = feld === 'content' ? id : `${id}-desc`;
+        const editor = editorRefs.current[editorKey];
+        return !editor || !fokussierteEditorenRef.current.has(editor);
+    }, []);
 
     // --- Placeholders ---
     // keepZahlungszielPlatzhalter: laesst {{ZAHLUNGSZIEL}} und {{ZAHLUNGSZIEL_TAGE}}
@@ -550,10 +744,54 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         []
     );
 
-    const handleZahlungszielChange = useCallback((tage: number) => {
-        if (isLocked) return;
-        setKontextDaten(prev => ({ ...prev, zahlungsziel: tage }));
-    }, [isLocked]);
+    /**
+     * Uebernimmt ein neues Zahlungsziel, wenn die Eingabe abgeschlossen ist
+     * (Feld verlassen oder Enter) — nicht bei jedem Tastendruck, sonst stuende
+     * die Rueckfrage unten mitten im Tippen im Weg.
+     *
+     * Liefert zurueck, ob der Wert uebernommen wurde: die Eingabefelder setzen
+     * ihren Entwurf sonst wieder auf den geltenden Wert.
+     */
+    const handleZahlungszielChange = useCallback(async (tage: number): Promise<boolean> => {
+        // Verteidigungslinie ohne Meldung: bei gesperrtem Dokument gibt es gar
+        // kein Eingabefeld (die Summenzeile bekommt `undefined`, der Chip
+        // reagiert nicht), hier kann also niemand ankommen.
+        if (isLocked) return false;
+        // `min`/`max` am Feld halten eine getippte Zahl nicht auf. Ungeprueft
+        // ginge sie jetzt in die Datenbank und von dort in die Faelligkeit:
+        // negativ hiesse "ab sofort ueberfaellig", Mahnwesen inklusive.
+        if (!Number.isInteger(tage) || tage < MIN_ZAHLUNGSZIEL_TAGE || tage > MAX_ZAHLUNGSZIEL_TAGE) {
+            toast.error(`Bitte ein Zahlungsziel zwischen ${MIN_ZAHLUNGSZIEL_TAGE} und ${MAX_ZAHLUNGSZIEL_TAGE} Tagen eingeben.`);
+            return false;
+        }
+        // Laenger als der Standard: nachfragen (Nutzervorgabe 17.09.2026).
+        // Ein langes Zahlungsziel ist erlaubt, soll aber eine bewusste
+        // Entscheidung sein — es heisst spaeter an das eigene Geld kommen.
+        if (tage > ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN) {
+            const bestaetigt = await confirm({
+                title: 'Langes Zahlungsziel',
+                message: `Bei ${tage} Tagen Zahlungsziel ist die Rechnung erst am ${berechneZahlungszielDatum(datumRef.current, tage)} fällig. Üblich sind ${ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN} Tage. Wirklich ${tage} Tage eintragen?`,
+                confirmLabel: `Ja, ${tage} Tage`,
+                cancelLabel: 'Abbrechen',
+                variant: 'warning',
+            });
+            if (!bestaetigt) return false;
+        }
+        // schreibeStand setzt zahlungszielUserEditedRef/zahlungszielGeaendert
+        // (Zurueck auf den gespeicherten Stand ist keine Aenderung mehr: sonst
+        // bliebe "Ungespeichert" stehen und der Auto-Save legte ein noch nie
+        // gespeichertes Dokument allein deswegen an). Kein Bündeln über
+        // schnelle Tastendrücke hinweg, da erst beim Abschluss übernommen wird
+        // (siehe ZahlungszielTageEingabe) -- der Bündel-Schlüssel greift nur,
+        // wenn dieselbe Feld-Änderung kurz hintereinander mehrfach eintrifft.
+        verlauf.aendern({
+            bezeichnung: 'Zahlungsziel geändert',
+            berechne: () => ({ zahlungsziel: tage }),
+            buendelSchluessel: 'kopf:zahlungsziel',
+            ziel: null,
+        });
+        return true;
+    }, [isLocked, toast, confirm, verlauf]);
 
     /** Position des Chip-Bearbeitungs-Popovers (null = geschlossen). */
     const [zahlungszielPopover, setZahlungszielPopover] = useState<{ top: number; left: number } | null>(null);
@@ -562,10 +800,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     useEffect(() => {
         if (!zahlungszielPopover) return;
         const handler = (e: MouseEvent) => {
-            if (zahlungszielPopoverRef.current && !zahlungszielPopoverRef.current.contains(e.target as Node)) {
+            const ziel = e.target as HTMLElement;
+            // Ein Chip zaehlt nicht als "draussen": dasselbe mousedown oeffnet
+            // das Popover gerade und laeuft danach bis hierher weiter (es wuerde
+            // sich sonst im selben Moment wieder schliessen), und ein zweiter
+            // Chip im selben Textbaustein setzt es nur um.
+            if (ziel.closest?.('[data-zahlungsziel-chip]')) return;
+            if (zahlungszielPopoverRef.current && !zahlungszielPopoverRef.current.contains(ziel)) {
                 setZahlungszielPopover(null);
             }
         };
+        // Escape schliesst das Popover; der Entwurf im Feld wird davon unabhaengig
+        // verworfen (siehe ZahlungszielTageEingabe).
         const escHandler = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setZahlungszielPopover(null);
         };
@@ -636,7 +882,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     }
                 }
 
-                setBlocks(current => insertBlocksBeforeClosure(current, mappedBlocks));
+                verlauf.aendern({
+                    bezeichnung: 'GAEB-Positionen eingefügt',
+                    berechne: stand => ({ blocks: insertBlocksBeforeClosure(stand.blocks, mappedBlocks) }),
+                    buendelSchluessel: null,
+                    ziel: mappedBlocks[0] ? { blockId: mappedBlocks[0].id } : null,
+                });
                 const sectionCount = mappedBlocks.filter(b => b.type === 'SECTION_HEADER').length;
                 showImportToast('success',
                     'GAEB Import erfolgreich',
@@ -710,7 +961,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             anrede: projekt.kundeDto?.anrede,
                             ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                             kundenEmails: emails,
-                            zahlungsziel: projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
+                            // Nur bei einem neuen, noch unberuehrten Dokument setzen.
+                            // Bei einem bestehenden Dokument setzt loadDokument das gespeicherte
+                            // Zahlungsziel. Beide Effekte laden parallel: kaeme diese Antwort
+                            // zuletzt an, stuende sonst der Kunden-Standard im Editor, und
+                            // handleSave wuerde ihn ueber den gespeicherten Wert schreiben.
+                            // Dasselbe gilt fuer ein neues Dokument, in dem der Nutzer waehrend
+                            // des Ladens schon getippt hat (wie `adresseUserEditedRef` oben).
+                            // `dokumentId` kommt aus der Closure -- der Effekt haengt bewusst nur
+                            // an projektId/anfrageId (siehe eslint-disable am Ende des Effekts).
+                            ...(dokumentId || zahlungszielUserEditedRef.current
+                                ? {}
+                                : { zahlungsziel: projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
                         }));
                         setBetreff(projekt.bauvorhaben || '');
                     }
@@ -733,7 +995,11 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             anrede: anfrage.kundenAnrede || anfrage.anrede,
                             ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
                             kundenEmails: emails,
-                            zahlungsziel: anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
+                            // Wie im Projekt-Zweig: weder ein gespeichertes noch ein vom Nutzer
+                            // bereits eingetipptes Zahlungsziel ueberschreiben.
+                            ...(dokumentId || zahlungszielUserEditedRef.current
+                                ? {}
+                                : { zahlungsziel: anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
                             ...(useAnfrageAsReferenceFallback
                                 ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' }
                                 : {})
@@ -899,6 +1165,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
 
                     let loadedBlocks: DocBlock[] = [];
                     let loadedGlobalRabatt = 0;
+                    // Ladebaseline fuer baueDokumentSignatur unten -- die State-Variable
+                    // balkenAnzeigen ist zu diesem Zeitpunkt noch nicht aktualisiert.
+                    let geladenerBalken = true;
                     if (data.positionenJson) {
                         try {
                             const parsed = JSON.parse(data.positionenJson);
@@ -910,7 +1179,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                 loadedBlocks = parsed.blocks;
                                 loadedGlobalRabatt = parsed.globalRabatt || 0;
                                 // Fehlendes Flag = an: Bestandsrechnungen behalten ihren Balken.
-                                setBalkenAnzeigen(parsed.abrechnungsstandBalkenAnzeigen !== false);
+                                geladenerBalken = parsed.abrechnungsstandBalkenAnzeigen !== false;
+                                setzeBalkenAnzeigen(geladenerBalken);
                                 if (parsed.abschlagInfo) {
                                     setAbschlagInfo(parsed.abschlagInfo);
                                 }
@@ -924,8 +1194,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                     setStandardTexteErneuern(true);
                                 }
                             }
-                            setBlocks(loadedBlocks.filter(b => b.type !== 'CLOSURE'));
-                            setGlobalRabatt(loadedGlobalRabatt);
+                            // Automatische Aenderung (Laden), kein Nutzer-Schritt: ref-first
+                            // setzen, nicht ueber verlauf.aendern.
+                            setzeBlocks(loadedBlocks.filter(b => b.type !== 'CLOSURE'));
+                            setzeGlobalRabatt(loadedGlobalRabatt);
                         } catch (e) {
                             console.error('Fehler beim Parsen der Positionen:', e);
                         }
@@ -941,11 +1213,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     // eingefuegt wird und nicht Teil der persistierten Daten ist.
                     setTimeout(() => {
                         const persistedLoaded = loadedBlocks.filter(b => b.id !== CLOSURE_BLOCK_ID && b.type !== 'CLOSURE');
-                        lastSavedStateRef.current = JSON.stringify({
+                        lastSavedStateRef.current = baueDokumentSignatur({
                             blocks: persistedLoaded,
                             datum: data.datum,
                             betreff: data.betreff || '',
-                            dokumentTyp: data.typ
+                            dokumentTyp: data.typ,
+                            globalRabatt: loadedGlobalRabatt,
+                            balkenAnzeigen: geladenerBalken,
                         });
                         setHasUnsavedChanges(false);
                     }, 0);
@@ -1113,7 +1387,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     for (const item of data.vortexte || []) defaultsByKey.set(`VOR:${item.id}`, item);
                     for (const item of data.nachtexte || []) defaultsByKey.set(`NACH:${item.id}`, item);
 
-                    setBlocks(prev => prev.map(block => {
+                    setzeBlocks(blocksRef.current.map(block => {
                         if (!block.textbausteinRolle || block.textbausteinId == null) return block;
                         const item = defaultsByKey.get(`${block.textbausteinRolle}:${block.textbausteinId}`);
                         const rawHtml = item?.html || item?.beschreibung || '';
@@ -1130,6 +1404,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             content: reparierterInhalt,
                         };
                     }));
+                    // Automatische Aenderung, kein Nutzer-Schritt -- trifft dieser
+                    // Fetch erst ein, nachdem der Nutzer schon etwas geaendert hat,
+                    // beginnt der Verlauf laut Spec neu (Randfall).
+                    verlauf.leeren();
                     lastAppliedDefaultsTypRef.current = dokumentTyp;
                     return;
                 }
@@ -1155,24 +1433,27 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 const vorBlocks = (data.vortexte || []).map(v => buildBlock(v, 'VOR'));
                 const nachBlocks = (data.nachtexte || []).map(n => buildBlock(n, 'NACH'));
 
-                setBlocks(prev => {
-                    // Vorhandene Default-Bloecke entfernen, manuell eingefuegte Texte bleiben
-                    const cleaned = prev.filter(b => b.textbausteinRolle == null);
-                    if (vorBlocks.length === 0 && nachBlocks.length === 0) return cleaned;
-                    const firstLeistungIdx = cleaned.findIndex(
-                        b => b.type === 'SERVICE' || b.type === 'SECTION_HEADER',
-                    );
-                    if (firstLeistungIdx === -1) {
+                // Vorhandene Default-Bloecke entfernen, manuell eingefuegte Texte bleiben
+                const cleaned = blocksRef.current.filter(b => b.textbausteinRolle == null);
+                const firstLeistungIdx = cleaned.findIndex(
+                    b => b.type === 'SERVICE' || b.type === 'SECTION_HEADER',
+                );
+                const naechsteBlocks = vorBlocks.length === 0 && nachBlocks.length === 0
+                    ? cleaned
+                    : firstLeistungIdx === -1
                         // Noch keine Leistungen: Vor- und Nachtexte einfach anhaengen
-                        return [...cleaned, ...vorBlocks, ...nachBlocks];
-                    }
-                    return [
-                        ...cleaned.slice(0, firstLeistungIdx),
-                        ...vorBlocks,
-                        ...cleaned.slice(firstLeistungIdx),
-                        ...nachBlocks,
-                    ];
-                });
+                        ? [...cleaned, ...vorBlocks, ...nachBlocks]
+                        : [
+                            ...cleaned.slice(0, firstLeistungIdx),
+                            ...vorBlocks,
+                            ...cleaned.slice(firstLeistungIdx),
+                            ...nachBlocks,
+                        ];
+                setzeBlocks(naechsteBlocks);
+                // Automatische Aenderung, kein Nutzer-Schritt -- trifft dieser Fetch
+                // erst ein, nachdem der Nutzer schon etwas geaendert hat, beginnt der
+                // Verlauf laut Spec neu (Randfall).
+                verlauf.leeren();
                 // Erfolg: erst jetzt als "angewendet" markieren und das
                 // Umwandlungs-Flag verbrauchen — die Defaults des neuen Typs sind drin.
                 lastAppliedDefaultsTypRef.current = dokumentTyp;
@@ -1187,7 +1468,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 }
             }
         })();
-    }, [loading, dokumentId, dokumentTyp, replacePlaceholders, kontextDaten, projektId, anfrageId, dokument, standardTexteErneuern, kontextGeladen]);
+    // verlauf.leeren ist ueber seinen eigenen useCallback stabil (siehe
+    // useDokumentVerlauf.ts); das umschliessende `verlauf`-Objekt selbst ist
+    // das NICHT (frisches Objekt-Literal bei jedem Render) -- es in die
+    // Dep-Liste aufzunehmen wuerde diesen schweren, mehrstufigen Fetch-Effekt
+    // bei jedem Render neu anstossen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, dokumentId, dokumentTyp, replacePlaceholders, kontextDaten, projektId, anfrageId, dokument, standardTexteErneuern, kontextGeladen, setzeBlocks, verlauf.leeren]);
 
     // Nachbesserung 1 (Kontext-Log): frueher per window.history.replaceState
     // geschrieben -- das aendert die URL, ohne dass react-router (und damit
@@ -1230,6 +1517,16 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         // Aenderung stillschweigend zu verwerfen (Lost Update).
         const gesendeteAdresse = kontextDatenRef.current.rechnungsadresse;
         const adresseUnveraendert = () => kontextDatenRef.current.rechnungsadresse === gesendeteAdresse;
+        // Zahlungsziel genauso festhalten. Immer den angezeigten Wert schicken,
+        // damit Datenbank (Offene Posten, Mahnwesen) und PDF uebereinstimmen.
+        // `undefined` (Kontext nicht geladen) faellt aus dem JSON heraus und das
+        // Backend behaelt seinen Wert — nie still DEFAULT_ZAHLUNGSZIEL_TAGE speichern.
+        // Bewusste Nebenwirkung: ein Dokument ohne eigenen Wert folgte bisher
+        // dauerhaft dem Kundenstamm; mit dem ersten Speichern friert der
+        // angezeigte Wert fest ein. Fuer Rechnungen ist genau das richtig — im
+        // PDF steht dann derselbe Wert wie in der Faelligkeit.
+        const gesendetesZahlungsziel = kontextDatenRef.current.zahlungsziel;
+        const zahlungszielUnveraendert = () => kontextDatenRef.current.zahlungsziel === gesendetesZahlungsziel;
         try {
             // CLOSURE-Marker wird NICHT persistiert: er ist ein UI-Konstrukt, der per
             // useEffect bei Bedarf wieder eingefuegt wird. Damit bleibt positionenJson
@@ -1265,6 +1562,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     betragNetto,
                     htmlInhalt,
                     positionenJson: positionenData,
+                    zahlungszielTage: gesendetesZahlungsziel,
                     // Nur mitschicken wenn User die Adresse bewusst geändert hat.
                     // Ueber das Ref lesen, nicht ueber den State — siehe kontextDatenRef.
                     ...(adresseUserEditedRef.current
@@ -1307,12 +1605,19 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setDokument(updated);
                     setDokumentNummer(updated.dokumentNummer);
                     syncDocumentIdInUrl(updated.id);
-                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp });
+                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    // Bezugswert auf den tatsaechlich persistierten Wert setzen --
+                    // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
+                    // hat. Sonst haelt die Ref den Stand von VOR dem Speichern, und
+                    // ein Zuruecktippen auf diesen alten Wert loeschte das
+                    // Dirty-Flag, obwohl in der Datenbank etwas anderes steht.
+                    gespeichertesZahlungszielRef.current = gesendetesZahlungsziel;
+                    if (zahlungszielUnveraendert()) setZahlungszielGeaendert(false);
                     setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
                     return updated;
@@ -1329,6 +1634,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     betragNetto,
                     htmlInhalt,
                     positionenJson: positionenData,
+                    zahlungszielTage: gesendetesZahlungsziel,
                     projektId,
                     anfrageId,
                     // Hat der User die Adresse schon vor dem ersten Speichern bearbeitet,
@@ -1360,12 +1666,19 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setDokument(created);
                     setDokumentNummer(created.dokumentNummer);
                     syncDocumentIdInUrl(created.id);
-                    const currentState = JSON.stringify({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp });
+                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    // Bezugswert auf den tatsaechlich persistierten Wert setzen --
+                    // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
+                    // hat. Sonst haelt die Ref den Stand von VOR dem Speichern, und
+                    // ein Zuruecktippen auf diesen alten Wert loeschte das
+                    // Dirty-Flag, obwohl in der Datenbank etwas anderes steht.
+                    gespeichertesZahlungszielRef.current = gesendetesZahlungsziel;
+                    if (zahlungszielUnveraendert()) setZahlungszielGeaendert(false);
                     setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: created.id });
                     return created;
@@ -1422,29 +1735,30 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // Einfuegen/Entfernen des Markers nicht als "ungespeicherte Aenderung" zaehlt.
     useEffect(() => {
         const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
-        const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
+        const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
         if (lastSavedStateRef.current === '') {
             lastSavedStateRef.current = currentState;
             return;
         }
-        // `adresseGeaendert` additiv, sonst wuerde ein Undo, das die Bloecke
-        // exakt auf den gespeicherten Stand zuruecksetzt, das Dirty-Flag
-        // loeschen und die geaenderte Adresse ginge beim Schliessen verloren.
-        setHasUnsavedChanges(currentState !== lastSavedStateRef.current || adresseGeaendert);
-    }, [blocks, datum, betreff, dokumentTyp, adresseGeaendert]);
+        // `adresseGeaendert` und `zahlungszielGeaendert` additiv, sonst wuerde
+        // ein Undo, das die Bloecke exakt auf den gespeicherten Stand
+        // zuruecksetzt, das Dirty-Flag loeschen und die geaenderte Adresse
+        // bzw. das geaenderte Zahlungsziel ginge beim Schliessen verloren.
+        setHasUnsavedChanges(currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert);
+    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, adresseGeaendert, zahlungszielGeaendert]);
 
     // --- Auto-Save ---
     useEffect(() => {
         if (isLocked) return;
         const intervalId = setInterval(() => {
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
-            const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
-            if ((currentState !== lastSavedStateRef.current || adresseGeaendert) && !saving) {
+            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
+            if ((currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert) && !saving) {
                 handleSave();
             }
         }, 10000);
         return () => clearInterval(intervalId);
-    }, [blocks, datum, betreff, dokumentTyp, saving, isLocked, handleSave, adresseGeaendert]);
+    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, saving, isLocked, handleSave, adresseGeaendert, zahlungszielGeaendert]);
 
     // --- Tab schliessen (X-Button-Ablauf, Issue #82) ---
     // Feste Reihenfolge laut Spec: (1) Warnung bei ungespeicherten Aenderungen
@@ -1534,7 +1848,91 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         // damit beim Entsperren kein stale Anker aus einem abgebrochenen
         // Picker-Flow im Ref haengen bleibt.
         pendingAnchorRef.current = DEFAULT_ANCHOR;
-    }, [isLocked]);
+        // Verlauf leeren: auch bei einem reinen Soft-Lock-Wechsel (Fremdsperre,
+        // eigenes "Fertig", Untaetigkeit), weil der Stand danach fremd
+        // veraendert sein kann -- ein "Rueckgaengig" auf einen dann veralteten
+        // Schritt waere falsch.
+        verlauf.leeren();
+    // Gleicher Grund wie beim Standard-Textbausteine-Effekt oben: verlauf.leeren
+    // ist stabil, das `verlauf`-Objekt selbst nicht.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLocked, verlauf.leeren]);
+
+    // --- Rückgängig & Wiederholen: Tastatur + "Stelle zeigen" ---
+    // Wurzel-Element des Editor-Bereichs (Bloecke, Rechnungsadresse) --
+    // ausserhalb (Kopf-/Fusszeile, Dialoge) bleibt das normale Verhalten des
+    // fokussierten Elements unangetastet.
+    const editorWurzelRef = useRef<HTMLDivElement>(null);
+
+    const [sprung, setSprung] = useState<{ text: string; ziel: VerlaufsZiel | null; nummer: number } | null>(null);
+    const sprungZaehlerRef = useRef(0);
+
+    /** Meldet einen Rückgängig-/Wiederholen-Sprung fuer Ansage + "Stelle zeigen". */
+    const zeigeSprung = useCallback((richtung: 'Rückgängig' | 'Wiederholen', meldung: VerlaufsMeldung | null) => {
+        if (!meldung) return;
+        sprungZaehlerRef.current += 1;
+        setSprung({ text: `${richtung}: ${meldung.bezeichnung}`, ziel: meldung.ziel, nummer: sprungZaehlerRef.current });
+    }, []);
+
+    // Die meisten Dialoge des Editors tragen kein role="dialog"/aria-modal --
+    // deshalb hier explizit gebuendelt statt ueber darfVerlaufTasteGreifens
+    // eigene [aria-modal]-Suche (die deckt nur AddTypeDialog,
+    // AlternativGruppeDialog, ArtikelAuswahlDialog und den globalen
+    // Bestaetigungsdialog ab).
+    const einDialogOffen = showExportWarning || showExportFormatDialog || showPrintOptions
+        || showUnsavedWarning || showAddTypeDialog || showTextbausteinPicker
+        || showLeistungPicker || showStundensatzPicker || showRabattDialog
+        || alternativDialogAnker !== null || pendingLeistungInsert !== null
+        || showFormatDialog || showValidityDialog || showEmailModal || materialDialogOffen;
+
+    useVerlaufTastatur({
+        aktiv: !isLocked && !einDialogOffen,
+        wurzelRef: editorWurzelRef,
+        onRueckgaengig: () => zeigeSprung('Rückgängig', verlauf.rueckgaengig()),
+        onWiederholen: () => zeigeSprung('Wiederholen', verlauf.wiederholen()),
+    });
+
+    // "Stelle zeigen": Karte in den sichtbaren Bereich scrollen, kurz
+    // hervorheben und bei Inhalts-Feldern den Cursor dorthin setzen.
+    useEffect(() => {
+        if (!sprung || !sprung.ziel) return;
+        const wurzel = editorWurzelRef.current;
+        if (!wurzel) return;
+        const ziel = sprung.ziel;
+
+        const karten = Array.from(wurzel.querySelectorAll<HTMLElement>('[data-block-id]'));
+        const karte = karten.find(el => el.dataset.blockId === ziel.blockId)
+            ?? (ziel.sectionId ? karten.find(el => el.dataset.blockId === ziel.sectionId) : undefined);
+        if (!karte) return; // Stelle existiert nicht mehr (z.B. Einfuegen zurueckgenommen) -- nicht scrollen.
+
+        const reduziert = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (typeof karte.scrollIntoView === 'function') {
+            karte.scrollIntoView({ block: 'center', behavior: reduziert ? 'auto' : 'smooth' });
+        }
+        karte.classList.add('verlauf-hervorgehoben');
+        const timer = window.setTimeout(() => karte.classList.remove('verlauf-hervorgehoben'), 1200);
+
+        if (ziel.feld === 'content' || ziel.feld === 'description') {
+            const editorKey = ziel.feld === 'content' ? ziel.blockId : `${ziel.blockId}-desc`;
+            const ed = editorRefs.current[editorKey];
+            if (ed && !ed.isDestroyed) ed.commands.focus();
+        } else if (ziel.feld) {
+            karte.querySelector<HTMLInputElement>(`[data-verlauf-feld="${ziel.feld}"]`)?.focus();
+        }
+
+        return () => window.clearTimeout(timer);
+    }, [sprung]);
+
+    /** Props fuer die Verlauf-Knoepfe in der Kopfleiste. */
+    const verlaufKnoepfeProps = useMemo(() => ({
+        kannRueckgaengig: verlauf.kannRueckgaengig,
+        kannWiederholen: verlauf.kannWiederholen,
+        naechstesRueckgaengig: verlauf.naechstesRueckgaengig,
+        naechstesWiederholen: verlauf.naechstesWiederholen,
+        schritte: verlauf.schritte,
+        onRueckgaengig: (anzahl: number) => zeigeSprung('Rückgängig', verlauf.rueckgaengig(anzahl)),
+        onWiederholen: () => zeigeSprung('Wiederholen', verlauf.wiederholen()),
+    }), [verlauf, zeigeSprung]);
 
     /**
      * Oeffnet das "+"-Auswahl-Dialog (Was hinzufuegen?) mit der angegebenen
@@ -1640,130 +2038,154 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         const overContainer = findBlockContainer(blocks, overId);
 
         if (!activeContainer || !overContainer) return;
+        if (activeContainer !== overContainer) return; // Cross-container drag handled by drop zones, not by sorting overlap
 
-        if (activeContainer === overContainer) {
-            // Same container: reorder
-            if (activeContainer === 'root') {
-                // Root-level reorder mit CLOSURE-Constraint:
-                //  - Leistungen (SERVICE) und Bauabschnitte (SECTION_HEADER) muessen
-                //    vor dem CLOSURE-Block bleiben.
-                //  - CLOSURE selbst darf nicht vor die letzte Leistung/Bauabschnitt wandern.
-                //  - Textbausteine, Separatoren etc. duerfen frei umsortiert werden.
-                // Validation in blockOps.validateRootReorder (testabar mit Vitest).
-                setBlocks((items) => {
-                    const oldIndex = items.findIndex((item) => item.id === activeId);
-                    const newIndex = items.findIndex((item) => item.id === overId);
-                    if (oldIndex === -1 || newIndex === -1) return items;
-                    const newOrder = arrayMove(items, oldIndex, newIndex);
+        // Verschieben ist eine Nutzeraktion: Stand ref-first lesen, Ergebnis
+        // (inkl. Validierung) VOR dem Schreiben ausrechnen. Ungueltig ⇒ nur
+        // Toast, kein Schritt ("Aktion, die den Stand nicht veraendert").
+        // toast.warning() bewusst AUSSERHALB eines State-Updaters (StrictMode
+        // wuerde ihn sonst doppelt zeigen).
+        const aktuelleBlocks = blocksRef.current;
 
-                    const validation = validateRootReorder(newOrder, activeId);
-                    if (!validation.ok) {
-                        if (validation.reason === 'SERVICE_AFTER_CLOSURE') {
-                            toast.warning('Leistungen und Bauabschnitte müssen vor dem Abschluss bleiben.');
-                        } else {
-                            toast.warning('Der Abschluss muss nach allen Leistungen und Bauabschnitten stehen.');
-                        }
-                        return items; // revert
-                    }
-                    // Varianten einer Auswahl muessen nebeneinander bleiben — wurde
-                    // etwas dazwischen gezogen, ruecken sie wieder zusammen.
-                    return normalisiereAlternativGruppen(newOrder);
-                });
-            } else {
-                // Within a section: reorder children
-                setBlocks(prev => normalisiereAlternativGruppen(prev.map(b => {
-                    if (b.id === activeContainer && b.children) {
-                        const oldIndex = b.children.findIndex(c => c.id === activeId);
-                        const newIndex = b.children.findIndex(c => c.id === overId);
-                        if (oldIndex === -1 || newIndex === -1) return b;
-                        return { ...b, children: arrayMove(b.children, oldIndex, newIndex) };
-                    }
-                    return b;
-                })));
+        if (activeContainer === 'root') {
+            // Root-level reorder mit CLOSURE-Constraint:
+            //  - Leistungen (SERVICE) und Bauabschnitte (SECTION_HEADER) muessen
+            //    vor dem CLOSURE-Block bleiben.
+            //  - CLOSURE selbst darf nicht vor die letzte Leistung/Bauabschnitt wandern.
+            //  - Textbausteine, Separatoren etc. duerfen frei umsortiert werden.
+            // Validation in blockOps.validateRootReorder (testabar mit Vitest).
+            const oldIndex = aktuelleBlocks.findIndex((item) => item.id === activeId);
+            const newIndex = aktuelleBlocks.findIndex((item) => item.id === overId);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const newOrder = arrayMove(aktuelleBlocks, oldIndex, newIndex);
+
+            const validation = validateRootReorder(newOrder, activeId);
+            if (!validation.ok) {
+                if (validation.reason === 'SERVICE_AFTER_CLOSURE') {
+                    toast.warning('Leistungen und Bauabschnitte müssen vor dem Abschluss bleiben.');
+                } else {
+                    toast.warning('Der Abschluss muss nach allen Leistungen und Bauabschnitten stehen.');
+                }
+                return;
             }
+            const bewegterBlock = aktuelleBlocks.find(b => b.id === activeId);
+            // Varianten einer Auswahl muessen nebeneinander bleiben — wurde
+            // etwas dazwischen gezogen, ruecken sie wieder zusammen.
+            const naechsteBlocks = normalisiereAlternativGruppen(newOrder);
+            verlauf.aendern({
+                bezeichnung: `${blockName(bewegterBlock)} verschoben`,
+                berechne: () => ({ blocks: naechsteBlocks }),
+                buendelSchluessel: null,
+                ziel: { blockId: activeId },
+            });
+        } else {
+            // Within a section: reorder children
+            const section = aktuelleBlocks.find(b => b.id === activeContainer);
+            const bewegterBlock = section?.children?.find(c => c.id === activeId);
+            if (!section?.children) return;
+            const oldIndex = section.children.findIndex(c => c.id === activeId);
+            const newIndex = section.children.findIndex(c => c.id === overId);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const naechsteBlocks = normalisiereAlternativGruppen(aktuelleBlocks.map(b => (
+                b.id === activeContainer && b.children
+                    ? { ...b, children: arrayMove(b.children, oldIndex, newIndex) }
+                    : b
+            )));
+            verlauf.aendern({
+                bezeichnung: `${blockName(bewegterBlock)} verschoben`,
+                berechne: () => ({ blocks: naechsteBlocks }),
+                buendelSchluessel: null,
+                ziel: { blockId: activeId, sectionId: activeContainer },
+            });
         }
-        // Cross-container drag handled by drop zones, not by sorting overlap
     }
 
     /** Move a SERVICE block from wherever it is into a target section */
     const moveServiceToSection = useCallback((serviceId: string, sectionId: string) => {
-        setBlocks(prev => {
-            // Find the service block
-            let serviceBlock: DocBlock | null = null;
-
-            // Check root level
-            const rootItem = prev.find(b => b.id === serviceId);
-            if (rootItem && rootItem.type === 'SERVICE') {
-                serviceBlock = rootItem;
-            }
-
-            // Check inside other sections
-            if (!serviceBlock) {
-                for (const b of prev) {
-                    if (b.type === 'SECTION_HEADER' && b.children) {
-                        const child = b.children.find(c => c.id === serviceId);
-                        if (child) {
-                            serviceBlock = child;
-                            break;
-                        }
+        // Find the service block (fuer die Bezeichnung und um fruehzeitig
+        // auszusteigen, wenn es ihn gar nicht mehr gibt).
+        const aktuelleBlocks = blocksRef.current;
+        let serviceBlock: DocBlock | null = null;
+        const rootItem = aktuelleBlocks.find(b => b.id === serviceId);
+        if (rootItem && rootItem.type === 'SERVICE') {
+            serviceBlock = rootItem;
+        }
+        if (!serviceBlock) {
+            for (const b of aktuelleBlocks) {
+                if (b.type === 'SECTION_HEADER' && b.children) {
+                    const child = b.children.find(c => c.id === serviceId);
+                    if (child) {
+                        serviceBlock = child;
+                        break;
                     }
                 }
             }
+        }
+        if (!serviceBlock) return;
 
-            if (!serviceBlock) return prev;
+        verlauf.aendern({
+            bezeichnung: 'Position in Bauabschnitt verschoben',
+            berechne: stand => {
+                // Remove from current location
+                let newBlocks = stand.blocks
+                    .filter(b => b.id !== serviceId)
+                    .map(b => {
+                        if (b.type === 'SECTION_HEADER' && b.children) {
+                            return { ...b, children: b.children.filter(c => c.id !== serviceId) };
+                        }
+                        return b;
+                    });
 
-            // Remove from current location
-            let newBlocks = prev
-                .filter(b => b.id !== serviceId)
-                .map(b => {
-                    if (b.type === 'SECTION_HEADER' && b.children) {
-                        return { ...b, children: b.children.filter(c => c.id !== serviceId) };
+                // Add to target section's children
+                newBlocks = newBlocks.map(b => {
+                    if (b.id === sectionId && b.type === 'SECTION_HEADER') {
+                        return { ...b, children: [...(b.children || []), serviceBlock!] };
                     }
                     return b;
                 });
 
-            // Add to target section's children
-            newBlocks = newBlocks.map(b => {
-                if (b.id === sectionId && b.type === 'SECTION_HEADER') {
-                    return { ...b, children: [...(b.children || []), serviceBlock!] };
-                }
-                return b;
-            });
-
-            // Container-Wechsel: die Variante verlaesst ihre Gruppe, im Ziel steht
-            // sie zunaechst allein. Beides regelt die Invariante.
-            return normalisiereAlternativGruppen(newBlocks);
+                // Container-Wechsel: die Variante verlaesst ihre Gruppe, im Ziel steht
+                // sie zunaechst allein. Beides regelt die Invariante.
+                return { blocks: normalisiereAlternativGruppen(newBlocks) };
+            },
+            buendelSchluessel: null,
+            ziel: { blockId: serviceId, sectionId },
         });
-    }, []);
+    }, [verlauf]);
 
     /** Remove a SERVICE from a section back to root level (placed right after the section) */
     const ejectChildFromSection = useCallback((sectionId: string, childId: string) => {
-        setBlocks(prev => {
-            const section = prev.find(b => b.id === sectionId);
-            const child = section?.children?.find(c => c.id === childId);
-            if (!child) return prev;
+        const section = blocksRef.current.find(b => b.id === sectionId);
+        const child = section?.children?.find(c => c.id === childId);
+        if (!child) return;
 
-            // Remove from section
-            const newBlocks = prev.map(b => {
-                if (b.id === sectionId && b.children) {
-                    return { ...b, children: b.children.filter(c => c.id !== childId) };
+        verlauf.aendern({
+            bezeichnung: `${blockName(child)} aus Bauabschnitt geholt`,
+            berechne: stand => {
+                // Remove from section
+                const newBlocks = stand.blocks.map(b => {
+                    if (b.id === sectionId && b.children) {
+                        return { ...b, children: b.children.filter(c => c.id !== childId) };
+                    }
+                    return b;
+                });
+
+                // Insert right after the section
+                const sectionIndex = newBlocks.findIndex(b => b.id === sectionId);
+                if (sectionIndex !== -1) {
+                    newBlocks.splice(sectionIndex + 1, 0, child);
+                } else {
+                    newBlocks.push(child);
                 }
-                return b;
-            });
 
-            // Insert right after the section
-            const sectionIndex = newBlocks.findIndex(b => b.id === sectionId);
-            if (sectionIndex !== -1) {
-                newBlocks.splice(sectionIndex + 1, 0, child);
-            } else {
-                newBlocks.push(child);
-            }
-
-            // Die herausgeworfene Variante wechselt den Container: im Bauabschnitt
-            // bleibt evtl. nur eine zurueck, auf Root-Ebene steht sie allein.
-            return normalisiereAlternativGruppen(newBlocks);
+                // Die herausgeworfene Variante wechselt den Container: im Bauabschnitt
+                // bleibt evtl. nur eine zurueck, auf Root-Ebene steht sie allein.
+                return { blocks: normalisiereAlternativGruppen(newBlocks) };
+            },
+            buendelSchluessel: null,
+            ziel: { blockId: childId },
         });
-    }, []);
+    }, [verlauf]);
 
     // Hinweis: insertBeforeNachtexte und insertAtAnchor sind nach blockOps.ts ausgelagert,
     // damit sie in der Vitest-Suite (blockOps.test.ts) direkt mit 100% Branch-Coverage
@@ -1778,22 +2200,25 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // wenn nichts zu tun -> kein Re-Render-Loop).
     useEffect(() => {
         if (loading) return;
-        setBlocks(prev => {
-            // Wenn gesamtNetto === 0, soll KEIN CLOSURE im Array sein – sonst
-            // hinge ein leerer SortableBlock-Wrapper inkl. Drag-Handle im DOM.
-            // computeClosureSummary direkt hier (noch keine Component-Variable,
-            // closureSummary wird erst weiter unten gebildet).
-            const gesamtNetto = computeClosureSummary(prev).gesamtNetto;
-            if (gesamtNetto <= 0) {
-                const hasClosure = prev.some(b => b.id === CLOSURE_BLOCK_ID);
-                return hasClosure ? prev.filter(b => b.id !== CLOSURE_BLOCK_ID) : prev;
-            }
-            return syncClosureBlock(prev);
-        });
-    }, [blocks, loading]);
+        // Automatische Aenderung, kein Nutzer-Schritt: liest blocksRef.current
+        // statt `prev` (Ref-first) und setzt nur, wenn sich die Referenz
+        // tatsaechlich aendert -- sonst haengt jeder Rueckgaengig/Wiederholen-
+        // Sprung eine unsichtbare, identische Extra-Runde an.
+        const prev = blocksRef.current;
+        // Wenn gesamtNetto === 0, soll KEIN CLOSURE im Array sein – sonst
+        // hinge ein leerer SortableBlock-Wrapper inkl. Drag-Handle im DOM.
+        // computeClosureSummary direkt hier (noch keine Component-Variable,
+        // closureSummary wird erst weiter unten gebildet).
+        const gesamtNetto = computeClosureSummary(prev).gesamtNetto;
+        const naechste = gesamtNetto <= 0
+            ? (prev.some(b => b.id === CLOSURE_BLOCK_ID) ? prev.filter(b => b.id !== CLOSURE_BLOCK_ID) : prev)
+            : syncClosureBlock(prev);
+        if (naechste !== prev) setzeBlocks(naechste);
+    }, [blocks, loading, setzeBlocks]);
 
     // --- Block Actions ---
-    const addBlock = (type: DocBlock['type'], payload?: Partial<DocBlock>) => {
+    /** Default-Bezeichnung je Typ (Wortliste) -- `bezeichnung` ueberschreibt sie (Stundensatz vs. Leistung, beide type SERVICE). */
+    const addBlock = (type: DocBlock['type'], payload?: Partial<DocBlock>, bezeichnung?: string) => {
         if (isLocked) return;
 
         const allServices = getAllServiceBlocks(blocks);
@@ -1842,7 +2267,17 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             return;
         }
 
-        setBlocks(prev => applyInsert(prev, newBlock, anchor));
+        // SUBTOTAL/CLOSURE entstehen nie ueber addBlock (synthetisch bzw.
+        // CLOSURE-Sync) -- der Fallback deckt sie nur type-sicher ab.
+        const label = bezeichnung ?? `${blockName({ ...newBlock, type })} eingefügt`;
+        verlauf.aendern({
+            bezeichnung: label,
+            berechne: stand => ({ blocks: applyInsert(stand.blocks, newBlock, anchor) }),
+            buendelSchluessel: null,
+            ziel: anchor.kind === 'in-section'
+                ? { blockId: newBlock.id, sectionId: anchor.sectionId }
+                : { blockId: newBlock.id },
+        });
     };
 
     /**
@@ -1871,7 +2306,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             optional: false,
             artikelId: a.artikelId,
         }));
-        setBlocks(prev => insertBlocksBeforeClosure(prev, neueBloecke));
+        verlauf.aendern({
+            bezeichnung: 'Material eingefügt',
+            berechne: stand => ({ blocks: insertBlocksBeforeClosure(stand.blocks, neueBloecke) }),
+            buendelSchluessel: null,
+            ziel: { blockId: neueBloecke[0].id },
+        });
         setMaterialDialogOffen(false);
     };
 
@@ -1879,7 +2319,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         if (!pendingLeistungInsert || !projektId) return;
         const finalBlock = { ...pendingLeistungInsert.block, kategorieId };
         const anchor = pendingLeistungInsert.anchor;
-        setBlocks(prev => applyInsert(prev, finalBlock, anchor));
+        verlauf.aendern({
+            bezeichnung: 'Leistung eingefügt',
+            berechne: stand => ({ blocks: applyInsert(stand.blocks, finalBlock, anchor) }),
+            buendelSchluessel: null,
+            ziel: anchor.kind === 'in-section'
+                ? { blockId: finalBlock.id, sectionId: anchor.sectionId }
+                : { blockId: finalBlock.id },
+        });
         setPendingLeistungInsert(null);
         try {
             const res = await fetch(`/api/projekte/${projektId}/produktkategorien`, {
@@ -1905,58 +2352,97 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         if (!pendingLeistungInsert) return;
         const name = pendingLeistungInsert.leistungName;
         const anchor = pendingLeistungInsert.anchor;
-        setBlocks(prev => applyInsert(prev, pendingLeistungInsert.block, anchor));
+        const block = pendingLeistungInsert.block;
+        verlauf.aendern({
+            bezeichnung: 'Leistung eingefügt',
+            berechne: stand => ({ blocks: applyInsert(stand.blocks, block, anchor) }),
+            buendelSchluessel: null,
+            ziel: anchor.kind === 'in-section'
+                ? { blockId: block.id, sectionId: anchor.sectionId }
+                : { blockId: block.id },
+        });
         setPendingLeistungInsert(null);
         toast.info(`Leistung „${name}“ ohne Kategorie eingefügt`);
     };
 
-    const updateBlock = (id: string, updates: Partial<DocBlock>) => {
+    /**
+     * Uebernimmt eine Feldaenderung (Titel/Menge/Einheit/Preis/Beschreibung/
+     * Inhalt). `art` kommt nur bei Content-/Description-Aenderungen aus Tiptap
+     * (verlaufsModus) -- siehe istPhantomTiptapAenderung fuer den Mount-Guard.
+     */
+    const updateBlock = (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => {
         if (isLocked) return;
-        setBlocks(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+        if (istPhantomTiptapAenderung(id, updates)) {
+            setzeBlocks(blocksRef.current.map(b => b.id === id ? { ...b, ...updates } : b));
+            return;
+        }
+        verlauf.aendern({
+            bezeichnung: bezeichnungFuerAenderung(updates, art),
+            berechne: stand => ({ blocks: stand.blocks.map(b => b.id === id ? { ...b, ...updates } : b) }),
+            buendelSchluessel: buendelSchluesselFuer(id, updates, art),
+            ziel: { blockId: id, feld: verlaufsFeldVon(updates) },
+        });
     };
 
     const removeBlock = (id: string) => {
         if (isLocked) return;
-        // When removing a SECTION_HEADER, eject its children back to root
-        setBlocks(prev => {
-            const block = prev.find(b => b.id === id);
-            if (block?.type === 'SECTION_HEADER' && block.children && block.children.length > 0) {
-                const idx = prev.findIndex(b => b.id === id);
-                const newBlocks = [...prev];
-                newBlocks.splice(idx, 1, ...block.children);
-                // Aus einem aufgeloesten Bauabschnitt gekippte Varianten landen auf
-                // Root-Ebene — dort gilt die Gruppen-Invariante erneut.
-                return normalisiereAlternativGruppen(newBlocks);
-            }
-            // Bleibt nach dem Loeschen nur noch eine Variante uebrig, verliert sie
-            // die Gruppe und wird wieder eine normale Zusatzposition.
-            return normalisiereAlternativGruppen(prev.filter(b => b.id !== id));
+        const block = blocksRef.current.find(b => b.id === id);
+        verlauf.aendern({
+            bezeichnung: `${blockName(block)} gelöscht`,
+            // When removing a SECTION_HEADER, eject its children back to root
+            berechne: stand => {
+                const aktuellerBlock = stand.blocks.find(b => b.id === id);
+                if (aktuellerBlock?.type === 'SECTION_HEADER' && aktuellerBlock.children && aktuellerBlock.children.length > 0) {
+                    const idx = stand.blocks.findIndex(b => b.id === id);
+                    const newBlocks = [...stand.blocks];
+                    newBlocks.splice(idx, 1, ...aktuellerBlock.children);
+                    // Aus einem aufgeloesten Bauabschnitt gekippte Varianten landen auf
+                    // Root-Ebene — dort gilt die Gruppen-Invariante erneut.
+                    return { blocks: normalisiereAlternativGruppen(newBlocks) };
+                }
+                // Bleibt nach dem Loeschen nur noch eine Variante uebrig, verliert sie
+                // die Gruppe und wird wieder eine normale Zusatzposition.
+                return { blocks: normalisiereAlternativGruppen(stand.blocks.filter(b => b.id !== id)) };
+            },
+            buendelSchluessel: null,
+            ziel: { blockId: id },
         });
     };
 
     /** Update a child block within a section */
-    const updateSectionChild = (sectionId: string, childId: string, updates: Partial<DocBlock>) => {
+    const updateSectionChild = (sectionId: string, childId: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => {
         if (isLocked) return;
-        setBlocks(prev => prev.map(b => {
-            if (b.id === sectionId && b.children) {
-                return {
-                    ...b,
-                    children: b.children.map(c => c.id === childId ? { ...c, ...updates } : c)
-                };
-            }
-            return b;
-        }));
+        if (istPhantomTiptapAenderung(childId, updates)) {
+            setzeBlocks(blocksRef.current.map(b => (b.id === sectionId && b.children)
+                ? { ...b, children: b.children.map(c => c.id === childId ? { ...c, ...updates } : c) }
+                : b));
+            return;
+        }
+        verlauf.aendern({
+            bezeichnung: bezeichnungFuerAenderung(updates, art),
+            berechne: stand => ({
+                blocks: stand.blocks.map(b => (b.id === sectionId && b.children)
+                    ? { ...b, children: b.children.map(c => c.id === childId ? { ...c, ...updates } : c) }
+                    : b),
+            }),
+            buendelSchluessel: buendelSchluesselFuer(childId, updates, art),
+            ziel: { blockId: childId, sectionId, feld: verlaufsFeldVon(updates) },
+        });
     };
 
     /** Remove a child from a section (delete it entirely) */
     const removeSectionChild = (sectionId: string, childId: string) => {
         if (isLocked) return;
-        setBlocks(prev => normalisiereAlternativGruppen(prev.map(b => {
-            if (b.id === sectionId && b.children) {
-                return { ...b, children: b.children.filter(c => c.id !== childId) };
-            }
-            return b;
-        })));
+        verlauf.aendern({
+            bezeichnung: 'Position gelöscht',
+            berechne: stand => ({
+                blocks: normalisiereAlternativGruppen(stand.blocks.map(b => (b.id === sectionId && b.children)
+                    ? { ...b, children: b.children.filter(c => c.id !== childId) }
+                    : b)),
+            }),
+            buendelSchluessel: null,
+            ziel: { blockId: childId, sectionId },
+        });
     };
 
     /**
@@ -1972,18 +2458,32 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
 
     const childModusWechsel = (sectionId: string, childId: string, modus: 'fest' | 'optional') => {
         if (isLocked) return;
-        setBlocks(prev => syncClosureBlock(normalisiereAlternativGruppen(prev.map(b =>
-            b.id === sectionId && b.children
-                ? { ...b, children: b.children.map(c => c.id === childId ? setzeWahlmodus(c, modus) : c) }
-                : b
-        ))));
+        verlauf.aendern({
+            bezeichnung: modus === 'optional' ? 'Position auf Optional gestellt' : 'Position auf Fest beauftragt gestellt',
+            berechne: stand => ({
+                blocks: syncClosureBlock(normalisiereAlternativGruppen(stand.blocks.map(b =>
+                    b.id === sectionId && b.children
+                        ? { ...b, children: b.children.map(c => c.id === childId ? setzeWahlmodus(c, modus) : c) }
+                        : b
+                ))),
+            }),
+            buendelSchluessel: null,
+            ziel: { blockId: childId, sectionId },
+        });
     };
 
     const modusWechsel = (id: string, modus: 'fest' | 'optional') => {
         if (isLocked) return;
-        setBlocks(prev => syncClosureBlock(normalisiereAlternativGruppen(
-            prev.map(b => b.id === id ? setzeWahlmodus(b, modus) : b)
-        )));
+        verlauf.aendern({
+            bezeichnung: modus === 'optional' ? 'Position auf Optional gestellt' : 'Position auf Fest beauftragt gestellt',
+            berechne: stand => ({
+                blocks: syncClosureBlock(normalisiereAlternativGruppen(
+                    stand.blocks.map(b => b.id === id ? setzeWahlmodus(b, modus) : b)
+                )),
+            }),
+            buendelSchluessel: null,
+            ziel: { blockId: id },
+        });
     };
 
     /**
@@ -1993,14 +2493,22 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
      */
     const alternativGruppeSpeichern = (blockIds: string[], name: string, bisherigeGruppe: string | null) => {
         if (isLocked) return;
-        setBlocks(prev => syncClosureBlock(
-            gruppiereAlsAlternativen(prev, blockIds, name, bisherigeGruppe)
-        ));
+        verlauf.aendern({
+            bezeichnung: 'Auswahl gespeichert',
+            berechne: stand => ({ blocks: syncClosureBlock(gruppiereAlsAlternativen(stand.blocks, blockIds, name, bisherigeGruppe)) }),
+            buendelSchluessel: null,
+            ziel: blockIds[0] ? { blockId: blockIds[0] } : null,
+        });
     };
 
     const gruppeAufloesen = (name: string) => {
         if (isLocked) return;
-        setBlocks(prev => syncClosureBlock(loeseAlternativGruppeAuf(prev, name)));
+        verlauf.aendern({
+            bezeichnung: 'Auswahl aufgelöst',
+            berechne: stand => ({ blocks: syncClosureBlock(loeseAlternativGruppeAuf(stand.blocks, name)) }),
+            buendelSchluessel: null,
+            ziel: null,
+        });
     };
 
     const gruppeUmbenennen = (alt: string, neu: string) => {
@@ -2008,16 +2516,23 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         // Ohne diesen Guard verschmelzen zwei gleichnamige Gruppen dokumentweit:
         // der Editor zeigt weiter zwei Kaesten, das Backend sieht eine Gruppe —
         // der Kunde waehlt zweimal und kann das Angebot danach nicht annehmen.
-        if (gruppenNameVergeben(blocks, neu, alt)) {
+        if (gruppenNameVergeben(blocksRef.current, neu, alt)) {
             toast.error(`„${neu}“ ist in diesem Dokument schon vergeben. Bitte einen anderen Namen wählen.`);
             return;
         }
-        setBlocks(prev => normalisiereAlternativGruppen(prev.map(b => {
-            const um = (x: DocBlock) => x.alternativGruppe === alt ? { ...x, alternativGruppe: neu } : x;
-            return b.type === 'SECTION_HEADER' && b.children
-                ? { ...b, children: b.children.map(um) }
-                : um(b);
-        })));
+        verlauf.aendern({
+            bezeichnung: 'Auswahl umbenannt',
+            berechne: stand => ({
+                blocks: normalisiereAlternativGruppen(stand.blocks.map(b => {
+                    const um = (x: DocBlock) => x.alternativGruppe === alt ? { ...x, alternativGruppe: neu } : x;
+                    return b.type === 'SECTION_HEADER' && b.children
+                        ? { ...b, children: b.children.map(um) }
+                        : um(b);
+                })),
+            }),
+            buendelSchluessel: null,
+            ziel: null,
+        });
     };
 
     // --- Preview & Export ---
@@ -2162,13 +2677,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // Datum aus dem Ref. Sonst meldet die Change-Detection direkt nach
             // dem Buchen eine Abweichung, die niemand mehr speichern kann.
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
-            const currentState = JSON.stringify({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp });
+            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
             lastSavedStateRef.current = currentState;
             setHasUnsavedChanges(false);
-            // Muss mit zurueck: nach dem Buchen ist das Dokument gesperrt und
+            // Muessen mit zurueck: nach dem Buchen ist das Dokument gesperrt und
             // handleSave steigt sofort aus. Ein stehengebliebenes Flag waere
             // dann nicht mehr loeschbar und meldete dauerhaft "ungespeichert".
             setAdresseGeaendert(false);
+            setZahlungszielGeaendert(false);
             notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
             return true;
         } catch (err) {
@@ -2274,6 +2790,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 iframe.contentWindow?.focus();
                 iframe.contentWindow?.print();
             });
+            // Verlauf-Reset nur beim endgueltigen Druck -- Vorschau-Druck (mit
+            // Wasserzeichen) laesst ihn stehen.
+            if (shouldBook) verlauf.leeren();
         } catch (err) {
             console.error('Fehler beim Drucken:', err);
             toast.error('Drucken fehlgeschlagen: ' + (err instanceof Error ? err.message : ''));
@@ -2337,6 +2856,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
+            // Erfolgreicher PDF-Export (Download) startet den Verlauf neu --
+            // unabhaengig von shouldBook (anders als beim Druck gilt das hier
+            // fuer jeden Dokumenttyp, siehe Spec).
+            verlauf.leeren();
         } catch (err) {
             console.error('Fehler beim Export:', err);
             toast.error('Export fehlgeschlagen: ' + (err instanceof Error ? err.message : ''));
@@ -2879,13 +3402,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     onChildModusWechsel={childModusWechsel}
                     onAlternativOeffnen={setAlternativDialogAnker}
                     onFocus={(id) => setActiveEditorId(id)}
-                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
+                    onEditorFocus={markiereEditorFokussiert}
                     getPositionString={getPositionString}
                     sectionPosition={getPositionString(block)}
                     onAddBelow={handleAddBelow}
                     onAddIntoSection={handleAddIntoSection}
                     onGruppeUmbenennen={gruppeUmbenennen}
                     onGruppeAufloesen={gruppeAufloesen}
+                    verlaufsModus
                 />
             )}
             {block.type === 'TEXT' && (
@@ -2898,11 +3422,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     onUpdate={updateBlock}
                     onRemove={removeBlock}
                     onFocus={(id) => setActiveEditorId(id)}
-                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
+                    onEditorFocus={markiereEditorFokussiert}
                     prepareContent={prepareEditorContent}
                     serializeContent={serializeEditorContent}
                     onZahlungszielChipClick={handleZahlungszielChipClick}
                     onAddBelow={handleAddBelow}
+                    verlaufsModus
                 />
             )}
             {block.type === 'SERVICE' && (
@@ -2918,8 +3443,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     onModusWechsel={modusWechsel}
                     onAlternativOeffnen={setAlternativDialogAnker}
                     onFocus={(id) => setActiveEditorId(id)}
-                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
+                    onEditorFocus={markiereEditorFokussiert}
                     onAddBelow={handleAddBelow}
+                    verlaufsModus
                 />
             )}
             {block.type === 'CLOSURE' && closureSummary.gesamtNetto > 0 && (
@@ -2935,8 +3461,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     differenzHinweis={differenzHinweis}
                     balkenAnzeigen={balkenAnzeigen}
                     onBalkenAnzeigenChange={isLocked ? undefined : (anzeigen) => {
-                        setBalkenAnzeigen(anzeigen);
-                        setHasUnsavedChanges(true);
+                        verlauf.aendern({
+                            bezeichnung: anzeigen ? 'Balken eingeblendet' : 'Balken ausgeblendet',
+                            berechne: () => ({ balkenAnzeigen: anzeigen }),
+                            buendelSchluessel: null,
+                            ziel: { blockId: CLOSURE_BLOCK_ID },
+                        });
                     }}
                 />
             )}
@@ -3067,12 +3597,20 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 onGaebImport={handleGaebImportClick}
                 fileInputRef={fileInputRef}
                 onFileChange={handleFileChange}
+                verlauf={verlaufKnoepfeProps}
             />
 
             {/* ===== Main Split Pane ===== */}
             <div className="flex-1 flex overflow-hidden relative">
                 {/* Editor Area */}
-                <div className="flex-1 flex flex-col overflow-hidden min-w-0 transition-all duration-500 ease-in-out">
+                <div ref={editorWurzelRef} className="flex-1 flex flex-col overflow-hidden min-w-0 transition-all duration-500 ease-in-out">
+                    {/* Ansage fuer Screenreader nach Rückgängig/Wiederholen. Bewusst OHNE
+                        role="status": e2e/hilfen/design.ts sammelt [role="status"] fuer die
+                        Ueberschneidungs-Pruefung ein, ein sr-only-Element wuerde dort als
+                        (scheinbar) ueberlappendes Bedienelement auftauchen. */}
+                    <p aria-live="polite" aria-atomic="true" className="sr-only" data-testid="verlauf-ansage">
+                        {sprung?.text ?? ''}
+                    </p>
                     {/* Global Sticky Toolbar */}
                     {!isLocked && (
                         <div className="sticky top-0 z-20 bg-slate-50/90 backdrop-blur-sm px-4 py-1.5 border-b border-slate-100">
@@ -3093,9 +3631,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                     // eine eigene Adresse um und kappt damit die Vererbung vom
                                     // Vorgang — das soll keine Nebenwirkung eines No-ops sein.
                                     if (newAddr === (kontextDaten.rechnungsadresse ?? '')) return;
-                                    adresseUserEditedRef.current = true;
-                                    setKontextDaten(prev => ({ ...prev, rechnungsadresse: newAddr }));
-                                    setAdresseGeaendert(true);
+                                    // schreibeStand setzt adresseUserEditedRef/adresseGeaendert.
+                                    verlauf.aendern({
+                                        bezeichnung: 'Rechnungsadresse geändert',
+                                        berechne: () => ({ rechnungsadresse: newAddr }),
+                                        buendelSchluessel: null,
+                                        ziel: null,
+                                    });
                                 }}
                             />
 
@@ -3216,7 +3758,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 isLocked={isLocked}
                 onDatumChange={(value) => {
                     if (isLocked) return;
-                    setDatum(value);
+                    // "Datum wählen" ist laut Spec eine Einzelaktion -- nie gebuendelt.
+                    verlauf.aendern({
+                        bezeichnung: 'Datum geändert',
+                        berechne: () => ({ datum: value }),
+                        buendelSchluessel: null,
+                        ziel: null,
+                    });
                 }}
                 globalRabatt={globalRabatt}
                 istRestbetrag={bereitsAbgerechnetDurchAndere !== null && bereitsAbgerechnetDurchAndere > 0}
@@ -3231,14 +3779,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     ref={zahlungszielPopoverRef}
                     style={{ position: 'fixed', top: zahlungszielPopover.top, left: zahlungszielPopover.left, zIndex: 200 }}
                     className="w-64 rounded-lg border border-rose-200 bg-white p-3 shadow-xl"
+                    role="dialog"
+                    aria-labelledby="zahlungsziel-popover-titel"
                 >
-                    <p className="text-xs font-semibold text-slate-700 mb-2">Zahlungsziel</p>
+                    <p id="zahlungsziel-popover-titel" className="text-xs font-semibold text-slate-700 mb-2">Zahlungsziel</p>
                     <div className="flex items-center gap-2">
-                        <input
-                            type="number"
-                            min={1}
-                            value={zahlungszielTage}
-                            onChange={(e) => handleZahlungszielChange(parseInt(e.target.value) || DEFAULT_ZAHLUNGSZIEL_TAGE)}
+                        <ZahlungszielTageEingabe
+                            tage={zahlungszielTage}
+                            onUebernehmen={handleZahlungszielChange}
                             className="w-16 rounded border border-slate-300 px-2 py-1 text-sm text-center focus:border-rose-400 focus:outline-none"
                             autoFocus
                         />
@@ -3338,7 +3886,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             fett: extractBoldFromHtml(descHtml),
                             leistungId: l.id,
                             kategorieId: l.folderId ?? undefined,
-                        });
+                        }, 'Leistung eingefügt');
                         setShowLeistungPicker(false);
                         if (!hasKategorie) {
                             toast.success(`Leistung „${l.name}“ eingefügt`);
@@ -3363,7 +3911,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             price: az.stundensatz,
                             fontSize: extractFontSizeFromHtml(descHtml),
                             fett: extractBoldFromHtml(descHtml),
-                        });
+                        }, 'Stundensatz eingefügt');
                         setShowStundensatzPicker(false);
                         toast.success(`Stundensatz „${az.bezeichnung}“ eingefügt`);
                     }}
@@ -3378,14 +3926,20 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     blocks={blocks}
                     globalRabatt={globalRabatt}
                     onApply={(positionDiscounts, newGlobalRabatt) => {
-                        setBlocks(prev => prev.map(b => {
-                            if (b.type === 'SERVICE' && b.id in positionDiscounts) {
-                                return { ...b, discount: positionDiscounts[b.id] };
-                            }
-                            return b;
-                        }));
-                        setGlobalRabatt(newGlobalRabatt);
-                        setHasUnsavedChanges(true);
+                        // Positionsrabatte + Pauschalrabatt sind EIN Schritt (Wortliste).
+                        // Die Change-Detection erkennt globalRabatt jetzt selbst
+                        // (baueDokumentSignatur) -- kein setHasUnsavedChanges(true) mehr noetig.
+                        verlauf.aendern({
+                            bezeichnung: 'Rabatt geändert',
+                            berechne: stand => ({
+                                blocks: stand.blocks.map(b => (b.type === 'SERVICE' && b.id in positionDiscounts)
+                                    ? { ...b, discount: positionDiscounts[b.id] }
+                                    : b),
+                                globalRabatt: newGlobalRabatt,
+                            }),
+                            buendelSchluessel: null,
+                            ziel: null,
+                        });
                         setShowRabattDialog(false);
                     }}
                     onClose={() => setShowRabattDialog(false)}
@@ -3486,6 +4040,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             console.error('Fehler beim Setzen des Versanddatums:', err);
                         }
                     }
+                    // Erfolgreicher endgueltiger Versand startet den Verlauf neu;
+                    // ein Entwurfsversand laesst ihn stehen (Spec).
+                    if (!wasDraft) verlauf.leeren();
                     setShowEmailModal(false);
                     setEmailAttachments([]);
                     setEmailBody('');

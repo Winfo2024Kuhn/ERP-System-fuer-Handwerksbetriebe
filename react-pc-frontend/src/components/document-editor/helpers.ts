@@ -1,3 +1,4 @@
+import { CLOSURE_BLOCK_ID } from './blockOps';
 import type { DocBlock } from './types';
 
 interface AdresseKundeLike {
@@ -88,6 +89,20 @@ export const ZAHLUNGSZIEL_TAGE_PLACEHOLDER = '{{ZAHLUNGSZIEL_TAGE}}';
  * lässt freie Vereinbarung zu; 8 Tage waren hier schon immer der Default).
  */
 export const DEFAULT_ZAHLUNGSZIEL_TAGE = 8;
+
+/** Kleinstes Zahlungsziel, das der Editor annimmt. */
+export const MIN_ZAHLUNGSZIEL_TAGE = 1;
+
+/** Groesstes Zahlungsziel, das der Editor annimmt (ein Jahr). */
+export const MAX_ZAHLUNGSZIEL_TAGE = 365;
+
+/**
+ * Ab welcher Tageszahl der Editor nachfragt, ob das wirklich so gewollt ist
+ * (Nutzervorgabe 17.09.2026). Bewusst derselbe Wert wie
+ * DEFAULT_ZAHLUNGSZIEL_TAGE: alles darueber heisst spaeter an das eigene Geld
+ * kommen, und das soll eine bewusste Entscheidung sein, kein Vertipper.
+ */
+export const ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN = DEFAULT_ZAHLUNGSZIEL_TAGE;
 
 /** Matcht {{ZAHLUNGSZIEL}} (case-insensitive, mit Leerraum), aber NICHT {{ZAHLUNGSZIEL_TAGE}}. */
 const ZAHLUNGSZIEL_PLACEHOLDER_REGEX = /\{\{\s*ZAHLUNGSZIEL\s*\}\}/gi;
@@ -831,4 +846,42 @@ export function computeClosureSummary(blocks: DocBlock[]): ClosureSummary {
         hasSonstige: sonstigeTotal > 0 && sections.length > 0,
         gesamtNetto,
     };
+}
+
+/** Die Felder, aus denen sich der Vergleichswert fuer "Ungespeichert" zusammensetzt (siehe baueDokumentSignatur). */
+export interface DokumentSignaturDaten {
+    blocks: DocBlock[];
+    datum: string;
+    betreff: string;
+    dokumentTyp: string;
+    globalRabatt: number;
+    balkenAnzeigen: boolean;
+}
+
+/**
+ * Vergleichswert fuer "Ungespeichert": zwei Aufrufe mit identischer Signatur
+ * bedeuten fachlich identischen Dokumentinhalt.
+ *
+ * Der CLOSURE-Marker fliegt raus -- er wird nur zur Laufzeit synthetisch in
+ * die Block-Liste eingefuegt (siehe syncClosureBlock in blockOps.ts) und ist
+ * nicht Teil der persistierten Daten. Ohne den Ausschluss wuerde sein
+ * automatisches Einfuegen/Entfernen faelschlich als Dokumentaenderung zaehlen.
+ * Gefiltert wird ueber BEIDE Merkmale (id und type), nicht nur eines -- ein
+ * Block gilt schon dann als CLOSURE, wenn eines der beiden zutrifft.
+ *
+ * Die Schluesselreihenfolge im JSON.stringify ist absichtlich stabil (exakt
+ * die Feldreihenfolge von DokumentSignaturDaten): JSON.stringify serialisiert
+ * Objektschluessel in Einfuegereihenfolge, eine andere Reihenfolge ergaebe fuer
+ * denselben fachlichen Inhalt einen anderen String.
+ */
+export function baueDokumentSignatur(daten: DokumentSignaturDaten): string {
+    const persistierteBloecke = daten.blocks.filter(b => b.id !== CLOSURE_BLOCK_ID && b.type !== 'CLOSURE');
+    return JSON.stringify({
+        blocks: persistierteBloecke,
+        datum: daten.datum,
+        betreff: daten.betreff,
+        dokumentTyp: daten.dokumentTyp,
+        globalRabatt: daten.globalRabatt,
+        balkenAnzeigen: daten.balkenAnzeigen,
+    });
 }
