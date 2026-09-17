@@ -206,4 +206,70 @@ describe('audioRecorderService', () => {
             await expect(starteAufnahme()).rejects.toBe(fehler)
         })
     })
+
+    describe('Mikrofon-Freigabe, wenn nach getUserMedia noch etwas wirft', () => {
+        it('gibt das Mikrofon frei und wirft den Originalfehler unveraendert, wenn der MediaRecorder-Konstruktor wirft', async () => {
+            const konstruktorFehler = new Error('NotSupportedError: Konfiguration nicht unterstuetzt')
+            class WerfenderKonstruktorRecorder {
+                static isTypeSupported = () => true
+                constructor() {
+                    throw konstruktorFehler
+                }
+            }
+            vi.stubGlobal('MediaRecorder', WerfenderKonstruktorRecorder)
+
+            let erzeugterStream: MediaStream | undefined
+            getUserMedia.mockImplementationOnce(async () => {
+                erzeugterStream = makeFakeStream()
+                return erzeugterStream
+            })
+
+            await expect(starteAufnahme()).rejects.toBe(konstruktorFehler)
+
+            expect(erzeugterStream).toBeDefined()
+            erzeugterStream?.getTracks().forEach(track => {
+                expect(track.readyState).toBe('ended')
+            })
+        })
+
+        it('gibt das Mikrofon frei und wirft den Originalfehler unveraendert, wenn recorder.start() wirft', async () => {
+            const startFehler = new Error('InvalidStateError: falscher Zustand')
+            class RecorderMitWerfendemStart extends FakeMediaRecorder {
+                start(): void {
+                    throw startFehler
+                }
+            }
+            vi.stubGlobal('MediaRecorder', RecorderMitWerfendemStart)
+
+            let erzeugterStream: MediaStream | undefined
+            getUserMedia.mockImplementationOnce(async () => {
+                erzeugterStream = makeFakeStream()
+                return erzeugterStream
+            })
+
+            await expect(starteAufnahme()).rejects.toBe(startFehler)
+
+            expect(erzeugterStream).toBeDefined()
+            erzeugterStream?.getTracks().forEach(track => {
+                expect(track.readyState).toBe('ended')
+            })
+        })
+
+        it('gibt das Mikrofon frei, wenn MediaRecorder global gar nicht existiert (altes iOS)', async () => {
+            vi.stubGlobal('MediaRecorder', undefined)
+
+            let erzeugterStream: MediaStream | undefined
+            getUserMedia.mockImplementationOnce(async () => {
+                erzeugterStream = makeFakeStream()
+                return erzeugterStream
+            })
+
+            await expect(starteAufnahme()).rejects.toThrow()
+
+            expect(erzeugterStream).toBeDefined()
+            erzeugterStream?.getTracks().forEach(track => {
+                expect(track.readyState).toBe('ended')
+            })
+        })
+    })
 })
