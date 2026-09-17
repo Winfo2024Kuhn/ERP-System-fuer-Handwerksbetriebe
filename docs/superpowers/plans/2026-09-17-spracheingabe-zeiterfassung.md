@@ -96,10 +96,29 @@ solange das passende Doc in der Session nicht gelesen wurde. Nicht umgehen — l
 den Edit danach erneut versuchen.
 
 **Design-Skill bei Frontend-Arbeit (hook-erzwungen, `DESIGN-SKILL-GUARD`):**
-`wt/<worktree-name>:handwerkerprogramm-design` aufrufen (worktree-scoped funktioniert;
-der unscoped Name scheitert mit „Unknown skill"). Fallback: den Inhalt von
-`.claude/skills/handwerkerprogramm-design/SKILL.md` **und** `README.md` als Datei
-lesen und zusätzlich den Skill `ui-ux-pro-max` (ohne Namespace-Präfix) aufrufen.
+`handwerkerprogramm-design` aufrufen — **ohne** Namespace-Präfix.
+
+*(Korrigiert am 18.09.2026. Hier stand zuvor, der unscoped Name scheitere mit
+„Unknown skill" und nur `wt/<worktree-name>:handwerkerprogramm-design`
+funktioniere. Das ist falsch: Alle vier Coding-Agenten aus Abschnitt 1 haben
+unabhängig voneinander berichtet, dass der Aufruf ohne Präfix direkt
+funktioniert; der Orchestrator hat es in derselben Sitzung ebenso erlebt. Die
+alte Angabe hätte jeden Agenten auf einen Umweg geschickt.)*
+
+**Nicht verfügbar:** Der Skill `superpowers:test-driven-development`, den die
+Agenten-Rollendefinition nennt, ist in diesem Projekt nicht registriert
+(„Unknown skill", auch ohne Präfix). Von allen vier Agenten aus Abschnitt 1
+gemeldet. Bis das behoben ist: manuell nach TDD-Disziplin vorgehen — erst den
+Test schreiben, den roten Fehlschlag mit der erwarteten Begründung
+verifizieren, dann implementieren.
+
+**graphify steht in keinem Worktree zur Verfügung.** `graphify`, `graphify.cmd`
+und `.graphify-venv/` sind gitignored (`.gitignore:99,102,103`) und existieren
+nur im Haupt-Checkout. Ein per `git worktree add` angelegtes Arbeitsverzeichnis
+bekommt sie nicht mit. Task-Agenten können `./graphify` also weder zum Suchen
+noch für `update .` nutzen — deshalb nennt dieser Plan zu jeder Referenz Datei
+und Zeile, damit gezielt gelesen statt gesucht werden kann. `./graphify
+update .` läuft am Ende einmal zentral im Haupt-Checkout.
 
 **graphify:** vor der ersten Suche im Code `./graphify query "…"` laufen lassen (Hook
 in `.claude/settings.json` blockt sonst den ersten Roh-Read). Dieser Plan liefert die
