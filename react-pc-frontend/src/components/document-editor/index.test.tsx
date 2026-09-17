@@ -394,6 +394,443 @@ describe('DocumentEditor – Rechnungsadresse', () => {
     });
 });
 
+/** Das Zahlungsziel-Feld in der Summenzeile (SummenFooter). */
+function zahlungszielFeld(): HTMLElement {
+    return screen.getByTitle('Zahlungsziel in Tagen');
+}
+
+/** Alle POST-Bodies, mit denen ein neues Dokument angelegt wurde. */
+function anlageAufrufe(fetchMock: ReturnType<typeof mockFetchNeuesDokument>): Array<Record<string, unknown>> {
+    return fetchMock.mock.calls
+        .filter(call => call[0] === '/api/ausgangs-dokumente' && (call[1] as RequestInit | undefined)?.method === 'POST')
+        .map(call => JSON.parse((call[1] as RequestInit).body as string));
+}
+
+/**
+ * Laesst Fake-Timer in kleinen Schritten laufen: der Initial-Load ist eine
+ * Kette aus mehreren Fetches und React-Commits, die ein einzelner Flush nicht
+ * immer komplett abbildet. Fuer das Warten AUF etwas gibt es
+ * `warteMitFakeTimern`; diese Funktion ist fuer das begrenzte Nachfassen da,
+ * bevor gezeigt wird, dass etwas NICHT passiert.
+ */
+async function zeitVergehenLassen(schritte = 20) {
+    for (let i = 0; i < schritte; i++) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    }
+}
+
+/**
+ * Wartet, bis die Zusicherung haelt — der Ersatz fuer `waitFor` bei laufenden
+ * Fake-Timern: Testing Library erkennt nur Jests Fake-Timer und wartet sonst
+ * auf echte Zeit, die hier nie vergeht.
+ */
+async function warteMitFakeTimern(pruefung: () => void, versuche = 60) {
+    for (let i = 0; i < versuche; i++) {
+        try {
+            pruefung();
+            return;
+        } catch {
+            await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+        }
+    }
+    pruefung();
+}
+
+/** Tippt ein Zahlungsziel und schließt die Eingabe mit Enter ab. */
+function zahlungszielEingeben(wert: string) {
+    fireEvent.change(zahlungszielFeld(), { target: { value: wert } });
+    fireEvent.keyDown(zahlungszielFeld(), { key: 'Enter' });
+}
+
+/** Beantwortet die Rückfrage, die ab neun Tagen erscheint. */
+async function rueckfrageBeantworten(tage: number, antwort: 'ja' | 'abbrechen') {
+    const name = antwort === 'ja' ? `Ja, ${tage} Tage` : 'Abbrechen';
+    fireEvent.click(await screen.findByRole('button', { name }));
+}
+
+describe('DocumentEditor – Zahlungsziel', () => {
+    // Regression: handleSave schickte `zahlungszielTage` weder im PUT noch im
+    // POST mit, und eine reine Zahlungsziel-Aenderung galt nicht als
+    // ungespeichert. Im versendeten PDF stand das neue Zahlungsziel, in der
+    // Datenbank (Offene Posten, Mahnwesen) blieb das alte.
+    //
+    // Die Eingabe wird erst beim Abschluss uebernommen (Enter oder Feld
+    // verlassen) und ab neun Tagen nachgefragt -- siehe `zahlungszielEingeben`
+    // und `rueckfrageBeantworten`.
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('schickt das geänderte Zahlungsziel beim Speichern mit (PUT)', async () => {
+        const user = userEvent.setup();
+        renderEditor();
+        // Positiv-Anker: das gespeicherte Zahlungsziel des Dokuments steht da.
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'), { timeout: 3000 });
+
+        zahlungszielEingeben('30');
+        await rueckfrageBeantworten(30, 'ja');
+        // Anker auf den Editor-Zustand, nicht auf das Feld: der Entwurf im Feld
+        // zeigt die 30 schon beim Tippen, uebernommen ist sie erst danach.
+        expect(await screen.findByText(/^Ungespeichert$/)).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+
+        await waitFor(() => expect(speicherAufrufe(fetchMock).length).toBeGreaterThan(0));
+        expect(speicherAufrufe(fetchMock).at(-1)!.zahlungszielTage).toBe(30);
+    });
+
+    it('meldet eine reine Zahlungsziel-Änderung als ungespeichert', async () => {
+        renderEditor();
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'), { timeout: 3000 });
+
+        zahlungszielEingeben('30');
+        await rueckfrageBeantworten(30, 'ja');
+
+        expect(await screen.findByText(/^Ungespeichert$/)).toBeInTheDocument();
+    });
+
+    it('übernimmt nichts, wenn die Rückfrage abgebrochen wird', async () => {
+        renderEditor();
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'), { timeout: 3000 });
+
+        zahlungszielEingeben('30');
+        await rueckfrageBeantworten(30, 'abbrechen');
+
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'));
+        expect(screen.queryByText(/^Ungespeichert$/)).not.toBeInTheDocument();
+        expect(speicherAufrufe(fetchMock)).toHaveLength(0);
+    });
+
+    it('übernimmt bis acht Tage ohne Rückfrage', async () => {
+        renderEditor();
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'), { timeout: 3000 });
+
+        zahlungszielEingeben('5');
+
+        expect(await screen.findByText(/^Ungespeichert$/)).toBeInTheDocument();
+        expect(zahlungszielFeld()).toHaveValue('5');
+        expect(screen.queryByRole('button', { name: 'Ja, 5 Tage' })).not.toBeInTheDocument();
+    });
+
+    it('weist ein zu großes Zahlungsziel mit einer Meldung ab', async () => {
+        renderEditor();
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'), { timeout: 3000 });
+
+        zahlungszielEingeben('400');
+
+        expect(await screen.findByText(/zwischen 1 und 365 Tagen/i)).toBeInTheDocument();
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'));
+        expect(screen.queryByText(/^Ungespeichert$/)).not.toBeInTheDocument();
+        expect(speicherAufrufe(fetchMock)).toHaveLength(0);
+    });
+
+    it('weist ein Zahlungsziel unter einem Tag mit einer Meldung ab', async () => {
+        renderEditor();
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'), { timeout: 3000 });
+
+        zahlungszielEingeben('0');
+
+        expect(await screen.findByText(/zwischen 1 und 365 Tagen/i)).toBeInTheDocument();
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'));
+        expect(speicherAufrufe(fetchMock)).toHaveLength(0);
+    });
+
+    it('schickt ein vor dem ersten Speichern geändertes Zahlungsziel beim Anlegen mit (POST)', async () => {
+        const neuFetch = mockFetchNeuesDokument();
+        global.fetch = neuFetch as unknown as typeof fetch;
+        renderNeuesDokumentMitSeitenLock();
+
+        await screen.findByTitle('Zahlungsziel in Tagen');
+        zahlungszielEingeben('21');
+        await rueckfrageBeantworten(21, 'ja');
+        // Anker auf den Editor-Zustand (siehe PUT-Test oben).
+        expect(await screen.findByText(/^Ungespeichert$/)).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+
+        await waitFor(() => expect(anlageAufrufe(neuFetch)).toHaveLength(1));
+        expect(anlageAufrufe(neuFetch)[0].zahlungszielTage).toBe(21);
+    });
+
+    it('übernimmt ein vor dem Kontext-Load eingetipptes Zahlungsziel (keine Rückdrehung durch die späte Antwort)', async () => {
+        // Ein neues Dokument ist sofort bedienbar, waehrend loadKontext noch
+        // laedt. Tippt der Nutzer in dieser Zeit ein Zahlungsziel, darf die
+        // spaete Projekt-Antwort es nicht auf den Kunden-Standard zurueckdrehen
+        // — wie bei der Rechnungsadresse (adresseUserEditedRef).
+        const projekt = {
+            id: 7, auftragsnummer: 'P-2026-007', bauvorhaben: 'Dachsanierung',
+            kundennummer: 'K-4711', kunde: 'Max Mustermann', kundenId: 5,
+            kundeDto: { name: 'Max Mustermann', zahlungsziel: 30, kundenEmails: [] },
+        };
+        const basis = mockFetchNeuesDokument();
+        let kontextAntwortFreigeben = () => { };
+        let kontextAntwortGelesen = false;
+        const neuFetch = vi.fn((url: string, init?: RequestInit) => {
+            if (url !== '/api/projekte/7') return basis(url, init);
+            return new Promise(resolve => {
+                kontextAntwortFreigeben = () => resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => {
+                        kontextAntwortGelesen = true;
+                        return Promise.resolve(projekt);
+                    },
+                });
+            });
+        }) as unknown as ReturnType<typeof mockFetchNeuesDokument>;
+        global.fetch = neuFetch as unknown as typeof fetch;
+        renderNeuesDokumentMitSeitenLock({ projektId: 7 });
+
+        await screen.findByTitle('Zahlungsziel in Tagen');
+        zahlungszielEingeben('21');
+        await rueckfrageBeantworten(21, 'ja');
+        // Anker auf den Editor-Zustand (siehe PUT-Test oben).
+        expect(await screen.findByText(/^Ungespeichert$/)).toBeInTheDocument();
+
+        await act(async () => {
+            kontextAntwortFreigeben();
+            // Makrotask-Grenze: die ganze await-Kette in loadKontext laeuft vorher ab.
+            await new Promise(resolve => setTimeout(resolve, 0));
+        });
+        // Positiv-Anker: die spaete Antwort wurde tatsaechlich verarbeitet.
+        expect(kontextAntwortGelesen).toBe(true);
+        expect(zahlungszielFeld()).toHaveValue('21');
+
+        fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+        await waitFor(() => expect(anlageAufrufe(neuFetch)).toHaveLength(1));
+        expect(anlageAufrufe(neuFetch)[0].zahlungszielTage).toBe(21);
+    });
+
+    it('erfindet beim Anlegen kein Zahlungsziel, solange keins bekannt ist', async () => {
+        // Ohne Projekt, Anfrage oder Kunde kennt der Editor kein Zahlungsziel
+        // und zeigt nur seinen Standard an. Der darf nicht still gespeichert
+        // werden: dann uebernimmt das Backend beim Anlegen den Kunden-Standard,
+        // statt den Editor-Standard fuer einen gepflegten Wert zu halten.
+        const neuFetch = mockFetchNeuesDokument();
+        global.fetch = neuFetch as unknown as typeof fetch;
+        renderNeuesDokumentMitSeitenLock();
+
+        fireEvent.click(await screen.findByRole('button', { name: /Speichern/i }));
+
+        await waitFor(() => expect(anlageAufrufe(neuFetch)).toHaveLength(1));
+        expect(anlageAufrufe(neuFetch)[0]).not.toHaveProperty('zahlungszielTage');
+    });
+
+    it('speichert eine reine Zahlungsziel-Änderung automatisch (Auto-Save)', async () => {
+        vi.useFakeTimers();
+        renderEditor();
+        await warteMitFakeTimern(() => expect(zahlungszielFeld()).toHaveValue('14'));
+
+        zahlungszielEingeben('5');
+        // Auto-Save prueft alle 10 s.
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+        await warteMitFakeTimern(() => expect(speicherAufrufe(fetchMock).at(-1)?.zahlungszielTage).toBe(5));
+    });
+
+    it('löst bei einem zurückgetippten Zahlungsziel kein Speichern aus', async () => {
+        // Getippt wird ueber mehrere Zwischenstaende: am Ende steht wieder der
+        // gespeicherte Wert. Bliebe das Dokument trotzdem als geaendert
+        // markiert, liefe der Auto-Save — bei einem noch nie gespeicherten
+        // Dokument legte er es samt Nummernkreis an, ohne dass sich fachlich
+        // etwas geaendert hat.
+        vi.useFakeTimers();
+        fetchMock = mockFetch({ zahlungszielTage: 5 });
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        await warteMitFakeTimern(() => expect(zahlungszielFeld()).toHaveValue('5'));
+
+        zahlungszielEingeben('3');
+        // Positiv-Anker: der Zwischenwert IST eine Aenderung.
+        await warteMitFakeTimern(() => expect(screen.getByText(/^Ungespeichert$/)).toBeInTheDocument());
+        zahlungszielEingeben('5');
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        await zeitVergehenLassen();
+
+        expect(screen.queryByText(/^Ungespeichert$/)).not.toBeInTheDocument();
+        expect(speicherAufrufe(fetchMock)).toHaveLength(0);
+    });
+
+    it('speichert ein während des Speicherns erneut geändertes Zahlungsziel nach, danach Ruhe', async () => {
+        // Die Antwort des ersten PUT darf die zweite Aenderung nicht als
+        // gespeichert abhaken (Lost Update). Ist alles gespeichert, darf der
+        // Auto-Save aber auch nicht endlos weiter speichern.
+        vi.useFakeTimers();
+        const basis = mockFetch();
+        let putAbrufe = 0;
+        let erstenPutFreigeben = () => { };
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url !== '/api/ausgangs-dokumente/1' || init?.method !== 'PUT') return basis(url, init);
+            putAbrufe++;
+            if (putAbrufe > 1) return basis(url, init);
+            return new Promise(resolve => {
+                erstenPutFreigeben = () => resolve(basis(url, init));
+            });
+        }) as unknown as ReturnType<typeof mockFetch>;
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        await warteMitFakeTimern(() => expect(zahlungszielFeld()).toHaveValue('14'));
+
+        zahlungszielEingeben('5');
+        fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+        await warteMitFakeTimern(() => expect(speicherAufrufe(fetchMock)).toHaveLength(1));
+        // Der erste PUT haengt noch: jetzt erneut aendern.
+        zahlungszielEingeben('3');
+        await act(async () => { erstenPutFreigeben(); });
+        await zeitVergehenLassen();
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        await warteMitFakeTimern(
+            () => expect(speicherAufrufe(fetchMock).map(body => body.zahlungszielTage)).toEqual([5, 3]),
+        );
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        await zeitVergehenLassen();
+        expect(speicherAufrufe(fetchMock)).toHaveLength(2);
+    });
+
+    it('nimmt nach einem Speichern mit Zwischenänderung den gespeicherten Wert als Bezug', async () => {
+        // Gespeichert wurde 3, angezeigt wird 2. Tippt der Nutzer auf den Wert
+        // von VOR dem Speichern (5) zurueck, ist das eine Aenderung gegenueber
+        // der Datenbank — sonst verschwaende "Ungespeichert" und Rechnung und
+        // Faelligkeit liefen auseinander.
+        vi.useFakeTimers();
+        const basis = mockFetch({ zahlungszielTage: 5 });
+        let putAbrufe = 0;
+        let erstenPutFreigeben = () => { };
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url !== '/api/ausgangs-dokumente/1' || init?.method !== 'PUT') return basis(url, init);
+            putAbrufe++;
+            if (putAbrufe > 1) return basis(url, init);
+            return new Promise(resolve => {
+                erstenPutFreigeben = () => resolve(basis(url, init));
+            });
+        }) as unknown as ReturnType<typeof mockFetch>;
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        await warteMitFakeTimern(() => expect(zahlungszielFeld()).toHaveValue('5'));
+
+        zahlungszielEingeben('3');
+        fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+        await warteMitFakeTimern(() => expect(speicherAufrufe(fetchMock)).toHaveLength(1));
+        zahlungszielEingeben('2');
+        await act(async () => { erstenPutFreigeben(); });
+        await zeitVergehenLassen();
+
+        // Zurueck auf 5: das ist der Stand VOR dem Speichern, nicht der in der
+        // Datenbank (3).
+        zahlungszielEingeben('5');
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+        await warteMitFakeTimern(() => expect(speicherAufrufe(fetchMock).at(-1)?.zahlungszielTage).toBe(5));
+    });
+
+    it('meldet ein frisch geladenes Dokument mit abgeleitetem Zahlungsziel nicht als geändert', async () => {
+        // Ohne eigenen Wert zeigt der Editor den Kunden-Standard. Das ist kein
+        // Nutzer-Eingriff: kein "Ungespeichert", kein Auto-Save.
+        vi.useFakeTimers();
+        const basis = mockFetch({ kundeId: 5, zahlungszielTage: null });
+        fetchMock = vi.fn((url: string, init?: RequestInit) => url === '/api/kunden/5'
+            ? jsonAntwort({ id: 5, name: 'Max Mustermann', kundennummer: 'K-4711', zahlungsziel: 30 })
+            : basis(url, init));
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        // Positiv-Anker: der Kunden-Standard ist angekommen (vor dem Laden stehen 8 Tage da).
+        await warteMitFakeTimern(() => expect(zahlungszielFeld()).toHaveValue('30'));
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        await zeitVergehenLassen();
+
+        expect(screen.queryByText(/^Ungespeichert$/)).not.toBeInTheDocument();
+        expect(speicherAufrufe(fetchMock)).toHaveLength(0);
+    });
+
+    // Mit ?projektId=…&dokumentId=… bzw. ?anfrageId=…&dokumentId=… (ProjektEditor,
+    // DokumentHierarchie) holen loadKontext und loadDokument denselben Datensatz
+    // parallel. Kam die Antwort von loadKontext zuletzt an, stand der Kunden-
+    // Standard statt des gespeicherten Zahlungsziels im Editor – und ginge beim
+    // Speichern jetzt in die Datenbank.
+    it.each([
+        {
+            quelle: 'Projekt',
+            props: { projektId: 7 },
+            dokument: { projektId: 7 },
+            url: '/api/projekte/7',
+            antwort: {
+                id: 7, auftragsnummer: 'P-2026-007', bauvorhaben: 'Dachsanierung',
+                kundennummer: 'K-4711', kunde: 'Max Mustermann', kundenId: 5,
+                kundeDto: { name: 'Max Mustermann', zahlungsziel: 30, kundenEmails: [] },
+            },
+        },
+        {
+            quelle: 'Anfrage',
+            props: { anfrageId: 9 },
+            dokument: { anfrageId: 9 },
+            url: '/api/anfragen/9',
+            antwort: {
+                id: 9, anfragesnummer: 'AN-2026-009', bauvorhaben: 'Dachsanierung',
+                kundennummer: 'K-4711', kundenName: 'Max Mustermann', kundenId: 5,
+                zahlungsziel: 30, kundenEmails: [],
+            },
+        },
+    ])('überschreibt das gespeicherte Zahlungsziel nicht mit einer verspäteten $quelle-Antwort', async ({ props, dokument, url, antwort }) => {
+        const basis = mockFetch(dokument);
+        let abrufe = 0;
+        let kontextAntwortFreigeben = () => { };
+        let kontextAntwortGelesen = false;
+        fetchMock = vi.fn((aufgerufeneUrl: string, init?: RequestInit) => {
+            if (aufgerufeneUrl !== url) return basis(aufgerufeneUrl, init);
+            abrufe++;
+            // Der erste Abruf stammt aus loadKontext: dessen Effekt steht vor
+            // loadDokument, und nur loadDokument wartet vorher auf das Dokument.
+            if (abrufe > 1) return jsonAntwort(antwort);
+            return new Promise(resolve => {
+                kontextAntwortFreigeben = () => resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => {
+                        kontextAntwortGelesen = true;
+                        return Promise.resolve(antwort);
+                    },
+                });
+            });
+        }) as unknown as ReturnType<typeof mockFetch>;
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        const user = userEvent.setup();
+        renderEditor(props);
+        await waitFor(() => expect(zahlungszielFeld()).toHaveValue('14'), { timeout: 3000 });
+
+        await act(async () => {
+            kontextAntwortFreigeben();
+            // Makrotask-Grenze: die ganze await-Kette in loadKontext laeuft vorher ab.
+            await new Promise(resolve => setTimeout(resolve, 0));
+        });
+        // Positiv-Anker: die verspaetete Antwort wurde tatsaechlich verarbeitet.
+        expect(kontextAntwortGelesen).toBe(true);
+        expect(zahlungszielFeld()).toHaveValue('14');
+
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+        await waitFor(() => expect(speicherAufrufe(fetchMock).length).toBeGreaterThan(0));
+        expect(speicherAufrufe(fetchMock).at(-1)!.zahlungszielTage).toBe(14);
+    });
+});
+
 describe('DocumentEditor – Material einfügen', () => {
     let fetchMock: ReturnType<typeof mockFetch>;
 

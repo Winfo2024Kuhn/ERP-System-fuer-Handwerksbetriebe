@@ -52,13 +52,26 @@ export function TextBlock({
                     ? "border-l-rose-500 border-rose-200 ring-2 ring-rose-500/30 shadow-md shadow-rose-50"
                     : "border-l-rose-300 border-slate-200 hover:border-slate-300 hover:shadow-sm"
             )}
-            onClick={(e) => {
-                onFocus(block.id);
-                const chip = (e.target as HTMLElement).closest?.('[data-zahlungsziel-chip]');
-                if (chip && !isLocked && onZahlungszielChipClick) {
-                    onZahlungszielChipClick(chip.getBoundingClientRect());
-                }
+            onMouseDown={(e) => {
+                // Auf mousedown statt click: der erste Klick in einen noch nicht
+                // aktiven Textbaustein geht beim Fokussieren des Editors
+                // verloren, das Popover braeuchte dann zwei Klicks.
+                if (e.button !== 0) return;
+                if (isLocked || !onZahlungszielChipClick) return;
+                // Der Chip ist `contenteditable="false"`, weshalb ProseMirror den
+                // Editor-Bereich als Ziel meldet — deshalb zusaetzlich ueber die
+                // Klickposition suchen. `elementFromPoint` gibt es in jsdom nicht,
+                // daher optional aufrufen (und erst nach den Wachen oben, damit
+                // normales Tippen keinen Treffertest ausloest).
+                const chip = (e.target as HTMLElement).closest?.('[data-zahlungsziel-chip]')
+                    ?? document.elementFromPoint?.(e.clientX, e.clientY)?.closest('[data-zahlungsziel-chip]');
+                if (!chip) return;
+                // Ohne das holt sich der Editor beim Loslassen den Fokus und das
+                // frisch geoeffnete Eingabefeld im Popover verliert ihn sofort wieder.
+                e.preventDefault();
+                onZahlungszielChipClick(chip.getBoundingClientRect());
             }}
+            onClick={() => onFocus(block.id)}
         >
             <div className="p-4">
                 {/* Header */}

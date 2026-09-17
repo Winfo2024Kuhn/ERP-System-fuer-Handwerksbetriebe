@@ -100,6 +100,13 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - Kennnummern wie Personalnummern und Lohnarten bleiben Ziffernstrings mit führenden Nullen. Die Nullfokus- und Dezimalformatierung gilt für sie nicht. Uhrzeiten werden als `HH:mm` geprüft.
 - Die gemeinsamen Bausteine unter `components/ui/` wiederverwenden. Geöffnete Picker, Tastaturbedienung, Fehler und Toasts vor offenen Dialogen im Browser prüfen.
 
+### Zahlungsziel im Dokumenteditor (Nutzervorgabe 17.09.2026)
+
+- Erlaubt sind **1 bis 365 Tage**. Alles andere wird mit eigener Meldung abgelehnt, der geltende Wert bleibt stehen.
+- **Über 8 Tagen** fragt der Editor über den gemeinsamen Bestätigungsdialog (`useConfirm`) nach, bevor der Wert übernommen wird – ein langes Zahlungsziel heißt später an das eigene Geld kommen und soll eine bewusste Entscheidung sein.
+- Die Eingabe wird erst beim **Abschluss** übernommen (Enter oder Feld verlassen, Escape verwirft), sonst stünde die Rückfrage bei jedem Tastendruck im Weg. Beide Eingabestellen – Summenzeile und Chip-Popover – nutzen dafür `components/document-editor/ZahlungszielTageEingabe.tsx`.
+- Der Wert geht beim Speichern als `zahlungszielTage` mit ans Backend, damit Fälligkeit in Offenen Posten und Mahnwesen zur verschickten Rechnung passt.
+
 ### Gemeinsame Zahlenprüfung und Meldungsfläche
 
 - PC: `lib/numberDrafts.ts` prüft mehrere Zahlenentwürfe vollständig vor der ersten Aktion. Fachliche Geldregeln liegen in `features/finanzen/moneyDrafts.ts`; keine Kopien in Seiten anlegen. Zulässige Genauigkeit folgt dem API-/Datenbankvertrag. Fehlende gespeicherte Zahlen ergeben einen leeren Entwurf, keinen erfundenen Nullwert.

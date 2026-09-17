@@ -72,7 +72,7 @@ function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): D
             return insertIntoSection(prev, block, anchor.sectionId);
     }
 }
-import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis } from './helpers';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
@@ -84,6 +84,7 @@ import { SeparatorBlock } from './SeparatorBlock';
 import { SectionHeaderBlock } from './SectionHeaderBlock';
 import { SortableBlock } from './SortableBlock';
 import { SummenFooter } from './SummenFooter';
+import { ZahlungszielTageEingabe } from './ZahlungszielTageEingabe';
 import { LivePreviewPanel } from './LivePreviewPanel';
 import { ExportWarningModal, UnsavedChangesModal, PrintOptionsModal, TextbausteinPickerModal, LeistungPickerModal, StundensatzPickerModal, AddTypeDialog } from './Modals';
 import { RabattDialog } from './RabattDialog';
@@ -93,6 +94,7 @@ import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
 import { useToast } from '../ui/toast';
+import { useConfirm } from '../ui/confirm-dialog';
 import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
 import { useKonfliktMeldung } from '../lock/useKonfliktMeldung';
 
@@ -229,6 +231,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     ref
 ) {
     const toast = useToast();
+    // Rueckfrage bei langen Zahlungszielen, siehe handleZahlungszielChange.
+    const confirm = useConfirm();
     // Fuer das Zurueckschreiben der beim Anlegen vergebenen Id in die URL
     // (syncDocumentIdInUrl) -- MUSS ueber den Router laufen, nicht per
     // window.history.replaceState, sonst bekommt die Seite (liest dokumentId
@@ -285,6 +289,25 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // Oeffnen als geaendert melden. Stattdessen ein eigenes Flag, das additiv
     // in Dirty-Check und Auto-Save einfliesst und beim Speichern zuruecksetzt.
     const [adresseGeaendert, setAdresseGeaendert] = useState(false);
+    // Gleicher Grund beim Zahlungsziel: ohne eigenen Wert im Dokument zeigt der
+    // Editor den Kunden-Standard bzw. DEFAULT_ZAHLUNGSZIEL_TAGE an, und diese
+    // Werte kommen erst nach dem Laden asynchron an. In der Signatur wuerden
+    // frisch geladene und neue Dokumente sofort als geaendert gelten.
+    const [zahlungszielGeaendert, setZahlungszielGeaendert] = useState(false);
+    // Bezugswert dafuer: das zuletzt geladene bzw. gespeicherte Zahlungsziel.
+    // Solange nichts als geaendert markiert ist, ist der angezeigte Wert genau
+    // dieser Stand; danach friert er ein, bis wieder gespeichert wurde. Ohne
+    // ihn bliebe ein Hin-und-Zurueck-Tippen im Feld (14 -> 1 -> 14) als
+    // Aenderung stehen -- samt Auto-Save, der ein noch nie gespeichertes
+    // Dokument allein deswegen anlegen wuerde.
+    const gespeichertesZahlungszielRef = useRef<number | undefined>(undefined);
+    useEffect(() => {
+        if (!zahlungszielGeaendert) gespeichertesZahlungszielRef.current = kontextDaten.zahlungsziel;
+    }, [kontextDaten.zahlungsziel, zahlungszielGeaendert]);
+    // Sticky wie `adresseUserEditedRef`: hat der Nutzer das Zahlungsziel einmal
+    // angefasst, darf ein spaeter eintreffender Kontext-Load es nicht mehr
+    // ueberschreiben (siehe loadKontext).
+    const zahlungszielUserEditedRef = useRef(false);
 
     // Vorlagen
     const [textbausteine, setTextbausteine] = useState<TextbausteinApiDto[]>([]);
@@ -550,10 +573,49 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         []
     );
 
-    const handleZahlungszielChange = useCallback((tage: number) => {
-        if (isLocked) return;
+    /**
+     * Uebernimmt ein neues Zahlungsziel, wenn die Eingabe abgeschlossen ist
+     * (Feld verlassen oder Enter) — nicht bei jedem Tastendruck, sonst stuende
+     * die Rueckfrage unten mitten im Tippen im Weg.
+     *
+     * Liefert zurueck, ob der Wert uebernommen wurde: die Eingabefelder setzen
+     * ihren Entwurf sonst wieder auf den geltenden Wert.
+     */
+    const handleZahlungszielChange = useCallback(async (tage: number): Promise<boolean> => {
+        // Verteidigungslinie ohne Meldung: bei gesperrtem Dokument gibt es gar
+        // kein Eingabefeld (die Summenzeile bekommt `undefined`, der Chip
+        // reagiert nicht), hier kann also niemand ankommen.
+        if (isLocked) return false;
+        // `min`/`max` am Feld halten eine getippte Zahl nicht auf. Ungeprueft
+        // ginge sie jetzt in die Datenbank und von dort in die Faelligkeit:
+        // negativ hiesse "ab sofort ueberfaellig", Mahnwesen inklusive.
+        if (!Number.isInteger(tage) || tage < MIN_ZAHLUNGSZIEL_TAGE || tage > MAX_ZAHLUNGSZIEL_TAGE) {
+            toast.error(`Bitte ein Zahlungsziel zwischen ${MIN_ZAHLUNGSZIEL_TAGE} und ${MAX_ZAHLUNGSZIEL_TAGE} Tagen eingeben.`);
+            return false;
+        }
+        // Laenger als der Standard: nachfragen (Nutzervorgabe 17.09.2026).
+        // Ein langes Zahlungsziel ist erlaubt, soll aber eine bewusste
+        // Entscheidung sein — es heisst spaeter an das eigene Geld kommen.
+        if (tage > ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN) {
+            const bestaetigt = await confirm({
+                title: 'Langes Zahlungsziel',
+                message: `Bei ${tage} Tagen Zahlungsziel ist die Rechnung erst am ${berechneZahlungszielDatum(datumRef.current, tage)} fällig. Üblich sind ${ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN} Tage. Wirklich ${tage} Tage eintragen?`,
+                confirmLabel: `Ja, ${tage} Tage`,
+                cancelLabel: 'Abbrechen',
+                variant: 'warning',
+            });
+            if (!bestaetigt) return false;
+        }
+        zahlungszielUserEditedRef.current = true;
         setKontextDaten(prev => ({ ...prev, zahlungsziel: tage }));
-    }, [isLocked]);
+        // Zurueck auf den gespeicherten Stand ist keine Aenderung mehr: sonst
+        // bliebe "Ungespeichert" stehen und der Auto-Save legte ein noch nie
+        // gespeichertes Dokument allein deswegen an. Ohne Kontext (neues
+        // Dokument ohne Projekt/Anfrage/Kunde) gibt es keinen gespeicherten
+        // Wert, angezeigt wird dann der Standard — also auch dagegen pruefen.
+        setZahlungszielGeaendert(tage !== (gespeichertesZahlungszielRef.current ?? DEFAULT_ZAHLUNGSZIEL_TAGE));
+        return true;
+    }, [isLocked, toast, confirm]);
 
     /** Position des Chip-Bearbeitungs-Popovers (null = geschlossen). */
     const [zahlungszielPopover, setZahlungszielPopover] = useState<{ top: number; left: number } | null>(null);
@@ -562,10 +624,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     useEffect(() => {
         if (!zahlungszielPopover) return;
         const handler = (e: MouseEvent) => {
-            if (zahlungszielPopoverRef.current && !zahlungszielPopoverRef.current.contains(e.target as Node)) {
+            const ziel = e.target as HTMLElement;
+            // Ein Chip zaehlt nicht als "draussen": dasselbe mousedown oeffnet
+            // das Popover gerade und laeuft danach bis hierher weiter (es wuerde
+            // sich sonst im selben Moment wieder schliessen), und ein zweiter
+            // Chip im selben Textbaustein setzt es nur um.
+            if (ziel.closest?.('[data-zahlungsziel-chip]')) return;
+            if (zahlungszielPopoverRef.current && !zahlungszielPopoverRef.current.contains(ziel)) {
                 setZahlungszielPopover(null);
             }
         };
+        // Escape schliesst das Popover; der Entwurf im Feld wird davon unabhaengig
+        // verworfen (siehe ZahlungszielTageEingabe).
         const escHandler = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setZahlungszielPopover(null);
         };
@@ -710,7 +780,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             anrede: projekt.kundeDto?.anrede,
                             ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                             kundenEmails: emails,
-                            zahlungsziel: projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
+                            // Nur bei einem neuen, noch unberuehrten Dokument setzen.
+                            // Bei einem bestehenden Dokument setzt loadDokument das gespeicherte
+                            // Zahlungsziel. Beide Effekte laden parallel: kaeme diese Antwort
+                            // zuletzt an, stuende sonst der Kunden-Standard im Editor, und
+                            // handleSave wuerde ihn ueber den gespeicherten Wert schreiben.
+                            // Dasselbe gilt fuer ein neues Dokument, in dem der Nutzer waehrend
+                            // des Ladens schon getippt hat (wie `adresseUserEditedRef` oben).
+                            // `dokumentId` kommt aus der Closure -- der Effekt haengt bewusst nur
+                            // an projektId/anfrageId (siehe eslint-disable am Ende des Effekts).
+                            ...(dokumentId || zahlungszielUserEditedRef.current
+                                ? {}
+                                : { zahlungsziel: projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
                         }));
                         setBetreff(projekt.bauvorhaben || '');
                     }
@@ -733,7 +814,11 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             anrede: anfrage.kundenAnrede || anfrage.anrede,
                             ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
                             kundenEmails: emails,
-                            zahlungsziel: anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
+                            // Wie im Projekt-Zweig: weder ein gespeichertes noch ein vom Nutzer
+                            // bereits eingetipptes Zahlungsziel ueberschreiben.
+                            ...(dokumentId || zahlungszielUserEditedRef.current
+                                ? {}
+                                : { zahlungsziel: anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
                             ...(useAnfrageAsReferenceFallback
                                 ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' }
                                 : {})
@@ -1230,6 +1315,16 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         // Aenderung stillschweigend zu verwerfen (Lost Update).
         const gesendeteAdresse = kontextDatenRef.current.rechnungsadresse;
         const adresseUnveraendert = () => kontextDatenRef.current.rechnungsadresse === gesendeteAdresse;
+        // Zahlungsziel genauso festhalten. Immer den angezeigten Wert schicken,
+        // damit Datenbank (Offene Posten, Mahnwesen) und PDF uebereinstimmen.
+        // `undefined` (Kontext nicht geladen) faellt aus dem JSON heraus und das
+        // Backend behaelt seinen Wert — nie still DEFAULT_ZAHLUNGSZIEL_TAGE speichern.
+        // Bewusste Nebenwirkung: ein Dokument ohne eigenen Wert folgte bisher
+        // dauerhaft dem Kundenstamm; mit dem ersten Speichern friert der
+        // angezeigte Wert fest ein. Fuer Rechnungen ist genau das richtig — im
+        // PDF steht dann derselbe Wert wie in der Faelligkeit.
+        const gesendetesZahlungsziel = kontextDatenRef.current.zahlungsziel;
+        const zahlungszielUnveraendert = () => kontextDatenRef.current.zahlungsziel === gesendetesZahlungsziel;
         try {
             // CLOSURE-Marker wird NICHT persistiert: er ist ein UI-Konstrukt, der per
             // useEffect bei Bedarf wieder eingefuegt wird. Damit bleibt positionenJson
@@ -1265,6 +1360,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     betragNetto,
                     htmlInhalt,
                     positionenJson: positionenData,
+                    zahlungszielTage: gesendetesZahlungsziel,
                     // Nur mitschicken wenn User die Adresse bewusst geändert hat.
                     // Ueber das Ref lesen, nicht ueber den State — siehe kontextDatenRef.
                     ...(adresseUserEditedRef.current
@@ -1313,6 +1409,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    // Bezugswert auf den tatsaechlich persistierten Wert setzen --
+                    // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
+                    // hat. Sonst haelt die Ref den Stand von VOR dem Speichern, und
+                    // ein Zuruecktippen auf diesen alten Wert loeschte das
+                    // Dirty-Flag, obwohl in der Datenbank etwas anderes steht.
+                    gespeichertesZahlungszielRef.current = gesendetesZahlungsziel;
+                    if (zahlungszielUnveraendert()) setZahlungszielGeaendert(false);
                     setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
                     return updated;
@@ -1329,6 +1432,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     betragNetto,
                     htmlInhalt,
                     positionenJson: positionenData,
+                    zahlungszielTage: gesendetesZahlungsziel,
                     projektId,
                     anfrageId,
                     // Hat der User die Adresse schon vor dem ersten Speichern bearbeitet,
@@ -1366,6 +1470,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    // Bezugswert auf den tatsaechlich persistierten Wert setzen --
+                    // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
+                    // hat. Sonst haelt die Ref den Stand von VOR dem Speichern, und
+                    // ein Zuruecktippen auf diesen alten Wert loeschte das
+                    // Dirty-Flag, obwohl in der Datenbank etwas anderes steht.
+                    gespeichertesZahlungszielRef.current = gesendetesZahlungsziel;
+                    if (zahlungszielUnveraendert()) setZahlungszielGeaendert(false);
                     setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: created.id });
                     return created;
@@ -1427,11 +1538,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             lastSavedStateRef.current = currentState;
             return;
         }
-        // `adresseGeaendert` additiv, sonst wuerde ein Undo, das die Bloecke
-        // exakt auf den gespeicherten Stand zuruecksetzt, das Dirty-Flag
-        // loeschen und die geaenderte Adresse ginge beim Schliessen verloren.
-        setHasUnsavedChanges(currentState !== lastSavedStateRef.current || adresseGeaendert);
-    }, [blocks, datum, betreff, dokumentTyp, adresseGeaendert]);
+        // `adresseGeaendert` und `zahlungszielGeaendert` additiv, sonst wuerde
+        // ein Undo, das die Bloecke exakt auf den gespeicherten Stand
+        // zuruecksetzt, das Dirty-Flag loeschen und die geaenderte Adresse
+        // bzw. das geaenderte Zahlungsziel ginge beim Schliessen verloren.
+        setHasUnsavedChanges(currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert);
+    }, [blocks, datum, betreff, dokumentTyp, adresseGeaendert, zahlungszielGeaendert]);
 
     // --- Auto-Save ---
     useEffect(() => {
@@ -1439,12 +1551,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         const intervalId = setInterval(() => {
             const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
             const currentState = JSON.stringify({ blocks: persistedBlocks, datum, betreff, dokumentTyp });
-            if ((currentState !== lastSavedStateRef.current || adresseGeaendert) && !saving) {
+            if ((currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert) && !saving) {
                 handleSave();
             }
         }, 10000);
         return () => clearInterval(intervalId);
-    }, [blocks, datum, betreff, dokumentTyp, saving, isLocked, handleSave, adresseGeaendert]);
+    }, [blocks, datum, betreff, dokumentTyp, saving, isLocked, handleSave, adresseGeaendert, zahlungszielGeaendert]);
 
     // --- Tab schliessen (X-Button-Ablauf, Issue #82) ---
     // Feste Reihenfolge laut Spec: (1) Warnung bei ungespeicherten Aenderungen
@@ -2165,10 +2277,11 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             const currentState = JSON.stringify({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp });
             lastSavedStateRef.current = currentState;
             setHasUnsavedChanges(false);
-            // Muss mit zurueck: nach dem Buchen ist das Dokument gesperrt und
+            // Muessen mit zurueck: nach dem Buchen ist das Dokument gesperrt und
             // handleSave steigt sofort aus. Ein stehengebliebenes Flag waere
             // dann nicht mehr loeschbar und meldete dauerhaft "ungespeichert".
             setAdresseGeaendert(false);
+            setZahlungszielGeaendert(false);
             notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
             return true;
         } catch (err) {
@@ -3231,14 +3344,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     ref={zahlungszielPopoverRef}
                     style={{ position: 'fixed', top: zahlungszielPopover.top, left: zahlungszielPopover.left, zIndex: 200 }}
                     className="w-64 rounded-lg border border-rose-200 bg-white p-3 shadow-xl"
+                    role="dialog"
+                    aria-labelledby="zahlungsziel-popover-titel"
                 >
-                    <p className="text-xs font-semibold text-slate-700 mb-2">Zahlungsziel</p>
+                    <p id="zahlungsziel-popover-titel" className="text-xs font-semibold text-slate-700 mb-2">Zahlungsziel</p>
                     <div className="flex items-center gap-2">
-                        <input
-                            type="number"
-                            min={1}
-                            value={zahlungszielTage}
-                            onChange={(e) => handleZahlungszielChange(parseInt(e.target.value) || DEFAULT_ZAHLUNGSZIEL_TAGE)}
+                        <ZahlungszielTageEingabe
+                            tage={zahlungszielTage}
+                            onUebernehmen={handleZahlungszielChange}
                             className="w-16 rounded border border-slate-300 px-2 py-1 text-sm text-center focus:border-rose-400 focus:outline-none"
                             autoFocus
                         />
