@@ -402,7 +402,7 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
                     <ToolbarButton
                         onClick={() => editor.chain().focus().undo().run()}
                         disabled={!editor.can().undo()}
-                        title="Rükgängig (Ctrl+Z)"
+                        title="Rückgängig (Ctrl+Z)"
                     >
                         <Undo className="w-4 h-4" />
                     </ToolbarButton>

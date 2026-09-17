@@ -199,7 +199,10 @@ export function VerlaufKnoepfe({
                     </button>
                 );
             })}
-            <div className="border-t border-slate-100 mt-1 pt-1.5 px-2.5 pb-1 text-[10px] text-slate-400">
+            {/* text-slate-500/11px statt slate-400/10px (Design-Review, Kontrast):
+                genau diese Zeile erklärt, was ein Klick als nächstes tut --
+                2,56:1 war zu schwach, 4,76:1 erfüllt WCAG AA für Fließtext. */}
+            <div className="border-t border-slate-100 mt-1 pt-1.5 px-2.5 pb-1 text-[11px] text-slate-500">
                 {anzahlText} rückgängig machen
             </div>
         </div>
@@ -234,7 +237,7 @@ export function VerlaufKnoepfe({
                 disabled={!kannRueckgaengig}
                 onClick={toggeln}
                 className={cn(
-                    "h-7 w-4 flex-shrink-0 inline-flex items-center justify-center rounded-md transition-colors",
+                    "h-7 w-6 flex-shrink-0 inline-flex items-center justify-center rounded-md transition-colors",
                     "text-slate-500 hover:text-slate-700",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40",
                     "disabled:opacity-50 disabled:cursor-not-allowed"

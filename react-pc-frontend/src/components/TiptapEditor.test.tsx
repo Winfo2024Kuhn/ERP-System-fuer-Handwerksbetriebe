@@ -116,7 +116,10 @@ describe('TiptapToolbar (eigenstaendig exportierte Leiste)', () => {
 
         expect(() => {
             const { queryByTitle } = render(<TiptapToolbar editor={erfassterEditor} />);
-            expect(queryByTitle('Rükgängig (Ctrl+Z)')).not.toBeInTheDocument();
+            // Wortlaut exakt wie in der Leiste (seit der Tippfehler-Korrektur
+            // "Rückgängig"): ein falsch geschriebener Titel waere hier immer
+            // null und die Zusicherung damit wertlos.
+            expect(queryByTitle('Rückgängig (Ctrl+Z)')).not.toBeInTheDocument();
             expect(queryByTitle('Wiederholen (Ctrl+Y)')).not.toBeInTheDocument();
         }).not.toThrow();
     });
