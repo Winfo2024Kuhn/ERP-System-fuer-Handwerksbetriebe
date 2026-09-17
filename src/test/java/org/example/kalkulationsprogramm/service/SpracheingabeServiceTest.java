@@ -53,17 +53,64 @@ class SpracheingabeServiceTest {
         return daten;
     }
 
+    /**
+     * Liefert bis zu {@code gesamtlaenge} Bytes und zaehlt dabei mit, wie viel
+     * tatsaechlich gelesen wurde. Damit laesst sich schwarzbox pruefen, DASS
+     * der Dienst das Lesen abbricht, statt nur, DASS er am Ende die richtige
+     * Ausnahme wirft - eine Implementierung, die erst alles puffert und die
+     * Groesse erst danach prueft, wuerde hier viel mehr als
+     * {@code MAX_AUDIO_BYTES} Bytes lesen.
+     */
+    private static final class ZaehlenderStrom extends InputStream {
+        private long verbleibend;
+        private long gelesen = 0;
+
+        ZaehlenderStrom(long gesamtlaenge) {
+            this.verbleibend = gesamtlaenge;
+        }
+
+        @Override
+        public int read() {
+            if (verbleibend <= 0) {
+                return -1;
+            }
+            verbleibend--;
+            gelesen++;
+            return 42;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) {
+            if (verbleibend <= 0) {
+                return -1;
+            }
+            int anzahl = (int) Math.min(len, verbleibend);
+            Arrays.fill(b, off, off + anzahl, (byte) 42);
+            verbleibend -= anzahl;
+            gelesen += anzahl;
+            return anzahl;
+        }
+
+        long geleseneBytes() {
+            return gelesen;
+        }
+    }
+
     @SuppressWarnings("unchecked")
-    private void mockGeminiAntwort(int status, String body) throws IOException, InterruptedException {
+    private HttpResponse<String> mockGeminiAntwort(int status, String body) throws IOException, InterruptedException {
         when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
         HttpResponse<String> antwort = mock(HttpResponse.class);
         when(antwort.statusCode()).thenReturn(status);
-        // lenient: bei HTTP >= 400 liest der Dienst absichtlich NIE antwort.body()
-        // (DSGVO - der Koerper waere hier das Transkript). Fuer den Erfolgsfall
-        // (200) wird der Stub dagegen tatsaechlich gebraucht.
+        // lenient() unterdrueckt hier NUR Mockitos "Stub nie benutzt"-Warnung,
+        // weil der 200-Erfolgsfall den Stub braucht und der Fehlerfall nicht.
+        // lenient() belegt fuer sich allein NICHTS ueber das Verhalten des
+        // Dienstes - der eigentliche Beweis, dass antwort.body() im Fehlerfall
+        // nie gelesen wird, ist die explizite verify(antwort, never()).body()
+        // im aufrufenden Test.
         Mockito.lenient().when(antwort.body()).thenReturn(body);
         when(httpClient.send(Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<String>>any()))
                 .thenReturn(antwort);
+        return antwort;
     }
 
     @Test
@@ -75,6 +122,10 @@ class SpracheingabeServiceTest {
         assertThat(anweisung).contains("reiner Text");
         assertThat(anweisung).contains("Erfinde nichts dazu");
         assertThat(anweisung).contains("HEB 200");
+        // Reintext-Verbot: eigene Zeile, nicht durch "reiner Text" oben abgedeckt.
+        assertThat(anweisung).contains("Keine Sternchen, keine Rauten, keine HTML-Tags, keine Markdown-Syntax.");
+        // Metallbau-Vokabelblock: eigene Zeile, nicht durch "HEB 200" (Profile-Zeile) abgedeckt.
+        assertThat(anweisung).contains("Feuerverzinkung, Pulverbeschichtung, VSG, ESG, Schwerlastanker,");
     }
 
     @Test
@@ -110,10 +161,20 @@ class SpracheingabeServiceTest {
 
     @Test
     void fremderInhaltstypWirdAbgewiesen() {
-        assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(new byte[0]), "image/png"))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(new byte[0]), "application/pdf"))
-                .isInstanceOf(IllegalArgumentException.class);
+        // Absichtlich NICHT-leere Stroeme: Mit einem leeren Stream waere die
+        // IllegalArgumentException auch bei einer durchgelassenen Whitelist
+        // ueber die "Aufnahme ist leer"-Pruefung gekommen - der Test haette
+        // dann gar nichts ueber die Whitelist selbst ausgesagt. Zusaetzlich
+        // die konkrete Meldung pruefen, damit nur genau die Whitelist-Pruefung
+        // (und keine andere IllegalArgumentException) den Test gruen macht.
+        assertThatThrownBy(() -> service.transkribiere(
+                new ByteArrayInputStream(audioBytes(10)), "image/png"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Dieses Audioformat wird nicht unterstuetzt.");
+        assertThatThrownBy(() -> service.transkribiere(
+                new ByteArrayInputStream(audioBytes(10)), "application/pdf"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Dieses Audioformat wird nicht unterstuetzt.");
     }
 
     @Test
@@ -122,6 +183,25 @@ class SpracheingabeServiceTest {
 
         assertThatThrownBy(() -> service.transkribiere(zuGross, "audio/webm"))
                 .isInstanceOf(SpracheingabeService.AufnahmeZuGross.class);
+    }
+
+    @Test
+    void grenzeBrichtDasLesenSofortAbStattAllesVorherZuPuffern() {
+        // 5 MB mehr als erlaubt anbieten. Bricht der Dienst NICHT waehrend des
+        // Lesens ab, sondern puffert er (fehlerhaft) erst alles und prueft die
+        // Groesse erst danach, liest er weit mehr als MAX_AUDIO_BYTES - genau
+        // das soll dieser Test aufdecken.
+        long angebotenGesamt = (long) SpracheingabeService.MAX_AUDIO_BYTES + 5_000_000;
+        ZaehlenderStrom strom = new ZaehlenderStrom(angebotenGesamt);
+
+        assertThatThrownBy(() -> service.transkribiere(strom, "audio/webm"))
+                .isInstanceOf(SpracheingabeService.AufnahmeZuGross.class);
+
+        assertThat(strom.geleseneBytes())
+                .as("der Dienst darf nur knapp ueber die Grenze lesen, nicht die kompletten %d angebotenen Bytes",
+                        angebotenGesamt)
+                .isGreaterThan((long) SpracheingabeService.MAX_AUDIO_BYTES)
+                .isLessThan((long) SpracheingabeService.MAX_AUDIO_BYTES + 1_000_000);
     }
 
     @Test
@@ -137,12 +217,19 @@ class SpracheingabeServiceTest {
 
     @Test
     void geminiFehlerAntwortLandetNichtInDerFehlermeldung() throws IOException, InterruptedException {
-        mockGeminiAntwort(500, "{\"error\":\"Geheimes Transkript von Max Mustermann\"}");
+        HttpResponse<String> antwort = mockGeminiAntwort(500, "{\"error\":\"Geheimes Transkript von Max Mustermann\"}");
         InputStream audio = new ByteArrayInputStream(audioBytes(10));
 
         assertThatThrownBy(() -> service.transkribiere(audio, "audio/webm"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageNotContaining("Geheimes Transkript");
+
+        // Der eigentliche Beweis (nicht nur die Fehlermeldung): der Dienst darf
+        // den Antwortkoerper im Fehlerfall nicht einmal LESEN, egal wohin er
+        // ihn danach schreiben wuerde. Sonst koennte das Transkript z.B. per
+        // Debugger, APM-Tool oder einer spaeteren Codeaenderung doch noch nach
+        // aussen dringen, ohne dass ein Test das je gemerkt haette.
+        Mockito.verify(antwort, Mockito.never()).body();
     }
 
     @Test
