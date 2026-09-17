@@ -1,5 +1,6 @@
 import { useToast, mobileOverlayStyle } from '../components/ui/toast'
 import { useConfirm } from '../components/ui/confirm-dialog'
+import VoiceInputButton from '../components/VoiceInputButton'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, MessageCircle, Plus, Loader2, Send, X, User, Edit2, Trash2, Camera, Image, Lock } from 'lucide-react'
@@ -505,6 +506,7 @@ export default function ProjektNotizenPage() {
                             className="w-full p-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
                             autoFocus
                         />
+                        <VoiceInputButton className="mt-2" feldName="Eintrag" wert={neueNotiz} onErgebnis={setNeueNotiz} />
                         <div className="space-y-3 mt-4">
                             <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
                                 <input

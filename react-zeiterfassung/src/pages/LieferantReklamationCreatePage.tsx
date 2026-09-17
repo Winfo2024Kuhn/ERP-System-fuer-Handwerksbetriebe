@@ -1,4 +1,5 @@
 import { useToast } from '../components/ui/toast'
+import VoiceInputButton from '../components/VoiceInputButton'
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, Plus, X, FileText, Camera, AlertTriangle, Loader2 } from 'lucide-react'
@@ -225,6 +226,7 @@ export default function LieferantReklamationCreatePage() {
                         placeholder="Was ist beschädigt oder fehlt?"
                         className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
                     />
+                    <VoiceInputButton className="mt-2" feldName="Problembeschreibung" wert={beschreibung} onErgebnis={setBeschreibung} />
                 </div>
 
                 {/* 3. Bilder */}

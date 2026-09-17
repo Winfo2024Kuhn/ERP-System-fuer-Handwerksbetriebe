@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import SetupPage from './pages/SetupPage'
 
 // ─── Cookie helpers (iOS PWA: localStorage gets cleared, cookies persist) ───
@@ -61,6 +61,7 @@ import DashboardPage from './pages/DashboardPage'
 import ZeiterfassungPage from './pages/ZeiterfassungPage'
 import ProjektePage from './pages/ProjektePage'
 import ProjektNotizenPage from './pages/ProjektNotizenPage'
+import EinstellungenPage from './pages/EinstellungenPage'
 
 import AnfragenPage from './pages/AnfragenPage'
 import AnfrageNotizenPage from './pages/AnfrageNotizenPage'
@@ -80,6 +81,7 @@ import { LieferantReklamationDetailPage } from './pages/LieferantReklamationDeta
 import KalenderPage from './pages/KalenderPage'
 import TerminDetailPage from './pages/TerminDetailPage'
 import { OfflineService } from './services/OfflineService'
+import { starteBenachrichtigungenFallsErlaubt, stoppeBenachrichtigungsIntervall } from './services/notificationBootstrap'
 import { NotificationService } from './services/NotificationService'
 
 function App() {
@@ -89,7 +91,6 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'done' | 'error'>('syncing')
   const [error, setError] = useState<string | null>(null)
-  const notificationIntervalRef = useRef<number | null>(null)
 
   useEffect(() => {
     initializeApp()
@@ -168,53 +169,15 @@ function App() {
           setIsAuthenticated(true)
           // Sync all data on app start
           syncData()
-          // Initialize notifications
-          initializeNotifications(auth.token)
+          // Nur einrichten, wenn die Erlaubnis bereits vorliegt. Gefragt wird
+          // ausschliesslich ueber die Einstellungsseite.
+          starteBenachrichtigungenFallsErlaubt(auth.token)
         } catch {
           clearAuth()
         }
       }
     }
     setLoading(false)
-  }
-
-  // Initialize push notifications for appointment reminders
-  // Uses Web Push API (VAPID) for iOS lock screen support,
-  // falls back to SW message-based polling for other browsers
-  const initializeNotifications = async (token: string) => {
-    // Request permission
-    const granted = await NotificationService.requestPermission()
-    if (granted) {
-      console.log('Notification permission granted')
-      // Store token for Service Worker periodic background sync
-      await NotificationService.storeTokenForSW(token)
-
-      // Try Web Push subscription (required for iOS lock screen notifications)
-      const pushSubscribed = await NotificationService.subscribeToPush(token)
-      if (pushSubscribed) {
-        console.log('Web Push subscription active - server will send notifications')
-      } else {
-        console.log('Web Push not available - using fallback polling')
-      }
-
-      // Register periodic background sync (Android Chrome/Edge)
-      await NotificationService.registerPeriodicSync()
-      // Check immediately via Service Worker (fallback)
-      NotificationService.loadAndCheck(token)
-      // Set up periodic check every 5 minutes as fallback
-      // (for browsers that don't support Web Push or periodic background sync)
-      if (notificationIntervalRef.current) {
-        clearInterval(notificationIntervalRef.current)
-      }
-      notificationIntervalRef.current = window.setInterval(() => {
-        const currentToken = localStorage.getItem('zeiterfassung_token')
-        if (currentToken) {
-          NotificationService.loadAndCheck(currentToken)
-        }
-      }, 5 * 60 * 1000) // 5 minutes
-    } else {
-      console.log('Notification permission not granted')
-    }
   }
 
   const syncData = async () => {
@@ -281,8 +244,8 @@ function App() {
         await OfflineService.syncAll()
         setSyncStatus('done')
 
-        // Initialize notifications after login
-        initializeNotifications(token)
+        // Siehe oben: hier wird nicht ungefragt nach der Erlaubnis gefragt.
+        starteBenachrichtigungenFallsErlaubt(token)
 
         // Remove token from URL (clean up) - wichtig für Homescreen!
         window.history.replaceState({}, '', window.location.pathname)
@@ -300,11 +263,7 @@ function App() {
   }
 
   const handleLogout = () => {
-    // Clear notification interval
-    if (notificationIntervalRef.current) {
-      clearInterval(notificationIntervalRef.current)
-      notificationIntervalRef.current = null
-    }
+    stoppeBenachrichtigungsIntervall()
     clearAuth()
     setIsAuthenticated(false)
     setMitarbeiter(null)
@@ -353,6 +312,7 @@ function App() {
         <Route path="/belege" element={<BelegScannerPage />} />
         <Route path="/belege/:id/positionen" element={<BelegPositionenAuswahlPage />} />
         <Route path="/mwst-rechner" element={<MwstRechnerPage />} />
+        <Route path="/einstellungen" element={<EinstellungenPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

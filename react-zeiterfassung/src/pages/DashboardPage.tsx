@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, X, Stethoscope } from 'lucide-react'
+import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Settings, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, X, Stethoscope } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
@@ -994,6 +994,13 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         <p className="text-sm text-slate-500">{formatDate(new Date())}</p>
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => navigate('/einstellungen')}
+                            aria-label="Einstellungen"
+                            className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                        >
+                            <Settings className="w-5 h-5 text-slate-600" />
+                        </button>
                         <NetworkStatusBadge syncStatus={syncStatus} onSync={onSync} />
                     </div>
                 </div>
