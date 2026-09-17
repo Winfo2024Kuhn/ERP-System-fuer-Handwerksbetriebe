@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardPage from './DashboardPage'
 import { OfflineService } from '../services/OfflineService'
@@ -596,5 +596,34 @@ describe('DashboardPage – Langzeitkrankmeldung-Karte', () => {
         expect(card!.className).not.toMatch(/teal/)
         expect(card!.querySelector('.bg-indigo-50')).not.toBeNull()
         expect(card!.innerHTML).not.toMatch(/teal/)
+    })
+})
+
+describe('DashboardPage – Zahnrad zu den Einstellungen', () => {
+    it('führt links neben dem Online-Abzeichen in die Einstellungen', async () => {
+        const user = userEvent.setup()
+        render(
+            <MemoryRouter initialEntries={['/']}>
+                <Routes>
+                    <Route
+                        path="/"
+                        element={<DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />}
+                    />
+                    <Route path="/einstellungen" element={<div>Einstellungs-Seite</div>} />
+                </Routes>
+            </MemoryRouter>,
+        )
+
+        const zahnrad = await screen.findByRole('button', { name: 'Einstellungen' })
+        await user.click(zahnrad)
+
+        expect(await screen.findByText('Einstellungs-Seite')).toBeInTheDocument()
+    })
+
+    it('trägt ein aria-label, weil es ein reiner Icon-Knopf ist', async () => {
+        renderDashboard()
+
+        const zahnrad = await screen.findByRole('button', { name: 'Einstellungen' })
+        expect(zahnrad).toHaveAttribute('aria-label', 'Einstellungen')
     })
 })
