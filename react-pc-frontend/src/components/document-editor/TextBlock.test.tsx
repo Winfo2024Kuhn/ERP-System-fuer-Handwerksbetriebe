@@ -12,10 +12,17 @@ import { render, fireEvent, screen } from '@testing-library/react';
 import { TextBlock } from './TextBlock';
 import type { DocBlock } from './types';
 
+/**
+ * Ersatz fuer den echten Editor. Er kann beides, was die Tests unten brauchen:
+ * eine Aenderung melden (Verlaufsmodus) und den aufbereiteten Inhalt ausgeben,
+ * damit der Zahlungsziel-Chip ueberhaupt im DOM steht — im echten Editor
+ * rendert ihn ProseMirror.
+ */
 vi.mock('../TiptapEditor', () => ({
-    TiptapEditor: ({ onChange, verlaufsModus }: { onChange: (v: string, a: string) => void; verlaufsModus?: boolean }) => (
+    TiptapEditor: ({ value, onChange, verlaufsModus }: { value?: string; onChange: (v: string, a: string) => void; verlaufsModus?: boolean }) => (
         <button data-testid="tiptap" data-verlaufsmodus={String(!!verlaufsModus)}
-                onClick={() => onChange('<p>neu</p>', 'sonstiges')} />
+                onClick={() => onChange('<p>neu</p>', 'sonstiges')}
+                dangerouslySetInnerHTML={{ __html: value ?? '' }} />
     ),
 }));
 
@@ -78,5 +85,64 @@ describe('TextBlock Verlaufsmodus', () => {
         render(<TextBlock {...props} />);
 
         expect(screen.getByTestId('tiptap')).toHaveAttribute('data-verlaufsmodus', 'false');
+    });
+});
+
+describe('TextBlock Zahlungsziel-Chip', () => {
+    // Der Chip oeffnet das Bearbeitungs-Popover. Erkannt wird er beim
+    // mousedown, weil der erste Klick in einen noch nicht aktiven Textbaustein
+    // sonst beim Fokussieren des Editors verloren geht.
+    const chipBlock: DocBlock = {
+        id: 't2',
+        type: 'TEXT',
+        content: '<p>Zahlbar innerhalb von <span data-zahlungsziel-chip="tage">14</span> Tagen.</p>',
+    };
+
+    function renderMitChip(ueberschreibungen: Partial<typeof props> = {}) {
+        const onZahlungszielChipClick = vi.fn();
+        render(
+            <TextBlock
+                {...props}
+                block={chipBlock}
+                onZahlungszielChipClick={onZahlungszielChipClick}
+                {...ueberschreibungen}
+            />
+        );
+        return { onZahlungszielChipClick };
+    }
+
+    it('meldet einen Klick auf den Chip mit dessen Position', () => {
+        const { onZahlungszielChipClick } = renderMitChip();
+
+        fireEvent.mouseDown(document.querySelector('[data-zahlungsziel-chip]')!, { button: 0 });
+
+        expect(onZahlungszielChipClick).toHaveBeenCalledTimes(1);
+        expect(onZahlungszielChipClick.mock.calls[0][0]).toHaveProperty('bottom');
+    });
+
+    it('meldet nichts bei einem Klick auf normalen Text', () => {
+        // Sonst ginge der Cursor im Textbaustein verloren.
+        const { onZahlungszielChipClick } = renderMitChip();
+
+        fireEvent.mouseDown(screen.getByTestId('tiptap'), { button: 0 });
+
+        expect(onZahlungszielChipClick).not.toHaveBeenCalled();
+    });
+
+    it('meldet nichts bei einem gesperrten Dokument', () => {
+        const { onZahlungszielChipClick } = renderMitChip({ isLocked: true });
+
+        fireEvent.mouseDown(document.querySelector('[data-zahlungsziel-chip]')!, { button: 0 });
+
+        expect(onZahlungszielChipClick).not.toHaveBeenCalled();
+    });
+
+    it('meldet nichts bei einem Klick mit der rechten Maustaste', () => {
+        // Sonst stuenden Popover und Kontextmenue gleichzeitig offen.
+        const { onZahlungszielChipClick } = renderMitChip();
+
+        fireEvent.mouseDown(document.querySelector('[data-zahlungsziel-chip]')!, { button: 2 });
+
+        expect(onZahlungszielChipClick).not.toHaveBeenCalled();
     });
 });
