@@ -28,6 +28,11 @@ describe('TiptapEditor Standardmodus (Regressionsschutz)', () => {
     it('meldet eine von aussen geaenderte value weiterhin ueber onChange', () => {
         const onChange = vi.fn();
         const { rerender } = render(<TiptapEditor value="<p>Alt</p>" onChange={onChange} />);
+        // Ohne das hier waere die Zusicherung unten schon durch den Mount-Aufruf
+        // erfuellt (setEditable-Effekt feuert beim Mounten ein eigenes onChange,
+        // siehe Verlaufsmodus-Test unten) -- der Test praeufte dann gar nicht
+        // mehr, ob der SYNC-Effekt selbst noch onChange meldet.
+        onChange.mockClear();
 
         rerender(<TiptapEditor value="<p>Neu</p>" onChange={onChange} />);
 

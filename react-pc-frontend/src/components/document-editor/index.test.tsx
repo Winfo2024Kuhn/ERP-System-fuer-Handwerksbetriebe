@@ -4,6 +4,7 @@ import { render, screen, waitFor, fireEvent, act, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter, useSearchParams } from 'react-router-dom';
+import type { Editor } from '@tiptap/core';
 import { ToastProvider } from '../ui/toast';
 import { ConfirmProvider } from '../ui/confirm-dialog';
 import { useDatensatzLock } from '../lock/useDatensatzLock';
@@ -1393,5 +1394,422 @@ describe('DocumentEditor – imperatives Handle speichernFuerFreigabe (Task 7a)'
         });
 
         expect(speicherAufrufe(fetchMock).length).toBe(0);
+    });
+});
+
+describe('DocumentEditor – Rückgängig & Wiederholen', () => {
+    // DSGVO: ausschliesslich Dummy-Daten. Drei Bloecke: ein Textbaustein und
+    // zwei Leistungen -- reicht, um Loeschen/Tippen/Formatierung/Rabatt/
+    // Mehrfach-Rueckgaengig ueber die echte Oberflaeche zu pruefen.
+    const BLOECKE = [
+        { id: 't1', type: 'TEXT', content: '<p>Vielen Dank für Ihre Anfrage.</p>', fontSize: 10 },
+        { id: 's1', type: 'SERVICE', title: 'Dachrinne reinigen', quantity: 2, unit: 'Stk', price: 100, fontSize: 10 },
+        { id: 's2', type: 'SERVICE', title: 'Ziegel ersetzen', quantity: 5, unit: 'Stk', price: 20, fontSize: 10 },
+    ];
+
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch({ positionenJson: JSON.stringify({ blocks: BLOECKE, globalRabatt: 0 }) });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+        // jsdom kennt scrollIntoView nicht (Vorbild EmailThreadView.test.tsx:14-16).
+        window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    /** Wartet auf den vollstaendig geladenen Editor mit den drei Beispiel-Bloecken. */
+    async function ladenAbwarten() {
+        await waitFor(() => expect(screen.getByDisplayValue('Dachrinne reinigen')).toBeInTheDocument(), { timeout: 3000 });
+    }
+
+    /** Loeschen-Knopf einer Karte (traegt svg.lucide-trash2). */
+    function muelleimer(container: HTMLElement, blockId: string): HTMLButtonElement {
+        const treffer = Array.from(
+            container.querySelectorAll<HTMLButtonElement>(`[data-block-id="${blockId}"] button`)
+        ).find(b => b.querySelector('svg.lucide-trash2'));
+        if (!treffer) throw new Error(`Kein Löschen-Knopf für Block ${blockId} gefunden`);
+        return treffer;
+    }
+
+    function rueckgaengigKnopf(): HTMLElement {
+        return screen.getByRole('button', { name: 'Rückgängig' });
+    }
+
+    function strgZ() {
+        fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+    }
+    function strgY() {
+        fireEvent.keyDown(document.body, { key: 'y', ctrlKey: true });
+    }
+
+    it('1. Position löschen ⇒ Karte weg; Strg+Z ⇒ wieder da; Strg+Y ⇒ wieder weg', async () => {
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+        expect(rueckgaengigKnopf()).not.toBeDisabled();
+
+        strgZ();
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).toBeInTheDocument());
+        expect(screen.getByDisplayValue('Dachrinne reinigen')).toBeInTheDocument();
+
+        strgY();
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+    });
+
+    it('2. Tippen im selben Feld wird zu einem Schritt gebündelt', async () => {
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        const titelfeld = container.querySelector<HTMLInputElement>('[data-block-id="s1"] [data-verlauf-feld="title"]')!;
+        await user.type(titelfeld, 'XY');
+        await waitFor(() => expect(titelfeld).toHaveValue('Dachrinne reinigenXY'));
+
+        strgZ();
+        await waitFor(() => expect(titelfeld).toHaveValue('Dachrinne reinigen'));
+    });
+
+    it('3. Feldwechsel trennt Schritte: das erste Strg+Z betrifft nur das zuletzt geänderte Feld', async () => {
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        const titelfeld = container.querySelector<HTMLInputElement>('[data-block-id="s1"] [data-verlauf-feld="title"]')!;
+        await user.type(titelfeld, 'X');
+        await waitFor(() => expect(titelfeld).toHaveValue('Dachrinne reinigenX'));
+
+        // Menge/Einheit/EP stehen nur bei aufgeklappter Karte im DOM.
+        const karteS1 = container.querySelector('[data-block-id="s1"]') as HTMLElement;
+        await user.click(within(karteS1).getByRole('button', { name: 'Aufklappen' }));
+
+        const mengenfeld = container.querySelector<HTMLInputElement>('[data-block-id="s1"] [data-verlauf-feld="quantity"]')!;
+        await user.clear(mengenfeld);
+        await user.type(mengenfeld, '9');
+        await waitFor(() => expect(mengenfeld).toHaveValue(9));
+
+        strgZ();
+        await waitFor(() => expect(mengenfeld).toHaveValue(2));
+        expect(titelfeld).toHaveValue('Dachrinne reinigenX');
+    });
+
+    it('4. Formatierung ist ein eigener Schritt, getippter Text bleibt beim Rückgängig erhalten', async () => {
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        const pm = container.querySelector('[data-block-id="t1"] .ProseMirror') as (HTMLElement & { editor: Editor }) | null;
+        if (!pm) throw new Error('.ProseMirror für t1 nicht gefunden');
+
+        // Echte Fokussierung zuerst (wie ein Klick des Nutzers) -- sonst greift
+        // das Phantom-Gate (Fokus-Nachweis) und die Aenderung wird automatisch
+        // statt als Nutzer-Schritt behandelt. Ueber ein echtes DOM-Fokus-Event
+        // statt editor.commands.focus(), damit React onFocus zuverlaessig feuert.
+        fireEvent.focus(pm);
+        await act(async () => { pm.editor.commands.insertContent(' Danke.'); });
+        await act(async () => { pm.editor.commands.toggleBulletList(); });
+        await waitFor(() => expect(pm.editor.getHTML()).toContain('<ul>'));
+
+        strgZ();
+
+        await waitFor(() => expect(pm.editor.getHTML()).not.toContain('<ul>'));
+        expect(pm.editor.getHTML()).toContain('Danke.');
+    });
+
+    /** Oeffnet den Rabatt-Dialog im "Gesamtes Dokument"-Modus und liefert das Eingabefeld. */
+    async function rabattFeldOeffnen(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+        await user.click(screen.getByRole('button', { name: 'Rabatt' }));
+        await user.click(await screen.findByRole('button', { name: 'Gesamtes Dokument' }));
+        const ueberschrift = await screen.findByText('Pauschalrabatt auf gesamtes Dokument');
+        const bereich = ueberschrift.closest('.py-6') as HTMLElement;
+        return within(bereich).getByRole('spinbutton');
+    }
+
+    it('5. Rabatt ist ein Schritt: 10 % übernehmen zeigt ihn in der Fußzeile, Strg+Z nimmt ihn zurück', async () => {
+        const user = userEvent.setup();
+        renderEditor();
+        await ladenAbwarten();
+
+        const rabattFeld = await rabattFeldOeffnen(user);
+        await user.clear(rabattFeld);
+        await user.type(rabattFeld, '10');
+        await user.click(screen.getByRole('button', { name: 'Rabatt übernehmen' }));
+
+        expect(await screen.findByText('Rabatt 10,00 %')).toBeInTheDocument();
+
+        strgZ();
+
+        await waitFor(() => expect(screen.queryByText('Rabatt 10,00 %')).not.toBeInTheDocument());
+    });
+
+    it('6. Rückgängig einer bereits gespeicherten Rabattänderung meldet sich erneut als ungespeichert und sendet globalRabatt 0', async () => {
+        // Regression: globalRabatt fehlte vor baueDokumentSignatur in der
+        // Ungespeichert-Signatur. Ohne den Fix waere der Stand nach dem
+        // Rueckgaengig lokal wieder 0, der zuvor gespeicherte Stand aber
+        // weiterhin 10 -- ohne erneutes "Ungespeichert" haette niemand die
+        // Rueck-Aenderung je gespeichert, das Dokument bliebe fuer immer bei
+        // 10 % Rabatt in der Datenbank stehen.
+        const user = userEvent.setup();
+        renderEditor();
+        await ladenAbwarten();
+
+        const rabattFeld = await rabattFeldOeffnen(user);
+        await user.clear(rabattFeld);
+        await user.type(rabattFeld, '10');
+        await user.click(screen.getByRole('button', { name: 'Rabatt übernehmen' }));
+        expect(await screen.findByText(/^Ungespeichert$/)).toBeInTheDocument();
+
+        // Erst speichern -- der Server kennt jetzt 10 %.
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+        await waitFor(() => expect(speicherAufrufe(fetchMock).length).toBeGreaterThan(0));
+        expect(speicherAufrufe(fetchMock).at(-1)!.positionenJson).toContain('"globalRabatt":10');
+        await waitFor(() => expect(screen.queryByText(/^Ungespeichert$/)).not.toBeInTheDocument());
+
+        // Rückgängig: lokal wieder 0 %, aber der zuletzt gespeicherte Stand ist 10 %.
+        strgZ();
+        await waitFor(() => expect(screen.queryByText('Rabatt 10,00 %')).not.toBeInTheDocument());
+        expect(await screen.findByText(/^Ungespeichert$/)).toBeInTheDocument();
+
+        // Der Knopf zeigt nach dem ersten Speichern 2s lang "Gespeichert" statt
+        // "Speichern" (saveSuccess) -- abwarten, bis er wieder anklickbar heisst.
+        await waitFor(() => expect(screen.getByRole('button', { name: /^Speichern$/i })).toBeInTheDocument(), { timeout: 3000 });
+        await user.click(screen.getByRole('button', { name: /^Speichern$/i }));
+        await waitFor(() => expect(speicherAufrufe(fetchMock).length).toBeGreaterThan(1));
+        const gespeichert = speicherAufrufe(fetchMock).at(-1)!;
+        const positionen = JSON.parse(gespeichert.positionenJson as string);
+        expect(positionen.globalRabatt).toBe(0);
+    });
+
+    it('7. Dropdown nimmt mehrere Schritte auf einmal zurück', async () => {
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's2'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s2"]')).not.toBeInTheDocument());
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+        fireEvent.click(muelleimer(container, 't1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="t1"]')).not.toBeInTheDocument());
+
+        await user.click(screen.getByRole('button', { name: 'Liste der letzten Änderungen' }));
+        const eintraege = await screen.findAllByRole('menuitem');
+        expect(eintraege).toHaveLength(3);
+
+        fireEvent.mouseEnter(eintraege[2]);
+        expect(await screen.findByText('3 Schritte rückgängig machen')).toBeInTheDocument();
+
+        await user.click(eintraege[2]);
+
+        await waitFor(() => expect(container.querySelector('[data-block-id="t1"]')).toBeInTheDocument());
+        expect(container.querySelector('[data-block-id="s1"]')).toBeInTheDocument();
+        expect(container.querySelector('[data-block-id="s2"]')).toBeInTheDocument();
+    });
+
+    it('8. Gebuchte Rechnung: keine Rückgängig-/Wiederholen-Knöpfe, Strg+Z ändert nichts', async () => {
+        fetchMock = mockFetch({ gebucht: true, positionenJson: JSON.stringify({ blocks: BLOECKE, globalRabatt: 0 }) });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        expect(screen.queryByRole('button', { name: 'Rückgängig' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Wiederholen' })).not.toBeInTheDocument();
+
+        strgZ();
+        expect(container.querySelector('[data-block-id="s1"]')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('Dachrinne reinigen')).toBeInTheDocument();
+    });
+
+    it('9. Sperre leert den Verlauf: nach dem Entsperren sind die Knöpfe wieder da, aber deaktiviert', async () => {
+        const { container, rerender } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+        expect(rueckgaengigKnopf()).not.toBeDisabled();
+
+        const baum = (readOnly: boolean) => (
+            <MemoryRouter initialEntries={['/dokumente/1']}>
+                <ConfirmProvider>
+                    <ToastProvider>
+                        <DocumentEditor dokumentId={1} onClose={() => { }} readOnly={readOnly} />
+                    </ToastProvider>
+                </ConfirmProvider>
+            </MemoryRouter>
+        );
+
+        rerender(baum(true));
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Rückgängig' })).not.toBeInTheDocument());
+
+        rerender(baum(false));
+        await waitFor(() => expect(rueckgaengigKnopf()).toBeDisabled());
+    });
+
+    it('10. Strg+Z im Adress-Entwurf greift nicht in den Dokument-Verlauf ein', async () => {
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+
+        await user.click(screen.getByTitle('Rechnungsadresse für dieses Dokument bearbeiten'));
+        const textarea = await screen.findByRole('textbox', { name: /Rechnungsadresse bearbeiten/i });
+        fireEvent.keyDown(textarea, { key: 'z', ctrlKey: true });
+
+        expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument();
+    });
+
+    it('11. Strg+Z bei offenem Dialog greift nicht in den Dokument-Verlauf ein', async () => {
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+
+        await user.click(screen.getByRole('button', { name: 'Textbaustein' }));
+        await screen.findByPlaceholderText('Textbaustein suchen…');
+
+        strgZ();
+
+        expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument();
+    });
+
+    it('12. Speichern lässt den Verlauf stehen', async () => {
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+        await waitFor(() => expect(speicherAufrufe(fetchMock).length).toBeGreaterThan(0));
+
+        expect(rueckgaengigKnopf()).not.toBeDisabled();
+    });
+
+    it('13. Erfolgreicher PDF-Export leert den Verlauf', async () => {
+        const user = userEvent.setup();
+        const basis = mockFetch({ positionenJson: JSON.stringify({ blocks: BLOECKE, globalRabatt: 0 }) });
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url === '/api/dokument-generator/pdf') {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    blob: () => Promise.resolve(new Blob(['%PDF-1.4'], { type: 'application/pdf' })),
+                });
+            }
+            return basis(url, init);
+        }) as unknown as ReturnType<typeof mockFetch>;
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+        expect(rueckgaengigKnopf()).not.toBeDisabled();
+
+        await user.click(screen.getByRole('button', { name: 'PDF' }));
+        await user.click(await screen.findByText('Standard PDF-Datei herunterladen'));
+
+        await waitFor(() => expect(rueckgaengigKnopf()).toBeDisabled());
+    });
+
+    it('14. „Stelle zeigen": nach Strg+Z wird die Karte kurz hervorgehoben und in den Blick gescrollt', async () => {
+        const { container } = renderEditor();
+        await ladenAbwarten();
+
+        fireEvent.click(muelleimer(container, 's1'));
+        await waitFor(() => expect(container.querySelector('[data-block-id="s1"]')).not.toBeInTheDocument());
+
+        strgZ();
+
+        await waitFor(() => {
+            const karte = container.querySelector('[data-block-id="s1"]');
+            expect(karte).not.toBeNull();
+            expect(karte).toHaveClass('verlauf-hervorgehoben');
+        });
+        expect(window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
+    });
+});
+
+describe('DocumentEditor – keine Phantom-Schritte beim Öffnen (Tiptap normalisiert HTML beim Mount)', () => {
+    // Befund aus dem Abschnitt-1-Review: der bestehende setEditable-Effekt in
+    // TiptapEditor.tsx feuert beim Mounten EIN onChange mit Tiptaps
+    // normalisiertem HTML (z.B. '' -> '<p></p>', '<ul><li>Punkt</li></ul>' ->
+    // '<ul><li><p>Punkt</p></li></ul>'). Ohne Gate (Fokus des jeweiligen
+    // Editors) würde das schon beim blossen Öffnen eines Dokuments einen
+    // Schritt im Verlauf erzeugen, den niemand gemacht hat.
+    beforeEach(() => {
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+        window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it.each([
+        { beschreibung: 'Listeninhalt', content: '<ul><li>Punkt</li></ul>' },
+        { beschreibung: 'leerem Inhalt', content: '' },
+        { beschreibung: 'Text ohne umschliessendes Tag', content: 'Nur Text ohne Tag' },
+    ])('erzeugt beim Öffnen eines Textbausteins mit $beschreibung keinen Verlaufsschritt', async ({ content }) => {
+        const fetchMock = mockFetch({
+            positionenJson: JSON.stringify({
+                blocks: [{ id: 't1', type: 'TEXT', content, fontSize: 10 }],
+                globalRabatt: 0,
+            }),
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderEditor();
+        await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeInTheDocument(), { timeout: 3000 });
+        // Dem normalisierenden Mount-Aufruf Zeit geben, bevor geprüft wird.
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        expect(screen.getByRole('button', { name: 'Rückgängig' })).toBeDisabled();
+    });
+});
+
+describe('DocumentEditor – data-block-id-Vertrag (SortableBlock)', () => {
+    // Abschnitt-1-Review, Mutationsprobe: `data-block-id` in SortableBlock.tsx
+    // entfernt ⇒ nichts wurde rot (🟡-Befund). "Stelle zeigen" (Task 4) haengt
+    // an genau diesem Attribut, deshalb hier explizit zugesichert -- mit
+    // echtem Editor gerendert, nicht nur ueber einen Mock erschlossen.
+    beforeEach(() => {
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('trägt data-block-id am äußeren SortableBlock-Wrapper jedes Root-Blocks', async () => {
+        const fetchMock = mockFetch({
+            positionenJson: JSON.stringify({
+                blocks: [{ id: 's1', type: 'SERVICE', title: 'Dachrinne reinigen', quantity: 2, unit: 'Stk', price: 100, fontSize: 10 }],
+                globalRabatt: 0,
+            }),
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        const { container } = renderEditor();
+        await waitFor(() => expect(screen.getByDisplayValue('Dachrinne reinigen')).toBeInTheDocument(), { timeout: 3000 });
+
+        const wrapper = container.querySelector('[data-block-id="s1"]');
+        expect(wrapper).not.toBeNull();
+        // Der Titel der Position muss INNERHALB des markierten Wrappers liegen --
+        // sonst waere data-block-id nur zufaellig irgendwo im Baum vorhanden.
+        expect(within(wrapper as HTMLElement).getByDisplayValue('Dachrinne reinigen')).toBeInTheDocument();
     });
 });
