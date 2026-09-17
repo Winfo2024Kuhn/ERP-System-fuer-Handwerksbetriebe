@@ -9,6 +9,7 @@ import { Extension } from '@tiptap/core';
 import Color from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
 import { ZahlungszielChip } from './document-editor/zahlungszielChipExtension';
+import { aenderungsArtVon, setzeInhaltVonAussen, type TiptapAenderungsArt } from './tiptapVerlauf';
 import {
     AlignCenter,
     AlignJustify,
@@ -85,12 +86,21 @@ const FontSize = Extension.create({
 
 interface TiptapEditorProps {
     value: string;
-    onChange: (value: string) => void;
+    /** `art` ist nur im Verlaufsmodus aussagekraeftig; im Standardmodus immer 'sonstiges'. */
+    onChange: (value: string, art: TiptapAenderungsArt) => void;
     hideToolbar?: boolean;
     compactMode?: boolean; // For document builder - auto-sizes to content height
     readOnly?: boolean;
     onFocus?: () => void;
     onEditorReady?: (editor: ReturnType<typeof useEditor>) => void;
+    /**
+     * Standard false. true = eigener Tiptap-Verlauf aus (StarterKit ohne
+     * History), externe `value`-Aenderungen ohne Rueckmeldung ueber onChange,
+     * Cursor springt an die geaenderte Stelle. Wird beim Erzeugen des Editors
+     * ausgewertet (StarterKit-Konfiguration) - jede rufende Stelle setzt sie
+     * konstant, ein Wechsel zur Laufzeit ist nicht vorgesehen.
+     */
+    verlaufsModus?: boolean;
 }
 
 export interface TiptapEditorRef {
@@ -378,25 +388,35 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
         );
     }
 
+    // Ein Editor im Verlaufsmodus (verlaufsModus=true, StarterKit ohne History)
+    // hat gar kein undo-Kommando - editor.can().undo() wuerde dann eine TypeError
+    // werfen. Ohne diese Pruefung stuerzt die globale Leiste des Dokumenteditors
+    // ab, sobald ein Verlaufsmodus-Editor den Fokus haelt.
+    const hatEigenenVerlauf = typeof editor.commands.undo === 'function';
+
     return (
         <div className="flex flex-wrap gap-1 items-center bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
-            {/* Undo/Redo */}
-            <ToolbarButton
-                onClick={() => editor.chain().focus().undo().run()}
-                disabled={!editor.can().undo()}
-                title="Rükgängig (Ctrl+Z)"
-            >
-                <Undo className="w-4 h-4" />
-            </ToolbarButton>
-            <ToolbarButton
-                onClick={() => editor.chain().focus().redo().run()}
-                disabled={!editor.can().redo()}
-                title="Wiederholen (Ctrl+Y)"
-            >
-                <Redo className="w-4 h-4" />
-            </ToolbarButton>
+            {/* Undo/Redo - nur, wenn der Editor ueberhaupt einen eigenen Verlauf hat */}
+            {hatEigenenVerlauf && (
+                <>
+                    <ToolbarButton
+                        onClick={() => editor.chain().focus().undo().run()}
+                        disabled={!editor.can().undo()}
+                        title="Rückgängig (Ctrl+Z)"
+                    >
+                        <Undo className="w-4 h-4" />
+                    </ToolbarButton>
+                    <ToolbarButton
+                        onClick={() => editor.chain().focus().redo().run()}
+                        disabled={!editor.can().redo()}
+                        title="Wiederholen (Ctrl+Y)"
+                    >
+                        <Redo className="w-4 h-4" />
+                    </ToolbarButton>
 
-            <span className="w-px h-6 bg-rose-200 mx-1" />
+                    <span className="w-px h-6 bg-rose-200 mx-1" />
+                </>
+            )}
 
             {/* Text formatting */}
             <ToolbarButton
@@ -559,7 +579,7 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
     );
 };
 
-export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hideToolbar = false, compactMode = false, readOnly = false, onFocus, onEditorReady }) => {
+export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hideToolbar = false, compactMode = false, readOnly = false, onFocus, onEditorReady, verlaufsModus = false }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorContainerRef = useRef<HTMLDivElement>(null);
     /** Tracks the value the editor was initialized with so the first sync can be skipped
@@ -583,6 +603,11 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                 codeBlock: false,
                 code: false,
                 horizontalRule: false,
+                // Verlaufsmodus: eigener Tiptap-Verlauf aus. Der Dokumentverlauf
+                // (useDokumentVerlauf) uebernimmt Rueckgaengig/Wiederholen dann
+                // feldübergreifend - zwei Verlaeufe uebereinander wuerden sich
+                // gegenseitig ins Gehege kommen.
+                ...(verlaufsModus ? { undoRedo: false } : {}),
             }),
             Underline,
             TextStyle,
@@ -600,8 +625,8 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
         ],
         content: value,
         editable: !readOnly,
-        onUpdate: ({ editor: ed }) => {
-            onChange(ed.getHTML());
+        onUpdate: ({ editor: ed, transaction, appendedTransactions }) => {
+            onChange(ed.getHTML(), verlaufsModus ? aenderungsArtVon(transaction, appendedTransactions) : 'sonstiges');
         },
         editorProps: {
             attributes: {
@@ -672,15 +697,15 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
             editorReadyRef.current = true;
             // If the value changed between the useEditor() call and now, sync it.
             if (value !== editorInitValueRef.current && value !== editor.getHTML()) {
-                editor.commands.setContent(value);
+                setzeInhaltVonAussen(editor, value, verlaufsModus);
             }
             return;
         }
 
         if (value !== editor.getHTML()) {
-            editor.commands.setContent(value);
+            setzeInhaltVonAussen(editor, value, verlaufsModus);
         }
-    }, [value, editor]);
+    }, [value, editor, verlaufsModus]);
 
     useEffect(() => {
         if (editor) {
@@ -723,28 +748,36 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
         return <div className="min-h-[260px] border border-slate-200 rounded-lg p-3 bg-white animate-pulse" />;
     }
 
+    // Verlaufsmodus-Editoren haben kein undo-Kommando (StarterKit ohne History) -
+    // editor.can().undo() wuerde sonst mit einer TypeError abstuerzen.
+    const hatEigenenVerlauf = typeof editor.commands.undo === 'function';
+
     return (
         <div className="space-y-2">
             {/* Toolbar - conditionally shown */}
             {!hideToolbar && !readOnly && (
                 <div className="flex flex-wrap gap-1 items-center bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
-                    {/* Undo/Redo */}
-                    <ToolbarButton
-                        onClick={() => editor.chain().focus().undo().run()}
-                        disabled={!editor.can().undo()}
-                        title="Rückgängig (Ctrl+Z)"
-                    >
-                        <Undo className="w-4 h-4" />
-                    </ToolbarButton>
-                    <ToolbarButton
-                        onClick={() => editor.chain().focus().redo().run()}
-                        disabled={!editor.can().redo()}
-                        title="Wiederholen (Ctrl+Y)"
-                    >
-                        <Redo className="w-4 h-4" />
-                    </ToolbarButton>
+                    {/* Undo/Redo - nur, wenn der Editor ueberhaupt einen eigenen Verlauf hat */}
+                    {hatEigenenVerlauf && (
+                        <>
+                            <ToolbarButton
+                                onClick={() => editor.chain().focus().undo().run()}
+                                disabled={!editor.can().undo()}
+                                title="Rückgängig (Ctrl+Z)"
+                            >
+                                <Undo className="w-4 h-4" />
+                            </ToolbarButton>
+                            <ToolbarButton
+                                onClick={() => editor.chain().focus().redo().run()}
+                                disabled={!editor.can().redo()}
+                                title="Wiederholen (Ctrl+Y)"
+                            >
+                                <Redo className="w-4 h-4" />
+                            </ToolbarButton>
 
-                    <span className="w-px h-6 bg-rose-200 mx-1" />
+                            <span className="w-px h-6 bg-rose-200 mx-1" />
+                        </>
+                    )}
 
                     {/* Text formatting */}
                     <ToolbarButton

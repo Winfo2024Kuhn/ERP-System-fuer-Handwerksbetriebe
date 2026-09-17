@@ -2,6 +2,7 @@ import { FileText, Trash2, Plus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
 import { cn } from '../../lib/utils';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
 import type { DocBlock, EditorInstance } from './types';
 
 interface TextBlockProps {
@@ -10,7 +11,7 @@ interface TextBlockProps {
     isActive: boolean;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
     onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
-    onUpdate: (id: string, updates: Partial<DocBlock>) => void;
+    onUpdate: (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => void;
     onRemove: (id: string) => void;
     onFocus: (blockId: string) => void;
     onEditorFocus: (editor: EditorInstance | null) => void;
@@ -22,6 +23,8 @@ interface TextBlockProps {
     onZahlungszielChipClick?: (anchor: DOMRect) => void;
     /** Optional: oeffnet den AddTypeDialog mit dieser Karte als Anker (Insert direkt darunter). */
     onAddBelow?: (anchorId: string) => void;
+    /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
+    verlaufsModus?: boolean;
 }
 
 export function TextBlock({
@@ -38,6 +41,7 @@ export function TextBlock({
     serializeContent,
     onZahlungszielChipClick,
     onAddBelow,
+    verlaufsModus,
 }: TextBlockProps) {
     return (
         <div className="group/card">
@@ -48,13 +52,26 @@ export function TextBlock({
                     ? "border-l-rose-500 border-rose-200 ring-2 ring-rose-500/30 shadow-md shadow-rose-50"
                     : "border-l-rose-300 border-slate-200 hover:border-slate-300 hover:shadow-sm"
             )}
-            onClick={(e) => {
-                onFocus(block.id);
-                const chip = (e.target as HTMLElement).closest?.('[data-zahlungsziel-chip]');
-                if (chip && !isLocked && onZahlungszielChipClick) {
-                    onZahlungszielChipClick(chip.getBoundingClientRect());
-                }
+            onMouseDown={(e) => {
+                // Auf mousedown statt click: der erste Klick in einen noch nicht
+                // aktiven Textbaustein geht beim Fokussieren des Editors
+                // verloren, das Popover braeuchte dann zwei Klicks.
+                if (e.button !== 0) return;
+                if (isLocked || !onZahlungszielChipClick) return;
+                // Der Chip ist `contenteditable="false"`, weshalb ProseMirror den
+                // Editor-Bereich als Ziel meldet — deshalb zusaetzlich ueber die
+                // Klickposition suchen. `elementFromPoint` gibt es in jsdom nicht,
+                // daher optional aufrufen (und erst nach den Wachen oben, damit
+                // normales Tippen keinen Treffertest ausloest).
+                const chip = (e.target as HTMLElement).closest?.('[data-zahlungsziel-chip]')
+                    ?? document.elementFromPoint?.(e.clientX, e.clientY)?.closest('[data-zahlungsziel-chip]');
+                if (!chip) return;
+                // Ohne das holt sich der Editor beim Loslassen den Fokus und das
+                // frisch geoeffnete Eingabefeld im Popover verliert ihn sofort wieder.
+                e.preventDefault();
+                onZahlungszielChipClick(chip.getBoundingClientRect());
             }}
+            onClick={() => onFocus(block.id)}
         >
             <div className="p-4">
                 {/* Header */}
@@ -79,10 +96,10 @@ export function TextBlock({
                 </div>
 
                 {/* Editor */}
-                <div className="ml-0.5 doc-pdf-metrics doc-pdf-metrics--voll">
+                <div className="ml-0.5 doc-pdf-metrics doc-pdf-metrics--voll" data-verlauf-feld="content">
                     <TiptapEditor
                         value={prepareContent(block.content || '')}
-                        onChange={(val) => onUpdate(block.id, { content: serializeContent(val) })}
+                        onChange={(val, art) => onUpdate(block.id, { content: serializeContent(val) }, art)}
                         readOnly={isLocked}
                         hideToolbar={true}
                         compactMode={true}
@@ -91,6 +108,7 @@ export function TextBlock({
                             onEditorFocus(editorRefs.current[block.id]);
                         }}
                         onEditorReady={(editor) => onEditorReady(block.id, editor)}
+                        verlaufsModus={verlaufsModus}
                     />
                 </div>
             </div>

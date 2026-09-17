@@ -2,6 +2,7 @@ import { X, Save, Upload, Download, FileText, Wrench, Clock, Package, Printer, M
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import type { AusgangsGeschaeftsDokument } from './types';
+import { VerlaufKnoepfe, type VerlaufKnoepfeProps } from './VerlaufKnoepfe';
 
 interface DocumentEditorHeaderProps {
     dokumentNummer: string;
@@ -36,6 +37,12 @@ interface DocumentEditorHeaderProps {
     onGaebImport: () => void;
     fileInputRef: React.RefObject<HTMLInputElement | null>;
     onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    /**
+     * Optional -- ohne diese Prop rendert der Header exakt wie bisher (kein
+     * Rueckgaengig/Wiederholen). Gesetzt wird sie erst von der Integration im
+     * Dokumenteditor selbst.
+     */
+    verlauf?: VerlaufKnoepfeProps;
 }
 
 export function DocumentEditorHeader({
@@ -64,6 +71,7 @@ export function DocumentEditorHeader({
     onGaebImport,
     fileInputRef,
     onFileChange,
+    verlauf,
 }: DocumentEditorHeaderProps) {
     return (
         <div className="bg-white border-b border-slate-200 px-3 h-11 flex items-center justify-between gap-2 flex-shrink-0">
@@ -78,7 +86,7 @@ export function DocumentEditorHeader({
                 </button>
                 <div className="h-4 w-px bg-slate-200 flex-shrink-0" />
                 <h1
-                    className="text-sm font-bold text-slate-800 truncate"
+                    className="text-sm font-bold text-slate-800 truncate flex-shrink-0"
                     title={dokumentNummer || 'Neues Dokument'}
                     data-kuerzung-erlaubt="true"
                 >
@@ -114,6 +122,10 @@ export function DocumentEditorHeader({
             {/* Center: action buttons */}
             {!isLocked && (
                 <div className="flex items-center gap-0.5 flex-shrink-0">
+                    {verlauf && (<>
+                        <VerlaufKnoepfe {...verlauf} />
+                        <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                    </>)}
                     <Button
                         variant="ghost"
                         size="sm"

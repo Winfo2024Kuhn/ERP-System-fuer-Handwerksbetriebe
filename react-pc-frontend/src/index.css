@@ -172,6 +172,19 @@ body {
   max-width: calc(515pt + 24px);
 }
 
+/* Kurze Hervorhebung der Stelle, die ein Rückgängig/Wiederholen verändert hat.
+   Gleicher Rose-Ring wie die aktive Karte (ring-2 ring-rose-500/30). */
+.verlauf-hervorgehoben {
+  box-shadow: 0 0 0 2px rgb(244 63 94 / 0.3);
+  border-radius: 0.75rem;
+  transition: box-shadow 200ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .verlauf-hervorgehoben {
+    transition: none;
+  }
+}
+
 /* ========================================
    Zahlungsziel-Chip (geschützter Platzhalter im Textbaustein)
    Styling bewusst per Attribut-Selektor statt class im HTML,

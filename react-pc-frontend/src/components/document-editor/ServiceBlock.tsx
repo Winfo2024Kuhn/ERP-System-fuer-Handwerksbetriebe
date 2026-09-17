@@ -4,6 +4,7 @@ import { TiptapEditor } from '../TiptapEditor';
 import { hatKundentext } from '../artikel/kundentext';
 import { cn } from '../../lib/utils';
 import { formatCurrency, serviceLineTotal } from './helpers';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
 import type { DocBlock, EditorInstance } from './types';
 import type { ZeitprognoseDto } from '../../types';
 import { useState, useEffect, useRef } from 'react';
@@ -19,7 +20,7 @@ interface ServiceBlockProps {
     isActive: boolean;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
     onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
-    onUpdate: (id: string, updates: Partial<DocBlock>) => void;
+    onUpdate: (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => void;
     onRemove: (id: string) => void;
     /** Setzt die Leistung auf "fest beauftragt" oder "optional". */
     onModusWechsel: (id: string, modus: 'fest' | 'optional') => void;
@@ -35,6 +36,8 @@ interface ServiceBlockProps {
      * Ansichtssache — wird bewusst nicht persistiert.
      */
     defaultCollapsed?: boolean;
+    /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
+    verlaufsModus?: boolean;
 }
 
 export function ServiceBlock({
@@ -52,6 +55,7 @@ export function ServiceBlock({
     onEditorFocus,
     onAddBelow,
     defaultCollapsed = true,
+    verlaufsModus,
 }: ServiceBlockProps) {
     const total = serviceLineTotal(block);
     const hasDiscount = (block.discount ?? 0) > 0;
@@ -156,6 +160,7 @@ export function ServiceBlock({
                         value={block.title || ''}
                         onChange={(e) => onUpdate(block.id, { title: e.target.value })}
                         disabled={isLocked}
+                        data-verlauf-feld="title"
                         className={cn(
                             "w-full font-semibold text-slate-900 bg-transparent border-none p-0 text-sm focus:ring-0 focus:outline-none placeholder:text-slate-300 disabled:text-slate-400",
                             block.optional && "italic text-slate-500"
@@ -205,10 +210,10 @@ export function ServiceBlock({
             {/* Description - nur aufgeklappt */}
             {!collapsed && (
             <div className="px-4 pt-2 pb-3">
-                <div className="pl-[52px] doc-pdf-metrics doc-pdf-metrics--spalte">
+                <div className="pl-[52px] doc-pdf-metrics doc-pdf-metrics--spalte" data-verlauf-feld="description">
                     <TiptapEditor
                         value={block.description || ''}
-                        onChange={(val) => onUpdate(block.id, { description: val })}
+                        onChange={(val, art) => onUpdate(block.id, { description: val }, art)}
                         readOnly={isLocked}
                         hideToolbar={true}
                         compactMode={true}
@@ -217,6 +222,7 @@ export function ServiceBlock({
                             onEditorFocus(editorRefs.current[`${block.id}-desc`]);
                         }}
                         onEditorReady={(editor) => onEditorReady(`${block.id}-desc`, editor)}
+                        verlaufsModus={verlaufsModus}
                     />
                 </div>
             </div>
@@ -243,6 +249,7 @@ export function ServiceBlock({
                                     if (!isNaN(num) && num >= 0) onUpdate(block.id, { quantity: num });
                                 }}
                                 disabled={isLocked}
+                                data-verlauf-feld="quantity"
                                 className="w-16 text-center text-sm font-semibold bg-white border border-slate-200 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 disabled:text-slate-400 transition-all"
                             />
                         </div>
@@ -253,6 +260,7 @@ export function ServiceBlock({
                                 value={block.unit || 'Stk'}
                                 onChange={(e) => onUpdate(block.id, { unit: e.target.value })}
                                 disabled={isLocked}
+                                data-verlauf-feld="unit"
                                 className="w-14 text-center text-xs text-slate-600 bg-white border border-slate-200 rounded-md px-1.5 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 transition-all"
                             />
                         </div>
@@ -278,6 +286,7 @@ export function ServiceBlock({
                                     if (!isNaN(num) && num >= 0) onUpdate(block.id, { price: num });
                                 }}
                                 disabled={isLocked}
+                                data-verlauf-feld="price"
                                 className="w-24 text-right text-sm font-semibold bg-white border border-slate-200 rounded-md pl-2 pr-6 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 disabled:text-slate-400 transition-all"
                             />
                             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">€</span>

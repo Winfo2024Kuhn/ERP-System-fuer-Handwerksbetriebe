@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { formatCurrency, rabattBetrag as berechneRabattBetrag } from './helpers';
+import { ZahlungszielTageEingabe } from './ZahlungszielTageEingabe';
 import { Calendar, User, Hash, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -26,8 +27,11 @@ interface SummenFooterProps {
     zahlungsziel?: number;
     /** Errechnetes Fälligkeitsdatum als formatierter String (z.B. "25.06.2026"). */
     zahlungszielDatum?: string;
-    /** Callback wenn der Benutzer das Zahlungsziel ändert. Fehlt = read-only. */
-    onZahlungszielChange?: (tage: number) => void;
+    /**
+     * Wird aufgerufen, wenn der Benutzer die Zahlungsziel-Eingabe abschließt.
+     * Liefert zurück, ob der Wert übernommen wurde. Fehlt = read-only.
+     */
+    onZahlungszielChange?: (tage: number) => Promise<boolean>;
 }
 
 export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag, zahlungsziel, zahlungszielDatum, onZahlungszielChange }: SummenFooterProps) {
@@ -83,7 +87,7 @@ export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, 
     const canEditDatum = !isLocked && !!onDatumChange;
 
     return (
-        <div className="bg-white border-t border-slate-200 px-4 h-9 flex items-center justify-between text-[11px] flex-shrink-0">
+        <div data-testid="summenzeile" className="bg-white border-t border-slate-200 px-4 h-9 flex items-center justify-between text-[11px] flex-shrink-0">
             {/* Left: document info + Kopfdaten */}
             <div className="flex items-center gap-2.5 text-slate-400 min-w-0 overflow-visible">
                 <span className="font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded text-[10px] flex-shrink-0">
@@ -183,13 +187,10 @@ export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, 
                         <div className="flex items-center gap-1 flex-shrink-0">
                             <span className="text-slate-500">Zahlungsziel:</span>
                             {onZahlungszielChange ? (
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={zahlungsziel}
-                                    onChange={(e) => onZahlungszielChange(parseInt(e.target.value) || 8)}
+                                <ZahlungszielTageEingabe
+                                    tage={zahlungsziel}
+                                    onUebernehmen={onZahlungszielChange}
                                     className="w-10 rounded border border-slate-200 bg-white px-1 text-center text-[11px] text-slate-700 focus:border-rose-400 focus:outline-none"
-                                    title="Zahlungsziel in Tagen"
                                 />
                             ) : (
                                 <span className="text-slate-700">{zahlungsziel}</span>

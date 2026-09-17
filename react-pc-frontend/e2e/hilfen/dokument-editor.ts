@@ -72,6 +72,11 @@ export interface DokumentEditorMitschrift {
 export interface DokumentEditorStubOptionen {
     /** Antwort auf PUT /api/ausgangs-dokumente/{id}: 'ok' (Standard) oder 'fehler' (500). */
     speichern?: 'ok' | 'fehler';
+    /**
+     * Punktuelle Abweichungen vom Beispieldokument, z.B. eigene Bloecke fuer
+     * Specs, die einen Textbaustein brauchen (Zahlungsziel-Chip).
+     */
+    dokument?: Partial<AusgangsDokumentStand>;
 }
 
 export async function stubbeDokumentEditorApi(
@@ -80,7 +85,7 @@ export async function stubbeDokumentEditorApi(
 ): Promise<DokumentEditorMitschrift> {
     const start = Date.now();
     const mitschrift: DokumentEditorMitschrift = { heartbeatAufrufe: [], speicherAufrufe: [] };
-    let dokument: AusgangsDokumentStand = { ...BEISPIEL_DOKUMENT };
+    let dokument: AusgangsDokumentStand = { ...BEISPIEL_DOKUMENT, ...optionen.dokument };
 
     // Generischer Fallback ZUERST registrieren -- Playwright prueft spaeter
     // registrierte Routen zuerst, dieser hier greift nur, wenn nichts
