@@ -671,7 +671,7 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
     const MAG_RADIUS = MAG_SIZE / 2;
 
     return (
-        <div style={mobileOverlayStyle} className="fixed inset-0 bg-black z-50 flex flex-col safe-area-top safe-area-bottom select-none touch-none">
+        <div style={mobileOverlayStyle} className="fixed inset-0 bg-black z-50 flex flex-col safe-area-top select-none touch-none">
             {/* Header */}
             <div className="flex justify-between items-center p-4 bg-black/80 text-white z-10">
                 <button onClick={onClose}><X /></button>

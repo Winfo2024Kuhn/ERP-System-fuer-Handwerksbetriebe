@@ -404,7 +404,7 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                     onClick={() => setShowPhoneModal(false)}
                 >
                     <div
-                        className="bg-white rounded-t-2xl w-full max-w-lg p-6 safe-area-bottom animate-slide-up"
+                        className="bg-white rounded-t-2xl w-full max-w-lg p-6 animate-slide-up"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-6">

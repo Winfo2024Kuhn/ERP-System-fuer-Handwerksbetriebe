@@ -9,7 +9,7 @@ export default function SyncFooter({ syncStatus, onSync }: SyncFooterProps) {
     if (!onSync) return null;
 
     return (
-        <footer className="bg-white border-t border-slate-200 px-4 py-3 safe-area-bottom [--sa-base-bottom:0.75rem] mt-auto">
+        <footer className="bg-white border-t border-slate-200 px-4 py-3 mt-auto">
             <div className="flex items-center justify-center">
                 {syncStatus === 'syncing' ? (
                     <div className="flex items-center gap-2 text-slate-500">

@@ -572,11 +572,6 @@ body {
   animation: tabBounce 0.3s ease-out;
 }
 
-/* Safe Area Padding for iOS */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
 /* Mobile Glassmorphism Nav */
 .mobile-glass-nav {
   background: rgba(255, 255, 255, 0.85);

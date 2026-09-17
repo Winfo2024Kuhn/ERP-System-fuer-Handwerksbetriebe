@@ -997,7 +997,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             </header>
 
             {/* Main Content */}
-            <main className="flex-1 p-4 space-y-4 overflow-y-auto safe-area-bottom [--sa-base-bottom:4rem]">
+            <main className="flex-1 p-4 space-y-4 overflow-y-auto pb-16">
 
                 {/* Reparatur-Banner: zeigt Buchungen, die der Server abgelehnt hat */}
                 {failedEntries.length > 0 && (
@@ -1347,7 +1347,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             {/* Arbeitsgang Switch Modal */}
             {showArbeitsgangSwitch && (
                 <div className="fixed inset-0 bg-black/50 flex items-end z-50">
-                    <div className="bg-white w-full rounded-t-3xl max-h-[85vh] flex flex-col safe-area-bottom">
+                    <div className="bg-white w-full rounded-t-3xl max-h-[85vh] flex flex-col">
                         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                             <h2 className="text-lg font-bold text-slate-900">
                                 {viewMode === 'projects' ? 'Projekt wählen' : 'Tätigkeit wählen'}
@@ -1426,7 +1426,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             {/* Kategorie Switch Modal */}
             {showKategorieSwitch && (
                 <div className="fixed inset-0 bg-black/50 flex items-end z-50">
-                    <div className="bg-white w-full rounded-t-3xl max-h-[85vh] flex flex-col safe-area-bottom">
+                    <div className="bg-white w-full rounded-t-3xl max-h-[85vh] flex flex-col">
                         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                             <h2 className="text-lg font-bold text-slate-900">
                                 Kategorie wählen

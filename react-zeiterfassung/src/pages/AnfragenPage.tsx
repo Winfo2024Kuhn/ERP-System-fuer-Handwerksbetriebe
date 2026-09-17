@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, FileText, MapPin, User, Loader2, Image, ChevronRight, Navigation, Phone, X, Camera, FolderOpen, Plus, Smartphone, RefreshCw, MessageCircle } from 'lucide-react'
 import { ImageViewer } from '../components/ui/image-viewer'
+import { useToast } from '../components/ui/toast'
 
 interface Anfrage {
     id: number
     bauvorhaben: string
+    betrag?: number
     kundenName: string
     kundenOrt?: string
     kundenStrasse?: string
@@ -43,8 +45,48 @@ interface AnfragenPageProps {
     onSync?: () => void
 }
 
+/** Rohform einer Anfrage, wie sie /api/anfragen (Liste und Einzelabruf) liefert. */
+interface AnfrageApiDto {
+    id: number
+    bauvorhaben: string
+    betrag?: number
+    kundenName?: string
+    kundenOrt?: string
+    kundenStrasse?: string
+    kundenPlz?: string
+    kundenTelefon?: string
+    kundenMobiltelefon?: string
+    projektStrasse?: string
+    projektPlz?: string
+    projektOrt?: string
+    bildUrl?: string
+    anlegedatum?: string
+    abgeschlossen?: boolean
+}
+
+function mapAnfrage(a: AnfrageApiDto): Anfrage {
+    return {
+        id: a.id,
+        bauvorhaben: a.bauvorhaben,
+        betrag: a.betrag,
+        kundenName: a.kundenName || 'Kein Kunde',
+        kundenOrt: a.kundenOrt,
+        kundenStrasse: a.kundenStrasse,
+        kundenPlz: a.kundenPlz,
+        kundenTelefon: a.kundenTelefon,
+        kundenMobil: a.kundenMobiltelefon,
+        projektStrasse: a.projektStrasse,
+        projektPlz: a.projektPlz,
+        projektOrt: a.projektOrt,
+        bildUrl: a.bildUrl,
+        anlegedatum: a.anlegedatum,
+        abgeschlossen: a.abgeschlossen,
+    }
+}
+
 export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: AnfragenPageProps) {
     const navigate = useNavigate()
+    const toast = useToast()
     const [searchParams, setSearchParams] = useSearchParams()
     const cameraInputRef = useRef<HTMLInputElement>(null)
     const galleryInputRef = useRef<HTMLInputElement>(null)
@@ -75,48 +117,31 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             if (res.ok) {
                 const data = await res.json()
                 // API returns direct array or paged content
-                const list = Array.isArray(data) ? data : (data.content || data.anfragen || [])
+                const list: AnfrageApiDto[] = Array.isArray(data) ? data : (data.content || data.anfragen || [])
                 const mapped = list
-                    .filter((a: { abgeschlossen?: boolean }) => !a.abgeschlossen) // Nur nicht-beendete Anfragen
-                    .map((a: {
-                        id: number;
-                        bauvorhaben: string;
-                        betrag?: number;
-                        kundenName?: string;
-                        kundenOrt?: string;
-                        kundenStrasse?: string;
-                        kundenPlz?: string;
-                        kundenTelefon?: string;
-                        kundenMobiltelefon?: string;
-                        projektStrasse?: string;
-                        projektPlz?: string;
-                        projektOrt?: string;
-                        bildUrl?: string;
-                        anlegedatum?: string;
-                        abgeschlossen?: boolean;
-                    }) => ({
-                        id: a.id,
-                        bauvorhaben: a.bauvorhaben,
-                        betrag: a.betrag,
-                        kundenName: a.kundenName || 'Kein Kunde',
-                        kundenOrt: a.kundenOrt,
-                        kundenStrasse: a.kundenStrasse,
-                        kundenPlz: a.kundenPlz,
-                        kundenTelefon: a.kundenTelefon,
-                        kundenMobil: a.kundenMobiltelefon,
-                        projektStrasse: a.projektStrasse,
-                        projektPlz: a.projektPlz,
-                        projektOrt: a.projektOrt,
-                        bildUrl: a.bildUrl,
-                        anlegedatum: a.anlegedatum,
-                        abgeschlossen: a.abgeschlossen,
-                    }))
+                    .filter(a => !a.abgeschlossen) // Nur nicht-beendete Anfragen
+                    .map(mapAnfrage)
                 setAnfragen(mapped)
             }
         } catch (err) {
             console.error('Fehler beim Laden:', err)
         }
         setLoading(false)
+    }
+
+    /**
+     * Lädt eine einzelne Anfrage direkt per ID – für Deep-Links (z.B. verknüpfte
+     * Anfrage im Kalender), wenn sie nicht in der Liste der offenen Anfragen steht.
+     */
+    async function loadAnfrageById(anfrageId: number): Promise<Anfrage | null> {
+        try {
+            const res = await fetch(`/api/anfragen/${anfrageId}`)
+            if (!res.ok) return null
+            return mapAnfrage(await res.json() as AnfrageApiDto)
+        } catch (err) {
+            console.error('Fehler beim Laden:', err)
+            return null
+        }
     }
 
     useEffect(() => {
@@ -164,20 +189,37 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
         })
     }, [selectedAnfrage?.id])
 
-    // URL-based Selection Sync
+    // URL-based Selection Sync (Deep-Link z.B. aus dem Kalender: /anfragen?id=123)
     useEffect(() => {
         const idParam = searchParams.get('id')
-        if (idParam && anfragen.length > 0) {
+        if (idParam) {
+            if (loading) return
             const anfrageId = parseInt(idParam, 10)
-            const found = anfragen.find(a => a.id === anfrageId)
-            if (found && found.id !== selectedAnfrage?.id) {
-                const timeoutId = window.setTimeout(() => {
-                    void loadAnfrageDetail(found)
-                }, 0)
+            if (Number.isNaN(anfrageId) || anfrageId === selectedAnfrage?.id) return
 
-                return () => window.clearTimeout(timeoutId)
+            const found = anfragen.find(a => a.id === anfrageId)
+            let cancelled = false
+            const timeoutId = window.setTimeout(async () => {
+                if (found) {
+                    void loadAnfrageDetail(found)
+                    return
+                }
+                // Nicht in der Liste (z.B. abgeschlossen) -> direkt laden
+                const direkt = await loadAnfrageById(anfrageId)
+                if (cancelled) return
+                if (direkt) {
+                    void loadAnfrageDetail(direkt)
+                } else {
+                    toast.error('Anfrage konnte nicht geladen werden.')
+                    setSearchParams({}, { replace: true })
+                }
+            }, 0)
+
+            return () => {
+                cancelled = true
+                window.clearTimeout(timeoutId)
             }
-        } else if (!idParam && selectedAnfrage) {
+        } else if (selectedAnfrage) {
             const timeoutId = window.setTimeout(() => {
                 setSelectedAnfrage(null)
                 setBilder([])
@@ -186,7 +228,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             return () => window.clearTimeout(timeoutId)
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams, anfragen])
+    }, [searchParams, anfragen, loading])
 
     // Server-side search logic
     useEffect(() => {
@@ -640,7 +682,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             {
                 showUploadModal && (
                     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-                        <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 safe-area-bottom animate-slide-up">
+                        <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 animate-slide-up">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-bold text-slate-900">
                                     {pendingPhotos.length > 0
@@ -738,7 +780,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             {
                 showPhoneModal && selectedAnfrage && (
                     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-                        <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 safe-area-bottom animate-slide-up">
+                        <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 animate-slide-up">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-bold text-slate-900">Nummer wählen</h3>
                                 <button

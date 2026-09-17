@@ -46,7 +46,7 @@ export function TagesSheet({ datum, termine, heute, onSchliessen, onTermin }: Ta
                                 <X aria-hidden="true" className="h-5 w-5" />
                             </DrawerClose>
                         </div>
-                        <div className="safe-area-bottom [--sa-base-bottom:1.5rem] overflow-y-auto px-5">
+                        <div className="pb-6 overflow-y-auto px-5">
                             {termine ? <TagesListe termine={termine} onTermin={onTermin} /> : <TagesListeSkeleton />}
                         </div>
                     </>

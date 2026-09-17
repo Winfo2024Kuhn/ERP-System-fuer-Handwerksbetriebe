@@ -524,7 +524,7 @@ export default function BelegScannerPage() {
 
             {/* Liste: erst lokale in-flight/fehlerhafte Items, danach die
                 persistierte Server-Liste der zuletzt hochgeladenen Belege. */}
-            <div className="flex-1 overflow-auto p-4 space-y-2 safe-area-bottom">
+            <div className="flex-1 overflow-auto p-4 space-y-2">
                 {queue.length === 0 && serverBelege.length === 0 ? (
                     <div className="text-center text-slate-400 py-12">
                         <Receipt className="w-12 h-12 mx-auto mb-2 opacity-40" />
@@ -596,7 +596,7 @@ export default function BelegScannerPage() {
 
 function DirektUploadOverlay({ dateiname }: { dateiname: string }) {
     return (
-        <div className="fixed inset-0 z-[70] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 safe-area-top safe-area-bottom">
+        <div className="fixed inset-0 z-[70] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 safe-area-top">
             <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center gap-4 text-center">
                 <Loader2 className="w-12 h-12 text-rose-600 animate-spin" />
                 <div>
@@ -704,7 +704,7 @@ function SheetShell({ title, subtitle, onCancel, onBack, children }: {
 }) {
     return (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/50">
-            <div className="w-full sm:max-w-md bg-slate-50 rounded-t-3xl sm:rounded-3xl shadow-2xl safe-area-bottom">
+            <div className="w-full sm:max-w-md bg-slate-50 rounded-t-3xl sm:rounded-3xl shadow-2xl">
                 <div className="px-5 pt-5 pb-3 flex items-start gap-3">
                     {onBack && (
                         <button

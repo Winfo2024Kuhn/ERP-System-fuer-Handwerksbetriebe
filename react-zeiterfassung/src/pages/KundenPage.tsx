@@ -379,7 +379,7 @@ export default function KundenPage({ syncStatus, onSync }: KundenPageProps) {
                     onClick={() => setShowPhoneModal(false)}
                 >
                     <div
-                        className="bg-white rounded-t-2xl w-full max-w-lg p-6 safe-area-bottom"
+                        className="bg-white rounded-t-2xl w-full max-w-lg p-6"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <h3 className="text-lg font-bold text-slate-900 mb-4 text-center">Nummer wählen</h3>

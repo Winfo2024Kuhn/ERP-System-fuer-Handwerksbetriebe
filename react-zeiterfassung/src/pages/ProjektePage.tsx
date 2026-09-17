@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Briefcase, MapPin, User, Loader2, Image, ChevronRight, Navigation, Phone, X, Camera, Plus, Smartphone, FolderOpen, RefreshCw, MessageCircle } from 'lucide-react'
 import { OfflineService } from '../services/OfflineService'
 import { ImageViewer } from '../components/ui/image-viewer'
+import { useToast } from '../components/ui/toast'
 
 interface Projekt {
     id: number
@@ -51,6 +52,7 @@ interface ProjektePageProps {
 
 export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: ProjektePageProps) {
     const navigate = useNavigate()
+    const toast = useToast()
     const [searchParams, setSearchParams] = useSearchParams()
     const cameraInputRef = useRef<HTMLInputElement>(null)
     const galleryInputRef = useRef<HTMLInputElement>(null)
@@ -105,6 +107,22 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
         return () => clearTimeout(delayDebounceFn);
     }, [searchTerm]);
 
+    /**
+     * Lädt ein einzelnes Projekt direkt per ID – für Deep-Links (z.B. verknüpfter
+     * Auftrag im Kalender), wenn das Projekt nicht in der begrenzten Liste der
+     * offenen Projekte enthalten ist (abgeschlossen oder außerhalb des Limits).
+     */
+    const loadProjektById = async (projektId: number): Promise<Projekt | null> => {
+        try {
+            const res = await fetch(`/api/zeiterfassung/projekte/${projektId}`)
+            if (!res.ok) return null
+            return await res.json() as Projekt
+        } catch (err) {
+            console.error('Fehler beim Laden:', err)
+            return null
+        }
+    }
+
     const loadProjektDetail = async (projekt: Projekt) => {
         setSelectedProjekt(projekt)
         setDetailLoading(true)
@@ -144,20 +162,37 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
         })
     }, [selectedProjekt?.id])
 
-    // URL-based Selection Sync
+    // URL-based Selection Sync (Deep-Link z.B. aus dem Kalender: /projekte?id=123)
     useEffect(() => {
         const idParam = searchParams.get('id')
-        if (idParam && projekte.length > 0) {
+        if (idParam) {
+            if (loading) return
             const projektId = parseInt(idParam, 10)
-            const found = projekte.find(p => p.id === projektId)
-            if (found && found.id !== selectedProjekt?.id) {
-                const timeoutId = window.setTimeout(() => {
-                    void loadProjektDetail(found)
-                }, 0)
+            if (Number.isNaN(projektId) || projektId === selectedProjekt?.id) return
 
-                return () => window.clearTimeout(timeoutId)
+            const found = projekte.find(p => p.id === projektId)
+            let cancelled = false
+            const timeoutId = window.setTimeout(async () => {
+                if (found) {
+                    void loadProjektDetail(found)
+                    return
+                }
+                // Nicht in der Liste (abgeschlossen oder außerhalb des Limits) -> direkt laden
+                const direkt = await loadProjektById(projektId)
+                if (cancelled) return
+                if (direkt) {
+                    void loadProjektDetail(direkt)
+                } else {
+                    toast.error('Auftrag konnte nicht geladen werden.')
+                    setSearchParams({}, { replace: true })
+                }
+            }, 0)
+
+            return () => {
+                cancelled = true
+                window.clearTimeout(timeoutId)
             }
-        } else if (!idParam && selectedProjekt) {
+        } else if (selectedProjekt) {
             const timeoutId = window.setTimeout(() => {
                 setSelectedProjekt(null)
                 setBilder([])
@@ -166,7 +201,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
             return () => window.clearTimeout(timeoutId)
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams, projekte])
+    }, [searchParams, projekte, loading])
 
     // Hilfsfunktion: Projektadresse (Bauvorhaben) bevorzugen, Fallback auf Kundenadresse
     const getAddress = () => {
@@ -619,7 +654,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
             {/* Modals */}
             {showUploadModal && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-                    <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 safe-area-bottom animate-slide-up">
+                    <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 animate-slide-up">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold text-slate-900">
                                 {pendingPhotos.length > 0
@@ -713,7 +748,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
 
             {showPhoneModal && selectedProjekt && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-                    <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 safe-area-bottom animate-slide-up">
+                    <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 animate-slide-up">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold text-slate-900">Nummer wählen</h3>
                             <button
