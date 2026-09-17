@@ -56,19 +56,32 @@ body,
   flex-direction: column;
 }
 
-/* iOS PWA Standalone Mode - Safe Areas werden NICHT mehr als utility classes verwendet!
-   Stattdessen direkt auf den relevanten Elementen anwenden */
+/* ==================== iOS Safe Area ====================
 
-/* OLD: Diese Klassen NICHT MEHR VERWENDEN - sie verursachen doppeltes Padding */
-/* .safe-area-top und .safe-area-bottom wurden durch inline-styles ersetzt */
+   Die App laeuft als PWA mit "apple-mobile-web-app-status-bar-style:
+   black-translucent". Der Inhalt liegt dadurch UNTER der Statusleiste, und
+   iOS 26/27 legt am oberen Rand zusaetzlich einen Weichzeichner darueber
+   ("scroll edge effect"). Ohne Abstand nach oben sitzt die erste Textzeile
+   genau in diesem Band und wirkt unscharf.
 
-/* Safe area - deaktiviert, wird in der mobilen App nicht benötigt */
+   Diese Klassen haengen an rund 20 Stellen (Kopfleisten, Fusszeilen,
+   Bottom-Sheets). Sie ueberschreiben das padding der Tailwind-Klasse am
+   selben Element, weil ungelayerte Regeln in der Kaskade vor Tailwinds
+   Layer kommen. Der bisherige Sockel wird deshalb hier mitgegeben statt
+   verloren zu gehen:
+
+     --sa-base-top     Standard 1rem  (entspricht dem ueblichen py-4)
+     --sa-base-bottom  Standard 2rem  (entspricht dem ueblichen pb-8)
+
+   Weicht eine Stelle davon ab, setzt sie die Variable selbst, z. B.
+   class="[--sa-base-bottom:4rem]". */
+
 .safe-area-top {
-  padding-top: 0;
+  padding-top: calc(var(--sa-base-top, 1rem) + var(--sat));
 }
 
 .safe-area-bottom {
-  padding-bottom: 0;
+  padding-bottom: calc(var(--sa-base-bottom, 2rem) + var(--sab));
 }
 
 /* Scrollbar verstecken für mobile */
