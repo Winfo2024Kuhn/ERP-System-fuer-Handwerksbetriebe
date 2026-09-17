@@ -6,6 +6,7 @@ import { cn } from '../../lib/utils';
 import { ServiceBlock } from './ServiceBlock';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { calculateSectionSubtotal, formatCurrency, gruppiereFuerAnzeige } from './helpers';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
 import type { DocBlock, EditorInstance } from './types';
 
 interface SectionHeaderBlockProps {
@@ -14,8 +15,8 @@ interface SectionHeaderBlockProps {
     isActive: boolean;
     activeEditorId: string | null;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
-    onUpdate: (id: string, updates: Partial<DocBlock>) => void;
-    onUpdateChild: (sectionId: string, childId: string, updates: Partial<DocBlock>) => void;
+    onUpdate: (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => void;
+    onUpdateChild: (sectionId: string, childId: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => void;
     onRemove: (id: string) => void;
     onRemoveChild: (sectionId: string, childId: string) => void;
     onEjectChild: (sectionId: string, childId: string) => void;
@@ -35,6 +36,8 @@ interface SectionHeaderBlockProps {
     onGruppeUmbenennen?: (alt: string, neu: string) => void;
     /** Loest eine Entweder-Oder-Gruppe auf; die Varianten bleiben Optional-Positionen. */
     onGruppeAufloesen?: (name: string) => void;
+    /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
+    verlaufsModus?: boolean;
 }
 
 export function SectionHeaderBlock({
@@ -58,6 +61,7 @@ export function SectionHeaderBlock({
     onAddIntoSection,
     onGruppeUmbenennen,
     onGruppeAufloesen,
+    verlaufsModus,
 }: SectionHeaderBlockProps) {
     const [editing, setEditing] = useState(false);
     const [localLabel, setLocalLabel] = useState(block.sectionLabel || '');
@@ -91,7 +95,7 @@ export function SectionHeaderBlock({
      * innerhalb der AlternativGruppeBox.
      */
     const renderChild = (child: DocBlock) => (
-        <div key={child.id} className="relative group/child group/card">
+        <div key={child.id} className="relative group/child group/card" data-block-id={child.id}>
             {child.type === 'TEXT' ? (
                 /* Inline TEXT (Remark) block within section */
                 <>
@@ -127,13 +131,14 @@ export function SectionHeaderBlock({
                     isActive={activeEditorId === child.id}
                     editorRefs={editorRefs}
                     onEditorReady={(key, editor) => { editorRefs.current[key] = editor; }}
-                    onUpdate={(id, updates) => onUpdateChild(block.id, id, updates)}
+                    onUpdate={(id, updates, art) => onUpdateChild(block.id, id, updates, art)}
                     onRemove={(id) => onRemoveChild(block.id, id)}
                     onModusWechsel={(id, modus) => onChildModusWechsel(block.id, id, modus)}
                     onAlternativOeffnen={onAlternativOeffnen}
                     onFocus={onFocus}
                     onEditorFocus={onEditorFocus}
                     onAddBelow={onAddBelow}
+                    verlaufsModus={verlaufsModus}
                 />
             )}
             {/* Eject button */}
@@ -184,6 +189,8 @@ export function SectionHeaderBlock({
                                 onKeyDown={handleKeyDown}
                                 autoFocus
                                 placeholder="z.B. Rohbauarbeiten, Stahlkonstruktion..."
+                                data-verlauf-feld="sectionLabel"
+                                data-eigenes-rueckgaengig="true"
                                 className="w-full bg-transparent text-white text-sm font-bold border-b border-rose-400 focus:outline-none placeholder:text-slate-500"
                             />
                         ) : (

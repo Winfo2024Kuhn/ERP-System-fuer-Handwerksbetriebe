@@ -48,6 +48,7 @@ export function AlternativGruppeBox({
                             onChange={(e) => setLocalName(e.target.value)}
                             onBlur={uebernehmen}
                             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                            data-eigenes-rueckgaengig="true"
                             className="text-xs font-semibold text-amber-900 bg-white border border-amber-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
                         />
                     ) : (

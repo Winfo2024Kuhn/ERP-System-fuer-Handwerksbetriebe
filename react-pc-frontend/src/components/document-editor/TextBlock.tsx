@@ -2,6 +2,7 @@ import { FileText, Trash2, Plus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
 import { cn } from '../../lib/utils';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
 import type { DocBlock, EditorInstance } from './types';
 
 interface TextBlockProps {
@@ -10,7 +11,7 @@ interface TextBlockProps {
     isActive: boolean;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
     onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
-    onUpdate: (id: string, updates: Partial<DocBlock>) => void;
+    onUpdate: (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => void;
     onRemove: (id: string) => void;
     onFocus: (blockId: string) => void;
     onEditorFocus: (editor: EditorInstance | null) => void;
@@ -22,6 +23,8 @@ interface TextBlockProps {
     onZahlungszielChipClick?: (anchor: DOMRect) => void;
     /** Optional: oeffnet den AddTypeDialog mit dieser Karte als Anker (Insert direkt darunter). */
     onAddBelow?: (anchorId: string) => void;
+    /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
+    verlaufsModus?: boolean;
 }
 
 export function TextBlock({
@@ -38,6 +41,7 @@ export function TextBlock({
     serializeContent,
     onZahlungszielChipClick,
     onAddBelow,
+    verlaufsModus,
 }: TextBlockProps) {
     return (
         <div className="group/card">
@@ -79,10 +83,10 @@ export function TextBlock({
                 </div>
 
                 {/* Editor */}
-                <div className="ml-0.5 doc-pdf-metrics doc-pdf-metrics--voll">
+                <div className="ml-0.5 doc-pdf-metrics doc-pdf-metrics--voll" data-verlauf-feld="content">
                     <TiptapEditor
                         value={prepareContent(block.content || '')}
-                        onChange={(val) => onUpdate(block.id, { content: serializeContent(val) })}
+                        onChange={(val, art) => onUpdate(block.id, { content: serializeContent(val) }, art)}
                         readOnly={isLocked}
                         hideToolbar={true}
                         compactMode={true}
@@ -91,6 +95,7 @@ export function TextBlock({
                             onEditorFocus(editorRefs.current[block.id]);
                         }}
                         onEditorReady={(editor) => onEditorReady(block.id, editor)}
+                        verlaufsModus={verlaufsModus}
                     />
                 </div>
             </div>
