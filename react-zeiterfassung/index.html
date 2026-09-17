@@ -11,6 +11,11 @@
   <!-- PWA Meta Tags -->
   <meta name="theme-color" content="#dc2626" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <!-- Hinweis iOS 26: Unabhaengig vom Statusleisten-Stil liegt der Inhalt unter der
+       Statusleiste, und iOS legt dort einen Weichzeichner ("scroll edge effect") ueber die
+       obersten ~25pt unterhalb der Leiste. Duenner, kleiner Text in diesem Band wirkt
+       unscharf. Kopfzeilen setzen deshalb die fette Ueberschrift nach oben und kleinen
+       Text (Datum, Untertitel) darunter - siehe DashboardPage/KalenderPage. -->
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Zeiterfassung" />
   <meta name="mobile-web-app-capable" content="yes" />

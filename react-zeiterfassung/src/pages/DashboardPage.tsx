@@ -982,13 +982,16 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     }
 
     return (
-        <div className="h-full bg-slate-50 flex flex-col overflow-hidden">
+        <div className="h-full bg-slate-50 flex flex-col">
             {/* Header */}
             <header className="bg-white border-b border-slate-200 px-4 py-4 safe-area-top">
                 <div className="flex items-center justify-between">
+                    {/* Fette Begrüßung zuerst, Datum darunter: iOS 26 legt unter der Statusleiste
+                        einen Weichzeichner über die obersten Zeilen – kleiner grauer Text wirkt dort
+                        unscharf, die fette Überschrift nicht. */}
                     <div>
-                        <p className="text-sm text-slate-500">{formatDate(new Date())}</p>
                         <h1 className="text-xl font-bold text-slate-900">{getDailyGreeting()}, {displayName}!</h1>
+                        <p className="text-sm text-slate-500">{formatDate(new Date())}</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <NetworkStatusBadge syncStatus={syncStatus} onSync={onSync} />
