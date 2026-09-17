@@ -13,6 +13,7 @@ import Kundeneditor from './pages/Kundeneditor';
 import LieferantenEditor from './pages/LieferantenEditor';
 import ArtikelEditor from './pages/ArtikelEditor';
 import ArtikelDetail from './pages/ArtikelDetail';
+import VorkalkulationDummy from './pages/VorkalkulationDummy';
 import ArbeitsgangEditor from './pages/ArbeitsgangEditor';
 import ProduktkategorieEditor from './pages/ProduktkategorieEditor';
 import ProjektEditor from './pages/ProjektEditor';
@@ -77,6 +78,8 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/artikel" element={<ErrorBoundary><ArtikelEditor /></ErrorBoundary>} />
                 <Route path="/artikel/:id" element={<ErrorBoundary><ArtikelDetail /></ErrorBoundary>} />
                 <Route path="/arbeitsgaenge" element={<ErrorBoundary><ArbeitsgangEditor /></ErrorBoundary>} />
+                {/* Entwurf zum Durchklicken — noch nicht in der Navigation verlinkt. */}
+                <Route path="/vorkalkulation-dummy" element={<ErrorBoundary><VorkalkulationDummy /></ErrorBoundary>} />
                 <Route path="/produktkategorien" element={<ErrorBoundary><ProduktkategorieEditor /></ErrorBoundary>} />
                 <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
                 <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
