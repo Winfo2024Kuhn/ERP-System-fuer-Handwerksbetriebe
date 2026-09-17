@@ -12,7 +12,10 @@ import { ServiceBlock } from './ServiceBlock';
 import type { DocBlock } from './types';
 
 vi.mock('../TiptapEditor', () => ({
-    TiptapEditor: () => <div data-testid="tiptap" />,
+    TiptapEditor: ({ onChange, verlaufsModus }: { onChange: (v: string, a: string) => void; verlaufsModus?: boolean }) => (
+        <button data-testid="tiptap" data-verlaufsmodus={String(!!verlaufsModus)}
+                onClick={() => onChange('<p>neu</p>', 'sonstiges')} />
+    ),
 }));
 
 const block: DocBlock = {
@@ -151,5 +154,40 @@ describe('ServiceBlock Hinweis auf fehlenden Kundentext', () => {
         render(<ServiceBlock {...props} block={{ ...block, description: '' }} />);
 
         expect(screen.queryByText(/Kein Text für den Kunden/)).not.toBeInTheDocument();
+    });
+});
+
+describe('ServiceBlock Verlaufsmodus (DOM-Vertraege fuer "Stelle zeigen")', () => {
+    it('traegt data-verlauf-feld="title" am Titelfeld (auch zugeklappt sichtbar)', () => {
+        render(<ServiceBlock {...props} />);
+
+        expect(screen.getByDisplayValue('Geländer Edelstahl')).toHaveAttribute('data-verlauf-feld', 'title');
+    });
+
+    it('traegt data-verlauf-feld an Mengen-, Einheit- und EP-Eingabe sowie am Beschreibungs-Wrapper', () => {
+        const { container } = render(<ServiceBlock {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
+
+        expect(screen.getByLabelText('Menge')).toHaveAttribute('data-verlauf-feld', 'quantity');
+        expect(screen.getByLabelText('Einzelpreis')).toHaveAttribute('data-verlauf-feld', 'price');
+        expect(screen.getByDisplayValue('m')).toHaveAttribute('data-verlauf-feld', 'unit');
+        expect(container.querySelector('[data-verlauf-feld="description"]')).not.toBeNull();
+    });
+
+    it('reicht die von TiptapEditor gemeldete Aenderungsart an onUpdate durch', () => {
+        const onUpdate = vi.fn();
+        render(<ServiceBlock {...props} onUpdate={onUpdate} />);
+        fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
+
+        fireEvent.click(screen.getByTestId('tiptap'));
+
+        expect(onUpdate).toHaveBeenCalledWith('b1', { description: '<p>neu</p>' }, 'sonstiges');
+    });
+
+    it('reicht verlaufsModus an TiptapEditor durch', () => {
+        render(<ServiceBlock {...props} verlaufsModus />);
+        fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
+
+        expect(screen.getByTestId('tiptap')).toHaveAttribute('data-verlaufsmodus', 'true');
     });
 });
