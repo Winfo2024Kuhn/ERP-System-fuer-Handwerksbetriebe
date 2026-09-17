@@ -40,6 +40,7 @@ class ZeiterfassungFilterChainMatcherTest {
         assertThat(ohneLoginErreichbar("/api/abwesenheit/team")).isTrue();
         assertThat(ohneLoginErreichbar("/api/push/subscribe")).isTrue();
         assertThat(ohneLoginErreichbar("/api/buchhaltung/mobile/belege")).isTrue();
+        assertThat(ohneLoginErreichbar("/api/spracheingabe/transkribieren")).isTrue();
     }
 
     @Test
