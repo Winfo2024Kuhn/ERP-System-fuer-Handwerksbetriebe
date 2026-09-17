@@ -131,7 +131,9 @@ public class SecurityConfig {
             // Buchhaltungs-Belegerfassung: NUR der Mobile-Subpath ist Token-only.
             // PC-Endpoints wie /api/buchhaltung/belege bleiben in der apiFilterChain
             // (Session-Auth + CSRF). Auth-Pruefung im Controller via Mitarbeiter-Token.
-            "/api/buchhaltung/mobile/**"
+            "/api/buchhaltung/mobile/**",
+            // Diktat der mobilen Zeiterfassung. Auth im Controller ueber Mitarbeiter-Token.
+            "/api/spracheingabe/**"
     };
 
     /**
