@@ -47,9 +47,18 @@ const TEXTBAUSTEIN_MIT_CHIPS = JSON.stringify({
     globalRabatt: 0,
 });
 
+/**
+ * Fester "Heute"-Zeitpunkt fuer den Faelligkeits-Chip. Ohne ihn las die Seite ihr
+ * Datum beim Laden und der Test rechnete es spaeter erneut aus - laeuft der Test
+ * genau ueber Mitternacht, liegen beide Werte einen Tag auseinander und er wird
+ * grundlos rot (hier real passiert: erwartet 20.10., angezeigt 19.10.).
+ * Mittags gewaehlt, damit keine Zeitzonenverschiebung den Tag kippt.
+ */
+const HEUTE = new Date('2026-09-20T12:00:00');
+
 /** Das Faelligkeitsdatum, das der Chip nach der Umstellung auf 30 Tage zeigen muss. */
 function faelligkeitInDreissigTagen(): string {
-    const faellig = new Date();
+    const faellig = new Date(HEUTE);
     faellig.setDate(faellig.getDate() + 30);
     return faellig.toLocaleDateString('de-DE');
 }
@@ -136,6 +145,10 @@ test.describe('Dokument-Editor – Zahlungsziel', () => {
     test('Chip im Textbaustein: Popover fragt nach und ändert dieselbe Zahl', async ({ page }, testInfo) => {
         // Zweiter Einsatzort derselben Eingabe. Der Textbaustein bringt beide
         // Zahlungsziel-Platzhalter mit, aus denen der Editor Chips macht.
+        // Uhr vor dem Laden festnageln, damit der Faelligkeits-Chip und die
+        // Erwartung vom selben Tag ausgehen (siehe HEUTE oben). setFixedTime
+        // friert nur Date.now() ein - Timer wie der Auto-Save laufen weiter.
+        await page.clock.setFixedTime(HEUTE);
         const mitschrift = await stubbeDokumentEditorApi(page, { dokument: { positionenJson: TEXTBAUSTEIN_MIT_CHIPS } });
         await oeffneDokumentEditor(page);
 
@@ -171,7 +184,16 @@ test.describe('Dokument-Editor – Zahlungsziel', () => {
         await stubbeDokumentEditorApi(page, { dokument: { positionenJson: TEXTBAUSTEIN_MIT_CHIPS } });
         await oeffneDokumentEditor(page);
 
-        await page.getByText('Zahlbar innerhalb von').click();
+        // Bewusst auf den Zeilenanfang klicken statt in die Elementmitte:
+        // getByText trifft den ganzen Absatz ("Zahlbar innerhalb von [14] Tagen,
+        // also bis [Datum].") und Playwright zielt ohne position auf dessen Mitte -
+        // die liegt je nach Textbreite auf einem der beiden Chips. Lokal ging das
+        // gut, in der CI (andere Schriften, minimal breitere Zeile) traf der Klick
+        // den Chip, das Popover ging auf und der Test wurde rot, obwohl die
+        // Anwendung sich richtig verhielt. x=5/y=8 liegt sicher im Wort "Zahlbar"
+        // - auch wenn der Absatz im schmalsten Viewport umbricht, steht es am
+        // Anfang der ersten Zeile.
+        await page.getByText('Zahlbar innerhalb von').click({ position: { x: 5, y: 8 } });
 
         await expect(page.getByRole('dialog')).toHaveCount(0);
         await expect(page.locator('.ProseMirror')).toBeFocused();

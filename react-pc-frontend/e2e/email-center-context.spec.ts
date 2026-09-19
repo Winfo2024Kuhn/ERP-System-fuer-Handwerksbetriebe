@@ -92,7 +92,13 @@ for (const target of messages) {
         await prepare(page);
         await page.goto('/emails/starred/701');
         await expect(page.getByRole('heading', { name: 'Montage 1' })).toBeVisible();
-        await page.getByRole('button', { name: 'Newsletter', exact: true }).click();
+        const newsletterOrdner = page.getByRole('button', { name: 'Newsletter', exact: true });
+        await newsletterOrdner.click();
+        // Den Ordnerwechsel abwarten, bevor die Nachricht angeklickt wird: sonst
+        // trifft der Klick unter Last noch einen Listeneintrag des vorherigen
+        // Ordners, der beim Neuaufbau ersetzt wird - die Nachricht oeffnet dann
+        // nicht und die Ueberschrift bleibt aus (in der CI als flaky aufgefallen).
+        await expect(newsletterOrdner).toHaveAttribute('aria-current', 'page');
         await page.getByText(target.subject, { exact: true }).first().click();
         await expect(page.getByRole('heading', { name: target.subject })).toBeVisible();
         await page.goBack();
