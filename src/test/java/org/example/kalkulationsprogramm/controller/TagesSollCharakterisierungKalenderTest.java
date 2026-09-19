@@ -122,6 +122,22 @@ class TagesSollCharakterisierungKalenderTest {
                 .willAnswer(inv -> arbeitsSollJeTagFuer(inv.getArgument(1), inv.getArgument(2)));
         given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any()))
                 .willAnswer(inv -> feiertagsGutschriftJeTagFuer(inv.getArgument(1), inv.getArgument(2)));
+        // Die Monatssummen des Kalenders kommen seit dem Korrektur-Bugfix aus dem
+        // MonatsSaldo statt aus einer eigenen Summe ueber die Tageszeilen (der
+        // alte Weg liess Zeitkonto-Korrekturen aus). Dieser Test sichert
+        // ausschliesslich die Tageszeilen zu - der Stub verhindert nur die NPE
+        // und laesst alle Zusicherungen unten unveraendert.
+        org.example.kalkulationsprogramm.domain.MonatsSaldo dezember =
+                new org.example.kalkulationsprogramm.domain.MonatsSaldo();
+        dezember.setJahr(2026);
+        dezember.setMonat(12);
+        dezember.setIstStunden(BigDecimal.ZERO);
+        dezember.setSollStunden(new BigDecimal("168.00"));
+        dezember.setAbwesenheitsStunden(BigDecimal.ZERO);
+        dezember.setFeiertagsStunden(new BigDecimal("12.00"));
+        dezember.setKorrekturStunden(BigDecimal.ZERO);
+        dezember.setFestgeschrieben(false);
+        given(monatsSaldoService.berechneOhneSpeichern(1L, 2026, 12)).willReturn(dezember);
 
         // 1.12.2026 ist ein Dienstag -> tage[0].
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
