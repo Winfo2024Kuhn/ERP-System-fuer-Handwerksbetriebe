@@ -268,7 +268,7 @@ export default function LieferantLieferscheinePage() {
                     <div className="w-10"></div>
                 </div>
 
-                <div className="min-h-0 overflow-auto p-4 space-y-4 flex-1">
+                <div className="min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 flex-1">
                     {previewUrl && (previewIsPdf || previewIsImage) && (
                         <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-200 shadow-sm">
                             {previewIsPdf ? (
@@ -416,7 +416,7 @@ export default function LieferantLieferscheinePage() {
             </div>
 
             {/* List */}
-            <div className="flex-1 overflow-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
                 {loading && lieferscheine.length === 0 ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="w-8 h-8 animate-spin text-rose-600" />

@@ -11,12 +11,27 @@
   <!-- PWA Meta Tags -->
   <meta name="theme-color" content="#dc2626" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <!-- Hinweis iOS 26: Unabhaengig vom Statusleisten-Stil liegt der Inhalt unter der
-       Statusleiste, und iOS legt dort einen Weichzeichner ("scroll edge effect") ueber die
-       obersten ~25pt unterhalb der Leiste. Duenner, kleiner Text in diesem Band wirkt
-       unscharf. Kopfzeilen setzen deshalb die fette Ueberschrift nach oben und kleinen
-       Text (Datum, Untertitel) darunter - siehe DashboardPage/KalenderPage. -->
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- "default" statt "black-translucent" (iOS 26/27, "Liquid Glass"):
+       black-translucent legt den Inhalt UNTER die Statusleiste und erzeugt oben einen
+       Safe-Area-Inset. Genau diesen Inset fuellt iOS seit 26 mit dem Liquid-Glass-
+       Material und legt einen Weichzeichner ("scroll edge effect") ueber die obersten
+       ~35pt - oberhalb der WebView, also mit CSS nicht abschaltbar. iOS 27 hat den
+       Effekt deutlich verstaerkt; die Kopfzeile ("Hi, Max!") wirkte dadurch dauerhaft
+       unscharf. Nur im installierten Standalone-Modus und nur im Hochformat.
+       Mit "default" bleibt die Statusleiste opak und die WebView sitzt darunter:
+       kein Inset -> nichts zu fuellen -> kein Weichzeichner.
+
+       Folgen: safe-area-inset-top ist im Standalone-Modus 0, die Klasse
+       .safe-area-top behaelt dadurch nur ihren eigenen Sockel (--sa-base-top) - in
+       Safari wirkt der Inset weiterhin. Die randlose Optik unter der Statusleiste
+       entfaellt, was bei unseren deckenden Kopfzeilen nicht auffaellt. Unten bleibt
+       alles unveraendert: viewport-fit=cover bleibt gesetzt, die App schliesst
+       weiterhin direkt mit der Geraetekante ab.
+
+       ACHTUNG: iOS liest diesen Wert nur BEIM INSTALLIEREN des Web-Clips. Die
+       Aenderung greift erst, nachdem die App vom Home-Bildschirm entfernt und neu
+       ueber "Zum Home-Bildschirm" abgelegt wurde. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Zeiterfassung" />
   <meta name="mobile-web-app-capable" content="yes" />
 

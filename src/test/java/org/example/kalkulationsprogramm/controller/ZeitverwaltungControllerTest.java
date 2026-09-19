@@ -74,6 +74,26 @@ class ZeitverwaltungControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.TagesSollService tagesSollService;
 
+    /**
+     * Baut den MonatsSaldo, den der Kalender seit dem Korrektur-Bugfix als einzige
+     * Quelle fuer die Monatssummen verwendet (vorher summierte der Controller die
+     * Tageszeilen selbst und liess dabei Zeitkonto-Korrekturen aus).
+     */
+    private static org.example.kalkulationsprogramm.domain.MonatsSaldo monatsSaldo(
+            int jahr, int monat, String ist, String soll, String abwesenheit, String feiertag, String korrektur) {
+        org.example.kalkulationsprogramm.domain.MonatsSaldo saldo =
+                new org.example.kalkulationsprogramm.domain.MonatsSaldo();
+        saldo.setJahr(jahr);
+        saldo.setMonat(monat);
+        saldo.setIstStunden(new BigDecimal(ist));
+        saldo.setSollStunden(new BigDecimal(soll));
+        saldo.setAbwesenheitsStunden(new BigDecimal(abwesenheit));
+        saldo.setFeiertagsStunden(new BigDecimal(feiertag));
+        saldo.setKorrekturStunden(new BigDecimal(korrektur));
+        saldo.setFestgeschrieben(false);
+        return saldo;
+    }
+
     /** Baut eine Je-Tag-Map mit einem konstanten Wert fuer jeden Tag im Zeitraum (inklusive). */
     private static Map<LocalDate, BigDecimal> konstanteJeTag(LocalDate von, LocalDate bis, BigDecimal wert) {
         Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
@@ -109,6 +129,8 @@ class ZeitverwaltungControllerTest {
                 konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), new BigDecimal("8.00")));
         given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any())).willReturn(
                 konstanteJeTag(LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 30), BigDecimal.ZERO));
+        given(monatsSaldoService.berechneOhneSpeichern(1L, 2025, 6))
+                .willReturn(monatsSaldo(2025, 6, "0.00", "160.00", "5.00", "0.00", "0.00"));
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -185,6 +207,8 @@ class ZeitverwaltungControllerTest {
                 new BigDecimal("8.00"));
         sollJeTag.put(LocalDate.of(2025, 6, 2), new BigDecimal("2.00"));
         given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(sollJeTag);
+        given(monatsSaldoService.berechneOhneSpeichern(1L, 2025, 6))
+                .willReturn(monatsSaldo(2025, 6, "0.00", "120.00", "0.00", "0.00", "0.00"));
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -232,6 +256,10 @@ class ZeitverwaltungControllerTest {
         feiertagsGutschriftJeTag.put(LocalDate.of(2026, 12, 24), new BigDecimal("4.00"));
         given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any()))
                 .willReturn(feiertagsGutschriftJeTag);
+        // Monatssummen kommen seit dem Korrektur-Bugfix aus dem MonatsSaldo: der
+        // halbe Feiertag steht dort als Gutschrift 4.00 gegen ein Soll von 4.00.
+        given(monatsSaldoService.berechneOhneSpeichern(1L, 2026, 12))
+                .willReturn(monatsSaldo(2026, 12, "0.00", "4.00", "0.00", "4.00", "0.00"));
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -246,6 +274,50 @@ class ZeitverwaltungControllerTest {
                 // Kalender und Monatsuebersicht widersprechen sich nicht mehr:
                 // Soll 4 / Ist 4 -> netto 0, keine Phantom-Ueberstunden mehr.
                 .andExpect(jsonPath("$.differenz").value(0.00));
+    }
+
+    @Test
+    void getKalender_ZaehltZeitkontoKorrekturenInDieMonatsdifferenz() throws Exception {
+        // Regression: Der Kalender summierte die Monatswerte selbst aus den Tageszeilen
+        // (Feiertagsgutschrift + Buchungen + Abwesenheiten) und liess dabei die
+        // Zeitkonto-Korrekturen aus, waehrend der Monatsabschluss ueber
+        // MonatsSaldo.getGesamtIst() sie mitzaehlt. Das Frontend waehlt je nach
+        // Abschlussstatus die eine oder die andere Quelle - derselbe Monat zeigte
+        // dadurch offen -7,69 h und festgeschrieben -29,79 h.
+        //
+        // Der Fall bildet einen realen Januar nach: 127,06 h gebucht, 19,25 h
+        // Abwesenheit, 15,40 h Feiertagsgutschrift, 169,40 h Soll und eine
+        // Korrektur ueber -22,10 h.
+        Mitarbeiter mitarbeiter = new Mitarbeiter();
+        mitarbeiter.setId(1L);
+        mitarbeiter.setVorname("Max");
+        mitarbeiter.setNachname("Mustermann");
+
+        given(feiertagService.getFeiertageZwischen(any(), any())).willReturn(List.of());
+        given(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitAfter(anyLong(), any()))
+                .willReturn(List.of());
+        given(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(anyLong(), any(), any()))
+                .willReturn(List.of());
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(
+                konstanteJeTag(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), BigDecimal.ZERO));
+        given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any())).willReturn(
+                konstanteJeTag(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), BigDecimal.ZERO));
+        given(monatsSaldoService.berechneOhneSpeichern(1L, 2026, 1))
+                .willReturn(monatsSaldo(2026, 1, "127.06", "169.40", "19.25", "15.40", "-22.10"));
+
+        mockMvc.perform(get("/api/zeitverwaltung/kalender")
+                        .param("mitarbeiterId", "1")
+                        .param("jahr", "2026")
+                        .param("monat", "1"))
+                .andExpect(status().isOk())
+                // Die Korrektur ist jetzt eigenstaendig ausgewiesen, damit die
+                // Monatssumme gegen die Tageszeilen erklaerbar bleibt.
+                .andExpect(jsonPath("$.korrekturStundenMonat").value(-22.10))
+                // 127,06 + 19,25 + 15,40 - 22,10 = 139,61 (vorher 161,71 ohne Korrektur)
+                .andExpect(jsonPath("$.istStundenMonat").value(139.61))
+                .andExpect(jsonPath("$.sollStundenMonat").value(169.40))
+                // 139,61 - 169,40 = -29,79 (vorher faelschlich -7,69)
+                .andExpect(jsonPath("$.differenz").value(-29.79));
     }
 
     @Test

@@ -397,7 +397,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 {/* Step 1: Project Selection */}
                 {step === 'projekt' && (
                     <div className="p-4 space-y-3">
@@ -520,7 +520,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                         </div>
 
                         {/* Scrollable activity list */}
-                        <div className="flex-1 overflow-auto p-4 pb-24">
+                        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 pb-24">
                             {loading ? (
                                 <div className="flex items-center justify-center py-12">
                                     <Loader2 className="w-6 h-6 animate-spin text-rose-600" />

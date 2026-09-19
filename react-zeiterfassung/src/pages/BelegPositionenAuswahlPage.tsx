@@ -245,7 +245,7 @@ export default function BelegPositionenAuswahlPage() {
                     </div>
 
                     {/* Positions-Liste */}
-                    <div className="flex-1 overflow-auto p-3 space-y-2 pb-44">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2 pb-44">
                         {beleg.positionen.map(p => {
                             const checked = selected.has(p.id)
                             return (

@@ -20,6 +20,7 @@ import org.example.kalkulationsprogramm.domain.BuchungsTyp;
 import org.example.kalkulationsprogramm.domain.ErfassungsQuelle;
 import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.domain.MonatsSaldo;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.dto.ZeitkontoStatusDto;
 import org.example.kalkulationsprogramm.dto.ZeitkontoWechselDto;
@@ -579,20 +580,27 @@ public class ZeitverwaltungController {
             tage.add(tagData);
         }
 
-        // Monatssummen
-        BigDecimal sollMonat = zeitkontoService.berechneSollstundenFuerMonat(mitarbeiterId, jahr, monat);
-        BigDecimal istMonat = tage.stream()
-                .map(t -> (BigDecimal) t.get("istStunden"))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Monatssummen: einzige Quelle ist der MonatsSaldo - derselbe Rechenweg,
+        // den auch der Monatsabschluss verwendet. Vorher summierte der Controller
+        // die Tageswerte selbst (Feiertagsgutschrift + Buchungen + Abwesenheiten)
+        // und liess dabei die Zeitkonto-Korrekturen aus, waehrend
+        // MonatsSaldo.getGesamtIst() sie mitzaehlt. Dadurch zeigte derselbe Monat
+        // offen eine andere Differenz als festgeschrieben (Beispiel: -7,69 statt
+        // -29,79 bei einer Korrektur ueber -22,10 h). berechneOhneSpeichern
+        // liefert bei festgeschriebenen Monaten den festgehaltenen Stand und
+        // rechnet sonst frisch - ohne Schreibzugriff aus einem GET heraus.
+        MonatsSaldo monatsSaldo = monatsSaldoService.berechneOhneSpeichern(mitarbeiterId, jahr, monat);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("jahr", jahr);
         result.put("monat", monat);
         result.put("mitarbeiterId", mitarbeiterId);
         result.put("tage", tage);
-        result.put("sollStundenMonat", sollMonat);
-        result.put("istStundenMonat", istMonat);
-        result.put("differenz", istMonat.subtract(sollMonat));
+        result.put("sollStundenMonat", monatsSaldo.getSollStunden());
+        result.put("istStundenMonat", monatsSaldo.getGesamtIst());
+        result.put("korrekturStundenMonat", monatsSaldo.getKorrekturStunden());
+        result.put("festgeschrieben", Boolean.TRUE.equals(monatsSaldo.getFestgeschrieben()));
+        result.put("differenz", monatsSaldo.getDifferenz());
         result.put("feiertage", feiertage.stream()
                 .map(f -> Map.of("datum", f.getDatum().toString(), "bezeichnung", f.getBezeichnung()))
                 .collect(Collectors.toList()));

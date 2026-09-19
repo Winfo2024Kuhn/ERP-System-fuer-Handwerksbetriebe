@@ -439,7 +439,9 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-auto">
+            {/* Siehe ProjektePage: overflow-auto gab beide Achsen frei und liess die
+                Seite seitlich wegschieben. */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="w-8 h-8 animate-spin text-rose-600" />

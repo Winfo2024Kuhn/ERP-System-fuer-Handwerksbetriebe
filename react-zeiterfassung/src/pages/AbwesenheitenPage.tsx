@@ -215,7 +215,7 @@ export default function AbwesenheitenPage({ mitarbeiter, syncStatus, onSync }: A
             </div>
 
             {/* List */}
-            <main className="flex-1 px-4 pb-4 overflow-auto">
+            <main className="flex-1 px-4 pb-4 overflow-y-auto overflow-x-hidden">
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
                         <div className="w-8 h-8 border-2 border-rose-200 border-t-rose-600 rounded-full animate-spin"></div>

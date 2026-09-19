@@ -1373,7 +1373,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-auto p-4 space-y-2">
+                        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2">
                             {switching ? (
                                 <div className="flex items-center justify-center py-8">
                                     <Loader2 className="w-6 h-6 animate-spin text-rose-600" />
@@ -1449,7 +1449,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-auto p-4 space-y-2">
+                        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2">
                             {switching ? (
                                 <div className="flex items-center justify-center py-8">
                                     <Loader2 className="w-6 h-6 animate-spin text-rose-600" />
