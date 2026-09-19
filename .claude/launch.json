@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "set -a; [ -f ./.env ] && . ./.env; set +a; exec ./mvnw spring-boot:run -Dspring-boot.run.arguments='--spring.jpa.hibernate.ddl-auto=update --spring.flyway.enabled=false --ai.rag.enabled=false --email.features.enabled=false'"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "zeiterfassung-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "react-zeiterfassung"],
+      "port": 5173
+    }
+  ]
+}
