@@ -407,7 +407,7 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
             </div>
 
             {/* Buchungen-Liste */}
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="w-8 h-8 animate-spin text-rose-600" />

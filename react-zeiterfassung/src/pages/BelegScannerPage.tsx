@@ -524,7 +524,7 @@ export default function BelegScannerPage() {
 
             {/* Liste: erst lokale in-flight/fehlerhafte Items, danach die
                 persistierte Server-Liste der zuletzt hochgeladenen Belege. */}
-            <div className="flex-1 overflow-auto p-4 space-y-2">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2">
                 {queue.length === 0 && serverBelege.length === 0 ? (
                     <div className="text-center text-slate-400 py-12">
                         <Receipt className="w-12 h-12 mx-auto mb-2 opacity-40" />

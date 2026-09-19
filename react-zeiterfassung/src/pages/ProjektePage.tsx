@@ -393,7 +393,11 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-auto">
+            {/* overflow-y-auto + overflow-x-hidden statt overflow-auto: letzteres gibt
+                BEIDE Achsen frei, wodurch sich die Seite seitlich wegschieben liess,
+                sobald ein Kind breiter als der Bildschirm war. In einer PWA fuehlt sich
+                das nach Webseite statt nach App an. */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="w-8 h-8 animate-spin text-rose-600" />

@@ -100,7 +100,7 @@ export default function EinstellungenPage() {
                 </div>
             </header>
 
-            <main className="flex-1 p-4 space-y-4 overflow-y-auto safe-area-bottom">
+            <main className="flex-1 p-4 space-y-4 overflow-y-auto overflow-x-hidden pb-6">
                 <p className="text-sm text-slate-600">
                     Hier siehst du, was die App auf diesem Gerät darf.
                 </p>

@@ -49,36 +49,53 @@ body,
 }
 
 #root {
+  /* Bewusst KEIN 100dvh: in der installierten iOS-PWA (standalone, viewport-fit=cover)
+     laesst dvh die Home-Indicator-Zone am unteren Rand aus. #root endete dadurch vor
+     der Geraetekante und der Seitenhintergrund schien darunter als grauer Balken
+     durch, der die letzte Karte anschnitt. html/body stehen auf 100% mit
+     -webkit-fill-available und reichen bis ganz unten - 100% erbt das korrekt.
+     Siehe [[mobile-pwa-native-feel-keine-bottom-safe-area]]: nach unten schliesst die
+     App direkt mit der Geraetekante ab. */
   height: 100%;
-  height: 100dvh; /* Dynamic viewport height - berücksichtigt iOS chrome */
   display: flex;
   flex-direction: column;
 }
 
 /* ==================== iOS Safe Area ====================
 
-   Die App laeuft als PWA mit "apple-mobile-web-app-status-bar-style:
-   black-translucent". Der Inhalt liegt dadurch UNTER der Statusleiste, und
-   iOS 26/27 legt am oberen Rand zusaetzlich einen Weichzeichner darueber
-   ("scroll edge effect"). Ohne Abstand nach oben sitzt die erste Textzeile
-   genau in diesem Band und wirkt unscharf.
+   Die App laeuft als PWA mit "apple-mobile-web-app-status-bar-style: default"
+   (siehe Begruendung in index.html). Die Statusleiste ist dadurch opak und die
+   WebView sitzt darunter - es gibt oben keinen Inset mehr, den iOS 26/27 mit
+   dem Liquid-Glass-Weichzeichner fuellen koennte. Im Standalone-Modus ist
+   --sat deshalb 0 und es bleibt nur der eigene Sockel; in Safari liefert der
+   Inset weiterhin einen echten Wert, den die Klasse korrekt aufaddiert.
 
    Die Klasse haengt an den Kopfleisten. Sie ueberschreibt das padding der
    Tailwind-Klasse am selben Element, weil ungelayerte Regeln in der Kaskade
    vor Tailwinds Layer kommen. Der bisherige Sockel wird deshalb hier
    mitgegeben statt verloren zu gehen:
 
-     --sa-base-top     Standard 1rem  (entspricht dem ueblichen py-4)
+     --sa-base-top     Standard 2.5rem
+
+   Der Sockel ist bewusst gross: iOS 26/27 legt im installierten Standalone-
+   Modus einen Weichzeichner ("scroll edge effect", Liquid Glass) ueber die
+   obersten rund 35pt der WebView. Dieses Material rendert OBERHALB der
+   WebView - es laesst sich weder per CSS noch per Meta-Tag abschalten, und
+   env(safe-area-inset-*) waechst nicht mit, um es abzudecken. Der einzige
+   wirksame Hebel ist, in diesem Band keinen Text zu zeigen. Mit den
+   vorherigen 1rem sass die Begruessung ("Hi, Max!") genau darin und wirkte
+   dauerhaft unscharf.
 
    Weicht eine Stelle davon ab, setzt sie die Variable selbst, z. B.
-   class="[--sa-base-top:1.5rem]".
+   class="[--sa-base-top:2.25rem]" - dabei 2rem nicht unterschreiten, sonst
+   rutscht die erste Textzeile wieder in den Weichzeichner.
 
    Nach unten gibt es bewusst KEINE Safe-Area (kein Sockel, kein Inset):
    Fusszeilen, Bottom-Sheets und feste Aktionsleisten schliessen direkt mit
    der Geraetekante ab und nutzen nur ihr eigenes Tailwind-Padding. */
 
 .safe-area-top {
-  padding-top: calc(var(--sa-base-top, 1rem) + var(--sat));
+  padding-top: calc(var(--sa-base-top, 2.5rem) + var(--sat));
 }
 
 /* Scrollbar verstecken für mobile */

@@ -93,7 +93,7 @@ export default function MwstRechnerPage() {
                 <Calculator className="w-6 h-6 text-rose-600" />
             </header>
 
-            <div className="flex-1 overflow-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
                 <p className="text-sm text-slate-600 bg-white p-3 rounded-xl border border-slate-200">
                     Trage <strong>zwei</strong> der drei Werte ein — den dritten rechne ich automatisch aus.
                 </p>
