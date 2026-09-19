@@ -1,26 +1,37 @@
 # =========================================================
-# Automatisches Datenbank-Backup Script
+# Automatisches Datenbank- und Uploads-Backup Script
 # Kalkulationsprogramm
 # =========================================================
-# Dieses Script erstellt automatische Backups der MariaDB/MySQL-Datenbank
-# auf der externen Festplatte E:\ und zusätzlich auf OneDrive
+# Sichert Datenbank + Uploads-Verzeichnis an DREI Orten:
+#   1. Lokal (immer verfuegbar, kritischstes Backup)
+#   2. Externe Festplatte E:\ (falls angeschlossen)
+#   3. OneDrive (Cloud-Sync)
+#
+# WICHTIG: Die externe Festplatte ist ABSICHTLICH kein hartes
+# Abbruchkriterium mehr. Frueher ist das komplette Backup
+# (inkl. OneDrive!) fehlgeschlagen, sobald E:\ nicht verfuegbar
+# war. Jetzt wird IMMER zuerst lokal gesichert; externe Platte
+# und OneDrive sind zusaetzliche, unabhaengige Kopien.
 # =========================================================
 
 param(
-    [string]$BackupDir = "E:\Kalkulationsprogramm\Backups",
+    [string]$LocalStagingDir = "C:\Kalkulationsprogramm\backups\db",
+    [string]$ExternalBackupDir = "E:\Kalkulationsprogramm\Backups",
     [string]$OneDriveBackupDir = "C:\Users\bausc\OneDrive\backup_handwerkerprogramm",
-    [string]$LogDir = "E:\Kalkulationsprogramm\Logs",
+    [string]$LogDir = "C:\Kalkulationsprogramm\logs\backups",
     [int]$RetentionDays = 30,
     [string]$UploadsDir = "C:\Kalkulationsprogramm\uploads"
 )
 
 # Konfiguration
-$DB_HOST = "192.168.x.x"
+# WICHTIG: Diese Platzhalter NIEMALS mit echten Zugangsdaten committen!
+# Auf dem Produktivserver wird diese Datei NACH dem Deployment lokal
+# (ausserhalb von Git) mit echten Werten befuellt - siehe DEPLOYMENT_README.md.
+$DB_HOST = "localhost"
 $DB_PORT = "3307"
 $DB_NAME = "kalkulationsprogramm_db"
 $DB_USER = "YOUR_DB_USERNAME"
 $DB_PASSWORD = "YOUR_DB_PASSWORD"
-$MYSQLDUMP_PATH = "C:\Program Files\MariaDB 11.4\bin\mariadb-dump.exe"
 
 # Alternative Pfade für Dump-Tools falls nicht gefunden
 $MYSQLDUMP_ALTERNATIVES = @(
@@ -28,9 +39,11 @@ $MYSQLDUMP_ALTERNATIVES = @(
     "C:\Program Files\MariaDB 11.3\bin\mariadb-dump.exe",
     "C:\Program Files\MariaDB 11.2\bin\mariadb-dump.exe",
     "C:\Program Files\MariaDB 10.11\bin\mariadb-dump.exe",
+    "C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqldump.exe",
     "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
     "C:\Program Files\MySQL\MySQL Server 8.3\bin\mysqldump.exe",
     "C:\Program Files\MySQL\MySQL Server 9.0\bin\mysqldump.exe",
+    "C:\Program Files (x86)\MySQL\MySQL Server 8.4\bin\mysqldump.exe",
     "C:\Program Files (x86)\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
     "mariadb-dump.exe", # Falls im PATH
     "mysqldump.exe"  # Falls im PATH
@@ -38,11 +51,11 @@ $MYSQLDUMP_ALTERNATIVES = @(
 
 # Zeitstempel für Backup-Datei
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$backupFileName = "kalkulationsprogramm_${timestamp}.sql"
-$backupFilePath = Join-Path $BackupDir $backupFileName
-$compressedBackupFilePath = "${backupFilePath}.gz"
+$backupFileName = "kalkulationsprogramm_db_${timestamp}.sql"
+$localBackupFilePath = Join-Path $LocalStagingDir $backupFileName
+$localCompressedFilePath = "${localBackupFilePath}.gz"
 $uploadsBackupFileName = "uploads_${timestamp}.zip"
-$uploadsBackupFilePath = Join-Path $BackupDir $uploadsBackupFileName
+$localUploadsBackupFilePath = Join-Path $LocalStagingDir $uploadsBackupFileName
 $logFileName = "backup_${timestamp}.log"
 $logFilePath = Join-Path $LogDir $logFileName
 
@@ -52,10 +65,10 @@ $logFilePath = Join-Path $LogDir $logFileName
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logMessage = "[$timestamp] [$Level] $Message"
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logMessage = "[$ts] [$Level] $Message"
     Write-Host $logMessage
-    
+
     if (Test-Path $LogDir) {
         Add-Content -Path $logFilePath -Value $logMessage
     }
@@ -79,7 +92,6 @@ function Ensure-Directory {
 function Find-MySQLDump {
     foreach ($path in $MYSQLDUMP_ALTERNATIVES) {
         if ($path -eq "mysqldump.exe" -or $path -eq "mariadb-dump.exe") {
-            # Prüfe ob Dump-Tool im PATH ist
             $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($path)
             $cmd = Get-Command $cmdName -ErrorAction SilentlyContinue
             if ($cmd) {
@@ -95,17 +107,16 @@ function Find-MySQLDump {
 
 function Test-ExternalDrive {
     param([string]$DriveLetter)
-    
+
     $drive = Get-PSDrive -Name $DriveLetter -ErrorAction SilentlyContinue
     if (-not $drive) {
-        Write-Log "Externe Festplatte ${DriveLetter}:\ ist nicht verfügbar!" "ERROR"
         return $false
     }
-    
+
     if ($drive.Free -lt 1GB) {
         Write-Log "WARNUNG: Weniger als 1GB freier Speicherplatz auf ${DriveLetter}:\" "WARN"
     }
-    
+
     return $true
 }
 
@@ -114,21 +125,20 @@ function Compress-File {
         [string]$SourceFile,
         [string]$DestinationFile
     )
-    
+
     try {
-        # Verwende .NET Compression
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        
+
         $sourceStream = [System.IO.File]::OpenRead($SourceFile)
         $destinationStream = [System.IO.File]::Create($DestinationFile)
         $gzipStream = New-Object System.IO.Compression.GZipStream($destinationStream, [System.IO.Compression.CompressionMode]::Compress)
-        
+
         $sourceStream.CopyTo($gzipStream)
-        
+
         $gzipStream.Close()
         $destinationStream.Close()
         $sourceStream.Close()
-        
+
         return $true
     }
     catch {
@@ -142,26 +152,24 @@ function Backup-UploadsDirectory {
         [string]$SourceDir,
         [string]$DestinationZip
     )
-    
+
     try {
         if (-not (Test-Path $SourceDir)) {
             Write-Log "WARNUNG: Uploads-Verzeichnis nicht gefunden: $SourceDir" "WARN"
             return $false
         }
-        
-        # Prüfe ob Verzeichnis leer ist
+
         $fileCount = (Get-ChildItem -Path $SourceDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count
         if ($fileCount -eq 0) {
             Write-Log "WARNUNG: Uploads-Verzeichnis ist leer" "WARN"
             return $false
         }
-        
+
         Write-Log "Sichere $fileCount Datei(en) aus uploads..."
-        
-        # Erstelle ZIP-Archive mit .NET Compression
+
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::CreateFromDirectory($SourceDir, $DestinationZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
-        
+
         if (Test-Path $DestinationZip) {
             $zipSize = (Get-Item $DestinationZip).Length / 1MB
             Write-Log "Uploads-Backup erstellt: $([math]::Round($zipSize, 2)) MB"
@@ -178,38 +186,63 @@ function Backup-UploadsDirectory {
     }
 }
 
+function Copy-ToDestination {
+    param(
+        [string]$Label,
+        [string]$DestinationDir,
+        [string[]]$Files
+    )
+
+    if (-not (Ensure-Directory $DestinationDir)) {
+        Write-Log "$Label übersprungen: Zielverzeichnis nicht erreichbar" "WARN"
+        return $false
+    }
+
+    try {
+        foreach ($file in $Files) {
+            if (Test-Path $file) {
+                Copy-Item -Path $file -Destination $DestinationDir -Force
+                Write-Log "$Label`: $(Split-Path $file -Leaf) kopiert"
+            }
+        }
+        return $true
+    }
+    catch {
+        Write-Log "Fehler beim Kopieren nach $Label ($DestinationDir): $_" "ERROR"
+        return $false
+    }
+}
+
 function Remove-OldBackups {
     param(
         [string]$BackupDirectory,
         [int]$Days
     )
-    
+
+    if (-not (Test-Path $BackupDirectory)) {
+        return
+    }
+
     try {
         $cutoffDate = (Get-Date).AddDays(-$Days)
-        
-        # Lösche alte Datenbank-Backups
-        $oldDbBackups = Get-ChildItem -Path $BackupDirectory -Filter "kalkulationsprogramm_*.sql.gz" | 
+
+        $oldDbBackups = Get-ChildItem -Path $BackupDirectory -Filter "kalkulationsprogramm_db_*.sql.gz" -ErrorAction SilentlyContinue |
                         Where-Object { $_.LastWriteTime -lt $cutoffDate }
-        
-        # Lösche alte Uploads-Backups
-        $oldUploadsBackups = Get-ChildItem -Path $BackupDirectory -Filter "uploads_*.zip" | 
+
+        $oldUploadsBackups = Get-ChildItem -Path $BackupDirectory -Filter "uploads_*.zip" -ErrorAction SilentlyContinue |
                              Where-Object { $_.LastWriteTime -lt $cutoffDate }
-        
-        $oldBackups = $oldDbBackups + $oldUploadsBackups
-        
+
+        $oldBackups = @($oldDbBackups) + @($oldUploadsBackups)
+
         if ($oldBackups.Count -gt 0) {
-            Write-Log "Lösche $($oldBackups.Count) alte Backup(s) älter als $Days Tage..."
+            Write-Log "Lösche $($oldBackups.Count) alte Backup(s) älter als $Days Tage in $BackupDirectory..."
             foreach ($backup in $oldBackups) {
                 Remove-Item $backup.FullName -Force
-                Write-Log "Gelöscht: $($backup.Name)"
             }
-        }
-        else {
-            Write-Log "Keine alten Backups zum Löschen gefunden."
         }
     }
     catch {
-        Write-Log "Fehler beim Löschen alter Backups: $_" "ERROR"
+        Write-Log "Fehler beim Löschen alter Backups in $BackupDirectory : $_" "WARN"
     }
 }
 
@@ -217,29 +250,19 @@ function Remove-OldBackups {
 # Hauptprogramm
 # =========================================================
 
-Write-Log "========================================" 
+Ensure-Directory $LogDir | Out-Null
+
+Write-Log "========================================"
 Write-Log "Backup-Prozess gestartet"
 Write-Log "========================================"
 
-# Schritt 1: Externe Festplatte prüfen
-Write-Log "Prüfe externe Festplatte E:\..."
-if (-not (Test-ExternalDrive "E")) {
-    Write-Log "Backup abgebrochen: Externe Festplatte nicht verfügbar!" "ERROR"
+# Schritt 1: Lokales Staging-Verzeichnis sicherstellen (kritisch - immer verfuegbar)
+if (-not (Ensure-Directory $LocalStagingDir)) {
+    Write-Log "Backup abgebrochen: Konnte lokales Backup-Verzeichnis nicht erstellen!" "ERROR"
     exit 1
 }
 
-# Schritt 2: Verzeichnisse erstellen
-Write-Log "Erstelle Verzeichnisse falls notwendig..."
-if (-not (Ensure-Directory $BackupDir)) {
-    Write-Log "Backup abgebrochen: Konnte Backup-Verzeichnis nicht erstellen!" "ERROR"
-    exit 1
-}
-
-if (-not (Ensure-Directory $LogDir)) {
-    Write-Log "WARNUNG: Konnte Log-Verzeichnis nicht erstellen!" "WARN"
-}
-
-# Schritt 3: Dump-Tool finden
+# Schritt 2: Dump-Tool finden
 Write-Log "Suche Dump-Tool (mariadb-dump/mysqldump)..."
 $MYSQLDUMP_PATH = Find-MySQLDump
 if (-not $MYSQLDUMP_PATH) {
@@ -249,12 +272,11 @@ if (-not $MYSQLDUMP_PATH) {
 }
 Write-Log "Dump-Tool gefunden: $MYSQLDUMP_PATH"
 
-# Schritt 4: Datenbank-Backup erstellen
+# Schritt 3: Datenbank-Backup lokal erstellen
 Write-Log "Erstelle Datenbank-Backup..."
-Write-Log "Ziel: $backupFilePath"
+Write-Log "Ziel: $localBackupFilePath"
 
 try {
-    # Dump-Befehl ausführen
     $arguments = @(
         "--host=$DB_HOST",
         "--port=$DB_PORT",
@@ -264,24 +286,23 @@ try {
         "--routines",
         "--triggers",
         "--events",
-        "--result-file=$backupFilePath",
+        "--result-file=$localBackupFilePath",
         $DB_NAME
     )
-    
+
     $process = Start-Process -FilePath $MYSQLDUMP_PATH -ArgumentList $arguments -NoNewWindow -Wait -PassThru
-    
+
     if ($process.ExitCode -ne 0) {
         Write-Log "Dump-Tool ist mit Fehlercode $($process.ExitCode) beendet!" "ERROR"
         exit 1
     }
-    
-    # Prüfe ob Backup-Datei erstellt wurde
-    if (-not (Test-Path $backupFilePath)) {
+
+    if (-not (Test-Path $localBackupFilePath)) {
         Write-Log "Backup-Datei wurde nicht erstellt!" "ERROR"
         exit 1
     }
-    
-    $backupSize = (Get-Item $backupFilePath).Length / 1MB
+
+    $backupSize = (Get-Item $localBackupFilePath).Length / 1MB
     Write-Log "Backup erstellt: $([math]::Round($backupSize, 2)) MB"
 }
 catch {
@@ -289,76 +310,65 @@ catch {
     exit 1
 }
 
-# Schritt 5: Backup komprimieren
+# Schritt 4: Backup komprimieren
 Write-Log "Komprimiere Backup..."
-if (Compress-File $backupFilePath $compressedBackupFilePath) {
-    $compressedSize = (Get-Item $compressedBackupFilePath).Length / 1MB
+if (Compress-File $localBackupFilePath $localCompressedFilePath) {
+    $compressedSize = (Get-Item $localCompressedFilePath).Length / 1MB
     Write-Log "Backup komprimiert: $([math]::Round($compressedSize, 2)) MB"
-    
-    # Lösche unkomprimierte Datei
-    Remove-Item $backupFilePath -Force
-    Write-Log "Unkomprimierte Datei entfernt"
+    Remove-Item $localBackupFilePath -Force
 }
 else {
     Write-Log "Komprimierung fehlgeschlagen, behalte unkomprimierte Datei" "WARN"
+    $localCompressedFilePath = $localBackupFilePath
 }
 
-# Schritt 6: Uploads-Verzeichnis sichern
+# Schritt 5: Uploads-Verzeichnis sichern (lokal)
 Write-Log "Sichere Uploads-Verzeichnis..."
 Write-Log "Quelle: $UploadsDir"
-Write-Log "Ziel: $uploadsBackupFilePath"
+$uploadsBackedUp = Backup-UploadsDirectory -SourceDir $UploadsDir -DestinationZip $localUploadsBackupFilePath
 
-$uploadsBackedUp = Backup-UploadsDirectory -SourceDir $UploadsDir -DestinationZip $uploadsBackupFilePath
+$filesToCopy = @($localCompressedFilePath)
+if ($uploadsBackedUp) {
+    $filesToCopy += $localUploadsBackupFilePath
+}
 
-# Schritt 7: Backup auf OneDrive kopieren
-$oneDriveCopySuccess = $false
-Write-Log "Kopiere Backups auf OneDrive: $OneDriveBackupDir"
-if (Ensure-Directory $OneDriveBackupDir) {
-    try {
-        # Datenbank-Backup kopieren
-        $dbSourceFile = if (Test-Path $compressedBackupFilePath) { $compressedBackupFilePath } else { $backupFilePath }
-        if (Test-Path $dbSourceFile) {
-            Copy-Item -Path $dbSourceFile -Destination $OneDriveBackupDir -Force
-            Write-Log "Datenbank-Backup auf OneDrive kopiert: $(Split-Path $dbSourceFile -Leaf)"
-        }
-
-        # Uploads-Backup kopieren
-        if ($uploadsBackedUp -and (Test-Path $uploadsBackupFilePath)) {
-            Copy-Item -Path $uploadsBackupFilePath -Destination $OneDriveBackupDir -Force
-            Write-Log "Uploads-Backup auf OneDrive kopiert: $(Split-Path $uploadsBackupFilePath -Leaf)"
-        }
-
-        $oneDriveCopySuccess = $true
-        Write-Log "OneDrive-Backup erfolgreich abgeschlossen."
+# Schritt 6: Auf externe Festplatte E:\ kopieren (best effort, KEIN Abbruch bei Fehlen)
+$externalSuccess = $false
+Write-Log "Prüfe externe Festplatte E:\..."
+if (Test-ExternalDrive "E") {
+    $externalSuccess = Copy-ToDestination -Label "Externe Festplatte" -DestinationDir $ExternalBackupDir -Files $filesToCopy
+    if ($externalSuccess) {
+        Remove-OldBackups -BackupDirectory $ExternalBackupDir -Days $RetentionDays
     }
-    catch {
-        Write-Log "Fehler beim Kopieren auf OneDrive: $_" "ERROR"
-    }
-
-    # Alte Backups auf OneDrive aufräumen
-    Remove-OldBackups -BackupDirectory $OneDriveBackupDir -Days $RetentionDays
 }
 else {
-    Write-Log "WARNUNG: OneDrive-Verzeichnis konnte nicht erstellt werden. Überspringe OneDrive-Backup." "WARN"
+    Write-Log "Externe Festplatte E:\ nicht angeschlossen - übersprungen (lokales Backup bleibt gültig)." "WARN"
 }
 
-# Schritt 8: Alte Backups löschen
-Write-Log "Prüfe alte Backups..."
-Remove-OldBackups -BackupDirectory $BackupDir -Days $RetentionDays
+# Schritt 7: Auf OneDrive kopieren (best effort)
+Write-Log "Kopiere Backups auf OneDrive: $OneDriveBackupDir"
+$oneDriveSuccess = Copy-ToDestination -Label "OneDrive" -DestinationDir $OneDriveBackupDir -Files $filesToCopy
+if ($oneDriveSuccess) {
+    Remove-OldBackups -BackupDirectory $OneDriveBackupDir -Days $RetentionDays
+}
+
+# Schritt 8: Alte lokale Backups löschen
+Write-Log "Prüfe alte lokale Backups..."
+Remove-OldBackups -BackupDirectory $LocalStagingDir -Days $RetentionDays
 
 # Schritt 9: Zusammenfassung
 Write-Log "========================================"
-Write-Log "Backup erfolgreich abgeschlossen!"
-Write-Log "Datenbank-Backup: $(Split-Path $compressedBackupFilePath -Leaf)"
+Write-Log "Backup abgeschlossen!"
+Write-Log "Datenbank-Backup: $(Split-Path $localCompressedFilePath -Leaf)"
 if ($uploadsBackedUp) {
-    Write-Log "Uploads-Backup: $(Split-Path $uploadsBackupFilePath -Leaf)"
+    Write-Log "Uploads-Backup: $(Split-Path $localUploadsBackupFilePath -Leaf)"
 }
-Write-Log "Speicherort 1 (Extern): $BackupDir"
-if ($oneDriveCopySuccess) {
-    Write-Log "Speicherort 2 (OneDrive): $OneDriveBackupDir"
-} else {
-    Write-Log "WARNUNG: OneDrive-Kopie fehlgeschlagen!" "WARN"
-}
+Write-Log "Speicherort 1 (Lokal):  $LocalStagingDir - OK"
+Write-Log "Speicherort 2 (Extern): $ExternalBackupDir - $(if ($externalSuccess) { 'OK' } else { 'ÜBERSPRUNGEN' })" $(if ($externalSuccess) { "INFO" } else { "WARN" })
+Write-Log "Speicherort 3 (OneDrive): $OneDriveBackupDir - $(if ($oneDriveSuccess) { 'OK' } else { 'FEHLGESCHLAGEN' })" $(if ($oneDriveSuccess) { "INFO" } else { "WARN" })
 Write-Log "========================================"
 
+# Exit-Code: Nur die eigentliche DB-Sicherung ist kritisch. Fehlende externe
+# Platte/OneDrive sind Warnungen, kein Fehlschlag des Gesamt-Backups, weil
+# das lokale (primaere) Backup in jedem Fall vorhanden ist.
 exit 0

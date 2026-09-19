@@ -1,0 +1,23 @@
+- generic [ref=e5]:
+  - heading "Zeiterfassung" [level=1] [ref=e13]
+  - paragraph [ref=e14]: Scanne deinen persönlichen QR-Code oder gib das Token manuell ein.
+  - button "Kamera öffnen & QR-Code scannen" [ref=e15]
+  - button "Token manuell eingeben" [ref=e19]
+  - generic [ref=e22]:
+    - paragraph [ref=e23]: "So funktioniert's:"
+    - generic [ref=e24]:
+      - generic [ref=e25]: "1"
+      - generic [ref=e26]:
+        - paragraph [ref=e27]: Öffne die Mitarbeiterverwaltung
+        - paragraph [ref=e28]: Gehe zu deinem Profil am PC
+    - generic [ref=e29]:
+      - generic [ref=e30]: "2"
+      - generic [ref=e31]:
+        - paragraph [ref=e32]: Klicke auf "QR-Code anzeigen"
+        - paragraph [ref=e33]: Der QR-Code wird am Bildschirm angezeigt
+    - generic [ref=e34]:
+      - generic [ref=e35]: "3"
+      - generic [ref=e36]:
+        - paragraph [ref=e37]: Tippe auf "Kamera öffnen"
+        - paragraph [ref=e38]: Halte dein Handy auf den QR-Code
+  - generic [ref=e39]: Danach bist du dauerhaft angemeldet
