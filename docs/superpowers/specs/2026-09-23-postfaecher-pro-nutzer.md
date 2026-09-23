@@ -1,5 +1,7 @@
 # Spec: E-Mail-Postfächer pro Nutzer
 
+Issue: #168
+
 Datum: 23.09.2026
 
 Status: Grundlage ist ein mit dem Nutzer abgeschlossenes Brainstorming.
