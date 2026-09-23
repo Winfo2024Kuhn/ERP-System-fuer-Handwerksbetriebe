@@ -3,28 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { BeitragRichtextEditor } from './BeitragRichtextEditor';
 
-// jsdom (aktuell v28) implementiert weder document.elementFromPoint noch
-// Range.getClientRects/getBoundingClientRect. ProseMirror braucht beides, um bei
-// Klick/Tastatureingabe die Cursor-Position im DOM zu berechnen - ohne die Stubs
-// wirft jede Interaktion mit dem Editor in Tests eine TypeError-Exception.
-// Lebt bewusst nur in dieser Testdatei statt in der geteilten src/setupTests.ts,
-// da diese Aufgabe ausschliesslich die beiden BeitragRichtextEditor-Dateien anfasst.
-if (!document.elementFromPoint) {
-    document.elementFromPoint = () => null;
-}
-if (!Range.prototype.getBoundingClientRect) {
-    Range.prototype.getBoundingClientRect = () => ({
-        bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0, x: 0, y: 0, toJSON: () => {},
-    });
-}
-if (!Range.prototype.getClientRects) {
-    Range.prototype.getClientRects = () => ({
-        length: 0,
-        item: () => null,
-        [Symbol.iterator]: function* () {},
-    }) as unknown as DOMRectList;
-}
-
 describe('BeitragRichtextEditor', () => {
     it('zeigt den uebergebenen Text an', () => {
         render(<BeitragRichtextEditor html="<p>Schiebetor gesetzt.</p>" onChange={() => {}} />);

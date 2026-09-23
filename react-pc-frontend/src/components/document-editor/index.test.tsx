@@ -22,6 +22,16 @@ const NEUE_ADRESSE = 'Max Mustermann\nNeue Gasse 7\n54321 Beispielstadt';
 // nichts damit zu tun.
 const HEUTE_ISO = new Date().toISOString().split('T')[0];
 
+describe('Tiptap-Testumgebung', () => {
+    it('stellt jsdom die fuer ProseMirror benoetigten Range-Geometrie-Methoden bereit', () => {
+        const range = document.createRange();
+
+        expect(typeof range.getClientRects).toBe('function');
+        expect(typeof range.getBoundingClientRect).toBe('function');
+        expect(typeof document.elementFromPoint).toBe('function');
+    });
+});
+
 const dokumentAntwort = {
     id: 1,
     typ: 'RECHNUNG',

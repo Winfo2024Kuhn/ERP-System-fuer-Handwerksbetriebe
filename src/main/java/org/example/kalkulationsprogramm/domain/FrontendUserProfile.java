@@ -9,6 +9,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung;
+
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -61,6 +63,13 @@ public class FrontendUserProfile {
     @Column(name = "role_name", nullable = false, length = 50)
     @Enumerated(EnumType.STRING)
     private Set<FrontendUserRole> roleSet = new LinkedHashSet<>();
+
+    @JsonIgnore
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "frontend_user_einkauf_recht", joinColumns = @JoinColumn(name = "profile_id"))
+    @Column(name = "recht", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Set<EinkaufBerechtigung> einkaufBerechtigungen = new LinkedHashSet<>();
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "default_signature_id")
@@ -154,6 +163,15 @@ public class FrontendUserProfile {
 
     public boolean hasRole(FrontendUserRole role) {
         return role != null && roleSet != null && roleSet.contains(role);
+    }
+
+    public Set<EinkaufBerechtigung> getEinkaufBerechtigungen() {
+        return einkaufBerechtigungen == null ? Set.of() : Set.copyOf(einkaufBerechtigungen);
+    }
+
+    public void setEinkaufBerechtigungen(Set<EinkaufBerechtigung> einkaufBerechtigungen) {
+        this.einkaufBerechtigungen = einkaufBerechtigungen == null
+                ? new LinkedHashSet<>() : new LinkedHashSet<>(einkaufBerechtigungen);
     }
 
     public EmailSignature getDefaultSignature() {
