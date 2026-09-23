@@ -34,6 +34,8 @@ public class ProjektResponseDto {
 
     private String bildUrl;
     private BigDecimal bruttoPreis;
+    private BigDecimal lagerentnahmenKosten;
+    private boolean lagerentnahmenBewertungOffen;
     private List<MaterialkostenResponseDto> materialkosten;
     private List<ArtikelInProjektResponseDto> artikel;
     private List<MaterialKilogrammDto> kilogrammProMaterial;

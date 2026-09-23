@@ -46,7 +46,10 @@ public class EmailThreadBackfillRunner {
         }
         try {
             log.info("[EmailThreadBackfill] Starte Subject-basierten Backfill für Thread-Erkennung...");
-            int verknuepft = emailImportService.backfillParentEmails();
+            int verknuepft = 0;
+            for (String kontoId : new String[] { "HAUPT", "DOKUMENTE", "EINKAUF" }) {
+                verknuepft += emailImportService.backfillParentEmails(kontoId);
+            }
             if (verknuepft > 0) {
                 log.info("[EmailThreadBackfill] {} E-Mails nachträglich an Thread-Parent verknüpft.", verknuepft);
             } else {

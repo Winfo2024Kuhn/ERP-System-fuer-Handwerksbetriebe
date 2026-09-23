@@ -178,6 +178,12 @@ public class BounceErkennungService
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean verarbeiteRuecklaeufer(Message msg)
     {
+        return verarbeiteRuecklaeufer(msg, "HAUPT");
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean verarbeiteRuecklaeufer(Message msg, String kontoId)
+    {
         if (msg == null) return false;
         try
         {
@@ -196,7 +202,7 @@ public class BounceErkennungService
                 return false;
             }
 
-            return markiereBetroffeneAusgangsmail(text);
+            return markiereBetroffeneAusgangsmail(text, kontoId);
         }
         catch (Exception e)
         {
@@ -210,12 +216,12 @@ public class BounceErkennungService
      * die erste gefundene. Mehrere Kandidaten sind normal — der Bounce zitiert
      * ausser der Original-Message-ID oft noch eigene IDs des Mailservers.
      */
-    private boolean markiereBetroffeneAusgangsmail(String text)
+    private boolean markiereBetroffeneAusgangsmail(String text, String kontoId)
     {
         String grund = extrahiereGrund(text);
         for (String messageId : extrahiereMessageIds(text))
         {
-            Optional<Email> treffer = emailRepository.findByMessageId(messageId);
+            Optional<Email> treffer = emailRepository.findByKontoIdAndMessageId(kontoId, messageId);
             if (treffer.isEmpty()) continue;
 
             Email original = treffer.get();

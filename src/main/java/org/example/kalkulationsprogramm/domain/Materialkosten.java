@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import org.example.kalkulationsprogramm.domain.einkauf.Einheit;
 
 @Getter
 @Setter
@@ -36,4 +37,29 @@ public class Materialkosten {
 
     @Column
     private String rechnungsnummer;
+
+    @Column(name = "artikel_id_snapshot")
+    private Long artikelIdSnapshot;
+
+    @Column(name = "lieferanten_artikel_preis_id")
+    private Long lieferantenArtikelPreisId;
+
+    @Column(name = "lieferantenname_snapshot", length = 255)
+    private String lieferantennameSnapshot;
+
+    @Column(name = "menge_snapshot", precision = 19, scale = 6)
+    private BigDecimal mengeSnapshot;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "einheit_snapshot")
+    private Einheit einheitSnapshot;
+
+    @Column(name = "preis_je_einheit_snapshot", precision = 19, scale = 6)
+    private BigDecimal preisJeEinheitSnapshot;
+
+    @Column(name = "preisquelle_snapshot", length = 255)
+    private String preisquelleSnapshot;
+
+    @Column(name = "preisnotiz_snapshot", length = 1000)
+    private String preisnotizSnapshot;
 }

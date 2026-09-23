@@ -581,3 +581,280 @@ Nächste Session: loese-problem ab Abschnitt4 (5 | 6→7 | 11), drei Luna-Pakete
 Lokaler Probebetrieb bleibt offen: erp-beschaffung-db enthält isolierten Restore (V367), 127.0.0.1:3309, Datenbank kalkulationsprogramm_db. Noch keine Appmigration/kein Serverstart. Niemals automatisierte Tests gegen diesen Clone; Dummy-DB/Testmail verwenden. Private Wiederaufnahmeunterlagen (Migrationen/Provenienz/Preflight/Credentials): /Users/marvinkuhn/Library/Application Support/Codex/erp-db-clone/2026-09-23-beschaffung/. migration-research.md vor Task39 lesen; keine blinde Flyway-Reparatur, keine Originalmigration ändern, keine Credentials ausgeben. Originaldump unter benachbartem 2026-09-09 bleibt unangetastet. DOCKER_HOST=unix:///Users/marvinkuhn/.docker/run/docker.sock; JDK23.0.2. Keine echten Lieferantenmails senden.
 
 Offene fachliche Gates: Task13 implementiert EinkaufAnfrageMengenProvider (aktuelle Anfragefassung einmal je Herkunft, keine Vervielfachung pro Lieferant), prüft vor Versand tatsächliche Projektbindung und Anlagenfreigabe. Reservierungsschlüssel BESTELLUNG:<persistierteBestellungId>, eigener UUID-Idempotenzschlüssel je Aktion. Gesamtziel samt UI, realen Dummy-E2Es und lokalem Backend/Frontend/DB-Start bleibt vollständig offen weiterzuführen; kein PR bisher. Auf Nutzerwunsch diese Session nach gesichertem Reviewstand beenden.
+
+
+## Abschnitt 4 — Wiederaufnahme und Paketstart
+
+Zeit: 2026-09-23T14:23:21.994944+00:00
+
+- Nutzer autorisiert Fortsetzung aller weiteren Abschnitte; Abschnitte 1–3 bleiben abgenommen. Basis a7b4636b89c3c444be72ee70d1a952259469b50a auf codex/beschaffung-konzept bestätigt. Nur die zwei bekannten erzeugten Graphdateien waren lokal geändert; bleiben uncommittet.
+- Drei parallele GPT-6-Luna-Pakete gestartet: 4a Task5, 4b Tasks6→7, 4c Task11. Aufträge /tmp/beschaffung-paket-4{a,b,c}-auftrag.md, Worktrees/Branches gemäß Plan.
+- Strikte Fertig-Barriere: erst alle Pakete fertig, dann Integration, dann gemeinsamer GPT-6-Sol-Code-/Abschnittsreview und bei Frontend zusätzlicher Sol-Designreview. Keine Wiederholung von Abschnitt3.
+- Unveränderte Testnachweise werden anhand Quell-/Abhängigkeitsstand wiederverwendet. Automatisierte Tests ausschließlich Dummy-DB/Testmail; isolierte Produktionskopie bleibt bis Task39 unangetastet.
+
+
+## Nutzerpräzisierung in Abschnitt 4 — Projekt-Editor
+
+Zeit: 2026-09-23T14:34:58.742432+00:00
+
+- Der bestehende Einstieg „Artikel aus Lager“ (Nutzer: „Artikelauslager“) und Dialogtexte „Bestellen“ / „Auslager hinzufügen“ sind missverständlich. Der Nutzer verlangt ausdrücklich: Dieser Einstieg dient ausschließlich der Erfassung von Materialkosten, nicht dem Auslösen von Bestellungen; fachlich entkoppeln.
+- An laufendes Luna-Paket4a/Task5 mit ProjektEditor-Ownership übergeben: verständlicher Einstieg „Materialkosten erfassen“, passende Aktionen und Regression ohne Bestellnebenwirkung. Tatsächliche bestätigte Lagerteilentnahmen behalten eigenen fachlichen Ablauf. Zusätzliche betroffene Backend-/Dialogdateien vor Änderung zur konfliktfreien Ownership-Erweiterung melden.
+- Diese direkte Nutzersteuerung präzisiert die bestehende freigegebene Spec; keine erneute Planung oder Freigabe erforderlich.
+
+
+## Nutzerhinweis — spätere Angebotskalkulation als Beschaffungsquelle
+
+Zeit: 2026-09-23T14:36:24.403205+00:00
+
+- Gewünschter späterer Ausbau: Nutzer bereitet Profile und weitere Materialien in einer Angebotskalkulation vor und übernimmt Positionen vollständig oder teilweise in eine Bestellung. Jetzt ausdrücklich im Hinterkopf behalten; kein Auftrag zur sofortigen vollständigen Kalkulationsoberfläche.
+- Architekturleitlinie für folgende Pakete: Kalkulationsmaterial, tatsächliche Projektmaterialkosten und verbindliche Beschaffung getrennt halten. Spätere bestätigte Übernahme nutzt das zentrale Bedarfs-/Herkunfts- und Teilmengenmodell; ursprüngliche Kalkulationsposition/-fassung sowie bereits übernommene Anteile müssen nachvollziehbar sein. Kalkulation allein reserviert/bestellt nichts; wiederholte Übernahme darf keine unbemerkten Doppelbestellungen erzeugen.
+- Bestehende Anfrage-/Direktbestellpfade werden dafür wiederverwendet. Keine isolierte zweite Bestelllogik und keine neue zwingende Kopplung an bereits vorhandenes Projekt. Konkreter Angebotskalkulationsumfang bleibt Folgeausbau; bestehende 39 Schritte laufen weiter.
+
+
+## Abschnitt 4 — Ownership-Erweiterung Paket4a
+
+Zeit: 2026-09-23T14:38:37.353377+00:00
+
+- Geprüfter bestehender Katalog-POST erzeugt bisher AIP mit ausLager/bestellt und publiziert den Bedarfssynchronisierungs-Event. Nutzer verlangt reine Kostenerfassung.
+- Vorhandene Materialkosten-Entity wird wiederverwendet; keine zusätzliche parallele Kosten-Entity. Katalog-POST hängt Materialkosten mit Artikel-/Mengen-/Einzelpreissnapshot an, ohne AIP/Bedarf/Bestellung/Reservierung. Manuelle PATCH-Liste bewahrt Snapshotdaten; historische AIP bleiben unverändert.
+- Root hat Luna-Paket4a die konfliktfreie zusätzliche Ownership aus Task5-Planpräzisierung erteilt, einschließlich V396__projekt_materialkosten_artikelsnapshot.sql. Niemand sonst im Abschnitt schreibt diese Dateien. Neue Persistenz-/UI-Regressionen verpflichtend; gemeinsamer Review erst nach allen fertigen Paketen.
+
+
+### Abschnitt4 — Ergänzter Integrationsvertrag / Ownership
+
+Zeit: 2026-09-23T14:45:03.980759+00:00
+
+- Task11 veröffentlicht `EmailImportService.EinkaufEmailImportiert(Long emailId)` erst nach erfolgreichem Commit einer neuen Einkaufsmail. Task16 konsumiert diesen Vertrag. Keine Benachrichtigung bei Rollback oder UID-Duplikat.
+- Paket4b erhält konfliktfrei `repository/ArtikelRepository.java` für parametrisierte exakte interne-Nummer-Suche. Bestandsdateireferenz, strikte Technikzuordnung und persistierte bestätigbare HiCAD-Bildanlagen müssen vor Fertigmeldung komplett sein. Erster grüner Volltest ohne diese Ergänzungen ersetzt nicht den finalen Paketnachweis.
+
+## Abschnitt 4 — Task 11 (Rolle: Coding-Agent; vorläufiger Paketstand)
+
+Zeit: 2026-09-23T14:53:12.424805+00:00
+Branch: codex/beschaffung-task-11
+Commit(s): a99c09174e438c9f3c9d5b97b1cd408192fb376d
+Status: Ergänzung vor Integration läuft
+
+- Kontobezogener IMAP-Import, UID-Identität und Message-ID-Deduplizierung; V384 mit HAUPT-Backfill und kontoabhängigen Constraints.
+- Ereignis `EmailImportService.EinkaufEmailImportiert(Long emailId)` nach Commit; kein Event für UID-Duplikat/Rollback. EINKAUF überspringt Legacy-Verkaufs-/Rechnungsverarbeitung.
+- Agentnachweis: gezielt 73 Tests grün, vollständiges Backend 3297 Tests / 0 Fehler / 17 bestehende Skips; unveränderte Frontendnachweise wiederverwendet, Graphify synchronisiert. Endgültige Logpfade folgen im Abschlussblock.
+- Noch vor Integration zu schließen: globaler Message-ID-Backfill in EmailThreadBackfillRunner. Root hat disjunkte Ownership für diesen Pfad und Regression erweitert; dies ist Paketvervollständigung, kein Abschnittsreview.
+- Technische Logkorrektur: Der ursprüngliche noch uncommittete Append führte durch unquotierte Backticks versehentlich Root-Maven/Graphify aus und bettete rund 2,9 MB Ausgabe ein. Ausschließlich dieser von unserem Coding-Agenten erzeugte fehlerhafte Block wurde kompakt ersetzt; Rohblock privat unter /tmp/beschaffung-task11-fehlerhafter-logappend.txt archiviert. Frühere Kontextlogeinträge unverändert. Dieser versehentliche Root-Testlauf ist kein integrierter Abschnitt4-Nachweis.
+
+
+## Abschnitt 4 — Task 11 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T14:57:05Z
+Branch: codex/beschaffung-task-11
+Commit(s): a99c09174e438c9f3c9d5b97b1cd408192fb376d, 3ac111d1f0cb1776ac10731c1fb273ebb71834aa
+Status: fertig
+
+Was gemacht wurde:
+- Kontobezogener IMAP-Import mit Konto-/Ordner-/UIDVALIDITY-/UID-Identität und konto-scoped Message-ID-Deduplizierung; Migration V384 ergänzt Constraints und Backfill bestehender E-Mails als HAUPT.
+- Einkaufsmails publizieren EmailImportService.EinkaufEmailImportiert(Long emailId) erst nach erfolgreichem Commit; UID-Duplikate und Rollbacks publizieren kein Event. EINKAUF überspringt Legacy-Verkaufs-/Lieferantenverarbeitung.
+- Startup-Thread-Backfill läuft jetzt getrennt für HAUPT, DOKUMENTE und EINKAUF; Subject-Matching und Legacy-Repository-Overloads sind auf ihr Konto begrenzt beziehungsweise auf HAUPT zurückgeführt.
+- Gezielte Verifikation des Backfill-Nachtrags: EmailImportServiceTest und MySQL-8-Testcontainers EmailKontoImportTest, 54 Tests grün. Vollständiges Backend nach letzter Änderung: 3298 Tests, 0 Fehler, 17 bestehende Skips, BUILD SUCCESS. Log: /tmp/beschaffung-task11-backfill-full-backend.log. Vorheriger Paketlauf: 3297 Tests grün, Log /tmp/beschaffung-task11-full-backend.log.
+- Graphify nach letzter Änderung aktualisiert; generierte Graphdateien nicht committet. Frontend unverändert; zuvor verifizierte Nachweise aus /tmp/beschaffung-frontend-testnachweise.json weiter gültig. Kein Dienst gestartet.
+
+Bedenken / Abweichungen vom Plan:
+- Keine offenen Paketabweichungen. Graphify meldete weiterhin die bereits bekannte Extraktionswarnung in react-pc-frontend/src/components/TiptapEditor.tsx.
+
+## Abschnitt 4 — Task 5 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T15:09:09Z
+Branch: codex/beschaffung-task-5
+Commit(s): ac050e4e50977956d301889e050d49f1f480a1af
+Status: fertig
+
+Was gemacht wurde:
+- Append-only, bewertbare Lagerteilentnahmen mit Herkunft, Mitarbeiter, Zeitpunkt, Idempotenz, Versions-/Verfügbarkeitsprüfung und späterer Bewertung umgesetzt; Projektmapper und Projektansicht addieren nur bewertete neue Entnahmen getrennt von historischen AIP-Kosten.
+- Katalogauswahl im Projekteditor in reine Materialkostenerfassung umgestellt. Sie schreibt in die bestehende Materialkosten-Entity samt Artikelsnapshot und löst keine AIP-, Bestellt-, AusLager-, Bestellungs-, Bedarf- oder Reservierungsnebenwirkung aus; PATCH erhält diese Snapshots.
+- Screenshots geprüft: Detail-/Teilentnahmedialog-/Katalogdialogzustände bei 1440×900, 1536×960 und 1920×1080. (1) Rose-Aktionen und Amber-Hinweis sind visuell klar unterscheidbar; (2) Rose/Slate, Lucide und bestehende Komponenten verwendet; (3) Abstände und Karten bleiben ruhig und ausgerichtet; (4) Preis ist optional erklärt, Bestellausschluss im Katalogdialog ausdrücklich benannt, Teilentnahme klar bestätigt; (5) Kosten- und Entnahmeaktionen sind im Materialreiter klar auffindbar und historische Lagerpositionen getrennt; (6) automatische Überlauf-/Überschneidungs-/Textchecks bestanden, auf allen drei Größen ohne Abschneiden. Mobile Frontendnachweise unverändert und gegen den Basistree wiederverwendet.
+- Neue/erweiterte Dateien:
+  - Frontend: , .
+  - Backend: , , , , , , , , .
+  - Geändert: , , , , , , , , sowie zugehörige Controller-/Mapper-/Service-Tests.
+- Prüfung: Backendvollsuite BUILD SUCCESS (3.294 bestanden, 17 bekannte Skips); PC Unit 142 Dateien/1.630 bestanden; PC E2E 675 bestanden; fokussierter E2E-Spec 6/6 über drei Größen; Lint und Build erfolgreich; Graphify synchronisiert.
+
+Bedenken / Abweichungen vom Plan:
+- Graphify meldete eine Syntaxwarnung in der unveränderten ; Graphify-Artefakte und -Symlink sind nicht Teil des Commits.
+
+### Task 5 — Nachtrag zur Dateiliste
+
+Zeit: 2026-09-23T15:09:39Z
+
+Die Dateiliste im vorigen Task-5-Block ist wegen einer Shell-Quoting-Panne leer geblieben. Hier die vollständige Liste, passend zu Commit ac050e4e50977956d301889e050d49f1f480a1af:
+- Neu Frontend: react-pc-frontend/src/pages/ProjektEditor.lagerkosten.test.tsx; react-pc-frontend/e2e/projekt-lagerentnahmen-kosten.spec.ts.
+- Neu Backend: src/main/java/org/example/kalkulationsprogramm/controller/EinkaufLagerentnahmeController.java; src/main/java/org/example/kalkulationsprogramm/domain/einkauf/EinkaufLagerentnahme.java; src/main/java/org/example/kalkulationsprogramm/dto/Einkauf/EinkaufLagerentnahmeDto.java; src/main/java/org/example/kalkulationsprogramm/repository/EinkaufLagerentnahmeRepository.java; src/main/java/org/example/kalkulationsprogramm/service/einkauf/EinkaufLagerentnahmeService.java; src/main/resources/db/migration/V379__einkauf_lagerentnahme.sql; src/main/resources/db/migration/V396__projekt_materialkosten_artikelsnapshot.sql; src/test/java/org/example/kalkulationsprogramm/service/EinkaufLagerentnahmeServiceTest.java; src/test/java/org/example/kalkulationsprogramm/service/ProjektArtikelMaterialkostenIntegrationTest.java.
+- Geändert: react-pc-frontend/src/pages/ProjektEditor.tsx; react-pc-frontend/src/types.ts; src/main/java/org/example/kalkulationsprogramm/controller/ProjektController.java; src/main/java/org/example/kalkulationsprogramm/domain/Materialkosten.java; src/main/java/org/example/kalkulationsprogramm/dto/Materialkosten/MaterialkostenResponseDto.java; src/main/java/org/example/kalkulationsprogramm/dto/Projekt/ProjektResponseDto.java; src/main/java/org/example/kalkulationsprogramm/mapper/ProjektMapper.java; src/main/java/org/example/kalkulationsprogramm/service/ProjektManagementService.java; Controller-, Mapper- und Service-Tests.
+- Beim unquotierten Append wurden Backtick-Dateipfadmarkierungen als Shell-Command-Substitution behandelt; dadurch blieben nur Dateipfade im vorigen Logblock leer. Die Datei ist append-only; dieser Nachtrag stellt die Informationen richtig. Es wurden dabei keine weiteren Projektdateien geändert.
+
+
+## Abschnitt 4 — Task 6/7 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T15:09:29Z
+Branch: codex/beschaffung-task-6
+Commit(s): 2d42ae113331bbdb5334a56e40ba29b7c587bb0d
+Status: fertig
+
+Was gemacht wurde:
+- Versionierte technische Anlagen mit Größen-/Formatprüfung, UUID-Speicherung, Hash-Deduplizierung, revisionsgebundenen Freigaben, sicherem Download und Versand-Gates ergänzt. Historische E-Mail- und Lieferantenanlagen werden nur als read-only Datei-Referenzen eingebunden; fehlende Dateien führen zu HTTP 409.
+- HiCAD-XLS/XLSX-Vorschau und idempotente Teilübernahme mit Tabellen-/ZIP-Grenzen, Formelsperre, deutschem Mengenformat, manuellem Spaltenmapping und Bestandsvorschlägen nur bei exakter interner Artikelnummer plus exaktem Werkstoff/Technikmatching umgesetzt. S235 und S355 werden nicht gleichgesetzt.
+- Eingebettete Bilder werden dedupliziert dauerhaft abgelegt, in der Vorschau referenziert und müssen bei der Übernahme explizit bestätigt werden. Nur bestätigte Bilder werden als technische Anlagen an den tatsächlichen Bedarf gebunden; Versand-Gate prüft Zuordnung, Freigabe und Dateiinhalt.
+- Regressionen für Traversal/Double-Extension, ZIP-Bombe, 10-MiB-Uploadgrenze, historische Ausfälle, gleiche Bytes, unveränderliche Revisionen, Fremdbedarf-Gate, Bildpersistenz, Formeln, deutsche Zahlen, Teilmenge, exaktes Werkstoffmatching und Idempotenz ergänzt.
+- Graphify aktualisiert. Frontend blieb unverändert; Treehashes stimmen mit den sieben verfügbaren Nachweisen in /tmp/beschaffung-frontend-testnachweise.json überein.
+- Validierung: gezielte vier Klassen 20 Tests grün; vollständiges Backend 3306 Tests, 0 Fehler/Fehlschläge, 17 bekannte Skips; BUILD SUCCESS. Keine eigenen Hintergrunddienste gestartet.
+
+Bedenken / Abweichungen vom Plan:
+- ArtikelRepository.java wurde nach konfliktfreier Ownership-Erweiterung durch Root um die parametrisierte exakte interne Nummernsuche ergänzt. Der Vorschlag liefert bei fehlendem exaktem technischen Treffer keine Fuzzy-Autoselektion.
+
+
+## Abschnitt4 — Integration und gemeinsame Abnahme gestartet
+
+Zeit: 2026-09-23T15:12:40.795400+00:00
+
+- Alle Pakete abgeschlossen: Task5 ac050e4e, Tasks6→7 2d42ae11, Task11 3ac111d1. Konfliktfreier gemeinsamer Merge --no-ff --no-commit in Root; Produktstand im Index, Basis a7b4636b bis erfolgreicher Abnahme.
+- GPT-6 Sol Code-/Abschnittsreview und Sol-Designreview auf identischem integrierten Quellstand gestartet, erstmals nach Fertig-Barriere. Code-Reviewer führt exklusiv Root-Backendvollsuite aus; Designreview nutzt isolierten Snapshotworktree und eigene E2E-Port5190.
+- Root-Produktionsbuild erfolgreich, Log /tmp/beschaffung-abschnitt4-root-build.log; erzeugte index.html/JS/CSS explizit staged. Git-Whitespacecheck des Quell-/Dokumentdiffs grün; Vite-Bundle enthält vorhandene Whitespace-Zeichen in Bibliotheks-/Template-Strings und wird nicht manuell verändert.
+
+
+## Nutzerkorrektur während Review4 — einfache Nachkalkulation
+
+Zeit: 2026-09-23T15:20:13.559563+00:00
+
+- Nutzer stellt klar: keine Lagerhaltungssoftware. Im Projekt einfach manuell Beschreibung/Kosten oder Artikel aus Stamm (z.B. Bohrer ungefähr8€) mit Menge/hinterlegtem anpassbarem Preis erfassen; Zweck ist Nachkalkulation verwendeter Produkte und Kosten.
+- Root erkennt unnötige UI-Erweiterung an. Neue Teilentnahme-/Bedarfsladebedienung wird aus ProjektEditor entfernt. Einfacher Kostenpfad ohne Bestell-/Bedarfsnebenwirkung bleibt. Spec§15 und Task5-Planpräzisierung aktualisiert; spätere Angebotskalkulation bleibt eigener Ausbau.
+- Laufender Designreview erhält diese Steuerung, beendet aktuelle Tests/übrige Sichtprüfung und startet keine weitere aufwendige Prüfung des entfallenden Dialogs. Erst sein Abschluss, dann gebündelte erste Korrekturrunde mit den drei Codeblockern. Der bisherige visuelle Teilentnahme-Buttonbefund wird nicht als eigenständiger Layoutfix verfolgt.
+
+
+## Abschnitt4 — Runde0 rot; erste formale Nachbesserung
+
+Zeit: 2026-09-23T15:24:43.295828+00:00
+
+- Beide gemeinsamen Reviews beendet. Codebericht /tmp/beschaffung-abschnitt4-review-report.md: HiCAD-Teilmenge sperrt Rest, Scheduler importiert nur HAUPT, Materialkosten-PATCH verliert Lieferanten. Integrierte Backendvollsuite3326Tests/0Fehler/17Skips grün. Konkrete ergänzende Hinweise zu N+1, fehlender Hashquelle, HTTP-Fachfehlern und XLSX-Makroprüfung gehen im selben Paket mit.
+- Designbericht /tmp/beschaffung-abschnitt4-design-report.md: aktuelle UI muss entsprechend Nutzerkorrektur einfache Nachkalkulation werden; Artikelpreis sichtbar/anpassbar, beideKostenwege mit Reload prüfen. Alte Teilentnahme-Bedienung entfällt. Suite674/675grün; ein bestehender Dokumenteditor-Layoutfall unter Konkurrenz rot, isoliert1/1grün. Nächster Vollnachweis auf korrigiertem UI ohne gleichzeitigen Mavenlauf.
+- Erste formale Korrekturrunde: dieselben Luna-Pakete4a und4b gestartet. Wiederaufnahme4c wurde zweimal vom Agentwerkzeug mit „agent thread limit reached“ abgewiesen; sein klar begrenzter Auftrag ist /tmp/beschaffung-task11-r1-auftrag.md und startet beim nächsten freien Slot. Keine vorzeitige Integration/Review zwischen diesen Codingwellen.
+- Keine Merge-Abnahme/keinPush. Aktueller Produktstand weiterhin pending staged Merge; Root-Dokumentation enthält neueste Nutzersteuerung.
+
+
+## Abschnitt 4 — Task 6/7, Nachbesserung 1 (Rolle: Coding-Agent)
+
+- Zeitpunkt: 2026-09-23T15:54:53Z
+- Branch: `codex/beschaffung-task-6`
+- Commit: `fbba2cf03d34eda8bbe3d322ae5b75336693448d`
+- Status: fertig
+- HiCAD-Teilübernahmen speichern die kumulierte Menge persistent, validieren offene Restmengen, erlauben sichere Teil-/Restübernahmen und liefern einen zugriffsgeschützten Fortschritts-GET. Persistierte Idempotenzhistorie gibt bei identischem Retry dieselben Ergebnis-IDs zurück; konkurrierende Requests sind über DB-Zeilensperre abgesichert.
+- XLSX-/XLS-Sicherheitsprüfung untersucht echte ZIP-/OPC-Beziehungen bzw. POI-Strukturen für externe Links und Makroinhalte; keine Ausführung. Bildrevisionen sind bei weiteren Teilübernahmen eindeutig.
+- SHA-Dedupe prüft die referenzierte Quelle; ein bewusster identischer Reupload repariert eine fehlende historische Datei, ohne fehlende Quelle still wiederzuverwenden.
+- Regressionen: stale-source Reupload; komprimierte XLSX-External-Relationship und XLS-VBA/External-SupBook; Teilübernahme 4/10, identischer Retry, Rest 6/10, Übermenge, Schlüsselkonflikt, Bildrevisionen, Fortschritt/Zugriff und paralleler Retry.
+- Tests: gezielt 29 Tests grün. Backend-Vollsuite: 3315 Tests, 0 Fehler, 0 Fehlschläge, 17 übersprungen; BUILD SUCCESS. Frontend unverändert, bestehende Nachweise wiederverwendbar. Graphify synchronisiert. Keine Server gestartet.
+- Bedenken/Abweichungen: keine.
+
+
+### Abschnitt4 — Korrekturwelle2 und Integrationszustand
+
+Zeit: 2026-09-23T15:55:51.950041+00:00
+
+- Paket6/7-R1 fertig (fbba2cf0); freier Slot erlaubt Wiederaufnahme desselben ursprünglichen Luna-Pakets4c. Task11-R1 läuft nun, keine neue Reviewrolle/kein anderer Codingagent nötig. Task5-R1 vervollständigt Pflichtnachweise und wartet mit vollerE2E auf Ende der Mavenläufe.
+- Früherer unfreigegebener Root-Merge wurde für saubere Re-Integration abgebrochen. Eigene aktuelle Spec/Plan/Log bleiben erhalten; geprüfter alter Index und Assets unter /tmp/beschaffung-abschnitt4-root-eigene-dateien und /tmp/beschaffung-abschnitt4-review0-index.patch gesichert. Root-Produktbasis wieder a7b4636b; beide ursprünglichen Graphdateiänderungen unverändert erhalten.
+
+
+## Abschnitt 4 — Task 11 Nachbesserung 1 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T16:04:07Z
+Branch: codex/beschaffung-task-11
+Commit(s): b170be001c3bbde3cdd23edfe36d1a9156d2fc25
+Status: fertig
+
+Was gemacht wurde:
+- Scheduler ruft die drei Konten EINKAUF, HAUPT und DOKUMENTE einzeln ab und fängt Fehler je Konto, sodass ein Kontoausfall die weiteren Abrufe nicht stoppt. Das bestehende E-Mail-Featureflag bleibt das Scheduling-Gate; manueller doImport() bleibt HAUPT-kompatibel.
+- LocalTestMailPolicy wird vor Aktivitätsauflösung/Dispatch geprüft. Im local-test-Profil bleiben standardmäßig alle externen Mailpfade gesperrt; das bestehende explizite Opt-in beschränkt Zugriff weiterhin auf EINKAUF.
+- MailkontoService ergänzt imapAbrufAktiv. HAUPT wird nur bei konfiguriertem IMAP abgerufen, EINKAUF nur bei Aktivierung. DOKUMENTE wird ausschließlich mit eigenständig aktiviertem Dokumentkonto und dessen IMAP-Zugang abgerufen; der Resolver gibt andernfalls ein inaktives Konto zurück statt auf HAUPT zurückzufallen. Versandadapter bleiben unverändert.
+- Regressionen prüfen die Reihenfolge Policy→Aktivitätsauflösung→Dispatch, Fehlerisolierung des EINKAUF-Kontos, lokales Policy-Gate und kontobezogene Aktivierung/Fallback. Gezielte Tests: EmailImportServiceTest und MailkontoServiceTest, 68 Tests grün. Vollsuite: Exit 0, 3303 Tests, 0 Fehler, 17 bekannte Skips. Log: /tmp/beschaffung-task11-r1-full-backend.log.
+- Graphify nach Änderung aktualisiert; generierte Graphdateien nicht committet. Keine Frontendänderung; bestehende Frontendnachweise bleiben gültig. Kein Dienst gestartet.
+
+Bedenken / Abweichungen:
+- Keine offenen Abweichungen. Eine unvollständige aktive EINKAUF-Konfiguration wird beim resolverseitigen Konfigurationscheck abgefangen und isoliert protokolliert; andere Konten laufen weiter.
+
+
+## Task 5 — Nachbesserung 1
+
+Status: fertig. Zeit (UTC): 2026-09-23 16:12:42 UTC.
+Worktree: .claude/worktrees/beschaffung-task-5
+Branch: codex/beschaffung-task-5
+Basis der Nachbesserung: ac050e4e50977956d301889e050d49f1f480a1af
+Commit: 80be624d47078a5c051ec2048af0d0143f4c305e
+
+Umgesetzt:
+- Projekteditor auf einfache Nachkalkulation begrenzt: manuelle Kosten oder Artikelstamm-Auswahl mit sichtbarer, editierbarer Menge und Projekteinzelpreis. Entfernt wurde nur die neue Lagerteilentnahme-/Bedarfslade-Bedienung im Projekteditor; das Entnahmebackend bleibt erhalten.
+- Reine Kosten-POSTs erzeugen weder AIP-/Bedarf-/Bestellungs-/Reservierungsereignisse noch ändern sie den Artikelstamm. Kosten-Snapshots sind nach Reload sichtbar; manuelle Kosten aktualisieren direkt ohne Reload.
+- Gemeinsamer validierter Mapper für manuelle Materialkosten bewahrt die Lieferantenzuordnung auch im Legacy-PATCH. Regressionen decken Preisoverride und unveränderten Artikelstamm sowie echte Kostenpersistenz ab.
+- Artikelkosten-Controller lässt ResponseStatusException einschließlich HTTP 409 durch und protokolliert keinen Stacktrace.
+- Projektlisten laden Lagerkosten und offenen Bewertungsstatus über eine gruppierte Batchabfrage; Detailmapper verwendet eine aggregierte Abfrage. Materialtab-Zähler zählt sichtbare Materialkostenpositionen.
+- Keine neuen Produktdateien oder Migrationen in dieser Nachbesserung.
+
+Nachweise:
+- Backendvollsuite: DOCKER_HOST=unix:///Users/marvinkuhn/.docker/run/docker.sock ./mvnw -B test — Exit 0; 3297 Tests, 0 Fehler, 17 bekannte Skips. Log: /tmp/beschaffung-task5-r1-backend-full-final.log
+- PC-Unitvollsuite: 142 Dateien, 1630 Tests, Exit 0. Log: /tmp/beschaffung-task5-r1-pc-unit-final.log
+- PC-E2Evollsuite: E2E_PORT=5186 npm run test:e2e -- --workers=1 — Exit 0; 675 Tests auf allen drei Desktopgrößen. Log: /tmp/beschaffung-task5-r1-pc-e2e-full.log
+- Lint: Exit 0. Log: /tmp/beschaffung-task5-r1-pc-lint-final.log
+- Build: Exit 0. Log: /tmp/beschaffung-task5-r1-pc-build2.log
+- Gezielte Komponentensuite: 1 Test, Exit 0. Log: /tmp/beschaffung-task5-r1-component-final2.log
+- Gezielte korrigierte Projekteditor-E2E: 6 Tests, Exit 0. Log: /tmp/beschaffung-task5-r1-e2e-final-targeted.log
+- Screenshots des geladenen ausgewählten Stammartikels samt Preisfeld liegen in react-pc-frontend/test-results/ bei den Projekten pc-14zoll, pc-uebergang und pc-monitor.
+- Graphify aktualisiert. Die generierten graphify-out-Dateien und der .graphify-venv-Symlink sind nicht committet.
+- Der eigene Playwright-Server wurde beendet; Port 5186 lauscht nicht mehr. Kein Backendserver gestartet.
+
+Bedenken/Abweichungen: keine. Kein eigener Review gestartet; Review bleibt gemäß Root-Abstimmung nach Integration.
+
+
+## Abschnitt4 — Nachbesserung1 vollständig integriert
+
+Zeit: 2026-09-23T16:14:16.241049+00:00
+
+- Alle drei Korrekturpakete abgeschlossen: Task5 80be624d, Tasks6→7 fbba2cf0, Task11 b170be00. Frischer konfliktfreier Merge --no-ff --no-commit; Produktcode im Index.
+- Nachkalkulations-UI entspricht aktueller Nutzerpräzisierung. Task5 abschließend1630Unit/675E2E/Lint/Build sowie3297Backendtests grün. Task6/7 final3315Backendtests, Task11 final3303Backendtests grün; je17unveränderteSkips.
+- Gemeinsamer Sol-Recheck folgt auf diesem vollständig integrierten Stand. Der Design-Recheck darf den identischen vollständigen675E2E-Nachweis wiederverwenden und prüft selbst gezielt die korrigierten Dialoge/Ansichten in allen3Größen, um unnötige Doppelvollsuiten und Konkurrenzartefakte zu vermeiden.
+
+
+## Abschnitt4 — Nachbesserung1 Review; zweite formale Korrektur
+
+Zeit: 2026-09-23T16:19:29.416397+00:00
+
+- R1-Codebericht /tmp/beschaffung-abschnitt4-r1-review-report.md: drei ursprünglicheBlocker und Nebenbefunde behoben. IntegrierteBackendvollsuite3343Tests/0Fehler/17Skips grün. NeuerBlocker: HiCadImportZeile/V381 speichert übernommeneMengeDECIMAL(15,6), zentralerVertrag19,6. GültigeMilliardenmenge scheitert erstbeimSpeichern.
+- R1-Design /tmp/beschaffung-abschnitt4-r1-design-report.md: GELB/abgenommen, keinBlocker. EigenergezielterNachlauf6/6über3Größen,9Screenshotsangesehen;675/675vollerNachweisgültig. NurHinweis zurErklärung deaktivierterSpeicherung imleerenDialog. Nachkalkulation erfülltvereinfachteNutzeranforderung.
+- ZweiteformaleKorrektur gestartet, ausschließlichgleichesLunaPaket4b: DB-/Entitypräzision19,6+MySQLGrenzwertregression; imgleichenMengenpfadüberschüssigeNachkommastellenvorRundungablehnen. KeinweiteresRefactoring. Task5/11undFrontendbleibenunverändert; Nachweisewiederverwenden.
+- DanachgleicherSolReviewaufvollständigreintegriertemStand. WennnachR2weiterRot: verbindlicherSkillstopp, keineweitereautomatischeKorrektur. NochkeinPush/Abschnitt4nichtabgenommen.
+
+
+## Abschnitt 4 — Task 6/7, Nachbesserung 2 (Rolle: Coding-Agent)
+
+- Zeitpunkt: 2026-09-23T16:27:57Z
+- Branch: `codex/beschaffung-task-6`
+- Commit: `84a23efe1906dd97ee239e3c1135206e1854fdb2`
+- Status: fertig
+- R1-Befund: neue Spalte `uebernommene_menge` und Entity-Mapping auf DECIMAL(19,6)/precision=19 angeglichen. Echter MySQL-Integrationstest persistiert Teilübernahme von 400.000.000 bei Gesamtmenge 1.000.000.000, prüft Fortschritt/Restmenge 600.000.000 und schließt die Restübernahme erfolgreich ab.
+- Mengenpräzision: Auswahlwerte mit mehr als sechs signifikanten Nachkommastellen werden vor Skalierung fachlich abgelehnt; Zwischenwerte werden exakt ohne HALF_UP normalisiert. Regression lehnt 0,9999999 als Stückzahl ab und nimmt 0,123456 für Meter an; bestehende Ganzzahltests bleiben grün.
+- RED/GREEN: MySQL-Fall zuerst mit `Data truncation: Out of range value for column uebernommene_menge` reproduziert. Dezimalfall zuerst über unerwarteten weiteren Mengenpfadfehler reproduziert.
+- Gezielte Tests: 31 Tests, 0 Fehler/Fehlschläge. Backend-Vollsuite: 3317 Tests, 0 Fehler/Fehlschläge, 17 bekannte Skips, BUILD SUCCESS. Log: `/tmp/beschaffung-task6-r2-backend-final.log`. Graphify aktualisiert; temporäre Links entfernt. Frontend unverändert; bestehende Frontend- und Designnachweise wiederverwendbar. Keine Server gestartet.
+- Bedenken/Abweichungen: keine.
+
+
+## Abschnitt 4 — zweite Nachbesserung integriert
+
+Zeit: 2026-09-23T16:29:17.057314+00:00
+
+- Task5 80be624d, Task6/7 84a23efe und Task11 b170be00 vollständig und konfliktfrei reintegriert; pending Merge auf a7b4636b.
+- Der PC-Baum ist unverändert 83813ced1750173452c46197f876468f09600f3d. Geprüfte R1-Buildartefakte wiederhergestellt; volle Frontend-, E2E- und Designnachweise bleiben gültig. Kein erneuter Designlauf nötig, da R2 ausschließlich HiCAD-Backendpräzision und dessen Tests ändert.
+- Derselbe Sol-Code-Reviewer übernimmt den abschließenden R2-Recheck samt exklusiver integrierter Backendvollsuite. Bei weiterem Rot greift die Skillgrenze; keine dritte automatische Nachbesserung.
+
+
+## Abschnitt 4 — endgültige Abnahme
+
+Zeit: 2026-09-23T16:32:35.397386+00:00
+
+- Sol-Code-/Security-/Architekturreview R2 GRÜN, kein kritischer Befund und keine neue Warnung. Bericht /tmp/beschaffung-abschnitt4-r2-review-report.md. Alle R0-/R1-Befunde behoben; zwei formale Nachbesserungen.
+- Exklusive integrierte Backendvollsuite: Exit0, BUILD SUCCESS, 3345 Tests, 0 Fehler, 17 bekannte Skips; /tmp/beschaffung-abschnitt4-r2-review-backend.log.
+- PC exakt Task5-R1-Baum 83813ced1750173452c46197f876468f09600f3d: 1630 Unit, 675 E2E, Lint und Produktionsbuild grün. Sol-Design R1 GELB/abgenommen, keine Blocker; gezielt6/6 in drei Größen und9Screenshots. Nur optionaler Hinweis zur Erklärung deaktivierter Speicherung im leeren manuellen Dialog. Mobile unverändert, bestehende grüne Nachweise weiter gültig.
+- Materialkosten im Projekt nun einfache Nachkalkulation: manuell oder Stammartikel mit Menge und anpassbarem Projektpreis. Keine Projekt-Teilentnahmebedienung, keine Bestell-/Bedarfsnebenwirkung. Spätere Angebotskalkulation als eigenständiger Erweiterungspunkt dokumentiert.
+- Alle64stagedDateien wurden gegen die drei Paketdiffs plus eigene Spec/Plan/Log und Buildartefakte abgeglichen; keine Fremddatei, keine Graphdatei staged. Quell-/Dokument-Whitespacecheck sauber. Graphify zuletzt Exit0 synchronisiert, erzeugte Daten bleiben lokal.
+- Weiter mit Abschnitt5: Task13 (Anfragefassungen + tatsächlicher Anfrage-Mengenprovider + Anlagen-/Projektgate), Task14 (gemeinsame PDF-Darstellung), Task15 (Outbox). Erst alle drei fertig, dann gemeinsame Integration und ein Sol-Code-Review; kein Frontend in Abschnitt5 geplant.

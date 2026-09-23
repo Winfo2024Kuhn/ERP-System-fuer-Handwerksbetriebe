@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektResponseDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenResponseDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
+import org.example.kalkulationsprogramm.repository.EinkaufLagerentnahmeRepository;
 
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieResponseDto;
 import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitResponseDto;
@@ -14,6 +15,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Component
 @AllArgsConstructor
@@ -21,6 +25,7 @@ public class ProjektMapper {
     private final ProduktkategorieMapper produktkategorieMapper;
     private final AnfrageMapper anfrageMapper;
     private final KundeMapper kundeMapper;
+    private final EinkaufLagerentnahmeRepository lagerentnahmeRepository;
 
     public ProjektResponseDto toProjektResponseDto(Projekt projekt) {
         if (projekt == null) {
@@ -28,6 +33,14 @@ public class ProjektMapper {
         }
         ProjektResponseDto dto = new ProjektResponseDto();
         dto.setId(projekt.getId());
+        if (projekt.getId() != null) {
+            EinkaufLagerentnahmeRepository.ProjektKostenStatus status =
+                    lagerentnahmeRepository.zusammenfassungFuerProjekt(projekt.getId());
+            if (status != null) {
+                dto.setLagerentnahmenKosten(status.getSumme());
+                dto.setLagerentnahmenBewertungOffen(Boolean.TRUE.equals(status.getBewertungOffen()));
+            }
+        }
         dto.setBauvorhaben(projekt.getBauvorhaben());
         dto.setStrasse(projekt.getStrasse());
         dto.setPlz(projekt.getPlz());
@@ -87,6 +100,14 @@ public class ProjektMapper {
                         mDto.setExterneArtikelnummer(mk.getExterneArtikelnummer());
                         mDto.setMonat(mk.getMonat());
                         mDto.setBetrag(mk.getBetrag());
+                        mDto.setArtikelIdSnapshot(mk.getArtikelIdSnapshot());
+                        mDto.setLieferantenArtikelPreisId(mk.getLieferantenArtikelPreisId());
+                        mDto.setLieferantennameSnapshot(mk.getLieferantennameSnapshot());
+                        mDto.setMengeSnapshot(mk.getMengeSnapshot());
+                        mDto.setEinheitSnapshot(mk.getEinheitSnapshot());
+                        mDto.setPreisJeEinheitSnapshot(mk.getPreisJeEinheitSnapshot());
+                        mDto.setPreisquelleSnapshot(mk.getPreisquelleSnapshot());
+                        mDto.setPreisnotizSnapshot(mk.getPreisnotizSnapshot());
                         return mDto;
                     }).toList();
             dto.setMaterialkosten(mkDtos);
@@ -203,6 +224,24 @@ public class ProjektMapper {
         dto.setAbgeschlossen(projekt.isAbgeschlossen());
 
         return dto;
+    }
+
+    public List<ProjektResponseDto> toProjektListeDtos(List<Projekt> projekte) {
+        List<ProjektResponseDto> dtos = projekte.stream().map(this::toProjektListeDto).toList();
+        List<Long> projektIds = projekte.stream().map(Projekt::getId).filter(java.util.Objects::nonNull).toList();
+        if (projektIds.isEmpty()) return dtos;
+        Map<Long, EinkaufLagerentnahmeRepository.ProjektKostenStatus> statusByProjekt =
+                lagerentnahmeRepository.zusammenfassungenFuerProjekte(projektIds).stream()
+                        .collect(Collectors.toMap(EinkaufLagerentnahmeRepository.ProjektKostenStatus::getProjektId,
+                                Function.identity()));
+        dtos.forEach(dto -> {
+            var status = statusByProjekt.get(dto.getId());
+            if (status != null) {
+                dto.setLagerentnahmenKosten(status.getSumme());
+                dto.setLagerentnahmenBewertungOffen(Boolean.TRUE.equals(status.getBewertungOffen()));
+            }
+        });
+        return dtos;
     }
 
     /**

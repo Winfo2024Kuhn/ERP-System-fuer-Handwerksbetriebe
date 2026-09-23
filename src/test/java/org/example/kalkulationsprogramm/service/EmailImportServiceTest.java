@@ -1,8 +1,10 @@
 package org.example.kalkulationsprogramm.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.eq;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -41,9 +43,24 @@ class EmailImportServiceTest {
     @Mock private EmailBlacklistRepository emailBlacklistRepository;
     @Mock private BounceErkennungService bounceErkennungService;
     @Mock private LocalTestMailPolicy localTestMailPolicy;
+    @Mock private SystemSettingsService systemSettingsService;
+    @Mock private org.example.kalkulationsprogramm.repository.EmailImportIdentitaetRepository importIdentitaetRepository;
+    @Mock private org.example.kalkulationsprogramm.service.mail.MailkontoService mailkontoService;
+    @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private EmailImportService service;
+
+    private boolean importMessageForTest(Message message, IMAPFolder folder, EmailDirection direction)
+            throws Exception {
+        return importMessageForTest(message, folder, direction, "HAUPT");
+    }
+
+    private boolean importMessageForTest(Message message, IMAPFolder folder, EmailDirection direction, String kontoId)
+            throws Exception {
+        return service.persistImportierteNachricht(message, direction, kontoId, folder.getFullName(),
+                folder.getUID(message), folder.getUIDValidity());
+    }
 
     private Email erstelleEmail(Long id, String messageId, String fromAddress) {
         Email email = new Email();
@@ -66,6 +83,32 @@ class EmailImportServiceTest {
     class DuplikatErkennung {
 
         @Test
+        void kontoPolicyWirdVorJederZugangsaufloesungGeprueft() {
+            doThrow(new IllegalStateException("gesperrt"))
+                    .when(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+
+            assertThatThrownBy(() -> service.doImport("EINKAUF"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("gesperrt");
+
+            verifyNoInteractions(systemSettingsService);
+        }
+
+        @Test
+        void kontoPolicyBlockiertDenNachrichtenabrufVorJederIMAPOperation() throws Exception {
+            IMAPFolder folder = mock(IMAPFolder.class);
+            Message message = mock(Message.class);
+            doThrow(new IllegalStateException("gesperrt"))
+                    .when(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+
+            assertThatThrownBy(() -> service.importMessage(message, folder, EmailDirection.IN, "EINKAUF"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("gesperrt");
+
+            verifyNoInteractions(folder, message);
+        }
+
+        @Test
         void erkenntesBereitsImportiertesViamessageId() {
             // Die importMessage()-Methode benötigt jakarta.mail.Message,
             // daher testen wir die Logik indirekt über die Repository-Prüfung
@@ -84,12 +127,80 @@ class EmailImportServiceTest {
         }
     }
 
+    @Nested
+    class ImportZeitplan {
+
+        @Test
+        void ruftKontenGetrenntMitPolicyGateUndFehlerisolierungAb() {
+            ReflectionTestUtils.setField(service, "emailFeaturesEnabled", true);
+            lenient().when(systemSettingsService.isImapConfigured()).thenReturn(true);
+            lenient().when(mailkontoService.imapAbrufAktiv(anyString())).thenReturn(true);
+            EmailImportService spy = spy(service);
+            doThrow(new IllegalStateException("Einkaufkonto nicht verfügbar"))
+                    .when(spy).doImport("EINKAUF");
+            doReturn(2).when(spy).doImport("HAUPT");
+            doReturn(1).when(spy).doImport("DOKUMENTE");
+
+            spy.importNewEmails();
+
+            var calls = inOrder(localTestMailPolicy, mailkontoService, spy);
+            calls.verify(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+            calls.verify(mailkontoService).imapAbrufAktiv("EINKAUF");
+            calls.verify(spy).doImport("EINKAUF");
+            calls.verify(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
+            calls.verify(mailkontoService).imapAbrufAktiv("HAUPT");
+            calls.verify(spy).doImport("HAUPT");
+            calls.verify(localTestMailPolicy).pruefeNetzwerkzugriff("DOKUMENTE");
+            calls.verify(mailkontoService).imapAbrufAktiv("DOKUMENTE");
+            calls.verify(spy).doImport("DOKUMENTE");
+            verify(spy, never()).doImport();
+        }
+
+        @Test
+        void lokalesProfilOhneOptInStopptNetzwerkpfadeVorDemImport() {
+            ReflectionTestUtils.setField(service, "emailFeaturesEnabled", true);
+            lenient().when(systemSettingsService.isImapConfigured()).thenReturn(true);
+            EmailImportService spy = spy(service);
+            doThrow(new IllegalStateException("local-test gesperrt"))
+                    .when(localTestMailPolicy).pruefeNetzwerkzugriff(any());
+
+            spy.importNewEmails();
+
+            verify(spy, never()).doImport(anyString());
+            verify(mailkontoService, never()).imapAbrufAktiv(anyString());
+            verify(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
+            verify(localTestMailPolicy).pruefeNetzwerkzugriff("DOKUMENTE");
+            verify(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 2.3.2 Verknüpft Antworten mit Eltern-E-Mail
     // ═══════════════════════════════════════════════════════════════
 
     @Nested
     class ParentEmailVerknuepfung {
+
+        @Test
+        void kontobezogenerBackfillVerknuepftKeineMailAusAnderemKonto() {
+            Email haupt = erstelleEmail(1L, "<same@example.com>", "lieferant@example.com");
+            haupt.setKontoId("HAUPT");
+            haupt.setSubject("Einkauf Anfrage");
+            haupt.setSentAt(LocalDateTime.of(2026, 1, 1, 10, 0));
+
+            Email einkaufReply = erstelleEmail(2L, "<same@example.com>", "lieferant@example.com");
+            einkaufReply.setKontoId("EINKAUF");
+            einkaufReply.setSubject("RE: Einkauf Anfrage");
+            einkaufReply.setSentAt(LocalDateTime.of(2026, 1, 2, 10, 0));
+
+            when(emailRepository.findByKontoId("EINKAUF")).thenReturn(List.of(einkaufReply));
+
+            int updated = service.backfillParentEmails("EINKAUF");
+
+            assertThat(updated).isZero();
+            assertThat(einkaufReply.getParentEmail()).isNull();
+            verify(emailRepository, never()).save(einkaufReply);
+        }
 
         @Test
         void findetParentEmailAnhandMessageId() {
@@ -400,7 +511,7 @@ class EmailImportServiceTest {
         void emailOhneMessageIdWirdNichtVerworfen() throws Exception {
             // Regression für: `if (messageId == null) { return false; }`
             // Emails ohne Message-ID-Header müssen importiert werden
-            boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            boolean imported = importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
             assertThat(imported).isTrue();
             verify(emailRepository, atLeastOnce()).save(any(Email.class));
@@ -410,18 +521,19 @@ class EmailImportServiceTest {
         void fallbackIdWirdAusIMAPUidUndOrdnerGeneriert() throws Exception {
             // Fallback-ID muss deterministisch und eindeutig sein:
             // Format: <no-msgid-uid-{uid}@{folder}>
-            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
-            verify(emailRepository).existsByMessageId("<no-msgid-uid-146693@INBOX>");
+            verify(emailRepository).findByKontoIdAndMessageId("HAUPT", "<no-msgid-haupt-SU5CT1g-0-146693@erp.local>");
         }
 
         @Test
         void fallbackIdErmoeglichtDeduplizierung() throws Exception {
             // Wenn die Fallback-ID bereits existiert, darf die Email nicht
             // erneut importiert werden (Dedup nach erfolgreichem Import)
-            when(emailRepository.existsByMessageId("<no-msgid-uid-146693@INBOX>")).thenReturn(true);
+            when(emailRepository.findByKontoIdAndMessageId("HAUPT", "<no-msgid-haupt-SU5CT1g-0-146693@erp.local>"))
+                    .thenReturn(Optional.of(new Email()));
 
-            boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            boolean imported = importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
             assertThat(imported).isFalse();
             verify(emailRepository, never()).save(any(Email.class));
@@ -433,9 +545,9 @@ class EmailImportServiceTest {
             when(mockFolder.getFullName()).thenReturn("INBOX.Mein Ordner");
             when(mockFolder.getUID(mockMessage)).thenReturn(999L);
 
-            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
-            verify(emailRepository).existsByMessageId("<no-msgid-uid-999@INBOX.Mein_Ordner>");
+            verify(emailRepository).findByKontoIdAndMessageId("HAUPT", "<no-msgid-haupt-SU5CT1guTWVpbiBPcmRuZXI-0-999@erp.local>");
         }
 
         @Test
@@ -444,14 +556,94 @@ class EmailImportServiceTest {
             when(mockMessage.getHeader("Message-ID"))
                     .thenReturn(new String[]{"<original-id@example.com>"});
 
-            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
             // Original Message-ID wird für Dedup-Prüfung verwendet
-            verify(emailRepository).existsByMessageId("<original-id@example.com>");
+            verify(emailRepository).findByKontoIdAndMessageId("HAUPT", "<original-id@example.com>");
             // Fallback-Format (<no-msgid-uid-...>) wird NICHT für Dedup genutzt
             // (getUID wird aber trotzdem für imapUid-Speicherung aufgerufen – das ist korrekt)
-            verify(emailRepository, never()).existsByMessageId(
-                    argThat(id -> id != null && id.startsWith("<no-msgid-uid-")));
+            verify(emailRepository, never()).findByKontoIdAndMessageId(
+                    eq("HAUPT"),
+                    argThat(id -> id != null && id.startsWith("<no-msgid-")));
+        }
+
+        @Test
+        void gleicheMessageIdInVerschiedenenKontenBleibtGetrennt() throws Exception {
+            when(mockMessage.getHeader("Message-ID")).thenReturn(new String[]{"<konto-getrennt@example.test>"});
+
+            assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN, "HAUPT")).isTrue();
+            assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN, "EINKAUF")).isTrue();
+
+            verify(emailRepository).findByKontoIdAndMessageId("HAUPT", "<konto-getrennt@example.test>");
+            verify(emailRepository).findByKontoIdAndMessageId("EINKAUF", "<konto-getrennt@example.test>");
+            verify(emailRepository, atLeast(2)).save(argThat(email ->
+                    "HAUPT".equals(email.getKontoId()) || "EINKAUF".equals(email.getKontoId())));
+            verify(eventPublisher).publishEvent(eq(new EmailImportService.EinkaufEmailImportiert(3202L)));
+        }
+
+        @Test
+        void gleicheUidWirdBeiUnveraenderterUidValidityNichtErneutImportiert() throws Exception {
+            when(mockFolder.getUIDValidity()).thenReturn(17L);
+            when(importIdentitaetRepository.existsByKontoIdAndFolderAndUidValidityAndUid(
+                    "HAUPT", "INBOX", 17L, 146693L)).thenReturn(true);
+
+            assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN)).isFalse();
+            verify(emailRepository, never()).save(any(Email.class));
+            verify(emailRepository, never()).findByKontoIdAndMessageId(anyString(), anyString());
+            verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        void einkaufsereignisWirdErstNachCommitVeroeffentlicht() throws Exception {
+            org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+            try {
+                assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN, "EINKAUF")).isTrue();
+                verifyNoInteractions(eventPublisher);
+                var callbacks = org.springframework.transaction.support.TransactionSynchronizationManager
+                        .getSynchronizations();
+                org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+                callbacks.forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+                verify(eventPublisher).publishEvent(new EmailImportService.EinkaufEmailImportiert(3202L));
+            } finally {
+                if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                    org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+                }
+            }
+        }
+
+        @Test
+        void einkaufsereignisWirdBeiRollbackNichtVeroeffentlicht() throws Exception {
+            org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+            try {
+                assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN, "EINKAUF")).isTrue();
+                org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+                verifyNoInteractions(eventPublisher);
+            } finally {
+                if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                    org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+                }
+            }
+        }
+
+        @Test
+        void gleicheMessageIdMitAbweichendemInhaltWirdZurPruefungErfasst() throws Exception {
+            when(mockMessage.getHeader("Message-ID")).thenReturn(new String[]{"<konflikt@example.test>"});
+            Email existing = new Email();
+            existing.setSubject("Rechnung 400185");
+            existing.setFromAddress("rechnungen@bluesolution.software");
+            existing.setBody("anderer Inhalt");
+            when(emailRepository.findByKontoIdAndMessageId("HAUPT", "<konflikt@example.test>"))
+                    .thenReturn(Optional.of(existing));
+
+            assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN)).isFalse();
+
+            verify(importIdentitaetRepository).save(argThat(identity -> identity.isPruefkonflikt()));
+        }
+
+        @Test
+        void fallbackIdEnthaeltUidValidityDamitUidResetErkanntWird() {
+            assertThat(EmailImportService.fehlendeMessageId("EINKAUF", "INBOX", 4L, 8L))
+                    .isNotEqualTo(EmailImportService.fehlendeMessageId("EINKAUF", "INBOX", 5L, 8L));
         }
 
         /**
@@ -464,9 +656,10 @@ class EmailImportServiceTest {
         void ueberspringtEigeneSentKopieUeberMessageIdDedup() throws Exception {
             when(mockMessage.getHeader("Message-ID"))
                     .thenReturn(new String[]{"<eigene-mail@example.com>"});
-            when(emailRepository.existsByMessageId("<eigene-mail@example.com>")).thenReturn(true);
+            when(emailRepository.findByKontoIdAndMessageId("HAUPT", "<eigene-mail@example.com>"))
+                    .thenReturn(Optional.of(new Email()));
 
-            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+            boolean importiert = importMessageForTest(mockMessage, mockFolder, EmailDirection.OUT);
 
             assertThat(importiert).as("Bereits archivierte Ausgangsmail nicht doppelt importieren").isFalse();
             verify(emailRepository, never()).save(any(Email.class));
@@ -485,7 +678,7 @@ class EmailImportServiceTest {
             when(mockMessage.getHeader(org.example.email.EmailService.ERP_ORIGIN_HEADER))
                     .thenReturn(new String[]{org.example.email.EmailService.ERP_ORIGIN_WERT});
 
-            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+            boolean importiert = importMessageForTest(mockMessage, mockFolder, EmailDirection.OUT);
 
             assertThat(importiert).as("Nicht archivierte Ausgangsmail muss nachgeholt werden").isTrue();
         }
@@ -501,7 +694,7 @@ class EmailImportServiceTest {
             when(mockMessage.getHeader(org.example.email.EmailService.ERP_ORIGIN_HEADER))
                     .thenReturn(null);
 
-            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+            boolean importiert = importMessageForTest(mockMessage, mockFolder, EmailDirection.OUT);
 
             assertThat(importiert).as("Mails ohne Marker muessen weiterhin importiert werden").isTrue();
         }
@@ -510,7 +703,7 @@ class EmailImportServiceTest {
         void speichertImapUidInEmail() throws Exception {
             // Die IMAP-UID muss in der Email gespeichert werden für spätere Referenzen.
             // Hinweis: save() wird 2× aufgerufen – einmal in importMessage, einmal in postProcessEmail.
-            service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
             verify(emailRepository, atLeastOnce()).save(argThat(email ->
                     email.getImapUid() != null && email.getImapUid() == 146693L
@@ -581,7 +774,7 @@ class EmailImportServiceTest {
             // Kern des Fixes: Solange die Import-Transaktion offen ist, darf der
             // Bounce-Service (REQUIRES_NEW) nicht laufen — sonst wartet seine
             // eigene Transaktion auf Sperren, die diese hier noch hält.
-            boolean importiert = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            boolean importiert = importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
             assertThat(importiert).isTrue();
             verifyNoInteractions(bounceErkennungService);
@@ -590,7 +783,7 @@ class EmailImportServiceTest {
         @Test
         void ausgangsmailsLoesenKeineRuecklaeuferPruefungAus() throws Exception {
             // Eine eigene Mail im Sent-Ordner ist nie ein Rückläufer.
-            service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+            importMessageForTest(mockMessage, mockFolder, EmailDirection.OUT);
 
             verifyNoInteractions(bounceErkennungService);
         }
@@ -634,7 +827,7 @@ class EmailImportServiceTest {
             when(emailBlacklistRepository.existsByEmailAddress("blocked@evil.example.com"))
                     .thenReturn(true);
 
-            boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            boolean imported = importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
             // Mail wird verworfen, kein DB-Eintrag, kein Spam-Filter, kein Auto-Assign.
             // Genau diese Eigenschaften sind der Kern des Bugfixes — würden sie wieder
@@ -661,7 +854,7 @@ class EmailImportServiceTest {
             lenient().when(mockMessage.getContent()).thenReturn("body");
             lenient().when(mockMessage.getContentType()).thenReturn("text/plain");
 
-            boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.IN);
+            boolean imported = importMessageForTest(mockMessage, mockFolder, EmailDirection.IN);
 
             assertThat(imported).isTrue();
             verify(emailRepository, atLeastOnce()).save(any(Email.class));
@@ -682,7 +875,7 @@ class EmailImportServiceTest {
             lenient().when(mockMessage.getContent()).thenReturn("body");
             lenient().when(mockMessage.getContentType()).thenReturn("text/plain");
 
-            boolean imported = service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+            boolean imported = importMessageForTest(mockMessage, mockFolder, EmailDirection.OUT);
 
             assertThat(imported).isTrue();
             // Blacklist-Repository darf für ausgehende Mails gar nicht erst gefragt werden

@@ -579,6 +579,8 @@ export interface Projekt {
   anlegedatum?: string;
   abschlussdatum?: string;
   bruttoPreis?: number;
+  lagerentnahmenKosten?: number | null;
+  lagerentnahmenBewertungOffen?: boolean;
   bezahlt: boolean;
   abgeschlossen?: boolean;
   strasse?: string;
@@ -605,6 +607,14 @@ export interface Materialkosten {
   monat?: number;
   betrag: number;
   rechnungsnummer?: string;
+  artikelIdSnapshot?: number;
+  lieferantenArtikelPreisId?: number;
+  lieferantennameSnapshot?: string;
+  mengeSnapshot?: number;
+  einheitSnapshot?: string;
+  preisJeEinheitSnapshot?: number;
+  preisquelleSnapshot?: string;
+  preisnotizSnapshot?: string;
 }
 
 // Nested Produktkategorie object in ProjektProduktkategorie

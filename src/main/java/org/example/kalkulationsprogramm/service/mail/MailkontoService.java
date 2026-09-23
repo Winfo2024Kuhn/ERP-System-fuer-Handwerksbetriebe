@@ -45,6 +45,26 @@ public class MailkontoService {
         };
     }
 
+    /**
+     * Prüft, ob das Konto für einen automatischen IMAP-Abruf aktiviert und vollständig
+     * konfiguriert ist. Anders als Versandmethoden verwendet der Dokumentabruf keinen
+     * Rückfall auf das Hauptkonto, damit dieselbe Mailbox nicht doppelt importiert wird.
+     */
+    public boolean imapAbrufAktiv(String kontoId) {
+        return switch (kontoId) {
+            case "HAUPT" -> settings.isImapConfigured();
+            case "DOKUMENTE" -> {
+                if (!settings.nutztDokumentMailKonto()) yield false;
+                var imap = settings.getDokumentImapZugang();
+                yield hatWert(imap.host()) && imap.port() > 0
+                        && hatWert(imap.username()) && hatWert(imap.password());
+            }
+            case "EINKAUF" -> repository.findById("EINKAUF")
+                    .map(EinkaufMailkonto::isAktiv).orElse(false);
+            default -> false;
+        };
+    }
+
     public MailTransportDto.Testverbindung verbindungTesten(Authentication authentication) {
         lesen(authentication);
         return mailTransport.pruefeVerbindung(resolve("EINKAUF"));
@@ -177,6 +197,9 @@ public class MailkontoService {
     }
 
     private KontoZugang adaptiereDokumentkonto() {
+        if (!settings.nutztDokumentMailKonto()) {
+            return new KontoZugang("DOKUMENTE", false, "", "", leeresServer(), leeresServer(), "INBOX", "Sent");
+        }
         var smtp = settings.getDokumentMailKonto();
         var imap = settings.getDokumentImapZugang();
         return new KontoZugang("DOKUMENTE", true, smtp.fromAddress(), smtp.fromName(),

@@ -1,6 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +33,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.sun.mail.imap.IMAPFolder;
 
@@ -47,6 +52,7 @@ import jakarta.mail.Store;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMultipart;
+import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeUtility;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -86,6 +92,9 @@ public class EmailImportService {
     private final BounceErkennungService bounceErkennungService;
     private final org.example.kalkulationsprogramm.repository.SeenSenderDomainRepository seenSenderDomainRepository;
     private final LocalTestMailPolicy localTestMailPolicy;
+    private final org.example.kalkulationsprogramm.service.mail.MailkontoService mailkontoService;
+    private final org.example.kalkulationsprogramm.repository.EmailImportIdentitaetRepository importIdentitaetRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // Self-Injection für transactional proxy: importMessage muss durch den
     // Spring-Proxy laufen, damit @Transactional pro Mail eine eigene
@@ -133,18 +142,22 @@ public class EmailImportService {
         if (!emailFeaturesEnabled) {
             return;
         }
-        if (!systemSettingsService.isImapConfigured()) {
-            log.debug("[EmailImport] IMAP nicht konfiguriert (siehe System-Einstellungen → E-Mail)");
-            return;
-        }
 
-        try {
-            int imported = doImport();
-            if (imported > 0) {
-                log.info("[EmailImport] {} neue E-Mails importiert", imported);
+        for (String kontoId : List.of("EINKAUF", "HAUPT", "DOKUMENTE")) {
+            try {
+                // Die lokale Testmail-Policy muss vor dem Resolver laufen, da dieser Zugangsdaten lädt.
+                localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
+                if (!mailkontoService.imapAbrufAktiv(kontoId)) {
+                    continue;
+                }
+                int imported = doImport(kontoId);
+                if (imported > 0) {
+                    log.info("[EmailImport] {} neue E-Mails aus Konto {} importiert", imported, kontoId);
+                }
+            } catch (Exception e) {
+                // Ein fehlerhaftes oder gesperrtes Konto darf die übrigen Konten nicht stoppen.
+                log.error("[EmailImport] Fehler beim Import von Konto {}: {}", kontoId, e.getMessage());
             }
-        } catch (Exception e) {
-            log.error("[EmailImport] Fehler beim Import: {}", e.getMessage());
         }
     }
 
@@ -156,51 +169,63 @@ public class EmailImportService {
      * minutenlangen Transaktion laufen und Connections blockieren.
      */
     public int doImport() {
-        String user = systemSettingsService.getImapUsername();
-        String pass = systemSettingsService.getImapPassword();
-        String host = systemSettingsService.getImapHost();
-        int port = systemSettingsService.getImapPort();
+        return doImport("HAUPT");
+    }
+
+    /** Importiert Nachrichten eines bestimmten Mailkontos. */
+    public int doImport(String kontoId) {
+        // Fail-closed vor dem Resolver, da dieser Zugangsdaten auflösen kann.
+        localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
+        var konto = mailkontoService.resolve(kontoId);
+        if (!konto.aktiv()) return 0;
+        var imap = konto.imap();
+        String user = imap.username();
+        String pass = imap.password();
+        String host = imap.host();
+        int port = imap.port();
         if (user == null || user.isBlank() || pass == null || pass.isBlank()) {
-            log.debug("[EmailImport] IMAP-Zugangsdaten fehlen");
+            log.debug("[EmailImport] IMAP-Zugangsdaten für Konto {} fehlen", kontoId);
             return 0;
         }
 
+        boolean startTls = imap.tls() == org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselung.STARTTLS;
+        String protocol = startTls ? "imap" : "imaps";
+        String protocolPrefix = "mail." + protocol + ".";
         Properties props = new Properties();
-        props.put("mail.store.protocol", "imaps");
+        props.put("mail.store.protocol", protocol);
         props.put("mail.mime.address.strict", "false");
-        props.put("mail.imaps.ssl.enable", "true");
-        props.put("mail.imaps.connectiontimeout", "15000");
-        props.put("mail.imaps.timeout", "30000");
+        if (startTls) {
+            props.put("mail.imap.starttls.enable", "true");
+            props.put("mail.imap.starttls.required", "true");
+        } else {
+            props.put("mail.imaps.ssl.enable", "true");
+        }
+        props.put(protocolPrefix + "connectiontimeout", "15000");
+        props.put(protocolPrefix + "timeout", "30000");
 
         Session session = Session.getInstance(props);
         int totalImported = 0;
-
-        try (Store store = session.getStore("imaps")) {
-            localTestMailPolicy.pruefeNetzwerkzugriff("HAUPT");
+        try (Store store = session.getStore(protocol)) {
+            localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
             store.connect(host, port, user, pass);
-            log.info("[EmailImport] IMAP-Verbindung hergestellt");
-
-            // Eingehende E-Mails
-            for (String folderName : INCOMING_FOLDERS) {
-                totalImported += importFromFolder(store, folderName, EmailDirection.IN);
+            List<String> incoming = "HAUPT".equals(kontoId) ? INCOMING_FOLDERS : List.of(konto.inbox());
+            List<String> outgoing = "HAUPT".equals(kontoId) ? OUTGOING_FOLDERS : List.of(konto.sent());
+            for (String folderName : incoming) {
+                totalImported += importFromFolder(store, folderName, EmailDirection.IN, kontoId);
             }
-
-            // Ausgehende E-Mails
-            for (String folderName : OUTGOING_FOLDERS) {
-                totalImported += importFromFolder(store, folderName, EmailDirection.OUT);
+            for (String folderName : outgoing) {
+                totalImported += importFromFolder(store, folderName, EmailDirection.OUT, kontoId);
             }
-
         } catch (MessagingException e) {
-            log.error("[EmailImport] IMAP-Fehler: {}", e.getMessage());
+            log.error("[EmailImport] IMAP-Fehler für Konto {}: {}", kontoId, e.getMessage());
         }
-
         return totalImported;
     }
 
     /**
      * Importiert E-Mails aus einem einzelnen IMAP-Ordner.
      */
-    private int importFromFolder(Store store, String folderName, EmailDirection direction) {
+    private int importFromFolder(Store store, String folderName, EmailDirection direction, String kontoId) {
         try {
             Folder genericFolder = store.getFolder(folderName);
             if (!(genericFolder instanceof IMAPFolder folder) || !folder.exists()) {
@@ -222,11 +247,11 @@ public class EmailImportService {
                     try {
                         // Über self-Proxy aufrufen, damit @Transactional auf
                         // importMessage greift (eigene Tx pro Mail).
-                        if (self.importMessage(msg, folder, direction)) {
+                        if (self.importMessage(msg, folder, direction, kontoId)) {
                             imported++;
                             // Erst NACH dem Commit der Import-Transaktion,
                             // sonst sperren sich beide gegenseitig.
-                            pruefeRuecklaeufer(msg, direction);
+                            pruefeRuecklaeufer(msg, direction, kontoId);
                         }
                     } catch (Exception e) {
                         // Versuche Kontext-Infos aus dem Envelope zu extrahieren (bereits vorgeladen)
@@ -308,12 +333,12 @@ public class EmailImportService {
      * hinter der Methode am Spring-Proxy — ein Fehler von dort wuerde sonst
      * den Import der uebrigen Mails abbrechen.
      */
-    private void pruefeRuecklaeufer(Message msg, EmailDirection direction) {
-        if (direction != EmailDirection.IN) {
+    private void pruefeRuecklaeufer(Message msg, EmailDirection direction, String kontoId) {
+        if (direction != EmailDirection.IN || !"HAUPT".equals(kontoId)) {
             return;
         }
         try {
-            bounceErkennungService.verarbeiteRuecklaeufer(msg);
+            bounceErkennungService.verarbeiteRuecklaeufer(msg, kontoId);
         } catch (Exception e) {
             log.warn("[EmailImport] Rueckläufer-Pruefung fehlgeschlagen: {} – {}",
                     e.getClass().getSimpleName(), e.getMessage());
@@ -324,24 +349,62 @@ public class EmailImportService {
      * Importiert eine einzelne E-Mail.
      * Gibt true zurück wenn neu importiert, false wenn bereits vorhanden.
      */
-    @Transactional
     public boolean importMessage(Message msg, IMAPFolder folder, EmailDirection direction)
             throws MessagingException, IOException {
+        return importMessage(msg, folder, direction, "HAUPT");
+    }
 
+    /** Lädt die IMAP-Nachricht vollständig außerhalb der DB-Transaktion. */
+    public boolean importMessage(Message msg, IMAPFolder folder, EmailDirection direction, String kontoId)
+            throws MessagingException, IOException {
+        localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
+        String folderName = folder.getFullName();
+        long uid = folder.getUID(msg);
+        long uidValidity = folder.getUIDValidity();
+        ByteArrayOutputStream serialized = new ByteArrayOutputStream();
+        msg.writeTo(serialized);
+        Message localMessage = new MimeMessage(Session.getInstance(new Properties()),
+                new ByteArrayInputStream(serialized.toByteArray()));
+        if (self != null) {
+            return self.persistImportierteNachricht(localMessage, direction, kontoId, folderName, uid, uidValidity);
+        }
+        return persistImportierteNachricht(localMessage, direction, kontoId, folderName, uid, uidValidity);
+    }
+
+    @Transactional
+    public boolean persistImportierteNachricht(Message msg, EmailDirection direction, String kontoId,
+            String folderName, long uid, long uidValidity) throws MessagingException, IOException {
+        localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
         // Message-ID extrahieren
         String[] ids = msg.getHeader("Message-ID");
         String messageId = (ids != null && ids.length > 0) ? ids[0] : null;
 
         boolean fallbackId = false;
-        if (messageId == null) {
-            // Fallback: IMAP-UID + Ordner als deterministische Message-ID
-            long uid = folder.getUID(msg);
-            messageId = "<no-msgid-uid-" + uid + "@" + folder.getFullName().replace(" ", "_") + ">";
+        if (messageId == null || messageId.isBlank()) {
+            messageId = fehlendeMessageId(kontoId, folderName, uidValidity, uid);
             fallbackId = true;
         }
 
-        // Bereits importiert?
-        if (emailRepository.existsByMessageId(messageId)) {
+        if (importIdentitaetRepository.existsByKontoIdAndFolderAndUidValidityAndUid(
+                kontoId, folderName, uidValidity, uid)) {
+            return false;
+        }
+        var existingForAccount = emailRepository.findByKontoIdAndMessageId(kontoId, messageId);
+        if (existingForAccount.isPresent()) {
+            Email existing = existingForAccount.get();
+            Email incoming = new Email();
+            incoming.setSubject(msg.getSubject());
+            incoming.setFromAddress(ersteAbsenderadresse(msg));
+            extractBody(msg, incoming);
+            boolean conflict = !java.util.Objects.equals(existing.getSubject(), msg.getSubject())
+                    || !java.util.Objects.equals(existing.getFromAddress(), incoming.getFromAddress())
+                    || !java.util.Objects.equals(existing.getBody(), incoming.getBody())
+                    || !java.util.Objects.equals(existing.getHtmlBody(), incoming.getHtmlBody());
+            importIdentitaetRepository.save(new org.example.kalkulationsprogramm.domain.einkauf.EmailImportIdentitaet(
+                    kontoId, folderName, uidValidity, uid, existing, conflict));
+            if (conflict) {
+                log.warn("[EmailImport] Message-ID-Konflikt für Konto {} – Identität zur Prüfung erfasst", kontoId);
+            }
             return false;
         }
 
@@ -368,18 +431,19 @@ public class EmailImportService {
                 Address[] fallbackFrom = msg.getFrom();
                 String fallbackFromStr = (fallbackFrom != null && fallbackFrom.length > 0) ? fallbackFrom[0].toString() : "<unbekannt>";
                 log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}', Von: '{}', Betreff: '{}' – Fallback-ID: {}",
-                        folder.getFullName(), fallbackFromStr, fallbackSubject, messageId);
+                        folderName, fallbackFromStr, fallbackSubject, messageId);
             } catch (Exception ignored) {
-                log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}' – Fallback-ID: {}", folder.getFullName(), messageId);
+                log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}' – Fallback-ID: {}", folderName, messageId);
             }
         }
 
         // Email erstellen
         Email email = new Email();
         email.setMessageId(messageId);
+        email.setKontoId(kontoId);
         email.setDirection(direction);
-        email.setImapFolder(folder.getFullName());
-        email.setImapUid(folder.getUID(msg));
+        email.setImapFolder(folderName);
+        email.setImapUid(uid);
         // Eigene gesendete Mails gelten automatisch als gelesen.
         if (direction == EmailDirection.OUT) {
             email.setRead(true);
@@ -450,8 +514,8 @@ public class EmailImportService {
         // Parent-Email via In-Reply-To oder References Header finden.
         // Fallback: Subject-Matching (z.B. t-online-Client setzt In-Reply-To
         // nicht zuverlässig, oder die Original-Message-ID liegt nicht in der DB).
-        Email parentEmail = findParentEmail(msg);
-        if (parentEmail == null) {
+        Email parentEmail = findParentEmail(msg, kontoId);
+        if (parentEmail == null && "HAUPT".equals(kontoId)) {
             parentEmail = findParentBySubject(email);
             if (parentEmail != null) {
                 log.info("[EmailImport] Parent via Subject-Fallback gefunden für '{}' → '{}'",
@@ -530,20 +594,23 @@ public class EmailImportService {
         // Status
         email.setProcessingStatus(EmailProcessingStatus.DONE);
         email.setProcessedAt(LocalDateTime.now());
+        email.setAutoSubmitted(autoSubmittedHeader);
+        email.setInReplyTo(firstHeader(msg, "In-Reply-To"));
+        email.setReferences(joinHeaders(msg, "References"));
 
         // Speichern (ohne Attachments erstmal)
         emailRepository.save(email);
+        importIdentitaetRepository.save(new org.example.kalkulationsprogramm.domain.einkauf.EmailImportIdentitaet(
+                kontoId, folderName, uidValidity, uid, email));
 
         // Attachments verarbeiten
         processAttachments(msg, email);
 
-        // Zuordnung versuchen und ggf. Attachments verarbeiten
-        // (nur wenn noch nicht durch Parent zugeordnet)
-        if (email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
-            postProcessEmail(email);
-        } else {
-            // Nur Lieferant-Attachments verarbeiten für bereits zugeordnete
-            if (email.getLieferant() != null && email.getDirection() == EmailDirection.IN) {
+        if (!"EINKAUF".equals(kontoId)) {
+            // Legacy-Zuordnung/Belegverarbeitung bleibt auf den vorhandenen Mailkonten.
+            if (email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
+                postProcessEmail(email);
+            } else if (email.getLieferant() != null && email.getDirection() == EmailDirection.IN) {
                 emailAttachmentProcessingService.processLieferantAttachments(email);
             }
         }
@@ -552,7 +619,8 @@ public class EmailImportService {
         // Klassifikation NICHT als Spam/Newsletter markiert wurden und vom
         // einem Kunden stammen. Greift in allen IMAP-Ordnern. Dedup pro
         // Absender + Plan erfolgt im Responder selbst.
-        if (direction == EmailDirection.IN
+        if ("HAUPT".equals(kontoId)
+                && direction == EmailDirection.IN
                 && !email.isSpam()
                 && !email.isNewsletter()) {
             try {
@@ -571,11 +639,28 @@ public class EmailImportService {
             }
         }
 
+        if ("EINKAUF".equals(kontoId)) {
+            EinkaufEmailImportiert event = new EinkaufEmailImportiert(email.getId());
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishEvent(event);
+                    }
+                });
+            } else {
+                eventPublisher.publishEvent(event);
+            }
+        }
+
         // Die Auswertung als Unzustellbarkeits-Meldung passiert bewusst erst
         // NACH dem Commit dieser Transaktion — siehe pruefeRuecklaeufer(..).
 
         return true;
     }
+
+    /** Wird erst nach erfolgreicher Speicherung für die Einkaufsverarbeitung veröffentlicht. */
+    public record EinkaufEmailImportiert(Long emailId) {}
 
     /**
      * Liest den ersten Wert eines Headers; gibt null zurück wenn nicht vorhanden.
@@ -629,7 +714,7 @@ public class EmailImportService {
      * Findet die Parent-Email anhand von In-Reply-To oder References Header.
      * Gibt die am besten passende Email zurück (In-Reply-To priorisiert).
      */
-    private Email findParentEmail(Message msg) throws MessagingException {
+    private Email findParentEmail(Message msg, String kontoId) throws MessagingException {
         List<String> candidateIds = new ArrayList<>();
 
         // 1. In-Reply-To Header (höchste Priorität - direkte Antwort)
@@ -663,7 +748,7 @@ public class EmailImportService {
         }
 
         // In DB nach diesen Message-IDs suchen
-        List<Email> foundParents = emailRepository.findByMessageIdIn(candidateIds);
+        List<Email> foundParents = emailRepository.findByKontoIdAndMessageIdIn(kontoId, candidateIds);
 
         if (foundParents.isEmpty()) {
             return null;
@@ -680,6 +765,20 @@ public class EmailImportService {
 
         // Fallback: Neueste aus References
         return foundParents.getFirst();
+    }
+
+    static String fehlendeMessageId(String kontoId, String folder, long uidValidity, long uid) {
+        String safeFolder = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(folder.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return "<no-msgid-" + kontoId.toLowerCase(java.util.Locale.ROOT) + "-" + safeFolder
+                + "-" + uidValidity + "-" + uid + "@erp.local>";
+    }
+
+    private String ersteAbsenderadresse(Message msg) throws MessagingException {
+        Address[] from = msg.getFrom();
+        if (from == null || from.length == 0) return null;
+        return from[0] instanceof InternetAddress internetAddress
+                ? internetAddress.getAddress() : from[0].toString();
     }
 
     /**
@@ -1067,10 +1166,16 @@ public class EmailImportService {
      */
     @Transactional
     public int backfillParentEmails() {
+        return backfillParentEmails("HAUPT");
+    }
+
+    /** Backfillt Subject-Threads ausschließlich innerhalb des angegebenen Kontos. */
+    @Transactional
+    public int backfillParentEmails(String kontoId) {
         log.info("[Backfill] Starte Parent-Email Backfill...");
         int updated = 0;
 
-        List<Email> allEmails = emailRepository.findAll();
+        List<Email> allEmails = emailRepository.findByKontoId(kontoId);
 
         // Index nach normalisiertem Subject (ohne AW:/RE:/FWD: Prefix).
         // Mails mit leerem Normalisat (z. B. Subject "RE:" allein) NICHT in den

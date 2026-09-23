@@ -32,6 +32,13 @@ public class EmailOutboundPersistenceService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = Exception.class)
     public void speichereOutEmail(Email email) {
+        email.setKontoId("HAUPT");
+        emailRepository.save(email);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = Exception.class)
+    public void speichereOutEmail(Email email, String kontoId) {
+        email.setKontoId(kontoId == null || kontoId.isBlank() ? "HAUPT" : kontoId);
         emailRepository.save(email);
     }
 
@@ -41,6 +48,11 @@ public class EmailOutboundPersistenceService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, noRollbackFor = Exception.class)
     public boolean existsByMessageId(String messageId) {
-        return emailRepository.existsByMessageId(messageId);
+        return emailRepository.existsByKontoIdAndMessageId("HAUPT", messageId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, noRollbackFor = Exception.class)
+    public boolean existsByMessageId(String kontoId, String messageId) {
+        return emailRepository.existsByKontoIdAndMessageId(kontoId == null ? "HAUPT" : kontoId, messageId);
     }
 }

@@ -365,3 +365,18 @@ Eine vorhandene Produktionskopie vom 09.09.2026 wurde lokal gefunden: MySQL-Cont
 - Ein explizit konfiguriertes Einkaufspostfach ermöglicht anschließend den vom Nutzer ausgelösten Anfrageversand und den gezielten Abruf seiner Antworten. Die Agenten verschicken keine ungefragt ausgewählten echten Anfragen an Lieferanten.
 - Hochgeladene Dateien fehlen im vorgefundenen SQL-Dump. Fehlende historische Anhänge müssen verständlich angezeigt werden; neue Testunterlagen werden lokal hochgeladen. Eine Produktionsdateikopie wird nicht vorausgesetzt.
 - Abnahme: Restore ohne Fehler, Flyway-Migration und Hibernate-Schemaprüfung erfolgreich, Backend und UI lokal erreichbar, Login und vollständiger Beschaffungsablauf mit lokaler DB prüfbar. Versand/Antwortimport werden über kontrollierte Mail-Testdienste automatisiert geprüft; ein echter Postfach-Test setzt die vom Nutzer eingerichteten Zugangsdaten voraus.
+
+
+## 15. Nutzerpräzisierungen während Abschnitt 4 (23.09.2026)
+
+Der Einstieg im Projekt-Editor zur Artikelauswahl dient der **Erfassung von Materialkosten**. Beschriftungen und Speicherpfad dürfen darüber keine Bestellung auslösen oder diesen Eindruck vermitteln. Tatsächliche bestätigte Lagerteilentnahmen und die Beschaffungsabläufe bleiben eigenständige fachliche Aktionen.
+
+Als späterer Ausbau ist eine **Angebotskalkulation** vorgesehen, in der Profile und weitere Materialpositionen vorbereitet werden. Ausgewählte Positionen oder Teilmengen sollen anschließend bewusst in den bestehenden Beschaffungsablauf bis zur Bestellung übernommen werden können. Die Kalkulation allein erzeugt keine Reservierung oder Bestellung. Die Übernahme soll die ursprüngliche Kalkulationsposition und Fassung sowie bereits übernommene Mengen nachvollziehbar erhalten und unbemerkte Doppelübernahmen verhindern.
+
+Diese künftige Quelle soll das gemeinsame Bedarfs-/Herkunftsmodell und die Anfrage-/Direktbestellpfade nutzen; keine zweite Bestelllogik. Kalkulationswerte und tatsächliche Projektmaterialkosten bleiben getrennt. Die vollständige Angebotskalkulationsoberfläche gehört zu einem späteren Auftrag und erweitert jetzt nicht die 39 fachlichen Umsetzungsschritte.
+
+### Präzisierung: einfache Nachkalkulation statt Lagerbedienung
+
+Der Nutzer hat die Projekt-Editor-Anforderung ausdrücklich vereinfacht: Der Handwerksbetrieb hat keine Lagerhaltungssoftware. Im Projekt werden verwendete Produkte und tatsächliche Materialkosten für die Nachkalkulation erfasst. Zwei gleichwertige einfache Eingänge: (1) manuelle Beschreibung und Betrag, (2) Artikel aus dem Artikelstamm auswählen, Menge und dort hinterlegten Preis übernehmen beziehungsweise anpassen. Beispiel: Bohrer auswählen, hinterlegten Preis von ungefähr 8 € nutzen, speichern. Die Artikelherkunft behauptet keinen verwalteten Lagerbestand.
+
+Die in Abschnitt4 neu hinzugefügte Teilentnahme-/Bedarfslade-Bedienung gehört daher **nicht in den Projekt-Editor** und wird entfernt. Die Kostenansicht soll Produkt, Menge/Preis soweit vorhanden und Kosten zeigen; keine Lager-/Bestellfreigabe als Voraussetzung. Kostenerfassung erzeugt keinen Einkaufsbedarf und keine Bestellung. Die bereits geplanten internen Beschaffungsmengen werden durch diese einfache Nachkalkulation nicht gebucht. Die zuvor erwähnte spätere Angebotskalkulation bleibt unabhängig davon ein vorbereitender Kalkulationsablauf.
