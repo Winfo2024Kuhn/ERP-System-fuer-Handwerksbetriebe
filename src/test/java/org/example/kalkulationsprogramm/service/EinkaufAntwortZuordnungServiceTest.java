@@ -68,6 +68,8 @@ class EinkaufAntwortZuordnungServiceTest {
         when(links.save(any(EinkaufMailZuordnung.class))).thenAnswer(call -> call.getArgument(0));
         var service = new EinkaufAntwortZuordnungService(emails, participations, links, requests, revisions,
                 mock(EinkaufAuditService.class), new ObjectMapper(), mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EinkaufBestellungRepository.class), mock(org.example.kalkulationsprogramm.repository.BestellungRevisionRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AngebotVersionRepository.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));
 
         service.verarbeiteImportZuordnung(88L);
@@ -86,16 +88,26 @@ class EinkaufAntwortZuordnungServiceTest {
     }
 
     @Test
-    void bestaetigtKeineBestellzuordnungBevorEinBestellmodellExistiert() {
+    void bestaetigtKeineBestellungOhneNachweislichVersandteFassung() {
         var emails = mock(EmailRepository.class);
         var links = mock(EinkaufMailZuordnungRepository.class);
+        var orders = mock(org.example.kalkulationsprogramm.repository.EinkaufBestellungRepository.class);
+        var revisions = mock(org.example.kalkulationsprogramm.repository.BestellungRevisionRepository.class);
+        var order = mock(org.example.kalkulationsprogramm.domain.einkauf.EinkaufBestellung.class);
+        var revision = mock(org.example.kalkulationsprogramm.domain.einkauf.BestellungRevision.class);
         Email email = new Email();
         ReflectionTestUtils.setField(email, "id", 92L);
         email.setKontoId("EINKAUF");
         when(emails.findById(92L)).thenReturn(Optional.of(email));
+        when(orders.findById(999L)).thenReturn(Optional.of(order));
+        when(order.getStatus()).thenReturn(org.example.kalkulationsprogramm.domain.einkauf.BestellungStatus.BESTELLT);
+        when(revisions.findFirstByBestellung_IdOrderByNummerDesc(999L)).thenReturn(Optional.of(revision));
+        when(revision.getId()).thenReturn(1L);
         var service = new EinkaufAntwortZuordnungService(emails, mock(AnfrageLieferantRepository.class), links,
                 mock(EinkaufsanfrageRepository.class), mock(AnfrageRevisionRepository.class), mock(EinkaufAuditService.class),
                 new ObjectMapper(), mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class),
+                orders, revisions,
+                mock(org.example.kalkulationsprogramm.repository.AngebotVersionRepository.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
@@ -121,7 +133,9 @@ class EinkaufAntwortZuordnungServiceTest {
         when(links.save(any(EinkaufMailZuordnung.class))).thenAnswer(call -> call.getArgument(0));
         var service = new EinkaufAntwortZuordnungService(emails, mock(AnfrageLieferantRepository.class), links,
                 mock(EinkaufsanfrageRepository.class), mock(AnfrageRevisionRepository.class), mock(EinkaufAuditService.class),
-                new ObjectMapper(), mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class), txManager);
+                new ObjectMapper(), mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EinkaufBestellungRepository.class), mock(org.example.kalkulationsprogramm.repository.BestellungRevisionRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AngebotVersionRepository.class), txManager);
 
         assertEquals(1, service.verarbeiteOffeneImportZuordnungen(20));
 

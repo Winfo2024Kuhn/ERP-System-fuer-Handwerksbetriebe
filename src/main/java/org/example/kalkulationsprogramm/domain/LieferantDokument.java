@@ -28,6 +28,10 @@ public class LieferantDokument {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Optionale Verknüpfung zu einer Einkaufsbestellung; historische Belegketten bleiben zulässig. */
+    @Column(name = "einkauf_bestellung_id")
+    private Long einkaufBestellungId;
+
     /**
      * Optimistisches Sperren: schuetzt gegen paralleles Speichern (auch aus
      * der Mobile-App, die keine Sperr-Oberflaeche hat).

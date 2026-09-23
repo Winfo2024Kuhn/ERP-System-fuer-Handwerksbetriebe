@@ -8,6 +8,7 @@ import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.PreisQuelle;
+import org.example.kalkulationsprogramm.domain.PreisScope;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
@@ -110,6 +111,56 @@ public class LieferantArtikelpreisService {
         neu.setAktuell(true);
         return Optional.of(mapper.toDto(artikelPreiseRepository.save(neu)));
     }
+
+    /** Schreibt einen belegten Einkaufsstand in genau seinen Scope, ohne Projekt-/Mengensonderpreise zu vermischen. */
+    @Transactional
+    public Optional<LieferantArtikelpreisDto> schreibePreisstand(Long lieferantId, Long artikelId, BigDecimal preis,
+            String externeArtikelnummer, PreisQuelle quelle, String notiz, PreisScope scope, Long projektId,
+            BigDecimal abMenge, BigDecimal bisMenge, java.time.LocalDate datum, java.time.LocalDate gueltigBis,
+            String einheit, BigDecimal preisbasisMenge, Long angebotsversionId, Long angebotspositionId,
+            java.util.UUID idempotenzKey, String komponentenHash) {
+        if (lieferantId == null || artikelId == null || preis == null || preis.signum() <= 0 || scope == null
+                || idempotenzKey == null || datum == null
+                || (scope == PreisScope.PROJEKT && (projektId == null || projektId <= 0))
+                || (scope == PreisScope.MENGENSTAFFEL && (abMenge == null || abMenge.signum() <= 0)))
+            throw new IllegalArgumentException("Preis, Herkunft, Scope und Gültigkeit müssen vollständig sein.");
+        var duplicate = artikelPreiseRepository.findByIdempotenzKey(idempotenzKey);
+        if (duplicate.isPresent()) {
+            LieferantenArtikelPreise p = duplicate.get();
+            if (!p.getArtikel().getId().equals(artikelId) || !p.getLieferant().getId().equals(lieferantId)
+                    || p.getPreis().compareTo(preis) != 0 || p.getScope() != scope
+                    || !Objects.equals(p.getProjektId(), projektId) || !gleicheZahl(p.getAbMenge(), abMenge)
+                    || !gleicheZahl(p.getBisMenge(), bisMenge) || !Objects.equals(p.getGueltigAb(), datum)
+                    || !Objects.equals(p.getGueltigBis(), gueltigBis) || !Objects.equals(p.getEinheit(), einheit)
+                    || !gleicheZahl(p.getPreisbasisMenge(), preisbasisMenge)
+                    || !Objects.equals(p.getAngebotsversionId(), angebotsversionId)
+                    || !Objects.equals(p.getAngebotspositionId(), angebotspositionId)
+                    || !Objects.equals(p.getKomponentenHash(), komponentenHash))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                        "Der Idempotenzschlüssel gehört zu einer anderen Preisübernahme.");
+            return Optional.of(mapper.toDto(p));
+        }
+        List<LieferantenArtikelPreise> history = artikelPreiseRepository.findeHistorieFuerUpdate(artikelId, lieferantId);
+        for (LieferantenArtikelPreise old : history) {
+            boolean sameScope = old.getScope() == scope && Objects.equals(old.getProjektId(), projektId)
+                    && gleicheZahl(old.getAbMenge(), abMenge) && gleicheZahl(old.getBisMenge(), bisMenge);
+            if (sameScope && old.isAktuell()) old.setAktuell(false);
+        }
+        Lieferanten supplier = lieferantenRepository.findById(lieferantId).orElse(null);
+        Artikel article = artikelRepository.findById(artikelId).orElse(null);
+        if (supplier == null || article == null) return Optional.empty();
+        LieferantenArtikelPreise neu = new LieferantenArtikelPreise();
+        neu.setArtikel(article); neu.setLieferant(supplier); neu.setPreis(preis); neu.setQuelle(quelle);
+        neu.setExterneArtikelnummer(normalizeExterneArtikelnummer(externeArtikelnummer)); neu.setNotiz(notiz);
+        neu.setAktuell(true); neu.setScope(scope); neu.setProjektId(projektId); neu.setAbMenge(abMenge); neu.setBisMenge(bisMenge);
+        neu.setGueltigAb(datum); neu.setGueltigBis(gueltigBis); neu.setWaehrung("EUR"); neu.setEinheit(einheit);
+        neu.setPreisbasisMenge(preisbasisMenge); neu.setAngebotsversionId(angebotsversionId); neu.setAngebotspositionId(angebotspositionId);
+        neu.setIdempotenzKey(idempotenzKey); neu.setKomponentenHash(komponentenHash);
+        neu.setPreisAenderungsdatum(java.util.Date.from(datum.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()));
+        return Optional.of(mapper.toDto(artikelPreiseRepository.saveAndFlush(neu)));
+    }
+
+    private static boolean gleicheZahl(BigDecimal a, BigDecimal b) { return a == b || (a != null && b != null && a.compareTo(b) == 0); }
 
     /** Vollstaendiger Preisverlauf eines Artikels ueber alle Lieferanten. */
     @Transactional(readOnly = true)

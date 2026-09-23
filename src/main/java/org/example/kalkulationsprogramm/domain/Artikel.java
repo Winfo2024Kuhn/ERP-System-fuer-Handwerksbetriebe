@@ -44,6 +44,7 @@ public class Artikel
     {
         return artikelpreis.stream()
                 .filter(LieferantenArtikelPreise::isAktuell)
+                .filter(LieferantenArtikelPreise::istAllgemeinerPreis)
                 .toList();
     }
 
@@ -53,6 +54,7 @@ public class Artikel
     {
         return artikelpreis.stream()
                 .filter(LieferantenArtikelPreise::isAktuell)
+                .filter(LieferantenArtikelPreise::istAllgemeinerPreis)
                 .filter(p -> p.getPreis() != null)
                 .min(Comparator.comparing(LieferantenArtikelPreise::getPreis));
     }

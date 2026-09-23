@@ -141,4 +141,34 @@ class LieferantArtikelpreisServiceTest {
         assertThat(service.anlegen(LIEFERANT_ID, null, new BigDecimal("12.50"), "ABC-123")).isEmpty();
         verify(artikelPreiseRepository, never()).save(any(LieferantenArtikelPreise.class));
     }
+
+    @Test
+    void gleicherBetragMitNeuemAngebotsbelegErzeugtNeuenScopedStand() {
+        var old = new LieferantenArtikelPreise();
+        old.setArtikel(erstelleArtikel()); old.setLieferant(erstelleLieferant());
+        old.setScope(org.example.kalkulationsprogramm.domain.PreisScope.STANDARD);
+        old.setAktuell(true); old.setPreis(new BigDecimal("12.5000"));
+        when(artikelPreiseRepository.findByIdempotenzKey(any())).thenReturn(Optional.empty());
+        when(artikelPreiseRepository.findeHistorieFuerUpdate(ARTIKEL_ID, LIEFERANT_ID)).thenReturn(java.util.List.of(old));
+        when(lieferantenRepository.findById(LIEFERANT_ID)).thenReturn(Optional.of(erstelleLieferant()));
+        when(artikelRepository.findById(ARTIKEL_ID)).thenReturn(Optional.of(erstelleArtikel()));
+        when(artikelPreiseRepository.saveAndFlush(any(LieferantenArtikelPreise.class)))
+                .thenAnswer(call -> call.getArgument(0));
+        when(mapper.toDto(any(LieferantenArtikelPreise.class))).thenReturn(new LieferantArtikelpreisDto());
+        var key = java.util.UUID.randomUUID();
+
+        service.schreibePreisstand(LIEFERANT_ID, ARTIKEL_ID, new BigDecimal("12.50"), null,
+                org.example.kalkulationsprogramm.domain.PreisQuelle.ANGEBOT_EMAIL, "Angebot übernommen",
+                org.example.kalkulationsprogramm.domain.PreisScope.STANDARD, null, null, null,
+                java.time.LocalDate.of(2026, 9, 22), java.time.LocalDate.of(2026, 10, 22),
+                "STUECK", BigDecimal.ONE, 90L, 91L, key, "a".repeat(64));
+
+        var captured = org.mockito.ArgumentCaptor.forClass(LieferantenArtikelPreise.class);
+        verify(artikelPreiseRepository).saveAndFlush(captured.capture());
+        assertThat(old.isAktuell()).isFalse();
+        assertThat(captured.getValue().getPreis()).isEqualByComparingTo("12.50");
+        assertThat(captured.getValue().getAngebotsversionId()).isEqualTo(90L);
+        assertThat(captured.getValue().getAngebotspositionId()).isEqualTo(91L);
+        assertThat(captured.getValue().getIdempotenzKey()).isEqualTo(key);
+    }
 }

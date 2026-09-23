@@ -16,4 +16,15 @@ public class LieferantArtikelpreisDto {
     private String externeArtikelnummer;
     private LocalDate preisAenderungsdatum;
     private BigDecimal preis;
+    private org.example.kalkulationsprogramm.domain.PreisScope scope;
+    private Long projektId;
+    private BigDecimal abMenge;
+    private BigDecimal bisMenge;
+    private LocalDate gueltigAb;
+    private LocalDate gueltigBis;
+    private String waehrung;
+    private String einheit;
+    private BigDecimal preisbasisMenge;
+    private Long angebotsversionId;
+    private Long angebotspositionId;
 }
