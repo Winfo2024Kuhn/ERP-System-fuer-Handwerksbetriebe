@@ -260,6 +260,33 @@ class EinkaufMengenParallelTest {
     }
 
     @Test
+    void neueProjektpositionSpeichertBedarfDauerhaftUndWiederholterAbgleichDupliziertNicht() {
+        Projekt projekt = new Projekt();
+        projekt.setId(1L);
+        Artikel artikel = new Artikel();
+        artikel.setId(1L);
+        artikel.setProduktname("Testprofil");
+        artikel.setArtikelnummer("DUMMY-1");
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        ArtikelInProjekt position = aip(991L, projekt, artikel, 7);
+
+        einkaufBedarfService.synchronisiereProjektposition(position);
+
+        assertEquals(1, bedarfRepository.count());
+        EinkaufBedarf gespeichert = bedarfRepository.findAll().getFirst();
+        assertEquals(991L, gespeichert.getArtikelInProjektId());
+        assertEquals(1L, gespeichert.getProjektId());
+        assertEquals("DUMMY-1", gespeichert.getPosition().interneReferenz());
+        assertEquals(0, gespeichert.getBedarfMenge().compareTo(new BigDecimal("7")));
+
+        einkaufBedarfService.synchronisiereProjektposition(position);
+
+        assertEquals(1, bedarfRepository.count());
+        assertEquals(gespeichert.getVersion(),
+                bedarfRepository.findById(gespeichert.getId()).orElseThrow().getVersion());
+    }
+
+    @Test
     void projektpositionAenderungAktualisiertVerknuepftenBedarfPerMysqlLockUndVersion() {
         EinkaufBedarf bedarf = bedarfRepository.saveAndFlush(bedarf("5"));
         bedarf.setArtikelInProjektId(991L);

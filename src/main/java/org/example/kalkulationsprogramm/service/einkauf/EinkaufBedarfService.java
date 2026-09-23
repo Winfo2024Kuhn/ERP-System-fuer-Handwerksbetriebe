@@ -174,6 +174,7 @@ public class EinkaufBedarfService {
                         : "Historisch als Lagerentnahme markiert; bitte Lagerdeckung prüfen.");
                 bedarf.setNachpflegeErforderlich(true);
             }
+            bedarfRepository.saveAndFlush(bedarf);
         } else {
             BigDecimal bereitsGedeckt = bedarf.getLagergedeckt().add(bedarf.getBestellt()).add(bedarf.getReserviert());
             if ((menge == null && bereitsGedeckt.signum() > 0)
