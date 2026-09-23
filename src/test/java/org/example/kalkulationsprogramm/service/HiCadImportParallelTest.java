@@ -60,7 +60,10 @@ class HiCadImportParallelTest {
     @jakarta.annotation.Resource HiCadImportService service;
 
     @AfterEach
-    void cleanup() { imports.deleteAll(); }
+    void cleanup() {
+        imports.deleteAll();
+        org.mockito.Mockito.clearInvocations(TestConfig.BEDARFE, TestConfig.DATEIEN);
+    }
 
     @Test
     void parallelRetryCreatesOneNeedThenProgressVersionAllowsRemainder() throws Exception {
@@ -104,6 +107,40 @@ class HiCadImportParallelTest {
         assertEquals(new BigDecimal("10.000000"), completed.getZeilen().get(0).getUebernommeneMenge());
         assertTrue(completed.getZeilen().get(0).isUebernommen());
         verify(TestConfig.BEDARFE, org.mockito.Mockito.times(2)).anlegen(any(), eq(4L));
+    }
+
+    @Test
+    void mysqlPersistsLargePartialQuantityAndItsRemainder() {
+        org.mockito.Mockito.clearInvocations(TestConfig.BEDARFE, TestConfig.DATEIEN);
+        HiCadImport imported = new HiCadImport(17L, "c".repeat(64), 4L, false);
+        HiCadImportZeile row = new HiCadImportZeile(4, "Large HiCAD row",
+                "{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"P-18\",\"zeichnungsnummer\":\"Z-18\",\"zeichnungsrevision\":\"A\",\"bezeichnung\":\"Rahmen\",\"basis\":{\"menge\":1000000000,\"einheit\":\"STUECK\",\"stueckzahl\":1000000000},\"dokumente\":[],\"anlageVersionIds\":[]}");
+        row.setBildDateiIdsJson("[7]");
+        when(TestConfig.DATEIEN.anhaengenImportBild(any(), eq(7L), any(), eq(4L)))
+                .thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufDateiDto.AnlageDto(
+                        700L, 70L, 71L, "HiCAD-test", "test.png", "image/png", 9L, "hash", false, false, null));
+        imported.addZeile(row);
+        imported = imports.saveAndFlush(imported);
+        long importId = imported.getId();
+
+        var first = new HiCadImportDto.Uebernahme(0L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(4, new BigDecimal("400000000"), null, List.of(7L))), false, UUID.randomUUID());
+        service.uebernehmen(importId, first, 4L);
+
+        HiCadImport afterPartial = imports.findById(importId).orElseThrow();
+        assertEquals(new BigDecimal("400000000.000000"), afterPartial.getZeilen().get(0).getUebernommeneMenge());
+        var progress = service.fortschritt(importId, 4L);
+        assertEquals(new BigDecimal("1000000000.000000"), progress.zeilen().get(0).gesamtmenge());
+        assertEquals(new BigDecimal("600000000.000000"), progress.zeilen().get(0).verbleibendeMenge());
+        assertEquals(false, progress.zeilen().get(0).vollstaendigUebernommen());
+
+        service.uebernehmen(importId, new HiCadImportDto.Uebernahme(progress.version(),
+                List.of(new HiCadImportDto.ZeilenAuswahl(4, new BigDecimal("600000000"), null, List.of(7L))), false,
+                UUID.randomUUID()), 4L);
+
+        HiCadImport completed = imports.findById(importId).orElseThrow();
+        assertEquals(new BigDecimal("1000000000.000000"), completed.getZeilen().get(0).getUebernommeneMenge());
+        assertTrue(completed.getZeilen().get(0).isUebernommen());
     }
 
     private List<EinkaufBedarfDto.Response> callTogether(long id, HiCadImportDto.Uebernahme request,

@@ -364,6 +364,44 @@ class HiCadImportServiceTest {
     }
 
     @Test
+    void rejectsFractionalDigitsBeyondSixBeforeRoundingWholePieces() {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        HiCadImport imported = new HiCadImport(17L, "d".repeat(64), 4L, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(imported, "id", 6L);
+        org.springframework.test.util.ReflectionTestUtils.setField(imported, "version", 0L);
+        HiCadImportZeile row = new HiCadImportZeile(3, "HiCAD row",
+                "{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"P-17\",\"zeichnungsnummer\":\"Z-17\",\"zeichnungsrevision\":\"A\",\"bezeichnung\":\"Konsole\",\"basis\":{\"menge\":1,\"einheit\":\"STUECK\",\"stueckzahl\":1},\"dokumente\":[],\"anlageVersionIds\":[]}");
+        imported.addZeile(row);
+        when(imports.findByIdForUpdate(6L)).thenReturn(Optional.of(imported));
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        HiCadImportService service = new HiCadImportService(imports, mock(EinkaufBedarfService.class),
+                mock(EinkaufDateiService.class));
+        var request = new HiCadImportDto.Uebernahme(0L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(3, new java.math.BigDecimal("0.9999999"), null, List.of())),
+                false, UUID.randomUUID());
+
+        assertThrows(IllegalArgumentException.class, () -> service.uebernehmen(6L, request, 4L));
+
+        row.setSnapshotJson("{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"P-17\",\"zeichnungsnummer\":\"Z-17\",\"zeichnungsrevision\":\"A\",\"bezeichnung\":\"Konsole\",\"basis\":{\"menge\":1,\"einheit\":\"METER\"},\"dokumente\":[],\"anlageVersionIds\":[]}");
+        row.setBildDateiIdsJson("[7]");
+        EinkaufDateiService files = mock(EinkaufDateiService.class);
+        when(files.anhaengenImportBild(org.mockito.ArgumentMatchers.anyLong(), eq(7L), anyString(), eq(4L)))
+                .thenReturn(new EinkaufDateiDto.AnlageDto(700L, 70L, 71L, "HiCAD-test", "test.png", "image/png", 9L, "hash", false, false, null));
+        when(imports.findByIdForUpdate(6L)).thenReturn(Optional.of(imported));
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        EinkaufBedarfService needs = mock(EinkaufBedarfService.class);
+        when(needs.anlegen(any(), eq(4L))).thenReturn(new EinkaufBedarfDto.Response(900L, 0L, null, null, null, false, null));
+        when(needs.aktualisieren(org.mockito.ArgumentMatchers.anyLong(), any(), eq(4L)))
+                .thenAnswer(invocation -> new EinkaufBedarfDto.Response(invocation.getArgument(0), 1L, null, null, null, false, null));
+        HiCadImportService serviceWithAttachments = new HiCadImportService(imports, needs, files);
+        var exactPrecision = new HiCadImportDto.Uebernahme(0L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(3, new java.math.BigDecimal("0.123456"), null, List.of(7L))),
+                false, UUID.randomUUID());
+        assertEquals(1, serviceWithAttachments.uebernehmen(6L, exactPrecision, 4L).size());
+        assertEquals(new java.math.BigDecimal("0.123456"), row.getUebernommeneMenge());
+    }
+
+    @Test
     void secondPreviewOfIdenticalCompressedWorkbookIsExplicitlyMarkedAsDuplicate() throws Exception {
         HiCadImportRepository imports = mock(HiCadImportRepository.class);
         java.util.Map<String, HiCadImport> byHash = new java.util.HashMap<>();

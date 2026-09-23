@@ -13,7 +13,7 @@ public class HiCadImportZeile {
     @Column(name = "snapshot_json", length = 8000) private String snapshotJson;
     @Column(name = "bild_datei_ids_json", length = 4000) private String bildDateiIdsJson;
     @Column(name = "uebernommen", nullable = false) private boolean uebernommen;
-    @Column(name = "uebernommene_menge", nullable = false, precision = 15, scale = 6) private BigDecimal uebernommeneMenge = BigDecimal.ZERO;
+    @Column(name = "uebernommene_menge", nullable = false, precision = 19, scale = 6) private BigDecimal uebernommeneMenge = BigDecimal.ZERO;
     protected HiCadImportZeile() {}
     public HiCadImportZeile(int zeilennummer, String rohtext, String snapshotJson) {
         this.zeilennummer = zeilennummer; this.rohtext = rohtext; this.snapshotJson = snapshotJson;

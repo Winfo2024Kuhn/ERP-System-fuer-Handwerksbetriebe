@@ -174,7 +174,11 @@ public class HiCadImportService {
                     ? (snapshot.basis() == null ? null : snapshot.basis().menge()) : selection.menge();
             if (snapshot.basis() == null || snapshot.basis().einheit() != original.basis().einheit())
                 throw new IllegalArgumentException("Die Einheit einer Importzeile darf bei einer Teilübernahme nicht geändert werden.");
-            if (selectedQuantity != null) selectedQuantity = selectedQuantity.setScale(6, java.math.RoundingMode.HALF_UP);
+            if (selectedQuantity != null) {
+                if (selectedQuantity.stripTrailingZeros().scale() > 6)
+                    throw new IllegalArgumentException("Die Teilmenge darf höchstens sechs Nachkommastellen haben.");
+                selectedQuantity = selectedQuantity.setScale(6);
+            }
             snapshot = withQuantity(snapshot, selectedQuantity, remaining);
             List<Long> imageIds = parseBildIds(row.getBildDateiIdsJson());
             List<Long> confirmedIds = selection.bestaetigteBildDateiIds() == null ? List.of() : selection.bestaetigteBildDateiIds();
@@ -195,7 +199,7 @@ public class HiCadImportService {
             }
             PositionSnapshot finalSnapshot = withAttachments(snapshot, versionIds);
             created.add(bedarfe.aktualisieren(newNeed.id(), new EinkaufBedarfDto.Update(newNeed.version(), finalSnapshot, group), akteurId));
-            BigDecimal transferredTotal = alreadyTransferred.add(selectedQuantity).setScale(6, java.math.RoundingMode.HALF_UP);
+            BigDecimal transferredTotal = alreadyTransferred.add(selectedQuantity);
             row.setUebernommeneMenge(transferredTotal);
             row.setUebernommen(transferredTotal.compareTo(totalQuantity) >= 0);
         }
@@ -466,7 +470,7 @@ public class HiCadImportService {
         BigDecimal pieces = old.stueckzahl();
         if (old.einheit() == Einheit.STUECK && selected.stripTrailingZeros().scale() > 0) throw new IllegalArgumentException("Die Stückzahl muss ganzzahlig sein.");
         if (old.einheit() == Einheit.STUECK) pieces = selected;
-        Mengenbasis basis = new Mengenbasis(selected.setScale(6, java.math.RoundingMode.HALF_UP), old.einheit(), pieces,
+        Mengenbasis basis = new Mengenbasis(selected.setScale(6), old.einheit(), pieces,
                 old.einzelLaengeMm(), old.kgJeMeter(), old.faktorQuelle());
         return new PositionSnapshot(position.art(), position.artikelId(), position.interneReferenz(), position.zeichnungsnummer(),
                 position.zeichnungsrevision(), position.bezeichnung(), position.werkstoff(), position.abmessung(), basis,
