@@ -719,6 +719,11 @@ public class SystemSettingsService {
      */
     public record MailKonto(String host, int port, String username,
             String password, String fromAddress, String fromName) {
+        @Override
+        public String toString() {
+            return "MailKonto[host=" + host + ", port=" + port + ", username=" + username
+                    + ", password=[geschützt], fromAddress=" + fromAddress + ", fromName=" + fromName + "]";
+        }
     }
 
     /**
@@ -726,6 +731,11 @@ public class SystemSettingsService {
      * Kopie im "Gesendet"-Ordner.
      */
     public record ImapZugang(String host, int port, String username, String password) {
+        @Override
+        public String toString() {
+            return "ImapZugang[host=" + host + ", port=" + port + ", username=" + username
+                    + ", password=[geschützt]]";
+        }
     }
 
     /**

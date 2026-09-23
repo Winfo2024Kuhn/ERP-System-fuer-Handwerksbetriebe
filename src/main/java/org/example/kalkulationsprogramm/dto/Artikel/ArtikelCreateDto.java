@@ -12,6 +12,7 @@ public class ArtikelCreateDto {
     private String produktname;
     private String produktlinie;
     private String produkttext;
+    private String artikelnummer;
     private String externeArtikelnummer;
     private Long verpackungseinheit;
     private String preiseinheit;

@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import jakarta.persistence.EntityManager;
+
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
@@ -25,6 +27,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.stream.Collectors;
@@ -72,10 +76,16 @@ public class ArtikelService implements ArtikelServiceContract {
     private final KategorieRepository kategorieRepository;
     private final WerkstoffRepository werkstoffRepository;
     private final LieferantenRepository lieferantenRepository;
+    private final EntityManager entityManager;
 
     @Transactional
     public Artikel erstelleArtikel(ArtikelCreateDto dto) {
+        String artikelnummer = normalisiereInterneArtikelnummer(dto.getArtikelnummer());
+        if (artikelnummer != null) {
+            pruefeArtikelnummerFrei(artikelnummer);
+        }
         Artikel artikel = new Artikel();
+        artikel.setArtikelnummer(artikelnummer);
         artikel.setProduktname(dto.getProduktname());
         artikel.setProduktlinie(dto.getProduktlinie());
         artikel.setProdukttext(dto.getProdukttext());
@@ -95,6 +105,17 @@ public class ArtikelService implements ArtikelServiceContract {
 
         Artikel saved = artikelRepository.save(artikel);
 
+        String gespeicherteNummer = artikelnummer;
+        if (gespeicherteNummer == null) {
+            gespeicherteNummer = naechsteAutomatischeArtikelnummer(saved.getId());
+            saved.setArtikelnummer(gespeicherteNummer);
+        }
+        try {
+            saved = artikelRepository.saveAndFlush(saved);
+        } catch (org.springframework.dao.DataIntegrityViolationException conflict) {
+            throw artikelnummerKonflikt(gespeicherteNummer, conflict);
+        }
+
         if (dto.getPreis() != null || (dto.getExterneArtikelnummer() != null && !dto.getExterneArtikelnummer().isBlank())) {
             LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
             preis.setArtikel(saved);
@@ -108,6 +129,53 @@ public class ArtikelService implements ArtikelServiceContract {
         }
 
         return saved;
+    }
+
+    private String normalisiereInterneArtikelnummer(String input) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+        String nummer = input.trim();
+        if (nummer.length() > 64) {
+            throw new IllegalArgumentException("Die interne Artikelnummer darf höchstens 64 Zeichen lang sein.");
+        }
+        return nummer;
+    }
+
+    private String naechsteAutomatischeArtikelnummer(Long artikelId) {
+        if (artikelId == null || artikelId <= 0) {
+            throw new IllegalStateException("Der Artikel benötigt vor der Nummernvergabe eine gespeicherte ID.");
+        }
+        String basis = "ART-" + artikelId;
+        if (!istArtikelnummerBelegt(basis)) {
+            return basis;
+        }
+        for (int suffix = 2; suffix < Integer.MAX_VALUE; suffix++) {
+            String kandidat = basis + "-" + suffix;
+            if (!istArtikelnummerBelegt(kandidat)) {
+                return kandidat;
+            }
+        }
+        throw new IllegalStateException("Für den Artikel konnte keine freie interne Artikelnummer vergeben werden.");
+    }
+
+    private void pruefeArtikelnummerFrei(String nummer) {
+        if (istArtikelnummerBelegt(nummer)) {
+            throw artikelnummerKonflikt(nummer, null);
+        }
+    }
+
+    private boolean istArtikelnummerBelegt(String nummer) {
+        Long anzahl = entityManager.createQuery(
+                "select count(a) from Artikel a where a.artikelnummer = :nummer", Long.class)
+                .setParameter("nummer", nummer)
+                .getSingleResult();
+        return anzahl != null && anzahl > 0;
+    }
+
+    private ResponseStatusException artikelnummerKonflikt(String nummer, Throwable cause) {
+        return new ResponseStatusException(HttpStatus.CONFLICT,
+                "Die interne Artikelnummer " + nummer + " ist bereits vergeben.", cause);
     }
 
     @Transactional(readOnly = true)
