@@ -20,7 +20,8 @@ public final class EinkaufsanfrageDto {
     public record Positionszeile(Long id, PositionSnapshot snapshot, List<Herkunft> herkuenfte) {
         public Positionszeile { herkuenfte = List.copyOf(herkuenfte); }
     }
-    public record Lieferantenbeteiligung(Long id, Long lieferantId, String lieferantenname, String status) {}
+    public record Lieferantenbeteiligung(Long id, Long lieferantId, String lieferantenname, String status, long version) {}
+    public record LieferantenstatusRequest(long version, String status) {}
     public record Detail(Kopf kopf, List<Positionszeile> positionen, List<Lieferantenbeteiligung> lieferanten) {
         public Detail { positionen = List.copyOf(positionen); lieferanten = List.copyOf(lieferanten); }
     }

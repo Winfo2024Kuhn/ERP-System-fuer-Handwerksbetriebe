@@ -11,7 +11,7 @@ public interface AnfrageRevisionRepository extends JpaRepository<AnfrageRevision
     Optional<AnfrageRevision> findByIdempotenzKey(java.util.UUID idempotenzKey);
     List<AnfrageRevision> findByAnfrageIdOrderByNummerAsc(Long anfrageId);
     @Query("select h.bedarf.id, sum(h.menge) from AnfrageHerkunft h " +
-            "where h.bedarf.id in :ids and h.position.revision.anfrage.aktuelleRevision.id = h.position.revision.id " +
+            "where h.bedarf.id in :ids and h.position.revision.anfrage.geloeschtAm is null and h.position.revision.anfrage.aktuelleRevision.id = h.position.revision.id " +
             "group by h.bedarf.id")
     List<Object[]> summenAktuelleAnfragen(@Param("ids") List<Long> bedarfIds);
 }

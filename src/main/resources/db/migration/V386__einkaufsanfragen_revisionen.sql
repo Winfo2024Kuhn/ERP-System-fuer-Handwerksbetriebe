@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS einkaufsanfrage (
     payload_hash CHAR(64) NOT NULL,
     aktuelle_revision_id BIGINT NULL,
     angelegt_am TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    geloescht_am TIMESTAMP(6) NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uk_einkaufsanfrage_pa (pa_nummer),
     UNIQUE KEY uk_einkaufsanfrage_idempotenz (idempotenz_key)
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS einkaufsanfrage_herkunft (
 CREATE TABLE IF NOT EXISTS einkaufsanfrage_lieferant (
     id BIGINT NOT NULL AUTO_INCREMENT,
     revision_id BIGINT NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
     kontakt_snapshot JSON NOT NULL,
     rueckmeldecode CHAR(32) NOT NULL,
     status VARCHAR(24) NOT NULL,

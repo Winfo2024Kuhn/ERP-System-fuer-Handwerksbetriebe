@@ -56,6 +56,7 @@ public class EinkaufsanfrageService implements EinkaufAnfrageMengenProvider {
         Optional<Einkaufsanfrage> wiederholung = anfragen.findByIdempotenzKey(request.idempotenzKey());
         if (wiederholung.isPresent()) {
             if (!hash.equals(wiederholung.get().getPayloadHash())) throw conflict("Der Idempotenzschlüssel wurde bereits mit anderen Anfragedaten verwendet.");
+            if (wiederholung.get().isGeloescht()) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden.");
             return toDetail(wiederholung.get(), wiederholung.get().getAktuelleRevision());
         }
         List<EinkaufBedarf> gesperrt = bedarfe.findeAlleFuerUpdate(request.positionen().stream()
@@ -92,6 +93,7 @@ public class EinkaufsanfrageService implements EinkaufAnfrageMengenProvider {
             return laden(id);
         }
         Einkaufsanfrage kopf = anfragen.findById(id).orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden."));
+        if (kopf.isGeloescht()) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden.");
         if (!Objects.equals(kopf.getVersion(), request.version())) throw conflict("Die Anfrage wurde zwischenzeitlich geändert. Bitte neu laden.");
         List<EinkaufBedarf> gesperrt = bedarfe.findeAlleFuerUpdate(request.inhalt().positionen().stream()
                 .map(Herkunft::bedarfId).distinct().sorted().toList());
@@ -120,12 +122,13 @@ public class EinkaufsanfrageService implements EinkaufAnfrageMengenProvider {
     public Detail laden(Long id) {
         if (id == null || id <= 0) throw new IllegalArgumentException("Die Anfrage-ID ist ungültig.");
         Einkaufsanfrage kopf = anfragen.findById(id).orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden."));
+        if (kopf.isGeloescht()) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden.");
         return kopf.getAktuelleRevision() == null ? new Detail(toKopf(kopf, null), List.of(), List.of()) : toDetail(kopf, kopf.getAktuelleRevision());
     }
 
     public Page<Kopf> suchen(Pageable pageable) {
         if (pageable == null) throw new IllegalArgumentException("Die Seitenauswahl fehlt.");
-        return anfragen.findAllByOrderByAngelegtAmDesc(pageable).map(k -> toKopf(k, k.getAktuelleRevision()));
+        return anfragen.findAllByGeloeschtAmIsNullOrderByAngelegtAmDesc(pageable).map(k -> toKopf(k, k.getAktuelleRevision()));
     }
 
     @Override
@@ -137,6 +140,65 @@ public class EinkaufsanfrageService implements EinkaufAnfrageMengenProvider {
         for (Object[] row : revisionen.summenAktuelleAnfragen(ids)) result.put((Long) row[0], (BigDecimal) row[1]);
         return Map.copyOf(result);
     }
+
+    @Transactional
+    public void loeschen(Long id, long version, Long akteurId) {
+        validiereAkteur(akteurId);
+        if (id == null || id <= 0 || version < 0) throw new IllegalArgumentException("Die Anfrage oder Versionsangabe ist ungültig.");
+        Einkaufsanfrage kopf = anfragen.findByIdForUpdate(id)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden."));
+        if (kopf.isGeloescht()) return;
+        if (!Objects.equals(kopf.getVersion(), version)) throw conflict("Die Anfrage wurde zwischenzeitlich geändert. Bitte neu laden.");
+        Kopf vorher = toKopf(kopf, kopf.getAktuelleRevision());
+        kopf.markiereGeloescht(java.time.Instant.now());
+        kopf = anfragen.saveAndFlush(kopf);
+        audit.protokolliere("EINKAUFSANFRAGE", id, "ANFRAGE_GELOESCHT", akteurId,
+                objectMapper.valueToTree(vorher), objectMapper.valueToTree(toKopf(kopf, kopf.getAktuelleRevision())), null);
+    }
+
+    @Transactional
+    public Lieferantenbeteiligung aktualisiereLieferantenstatus(Long anfrageId, Long beteiligungId,
+            LieferantenstatusRequest request, Long akteurId) {
+        validiereAkteur(akteurId);
+        if (anfrageId == null || anfrageId <= 0 || beteiligungId == null || beteiligungId <= 0
+                || request == null || request.version() < 0 || request.status() == null)
+            throw new IllegalArgumentException("Der Lieferantenstatus ist ungültig.");
+        AnfrageLieferant beteiligung = lieferanten.findByIdAndRevisionAnfrageId(beteiligungId, anfrageId)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Lieferantenbeteiligung wurde nicht gefunden."));
+        if (!Objects.equals(beteiligung.getVersion(), request.version())) throw conflict("Die Lieferantenantwort wurde zwischenzeitlich geändert. Bitte neu laden.");
+        String vorher = beteiligung.getStatus();
+        String ziel = switch (request.status()) {
+            case "ABSAGE" -> {
+                if (!"AUSSTEHEND".equals(vorher)) throw conflict("Eine bereits beantwortete Anfrage kann nicht nochmals abgesagt werden.");
+                yield "ABGESAGT";
+            }
+            case "ANTWORT_ERHALTEN" -> {
+                if (!"AUSSTEHEND".equals(vorher)) throw conflict("Die Lieferantenanfrage wurde bereits beantwortet.");
+                yield "BEANTWORTET";
+            }
+            case "ERLEDIGT" -> {
+                if (!"ABGESAGT".equals(vorher) && !"BEANTWORTET".equals(vorher)) throw conflict("Nur eine beantwortete Anfrage kann erledigt werden.");
+                yield "ERLEDIGT";
+            }
+            default -> throw new IllegalArgumentException("Bitte wählen Sie Absage, Antwort erhalten oder Erledigt.");
+        };
+        beteiligung.setStatus(ziel);
+        if (!"ERLEDIGT".equals(ziel)) beteiligung.setAntwortAm(java.time.Instant.now());
+        beteiligung = lieferanten.saveAndFlush(beteiligung);
+        String aktion = switch (ziel) {
+            case "ABGESAGT" -> "LIEFERANT_ABSAGE";
+            case "BEANTWORTET" -> "LIEFERANT_ANTWORT_ERHALTEN";
+            default -> "LIEFERANTENANFRAGE_ERLEDIGT";
+        };
+        audit.protokolliere("EINKAUFSANFRAGE_LIEFERANT", beteiligungId, aktion, akteurId,
+                objectMapper.valueToTree(new LieferantenstatusAudit(beteiligungId, vorher, request.version())),
+                objectMapper.valueToTree(new LieferantenstatusAudit(beteiligungId, ziel, beteiligung.getVersion() == null ? request.version() + 1 : beteiligung.getVersion())), null);
+        Snapshot kontakt = beteiligung.getKontakt();
+        return new Lieferantenbeteiligung(beteiligung.getId(), kontakt.lieferantId(), kontakt.lieferantenname(),
+                beteiligung.getStatus(), beteiligung.getVersion() == null ? request.version() + 1 : beteiligung.getVersion());
+    }
+
+    private record LieferantenstatusAudit(Long beteiligungId, String status, long version) {}
 
     private ValidiertePosition validiereHerkunft(Herkunft h, Map<Long, EinkaufBedarf> nachId) {
         if (h == null || h.bedarfId() == null || h.bedarfId() <= 0 || h.version() < 0 || h.menge() == null || h.menge().signum() <= 0 || h.menge().scale() > 6)
@@ -186,7 +248,7 @@ public class EinkaufsanfrageService implements EinkaufAnfrageMengenProvider {
         List<Positionszeile> positions = revision.getPositionen().stream().map(p -> new Positionszeile(p.getId(), p.getSnapshot(),
                 p.getHerkuenfte().stream().map(h -> new Herkunft(h.getBedarf().getId(), h.getBedarfVersion(), h.getMenge())).toList())).toList();
         List<Lieferantenbeteiligung> participations = revision.getLieferanten().stream()
-                .map(l -> new Lieferantenbeteiligung(l.getId(), l.getKontakt().lieferantId(), l.getKontakt().lieferantenname(), l.getStatus())).toList();
+                .map(l -> new Lieferantenbeteiligung(l.getId(), l.getKontakt().lieferantId(), l.getKontakt().lieferantenname(), l.getStatus(), l.getVersion() == null ? 0 : l.getVersion())).toList();
         return new Detail(toKopf(head, revision), positions, participations);
     }
     private Kopf toKopf(Einkaufsanfrage h, AnfrageRevision r) {

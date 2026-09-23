@@ -7,6 +7,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,6 +61,26 @@ class EinkaufsanfrageControllerTest {
                 .andExpect(jsonPath("$.content").isArray()).andExpect(jsonPath("$.totalElements").value(0));
         verify(service).suchen(any());
     }
+
+    @Test void lieferantenstatusAendernErfordertBearbeitungsrecht() throws Exception {
+        when(berechtigungen.verlange(any(Authentication.class), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(4L);
+        when(service.aktualisiereLieferantenstatus(eq(22L), eq(41L), any(), eq(4L)))
+                .thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufsanfrageDto.Lieferantenbeteiligung(41L, 3L, "Lieferant C", "ABGESAGT", 3));
+        mockMvc.perform(patch("/api/einkauf/anfragen/22/lieferanten/41/status").with(authentication())
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()).contentType("application/json")
+                        .content("{\"version\":2,\"status\":\"ABSAGE\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ABGESAGT"));
+        verify(service).aktualisiereLieferantenstatus(eq(22L), eq(41L), any(), eq(4L));
+    }
+
+    @Test void anfrageLoeschenVerlangtBearbeitungsrechtUndVersionsstand() throws Exception {
+        when(berechtigungen.verlange(any(Authentication.class), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(4L);
+        mockMvc.perform(delete("/api/einkauf/anfragen/22?version=0").with(authentication())
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isNoContent());
+        org.mockito.Mockito.verify(service).loeschen(22L, 0L, 4L);
+    }
+
     private static RequestPostProcessor authentication() {
         FrontendUserPrincipal principal = new FrontendUserPrincipal(4L, "test@example.com", "Max Mustermann", "{noop}dummy", true, Set.of(FrontendUserRole.USER));
         Authentication auth = new UsernamePasswordAuthenticationToken(principal, principal.getPassword(), principal.getAuthorities());

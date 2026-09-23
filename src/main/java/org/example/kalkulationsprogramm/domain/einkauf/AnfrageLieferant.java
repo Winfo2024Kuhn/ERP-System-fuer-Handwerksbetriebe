@@ -12,6 +12,7 @@ import java.util.HexFormat;
 public class AnfrageLieferant {
     private static final SecureRandom RANDOM = new SecureRandom();
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+    @Version @Column(nullable = false) private Long version;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "revision_id", nullable = false) private AnfrageRevision revision;
     @JdbcTypeCode(SqlTypes.JSON) @Column(name = "kontakt_snapshot", nullable = false, columnDefinition = "json") private Snapshot kontakt;
     @Column(name = "rueckmeldecode", nullable = false, length = 32, unique = true) private String rueckmeldecode = neuerCode();
@@ -21,9 +22,10 @@ public class AnfrageLieferant {
     protected AnfrageLieferant() {}
     public AnfrageLieferant(AnfrageRevision revision, Snapshot kontakt) { this.revision = revision; this.kontakt = kontakt; }
     private static String neuerCode() { byte[] bytes = new byte[16]; RANDOM.nextBytes(bytes); return HexFormat.of().formatHex(bytes); }
-    public Long getId() { return id; } public AnfrageRevision getRevision() { return revision; }
+    public Long getId() { return id; } public Long getVersion() { return version; } public void setVersion(Long version) { this.version = version; } public AnfrageRevision getRevision() { return revision; }
     public Snapshot getKontakt() { return kontakt; } public String getRueckmeldecode() { return rueckmeldecode; }
     public String getStatus() { return status; } public java.time.Instant getAntwortAm() { return antwortAm; }
     public java.util.List<String> getVersandversuche() { return java.util.List.copyOf(versandversuche); }
     public void setStatus(String status) { this.status = status; }
+    public void setAntwortAm(java.time.Instant antwortAm) { this.antwortAm = antwortAm; }
 }

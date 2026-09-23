@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -105,6 +106,42 @@ class EinkaufsanfrageServiceTest {
         verify(bedarf, never()).setReserviert(any());
     }
 
+    @Test void lieferantenabsageWirdVersionsgeprueftUndAuditiert() {
+        var participation = mock(org.example.kalkulationsprogramm.domain.einkauf.AnfrageLieferant.class);
+        when(participation.getId()).thenReturn(41L);
+        when(participation.getVersion()).thenReturn(2L);
+        java.util.concurrent.atomic.AtomicReference<String> state = new java.util.concurrent.atomic.AtomicReference<>("AUSSTEHEND");
+        when(participation.getStatus()).thenAnswer(invocation -> state.get());
+        org.mockito.Mockito.doAnswer(invocation -> { state.set(invocation.getArgument(0)); return null; }).when(participation).setStatus(any());
+        when(participation.getKontakt()).thenReturn(new Snapshot(3L, 4L, "Lieferant C", "test@example.com", null, null, null));
+        when(lieferanten.findByIdAndRevisionAnfrageId(41L, 22L)).thenReturn(Optional.of(participation));
+        when(lieferanten.saveAndFlush(participation)).thenReturn(participation);
+
+        var result = service.aktualisiereLieferantenstatus(22L, 41L,
+                new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufsanfrageDto.LieferantenstatusRequest(2, "ABSAGE"), 9L);
+
+        assertEquals("ABGESAGT", result.status());
+        verify(participation).setStatus("ABGESAGT");
+        verify(audit).protokolliere(eq("EINKAUFSANFRAGE_LIEFERANT"), eq(41L), eq("LIEFERANT_ABSAGE"), eq(9L), any(), any(), isNull());
+    }
+
+    @Test void geloeschteAnfrageWirdAuditiertUndVonAktuellenAnfragemengenAusgeschlossen() {
+        var head = new org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage("PA-2026-00001", 9L, UUID.randomUUID(), "hash");
+        head.setId(22L); head.setVersion(0L);
+        when(anfragen.findByIdForUpdate(22L)).thenReturn(Optional.of(head));
+        when(anfragen.saveAndFlush(head)).thenReturn(head);
+        when(revisionen.summenAktuelleAnfragen(List.of(7L))).thenReturn(List.of());
+
+        service.loeschen(22L, 0L, 9L);
+
+        assertEquals(true, head.isGeloescht());
+        assertEquals(Map.of(), service.angefragtFuerBedarfe(List.of(7L)));
+        when(anfragen.findById(22L)).thenReturn(Optional.of(head));
+        assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class, () -> service.laden(22L));
+        verify(audit).protokolliere(eq("EINKAUFSANFRAGE"), eq(22L), eq("ANFRAGE_GELOESCHT"), eq(9L), any(), any(), isNull());
+        verify(revisionen).summenAktuelleAnfragen(List.of(7L));
+    }
+
     @Test void migration386IstAufMySqlWiederholbarUndSpeichertRevisionenUndHerkunft() throws Exception {
         try (Connection connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())) {
             try (var statement = connection.createStatement()) {
@@ -123,8 +160,17 @@ class EinkaufsanfrageServiceTest {
                 query.executeUpdate("INSERT INTO einkaufsanfrage_position (revision_id,position_snapshot,menge) VALUES (1,JSON_OBJECT('bezeichnung','Dummy'),4)");
                 query.executeUpdate("INSERT INTO einkaufsanfrage_herkunft (position_id,bedarf_id,bedarf_version,menge) VALUES (1,1,0,4)");
                 query.executeUpdate("UPDATE einkaufsanfrage SET aktuelle_revision_id=1 WHERE id=1");
-                try (var rows = query.executeQuery("SELECT SUM(h.menge) FROM einkaufsanfrage_herkunft h JOIN einkaufsanfrage_position p ON p.id=h.position_id JOIN einkaufsanfrage_revision r ON r.id=p.revision_id JOIN einkaufsanfrage a ON a.aktuelle_revision_id=r.id WHERE h.bedarf_id=1")) {
-                    rows.next(); assertEquals(new BigDecimal("4.000000"), rows.getBigDecimal(1));
+                query.executeUpdate("INSERT INTO einkaufsanfrage_revision (anfrage_id,nummer,status,idempotenz_key,payload_hash) VALUES (1,2,'ENTWURF','00000000-0000-0000-0000-000000000003',REPEAT('c',64))");
+                query.executeUpdate("INSERT INTO einkaufsanfrage_position (revision_id,position_snapshot,menge) VALUES (2,JSON_OBJECT('bezeichnung','Neue Fassung'),2)");
+                query.executeUpdate("INSERT INTO einkaufsanfrage_herkunft (position_id,bedarf_id,bedarf_version,menge) VALUES (2,1,0,2)");
+                query.executeUpdate("INSERT INTO einkaufsanfrage_lieferant (revision_id,kontakt_snapshot,rueckmeldecode,status,versandversuche) VALUES (2,JSON_OBJECT('lieferantId',3),'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','AUSSTEHEND',JSON_ARRAY()), (2,JSON_OBJECT('lieferantId',4),'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','AUSSTEHEND',JSON_ARRAY()), (2,JSON_OBJECT('lieferantId',5),'cccccccccccccccccccccccccccccccc','AUSSTEHEND',JSON_ARRAY())");
+                query.executeUpdate("UPDATE einkaufsanfrage SET aktuelle_revision_id=2 WHERE id=1");
+                try (var rows = query.executeQuery("SELECT SUM(h.menge) FROM einkaufsanfrage_herkunft h JOIN einkaufsanfrage_position p ON p.id=h.position_id JOIN einkaufsanfrage_revision r ON r.id=p.revision_id JOIN einkaufsanfrage a ON a.aktuelle_revision_id=r.id WHERE h.bedarf_id=1 AND a.geloescht_am IS NULL")) {
+                    rows.next(); assertEquals(new BigDecimal("2.000000"), rows.getBigDecimal(1));
+                }
+                query.executeUpdate("UPDATE einkaufsanfrage SET geloescht_am=CURRENT_TIMESTAMP(6) WHERE id=1");
+                try (var rows = query.executeQuery("SELECT SUM(h.menge) FROM einkaufsanfrage_herkunft h JOIN einkaufsanfrage_position p ON p.id=h.position_id JOIN einkaufsanfrage_revision r ON r.id=p.revision_id JOIN einkaufsanfrage a ON a.aktuelle_revision_id=r.id WHERE h.bedarf_id=1 AND a.geloescht_am IS NULL")) {
+                    rows.next(); assertEquals(null, rows.getBigDecimal(1));
                 }
             }
         }
