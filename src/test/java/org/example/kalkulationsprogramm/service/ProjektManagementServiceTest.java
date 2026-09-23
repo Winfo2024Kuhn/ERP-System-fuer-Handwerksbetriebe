@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import jakarta.persistence.EntityManager;
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
@@ -113,11 +114,14 @@ class ProjektManagementServiceTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+    @Mock
+    private EntityManager entityManager;
 
     private ProjektManagementService service;
 
     @BeforeEach
     void setup() {
+        lenient().when(entityManager.contains(any())).thenReturn(true);
         lenient().when(artikelInProjektRepository.sumKilogrammByProjektGroupedByWerkstoff(any()))
                 .thenReturn(List.of());
         service = new ProjektManagementService(projektRepository,
@@ -128,6 +132,7 @@ class ProjektManagementServiceTest {
                 anfrageRepository, ausgangsGeschaeftsDokumentRepository, ZeitbuchungRepository, stundensatzRepository,
                 artikelRepository, artikelInProjektRepository, projektPersistenceService,
                 lieferantenRepository, emailRepository, kalenderEintragRepository, eventPublisher);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "entityManager", entityManager);
         service.setAusgangsGeschaeftsDokumentService(ausgangsGeschaeftsDokumentService);
     }
 

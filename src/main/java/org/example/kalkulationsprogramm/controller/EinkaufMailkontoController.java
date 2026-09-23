@@ -2,6 +2,9 @@ package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Response;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Update;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Testmail;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.TestmailErgebnis;
 import org.example.kalkulationsprogramm.service.mail.MailkontoService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,5 +29,15 @@ public class EinkaufMailkontoController {
     @PutMapping
     public Response speichern(@RequestBody Update update, Authentication authentication) {
         return mailkontoService.speichern(authentication, update);
+    }
+
+    @PutMapping("/verbindung-testen")
+    public MailTransportDto.Testverbindung verbindungTesten(Authentication authentication) {
+        return mailkontoService.verbindungTesten(authentication);
+    }
+
+    @PutMapping("/testmail")
+    public TestmailErgebnis testmail(@RequestBody Testmail request, Authentication authentication) {
+        return mailkontoService.testmail(authentication, request);
     }
 }

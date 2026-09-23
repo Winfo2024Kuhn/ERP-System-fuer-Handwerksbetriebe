@@ -13,6 +13,7 @@ public enum EmailTextTemplateKategorie {
     DOKUMENT("Dokumente"),
     MAHNWESEN("Mahnwesen"),
     WEBSITE("Webseite & Anfragen"),
+    EINKAUF("Einkauf"),
     SYSTEM("System");
 
     private final String label;

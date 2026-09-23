@@ -82,7 +82,7 @@ Der vorhandene Featurebranch `codex/beschaffung-konzept` bleibt Integrationsbasi
 |---|---|---|
 | 1 – Grundlagen | 1; 2; 38 | Abgenommen |
 | 2 – Positionen, Kontakte und Postfach | 3; 8; 9 | Abgenommen |
-| 3 – Bedarf, Transport und Vorlagen | 4; 10; 12 | Blockiert nach Nachbesserung 2 |
+| 3 – Bedarf, Transport und Vorlagen | 4; 10; 12 | Abgenommen; Sol grün, 3286 Backendtests / 0 Fehler |
 | 4 – Materialeingang und Mailimport | 5; 6 → 7; 11 | Abschnitt 3 abgenommen |
 | 5 – Anfragevorbereitung und Versandaufträge | 13; 14; 15 | Abschnitt 4 abgenommen |
 | 6 – Kommunikation, Angebote und Vergleich | 16 → 17 → 18 | Abschnitt 5 abgenommen |

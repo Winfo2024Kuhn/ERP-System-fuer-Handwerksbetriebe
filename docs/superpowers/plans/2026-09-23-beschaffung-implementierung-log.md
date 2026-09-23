@@ -544,3 +544,40 @@ Zeit: 2026-09-23T13:58:56.161110+00:00
 - Unabgenommenen pending Produktmerge abgebrochen. Root-Produktbasis ist wieder f23b29f7; kein fehlerhafter Abschnitt3-Code wird auf Featurebranch gepusht. Alle fertig committed Taskbranches/Worktrees bleiben lokal erhalten: Task4=6ef592496c95baf11cea653cfa62feae78f98cc, Task10=11eb149c, Task12=366fb87c. Gemeinsamer Produktdiff zusaetzlich in /tmp/beschaffung-section3-stopp-sicherung/produktdiff.patch.
 - Wiederaufnahme erst mit ausdruecklicher neuer Nutzersteuerung zur erreichten Skillgrenze. Dann im bestehenden Task4-Worktree die fehlende Persistierung plus echten MySQL-Neuanlagefall beheben; Task10/12 unveraendert. Erst abgeschlossene Branches wieder zusammenfuehren und Sol pruefen lassen. Keine Worktrees doppelt anlegen.
 - Noch kein PR/Merge, kein lokaler Appstart. Isolierter Restore erp-beschaffung-db bleibt auf V367; Originalbackup unveraendert. Die weiteren lokalen Migrations-/Startschritte gehoeren weiterhin zur offenen Gesamtaufgabe.
+
+### 2026-09-23T14:16:39.428224+00:00 – Abschnitt 3 ausdrücklich fortgesetzt
+
+Nutzer: „dann fixe du problem und mache dann weiter mit nächster runde“. Diese Freigabe hebt den vorherigen Skill-Stopp für die Fortsetzung auf. Root korrigiert den fehlenden Persistenzaufruf bei neuen Projektpositionen direkt; anschließend integrierter Sol-Review, danach Abschnitt 4 mit Luna-Paketen 5 | 6→7 | 11. Neuer echter MySQL-Regressionstest reproduziert den Befund: erwartet 1 Bedarf, tatsächlich 0 (Log /tmp/beschaffung-task4-neuanlage-red.log). Keine zusätzliche Funktionskürzung.
+
+### 2026-09-23T14:19:34.213004+00:00 – Nutzer beendet nach laufendem Review
+
+Neue Steuerung: „mache dann schluss ich starte dann neue session nach review und gebe mir übergabeprompt einfach in textform“. Nur Abschnitt3-Abschlussreview zu Ende führen; bei Grün geprüften Stand committen/pushen. Abschnitt4 wird in dieser Session nicht gestartet. Bei Rot verbleibenden Befund dokumentieren, keine weitere Korrekturrunde. Danach Klartext-Übergabe mit nächster Runde und lokalen Laufzeitvoraussetzungen.
+
+## Abschnitt 3 — Review-Agent (ausdrücklich freigegebene Fortsetzung nach Nachbesserung 2)
+
+Zeit: 2026-09-23T14:19:55Z
+Branch: codex/beschaffung-konzept
+Basis: 438b79e9
+Commit(s): d52a57bc, 11eb149c, 366fb87c (gemeinsam staged, Merge-Commit noch offen)
+Status: fertig
+Ampel: 🟢
+
+Was gemacht wurde:
+- Letzten kritischen Befund im integrierten Root-Stand gezielt erneut geprüft: EinkaufBedarfService.synchronisiereProjektposition persistiert den neu angelegten Bedarf nun mit saveAndFlush im Neuanlagezweig.
+- Echter MySQL-Regressionstest EinkaufMengenParallelTest.neueProjektpositionSpeichertBedarfDauerhaftUndWiederholterAbgleichDupliziertNicht prüft persistierten Bedarf sowie Wiederholung ohne Duplikat oder Versionsänderung. Zuvor rot reproduziert, nach Fix grün.
+- Vollständige exklusive Root-Backend-Suite: DOCKER_HOST=unix:///Users/marvinkuhn/.docker/run/docker.sock ./mvnw -B test; Exit 0, BUILD SUCCESS, 3286 Tests, 0 Failures, 0 Errors, 17 bekannte Skips. Log: /tmp/beschaffung-abschnitt3-review-final-root.log. git diff --cached --check sauber.
+- Frontend und Skilldateien gegenüber vorherigen vollständigen grünen Nachweisen unverändert; vorhandene Nachweise wiederverwendet.
+
+Bedenken / Abweichungen vom Plan:
+- Keine blockierenden Befunde in Abschnitt 3. Die Anlagenfreigabe und tatsächliche Projektbindung sind weiterhin verbindliche Gates für die folgenden Abschnitte vor Versand.
+- Auf aktuelle Nutzersteuerung keine Agenten für Abschnitt 4 gestartet.
+
+### 2026-09-23T14:20:37.413084+00:00 – Übergabestand nach Abschnitt 3
+
+Abschnitte 1–3 abgenommen. Aktueller Persistenzfix d52a57bc ist integriert und Sol-grün, Root-Suite 3286 Tests / 0 Fehler / 17 unveränderte Skips. Graphify aktualisiert, erzeugte Graphdateien bleiben ausschließlich lokal. Frontendbäume identisch mit /tmp/beschaffung-frontend-testnachweise.json; Nachweise wiederverwendet. Keine laufenden Coding-Pakete, Abschnitt4 nicht begonnen.
+
+Nächste Session: loese-problem ab Abschnitt4 (5 | 6→7 | 11), drei Luna-Pakete auf dem dann gepushten Featurestand. Aufträge vorbereitet: /tmp/beschaffung-paket-4a-auftrag.md, /tmp/beschaffung-paket-4b-auftrag.md, /tmp/beschaffung-paket-4c-auftrag.md. Verbindliche Quelle bleibt der Plan, falls /tmp fehlt. Alle Coding-Pakete vollständig abschließen, dann integrieren, erst danach Sol-Code- und bei Frontend Sol-Designreview. 13 statt 23 Abschnitte, alle 39 fachlichen Schritte erhalten.
+
+Lokaler Probebetrieb bleibt offen: erp-beschaffung-db enthält isolierten Restore (V367), 127.0.0.1:3309, Datenbank kalkulationsprogramm_db. Noch keine Appmigration/kein Serverstart. Niemals automatisierte Tests gegen diesen Clone; Dummy-DB/Testmail verwenden. Private Wiederaufnahmeunterlagen (Migrationen/Provenienz/Preflight/Credentials): /Users/marvinkuhn/Library/Application Support/Codex/erp-db-clone/2026-09-23-beschaffung/. migration-research.md vor Task39 lesen; keine blinde Flyway-Reparatur, keine Originalmigration ändern, keine Credentials ausgeben. Originaldump unter benachbartem 2026-09-09 bleibt unangetastet. DOCKER_HOST=unix:///Users/marvinkuhn/.docker/run/docker.sock; JDK23.0.2. Keine echten Lieferantenmails senden.
+
+Offene fachliche Gates: Task13 implementiert EinkaufAnfrageMengenProvider (aktuelle Anfragefassung einmal je Herkunft, keine Vervielfachung pro Lieferant), prüft vor Versand tatsächliche Projektbindung und Anlagenfreigabe. Reservierungsschlüssel BESTELLUNG:<persistierteBestellungId>, eigener UUID-Idempotenzschlüssel je Aktion. Gesamtziel samt UI, realen Dummy-E2Es und lokalem Backend/Frontend/DB-Start bleibt vollständig offen weiterzuführen; kein PR bisher. Auf Nutzerwunsch diese Session nach gesichertem Reviewstand beenden.

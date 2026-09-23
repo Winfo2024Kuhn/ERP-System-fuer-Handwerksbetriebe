@@ -32,7 +32,14 @@ public final class EmailTextTemplateKategorien {
             Map.entry("ZWEITE_MAHNUNG", EmailTextTemplateKategorie.MAHNWESEN),
             Map.entry("MAHNUNG", EmailTextTemplateKategorie.MAHNWESEN),
             // Webseiten-Funnel / Lead-Automatik
-            Map.entry("WEBSITE_ANFRAGE_BESTAETIGUNG", EmailTextTemplateKategorie.WEBSITE)
+            Map.entry("WEBSITE_ANFRAGE_BESTAETIGUNG", EmailTextTemplateKategorie.WEBSITE),
+            Map.entry("EINKAUF_ANFRAGE", EmailTextTemplateKategorie.EINKAUF),
+            Map.entry("EINKAUF_BESTELLUNG", EmailTextTemplateKategorie.EINKAUF),
+            Map.entry("EINKAUF_DIREKTBESTELLUNG", EmailTextTemplateKategorie.EINKAUF),
+            Map.entry("EINKAUF_NACHFRAGE", EmailTextTemplateKategorie.EINKAUF),
+            Map.entry("EINKAUF_ZEUGNIS_NACHFORDERUNG", EmailTextTemplateKategorie.EINKAUF),
+            Map.entry("EINKAUF_BESTAETIGUNG_NACHFRAGE", EmailTextTemplateKategorie.EINKAUF),
+            Map.entry("EINKAUF_LIEFERUNG_NACHFRAGE", EmailTextTemplateKategorie.EINKAUF)
     );
 
     private EmailTextTemplateKategorien() {

@@ -8,6 +8,8 @@ import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -36,6 +38,13 @@ public class BestellungService {
 
     @Transactional
     public void setBestellt(Long id, boolean bestellt) {
+        if (id == null || id <= 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Die Projektposition wurde nicht gefunden.");
+        }
+        if (artikelInProjektRepository.existsEinkaufBedarfById(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Diese Position wird jetzt über den Einkauf verwaltet. Bitte den Einkaufsbedarf aktualisieren.");
+        }
         ArtikelInProjekt aip = artikelInProjektRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Artikel nicht gefunden"));
         aip.setBestellt(bestellt);

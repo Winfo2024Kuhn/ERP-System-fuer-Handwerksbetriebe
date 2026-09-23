@@ -3,13 +3,16 @@ package org.example.kalkulationsprogramm.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
 
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.EmailTextTemplate;
+import org.example.kalkulationsprogramm.dto.Email.EmailTextTemplateDto;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.EmailTextTemplateRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -137,5 +140,25 @@ class EmailTextTemplateServiceTest {
         EmailService.EmailContent result = service.render("RECHNUNG", null);
 
         assertThat(result.htmlBody()).contains("Musterbank");
+    }
+
+    @Test
+    void standardVorlageBeiDokumenttypAenderungAufBisherigeVarianteUmlegen() {
+        EmailTextTemplate current = aktiveVorlage("Betreff", "Text");
+        current.setId(10L);
+        current.setStandard(true);
+        EmailTextTemplate replacement = aktiveVorlage("Alter Standard", "Text");
+        replacement.setId(11L);
+        given(repository.findById(10L)).willReturn(Optional.of(current));
+        given(repository.save(current)).willReturn(current);
+        given(repository.findAllByDokumentTypOrderByIdAsc("RECHNUNG")).willReturn(List.of(replacement));
+        EmailTextTemplateDto update = new EmailTextTemplateDto();
+        update.setDokumentTyp("GUTSCHRIFT");
+
+        service.update(10L, update);
+
+        verify(repository).deleteStandardAssignment(10L);
+        verify(repository).setStandardTemplate(11L);
+        verify(repository).markStandardTemplate(11L);
     }
 }

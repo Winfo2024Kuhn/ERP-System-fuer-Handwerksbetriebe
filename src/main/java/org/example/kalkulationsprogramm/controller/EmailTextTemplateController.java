@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.domain.EmailTextTemplateKategorie;
 import org.example.kalkulationsprogramm.dto.Email.EmailTextTemplateDto;
 import org.example.kalkulationsprogramm.service.EmailTextTemplateKategorien;
 import org.example.kalkulationsprogramm.service.EmailTextTemplateService;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufVorlagenService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,6 +48,13 @@ public class EmailTextTemplateController {
         }
         list.add(buildOption("ZEICHNUNG", "Zeichnung / Entwurf"));
         list.add(buildOption("WEBSITE_ANFRAGE_BESTAETIGUNG", "Webseite — Anfragebestätigung"));
+        list.add(buildOption("EINKAUF_ANFRAGE", "Einkauf — Lieferantenanfrage"));
+        list.add(buildOption("EINKAUF_BESTELLUNG", "Einkauf — Bestellung"));
+        list.add(buildOption("EINKAUF_DIREKTBESTELLUNG", "Einkauf — Direktbestellung"));
+        list.add(buildOption("EINKAUF_NACHFRAGE", "Einkauf — Nachfrage zum Angebot"));
+        list.add(buildOption("EINKAUF_ZEUGNIS_NACHFORDERUNG", "Einkauf — Werkstoffzeugnis nachfordern"));
+        list.add(buildOption("EINKAUF_BESTAETIGUNG_NACHFRAGE", "Einkauf — Auftragsbestätigung nachfragen"));
+        list.add(buildOption("EINKAUF_LIEFERUNG_NACHFRAGE", "Einkauf — Liefertermin nachfragen"));
         return List.copyOf(list);
     }
 
@@ -87,6 +95,7 @@ public class EmailTextTemplateController {
             Map.of("token", "{{ANFRAGENUMMER}}", "label", "Anfrage-Nummer (Webseite)"));
 
     private final EmailTextTemplateService service;
+    private final EinkaufVorlagenService einkaufVorlagenService;
 
     @GetMapping
     public ResponseEntity<List<EmailTextTemplateDto>> list() {
@@ -136,5 +145,15 @@ public class EmailTextTemplateController {
     @GetMapping("/placeholders")
     public ResponseEntity<List<Map<String, String>>> placeholders() {
         return ResponseEntity.ok(PLACEHOLDERS);
+    }
+
+    @GetMapping("/placeholders/{dokumentTyp}")
+    public ResponseEntity<List<org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVorlagenDto.Platzhalter>>
+            placeholders(@PathVariable String dokumentTyp) {
+        try {
+            return ResponseEntity.ok(einkaufVorlagenService.placeholders(dokumentTyp));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 }
