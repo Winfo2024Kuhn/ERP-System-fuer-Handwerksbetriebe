@@ -70,7 +70,8 @@ class EinkaufBestellfreigabeRegressionTest {
         var service = new EinkaufBestellfreigabeService(orders, revisions, mock(AngebotVersionRepository.class),
                 mock(EinkaufKommunikationVorschauRepository.class), mock(EinkaufVorlagenService.class), mock(EinkaufPdfService.class), files,
                 mock(EinkaufOutboxService.class), mock(EinkaufVersandWorker.class), mock(EinkaufVersandauftragRepository.class),
-                amounts, needs, documents, mock(EinkaufAuditService.class), new ObjectMapper().findAndRegisterModules());
+                amounts, needs, documents, mock(EinkaufAuditService.class), new ObjectMapper().findAndRegisterModules(),
+                mock(EinkaufZeugnisService.class));
         return new Fixture(service, order, revision, amounts, files);
     }
     record Fixture(EinkaufBestellfreigabeService service, EinkaufBestellung order, BestellungRevision revision,

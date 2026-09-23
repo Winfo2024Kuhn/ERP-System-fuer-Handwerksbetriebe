@@ -1307,3 +1307,145 @@ Zeit: 2026-09-23T21:33:28.457841+00:00
 - Sol R2 GRÜN ohne Blocker, Warnungen oder Hinweise. Bericht /tmp/beschaffung-abschnitt7-r2-review-report.md; integrierte Vollsuite /tmp/beschaffung-abschnitt7-r2-review-backend.log direkter Exit0/BUILD SUCCESS,3468Tests/0Fehler/17bekannteSkips. Zwei reguläre Nachbesserungen verbraucht. Beide R1-Blocker durch echte MySQL-Regressionen belegt.
 - Keine Frontendänderung; gültige gemeinsame Trees/Nachweise wiederverwendet. Graphify /tmp/beschaffung-abschnitt7-r2-graphify.log Exit0. Generierte Graphdaten bleiben uncommittet. Staged Diff vom Reviewer geprüft, keine Secrets/Fremdänderungen.
 - Abschnitt8 folgt mit zwei parallelen Luna-Paketen25→23 und26. Alle Codingpakete vollständig fertig, dann gemeinsame Integration und Sol-Review. Aktuelle Bestell-/Revisions-/Mengenverträge in Briefs8A/8B/9A/11A ergänzt.
+
+
+## Abschnitt 8 — beide Coding-Pakete gestartet
+
+Zeit: 2026-09-23T21:34:49.118209+00:00
+
+- Abgenommene Integrationsbasis4756ff733d975cc7f51946da9e6d0bfceada4203 ist auf codex/beschaffung-konzept gepusht. Abschnitt7 nach zwei Root-Korrekturrunden Sol-grün.
+- GPT-6-Luna /root/paket8a: Tasks25→23, Worktree .claude/worktrees/beschaffung-task-25, Branch codex/beschaffung-task-25, Auftrag /tmp/beschaffung-paket-8a-auftrag.md.
+- GPT-6-Luna /root/paket8b: Task26, Worktree .claude/worktrees/beschaffung-task-26, Branch codex/beschaffung-task-26, Auftrag /tmp/beschaffung-paket-8b-auftrag.md. Beide Worktrees von derselben abgenommenen Basis erstellt, node_modules und .graphify-venv verlinkt, Symlinks nicht committen.
+- Keine vorgezogenen Teilreviews. Erst beide Pakete komplett fertig und gemeinsam integriert, dann ein Sol-Code-/Abschnittsreview. Nur Dummy-Testdatenbanken und Fake-/Testmail, Produktionskopie3309 unberührt. Pakete liefern fertigen Literal-Logblock an Root; keine Statuspings.
+
+
+## Issue 167 — Nutzerpräzisierung synchronisiert
+
+Zeit: 2026-09-23T21:53:04.409020+00:00
+
+- GitHub-MCP read/update funktionsfähig. Issue167 blieb offen; altes Lagerentnahme-Wording durch getrennte manuelle/Artikelstamm-Materialkostenerfassung für Nachkalkulation ersetzt. Beschaffung/Mengenschutz gilt für Einkaufsbedarf, keine Bestellung aus Projektkosten. Ergänzte verbindliche Klarstellung verweist auf Spec§15 und hält spätere teilweise/vollständige Übernahme aus Angebotskalkulation als Folgeausbau fest.
+- Änderung per strukturierter github_update_issue-Body, kein Kommentar/keine Benachrichtigung an Personen. Finale PR-Erstellung/Merge weiterhin per GitHub-MCP verfügbar.
+
+
+## Abschnitt 8 — Ownership für automatischen Zeugnis-Trigger
+
+Zeit: 2026-09-23T21:56:12.592958+00:00
+
+- Paket8A meldete echten Scopeblocker: automatisches erwarte() bei Bestellannahme braucht Änderung außerhalb ursprünglicher Dateiliste. Root erweitert Ownership gezielt um EinkaufBestellfreigabeService und notwendige Constructor-Wiring-Anpassungen vorhandener Tests. Keine Überschneidung mit8B.
+- Trigger in gemeinsamer bucheAnnahme-Transaktion nach revision.angenommen(...) für SMTP und externen belegten Versand. Frist aus geeigneter Liefer-/Bestellgrundlage, fehlende Frist bleibt klärungsbedürftig. Idempotente Erwartungsanlage und echte Persistenzprobe erforderlich, keine sonstige Änderung akzeptierter Bestelllogik. Agent setzt dies vollständig innerhalb Paket8A um.
+
+
+## Paket 8A – Tasks 25 und 23
+
+Status: fertig. Branch codex/beschaffung-task-25, Commit 4b3828ae6cbfca6003d5f9094bb7a3e2a7815342.
+
+Task 25 ergänzt versionierte, manuell bestätigte Zeugnisanforderungen, idempotente Anforderungen nach Annahme der tatsächlich angenommenen Bestellrevision, PDF-Eingang, Zuordnungen mit vorhandenen Dateireferenzen zu Lieferpositionen/Chargen, append-only Prüfungen und separate Materialfreigabe. Fehlende Lieferfrist bleibt klärungsbedürftig. Der Annahmetrigger läuft nach revision.angenommen() im gemeinsamen bucheAnnahme-Pfad für SMTP und externen Nachweis. Reale Testcontainers-Probe persistiert den vollständigen Ablauf bis zur Freigabe und prüft die Zuordnungs- und Prüfdatensätze.
+
+Task 23 ergänzt die paginierte serverseitige Arbeitsliste für offene Anfragen, fehlende Auftragsbestätigungen, überfällige bestätigte Liefertermine und Zeugnisse. Die Nachfrage-API liefert nur eine Vorlagen-/Empfängervorschau und versendet keine Nachricht. Zeugnisursachen beziehen sich auf die letzte angenommene Revision.
+
+API-Folgeverträge: GET /api/einkauf/zeugnisse, POST /api/einkauf/zeugnisse/revision/{revisionId}/erwarten, POST /api/einkauf/zeugnisse/{id}/eingang/{dokumentId}, POST /api/einkauf/zeugnisse/{id}/zuordnen, POST /api/einkauf/zeugnisse/{id}/pruefen, GET/POST /api/einkauf/anforderungsvorlagen, GET /api/einkauf/faelligkeiten, POST /api/einkauf/faelligkeiten/nachfrage.
+
+Validierung: vollständige Backend-Suite grün, 3479 Tests, 0 Fehler/Failures, 17 bekannte Skips. Log: /tmp/beschaffung-paket8a-full-backend.log. Gezielte Tasktests: 24 Tests grün, Log /tmp/beschaffung-paket8a-final-targeted.log. git diff --check grün. Frontend unverändert; vorhandene Tree- und Testnachweise in /tmp/beschaffung-frontend-testnachweise.json wurden herangezogen. Migration und Persistenz wurden mit Dummy-Testcontainers geprüft; keine echten Mails, keine Produktionskopie. Von mir gestartete Testcontainer sind durch Maven beendet; keine anderen Dienste gestartet.
+
+Bedenken/Abweichungen: keine. Es liegt lediglich das nicht gestagte Worktree-Artefakt .graphify-venv vor; keine Graphdaten wurden committet. Root übernimmt Graphify-Synchronisierung und Kontextlog-Append.
+
+
+## Paket 8b – Task 26
+
+- Status: fertig
+- Branch: `codex/beschaffung-task-26`
+- Worktree: `.claude/worktrees/beschaffung-task-26`
+- Commit: `b89777891ee5318be5534d5a3b9cf1cc5c6c86cf`
+- Ergebnis: persistente Belegpositionen samt Originaleinheit/-menge, Kosten und Quellen; idempotente Belegzuordnung; positionsbezogener Vergleich gegen die jüngste angenommene Bestellrevision mit Teilrechnungen, bestätigten/gelieferten/kumulierten Mengen, Korrekturvorzeichen und Kostenabweichungen; Einkaufsrechte an beiden Endpunkten; Reklamationen können validierte Bestell-, Positions- und Rechnungsbezüge tragen.
+- API-Folge-Verträge: GET `/api/einkauf/bestellungen/{id}/rechnungsabgleich` benötigt `LESEN`. POST `/api/einkauf/belege/{dokumentId}/zuordnung` benötigt `BEARBEITEN`; das Lieferantendokument muss bereits über den vorhandenen Bestellworkflow an eine Bestellung gebunden sein. Gutschrift/Storno brauchen eine zugeordnete Ursprungsrechnung. Der Vergleich und die Preisabweichungsanzeige buchen keine Projektkosten; die bestehende Projektkostenzuordnung bleibt der Schreibpfad.
+- Gezielter Test: `EinkaufRechnungsabgleichServiceTest`, 4/4 grün; Log `/tmp/task26-persist-test.log` (inklusive zweimaliger Ausführung von V395 und MySQL-Persistenzprobe für zwei Teilrechnungen plus Gutschrift).
+- Vollständiger Backendlauf: 3472 Tests, 0 Fehler, 0 Fehlschläge, 17 bekannte Skips; Log `/tmp/task26-full-backend-final7.log`, `BUILD SUCCESS`.
+- Frontend unverändert: `git diff --exit-code HEAD -- react-pc-frontend react-zeiterfassung` war leer; Nachweisbasis `/tmp/beschaffung-frontend-testnachweise.json`.
+- `git diff --cached --check` grün. Keine Frontenddateien geändert. Keine Maildienste gestartet; Testcontainers wurden nach den Testläufen beendet. Das bereits unversionierte `.graphify-venv` wurde nicht verändert oder committet; der Graphify-Wrapper fehlt in diesem Worktree, die gemeinsame Graphify-Aktualisierung bleibt Root überlassen.
+- Bedenken/Abweichungen: keine offenen Implementierungsblocker. Belegzuordnung setzt wie oben festgehalten die vorgelagerte Dokument-Bestellungsbindung voraus.
+- UTC-Abschlusszeit: 2026-09-23 22:12:28 UTC.
+
+
+## Abschnitt 8 — beide Pakete fertig, gemeinsamer Review R0
+
+Zeit: 2026-09-23T22:13:34.867832+00:00
+
+- Paket8A4b3828ae6cbfca6003d5f9094bb7a3e2a7815342 und8Bb89777891ee5318be5534d5a3b9cf1cc5c6c86cf vollständig fertig. Gemeinsame konfliktfreie --no-ff --no-commit Integration auf4756ff73. Erst jetzt ein Sol-Review über gesamten Abschnitt, kein Frontend und deshalb kein Designreview.
+- Testnachweise:8A3479Tests/0Fehler/17Skips,8B3472Tests/0Fehler/17Skips; beide reale MySQL-Persistenzproben. Reviewer übernimmt allein integrierte Vollsuite und prüft auch Integrationsvoraussetzung8B (Beleg muss bereits an Bestellung gebunden sein) gegen erreichbaren Benutzerworkflow.
+- Reviewbrief /tmp/beschaffung-review8-auftrag.md; Root übernimmt Graphify/Docs/Stage. Keine Fremd-/Graphdateien committen, Tests ausschließlich Dummy-Daten/Fakes.
+
+
+## Abschnitt 8 — Review R0 rot, erste Korrekturrunde
+
+Zeit: 2026-09-23T22:31:13.129207+00:00
+
+- Sol R0 ROT, Bericht /tmp/beschaffung-abschnitt8-r0-review-report.md; integrierte3483Tests/0Fehler/17Skips grün. Vier Rechnungsblocker (fehlender Bindungspfad, falsche Teilmengenabweichung, Vollkosten-/Vorzeichen-/Einzelpreisfehler, unvalidierte Belegart) und Zeugnisblocker bei Mehrchargen/späteren PDFs.
+- Root hat eigenen ROOT-Kontextlog vor Merge-Abbruch unter /tmp/beschaffung-abschnitt8-r0-root-log.md gesichert/wiederhergestellt. Root repariert Task26 selbst; derselbe Luna8A repariert ausschließlich Mehrchargen-/späteren-Eingang-Fall mit vollständigem persistierten Workflowtest. Alle fertig, dann gemeinsame R1-Integration, gleicher Sol-Reviewer.
+- V394/V395 behalten planmäßig reservierte Nummern. Reviewer nahm ursprünglichen Git-Reihenfolge-Vorwurf nach Verweis auf Plan340/948 zurück: keine spätere Appmigration auf persistenter Kopie angewandt, spätere Gesamtmigration erfolgt geordnet.
+- Root: neues validiertes Request-Feld bestellungId bindet Rechnung/Gutschrift in derselben Transaktion, Kopf vor Dokument sperren, Typ-/Lieferant-/Positions-/Originalrechnungsbezug prüfen, keine doppelte Belegzuordnung, identische Requests wiederholbar. Netto-Einzelpreis/Preisbasismenge/Originalpreis und Preis-only-Korrektur werden persistiert.
+- Kumulierte Teilrechnung ist keine Mengenabweichung; offene Menge separat, bestätigte Stornos über bestehenden bestellbezogenen Mengenstand berücksichtigen. Signierte Gutschrift/Storno, reine Preisnachberechnung ohne zweite Mengenabrechnung. Shared Task18-Rechner/Umrechnung für Nebenkosten und Preisbasen; fixe Kosten einmal je Position bzw. Kopf/Liefergruppe statt je Teilrechnung. Sammelladen der Belegpositionen.
+- Echte MockMvc→Service→MySQL-Probe reproduzierte ungebundenen Rechnungsbeleg mit409 (/tmp/beschaffung-8-r1-root-red.log). Korrigierter kompletter Ablauf mit zwei Teilrechnungen, Gutschrift, Preisnachberechnung, doppelter Fracht, falschem Typ/fremdem Lieferanten, Preis je100, bestätigtem Storno und unbekannter Einheit grün. Gezielte9Tests Exit0 /tmp/beschaffung-8-r1-root-targeted3.log. Vollsuite läuft, noch kein Commit/Review.
+
+
+## Abschnitt 8 — Root-Korrektur Task26 R1 fertig
+
+Zeit: 2026-09-23T22:34:19.536198+00:00
+
+- Commit3c5e8c30751a20efb8da19816e5da9f60861fce2 auf codex/beschaffung-task-26. Sieben Korrekturdateien einschließlich neuem gemeinsamen EinkaufBelegKostenRechner und echtem EinkaufRechnungsabgleichWorkflowTest. Eigene Stage-Ownership/Diff geprüft, keine Secrets/Graphdaten/Fremdänderungen. Nur untracked .graphify-venv-Symlink bleibt.
+- Vollsuite /tmp/beschaffung-8-r1-root-backend-full.log direkter Exit0/BUILD SUCCESS,3477Tests/0Fehler/17bekannteSkips. Gezielte9Tests /tmp/beschaffung-8-r1-root-targeted3.log grün. Roter HTTP-Bindungsnachweis /tmp/beschaffung-8-r1-root-red.log; echter Servicevergleich deckte zusätzlich doppeltes LIMIT in nativer AB-Abfrage auf, behoben. Frontend unverändert, gemeinsame Tree-Nachweise gültig. Keine Root-Testprozesse/Dienste mehr aktiv.
+- Rechnung kann aus ungebundenem Lieferantenbeleg über bestellungId sicher zugeordnet werden. Lieferant, echte Belegart, angenommene Bestellpositionen und Originalrechnung/Korrekturbezug werden serverseitig geprüft; Kopf-vor-Beleg-Sperre, erwartete Version, idempotente Wiederholung, keine zweite Zuordnung desselben Belegs. Vergleich und Zuordnung buchen weiterhin keine Projektkosten.
+- Einzelpreis, Originalpreis und Preisbasismenge persistiert; gemeinsame Umrechnung, unbekannte Zuordnung/Einheit/Preis bleibt PRUEFEN. Kumulierte reguläre Teilmengen erzeugen keine Abweichung, offene Menge getrennt; bestätigte Stornos aus bestellbezogenem Mengenjournal berücksichtigt. Gutschrift/STORNO signiert, reine Preisnachberechnung verändert Menge nicht.
+- Nebenkosten nutzen Task18-Rechner; bereits enthaltener Materialpreis wird nicht nochmals addiert. Fixe Zuschläge einmal pro Position bzw. Kopf-/Liefergruppenschlüssel, kein neuer voller Frachtanspruch pro Teilrechnung. Belegpositionen werden gemeinsam geladen.
+- API-Delta für kommende Frontends: BelegZuordnung(Long bestellungId,long version,String art,Long bezugsDokumentId,List<BelegPosition> positionen,UUID idempotenzKey). BelegPosition(String originalPositionsnummer,Long bestellPositionId,BigDecimal menge,Einheit einheit,BigDecimal nettoEinzelpreis,BigDecimal preisBasisMenge,boolean nurPreisKorrektur,List<Kosten> kosten,List<Quelle> quellen). Preisbasismenge bezieht sich auf originale Belegeinheit; nurPreisKorrektur ausschließlich bei Korrektur mit Originalrechnung. Kosten hat optional prozentBasisSchluessel. RECHNUNG/NACHBERECHNUNG benötigen DokumenttypRECHNUNG; GUTSCHRIFT/STORNO DokumenttypGUTSCHRIFT.
+- Prüfworkflow: HTTP→reale Services→Dummy-MySQL, zwei Teilrechnungen mit einmaliger Fracht, Gutschrift, reine80-Euro-Nachberechnung, doppelte Fracht+Einzelpreisabweichung, falscher Typ/fremder Lieferant, idempotente Wiederholung, Preis je100, bestätigtes Mengenstorno und unbekannte Einheit.
+
+
+## Paket 8A R1 – Zeugnisse je gelieferter Charge
+
+Status: fertig. Branch codex/beschaffung-task-25, einzelner R1-Commit 76106affe50acbb1efb374783d9635e9fbabd269.
+
+Befund aus Abschnitt8 R0 behoben: Status und Materialfreigabe liegen jetzt je Bestellpositions-Soll und tatsächlicher Charge in einkauf_zeugnis_charge_status. PDF-Zuordnungen verknüpfen vorhandene Dateien separat mit genau dieser Soll-Charge; Prüfungen referenzieren die jeweilige Zuordnung und bleiben append-only. Eine Zuordnung von Charge A muss nicht mehr alle Chargen derselben Lieferposition enthalten. Spätere PDFs können auch nach einer bereits geprüften Zuordnung eingehen, und dieselbe Zuordnung kann erneut manuell geprüft werden. Die Zeugnisliste materialisiert neu gelieferte, noch offene Chargenstände und zeigt sie pro Soll; die Fälligkeitsabfrage findet fehlende Status für weitere gelieferte Chargen ebenfalls.
+
+TDD-Nachweis: neuer echter Testcontainers-Workflow mit erstem Teilzugang/Charge A, PDF-Zuordnung, Prüfung und Freigabe; späterer Teilzugang/Charge B wird als ERWARTET persisted und bleibt unfrei; danach separates PDF, Zuordnung und Freigabe; erneute append-only manuelle Prüfung für A. Vor der Implementierung schlug er erwartungsgemäß mit 409 beim späteren Eingang fehl. Migrationstest prüft DDL und offene Charge-Status.
+
+Gezielte Pakettests: 25 Tests grün, 0 Fehler/Failures, Log /tmp/beschaffung-paket8a-r1-targeted.log. Vollständige Backend-Suite: 3480 Tests, 0 Fehler/Failures, 17 bekannte Skips, BUILD SUCCESS, Log /tmp/beschaffung-paket8a-r1-full-backend.log. git diff --check grün. Es wurden ausschließlich Dummy-Testcontainers genutzt, keine echten Mails und keine Produktionskopie. Container sind mit Maven beendet; keine sonstigen Dienste gestartet.
+
+Bedenken/Abweichungen: keine. Nicht gestagtes Worktree-Artefakt .graphify-venv blieb unberührt und ist nicht committed. Root übernimmt Graphify-Synchronisierung und gemeinsames Kontextlog.
+
+
+## Abschnitt 8 — erste Korrekturrunde gemeinsam integriert
+
+Zeit: 2026-09-23T22:43:18.754177+00:00
+
+- Paket8A76106affe50acbb1efb374783d9635e9fbabd269 und Root-8B3c5e8c30751a20efb8da19816e5da9f60861fce2 komplett fertig, gemeinsam --no-ff --no-commit auf4756ff73 integriert. Gleicher Sol-Reviewer prüft R1 und besitzt allein integrierte Backendvollsuite.
+-8A3480Tests/0Fehler/17Skips,8B3477Tests/0Fehler/17Skips. Neue echte persistierte Mehrchargen- und HTTP-Rechnungsworkflows. Frontendtrees unverändert. Root übernimmt Graphify/Stage/Docs; Plan-API an tatsächliche geprüfte Requestfelder angepasst. Noch keine Abschnittsabnahme/kein Push.
+
+
+## Abschnitt 8 — zweite und letzte Korrekturrunde durch Root
+
+Zeit: 2026-09-23T22:55:03.082981+00:00
+
+- R1 ROT trotz 3489 grünen Tests: /tmp/beschaffung-abschnitt8-r1-review-report.md. Alle fünf R0-Befunde behoben; zwei neue Blocker bei Zeugnis-Bestellbezug und Nachfrage zu später gelieferten Chargen. Root übernimmt beide Reparaturen selbst gemäß Nutzerauftrag. Sicherungen beider Root-Dokumente vor Merge-Abbruch: /tmp/beschaffung-abschnitt8-r1-root-log.md und /tmp/beschaffung-abschnitt8-r1-root-plan.md. HEAD bleibt4756ff73.
+- R2 ist die zweite/letzte formale Korrekturrunde gemäß Skill5.4. Bei erneutem ROT keine dritte Schleife. Gleicher Sol prüft erst nach vollständig fertigen Paketen.
+- Echte Dummy-MySQL-Regressionsprobe reproduziert beide Fehler: /tmp/beschaffung-8-r2-root-red.log,11Tests/2fachlicheFailures. Zeugnis-PDF bekommt Lieferanten-/Bestellprüfung unter Belegsperre bei Eingang, Zuordnung und Prüfung; ungebundene Belege atomar an Bestellung binden.
+- Fälligkeitsliste und Vorschau teilen offenen Soll-Chargenfilter, Vorschau nennt nur noch nicht freigegebene Chargen. Vollständig gelieferte Bestellungen behalten offene Zeugnisnachweise. Echte Regression A freigeben→B vollständig liefern→direkt Fälligkeit/Nachfrage ohne Zeugnis-GET.
+- Zusätzliche nichtblockierende Reviewwarnung wird durch negativen Controller-Rollentest mit echter Einkaufsberechtigungslogik in Task26 behoben. Vollsuiten laufen je eigenem Worktree; keine Tests auf3309/Produktionskopie, kein echter Versand.
+
+
+## Abschnitt 8 — Root-R2 fertig und gemeinsam integriert
+
+Zeit: 2026-09-23T22:58:07.001593+00:00
+
+- Task25 a08c90f2: beide R1-Blocker behoben, 3 eigene Dateien. Vollsuite3481/0Fehler/17Skips Exit0, /tmp/beschaffung-8-r2-root-full.log. Roter Vorhernachweis11Tests/2fachlicheFailures /tmp/beschaffung-8-r2-root-red.log. Zwischenlauf entdeckte kollidierende Dummy-Dateihashes; Fixture jetzt pro Datei eindeutig, finaler Volltest grün.
+- Task26 205523ad: negativer Controller-Rechtetest prüft LESEN/BEARBEITEN mit echter Berechtigungslogik, kein Servicedurchgriff ohne Recht. Vollsuite3478/0Fehler/17Skips Exit0 /tmp/beschaffung-8-r2-invoice-security-full.log.
+- Beide Paketbranches vollständig fertig, gemeinsam konfliktfrei --no-ff --no-commit auf4756ff73 integriert. Gleicher Sol-Reviewer review8 übernimmt allein integrierte Vollsuite/R2; Root synchronisiert Graphify und Dokumentation. Noch keine Abschnittsabnahme, kein Featurepush.
+- Frontend unverändert; vorhandene gemeinsame Tree-Nachweise bleiben gültig. Keine echten Mails/Produktionskopie genutzt. Nur untracked Graphify-Symlink in Paketworktrees bleibt.
+
+
+## Abschnitt 8 — Sol R2 grün, abgenommen
+
+Zeit: 2026-09-23T23:01:24.144454+00:00
+
+- Sol final GRÜN; /tmp/beschaffung-abschnitt8-r2-review-report.md. Integrierter Volltest3491/0Fehler/17bekannteSkips, direkter Maven-Exit0, /tmp/beschaffung-abschnitt8-r2-review-backend.log. Beide R1-Blocker behoben und persistiert geprüft, Warnung fehlender Rechnungsrechtetest ebenfalls behoben.
+- Geprüfte Paketstände: a08c90f2 (Tasks25→23) und205523ad (Task26). Frontendtrees unverändert, gültige gemeinsame Nachweise /tmp/beschaffung-frontend-testnachweise.json. Graphifyupdate Exit0 /tmp/beschaffung-abschnitt8-r2-graphify.log; beide erzeugten Graphdaten weiter absichtlich uncommitted.
+- Zweite Nachbesserung erfolgreich. Abschnitt8 abgenommen, als Nächstes Abschnitt9/Task27 gemeinsame Desktop-Einkaufsbausteine. Keine Wiederholung abgeschlossener Planung/Abschnitte.

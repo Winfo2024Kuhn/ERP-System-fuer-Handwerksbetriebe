@@ -11,6 +11,9 @@ public class LieferantReklamationDto {
     private Long id;
     private Long lieferantId;
     private String lieferantName;
+    private Long bestellungId;
+    private Long bestellPositionId;
+    private Long rechnungId;
 
     // Lieferschein Infos
     private Long lieferscheinId;

@@ -7,6 +7,8 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBestellung;
+import org.example.kalkulationsprogramm.domain.einkauf.BestellungPosition;
 
 @Getter
 @Setter
@@ -31,6 +33,18 @@ public class LieferantReklamation {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lieferschein_id")
     private LieferantDokument lieferschein;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bestellung_id")
+    private EinkaufBestellung bestellung;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bestell_position_id")
+    private BestellungPosition bestellPosition;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rechnung_id")
+    private LieferantDokument rechnung;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "erstellt_von_id")
