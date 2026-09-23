@@ -107,6 +107,9 @@ public class LieferantEinkaufKontaktService {
     private void clearOtherStandard(Long lieferantId, LieferantEinkaufKontakt selected, KontaktZweck zweck, Long akteurId) {
         for (LieferantEinkaufKontakt other : repository.findByLieferantIdAndAktivTrueOrderById(lieferantId)) {
             if (!other.getId().equals(selected.getId())) {
+                boolean isStandard = zweck == KontaktZweck.ANFRAGE
+                        ? other.isStandardAnfrage() : other.isStandardBestellung();
+                if (!isStandard) continue;
                 Kontakt vorher = toDto(other);
                 if (zweck == KontaktZweck.ANFRAGE) other.setStandardAnfrage(false);
                 else other.setStandardBestellung(false);

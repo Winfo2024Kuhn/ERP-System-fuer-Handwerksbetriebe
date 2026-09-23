@@ -6,10 +6,10 @@ import static org.mockito.Mockito.*;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.ArrayList;
 
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.einkauf.LieferantEinkaufKontakt;
-import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKontaktDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKontaktDto.Kontakt;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKontaktDto.KontaktZweck;
 import org.example.kalkulationsprogramm.repository.LieferantEinkaufKontaktRepository;
@@ -73,6 +73,35 @@ class LieferantEinkaufKontaktServiceTest {
         service.speichern(7L, new Kontakt(1L, 1L, "A", null, "a@example.com", true, true, false), 99L);
         verify(kontakte).saveAndFlush(argThat(saved -> !saved.isAktiv()));
         verify(kontakte, never()).delete(any());
+    }
+
+    @Test void standardwechselSpeichertUndAuditiertNurKontakteMitGeaendertemStandardflag() {
+        Lieferanten lieferant = lieferant(7L);
+        when(kontakte.findLieferantByIdForUpdate(7L)).thenReturn(Optional.of(lieferant));
+        LieferantEinkaufKontakt bisherigerStandard = kontakt(1L, lieferant, "A", null, "a@example.com", true, false);
+        LieferantEinkaufKontakt neuerStandard = kontakt(2L, lieferant, "B", null, "b@example.com", false, false);
+        LieferantEinkaufKontakt unveraendert = kontakt(3L, lieferant, "C", null, "c@example.com", false, true);
+        when(kontakte.findByIdAndLieferantId(2L, 7L)).thenReturn(Optional.of(neuerStandard));
+        when(kontakte.findByLieferantIdAndAktivTrueOrderById(7L))
+                .thenReturn(List.of(bisherigerStandard, neuerStandard, unveraendert));
+        List<LieferantEinkaufKontakt> saved = new ArrayList<>();
+        when(kontakte.saveAndFlush(any())).thenAnswer(invocation -> {
+            LieferantEinkaufKontakt contact = invocation.getArgument(0);
+            saved.add(contact);
+            return contact;
+        });
+
+        service.speichern(7L, new Kontakt(2L, 1L, "B", null, "b@example.com", true, false, true), 99L);
+
+        assertEquals(List.of(1L, 2L), saved.stream().map(LieferantEinkaufKontakt::getId).toList());
+        assertFalse(bisherigerStandard.isStandardAnfrage());
+        assertTrue(neuerStandard.isStandardAnfrage());
+        assertFalse(unveraendert.isStandardAnfrage());
+        assertTrue(unveraendert.isStandardBestellung());
+        org.mockito.ArgumentCaptor<Long> auditedIds = org.mockito.ArgumentCaptor.forClass(Long.class);
+        verify(audit, times(2)).protokolliere(eq("LIEFERANT_EINKAUF_KONTAKT"), auditedIds.capture(), anyString(),
+                eq(99L), any(), any(), isNull());
+        assertEquals(List.of(1L, 2L), auditedIds.getAllValues());
     }
 
     private static Lieferanten lieferant(Long id) { Lieferanten l = new Lieferanten(); l.setId(id); l.setLieferantenname("Dummy Stahl"); l.setEigeneKundennummer("00127"); return l; }
