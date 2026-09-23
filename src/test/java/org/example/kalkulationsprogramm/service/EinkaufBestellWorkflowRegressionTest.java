@@ -282,6 +282,19 @@ class EinkaufBestellWorkflowRegressionTest {
   Long slipB=proof(LieferantDokumentTyp.LIEFERSCHEIN);deliver(id,slipB,"1","DUMMY-CHARGE-B");
   var deliveryB=tx(()->deliveries.findByBestellung_IdOrderByEingangAsc(id).getLast().getPositionen().getFirst());
   var chargeB=tx(()->em.createQuery("select c from EinkaufCharge c where c.position.id=:id",EinkaufCharge.class).setParameter("id",deliveryB.getId()).getSingleResult());
+  // A newly delivered charge must be actionable without a certificate GET materializing its status.
+  var deadlineClock=Clock.fixed(LocalDate.now().plusDays(8).atStartOfDay(ZoneOffset.UTC).toInstant(),ZoneOffset.UTC);
+  var reminderTemplates=mock(EinkaufVorlagenService.class);
+  when(reminderTemplates.rendern(any(),any())).thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVorlagenDto.Gerendert(4L,1,"Dummy Nachfrage","<p>Dummy</p>","hash"));
+  tx(()->{var template=new EmailTextTemplate();template.setDokumentTyp("EINKAUF_ZEUGNIS_NACHFORDERUNG");template.setName("Dummy Zeugnisnachfrage");template.setSubjectTemplate("Dummy");template.setHtmlBody("<p>Dummy</p>");template.setStandard(true);em.persist(template);return null;});
+  var deadlines=new EinkaufFaelligkeitService(em,reminderTemplates,deadlineClock);
+  assertEquals(EinkaufZeugnisErwartung.Status.GEPRUEFT,tx(()->certificates.findById(expectation.getId()).orElseThrow().getStatus()));
+  assertTrue(tx(()->deadlines.liste(LocalDate.now(deadlineClock),9L,org.springframework.data.domain.PageRequest.of(0,200)))
+    .stream().anyMatch(row->row.typ().equals("ZEUGNIS")&&row.vorgangId().equals(id)));
+  var reminder=tx(()->deadlines.nachfrage("ZEUGNIS",id,null));
+  assertEquals(1,reminder.fehlendeNachweise().size());
+  assertTrue(reminder.fehlendeNachweise().getFirst().contains("DUMMY-CHARGE-B"));
+  assertFalse(reminder.fehlendeNachweise().getFirst().contains("DUMMY-CHARGE-A"));
   var afterDeliveryB=tx(()->certificateService.liste(id).getFirst());
   assertEquals(EinkaufZeugnisErwartung.Status.EINGEGANGEN,afterDeliveryB.status());
   assertFalse(afterDeliveryB.materialFreigegeben());
@@ -302,6 +315,31 @@ class EinkaufBestellWorkflowRegressionTest {
   assertEquals(2,tx(()->em.createQuery("select count(z) from EinkaufZeugnisZuordnung z where z.zeugnis.id=:id",Long.class).setParameter("id",expectation.getId()).getSingleResult()));
   assertEquals(3,tx(()->certificates.findById(expectation.getId()).orElseThrow().getPruefungen().size()));
   assertEquals(2,tx(()->em.createQuery("select count(s) from EinkaufZeugnisChargeStatus s where s.zeugnis.id=:id and s.status=:done and s.materialFreigegeben=true",Long.class).setParameter("id",expectation.getId()).setParameter("done",EinkaufZeugnisErwartung.Status.GEPRUEFT).getSingleResult()));
+ }
+
+ @Test void zeugnisAusAndererBestellungDesselbenLieferantenWirdAbgelehnt(){
+  Long first=tx(()->ordering.direkt(content("2"),9L).id());accept(first);
+  Long second=tx(()->ordering.direkt(content("2"),9L).id());accept(second);
+  var expected=tx(()->certificates.findByRevision_IdOrderByIdAsc(revisions.findFirstByBestellung_IdOrderByNummerDesc(second).orElseThrow().getId()).getFirst());
+  Long file=certificateFile("fremde-bestellung.pdf");
+  tx(()->{em.find(LieferantDokument.class,purchaseFiles.findById(file).orElseThrow().getLieferantDokumentId()).setEinkaufBestellungId(first);return null;});
+  assertEquals(409,assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->certificateService.eingang(expected.getId(),file))).getStatusCode().value());
+  // Existing associations must also be checked, including ones imported before the guard existed.
+  tx(()->{certificates.findById(expected.getId()).orElseThrow().eingegangen(purchaseFiles.findById(file).orElseThrow(),Instant.now());return null;});
+  deliver(second,proof(LieferantDokumentTyp.LIEFERSCHEIN),"1");
+  var line=tx(()->deliveries.findByBestellung_IdOrderByEingangAsc(second).getFirst().getPositionen().getFirst());
+  var charge=tx(()->em.createQuery("select c from EinkaufCharge c where c.position.id=:id",EinkaufCharge.class).setParameter("id",line.getId()).getSingleResult());
+  assertEquals(409,assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->certificateService.zuordnen(
+    new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufZeugnisDto.Zuordnung(file,List.of(expected.getId()),List.of(line.getId()),List.of(charge.getId()),null),9L))).getStatusCode().value());
+  assertEquals(0L,tx(()->em.createQuery("select count(z) from EinkaufZeugnisZuordnung z where z.zeugnis.id=:id",Long.class).setParameter("id",expected.getId()).getSingleResult()));
+  Long unbound=certificateFile("neuer-beleg.pdf");
+  tx(()->certificateService.eingang(expected.getId(),unbound));
+  assertEquals(second,tx(()->em.find(LieferantDokument.class,purchaseFiles.findById(unbound).orElseThrow().getLieferantDokumentId()).getEinkaufBestellungId()));
+  var firstExpected=tx(()->certificates.findByRevision_IdOrderByIdAsc(revisions.findFirstByBestellung_IdOrderByNummerDesc(first).orElseThrow().getId()).getFirst());
+  assertEquals(409,assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->certificateService.eingang(firstExpected.getId(),unbound))).getStatusCode().value());
+  Long foreign=certificateFile("fremder-lieferant.pdf");
+  tx(()->{var other=new Lieferanten();other.setLieferantenname("Dummy Fremdlieferant "+UUID.randomUUID());em.persist(other);em.find(LieferantDokument.class,purchaseFiles.findById(foreign).orElseThrow().getLieferantDokumentId()).setLieferant(other);return null;});
+  assertEquals(400,assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->certificateService.eingang(expected.getId(),foreign))).getStatusCode().value());
  }
 
  @Test void gleichzeitigeAenderungUndLieferungSperrenBedarfVorBestellkopf() throws Exception {
@@ -360,7 +398,7 @@ class EinkaufBestellWorkflowRegressionTest {
  private Long proof(LieferantDokumentTyp type) {
   return tx(()->{var doc=new LieferantDokument();doc.setLieferant(em.find(Lieferanten.class,supplierId));doc.setTyp(type);em.persist(doc);em.flush();return doc.getId();});
  }
- private Long certificateFile(String name){return tx(()->{var doc=new LieferantDokument();doc.setLieferant(em.find(Lieferanten.class,supplierId));doc.setTyp(LieferantDokumentTyp.SONSTIG);doc.setOriginalDateiname(name);em.persist(doc);em.flush();var file=new EinkaufDatei(name.equals("zeugnis-a.pdf")?"a".repeat(64):"b".repeat(64),null,name,"application/pdf",12,null,doc.getId());em.persist(file);em.flush();return file.getId();});}
+ private Long certificateFile(String name){return tx(()->{var doc=new LieferantDokument();doc.setLieferant(em.find(Lieferanten.class,supplierId));doc.setTyp(LieferantDokumentTyp.SONSTIG);doc.setOriginalDateiname(name);em.persist(doc);em.flush();var file=new EinkaufDatei(UUID.randomUUID().toString().replace("-","").repeat(2),null,name,"application/pdf",12,null,doc.getId());em.persist(file);em.flush();return file.getId();});}
  private long version(Long id){return orders.findById(id).orElseThrow().getVersion();}
  private void assertAmount(Long id,String ordered,String reserved,String delivered) {
   var amount=tx(()->amounts.standFuerVorgang("BESTELLUNG:"+id).get(needId));

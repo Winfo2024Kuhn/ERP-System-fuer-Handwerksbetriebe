@@ -21,6 +21,16 @@ import org.springframework.http.HttpStatus;
 
 @Service
 public class EinkaufFaelligkeitService {
+    // Shared by the overview and its preview, including charges delivered after a completed review.
+    private static final String OFFENE_CHARGEN_SQL = """
+        SELECT c.id FROM einkauf_charge c
+        JOIN einkauf_lieferung_position lp ON lp.id=c.lieferung_position_id
+        WHERE lp.bestell_position_id=z.bestell_position_id
+          AND NOT EXISTS (SELECT 1 FROM einkauf_zeugnis_charge_status cs
+                          WHERE cs.zeugnis_id=z.id AND cs.charge_id=c.id
+                            AND cs.status='GEPRUEFT' AND cs.material_freigegeben=TRUE)
+        """;
+    private static final String OFFENES_ZEUGNIS_SQL = "(z.status<>'GEPRUEFT' OR EXISTS ("+OFFENE_CHARGEN_SQL+"))";
     private static final String VORGANGS_SQL = """
         SELECT 'ANFRAGE_ANTWORTFRIST' typ, a.id vorgangId, a.pa_nummer nummer, l.id beteiligungId,
                r.antwortfrist frist, a.zustaendig_id zustaendigId,
@@ -57,14 +67,10 @@ public class EinkaufFaelligkeitService {
           JOIN einkauf_bestellung b ON b.id=r.bestellung_id
          WHERE r.angenommen_am IS NOT NULL AND r.verworfen_am IS NULL
            AND r.nummer=(SELECT MAX(r2.nummer) FROM einkauf_bestellung_revision r2 WHERE r2.bestellung_id=b.id AND r2.angenommen_am IS NOT NULL AND r2.verworfen_am IS NULL)
-           AND (z.status<>'GEPRUEFT' OR EXISTS (SELECT 1 FROM einkauf_charge c
-                 JOIN einkauf_lieferung_position lp ON lp.id=c.lieferung_position_id
-                WHERE lp.bestell_position_id=z.bestell_position_id
-                  AND NOT EXISTS (SELECT 1 FROM einkauf_zeugnis_charge_status cs WHERE cs.zeugnis_id=z.id AND cs.charge_id=c.id
-                                   AND cs.status='GEPRUEFT' AND cs.material_freigegeben=TRUE)))
-           AND (z.frist IS NULL OR z.frist<=:heute) AND b.status IN ('BESTELLT','TEILGELIEFERT')
+           AND __OFFENES_ZEUGNIS__
+           AND (z.frist IS NULL OR z.frist<=:heute) AND b.status IN ('BESTELLT','TEILGELIEFERT','GELIEFERT')
            AND (:zustaendig IS NULL OR b.angelegt_von=:zustaendig)
-        """;
+        """.replace("__OFFENES_ZEUGNIS__",OFFENES_ZEUGNIS_SQL);
     private final EntityManager em;
     private final EinkaufVorlagenService templates;
     private final Clock clock;
@@ -93,7 +99,7 @@ public class EinkaufFaelligkeitService {
         if(!Set.of("BESTELLBESTAETIGUNG","LIEFERTERMIN","ZEUGNIS").contains(typ)||beteiligungId!=null)throw bad("Diese Nachfrageart passt nicht zum angegebenen Vorgang.");
         EinkaufBestellung order=em.find(EinkaufBestellung.class,vorgangId);
         if(order==null)throw new NoSuchElementException("Die Bestellung wurde nicht gefunden.");
-        if(order.getStatus()==BestellungStatus.STORNIERT||order.getStatus()==BestellungStatus.GELIEFERT)throw conflict("Für erledigte oder stornierte Bestellungen wird keine Nachfrage vorbereitet.");
+        if(order.getStatus()==BestellungStatus.STORNIERT||order.getStatus()==BestellungStatus.GELIEFERT&&!"ZEUGNIS".equals(typ))throw conflict("Für erledigte oder stornierte Bestellungen wird keine Nachfrage vorbereitet.");
         List<BestellungRevision> accepted=em.createQuery("select r from BestellungRevision r where r.bestellung.id=:id and r.angenommenAm is not null and r.verworfenAm is null order by r.nummer desc",BestellungRevision.class).setParameter("id",vorgangId).setMaxResults(1).getResultList();
         if(accepted.isEmpty())throw conflict("Es gibt keine angenommene Bestellfassung.");
         BestellungRevision revision=accepted.get(0);
@@ -105,18 +111,25 @@ public class EinkaufFaelligkeitService {
         List<PositionSnapshot> snapshots=revision.getPositionen().stream().map(BestellungPosition::getPosition).filter(Objects::nonNull).toList();
         List<String> missing=List.of();
         if("ZEUGNIS".equals(typ)){
-            List<EinkaufZeugnisErwartung> expected=em.createQuery("select z from EinkaufZeugnisErwartung z where z.revision.id=:id and z.status<>:done order by z.id",EinkaufZeugnisErwartung.class)
-                    .setParameter("id",revision.getId()).setParameter("done",EinkaufZeugnisErwartung.Status.GEPRUEFT).getResultList();
-            expected=expected.stream().filter(x->x.getFrist()==null||!x.getFrist().isAfter(LocalDate.now(clock))).toList();
+            @SuppressWarnings("unchecked")
+            List<Number> openIds=em.createNativeQuery("SELECT z.id FROM einkauf_zeugnis_erwartung z WHERE z.revision_id=:id AND (z.frist IS NULL OR z.frist<=:heute) AND "+OFFENES_ZEUGNIS_SQL+" ORDER BY z.id")
+                    .setParameter("id",revision.getId()).setParameter("heute",LocalDate.now(clock)).getResultList();
+            List<EinkaufZeugnisErwartung> expected=openIds.isEmpty()?List.of():em.createQuery(
+                    "select z from EinkaufZeugnisErwartung z where z.id in :ids order by z.id",EinkaufZeugnisErwartung.class)
+                    .setParameter("ids",openIds.stream().map(Number::longValue).toList()).getResultList();
             if(expected.isEmpty())throw conflict("Für diese Bestellung sind keine fälligen Zeugnisse offen.");
             Map<Long,List<org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.DokumentSoll>> byPosition=new HashMap<>();
             expected.forEach(x->byPosition.computeIfAbsent(x.getBestellPosition().getId(),ignored->new ArrayList<>()).add(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.DokumentSoll(x.getArt(),x.getGrundlage(),x.getGrundlageVersion(),true)));
             snapshots=revision.getPositionen().stream().filter(p->byPosition.containsKey(p.getId())).map(p->withDocuments(p.getPosition(),byPosition.get(p.getId()))).toList();
-            List<Long> positionIds=expected.stream().map(x->x.getBestellPosition().getId()).distinct().toList();
             Map<Long,List<String>> charges=new HashMap<>();
-            em.createQuery("select p.bestellPosition.id,p.charge,p.schmelznummer from LieferungPosition p where p.bestellPosition.id in :ids",Object[].class)
-                    .setParameter("ids",positionIds).getResultList().forEach(row->{Object[] chargeRow=(Object[])row;String label=String.join(" / ",java.util.stream.Stream.of((String)chargeRow[1],(String)chargeRow[2]).filter(v->v!=null&&!v.isBlank()).toList());if(!label.isBlank())charges.computeIfAbsent(((Number)chargeRow[0]).longValue(),ignored->new ArrayList<>()).add(label);});
-            missing=expected.stream().map(x->{List<String> codes=charges.getOrDefault(x.getBestellPosition().getId(),List.of());String charge=codes.isEmpty()?"Charge noch nicht erfasst":"Charge(n): "+String.join(", ",codes);return x.getArt()+" — "+x.getGrundlage()+" ("+x.getBestellPosition().getPosition().bezeichnung()+"; "+charge+")";}).toList();
+            @SuppressWarnings("unchecked")
+            List<Object[]> openCharges=em.createNativeQuery("SELECT z.id,c.kennung,c.schmelznummer FROM einkauf_zeugnis_erwartung z JOIN einkauf_charge c ON c.id IN ("+OFFENE_CHARGEN_SQL+") WHERE z.id IN (:ids) ORDER BY z.id,c.id")
+                    .setParameter("ids",openIds.stream().map(Number::longValue).toList()).getResultList();
+            for(Object[] chargeRow:openCharges){
+                String label=String.join(" / ",java.util.stream.Stream.of((String)chargeRow[1],(String)chargeRow[2]).filter(v->v!=null&&!v.isBlank()).toList());
+                charges.computeIfAbsent(((Number)chargeRow[0]).longValue(),ignored->new ArrayList<>()).add(label);
+            }
+            missing=expected.stream().map(x->{List<String> codes=charges.getOrDefault(x.getId(),List.of());String charge=codes.isEmpty()?"Charge noch nicht erfasst":"Charge(n): "+String.join(", ",codes);return x.getArt()+" — "+x.getGrundlage()+" ("+x.getBestellPosition().getPosition().bezeichnung()+"; "+charge+")";}).toList();
         } else if("BESTELLBESTAETIGUNG".equals(typ)){
             if(em.createQuery("select count(b) from BestellBestaetigung b where b.bestellung.id=:id",Long.class).setParameter("id",vorgangId).getSingleResult().longValue()!=0L)throw conflict("Die Auftragsbestätigung liegt bereits vor.");
             Object deadline=revision.getSnapshot().get("bestaetigungsfrist");

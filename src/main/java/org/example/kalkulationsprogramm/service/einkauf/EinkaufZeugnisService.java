@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service.einkauf;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -66,6 +67,7 @@ public class EinkaufZeugnisService {
         var expectation=zeugnisse.findById(erwartungId).orElseThrow(()->new NoSuchElementException("Die Zeugnisanforderung wurde nicht gefunden."));
         var file=dateien.findById(dokumentId).orElseThrow(()->new NoSuchElementException("Das Einkaufsdokument wurde nicht gefunden."));
         if(!"application/pdf".equalsIgnoreCase(file.getMimeTyp()))throw bad("Für Zeugnisse sind nur PDF-Dateien zulässig.");
+        pruefeUndBindeBeleg(file,expectation.getRevision().getBestellung());
         if(expectation.getDateien().stream().anyMatch(existing->Objects.equals(existing.getId(),file.getId())))return dto(expectation);
         expectation.eingegangen(file,Instant.now(clock));
         ensureChargeStatuses(expectation);
@@ -85,14 +87,7 @@ public class EinkaufZeugnisService {
         if (targets.size()!=request.erwartungIds().stream().distinct().count()) throw new NoSuchElementException("Eine Zeugnisanforderung wurde nicht gefunden.");
         BestellungRevision latest=latestAccepted(targets.get(0).getRevision().getBestellung().getId());
         if(targets.stream().anyMatch(t->!Objects.equals(t.getRevision().getBestellung().getId(),latest.getBestellung().getId()))) throw bad("Ein Dokument kann nur Zeugnisse derselben Bestellung zugeordnet werden.");
-        LieferantDokument supplierDocument=datei.getLieferantDokumentId()==null?null:em.find(LieferantDokument.class,datei.getLieferantDokumentId());
-        if(supplierDocument==null&&datei.getEmailAttachmentId()!=null){
-            List<LieferantDokument> linked=em.createQuery("select d from LieferantDokument d where d.attachment.id=:attachmentId and d.lieferant.id=:supplierId order by d.id",LieferantDokument.class)
-                    .setParameter("attachmentId",datei.getEmailAttachmentId()).setParameter("supplierId",latest.getBestellung().getLieferantId()).setMaxResults(1).getResultList();
-            if(!linked.isEmpty())supplierDocument=linked.getFirst();
-        }
-        if(supplierDocument==null || supplierDocument.getLieferant()==null || !Objects.equals(supplierDocument.getLieferant().getId(),latest.getBestellung().getLieferantId()))
-            throw bad("Das Zeugnis gehört nicht zum Lieferanten der Bestellung.");
+        pruefeUndBindeBeleg(datei,latest.getBestellung());
         if(targets.stream().anyMatch(t->t.getRevision().getId()==null||!Objects.equals(t.getRevision().getId(),latest.getId())))
             throw conflict("Die Zeugnisanforderung gehört nicht zur zuletzt angenommenen Bestellfassung.");
         if(targets.stream().anyMatch(t->t.getDateien().stream().noneMatch(f->Objects.equals(f.getId(),datei.getId()))))
@@ -145,6 +140,7 @@ public class EinkaufZeugnisService {
         EinkaufZeugnisZuordnung association=em.find(EinkaufZeugnisZuordnung.class,zuordnungId);
         if(association==null)throw new NoSuchElementException("Die Zeugniszuordnung wurde nicht gefunden.");
         EinkaufZeugnisErwartung target=association.getZeugnis();EinkaufZeugnisChargeStatus chargeStatus=association.getChargeStatus();
+        pruefeUndBindeBeleg(association.getDatei(),target.getRevision().getBestellung());
         if(chargeStatus.getVersion()==null||chargeStatus.getVersion()!=request.version())throw conflict("Die Zeugniszuordnung wurde geändert; bitte neu laden.");
         if(!Objects.equals(target.getGrundlageVersion(),request.grundlageVersion()))throw conflict("Die geprüfte Grundlage passt nicht mehr zur Bestellfassung.");
         if(association.isKlaerungNoetig()||chargeStatus.getStatus()==EinkaufZeugnisErwartung.Status.KLAERUNG_NOETIG)throw conflict("Widersprüchliche Charge oder Schmelznummer muss zuerst geklärt werden.");
@@ -186,6 +182,28 @@ public class EinkaufZeugnisService {
         old.stream().filter(v->Objects.equals(v.getArtikelId(),request.artikelId())&&Objects.equals(v.getProjektId(),request.projektId())&&v.getArt()==request.art()).forEach(v->em.createQuery("update EinkaufAnforderungsVorlage x set x.aktiv=false where x.id=:id").setParameter("id",v.getId()).executeUpdate());
         var saved=vorlagen.saveAndFlush(new EinkaufAnforderungsVorlage(request.artikelId(),request.projektId(),request.art(),request.grundlage().trim(),version,akteurId,Instant.now(clock)));
         return new VorlageDto(saved.getId(),saved.getArtikelId(),saved.getProjektId(),saved.getArt(),saved.getGrundlage(),"V"+version,true);
+    }
+
+    private void pruefeUndBindeBeleg(EinkaufDatei file,EinkaufBestellung order) {
+        LieferantDokument document=null;
+        if(file.getLieferantDokumentId()!=null) {
+            document=em.find(LieferantDokument.class,file.getLieferantDokumentId(),LockModeType.PESSIMISTIC_WRITE);
+        } else if(file.getEmailAttachmentId()!=null) {
+            List<LieferantDokument> linked=em.createQuery(
+                    "select d from LieferantDokument d where d.attachment.id=:id order by d.id",LieferantDokument.class)
+                    .setParameter("id",file.getEmailAttachmentId()).setMaxResults(2)
+                    .setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultList();
+            if(linked.size()!=1)throw conflict("Der Lieferantenbeleg zur PDF-Datei ist nicht eindeutig.");
+            document=linked.getFirst();
+        }
+        if(document==null)throw bad("Zum Zeugnis fehlt der Lieferantenbeleg.");
+        // Refresh under the document lock: another workflow may already have bound this PDF.
+        em.refresh(document,LockModeType.PESSIMISTIC_WRITE);
+        if(document.getLieferant()==null||!Objects.equals(document.getLieferant().getId(),order.getLieferantId()))
+            throw bad("Das Zeugnis gehört nicht zum Lieferanten der Bestellung.");
+        if(document.getEinkaufBestellungId()!=null&&!Objects.equals(document.getEinkaufBestellungId(),order.getId()))
+            throw conflict("Das Zeugnis gehört bereits zu einer anderen Bestellung.");
+        document.setEinkaufBestellungId(order.getId());
     }
 
     private BestellungRevision latestAccepted(Long orderId){return revisions.findByBestellung_IdOrderByNummerAsc(orderId).stream().filter(BestellungRevision::istAngenommen)
