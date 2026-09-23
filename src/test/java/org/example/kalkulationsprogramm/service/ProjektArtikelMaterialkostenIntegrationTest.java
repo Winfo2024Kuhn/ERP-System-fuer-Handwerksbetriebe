@@ -63,7 +63,7 @@ class ProjektArtikelMaterialkostenIntegrationTest {
         auswahl.setArtikelId(artikel.getId());
         auswahl.setMenge(new BigDecimal("3"));
         auswahl.setEinheit("STUECK");
-        auswahl.setPreis(new BigDecimal("2.0000"));
+        auswahl.setPreis(new BigDecimal("2.5000"));
 
         service.erfasseArtikelKosten(projektId, List.of(auswahl));
         entityManager.flush();
@@ -74,7 +74,10 @@ class ProjektArtikelMaterialkostenIntegrationTest {
         assertThat(gespeichert.getMaterialkosten().getFirst().getArtikelIdSnapshot()).isEqualTo(artikel.getId());
         assertThat(gespeichert.getMaterialkosten().getFirst().getMengeSnapshot())
                 .isEqualByComparingTo("3.000000");
-        assertThat(gespeichert.getMaterialkosten().getFirst().getBetrag()).isEqualByComparingTo("6.00");
+        assertThat(gespeichert.getMaterialkosten().getFirst().getBetrag()).isEqualByComparingTo("7.50");
+        assertThat(gespeichert.getMaterialkosten().getFirst().getPreisJeEinheitSnapshot()).isEqualByComparingTo("2.500000");
+        assertThat(artikelRepository.findById(artikel.getId()).orElseThrow().getArtikelpreis().getFirst().getPreis())
+                .isEqualByComparingTo("2.0000");
         assertThat(artikelInProjektRepository.findAll()).isEmpty();
         assertThat(bedarfRepository.findAll().stream().filter(b -> projektId.equals(b.getProjektId())))
                 .isEmpty();
@@ -89,6 +92,10 @@ class ProjektArtikelMaterialkostenIntegrationTest {
         Projekt nachPatch = projektRepository.findById(projektId).orElseThrow();
         assertThat(nachPatch.getMaterialkosten()).hasSize(2);
         assertThat(nachPatch.getMaterialkosten().stream().filter(m -> m.getArtikelIdSnapshot() != null)
-                .findFirst().orElseThrow().getPreisJeEinheitSnapshot()).isEqualByComparingTo("2.000000");
+                .findFirst().orElseThrow().getPreisJeEinheitSnapshot()).isEqualByComparingTo("2.500000");
+
+        var listenErgebnis = service.findeProjekteMitFilter(null, null, null, null, null,
+                null, null, null, null, 0, 50);
+        assertThat(listenErgebnis.getContent()).extracting("id").contains(projektId);
     }
 }

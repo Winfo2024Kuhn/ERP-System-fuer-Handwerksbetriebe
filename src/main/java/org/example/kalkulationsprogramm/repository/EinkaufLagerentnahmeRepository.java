@@ -11,9 +11,16 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 public interface EinkaufLagerentnahmeRepository extends JpaRepository<EinkaufLagerentnahme, Long> {
+    interface ProjektKostenStatus {
+        Long getProjektId();
+        BigDecimal getSumme();
+        Boolean getBewertungOffen();
+    }
     Optional<EinkaufLagerentnahme> findByIdempotenzKey(UUID idempotenzKey);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -29,4 +36,14 @@ public interface EinkaufLagerentnahmeRepository extends JpaRepository<EinkaufLag
     @Query("select case when count(e) > 0 then true else false end from EinkaufLagerentnahme e "
             + "where e.projektId = :projektId and e.preisJeEinheit is null")
     boolean existsUnbewerteteByProjektId(@Param("projektId") Long projektId);
+
+    @Query("select sum(e.bewerteterBetrag) as summe, "
+            + "case when sum(case when e.preisJeEinheit is null then 1 else 0 end) > 0 then true else false end as bewertungOffen "
+            + "from EinkaufLagerentnahme e where e.projektId = :projektId")
+    ProjektKostenStatus zusammenfassungFuerProjekt(@Param("projektId") Long projektId);
+
+    @Query("select e.projektId as projektId, sum(e.bewerteterBetrag) as summe, "
+            + "case when sum(case when e.preisJeEinheit is null then 1 else 0 end) > 0 then true else false end as bewertungOffen "
+            + "from EinkaufLagerentnahme e where e.projektId in :projektIds group by e.projektId")
+    List<ProjektKostenStatus> zusammenfassungenFuerProjekte(@Param("projektIds") Collection<Long> projektIds);
 }

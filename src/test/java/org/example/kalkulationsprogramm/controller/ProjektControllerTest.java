@@ -38,6 +38,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -157,6 +159,17 @@ class ProjektControllerTest {
                                 .andExpect(status().isOk());
 
                 verify(projektManagementService).erfasseArtikelKosten(eq(7L), anyList());
+        }
+
+        @Test
+        void katalogMaterialkostenErhaeltPreisVersionskonflikt() throws Exception {
+                doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "Preis hat sich geändert."))
+                                .when(projektManagementService).erfasseArtikelKosten(eq(7L), anyList());
+
+                mockMvc.perform(post("/api/projekte/7/materialkosten/artikel")
+                                .contentType("application/json")
+                                .content("[{\"artikelId\":3,\"menge\":3,\"einheit\":\"STUECK\",\"preis\":2}]"))
+                                .andExpect(status().isConflict());
         }
 
         @Test

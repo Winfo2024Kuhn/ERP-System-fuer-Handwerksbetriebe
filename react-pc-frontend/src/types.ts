@@ -607,6 +607,14 @@ export interface Materialkosten {
   monat?: number;
   betrag: number;
   rechnungsnummer?: string;
+  artikelIdSnapshot?: number;
+  lieferantenArtikelPreisId?: number;
+  lieferantennameSnapshot?: string;
+  mengeSnapshot?: number;
+  einheitSnapshot?: string;
+  preisJeEinheitSnapshot?: number;
+  preisquelleSnapshot?: string;
+  preisnotizSnapshot?: string;
 }
 
 // Nested Produktkategorie object in ProjektProduktkategorie

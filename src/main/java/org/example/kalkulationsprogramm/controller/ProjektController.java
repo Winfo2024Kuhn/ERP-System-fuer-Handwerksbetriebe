@@ -302,9 +302,8 @@ public class ProjektController {
         try {
             ProjektResponseDto dto = projektManagementService.erfasseArtikelKosten(projektID, artikelAuswahl);
             return ResponseEntity.ok(dto);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
         }
     }
 

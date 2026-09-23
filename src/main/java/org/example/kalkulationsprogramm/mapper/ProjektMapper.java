@@ -15,6 +15,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Component
 @AllArgsConstructor
@@ -31,9 +34,12 @@ public class ProjektMapper {
         ProjektResponseDto dto = new ProjektResponseDto();
         dto.setId(projekt.getId());
         if (projekt.getId() != null) {
-            dto.setLagerentnahmenKosten(lagerentnahmeRepository.sumBewerteteEntnahmen(projekt.getId()));
-            dto.setLagerentnahmenBewertungOffen(
-                    lagerentnahmeRepository.existsUnbewerteteByProjektId(projekt.getId()));
+            EinkaufLagerentnahmeRepository.ProjektKostenStatus status =
+                    lagerentnahmeRepository.zusammenfassungFuerProjekt(projekt.getId());
+            if (status != null) {
+                dto.setLagerentnahmenKosten(status.getSumme());
+                dto.setLagerentnahmenBewertungOffen(Boolean.TRUE.equals(status.getBewertungOffen()));
+            }
         }
         dto.setBauvorhaben(projekt.getBauvorhaben());
         dto.setStrasse(projekt.getStrasse());
@@ -218,6 +224,24 @@ public class ProjektMapper {
         dto.setAbgeschlossen(projekt.isAbgeschlossen());
 
         return dto;
+    }
+
+    public List<ProjektResponseDto> toProjektListeDtos(List<Projekt> projekte) {
+        List<ProjektResponseDto> dtos = projekte.stream().map(this::toProjektListeDto).toList();
+        List<Long> projektIds = projekte.stream().map(Projekt::getId).filter(java.util.Objects::nonNull).toList();
+        if (projektIds.isEmpty()) return dtos;
+        Map<Long, EinkaufLagerentnahmeRepository.ProjektKostenStatus> statusByProjekt =
+                lagerentnahmeRepository.zusammenfassungenFuerProjekte(projektIds).stream()
+                        .collect(Collectors.toMap(EinkaufLagerentnahmeRepository.ProjektKostenStatus::getProjektId,
+                                Function.identity()));
+        dtos.forEach(dto -> {
+            var status = statusByProjekt.get(dto.getId());
+            if (status != null) {
+                dto.setLagerentnahmenKosten(status.getSumme());
+                dto.setLagerentnahmenBewertungOffen(Boolean.TRUE.equals(status.getBewertungOffen()));
+            }
+        });
+        return dtos;
     }
 
     /**
