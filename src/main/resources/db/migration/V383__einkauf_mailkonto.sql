@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS einkauf_mailkonto (
+    id VARCHAR(16) NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    aktiv BOOLEAN NOT NULL DEFAULT FALSE,
+    from_address VARCHAR(254) NOT NULL DEFAULT '',
+    from_name VARCHAR(120) NOT NULL DEFAULT '',
+    smtp_host VARCHAR(253) NOT NULL DEFAULT '',
+    smtp_port INT NOT NULL DEFAULT 465,
+    smtp_username VARCHAR(254) NOT NULL DEFAULT '',
+    smtp_password_ciphertext TEXT NULL,
+    smtp_tls VARCHAR(16) NOT NULL DEFAULT 'TLS',
+    imap_host VARCHAR(253) NOT NULL DEFAULT '',
+    imap_port INT NOT NULL DEFAULT 993,
+    imap_username VARCHAR(254) NOT NULL DEFAULT '',
+    imap_password_ciphertext TEXT NULL,
+    imap_tls VARCHAR(16) NOT NULL DEFAULT 'TLS',
+    inbox VARCHAR(255) NOT NULL DEFAULT 'INBOX',
+    sent VARCHAR(255) NOT NULL DEFAULT 'Sent',
+    letzter_abruf TIMESTAMP(6) NULL,
+    letzter_fehler VARCHAR(80) NULL,
+    PRIMARY KEY (id)
+);
