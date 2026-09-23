@@ -24,6 +24,7 @@ class EinkaufKommunikationServiceTest {
         var beteiligungen = mock(AnfrageLieferantRepository.class);
         var emails = mock(EmailRepository.class);
         var zuordnungen = mock(EinkaufMailZuordnungRepository.class);
+        var previews = mock(org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository.class);
         var vorlagen = mock(EinkaufVorlagenService.class);
         var pdf = mock(EinkaufPdfService.class);
         var dateien = mock(EinkaufDateiService.class);
@@ -34,7 +35,7 @@ class EinkaufKommunikationServiceTest {
         var sent = new VersandDto(77L, 2, "ANFRAGE", 11L, 12L, "ANGENOMMEN", null,
                 Instant.EPOCH, Instant.EPOCH, true, "<mail@erp.local>");
         when(outbox.findeWiederholungsauftrag(key, token, 11L, 13L)).thenReturn(Optional.of(sent));
-        var service = new EinkaufKommunikationService(anfragen, revisionen, beteiligungen, emails, zuordnungen,
+        var service = new EinkaufKommunikationService(anfragen, revisionen, beteiligungen, emails, zuordnungen, previews,
                 vorlagen, pdf, dateien, outbox, worker, new ObjectMapper());
 
         var result = service.senden(11L, 13L, new Freigabe(12, token, key), 5L);
@@ -42,5 +43,27 @@ class EinkaufKommunikationServiceTest {
         assertEquals("ANGENOMMEN", result.status());
         verify(outbox).findeWiederholungsauftrag(key, token, 11L, 13L);
         verifyNoInteractions(anfragen, revisionen, beteiligungen, vorlagen, pdf, dateien, worker);
+    }
+
+    @Test
+    void clientErfundeneJsonFreigabeKannKeineAnderePDFVorschauFreigeben() {
+        var outbox = mock(EinkaufOutboxService.class);
+        var previews = mock(org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository.class);
+        var vorlagen = mock(EinkaufVorlagenService.class);
+        var pdf = mock(EinkaufPdfService.class);
+        var dateien = mock(EinkaufDateiService.class);
+        var worker = mock(EinkaufVersandWorker.class);
+        var key = UUID.randomUUID();
+        String forged = "{\"templateId\":3,\"pdfDateiId\":999,\"snapshotHash\":\"self-made\"}";
+        var service = new EinkaufKommunikationService(mock(EinkaufsanfrageRepository.class),
+                mock(AnfrageRevisionRepository.class), mock(AnfrageLieferantRepository.class),
+                mock(EmailRepository.class), mock(EinkaufMailZuordnungRepository.class), previews,
+                vorlagen, pdf, dateien, outbox, worker, new ObjectMapper());
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.senden(11L, 13L, new Freigabe(12, forged, key), 5L));
+
+        verify(previews).findByFreigabeTokenAndAnfrageIdAndBeteiligungId(forged, 11L, 13L);
+        verifyNoInteractions(vorlagen, pdf, dateien, worker);
     }
 }

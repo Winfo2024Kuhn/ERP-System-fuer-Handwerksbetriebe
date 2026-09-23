@@ -141,6 +141,12 @@ public class EinkaufOutboxService {
         });
     }
 
+    public java.util.List<Long> findeVorbereiteteAuftraege(int limit) {
+        if (limit < 1 || limit > 500) throw new IllegalArgumentException("Das Dispatch-Limit muss zwischen 1 und 500 liegen.");
+        return transaktion(() -> repository.findeIdsByStatus(EinkaufVersandauftrag.Status.VORBEREITET,
+                org.springframework.data.domain.PageRequest.of(0, limit)));
+    }
+
     public void abgeschlossen(Long id, org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis result) {
         if (result == null) throw new IllegalArgumentException("Das SMTP-Ergebnis fehlt.");
         transaktion(() -> {

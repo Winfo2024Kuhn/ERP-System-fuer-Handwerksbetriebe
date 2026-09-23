@@ -7,12 +7,16 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.einkauf.AnfrageLieferant;
 import org.example.kalkulationsprogramm.domain.einkauf.AnfrageRevision;
 import org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage;
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufKommunikationVorschau;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKommunikationDto.*;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPdfDto.*;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandSnapshot;
@@ -23,6 +27,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageLieferantRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRevisionRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.EinkaufMailZuordnungRepository;
+import org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository;
 import org.example.kalkulationsprogramm.repository.EinkaufsanfrageRepository;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufOutboxService;
 import org.springframework.data.domain.Page;
@@ -32,11 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class EinkaufKommunikationService {
+    private static final SecureRandom TOKEN_GENERATOR = new SecureRandom();
     private final EinkaufsanfrageRepository anfragen;
     private final AnfrageRevisionRepository revisionen;
     private final AnfrageLieferantRepository beteiligungen;
     private final EmailRepository emails;
     private final EinkaufMailZuordnungRepository zuordnungen;
+    private final EinkaufKommunikationVorschauRepository vorschauen;
     private final EinkaufVorlagenService vorlagen;
     private final EinkaufPdfService pdf;
     private final EinkaufDateiService dateien;
@@ -46,26 +53,29 @@ public class EinkaufKommunikationService {
 
     public EinkaufKommunikationService(EinkaufsanfrageRepository anfragen, AnfrageRevisionRepository revisionen,
             AnfrageLieferantRepository beteiligungen, EmailRepository emails, EinkaufMailZuordnungRepository zuordnungen,
-            EinkaufVorlagenService vorlagen, EinkaufPdfService pdf, EinkaufDateiService dateien,
+            EinkaufKommunikationVorschauRepository vorschauen, EinkaufVorlagenService vorlagen,
+            EinkaufPdfService pdf, EinkaufDateiService dateien,
             EinkaufOutboxService outbox, EinkaufVersandWorker worker, ObjectMapper objectMapper) {
         this.anfragen = anfragen; this.revisionen = revisionen; this.beteiligungen = beteiligungen;
-        this.emails = emails; this.zuordnungen = zuordnungen; this.vorlagen = vorlagen; this.pdf = pdf;
+        this.emails = emails; this.zuordnungen = zuordnungen; this.vorschauen = vorschauen;
+        this.vorlagen = vorlagen; this.pdf = pdf;
         this.dateien = dateien; this.outbox = outbox; this.worker = worker; this.objectMapper = objectMapper;
     }
 
     @Transactional
     public Vorschau vorschau(Long anfrageId, Long beteiligungId, Long templateId) {
-        return vorschauDaten(anfrageId, beteiligungId, templateId, null).vorschau();
+        return vorschauDaten(anfrageId, beteiligungId, templateId).vorschau();
     }
 
-    private VorschauDaten vorschauDaten(Long anfrageId, Long beteiligungId, Long templateId, Long pdfDateiId) {
+    private VorschauDaten vorschauDaten(Long anfrageId, Long beteiligungId, Long templateId) {
         VersandBasis basis = ladeBasis(anfrageId, beteiligungId);
         if (templateId == null || templateId <= 0) throw new IllegalArgumentException("Bitte wählen Sie eine Einkaufsvorlage.");
         var kontakt = basis.beteiligung().getKontakt();
         var positionen = basis.revision().getPositionen().stream().map(p -> p.getSnapshot()).toList();
-        String lieferadresse = positionen.stream().map(p -> basis.revision().getPositionen().stream()
-                .filter(z -> z.getSnapshot().equals(p)).findFirst().orElseThrow().getHerkuenfte().stream().findFirst()
-                .map(h -> h.getBedarf().getLiefergruppe().lieferadresse()).orElse("")).filter(Objects::nonNull).findFirst().orElse("");
+        String lieferadresse = basis.revision().getPositionen().stream().flatMap(p -> p.getHerkuenfte().stream())
+                .map(h -> h.getBedarf().getLiefergruppe()).filter(Objects::nonNull)
+                .map(group -> group.lieferadresse())
+                .filter(Objects::nonNull).findFirst().orElse("");
         Gerendert gerendert = vorlagen.rendern(templateId, new VorlagenKontext("EINKAUF_ANFRAGE",
                 Map.of("LIEFERANTENNAME", safe(kontakt.lieferantenname()), "ANSPRECHPARTNER", safe(kontakt.name()),
                         "ANREDE", safe(kontakt.anrede()), "LIEFERADRESSE", lieferadresse,
@@ -80,24 +90,24 @@ public class EinkaufKommunikationService {
                 List.of(), basis.revision().getPositionen().stream().flatMap(p -> p.getHerkuenfte().stream())
                         .map(h -> h.getBedarf().getLiefergruppe()).distinct().toList(), basis.revision().getAntwortfrist(),
                 basis.revision().getLiefertermin(), null, null, true);
-        byte[] renderedPdf = pdfDateiId == null ? pdf.erzeugen(pdfBeleg) : null;
-        byte[] pdfBytes = pdfDateiId == null ? renderedPdf : dateien.ladePdfSnapshotBytes(pdfDateiId);
+        byte[] renderedPdf = pdf.erzeugen(pdfBeleg);
+        byte[] pdfBytes = renderedPdf;
         List<Long> attachmentIds = basis.revision().getPositionen().stream().flatMap(p -> p.getSnapshot().anlageVersionIds().stream()).distinct().sorted().toList();
         dateien.pruefePaketgroesse(attachmentIds, pdfBytes.length);
         var attachments = new java.util.ArrayList<>(dateien.ladeVersandanlagen(attachmentIds));
-        var pdfSnapshot = pdfDateiId == null
-                ? dateien.speicherePdfSnapshot(renderedPdf, basis.anfrage().getPaNummer() + "-Anfrage-" + basis.revision().getNummer() + ".pdf")
-                : null;
-        Long frozenPdfId = pdfDateiId == null ? pdfSnapshot.dateiId() : pdfDateiId;
+        var pdfSnapshot = dateien.speicherePdfSnapshot(renderedPdf,
+                basis.anfrage().getPaNummer() + "-Anfrage-" + basis.revision().getNummer() + ".pdf");
+        Long frozenPdfId = pdfSnapshot.dateiId();
         attachments.add(new EmailService.Attachment(pdfBytes, basis.anfrage().getPaNummer() + "-Anfrage.pdf", "application/pdf"));
         String empfaenger = kontakt.email();
-        String hash = sha256(basis.revision().getId() + "\n" + templateId + ":" + gerendert.version() + "\n"
-                + gerendert.hash() + "\n" + empfaenger + "\n" + attachmentIds + "\n" + sha256(pdfBytes));
-        String token;
-        try { token = objectMapper.writeValueAsString(Map.of("templateId", templateId, "templateVersion", gerendert.version(),
-                "revisionId", basis.revision().getId(), "empfaenger", empfaenger, "anlageVersionIds", attachmentIds,
-                "pdfDateiId", frozenPdfId, "snapshotHash", hash)); }
-        catch (Exception ex) { throw new IllegalStateException("Die Vorschau konnte nicht freigegeben werden.", ex); }
+        String token = token();
+        String inhaltHash = inhaltHash(basis.revision().getId(), templateId, gerendert.version(), gerendert.subject(),
+                gerendert.htmlBody(), empfaenger, attachmentIds, frozenPdfId, sha256(pdfBytes));
+        Instant erstelltAm = Instant.now();
+        vorschauen.saveAndFlush(new EinkaufKommunikationVorschau(token, basis.anfrage().getId(), beteiligungId,
+                basis.revision().getId(), templateId, gerendert.version(), gerendert.subject(), gerendert.htmlBody(),
+                empfaenger, attachmentIds, frozenPdfId, sha256(pdfBytes), inhaltHash, erstelltAm,
+                erstelltAm.plus(Duration.ofDays(1))));
         Vorschau preview = new Vorschau(basis.revision().getId(), token, gerendert.subject(), gerendert.htmlBody(), empfaenger, frozenPdfId, attachmentIds);
         return new VorschauDaten(basis, preview, List.copyOf(attachments));
     }
@@ -106,30 +116,38 @@ public class EinkaufKommunikationService {
     public VersandErgebnis senden(Long anfrageId, Long beteiligungId, Freigabe freigabe, Long akteurId) {
         if (freigabe == null || freigabe.idempotenzKey() == null || akteurId == null || akteurId <= 0)
             throw new IllegalArgumentException("Die Versandfreigabe ist unvollständig.");
-        long templateId;
-        long pdfDateiId;
-        try {
-            var previewToken = objectMapper.readTree(freigabe.vorschauHash());
-            templateId = previewToken.path("templateId").asLong();
-            pdfDateiId = previewToken.path("pdfDateiId").asLong();
-            if (pdfDateiId <= 0) throw new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen.");
-        } catch (Exception ignored) { throw new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen."); }
         var prior = outbox.findeWiederholungsauftrag(freigabe.idempotenzKey(), freigabe.vorschauHash(), anfrageId, beteiligungId);
         if (prior.isPresent()) {
             var versand = prior.get();
             return new VersandErgebnis(beteiligungId, versand.status(), versand.fehlerCode(), versand.messageId());
         }
-        // Hashes are opaque; the UI supplies the selected template in the request header encoded with the preview token.
-        VorschauDaten data = vorschauDaten(anfrageId, beteiligungId, templateId, pdfDateiId);
-        Vorschau aktuell = data.vorschau();
-        if (aktuell.version() != freigabe.version() || !aktuell.vorschauHash().equals(freigabe.vorschauHash()))
+        EinkaufKommunikationVorschau vorschauSnapshot = vorschauen
+                .findByFreigabeTokenAndAnfrageIdAndBeteiligungId(freigabe.vorschauHash(), anfrageId, beteiligungId)
+                .orElseThrow(() -> new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen."));
+        if (!Instant.now().isBefore(vorschauSnapshot.getGueltigBis()))
+            throw new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen.");
+        VersandBasis basis = ladeBasis(anfrageId, beteiligungId);
+        if (!basis.revision().getId().equals(vorschauSnapshot.getRevisionId())
+                || !basis.revision().getId().equals(freigabe.version()))
             throw new IllegalStateException("Die Anfrage oder Vorschau wurde geändert. Bitte neu prüfen.");
-        VersandBasis basis = data.basis();
-        var message = new Nachricht(null, aktuell.empfaenger(), aktuell.subject(), aktuell.htmlBody(), null, List.of(), data.anlagen());
-        VersandSnapshot snapshot = new VersandSnapshot("ANFRAGE", anfrageId, basis.revision().getId(), beteiligungId,
+        String verifiedHash = inhaltHash(vorschauSnapshot.getRevisionId(), vorschauSnapshot.getVorlageId(), vorschauSnapshot.getVorlageVersion(),
+                vorschauSnapshot.getSubject(), vorschauSnapshot.getHtmlBody(), vorschauSnapshot.getEmpfaenger(), vorschauSnapshot.getAnlageVersionIds(),
+                vorschauSnapshot.getPdfDateiId(), vorschauSnapshot.getPdfSha256());
+        if (!verifiedHash.equals(vorschauSnapshot.getInhaltSha256()))
+            throw new IllegalStateException("Der gespeicherte Vorschauinhalt ist verändert und kann nicht versendet werden.");
+        byte[] pdfBytes = dateien.ladePdfSnapshotBytes(vorschauSnapshot.getPdfDateiId());
+        if (!sha256(pdfBytes).equals(vorschauSnapshot.getPdfSha256()))
+            throw new IllegalStateException("Die freigegebene PDF-Datei stimmt nicht mit der Vorschau überein.");
+        dateien.pruefePaketgroesse(vorschauSnapshot.getAnlageVersionIds(), pdfBytes.length);
+        var attachments = new java.util.ArrayList<>(dateien.ladeVersandanlagen(vorschauSnapshot.getAnlageVersionIds()));
+        attachments.add(new EmailService.Attachment(pdfBytes, basis.anfrage().getPaNummer() + "-Anfrage.pdf", "application/pdf"));
+        Vorschau aktuell = new Vorschau(vorschauSnapshot.getRevisionId(), vorschauSnapshot.getFreigabeToken(), vorschauSnapshot.getSubject(),
+                vorschauSnapshot.getHtmlBody(), vorschauSnapshot.getEmpfaenger(), vorschauSnapshot.getPdfDateiId(), vorschauSnapshot.getAnlageVersionIds());
+        var message = new Nachricht(null, aktuell.empfaenger(), aktuell.subject(), aktuell.htmlBody(), null, List.of(), attachments);
+        VersandSnapshot versandSnapshot = new VersandSnapshot("ANFRAGE", anfrageId, basis.revision().getId(), beteiligungId,
                 new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.KontoZugangReferenz("EINKAUF"), message, aktuell.vorschauHash());
-        var result = outbox.einreihen(snapshot, freigabe.idempotenzKey(), akteurId);
-        worker.verarbeite(result.id());
+        var result = outbox.einreihen(versandSnapshot, freigabe.idempotenzKey(), akteurId);
+        worker.dispatchNachCommit(result.id());
         return new VersandErgebnis(beteiligungId, result.status(), result.fehlerCode(), result.messageId());
     }
 
@@ -167,6 +185,8 @@ public class EinkaufKommunikationService {
     }
     private record VersandBasis(Einkaufsanfrage anfrage, AnfrageRevision revision, AnfrageLieferant beteiligung) {}
     private record VorschauDaten(VersandBasis basis, Vorschau vorschau, List<EmailService.Attachment> anlagen) {}
+    private record VorschauInhalt(Long revisionId, Long templateId, Long templateVersion, String subject, String html,
+            String recipient, List<Long> attachmentIds, Long pdfId, String pdfHash) {}
     private static String safe(String value) { return value == null ? "" : value; }
     private static String value(java.time.LocalDate value) { return value == null ? "" : value.toString(); }
     private static String sha256(byte[] bytes) {
@@ -174,4 +194,18 @@ public class EinkaufKommunikationService {
         catch (Exception ex) { throw new IllegalStateException("SHA-256 ist nicht verfügbar.", ex); }
     }
     private static String sha256(String value) { return sha256(value.getBytes(StandardCharsets.UTF_8)); }
+    private static String token() {
+        byte[] bytes = new byte[32];
+        TOKEN_GENERATOR.nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
+    }
+    private String inhaltHash(Long revisionId, Long templateId, Long templateVersion, String subject, String html,
+            String recipient, List<Long> attachmentIds, Long pdfId, String pdfHash) {
+        try {
+            return sha256(objectMapper.writeValueAsBytes(new VorschauInhalt(revisionId, templateId, templateVersion,
+                    subject, html, recipient, List.copyOf(attachmentIds), pdfId, pdfHash)));
+        } catch (Exception ex) {
+            throw new IllegalStateException("Der Vorschauinhalt konnte nicht gebunden werden.", ex);
+        }
+    }
 }

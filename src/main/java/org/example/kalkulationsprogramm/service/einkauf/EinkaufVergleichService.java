@@ -48,14 +48,21 @@ public class EinkaufVergleichService {
         long currentRevisionId = anfrage.getAktuelleRevision().getId();
         List<AngebotSumme> sums = new ArrayList<>();
         List<AngebotVersion> rankable = new ArrayList<>();
-        for (EinkaufAngebot offer : angebote.findAllByBeteiligungRevisionAnfrageIdOrderById(anfrageId)) {
-            AngebotVersion latest = versionen.findFirstByAngebotIdOrderByNummerDesc(offer.getId()).orElse(null);
-            if (latest == null) continue;
-            VersionDto dto = angebotService.laden(offer.getId()).versionen().stream()
-                    .filter(v -> v.id().equals(latest.getId())).findFirst().orElseThrow();
-            List<Herkunft> packageAmounts = anfrage.getAktuelleRevision().getPositionen().stream()
-                    .flatMap(p -> p.getHerkuenfte().stream()).map(h -> new Herkunft(h.getBedarf().getId(), h.getBedarfVersion(), h.getMenge())).toList();
-            AngebotSumme calculated = berechne(dto, packageAmounts, stichtag);
+        List<AngebotVersion> aktuelleVersionen = versionen.findeAktuelleVergleichsversionen(anfrageId);
+        if (aktuelleVersionen.isEmpty()) return new Vergleich(anfrageId, stichtag, List.of(), null);
+        versionen.ladeVergleichskosten(aktuelleVersionen.stream().map(AngebotVersion::getId).toList());
+        Set<Long> revisionIds = new java.util.LinkedHashSet<>();
+        revisionIds.add(currentRevisionId);
+        aktuelleVersionen.forEach(v -> revisionIds.add(v.getAnfrageRevision().getId()));
+        versionen.ladeVergleichsAnfragepositionen(List.copyOf(revisionIds));
+        versionen.ladeVergleichsHerkuenfte(List.copyOf(revisionIds));
+        List<Herkunft> packageAmounts = anfrage.getAktuelleRevision().getPositionen().stream()
+                .flatMap(p -> p.getHerkuenfte().stream())
+                .map(h -> new Herkunft(h.getBedarf().getId(), h.getBedarfVersion(), h.getMenge())).toList();
+        for (AngebotVersion latest : aktuelleVersionen) {
+            EinkaufAngebot offer = latest.getAngebot();
+            VersionDto dto = angebotService.dto(latest);
+            AngebotSumme calculated = berechne(dto, latest, packageAmounts, stichtag);
             if (!latest.getAnfrageRevision().getId().equals(currentRevisionId)) {
                 List<String> blockers = new ArrayList<>(calculated.hindernisse());
                 blockers.add("ANFRAGEFASSUNG_ABWEICHEND");
@@ -77,6 +84,11 @@ public class EinkaufVergleichService {
         if (angebot == null || angebot.id() == null || paket == null || paket.isEmpty() || stichtag == null)
             throw new IllegalArgumentException("Angebot, Paket und Stichtag sind erforderlich.");
         AngebotVersion version = versionen.findById(angebot.id()).orElseThrow(() -> new java.util.NoSuchElementException("Angebotsversion nicht gefunden."));
+        return berechne(angebot, version, paket, stichtag);
+    }
+
+    private AngebotSumme berechne(VersionDto angebot, AngebotVersion version, List<Herkunft> paket, LocalDate stichtag) {
+        if (paket == null || paket.isEmpty()) throw new IllegalArgumentException("Ein nicht leeres Mengenpaket ist erforderlich.");
         List<String> blockers = new ArrayList<>();
         List<Rechenschritt> steps = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;

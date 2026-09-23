@@ -645,16 +645,9 @@ public class EmailImportService {
 
         if ("EINKAUF".equals(kontoId)) {
             EinkaufEmailImportiert event = new EinkaufEmailImportiert(email.getId());
-            if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        eventPublisher.publishEvent(event);
-                    }
-                });
-            } else {
-                eventPublisher.publishEvent(event);
-            }
+            // The transactional listener registers for AFTER_COMMIT while the import transaction is still active.
+            // A committed EINKAUF email without its mapping is also found by the durable recovery query.
+            eventPublisher.publishEvent(event);
         }
 
         // Die Auswertung als Unzustellbarkeits-Meldung passiert bewusst erst

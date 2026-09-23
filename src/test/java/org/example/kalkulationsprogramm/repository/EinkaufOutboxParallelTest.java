@@ -31,6 +31,8 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -63,6 +65,46 @@ class EinkaufOutboxParallelTest {
     @jakarta.annotation.Resource JdbcTemplate jdbcTemplate;
     @jakarta.annotation.Resource EinkaufOutboxService outbox;
     @jakarta.annotation.Resource org.example.kalkulationsprogramm.repository.EinkaufVersandAnnahmeereignisRepository annahmeereignisse;
+    @jakarta.annotation.Resource org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher dispatchPublisher;
+    @jakarta.annotation.Resource PlatformTransactionManager transactionManager;
+
+    @Test
+    void workerDispatchWirdErstNachCommitDerVorbereitetenOutboxVerbreitet() {
+        var id = new java.util.concurrent.atomic.AtomicReference<Long>();
+
+        new TransactionTemplate(transactionManager).execute(status -> {
+            var auftrag = repository.saveAndFlush(new EinkaufVersandauftrag("ANFRAGE", 31L, 8L, 9L,
+                    "EINKAUF", java.util.UUID.randomUUID(), "payload-commit", "mime-commit", "freigabe-commit",
+                    "{}".getBytes(), "MIME".getBytes(), "<commit-dispatch@erp.local>", 2L));
+            id.set(auftrag.getId());
+            worker.dispatchNachCommit(auftrag.getId());
+            verifyNoInteractions(dispatchPublisher);
+            assertEquals(EinkaufVersandauftrag.Status.VORBEREITET, auftrag.getStatus());
+            return null;
+        });
+
+        verify(dispatchPublisher).publish(id.get());
+        assertEquals(EinkaufVersandauftrag.Status.VORBEREITET, repository.findById(id.get()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void neustartRecoveryDispatchtPersistierteVorbereiteteAuftraegeNurWennHintergrundjobsAktivSind() {
+        var auftrag = repository.saveAndFlush(new EinkaufVersandauftrag("ANFRAGE", 32L, 8L, 10L,
+                "EINKAUF", java.util.UUID.randomUUID(), "payload-restart", "mime-restart", "freigabe-restart",
+                "{}".getBytes(), "MIME".getBytes(), "<restart-dispatch@erp.local>", 2L));
+        ReflectionTestUtils.setField(worker, "backgroundJobsEnabled", true);
+
+        worker.wiederholeVorbereiteteAuftraege();
+
+        verify(dispatchPublisher).publish(auftrag.getId());
+        assertEquals(EinkaufVersandauftrag.Status.VORBEREITET, repository.findById(auftrag.getId()).orElseThrow().getStatus());
+        org.mockito.Mockito.reset(dispatchPublisher);
+        ReflectionTestUtils.setField(worker, "backgroundJobsEnabled", false);
+
+        worker.wiederholeVorbereiteteAuftraege();
+
+        verifyNoInteractions(dispatchPublisher);
+    }
 
     @Test
     void smtpAnnahmePersistiertFachereignisAtomarMitAngenommenStatus() {
@@ -227,6 +269,9 @@ class EinkaufOutboxParallelTest {
         @Bean KontoMailTransport kontoMailTransport() { return mock(KontoMailTransport.class); }
         @Bean SentMailArchiver sentMailArchiver() { return mock(SentMailArchiver.class); }
         @Bean LocalTestMailPolicy localTestMailPolicy() { return mock(LocalTestMailPolicy.class); }
+        @Bean org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher dispatchPublisher() {
+            return mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class);
+        }
         @Bean EinkaufOutboxService einkaufOutboxService(EinkaufVersandauftragRepository repository,
                 org.example.kalkulationsprogramm.repository.EinkaufVersandAnnahmeereignisRepository annahmeereignisse,
                 MailkontoService mailkontoService, LocalTestMailPolicy policy, KontoMailTransport transport,
@@ -234,8 +279,9 @@ class EinkaufOutboxParallelTest {
             return new EinkaufOutboxService(repository, annahmeereignisse, mailkontoService, policy, transport, mapper, tm);
         }
         @Bean EinkaufVersandWorker worker(EinkaufOutboxService outbox, MailkontoService konten,
-                KontoMailTransport transport, SentMailArchiver archiver, LocalTestMailPolicy policy) {
-            return new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, java.util.List.of());
+                KontoMailTransport transport, SentMailArchiver archiver, LocalTestMailPolicy policy,
+                org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher dispatchPublisher) {
+            return new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, java.util.List.of(), dispatchPublisher);
         }
     }
 }

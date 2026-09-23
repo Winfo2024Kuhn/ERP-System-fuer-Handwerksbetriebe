@@ -21,7 +21,7 @@ class EinkaufVersandWorkerTest {
         KontoMailTransport transport = mock(KontoMailTransport.class);
         SentMailArchiver archiver = mock(SentMailArchiver.class);
         LocalTestMailPolicy policy = mock(LocalTestMailPolicy.class);
-        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of());
+        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         when(outbox.beanspruche(42L)).thenReturn(null);
         worker.verarbeite(42L);
@@ -38,7 +38,7 @@ class EinkaufVersandWorkerTest {
         KontoMailTransport transport = mock(KontoMailTransport.class);
         SentMailArchiver archiver = mock(SentMailArchiver.class);
         LocalTestMailPolicy policy = mock(LocalTestMailPolicy.class);
-        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of());
+        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
         byte[] mime = {1, 2, 3};
         var sending = new EinkaufOutboxService.Claim(42L, "EINKAUF", mime,
                 org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandauftrag.Status.LAEUFT,
@@ -75,7 +75,7 @@ class EinkaufVersandWorkerTest {
         SentMailArchiver archiver = mock(SentMailArchiver.class);
         LocalTestMailPolicy policy = mock(LocalTestMailPolicy.class);
         doThrow(new IllegalStateException("gesperrt")).when(policy).pruefeNetzwerkzugriff("EINKAUF");
-        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of());
+        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> worker.verarbeite(42L));
 
@@ -97,7 +97,7 @@ class EinkaufVersandWorkerTest {
         when(transport.sendenVorbereitet(isNull(), any())).thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis(
                 org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.UNKLAR,
                 "<mail@erp.local>", "SMTP_ANTWORT_UNKLAR", new byte[] {4}));
-        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of());
+        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         worker.verarbeite(42L);
         worker.verarbeite(42L);
@@ -125,7 +125,7 @@ class EinkaufVersandWorkerTest {
                 "<mail@erp.local>", null, new byte[] {4}));
         doThrow(new IllegalStateException("Datenbank nicht verfügbar"))
                 .when(outbox).abgeschlossen(eq(42L), any());
-        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of());
+        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> worker.verarbeite(42L));
         worker.verarbeite(42L);
@@ -153,7 +153,7 @@ class EinkaufVersandWorkerTest {
         when(transport.sendenVorbereitet(isNull(), any())).thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis(
                 org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.ANGENOMMEN,
                 "<mail@erp.local>", null, new byte[] {4}));
-        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(consumer));
+        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(consumer), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         worker.verarbeite(42L);
 

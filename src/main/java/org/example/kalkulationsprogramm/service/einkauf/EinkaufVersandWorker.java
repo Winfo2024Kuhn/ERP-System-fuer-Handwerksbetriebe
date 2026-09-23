@@ -25,6 +25,7 @@ public class EinkaufVersandWorker {
     private final SentMailArchiver archiver;
     private final LocalTestMailPolicy localTestMailPolicy;
     private final List<EinkaufAnnahmeereignisConsumer> acceptanceConsumers;
+    private final EinkaufVersandDispatchPublisher dispatchPublisher;
     @Value("${app.background-jobs.enabled:true}")
     private boolean backgroundJobsEnabled;
 
@@ -69,12 +70,34 @@ public class EinkaufVersandWorker {
         log.info("[EinkaufOutbox] Versandauftrag {} Status {}", claim.id(), result.status());
     }
 
+    public void dispatchNachCommit(Long auftragId) {
+        if (auftragId == null || auftragId <= 0) return;
+        Runnable dispatch = () -> dispatchPublisher.publish(auftragId);
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { dispatch.run(); }
+                    });
+        } else {
+            dispatch.run();
+        }
+    }
+
+    @Async
+    @EventListener
+    public void verarbeiteDispatch(VersandauftragDispatch event) {
+        if (event != null) verarbeite(event.auftragId());
+    }
+
     /** An interrupted SMTP DATA phase is uncertain after restart and needs documented human resolution. */
     @EventListener(ApplicationReadyEvent.class)
     public void markiereUnterbrocheneVersuche() {
         int count = outbox.markiereUnterbrocheneAlsUnklar();
         if (count > 0) log.warn("[EinkaufOutbox] {} unterbrochene Versandaufträge auf UNKLAR gesetzt", count);
-        if (backgroundJobsEnabled) verarbeiteAnnahmeereignisse();
+        if (backgroundJobsEnabled) {
+            verarbeiteVorbereiteteAuftraege();
+            verarbeiteAnnahmeereignisse();
+        }
     }
 
     private void verarbeiteAnnahmeereignisse() {
@@ -94,4 +117,20 @@ public class EinkaufVersandWorker {
     public void wiederholeOffeneAnnahmeereignisse() {
         if (backgroundJobsEnabled) verarbeiteAnnahmeereignisse();
     }
+
+    /** Dispatches durable VORBEREITET jobs on startup and after transient dispatch/process failures. */
+    @Scheduled(fixedDelayString = "${einkauf.versand.recovery-delay:30000}")
+    public void wiederholeVorbereiteteAuftraege() {
+        if (backgroundJobsEnabled) verarbeiteVorbereiteteAuftraege();
+    }
+
+    private void verarbeiteVorbereiteteAuftraege() {
+        try {
+            for (Long id : outbox.findeVorbereiteteAuftraege(100)) dispatchNachCommit(id);
+        } catch (RuntimeException ex) {
+            log.error("[EinkaufOutbox] Recovery vorbereiteter Versandaufträge fehlgeschlagen", ex);
+        }
+    }
+
+    public record VersandauftragDispatch(Long auftragId) {}
 }

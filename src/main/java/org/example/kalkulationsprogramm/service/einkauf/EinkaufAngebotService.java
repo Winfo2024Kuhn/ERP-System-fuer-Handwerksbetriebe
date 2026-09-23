@@ -27,15 +27,18 @@ public class EinkaufAngebotService {
     private final EinkaufDateiRepository dateien;
     private final org.example.kalkulationsprogramm.repository.EmailAttachmentRepository emailAttachments;
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumente;
+    private final EinkaufMailZuordnungRepository mailZuordnungen;
 
     public EinkaufAngebotService(EinkaufAngebotRepository angebote, AngebotVersionRepository versionen,
             AnfrageLieferantRepository beteiligungen, AnfrageRevisionRepository revisionen,
             EmailRepository emails, EinkaufDateiRepository dateien,
             org.example.kalkulationsprogramm.repository.EmailAttachmentRepository emailAttachments,
-            org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumente) {
+            org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumente,
+            EinkaufMailZuordnungRepository mailZuordnungen) {
         this.angebote = angebote; this.versionen = versionen; this.beteiligungen = beteiligungen;
         this.revisionen = revisionen; this.emails = emails; this.dateien = dateien;
         this.emailAttachments = emailAttachments; this.lieferantDokumente = lieferantDokumente;
+        this.mailZuordnungen = mailZuordnungen;
     }
 
     @Transactional
@@ -147,6 +150,18 @@ public class EinkaufAngebotService {
                     || !email.getFromAddress().equalsIgnoreCase(angebot.getBeteiligung().getKontakt().email()))
                 throw new IllegalArgumentException("Die Quell-E-Mail gehört nicht zu diesem Lieferantenangebot.");
         }
+        if (request.emailId() != null) {
+            var beteiligung = angebot.getBeteiligung();
+            boolean passend = mailZuordnungen.findByEmailId(request.emailId())
+                    .filter(EinkaufMailZuordnung::isBestaetigt)
+                    .filter(link -> "ANFRAGE".equals(link.getTyp()))
+                    .filter(link -> java.util.Objects.equals(link.getVorgangId(), beteiligung.getRevision().getAnfrage().getId()))
+                    .filter(link -> java.util.Objects.equals(link.getBeteiligungId(), beteiligung.getId()))
+                    .filter(link -> java.util.Objects.equals(link.getRevisionId(), request.anfrageRevisionId()))
+                    .isPresent();
+            if (!passend) throw new IllegalArgumentException(
+                    "Die Quell-E-Mail braucht eine bestätigte Zuordnung zu dieser Anfrage, Lieferantenbeteiligung und Fassung.");
+        }
         if (request.originalDateiId() != null) {
             var file = dateien.findById(request.originalDateiId()).orElseThrow(() -> new java.util.NoSuchElementException("Die Originaldatei wurde nicht gefunden."));
             boolean fromMatchingEmail = request.emailId() != null && file.getEmailAttachmentId() != null
@@ -195,7 +210,7 @@ public class EinkaufAngebotService {
         return new AngebotKostenbestandteil(version, position, k.schluessel(), k.art(), k.betrag(), k.basis(), k.basisMenge(),
                 k.prozentBasisSchluessel(), k.enthalten(), k.variabel(), sauber(k.quelle()));
     }
-    private VersionDto dto(AngebotVersion v) {
+    VersionDto dto(AngebotVersion v) {
         Map<Long, List<Kosten>> byPosition = new HashMap<>();
         List<Kosten> heads = new ArrayList<>();
         for (AngebotKostenbestandteil cost : v.getKosten()) {

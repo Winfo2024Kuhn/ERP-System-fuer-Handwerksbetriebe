@@ -17,12 +17,18 @@ import org.example.kalkulationsprogramm.repository.EinkaufMailZuordnungRepositor
 import org.example.kalkulationsprogramm.repository.EinkaufsanfrageRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRevisionRepository;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufAuditService;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
-public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisConsumer {
+@Slf4j
+public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisConsumer, EinkaufImportZuordnungsService {
     private static final Pattern CODE = Pattern.compile("(?i)(?:zuordnungscode\\s*:?\\s*)?([a-f0-9]{32})");
     private final EmailRepository emails;
     private final AnfrageLieferantRepository beteiligungen;
@@ -32,12 +38,16 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
     private final EinkaufAuditService audit;
     private final ObjectMapper objectMapper;
     private final org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandauftraege;
+    private final PlatformTransactionManager transactionManager;
+    @Value("${app.background-jobs.enabled:true}")
+    private boolean backgroundJobsEnabled;
     private static final Pattern PA_NUMMER = Pattern.compile("(?i)\\bPA-[0-9]{4}-[A-Z0-9-]{3,32}\\b");
 
     public EinkaufAntwortZuordnungService(EmailRepository emails, AnfrageLieferantRepository beteiligungen,
             EinkaufMailZuordnungRepository zuordnungen, EinkaufsanfrageRepository anfragen,
             AnfrageRevisionRepository revisionen, EinkaufAuditService audit, ObjectMapper objectMapper,
-            org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandauftraege) {
+            org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandauftraege,
+            PlatformTransactionManager transactionManager) {
         this.emails = emails;
         this.beteiligungen = beteiligungen;
         this.zuordnungen = zuordnungen;
@@ -46,6 +56,7 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
         this.audit = audit;
         this.objectMapper = objectMapper;
         this.versandauftraege = versandauftraege;
+        this.transactionManager = transactionManager;
     }
 
     public static String klassifiziere(String autoSubmitted, String subject, String body) {
@@ -58,12 +69,45 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
         return "PRUEFEN";
     }
 
-    @EventListener
-    @Transactional
-    public void nachImport(org.example.kalkulationsprogramm.service.EmailImportService.EinkaufEmailImportiert event) {
-        if (event == null || event.emailId() == null) return;
-        emails.findById(event.emailId()).filter(email -> "EINKAUF".equals(email.getKontoId()))
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void verarbeiteImportZuordnung(Long emailId) {
+        if (emailId == null) return;
+        emails.findById(emailId).filter(email -> "EINKAUF".equals(email.getKontoId()) && email.getDirection() == EmailDirection.IN)
                 .ifPresent(this::ordneZu);
+    }
+
+    /** Durable recovery source: committed incoming EINKAUF emails without a mapping remain discoverable. */
+    public int verarbeiteOffeneImportZuordnungen(int limit) {
+        if (limit < 1 || limit > 500) throw new IllegalArgumentException("Das Recovery-Limit muss zwischen 1 und 500 liegen.");
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        int completed = 0;
+        for (Long emailId : zuordnungen.findeOffeneImportZuordnungen(limit)) {
+            try {
+                Boolean processed = transaction.execute(status -> {
+                    if (zuordnungen.findByEmailId(emailId).isPresent()) return false;
+                    Email email = emails.findById(emailId).orElse(null);
+                    if (email == null || !"EINKAUF".equals(email.getKontoId()) || email.getDirection() != EmailDirection.IN) return false;
+                    ordneZu(email);
+                    return true;
+                });
+                if (Boolean.TRUE.equals(processed)) completed++;
+            } catch (RuntimeException ex) {
+                log.error("[EinkaufMailZuordnung] Recovery für E-Mail {} fehlgeschlagen; bleibt offen", emailId, ex);
+            }
+        }
+        return completed;
+    }
+
+    @Scheduled(fixedDelayString = "${einkauf.importzuordnung.recovery-delay:30000}")
+    public void wiederholeOffeneImportZuordnungen() {
+        if (!backgroundJobsEnabled) return;
+        try {
+            verarbeiteOffeneImportZuordnungen(100);
+        } catch (RuntimeException ex) {
+            log.error("[EinkaufMailZuordnung] Recovery offener Importzuordnungen fehlgeschlagen", ex);
+        }
     }
 
     @Transactional
@@ -83,6 +127,8 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
             throw new IllegalArgumentException("Bitte geben Sie eine gültige, begründete Zuordnung an.");
         Email email = emails.findById(emailId).orElseThrow(() -> new java.util.NoSuchElementException("E-Mail nicht gefunden."));
         if (!"EINKAUF".equals(email.getKontoId())) throw new IllegalArgumentException("Nur E-Mails aus dem Einkaufspostfach können zugeordnet werden.");
+        if ("BESTELLUNG".equals(typ))
+            throw new IllegalArgumentException("Bestellzuordnungen sind erst verfügbar, wenn das Bestellmodell bereitsteht.");
         if ("ANFRAGE".equals(typ)) {
             var anfrage = anfragen.findById(vorgangId).orElseThrow(() -> new java.util.NoSuchElementException("Anfrage nicht gefunden."));
             var revision = revisionId == null ? null : revisionen.findByIdAndAnfrageId(revisionId, vorgangId).orElse(null);
@@ -115,7 +161,9 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
         String status = klassifiziere(email.getAutoSubmitted(), email.getSubject(), email.getBody());
         if (email.getDirection() != EmailDirection.IN || !"EINKAUF".equals(email.getKontoId())) status = "PRUEFEN";
         AnfrageLieferant hit = null;
-        String content = (email.getBody() == null ? "" : email.getBody()) + "\n" + (email.getHtmlBody() == null ? "" : email.getHtmlBody());
+        String content = (email.getSubject() == null ? "" : email.getSubject()) + "\n"
+                + (email.getBody() == null ? "" : email.getBody()) + "\n"
+                + (email.getHtmlBody() == null ? "" : email.getHtmlBody());
         var matcher = CODE.matcher(content);
         if (matcher.find()) {
             hit = beteiligungen.findFirstByRueckmeldecode(matcher.group(1)).orElse(null);
