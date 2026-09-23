@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS einkauf_bestellung_revision (
  id BIGINT NOT NULL AUTO_INCREMENT, bestellung_id BIGINT NOT NULL, nummer INT NOT NULL, version BIGINT NOT NULL DEFAULT 0,
  snapshot JSON NOT NULL, sha256 VARCHAR(64) NOT NULL, geaendert_von BIGINT NOT NULL,
  geaendert_am TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), versand_id BIGINT NULL,
- angenommen_am DATETIME(6) NULL, externer_nachweis JSON NULL,
+ angenommen_am DATETIME(6) NULL, verworfen_am DATETIME(6) NULL, externer_nachweis JSON NULL,
  PRIMARY KEY(id), CONSTRAINT uk_bestellung_revision_nummer UNIQUE(bestellung_id,nummer),
  CONSTRAINT fk_bestellung_revision_bestellung FOREIGN KEY(bestellung_id) REFERENCES einkauf_bestellung(id),
  INDEX idx_bestellung_revision_versand(versand_id)

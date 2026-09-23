@@ -12,6 +12,9 @@ public class BestellungRevision {
  @Column(name="geaendert_am",nullable=false) private Instant geaendertAm=Instant.now();
  @Column(name="versand_id") private Long versandId;
  @Column(name="angenommen_am") private Instant angenommenAm;
+ @Column(name="verworfen_am") private Instant verworfenAm;
+ public boolean istVerworfen(){return verworfenAm!=null;}
+ public void verwerfen(){if(istAngenommen()||versandId!=null)throw new IllegalStateException("Eine zum Versand freigegebene Fassung kann nicht verworfen werden.");verworfenAm=Instant.now();}
  @JdbcTypeCode(SqlTypes.JSON) @Column(name="externer_nachweis",columnDefinition="json") private Map<String,Object> externerNachweis;
  public Instant getAngenommenAm(){return angenommenAm;}
  public boolean istAngenommen(){return angenommenAm!=null;}

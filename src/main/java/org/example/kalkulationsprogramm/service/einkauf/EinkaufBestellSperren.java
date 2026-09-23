@@ -38,6 +38,12 @@ final class EinkaufBestellSperren {
     static void aktualisiereStatus(EinkaufBestellung order, Map<Long,EinkaufMengenService.Vorgangsmenge> balances) {
         BigDecimal ordered = balances.values().stream().map(EinkaufMengenService.Vorgangsmenge::bestellt).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal delivered = balances.values().stream().map(EinkaufMengenService.Vorgangsmenge::geliefert).reduce(BigDecimal.ZERO, BigDecimal::add);
+        boolean pending = order.getRevisionen().stream().max(Comparator.comparingInt(BestellungRevision::getNummer))
+                .filter(r -> !r.istAngenommen() && !r.istVerworfen()).isPresent();
+        if (pending) {
+            order.setStatus(delivered.signum()>0 ? BestellungStatus.TEILGELIEFERT : BestellungStatus.BESTELLT);
+            return;
+        }
         order.setStatus(ordered.signum()==0 ? BestellungStatus.STORNIERT : delivered.compareTo(ordered)>=0 ? BestellungStatus.GELIEFERT
                 : delivered.signum()>0 ? BestellungStatus.TEILGELIEFERT : BestellungStatus.BESTELLT);
     }

@@ -135,6 +135,64 @@ class EinkaufBestellWorkflowRegressionTest {
    new Bestaetigung(confirmation,LocalDate.now(),null,List.of()),9L)));
  }
 
+ @Test void vollstaendigeLieferungDerAltenFassungBlockiertOffeneAenderungNicht() {
+  Long id=tx(()->ordering.direkt(content("10"),9L).id());accept(id);
+  tx(()->ordering.aendern(id,new Aenderung(version(id),content("12"),"Zusatzbedarf"),9L));
+  deliver(id,proof(LieferantDokumentTyp.LIEFERSCHEIN),"10");
+  assertAmount(id,"10","2","10");
+  assertEquals(BestellungStatus.TEILGELIEFERT,tx(()->ordering.lade(id).status()));
+  accept(id);assertAmount(id,"12","0","10");
+  deliver(id,proof(LieferantDokumentTyp.LIEFERSCHEIN),"2");
+  assertEquals(BestellungStatus.GELIEFERT,tx(()->ordering.lade(id).status()));
+ }
+
+ @Test void unveroeffentlichteAenderungKannNachLieferungVerworfenWerden() {
+  Long id=tx(()->ordering.direkt(content("10"),9L).id());accept(id);
+  tx(()->ordering.aendern(id,new Aenderung(version(id),content("12"),"Zusatzbedarf"),9L));
+  var stalePreview=tx(()->approval.vorschau(id,4L));
+  deliver(id,proof(LieferantDokumentTyp.LIEFERSCHEIN),"10");
+  tx(()->{ordering.verwerfen(id,version(id),9L);return null;});
+  assertAmount(id,"10","0","10");
+  assertEquals(BestellungStatus.GELIEFERT,tx(()->ordering.lade(id).status()));
+  assertTrue(tx(()->ordering.lade(id).revisionen().getLast().verworfen()));
+  assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->approval.freigeben(id,
+   new Freigabe(version(id),stalePreview.vorschauHash(),UUID.randomUUID()),9L)));
+ }
+
+ @Test void verwerfenBewahrtAlteBestellungUndVerhindertAbbruchNachMailfreigabe() {
+  Long id=tx(()->ordering.direkt(content("10"),9L).id());accept(id);
+  tx(()->ordering.aendern(id,new Aenderung(version(id),content("12"),"Zusatzbedarf"),9L));
+  tx(()->{ordering.verwerfen(id,version(id),9L);return null;});
+  assertAmount(id,"10","0","0");
+  tx(()->ordering.aendern(id,new Aenderung(version(id),content("11"),"Neuer Zusatzbedarf"),9L));
+  var preview=tx(()->approval.vorschau(id,4L));
+  tx(()->approval.freigeben(id,new Freigabe(version(id),preview.vorschauHash(),UUID.randomUUID()),9L));
+  assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->{ordering.verwerfen(id,version(id),9L);return null;}));
+  assertAmount(id,"10","1","0");
+  Long draft=tx(()->ordering.direkt(content("2"),9L).id());
+  tx(()->{ordering.verwerfen(draft,version(draft),9L);return null;});
+  assertAmount(draft,"0","0","0");
+  assertEquals(BestellungStatus.STORNIERT,tx(()->ordering.lade(draft).status()));
+ }
+
+ @Test void dokumentierteStornobestaetigungBrauchtKeineGutschrift() {
+  Long id=tx(()->ordering.direkt(content("10"),9L).id());accept(id);
+  Long wrong=proof(LieferantDokumentTyp.RECHNUNG);
+  assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->approval.stornoBestaetigen(id,
+   new Storno(version(id),List.of(new Herkunft(needId,0,BigDecimal.ONE)),wrong,"Nicht bestätigt",UUID.randomUUID()),9L)));
+  Long confirmation=proof(LieferantDokumentTyp.SONSTIG);
+  var request=tx(()->new Storno(version(id),List.of(new Herkunft(needId,0,BigDecimal.TEN)),confirmation,
+   "Lieferant bestätigt vollständigen Storno per E-Mail vor Rechnungsstellung",UUID.randomUUID()));
+  tx(()->approval.stornoBestaetigen(id,request,9L));
+  tx(()->approval.stornoBestaetigen(id,request,9L));
+  assertAmount(id,"0","0","0");
+  assertEquals(BestellungStatus.STORNIERT,tx(()->ordering.lade(id).status()));
+  Long other=tx(()->ordering.direkt(content("10"),9L).id());accept(other);
+  assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->approval.stornoBestaetigen(other,
+   new Storno(version(other),List.of(new Herkunft(needId,0,BigDecimal.ONE)),confirmation,"Wiederverwendung",UUID.randomUUID()),9L)));
+  assertAmount(other,"10","0","0");
+ }
+
  @Test void externerVersandSpeichertEigenenNachweisStattEinerFalschenOutboxId() {
   Long id=tx(()->ordering.direkt(content("2"),9L).id());
   when(files.pruefeExternenVersandbeleg(999L,supplierId,id)).thenThrow(new IllegalArgumentException("Beleg fehlt"));
@@ -195,8 +253,9 @@ class EinkaufBestellWorkflowRegressionTest {
   tx(()->{approval.versandAngenommen(event);return null;});
  }
  private void deliver(Long id,Long proof,String quantity) {
-  var request=tx(()->{var order=ordering.lade(id);var line=order.revisionen().getLast().positionen().getFirst();
-   return new Annahme(order.version(),proof,Instant.now(),List.of(new Lieferanteil(line.id(),new BigDecimal(quantity),
+  var request=tx(()->{var order=ordering.lade(id);var line=revisions.findByBestellung_IdOrderByNummerAsc(id).stream().filter(BestellungRevision::istAngenommen)
+    .max(Comparator.comparingInt(BestellungRevision::getNummer)).orElseThrow().getPositionen().getFirst();
+   return new Annahme(order.version(),proof,Instant.now(),List.of(new Lieferanteil(line.getId(),new BigDecimal(quantity),
     "DUMMY-CHARGE",null,List.of(new Herkunft(needId,needs.findById(needId).orElseThrow().getVersion(),new BigDecimal(quantity))))),UUID.randomUUID());});
   Long first=tx(()->delivery.annehmen(id,request,9L).id());
   assertEquals(first,tx(()->delivery.annehmen(id,request,9L).id()));

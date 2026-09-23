@@ -70,7 +70,26 @@ public class EinkaufBestellungService {
  }
  @Transactional(readOnly=true) public Page<Detail> suche(Pageable pageable){if(pageable==null)throw bad("Seiteneinstellungen fehlen.");return bestellungen.suche(pageable).map(this::detail);}
  @Transactional(readOnly=true) public Detail lade(Long id){return detail(bestellungen.findById(id).orElseThrow(()->new NoSuchElementException("Bestellung nicht gefunden.")));}
- @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED) public void verwerfen(Long id,long version,Long actor){EinkaufBestellung o=EinkaufBestellSperren.sperre(id,List.of(),bestellungen,revisionen,bedarfe);if(o.getVersion()==null||o.getVersion()!=version)throw conflict("Die Bestellung wurde geändert.");if(o.getStatus()!=BestellungStatus.ENTWURF)throw conflict("Nur ein noch nicht versandter Entwurf kann verworfen werden.");List<Herkunft> origins=o.getRevisionen().stream().reduce((a,b)->b).orElseThrow().getPositionen().stream().flatMap(p->p.getHerkuenfte().stream()).map(h->new Herkunft(h.getBedarfId(),h.getBedarfVersion(),h.getMenge())).toList();mengen.buche(origins.stream().map(h->new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft(h.bedarfId(),h.version(),h.menge())).toList(),EinkaufMengenService.Mengenaktion.RESERVIERUNG_FREIGEBEN,"BESTELLUNG:"+id,UUID.randomUUID(),actor);o.setStatus(BestellungStatus.STORNIERT);audit.protokolliere("BESTELLUNG",id,"ENTWURF_VERWORFEN",actor,null,null,"Entwurf verworfen");}
+ @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+ public void verwerfen(Long id,long version,Long actor) {
+  if(actor==null||actor<=0)throw bad("Der Benutzer fehlt.");
+  var order=EinkaufBestellSperren.sperre(id,List.of(),bestellungen,revisionen,bedarfe);
+  if(order.getVersion()==null||order.getVersion()!=version)throw conflict("Die Bestellung wurde geändert.");
+  var revision=revisionen.findFirstByBestellung_IdOrderByNummerDesc(id).orElseThrow();
+  if(revision.istAngenommen()||revision.istVerworfen()||revision.getVersandId()!=null)
+   throw conflict("Nur eine noch nicht zum Versand freigegebene Fassung kann verworfen werden.");
+  Map<Long,BigDecimal> reservations=new LinkedHashMap<>();
+  mengen.standFuerVorgang("BESTELLUNG:"+id).forEach((need,balance)->{
+   if(balance.reserviert().signum()>0)reservations.put(need,balance.reserviert());
+  });
+  if(!reservations.isEmpty())mengen.buche(EinkaufBestellSperren.aktuelleAnteile(reservations,bedarfe),
+   EinkaufMengenService.Mengenaktion.RESERVIERUNG_FREIGEBEN,"BESTELLUNG:"+id,UUID.randomUUID(),actor);
+  bedarfe.flush();revision.verwerfen();
+  EinkaufBestellSperren.aktualisiereStatus(order,mengen.standFuerVorgang("BESTELLUNG:"+id));
+  audit.protokolliere("BESTELLUNG",id,"ENTWURF_VERWORFEN",actor,null,
+   json.valueToTree(Map.of("revisionId",revision.getId(),"freigegebeneReservierungen",reservations)),"Unversandte Bestellfassung verworfen");
+ }
+
  @Transactional(readOnly=true) public List<Revision> revisionen(Long id){return revisionen.findByBestellung_IdOrderByNummerAsc(id).stream().map(this::revisionDto).toList();}
  @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED) public Detail aendern(Long id,Aenderung r,Long actor){
   validiere(r==null||r.inhalt()==null?null:r.inhalt().paket(), r==null||r.inhalt()==null?null:r.inhalt().idempotenzKey(), actor);
@@ -80,7 +99,7 @@ public class EinkaufBestellungService {
   if(!Objects.equals(order.getLieferantId(),r.inhalt().lieferantId())||r.inhalt().empfaenger()==null||!Objects.equals(order.getLieferantId(),r.inhalt().empfaenger().lieferantId()))throw bad("Eine Revision muss beim selben Lieferanten bleiben.");
   BestellungRevision previous=revisionen.findFirstByBestellung_IdOrderByNummerDesc(id).orElseThrow(()->conflict("Bestellung hat keine Revision."));
   String hash=hash(r.toString());if(Objects.equals(previous.getSnapshot().get("idempotenzKey"),r.inhalt().idempotenzKey().toString())){if(!Objects.equals(previous.getSha256(),hash))throw conflict("Der Idempotenzschlüssel gehört zu einer anderen Bestelländerung.");return detail(order);}
-  if(!previous.istAngenommen())throw conflict("Die vorige Bestellfassung muss zuerst versandt und geklärt werden.");
+  if(!previous.istAngenommen()&&!previous.istVerworfen())throw conflict("Die vorige Bestellfassung muss zuerst versandt und geklärt werden.");
   Map<Long,BigDecimal> old=new HashMap<>();mengen.standFuerVorgang("BESTELLUNG:"+id).forEach((need,stand)->old.put(need,stand.bestellt()));
   Map<Long,Herkunft> requested=index(r.inhalt().paket());Map<Long,Direktpreis> prices=r.inhalt().preise().stream().collect(Collectors.toMap(Direktpreis::bedarfId,x->x,(a,b)->{throw bad("Ein Bedarf hat mehrere Preisstände.");}));
   List<Long> ids=requested.keySet().stream().sorted().toList();List<EinkaufBedarf> locked=bedarfe.findeAlleFuerUpdate(ids);if(locked.size()!=ids.size())throw new NoSuchElementException("Ein Bedarf fehlt.");Map<Long,EinkaufBedarf> byId=locked.stream().collect(Collectors.toMap(EinkaufBedarf::getId,x->x));Map<Long,BigDecimal> unitPrices=new HashMap<>();
@@ -117,7 +136,7 @@ public class EinkaufBestellungService {
   return calculated.nettoGesamt().divide(snapshot.basis().menge(),6,java.math.RoundingMode.HALF_UP);
  }
  private Detail detail(EinkaufBestellung o){List<BestellungRevision> rs=o.getRevisionen().isEmpty()?revisionen.findByBestellung_IdOrderByNummerAsc(o.getId()):o.getRevisionen();return new Detail(o.getId(),o.getVersion()==null?0:o.getVersion(),o.getNummer(),o.getLieferantId(),o.getAngebotsversionId(),o.getAnfrageRevisionId(),o.getEmpfaenger(),o.getStatus(),o.getLieferantenStatus(),rs.stream().map(this::revisionDto).toList());}
- private Revision revisionDto(BestellungRevision r){return new Revision(r.getId(),r.getNummer(),r.getVersion()==null?0:r.getVersion(),r.getSnapshot(),r.getSha256(),r.getVersandId(),r.getPositionen().stream().map(p->new Position(p.getId(),p.getPosition(),p.getMenge(),p.getNettoEinzelpreis(),p.getHerkuenfte().stream().map(h->new Herkunft(h.getBedarfId(),h.getBedarfVersion(),h.getMenge())).toList())).toList());}
+ private Revision revisionDto(BestellungRevision r){return new Revision(r.getId(),r.getNummer(),r.getVersion()==null?0:r.getVersion(),r.getSnapshot(),r.getSha256(),r.getVersandId(),r.istVerworfen(),r.getPositionen().stream().map(p->new Position(p.getId(),p.getPosition(),p.getMenge(),p.getNettoEinzelpreis(),p.getHerkuenfte().stream().map(h->new Herkunft(h.getBedarfId(),h.getBedarfVersion(),h.getMenge())).toList())).toList());}
  private String hash(String s){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);}}
  private static ResponseStatusException bad(String m){return new ResponseStatusException(HttpStatus.BAD_REQUEST,m);} private static ResponseStatusException conflict(String m){return new ResponseStatusException(HttpStatus.CONFLICT,m);}
 }

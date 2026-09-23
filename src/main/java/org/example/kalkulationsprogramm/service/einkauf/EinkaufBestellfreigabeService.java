@@ -67,11 +67,11 @@ import org.example.email.EmailService;import org.example.kalkulationsprogramm.do
   if(audit.istWiederholung("BESTELLUNG",id,"STORNO_BESTAETIGT",actor,json.valueToTree(request)))
    return new StornoErgebnis(id,order.getStatus(),"Dieser Stornobeleg wurde bereits erfasst.");
   if(order.getVersion()==null || order.getVersion()!=request.version())throw conflict("Bestellung wurde geändert.");
-  if(!latest(id).istAngenommen())throw conflict("Bitte die ausstehende Bestelländerung zuerst versenden oder klären.");
+  if(!latest(id).istAngenommen()&&!latest(id).istVerworfen())throw conflict("Bitte die ausstehende Bestelländerung zuerst versenden oder klären.");
   var proof=documents.sperreEinkaufsbeleg(request.belegDateiId()).orElseThrow(()->new NoSuchElementException("Stornobeleg nicht gefunden."));
-  if(proof.getTyp()!=LieferantDokumentTyp.GUTSCHRIFT || proof.getLieferant()==null
+  if((proof.getTyp()!=LieferantDokumentTyp.GUTSCHRIFT && proof.getTyp()!=LieferantDokumentTyp.SONSTIG) || proof.getLieferant()==null
       || !Objects.equals(proof.getLieferant().getId(),order.getLieferantId()) || proof.getEinkaufBestellungId()!=null)
-   throw bad("Der Stornobeleg muss neu und vom Bestelllieferanten sein.");
+   throw bad("Bitte eine neue Gutschrift oder dokumentierte Stornobestätigung des Bestelllieferanten auswählen.");
   var balances=amounts.standFuerVorgang("BESTELLUNG:"+id);
   Map<Long,java.math.BigDecimal> shares=new LinkedHashMap<>();
   for(var share:request.anteile()) {
@@ -104,7 +104,7 @@ import org.example.email.EmailService;import org.example.kalkulationsprogramm.do
   order.setLieferantenStatus(LieferantenBestellstatus.AUSSTEHEND);
  }
  private void pruefeOffeneRevision(EinkaufBestellung order,BestellungRevision revision) {
-  if(revision.istAngenommen() || order.getStatus()==BestellungStatus.STORNIERT || order.getStatus()==BestellungStatus.GELIEFERT)
+  if(revision.istAngenommen() || revision.istVerworfen() || order.getStatus()==BestellungStatus.STORNIERT || order.getStatus()==BestellungStatus.GELIEFERT)
    throw conflict("Diese Bestellfassung ist bereits versandt oder abgeschlossen.");
   if(order.getStatus()!=BestellungStatus.ENTWURF && !"AENDERUNG".equals(revision.getSnapshot().get("typ")))
    throw conflict("Nur ein Entwurf oder eine neue Änderungsfassung kann versendet werden.");
