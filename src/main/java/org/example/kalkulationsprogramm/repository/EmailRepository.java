@@ -55,9 +55,13 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   // SUCHE
   // ═══════════════════════════════════════════════════════════════
 
-  Optional<Email> findByMessageId(String messageId);
+  @Query("SELECT e FROM Email e WHERE e.kontoId = 'HAUPT' AND e.messageId = :messageId")
+  Optional<Email> findByMessageId(@Param("messageId") String messageId);
 
-  boolean existsByMessageId(String messageId);
+  @Query("SELECT CASE WHEN COUNT(e) > 0 THEN true ELSE false END FROM Email e WHERE e.kontoId = 'HAUPT' AND e.messageId = :messageId")
+  boolean existsByMessageId(@Param("messageId") String messageId);
+
+  List<Email> findByKontoId(String kontoId);
 
   Optional<Email> findByKontoIdAndMessageId(String kontoId, String messageId);
 
@@ -341,7 +345,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   /**
    * Sucht eine Email anhand von Message-IDs aus In-Reply-To / References.
    */
-  @Query("SELECT e FROM Email e WHERE e.messageId IN :messageIds ORDER BY e.sentAt DESC")
+  @Query("SELECT e FROM Email e WHERE e.kontoId = 'HAUPT' AND e.messageId IN :messageIds ORDER BY e.sentAt DESC")
   List<Email> findByMessageIdIn(@Param("messageIds") java.util.Collection<String> messageIds);
 
   /**

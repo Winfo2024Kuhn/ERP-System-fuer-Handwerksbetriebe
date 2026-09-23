@@ -61,13 +61,22 @@ class EmailKontoImportTest {
     void jpaPersistiertGleicheMessageIdGetrenntJeKontoUndBindetUidIdentitaet() {
         Email haupt = email("<jpa-identitaet@example.test>", "HAUPT");
         Email einkauf = email("<jpa-identitaet@example.test>", "EINKAUF");
+        Email einkaufOnly = email("<einkauf-only@example.test>", "EINKAUF");
         haupt = emailRepository.saveAndFlush(haupt);
         final Email einkaufMail = emailRepository.saveAndFlush(einkauf);
+        emailRepository.saveAndFlush(einkaufOnly);
 
         assertThat(emailRepository.findByKontoIdAndMessageId("HAUPT", haupt.getMessageId()).orElseThrow().getId())
                 .isEqualTo(haupt.getId());
         assertThat(emailRepository.findByKontoIdAndMessageId("EINKAUF", einkaufMail.getMessageId()).orElseThrow().getId())
                 .isEqualTo(einkaufMail.getId());
+        assertThat(emailRepository.findByMessageId(einkaufMail.getMessageId()).orElseThrow().getId())
+                .isEqualTo(haupt.getId());
+        assertThat(emailRepository.existsByMessageId(einkaufMail.getMessageId())).isTrue();
+        assertThat(emailRepository.findByMessageId(einkaufOnly.getMessageId())).isEmpty();
+        assertThat(emailRepository.existsByMessageId(einkaufOnly.getMessageId())).isFalse();
+        assertThat(emailRepository.findByMessageIdIn(List.of(einkaufMail.getMessageId())))
+                .extracting(Email::getKontoId).containsOnly("HAUPT");
 
         identitaetRepository.saveAndFlush(new EmailImportIdentitaet("EINKAUF", "INBOX", 81, 82, einkaufMail));
         assertThat(identitaetRepository.existsByKontoIdAndFolderAndUidValidityAndUid(

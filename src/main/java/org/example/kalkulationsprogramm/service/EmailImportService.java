@@ -1162,10 +1162,16 @@ public class EmailImportService {
      */
     @Transactional
     public int backfillParentEmails() {
+        return backfillParentEmails("HAUPT");
+    }
+
+    /** Backfillt Subject-Threads ausschließlich innerhalb des angegebenen Kontos. */
+    @Transactional
+    public int backfillParentEmails(String kontoId) {
         log.info("[Backfill] Starte Parent-Email Backfill...");
         int updated = 0;
 
-        List<Email> allEmails = emailRepository.findAll();
+        List<Email> allEmails = emailRepository.findByKontoId(kontoId);
 
         // Index nach normalisiertem Subject (ohne AW:/RE:/FWD: Prefix).
         // Mails mit leerem Normalisat (z. B. Subject "RE:" allein) NICHT in den

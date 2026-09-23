@@ -135,6 +135,27 @@ class EmailImportServiceTest {
     class ParentEmailVerknuepfung {
 
         @Test
+        void kontobezogenerBackfillVerknuepftKeineMailAusAnderemKonto() {
+            Email haupt = erstelleEmail(1L, "<same@example.com>", "lieferant@example.com");
+            haupt.setKontoId("HAUPT");
+            haupt.setSubject("Einkauf Anfrage");
+            haupt.setSentAt(LocalDateTime.of(2026, 1, 1, 10, 0));
+
+            Email einkaufReply = erstelleEmail(2L, "<same@example.com>", "lieferant@example.com");
+            einkaufReply.setKontoId("EINKAUF");
+            einkaufReply.setSubject("RE: Einkauf Anfrage");
+            einkaufReply.setSentAt(LocalDateTime.of(2026, 1, 2, 10, 0));
+
+            when(emailRepository.findByKontoId("EINKAUF")).thenReturn(List.of(einkaufReply));
+
+            int updated = service.backfillParentEmails("EINKAUF");
+
+            assertThat(updated).isZero();
+            assertThat(einkaufReply.getParentEmail()).isNull();
+            verify(emailRepository, never()).save(einkaufReply);
+        }
+
+        @Test
         void findetParentEmailAnhandMessageId() {
             Email parent = erstelleEmail(1L, "<parent@example.com>", "sender@firma.de");
             parent.setZuordnungTyp(EmailZuordnungTyp.PROJEKT);
