@@ -31,3 +31,22 @@ Status: erfolgreich
 
 - Tabellenzahlen aller 139 Tabellen stimmen mit dem gesicherten Quellmanifest überein; insgesamt 122821 Datensätze. Keine Datensatzinhalte ausgegeben.
 - Nachweise und Zugangsdaten bleiben außerhalb Git. Der reguläre lokale Serverstart erfolgt erst nach Implementierung des kontrollierten Testprofils.
+
+## Abschnitt 1 — Task 1 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T11:07:54Z
+Branch: codex/beschaffung-task-1
+Commit(s): 892a2501
+Status: fertig
+
+Was gemacht wurde:
+- Einkaufsrechte in aktiven Benutzerprofilen ergänzt; Berechtigungsservice lädt Profil und Grants bei jeder Aktion frisch, Admins erhalten alle Rechte implizit. GET/PUT-Endpunkte nutzen bestehende Authentifizierung, Admin-Einstellungsschutz und CSRF.
+- V377 ergänzt die profilbezogene native ENUM-Granttabelle sowie den Audit-Speicher. Audit-Schreibzugriffe laufen nur innerhalb einer bestehenden Fachtransaktion.
+- Security- und Service-Tests decken anonymous 401, fehlende Rechte 403, Admin-Vollzugriff, Sessionrollen gegen aktuellen Profilstand, inaktive Profile, gefälschte Request-IDs und CSRF ab.
+- Root hat den Taskscope zusätzlich um den vorbestehenden PC-Unit-Testfehler erweitert: jsdom fehlten DOM-Geometriemethoden für ProseMirror. Gemeinsame Range-/elementFromPoint-Stubs plus Regressionstest beseitigen den unhandled Fehler; das bisher lokale Duplikat wurde entfernt.
+- Verifikation: fokussiert 10 Backendtests grün; vollständiges Backend 3156 Tests, 0 Fehler, 17 bestehende Skips. PC 141 Dateien/1629 Tests grün, Lint und Build grün. PC-E2E Port 5182: 669 passed; Mobile-E2E Port 5183: 24 passed. Mobile Unit/Lint/Build gemäß Task2-Nachweis auf unverändertem Frontend grün. Graphify aktualisiert.
+- Logs: `/tmp/beschaffung-task1-targeted.log`, `/tmp/beschaffung-task1-full-maven.log`, `/tmp/beschaffung-task1-pc-unit-final2.log`, `/tmp/beschaffung-task1-pc-lint-final2.log`, `/tmp/beschaffung-task1-pc-build-final2.log`, `/tmp/beschaffung-task1-pc-e2e.log`, `/tmp/beschaffung-task1-mobile-e2e.log`.
+
+Bedenken / Abweichungen:
+- `./graphify` fehlte anfangs im Worktree; nach Bereitstellung des Symlinks wurde das Update erfolgreich ausgeführt. Graphify meldete eine Syntax-Extraktionswarnung in der unveränderten `react-pc-frontend/src/components/TiptapEditor.tsx`.
+- Gemeinsame Testsetup-Dateien wurden nur auf Root-Anweisung in den Task aufgenommen. Keine Frontend-Produktdateien geändert.
