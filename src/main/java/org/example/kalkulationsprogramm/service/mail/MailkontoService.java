@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselun
 import org.example.kalkulationsprogramm.repository.EinkaufMailkontoRepository;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,7 +81,12 @@ public class MailkontoService {
         konto.setSent(sauber(update.sent()));
         if (neuesSmtpSecret) konto.setSmtpPasswordCiphertext(secrets.encrypt(update.smtpPassword()));
         if (neuesImapSecret) konto.setImapPasswordCiphertext(secrets.encrypt(update.imapPassword()));
-        return response(repository.save(konto));
+        try {
+            return response(repository.saveAndFlush(konto));
+        } catch (OptimisticLockingFailureException ex) {
+            throw new IllegalStateException(
+                    "Die Mailkonto-Einstellungen wurden zwischenzeitlich geändert. Bitte neu laden.", ex);
+        }
     }
 
     private void validiere(Update r) {

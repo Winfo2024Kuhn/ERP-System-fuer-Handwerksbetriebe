@@ -56,7 +56,7 @@ class MailkontoServiceTest {
         FrontendUserPrincipal principal = aktiverAdmin();
         when(berechtigungen.verlangeAktivenAdmin(any())).thenReturn(70L);
         when(repository.findById("EINKAUF")).thenReturn(Optional.of(kontoMitSecrets()));
-        when(repository.save(any(EinkaufMailkonto.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAndFlush(any(EinkaufMailkonto.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Update update = new Update(0L, true, "einkauf@example.com", "Einkauf",
                 "smtp.test.invalid", 465, "smtp-user", Verschluesselung.TLS,
