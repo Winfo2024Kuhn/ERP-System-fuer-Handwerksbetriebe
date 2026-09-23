@@ -242,12 +242,41 @@ MIIKEgIBAzCCCbwGCSqGSIb3DQEHAaCCCa0EggmpMIIJpTCCBawGCSqGSIb3DQEHAaCCBZ0EggWZMIIF
     }
 
     @Test
+    void eindeutigeEmpfaengerablehnungVorDataIstSicherFehlgeschlagen() throws Exception {
+        try (FakeSmtp smtp = new FakeSmtp(FakeSmtp.Ausgang.EMPFAENGER_ABGELEHNT)) {
+            KontoMailTransport transport = new KontoMailTransport(mock(LocalTestMailPolicy.class));
+            var konto = kontoMitPort(smtp.port());
+            byte[] mime = transport.vorbereiten(konto, nachricht());
+
+            var result = transport.sendenVorbereitet(konto, mime);
+
+            assertEquals(MailTransportDto.Status.SICHER_FEHLGESCHLAGEN, result.status());
+            assertEquals("SMTP_EMPFAENGER_ABGELEHNT", result.fehlerCode());
+            assertFalse(smtp.awaitData());
+        }
+    }
+
+    @Test
     void verbindungsabbruchNachDataIstUnklar() throws Exception {
         try (FakeSmtp smtp = new FakeSmtp(FakeSmtp.Ausgang.ABBRUCH_NACH_DATA)) {
             KontoMailTransport transport = new KontoMailTransport(mock(LocalTestMailPolicy.class));
             var result = transport.sendenVorbereitet(kontoMitPort(smtp.port()),
                     transport.vorbereiten(kontoMitPort(smtp.port()), nachricht()));
             assertEquals(MailTransportDto.Status.UNKLAR, result.status());
+            assertTrue(smtp.awaitData());
+        }
+    }
+
+    @Test
+    void smtpRejectNachDataBleibtUnklar() throws Exception {
+        try (FakeSmtp smtp = new FakeSmtp(FakeSmtp.Ausgang.ABGELEHNT_NACH_DATA)) {
+            KontoMailTransport transport = new KontoMailTransport(mock(LocalTestMailPolicy.class));
+            var konto = kontoMitPort(smtp.port());
+
+            var result = transport.sendenVorbereitet(konto, transport.vorbereiten(konto, nachricht()));
+
+            assertEquals(MailTransportDto.Status.UNKLAR, result.status());
+            assertEquals("SMTP_ANTWORT_UNKLAR", result.fehlerCode());
             assertTrue(smtp.awaitData());
         }
     }
@@ -314,7 +343,7 @@ MIIKEgIBAzCCCbwGCSqGSIb3DQEHAaCCCa0EggmpMIIJpTCCBawGCSqGSIb3DQEHAaCCBZ0EggWZMIIF
     }
 
     private static final class FakeSmtp implements AutoCloseable {
-        enum Ausgang { ANGENOMMEN, AUTH_FEHLER, ABBRUCH_NACH_DATA }
+        enum Ausgang { ANGENOMMEN, AUTH_FEHLER, EMPFAENGER_ABGELEHNT, ABGELEHNT_NACH_DATA, ABBRUCH_NACH_DATA }
         private final ServerSocket server;
         private final Thread worker;
         private final Ausgang ausgang;
@@ -366,11 +395,19 @@ MIIKEgIBAzCCCbwGCSqGSIb3DQEHAaCCCa0EggmpMIIJpTCCBawGCSqGSIb3DQEHAaCCBZ0EggWZMIIF
                         if (ausgang == Ausgang.AUTH_FEHLER) { out.print("535 invalid credentials\r\n"); out.flush(); return; }
                         authStep = 0; out.print("235 authenticated\r\n"); out.flush();
                     } else if (line.startsWith("MAIL FROM:")) { out.print("250 sender ok\r\n"); out.flush(); }
-                    else if (line.startsWith("RCPT TO:")) { out.print("250 recipient ok\r\n"); out.flush(); }
+                    else if (line.startsWith("RCPT TO:")) {
+                        if (ausgang == Ausgang.EMPFAENGER_ABGELEHNT) out.print("550 5.1.1 recipient rejected\r\n");
+                        else out.print("250 recipient ok\r\n");
+                        out.flush();
+                    }
                     else if (line.equals("DATA")) { dataSeen = true; dataReached = true; out.print("354 send data\r\n"); out.flush(); }
                     else if (dataSeen && line.equals(".")) {
                         receivedData = mime.toByteArray();
                         if (ausgang == Ausgang.ABBRUCH_NACH_DATA) return;
+                        if (ausgang == Ausgang.ABGELEHNT_NACH_DATA) {
+                            out.print("550 message rejected after DATA\r\n"); out.flush(); dataSeen = false;
+                            continue;
+                        }
                         out.print("250 queued\r\n"); out.flush(); dataSeen = false;
                     } else if (dataSeen) {
                         String unstuffed = line.startsWith("..") ? line.substring(1) : line;
