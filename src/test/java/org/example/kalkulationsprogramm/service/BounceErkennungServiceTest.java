@@ -88,7 +88,7 @@ class BounceErkennungServiceTest
     void markiertAusgangsmailBeiTOnlineKlartextBounce() throws Exception
     {
         Email original = ausgangsmail();
-        when(emailRepository.findByMessageId(ORIGINAL_MESSAGE_ID)).thenReturn(Optional.of(original));
+        when(emailRepository.findByKontoIdAndMessageId("HAUPT", ORIGINAL_MESSAGE_ID)).thenReturn(Optional.of(original));
 
         MimeMessage bounce = baueMail("mailer-daemon@example.com",
                 "Mail delivery failed: returning message to sender",
@@ -106,12 +106,25 @@ class BounceErkennungServiceTest
     @Test
     void markiertNichtsWennMessageIdUnbekanntIst() throws Exception
     {
-        when(emailRepository.findByMessageId(ORIGINAL_MESSAGE_ID)).thenReturn(Optional.empty());
+        when(emailRepository.findByKontoIdAndMessageId("HAUPT", ORIGINAL_MESSAGE_ID)).thenReturn(Optional.empty());
 
         MimeMessage bounce = baueMail("mailer-daemon@example.com",
                 "Mail delivery failed", tOnlineKlartextBounce());
 
         assertThat(service.verarbeiteRuecklaeufer(bounce)).isFalse();
+        verify(emailRepository, never()).save(any());
+    }
+
+    @Test
+    void ruecklaeuferSuchtAusgangsmailNurImImportkonto() throws Exception
+    {
+        MimeMessage bounce = baueMail("mailer-daemon@example.test", "Mail delivery failed",
+                tOnlineKlartextBounce());
+
+        assertThat(service.verarbeiteRuecklaeufer(bounce, "EINKAUF")).isFalse();
+
+        verify(emailRepository).findByKontoIdAndMessageId("EINKAUF", ORIGINAL_MESSAGE_ID);
+        verify(emailRepository, never()).findByKontoIdAndMessageId("HAUPT", ORIGINAL_MESSAGE_ID);
         verify(emailRepository, never()).save(any());
     }
 
@@ -141,7 +154,7 @@ class BounceErkennungServiceTest
     {
         Email original = ausgangsmail();
         original.markiereUnzustellbar("unknown user");
-        when(emailRepository.findByMessageId(ORIGINAL_MESSAGE_ID)).thenReturn(Optional.of(original));
+        when(emailRepository.findByKontoIdAndMessageId("HAUPT", ORIGINAL_MESSAGE_ID)).thenReturn(Optional.of(original));
 
         MimeMessage bounce = baueMail("mailer-daemon@example.com",
                 "Mail delivery failed", tOnlineKlartextBounce());
@@ -156,7 +169,7 @@ class BounceErkennungServiceTest
     {
         Email eingehend = ausgangsmail();
         eingehend.setDirection(EmailDirection.IN);
-        when(emailRepository.findByMessageId(ORIGINAL_MESSAGE_ID)).thenReturn(Optional.of(eingehend));
+        when(emailRepository.findByKontoIdAndMessageId("HAUPT", ORIGINAL_MESSAGE_ID)).thenReturn(Optional.of(eingehend));
 
         MimeMessage bounce = baueMail("mailer-daemon@example.com",
                 "Mail delivery failed", tOnlineKlartextBounce());

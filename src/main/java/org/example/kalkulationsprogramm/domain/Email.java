@@ -33,7 +33,7 @@ import lombok.Setter;
  */
 @Entity
 @Table(name = "email", indexes = {
-    @Index(name = "idx_email_message_id", columnList = "messageId", unique = true),
+    @Index(name = "idx_email_konto_message_id", columnList = "konto_id,message_id", unique = true),
     @Index(name = "idx_email_sender_domain", columnList = "senderDomain"),
     @Index(name = "idx_email_direction", columnList = "direction"),
     @Index(name = "idx_email_zuordnung", columnList = "zuordnungTyp"),
@@ -59,8 +59,20 @@ public class Email {
     /**
      * IMAP Message-ID (eindeutig).
      */
-    @Column(length = 512, nullable = false, unique = true)
+    @Column(length = 512, nullable = false)
     private String messageId;
+
+    @Column(name = "konto_id", length = 16, nullable = false)
+    private String kontoId = "HAUPT";
+
+    @Column(name = "auto_submitted", length = 255)
+    private String autoSubmitted;
+
+    @Column(name = "in_reply_to", length = 1000)
+    private String inReplyTo;
+
+    @Column(name = "references_header", columnDefinition = "TEXT")
+    private String references;
 
     // ═══════════════════════════════════════════════════════════════
     // ABSENDER / EMPFÄNGER

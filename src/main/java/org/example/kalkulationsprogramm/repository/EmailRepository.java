@@ -59,6 +59,12 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   boolean existsByMessageId(String messageId);
 
+  Optional<Email> findByKontoIdAndMessageId(String kontoId, String messageId);
+
+  boolean existsByKontoIdAndMessageId(String kontoId, String messageId);
+
+  List<Email> findByKontoIdAndMessageIdIn(String kontoId, java.util.Collection<String> messageIds);
+
   List<Email> findByDirection(EmailDirection direction);
 
   List<Email> findByDirectionOrderBySentAtDesc(EmailDirection direction);
