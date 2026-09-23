@@ -266,9 +266,11 @@ ein zweiter Lauf also keine Klartext-Quelle mehr vorfindet):
 6. Alle bestehenden `email`-Zeilen und `out_of_office_schedule`-Zeilen
    erhalten die `postfach_id` des neuen "Alten Postfachs".
 7. Falls `smtp.dokumente.*` aktiv war
-   (`settings.nutztDokumentMailKonto()`): legt ein weiteres Postfach ohne
-   Abruf (`abruf_aktiv = false`, IMAP optional/leer) mit Zweck
-   `GESCHAEFTSDOKUMENTE` an — ersetzt den heutigen Sonderfall
+   (`settings.nutztDokumentMailKonto()`): legt ein weiteres Postfach mit
+   Zweck `GESCHAEFTSDOKUMENTE` an. `abruf_aktiv` übernimmt den bisherigen
+   Abrufstatus des Dokumente-Kontos (Einkaufs-Branch ruft es bereits ab —
+   keine Verhaltensänderung beim Deploy; Entscheidung Orchestrator 23.09.2026);
+   ohne IMAP-Zugang `false` — ersetzt den heutigen Sonderfall
    `SystemSettingsService.getDokumentMailKonto()`.
 8. `einkauf_mailkonto` (aus dem vorausgesetzten Einkaufs-Branch, falls zu
    diesem Zeitpunkt bereits befüllt) wird zu einem Postfach mit Zweck

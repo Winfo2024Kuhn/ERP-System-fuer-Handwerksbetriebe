@@ -537,7 +537,7 @@ Pfadpräfix Backend: `J = src/main/java/org/example/kalkulationsprogramm`,
         2. Altdaten erkennen: `hauptVorhanden = hatWert(settings.getSmtpHost()) && hatWert(settings.getSmtpUsername())`; `dokumenteVorhanden = settings.nutztDokumentMailKonto()`; `einkaufZeile` = `SELECT … FROM einkauf_mailkonto WHERE id='EINKAUF'` nur wenn Tabelle existiert (`tabelleVorhanden`, s. u.). Nichts davon → Marker setzen, `NICHTS_ZU_TUN`.
         3. Klartext-Passwörter vorhanden, aber `!secrets.isConfigured()` → **ohne** Änderung `SCHLUESSEL_FEHLT`.
         4. **Altes Postfach:** `adresse = settings.getMailFromAddress()`, `anzeigename = "Altes Postfach (t-online)"`, `absenderName = settings.getMailAbsenderName()` (leer → `null`), `art = ALLGEMEIN`, SMTP `getSmtpHost/Port/Username`, `encrypt(getSmtpPassword())`, `smtpTls="TLS"` (heutiges `EmailService` sendet immer SSL); IMAP `getImapHost/Port/Username`, `encrypt(getImapPassword())`, `imapTls="TLS"`; `ordnerPosteingang="INBOX"`, `ordnerGesendet="INBOX.Sent"`; Import-Ordner IN = `"INBOX.Archives (2).Eingangsanfragen"`, `"INBOX.Archives (2).Eingangs Ab's"`, `"INBOX.Archives (2).Eingangsrechnungen"`, `"INBOX.Archives (2).Gedruckte Eingangsrechnungen"`, `"INBOX.Archives (2).Werkstoffzeugnisse"`, OUT = `"INBOX.Sent Items"` (1:1 aus `EmailImportService.java:106-117`, hier als eigene Konstanten, da Task 3 die Originale löscht); **`abrufAktiv = true`** (Spec 6.4). Existiert die Adresse schon (`findByAdresseIgnoreCase`), diese Zeile wiederverwenden.
-        5. **Dokumente-Postfach** (nur wenn `dokumenteVorhanden`): aus `settings.getDokumentMailKonto()` (host, port, username, password, fromAddress, fromName) + `settings.getDokumentImapZugang()`; `anzeigename = "Postfach für Rechnungen und Mahnungen"`; **`abrufAktiv = false`** (Spec 6.7; IMAP-Zugang wird trotzdem übernommen, damit die Gesendet-Kopie funktioniert — siehe Risiko R2); `ordnerGesendet="Sent"`. Gleiche Adresse wie Altes Postfach → kein neues Postfach, Zweck auf das Alte legen.
+        5. **Dokumente-Postfach** (nur wenn `dokumenteVorhanden`): aus `settings.getDokumentMailKonto()` (host, port, username, password, fromAddress, fromName) + `settings.getDokumentImapZugang()`; `anzeigename = "Postfach für Rechnungen und Mahnungen"`; **`abrufAktiv` = bisheriger Status `MailkontoService.imapAbrufAktiv("DOKUMENTE")`, ohne IMAP-Zugang `false`** (Spec 6.7 korrigiert; IMAP-Zugang wird trotzdem übernommen, damit die Gesendet-Kopie funktioniert — siehe Risiko R2); `ordnerGesendet="Sent"`. Gleiche Adresse wie Altes Postfach → kein neues Postfach, Zweck auf das Alte legen.
         6. **Einkaufs-Postfach** (nur wenn Einkaufszeile mit `aktiv=1` oder nicht-leerer `from_address`): Ciphertexte **unverändert kopieren** (gleiches Format `v1:` und gleicher Schlüssel), `adresse=from_address`, `absenderName=from_name`, `anzeigename="Einkauf"`, Host/Port/User/TLS/`inbox`/`sent` übernehmen, `abrufAktiv = aktiv`.
         7. Zugriff: jede angelegte Zeile bekommt `zugriffNutzerIds` = IDs aller `FrontendUserProfile` (Entscheidung G).
         8. Versandzwecke anlegen/aktualisieren (Entscheidung G), `signaturId = null`.
@@ -554,7 +554,7 @@ Pfadpräfix Backend: `J = src/main/java/org/example/kalkulationsprogramm`,
   - [ ] `PostfachMigrationServiceTest` (H2; Legacy-Spalten per `JdbcTemplate` vorher anlegen: `ALTER TABLE email ADD COLUMN konto_id VARCHAR(16)`, `CREATE TABLE einkauf_mailkonto …`; `SystemSettingsService` als `@MockBean` mit Max-Mustermann-Daten, `MailSecretService` echt mit 32-Byte-Testschlüssel):
         (a) Standardfall → ein Altes Postfach `ALLGEMEIN`, `abrufAktiv`, 5+1 Import-Ordner, Zugriff für Max und Erika, alle drei alten Mails haben `postfach_id`, OOO-Plan hat `postfach_id`, `settings.save("smtp.password","",…)` aufgerufen, Marker gesetzt, Passwort nur verschlüsselt (`startsWith("v1:")`);
         (b) zweiter Aufruf → `BEREITS_ERLEDIGT`, keine zweite Zeile;
-        (c) Dokumente aktiv → zweites Postfach `abrufAktiv=false`, Mails mit `konto_id='DOKUMENTE'` dort, Zweck `GESCHAEFTSDOKUMENTE` zeigt darauf;
+        (c) Dokumente aktiv → zweites Postfach, `abrufAktiv` wie vorher (Test mit Abruf an und aus), Mails mit `konto_id='DOKUMENTE'` dort, Zweck `GESCHAEFTSDOKUMENTE` zeigt darauf;
         (d) Einkaufszeile aktiv → Ciphertext identisch kopiert, Zweck `EINKAUF`;
         (e) Schlüssel fehlt → `SCHLUESSEL_FEHLT`, keine Zeile, kein `save`;
         (f) keine Altdaten → `NICHTS_ZU_TUN`, Marker gesetzt;
@@ -936,11 +936,9 @@ aufrufen (Farben rose/slate, Wording, Einstellungs-Kits). Kein Build-Commit (Tas
 ## Risiken und offene Rückfragen an den Nutzer
 
 - **R1 Voraussetzung:** Einkaufs-Branch noch nicht auf `main` — Start blockiert.
-- **R2 Dokumente-Postfach ohne Abruf:** Spec 6.7 verlangt `abruf_aktiv=false`. Der
-  Einkaufs-Branch importiert das Dokumente-Konto aber bereits (`MailkontoService.imapAbrufAktiv("DOKUMENTE")`,
-  Zeile 56-61). Folge: Antworten auf Rechnungen an die Rechnungsadresse erscheinen nach
-  dem Deploy nicht mehr im ERP, bis der Admin „Abruf aktiv“ einschaltet. Plan folgt
-  der Spec; **bitte bestätigen oder auf `true` ändern** (eine Zeile in Task 4).
+- **R2 Dokumente-Postfach Abruf (entschieden):** Der Migrator übernimmt den bisherigen
+  Abrufstatus des Dokumente-Kontos, damit Antworten an die Rechnungsadresse nach dem Deploy
+  weiter im ERP erscheinen (Spec 6.7 entsprechend korrigiert, 23.09.2026).
 - **R3 Zugriff nach Migration:** Entscheidung G gibt allen Nutzern Zugriff auf alle
   migrierten Postfächer (heutiges Verhalten). Wer das einschränken will, tut es danach im Admin-UI.
 - **R4 Rechnungsversand im E-Mail-Center:** Mails mit Geschäftsdokument gehen immer über
@@ -950,3 +948,16 @@ aufrufen (Farben rose/slate, Wording, Einstellungs-Kits). Kein Build-Commit (Tas
   `email.konto_id` nicht; der Migrator lockert sie (Task 4). Ohne diesen Schritt
   schlagen dort alle neuen Mails fehl.
 - **R6 Testcontainers:** Migrationstests (Task 1, 4, 13) brauchen Docker.
+
+# ⏸ HIER GEHT ES WEITER
+
+Stand 23.09.2026: Pipeline `loese-problem` nach Schritt 3 (Grobplan) auf Wunsch des Nutzers angehalten.
+Spec, Issue #168 und dieser Plan liegen auf `main`.
+
+Nächste Schritte beim Wiederaufnehmen:
+1. Voraussetzung prüfen: `codex/beschaffung-konzept` ist auf `main` gemergt. Sonst nicht starten.
+2. Zeilenangaben in diesem Plan beziehen sich auf `origin/codex/beschaffung-konzept@486ee800`. Nach dem Merge kurz gegenprüfen.
+3. Migrationsnummern `V{N}` auf die nächste freie Nummer nach dem Merge setzen.
+4. Weiter mit Schritt 4 (`loese-problem-parallelplan`): Feature-Branch `feature/postfaecher-pro-nutzer`, Kontext-Log, Baseline, Worktrees.
+   Hinweise zur Kopplung stehen im Plan: Tasks 2+3 in ein Paket, Tasks 7+8 im selben Abschnitt integrieren. Task 13 ist ein eigener PR (Release 2).
+Es existieren noch keine Feature-Worktrees oder -Branches für die Umsetzung.
