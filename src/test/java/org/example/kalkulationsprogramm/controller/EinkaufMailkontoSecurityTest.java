@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.repository.EinkaufMailkontoRepository;
@@ -34,7 +35,8 @@ class EinkaufMailkontoSecurityTest {
     @BeforeEach
     void setUp() {
         MailkontoService service = new MailkontoService(konten, settings, secrets,
-                new EinkaufBerechtigungService(profiles));
+                new EinkaufBerechtigungService(profiles), org.mockito.Mockito.mock(LocalTestMailPolicy.class),
+                org.mockito.Mockito.mock(org.example.kalkulationsprogramm.service.mail.KontoMailTransport.class));
         controller = new EinkaufMailkontoController(service);
     }
 

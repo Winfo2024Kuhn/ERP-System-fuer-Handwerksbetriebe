@@ -4,10 +4,15 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailkonto;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Response;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Update;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselung;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Nachricht;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Testmail;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.TestmailErgebnis;
 import org.example.kalkulationsprogramm.repository.EinkaufMailkontoRepository;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService;
@@ -26,15 +31,45 @@ public class MailkontoService {
     private final SystemSettingsService settings;
     private final MailSecretService secrets;
     private final EinkaufBerechtigungService berechtigungen;
+    private final LocalTestMailPolicy localTestMailPolicy;
+    private final KontoMailTransport mailTransport;
 
     public KontoZugang resolve(String kontoId) {
         if (kontoId == null) throw new IllegalArgumentException("Das Mailkonto ist ungültig.");
+        localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
         return switch (kontoId) {
             case "HAUPT" -> adaptiereHauptkonto();
             case "DOKUMENTE" -> adaptiereDokumentkonto();
             case "EINKAUF" -> ladeEinkaufZugang();
             default -> throw new IllegalArgumentException("Das Mailkonto ist ungültig.");
         };
+    }
+
+    public MailTransportDto.Testverbindung verbindungTesten(Authentication authentication) {
+        lesen(authentication);
+        return mailTransport.pruefeVerbindung(resolve("EINKAUF"));
+    }
+
+    public TestmailErgebnis testmail(Authentication authentication, Testmail request) {
+        lesen(authentication);
+        if (request == null || !request.empfaengerBestaetigt()) {
+            throw new IllegalArgumentException("Bitte bestätigen Sie den Testempfänger.");
+        }
+        if (request.empfaenger() == null || request.empfaenger().isBlank()) {
+            throw new IllegalArgumentException("Bitte eine Testempfänger-Adresse eintragen.");
+        }
+        try {
+            var recipients = jakarta.mail.internet.InternetAddress.parse(request.empfaenger(), true);
+            if (recipients.length != 1 || recipients[0].isGroup()) throw new IllegalArgumentException();
+        } catch (jakarta.mail.internet.AddressException ex) {
+            throw new IllegalArgumentException("Bitte genau eine gültige Testempfänger-Adresse eintragen.");
+        }
+        var konto = resolve("EINKAUF");
+        String id = "<" + java.util.UUID.randomUUID() + "@erp.local>";
+        var result = mailTransport.senden(konto, new Nachricht(id, request.empfaenger(),
+                "Test der Einkaufsmail", "<p>Dies ist eine bestätigte Testmail aus dem Einkauf.</p>", null,
+                java.util.List.of(), java.util.List.of()));
+        return new TestmailErgebnis(result.status(), result.messageId(), result.fehlerCode());
     }
 
     @Transactional(readOnly = true)

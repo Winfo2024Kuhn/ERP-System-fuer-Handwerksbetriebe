@@ -5,6 +5,8 @@ import java.util.Properties;
 
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselung;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.ArchivErgebnis;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.springframework.stereotype.Component;
 
@@ -88,6 +90,57 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
         return nachricht -> archiviereKopie(nachricht, systemSettingsService.getDokumentImapZugang(), "DOKUMENTE");
     }
 
+    /** Stores the exact successfully sent bytes in the selected account's Sent folder. */
+    public ArchivErgebnis archiviere(MailkontoService.KontoZugang konto, byte[] mime)
+    {
+        Store store = null;
+        Folder sent = null;
+        try
+        {
+            if (konto == null || !konto.aktiv() || konto.imap() == null || konto.sent() == null || konto.sent().isBlank())
+                return new ArchivErgebnis(false, "KONTO_UNGUELTIG");
+            localTestMailPolicy.pruefeNetzwerkzugriff(konto.id());
+            var imap = konto.imap();
+            if (mime == null || mime.length == 0) return new ArchivErgebnis(false, "MIME_FEHLT");
+            if (imap.host() == null || imap.host().isBlank() || imap.username() == null || imap.username().isBlank()
+                    || imap.password() == null || imap.password().isBlank() || imap.port() < 1 || imap.port() > 65535
+                    || imap.tls() == null) return new ArchivErgebnis(false, "KONTO_UNGUELTIG");
+            Properties props = new Properties();
+            String protocol = imap.tls() == Verschluesselung.TLS ? "imaps" : "imap";
+            String prefix = imap.tls() == Verschluesselung.TLS ? "mail.imaps" : "mail.imap";
+            props.put(prefix + ".connectiontimeout", "15000");
+            props.put(prefix + ".timeout", "30000");
+            props.put(prefix + ".ssl.checkserveridentity", "true");
+            if (imap.tls() == Verschluesselung.STARTTLS) {
+                props.put("mail.imap.starttls.enable", "true");
+                props.put("mail.imap.starttls.required", "true");
+            }
+            Session session = Session.getInstance(props);
+            store = session.getStore(protocol);
+            store.connect(imap.host(), imap.port(), imap.username(), imap.password());
+            sent = store.getFolder(konto.sent());
+            if (sent == null || !sent.exists()) return new ArchivErgebnis(false, "IMAP_SENT_FEHLT");
+            MimeMessage message = EmailService.ausEingefrorenemMime(session, mime);
+            sent.open(Folder.READ_WRITE);
+            String id = message.getMessageID();
+            if (id != null && sent.search(new MessageIDTerm(id)).length > 0) return new ArchivErgebnis(true, null);
+            message.setFlag(Flags.Flag.SEEN, true);
+            sent.appendMessages(new Message[] { message });
+            return new ArchivErgebnis(true, null);
+        }
+        catch (Exception e)
+        {
+            log.warn("[EinkaufMail] IMAP-Archivierung fehlgeschlagen: {}", e.getClass().getSimpleName());
+            return new ArchivErgebnis(false, e instanceof jakarta.mail.AuthenticationFailedException
+                    ? "AUTHENTIFIZIERUNG_FEHLGESCHLAGEN" : "IMAP_ARCHIV");
+        }
+        finally
+        {
+            try { if (sent != null && sent.isOpen()) sent.close(false); } catch (Exception e) { log.debug("[EinkaufMail] Sent-Ordner konnte nicht geschlossen werden: {}", e.getClass().getSimpleName()); }
+            try { if (store != null && store.isConnected()) store.close(); } catch (Exception e) { log.debug("[EinkaufMail] IMAP-Verbindung konnte nicht geschlossen werden: {}", e.getClass().getSimpleName()); }
+        }
+    }
+
     void archiviereKopie(MimeMessage versendeteNachricht,
             SystemSettingsService.ImapZugang zugang, String kontoId)
     {
@@ -112,46 +165,49 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
         props.put("mail.imaps.connectiontimeout", "15000");
         props.put("mail.imaps.timeout", "30000");
 
-        try (Store store = Session.getInstance(props).getStore("imaps"))
+        try
         {
             localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
-            store.connect(zugang.host(), zugang.port(), zugang.username(), zugang.password());
-
-            Folder sent = findeSentOrdner(store);
-            if (sent == null)
+            try (Store store = Session.getInstance(props).getStore("imaps"))
             {
-                log.warn("[SentKopie] Kein 'Gesendet'-Ordner gefunden (geprueft: {})", SENT_ORDNER_KANDIDATEN);
-                return;
-            }
+                store.connect(zugang.host(), zugang.port(), zugang.username(), zugang.password());
+
+                Folder sent = findeSentOrdner(store);
+                if (sent == null)
+                {
+                    log.warn("[SentKopie] Kein 'Gesendet'-Ordner gefunden (geprueft: {})", SENT_ORDNER_KANDIDATEN);
+                    return;
+                }
 
             // Als gelesen markieren: es ist die eigene Mail, sie soll im
             // Webmailer des Inhabers nicht als ungelesen auftauchen.
-            versendeteNachricht.setFlag(Flags.Flag.SEEN, true);
+                versendeteNachricht.setFlag(Flags.Flag.SEEN, true);
 
-            sent.open(Folder.READ_WRITE);
-            try
-            {
+                sent.open(Folder.READ_WRITE);
+                try
+                {
                 // Manche Provider legen SMTP-versendete Mails selbst im
                 // "Gesendet"-Ordner ab, andere nicht (bei T-Online in Produktion
                 // als unzuverlaessig nachgewiesen — siehe
                 // AnfrageBestaetigungVersandService). Deshalb erst pruefen: liegt
                 // die Mail schon da, waere unser APPEND ein sichtbares Duplikat
                 // im Webmailer des Inhabers.
-                if (istBereitsVorhanden(sent, versendeteNachricht))
-                {
-                    log.debug("[SentKopie] Provider hat die Mail bereits in '{}' abgelegt — kein zweites APPEND",
-                            sent.getFullName());
-                    return;
-                }
+                    if (istBereitsVorhanden(sent, versendeteNachricht))
+                    {
+                        log.debug("[SentKopie] Provider hat die Mail bereits in '{}' abgelegt — kein zweites APPEND",
+                                sent.getFullName());
+                        return;
+                    }
 
-                sent.appendMessages(new Message[] { versendeteNachricht });
-                // Bewusst ohne Empfaenger-Adresse geloggt (DSGVO).
-                log.debug("[SentKopie] Kopie in '{}' abgelegt: {}",
-                        sent.getFullName(), versendeteNachricht.getMessageID());
-            }
-            finally
-            {
-                sent.close(false);
+                    sent.appendMessages(new Message[] { versendeteNachricht });
+                    // Bewusst ohne Empfaenger-Adresse geloggt (DSGVO).
+                    log.debug("[SentKopie] Kopie in '{}' abgelegt: {}",
+                            sent.getFullName(), versendeteNachricht.getMessageID());
+                }
+                finally
+                {
+                    sent.close(false);
+                }
             }
         }
         catch (Exception e)

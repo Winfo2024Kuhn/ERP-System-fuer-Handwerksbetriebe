@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailkonto;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Update;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselung;
@@ -34,6 +35,8 @@ class MailkontoPersistenzTest {
     @MockBean private SystemSettingsService settings;
     @MockBean private MailSecretService secrets;
     @MockBean private EinkaufBerechtigungService berechtigungen;
+    @MockBean private LocalTestMailPolicy localTestMailPolicy;
+    @MockBean private KontoMailTransport mailTransport;
 
     @BeforeEach
     void leereMailkonten() {

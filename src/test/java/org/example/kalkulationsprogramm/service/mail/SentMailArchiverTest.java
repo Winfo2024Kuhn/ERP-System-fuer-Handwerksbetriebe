@@ -4,6 +4,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.Mockito.doThrow;
 
 import java.util.Properties;
 
@@ -79,5 +81,21 @@ class SentMailArchiverTest
         archiver.archiviereKopie(null);
 
         verify(systemSettingsService, never()).isImapConfigured();
+    }
+
+    @Test
+    void einkaufsarchivPrueftLocalTestPolicyVorImapVerbindung()
+    {
+        doThrow(new IllegalStateException("gesperrt")).when(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+        var imap = new org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.ServerZugang(
+                "127.0.0.1", 2993, "dummy", "dummy", org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselung.STARTTLS);
+        var smtp = new org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.ServerZugang(
+                "127.0.0.1", 2525, "dummy", "dummy", org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselung.STARTTLS);
+        var konto = new MailkontoService.KontoZugang("EINKAUF", true, "erp@example.test", "Test", smtp, imap, "INBOX", "Sent");
+
+        var result = archiver.archiviere(konto, "dummy".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertFalse(result.erfolgreich());
+        verify(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
     }
 }

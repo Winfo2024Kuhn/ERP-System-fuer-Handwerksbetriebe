@@ -1,6 +1,7 @@
 package org.example.email;
 
 import java.io.File;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -160,18 +161,6 @@ public class EmailService {
      * Schlaegt die Kodierung fehl, faellt die Mail auf die reine Adresse
      * zurueck — ein huebscher Absender ist den Versand nicht wert.</p>
      */
-    private InternetAddress baueAbsender(String adresse) throws jakarta.mail.internet.AddressException {
-        if (absenderAnzeigename == null || absenderAnzeigename.isBlank()) {
-            return new InternetAddress(adresse);
-        }
-        try {
-            return new InternetAddress(adresse, absenderAnzeigename, StandardCharsets.UTF_8.name());
-        } catch (java.io.UnsupportedEncodingException e) {
-            log.warn("[EmailService] Absender-Anzeigename konnte nicht kodiert werden: {}", e.getMessage());
-            return new InternetAddress(adresse);
-        }
-    }
-
     /**
      * Setzt den Marker-Header. Muss VOR {@code Transport.send()} passieren:
      * danach ist die Nachricht bereits serialisiert, und ein erneutes
@@ -180,6 +169,134 @@ public class EmailService {
      */
     private static void markiereAlsErpMail(MimeMessage message) throws MessagingException {
         message.setHeader(ERP_ORIGIN_HEADER, ERP_ORIGIN_WERT);
+    }
+
+    private static java.util.List<Attachment> dateiAnlage(String path, String filename) throws IOException {
+        if (path == null || path.isBlank()) return java.util.List.of();
+        File file = new File(path);
+        byte[] data = java.nio.file.Files.readAllBytes(file.toPath());
+        String name = filename == null || filename.isBlank() ? file.getName() : filename;
+        String type = java.nio.file.Files.probeContentType(file.toPath());
+        return java.util.List.of(new Attachment(data, name, type == null ? "application/octet-stream" : type));
+    }
+
+    /** Shared in-memory MIME builder used by the legacy methods and account-aware mail transport. */
+    public static MimeMessage baueMimeNachricht(Session session, String fromAddress, String fromName,
+            String to, String subject, String html, String inReplyTo, java.util.List<String> references,
+            java.util.List<Attachment> attachments) throws MessagingException, java.io.UnsupportedEncodingException {
+        try {
+            return baueMimeNachricht(session, fromAddress, fromName, to, null, subject, html, inReplyTo,
+                    references, attachments, null, false);
+        } catch (IOException ex) {
+            throw new MessagingException("MIME-Aufbau fehlgeschlagen.", ex);
+        }
+    }
+
+    private static MimeMessage baueMimeNachricht(Session session, String fromAddress, String fromName,
+            String to, String cc, String subject, String html, String inReplyTo, java.util.List<String> references,
+            java.util.List<Attachment> attachments, java.util.Map<String, File> inlineCidToFile, boolean logo)
+            throws MessagingException, java.io.UnsupportedEncodingException, IOException {
+        MimeMessage message = new MimeMessage(session);
+        InternetAddress from = fromName == null || fromName.isBlank()
+                ? new InternetAddress(fromAddress)
+                : new InternetAddress(fromAddress, fromName, StandardCharsets.UTF_8.name());
+        message.setFrom(from);
+        message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to, true));
+        if (cc != null && !cc.isBlank()) message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc, true));
+        message.setSubject(subject == null ? "" : subject, StandardCharsets.UTF_8.name());
+        if (inReplyTo != null && !inReplyTo.isBlank()) {
+            pruefeMailHeader(inReplyTo);
+            message.setHeader("In-Reply-To", inReplyTo);
+        }
+        if (references != null && !references.isEmpty()) {
+            references.forEach(EmailService::pruefeMailHeader);
+            message.setHeader("References", String.join(" ", references));
+        }
+
+        MimeMultipart mixed = new MimeMultipart("mixed");
+        MimeBodyPart relatedHolder = new MimeBodyPart();
+        MimeMultipart related = new MimeMultipart("related");
+        relatedHolder.setContent(related);
+        mixed.addBodyPart(relatedHolder);
+        MimeBodyPart htmlPart = new MimeBodyPart();
+        htmlPart.setContent(html == null ? "" : html, "text/html; charset=utf-8");
+        related.addBodyPart(htmlPart);
+
+        if (logo && html != null && html.contains("cid:Firmenlogo")) {
+            try (InputStream input = EmailService.class.getResourceAsStream("/static/firmenlogo.png")) {
+                if (input == null) throw new IOException("Logo-Datei fehlt.");
+                MimeBodyPart part = new MimeBodyPart();
+                part.setDataHandler(new DataHandler(new ByteArrayDataSource(input, "image/png")));
+                part.setFileName("image001.png");
+                part.setDisposition(MimeBodyPart.INLINE);
+                part.setHeader("Content-ID", "<Firmenlogo>");
+                related.addBodyPart(part);
+            }
+        }
+
+        if (inlineCidToFile != null) {
+            for (java.util.Map.Entry<String, File> entry : inlineCidToFile.entrySet()) {
+                String cid = entry.getKey();
+                File file = entry.getValue();
+                if (cid == null || !cid.matches("[A-Za-z0-9._-]{1,128}") || file == null || !file.isFile()) continue;
+                String type = java.nio.file.Files.probeContentType(file.toPath());
+                if (type == null || type.isBlank()) type = "application/octet-stream";
+                MimeBodyPart part = new MimeBodyPart();
+                part.setDataHandler(new DataHandler(new ByteArrayDataSource(java.nio.file.Files.readAllBytes(file.toPath()), type)));
+                part.setFileName(sichererAnlagenname(file.getName()));
+                part.setDisposition(MimeBodyPart.INLINE);
+                part.setHeader("Content-ID", "<" + cid + ">");
+                related.addBodyPart(part);
+            }
+        }
+
+        if (attachments != null) {
+            for (Attachment attachment : attachments) {
+                if (attachment == null) continue;
+                byte[] attachmentBytes = attachment.data();
+                if ((attachmentBytes == null || attachmentBytes.length == 0) && attachment.file() != null) {
+                    attachmentBytes = Attachment.readBytesSafely(attachment.file());
+                }
+                if (attachmentBytes == null || attachmentBytes.length == 0) continue;
+                MimeBodyPart part = new MimeBodyPart();
+                String type = attachment.mimeType() == null || attachment.mimeType().isBlank()
+                        ? "application/octet-stream" : attachment.mimeType();
+                part.setDataHandler(new DataHandler(new ByteArrayDataSource(attachmentBytes, type)));
+                part.setDisposition(MimeBodyPart.ATTACHMENT);
+                String rawName = attachment.filename() == null || attachment.filename().isBlank()
+                        ? "attachment" : attachment.filename();
+                part.setFileName(sichererAnlagenname(rawName));
+                mixed.addBodyPart(part);
+            }
+        }
+        message.setContent(mixed);
+        markiereAlsErpMail(message);
+        return message;
+    }
+
+    private static String sichererAnlagenname(String name) {
+        String leaf = java.nio.file.Path.of(name).getFileName().toString();
+        String safe = leaf.replaceAll("[\\\\/:*?\"<>|]", "_");
+        return safe.isBlank() ? "attachment" : safe;
+    }
+
+    private static void pruefeMailHeader(String value) {
+        if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0 || value.length() > 2000) {
+            throw new IllegalArgumentException("Mail-Thread-Header ist ungültig.");
+        }
+    }
+
+    /** Parses an already serialized snapshot without allowing mail providers to regenerate headers. */
+    public static MimeMessage ausEingefrorenemMime(Session session, byte[] mime) throws MessagingException {
+        if (mime == null || mime.length == 0) throw new MessagingException("MIME-Inhalt fehlt.");
+        return new EingefroreneMimeMessage(session, mime);
+    }
+
+    private static final class EingefroreneMimeMessage extends MimeMessage {
+        private EingefroreneMimeMessage(Session session, byte[] mime) throws MessagingException {
+            super(session, new ByteArrayInputStream(mime));
+        }
+        @Override public void saveChanges() { }
     }
 
     /**
@@ -240,53 +357,8 @@ public class EmailService {
         });
 
         try {
-            MimeMessage message = new MimeMessage(session);
-            message.setFrom(baueAbsender(fromAddress));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
-            if (cc != null && !cc.isBlank()) {
-                message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
-            }
-            message.setSubject(subject, StandardCharsets.UTF_8.name());
-
-            MimeMultipart mixed = new MimeMultipart("mixed");
-
-            // related-Container an mixed anhängen
-            MimeBodyPart relatedHolder = new MimeBodyPart();
-            MimeMultipart related = new MimeMultipart("related");
-            relatedHolder.setContent(related);
-            mixed.addBodyPart(relatedHolder);
-
-            // HTML in den related-Container
-            MimeBodyPart htmlPart = new MimeBodyPart();
-            htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-            related.addBodyPart(htmlPart);
-
-            // Inline-Logo nur anhängen, wenn im HTML ein cid:Firmenlogo vorkommt
-            if (htmlBody != null && htmlBody.contains("cid:Firmenlogo")) {
-                try (InputStream is = EmailService.class.getResourceAsStream("/static/firmenlogo.png")) {
-                    if (is == null) {
-                        throw new IOException("Logo /static/firmenlogo.png nicht im Klassenpfad gefunden.");
-                    }
-                    MimeBodyPart logoPart = new MimeBodyPart();
-                    logoPart.setDataHandler(new DataHandler(new ByteArrayDataSource(is, "image/png")));
-                    logoPart.setFileName("image001.png");
-                    logoPart.setDisposition(MimeBodyPart.INLINE);
-                    logoPart.setHeader("Content-ID", "<Firmenlogo>"); // passt zu src="cid:Firmenlogo"
-                    related.addBodyPart(logoPart);
-                }
-            }
-
-            if (attachmentFilePath != null && !attachmentFilePath.isBlank()) {
-                MimeBodyPart attachmentPart = new MimeBodyPart();
-                attachmentPart.attachFile(new File(attachmentFilePath));
-                if (attachmentFileName != null && !attachmentFileName.isBlank()) {
-                    attachmentPart.setFileName(attachmentFileName);
-                }
-                mixed.addBodyPart(attachmentPart);
-            }
-
-            message.setContent(mixed);
-            markiereAlsErpMail(message);
+            MimeMessage message = baueMimeNachricht(session, fromAddress, absenderAnzeigename, recipient, cc,
+                    subject, htmlBody, null, java.util.List.of(), dateiAnlage(attachmentFilePath, attachmentFileName), null, true);
             Transport.send(message);
 
             // Kopie in den IMAP-"Gesendet"-Ordner, sofern ein Handler gesetzt ist.
@@ -363,48 +435,8 @@ public class EmailService {
             }
         });
 
-        MimeMessage message = new MimeMessage(session);
-        message.setFrom(baueAbsender(fromAddress));
-        message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
-        if (cc != null && !cc.isBlank()) {
-            message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
-        }
-        message.setSubject(subject, StandardCharsets.UTF_8.name());
-
-        MimeMultipart mixed = new MimeMultipart("mixed");
-        MimeBodyPart relatedHolder = new MimeBodyPart();
-        MimeMultipart related = new MimeMultipart("related");
-        relatedHolder.setContent(related);
-        mixed.addBodyPart(relatedHolder);
-
-        MimeBodyPart htmlPart = new MimeBodyPart();
-        htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-        related.addBodyPart(htmlPart);
-
-        if (htmlBody != null && htmlBody.contains("cid:Firmenlogo")) {
-            try (InputStream is = EmailService.class.getResourceAsStream("/static/firmenlogo.png")) {
-                if (is != null) {
-                    MimeBodyPart logoPart = new MimeBodyPart();
-                    logoPart.setDataHandler(new DataHandler(new ByteArrayDataSource(is, "image/png")));
-                    logoPart.setFileName("image001.png");
-                    logoPart.setDisposition(MimeBodyPart.INLINE);
-                    logoPart.setHeader("Content-ID", "<Firmenlogo>");
-                    related.addBodyPart(logoPart);
-                }
-            }
-        }
-
-        if (attachmentFilePath != null && !attachmentFilePath.isBlank()) {
-            MimeBodyPart attachmentPart = new MimeBodyPart();
-            attachmentPart.attachFile(new File(attachmentFilePath));
-            if (attachmentFileName != null && !attachmentFileName.isBlank()) {
-                attachmentPart.setFileName(attachmentFileName);
-            }
-            mixed.addBodyPart(attachmentPart);
-        }
-
-        message.setContent(mixed);
-        markiereAlsErpMail(message);
+        MimeMessage message = baueMimeNachricht(session, fromAddress, absenderAnzeigename, recipient, cc,
+                subject, htmlBody, null, java.util.List.of(), dateiAnlage(attachmentFilePath, attachmentFileName), null, true);
         Transport.send(message);
 
         // Sent-Kopie auf dem Provider-Server: unabhaengiger Nachweis, dass die
@@ -444,62 +476,8 @@ public class EmailService {
             }
         });
 
-        MimeMessage message = new MimeMessage(session);
-        message.setFrom(baueAbsender(fromAddress));
-        message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
-        if (cc != null && !cc.isBlank()) {
-            message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
-        }
-        message.setSubject(subject, StandardCharsets.UTF_8.name());
-
-        MimeMultipart mixed = new MimeMultipart("mixed");
-        MimeBodyPart relatedHolder = new MimeBodyPart();
-        MimeMultipart related = new MimeMultipart("related");
-        relatedHolder.setContent(related);
-        mixed.addBodyPart(relatedHolder);
-
-        MimeBodyPart htmlPart = new MimeBodyPart();
-        htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-        related.addBodyPart(htmlPart);
-
-        // Add inline images provided via CID map
-        if (inlineCidToFile != null) {
-            for (java.util.Map.Entry<String, java.io.File> e : inlineCidToFile.entrySet()) {
-                String cid = e.getKey();
-                java.io.File file = e.getValue();
-                if (cid == null || cid.isBlank() || file == null || !file.exists())
-                    continue;
-                MimeBodyPart inlinePart = new MimeBodyPart();
-                String ctype;
-                try {
-                    ctype = java.nio.file.Files.probeContentType(file.toPath());
-                } catch (IOException io) {
-                    ctype = null;
-                }
-                if (ctype == null || ctype.isBlank())
-                    ctype = "application/octet-stream";
-                try (java.io.InputStream is = new java.io.FileInputStream(file)) {
-                    inlinePart.setDataHandler(new DataHandler(new ByteArrayDataSource(is, ctype)));
-                }
-                inlinePart.setFileName(file.getName());
-                inlinePart.setDisposition(MimeBodyPart.INLINE);
-                inlinePart.setHeader("Content-ID", "<" + cid + ">");
-                related.addBodyPart(inlinePart);
-            }
-        }
-
-        // Optional regular attachment
-        if (attachmentFilePath != null && !attachmentFilePath.isBlank()) {
-            MimeBodyPart attachmentPart = new MimeBodyPart();
-            attachmentPart.attachFile(new File(attachmentFilePath));
-            if (attachmentFileName != null && !attachmentFileName.isBlank()) {
-                attachmentPart.setFileName(attachmentFileName);
-            }
-            mixed.addBodyPart(attachmentPart);
-        }
-
-        message.setContent(mixed);
-        markiereAlsErpMail(message);
+        MimeMessage message = baueMimeNachricht(session, fromAddress, absenderAnzeigename, recipient, cc,
+                subject, htmlBody, null, java.util.List.of(), dateiAnlage(attachmentFilePath, attachmentFileName), inlineCidToFile, true);
         Transport.send(message);
 
         // Sent-Kopie auf dem Provider-Server (siehe ERP_ORIGIN_HEADER).
@@ -537,78 +515,8 @@ public class EmailService {
             }
         });
 
-        MimeMessage message = new MimeMessage(session);
-        message.setFrom(baueAbsender(fromAddress));
-        message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
-        if (cc != null && !cc.isBlank()) {
-            message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
-        }
-        message.setSubject(subject, StandardCharsets.UTF_8.name());
-
-        MimeMultipart mixed = new MimeMultipart("mixed");
-        MimeBodyPart relatedHolder = new MimeBodyPart();
-        MimeMultipart related = new MimeMultipart("related");
-        relatedHolder.setContent(related);
-        mixed.addBodyPart(relatedHolder);
-
-        MimeBodyPart htmlPart = new MimeBodyPart();
-        htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-        related.addBodyPart(htmlPart);
-
-        // Add inline images provided via CID map
-        if (inlineCidToFile != null) {
-            for (java.util.Map.Entry<String, java.io.File> e : inlineCidToFile.entrySet()) {
-                String cid = e.getKey();
-                java.io.File file = e.getValue();
-                if (cid == null || cid.isBlank() || file == null || !file.exists())
-                    continue;
-                MimeBodyPart inlinePart = new MimeBodyPart();
-                String ctype;
-                try {
-                    ctype = java.nio.file.Files.probeContentType(file.toPath());
-                } catch (IOException io) {
-                    ctype = null;
-                }
-                if (ctype == null || ctype.isBlank())
-                    ctype = "application/octet-stream";
-                try (java.io.InputStream is = new java.io.FileInputStream(file)) {
-                    inlinePart.setDataHandler(new DataHandler(new ByteArrayDataSource(is, ctype)));
-                }
-                inlinePart.setFileName(file.getName());
-                inlinePart.setDisposition(MimeBodyPart.INLINE);
-                inlinePart.setHeader("Content-ID", "<" + cid + ">");
-                related.addBodyPart(inlinePart);
-            }
-        }
-
-        // Add multiple attachments
-        if (attachments != null) {
-            for (Attachment attachment : attachments) {
-                if (attachment != null) {
-                    byte[] data = attachment.data();
-                    if ((data == null || data.length == 0) && attachment.file() != null) {
-                        data = Attachment.readBytesSafely(attachment.file());
-                    }
-                    if (data != null && data.length > 0) {
-                        MimeBodyPart attachmentPart = new MimeBodyPart();
-                        String ctype = (attachment.mimeType() != null && !attachment.mimeType().isBlank())
-                                ? attachment.mimeType()
-                                : "application/octet-stream";
-                        attachmentPart.setDataHandler(new DataHandler(new ByteArrayDataSource(data, ctype)));
-                        attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
-                        String rawName = (attachment.filename() != null && !attachment.filename().isBlank())
-                                ? attachment.filename()
-                                : (attachment.file() != null ? attachment.file().getName() : "attachment");
-                        String safeName = java.nio.file.Path.of(rawName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
-                        attachmentPart.setFileName(safeName);
-                        mixed.addBodyPart(attachmentPart);
-                    }
-                }
-            }
-        }
-
-        message.setContent(mixed);
-        markiereAlsErpMail(message);
+        MimeMessage message = baueMimeNachricht(session, fromAddress, absenderAnzeigename, recipient, cc,
+                subject, htmlBody, null, java.util.List.of(), attachments, inlineCidToFile, true);
         Transport.send(message);
 
         // Sent-Kopie auf dem Provider-Server (siehe ERP_ORIGIN_HEADER).

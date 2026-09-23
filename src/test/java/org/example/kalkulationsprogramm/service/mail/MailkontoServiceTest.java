@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailkonto;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto;
@@ -29,11 +30,13 @@ class MailkontoServiceTest {
     @Mock private EinkaufBerechtigungService berechtigungen;
     @Mock private SystemSettingsService settings;
     @Mock private MailSecretService secrets;
+    @Mock private LocalTestMailPolicy localTestMailPolicy;
+    @Mock private KontoMailTransport mailTransport;
     private MailkontoService service;
 
     @BeforeEach
     void setUp() {
-        service = new MailkontoService(repository, settings, secrets, berechtigungen);
+        service = new MailkontoService(repository, settings, secrets, berechtigungen, localTestMailPolicy, mailTransport);
     }
 
     @Test
@@ -49,6 +52,38 @@ class MailkontoServiceTest {
         assertEquals("HAUPT", konto.id());
         assertEquals("test@example.com", konto.smtp().username());
         assertEquals("imap-user", konto.imap().username());
+    }
+
+    @Test
+    void failClosedPolicyBlockiertResolverVorSecretOderSettingsZugriff() {
+        doThrow(new IllegalStateException("Mailzugriff gesperrt"))
+                .when(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+
+        assertThrows(IllegalStateException.class, () -> service.resolve("EINKAUF"));
+
+        verify(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+        verifyNoInteractions(repository, secrets, settings);
+    }
+
+    @Test
+    void einstellungenBleibenAuchBeiGesperrtemNetzwerkLesbar() {
+        when(berechtigungen.verlangeAktivenAdmin(any())).thenReturn(70L);
+        when(repository.findById("EINKAUF")).thenReturn(Optional.empty());
+
+        service.lesen(auth(aktiverAdmin()));
+
+        verifyNoInteractions(localTestMailPolicy);
+    }
+
+    @Test
+    void testmailOhneEmpfaengerbestaetigungErreichtKeinenResolverOderTransport() {
+        when(berechtigungen.verlangeAktivenAdmin(any())).thenReturn(70L);
+        when(repository.findById("EINKAUF")).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> service.testmail(auth(aktiverAdmin()),
+                new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Testmail("test@example.com", false)));
+
+        verifyNoInteractions(localTestMailPolicy, secrets, settings, mailTransport);
     }
 
     @Test
