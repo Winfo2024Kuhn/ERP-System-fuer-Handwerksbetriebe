@@ -33,9 +33,18 @@ public class EinkaufZeugnisErwartung {
         this.anforderungsIndex=anforderungsIndex; this.grundlageVersion=grundlageVersion; this.frist=frist;
         this.status=frist==null?Status.KLAERUNG_NOETIG:Status.ANGEFORDERT;
     }
-    public void eingegangen(EinkaufDatei datei, Instant zeit){if(!dateien.contains(datei))dateien.add(datei);this.eingegangenAm=zeit;this.status=Status.EINGEGANGEN;this.materialFreigegeben=false;}
-    public void zuordnen(List<LieferungPosition> positionen,List<EinkaufCharge> charges, boolean widerspruch){this.lieferPositionen.clear();this.lieferPositionen.addAll(positionen);this.chargen.clear();this.chargen.addAll(charges);this.status=widerspruch?Status.KLAERUNG_NOETIG:Status.ZUGEORDNET;this.materialFreigegeben=false;}
-    public void pruefen(EinkaufDokumentPruefung p, boolean positiv, boolean alleAnforderungenGeprueft){pruefungen.add(p);status=positiv?Status.GEPRUEFT:Status.KLAERUNG_NOETIG;materialFreigegeben=positiv&&alleAnforderungenGeprueft;}
+    public void eingegangen(EinkaufDatei datei, Instant zeit){if(!dateien.contains(datei))dateien.add(datei);this.eingegangenAm=zeit;if(status!=Status.GEPRUEFT){this.status=Status.EINGEGANGEN;this.materialFreigegeben=false;}}
+    public void zuordnen(List<LieferungPosition> positionen,List<EinkaufCharge> charges, boolean widerspruch){positionen.stream().filter(p->!lieferPositionen.contains(p)).forEach(lieferPositionen::add);charges.stream().filter(c->!chargen.contains(c)).forEach(chargen::add);if(widerspruch)this.status=Status.KLAERUNG_NOETIG;this.materialFreigegeben=false;}
+    public void aktualisiereChargenstand(List<EinkaufZeugnisChargeStatus> staende){
+        materialFreigegeben=!staende.isEmpty()&&staende.stream().allMatch(s->s.getStatus()==Status.GEPRUEFT&&s.isMaterialFreigegeben());
+        if(staende.stream().anyMatch(s->s.getStatus()==Status.KLAERUNG_NOETIG))status=Status.KLAERUNG_NOETIG;
+        else if(materialFreigegeben)status=Status.GEPRUEFT;
+        else if(staende.stream().anyMatch(s->s.getStatus()==Status.ZUGEORDNET))status=Status.ZUGEORDNET;
+        else if(!dateien.isEmpty())status=Status.EINGEGANGEN;
+        else if(frist==null)status=Status.KLAERUNG_NOETIG;
+        else status=Status.ANGEFORDERT;
+    }
+    public void pruefungAbgelegt(EinkaufDokumentPruefung p){pruefungen.add(p);}
     public void materialfreigeben(){if(status!=Status.GEPRUEFT)throw new IllegalStateException("Nur positiv geprüfte Zeugnisse erlauben die Materialfreigabe.");materialFreigegeben=true;}
     public Long getId(){return id;} public Long getVersion(){return version;} public BestellungRevision getRevision(){return revision;} public BestellungPosition getBestellPosition(){return bestellPosition;}
     public int getAnforderungsIndex(){return anforderungsIndex;}

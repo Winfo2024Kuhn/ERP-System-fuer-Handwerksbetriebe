@@ -57,7 +57,12 @@ public class EinkaufFaelligkeitService {
           JOIN einkauf_bestellung b ON b.id=r.bestellung_id
          WHERE r.angenommen_am IS NOT NULL AND r.verworfen_am IS NULL
            AND r.nummer=(SELECT MAX(r2.nummer) FROM einkauf_bestellung_revision r2 WHERE r2.bestellung_id=b.id AND r2.angenommen_am IS NOT NULL AND r2.verworfen_am IS NULL)
-           AND z.status<>'GEPRUEFT' AND (z.frist IS NULL OR z.frist<=:heute) AND b.status IN ('BESTELLT','TEILGELIEFERT')
+           AND (z.status<>'GEPRUEFT' OR EXISTS (SELECT 1 FROM einkauf_charge c
+                 JOIN einkauf_lieferung_position lp ON lp.id=c.lieferung_position_id
+                WHERE lp.bestell_position_id=z.bestell_position_id
+                  AND NOT EXISTS (SELECT 1 FROM einkauf_zeugnis_charge_status cs WHERE cs.zeugnis_id=z.id AND cs.charge_id=c.id
+                                   AND cs.status='GEPRUEFT' AND cs.material_freigegeben=TRUE)))
+           AND (z.frist IS NULL OR z.frist<=:heute) AND b.status IN ('BESTELLT','TEILGELIEFERT')
            AND (:zustaendig IS NULL OR b.angelegt_von=:zustaendig)
         """;
     private final EntityManager em;

@@ -117,9 +117,11 @@ class EinkaufZeugnisServiceTest {
                 statement.executeUpdate("INSERT INTO einkauf_zeugnis_datei VALUES(1,4),(2,4)");
                 statement.executeUpdate("INSERT INTO einkauf_zeugnis_lieferposition VALUES(1,5),(2,6)");
                 statement.executeUpdate("INSERT INTO einkauf_zeugnis_charge VALUES(1,7),(2,8)");
-                statement.executeUpdate("INSERT INTO einkauf_dokument_pruefung(zeugnis_id,akteur_id,geprueft_am,ergebnis,begruendung,grundlage_version) VALUES(1,9,NOW(6),'ABGELEHNT','Dokument unvollständig','V1'),(1,9,NOW(6),'BESTANDEN','Dokument vollständig','V1')");
-                try(var rows=statement.executeQuery("SELECT (SELECT COUNT(*) FROM einkauf_zeugnis_datei WHERE datei_id=4),(SELECT COUNT(*) FROM einkauf_dokument_pruefung WHERE zeugnis_id=1)")){
-                    assertTrue(rows.next());assertEquals(2,rows.getInt(1));assertEquals(2,rows.getInt(2));
+                statement.executeUpdate("INSERT INTO einkauf_zeugnis_charge_status(zeugnis_id,charge_id,status) VALUES(1,7,'GEPRUEFT'),(2,8,'ERWARTET')");
+                statement.executeUpdate("INSERT INTO einkauf_zeugnis_zuordnung(zeugnis_id,datei_id,charge_status_id) VALUES(1,4,1),(2,4,2)");
+                statement.executeUpdate("INSERT INTO einkauf_dokument_pruefung(zeugnis_id,zuordnung_id,akteur_id,geprueft_am,ergebnis,begruendung,grundlage_version) VALUES(1,1,9,NOW(6),'ABGELEHNT','Dokument unvollständig','V1'),(1,1,9,NOW(6),'BESTANDEN','Dokument vollständig','V1')");
+                try(var rows=statement.executeQuery("SELECT (SELECT COUNT(*) FROM einkauf_zeugnis_datei WHERE datei_id=4),(SELECT COUNT(*) FROM einkauf_dokument_pruefung WHERE zeugnis_id=1),(SELECT COUNT(*) FROM einkauf_zeugnis_charge_status WHERE zeugnis_id=2 AND status='ERWARTET')")){
+                    assertTrue(rows.next());assertEquals(2,rows.getInt(1));assertEquals(2,rows.getInt(2));assertEquals(1,rows.getInt(3));
                 }
             }
         }

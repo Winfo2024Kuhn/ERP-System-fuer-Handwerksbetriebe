@@ -58,34 +58,37 @@ CREATE TABLE IF NOT EXISTS einkauf_zeugnis_charge (
   CONSTRAINT fk_zeugnis_charge_charge FOREIGN KEY (charge_id) REFERENCES einkauf_charge(id)
 );
 
+CREATE TABLE IF NOT EXISTS einkauf_zeugnis_charge_status (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  version BIGINT NOT NULL DEFAULT 0,
+  zeugnis_id BIGINT NOT NULL,
+  charge_id BIGINT NOT NULL,
+  status ENUM('ERWARTET','EINGEGANGEN','ZUGEORDNET','GEPRUEFT','KLAERUNG_NOETIG') NOT NULL DEFAULT 'ERWARTET',
+  material_freigegeben BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (id),
+  CONSTRAINT uk_zeugnis_soll_charge UNIQUE (zeugnis_id, charge_id),
+  CONSTRAINT fk_zeugnis_status_zeugnis FOREIGN KEY (zeugnis_id) REFERENCES einkauf_zeugnis_erwartung(id),
+  CONSTRAINT fk_zeugnis_status_charge FOREIGN KEY (charge_id) REFERENCES einkauf_charge(id)
+);
+
 CREATE TABLE IF NOT EXISTS einkauf_zeugnis_zuordnung (
   id BIGINT NOT NULL AUTO_INCREMENT,
+  version BIGINT NOT NULL DEFAULT 0,
   zeugnis_id BIGINT NOT NULL,
   datei_id BIGINT NOT NULL,
+  charge_status_id BIGINT NOT NULL,
   klaerung_noetig BOOLEAN NOT NULL DEFAULT FALSE,
   PRIMARY KEY (id),
-  CONSTRAINT uk_zeugnis_zuordnung UNIQUE (zeugnis_id, datei_id),
+  CONSTRAINT uk_zeugnis_zuordnung UNIQUE (charge_status_id, datei_id),
   CONSTRAINT fk_zeugnis_zuordnung_zeugnis FOREIGN KEY (zeugnis_id) REFERENCES einkauf_zeugnis_erwartung(id),
-  CONSTRAINT fk_zeugnis_zuordnung_datei FOREIGN KEY (datei_id) REFERENCES einkauf_datei(id)
-);
-
-CREATE TABLE IF NOT EXISTS einkauf_zeugnis_zuordnung_lieferposition (
-  zuordnung_id BIGINT NOT NULL, lieferposition_id BIGINT NOT NULL,
-  PRIMARY KEY (zuordnung_id, lieferposition_id),
-  CONSTRAINT fk_zeugnis_zuordnung_liefer FOREIGN KEY (zuordnung_id) REFERENCES einkauf_zeugnis_zuordnung(id),
-  CONSTRAINT fk_zeugnis_zuordnung_lieferposition FOREIGN KEY (lieferposition_id) REFERENCES einkauf_lieferung_position(id)
-);
-
-CREATE TABLE IF NOT EXISTS einkauf_zeugnis_zuordnung_charge (
-  zuordnung_id BIGINT NOT NULL, charge_id BIGINT NOT NULL,
-  PRIMARY KEY (zuordnung_id, charge_id),
-  CONSTRAINT fk_zeugnis_zuordnung_charge FOREIGN KEY (zuordnung_id) REFERENCES einkauf_zeugnis_zuordnung(id),
-  CONSTRAINT fk_zeugnis_zuordnung_charge_ref FOREIGN KEY (charge_id) REFERENCES einkauf_charge(id)
+  CONSTRAINT fk_zeugnis_zuordnung_datei FOREIGN KEY (datei_id) REFERENCES einkauf_datei(id),
+  CONSTRAINT fk_zeugnis_zuordnung_charge_status FOREIGN KEY (charge_status_id) REFERENCES einkauf_zeugnis_charge_status(id)
 );
 
 CREATE TABLE IF NOT EXISTS einkauf_dokument_pruefung (
   id BIGINT NOT NULL AUTO_INCREMENT,
   zeugnis_id BIGINT NOT NULL,
+  zuordnung_id BIGINT NOT NULL,
   akteur_id BIGINT NOT NULL,
   geprueft_am TIMESTAMP(6) NOT NULL,
   ergebnis VARCHAR(32) NOT NULL,
@@ -93,5 +96,6 @@ CREATE TABLE IF NOT EXISTS einkauf_dokument_pruefung (
   grundlage_version VARCHAR(120) NOT NULL,
   PRIMARY KEY (id),
   KEY ix_zeugnis_pruefung_zeit (zeugnis_id, geprueft_am, id),
-  CONSTRAINT fk_dokument_pruefung_zeugnis FOREIGN KEY (zeugnis_id) REFERENCES einkauf_zeugnis_erwartung(id)
+  CONSTRAINT fk_dokument_pruefung_zeugnis FOREIGN KEY (zeugnis_id) REFERENCES einkauf_zeugnis_erwartung(id),
+  CONSTRAINT fk_dokument_pruefung_zuordnung FOREIGN KEY (zuordnung_id) REFERENCES einkauf_zeugnis_zuordnung(id)
 );

@@ -66,8 +66,10 @@ public class EinkaufZeugnisService {
         var expectation=zeugnisse.findById(erwartungId).orElseThrow(()->new NoSuchElementException("Die Zeugnisanforderung wurde nicht gefunden."));
         var file=dateien.findById(dokumentId).orElseThrow(()->new NoSuchElementException("Das Einkaufsdokument wurde nicht gefunden."));
         if(!"application/pdf".equalsIgnoreCase(file.getMimeTyp()))throw bad("Für Zeugnisse sind nur PDF-Dateien zulässig.");
-        if(expectation.getStatus()==EinkaufZeugnisErwartung.Status.GEPRUEFT)throw conflict("Ein bereits geprüftes Zeugnis kann nicht ersetzt werden.");
+        if(expectation.getDateien().stream().anyMatch(existing->Objects.equals(existing.getId(),file.getId())))return dto(expectation);
         expectation.eingegangen(file,Instant.now(clock));
+        ensureChargeStatuses(expectation);
+        expectation.aktualisiereChargenstand(chargeStatuses(expectation.getId()));
         return dto(zeugnisse.saveAndFlush(expectation));
     }
 
@@ -76,7 +78,7 @@ public class EinkaufZeugnisService {
         if (request==null || request.dokumentId()==null || request.dokumentId()<=0 || request.erwartungIds().isEmpty()
                 || akteurId==null || akteurId<=0) throw bad("Dokument, Zeugnisanforderungen und Benutzer sind erforderlich.");
         if(request.erwartungIds().stream().distinct().count()!=request.erwartungIds().size()||request.erwartungIds().size()>100
-                ||request.lieferPositionIds().size()>500||request.chargeIds().size()>500)throw bad("Die Zuordnung enthält doppelte oder zu viele Einträge.");
+                ||request.lieferPositionIds().isEmpty()||request.chargeIds().isEmpty()||request.lieferPositionIds().size()>500||request.chargeIds().size()>500)throw bad("Die Zuordnung enthält doppelte oder zu viele Einträge.");
         EinkaufDatei datei=dateien.findById(request.dokumentId()).orElseThrow(()->new NoSuchElementException("Das Einkaufsdokument wurde nicht gefunden."));
         if (!"application/pdf".equalsIgnoreCase(datei.getMimeTyp())) throw bad("Für Zeugnisse sind nur PDF-Dateien zulässig.");
         List<EinkaufZeugnisErwartung> targets=zeugnisse.findAllById(request.erwartungIds());
@@ -93,31 +95,45 @@ public class EinkaufZeugnisService {
             throw bad("Das Zeugnis gehört nicht zum Lieferanten der Bestellung.");
         if(targets.stream().anyMatch(t->t.getRevision().getId()==null||!Objects.equals(t.getRevision().getId(),latest.getId())))
             throw conflict("Die Zeugnisanforderung gehört nicht zur zuletzt angenommenen Bestellfassung.");
-        if(targets.stream().anyMatch(t->t.getStatus()!=EinkaufZeugnisErwartung.Status.EINGEGANGEN||t.getDateien().stream().noneMatch(f->Objects.equals(f.getId(),datei.getId()))))
+        if(targets.stream().anyMatch(t->t.getDateien().stream().noneMatch(f->Objects.equals(f.getId(),datei.getId()))))
             throw conflict("Der PDF-Eingang muss zuerst der Zeugnisanforderung zugeordnet werden.");
         List<LieferungPosition> lines=load(request.lieferPositionIds(),LieferungPosition.class);
         List<EinkaufCharge> charges=load(request.chargeIds(),EinkaufCharge.class);
         Set<Long> lineIds=lines.stream().map(LieferungPosition::getId).collect(java.util.stream.Collectors.toSet());
+        Map<Long,Long> chargePositionIds=new HashMap<>();
+        em.createQuery("select c.id,c.position.bestellPosition.id from EinkaufCharge c where c.id in :ids",Object[].class).setParameter("ids",request.chargeIds()).getResultList()
+                .forEach(row->{Object[] chargeRow=(Object[])row;chargePositionIds.put(((Number)chargeRow[0]).longValue(),((Number)chargeRow[1]).longValue());});
         Set<Long> matchingChargeIds=charges.isEmpty()?Set.of():new HashSet<>(em.createQuery(
                 "select c.id from EinkaufCharge c where c.id in :chargeIds and c.position.id in :lineIds",Long.class)
                 .setParameter("chargeIds",request.chargeIds()).setParameter("lineIds",lineIds).getResultList());
-        Set<Long> allChargeIds=lines.isEmpty()?Set.of():new HashSet<>(em.createQuery(
-                "select c.id from EinkaufCharge c where c.position.id in :lineIds",Long.class).setParameter("lineIds",lineIds).getResultList());
         Set<Long> targetPositionIds=targets.stream().map(t->t.getBestellPosition().getId()).collect(java.util.stream.Collectors.toSet());
-        boolean conflict=targets.stream().anyMatch(t->lines.stream().noneMatch(line->Objects.equals(line.getBestellPosition().getId(),t.getBestellPosition().getId())))
+        boolean conflict=targets.stream().anyMatch(t->lines.stream().noneMatch(line->Objects.equals(line.getBestellPosition().getId(),t.getBestellPosition().getId()))
+                        ||charges.stream().noneMatch(charge->chargePositionIds.containsKey(charge.getId())&&Objects.equals(chargePositionIds.get(charge.getId()),t.getBestellPosition().getId())))
                 ||lines.isEmpty()||lines.stream().anyMatch(line->!Objects.equals(line.getBestellPosition().getRevision().getId(),latest.getId())
                         ||!targetPositionIds.contains(line.getBestellPosition().getId()))
-                || matchingChargeIds.size()!=charges.size()||!matchingChargeIds.containsAll(allChargeIds);
+                || matchingChargeIds.size()!=charges.size();
         if (request.schmelznummer()!=null&&!request.schmelznummer().isBlank()) {
             conflict |= lines.stream().anyMatch(l->l.getSchmelznummer()==null||!request.schmelznummer().equals(l.getSchmelznummer()));
             conflict |= charges.stream().anyMatch(c->c.getSchmelznummer()==null||!request.schmelznummer().equals(c.getSchmelznummer()));
         }
+        List<EinkaufZeugnisZuordnung> associations=new ArrayList<>();
         for(var target:targets){
-            target.zuordnen(lines,charges,conflict);
-            em.persist(new EinkaufZeugnisZuordnung(target,datei,lines,charges,conflict));
+            ensureChargeStatuses(target);
+            target.zuordnen(lines.stream().filter(l->Objects.equals(l.getBestellPosition().getId(),target.getBestellPosition().getId())).toList(),
+                    charges.stream().filter(c->Objects.equals(chargePositionIds.get(c.getId()),target.getBestellPosition().getId())).toList(),conflict);
+            for(var charge:charges){
+                if(!Objects.equals(chargePositionIds.get(charge.getId()),target.getBestellPosition().getId()))continue;
+                var status=chargeStatus(target.getId(),charge.getId());status.zuordnen(conflict);
+                List<EinkaufZeugnisZuordnung> old=em.createQuery("select z from EinkaufZeugnisZuordnung z where z.zeugnis.id=:eid and z.datei.id=:fid and z.chargeStatus.id=:sid",EinkaufZeugnisZuordnung.class)
+                        .setParameter("eid",target.getId()).setParameter("fid",datei.getId()).setParameter("sid",status.getId()).getResultList();
+                EinkaufZeugnisZuordnung association=old.isEmpty()?new EinkaufZeugnisZuordnung(target,datei,status,conflict):old.getFirst();
+                if(old.isEmpty())em.persist(association);
+                associations.add(association);
+            }
+            target.aktualisiereChargenstand(chargeStatuses(target.getId()));
         }
         zeugnisse.saveAll(targets);zeugnisse.flush();
-        return new ZuordnungDto(targets.stream().map(this::dto).toList(),conflict);
+        return new ZuordnungDto(targets.stream().map(this::dto).toList(),conflict,associations.stream().map(this::chargeDto).toList());
     }
 
     @Transactional
@@ -126,29 +142,30 @@ public class EinkaufZeugnisService {
                 ||blank(request.ergebnis())||!Set.of("BESTANDEN","ABGELEHNT","KLAERUNG").contains(request.ergebnis())
                 ||blank(request.begruendung())||request.begruendung().length()>2000||blank(request.grundlageVersion()))
             throw bad("Prüfergebnis, Begründung, Grundlage und Benutzer müssen vollständig sein.");
-        EinkaufZeugnisErwartung target=zeugnisse.findById(zuordnungId).orElseThrow(()->new NoSuchElementException("Die Zeugniszuordnung wurde nicht gefunden."));
-        if(target.getVersion()==null||target.getVersion()!=request.version())throw conflict("Die Zeugniszuordnung wurde geändert; bitte neu laden.");
+        EinkaufZeugnisZuordnung association=em.find(EinkaufZeugnisZuordnung.class,zuordnungId);
+        if(association==null)throw new NoSuchElementException("Die Zeugniszuordnung wurde nicht gefunden.");
+        EinkaufZeugnisErwartung target=association.getZeugnis();EinkaufZeugnisChargeStatus chargeStatus=association.getChargeStatus();
+        if(chargeStatus.getVersion()==null||chargeStatus.getVersion()!=request.version())throw conflict("Die Zeugniszuordnung wurde geändert; bitte neu laden.");
         if(!Objects.equals(target.getGrundlageVersion(),request.grundlageVersion()))throw conflict("Die geprüfte Grundlage passt nicht mehr zur Bestellfassung.");
-        if(target.getStatus()!=EinkaufZeugnisErwartung.Status.ZUGEORDNET&&target.getStatus()!=EinkaufZeugnisErwartung.Status.KLAERUNG_NOETIG)
-            throw conflict("Nur eingegangene und zugeordnete Zeugnisse können geprüft werden.");
-        if(target.getStatus()==EinkaufZeugnisErwartung.Status.KLAERUNG_NOETIG)throw conflict("Widersprüchliche Charge oder Schmelznummer muss zuerst geklärt werden.");
-        if(target.getDateien().isEmpty()||target.getStatus()!=EinkaufZeugnisErwartung.Status.ZUGEORDNET)throw conflict("Ein PDF-Eingang muss vor der Prüfung zugeordnet werden.");
+        if(association.isKlaerungNoetig()||chargeStatus.getStatus()==EinkaufZeugnisErwartung.Status.KLAERUNG_NOETIG)throw conflict("Widersprüchliche Charge oder Schmelznummer muss zuerst geklärt werden.");
+        if(chargeStatus.getStatus()!=EinkaufZeugnisErwartung.Status.ZUGEORDNET&&chargeStatus.getStatus()!=EinkaufZeugnisErwartung.Status.GEPRUEFT)throw conflict("Nur eingegangene und zugeordnete Zeugnisse können geprüft werden.");
         boolean positive="BESTANDEN".equals(request.ergebnis());
-        EinkaufDokumentPruefung check=new EinkaufDokumentPruefung(target,akteurId,Instant.now(clock),request.ergebnis(),request.begruendung().trim(),request.grundlageVersion().trim());
-        target.pruefen(check,positive,false);
+        EinkaufDokumentPruefung check=new EinkaufDokumentPruefung(association,akteurId,Instant.now(clock),request.ergebnis(),request.begruendung().trim(),request.grundlageVersion().trim());
+        chargeStatus.pruefen(positive);target.pruefungAbgelegt(check);
         em.persist(check); zeugnisse.flush();
-        List<EinkaufZeugnisErwartung> all=zeugnisse.findByRevision_IdOrderByIdAsc(target.getRevision().getId());
-        boolean allPositive=positive&&all.stream().allMatch(x->x.getStatus()==EinkaufZeugnisErwartung.Status.GEPRUEFT);
-        if(allPositive)all.forEach(EinkaufZeugnisErwartung::materialfreigeben);
+        target.aktualisiereChargenstand(chargeStatuses(target.getId()));
         zeugnisse.flush();
         return new PruefungDto(check.getId(),target.getId(),check.getErgebnis(),check.getBegruendung(),check.getGrundlageVersion(),
-                check.getAkteurId(),check.getGeprueftAm(),target.isMaterialFreigegeben());
+                check.getAkteurId(),check.getGeprueftAm(),chargeStatus.isMaterialFreigegeben());
     }
 
-    @Transactional(readOnly=true)
+    @Transactional
     public List<ErwartungDto> liste(Long bestellungId) {
         if(bestellungId==null||bestellungId<=0)throw bad("Die Bestell-ID ist ungültig.");
-        return zeugnisse.findByRevision_Bestellung_IdOrderByFristAscIdAsc(bestellungId).stream().map(this::dto).toList();
+        List<EinkaufZeugnisErwartung> expectations=zeugnisse.findByRevision_Bestellung_IdOrderByFristAscIdAsc(bestellungId);
+        for(var expectation:expectations){ensureChargeStatuses(expectation);expectation.aktualisiereChargenstand(chargeStatuses(expectation.getId()));}
+        zeugnisse.flush();
+        return expectations.stream().map(this::dto).toList();
     }
 
     @Transactional(readOnly=true)
@@ -173,8 +190,27 @@ public class EinkaufZeugnisService {
 
     private BestellungRevision latestAccepted(Long orderId){return revisions.findByBestellung_IdOrderByNummerAsc(orderId).stream().filter(BestellungRevision::istAngenommen)
             .max(Comparator.comparingInt(BestellungRevision::getNummer)).orElseThrow(()->conflict("Bestellung hat keine angenommene Fassung."));}
+    private List<EinkaufZeugnisChargeStatus> chargeStatuses(Long expectationId){return em.createQuery("select s from EinkaufZeugnisChargeStatus s where s.zeugnis.id=:id order by s.id",EinkaufZeugnisChargeStatus.class).setParameter("id",expectationId).getResultList();}
+    private EinkaufZeugnisChargeStatus chargeStatus(Long expectationId,Long chargeId){return em.createQuery("select s from EinkaufZeugnisChargeStatus s where s.zeugnis.id=:eid and s.charge.id=:cid",EinkaufZeugnisChargeStatus.class).setParameter("eid",expectationId).setParameter("cid",chargeId).getSingleResult();}
+    private void ensureChargeStatuses(EinkaufZeugnisErwartung expectation){
+        List<EinkaufCharge> all=em.createQuery("select c from EinkaufCharge c where c.position.bestellPosition.id=:positionId and c.position.bestellPosition.revision.id=:revisionId order by c.id",EinkaufCharge.class)
+                .setParameter("positionId",expectation.getBestellPosition().getId()).setParameter("revisionId",expectation.getRevision().getId()).getResultList();
+        Set<Long> existing=chargeStatuses(expectation.getId()).stream().map(s->s.getCharge().getId()).collect(java.util.stream.Collectors.toSet());
+        for(EinkaufCharge charge:all)if(!existing.contains(charge.getId()))em.persist(new EinkaufZeugnisChargeStatus(expectation,charge));
+        em.flush();
+    }
+    private ChargeZuordnungDto chargeDto(EinkaufZeugnisZuordnung association){var status=association.getChargeStatus();return new ChargeZuordnungDto(association.getId(),association.getZeugnis().getId(),status.getCharge().getId(),status.getStatus(),status.getVersion()==null?0:status.getVersion(),status.isMaterialFreigegeben());}
     private <T> List<T> load(List<Long> ids,Class<T> type){if(ids.stream().anyMatch(x->x==null||x<=0)||ids.stream().distinct().count()!=ids.size())throw bad("Lieferpositionen und Chargen müssen gültige IDs sein.");return ids.stream().map(id->{T value=em.find(type,id);if(value==null)throw new NoSuchElementException("Lieferposition oder Charge wurde nicht gefunden.");return value;}).toList();}
-    private ErwartungDto dto(EinkaufZeugnisErwartung x){return new ErwartungDto(x.getId(),x.getVersion()==null?0:x.getVersion(),x.getRevision().getId(),x.getBestellPosition().getId(),x.getArt(),x.getGrundlage(),x.getGrundlageVersion(),x.getFrist(),x.getStatus(),x.getDateien().stream().map(EinkaufDatei::getId).toList(),x.getLieferPositionen().stream().map(LieferungPosition::getId).toList(),x.getChargen().stream().map(EinkaufCharge::getId).toList(),x.isMaterialFreigegeben());}
+    private ErwartungDto dto(EinkaufZeugnisErwartung x){
+        List<Long> actualCharges=em.createQuery("select c.id from EinkaufCharge c where c.position.bestellPosition.id=:positionId and c.position.bestellPosition.revision.id=:revisionId",Long.class)
+                .setParameter("positionId",x.getBestellPosition().getId()).setParameter("revisionId",x.getRevision().getId()).getResultList();
+        Set<Long> released=actualCharges.isEmpty()?Set.of():new HashSet<>(em.createQuery("select s.charge.id from EinkaufZeugnisChargeStatus s where s.zeugnis.id=:id and s.status=:done and s.materialFreigegeben=true",Long.class)
+                .setParameter("id",x.getId()).setParameter("done",EinkaufZeugnisErwartung.Status.GEPRUEFT).getResultList());
+        boolean allReleased=!actualCharges.isEmpty()&&released.containsAll(actualCharges);
+        var status=x.getStatus()==EinkaufZeugnisErwartung.Status.GEPRUEFT&&!allReleased?EinkaufZeugnisErwartung.Status.EINGEGANGEN:x.getStatus();
+        List<ChargeStatusDto> chargeStates=chargeStatuses(x.getId()).stream().map(s->new ChargeStatusDto(s.getCharge().getId(),s.getStatus(),s.getVersion()==null?0:s.getVersion(),s.isMaterialFreigegeben())).toList();
+        return new ErwartungDto(x.getId(),x.getVersion()==null?0:x.getVersion(),x.getRevision().getId(),x.getBestellPosition().getId(),x.getArt(),x.getGrundlage(),x.getGrundlageVersion(),x.getFrist(),status,x.getDateien().stream().map(EinkaufDatei::getId).toList(),x.getLieferPositionen().stream().map(LieferungPosition::getId).toList(),x.getChargen().stream().map(EinkaufCharge::getId).toList(),allReleased,chargeStates);
+    }
     private static boolean blank(String x){return x==null||x.isBlank();}
     private static ResponseStatusException bad(String m){return new ResponseStatusException(HttpStatus.BAD_REQUEST,m);}
     private static ResponseStatusException conflict(String m){return new ResponseStatusException(HttpStatus.CONFLICT,m);}
