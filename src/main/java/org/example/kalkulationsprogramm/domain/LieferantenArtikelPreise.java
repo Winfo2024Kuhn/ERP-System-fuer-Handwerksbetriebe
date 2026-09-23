@@ -92,6 +92,7 @@ public class LieferantenArtikelPreise {
     @Column(name = "preisbasis_menge", precision = 19, scale = 6) private BigDecimal preisbasisMenge;
     @Column(name = "angebotsversion_id") private Long angebotsversionId;
     @Column(name = "angebotsposition_id") private Long angebotspositionId;
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
     @Column(name = "idempotenz_key", length = 36) private java.util.UUID idempotenzKey;
     @Column(name = "komponenten_hash", length = 64) private String komponentenHash;
 

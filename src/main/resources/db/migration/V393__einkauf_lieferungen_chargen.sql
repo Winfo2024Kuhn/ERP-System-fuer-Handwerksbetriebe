@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS einkauf_lieferung (
  id BIGINT NOT NULL AUTO_INCREMENT, bestellung_id BIGINT NOT NULL, revision_id BIGINT NOT NULL,
- lieferschein_id BIGINT NOT NULL, eingang TIMESTAMP(6) NOT NULL, idempotenz_key CHAR(36) NOT NULL,
+ lieferschein_id BIGINT NOT NULL, eingang TIMESTAMP(6) NOT NULL, idempotenz_key VARCHAR(36) NOT NULL,
  akteur_id BIGINT NOT NULL, angelegt_am TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), PRIMARY KEY(id),
  CONSTRAINT uk_einkauf_lieferung_idempotenz UNIQUE(idempotenz_key),
  CONSTRAINT fk_einkauf_lieferung_bestellung FOREIGN KEY(bestellung_id) REFERENCES einkauf_bestellung(id),

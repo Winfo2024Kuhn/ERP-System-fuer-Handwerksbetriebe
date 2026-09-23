@@ -18,7 +18,7 @@ public class EinkaufBestellung {
  @JdbcTypeCode(SqlTypes.JSON) @Column(name="empfaenger_snapshot",nullable=false,columnDefinition="json") private Snapshot empfaenger;
  @Enumerated(EnumType.STRING) @Column(nullable=false,columnDefinition="ENUM('ENTWURF','BESTELLT','TEILGELIEFERT','GELIEFERT','STORNIERT')") private BestellungStatus status=BestellungStatus.ENTWURF;
  @Enumerated(EnumType.STRING) @Column(name="lieferanten_status",nullable=false,columnDefinition="ENUM('AUSSTEHEND','BESTAETIGT','ABWEICHUNG')") private LieferantenBestellstatus lieferantenStatus=LieferantenBestellstatus.AUSSTEHEND;
- @Column(name="idempotenz_key",nullable=false,length=36) private UUID idempotenzKey;
+ @JdbcTypeCode(SqlTypes.VARCHAR) @Column(name="idempotenz_key",nullable=false,length=36) private UUID idempotenzKey;
  @Column(name="payload_hash",nullable=false,length=64) private String payloadHash;
  @Column(name="angelegt_von",nullable=false) private Long angelegtVon;
  @Column(name="angelegt_am",nullable=false,updatable=false) private Instant angelegtAm=Instant.now();
