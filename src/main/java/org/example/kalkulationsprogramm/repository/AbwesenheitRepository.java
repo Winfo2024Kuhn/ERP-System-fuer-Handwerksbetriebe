@@ -143,4 +143,22 @@ public interface AbwesenheitRepository extends JpaRepository<Abwesenheit, Long> 
                         @Param("mitarbeiterId") Long mitarbeiterId,
                         @Param("von") LocalDate von,
                         @Param("bis") LocalDate bis);
+
+        /** Stunden je Mitarbeiter, Monat und Abwesenheitsart – für die Spalten der Monatsübersicht. */
+        interface StundenNachMonatUndTyp {
+                Long getMitarbeiterId();
+                Integer getJahr();
+                Integer getMonat();
+                AbwesenheitsTyp getTyp();
+                java.math.BigDecimal getStunden();
+        }
+
+        @Query("SELECT a.mitarbeiter.id AS mitarbeiterId, YEAR(a.datum) AS jahr, MONTH(a.datum) AS monat, "
+                        + "a.typ AS typ, SUM(a.stunden) AS stunden "
+                        + "FROM Abwesenheit a WHERE a.mitarbeiter.id IN :ids AND a.datum >= :von AND a.datum <= :bis "
+                        + "GROUP BY a.mitarbeiter.id, YEAR(a.datum), MONTH(a.datum), a.typ")
+        List<StundenNachMonatUndTyp> sumStundenNachMonatUndTyp(
+                        @Param("ids") Collection<Long> ids,
+                        @Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis);
 }

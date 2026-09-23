@@ -7,26 +7,41 @@ vi.mock('../components/ui/toast', () => ({ useToast: () => toast }));
 vi.mock('../components/ui/confirm-dialog', () => ({ useConfirm: () => confirm }));
 vi.mock('react-chartjs-2', () => ({ Line: () => <div data-testid="line-chart" /> }));
 const fetchMock = vi.fn();
-const kennzahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 16, feiertagsStunden: 8, korrekturStunden: 1, gesamtIst: 145.5, differenz: -14.5 };
+const kennzahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 16, feiertagsStunden: 8, korrekturStunden: 1, gesamtIst: 145.5, differenz: -14.5, urlaubStunden: 8, krankheitStunden: 6, zeitausgleichStunden: 2, sonstigeAbwesenheitStunden: 0 };
+let sonstige = 0;
 let allowed: boolean;
 let calls: string[];
 let submitted: { mitarbeiterId: number; jahr: number; monat: number }[][];
 function mount(url = '/monatsabschluss') { return render(<MemoryRouter initialEntries={[url]}><Monatsabschluss /></MemoryRouter>); }
 async function choose(label: string, option: string) { fireEvent.click(screen.getByRole('combobox', { name: label })); fireEvent.click(await screen.findByRole('option', { name: option, exact: true })); }
 beforeEach(() => {
- vi.clearAllMocks(); allowed = true; calls = []; submitted = []; confirm.mockResolvedValue(true);
+ vi.clearAllMocks(); allowed = true; sonstige = 0; calls = []; submitted = []; confirm.mockResolvedValue(true);
  fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
  calls.push(input); const url = new URL(input, 'http://localhost'); const jahr = Number(url.searchParams.get('jahr')); const monat = Number(url.searchParams.get('monat')); let body: unknown = [];
  if (input.endsWith('/berechtigung')) body = { darfMonatAbschliessen: allowed };
  if (input === '/api/mitarbeiter') body = [{ id: 1, vorname: 'Max', nachname: 'Mustermann' }];
  if (input.endsWith('/abteilungen')) body = [{ id: 2, name: 'Werkstatt' }];
- if (url.pathname.endsWith('/uebersicht')) { const page = Number(url.searchParams.get('page')); body = { items: Array.from({ length: 50 }, (_, i) => ({ referenz: { mitarbeiterId: page * 50 + i + 1, jahr, monat }, mitarbeiterName: `Max Mustermann ${page * 50 + i + 1}`, abteilungIds: [2], festgeschrieben: false, version: 3, festgeschriebenAm: null, kennzahlen })), totalElements: 500, page, size: 50, summen: { ...kennzahlen, gesamtIst: 72750 }, auswahl: Array.from({ length: 500 }, (_, i) => ({ mitarbeiterId: i + 1, jahr, monat, version: 3, festgeschrieben: false })) }; }
+ if (url.pathname.endsWith('/uebersicht')) { const page = Number(url.searchParams.get('page')); body = { items: Array.from({ length: 50 }, (_, i) => ({ referenz: { mitarbeiterId: page * 50 + i + 1, jahr, monat }, mitarbeiterName: `Max Mustermann ${page * 50 + i + 1}`, abteilungIds: [2], festgeschrieben: false, version: 3, festgeschriebenAm: null, kennzahlen: { ...kennzahlen, sonstigeAbwesenheitStunden: i === 0 ? sonstige : 0 } })), totalElements: 500, page, size: 50, summen: { ...kennzahlen, gesamtIst: 72750, sonstigeAbwesenheitStunden: sonstige }, auswahl: Array.from({ length: 500 }, (_, i) => ({ mitarbeiterId: i + 1, jahr, monat, version: 3, festgeschrieben: false })) }; }
  if (url.pathname.endsWith('/vergleich')) body = Array.from({ length: 6 }, (_, i) => ({ jahr: 2026, monat: i + 1, summen: kennzahlen, offen: 3, abgeschlossen: 4 }));
  if (url.pathname.endsWith('/jahresvergleich')) body = { jahr, vorjahr: jahr - 1, aktuellesJahr: Array.from({ length: 12 }, (_, i) => ({ monat: i + 1, arbeitsstunden: 160, krankheitstage: 1, urlaubstage: 2 })), vorjahrDaten: Array.from({ length: 12 }, (_, i) => ({ monat: i + 1, arbeitsstunden: 155, krankheitstage: 2, urlaubstage: 2 })) };
  if (input.endsWith('/sammelabschluss')) { const refs = JSON.parse(String(init?.body)).auswahl; submitted.push(refs); body = { ergebnisse: refs.map((referenz: { mitarbeiterId: number }) => ({ referenz, status: referenz.mitarbeiterId === 1 ? 'FEHLGESCHLAGEN' : 'ABGESCHLOSSEN', meldung: referenz.mitarbeiterId === 1 ? 'Zeiten bitte prüfen.' : 'Monat abgeschlossen.' })) }; }
  if (/monatsabschluesse\/\d+\/\d+\/\d+$/.test(input)) body = { audit: [{ id: 1, aktion: 'ABSCHLIESSEN', akteurMitarbeiterId: 1, akteurName: 'Max Mustermann', zeitpunkt: '2026-08-01T10:00:00' }] };
  return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
  }); vi.stubGlobal('fetch', fetchMock);
+});
+it('teilt Abwesenheiten in Urlaub, Krankheit und Zeitausgleich auf und erklärt die Korrektur', async () => {
+ mount(); const tabelle = await screen.findByRole('table');
+ const koepfe = Array.from(tabelle.querySelectorAll('thead th')).map(th => th.textContent?.replace('\u00AD', ''));
+ expect(koepfe).toEqual(['', 'Mitarbeiter', 'Arbeit', 'Urlaub', 'Krankheit', 'Zeitausgleich', 'Feiertage', 'Korrektur', 'Gesamt', 'Soll', 'Differenz', 'Stand', 'Details']);
+ expect(screen.getByText(/Gesamt = Arbeit \+ Urlaub \+ Krankheit \+ Zeitausgleich \+ Feiertage \+ Korrektur\./)).toBeVisible();
+ expect(screen.getByText(/Korrektur: von Hand im Büro nachgetragene Stunden/)).toBeVisible();
+ const zeile = screen.getByText('Max Mustermann 1', { selector: 'th' }).closest('tr')!;
+ expect(Array.from(zeile.querySelectorAll('td')).slice(1, 5).map(td => td.textContent)).toEqual(['120,50', '8,00', '6,00', '2,00']);
+});
+it('zeigt Sonstige nur, wenn es dort Stunden gibt', async () => {
+ sonstige = 4; mount(); await screen.findByRole('table');
+ expect(screen.getByRole('columnheader', { name: 'Sonstige' })).toBeVisible();
+ expect(screen.getByText(/Sonstige sind Fortbildungen/)).toBeVisible();
 });
 it('ruft ohne Abschlussrecht keine Mitarbeiter oder Monatsdaten ab', async () => { allowed = false; mount(); await screen.findByText(/Keine Berechtigung/); expect(calls).toHaveLength(1); });
 it('wählt alle 500 über Seiten hinweg und behält nach Teilerfolg nur Fehler', async () => {

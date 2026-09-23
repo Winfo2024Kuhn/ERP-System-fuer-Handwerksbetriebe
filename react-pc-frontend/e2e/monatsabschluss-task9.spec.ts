@@ -37,12 +37,12 @@ async function stub(page: Page, options: { allowed?: boolean; error?: boolean; c
                     festgeschrieben: closed,
                     version: audit.length,
                     festgeschriebenAm: closed ? '2026-09-09T10:00:00' : null,
-                    kennzahlen: { istStunden: 120, sollStunden: 120, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 120, differenz: 0 }
+                    kennzahlen: { istStunden: 120, sollStunden: 120, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 120, differenz: 0, urlaubStunden: 0, krankheitStunden: 0, zeitausgleichStunden: 0, sonstigeAbwesenheitStunden: 0 }
                 }],
                 totalElements: 1,
                 page: 0,
                 size: 50,
-                summen: { istStunden: 120, sollStunden: 120, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 120, differenz: 0 },
+                summen: { istStunden: 120, sollStunden: 120, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 120, differenz: 0, urlaubStunden: 0, krankheitStunden: 0, zeitausgleichStunden: 0, sonstigeAbwesenheitStunden: 0 },
                 auswahl: [{ mitarbeiterId: 1, jahr, monat, version: audit.length, festgeschrieben: closed }]
             });
         }

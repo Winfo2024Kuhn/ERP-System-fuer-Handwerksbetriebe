@@ -72,6 +72,47 @@ class MonatsabschlussSnapshotRepositoryTest {
     }
 
     @Test
+    void summiertAbwesenheitenJeMitarbeiterMonatUndArtFuerDieMonatsuebersicht() {
+        Mitarbeiter mitarbeiter = mitarbeiter();
+        Mitarbeiter anderer = mitarbeiter();
+        Mitarbeiter ausserhalbFilter = mitarbeiter();
+        abwesenheit(mitarbeiter, VON, AbwesenheitsTyp.URLAUB, "7.75", null);
+        abwesenheit(mitarbeiter, BIS, AbwesenheitsTyp.URLAUB, "4.50", null);
+        abwesenheit(mitarbeiter, VON.plusDays(1), AbwesenheitsTyp.KRANKHEIT, "8.00",
+                phase(mitarbeiter, LangzeitkrankmeldungPhaseTyp.KRANKENGELD));
+        abwesenheit(mitarbeiter, VON.plusDays(2), AbwesenheitsTyp.KRANKHEIT, "2.00", null);
+        abwesenheit(mitarbeiter, BIS.plusDays(1), AbwesenheitsTyp.ZEITAUSGLEICH, "3.00", null);
+        abwesenheit(anderer, VON, AbwesenheitsTyp.ZEITAUSGLEICH, "4.00", null);
+        abwesenheit(ausserhalbFilter, VON, AbwesenheitsTyp.URLAUB, "99.00", null);
+        entityManager.flush();
+        entityManager.clear();
+
+        var ergebnis = repository.sumStundenNachMonatUndTyp(
+                List.of(mitarbeiter.getId(), anderer.getId()), VON, BIS.plusDays(30));
+
+        assertThat(ergebnis).hasSize(4);
+        assertThat(ergebnis).anySatisfy(g -> {
+            assertThat(g.getMitarbeiterId()).isEqualTo(mitarbeiter.getId());
+            assertThat(g.getJahr()).isEqualTo(2026);
+            assertThat(g.getMonat()).isEqualTo(8);
+            assertThat(g.getTyp()).isEqualTo(AbwesenheitsTyp.URLAUB);
+            assertThat(g.getStunden()).isEqualByComparingTo("12.25");
+        });
+        assertThat(ergebnis).anySatisfy(g -> {
+            assertThat(g.getMitarbeiterId()).isEqualTo(mitarbeiter.getId());
+            assertThat(g.getTyp()).isEqualTo(AbwesenheitsTyp.KRANKHEIT);
+            assertThat(g.getStunden()).isEqualByComparingTo("10.00");
+        });
+        assertThat(ergebnis).anySatisfy(g -> {
+            assertThat(g.getMitarbeiterId()).isEqualTo(mitarbeiter.getId());
+            assertThat(g.getMonat()).isEqualTo(9);
+            assertThat(g.getTyp()).isEqualTo(AbwesenheitsTyp.ZEITAUSGLEICH);
+            assertThat(g.getStunden()).isEqualByComparingTo("3.00");
+        });
+        assertThat(ergebnis).noneSatisfy(g -> assertThat(g.getMitarbeiterId()).isEqualTo(ausserhalbFilter.getId()));
+    }
+
+    @Test
     void liefertKeineGruppenWennImMonatKeineAbwesenheitenVorliegen() {
         Mitarbeiter mitarbeiter = mitarbeiter();
         abwesenheit(mitarbeiter, VON.minusDays(1), AbwesenheitsTyp.URLAUB, "8.00", null);
