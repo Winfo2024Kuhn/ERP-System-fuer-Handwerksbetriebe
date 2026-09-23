@@ -16,6 +16,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import org.springframework.web.server.ResponseStatusException;
+
 @ExtendWith(MockitoExtension.class)
 class BestellungServiceTest {
 
@@ -69,6 +71,17 @@ class BestellungServiceTest {
 
         assertNull(aip.getPreisProStueck());
         assertNull(aip.getLieferantenArtikelPreis());
+    }
+
+    @Test
+    void setBestelltLehntUebernommeneEinkaufspositionAb() {
+        when(artikelInProjektRepository.existsEinkaufBedarfById(5L)).thenReturn(true);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.setBestellt(5L, true));
+
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, exception.getStatusCode());
+        verify(artikelInProjektRepository, never()).save(any());
     }
 
     @Test

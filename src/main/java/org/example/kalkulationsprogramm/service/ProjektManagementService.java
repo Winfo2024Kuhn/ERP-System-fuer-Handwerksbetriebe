@@ -1056,6 +1056,10 @@ ProjektManagementService {
             }
         }
         Projekt gespeichert = projektRepository.save(projekt);
+        entityManager.flush();
+        gespeichert.getArtikelInProjekt().stream()
+                .filter(aip -> aip.getId() != null)
+                .forEach(eventPublisher::publishEvent);
         return mappeMitKilogramm(gespeichert);
     }
 
