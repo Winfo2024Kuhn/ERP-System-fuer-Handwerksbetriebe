@@ -34,6 +34,14 @@ import jakarta.mail.util.ByteArrayDataSource;
 @lombok.extern.slf4j.Slf4j
 public class EmailService {
 
+    public static final int MAX_ANLAGE_BYTES = 10 * 1024 * 1024;
+
+    public static final class AnlageValidierungsException extends IllegalArgumentException {
+        public AnlageValidierungsException(String message) {
+            super(message);
+        }
+    }
+
     /**
      * A mail attachment with its display name kept separate from its temporary
      * file on disk.  Temporary file names are implementation details and must
@@ -45,16 +53,7 @@ public class EmailService {
         }
 
         public Attachment(File file, String filename, String mimeType) {
-            this(readBytesSafely(file), filename, mimeType, file);
-        }
-
-        private static byte[] readBytesSafely(File file) {
-            if (file == null || !file.exists()) return new byte[0];
-            try {
-                return java.nio.file.Files.readAllBytes(file.toPath());
-            } catch (Exception e) {
-                return new byte[0];
-            }
+            this(null, filename, mimeType, file);
         }
     }
 
@@ -174,10 +173,14 @@ public class EmailService {
     private static java.util.List<Attachment> dateiAnlage(String path, String filename) throws IOException {
         if (path == null || path.isBlank()) return java.util.List.of();
         File file = new File(path);
-        byte[] data = java.nio.file.Files.readAllBytes(file.toPath());
         String name = filename == null || filename.isBlank() ? file.getName() : filename;
-        String type = java.nio.file.Files.probeContentType(file.toPath());
-        return java.util.List.of(new Attachment(data, name, type == null ? "application/octet-stream" : type));
+        String type;
+        try {
+            type = java.nio.file.Files.probeContentType(file.toPath());
+        } catch (IOException | SecurityException ex) {
+            type = null;
+        }
+        return java.util.List.of(new Attachment(file, name, type == null ? "application/octet-stream" : type));
     }
 
     /** Shared in-memory MIME builder used by the legacy methods and account-aware mail transport. */
@@ -196,6 +199,7 @@ public class EmailService {
             String to, String cc, String subject, String html, String inReplyTo, java.util.List<String> references,
             java.util.List<Attachment> attachments, java.util.Map<String, File> inlineCidToFile, boolean logo)
             throws MessagingException, java.io.UnsupportedEncodingException, IOException {
+        java.util.List<Attachment> validatedAttachments = validiereAnlagen(attachments);
         MimeMessage message = new MimeMessage(session);
         InternetAddress from = fromName == null || fromName.isBlank()
                 ? new InternetAddress(fromAddress)
@@ -250,28 +254,56 @@ public class EmailService {
             }
         }
 
-        if (attachments != null) {
-            for (Attachment attachment : attachments) {
-                if (attachment == null) continue;
-                byte[] attachmentBytes = attachment.data();
-                if ((attachmentBytes == null || attachmentBytes.length == 0) && attachment.file() != null) {
-                    attachmentBytes = Attachment.readBytesSafely(attachment.file());
-                }
-                if (attachmentBytes == null || attachmentBytes.length == 0) continue;
-                MimeBodyPart part = new MimeBodyPart();
-                String type = attachment.mimeType() == null || attachment.mimeType().isBlank()
-                        ? "application/octet-stream" : attachment.mimeType();
-                part.setDataHandler(new DataHandler(new ByteArrayDataSource(attachmentBytes, type)));
-                part.setDisposition(MimeBodyPart.ATTACHMENT);
-                String rawName = attachment.filename() == null || attachment.filename().isBlank()
-                        ? "attachment" : attachment.filename();
-                part.setFileName(sichererAnlagenname(rawName));
-                mixed.addBodyPart(part);
-            }
+        for (Attachment attachment : validatedAttachments) {
+            byte[] attachmentBytes = attachment.data();
+            MimeBodyPart part = new MimeBodyPart();
+            String type = attachment.mimeType() == null || attachment.mimeType().isBlank()
+                    ? "application/octet-stream" : attachment.mimeType();
+            part.setDataHandler(new DataHandler(new ByteArrayDataSource(attachmentBytes, type)));
+            part.setDisposition(MimeBodyPart.ATTACHMENT);
+            String rawName = attachment.filename() == null || attachment.filename().isBlank()
+                    ? "attachment" : attachment.filename();
+            part.setFileName(sichererAnlagenname(rawName));
+            mixed.addBodyPart(part);
         }
         message.setContent(mixed);
         markiereAlsErpMail(message);
         return message;
+    }
+
+    private static java.util.List<Attachment> validiereAnlagen(java.util.List<Attachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) return java.util.List.of();
+        java.util.List<Attachment> validiert = new java.util.ArrayList<>(attachments.size());
+        for (Attachment attachment : attachments) {
+            if (attachment == null) throw new AnlageValidierungsException("Die Anlage fehlt oder kann nicht gelesen werden.");
+            byte[] bytes = attachment.data();
+            File file = attachment.file();
+            if (file != null) {
+                java.nio.file.Path path = file.toPath();
+                try {
+                    if (!java.nio.file.Files.isRegularFile(path) || !java.nio.file.Files.isReadable(path)) {
+                        throw new AnlageValidierungsException("Die Anlage fehlt oder kann nicht gelesen werden.");
+                    }
+                    long size = java.nio.file.Files.size(path);
+                    if (size > MAX_ANLAGE_BYTES) {
+                        throw new AnlageValidierungsException("Die Anlage darf höchstens 10 MiB groß sein.");
+                    }
+                    if (size == 0) {
+                        throw new AnlageValidierungsException("Die Anlage darf nicht leer sein.");
+                    }
+                    if (bytes == null || bytes.length == 0) bytes = java.nio.file.Files.readAllBytes(path);
+                } catch (AnlageValidierungsException ex) {
+                    throw ex;
+                } catch (IOException | SecurityException ex) {
+                    throw new AnlageValidierungsException("Die Anlage fehlt oder kann nicht gelesen werden.");
+                }
+            }
+            if (bytes == null) throw new AnlageValidierungsException("Die Anlage fehlt oder kann nicht gelesen werden.");
+            if (bytes.length == 0) throw new AnlageValidierungsException("Die Anlage darf nicht leer sein.");
+            if (bytes.length > MAX_ANLAGE_BYTES) throw new AnlageValidierungsException("Die Anlage darf höchstens 10 MiB groß sein.");
+            validiert.add(new Attachment(java.util.Arrays.copyOf(bytes, bytes.length), attachment.filename(), attachment.mimeType()));
+        }
+        return java.util.List.copyOf(validiert);
     }
 
     private static String sichererAnlagenname(String name) {

@@ -28,7 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @Slf4j
 public class KontoMailTransport {
-    private static final int MAX_ANLAGE_BYTES = 10 * 1024 * 1024;
     private final LocalTestMailPolicy localTestMailPolicy;
     private final int maxMimeBytes;
 
@@ -54,10 +53,6 @@ public class KontoMailTransport {
             if (recipients.length != 1 || recipients[0].isGroup()) {
                 throw new jakarta.mail.internet.AddressException("Genau eine Empfängeradresse ist erforderlich.");
             }
-            for (EmailService.Attachment anlage : nachricht.anlagen()) {
-                if (anlage == null || anlage.data() == null) continue;
-                if (anlage.data().length > MAX_ANLAGE_BYTES) throw new IllegalArgumentException("Eine Anlage überschreitet 10 MiB.");
-            }
             Session session = Session.getInstance(new Properties());
             MimeMessage message = EmailService.baueMimeNachricht(session, konto.fromAddress(), konto.fromName(),
                     nachricht.to(), nachricht.subject(), nachricht.html(), nachricht.inReplyTo(),
@@ -69,6 +64,8 @@ public class KontoMailTransport {
             message.writeTo(output);
             if (output.size() > maxMimeBytes) throw new IllegalArgumentException("Die gesamte E-Mail überschreitet das MIME-Limit.");
             return output.toByteArray();
+        } catch (EmailService.AnlageValidierungsException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new IllegalArgumentException("Die E-Mail konnte nicht vorbereitet werden.", ex);
         }

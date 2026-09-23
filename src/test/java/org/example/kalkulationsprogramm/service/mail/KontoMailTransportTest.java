@@ -20,11 +20,17 @@ import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Nachricht;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailkontoDto.Verschluesselung;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 
 class KontoMailTransportTest {
+    private static final String FEHLER_ANLAGE = "Die Anlage fehlt oder kann nicht gelesen werden.";
+    private static final String FEHLER_LEER = "Die Anlage darf nicht leer sein.";
+    private static final String FEHLER_GROESS = "Die Anlage darf höchstens 10 MiB groß sein.";
     // Test-only self-signed keypair for the in-process SMTP/IMAP dummy servers.
     private static final String DUMMY_P12 = """
 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""";
@@ -109,6 +115,100 @@ MIIKEgIBAzCCCbwGCSqGSIb3DQEHAaCCCa0EggmpMIIJpTCCBawGCSqGSIb3DQEHAaCCBZ0EggWZMIIF
                 List.of(), List.of(new EmailService.Attachment(new byte[1024], "beleg.pdf", "application/pdf")));
 
         assertThrows(IllegalArgumentException.class, () -> transport.vorbereiten(konto(), nachricht));
+    }
+
+    @Test
+    void mimeAufbauBlockiertAnlageMitFehlendenBytes() {
+        assertEquals(FEHLER_ANLAGE, assertThrows(IllegalArgumentException.class,
+                () -> mimeMitAnlagen(List.of(new EmailService.Attachment((byte[]) null, "fehlend.pdf", "application/pdf")))).getMessage());
+    }
+
+    @Test
+    void mimeAufbauBlockiertLeereByteAnlage() {
+        assertEquals(FEHLER_LEER, assertThrows(IllegalArgumentException.class,
+                () -> mimeMitAnlagen(List.of(new EmailService.Attachment(new byte[0], "leer.pdf", "application/pdf")))).getMessage());
+    }
+
+    @Test
+    void mimeAufbauBlockiertFehlendeDateiOhnePfadleck(@TempDir Path tempDir) {
+        Path missing = tempDir.resolve("private-path-secret.pdf");
+        var ex = assertThrows(IllegalArgumentException.class, () -> mimeMitAnlagen(List.of(
+                new EmailService.Attachment(null, "fehlt.pdf", "application/pdf", missing.toFile()))));
+        assertEquals(FEHLER_ANLAGE, ex.getMessage());
+        assertFalse(ex.getMessage().contains(tempDir.toString()));
+    }
+
+    @Test
+    void mimeAufbauBlockiertNichtLesbareDatei(@TempDir Path tempDir) {
+        assertEquals(FEHLER_ANLAGE, assertThrows(IllegalArgumentException.class, () -> mimeMitAnlagen(List.of(
+                new EmailService.Attachment(null, "ordner.pdf", "application/pdf", tempDir.toFile())))).getMessage());
+    }
+
+    @Test
+    void mimeAufbauBlockiertLeereDatei(@TempDir Path tempDir) throws Exception {
+        Path empty = Files.createFile(tempDir.resolve("leer.pdf"));
+        assertEquals(FEHLER_LEER, assertThrows(IllegalArgumentException.class, () -> mimeMitAnlagen(List.of(
+                new EmailService.Attachment(null, "leer.pdf", "application/pdf", empty.toFile())))).getMessage());
+    }
+
+    @Test
+    void mimeAufbauBlockiertZuGrosseByteAnlage() {
+        assertEquals(FEHLER_GROESS, assertThrows(IllegalArgumentException.class, () -> mimeMitAnlagen(List.of(
+                new EmailService.Attachment(new byte[10 * 1024 * 1024 + 1], "gross.pdf", "application/pdf")))).getMessage());
+    }
+
+    @Test
+    void mimeAufbauBlockiertZuGrosseDateiAuchOhneDaten(@TempDir Path tempDir) throws Exception {
+        Path oversized = Files.createFile(tempDir.resolve("gross.pdf"));
+        try (var file = new java.io.RandomAccessFile(oversized.toFile(), "rw")) {
+            file.setLength(10L * 1024 * 1024 + 1);
+        }
+        assertEquals(FEHLER_GROESS, assertThrows(IllegalArgumentException.class, () -> mimeMitAnlagen(List.of(
+                new EmailService.Attachment(null, "gross.pdf", "application/pdf", oversized.toFile())))).getMessage());
+    }
+
+    @Test
+    void dateiAttachmentKonstruktorLiestZuGrosseDateiNichtVorab(@TempDir Path tempDir) throws Exception {
+        Path oversized = Files.createFile(tempDir.resolve("gross-konstruierter-anhang.pdf"));
+        try (var file = new java.io.RandomAccessFile(oversized.toFile(), "rw")) {
+            file.setLength(10L * 1024 * 1024 + 1);
+        }
+        assertEquals(FEHLER_GROESS, assertThrows(IllegalArgumentException.class, () -> mimeMitAnlagen(List.of(
+                new EmailService.Attachment(oversized.toFile(), "gross.pdf", "application/pdf")))).getMessage());
+    }
+
+    @Test
+    void alteMehrfachVersandsignaturValidiertVorDemNetzwerk(@TempDir Path tempDir) throws Exception {
+        try (FakeSmtp smtp = new FakeSmtp(FakeSmtp.Ausgang.ANGENOMMEN)) {
+            EmailService legacy = new EmailService("localhost", smtp.port(), "dummy", "dummy",
+                    mock(LocalTestMailPolicy.class));
+            Path missingPath = tempDir.resolve("private-path-secret.pdf");
+            var missing = new EmailService.Attachment(null, "fehlt.pdf", "application/pdf", missingPath.toFile());
+            var ex = assertThrows(IllegalArgumentException.class, () -> legacy.sendEmailWithMultipleAttachments(
+                    "test@example.com", null, "erp@example.test", "Test", "<p>Dummy</p>", null, List.of(missing)));
+            assertEquals(FEHLER_ANLAGE, ex.getMessage());
+            assertFalse(ex.getMessage().contains(tempDir.toString()));
+            assertFalse(smtp.awaitConnection());
+        }
+    }
+
+    @Test
+    void unvollstaendigesPaketBlockiertAlleAnlagenVorJederSmtpVerbindung() throws Exception {
+        try (FakeSmtp smtp = new FakeSmtp(FakeSmtp.Ausgang.ANGENOMMEN)) {
+            KontoMailTransport transport = new KontoMailTransport(mock(LocalTestMailPolicy.class));
+            var gueltig = new EmailService.Attachment("vollständig".getBytes(StandardCharsets.UTF_8), "ok.pdf", "application/pdf");
+            var unvollstaendig = new EmailService.Attachment((byte[]) null, "fehlt.pdf", "application/pdf");
+            var result = transport.senden(kontoMitPort(smtp.port()), new Nachricht("<id@example.test>", "test@example.com",
+                    "Test", "<p>Dummy</p>", null, List.of(), List.of(gueltig, unvollstaendig)));
+            assertEquals(MailTransportDto.Status.SICHER_FEHLGESCHLAGEN, result.status());
+            assertNull(result.mime());
+            assertFalse(smtp.awaitConnection());
+        }
+    }
+
+    private static MimeMessage mimeMitAnlagen(List<EmailService.Attachment> attachments) throws Exception {
+        return EmailService.baueMimeNachricht(Session.getInstance(new Properties()), "erp@example.test", null,
+                "test@example.com", "Test", "<p>Dummy</p>", null, List.of(), attachments);
     }
 
     @Test
@@ -219,6 +319,7 @@ MIIKEgIBAzCCCbwGCSqGSIb3DQEHAaCCCa0EggmpMIIJpTCCBawGCSqGSIb3DQEHAaCCBZ0EggWZMIIF
         private final Thread worker;
         private final Ausgang ausgang;
         private volatile boolean dataSeen;
+        private volatile boolean accepted;
         private volatile boolean dataReached;
         private volatile byte[] receivedData;
         FakeSmtp(Ausgang ausgang) throws Exception {
@@ -230,11 +331,13 @@ MIIKEgIBAzCCCbwGCSqGSIb3DQEHAaCCCa0EggmpMIIJpTCCBawGCSqGSIb3DQEHAaCCBZ0EggWZMIIF
         }
         int port() { return server.getLocalPort(); }
         boolean awaitData() throws InterruptedException { worker.join(3000); return dataReached; }
+        boolean awaitConnection() throws InterruptedException { worker.join(200); return accepted; }
         byte[] receivedData() { return receivedData; }
         private void serve() {
             Socket socket = null;
             try {
                 socket = server.accept();
+                accepted = true;
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
                 PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.US_ASCII), true);
                 out.print("220 dummy.test ESMTP\r\n"); out.flush();
