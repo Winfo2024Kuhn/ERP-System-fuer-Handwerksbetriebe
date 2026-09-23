@@ -199,6 +199,7 @@ class EinkaufBestellungParallelTest {
         @Bean EinkaufBedarfRepository needs() { return mock(EinkaufBedarfRepository.class); }
         @Bean LieferantDokumentRepository documents() { return mock(LieferantDokumentRepository.class); }
         @Bean EinkaufAuditService audit() { return mock(EinkaufAuditService.class); }
+        @Bean EinkaufZeugnisService certificates() { return mock(EinkaufZeugnisService.class); }
         @Bean AngebotVersionRepository offers() { return mock(AngebotVersionRepository.class); }
         @Bean EinkaufBestellfreigabeService service(EinkaufBestellungRepository orders,
                 BestellungRevisionRepository revisions, AngebotVersionRepository offers,
@@ -206,9 +207,10 @@ class EinkaufBestellungParallelTest {
                 EinkaufPdfService pdf, EinkaufDateiService files, EinkaufOutboxService outbox,
                 EinkaufVersandWorker worker, EinkaufVersandauftragRepository outboxRepo,
                 EinkaufMengenService amounts, EinkaufBedarfRepository needs,
-                LieferantDokumentRepository documents, EinkaufAuditService audit, ObjectMapper mapper) {
+                LieferantDokumentRepository documents, EinkaufAuditService audit, ObjectMapper mapper,
+                EinkaufZeugnisService certificates) {
             return new EinkaufBestellfreigabeService(orders, revisions, offers, previews, templates, pdf, files,
-                    outbox, worker, outboxRepo, amounts, needs, documents, audit, mapper);
+                    outbox, worker, outboxRepo, amounts, needs, documents, audit, mapper, certificates);
         }
     }
 }

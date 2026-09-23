@@ -53,9 +53,13 @@ class EinkaufBestellWorkflowRegressionTest {
  @Autowired AngebotVersionRepository offers;
  @Autowired LieferantDokumentRepository documents;
  @Autowired EinkaufLieferungRepository deliveries;
+ @Autowired EinkaufZeugnisRepository certificates;
+ @Autowired EinkaufAnforderungsVorlageRepository certificateTemplates;
+ @Autowired org.example.kalkulationsprogramm.repository.EinkaufDateiRepository purchaseFiles;
  private final ObjectMapper json=new ObjectMapper().findAndRegisterModules();
  private EinkaufBestellungService ordering;
  private EinkaufBestellfreigabeService approval;
+ private EinkaufZeugnisService certificateService;
  private EinkaufLieferungService delivery;
  private EinkaufMengenService amounts;
  private EinkaufDateiService files;
@@ -71,7 +75,8 @@ class EinkaufBestellWorkflowRegressionTest {
   tx(()->{
    var supplier=new Lieferanten();supplier.setLieferantenname("Dummy "+UUID.randomUUID());em.persist(supplier);supplierId=supplier.getId();
    var basis=new Mengenbasis(new BigDecimal("30"),Einheit.STUECK,new BigDecimal("30"),null,null,null);
-   var snapshot=new PositionSnapshot(Positionsart.ARTIKEL,21L,"DUMMY",null,null,"Profil",null,null,basis,null,null,null,null,null,List.of(),List.of());
+   var snapshot=new PositionSnapshot(Positionsart.ARTIKEL,21L,"DUMMY",null,null,"Profil","S235",null,basis,null,null,null,null,null,
+    List.of(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.DokumentSoll(Dokumentart.ZEUGNIS_3_1,"EN 10204 für S235","DUMMY-SPEC-1",true)),List.of());
    var need=new EinkaufBedarf(snapshot,new Liefergruppe("Musterstraße 1",null,null,"Werkstatt"),null,null,false);
    em.persist(need);em.flush();needId=need.getId();return null;
   });
@@ -93,8 +98,9 @@ class EinkaufBestellWorkflowRegressionTest {
   when(transport.vorbereiten(any(),any())).thenReturn(bytes);
   var outbox=new EinkaufOutboxService(dispatches,acceptances,mock(org.example.kalkulationsprogramm.service.mail.MailkontoService.class),
    mock(org.example.kalkulationsprogramm.config.LocalTestMailPolicy.class),transport,json,transactionManager);
+  certificateService=new EinkaufZeugnisService(revisions,certificates,certificateTemplates,purchaseFiles,em);
   approval=new EinkaufBestellfreigabeService(orders,revisions,offers,previews,templates,pdf,files,outbox,
-   mock(EinkaufVersandWorker.class),dispatches,amounts,needs,documents,audit,json);
+   mock(EinkaufVersandWorker.class),dispatches,amounts,needs,documents,audit,json,certificateService);
   delivery=new EinkaufLieferungService(orders,revisions,deliveries,needs,amounts,documents,em,audit,json);
  }
 
@@ -104,6 +110,11 @@ class EinkaufBestellWorkflowRegressionTest {
   assertEquals("DIREKT",draft.revisionen().getFirst().snapshot().get("typ"));
   assertEquals("frei Haus",draft.revisionen().getFirst().snapshot().get("bedingungen"));
   accept(a);
+  var firstAccepted=tx(()->revisions.findByBestellung_IdOrderByNummerAsc(a).stream().filter(BestellungRevision::istAngenommen).findFirst().orElseThrow());
+  var firstCertificates=tx(()->certificates.findByRevision_IdOrderByIdAsc(firstAccepted.getId()));
+  assertEquals(1,firstCertificates.size());
+  assertEquals(LocalDate.now().plusDays(7),firstCertificates.getFirst().getFrist());
+  assertEquals(EinkaufZeugnisErwartung.Status.ANGEFORDERT,firstCertificates.getFirst().getStatus());
   var rendered=org.mockito.ArgumentCaptor.forClass(org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPdfDto.Beleg.class);
   verify(pdf).erzeugen(rendered.capture());assertEquals("frei Haus",rendered.getValue().bedingungen());
   Long b=tx(()->ordering.direkt(content("10"),9L).id());accept(b);
@@ -207,7 +218,49 @@ class EinkaufBestellWorkflowRegressionTest {
   assertAmount(id,"2","0","0");
   tx(()->{var revision=revisions.findFirstByBestellung_IdOrderByNummerDesc(id).orElseThrow();
    assertNull(revision.getVersandId());assertTrue(revision.istAngenommen());
-   assertEquals(123,((Number)revision.getExternerNachweis().get("dateiId")).intValue());return null;});
+  assertEquals(123,((Number)revision.getExternerNachweis().get("dateiId")).intValue());return null;});
+  var expected=tx(()->certificates.findByRevision_IdOrderByIdAsc(revisions.findFirstByBestellung_IdOrderByNummerDesc(id).orElseThrow().getId()));
+  assertEquals(1,expected.size());
+ }
+
+ @Test void angenommeneBestellungOhneLieferterminErzeugtKlaerungsfallMitIdempotentemErwartungseintrag(){
+  var withNoDeliveryDate=content("2");
+  var request=new Direkt(withNoDeliveryDate.lieferantId(),withNoDeliveryDate.empfaenger(),withNoDeliveryDate.paket(),withNoDeliveryDate.preise(),
+    null,withNoDeliveryDate.bestaetigungsfrist(),withNoDeliveryDate.bedingungen(),UUID.randomUUID());
+  Long id=tx(()->ordering.direkt(request,9L).id());
+  when(files.pruefeExternenVersandbeleg(231L,supplierId,id)).thenReturn(Map.of("dateiId",231L,"lieferantDokumentId",456L,"sha256","b".repeat(64)));
+  var evidence=new ExternerNachweis(tx(()->version(id)),Instant.now().minusSeconds(5),231L,"Dummy Versandbeleg",UUID.randomUUID());
+  tx(()->{approval.externGesendet(id,evidence,9L);return null;});
+  tx(()->{approval.externGesendet(id,evidence,9L);return null;});
+  var accepted=tx(()->revisions.findFirstByBestellung_IdOrderByNummerDesc(id).orElseThrow());
+  var expected=tx(()->certificates.findByRevision_IdOrderByIdAsc(accepted.getId()));
+  assertEquals(1,expected.size());
+  assertNull(expected.getFirst().getFrist());
+  assertEquals(EinkaufZeugnisErwartung.Status.KLAERUNG_NOETIG,expected.getFirst().getStatus());
+ }
+
+ @Test void zeugnisWorkflowOrdnetLieferpositionChargeAppendOnlyPruefungUndMaterialfreigabeZu(){
+  Long id=tx(()->ordering.direkt(content("2"),9L).id());accept(id);
+  var expectation=tx(()->certificates.findByRevision_IdOrderByIdAsc(revisions.findFirstByBestellung_IdOrderByNummerDesc(id).orElseThrow().getId()).getFirst());
+  Long deliveryDocument=proof(LieferantDokumentTyp.LIEFERSCHEIN);deliver(id,deliveryDocument,"2");
+  var deliveryPosition=tx(()->deliveries.findByBestellung_IdOrderByEingangAsc(id).getFirst().getPositionen().getFirst());
+  var charge=tx(()->em.createQuery("select c from EinkaufCharge c where c.position.id=:id",EinkaufCharge.class).setParameter("id",deliveryPosition.getId()).getSingleResult());
+  Long certificateDocument=tx(()->{var document=new LieferantDokument();document.setLieferant(em.find(Lieferanten.class,supplierId));document.setTyp(LieferantDokumentTyp.SONSTIG);document.setOriginalDateiname("zeugnis.pdf");em.persist(document);em.flush();
+   var file=new EinkaufDatei("c".repeat(64),null,"zeugnis.pdf","application/pdf",12,null,document.getId());em.persist(file);em.flush();return file.getId();});
+  var arrived=tx(()->certificateService.eingang(expectation.getId(),certificateDocument));
+  assertEquals(EinkaufZeugnisErwartung.Status.EINGEGANGEN,arrived.status());
+  var assignment=tx(()->certificateService.zuordnen(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufZeugnisDto.Zuordnung(
+    certificateDocument,List.of(expectation.getId()),List.of(deliveryPosition.getId()),List.of(charge.getId()),null),9L));
+  assertFalse(assignment.klaerungNoetig());
+  assertEquals(EinkaufZeugnisErwartung.Status.ZUGEORDNET,assignment.erwartungen().getFirst().status());
+  var reviewed=tx(()->certificateService.pruefen(expectation.getId(),new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufZeugnisDto.Pruefung(
+    assignment.erwartungen().getFirst().version(),"BESTANDEN","Dummy-Prüfung bestätigt","DUMMY-SPEC-1"),9L));
+  assertTrue(reviewed.materialFreigegeben());
+  var persisted=tx(()->certificates.findById(expectation.getId()).orElseThrow());
+  assertEquals(EinkaufZeugnisErwartung.Status.GEPRUEFT,persisted.getStatus());
+  assertTrue(persisted.isMaterialFreigegeben());
+  assertEquals(1,tx(()->certificates.findById(expectation.getId()).orElseThrow().getPruefungen().size()));
+  assertEquals(1,tx(()->em.createQuery("select count(z) from EinkaufZeugnisZuordnung z where z.zeugnis.id=:id",Long.class).setParameter("id",expectation.getId()).getSingleResult()));
  }
 
  @Test void gleichzeitigeAenderungUndLieferungSperrenBedarfVorBestellkopf() throws Exception {
