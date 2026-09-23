@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 public interface EinkaufsanfrageRepository extends JpaRepository<Einkaufsanfrage, Long> {
+    Optional<Einkaufsanfrage> findByPaNummer(String paNummer);
     Optional<Einkaufsanfrage> findByIdempotenzKey(UUID key);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Einkaufsanfrage a where a.id = :id")

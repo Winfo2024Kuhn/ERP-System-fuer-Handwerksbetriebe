@@ -606,7 +606,11 @@ public class EmailImportService {
         // Attachments verarbeiten
         processAttachments(msg, email);
 
-        if (!"EINKAUF".equals(kontoId)) {
+        if ("EINKAUF".equals(kontoId)) {
+            // Keep legacy project/request/supplier references visible in the shared inbox.
+            // Financial document processing and the sales spam/automation pipeline stay out of the purchasing mailbox.
+            postProcessEinkaufEmail(email);
+        } else {
             // Legacy-Zuordnung/Belegverarbeitung bleibt auf den vorhandenen Mailkonten.
             if (email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
                 postProcessEmail(email);
@@ -1039,6 +1043,15 @@ public class EmailImportService {
         }
 
         // Spam-Score und Zuordnungs-Änderungen persistieren
+        emailRepository.save(email);
+    }
+
+    @Transactional
+    public void postProcessEinkaufEmail(Email email) {
+        if (email == null || !"EINKAUF".equals(email.getKontoId())) {
+            throw new IllegalArgumentException("Die Nachricht gehört nicht zum Einkaufspostfach.");
+        }
+        emailAutoAssignmentService.tryAutoAssign(email);
         emailRepository.save(email);
     }
 

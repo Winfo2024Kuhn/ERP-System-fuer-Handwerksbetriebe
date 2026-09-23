@@ -235,7 +235,7 @@ class EinkaufOutboxParallelTest {
         }
         @Bean EinkaufVersandWorker worker(EinkaufOutboxService outbox, MailkontoService konten,
                 KontoMailTransport transport, SentMailArchiver archiver, LocalTestMailPolicy policy) {
-            return new EinkaufVersandWorker(outbox, konten, transport, archiver, policy);
+            return new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, java.util.List.of());
         }
     }
 }

@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.service.einkauf;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.ArchivErgebnis;
 import org.example.kalkulationsprogramm.service.mail.KontoMailTransport;
@@ -10,7 +11,9 @@ import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -21,6 +24,9 @@ public class EinkaufVersandWorker {
     private final KontoMailTransport transport;
     private final SentMailArchiver archiver;
     private final LocalTestMailPolicy localTestMailPolicy;
+    private final List<EinkaufAnnahmeereignisConsumer> acceptanceConsumers;
+    @Value("${app.background-jobs.enabled:true}")
+    private boolean backgroundJobsEnabled;
 
     /** May be called immediately after the user has approved a prepared order. */
     @Async
@@ -53,6 +59,7 @@ public class EinkaufVersandWorker {
         var result = transport.sendenVorbereitet(konto, claim.mime());
         outbox.abgeschlossen(claim.id(), result);
         if (result.status() == org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.ANGENOMMEN) {
+            verarbeiteAnnahmeereignisse();
             EinkaufOutboxService.Claim archiveClaim = outbox.beanspruche(claim.id());
             if (archiveClaim != null && archiveClaim.archivRetry()) {
                 ArchivErgebnis archiveResult = archiver.archiviere(konto, archiveClaim.mime());
@@ -67,5 +74,24 @@ public class EinkaufVersandWorker {
     public void markiereUnterbrocheneVersuche() {
         int count = outbox.markiereUnterbrocheneAlsUnklar();
         if (count > 0) log.warn("[EinkaufOutbox] {} unterbrochene Versandaufträge auf UNKLAR gesetzt", count);
+        if (backgroundJobsEnabled) verarbeiteAnnahmeereignisse();
+    }
+
+    private void verarbeiteAnnahmeereignisse() {
+        for (EinkaufAnnahmeereignisConsumer consumer : acceptanceConsumers) {
+            try {
+                outbox.verarbeiteOffeneAnnahmeereignisse(consumer, 100);
+            } catch (RuntimeException ex) {
+                // SMTP ist bereits angenommen. A pending durable event is left for recovery; never retry SMTP here.
+                log.error("[EinkaufOutbox] Annahmeereignis-Consumer {} fehlgeschlagen; bleibt zur Wiederverarbeitung offen",
+                        consumer.getClass().getSimpleName(), ex);
+            }
+        }
+    }
+
+    /** Retries durable acceptance facts after transient database or application errors. */
+    @Scheduled(fixedDelayString = "${einkauf.annahmeereignis.recovery-delay:30000}")
+    public void wiederholeOffeneAnnahmeereignisse() {
+        if (backgroundJobsEnabled) verarbeiteAnnahmeereignisse();
     }
 }

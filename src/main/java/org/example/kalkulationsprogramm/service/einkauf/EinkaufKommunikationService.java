@@ -1,0 +1,177 @@
+package org.example.kalkulationsprogramm.service.einkauf;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.einkauf.AnfrageLieferant;
+import org.example.kalkulationsprogramm.domain.einkauf.AnfrageRevision;
+import org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKommunikationDto.*;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPdfDto.*;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandSnapshot;
+import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Nachricht;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVorlagenDto.Gerendert;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVorlagenDto.VorlagenKontext;
+import org.example.kalkulationsprogramm.repository.AnfrageLieferantRepository;
+import org.example.kalkulationsprogramm.repository.AnfrageRevisionRepository;
+import org.example.kalkulationsprogramm.repository.EmailRepository;
+import org.example.kalkulationsprogramm.repository.EinkaufMailZuordnungRepository;
+import org.example.kalkulationsprogramm.repository.EinkaufsanfrageRepository;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufOutboxService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class EinkaufKommunikationService {
+    private final EinkaufsanfrageRepository anfragen;
+    private final AnfrageRevisionRepository revisionen;
+    private final AnfrageLieferantRepository beteiligungen;
+    private final EmailRepository emails;
+    private final EinkaufMailZuordnungRepository zuordnungen;
+    private final EinkaufVorlagenService vorlagen;
+    private final EinkaufPdfService pdf;
+    private final EinkaufDateiService dateien;
+    private final EinkaufOutboxService outbox;
+    private final EinkaufVersandWorker worker;
+    private final ObjectMapper objectMapper;
+
+    public EinkaufKommunikationService(EinkaufsanfrageRepository anfragen, AnfrageRevisionRepository revisionen,
+            AnfrageLieferantRepository beteiligungen, EmailRepository emails, EinkaufMailZuordnungRepository zuordnungen,
+            EinkaufVorlagenService vorlagen, EinkaufPdfService pdf, EinkaufDateiService dateien,
+            EinkaufOutboxService outbox, EinkaufVersandWorker worker, ObjectMapper objectMapper) {
+        this.anfragen = anfragen; this.revisionen = revisionen; this.beteiligungen = beteiligungen;
+        this.emails = emails; this.zuordnungen = zuordnungen; this.vorlagen = vorlagen; this.pdf = pdf;
+        this.dateien = dateien; this.outbox = outbox; this.worker = worker; this.objectMapper = objectMapper;
+    }
+
+    @Transactional
+    public Vorschau vorschau(Long anfrageId, Long beteiligungId, Long templateId) {
+        return vorschauDaten(anfrageId, beteiligungId, templateId, null).vorschau();
+    }
+
+    private VorschauDaten vorschauDaten(Long anfrageId, Long beteiligungId, Long templateId, Long pdfDateiId) {
+        VersandBasis basis = ladeBasis(anfrageId, beteiligungId);
+        if (templateId == null || templateId <= 0) throw new IllegalArgumentException("Bitte wählen Sie eine Einkaufsvorlage.");
+        var kontakt = basis.beteiligung().getKontakt();
+        var positionen = basis.revision().getPositionen().stream().map(p -> p.getSnapshot()).toList();
+        String lieferadresse = positionen.stream().map(p -> basis.revision().getPositionen().stream()
+                .filter(z -> z.getSnapshot().equals(p)).findFirst().orElseThrow().getHerkuenfte().stream().findFirst()
+                .map(h -> h.getBedarf().getLiefergruppe().lieferadresse()).orElse("")).filter(Objects::nonNull).findFirst().orElse("");
+        Gerendert gerendert = vorlagen.rendern(templateId, new VorlagenKontext("EINKAUF_ANFRAGE",
+                Map.of("LIEFERANTENNAME", safe(kontakt.lieferantenname()), "ANSPRECHPARTNER", safe(kontakt.name()),
+                        "ANREDE", safe(kontakt.anrede()), "LIEFERADRESSE", lieferadresse,
+                        "EIGENE_KUNDENNUMMER_BEIM_LIEFERANTEN", safe(kontakt.eigeneKundennummer()),
+                        "ANFRAGENUMMER", basis.anfrage().getPaNummer(), "ANTWORTFRIST", value(basis.revision().getAntwortfrist()),
+                        "LIEFERTERMIN", value(basis.revision().getLiefertermin())), positionen, basis.beteiligung().getRueckmeldecode()));
+        Beleg pdfBeleg = new Beleg("ANFRAGE", basis.anfrage().getPaNummer(), basis.revision().getNummer(),
+                kontakt, basis.revision().getPositionen().stream().map(p -> new PdfPosition(String.valueOf(p.getId()),
+                        p.getSnapshot(), p.getHerkuenfte().stream().map(h -> new PdfHerkunft(h.getBedarf().getId(),
+                                h.getBedarf().getLiefergruppe().projektId() == null ? null : String.valueOf(h.getBedarf().getLiefergruppe().projektId()),
+                                h.getMenge(), p.getSnapshot().basis().einheit())).toList(), List.of(), null)).toList(),
+                List.of(), basis.revision().getPositionen().stream().flatMap(p -> p.getHerkuenfte().stream())
+                        .map(h -> h.getBedarf().getLiefergruppe()).distinct().toList(), basis.revision().getAntwortfrist(),
+                basis.revision().getLiefertermin(), null, null, true);
+        byte[] renderedPdf = pdfDateiId == null ? pdf.erzeugen(pdfBeleg) : null;
+        byte[] pdfBytes = pdfDateiId == null ? renderedPdf : dateien.ladePdfSnapshotBytes(pdfDateiId);
+        List<Long> attachmentIds = basis.revision().getPositionen().stream().flatMap(p -> p.getSnapshot().anlageVersionIds().stream()).distinct().sorted().toList();
+        dateien.pruefePaketgroesse(attachmentIds, pdfBytes.length);
+        var attachments = new java.util.ArrayList<>(dateien.ladeVersandanlagen(attachmentIds));
+        var pdfSnapshot = pdfDateiId == null
+                ? dateien.speicherePdfSnapshot(renderedPdf, basis.anfrage().getPaNummer() + "-Anfrage-" + basis.revision().getNummer() + ".pdf")
+                : null;
+        Long frozenPdfId = pdfDateiId == null ? pdfSnapshot.dateiId() : pdfDateiId;
+        attachments.add(new EmailService.Attachment(pdfBytes, basis.anfrage().getPaNummer() + "-Anfrage.pdf", "application/pdf"));
+        String empfaenger = kontakt.email();
+        String hash = sha256(basis.revision().getId() + "\n" + templateId + ":" + gerendert.version() + "\n"
+                + gerendert.hash() + "\n" + empfaenger + "\n" + attachmentIds + "\n" + sha256(pdfBytes));
+        String token;
+        try { token = objectMapper.writeValueAsString(Map.of("templateId", templateId, "templateVersion", gerendert.version(),
+                "revisionId", basis.revision().getId(), "empfaenger", empfaenger, "anlageVersionIds", attachmentIds,
+                "pdfDateiId", frozenPdfId, "snapshotHash", hash)); }
+        catch (Exception ex) { throw new IllegalStateException("Die Vorschau konnte nicht freigegeben werden.", ex); }
+        Vorschau preview = new Vorschau(basis.revision().getId(), token, gerendert.subject(), gerendert.htmlBody(), empfaenger, frozenPdfId, attachmentIds);
+        return new VorschauDaten(basis, preview, List.copyOf(attachments));
+    }
+
+    @Transactional
+    public VersandErgebnis senden(Long anfrageId, Long beteiligungId, Freigabe freigabe, Long akteurId) {
+        if (freigabe == null || freigabe.idempotenzKey() == null || akteurId == null || akteurId <= 0)
+            throw new IllegalArgumentException("Die Versandfreigabe ist unvollständig.");
+        long templateId;
+        long pdfDateiId;
+        try {
+            var previewToken = objectMapper.readTree(freigabe.vorschauHash());
+            templateId = previewToken.path("templateId").asLong();
+            pdfDateiId = previewToken.path("pdfDateiId").asLong();
+            if (pdfDateiId <= 0) throw new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen.");
+        } catch (Exception ignored) { throw new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen."); }
+        var prior = outbox.findeWiederholungsauftrag(freigabe.idempotenzKey(), freigabe.vorschauHash(), anfrageId, beteiligungId);
+        if (prior.isPresent()) {
+            var versand = prior.get();
+            return new VersandErgebnis(beteiligungId, versand.status(), versand.fehlerCode(), versand.messageId());
+        }
+        // Hashes are opaque; the UI supplies the selected template in the request header encoded with the preview token.
+        VorschauDaten data = vorschauDaten(anfrageId, beteiligungId, templateId, pdfDateiId);
+        Vorschau aktuell = data.vorschau();
+        if (aktuell.version() != freigabe.version() || !aktuell.vorschauHash().equals(freigabe.vorschauHash()))
+            throw new IllegalStateException("Die Anfrage oder Vorschau wurde geändert. Bitte neu prüfen.");
+        VersandBasis basis = data.basis();
+        var message = new Nachricht(null, aktuell.empfaenger(), aktuell.subject(), aktuell.htmlBody(), null, List.of(), data.anlagen());
+        VersandSnapshot snapshot = new VersandSnapshot("ANFRAGE", anfrageId, basis.revision().getId(), beteiligungId,
+                new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.KontoZugangReferenz("EINKAUF"), message, aktuell.vorschauHash());
+        var result = outbox.einreihen(snapshot, freigabe.idempotenzKey(), akteurId);
+        worker.verarbeite(result.id());
+        return new VersandErgebnis(beteiligungId, result.status(), result.fehlerCode(), result.messageId());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<NachrichtDto> verlauf(String typ, Long vorgangId, Pageable pageable) {
+        if (typ == null || !List.of("ANFRAGE", "BESTELLUNG").contains(typ) || vorgangId == null || vorgangId <= 0 || pageable == null)
+            throw new IllegalArgumentException("Vorgang oder Seitenauswahl ist ungültig.");
+        return zuordnungen.findAllByTypAndVorgangId(typ, vorgangId, pageable).map(link -> emails.findById(link.getEmailId())
+                .map(e -> new NachrichtDto(e.getId(), e.getMessageId(), e.getSubject(), e.getFromAddress(), e.getSentAt(),
+                        link.getTyp(), link.getVorgangId(), link.getBeteiligungId(), link.getRevisionId(), link.getStatus(), link.getQuelle()))
+                .orElse(null));
+    }
+
+    private VersandBasis ladeBasis(Long anfrageId, Long beteiligungId) {
+        if (anfrageId == null || anfrageId <= 0 || beteiligungId == null || beteiligungId <= 0)
+            throw new IllegalArgumentException("Anfrage und Lieferantenbeteiligung sind ungültig.");
+        Einkaufsanfrage anfrage = anfragen.findById(anfrageId).orElseThrow(() -> new java.util.NoSuchElementException("Anfrage nicht gefunden."));
+        AnfrageRevision revision = anfrage.getAktuelleRevision();
+        if (anfrage.isGeloescht() || revision == null) throw new IllegalStateException("Die Anfrage kann nicht versendet werden.");
+        AnfrageLieferant beteiligung = beteiligungen.findByIdAndRevisionAnfrageId(beteiligungId, anfrageId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Lieferantenbeteiligung nicht gefunden."));
+        if (!revision.getId().equals(beteiligung.getRevision().getId())) throw new IllegalStateException("Nur Lieferanten der aktuellen Anfragefassung können versendet werden.");
+        if (!List.of("AUSSTEHEND").contains(beteiligung.getStatus())) throw new IllegalStateException("Diese Lieferantenanfrage wurde bereits beantwortet oder versendet.");
+        return new VersandBasis(anfrage, revision, beteiligung);
+    }
+    private Beleg beleg(VersandBasis basis) {
+        return new Beleg("ANFRAGE", basis.anfrage().getPaNummer(), basis.revision().getNummer(), basis.beteiligung().getKontakt(),
+                basis.revision().getPositionen().stream().map(p -> new PdfPosition(String.valueOf(p.getId()), p.getSnapshot(),
+                        p.getHerkuenfte().stream().map(h -> new PdfHerkunft(h.getBedarf().getId(),
+                                h.getBedarf().getLiefergruppe().projektId() == null ? null : String.valueOf(h.getBedarf().getLiefergruppe().projektId()),
+                                h.getMenge(), p.getSnapshot().basis().einheit())).toList(), List.of(), null)).toList(),
+                List.of(), basis.revision().getPositionen().stream().flatMap(p -> p.getHerkuenfte().stream())
+                        .map(h -> h.getBedarf().getLiefergruppe()).distinct().toList(), basis.revision().getAntwortfrist(),
+                basis.revision().getLiefertermin(), null, null, true);
+    }
+    private record VersandBasis(Einkaufsanfrage anfrage, AnfrageRevision revision, AnfrageLieferant beteiligung) {}
+    private record VorschauDaten(VersandBasis basis, Vorschau vorschau, List<EmailService.Attachment> anlagen) {}
+    private static String safe(String value) { return value == null ? "" : value; }
+    private static String value(java.time.LocalDate value) { return value == null ? "" : value.toString(); }
+    private static String sha256(byte[] bytes) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
+        catch (Exception ex) { throw new IllegalStateException("SHA-256 ist nicht verfügbar.", ex); }
+    }
+    private static String sha256(String value) { return sha256(value.getBytes(StandardCharsets.UTF_8)); }
+}

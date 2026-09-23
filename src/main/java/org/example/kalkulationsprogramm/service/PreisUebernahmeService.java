@@ -407,42 +407,16 @@ public class PreisUebernahmeService {
     }
 
     private static Preisbasis leseEinheit(String roh) {
-        if (roh == null || roh.isBlank()) {
-            return new Preisbasis(BigDecimal.ONE, null);
-        }
-
-        String text = roh.toLowerCase(Locale.ROOT)
-                .replace("€", " ")
-                .replace("eur", " ")
-                .replace("/", " ");
-        text = FUELLWORT.matcher(text).replaceAll(" ").trim();
-
-        BigDecimal menge = BigDecimal.ONE;
-        String code = text;
-        Matcher matcher = MENGE_UND_EINHEIT.matcher(text);
-        if (matcher.matches()) {
-            menge = leseMenge(matcher.group(1));
-            code = matcher.group(2).trim();
-        }
-
-        // Kuerzel: links die UN/ECE-Codes aus ZUGFeRD, rechts was die KI aus dem
-        // PDF-Text liest.
-        return switch (code) {
-            case "kg", "kgm", "kilo", "kilogramm" -> new Preisbasis(menge, Verrechnungseinheit.KILOGRAMM);
-            case "t", "to", "tne", "ton", "tonne", "tonnen" ->
-                    new Preisbasis(menge.multiply(TAUSEND), Verrechnungseinheit.KILOGRAMM);
-            case "g", "gr", "grm", "gramm" ->
-                    new Preisbasis(menge.divide(TAUSEND, 6, RoundingMode.HALF_UP), Verrechnungseinheit.KILOGRAMM);
-            case "c62", "h87", "ea", "pce", "pcs", "st", "stk", "stck", "stueck", "stück", "piece" ->
-                    new Preisbasis(menge, Verrechnungseinheit.STUECK);
-            case "mtr", "m", "lm", "lfm", "lfdm", "meter", "laufmeter" ->
-                    new Preisbasis(menge, Verrechnungseinheit.LAUFENDE_METER);
-            case "mtk", "m2", "m²", "qm", "quadratmeter" ->
-                    new Preisbasis(menge, Verrechnungseinheit.QUADRATMETER);
-            // Unbekanntes Kuerzel: die gelesene Zahl gehoert nicht zwingend zu einer
-            // Mengenbasis, also nicht damit teilen.
-            default -> new Preisbasis(BigDecimal.ONE, null);
+        var parsed = org.example.kalkulationsprogramm.service.einkauf.EinkaufMengenUmrechnung.parsePreisBasis(roh);
+        if (!parsed.vollstaendig()) return new Preisbasis(BigDecimal.ONE, null);
+        Verrechnungseinheit unit = switch (parsed.einheit()) {
+            case KILOGRAMM -> Verrechnungseinheit.KILOGRAMM;
+            case STUECK -> Verrechnungseinheit.STUECK;
+            case METER -> Verrechnungseinheit.LAUFENDE_METER;
+            case QUADRATMETER -> Verrechnungseinheit.QUADRATMETER;
+            case TONNE -> Verrechnungseinheit.KILOGRAMM;
         };
+        return new Preisbasis(parsed.menge(), unit);
     }
 
     /**

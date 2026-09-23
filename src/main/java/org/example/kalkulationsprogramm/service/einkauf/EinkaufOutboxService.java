@@ -74,6 +74,23 @@ public class EinkaufOutboxService {
         return result;
     }
 
+    /** Returns a prior dispatch for the exact approved request, so a client retry cannot create another mail. */
+    public java.util.Optional<VersandDto> findeWiederholungsauftrag(UUID idempotenzKey, String freigabeHash,
+            Long vorgangId, Long beteiligungId) {
+        if (idempotenzKey == null || freigabeHash == null || vorgangId == null || beteiligungId == null) {
+            throw new IllegalArgumentException("Die Versandfreigabe ist unvollständig.");
+        }
+        return new TransactionTemplate(transactionManager).execute(status -> repository.findByIdempotenzKey(idempotenzKey)
+                .map(auftrag -> {
+                    if (!"ANFRAGE".equals(auftrag.getTyp()) || !vorgangId.equals(auftrag.getVorgangId())
+                            || !beteiligungId.equals(auftrag.getBeteiligungId())
+                            || !freigabeHash.equals(auftrag.getFreigabeHash())) {
+                        throw new IllegalStateException("Der Idempotenzschlüssel gehört zu einer anderen Versandfreigabe.");
+                    }
+                    return dto(auftrag);
+                }));
+    }
+
     public VersandDto erneutVersuchen(Long id, long version, Long akteurId) {
         if (akteurId == null || akteurId <= 0) throw new IllegalArgumentException("Ein Benutzer ist erforderlich.");
         return transaktion(() -> {

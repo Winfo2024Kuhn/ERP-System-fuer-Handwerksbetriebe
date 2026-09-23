@@ -18,6 +18,7 @@ public class AnfrageLieferant {
     @Column(name = "rueckmeldecode", nullable = false, length = 32, unique = true) private String rueckmeldecode = neuerCode();
     @Column(nullable = false, length = 24) private String status = "AUSSTEHEND";
     @Column(name = "antwort_am") private java.time.Instant antwortAm;
+    @Column(name = "versand_annahmeereignis", length = 36) private java.util.UUID versandAnnahmeereignis;
     @JdbcTypeCode(SqlTypes.JSON) @Column(name = "versandversuche", nullable = false, columnDefinition = "json") private java.util.List<String> versandversuche = new java.util.ArrayList<>();
     protected AnfrageLieferant() {}
     public AnfrageLieferant(AnfrageRevision revision, Snapshot kontakt) { this.revision = revision; this.kontakt = kontakt; }
@@ -28,4 +29,9 @@ public class AnfrageLieferant {
     public java.util.List<String> getVersandversuche() { return java.util.List.copyOf(versandversuche); }
     public void setStatus(String status) { this.status = status; }
     public void setAntwortAm(java.time.Instant antwortAm) { this.antwortAm = antwortAm; }
+    public java.util.UUID getVersandAnnahmeereignis() { return versandAnnahmeereignis; }
+    public void versandAngenommen(java.util.UUID ereignisSchluessel) {
+        this.versandAnnahmeereignis = ereignisSchluessel;
+        this.status = "VERSENDET";
+    }
 }

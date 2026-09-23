@@ -75,6 +75,18 @@ class EmailImportServiceTest {
         return email;
     }
 
+    @Test
+    void einkaufImportBehältBestehendeProjektAnfrageLieferantZuordnungOhneRechnungsautomation() {
+        Email email = erstelleEmail(3202L, "<einkauf@example.test>", "kontakt@example.test");
+        email.setKontoId("EINKAUF");
+
+        service.postProcessEinkaufEmail(email);
+
+        verify(emailAutoAssignmentService).tryAutoAssign(email);
+        verify(emailRepository).save(email);
+        verifyNoInteractions(spamFilterService, emailAttachmentProcessingService, steuerberaterEmailProcessingService);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 2.3.1 Erkennt Duplikate anhand Message-ID
     // ═══════════════════════════════════════════════════════════════

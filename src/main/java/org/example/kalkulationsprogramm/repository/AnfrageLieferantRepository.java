@@ -9,4 +9,5 @@ public interface AnfrageLieferantRepository extends JpaRepository<AnfrageLiefera
     List<AnfrageLieferant> findByRevisionIdOrderByIdAsc(Long revisionId);
     @Query("select l from AnfrageLieferant l where l.id = :id and l.revision.anfrage.id = :anfrageId")
     Optional<AnfrageLieferant> findByIdAndRevisionAnfrageId(@Param("id") Long id, @Param("anfrageId") Long anfrageId);
+    Optional<AnfrageLieferant> findFirstByRueckmeldecode(String rueckmeldecode);
 }
