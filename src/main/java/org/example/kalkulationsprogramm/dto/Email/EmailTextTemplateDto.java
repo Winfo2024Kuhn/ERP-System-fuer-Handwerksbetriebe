@@ -35,6 +35,9 @@ public class EmailTextTemplateDto {
 
     private Boolean aktiv;
 
+    private Boolean standard;
+    private Long version;
+
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 
@@ -49,6 +52,8 @@ public class EmailTextTemplateDto {
         dto.setSubjectTemplate(entity.getSubjectTemplate());
         dto.setHtmlBody(entity.getHtmlBody());
         dto.setAktiv(entity.isAktiv());
+        dto.setStandard(entity.isStandard());
+        dto.setVersion(entity.getVersion());
         dto.setCreatedAt(entity.getCreatedAt());
         dto.setUpdatedAt(entity.getUpdatedAt());
         return dto;

@@ -49,22 +49,50 @@ public class EmailTextTemplateService {
         return repository.findByDokumentTyp(dokumentTyp.trim().toUpperCase());
     }
 
+    @Transactional
     public EmailTextTemplate create(EmailTextTemplateDto dto) {
         EmailTextTemplate entity = new EmailTextTemplate();
         dto.applyToEntity(entity);
-        return repository.save(entity);
+        EmailTextTemplate saved = repository.save(entity);
+        if (Boolean.TRUE.equals(dto.getStandard())) setStandard(saved);
+        return saved;
     }
 
+    @Transactional
     public EmailTextTemplate update(Long id, EmailTextTemplateDto dto) {
         EmailTextTemplate entity = get(id);
+        String previousDokumentTyp = entity.getDokumentTyp();
+        boolean previousStandard = entity.isStandard();
         dto.applyToEntity(entity);
-        return repository.save(entity);
+        boolean dokumentTypGeaendert = !previousDokumentTyp.equals(entity.getDokumentTyp());
+        if (dokumentTypGeaendert) {
+            if (previousStandard) repository.deleteStandardAssignment(id);
+            entity.setStandard(false);
+        }
+        EmailTextTemplate saved = repository.save(entity);
+        if (dokumentTypGeaendert && previousStandard) {
+            repository.findAllByDokumentTypOrderByIdAsc(previousDokumentTyp).stream()
+                    .filter(EmailTextTemplate::isAktiv)
+                    .findFirst()
+                    .ifPresent(this::setStandard);
+        }
+        if (Boolean.TRUE.equals(dto.getStandard())) setStandard(saved);
+        return saved;
     }
 
+    private void setStandard(EmailTextTemplate template) {
+        repository.clearStandardFlags(template.getDokumentTyp());
+        repository.setStandardTemplate(template.getId());
+        repository.markStandardTemplate(template.getId());
+        template.setStandard(true);
+    }
+
+    @Transactional
     public void delete(Long id) {
         if (id == null) {
             return;
         }
+        repository.deleteStandardAssignment(id);
         repository.deleteById(id);
     }
 
