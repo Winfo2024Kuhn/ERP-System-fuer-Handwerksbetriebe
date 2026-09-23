@@ -1026,3 +1026,161 @@ Zeit: 2026-09-23T17:42:08.583911+00:00
 - Exklusive integrierte Backendvollsuite: Exit0,3379 Tests,0 Fehler,17 bekannte Skips, BUILD SUCCESS; /tmp/beschaffung-abschnitt5-r1-review-backend.log. PC/Mobile-Bäume unverändert, bestehende vollständige Frontendnachweise gültig.
 - Root-Sichtprüfung aller13 Seiten des R1-Dummy-PDF bestanden. Quellen-/Dokumentdiff-Whitespacecheck sauber. Graphify synchronisiert, generierte Dateien bleiben lokal.
 - Weiter mit Abschnitt6 als zusammenhängendem Luna-Paket16→17→18: Anfrageversand/Antwortzuordnung, manuelle versionierte Lieferantenangebote, deterministischer Vollkostenvergleich. Persistenter typgebundener Annahmeconsumer aus R1 ist verbindlicher Integrationsvertrag; keine flüchtige alleinige Ereignisverarbeitung.
+
+
+## Abschnitt 6 — Paketstart
+
+Zeit: 2026-09-23T17:43:15.480103+00:00
+
+- Abschnitt5 als486ee800f150a3ca2ce42f3e177bdb7e2d3325e9 committed und erfolgreich nach origin/codex/beschaffung-konzept gepusht. Root sauber bis auf die beiden bewusst lokalen Graphdateien.
+- GPT-6 Luna startet Paket6A, Tasks16→17→18, in codex/beschaffung-task-16 / .claude/worktrees/beschaffung-task-16 von exakt486ee800. Auftrag /tmp/beschaffung-paket-6a-auftrag.md, Ergebnis später /tmp/beschaffung-paket-6a-logblock.md.
+- Interne Abhängigkeiten werden im selben Paket nacheinander umgesetzt; ein gemeinsamer Sol-Review erst nach vollständigem Abschluss. Persistente typgebundene Annahmeereignisse und Task11-Importevent sind verbindliche Integration. Vollständiger Umfang gemäß Plan, Angebotskalkulation bleibt Folgeausbau.
+- Unveränderte Frontendnachweise /tmp/beschaffung-frontend-testnachweise.json an neue Basis gebunden; keine unnötigen wiederholten Frontendsuiten. Nur Dummy-DB/Mailserver.
+
+
+## Abschnitt 6 — Ownership für verbindliche Ereignisintegration
+
+Zeit: 2026-09-23T17:47:36.436235+00:00
+
+- Paket6A meldet: EinkaufVersandWorker speichert Annahmeereignis, hat bislang keinen Fachconsumer-/Neustarttrigger. Root erweitert Ownership auf EinkaufVersandWorker.java samt Worker-/Outbox-Tests, falls nötig eng begrenzt EinkaufOutboxService.java.
+- Zweck ausschließlich tatsächlicher Dispatch des Task15-R1-Vertrags und abschaltbare Neustart-Recovery nach Task38. Typbindung, atomare Fachwrites/Quittierung, SMTP-freier Ereignisretry und LocalTestMailPolicy bleiben verbindlich. Kein Zwischenreview; Paket16→17→18 wird gemeinsam fertiggestellt.
+
+
+## Abschnitt 6 — Vorschau-PDF muss abrufbar und unveränderlich sein
+
+Zeit: 2026-09-23T18:25:51.573182+00:00
+
+- Paket6A meldet fehlende Dateiablage für generierte Vorschau-PDFs; pdfDateiId wäre sonst null und die tatsächlichen Bytes nicht abrufbar. Root erweitert Ownership eng auf EinkaufDateiService, bestehende Datei-Domain/Repository und zugehörige Tests. Bestehende Ablage-/Berechtigungspfade wiederverwenden.
+- Exakt angezeigte PDF-Bytes müssen unveränderlich abgelegt, autorisiert abrufbar und später über die Freigabe als identischer MIME-Anhang verwendet werden. Keine zweite Dateiplattform.
+- Falls Schemaänderung unvermeidbar, neue V397__einkauf_pdf_snapshots.sql reserviert. Bereits abgenommene V377–396 bleiben unverändert. Ohne Schemaänderung keine künstliche Migration; Paket6A meldet endgültige Entscheidung. Gesamtmigrationstest/lokaler Start müssen eine tatsächlich entstandene V397 mitnehmen.
+
+
+## Nutzersteuerung — Zwischenkommunikation reduzieren
+
+Zeit: 2026-09-23T18:28:18.214808+00:00
+
+- Nutzer beanstandet Tokenverbrauch durch wiederholte Zwischenmeldungen und verlangt die Regel dauerhaft im Skill.
+- .agents/skills/loese-problem/SKILL.md und .claude/skills/loese-problem/SKILL.md gezielt um identischen Abschnitt ergänzt: nur echte Blocker, notwendige Entscheidungen/Ownership-Absprachen und fertige Übergaben/Reviewbefunde. Keine regelmäßigen Status-/Meilensteinabfragen, Bestätigungen oder erneuten Vertragszusammenfassungen; warten auf Abschlussereignisse. Keine Tests nur für Status.
+- Laufendes Paket6A einmal über neue Regel informiert; keine weiteren periodischen Nachfragen. Reine Markdownänderungen diff --check sauber, werden mit nächstem regulären Abschnitt geprüft/gesichert; kein zusätzlicher Test-/Reviewzyklus nur hierfür.
+
+
+## Coding-Paket 6a: Tasks 16–18 — abgeschlossen
+
+Zeitpunkt: 2026-09-23 18:50:44 UTC
+Branch: codex/beschaffung-task-16
+Worktree: .claude/worktrees/beschaffung-task-16
+Basis: 486ee800f150a3ca2ce42f3e177bdb7e2d3325e9
+Commit: fa226281d2a4c7c257930c580d124a655dbc3caa (Implement purchasing communication offers and comparison)
+Status: fertig; kein bekannter Blocker.
+
+### Task 16 — Kommunikation und Zuordnung
+
+Implementiert sind die Einkaufs-Mailzuordnung, Klassifizierung, manuelle auditierte Zuordnungsbestätigung und paginierter Verlauf. Der Task11-Importevent wird durch den typgebundenen Consumer verarbeitet. Antwortzuordnung nutzt verifizierte Thread-/Code-/Kontaktkandidaten; Widersprüche bleiben PRUEFEN. Verkaufs-/Rechnungsautomatik wird beim Einkaufsmailimport übersprungen.
+
+Die Vorschau persistiert ein unveränderliches PDF über die bestehende EinkaufDatei-Ablage und liefert dessen Datei-ID. Hash und Freigabe binden die konkrete Vorschau, Revision, Empfänger und freigegebene Anlagen; Senden verwendet dieselben gespeicherten PDF-Bytes. V388__einkauf_kommunikation.sql legt die Kommunikationszuordnung und Versandannahme-ID an.
+
+EinkaufVersandAngenommen wird nach SMTP-Annahme dauerhaft und idempotent verarbeitet. Der Worker dispatcht den zuständigen Consumer nach Annahme und startet separat eine abschaltbare Recovery offener Annahmeereignisse. Fachverarbeitung nach bereits erfolgter SMTP-Annahme setzt keinen SMTP-Versandretry in Gang. LocalTestMailPolicy bleibt vor Claim/Netzwerkzugriff wirksam.
+
+Kommunikations-API: GET /api/einkauf/anfragen/{id}/lieferanten/{beteiligungId}/vorschau; POST derselben Route /senden; GET /api/einkauf/pdf-vorschau/{dateiId}; POST /api/einkauf/mail/{emailId}/zuordnung und /ermitteln; POST /api/einkauf/mail/abruf; GET /api/einkauf/{typ}/{id}/verlauf.
+
+### Task 17 — Angebotsversionen
+
+Angebotskopf, immutable Versionen, Quellmail/-datei, Positionen, Kostenkomponenten, Zeugnisstatus und Lieferanten-/Positionsprüfungen sind implementiert. Statusführung und Optimistic Lock erhalten historische Fassungen. V389__einkauf_angebote.sql legt das Angebotsmodell an. Technische Abweichungsfreigabe ist separat mit Begründung, Nutzer und Zeit erfasst; allgemeines GEPRUEFT erteilt sie nicht. T18 schließt betroffene Angebote bis zu dieser expliziten Freigabe vom Ranking aus.
+
+Angebots-API: POST /api/einkauf/anfrage-lieferanten/{id}/angebote; GET/PUT /api/einkauf/angebote/{id}; POST /api/einkauf/angebote/{id}/versionen; POST /api/einkauf/angebote/{id}/abweichung-bestaetigen; POST /api/einkauf/angebote/{id}/bestaetigen.
+
+### Task 18 — Vollkostenvergleich
+
+Implementiert sind belegte kg/m/Stück/t-Umrechnungen, Preisbasen 100KG und 100STUECK, Komponenten mit stabilen Keys, enthaltene Kosten ohne Doppeladdition, variable/unbekannte Basis als offen, Fracht pro Liefergruppe, Mindestmengen/Verpackungsbedingungen ohne Aufrunden, Wegfall von Paketnachlass bei Teilmenge sowie separater Skonto-Hinweis. Nur vollständige gültige EUR-Angebote mit bestätigter technischer Eignung sind rankingfähig; veraltete Anfragefassungen, offene Kosten und nicht bestätigte Abweichungen bleiben ausgeschlossen. Leere Mengenpakete werden abgewiesen, damit kein Null-Euro-Angebot als vollständig gelten kann. Bestehendes Preisbasen-Parsing wurde wiederverwendet, Alt-Fallbacks sind durch PreisUebernahmeService-Tests abgedeckt.
+
+Vergleichs-API: GET /api/einkauf/anfragen/{id}/vergleich.
+
+### Verifikation
+
+- Gezielte gebündelte Backendtests: /tmp/paket6a-final-targeted.log — 139 Tests, 0 Fehler/Fehlschläge, BUILD SUCCESS.
+- Finaler vollständiger Backendlauf nach letzter Änderung: /tmp/paket6a-backend-full-final.log — 3414 Tests, 0 Fehler/Fehlschläge, 17 unveränderte bekannte Skips, BUILD SUCCESS. DOCKER_HOST zeigte ausschließlich auf den lokalen Docker-Testdienst; Migrationstests verwendeten einen isolierten Dummy-MySQL-Testcontainer. Keine echten Lieferantenmails oder produktiven Datenbanken.
+- Zusätzlicher Rot-Grün-Nachweis: /tmp/paket6a-empty-package-red.log scheiterte zunächst wie erwartet am fehlenden Paket-Guard; /tmp/paket6a-empty-package-green.log ist grün. Liefergruppen-Rechenschritte geben keine NUL-Trennzeichen preis: /tmp/paket6a-nul-red2.log rot, /tmp/paket6a-nul-green.log grün.
+- Frontend unverändert: Trees 83813ced1750173452c46197f876468f09600f3d (PC) und 9d847fc058aef8337a23a5ce4eeabd6ff2f174f1 (Mobile) stimmen mit /tmp/beschaffung-frontend-testnachweise.json und der Basis überein; dessen Frontendnachweise bleiben wiederverwendbar.
+- git diff --cached --check war sauber; staged Diff auf Secrets/Sperrzonen geprüft. Graphify wurde für den Worktree aktualisiert. Generierte Graphartefakte wurden nicht committet. Graphify meldete den bestehenden TiptapEditor.tsx-Parserhinweis (Zeile 963); kein geändertes Paket-Frontend.
+- Keine Migration V397 angelegt: PDF-Snapshot nutzt die vorhandene EinkaufDatei-Ablage und benötigt kein neues Schema. V377–V387 und V396 blieben unangetastet.
+- Keine eigenen Dienste gestartet. Arbeitsbaum nach Commit sauber.
+
+Bedenken/Abweichungen: keine bekannten. Root-Review bleibt der nächste Schritt nach den Paketabschlüssen des Abschnitts.
+
+
+## Abschnitt 6 — vollständige Integration und Reviewstart
+
+Zeit: 2026-09-23T18:52:39.938778+00:00
+
+- Paket16→17→18 vollständig fertig, Commitfa226281d2a4c7c257930c580d124a655dbc3caa, konfliktfrei --no-ff --no-commit auf Basis486ee800 integriert.
+- Ein GPT-6-Sol-Reviewer übernimmt gesamten integrierten Code-/Security-/Architekturreview und exklusiv die Backendvollsuite. Keine Frontendänderungen; PC/Mobilebaumgleichheit bestätigt, gültige Nachweise wiederverwendet.
+- Stage-Ownership45Dateien ausschließlich Paketdiff und eigene Skill/Plan/Log-Dateien; diff --cached --check sauber. Keine Graphdaten oder fremden Änderungen staged.
+- Vorschau-PDF verwendet bestehende Dateiablage, keine neueV397 entstanden. Separate technische Abweichungsfreigabe wurde im Paket ausdrücklich von allgemeinem Angebotsstatus getrennt.
+- Sparsame Kommunikationsregel gilt; keine periodischen Agentenstatusmeldungen. Noch keine Abnahme/kein Push von Abschnitt6.
+
+
+## Abschnitt 6 — Review R0 und erste Nachbesserung
+
+Zeit: 2026-09-23T18:56:46.937703+00:00
+
+- Sol-Review ROT: fünf Blocker, Bericht /tmp/beschaffung-abschnitt6-r0-review-report.md. Integrierte Backendvollsuite3414 Tests/0 Fehler/17 bekannte Skips grün, /tmp/beschaffung-abschnitt6-r0-review-backend.log.
+- Blocker: afterCommit-Importzuordnung ohne eigene dauerhafte Transaktion/Recovery; Outbox-Dispatch vor Commit ohne Wiederaufnahme vorbereiteter Aufträge; manipulierbarer Vorschau-JSONtoken; Quellmail nicht an konkrete bestätigte Anfrage/Beteiligung/Revision gebunden; V388-ALTER nicht idempotent.
+- Gleicher Luna-Agent6A korrigiert alles gesammelt in R1, außerdem Betreffreferenzen, Vergleichs-Batchloading und ungültige manuelle BESTELLUNG-Zuordnung. Bis zum Bestellmodell in Task19 muss BESTELLUNG fail-closed sein; später echten Validator anschließen. Kleine Lieferadressentaversierung im selben Pfad bereinigen.
+- Ownership um erforderliche eng begrenzte persistente Vorschau-/Import-Recovery-Bausteine/Repositories/Tests erweitert. Noch nicht abgenommeneV388/V389 dürfen korrigiert werden, frühere Migrationen unverändert. Root hat Merge abgebrochen, eigene vier Skill/Plan/Logdateien unter /tmp/beschaffung-abschnitt6-root-r0 gesichert und wiederhergestellt; Graphdateien nicht angerührt.
+- Kein Zwischenreview; gleicher Sol-Reviewer nach vollständiger R1-Reintegration. Kommunikationsregel bleibt sparsam.
+
+
+## Abschnitt 6 — Nutzer beauftragt direkte Reparatur durch Root
+
+Zeit: 2026-09-23T19:29:35.256809+00:00
+
+- Nutzer: „reapiere du das weiter der braucht ewig“. Root hat Paket6A unterbrochen und die uncommitteten R1-Änderungen im gleichen Worktree übernommen; keine parallelen Produktedits oder Testläufe. Modellvorgabe für diese Reparatur durch ausdrücklichen Nutzerauftrag übersteuert.
+- Einmalige Übergabe des gestoppten Agenten: Import-Commit/Recovery und Outbox-Dispatch gezielt grün; Quellmailbindung noch unvollständig, fehlender Test-Konstruktorparameter, Batch-Fetch und echte Vorschaupersistenz noch offen. Keine laufenden Tests.
+- Root ergänzt die restlichen Korrekturen und Regressionen. Erste reproduzierte Befunde: sechs ungültige Quellmailzuordnungen wurden akzeptiert; echter MySQL-Vergleich für zwölf Lieferanten benötigte89 SQL-Abfragen. Referenzen: /tmp/beschaffung-root-r1-quellmail-red3.log und /tmp/beschaffung-root-r1-batch-red.log.
+- Es bleibt dieselbe erste formale R1-Runde; gleicher Sol-Reviewer nach vollständigem Abschluss und Reintegration.
+
+
+## Abschnitt 6 — R1 durch Root abgeschlossen
+
+Zeit: 2026-09-23T19:32:24.197337+00:00
+
+- Nutzer verlangte direkte Reparatur durch Root. Vorhandene Luna-R1-Arbeit erhalten und fertiggestellt; Commit 53a5ef04a8126f16c53f72898169ec9bef3f7811 auf codex/beschaffung-task-16, Basisimplementierung fa226281.
+- Importevent wird innerhalb der Importtransaktion veröffentlicht, AFTER_COMMIT-Listener ruft separat REQUIRES_NEW auf. Persistierte eingegangene EINKAUF-Mails ohne Zuordnung sind dauerhafte Recoveryquelle; abschaltbarer Recoverylauf und echte MySQL-Tests für Commit/Rollback/Neustart.
+- Versand-Dispatch erst nach Commit; vorbereitete Outboxaufträge werden nach Startfehler/Neustart wiedergefunden, Netzwerkpolicy weiterhin vor Claim. Annahmeereignisverarbeitung bleibt atomar und SMTP-frei. Bestehende manuellen BESTELLUNG-Zuordnungen werden bis zum echten Validator in Task19 sicher abgewiesen.
+- PDF-Freigabe ist nun ein zufälliges 256-Bit-Token zu einem serverseitig gespeicherten unveränderlichen Snapshot, gebunden an Anfrage/Beteiligung/Revision/Vorlagenversion/Anlagen/PDF-ID und SHA-256. Clients können keine andere PDF-ID hineinrechnen. Snapshot ist24Stunden gültig; bereits erfolgte idempotente Wiederholungen bleiben möglich. Tabelle in neuer, noch nicht abgenommener V388 ergänzt; V388-ALTERs/Indexanlagen idempotent, zweimaliger echter MySQL-Lauf grün. KeineV397 erforderlich.
+- Angebotsquellmail erfordert neben Konto/Absender eine bestätigte passende ANFRAGE-Zuordnung mit exakter Beteiligung und Anfragefassung. Sechs ungültige Varianten reproduziert (vor Fix akzeptiert), nach Fix abgewiesen; passende Quelle akzeptiert.
+- Vergleich lädt jeweils neueste Angebotsfassungen, Positionen/Kosten und Anfrageherkünfte gebündelt, ohne Mehrfach-Collection-Join oder historische Vollauflistung je Lieferant. Echter MySQL-Test: zwölf Lieferanten mit je zwei Versionen; vorher89SQL-Abfragen, jetzt höchstens10, weiterhin exakt neueste20,00EUR-Angebote. Betreffreferenzen und Lieferadressenpfad aus R0-Hinweisen korrigiert.
+- Echte Vorschau-Persistenz/Neutransaktionsreload und Ablehnung fremder Anfrage-/Beteiligungsbindung ebenfalls grün.
+- Nachweise: /tmp/beschaffung-root-r1-quellmail-red3.log und /tmp/beschaffung-root-r1-batch-red.log reproduzieren Befunde. /tmp/beschaffung-root-r1-targeted.log:105Tests,0Fehler. Finale vollständige Backend-Suite /tmp/beschaffung-root-r1-backend-full.log:3430Tests,0Fehler,17bekannteSkips,Exit0/BUILD SUCCESS. Unveränderte Frontendbäume/Nachweise gelten weiter. Nur Dummy-DBs und Testmails.
+- Genau25übernommene/ergänzteR1Dateien explizit staged; diff --cached --check sauber, keine Graphdaten/Secrets/Produktionsdaten. Graphify synchronisiert Root nach vollständiger Reintegration. Keine laufenden Testdienste vom Codingprozess.
+- Folgepakete6/7 beachten: Vorschautoken ist opaque; keine Client-Tokenberechnung. Quellmails vor Nutzung ausdrücklich an den passenden Vorgang bestätigen. Task19 aktiviert BESTELLUNG-Zuordnung ausschließlich mit echtem Vorgangs-/Beteiligungs-/Revisionsvalidator.
+
+
+## Abschnitt 6 — Review R1 und direkte zweite Nachbesserung
+
+Zeit: 2026-09-23T19:44:48.788546+00:00
+
+- R1 Sol ROT wegen möglichem Doppelversand derselben Lieferantenbeteiligung/Revision mit verschiedenen Idempotenzschlüsseln. Die fünf R0-Blocker sind behoben. Bericht: /tmp/beschaffung-abschnitt6-r1-review-report.md; integrierte Vollsuite3430/0Fehler/17bekannteSkips grün.
+- Root korrigiert wie vom Nutzer beauftragt selbst, gleicher Task16-Worktree. Merge abgebrochen, eigene vier Dokumentdateien gesichert/wiederhergestellt; fremde Graphdaten unberührt.
+- Echter gleichzeitiger MySQL-Test mit zwei serverseitigen Vorschauen und verschiedenen Schlüsseln reproduziert zwei statt einem Auftrag: /tmp/beschaffung-r2-race-red2.log. Beteiligungssperre bleibt bis Outboxcommit bestehen; anschließender Current-Read erkennt den bestehenden Auftrag auch bei einem vorab aufgebauten REPEATABLE-READ-Snapshot. Gleicher Key/Token liefert bestehenden Auftrag; andere Freigabe verweist auf vorhandenen Versand und dessen expliziten Wiederholungs-/Klärungspfad.
+- Verlauf lädt die aktuelle Seite gebündelt, ungenutzter PDF-Helfer entfernt. R1-Hinweis zu null-Listen traf nicht zu: bestehende DTO-Konstruktoren normalisieren sie. JSON-Regressionsnachweis ergänzt (fehlende Positionen fachlicher Eingabefehler, optionale Kostenlisten leer).
+- Gezielte Korrekturtests /tmp/beschaffung-r2-targeted.log Exit0. Vollsuite läuft, noch keine Abnahme. Dies ist R2, die letzte reguläre Korrekturrunde dieses Abschnitts.
+
+
+## Abschnitt 6 — Root-R2 fertig und reintegriert
+
+Zeit: 2026-09-23T19:47:06.972837+00:00
+
+- Korrekturcommit fcd6131be209b79db39ca9630350a18557ce2f7f auf codex/beschaffung-task-16, vollständig fertig und konfliktfrei --no-ff --no-commit integriert. Sieben Korrekturdateien, keine Frontend- oder Migrationsänderung in R2.
+- Backendvollsuite: /tmp/beschaffung-r2-backend-full.log, direkter Exit0/BUILD SUCCESS,3433Tests/0Fehler/17bekannteSkips. Gezielte Regressionen /tmp/beschaffung-r2-targeted.log Exit0; echter Rotnachweis verschiedener Freigabeschlüssel /tmp/beschaffung-r2-race-red2.log (2statt1Auftrag).
+- Beteiligung transaktional gesperrt und bestehender revisionsgebundener Outboxauftrag mit Current Read geprüft; keine neue Freigabe umgeht explizite Wiederholung oder UNKLAR-Klärung. Verlauf lädt nur aktuelle Nachrichtenseite gebündelt. JSON-Tests belegen bereits vorhandene Null-Listen-Normalisierung und fachliche Ablehnung fehlender Positionen.
+- Unveränderte Frontendnachweise gültig, keine fremden Dateien oder Sperrzonen gestaged. Root synchronisiert Graphify, Sol prüft den integrierten R2-Stand. Letzte reguläre Nachbesserung, noch nicht abgenommen/gepusht.
+
+
+## Abschnitt 6 — Abnahme und Übergang zu Abschnitt 7
+
+Zeit: 2026-09-23T19:50:15.448062+00:00
+
+- Sol R2 GELB ohne Blocker, somit gemäß Abschnittskriterien abgenommen. Bericht /tmp/beschaffung-abschnitt6-r2-review-report.md; integrierte Vollsuite /tmp/beschaffung-abschnitt6-r2-review-backend.log Exit0/BUILD SUCCESS,3433Tests/0Fehler/17bekannteSkips. Zwei reguläre Nachbesserungen verbraucht. Keine Frontendänderung; gültige Baumnachweise wiederverwendet.
+- Nichtblockierende Wartungshinweise: abgelaufene Vorschau-Datensätze bereinigen und optional Index auf Outbox(Typ,Vorgang,Revision,Beteiligung). Keine Produktänderung nach Review. Graphify Exit0, generierte Dateien bleiben absichtlich uncommittet. Kommunikationregel dauerhaft in beiden Skillkopien enthalten.
+- Nächster Abschnitt7 hat zwei unabhängige Luna-Pakete:19→21→22→24 und20. Alle fertig, dann gemeinsam integrieren und Sol-Review; kein vorgezogener Teilreview.

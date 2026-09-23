@@ -174,6 +174,45 @@ public class EinkaufDateiService {
         return new ImportBildDto(datei.getId(), datei.getOriginalName(), datei.getMimeTyp(), datei.getByteAnzahl());
     }
 
+    @Transactional
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufDateiDto.PdfSnapshotDto speicherePdfSnapshot(byte[] bytes, String filename) {
+        if (bytes == null || bytes.length == 0 || bytes.length > MAX_DATEIGROESSE || !starts(bytes, "%PDF-"))
+            throw new IllegalArgumentException("Der PDF-Snapshot ist ungültig oder zu groß.");
+        String name = safeFilename(filename);
+        if (!name.toLowerCase(Locale.ROOT).endsWith(".pdf")) throw new IllegalArgumentException("Der PDF-Dateiname ist ungültig.");
+        String hash = sha256(bytes);
+        EinkaufDatei stored = dateien.findBySha256(hash).map(existing -> {
+            try {
+                if (!java.security.MessageDigest.isEqual(readStoredBytes(existing), bytes))
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Der PDF-Snapshot ist nicht unveränderlich.");
+                return existing;
+            } catch (IOException exception) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Der PDF-Snapshot fehlt.", exception);
+            }
+        }).orElseGet(() -> writeNewFile(bytes.clone(), name, "application/pdf"));
+        if (!"application/pdf".equalsIgnoreCase(stored.getMimeTyp()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Der PDF-Snapshot ist nicht als PDF gespeichert.");
+        return new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufDateiDto.PdfSnapshotDto(
+                stored.getId(), hash, bytes.length);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] ladePdfSnapshotBytes(Long dateiId) {
+        if (dateiId == null || dateiId <= 0) throw new IllegalArgumentException("Der PDF-Snapshot ist ungültig.");
+        EinkaufDatei file = dateien.findById(dateiId)
+                .orElseThrow(() -> new NotFoundException("Der PDF-Snapshot wurde nicht gefunden."));
+        if (!"application/pdf".equalsIgnoreCase(file.getMimeTyp()))
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Der PDF-Snapshot wurde nicht gefunden.");
+        try { return readStoredBytes(file); }
+        catch (IOException exception) { throw new ResponseStatusException(HttpStatus.CONFLICT, "Der PDF-Snapshot fehlt.", exception); }
+    }
+
+    @Transactional(readOnly = true)
+    public Resource ladePdfSnapshot(Long dateiId, Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        return new org.springframework.core.io.ByteArrayResource(ladePdfSnapshotBytes(dateiId));
+    }
+
     @Transactional(readOnly = true)
     public Resource laden(Long dateiId, Authentication auth) {
         if (auth == null || !auth.isAuthenticated()) throw new ResponseStatusException(HttpStatus.FORBIDDEN);

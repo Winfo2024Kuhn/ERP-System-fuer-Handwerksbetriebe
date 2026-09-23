@@ -606,7 +606,11 @@ public class EmailImportService {
         // Attachments verarbeiten
         processAttachments(msg, email);
 
-        if (!"EINKAUF".equals(kontoId)) {
+        if ("EINKAUF".equals(kontoId)) {
+            // Keep legacy project/request/supplier references visible in the shared inbox.
+            // Financial document processing and the sales spam/automation pipeline stay out of the purchasing mailbox.
+            postProcessEinkaufEmail(email);
+        } else {
             // Legacy-Zuordnung/Belegverarbeitung bleibt auf den vorhandenen Mailkonten.
             if (email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
                 postProcessEmail(email);
@@ -641,16 +645,9 @@ public class EmailImportService {
 
         if ("EINKAUF".equals(kontoId)) {
             EinkaufEmailImportiert event = new EinkaufEmailImportiert(email.getId());
-            if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        eventPublisher.publishEvent(event);
-                    }
-                });
-            } else {
-                eventPublisher.publishEvent(event);
-            }
+            // The transactional listener registers for AFTER_COMMIT while the import transaction is still active.
+            // A committed EINKAUF email without its mapping is also found by the durable recovery query.
+            eventPublisher.publishEvent(event);
         }
 
         // Die Auswertung als Unzustellbarkeits-Meldung passiert bewusst erst
@@ -1039,6 +1036,15 @@ public class EmailImportService {
         }
 
         // Spam-Score und Zuordnungs-Änderungen persistieren
+        emailRepository.save(email);
+    }
+
+    @Transactional
+    public void postProcessEinkaufEmail(Email email) {
+        if (email == null || !"EINKAUF".equals(email.getKontoId())) {
+            throw new IllegalArgumentException("Die Nachricht gehört nicht zum Einkaufspostfach.");
+        }
+        emailAutoAssignmentService.tryAutoAssign(email);
         emailRepository.save(email);
     }
 

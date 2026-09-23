@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufOutboxService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandWorker;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufAnnahmeereignisConsumer;
 import org.example.kalkulationsprogramm.service.mail.KontoMailTransport;
 import org.example.kalkulationsprogramm.service.mail.MailkontoService;
 import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.inOrder;
+import java.util.List;
 
 class EinkaufVersandWorkerTest {
     @Test
@@ -19,7 +21,7 @@ class EinkaufVersandWorkerTest {
         KontoMailTransport transport = mock(KontoMailTransport.class);
         SentMailArchiver archiver = mock(SentMailArchiver.class);
         LocalTestMailPolicy policy = mock(LocalTestMailPolicy.class);
-        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy);
+        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         when(outbox.beanspruche(42L)).thenReturn(null);
         worker.verarbeite(42L);
@@ -36,7 +38,7 @@ class EinkaufVersandWorkerTest {
         KontoMailTransport transport = mock(KontoMailTransport.class);
         SentMailArchiver archiver = mock(SentMailArchiver.class);
         LocalTestMailPolicy policy = mock(LocalTestMailPolicy.class);
-        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy);
+        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
         byte[] mime = {1, 2, 3};
         var sending = new EinkaufOutboxService.Claim(42L, "EINKAUF", mime,
                 org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandauftrag.Status.LAEUFT,
@@ -73,7 +75,7 @@ class EinkaufVersandWorkerTest {
         SentMailArchiver archiver = mock(SentMailArchiver.class);
         LocalTestMailPolicy policy = mock(LocalTestMailPolicy.class);
         doThrow(new IllegalStateException("gesperrt")).when(policy).pruefeNetzwerkzugriff("EINKAUF");
-        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy);
+        EinkaufVersandWorker worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> worker.verarbeite(42L));
 
@@ -95,7 +97,7 @@ class EinkaufVersandWorkerTest {
         when(transport.sendenVorbereitet(isNull(), any())).thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis(
                 org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.UNKLAR,
                 "<mail@erp.local>", "SMTP_ANTWORT_UNKLAR", new byte[] {4}));
-        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy);
+        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         worker.verarbeite(42L);
         worker.verarbeite(42L);
@@ -123,12 +125,41 @@ class EinkaufVersandWorkerTest {
                 "<mail@erp.local>", null, new byte[] {4}));
         doThrow(new IllegalStateException("Datenbank nicht verfügbar"))
                 .when(outbox).abgeschlossen(eq(42L), any());
-        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy);
+        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> worker.verarbeite(42L));
         worker.verarbeite(42L);
 
         verify(transport, times(1)).sendenVorbereitet(isNull(), any());
         verifyNoInteractions(archiver);
+    }
+
+    @Test
+    void angenommeneAnfrageVerarbeitetDauerhaftesFachereignisNachSmtpUndVorArchivierung() {
+        EinkaufOutboxService outbox = mock(EinkaufOutboxService.class);
+        MailkontoService konten = mock(MailkontoService.class);
+        KontoMailTransport transport = mock(KontoMailTransport.class);
+        SentMailArchiver archiver = mock(SentMailArchiver.class);
+        LocalTestMailPolicy policy = mock(LocalTestMailPolicy.class);
+        EinkaufAnnahmeereignisConsumer consumer = mock(EinkaufAnnahmeereignisConsumer.class);
+        var sending = new EinkaufOutboxService.Claim(42L, "EINKAUF", new byte[] {4},
+                org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandauftrag.Status.LAEUFT,
+                1, false, "ANFRAGE", 8L, 9L);
+        var accepted = new EinkaufOutboxService.Claim(42L, "EINKAUF", new byte[] {4},
+                org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandauftrag.Status.ANGENOMMEN,
+                2, true, "ANFRAGE", 8L, 9L);
+        when(outbox.beanspruche(42L)).thenReturn(sending, accepted);
+        when(konten.resolve("EINKAUF")).thenReturn(null);
+        when(transport.sendenVorbereitet(isNull(), any())).thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis(
+                org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.ANGENOMMEN,
+                "<mail@erp.local>", null, new byte[] {4}));
+        var worker = new EinkaufVersandWorker(outbox, konten, transport, archiver, policy, List.of(consumer), mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandDispatchPublisher.class));
+
+        worker.verarbeite(42L);
+
+        var order = inOrder(outbox, consumer, archiver);
+        order.verify(outbox).abgeschlossen(eq(42L), any());
+        order.verify(outbox).verarbeiteOffeneAnnahmeereignisse(consumer, 100);
+        order.verify(archiver).archiviere(null, new byte[] {4});
     }
 }

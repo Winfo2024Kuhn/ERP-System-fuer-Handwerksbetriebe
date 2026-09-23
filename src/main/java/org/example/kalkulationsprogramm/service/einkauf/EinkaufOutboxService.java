@@ -74,6 +74,37 @@ public class EinkaufOutboxService {
         return result;
     }
 
+    /** Returns a prior dispatch for the exact approved request, so a client retry cannot create another mail. */
+    public java.util.Optional<VersandDto> findeWiederholungsauftrag(UUID idempotenzKey, String freigabeHash,
+            Long vorgangId, Long beteiligungId) {
+        if (idempotenzKey == null || freigabeHash == null || vorgangId == null || beteiligungId == null) {
+            throw new IllegalArgumentException("Die Versandfreigabe ist unvollständig.");
+        }
+        return new TransactionTemplate(transactionManager).execute(status -> repository.findByIdempotenzKey(idempotenzKey)
+                .map(auftrag -> {
+                    if (!"ANFRAGE".equals(auftrag.getTyp()) || !vorgangId.equals(auftrag.getVorgangId())
+                            || !beteiligungId.equals(auftrag.getBeteiligungId())
+                            || !freigabeHash.equals(auftrag.getFreigabeHash())) {
+                        throw new IllegalStateException("Der Idempotenzschlüssel gehört zu einer anderen Versandfreigabe.");
+                    }
+                    return dto(auftrag);
+                }));
+    }
+
+    /** Caller holds the participation lock until enqueue commits; explicit retries reuse the existing job. */
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public java.util.Optional<VersandDto> pruefeBeteiligungsversand(Long vorgangId, Long revisionId,
+            Long beteiligungId, UUID key, String freigabeHash) {
+        return repository.findFirstByTypAndVorgangIdAndRevisionIdAndBeteiligungIdOrderByIdAsc(
+                "ANFRAGE", vorgangId, revisionId, beteiligungId).map(auftrag -> {
+                    if (!key.equals(auftrag.getIdempotenzKey()) || !freigabeHash.equals(auftrag.getFreigabeHash())) {
+                        throw new IllegalStateException("Für diese Lieferantenanfrage besteht bereits ein Versandauftrag. "
+                                + "Bitte dessen Status prüfen und bei Bedarf den vorhandenen Auftrag erneut versuchen.");
+                    }
+                    return dto(auftrag);
+                });
+    }
+
     public VersandDto erneutVersuchen(Long id, long version, Long akteurId) {
         if (akteurId == null || akteurId <= 0) throw new IllegalArgumentException("Ein Benutzer ist erforderlich.");
         return transaktion(() -> {
@@ -122,6 +153,12 @@ public class EinkaufOutboxService {
             a.starte(a.getAkteurId());
             return new Claim(a.getId(), a.getKontoId(), a.getMimeBytes(), a.getStatus(), a.getVersion(), false, a.getTyp(), a.getVorgangId(), a.getRevisionId());
         });
+    }
+
+    public java.util.List<Long> findeVorbereiteteAuftraege(int limit) {
+        if (limit < 1 || limit > 500) throw new IllegalArgumentException("Das Dispatch-Limit muss zwischen 1 und 500 liegen.");
+        return transaktion(() -> repository.findeIdsByStatus(EinkaufVersandauftrag.Status.VORBEREITET,
+                org.springframework.data.domain.PageRequest.of(0, limit)));
     }
 
     public void abgeschlossen(Long id, org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis result) {

@@ -75,6 +75,18 @@ class EmailImportServiceTest {
         return email;
     }
 
+    @Test
+    void einkaufImportBehältBestehendeProjektAnfrageLieferantZuordnungOhneRechnungsautomation() {
+        Email email = erstelleEmail(3202L, "<einkauf@example.test>", "kontakt@example.test");
+        email.setKontoId("EINKAUF");
+
+        service.postProcessEinkaufEmail(email);
+
+        verify(emailAutoAssignmentService).tryAutoAssign(email);
+        verify(emailRepository).save(email);
+        verifyNoInteractions(spamFilterService, emailAttachmentProcessingService, steuerberaterEmailProcessingService);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 2.3.1 Erkennt Duplikate anhand Message-ID
     // ═══════════════════════════════════════════════════════════════
@@ -594,30 +606,11 @@ class EmailImportServiceTest {
         }
 
         @Test
-        void einkaufsereignisWirdErstNachCommitVeroeffentlicht() throws Exception {
+        void einkaufsereignisWirdWaehrenDerTransaktionAnAfterCommitListenerPubliziert() throws Exception {
             org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
             try {
                 assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN, "EINKAUF")).isTrue();
-                verifyNoInteractions(eventPublisher);
-                var callbacks = org.springframework.transaction.support.TransactionSynchronizationManager
-                        .getSynchronizations();
-                org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
-                callbacks.forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
                 verify(eventPublisher).publishEvent(new EmailImportService.EinkaufEmailImportiert(3202L));
-            } finally {
-                if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
-                    org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
-                }
-            }
-        }
-
-        @Test
-        void einkaufsereignisWirdBeiRollbackNichtVeroeffentlicht() throws Exception {
-            org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
-            try {
-                assertThat(importMessageForTest(mockMessage, mockFolder, EmailDirection.IN, "EINKAUF")).isTrue();
-                org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
-                verifyNoInteractions(eventPublisher);
             } finally {
                 if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
                     org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();

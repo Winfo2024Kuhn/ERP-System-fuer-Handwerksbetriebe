@@ -45,6 +45,22 @@ neuen Agenten und Abschnitt.
   Befunde plus Änderungen übergeben. Keine zusätzliche Reviewrolle ohne eigene
   Prüfverantwortung. Modellvorgaben des Nutzers gelten vor den Tabellen unten.
 
+## Sparsame Agentenkommunikation (Nutzervorgabe 23.09.2026)
+
+Agenten arbeiten nach einem vollständigen Startauftrag autonom bis zur fertigen
+Übergabe. Nachrichten zwischen Orchestrator und Agenten sind auf drei Anlässe
+beschränkt: **echte Blocker, notwendige Entscheidungen/Ownership-Absprachen und
+fertige Übergaben einschließlich Reviewbefunden**.
+
+- Keine regelmäßigen Statusabfragen, Meilensteinmeldungen, Bestätigungen oder
+  Erinnerungen an bereits erteilte Aufträge; auch nicht „beim nächsten Meilenstein“.
+- Fortschritt über Abschluss-/Fehlerereignisse und wartende Werkzeuge verfolgen,
+  ohne dafür neue Agentenantworten anzufordern. Unveränderten Wartestatus nicht
+  wiederholt kommentieren.
+- Notwendige Rückfragen/Befunde bündeln; Antworten knapp mit Entscheidung und
+  relevanten Datei-/Logpfaden. Keine erneute Zusammenfassung bekannter Verträge.
+- Tests, Logs oder Recherchen niemals nur für eine Statusmeldung wiederholen.
+
 ## Wann NICHT starten
 
 - Ein-Datei-Fix, klarer Bug, triviale Änderung → normal umsetzen oder `/bugfix`.

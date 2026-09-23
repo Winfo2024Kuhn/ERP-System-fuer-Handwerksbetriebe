@@ -14,4 +14,5 @@ public interface EinkaufAnnahmeereignisConsumer {
 
     /** Runs in the outbox transaction. Persist business writes idempotently using {@code ereignisSchluessel}; do not use REQUIRES_NEW or external I/O. */
     void verarbeite(EinkaufVersandAngenommen ereignis);
+
 }
