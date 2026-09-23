@@ -1184,3 +1184,126 @@ Zeit: 2026-09-23T19:50:15.448062+00:00
 - Sol R2 GELB ohne Blocker, somit gemäß Abschnittskriterien abgenommen. Bericht /tmp/beschaffung-abschnitt6-r2-review-report.md; integrierte Vollsuite /tmp/beschaffung-abschnitt6-r2-review-backend.log Exit0/BUILD SUCCESS,3433Tests/0Fehler/17bekannteSkips. Zwei reguläre Nachbesserungen verbraucht. Keine Frontendänderung; gültige Baumnachweise wiederverwendet.
 - Nichtblockierende Wartungshinweise: abgelaufene Vorschau-Datensätze bereinigen und optional Index auf Outbox(Typ,Vorgang,Revision,Beteiligung). Keine Produktänderung nach Review. Graphify Exit0, generierte Dateien bleiben absichtlich uncommittet. Kommunikationregel dauerhaft in beiden Skillkopien enthalten.
 - Nächster Abschnitt7 hat zwei unabhängige Luna-Pakete:19→21→22→24 und20. Alle fertig, dann gemeinsam integrieren und Sol-Review; kein vorgezogener Teilreview.
+
+
+## Abschnitt 7 — beide Coding-Pakete gestartet
+
+Zeit: 2026-09-23T19:51:37.523827+00:00
+
+- Abgenommene Integrationsbasis a2f24420906423ef42d6a2a24197db5fd95c8cf2 auf codex/beschaffung-konzept gepusht.
+- GPT-6-Luna /root/paket7a besitzt Tasks19→21→22→24 in .claude/worktrees/beschaffung-task-19, Branch codex/beschaffung-task-19. Auftrag /tmp/beschaffung-paket-7a-auftrag.md mit Reviewkorrekturverträgen aus Abschnitt6.
+- GPT-6-Luna /root/paket7b besitzt Task20 in .claude/worktrees/beschaffung-task-20, Branch codex/beschaffung-task-20. Auftrag /tmp/beschaffung-paket-7b-auftrag.md.
+- Kein Teilreview; erst beide vollständig fertig, dann gemeinsame Integration und Sol. Root führt keine konkurrierenden Produktedits aus. Nur Dummy-DBs/Fake-KI/Testmailserver, keine Produktion/Testläufe gegen lokale Kopie. Kommunikationsregel dauerhaft gültig.
+
+
+## Abschnitt 7 — Task 20 (Coding-Agent)
+
+Zeit: 2026-09-23T20:39:35Z
+Branch: codex/beschaffung-task-20
+Worktree: .claude/worktrees/beschaffung-task-20
+Commit(s): 88b3bef14f100beed0b9a93bb2755a7fc04b33bf
+Status: fertig
+
+Was gemacht wurde:
+- Persistente, deduplizierte Analysejobs je E-Mail, Anlagenhash und Parser-Version. Unterstützte PDFs und Textdateien werden begrenzt verarbeitet; CAD-Dateien werden ausgeschlossen. Jobs starten asynchron erst nach dem Commit. Der Datei-/PDF-/Providerlauf hält keine Datenbanktransaktion offen.
+- Angebotsfelder werden schema-validiert. Zitate werden seitenweise gegen extrahierten Originaltext und exakte Textpositionen geprüft; fehlende oder ungültige Fundstellen bleiben Vorschläge mit Confidence 0. Unbestätigte PA-/B-Referenzen werden als Zuordnungshinweise ausgegeben, ohne eine Mailzuordnung anzulegen.
+- Übernahmen prüfen die erwartete Angebotsversion, erzwingen einen Versionszuwachs und erstellen eine neue bearbeitbare Angebotsfassung. Manuelle Korrekturen übersteuern KI-Werte; eine abgeschlossene Analyse läuft idempotent nicht erneut. KI-Ausfälle setzen nur den Job auf Fehler und lassen manuelle Erfassung offen.
+- API unter /api/einkauf/analysen: Job starten/Status lesen, Vorschläge und deterministische Empfehlung aus Task18-Vergleichszahlen samt Quellen lesen sowie Vorschläge als neue Angebotsversion übernehmen. Neue Migration V391.
+- Graphify synchronisiert. Frontend unverändert; die Frontendtrees stimmen mit den wiederverwendeten Nachweisen überein.
+
+Verifikation:
+- Gezielte Tests: 9 Tests, 0 Fehler, BUILD SUCCESS — /tmp/task20-targeted-final3.log.
+- Backendvollsuite: 3442 Tests, 0 Fehler, 17 unveränderte bekannte Skips, BUILD SUCCESS — /tmp/task20-backend-full-final6.log.
+- Rote TDD-Nachweise: fehlende Analyse-/Worker-Implementierung — /tmp/task20-service-red.log, /tmp/task20-worker-red.log; zu langes Zitat wurde vor der Begrenzung übernommen — /tmp/task20-quote-red.log; fehlender Versionszwang bei Übernahme — /tmp/task20-force-increment-red.log.
+- Frontendbäume PC 83813ced1750173452c46197f876468f09600f3d und Mobile 9d847fc058aef8337a23a5ce4eeabd6ff2f174f1 stimmen mit /tmp/beschaffung-frontend-testnachweise.json überein. Keine Frontenddateien geändert.
+- Dummy-Testdaten/Provider-Fakes; keine echten Providerzugriffe, Lieferantenmails oder produktiven Datenbanken. Keine Dienste gestartet; Maven und Graphify sind beendet.
+- Nur die zehn Task20-Dateien gestaged/committet; staged Diff-Check sauber. Die generierten Graphify-Dateien graphify-out/GRAPH_REPORT.md und graphify-out/graph.json bleiben erwartungsgemäß uncommittet.
+
+Bedenken / Abweichungen vom Plan:
+- keine
+
+
+## Abschnitt 7 — Tasks 19, 21, 22, 24 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T20:51:36Z
+Branch: codex/beschaffung-task-19
+Commit(s): 01d8d56f2003976b99a4dc39381de7f8217cc528, 6dcd9f0433a493ab9d742b781a87d03a510035eb
+Status: fertig
+
+Was gemacht wurde:
+- Preisübernahme in die bestehende Historie mit Standard-/Projekt-/Staffelscope, Herkunfts- und Preisbasismetadaten, Komponentenhash, Idempotenz und gefilterten Standardpreisabfragen ergänzt. Gleichbleibende Beträge mit neuem Angebotsbeleg bleiben als neuer Stand nachvollziehbar; abgelaufene Vorschläge tragen einen Hinweis.
+- Bestellentwürfe aus geprüften Angeboten oder belegten Direktpreisen, unveränderliche Revisionen, Mengenreservierung und statusgeführte Bestellungen ergänzt. Bestellfreigabe bindet gespeicherten Vorschautoken, Revision, PDF-Bytes und Anlagenhash an den Outboxauftrag; persistente SMTP-Annahme verarbeitet die Mengenbuchung.
+- Teillieferungs-/Chargenmodell, AB-Abweichungssnapshot und Belegverknüpfung hinzugefügt. Mehrere Chargen je Bestellposition werden gemeinsam gegen die offene Menge geprüft; dieselbe Idempotenz-ID mit abweichendem Inhalt wird abgewiesen.
+- BESTELLUNG-Mailzuordnung validiert Versandnachweis, aktuelle Revision, Empfänger und – bei Angebotsbestellungen – Lieferantenbeteiligung und Anfragefassung.
+- Die MySQL-Testabdeckung prüft zwei parallele Freigaben derselben Bestellrevision mit verschiedenen Idempotenzschlüsseln (genau ein Outboxauftrag), die Migrationen V390/V392/V393 auf frischer Dummy-MySQL-Struktur und Hibernate-Validierung. Die vorhandenen konkurrierenden Mengenreservierungstests liefen ebenfalls.
+- Gezielte Backendtests: /tmp/paket7a-targeted-final-04.log — 39 Tests, 0 Fehler/Fehlschläge, BUILD SUCCESS. Vollständiges Backend: /tmp/paket7a-backend-full-final-02.log — 3448 Tests, 0 Fehler/Fehlschläge, 17 bekannte Skips, BUILD SUCCESS. Kontext-Regressionstest nach Behebung des Spring-Cycles: /tmp/paket7a-context-cycle-fix.log — 3 Tests grün.
+- Frontend unverändert: Tree-IDs 83813ced1750173452c46197f876468f09600f3d und 9d847fc058aef8337a23a5ce4eeabd6ff2f174f1 stimmen mit /tmp/beschaffung-frontend-testnachweise.json überein.
+- `./graphify update .claude/worktrees/beschaffung-task-19` ausgeführt; generierte Graphdatenänderungen nicht committet. `git diff --cached --check` sauber, staged Änderungen auf Secrets geprüft, Arbeitsbaum nach Commit sauber. Keine eigenen Dienste gestartet.
+
+Bedenken / Abweichungen vom Plan:
+- Keine bekannten. Graphify meldete den unveränderten Parserhinweis für `TiptapEditor.tsx` (Zeile 963); das Frontend dieses Pakets blieb unverändert.
+
+
+## Abschnitt 7 — vollständig integriert, Review R0
+
+Zeit: 2026-09-23T20:52:31.313119+00:00
+
+- Beide Pakete vollständig fertig: 7A6dcd9f04 (Tasks19/21/22/24), 7B88b3bef1 (Task20). Konfliktfrei gemeinsam --no-ff --no-commit auf a2f24420 integriert. Erst jetzt ein gemeinsamer Sol-Code-/Abschnittsreview; keine Frontendänderung und somit kein zusätzlicher Designreview.
+- Erste7A-Übergabe war ohne volle Pflichtnachweise; vor Review zurückgegeben und im laufenden Codingpaket ergänzt. Keine formale Reviewkorrektur verbraucht. Echte MySQL-Versandkonkurrenz, Reservierungen und V390/V392/V393-Hibernatevalidierung nun belegt. Backendvollsuite7A3448/7B3442, jeweils0Fehler/17bekannteSkips; Logs in Paketübergaben.
+- Sol übernimmt allein integrierte Backendvollsuite und Review. Root prüft Stage-Ownership und synchronisiert Graphify. Unveränderte Frontendnachweise bleiben gültig. Kein Push vor Abnahme.
+
+
+## Abschnitt 7 — Review R0 und direkte fachliche R1-Reparatur
+
+Zeit: 2026-09-23T21:15:52.621471+00:00
+
+- Sol R0 ROT trotz integrierter3457Tests/0Fehler/17Skips. Bericht /tmp/beschaffung-abschnitt7-r0-review-report.md. Sechs Blockergruppen: falsche Snapshot-Schlüssel; Änderungsrevision nicht versendbar; Teilstorno/Gesamtstatus und bestellübergreifende Mengen; unvalidierter externer Versandbeleg; wiederverwendbare Lieferschein-/AB-Belege; nicht-idempotenteV390/V393. Zusätzlich gemeinsame Sperrfolge und fehlende Workflowtests korrigieren.
+- Root übernimmt fachliche Reparatur in bestehendem Task19-Worktree, Luna7A beschränkt parallel auf V390/V393 und den Migrationsteil von EinkaufBestellungParallelTest. SQL-Änderungen fertig übergeben, keine konkurrierenden Tests/Commits. Root führt gemeinsame Checks und Commit aus. Paket7B88b3bef1 bleibt unverändert.
+- Merge abgebrochen, eigener ROOT-Kontextlog unter /tmp/beschaffung-abschnitt7-root-r0 gesichert/wiederhergestellt, Graphdaten unberührt. Erste formale Korrekturrunde R1, zwei sind zulässig.
+- /tmp/beschaffung-7-r1-root-red.log reproduziert drei Fehler: frei erfundener externer Beleg akzeptiert, fremde offene Menge stornierbar, Teilstorno markiert GesamtbestellungSTORNIERT.
+- Root nutzt vorhandene EinkaufMengenbuchung als bestellbezogene Mengenhistorie; gemeinsame Bedarfssperren aufsteigend vor Bestellkopf. Revisionsannahme/externes Nachweismodell getrennt von Outbox-ID. Änderungsannahme wandelt nur tatsächlich für diese Bestellung reservierte Zusatzmengen um; Reduktionen warten auf belegte Stornobestätigung. Anfrage-/Bestellmailzuordnung erfordert angenommene Bestellrevision.
+- Durchgehender echter MySQL-Ablauf für zwei Bestellungen desselben Bedarfs, initiale Mailannahme, +2Änderung, Teillieferung, Reduktion ohne automatische Freigabe, Teilstorno, Überstornoablehnung, verbleibende Lieferung, wiederverwendeten Lieferschein/AB und getrennten externen Beleg ist grün: /tmp/beschaffung-7-r1-root-workflow3.log. Finale zusätzliche Paralleländerungs-/Lieferprobe und Gesamtbackendtest laufen noch, keine Abnahme/kein Commit behauptet.
+
+
+## Abschnitt 7 — R1 durch Root fertig und reintegriert
+
+Zeit: 2026-09-23T21:18:33.295616+00:00
+
+- Task19-Korrekturcommit 820158073f9ebf24c796c2eb075912a4a79f4aa2 (Root-Fachcode, Luna-SQLkorrektur) mit unverändertem Paket20 88b3bef1 konfliktfrei gemeinsam integriert. 21Korrekturdateien, keine Frontendänderungen. Erst jetzt gleicher Sol-Reviewer für R1.
+- Explizite stabile Snapshotfelder statt fehlerhafter Varargs. Änderungsrevisionen sind bei offener Bestellung freigebbar; persistierter Annahmezeitpunkt je Revision verhindert Doppelbuchung. Mengen werden aus vorhandener bestellbezogener Buchungshistorie gebildet; nur offene eigene Reservierungen bei Annahme umgewandelt. Reduktionen bleiben bis belegtem Storno aktiv.
+- Teilstorno und Lieferung prüfen verbleibende Mengen genau dieser Bestellung/Herkunft, nicht nur den Bedarf insgesamt. Status bleibt bei Teilstorno lieferbar. Gemeinsamer Sperrhelfer sperrt Bedarfs-IDs aufsteigend vor dem Bestellkopf; Mutationen verwenden READ_COMMITTED plus pessimistische Locks/Versionsprüfung. Bestellkopf erhält Änderungszeitpunkt, damit Revision-/Liefer-/Stornoänderungen die optimistische Version fortschreiben.
+- Externer Versand: lesbare Datei mit geprüftem Hash, Lieferantenherkunft und unbenutztem SONSTIG-Beleg zwingend. Separater persistenter Revisionsnachweis mit Datei/Dokument/Hash/Datum/Grund/Akteur/Key; keine Überladung der Outbox-ID. Lieferantenbelege werden vor Bindung gesperrt; vorhandene Lieferschein-/AB-Bindung wird nicht überschrieben. Bestellmailzuordnung braucht angenommene Revision.
+- Wiederholte Storno-/Externaktionen werden anhand des vollständigen Auditpayloads samt Akteur/Key geprüft; JSON-Zahlen werden nach Persistenz numerisch verglichen, externer Zeitstempel als ISO-Text. Lieferungswiederholung berücksichtigt DB-Mikrosekunden und Dezimalskalen, ohne neue Mengenbuchung.
+- V390/V393 haben information_schema-Guards pro Spalte/Index; Test deckt teilangewandte und doppelte Anwendung ab. V392 ergänzt nur neue noch nicht abgenommene Bestellfelder. Frühere Migrationen unverändert.
+- Echte MySQL-Regression mit zwei Bestellungen desselben Bedarfs, Vorschau/PDF-Bedingungen, Mailfreigabe/Annahme/replay, +2Änderung, Teillieferung, Reduktion ohne automatische Mengenfreigabe, Teilstorno/replay, Überstornoablehnung, Restlieferung/replay und doppeltem Lieferschein/AB. Externer Beleg separat geprüft, Paralleländerung/Lieferung erzeugt genau einen gültigen Übergang ohne Deadlock. Physische Belegbytes/Herkunft/fehlende/fremde Datei gesondert getestet.
+- Rotnachweis /tmp/beschaffung-7-r1-root-red.log (drei reproduzierte Fehler). Workflowgrün /tmp/beschaffung-7-r1-root-workflow3.log. Finale vollständige Backend-Suite /tmp/beschaffung-7-r1-root-backend-full.log: direkter Exit0/BUILD SUCCESS,3455Tests/0Fehler/17bekannteSkips; inklusive neuer Parallelprobe. Frontendtrees identisch zu gültigen gemeinsamen Nachweisen.
+- Git staged Diff geprüft, keine Secrets/Graphdaten/Fremdänderungen; Worktree sauber nach Commit. Root synchronisiert Graphify nach gemeinsamer Reintegration. Keine Dienste oder Tests mehr aus dem Codingprozess aktiv.
+
+
+## Abschnitt 7 — R1-Befunde und direkte R2-Reparatur
+
+Zeit: 2026-09-23T21:27:06.442846+00:00
+
+- Sol R1 ROT: /tmp/beschaffung-abschnitt7-r1-review-report.md; integrierte3464Tests/0Fehler/17bekannteSkips grün. Zwei neue Blocker: vollständige Lieferung der alten Bestellfassung blockiert offene Änderung und lässt Reservierung hängen; Stornobestätigung verlangt zwingend Gutschrift. R0-Befundgruppen sind korrigiert und bestätigt.
+- Root übernimmt auch zweite formale Korrekturrunde selbst, wie vom Nutzer verlangt. Merge abgebrochen, ROOT-Kontextlog vorher unter /tmp/beschaffung-abschnitt7-r1-root-log.md gesichert und wiederhergestellt. Task20 bleibt unverändert.
+- Offene Revision hält Bestellung bearbeitbar, bis Versandannahme oder dokumentiertes Verwerfen erfolgt. Verwerfen erhält Revisionsinhalt und Historie, markiert verworfen_am, gibt nur eigene zusätzliche Reservierungen mit aktuellen Bedarfsversionen frei und berechnet Kopfstatus aus verbleibenden aktiven Mengen. Zum Versand freigegebene Fassungen dürfen nicht verworfen werden. DTO zeigt verworfen. Neue V392 im noch nicht abgenommenen Abschnitt ergänzt Marker.
+- Stornobestätigung akzeptiert neben GUTSCHRIFT auch dokumentierte SONSTIG-Bestätigung mit Pflichtbegründung, Lieferanten-/Einmaligkeitsprüfung und Audit. Rechnungen/Lieferscheine werden dadurch nicht als Stornogrund akzeptiert.
+- Vier neue echte MySQL-Regressionen: alte Fassung vollständig liefern → Änderung annehmen → Rest liefern; alte Fassung vollständig liefern → Änderung verwerfen → veraltete Vorschau abweisen; verwerfen → erneut ändern sowie Abbruch nach Mailfreigabe abweisen und initialen Entwurf freigeben; Storno vor Rechnung mit Bestätigung inklusive Wiederholung/falschem Typ/Belegwiederverwendung. Gezielte18Tests grün, direkter Exit0: /tmp/beschaffung-7-r2-root-targeted.log. Vollsuite läuft, noch kein Commit/Reviewstart.
+
+
+## Abschnitt 7 — Root-R2 fertig und gemeinsam reintegriert
+
+Zeit: 2026-09-23T21:29:21.441323+00:00
+
+- Task19 ae6863e173a8548810f64866fe513a55cfdee3ac, sieben Korrekturdateien. Task20 88b3bef14f100beed0b9a93bb2755a7fc04b33bf unverändert. Beide gemeinsam konfliktfrei --no-ff --no-commit integriert. Zweite reguläre Korrekturrunde; gleicher Sol-Reviewer übernimmt Review und integrierte Vollsuite.
+- Vollständiger Paketbackendtest: /tmp/beschaffung-7-r2-root-backend-full.log, direkter Exit0/BUILD SUCCESS,3459Tests/0Fehler/17bekannteSkips. Gezielte18Tests ebenfalls grün. Unveränderte Frontendtrees entsprechen /tmp/beschaffung-frontend-testnachweise.json. Keine neuen Dienste/Testprozesse aktiv.
+- Staged Diff und Ownership vor Paketcommit geprüft, keine Graphdaten/Secrets/Fremdänderungen. Neuer DTO-Revisionsmarker verworfen; unveröffentlichte Änderung kann ohne Einfluss auf aktive alte Bestellung abgebrochen werden, Mailfreigabe verhindert Abbruch. SONSTIG-Stornobestätigung mit Begründung als Alternative zu Gutschrift. Details und Regressionen im vorherigen Block.
+
+
+## Abschnitt 7 — Sol R2 grün, abgenommen
+
+Zeit: 2026-09-23T21:33:28.457841+00:00
+
+- Sol R2 GRÜN ohne Blocker, Warnungen oder Hinweise. Bericht /tmp/beschaffung-abschnitt7-r2-review-report.md; integrierte Vollsuite /tmp/beschaffung-abschnitt7-r2-review-backend.log direkter Exit0/BUILD SUCCESS,3468Tests/0Fehler/17bekannteSkips. Zwei reguläre Nachbesserungen verbraucht. Beide R1-Blocker durch echte MySQL-Regressionen belegt.
+- Keine Frontendänderung; gültige gemeinsame Trees/Nachweise wiederverwendet. Graphify /tmp/beschaffung-abschnitt7-r2-graphify.log Exit0. Generierte Graphdaten bleiben uncommittet. Staged Diff vom Reviewer geprüft, keine Secrets/Fremdänderungen.
+- Abschnitt8 folgt mit zwei parallelen Luna-Paketen25→23 und26. Alle Codingpakete vollständig fertig, dann gemeinsame Integration und Sol-Review. Aktuelle Bestell-/Revisions-/Mengenverträge in Briefs8A/8B/9A/11A ergänzt.

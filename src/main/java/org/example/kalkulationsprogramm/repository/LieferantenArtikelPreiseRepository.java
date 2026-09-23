@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
@@ -23,11 +25,13 @@ public interface LieferantenArtikelPreiseRepository
         JpaSpecificationExecutor<LieferantenArtikelPreise> {
 
     /** Der derzeit gueltige Preis eines Lieferanten fuer einen Artikel. */
-    Optional<LieferantenArtikelPreise> findByArtikel_IdAndLieferant_IdAndAktuellTrue(Long artikelId, Long lieferantId);
+    @Query("select p from LieferantenArtikelPreise p where p.artikel.id = :artikelId and p.lieferant.id = :lieferantId and p.aktuell = true and p.scope = org.example.kalkulationsprogramm.domain.PreisScope.STANDARD")
+    Optional<LieferantenArtikelPreise> findByArtikel_IdAndLieferant_IdAndAktuellTrue(@Param("artikelId") Long artikelId, @Param("lieferantId") Long lieferantId);
 
     /** Der derzeit gueltige Eintrag zu einer Lieferanten-Artikelnummer. */
+    @Query("select p from LieferantenArtikelPreise p where upper(p.externeArtikelnummer) = upper(:nummer) and p.lieferant.id = :lieferantId and p.aktuell = true and p.scope = org.example.kalkulationsprogramm.domain.PreisScope.STANDARD")
     Optional<LieferantenArtikelPreise> findByExterneArtikelnummerIgnoreCaseAndLieferant_IdAndAktuellTrue(
-            String externeArtikelnummer, Long lieferantId);
+            @Param("nummer") String externeArtikelnummer, @Param("lieferantId") Long lieferantId);
 
     /**
      * Die derzeit gueltigen Eintraege zu mehreren Lieferanten-Artikelnummern in
@@ -51,6 +55,7 @@ public interface LieferantenArtikelPreiseRepository
     @Query("""
             SELECT p FROM LieferantenArtikelPreise p
             WHERE p.lieferant.id = :lieferantId AND p.aktuell = true
+            AND p.scope = org.example.kalkulationsprogramm.domain.PreisScope.STANDARD
             AND UPPER(p.externeArtikelnummer) IN :externeArtikelnummern
             """)
     List<LieferantenArtikelPreise> findByLieferant_IdAndAktuellTrueAndExterneArtikelnummerIn(
@@ -62,6 +67,7 @@ public interface LieferantenArtikelPreiseRepository
             SELECT p FROM LieferantenArtikelPreise p
             LEFT JOIN FETCH p.lieferant
             WHERE p.artikel.id = :artikelId AND p.aktuell = true AND p.preis IS NOT NULL
+              AND p.scope = org.example.kalkulationsprogramm.domain.PreisScope.STANDARD
             ORDER BY p.preis ASC
             """)
     List<LieferantenArtikelPreise> findeAktuellePreise(@Param("artikelId") Long artikelId);
@@ -84,6 +90,15 @@ public interface LieferantenArtikelPreiseRepository
     @Query("""
             UPDATE LieferantenArtikelPreise p SET p.aktuell = false
             WHERE p.artikel.id = :artikelId AND p.lieferant.id = :lieferantId AND p.aktuell = true
+              AND p.scope = org.example.kalkulationsprogramm.domain.PreisScope.STANDARD
             """)
     int markiereBisherigeAlsVeraltet(@Param("artikelId") Long artikelId, @Param("lieferantId") Long lieferantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from LieferantenArtikelPreise p where p.artikel.id = :artikelId and p.lieferant.id = :lieferantId order by p.id")
+    List<LieferantenArtikelPreise> findeHistorieFuerUpdate(@Param("artikelId") Long artikelId,
+            @Param("lieferantId") Long lieferantId);
+
+    Optional<LieferantenArtikelPreise> findByIdempotenzKey(java.util.UUID idempotenzKey);
+    List<LieferantenArtikelPreise> findAllByArtikel_IdAndLieferant_IdAndAktuellTrue(Long artikelId, Long lieferantId);
 }

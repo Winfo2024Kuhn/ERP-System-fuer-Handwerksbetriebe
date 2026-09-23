@@ -29,6 +29,12 @@ public class LieferantArtikelpreisMapper {
         dto.setExterneArtikelnummer(entity.getExterneArtikelnummer());
         dto.setPreis(entity.getPreis());
         dto.setPreisAenderungsdatum(toLocalDate(entity.getPreisAenderungsdatum()));
+        dto.setScope(entity.getScope()); dto.setProjektId(entity.getProjektId());
+        dto.setAbMenge(entity.getAbMenge()); dto.setBisMenge(entity.getBisMenge());
+        dto.setGueltigAb(entity.getGueltigAb()); dto.setGueltigBis(entity.getGueltigBis());
+        dto.setWaehrung(entity.getWaehrung()); dto.setEinheit(entity.getEinheit());
+        dto.setPreisbasisMenge(entity.getPreisbasisMenge());
+        dto.setAngebotsversionId(entity.getAngebotsversionId()); dto.setAngebotspositionId(entity.getAngebotspositionId());
         return dto;
     }
 

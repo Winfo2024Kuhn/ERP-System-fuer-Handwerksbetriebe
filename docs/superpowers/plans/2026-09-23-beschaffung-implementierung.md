@@ -87,7 +87,7 @@ Der vorhandene Featurebranch `codex/beschaffung-konzept` bleibt Integrationsbasi
 | 4 – Materialeingang und Mailimport | 5; 6 → 7; 11 | Abgenommen; Sol-Code grün, Design abgenommen, 3345 Backendtests / 0 Fehler |
 | 5 – Anfragevorbereitung und Versandaufträge | 13; 14; 15 | Abgenommen; Sol-Code grün nach 1 Nachbesserung, 3379 Backendtests / 0 Fehler; PDF geprüft |
 | 6 – Kommunikation, Angebote und Vergleich | 16 → 17 → 18 | Abgenommen; Sol gelb ohne Blocker nach 2 Nachbesserungen, 3433 Backendtests / 0 Fehler |
-| 7 – Bestellung, Lieferungen und KI | 19 → 21 → 22 → 24; 20 | Abschnitt 6 abgenommen |
+| 7 – Bestellung, Lieferungen und KI | 19 → 21 → 22 → 24; 20 | Abgenommen; Sol grün nach 2 Nachbesserungen, 3468 Backendtests / 0 Fehler |
 | 8 – Unterlagen, Rechnungsprüfung und Fristen | 25 → 23; 26 | Abschnitt 7 abgenommen |
 | 9 – Gemeinsame Oberflächenbausteine | 27 | Abschnitt 8 abgenommen |
 | 10 – Einstellungen und Anfrageseiten | 29; 30 → 31 | Abschnitt 9 abgenommen |

@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service.einkauf;
 import java.util.Locale;
 import java.util.Set;
 import java.util.List;
+import java.util.Objects;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.regex.Pattern;
 import org.example.kalkulationsprogramm.domain.Email;
@@ -38,15 +39,22 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
     private final EinkaufAuditService audit;
     private final ObjectMapper objectMapper;
     private final org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandauftraege;
+    private final org.example.kalkulationsprogramm.repository.EinkaufBestellungRepository bestellungen;
+    private final org.example.kalkulationsprogramm.repository.BestellungRevisionRepository bestellrevisionen;
+    private final org.example.kalkulationsprogramm.repository.AngebotVersionRepository angebotsversionen;
     private final PlatformTransactionManager transactionManager;
     @Value("${app.background-jobs.enabled:true}")
     private boolean backgroundJobsEnabled;
     private static final Pattern PA_NUMMER = Pattern.compile("(?i)\\bPA-[0-9]{4}-[A-Z0-9-]{3,32}\\b");
 
+    @org.springframework.beans.factory.annotation.Autowired
     public EinkaufAntwortZuordnungService(EmailRepository emails, AnfrageLieferantRepository beteiligungen,
             EinkaufMailZuordnungRepository zuordnungen, EinkaufsanfrageRepository anfragen,
             AnfrageRevisionRepository revisionen, EinkaufAuditService audit, ObjectMapper objectMapper,
             org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandauftraege,
+            org.example.kalkulationsprogramm.repository.EinkaufBestellungRepository bestellungen,
+            org.example.kalkulationsprogramm.repository.BestellungRevisionRepository bestellrevisionen,
+            org.example.kalkulationsprogramm.repository.AngebotVersionRepository angebotsversionen,
             PlatformTransactionManager transactionManager) {
         this.emails = emails;
         this.beteiligungen = beteiligungen;
@@ -56,7 +64,20 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
         this.audit = audit;
         this.objectMapper = objectMapper;
         this.versandauftraege = versandauftraege;
+        this.bestellungen = bestellungen;
+        this.bestellrevisionen = bestellrevisionen;
+        this.angebotsversionen = angebotsversionen;
         this.transactionManager = transactionManager;
+    }
+
+    /** Compatibility constructor for isolated import-recovery fixtures predating bestellungs validation. */
+    public EinkaufAntwortZuordnungService(EmailRepository emails, AnfrageLieferantRepository beteiligungen,
+            EinkaufMailZuordnungRepository zuordnungen, EinkaufsanfrageRepository anfragen,
+            AnfrageRevisionRepository revisionen, EinkaufAuditService audit, ObjectMapper objectMapper,
+            org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandauftraege,
+            PlatformTransactionManager transactionManager) {
+        this(emails, beteiligungen, zuordnungen, anfragen, revisionen, audit, objectMapper, versandauftraege,
+                null, null, null, transactionManager);
     }
 
     public static String klassifiziere(String autoSubmitted, String subject, String body) {
@@ -127,9 +148,9 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
             throw new IllegalArgumentException("Bitte geben Sie eine gültige, begründete Zuordnung an.");
         Email email = emails.findById(emailId).orElseThrow(() -> new java.util.NoSuchElementException("E-Mail nicht gefunden."));
         if (!"EINKAUF".equals(email.getKontoId())) throw new IllegalArgumentException("Nur E-Mails aus dem Einkaufspostfach können zugeordnet werden.");
-        if ("BESTELLUNG".equals(typ))
-            throw new IllegalArgumentException("Bestellzuordnungen sind erst verfügbar, wenn das Bestellmodell bereitsteht.");
-        if ("ANFRAGE".equals(typ)) {
+        if ("BESTELLUNG".equals(typ)) {
+            validiereBestellung(email, vorgangId, beteiligungId, revisionId);
+        } else if ("ANFRAGE".equals(typ)) {
             var anfrage = anfragen.findById(vorgangId).orElseThrow(() -> new java.util.NoSuchElementException("Anfrage nicht gefunden."));
             var revision = revisionId == null ? null : revisionen.findByIdAndAnfrageId(revisionId, vorgangId).orElse(null);
             if (revision == null || anfrage.getAktuelleRevision() == null
@@ -153,6 +174,34 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
         audit.protokolliere("EINKAUF_EMAIL", emailId, "EMAIL_ZUORDNUNG_BESTAETIGT", akteurId,
                 objectMapper.valueToTree(vorher), objectMapper.valueToTree(ergebnis), begruendung);
         return ergebnis;
+    }
+
+    private void validiereBestellung(Email email, Long bestellungId, Long beteiligungId, Long revisionId) {
+        if (bestellungen == null || bestellrevisionen == null || angebotsversionen == null)
+            throw new IllegalArgumentException("Bestellzuordnungen benötigen den aktuellen Bestellvalidator.");
+        var bestellung = bestellungen.findById(bestellungId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Bestellung nicht gefunden."));
+        if (bestellung.getStatus() == org.example.kalkulationsprogramm.domain.einkauf.BestellungStatus.ENTWURF
+                || bestellung.getStatus() == org.example.kalkulationsprogramm.domain.einkauf.BestellungStatus.STORNIERT)
+            throw new IllegalArgumentException("Die Bestellung wurde noch nicht versandt oder ist storniert.");
+        var revision = bestellrevisionen.findFirstByBestellung_IdOrderByNummerDesc(bestellungId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Bestellfassung nicht gefunden."));
+        if (revisionId == null || !revisionId.equals(revision.getId()) || !revision.istAngenommen() || revision.getVersandId() == null && revision.getExternerNachweis().isEmpty())
+            throw new IllegalArgumentException("Die Bestellfassung wurde nicht nachweislich versandt oder ist nicht mehr aktuell.");
+        String expectedEmail = bestellung.getEmpfaenger() == null ? null : bestellung.getEmpfaenger().email();
+        if (expectedEmail == null || email.getFromAddress() == null || !expectedEmail.equalsIgnoreCase(email.getFromAddress()))
+            throw new IllegalArgumentException("Absender und gespeicherter Bestellempfänger passen nicht zusammen.");
+        if (bestellung.getAngebotsversionId() == null) {
+            if (beteiligungId != null) throw new IllegalArgumentException("Eine Direktbestellung hat keine Angebotsbeteiligung.");
+            return;
+        }
+        var offer = angebotsversionen.findById(bestellung.getAngebotsversionId())
+                .orElseThrow(() -> new java.util.NoSuchElementException("Angebotsfassung nicht gefunden."));
+        var participation = offer.getAngebot().getBeteiligung();
+        if (beteiligungId == null || !beteiligungId.equals(participation.getId())
+                || !Objects.equals(bestellung.getAnfrageRevisionId(), participation.getRevision().getId())
+                || !Objects.equals(expectedEmail, participation.getKontakt().email()))
+            throw new IllegalArgumentException("Bestellung, Lieferantenbeteiligung, Anfragefassung und Absender passen nicht zusammen.");
     }
 
     private Zuordnungsergebnis ordneZu(Email email) {

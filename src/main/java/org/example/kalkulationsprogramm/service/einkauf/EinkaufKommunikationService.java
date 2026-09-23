@@ -174,6 +174,12 @@ public class EinkaufKommunikationService {
         });
     }
 
+    /** Bestellverlauf bleibt an dieselbe paginierte Zuordnungsquelle gebunden wie der Anfrageverlauf. */
+    @Transactional(readOnly = true)
+    public Page<NachrichtDto> bestellverlauf(Long bestellungId, Pageable pageable) {
+        return verlauf("BESTELLUNG", bestellungId, pageable);
+    }
+
     private VersandBasis ladeBasis(Long anfrageId, Long beteiligungId) {
         if (anfrageId == null || anfrageId <= 0 || beteiligungId == null || beteiligungId <= 0)
             throw new IllegalArgumentException("Anfrage und Lieferantenbeteiligung sind ungültig.");

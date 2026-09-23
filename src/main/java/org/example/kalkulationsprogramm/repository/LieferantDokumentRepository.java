@@ -11,6 +11,10 @@ import java.util.List;
 
 @Repository
 public interface LieferantDokumentRepository extends JpaRepository<LieferantDokument, Long> {
+        @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+        @Query("select d from LieferantDokument d where d.id = :id")
+        java.util.Optional<LieferantDokument> sperreEinkaufsbeleg(@Param("id") Long id);
+
 
         // JOIN FETCH lädt Geschäftsdaten + Uploader + Lieferant in EINEM Query mit,
         // sonst gibt es N+1 wenn das DTO später darauf zugreift.

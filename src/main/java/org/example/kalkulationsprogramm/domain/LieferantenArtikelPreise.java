@@ -78,6 +78,24 @@ public class LieferantenArtikelPreise {
     @Column(name = "notiz")
     private String notiz;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scope", nullable = false)
+    private PreisScope scope = PreisScope.STANDARD;
+
+    @Column(name = "projekt_id") private Long projektId;
+    @Column(name = "ab_menge", precision = 19, scale = 6) private BigDecimal abMenge;
+    @Column(name = "bis_menge", precision = 19, scale = 6) private BigDecimal bisMenge;
+    @Column(name = "gueltig_ab") private java.time.LocalDate gueltigAb;
+    @Column(name = "gueltig_bis") private java.time.LocalDate gueltigBis;
+    @Column(name = "waehrung", nullable = false, length = 3) private String waehrung = "EUR";
+    @Column(name = "einheit", length = 24) private String einheit;
+    @Column(name = "preisbasis_menge", precision = 19, scale = 6) private BigDecimal preisbasisMenge;
+    @Column(name = "angebotsversion_id") private Long angebotsversionId;
+    @Column(name = "angebotsposition_id") private Long angebotspositionId;
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
+    @Column(name = "idempotenz_key", length = 36) private java.util.UUID idempotenzKey;
+    @Column(name = "komponenten_hash", length = 64) private String komponentenHash;
+
     /** Technischer Erfassungszeitpunkt, unabhaengig vom fachlichen Preisdatum. */
     @Column(name = "erfasst_am")
     private Date erfasstAm;
@@ -109,4 +127,6 @@ public class LieferantenArtikelPreise {
         nachfolger.setAktuell(true);
         return nachfolger;
     }
+
+    public boolean istAllgemeinerPreis() { return scope == null || scope == PreisScope.STANDARD; }
 }
