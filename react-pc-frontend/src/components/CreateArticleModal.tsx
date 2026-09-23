@@ -7,10 +7,13 @@ import { Select } from "./ui/select-custom";
 import { CategoryTreeModal } from "./CategoryTreeModal";
 import { SupplierSelectModal } from "./SupplierSelectModal";
 import { useToast } from './ui/toast';
+import type { Artikel } from '../types';
+import { validateNumberDrafts } from '../lib/numberDrafts';
 
 interface CreateArticleModalProps {
     onClose: () => void;
     onSave: () => void;
+    onCreated?: (artikel: Artikel) => void;
 }
 
 const VERRECHNUNGSEINHEITEN = [
@@ -20,21 +23,21 @@ const VERRECHNUNGSEINHEITEN = [
     { value: "STUECK", label: "Stück" }
 ];
 
-export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps) {
+export function CreateArticleModal({ onClose, onSave, onCreated }: CreateArticleModalProps) {
     const toast = useToast();
     const [formData, setFormData] = useState({
         produktname: "",
         produktlinie: "",
         produkttext: "",
         externeArtikelnummer: "",
-        verpackungseinheit: 1,
+        verpackungseinheit: '1',
         preiseinheit: "1",
         verrechnungseinheit: "STUECK",
         kategorieId: 0,
         kategorieName: "",
         werkstoffId: 0 as number | null,
         werkstoffName: "",
-        preis: 0,
+        preis: '',
         lieferantId: 0,
         lieferantName: ""
     });
@@ -66,6 +69,15 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
             toast.warning("Produktname ist erforderlich.");
             return;
         }
+
+        const zahlen = validateNumberDrafts({ verpackungseinheit: formData.verpackungseinheit, preis: formData.preis }, {
+            verpackungseinheit: { label: 'VPE (Menge)', required: true, min: 1, integer: true },
+            preis: { label: 'Preis', min: 0 },
+        });
+        if (!zahlen.valid) {
+            toast.warning(zahlen.message);
+            return;
+        }
         
         setLoading(true);
         try {
@@ -74,12 +86,12 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                 produktlinie: formData.produktlinie,
                 produkttext: formData.produkttext,
                 externeArtikelnummer: formData.externeArtikelnummer,
-                verpackungseinheit: formData.verpackungseinheit,
+                verpackungseinheit: zahlen.values.verpackungseinheit,
                 preiseinheit: formData.preiseinheit,
                 verrechnungseinheit: formData.verrechnungseinheit,
                 kategorieId: formData.kategorieId || null,
                 werkstoffId: formData.werkstoffId || null,
-                preis: formData.preis,
+                ...(zahlen.values.preis === null ? {} : { preis: zahlen.values.preis }),
                 lieferantId: formData.lieferantId || null
             };
 
@@ -90,6 +102,8 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
             });
 
             if (!res.ok) throw new Error("Fehler beim Speichern");
+            const savedArticle = await res.json() as Artikel;
+            onCreated?.(savedArticle);
             onSave();
             onClose();
         } catch (err) {
@@ -185,10 +199,10 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         <div className="space-y-1.5">
                             <Label>VPE (Menge)</Label>
                             <Input 
-                                type="number" 
-                                min="1"
+                                inputMode="decimal"
                                 value={formData.verpackungseinheit} 
-                                onChange={e => handleChange('verpackungseinheit', parseInt(e.target.value) || 1)} 
+                                onFocus={() => { if (formData.verpackungseinheit === '0' || formData.verpackungseinheit === '0,00') handleChange('verpackungseinheit', ''); }}
+                                onChange={e => handleChange('verpackungseinheit', e.target.value)}
                             />
                         </div>
                         <div className="space-y-1.5">
@@ -205,10 +219,11 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         <div className="space-y-1.5">
                             <Label>Preis (€)</Label>
                             <Input 
-                                type="number" 
-                                step="0.01"
+                                inputMode="decimal"
+                                placeholder="Optional"
                                 value={formData.preis} 
-                                onChange={e => handleChange('preis', parseFloat(e.target.value) || 0)} 
+                                onFocus={() => { if (formData.preis === '0' || formData.preis === '0,00') handleChange('preis', ''); }}
+                                onChange={e => handleChange('preis', e.target.value)}
                             />
                         </div>
                         <div className="space-y-1.5">
