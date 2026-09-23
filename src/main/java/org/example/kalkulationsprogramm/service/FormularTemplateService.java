@@ -2,7 +2,6 @@ package org.example.kalkulationsprogramm.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import org.example.kalkulationsprogramm.domain.DokumentnummerCounter;
 import org.example.kalkulationsprogramm.domain.Dokumenttyp;
 import org.example.kalkulationsprogramm.domain.FormularTemplateAssignment;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
@@ -10,7 +9,6 @@ import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.Formular.FormularTemplateListDto;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
-import org.example.kalkulationsprogramm.repository.DokumentnummerCounterRepository;
 import org.example.kalkulationsprogramm.repository.FormularTemplateAssignmentRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -32,6 +30,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.OffsetDateTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -70,7 +69,7 @@ public class FormularTemplateService {
     private final Path templatesDir;
     private final ObjectMapper objectMapper;
     private final FormularTemplateAssignmentRepository assignmentRepository;
-    private final DokumentnummerCounterRepository dokumentnummerCounterRepository;
+    private final DokumentnummerService dokumentnummerService;
     private final ProjektRepository projektRepository;
     private final KundeRepository kundeRepository;
 
@@ -78,7 +77,7 @@ public class FormularTemplateService {
             @Value("${file.form-template-dir:${user.dir}/uploads/formulare}") String templateDirProp,
             @Value("${file.form-template-filename:formular-template.html}") String fileNameProp,
             FormularTemplateAssignmentRepository assignmentRepository,
-            DokumentnummerCounterRepository dokumentnummerCounterRepository, ProjektRepository projektRepository,
+            DokumentnummerService dokumentnummerService, ProjektRepository projektRepository,
             KundeRepository kundeRepository) {
         this.templateDir = Path.of(templateDirProp).toAbsolutePath().normalize();
         this.assetDir = templateDir.resolve("assets");
@@ -87,7 +86,7 @@ public class FormularTemplateService {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
         this.assignmentRepository = assignmentRepository;
-        this.dokumentnummerCounterRepository = dokumentnummerCounterRepository;
+        this.dokumentnummerService = dokumentnummerService;
         this.projektRepository = projektRepository;
         this.kundeRepository = kundeRepository;
         try {
@@ -156,20 +155,8 @@ public class FormularTemplateService {
         return map;
     }
 
-    @Transactional
     public String generateDokumentnummer() {
-        String monthKey = DateTimeFormatter.ofPattern("yyyyMM").format(OffsetDateTime.now(ZoneId.systemDefault()));
-        DokumentnummerCounter counter = dokumentnummerCounterRepository.findByMonthKey(monthKey).orElseGet(() -> {
-            DokumentnummerCounter neu = new DokumentnummerCounter();
-            neu.setMonthKey(monthKey);
-            neu.setCounter(0L);
-            return neu;
-        });
-        long next = counter.getCounter() + 1;
-        counter.setCounter(next);
-        dokumentnummerCounterRepository.save(counter);
-        String month = monthKey.substring(4);
-        return "%s/%05d".formatted(month, next);
+        return dokumentnummerService.naechsteVerkaufsnummer(YearMonth.now(ZoneId.systemDefault()));
     }
 
     public Map<String, String> resolveProjektPlaceholders(Long projektId) {
