@@ -1,0 +1,67 @@
+CREATE TABLE IF NOT EXISTS einkauf_versandauftrag (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    version BIGINT NOT NULL DEFAULT 0,
+    typ VARCHAR(40) NOT NULL,
+    vorgang_id BIGINT NOT NULL,
+    revision_id BIGINT NULL,
+    beteiligung_id BIGINT NULL,
+    konto_id VARCHAR(30) NOT NULL,
+    idempotenz_key BINARY(16) NOT NULL,
+    payload_hash VARCHAR(64) NOT NULL,
+    mime_hash VARCHAR(64) NOT NULL,
+    freigabe_hash VARCHAR(128) NOT NULL,
+    snapshot_json LONGBLOB NOT NULL,
+    mime_bytes LONGBLOB NOT NULL,
+    message_id VARCHAR(255) NOT NULL,
+    status ENUM('VORBEREITET','LAEUFT','ANGENOMMEN','FEHLGESCHLAGEN','UNKLAR') NOT NULL,
+    fehler_code VARCHAR(80) NULL,
+    erstellt_am DATETIME(6) NOT NULL,
+    angenommen_am DATETIME(6) NULL,
+    archiviert_am DATETIME(6) NULL,
+    archiv_claim_am DATETIME(6) NULL,
+    archiv_fehler_code VARCHAR(80) NULL,
+    akteur_id BIGINT NULL,
+    klaerung_entscheidung VARCHAR(40) NULL,
+    klaerung_beleg VARCHAR(5000) NULL,
+    klaerung_akteur_id BIGINT NULL,
+    klaerung_am DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_einkauf_versand_idempotenz UNIQUE (idempotenz_key),
+    KEY ix_einkauf_versand_status (status, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS einkauf_versandversuch (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    auftrag_id BIGINT NOT NULL,
+    nummer INT NOT NULL,
+    ergebnis ENUM('GESTARTET','ANGENOMMEN','SICHER_FEHLGESCHLAGEN','UNKLAR','ARCHIVIERT','ARCHIV_FEHLER') NOT NULL,
+    fehler_code VARCHAR(80) NULL,
+    gestartet_am DATETIME(6) NOT NULL,
+    beendet_am DATETIME(6) NULL,
+    akteur_id BIGINT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_einkauf_versuch_nummer (auftrag_id, nummer),
+    KEY ix_einkauf_versuch_auftrag (auftrag_id, id),
+    CONSTRAINT fk_einkauf_versuch_auftrag FOREIGN KEY (auftrag_id)
+        REFERENCES einkauf_versandauftrag (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS einkauf_versandannahmeereignis (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    ereignis_schluessel BINARY(16) NOT NULL,
+    versandauftrag_id BIGINT NOT NULL,
+    typ ENUM('VERSAND_ANGENOMMEN') NOT NULL,
+    vorgang_typ VARCHAR(40) NOT NULL,
+    vorgang_id BIGINT NOT NULL,
+    revision_id BIGINT NULL,
+    beteiligung_id BIGINT NULL,
+    angenommen_am DATETIME(6) NOT NULL,
+    erstellt_am DATETIME(6) NOT NULL,
+    verarbeitet_am DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_einkauf_annahme_event_key UNIQUE (ereignis_schluessel),
+    CONSTRAINT uk_einkauf_annahme_auftrag UNIQUE (versandauftrag_id),
+    KEY ix_einkauf_annahme_offen (verarbeitet_am, id),
+    CONSTRAINT fk_einkauf_annahme_auftrag FOREIGN KEY (versandauftrag_id)
+        REFERENCES einkauf_versandauftrag (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

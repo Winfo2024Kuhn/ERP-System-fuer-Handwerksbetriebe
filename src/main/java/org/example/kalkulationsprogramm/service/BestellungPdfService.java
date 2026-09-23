@@ -9,6 +9,7 @@ import com.lowagie.text.pdf.PdfWriter;
 import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufPdfPositionsRenderer;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -17,7 +18,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -45,7 +45,7 @@ public class BestellungPdfService {
         try {
             Path dir = Path.of("uploads");
             Files.createDirectories(dir);
-            Path temp = Files.createTempFile(dir, "bestellung-", ".pdf.html");
+            Path temp = Files.createTempFile(dir, "bestellung-", ".pdf");
             Document doc = new Document(PageSize.A4.rotate());
             PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
             writer.setCompressionLevel(0);
@@ -53,11 +53,9 @@ public class BestellungPdfService {
 
             addCompanyLogo(doc);
             doc.add(new Paragraph(" "));
-            String infoText = "Bitte stellen Sie je Auftrag eine separate Rechnung aus. Lieferungen können – wenn möglich – +"
-                    +
-                    "zusammengefasst werden; idealerweise erfolgt eine Gesamtsendung, auch bei mehreren Bestellungen.+"
-                    +
-                    " Die benötigten Meter je Profil entnehmen Sie der Anfrage. Bitte optimieren Sie die Zuschnitte auf Ihre Lagerlängen.\n";
+            String infoText = "Bitte stellen Sie Rechnungen separat pro Auftrag aus. Lieferungen können, wenn möglich, "
+                    + "zusammengefasst werden; idealerweise erfolgt eine Gesamtsendung, auch bei mehreren Bestellungen. "
+                    + "Die benötigten Meter je Profil entnehmen Sie der Anfrage. Bitte optimieren Sie die Zuschnitte auf Ihre Lagerlängen.";
             Paragraph info = new Paragraph(infoText, FontFactory.getFont(FontFactory.HELVETICA, 10));
             info.setSpacingAfter(15f);
             doc.add(info);
@@ -102,46 +100,7 @@ public class BestellungPdfService {
                 doc.add(new Paragraph(" ", cellFont));
             }
             doc.close();
-            // Statische Schnittbild-PDF-Seiten am Ende anhängen
-            try {
-                var mainReader = new com.lowagie.text.pdf.PdfReader(Files.readAllBytes(temp));
-                var refIs = BestellungPdfService.class
-                        .getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
-                if (refIs != null) {
-                    Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
-                    var refReader = new com.lowagie.text.pdf.PdfReader(refIs);
-                    var mergedDoc = new com.lowagie.text.Document();
-                    var copy = new com.lowagie.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
-                    mergedDoc.open();
-                    for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
-                        copy.addPage(copy.getImportedPage(mainReader, i));
-                    }
-                    for (int i = 1; i <= refReader.getNumberOfPages(); i++) {
-                        copy.addPage(copy.getImportedPage(refReader, i));
-                    }
-                    mergedDoc.close();
-                    mainReader.close();
-                    refReader.close();
-                    Files.move(merged, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
-            } catch (Exception ignored) {
-            }
-            try {
-                Files.writeString(temp, "\nBauvorhaben:\nRechnungen separat pro Auftrag\n", StandardOpenOption.APPEND);
-            } catch (IOException ignored) {
-            }
-            try {
-                if (Files.size(temp) == 0) {
-                    Files.writeString(temp, "Bauvorhaben:\nRechnungen separat pro Auftrag\n");
-                }
-            } catch (IOException ignored) {
-            }
-            System.out.println("[BestellungPdfService] Generated file: " + temp.toAbsolutePath() + ", exists="
-                    + Files.exists(temp));
-            if (!Files.exists(temp)) {
-                Files.createDirectories(temp.getParent());
-                Files.createFile(temp);
-            }
+            appendSchnittbildReferenz(temp, dir);
             return temp.toAbsolutePath();
         } catch (IOException e) {
             throw new RuntimeException("PDF generation failed", e);
@@ -160,7 +119,7 @@ public class BestellungPdfService {
         try {
             Path dir = Path.of("uploads");
             Files.createDirectories(dir);
-            Path temp = Files.createTempFile(dir, "bestellung-", ".pdf.html");
+            Path temp = Files.createTempFile(dir, "bestellung-", ".pdf");
             Document doc = new Document(PageSize.A4.rotate());
             PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
             writer.setCompressionLevel(0);
@@ -168,11 +127,10 @@ public class BestellungPdfService {
 
             addCompanyLogo(doc);
             doc.add(new Paragraph(" "));
-            String infoText = "Bitte stellen Sie je Auftrag eine separate Rechnung aus. " +
-                    "Lieferungen können – wenn möglich – zusammengefasst werden; idealerweise erfolgt eine Gesamtsendung, "
-                    +
-                    "auch bei mehreren Bestellungen. Die benötigten Meter je Profil entnehmen Sie der Anfrage. " +
-                    "Bitte optimieren Sie die Zuschnitte auf Ihre Lagerlängen.\n";
+            String infoText = "Bitte stellen Sie Rechnungen separat pro Auftrag aus. "
+                    + "Lieferungen können, wenn möglich, zusammengefasst werden; idealerweise erfolgt eine Gesamtsendung, "
+                    + "auch bei mehreren Bestellungen. Die benötigten Meter je Profil entnehmen Sie der Anfrage. "
+                    + "Bitte optimieren Sie die Zuschnitte auf Ihre Lagerlängen.";
             Paragraph info = new Paragraph(infoText, FontFactory.getFont(FontFactory.HELVETICA, 10));
             info.setSpacingAfter(15f);
             doc.add(info);
@@ -216,46 +174,36 @@ public class BestellungPdfService {
             }
             doc.close();
             // Statische Schnittbild-PDF-Seiten am Ende anhängen
-            try {
-                var mainReader = new com.lowagie.text.pdf.PdfReader(Files.readAllBytes(temp));
-                var refIs = BestellungPdfService.class
-                        .getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
-                if (refIs != null) {
-                    Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
-                    var refReader = new com.lowagie.text.pdf.PdfReader(refIs);
-                    var mergedDoc = new com.lowagie.text.Document();
-                    var copy = new com.lowagie.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
-                    mergedDoc.open();
-                    for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
-                        copy.addPage(copy.getImportedPage(mainReader, i));
-                    }
-                    for (int i = 1; i <= refReader.getNumberOfPages(); i++) {
-                        copy.addPage(copy.getImportedPage(refReader, i));
-                    }
-                    mergedDoc.close();
-                    mainReader.close();
-                    refReader.close();
-                    Files.move(merged, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
-            } catch (Exception ignored) {
-            }
-            try {
-                Files.writeString(temp, "\nBauvorhaben:\nRechnungen separat pro Auftrag\n", StandardOpenOption.APPEND);
-            } catch (IOException ignored) {
-            }
-            try {
-                if (Files.size(temp) == 0) {
-                    Files.writeString(temp, "Bauvorhaben:\nRechnungen separat pro Auftrag\n");
-                }
-            } catch (IOException ignored) {
-            }
-            if (!Files.exists(temp)) {
-                Files.createDirectories(temp.getParent());
-                Files.createFile(temp);
-            }
+            appendSchnittbildReferenz(temp, dir);
             return temp.toAbsolutePath();
         } catch (IOException e) {
             throw new RuntimeException("PDF generation failed", e);
+        }
+    }
+
+    private void appendSchnittbildReferenz(Path original, Path directory) throws IOException {
+        try (var reference = BestellungPdfService.class
+                .getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf")) {
+            if (reference == null) return;
+            Path merged = Files.createTempFile(directory, "bestellung-merged-", ".pdf");
+            var mainReader = new com.lowagie.text.pdf.PdfReader(Files.readAllBytes(original));
+            var referenceReader = new com.lowagie.text.pdf.PdfReader(reference);
+            try {
+                var mergedDocument = new com.lowagie.text.Document();
+                var copy = new com.lowagie.text.pdf.PdfCopy(mergedDocument, Files.newOutputStream(merged));
+                mergedDocument.open();
+                for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
+                    copy.addPage(copy.getImportedPage(mainReader, i));
+                }
+                for (int i = 1; i <= referenceReader.getNumberOfPages(); i++) {
+                    copy.addPage(copy.getImportedPage(referenceReader, i));
+                }
+                mergedDocument.close();
+            } finally {
+                mainReader.close();
+                referenceReader.close();
+            }
+            Files.move(merged, original, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -276,29 +224,10 @@ public class BestellungPdfService {
 
     private PdfPCell makeCutCell(String form, Font font, Color bg) {
         if (form == null || form.isBlank()) {
-            return makeCell("", font, bg);
+            return EinkaufPdfPositionsRenderer.schnittZelle(form, font, bg, null);
         }
         byte[] bytes = loadSchnittbildIcon(form);
-        if (bytes == null) {
-            return makeCell("Form " + form, font, bg);
-        }
-        try {
-            Image icon = Image.getInstance(bytes);
-            icon.scaleToFit(26f, 26f);
-            icon.setAlignment(Image.ALIGN_CENTER);
-            PdfPCell cell = new PdfPCell();
-            cell.setBackgroundColor(bg);
-            cell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            cell.setPadding(2f);
-            cell.addElement(icon);
-            Paragraph label = new Paragraph("Form " + form, FontFactory.getFont(FontFactory.HELVETICA, 6));
-            label.setAlignment(Element.ALIGN_CENTER);
-            cell.addElement(label);
-            return cell;
-        } catch (Exception e) {
-            return makeCell("Form " + form, font, bg);
-        }
+        return EinkaufPdfPositionsRenderer.schnittZelle(form, font, bg, bytes);
     }
 
     private byte[] loadSchnittbildIcon(String form) {
@@ -326,8 +255,8 @@ public class BestellungPdfService {
             try (var in = resource.getInputStream()) {
                 return in.readAllBytes();
             }
-        } catch (Exception ignored) {
-            return null;
+        } catch (Exception exception) {
+            throw new IllegalStateException("Schnittbild für Form " + form + " konnte nicht geladen werden.", exception);
         }
     }
 
@@ -346,30 +275,20 @@ public class BestellungPdfService {
     }
 
     private PdfPCell makeCell(String text, Font font, Color bg) {
-        PdfPCell cell = new PdfPCell(new Phrase(text != null ? text : "", font));
-        cell.setBackgroundColor(bg);
-        return cell;
+        return EinkaufPdfPositionsRenderer.gemeinsameZelle(text, font, bg);
     }
 
     private String formatMenge(BestellungResponseDto b) {
-        try {
-            if (b == null)
-                return "";
-            if (b.getRootKategorieId() != null && b.getRootKategorieId() == 1
-                    && b.getStueckzahl() > 0
-                    && b.getMenge() != null
-                    && "m".equalsIgnoreCase(b.getEinheit())) {
-                BigDecimal totalM = b.getMenge();
-                BigDecimal st = BigDecimal.valueOf(b.getStueckzahl());
-                if (st.compareTo(BigDecimal.ZERO) > 0) {
-                    BigDecimal perPieceM = totalM.divide(st, 6, RoundingMode.HALF_UP);
-                    BigDecimal perPieceMm = perPieceM.multiply(new BigDecimal("1000"));
-                    String mmTxt = perPieceMm.setScale(0, RoundingMode.HALF_UP).toPlainString();
-                    String totalTxt = totalM.stripTrailingZeros().toPlainString();
-                    return b.getStueckzahl() + " Stk \u00e0 " + mmTxt + " mm (Gesamt: " + totalTxt + " m)";
-                }
-            }
-        } catch (Exception ignored) {
+        if (b == null) return "";
+        if (b.getRootKategorieId() != null && b.getRootKategorieId() == 1
+                && b.getStueckzahl() > 0
+                && b.getMenge() != null
+                && "m".equalsIgnoreCase(b.getEinheit())) {
+            BigDecimal totalM = b.getMenge();
+            BigDecimal st = BigDecimal.valueOf(b.getStueckzahl());
+            BigDecimal perPieceM = totalM.divide(st, 6, RoundingMode.HALF_UP);
+            BigDecimal perPieceMm = perPieceM.multiply(new BigDecimal("1000"));
+            return EinkaufPdfPositionsRenderer.profilmenge(b.getStueckzahl(), perPieceMm, totalM, b.getEinheit());
         }
         return (b.getMenge() != null ? b.getMenge() : "") +
                 (b.getEinheit() != null ? (" " + b.getEinheit()) : "");

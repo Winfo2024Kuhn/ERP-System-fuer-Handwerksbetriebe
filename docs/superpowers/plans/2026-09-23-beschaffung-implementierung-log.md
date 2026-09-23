@@ -858,3 +858,171 @@ Zeit: 2026-09-23T16:32:35.397386+00:00
 - Materialkosten im Projekt nun einfache Nachkalkulation: manuell oder Stammartikel mit Menge und anpassbarem Projektpreis. Keine Projekt-Teilentnahmebedienung, keine Bestell-/Bedarfsnebenwirkung. Spätere Angebotskalkulation als eigenständiger Erweiterungspunkt dokumentiert.
 - Alle64stagedDateien wurden gegen die drei Paketdiffs plus eigene Spec/Plan/Log und Buildartefakte abgeglichen; keine Fremddatei, keine Graphdatei staged. Quell-/Dokument-Whitespacecheck sauber. Graphify zuletzt Exit0 synchronisiert, erzeugte Daten bleiben lokal.
 - Weiter mit Abschnitt5: Task13 (Anfragefassungen + tatsächlicher Anfrage-Mengenprovider + Anlagen-/Projektgate), Task14 (gemeinsame PDF-Darstellung), Task15 (Outbox). Erst alle drei fertig, dann gemeinsame Integration und ein Sol-Code-Review; kein Frontend in Abschnitt5 geplant.
+
+
+## Abschnitt 5 — Paketstart
+
+Zeit: 2026-09-23T16:34:47.912289+00:00
+
+- Abschnitt4 als 76bd1246928ac335c13e126beeac9bd97b4c26af committed und erfolgreich nach origin/codex/beschaffung-konzept gepusht. Alle drei Abschnitt5-Pakete starten von exakt dieser abgenommenen Basis.
+- GPT-6 Luna parallel: Task13 Anfragen/Provider (codex/beschaffung-task-13), Task14 PDFs (codex/beschaffung-task-14), Task15 Outbox (codex/beschaffung-task-15); Worktrees gemäß Plan.
+- Aufträge /tmp/beschaffung-paket-5a-auftrag.md, -5b-, -5c-. Abschlüsse als sichere /tmp-Logblöcke; Root fügt sie mit Lock an. Keine Reviewinstanz vor Abschluss aller drei Pakete.
+- Aktuelle Frontendnachweise /tmp/beschaffung-frontend-testnachweise.json sind an Abschnitt4 gebunden (PC1630Unit/675E2E/Lint/Build und abgenommenes Design; Mobile unverändert). Backend/Integrationswirkungen werden pro geändertem Paket und anschließend integriert geprüft.
+- Task13 darf für den verpflichtenden registrierten EinkaufAnfrageMengenProvider einen eigenen disjunkten Implementierungsbaustein innerhalb service/einkauf ergänzen. Der Provider zählt aktuelle Anfragefassungen einmal je Herkunft, unabhängig von Lieferantenanzahl; tatsächliche Projektbindung und freigegebene Anlagen sind verbindliche Gates.
+
+
+## Abschnitt 5 — begrenzte Ownership-Erweiterung
+
+Zeit: 2026-09-23T16:59:33.761006+00:00
+
+- Paket15 meldet einen Vorgängervertrag: KontoMailTransport.sendenVorbereitet klassifiziert bisher sämtliche sendMessage-Exceptions als UNKLAR. Damit ist ein nachweislich vor Annahme abgewiesener Versand im realen Transport nicht gezielt wiederholbar.
+- Ownership von Paket5C ausdrücklich auf KontoMailTransport.java und KontoMailTransportTest.java erweitert, ausschließlich für konservative sichere Reject-Klassifikation und Regression. Mögliche Teilannahme/unklarer DATA-Ausgang bleibt UNKLAR, keine blinde Wiederholung. LocalTestMailPolicy unverändert verbindlich.
+- Kein formaler Review gestartet; Paket15 stellt diese Vertragskorrektur einschließlich finaler Backendvollsuite vor gemeinsamer Integration fertig.
+
+
+## Abschnitt 5 — Task 14 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T16:59:33Z
+Branch: codex/beschaffung-task-14
+Commit(s): 5556763441cb964bee1390da98f9c0e8c8ff2798
+Status: fertig
+
+Was gemacht wurde:
+- Gemeinsame, bytebasierte Anfrage-/Bestell-PDF-Erzeugung aus Beleg-Snapshots umgesetzt. Anfragen lassen Preisbestandteile aus; Bestell-PDFs verwenden ausschließlich mitgegebene eingefrorene Konditionen.
+- Lesendes Entnahmeblatt unter GET /api/einkauf/lagerentnahmen/pdf ergänzt. Zugriff erfordert EinkaufBerechtigung.LESEN; das Blatt weist aus, dass der Ausdruck keine Entnahme bestätigt. Der Service verändert keine Bedarfsmengen.
+- Schnittsymbol-, Profilmengen- und Zellrendering mit dem Altservice geteilt; angehängte Textbytes entfernt und PDF-Endmarke per Regression geprüft. Schnittbild-Ladefehler werden weitergegeben.
+- PDFBox-Tests decken 60 Positionen mit Seitenumbrüchen, technische Daten, mehrere Zeugnisanforderungen und Liefergruppen, Umlaute/lange Texte, Logo/Schnittbild, Anfrage-Preisausschluss, eingefrorene Bestellkosten und read-only Entnahmeliste ab.
+- API-Folgevertrag: EinkaufPdfService.erzeugen(EinkaufPdfDto.Beleg) liefert PDF-bytes aus den übergebenen Snapshots. Der spätere Versandpfad kann diese Bytes vor dem Einreihen archivieren und hashen; Task 14 führt keine Queue ein. EinkaufPdfService.entnahmeliste(List<Long>) liefert ein Resource für den lesenden Controller.
+- Graphify wurde aktualisiert. Die generierten Änderungen an graphify-out/GRAPH_REPORT.md und graphify-out/graph.json sind ungestaged und nicht Teil des Task-Commits.
+
+Testnachweise:
+- Vollständiges Backend: ./mvnw -B test, 3348 Tests, 0 Failures, 0 Errors, 17 bekannte Skips; Log: /tmp/task14-backend-final.log
+- Gezielte Tests: EinkaufPdfServiceTest und BestellungPdfServiceTest, 6 Tests grün; Log: /tmp/task14-targeted3.log
+- Repräsentatives PDF: /tmp/beschaffung-task14-beispiel.pdf, PDF 1.5, 9 Seiten, SHA-256 fada80c93cbe90b4aa0eaa0280bf27baa0c89e0acfd3197a1daadf6fa6a41e9f
+- Frontend-Änderungen: keine. Die PC- und Mobile-Treehashes stimmen mit /tmp/beschaffung-frontend-testnachweise.json überein.
+- Diff-Prüfung: git diff --cached --check grün; nur die sieben Task-Dateien committed. Temporäre graphify-Symlinks entfernt; keine Server oder Browser gestartet.
+
+Bedenken / Abweichungen vom Plan:
+- Keine fachlichen Abweichungen und keine Task-13-Abhängigkeit hinzugefügt. Graphify-Ausgabedateien bleiben als generierte Änderungen für die Root-Integration uncommitted.
+
+
+### Paket 5c / Task 15 — persistente Versand-Outbox
+
+- Stand: fertig; Abschlusszeitpunkt 2026-09-23 17:11:44 UTC
+- Branch: `codex/beschaffung-task-15`; Worktree: `.claude/worktrees/beschaffung-task-15`
+- Commit: `04b51bfe996e68afe13c73b431fb850d1bd1fa2b` (`feat: persist einkauf mail versand outbox`)
+- Umsetzung: persistente Outbox/Versandversuche samt V387, stabiler Idempotenzschlüssel und Message-ID, eingefrorene serialisierte Snapshot-Daten und MIME-Bytes mit Payload-, MIME- und Freigabehash; parallele Claims; SMTP außerhalb von DB-Transaktionen; sicherheitsbewusste Zustandsübergänge und Archivierung.
+- Nutzbare APIs für Tasks 16–18:
+  - `EinkaufOutboxService.einreihen(VersandSnapshot, UUID, Long)` legt idempotent einen Auftrag mit vorbereitetem unveränderlichem Snapshot an.
+  - `EinkaufOutboxService.erneutVersuchen(Long, long, Long)` gibt ausschließlich `FEHLGESCHLAGEN` für einen erneuten Versand frei.
+  - `EinkaufOutboxService.klaeren(Long, Klaerung, Long)` verlangt Versionsabgleich und Beleg; Entscheidung unterscheidet nachweislich nicht gesendet von bereits angenommen.
+  - `EinkaufVersandWorker.verarbeite(Long)` führt Claim, Transport und Archivierung aus; der Transport liegt außerhalb der DB-Transaktion.
+  - `EinkaufVersandDto.VersandSnapshot` und `EinkaufVersandDto.EinkaufVersandAngenommen` sind der Snapshot- bzw. Annahmevertrag.
+  - Bei unklarem DATA-Ausgang wird `UNKLAR` festgehalten und nicht automatisch erneut gesendet. Nur ein nachweislicher RCPT-Ablehnungsfall vor DATA wird als sicher fehlgeschlagen klassifiziert; nach möglicher Annahme darf nur die Sent-Archivierung wiederholt werden. Ein Archiv-Retry ruft `SentMailArchiver.archiviere(...)` auf und sendet keine SMTP-Nachricht.
+- Snapshot-Grenze: eingefrorenes MIME und Bytes, Snapshot-JSON, stabile Message-ID und die drei Hashes werden gespeichert; keine Live-Referenz auf veränderliche Anhangbytes. Vorlage/Version und Freigabezuordnung zu Anhängen werden im Folgeabschnitt an Vorschau/Freigabe dokumentiert, wie mit Root abgestimmt.
+- Geänderte Hauptpfade: `src/main/java/org/example/kalkulationsprogramm/service/einkauf/EinkaufOutboxService.java`, `EinkaufVersandWorker.java`, `domain/einkauf/EinkaufVersandauftrag.java`, `EinkaufVersandversuch.java`, `dto/Einkauf/EinkaufVersandDto.java`, `repository/EinkaufVersandauftragRepository.java`, `service/mail/KontoMailTransport.java`, `src/main/resources/db/migration/V387__einkauf_versand_outbox.sql`; Tests unter `src/test/java/org/example/kalkulationsprogramm/{repository,service}`.
+- Nachweise: gezielte Regression `/tmp/task15-regression-final-2.log` — 32 Tests, 0 Fehler/Failures/Skips, BUILD SUCCESS. Finale Backend-Vollsuite `/tmp/task15-backend-final-3.log` — 3.357 Tests, 0 Fehler/Failures, 17 bestehende Skips, BUILD SUCCESS. Ausschließlich lokale Dummy-MySQL-Testcontainer und SMTP-Fakes.
+- Frontend unverändert; vorhandene Nachweise `/tmp/beschaffung-frontend-testnachweise.json` bleiben verwendbar. Graphify aktualisiert. `graphify-out/GRAPH_REPORT.md`, `graphify-out/graph.json` und `.graphify-venv` sind generierte/lokale Änderungen und nicht im Task-Commit enthalten.
+- Bedenken/Abweichungen: SMTP-Klassifikation wurde mit ausdrücklicher Ownership-Erweiterung auf `KontoMailTransport.java` und `KontoMailTransportTest.java` ergänzt. Kein Review oder Merge durch diesen Task; Root integriert und koordiniert Review nach Paket 13.
+- Status: fertig.
+
+
+## Abschnitt 5 — Task 13 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-23T17:15:28Z
+Branch: codex/beschaffung-task-13
+Commit(s): 842193169bc276205712ae27fe62cb3763f2477a, 9d7af24941dce9999c5763ae455332555c74ada0
+Status: fertig
+
+Was gemacht wurde:
+- Revisionsfähige Mehrlieferantenanfragen mit PA am Kopf, unveränderlichen Revisionen, Positions-/Herkunftssnapshots, Lieferantenkontaktsnapshots, Rückmeldecode und getrennten Versandversuchen umgesetzt.
+- `EinkaufsanfrageService` registriert den echten `EinkaufAnfrageMengenProvider`: Batchsumme aus ausschließlich der aktuellen Revision, ohne Lieferantenmultiplikation; gelöschte Köpfe werden ausgeschlossen. Anfragen buchen/reservieren keine Mengen.
+- Lieferantenstatus (Absage, Antwort, Erledigung) ist versionsgeprüft und auditiert. Löschen ist Soft-Delete mit Audit; Historie bleibt erhalten und Mengenprovider/Leseliste schließen gelöschte Anfragen aus.
+- V386 in echtem MySQL 8 Testcontainers zweimal ausgeführt; Revisionwechsel 4→2 trotz drei Lieferanten, Speicherung/Reload und Soft-Delete→0 geprüft.
+- Gezielte Tests: `/tmp/beschaffung-task13-lifecycle-green2.log` (10 Tests, grün). Vollständiges Backend: `/tmp/beschaffung-task13-backend-final.log` (3.355 Tests, 0 Fehler, 17 bekannte Skips, BUILD SUCCESS). Graphify: `/tmp/beschaffung-task13-graphify-final.log` (erfolgreich). Frontend unverändert; vorhandener Tree-Nachweis `/tmp/beschaffung-frontend-testnachweise.json` bleibt anwendbar.
+- Es wurden keine echten E-Mails versandt. Testcontainers wurden nach dem Testlauf beendet.
+
+Bedenken / Abweichungen vom Plan:
+- Keine.
+
+Übergabeverträge für Tasks 16–18:
+- DTOs liegen in `src/main/java/org/example/kalkulationsprogramm/dto/Einkauf/EinkaufsanfrageDto.java`: `Create(List<Herkunft> positionen, List<Snapshot> empfaenger, LocalDate antwortfrist, LocalDate liefertermin, Long zustaendigId, UUID idempotenzKey)`, `RevisionRequest(long version, Create inhalt)`, `Detail(Kopf kopf, List<Positionszeile> positionen, List<Lieferantenbeteiligung> lieferanten)`, plus `LieferantenstatusRequest(long version, String status)`. Empfänger verwenden `EinkaufKontaktDto.Snapshot`; Mengen/Herkunft und Positionssnapshot verwenden `EinkaufPositionDto`.
+- Service `src/main/java/org/example/kalkulationsprogramm/service/einkauf/EinkaufsanfrageService.java`: `anlegen(Create, Long)`, `revidieren(Long, RevisionRequest, Long)`, `laden(Long)`, `suchen(Pageable)`, `loeschen(Long, long version, Long)`, `aktualisiereLieferantenstatus(Long anfrageId, Long beteiligungId, LieferantenstatusRequest, Long)`; implementiert `EinkaufAnfrageMengenProvider.angefragtFuerBedarfe(Collection<Long>)`.
+- Repository-Verträge: `EinkaufsanfrageRepository.findByIdempotenzKey`, `findByIdForUpdate`, `findAllByGeloeschtAmIsNullOrderByAngelegtAmDesc`; `AnfrageRevisionRepository.findByIdempotenzKey`, `findByIdAndAnfrageId`, `summenAktuelleAnfragen(List<Long>)` (Rows `Object[]{Long bedarfId, BigDecimal summe}`); `AnfrageLieferantRepository.findByRevisionIdOrderByIdAsc`, `findByIdAndRevisionAnfrageId`.
+- API: `GET/POST /api/einkauf/anfragen`, `GET /{id}`, `POST /{id}/revisionen`, `DELETE /{id}?version=…`, `PATCH /{id}/lieferanten/{beteiligungId}/status`. Ein Versandendpunkt/SMTP-Aufruf ist nicht Bestandteil dieses Pakets.
+
+
+## Abschnitt 5 — vollständig integriert, gemeinsame Prüfung
+
+Zeit: 2026-09-23T17:17:22.379641+00:00
+
+- Alle drei Luna-Pakete abgeschlossen: Task13 9d7af249, Task14 55567634, Task15 04b51bfe. Konfliktfrei per --no-ff --no-commit in ROOT integriert; Basis weiterhin76bd1246 bis Abnahme. Alle Paketübergaben oben angehängt.
+- Ein gemeinsamer GPT-6-Sol-Reviewer übernimmt Code, Security, Architektur und exklusiv die integrierte Backendvollsuite. Keine Frontendänderungen; gültige Nachweise werden nach Baumvergleich wiederverwendet.
+- Root hat alle9 gerenderten Seiten des repräsentativen Dummy-PDF /tmp/beschaffung-task14-beispiel.pdf (SHA256 fada80c93cbe90b4aa0eaa0280bf27baa0c89e0acfd3197a1daadf6fa6a41e9f) gesehen: keine Textüberlagerungen oder abgeschnittenen Texte, Umlaute/Technik/Kosten/Liefergruppen sichtbar. Schwarze Bild-/Logoblocks sind Dummyfixture. Nichtblockierender Layouthinweis: normale Positionszeilen teilweise über Seiten getrennt, Schnittbild dann ohne wiederholte Positionsnummer; kein Informationsverlust. PNGs /tmp/beschaffung-task14-seite-1.png bis -9.png.
+- Noch keine Abnahme/kein Push dieses Abschnitts.
+
+
+## Abschnitt 5 — gemeinsamer Review, erste Nachbesserung
+
+Zeit: 2026-09-23T17:20:39.893601+00:00
+
+- Sol-Review ROT: SMTP-Annahme bisher nur flüchtiges Spring-Ereignis; bei Commit-/Listener-Ausfall kann der fachliche Folgeübergang dauerhaft fehlen. Persistent identifiziertes Ereignis und idempotente Recovery sind verbindlicher Task15-Vertrag. Bericht /tmp/beschaffung-abschnitt5-r0-review-report.md.
+- Integrierte Backendvollsuite grün:3370 Tests,0 Fehler,17 bekannte Skips; /tmp/beschaffung-abschnitt5-r0-review-backend.log. Frontendnachweise weiter gültig.
+- Erste formale Nachbesserung: gleicher Luna-Agent Paket5C behebt Annahmeereignis/Recovery; gleicher Luna-Agent Paket5B ergänzt vollständige DokumentSoll-Ausgabe, PDF-HTTP-Rechtetest und zusammengehaltene normale Tabellenzeilen. Task13 bleibt unverändert. Alle Korrekturpakete müssen fertig sein, bevor gleicher Sol-Reviewer den reintegrierten Stand prüft.
+
+
+## Task14 / Paket5b – R1 (2026-09-23)
+
+- Status: fertig; PDF-Korrekturen aus dem Abschnitt-5-Review umgesetzt.
+- Branch: `codex/beschaffung-task-14`; Worktree: `.claude/worktrees/beschaffung-task-14`.
+- Basis: `76bd1246928ac335c13e126beeac9bd97b4c26af`; Voriger Task14-Commit: `5556763441cb964bee1390da98f9c0e8c8ff2798`; R1-Commit: `770b2ddc9d6fceef6d4bea9a88d94cfe13fde4e9`.
+- Geändert (nur Task14 Ownership): `EinkaufPdfPositionsRenderer.java`, `EinkaufPdfServiceTest.java`, neu `EinkaufPdfControllerTest.java`.
+- DokumentSoll-Ausgabe zeigt jede Snapshot-Angabe mit Art, Grundlage, Grundlage-Version und fachlicher Bestätigung; gleichartige Einträge bleiben einzeln erhalten.
+- Tabellenpositionen samt Schnittbild bleiben bei normalen Zeilen zusammen. Schnittbildzelle nennt Position/Form; sehr lange Positionstexte werden in Fortsetzungszeilen mit Positionsreferenz aufgeteilt und vollständig erhalten.
+- Controller-HTTP-Tests decken LESEN-Berechtigung, anonymen Aufruf, fehlende Berechtigung, ungültige ID samt 400-Fehlerantwort sowie PDF-Content-Type/Disposition/Inhalt ab.
+- TDD: rote Reproduktionen in `/tmp/task14-r1-docs-red.log` und `/tmp/task14-r1-layout-red.log`; gezielte Tests grün: `/tmp/task14-r1-targeted-final.log` (EinkaufPdfControllerTest, EinkaufPdfServiceTest, BestellungPdfServiceTest; 11 Tests).
+- Finale Backendvollsuite: `DOCKER_HOST=unix:///Users/marvinkuhn/.docker/run/docker.sock ./mvnw -B test -Dtask14.pdfArtifact=/tmp/beschaffung-task14-r1-beispiel.pdf`; `/tmp/task14-r1-backend-full.log`; 3353 Tests, 0 Fehler/Failures, 17 übersprungen, BUILD SUCCESS.
+- Repräsentatives Dummy-PDF: `/tmp/beschaffung-task14-r1-beispiel.pdf`; 10 Seiten; SHA-256 `d477a95573b858c69adb254097991ff0fd5f74af439eea387b225891cb45d00c`. PDFBox-Text-/Seitentests sind maßgebliche Regressionen.
+- Frontendnachweise unverändert wiederverwendet: `/tmp/beschaffung-frontend-testnachweise.json`; Frontendquellcode/Tests/Dependencies/Config nicht geändert.
+- `./graphify update .` erfolgreich, Log `/tmp/task14-r1-graphify.log`. Graphify-Ausgabe `graphify-out/GRAPH_REPORT.md` und `graphify-out/graph.json` blieb uncommitted, da generierte, nicht taskeigene Artefakte.
+- `git diff --check` und staged diff geprüft. Keine Secrets oder echte Kundendaten. Keine Server/Browsersitzungen gestartet.
+- Bedenken/Abweichungen: Keine; Paket15-Outbox-Blocker bleibt beim Parallelowner.
+
+
+### Paket 5c / Task 15 — R1: dauerhaftes Versand-Annahmeereignis
+
+- Stand: fertig; Abschlusszeitpunkt 2026-09-23 17:38:23 UTC
+- Branch/Worktree: `codex/beschaffung-task-15` / `.claude/worktrees/beschaffung-task-15`
+- R1-Commit: `88fb656d9c17dacff12ad916665bcfd7c885c170` (`fix: persist einkauf mail acceptance events`); zugrunde liegender Task-15-Commit `04b51bfe996e68afe13c73b431fb850d1bd1fa2b`.
+- Reviewbefund behoben: SMTP-Annahme und die neue `einkauf_versandannahmeereignis`-Zeile werden atomar in derselben DB-Transaktion persistiert. Das gilt ebenfalls für manuelle Klärung `BEREITS_ANGENOMMEN`. Jede Auftragsannahme erhält einen stabilen deterministischen UUID-`ereignisSchluessel`, eindeutig sowohl pro Schlüssel als auch pro Versandauftrag; Payload hält Vorgangstyp, Vorgangs-/Revisions-/Beteiligungs-ID und Annahmezeitpunkt.
+- Vertrag für Abschnitt 6A/7A:
+  - `EinkaufOutboxService.verarbeiteOffeneAnnahmeereignisse(EinkaufAnnahmeereignisConsumer consumer, int limit)` verarbeitet bis zu `limit` offene Ereignisse in einzelnen Spring-DB-Transaktionen (Limit 1–500).
+  - Der Consumer muss `unterstuetzteVorgangstypen(): Set<String>` deklarieren. SQL sperrt nur offene Ereignisse dieser Vorgangstypen. Ohne passenden Consumer bleibt ein Ereignis offen; es kann nicht von einem unzuständigen Anfrage-/Bestellconsumer quittiert werden.
+  - `verarbeite(EinkaufVersandAngenommen)` läuft synchron in derselben Transaktion wie das Setzen von `verarbeitet_am`. Consumer-Fachwrites müssen diese `REQUIRED`-Transaktion teilen, `ereignisSchluessel` idempotent verwenden und dürfen weder `REQUIRES_NEW` noch externes I/O nutzen. Erst nach erfolgreicher Rückkehr wird das Ereignis in derselben Transaktion quittiert.
+  - Bei Consumerfehler, Prozessabbruch vor Commit oder Fehler beim DB-Commit werden Fachwrites und Quittierung zurückgerollt; der persistierte Datensatz bleibt offen und dieselbe Event-ID wird bei erneutem Aufruf geliefert. Der Recovery-Aufruf ist damit `verarbeiteOffeneAnnahmeereignisse(...)` nach Neustart bzw. durch den zuständigen Verbraucher, keine SMTP-Worker-Wiederholung.
+  - Öffentliche Datenform: `EinkaufVersandDto.EinkaufVersandAngenommen(UUID ereignisSchluessel, Long versandId, String typ, Long vorgangId, Long revisionId, Long beteiligungId, Instant zeit)`; Consumer-Schnittstelle in `service/einkauf/EinkaufAnnahmeereignisConsumer.java`.
+- SMTP-Sicherheit bleibt wie im Task-15-Commit: Ereignisverarbeitung ruft keinen SMTP-Versand auf. `UNKLAR` wird weiterhin nicht automatisch versandt; sicherer Retry bleibt auf `FEHLGESCHLAGEN` beschränkt und Archiv-Retry bleibt ausschließlich IMAP-Archivierung.
+- TDD-Nachweis: `/tmp/task15-r1-red-event.log` reproduzierte den Befund (fehlende persistente Ereignistabelle). Danach MySQL-Testcontainers prüfen Annahme/Atomizität, manuelle Annahmeklärung, Listener-Ausfall mit Rollback und Wiederverarbeitung nach Neustart mit gleicher Event-ID, keine SMTP-Wiederholung sowie Ausschluss fremder Vorgangstypen.
+- Finale gezielte Regression `/tmp/task15-r1-regression-final-3.log`: 36 Tests, 0 Failures/Errors/Skips, BUILD SUCCESS. Finale Backend-Vollsuite auf exakt dem Commitstand `/tmp/task15-r1-backend-final-2.log`: 3.361 Tests, 0 Failures/Errors, 17 bekannte Skips, BUILD SUCCESS. Nur lokale Dummy-MySQL-Container und SMTP-Fakes.
+- Frontend unverändert; Nachweise aus `/tmp/beschaffung-frontend-testnachweise.json` bleiben gültig. Graphify aktualisiert. Generierte Graphifydateien und `.graphify-venv` sind nicht committed.
+- Bedenken/Rest: Noch kein Fachconsumer wird hier eingerichtet, da das Bestellmodell Folgeabschnitt ist. Folgepakete müssen Typ-Scope deklarieren und ihre Fachwrites im beschriebenen transaktionalen/idempotenten Callback umsetzen. Kein Review, Merge oder Root-Logeintrag durch diesen Task; beides übernimmt Root nach Paket 5B.
+- Status: fertig.
+
+
+## Abschnitt 5 — erste Nachbesserung reintegriert
+
+Zeit: 2026-09-23T17:40:32.350710+00:00
+
+- Alle R1-Pakete fertig: Task13 unverändert9d7af249, PDF770b2ddc, Outbox88fb656d; konfliktfrei --no-ff --no-commit reintegriert. Derselbe Sol-Reviewer prüft R1 samt exklusiver integrierter Backendvollsuite.
+- Root-PDF-Sichtprüfung vollständig bestanden. Korrektur zur Paketübergabe: /tmp/beschaffung-task14-r1-beispiel.pdf (SHA256 d477a95573b858c69adb254097991ff0fd5f74af439eea387b225891cb45d00c) hat laut pdfinfo13 statt10Seiten. Alle13 PNGs angesehen:60Positionen, vollständige Dokumentgrundlagen/Versionen/Bestätigungen, Bildbezug mit Positionsnummer, normale Zeilen zusammengehalten, Liefergruppen/Kosten/Schlusstexte vollständig und ohne Überlagerung. Voriger Layouthinweis behoben.
+- Persistenter typgebundener Consumer-/Recovery-Vertrag ist in Folgeaufträgen6A und7A verpflichtend vorgemerkt. Kein erneuter SMTP-Versand bei Ereigniswiederholung.
+
+
+## Abschnitt 5 — endgültige Abnahme
+
+Zeit: 2026-09-23T17:42:08.583911+00:00
+
+- Sol-Code-/Security-/Architekturreview R1 GRÜN ohne Blocker oder Warnungen: /tmp/beschaffung-abschnitt5-r1-review-report.md. Eine formale Nachbesserung; ursprünglicher Outbox-Blocker sowie sämtliche PDF-/HTTP-/Layouthinweise behoben.
+- Exklusive integrierte Backendvollsuite: Exit0,3379 Tests,0 Fehler,17 bekannte Skips, BUILD SUCCESS; /tmp/beschaffung-abschnitt5-r1-review-backend.log. PC/Mobile-Bäume unverändert, bestehende vollständige Frontendnachweise gültig.
+- Root-Sichtprüfung aller13 Seiten des R1-Dummy-PDF bestanden. Quellen-/Dokumentdiff-Whitespacecheck sauber. Graphify synchronisiert, generierte Dateien bleiben lokal.
+- Weiter mit Abschnitt6 als zusammenhängendem Luna-Paket16→17→18: Anfrageversand/Antwortzuordnung, manuelle versionierte Lieferantenangebote, deterministischer Vollkostenvergleich. Persistenter typgebundener Annahmeconsumer aus R1 ist verbindlicher Integrationsvertrag; keine flüchtige alleinige Ereignisverarbeitung.

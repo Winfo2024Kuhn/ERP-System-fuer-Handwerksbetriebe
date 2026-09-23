@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.sun.mail.smtp.SMTPTransport;
+import com.sun.mail.smtp.SMTPAddressFailedException;
 
 import jakarta.mail.Session;
 import jakarta.mail.Store;
@@ -107,6 +108,11 @@ public class KontoMailTransport {
             transport.sendMessage(message, message.getAllRecipients());
             return new MailTransportDto.Versandergebnis(Status.ANGENOMMEN, messageId, null, mime);
         } catch (Exception ex) {
+            if (sicherVorDataAbgewiesen(ex)) {
+                log.info("[EinkaufMail] Empfänger vor DATA abgelehnt für Message-ID {}", messageId);
+                return new MailTransportDto.Versandergebnis(Status.SICHER_FEHLGESCHLAGEN,
+                        messageId, "SMTP_EMPFAENGER_ABGELEHNT", mime);
+            }
             log.warn("[EinkaufMail] SMTP-Ausgang unklar für Message-ID {}: {}", messageId, ex.getClass().getSimpleName());
             return new MailTransportDto.Versandergebnis(Status.UNKLAR, messageId, "SMTP_ANTWORT_UNKLAR", mime);
         } finally {
@@ -145,6 +151,23 @@ public class KontoMailTransport {
         }
         finally { try { if (imapStore != null && imapStore.isConnected()) imapStore.close(); } catch (Exception ignored) { } }
         return new Testverbindung(smtpOk, imapOk, error);
+    }
+
+    private boolean sicherVorDataAbgewiesen(Exception fehler) {
+        java.util.Set<Throwable> gesehen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Throwable aktuell = fehler;
+        while (aktuell != null && gesehen.add(aktuell)) {
+            if (aktuell instanceof SMTPAddressFailedException abgelehnt) {
+                String kommando = abgelehnt.getCommand();
+                int code = abgelehnt.getReturnCode();
+                if (kommando != null && kommando.regionMatches(true, 0, "RCPT", 0, 4)
+                        && code >= 400 && code < 600) return true;
+            }
+            if (aktuell instanceof jakarta.mail.MessagingException mailFehler
+                    && mailFehler.getNextException() != null) aktuell = mailFehler.getNextException();
+            else aktuell = aktuell.getCause();
+        }
+        return false;
     }
 
     private Properties smtpEigenschaften(ServerZugang zugang) {
