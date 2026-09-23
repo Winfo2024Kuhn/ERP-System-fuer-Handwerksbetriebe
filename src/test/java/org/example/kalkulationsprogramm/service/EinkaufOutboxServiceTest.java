@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandauftrag;
+import org.example.kalkulationsprogramm.repository.EinkaufVersandAnnahmeereignisRepository;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto;
 import org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository;
@@ -45,6 +46,7 @@ class EinkaufOutboxServiceTest {
     @Test
     void vorhandenerIdempotenzschluesselLiefertGleichenAuftragOhneKontozugriff() throws Exception {
         var repository = mock(EinkaufVersandauftragRepository.class);
+        var annahmeereignisse = mock(EinkaufVersandAnnahmeereignisRepository.class);
         var konten = mock(MailkontoService.class);
         var policy = mock(LocalTestMailPolicy.class);
         var transport = mock(KontoMailTransport.class);
@@ -58,7 +60,7 @@ class EinkaufOutboxServiceTest {
                 hash, "mimehash", request.freigabeHash(), mapper.writeValueAsBytes(request),
                 new byte[] {1, 2}, "<fixed@erp.local>", 1L);
         when(repository.findByIdempotenzKey(key)).thenReturn(Optional.of(existing));
-        var service = new EinkaufOutboxService(repository, konten, policy, transport, mapper, tx, eventPublisher());
+        var service = new EinkaufOutboxService(repository, annahmeereignisse, konten, policy, transport, mapper, tx);
 
         var result = service.einreihen(request, key, 99L);
 
@@ -93,12 +95,13 @@ class EinkaufOutboxServiceTest {
     @Test
     void aufklaerungSpeichertBelegUndNimmtKeinenZweitenSmtpVersandAn() {
         var repository = mock(EinkaufVersandauftragRepository.class);
+        var annahmeereignisse = mock(EinkaufVersandAnnahmeereignisRepository.class);
         var order = newOrder(UUID.randomUUID());
         order.starte(1L);
         order.unklar("SMTP_ANTWORT_UNKLAR");
         when(repository.sperreById(42L)).thenReturn(Optional.of(order));
-        var service = service(repository, mock(MailkontoService.class), mock(LocalTestMailPolicy.class),
-                mock(KontoMailTransport.class), transactionManager());
+        var service = new EinkaufOutboxService(repository, annahmeereignisse, mock(MailkontoService.class),
+                mock(LocalTestMailPolicy.class), mock(KontoMailTransport.class), new ObjectMapper(), transactionManager());
 
         service.klaeren(42L, new EinkaufVersandDto.Klaerung(0, EinkaufVersandDto.Entscheidung.BEREITS_ANGENOMMEN,
                 "Antwort im Testpostfach"), 3L);
@@ -107,21 +110,19 @@ class EinkaufOutboxServiceTest {
         assertEquals("Antwort im Testpostfach", order.getKlaerungBeleg());
         assertEquals("BEREITS_ANGENOMMEN", order.getKlaerungEntscheidung());
         assertEquals(3L, order.getKlaerungAkteurId());
+        verify(annahmeereignisse).save(any());
     }
 
     private EinkaufOutboxService service(EinkaufVersandauftragRepository repository, MailkontoService konten,
             LocalTestMailPolicy policy, KontoMailTransport transport, PlatformTransactionManager tm) {
-        return new EinkaufOutboxService(repository, konten, policy, transport, new ObjectMapper(), tm, eventPublisher());
+        return new EinkaufOutboxService(repository, mock(EinkaufVersandAnnahmeereignisRepository.class), konten,
+                policy, transport, new ObjectMapper(), tm);
     }
 
     private PlatformTransactionManager transactionManager() {
         PlatformTransactionManager tx = mock(PlatformTransactionManager.class);
         when(tx.getTransaction(any(TransactionDefinition.class))).thenReturn(new SimpleTransactionStatus());
         return tx;
-    }
-
-    private org.springframework.context.ApplicationEventPublisher eventPublisher() {
-        return mock(org.springframework.context.ApplicationEventPublisher.class);
     }
 
     private EinkaufVersandDto.VersandSnapshot snapshot() {

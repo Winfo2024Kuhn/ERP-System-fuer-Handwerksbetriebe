@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS einkauf_versandauftrag (
     archiviert_am DATETIME(6) NULL,
     archiv_claim_am DATETIME(6) NULL,
     archiv_fehler_code VARCHAR(80) NULL,
-    annahmeereignis_am DATETIME(6) NULL,
     akteur_id BIGINT NULL,
     klaerung_entscheidung VARCHAR(40) NULL,
     klaerung_beleg VARCHAR(5000) NULL,
@@ -44,5 +43,25 @@ CREATE TABLE IF NOT EXISTS einkauf_versandversuch (
     UNIQUE KEY uk_einkauf_versuch_nummer (auftrag_id, nummer),
     KEY ix_einkauf_versuch_auftrag (auftrag_id, id),
     CONSTRAINT fk_einkauf_versuch_auftrag FOREIGN KEY (auftrag_id)
+        REFERENCES einkauf_versandauftrag (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS einkauf_versandannahmeereignis (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    ereignis_schluessel BINARY(16) NOT NULL,
+    versandauftrag_id BIGINT NOT NULL,
+    typ ENUM('VERSAND_ANGENOMMEN') NOT NULL,
+    vorgang_typ VARCHAR(40) NOT NULL,
+    vorgang_id BIGINT NOT NULL,
+    revision_id BIGINT NULL,
+    beteiligung_id BIGINT NULL,
+    angenommen_am DATETIME(6) NOT NULL,
+    erstellt_am DATETIME(6) NOT NULL,
+    verarbeitet_am DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_einkauf_annahme_event_key UNIQUE (ereignis_schluessel),
+    CONSTRAINT uk_einkauf_annahme_auftrag UNIQUE (versandauftrag_id),
+    KEY ix_einkauf_annahme_offen (verarbeitet_am, id),
+    CONSTRAINT fk_einkauf_annahme_auftrag FOREIGN KEY (versandauftrag_id)
         REFERENCES einkauf_versandauftrag (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

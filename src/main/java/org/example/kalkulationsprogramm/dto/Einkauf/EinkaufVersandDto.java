@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.dto.Einkauf;
 
 import java.time.Instant;
+import java.util.UUID;
 
 public final class EinkaufVersandDto {
     private EinkaufVersandDto() {}
@@ -24,8 +25,8 @@ public final class EinkaufVersandDto {
             String status, String fehlerCode, Instant erstelltAm, Instant angenommenAm,
             boolean archiviert, String messageId) {}
 
-    public record EinkaufVersandAngenommen(Long versandId, String typ, Long vorgangId,
-            Long revisionId, Instant zeit) {}
+    public record EinkaufVersandAngenommen(UUID ereignisSchluessel, Long versandId, String typ, Long vorgangId,
+            Long revisionId, Long beteiligungId, Instant zeit) {}
 
     public record Klaerung(long version, Entscheidung entscheidung, String beleg) {}
 

@@ -61,8 +61,6 @@ public class EinkaufVersandauftrag {
     private Instant archivClaimAm;
     @Column(name = "archiv_fehler_code", length = 80)
     private String archivFehlerCode;
-    @Column(name = "annahmeereignis_am")
-    private Instant annahmeereignisAm;
     @Column(name = "akteur_id")
     private Long akteurId;
     @Column(name = "klaerung_entscheidung", length = 40)
@@ -101,7 +99,6 @@ public class EinkaufVersandauftrag {
     }
     public void angenommen(Instant zeit) {
         status = Status.ANGENOMMEN; angenommenAm = zeit; fehlerCode = null;
-        annahmeereignisAm = zeit;
         letzterVersuch(EinkaufVersandversuch.Ergebnis.ANGENOMMEN, null, zeit);
     }
     public void beansprucheArchiv(Instant zeit) { archivClaimAm = zeit; }

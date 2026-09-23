@@ -6,12 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandauftrag;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandversuch;
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufVersandAnnahmeereignis;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.*;
 import org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository;
+import org.example.kalkulationsprogramm.repository.EinkaufVersandAnnahmeereignisRepository;
 import org.example.kalkulationsprogramm.service.mail.KontoMailTransport;
 import org.example.kalkulationsprogramm.service.mail.MailkontoService;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -25,12 +26,12 @@ import java.util.UUID;
 @Slf4j
 public class EinkaufOutboxService {
     private final EinkaufVersandauftragRepository repository;
+    private final EinkaufVersandAnnahmeereignisRepository annahmeereignisse;
     private final MailkontoService mailkontoService;
     private final LocalTestMailPolicy localTestMailPolicy;
     private final KontoMailTransport transport;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
-    private final ApplicationEventPublisher events;
 
     public VersandDto einreihen(VersandSnapshot snapshot, UUID idempotenzKey, Long akteurId) {
         if (snapshot == null || idempotenzKey == null || akteurId == null || akteurId <= 0) {
@@ -98,7 +99,7 @@ public class EinkaufOutboxService {
             if (klaerung.entscheidung() == Entscheidung.BEREITS_ANGENOMMEN) {
                 Instant now = Instant.now(); a.angenommen(now);
                 a.klaere(klaerung.entscheidung().name(), klaerung.beleg(), akteurId, now);
-                events.publishEvent(new EinkaufVersandAngenommen(a.getId(), a.getTyp(), a.getVorgangId(), a.getRevisionId(), now));
+                speichereAnnahmeereignis(a, now);
             } else if (klaerung.entscheidung() == Entscheidung.NACHWEISLICH_NICHT_GESENDET) {
                 a.sicherFehlgeschlagen("MANUELL_GEKLAERT");
                 a.klaere(klaerung.entscheidung().name(), klaerung.beleg(), akteurId, Instant.now());
@@ -132,13 +133,47 @@ public class EinkaufOutboxService {
             switch (result.status()) {
                 case ANGENOMMEN -> {
                     a.angenommen(now);
-                    events.publishEvent(new EinkaufVersandAngenommen(a.getId(), a.getTyp(), a.getVorgangId(), a.getRevisionId(), now));
+                    speichereAnnahmeereignis(a, now);
                 }
                 case SICHER_FEHLGESCHLAGEN -> a.sicherFehlgeschlagen(result.fehlerCode());
                 case UNKLAR -> a.unklar(result.fehlerCode());
             }
             repository.flush();
         });
+    }
+
+    /**
+     * Replays durable acceptance facts. Consumer database changes and marking an event processed commit atomically;
+     * on a listener error or process crash the transaction rolls back and the same stable event key is offered again.
+     */
+    public int verarbeiteOffeneAnnahmeereignisse(EinkaufAnnahmeereignisConsumer consumer, int limit) {
+        if (consumer == null || limit < 1 || limit > 500) {
+            throw new IllegalArgumentException("Ein Consumer und ein Limit zwischen 1 und 500 sind erforderlich.");
+        }
+        var unterstuetzteTypen = consumer.unterstuetzteVorgangstypen();
+        if (unterstuetzteTypen == null || unterstuetzteTypen.isEmpty()
+                || unterstuetzteTypen.stream().anyMatch(typ -> typ == null || typ.isBlank())) {
+            throw new IllegalArgumentException("Der Consumer muss mindestens einen gültigen Vorgangstyp angeben.");
+        }
+        var vorgangstypen = java.util.Set.copyOf(unterstuetzteTypen);
+        int verarbeitet = 0;
+        while (verarbeitet < limit) {
+            boolean erledigt = transaktion(() -> {
+                var offene = annahmeereignisse.sperreOffene(vorgangstypen,
+                        org.springframework.data.domain.PageRequest.of(0, 1));
+                if (offene.isEmpty()) return false;
+                EinkaufVersandAnnahmeereignis ereignis = offene.getFirst();
+                consumer.verarbeite(new EinkaufVersandAngenommen(ereignis.getEreignisSchluessel(),
+                        ereignis.getVersandauftragId(), ereignis.getVorgangTyp(), ereignis.getVorgangId(),
+                        ereignis.getRevisionId(), ereignis.getBeteiligungId(), ereignis.getAngenommenAm()));
+                ereignis.verarbeitet(Instant.now());
+                annahmeereignisse.flush();
+                return true;
+            });
+            if (!erledigt) break;
+            verarbeitet++;
+        }
+        return verarbeitet;
     }
 
     public void archivErgebnis(Long id, org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.ArchivErgebnis result) {
@@ -174,6 +209,11 @@ public class EinkaufOutboxService {
     private EinkaufVersandauftrag sperre(Long id) {
         if (id == null || id <= 0) throw new IllegalArgumentException("Der Versandauftrag ist ungültig.");
         return repository.sperreById(id).orElseThrow(() -> new java.util.NoSuchElementException("Versandauftrag nicht gefunden."));
+    }
+    private void speichereAnnahmeereignis(EinkaufVersandauftrag auftrag, Instant angenommenAm) {
+        var ereignis = new EinkaufVersandAnnahmeereignis(auftrag.getId(), auftrag.getTyp(),
+                auftrag.getVorgangId(), auftrag.getRevisionId(), auftrag.getBeteiligungId(), angenommenAm);
+        annahmeereignisse.save(ereignis);
     }
     private VersandDto dto(EinkaufVersandauftrag a) {
         return new VersandDto(a.getId(), a.getVersion(), a.getTyp(), a.getVorgangId(), a.getRevisionId(),
