@@ -20,6 +20,9 @@ public class EinkaufBelegPosition {
     @Column(name="original_menge",precision=19,scale=6) private BigDecimal originalMenge;
     @Enumerated(EnumType.STRING) @Column(name="original_einheit",length=24) private Einheit originalEinheit;
     @Column(precision=19,scale=6) private BigDecimal einzelpreis;
+    @Column(name="original_einzelpreis",precision=19,scale=6) private BigDecimal originalEinzelpreis;
+    @Column(name="preis_basis_menge",precision=19,scale=6) private BigDecimal preisBasisMenge;
+    @Column(name="nur_preis_korrektur",nullable=false) private boolean nurPreisKorrektur;
     @Column(length=3) private String waehrung;
     @JdbcTypeCode(SqlTypes.JSON) @Column(name="kosten_snapshot", nullable=false, columnDefinition="json") private List<Map<String,Object>> kosten=List.of();
     @JdbcTypeCode(SqlTypes.JSON) @Column(name="quellen_snapshot", nullable=false, columnDefinition="json") private List<Map<String,Object>> quellen=List.of();
@@ -37,5 +40,7 @@ public class EinkaufBelegPosition {
     public BigDecimal getOriginalMenge(){return originalMenge;} public Einheit getOriginalEinheit(){return originalEinheit;}
     public BigDecimal getEinzelpreis(){return einzelpreis;} public String getWaehrung(){return waehrung;} public List<Map<String,Object>> getKosten(){return kosten;}
     public List<Map<String,Object>> getQuellen(){return quellen;} public boolean isPruefen(){return pruefen;}
+    public void preisBasis(BigDecimal preis,BigDecimal basis,boolean nurPreis){originalEinzelpreis=preis;preisBasisMenge=basis;nurPreisKorrektur=nurPreis;}
+    public boolean isNurPreisKorrektur(){return nurPreisKorrektur;}
     public void zuordnen(BestellungPosition position, boolean pruefen){this.bestellPosition=position;this.pruefen=pruefen;}
 }

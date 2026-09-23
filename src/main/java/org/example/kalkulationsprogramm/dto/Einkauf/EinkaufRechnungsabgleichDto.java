@@ -11,10 +11,10 @@ public final class EinkaufRechnungsabgleichDto {
     public record PositionAbgleich(Long positionId, String bezeichnung, Einheit einheit, BigDecimal vereinbart,
             BigDecimal bestaetigt, BigDecimal geliefert, BigDecimal kumuliertAbgerechnet, BigDecimal offen,
             List<Abweichung> abweichungen, boolean pruefen, List<Quelle> quellen) {}
-    public record BelegZuordnung(long version,String art,Long bezugsDokumentId,List<BelegPosition> positionen,UUID idempotenzKey) {}
+    public record BelegZuordnung(Long bestellungId,long version,String art,Long bezugsDokumentId,List<BelegPosition> positionen,UUID idempotenzKey) {}
     public record BelegPosition(String originalPositionsnummer,Long bestellPositionId,BigDecimal menge,Einheit einheit,
-            List<Kosten> kosten,List<Quelle> quellen) {}
-    public record Kosten(String schluessel,String art,BigDecimal betrag,String basis,BigDecimal basisMenge,boolean enthalten,String quelle) {}
+            BigDecimal nettoEinzelpreis,BigDecimal preisBasisMenge,boolean nurPreisKorrektur,List<Kosten> kosten,List<Quelle> quellen) {}
+    public record Kosten(String schluessel,String art,BigDecimal betrag,String basis,BigDecimal basisMenge,boolean enthalten,String quelle,String prozentBasisSchluessel) {}
     public record Quelle(String typ,Long id,String bezeichnung,BigDecimal betrag) {}
     public record Abweichung(Long positionId,String feld,BigDecimal vereinbart,BigDecimal abgerechnet,BigDecimal differenz,String rechenweg,List<Quelle> quellen) {}
     public record Mengenstand(BigDecimal offen,BigDecimal differenz) {}
