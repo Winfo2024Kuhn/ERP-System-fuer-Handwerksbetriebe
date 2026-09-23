@@ -37,6 +37,7 @@ import java.util.Map;
 public class EinkaufPdfPositionsRenderer {
     private static final Color ROSE = new Color(190, 24, 93);
     private static final Color LIGHT = new Color(255, 241, 242);
+    private static final int MAX_TEXT_PER_POSITION_ROW = 1200;
     private static final byte[] NO_IMAGE = new byte[0];
     private final SchnittbilderRepository schnittbilderRepository;
     private final DateiSpeicherService dateiSpeicherService;
@@ -157,35 +158,73 @@ public class EinkaufPdfPositionsRenderer {
                 : new float[] { 1.05f, 2.7f, 1.05f, 3.8f, 1.6f });
         table.setWidthPercentage(100);
         table.setHeaderRows(1);
-        table.setSplitLate(false);
+        table.setSplitLate(true);
+        table.setSplitRows(true);
         for (String label : List.of("Pos.", "Material / interne Nr.", "Menge", "Technische Angaben", "Kosten")) {
             if (anfrage && label.equals("Kosten")) continue;
             table.addCell(cell(label, Font.BOLD, Color.WHITE, ROSE));
         }
-        for (PdfPosition position : beleg.positionen()) {
+        for (int positionIndex = 0; positionIndex < beleg.positionen().size(); positionIndex++) {
+            PdfPosition position = beleg.positionen().get(positionIndex);
             PositionSnapshot p = position.technik();
-            Color background = table.getRows().size() % 2 == 0 ? Color.WHITE : LIGHT;
-            table.addCell(cell(text(position.positionsnummer()), Font.NORMAL, Color.BLACK, background));
             String material = p == null ? "" : join(p.bezeichnung(), "Interne Nr.: " + text(p.interneReferenz()),
                     p.zeichnungsnummer() == null ? null : "Zeichnung: " + p.zeichnungsnummer() + " " + text(p.zeichnungsrevision()));
-            table.addCell(cell(material, Font.NORMAL, Color.BLACK, background));
             String menge = p == null || p.basis() == null ? "" : profilmenge(
                     p.basis().stueckzahl() == null ? 0 : p.basis().stueckzahl().intValue(),
                     p.basis().einzelLaengeMm(), p.basis().menge(), p.basis().einheit() == null ? null : p.basis().einheit().name());
-            PdfPCell quantity = new PdfPCell();
-            quantity.setBackgroundColor(background);
-            quantity.setPadding(4);
-            quantity.addElement(new Paragraph(menge, font(Font.NORMAL, 8, Color.BLACK)));
-            if (p != null && p.schnittForm() != null) {
-                Image icon = schnittbild(p.schnittForm());
-                if (icon != null) { icon.scaleToFit(32, 32); quantity.addElement(icon); }
-                quantity.addElement(new Paragraph("Form " + p.schnittForm(), font(Font.NORMAL, 7, Color.DARK_GRAY)));
+            List<String> materialRows = textRows(material);
+            List<String> technicalRows = textRows(technik(p, position.herkuenfte()));
+            List<String> costRows = anfrage ? List.of("") : textRows(kosten(position.kosten()));
+            int rowCount = Math.max(materialRows.size(), Math.max(technicalRows.size(), costRows.size()));
+            Color background = positionIndex % 2 == 0 ? Color.WHITE : LIGHT;
+            for (int row = 0; row < rowCount; row++) {
+                table.addCell(cell(row == 0 ? text(position.positionsnummer())
+                        : text(position.positionsnummer()) + " (Fortsetzung)", Font.NORMAL, Color.BLACK, background));
+                table.addCell(cell(rowValue(materialRows, row), Font.NORMAL, Color.BLACK, background));
+                table.addCell(row == 0 ? quantityCell(position, p, menge, background)
+                        : cell("", Font.NORMAL, Color.BLACK, background));
+                table.addCell(cell(rowValue(technicalRows, row), Font.NORMAL, Color.BLACK, background));
+                if (!anfrage) table.addCell(cell(rowValue(costRows, row), Font.NORMAL, Color.BLACK, background));
             }
-            table.addCell(quantity);
-            table.addCell(cell(technik(p, position.herkuenfte()), Font.NORMAL, Color.BLACK, background));
-            if (!anfrage) table.addCell(cell(kosten(position.kosten()), Font.NORMAL, Color.BLACK, background));
         }
         document.add(table);
+    }
+
+    private PdfPCell quantityCell(PdfPosition position, PositionSnapshot p, String menge, Color background) {
+        PdfPCell quantity = new PdfPCell();
+        quantity.setBackgroundColor(background);
+        quantity.setPadding(4);
+        quantity.addElement(new Paragraph(menge, font(Font.NORMAL, 8, Color.BLACK)));
+        if (p != null && p.schnittForm() != null) {
+            quantity.addElement(new Paragraph("Pos. " + text(position.positionsnummer()) + " · Form " + p.schnittForm(),
+                    font(Font.NORMAL, 7, Color.DARK_GRAY)));
+            Image icon = schnittbild(p.schnittForm());
+            if (icon != null) {
+                icon.scaleToFit(32, 32);
+                quantity.addElement(icon);
+            }
+        }
+        return quantity;
+    }
+
+    private List<String> textRows(String value) {
+        if (value == null || value.isBlank()) return List.of("");
+        List<String> rows = new java.util.ArrayList<>();
+        int start = 0;
+        while (start < value.length()) {
+            int end = Math.min(value.length(), start + MAX_TEXT_PER_POSITION_ROW);
+            if (end < value.length()) {
+                int boundary = value.lastIndexOf(' ', end);
+                if (boundary > start + MAX_TEXT_PER_POSITION_ROW / 2) end = boundary + 1;
+            }
+            rows.add(value.substring(start, end));
+            start = end;
+        }
+        return rows;
+    }
+
+    private String rowValue(List<String> rows, int index) {
+        return index < rows.size() ? rows.get(index) : "";
     }
 
     private void addHeading(Document document, Beleg b) throws DocumentException {
@@ -268,7 +307,12 @@ public class EinkaufPdfPositionsRenderer {
 
     private String dokumente(List<DokumentSoll> documents) {
         if (documents == null || documents.isEmpty()) return null;
-        return "Dokumente: " + documents.stream().map(DokumentSoll::art).map(this::dokumentName).distinct().reduce((a, b) -> a + ", " + b).orElse("");
+        return "Dokumente: " + documents.stream().map(d -> join(
+                d.art() == null ? "Dokument" : dokumentName(d.art()),
+                d.grundlage() == null || d.grundlage().isBlank() ? null : "Grundlage " + d.grundlage(),
+                d.grundlageVersion() == null || d.grundlageVersion().isBlank() ? null : "Version " + d.grundlageVersion(),
+                d.fachlichBestaetigt() ? "fachlich bestätigt" : "fachlich nicht bestätigt"))
+                .reduce((a, b) -> a + "; " + b).orElse("");
     }
 
     private String dokumentName(Dokumentart d) {

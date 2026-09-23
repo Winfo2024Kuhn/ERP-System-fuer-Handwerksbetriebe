@@ -1,6 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.text.PDFTextStripper;
 import com.lowagie.text.Image;
 import org.example.kalkulationsprogramm.domain.einkauf.Dokumentart;
@@ -69,17 +72,57 @@ class EinkaufPdfServiceTest {
                     "Schnittbild muss als PDF-Bild eingebettet sein");
             assertTrue(text.contains("PA-2026-0001"));
             String normalized = text.replaceAll("\\s+", " ");
+            PDFTextStripper pageStripper = new PDFTextStripper();
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                if (containsImage(document.getPage(page - 1))) {
+                    pageStripper.setStartPage(page);
+                    pageStripper.setEndPage(page);
+                    assertTrue(pageStripper.getText(document).contains("POS-"),
+                            "Schnittbildseite " + page + " muss eine Positionsnummer enthalten");
+                }
+            }
             assertTrue(normalized.contains("4 Stk à 6000 mm"), text);
             assertTrue(normalized.contains("links 45° / rechts 90°"));
             assertTrue(normalized.contains("S235JR"));
             assertTrue(normalized.contains("Zeugnis 3.1"));
             assertTrue(normalized.contains("Zeugnis 2.2"));
+            assertTrue(normalized.contains("Materialzeugnis"));
+            assertTrue(normalized.contains("Version Rev C"));
+            assertTrue(normalized.contains("Prüfung vor Montage"));
+            assertTrue(normalized.contains("Version Rev 2"));
+            assertTrue(normalized.contains("fachlich bestätigt"));
+            assertTrue(normalized.contains("fachlich nicht bestätigt"));
             assertTrue(normalized.contains("Köln"));
             assertFalse(normalized.contains("Fremdpreis"));
         }
         verify(schnittbilder).findByForm("I");
         verify(dateien).ladeBildAlsResource("i.png");
         verifyNoMoreInteractions(schnittbilder, dateien);
+    }
+
+    @Test
+    void brichtEineUebergrossePositionszeileOhneInformationsverlustUm() throws Exception {
+        FirmeninformationService firma = mock(FirmeninformationService.class);
+        when(firma.loadLogoImage()).thenReturn(null);
+        EinkaufPdfService service = new EinkaufPdfService(new EinkaufPdfPositionsRenderer(null, null), firma, null);
+        PositionSnapshot basis = position("LANG").technik();
+        String langtext = "ANFANG-FERTIGUNGSDETAIL " + "Schweißfolge und Bearbeitung mit Maßprüfung. ".repeat(420)
+                + " ENDE-FERTIGUNGSDETAIL";
+        PositionSnapshot ueberlang = new PositionSnapshot(basis.art(), basis.artikelId(), basis.interneReferenz(),
+                basis.zeichnungsnummer(), basis.zeichnungsrevision(), basis.bezeichnung(), basis.werkstoff(),
+                basis.abmessung(), basis.basis(), basis.schnittForm(), basis.winkelLinks(), basis.winkelRechts(),
+                langtext, basis.oberflaeche(), basis.dokumente(), basis.anlageVersionIds());
+        Beleg beleg = new Beleg("ANFRAGE", "PA-2026-LANG", 1, null,
+                List.of(new PdfPosition("LANG-01", ueberlang, List.of(), List.of(), null)), List.of(), List.of(),
+                null, null, null, null, true);
+
+        try (var document = Loader.loadPDF(service.erzeugen(beleg))) {
+            String text = new PDFTextStripper().getText(document).replaceAll("\\s+", " ");
+            assertTrue(document.getNumberOfPages() > 1);
+            assertTrue(text.contains("LANG-01"));
+            assertTrue(text.contains("ANFANG-FERTIGUNGSDETAIL"));
+            assertTrue(text.contains("ENDE-FERTIGUNGSDETAIL"));
+        }
     }
 
     @Test
@@ -159,7 +202,8 @@ class EinkaufPdfServiceTest {
                 new Mengenbasis(new BigDecimal("24"), Einheit.METER, new BigDecimal("4"),
                         new BigDecimal("6000"), null, null), "I", "45°", "90°", "Bohrungen und Sägen",
                 "feuerverzinkt", List.of(
-                        new DokumentSoll(Dokumentart.ZEUGNIS_3_1, "Auftrag", "B", true),
+                        new DokumentSoll(Dokumentart.ZEUGNIS_3_1, "Materialzeugnis", "Rev C", true),
+                        new DokumentSoll(Dokumentart.ZEUGNIS_3_1, "Prüfung vor Montage", "Rev 2", false),
                         new DokumentSoll(Dokumentart.ZEUGNIS_2_2, "Auftrag", "B", true)), List.of(7L));
         return new PdfPosition(id, snapshot, List.of(new PdfHerkunft(1L, "P-01", new BigDecimal("24"), Einheit.METER)),
                 List.of(), null);
@@ -172,5 +216,12 @@ class EinkaufPdfServiceTest {
             ImageIO.write(image, "png", output);
             return output.toByteArray();
         }
+    }
+
+    private static boolean containsImage(PDPage page) throws Exception {
+        for (COSName name : page.getResources().getXObjectNames()) {
+            if (page.getResources().getXObject(name) instanceof PDImageXObject) return true;
+        }
+        return false;
     }
 }
