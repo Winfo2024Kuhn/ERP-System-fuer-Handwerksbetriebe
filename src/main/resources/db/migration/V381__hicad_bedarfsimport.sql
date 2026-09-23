@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS hicad_import (
     duplikat BOOLEAN NOT NULL DEFAULT FALSE,
     idempotenz_key CHAR(36) NULL,
     payload_hash CHAR(64) NULL,
-    result_json VARCHAR(20000) NULL,
+    result_json LONGTEXT NULL,
+    idempotenz_ergebnisse_json LONGTEXT NULL,
     PRIMARY KEY (id),
     KEY idx_hicad_hash_projekt (projekt_id, datei_hash),
     KEY idx_hicad_import_instanz (import_instanz)
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS hicad_import_zeile (
     rohtext VARCHAR(4000) NOT NULL,
     snapshot_json VARCHAR(8000) NULL,
     bild_datei_ids_json VARCHAR(4000) NULL,
+    uebernommene_menge DECIMAL(15,6) NOT NULL DEFAULT 0,
     uebernommen BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (id),
     CONSTRAINT uk_hicad_import_zeilennummer UNIQUE (import_id, zeilennummer),

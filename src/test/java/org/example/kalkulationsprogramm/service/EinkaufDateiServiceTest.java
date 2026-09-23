@@ -97,6 +97,34 @@ class EinkaufDateiServiceTest {
     }
 
     @Test
+    void explicitReuploadRepairsDedupedHistoricalReferenceWhoseSourceIsGone() throws Exception {
+        byte[] bytes = "%PDF-1.7\nRecovered from explicit upload".getBytes();
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        EinkaufDatei historicalReference = new EinkaufDatei(hash, null, "historisch.pdf", "application/pdf",
+                bytes.length, 55L, null);
+        EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
+        when(files.findBySha256(hash)).thenReturn(Optional.of(historicalReference));
+        when(files.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        when(versions.findByBedarfIdAndRevision(1L, "Reupload")).thenReturn(Optional.empty());
+        when(versions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        EinkaufBedarfRepository needs = mock(EinkaufBedarfRepository.class);
+        when(needs.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        var attachments = mock(org.example.kalkulationsprogramm.repository.EmailAttachmentRepository.class);
+        when(attachments.findById(55L)).thenReturn(Optional.empty());
+        var service = new EinkaufDateiService(files, versions, needs, attachments,
+                mock(org.example.kalkulationsprogramm.repository.LieferantDokumentRepository.class),
+                uploadRoot.toString(), uploadRoot.resolve("email").toString());
+
+        service.hochladen(1L, pdf(bytes, "erneuert.pdf"), "Reupload", 4L);
+
+        verify(files).save(argThat(file -> file == historicalReference && file.getGespeicherterName() != null
+                && file.getEmailAttachmentId() == null && file.getLieferantDokumentId() == null));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, java.nio.file.Files.readAllBytes(
+                uploadRoot.resolve("einkauf").resolve(historicalReference.getGespeicherterName())));
+    }
+
+    @Test
     void persistsHiCadPreviewImagesAsDeduplicatedFilesAndReturnsImageMetadata() throws Exception {
         EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
         var byHash = new HashMap<String, EinkaufDatei>();

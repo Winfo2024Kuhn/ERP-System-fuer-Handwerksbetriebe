@@ -91,23 +91,9 @@ public class EinkaufDateiService {
         String extension = extension(originalName);
         String mime = validateFormat(extension, datei.getContentType(), bytes);
         String hash = sha256(bytes);
-        EinkaufDatei dateiEntity = dateien.findBySha256(hash).orElseGet(() -> {
-            String stored = UUID.randomUUID().toString();
-            Path destination = uploadRoot.resolve(stored).normalize();
-            if (!destination.startsWith(uploadRoot)) throw new IllegalArgumentException("Ungültiger Dateipfad.");
-            try {
-                Files.createDirectories(uploadRoot);
-                Files.write(destination, bytes);
-            } catch (IOException exception) {
-                throw new IllegalStateException("Die Datei konnte nicht gespeichert werden.", exception);
-            }
-            try {
-                return dateien.save(new EinkaufDatei(hash, stored, originalName, mime, bytes.length));
-            } catch (RuntimeException exception) {
-                try { Files.deleteIfExists(destination); } catch (IOException cleanup) { exception.addSuppressed(cleanup); }
-                throw exception;
-            }
-        });
+        EinkaufDatei dateiEntity = dateien.findBySha256(hash)
+                .map(existing -> reuseOrRepair(existing, bytes, originalName, mime))
+                .orElseGet(() -> writeNewFile(bytes, originalName, mime));
         EinkaufAnlageVersion version = versionen.save(new EinkaufAnlageVersion(bedarf, dateiEntity, revision.trim()));
         return toDto(version);
     }
@@ -290,7 +276,41 @@ public class EinkaufDateiService {
         try {
             Files.createDirectories(uploadRoot);
             Files.write(destination, bytes);
-            return dateien.save(new EinkaufDatei(sha256(bytes), stored, filename, mime, bytes.length));
+            try {
+                return dateien.save(new EinkaufDatei(sha256(bytes), stored, filename, mime, bytes.length));
+            } catch (RuntimeException exception) {
+                try { Files.deleteIfExists(destination); } catch (IOException cleanup) { exception.addSuppressed(cleanup); }
+                throw exception;
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Die Datei konnte nicht gespeichert werden.", exception);
+        }
+    }
+
+    private EinkaufDatei reuseOrRepair(EinkaufDatei existing, byte[] uploadedBytes, String filename, String mime) {
+        try {
+            if (java.security.MessageDigest.isEqual(readStoredBytes(existing), uploadedBytes)) return existing;
+        } catch (IOException | ResponseStatusException missingSource) {
+            // An explicit upload may restore a broken legacy reference; reads alone still return 409.
+        }
+        String stored = UUID.randomUUID().toString();
+        Path destination = uploadRoot.resolve(stored).normalize();
+        if (!destination.startsWith(uploadRoot)) throw new IllegalArgumentException("Ungültiger Dateipfad.");
+        try {
+            Files.createDirectories(uploadRoot);
+            Files.write(destination, uploadedBytes);
+            existing.setGespeicherterName(stored);
+            existing.setOriginalName(filename);
+            existing.setMimeTyp(mime);
+            existing.setByteAnzahl(uploadedBytes.length);
+            existing.setEmailAttachmentId(null);
+            existing.setLieferantDokumentId(null);
+            try {
+                return dateien.save(existing);
+            } catch (RuntimeException exception) {
+                try { Files.deleteIfExists(destination); } catch (IOException cleanup) { exception.addSuppressed(cleanup); }
+                throw exception;
+            }
         } catch (IOException exception) {
             throw new IllegalStateException("Die Datei konnte nicht gespeichert werden.", exception);
         }

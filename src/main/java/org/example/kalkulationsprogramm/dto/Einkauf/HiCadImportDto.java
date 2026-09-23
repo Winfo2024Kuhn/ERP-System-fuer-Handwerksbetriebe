@@ -10,6 +10,9 @@ public final class HiCadImportDto {
             List<Long> artikelKandidaten, boolean bereitsUebernommen, List<String> hinweise, List<BildVorschlag> bilder) {}
     public record BildVorschlag(Long dateiId, String dateiname, String mimeTyp, long byteAnzahl, String url) {}
     public record Vorschau(Long id, String dateiHash, boolean dateiSchonImportiert, List<Zeile> zeilen) {}
+    public record ImportFortschritt(Long id, long version, boolean duplikat, List<ZeilenFortschritt> zeilen) {}
+    public record ZeilenFortschritt(int zeilennummer, java.math.BigDecimal gesamtmenge,
+            java.math.BigDecimal uebernommeneMenge, java.math.BigDecimal verbleibendeMenge, boolean vollstaendigUebernommen) {}
     public record ZeilenAuswahl(int zeilennummer, java.math.BigDecimal menge, PositionSnapshot korrigiert,
             List<Long> bestaetigteBildDateiIds) {
         public ZeilenAuswahl(int zeilennummer, java.math.BigDecimal menge, PositionSnapshot korrigiert) {

@@ -17,7 +17,8 @@ public class HiCadImport {
     @Column(name = "duplikat", nullable = false) private boolean duplikat;
     @Column(name = "idempotenz_key", length = 36) private String idempotenzKey;
     @Column(name = "payload_hash", length = 64) private String payloadHash;
-    @Column(name = "result_json", length = 20000) private String resultJson;
+    @Column(name = "result_json", columnDefinition = "LONGTEXT") private String resultJson;
+    @Column(name = "idempotenz_ergebnisse_json", columnDefinition = "LONGTEXT") private String idempotenzErgebnisseJson;
     @OneToMany(mappedBy = "importVorgang", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("zeilennummer ASC") private List<HiCadImportZeile> zeilen = new ArrayList<>();
     protected HiCadImport() {}
@@ -37,6 +38,8 @@ public class HiCadImport {
     public void setPayloadHash(String value) { payloadHash = value; }
     public String getResultJson() { return resultJson; }
     public void setResultJson(String value) { resultJson = value; }
+    public String getIdempotenzErgebnisseJson() { return idempotenzErgebnisseJson; }
+    public void setIdempotenzErgebnisseJson(String value) { idempotenzErgebnisseJson = value; }
     public List<HiCadImportZeile> getZeilen() { return zeilen; }
     public void addZeile(HiCadImportZeile zeile) { zeile.setImportVorgang(this); zeilen.add(zeile); }
 }

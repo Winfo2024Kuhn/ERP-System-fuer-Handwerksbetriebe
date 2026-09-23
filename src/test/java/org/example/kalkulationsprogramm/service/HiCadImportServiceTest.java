@@ -67,6 +67,7 @@ class HiCadImportServiceTest {
     @Test
     void rejectsHighlyCompressedWorksheetZipBombs() throws Exception {
         HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         HiCadImportService service = new HiCadImportService(imports,
                 mock(EinkaufBedarfService.class), mock(EinkaufDateiService.class));
         byte[] workbook = workbook("12,5");
@@ -95,6 +96,67 @@ class HiCadImportServiceTest {
     }
 
     @Test
+    void rejectsExternalRelationshipsStoredInsideCompressedXlsxEntries() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        HiCadImportService service = new HiCadImportService(imports,
+                mock(EinkaufBedarfService.class), mock(EinkaufDateiService.class));
+        String relationship = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"external1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/parts.xlsx\" TargetMode=\"External\"/></Relationships>";
+        byte[] withExternalLink = zipEntry(workbook("12,5"), "xl/worksheets/_rels/sheet1.xml.rels",
+                relationship.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        var file = new MockMultipartFile("file", "parts.xlsx", "application/octet-stream", withExternalLink);
+        assertThrows(IllegalArgumentException.class, () -> service.vorschau(17L, file, null, 4L));
+        verify(imports, never()).save(any());
+    }
+
+    @Test
+    void rejectsLegacyXlsContainingVbaProjectStream() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        HiCadImportService service = new HiCadImportService(imports,
+                mock(EinkaufBedarfService.class), mock(EinkaufDateiService.class));
+        byte[] macroWorkbook;
+        try (var workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook();
+                var workbookBytes = new ByteArrayOutputStream()) {
+            workbook.createSheet("Teile").createRow(0).createCell(0).setCellValue("Menge");
+            workbook.createSheet("Temp");
+            workbook.write(workbookBytes);
+            try (var compound = new org.apache.poi.poifs.filesystem.POIFSFileSystem(
+                    new ByteArrayInputStream(workbookBytes.toByteArray())); var output = new ByteArrayOutputStream()) {
+                compound.getRoot().createDocument("_VBA_PROJECT_CUR", new ByteArrayInputStream(new byte[] {1, 2, 3}));
+                compound.writeFilesystem(output);
+                macroWorkbook = output.toByteArray();
+            }
+        }
+
+        var file = new MockMultipartFile("file", "macro.xls", "application/vnd.ms-excel", macroWorkbook);
+        assertThrows(IllegalArgumentException.class, () -> service.vorschau(17L, file, null, 4L));
+        verify(imports, never()).save(any());
+    }
+
+    @Test
+    void rejectsExternalWorkbookReferencesEncodedAsLegacyXlsRecords() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        HiCadImportService service = new HiCadImportService(imports,
+                mock(EinkaufBedarfService.class), mock(EinkaufDateiService.class));
+        byte[] externalBook;
+        try (var workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook();
+                var linkedWorkbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            workbook.createSheet("Teile").createRow(0).createCell(0).setCellValue("Menge");
+            linkedWorkbook.createSheet("Extern");
+            workbook.linkExternalWorkbook("https://example.invalid/external.xlsx", linkedWorkbook);
+            workbook.write(output);
+            externalBook = output.toByteArray();
+        }
+
+        var file = new MockMultipartFile("file", "linked.xls", "application/vnd.ms-excel", externalBook);
+        assertThrows(IllegalArgumentException.class, () -> service.vorschau(17L, file, null, 4L));
+        verify(imports, never()).save(any());
+    }
+
+    @Test
     void rejectsSheetsOverTheTwentyColumnLimit() throws Exception {
         HiCadImportService service = new HiCadImportService(mock(HiCadImportRepository.class),
                 mock(EinkaufBedarfService.class), mock(EinkaufDateiService.class));
@@ -117,13 +179,14 @@ class HiCadImportServiceTest {
         HiCadImport imported = mock(HiCadImport.class);
         HiCadImportZeile first = mock(HiCadImportZeile.class);
         HiCadImportZeile second = mock(HiCadImportZeile.class);
-        when(imports.findById(5L)).thenReturn(Optional.of(imported));
+        when(imports.findByIdForUpdate(5L)).thenReturn(Optional.of(imported));
         when(imported.getProjektId()).thenReturn(17L);
         when(imported.getImportInstanz()).thenReturn("12345678-1234-1234-1234-123456789abc");
         when(imported.isDuplikat()).thenReturn(false);
         when(imported.getZeilen()).thenReturn(List.of(first, second));
         when(first.getZeilennummer()).thenReturn(2);
         when(second.getZeilennummer()).thenReturn(3);
+        when(second.getUebernommeneMenge()).thenReturn(java.math.BigDecimal.ZERO);
         when(second.getBildDateiIdsJson()).thenReturn("[7]");
         String snapshot = "{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"P-17\",\"zeichnungsnummer\":\"Z-17\",\"zeichnungsrevision\":\"A\",\"bezeichnung\":\"Konsole\",\"basis\":{\"menge\":1,\"einheit\":\"STUECK\"},\"dokumente\":[],\"anlageVersionIds\":[7]}";
         when(first.getSnapshotJson()).thenReturn(snapshot);
@@ -133,7 +196,7 @@ class HiCadImportServiceTest {
         when(bedarfe.aktualisieren(org.mockito.ArgumentMatchers.eq(99L), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq(4L))).thenReturn(expected);
         EinkaufDateiService fileService = mock(EinkaufDateiService.class);
-        when(fileService.anhaengenImportBild(99L, 7L, "HiCAD-12345678-Z3-B1", 4L))
+        when(fileService.anhaengenImportBild(eq(99L), eq(7L), anyString(), eq(4L)))
                 .thenReturn(new EinkaufDateiDto.AnlageDto(7L, 70L, 99L, "r1", "image.png", "image/png", 9L,
                         "hash", false, false, null));
         service = new HiCadImportService(imports, bedarfe, fileService);
@@ -215,16 +278,126 @@ class HiCadImportServiceTest {
         var request = new HiCadImportDto.Uebernahme(2L,
                 List.of(new HiCadImportDto.ZeilenAuswahl(3, null, null)), false, key);
         HiCadImport imported = mock(HiCadImport.class);
-        when(imports.findById(5L)).thenReturn(Optional.of(imported));
+        when(imports.findByIdForUpdate(5L)).thenReturn(Optional.of(imported));
         when(imported.getVersion()).thenReturn(3L);
         when(imported.getIdempotenzKey()).thenReturn(key.toString());
-        when(imported.getPayloadHash()).thenReturn(hash(request.zeilen().toString()));
+        when(imported.getPayloadHash()).thenReturn(hash("duplikatBewusst=false&zeilen=" + request.zeilen()));
         when(imported.getResultJson()).thenReturn("[]");
 
         var result = service.uebernehmen(5L, request, 4L);
 
         assertEquals(List.of(), result);
+        var changedPayload = new HiCadImportDto.Uebernahme(2L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(3, new java.math.BigDecimal("1"), null)), false, key);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.uebernehmen(5L, changedPayload, 4L));
         verify(bedarfe, never()).anlegen(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void partialTransferPersistsConsumedQuantityAllowsRemainderAndReplaysEveryRequestKey() {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        EinkaufBedarfService bedarfe = mock(EinkaufBedarfService.class);
+        EinkaufDateiService files = mock(EinkaufDateiService.class);
+        HiCadImport imported = new HiCadImport(17L, "a".repeat(64), 4L, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(imported, "id", 5L);
+        org.springframework.test.util.ReflectionTestUtils.setField(imported, "version", 0L);
+        HiCadImportZeile row = new HiCadImportZeile(3, "HiCAD row", "{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"P-17\",\"zeichnungsnummer\":\"Z-17\",\"zeichnungsrevision\":\"A\",\"bezeichnung\":\"Konsole\",\"basis\":{\"menge\":10,\"einheit\":\"STUECK\",\"stueckzahl\":10},\"dokumente\":[],\"anlageVersionIds\":[]}");
+        row.setBildDateiIdsJson("[7]");
+        imported.addZeile(row);
+        when(imports.findByIdForUpdate(5L)).thenReturn(Optional.of(imported));
+        when(imports.findById(5L)).thenReturn(Optional.of(imported));
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        java.util.concurrent.atomic.AtomicLong nextDemandId = new java.util.concurrent.atomic.AtomicLong(100L);
+        when(bedarfe.anlegen(any(), eq(4L))).thenAnswer(invocation ->
+                new EinkaufBedarfDto.Response(nextDemandId.getAndIncrement(), 0L, null, null, null, false, null));
+        when(bedarfe.aktualisieren(org.mockito.ArgumentMatchers.anyLong(), any(), eq(4L))).thenAnswer(invocation ->
+                new EinkaufBedarfDto.Response(invocation.getArgument(0), 1L, null, null, null, false, null));
+        java.util.concurrent.atomic.AtomicLong nextVersionId = new java.util.concurrent.atomic.AtomicLong(200L);
+        when(files.anhaengenImportBild(org.mockito.ArgumentMatchers.anyLong(), eq(7L), anyString(), eq(4L)))
+                .thenAnswer(invocation -> new EinkaufDateiDto.AnlageDto(nextVersionId.getAndIncrement(), 70L,
+                        invocation.getArgument(0), invocation.getArgument(2), "image.png", "image/png", 9L,
+                        "hash", false, false, null));
+        HiCadImportService service = new HiCadImportService(imports, bedarfe, files);
+        UUID firstKey = UUID.randomUUID();
+        var firstRequest = new HiCadImportDto.Uebernahme(0L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(3, new java.math.BigDecimal("4"), null, List.of(7L))),
+                false, firstKey);
+
+        var firstResult = service.uebernehmen(5L, firstRequest, 4L);
+
+        assertEquals(false, row.isUebernommen());
+        assertEquals(0, new java.math.BigDecimal("4").compareTo(
+                (java.math.BigDecimal) org.springframework.test.util.ReflectionTestUtils.getField(row, "uebernommeneMenge")));
+        var firstProgress = service.fortschritt(5L, 4L);
+        assertEquals(0, new java.math.BigDecimal("6").compareTo(firstProgress.zeilen().get(0).verbleibendeMenge()));
+        assertEquals(false, firstProgress.zeilen().get(0).vollstaendigUebernommen());
+        assertEquals(firstResult, service.uebernehmen(5L, firstRequest, 4L));
+        var excess = new HiCadImportDto.Uebernahme(0L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(3, new java.math.BigDecimal("7"), null, List.of(7L))),
+                false, UUID.randomUUID());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.uebernehmen(5L, excess, 4L));
+        verify(bedarfe, times(1)).anlegen(any(), eq(4L));
+
+        UUID remainderKey = UUID.randomUUID();
+        org.springframework.test.util.ReflectionTestUtils.setField(imported, "version", 1L);
+        var remainder = new HiCadImportDto.Uebernahme(1L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(3, new java.math.BigDecimal("6"), null, List.of(7L))),
+                false, remainderKey);
+        var remainderResult = service.uebernehmen(5L, remainder, 4L);
+
+        assertEquals(1, remainderResult.size());
+        assertEquals(101L, remainderResult.get(0).id());
+        assertEquals(true, row.isUebernommen());
+        assertEquals(0, new java.math.BigDecimal("10").compareTo(
+                (java.math.BigDecimal) org.springframework.test.util.ReflectionTestUtils.getField(row, "uebernommeneMenge")));
+        var completedProgress = service.fortschritt(5L, 4L);
+        assertEquals(0, completedProgress.zeilen().get(0).verbleibendeMenge().compareTo(java.math.BigDecimal.ZERO));
+        assertEquals(true, completedProgress.zeilen().get(0).vollstaendigUebernommen());
+        assertEquals(firstResult, service.uebernehmen(5L, firstRequest, 4L));
+        assertEquals(remainderResult, service.uebernehmen(5L, remainder, 4L));
+        verify(bedarfe, times(2)).anlegen(any(), eq(4L));
+        org.mockito.ArgumentCaptor<String> revisions = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(files, times(2)).anhaengenImportBild(org.mockito.ArgumentMatchers.anyLong(), eq(7L), revisions.capture(), eq(4L));
+        org.junit.jupiter.api.Assertions.assertNotEquals(revisions.getAllValues().get(0), revisions.getAllValues().get(1));
+    }
+
+    @Test
+    void secondPreviewOfIdenticalCompressedWorkbookIsExplicitlyMarkedAsDuplicate() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        java.util.Map<String, HiCadImport> byHash = new java.util.HashMap<>();
+        when(imports.findFirstByProjektIdAndDateiHashOrderByIdDesc(eq(17L), anyString()))
+                .thenAnswer(invocation -> Optional.ofNullable(byHash.get(invocation.getArgument(1))));
+        when(imports.save(any())).thenAnswer(invocation -> {
+            HiCadImport saved = invocation.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", 12L + byHash.size());
+            byHash.put(saved.getDateiHash(), saved);
+            return saved;
+        });
+        HiCadImportService service = new HiCadImportService(imports, mock(EinkaufBedarfService.class),
+                mock(EinkaufDateiService.class));
+        byte[] contents = workbook("12,5");
+
+        var first = service.vorschau(17L, new MockMultipartFile("file", "parts.xlsx", "application/octet-stream", contents), null, 4L);
+        var second = service.vorschau(17L, new MockMultipartFile("file", "parts.xlsx", "application/octet-stream", contents), null, 4L);
+
+        assertEquals(false, first.dateiSchonImportiert());
+        assertEquals(true, second.dateiSchonImportiert());
+        org.junit.jupiter.api.Assertions.assertNotEquals(first.id(), second.id());
+    }
+
+    @Test
+    void progressIsVisibleOnlyToTheImportOwner() {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        HiCadImport imported = mock(HiCadImport.class);
+        when(imports.findById(5L)).thenReturn(Optional.of(imported));
+        when(imported.getAkteurId()).thenReturn(4L);
+        HiCadImportService service = new HiCadImportService(imports, mock(EinkaufBedarfService.class),
+                mock(EinkaufDateiService.class));
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.fortschritt(5L, 99L));
     }
 
     private static byte[] workbook(String quantity) throws Exception {
@@ -248,6 +421,27 @@ class HiCadImportServiceTest {
                 }
                 zip.closeEntry();
             }
+            zip.finish();
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] zipEntry(byte[] archive, String name, byte[] value) throws Exception {
+        try (var input = new ZipInputStream(new ByteArrayInputStream(archive)); var output = new ByteArrayOutputStream();
+                var zip = new ZipOutputStream(output)) {
+            ZipEntry entry;
+            while ((entry = input.getNextEntry()) != null) {
+                if (!entry.getName().equals(name)) {
+                    zip.putNextEntry(new ZipEntry(entry.getName()));
+                    zip.write(input.readAllBytes());
+                    zip.closeEntry();
+                } else {
+                    input.readAllBytes();
+                }
+            }
+            zip.putNextEntry(new ZipEntry(name));
+            zip.write(value);
+            zip.closeEntry();
             zip.finish();
             return output.toByteArray();
         }

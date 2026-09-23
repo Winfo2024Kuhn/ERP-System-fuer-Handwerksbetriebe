@@ -38,6 +38,12 @@ public class HiCadImportController {
         return imports.uebernehmen(id, request, actor);
     }
 
+    @GetMapping("/{id}")
+    public HiCadImportDto.ImportFortschritt fortschritt(@PathVariable Long id, Authentication auth) {
+        Long actor = berechtigungen.verlange(auth, EinkaufBerechtigung.LESEN);
+        return imports.fortschritt(id, actor);
+    }
+
     @GetMapping("/{id}/bilder/{dateiId}")
     public ResponseEntity<Resource> ladeBild(@PathVariable Long id, @PathVariable Long dateiId, Authentication auth) {
         berechtigungen.verlange(auth, EinkaufBerechtigung.LESEN);

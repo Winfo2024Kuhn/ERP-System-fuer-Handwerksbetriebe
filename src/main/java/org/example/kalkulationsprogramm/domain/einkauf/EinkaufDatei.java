@@ -47,4 +47,10 @@ public class EinkaufDatei {
     public long getByteAnzahl() { return byteAnzahl; }
     public Long getEmailAttachmentId() { return emailAttachmentId; }
     public Long getLieferantDokumentId() { return lieferantDokumentId; }
+    public void setGespeicherterName(String value) { gespeicherterName = value; }
+    public void setOriginalName(String value) { originalName = value; }
+    public void setMimeTyp(String value) { mimeTyp = value; }
+    public void setByteAnzahl(long value) { byteAnzahl = value; }
+    public void setEmailAttachmentId(Long value) { emailAttachmentId = value; }
+    public void setLieferantDokumentId(Long value) { lieferantDokumentId = value; }
 }

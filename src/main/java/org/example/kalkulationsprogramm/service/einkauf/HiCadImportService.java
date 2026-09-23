@@ -16,6 +16,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.openxml4j.util.ZipSecureFile;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.openxml4j.opc.PackageRelationship;
+import org.apache.poi.openxml4j.opc.TargetMode;
+import org.apache.poi.poifs.filesystem.DirectoryEntry;
+import org.apache.poi.poifs.filesystem.Entry;
+import org.apache.poi.poifs.filesystem.POIFSFileSystem;
+import org.apache.poi.hssf.record.SupBookRecord;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
@@ -38,6 +45,8 @@ import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto.Zeile;
 import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto.ZeilenAuswahl;
 import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto.BildVorschlag;
+import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto.ImportFortschritt;
+import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto.ZeilenFortschritt;
 import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto.Vorschau;
 import org.example.kalkulationsprogramm.dto.Einkauf.HiCadImportDto.Uebernahme;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
@@ -92,6 +101,9 @@ public class HiCadImportService {
         try (var input = file.getInputStream()) { bytes = input.readNBytes(MAX_FILE_BYTES + 1); }
         catch (IOException e) { throw new IllegalArgumentException("Die Excel-Datei konnte nicht gelesen werden.", e); }
         if (bytes.length == 0 || bytes.length > MAX_FILE_BYTES) throw new IllegalArgumentException("Die Excel-Datei überschreitet das Limit von 10 MiB.");
+        ZipSecureFile.setMinInflateRatio(0.01d);
+        ZipSecureFile.setMaxEntrySize(MAX_FILE_BYTES);
+        ZipSecureFile.setMaxFileCount(2000);
         rejectExternalContent(bytes, filename);
         String hash = sha256(bytes);
         boolean duplicate = imports.findFirstByProjektIdAndDateiHashOrderByIdDesc(projektId, hash).isPresent();
@@ -124,8 +136,15 @@ public class HiCadImportService {
         if (importId == null || importId <= 0 || request == null || request.idempotenzKey() == null)
             throw new IllegalArgumentException("Import und Idempotenzschlüssel müssen angegeben werden.");
         if (akteurId == null || akteurId <= 0) throw new IllegalArgumentException("Der handelnde Benutzer fehlt.");
-        HiCadImport imp = imports.findById(importId).orElseThrow(() -> new NotFoundException("Der Import wurde nicht gefunden."));
-        String payloadHash = sha256(request.zeilen() == null ? "" : request.zeilen().toString());
+        HiCadImport imp = imports.findByIdForUpdate(importId).orElseThrow(() -> new NotFoundException("Der Import wurde nicht gefunden."));
+        String payloadHash = sha256("duplikatBewusst=" + request.duplikatBewusst() + "&zeilen="
+                + (request.zeilen() == null ? "" : request.zeilen().toString()));
+        List<StoredTransferResult> priorResults = parseTransferResults(imp.getIdempotenzErgebnisseJson());
+        for (StoredTransferResult prior : priorResults) {
+            if (!request.idempotenzKey().toString().equals(prior.idempotenzKey())) continue;
+            if (!payloadHash.equals(prior.payloadHash())) throw new ResponseStatusException(HttpStatus.CONFLICT, "Der Idempotenzschlüssel wurde mit anderen Zeilen verwendet.");
+            return parseResult(prior.resultJson());
+        }
         if (request.idempotenzKey().toString().equals(imp.getIdempotenzKey())) {
             if (!payloadHash.equals(imp.getPayloadHash())) throw new ResponseStatusException(HttpStatus.CONFLICT, "Der Idempotenzschlüssel wurde mit anderen Zeilen verwendet.");
             return parseResult(imp.getResultJson());
@@ -142,9 +161,21 @@ public class HiCadImportService {
             if (!selectedRows.add(selection.zeilennummer())) throw new IllegalArgumentException("Eine Excel-Zeile wurde doppelt ausgewählt.");
             HiCadImportZeile row = byRow.get(selection.zeilennummer());
             if (row == null) throw new IllegalArgumentException("Die gewählte Excel-Zeile gehört nicht zu diesem Import.");
-            if (row.isUebernommen()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Diese Zeile wurde bereits übernommen.");
-            PositionSnapshot snapshot = selection.korrigiert() == null ? parseSnapshot(row.getSnapshotJson()) : selection.korrigiert();
-            if (selection.menge() != null) snapshot = withQuantity(snapshot, selection.menge());
+            if (row.isUebernommen()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Diese Zeile wurde bereits vollständig übernommen.");
+            PositionSnapshot original = parseSnapshot(row.getSnapshotJson());
+            if (original.basis() == null || original.basis().menge() == null)
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Für diese Importzeile fehlt die Gesamtmenge.");
+            BigDecimal totalQuantity = original.basis().menge().setScale(6, java.math.RoundingMode.HALF_UP);
+            BigDecimal alreadyTransferred = row.getUebernommeneMenge();
+            BigDecimal remaining = totalQuantity.subtract(alreadyTransferred);
+            if (remaining.signum() <= 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "Diese Zeile wurde bereits vollständig übernommen.");
+            PositionSnapshot snapshot = selection.korrigiert() == null ? original : selection.korrigiert();
+            BigDecimal selectedQuantity = selection.menge() == null
+                    ? (snapshot.basis() == null ? null : snapshot.basis().menge()) : selection.menge();
+            if (snapshot.basis() == null || snapshot.basis().einheit() != original.basis().einheit())
+                throw new IllegalArgumentException("Die Einheit einer Importzeile darf bei einer Teilübernahme nicht geändert werden.");
+            if (selectedQuantity != null) selectedQuantity = selectedQuantity.setScale(6, java.math.RoundingMode.HALF_UP);
+            snapshot = withQuantity(snapshot, selectedQuantity, remaining);
             List<Long> imageIds = parseBildIds(row.getBildDateiIdsJson());
             List<Long> confirmedIds = selection.bestaetigteBildDateiIds() == null ? List.of() : selection.bestaetigteBildDateiIds();
             if (!new java.util.HashSet<>(confirmedIds).equals(new java.util.HashSet<>(imageIds)) || confirmedIds.size() != imageIds.size())
@@ -158,18 +189,40 @@ public class HiCadImportService {
             int imageIndex = 1;
             for (Long imageId : imageIds) {
                 var version = dateien.anhaengenImportBild(newNeed.id(), imageId,
-                        "HiCAD-" + imp.getImportInstanz().substring(0, 8) + "-Z" + selection.zeilennummer() + "-B" + imageIndex++, akteurId);
+                        "HiCAD-" + imp.getImportInstanz().substring(0, 8) + "-Z" + selection.zeilennummer()
+                                + "-B" + imageIndex++ + "-" + request.idempotenzKey().toString().substring(0, 8), akteurId);
                 versionIds.add(version.id());
             }
             PositionSnapshot finalSnapshot = withAttachments(snapshot, versionIds);
             created.add(bedarfe.aktualisieren(newNeed.id(), new EinkaufBedarfDto.Update(newNeed.version(), finalSnapshot, group), akteurId));
-            row.setUebernommen(true);
+            BigDecimal transferredTotal = alreadyTransferred.add(selectedQuantity).setScale(6, java.math.RoundingMode.HALF_UP);
+            row.setUebernommeneMenge(transferredTotal);
+            row.setUebernommen(transferredTotal.compareTo(totalQuantity) >= 0);
         }
+        priorResults.add(new StoredTransferResult(request.idempotenzKey().toString(), payloadHash, serialize(created)));
+        imp.setIdempotenzErgebnisseJson(serialize(priorResults));
         imp.setIdempotenzKey(request.idempotenzKey().toString());
         imp.setPayloadHash(payloadHash);
         imp.setResultJson(serialize(created));
         imports.save(imp);
         return List.copyOf(created);
+    }
+
+    @Transactional(readOnly = true)
+    public ImportFortschritt fortschritt(Long importId, Long akteurId) {
+        if (importId == null || importId <= 0 || akteurId == null || akteurId <= 0)
+            throw new IllegalArgumentException("Import und handelnder Benutzer müssen gültig sein.");
+        HiCadImport imp = imports.findById(importId)
+                .orElseThrow(() -> new NotFoundException("Der Import wurde nicht gefunden."));
+        if (!akteurId.equals(imp.getAkteurId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        List<ZeilenFortschritt> rows = imp.getZeilen().stream().map(row -> {
+            PositionSnapshot source = parseSnapshot(row.getSnapshotJson());
+            BigDecimal total = source.basis().menge().setScale(6, java.math.RoundingMode.HALF_UP);
+            BigDecimal transferred = row.getUebernommeneMenge();
+            BigDecimal remaining = total.subtract(transferred).max(BigDecimal.ZERO);
+            return new ZeilenFortschritt(row.getZeilennummer(), total, transferred, remaining, row.isUebernommen());
+        }).toList();
+        return new ImportFortschritt(imp.getId(), imp.getVersion() == null ? 0 : imp.getVersion(), imp.isDuplikat(), rows);
     }
 
     private Parsed parse(byte[] bytes, boolean xlsx, SpaltenMapping requested) {
@@ -310,11 +363,58 @@ public class HiCadImportService {
     }
 
     private static void rejectExternalContent(byte[] bytes, String filename) {
-        if (!filename.endsWith(".xlsx")) return;
-        String archiveNames = new String(bytes, StandardCharsets.ISO_8859_1).toLowerCase(Locale.ROOT);
-        if (archiveNames.contains("vbaproject.bin") || archiveNames.contains("xl/externallinks/")
-                || archiveNames.contains("connections.xml"))
-            throw new IllegalArgumentException("Makros und externe Verknüpfungen sind nicht erlaubt.");
+        try {
+            if (filename.endsWith(".xlsx")) {
+                try (OPCPackage pkg = OPCPackage.open(new ByteArrayInputStream(bytes))) {
+                    if (pkg.getParts().size() > 2000 || hasExternalRelationship(pkg.getRelationships()))
+                        throw forbiddenExternalContent();
+                    for (var part : pkg.getParts()) {
+                        String name = part.getPartName().getName().toLowerCase(Locale.ROOT);
+                        String contentType = part.getContentType().toLowerCase(Locale.ROOT);
+                        if (name.contains("vbaproject") || name.startsWith("/xl/externallinks/")
+                                || name.endsWith("/connections.xml") || contentType.contains("vbaproject")
+                                || !part.isRelationshipPart() && hasExternalRelationship(part.getRelationships()))
+                            throw forbiddenExternalContent();
+                    }
+                }
+                try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                    if (workbook.isMacroEnabled() || !workbook.getExternalLinksTable().isEmpty())
+                        throw forbiddenExternalContent();
+                }
+                return;
+            }
+            try (POIFSFileSystem compound = new POIFSFileSystem(new ByteArrayInputStream(bytes))) {
+                if (containsVbaProject(compound.getRoot())) throw forbiddenExternalContent();
+                try (HSSFWorkbook workbook = new HSSFWorkbook(compound)) {
+                    boolean external = workbook.getInternalWorkbook().getWorkbookRecordList().getRecords().stream()
+                            .filter(SupBookRecord.class::isInstance).map(SupBookRecord.class::cast)
+                            .anyMatch(SupBookRecord::isExternalReferences);
+                    if (external) throw forbiddenExternalContent();
+                }
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Die Excel-Datei ist beschädigt oder nicht sicher lesbar.", e);
+        }
+    }
+
+    private static boolean hasExternalRelationship(Iterable<PackageRelationship> relationships) {
+        for (PackageRelationship relationship : relationships)
+            if (relationship.getTargetMode() == TargetMode.EXTERNAL) return true;
+        return false;
+    }
+
+    private static boolean containsVbaProject(DirectoryEntry directory) {
+        for (Entry entry : directory) {
+            String name = entry.getName().toLowerCase(Locale.ROOT);
+            if (name.contains("vba") || entry instanceof DirectoryEntry child && containsVbaProject(child)) return true;
+        }
+        return false;
+    }
+
+    private static IllegalArgumentException forbiddenExternalContent() {
+        return new IllegalArgumentException("Makros und externe Verknüpfungen sind nicht erlaubt.");
     }
 
     private static String raw(Row row, DataFormatter formatter) {
@@ -358,10 +458,11 @@ public class HiCadImportService {
             default -> throw new IllegalArgumentException("Die Einheit „" + value + "“ wird nicht unterstützt.");
         };
     }
-    private static PositionSnapshot withQuantity(PositionSnapshot position, BigDecimal selected) {
+    private static PositionSnapshot withQuantity(PositionSnapshot position, BigDecimal selected, BigDecimal available) {
         if (selected == null || selected.signum() <= 0) throw new IllegalArgumentException("Die Teilmenge muss größer als 0 sein.");
         Mengenbasis old = position.basis();
-        if (selected.compareTo(old.menge()) > 0) throw new IllegalArgumentException("Die Teilmenge darf die importierte Menge nicht überschreiten.");
+        if (old == null || old.menge() == null || selected.compareTo(available) > 0)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Die Teilmenge überschreitet die noch offene Importmenge.");
         BigDecimal pieces = old.stueckzahl();
         if (old.einheit() == Einheit.STUECK && selected.stripTrailingZeros().scale() > 0) throw new IllegalArgumentException("Die Stückzahl muss ganzzahlig sein.");
         if (old.einheit() == Einheit.STUECK) pieces = selected;
@@ -400,6 +501,11 @@ public class HiCadImportService {
         try { return json.readerForListOf(EinkaufBedarfDto.Response.class).readValue(value); }
         catch (IOException e) { throw new IllegalStateException("Das Übernahmeergebnis konnte nicht gelesen werden.", e); }
     }
+    private List<StoredTransferResult> parseTransferResults(String value) {
+        if (value == null || value.isBlank()) return new ArrayList<>();
+        try { return json.readerForListOf(StoredTransferResult.class).readValue(value); }
+        catch (IOException e) { throw new IllegalStateException("Die Idempotenzhistorie des Imports ist beschädigt.", e); }
+    }
     private static String defaultValue(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
     private static String nullIfBlank(String value) { return value == null || value.isBlank() ? null : value; }
     private static String sha256(byte[] bytes) { return HexFormat.of().formatHex(digest(bytes)); }
@@ -412,6 +518,7 @@ public class HiCadImportService {
     private record ParsedRow(int rowNumber, String raw, PositionSnapshot snapshot, List<String> hints,
             List<EinkaufDateiService.ImportBildDto> images) {}
     private record PendingPreview(ParsedRow row, List<Long> candidates, List<String> hints) {}
+    private record StoredTransferResult(String idempotenzKey, String payloadHash, String resultJson) {}
     public record ImportBildRessource(Resource resource, String mimeTyp) {}
     public record SpaltenMapping(Map<String, Integer> spalten) {}
 }

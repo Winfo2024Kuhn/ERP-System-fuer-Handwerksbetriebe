@@ -28,4 +28,20 @@ class HiCadImportControllerTest {
 
         assertEquals(expected, actual);
     }
+
+    @Test
+    void progressRequiresReadPermissionAndReturnsPersistedRemainingQuantity() {
+        HiCadImportService service = mock(HiCadImportService.class);
+        EinkaufBerechtigungService permissions = mock(EinkaufBerechtigungService.class);
+        var auth = new UsernamePasswordAuthenticationToken("test@example.com", "dummy");
+        var expected = new HiCadImportDto.ImportFortschritt(3L, 2L, false,
+                List.of(new HiCadImportDto.ZeilenFortschritt(4, new java.math.BigDecimal("10"),
+                        new java.math.BigDecimal("4"), new java.math.BigDecimal("6"), false)));
+        when(permissions.verlange(auth, EinkaufBerechtigung.LESEN)).thenReturn(4L);
+        when(service.fortschritt(3L, 4L)).thenReturn(expected);
+
+        var actual = new HiCadImportController(service, permissions).fortschritt(3L, auth);
+
+        assertEquals(expected, actual);
+    }
 }
