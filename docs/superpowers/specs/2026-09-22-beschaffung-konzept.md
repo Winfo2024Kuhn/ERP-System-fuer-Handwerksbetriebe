@@ -1,6 +1,6 @@
 # Beschaffung für Handwerksbetriebe – Konzept und fachliche Spec
 
-Stand: 23.09.2026. Status: **Konzept zur Abstimmung, keine Implementierungsfreigabe**.
+Stand: 23.09.2026. Status: **Zur Umsetzung freigegeben am 23.09.2026 über loese-problem; Implementierung und Abnahme stehen aus**.
 
 ## 1. Ziel und bestätigte Entscheidungen
 
@@ -17,9 +17,9 @@ Vom Nutzer vorgegeben:
 - Für Stahlbau geeignete Positionen einschließlich Profilen und mit anfragbaren Werkstoffzeugnissen.
 - Jetzt Konzept und Spec mit Zuordnung zu bestehenden beziehungsweise ergänzenden Issues erstellen.
 
-Weitere Regeln in diesem Dokument sind konkrete Konzeptvorschläge zur Abstimmung, keine Behauptung über bereits fertige Funktionen.
+Die nachfolgenden Konzeptvorschläge wurden mit dem Umsetzungsauftrag vom 23.09.2026 als Grundlage freigegeben. Sie beschreiben das Ziel, keine bereits fertigen Funktionen.
 
-Die vom Nutzer nachgereichte externe Einschätzung wurde gegen den Quellcode geprüft. Daraus ergänzte Funktionen sind ebenfalls Konzeptvorschläge. Insbesondere Direktbestellung, HiCAD-Import und einfache Lagerentnahme sind empfohlene Erweiterungen, noch keine separat bestätigten Produktentscheidungen.
+Die vom Nutzer nachgereichte externe Einschätzung wurde gegen den Quellcode geprüft. Die ergänzten Funktionen einschließlich Direktbestellung, HiCAD-Import und einfacher Lagerentnahme gehören zur freigegebenen Umsetzungsgrundlage.
 
 ## 2. Befund im aktuellen Programm und im Referenzbranch
 
@@ -350,4 +350,18 @@ Die Folgeprüfung ergänzte kompatible Lieferorte/Termine beim Bündeln und den 
 
 Beim externen Review wurden die Punkte zu Lieferantenkontakten, Direktbestellungen, Zeichnungsteilen, Preisrückfluss, Nummernzähler, Platzhaltern, Stahlzuschlägen, Bearbeitung/Oberfläche, Dokumentarten, HiCAD, Lagerentnahme, Fälligkeiten, Rechnungsabgleich und PDF-Zuordnung aufgenommen. Zwei Aussagen wurden anhand des Codes korrigiert: Der bestehende Zähler ist noch nicht ausreichend gegen parallele Vergabe abgesichert; Angebotspreise sind keine tatsächlich angefallenen Projektkosten. Mobile Bedarfsmeldung bleibt eine spätere, hier nicht eingeplante Erweiterung.
 
-Die Nummerntrennung ist bereits bestätigt. Die Ausbaustufen, erste Gesamtvergabe mit späterer Teilvergabe und konkrete Bediengestaltung sind Vorschläge dieses Dokuments. Der nächste fachliche Schritt ist die gemeinsame Durchsicht des Konzepts; es wird noch keine Implementierung gestartet.
+Die Nummerntrennung ist bestätigt. Am 23.09.2026 hat der Nutzer die Fortsetzung mit loese-problem und die Umsetzung dieses Konzepts beauftragt. Coding erfolgt mit GPT-6 Luna, Reviews mit GPT-6 Sol. Bestehende Spec und Issue #167 werden weitergeführt; die historischen Konzeptprüfungen ersetzen keine Prüfung des späteren Codes.
+
+
+## 14. Lokaler Probebetrieb auf diesem Rechner
+
+Zusätzlicher Nutzerauftrag vom 23.09.2026: Das fertige System muss hier einschließlich Backend, Desktop-Frontend und Datenbank startbar sein, damit der Nutzer den Beschaffungsablauf und den manuellen Anfrageversand per E-Mail ausprobieren kann.
+
+Eine vorhandene Produktionskopie vom 09.09.2026 wurde lokal gefunden: MySQL-Container `erp-kalkulations-db` (MySQL 8.0.44), mit separatem komprimiertem SQL-Dump außerhalb des Repositorys. Das Originalbackup und vorhandene Container/Volumes bleiben erhalten. Für dieses Vorhaben wird eine separate lokale Datenbank restauriert und mit den neuen Flyway-Migrationen geprüft; es erfolgen keine Änderungen am Produktionsserver.
+
+- Datenbank und Testserver sind ausschließlich lokal erreichbar. Start-/Stop-Kommandos, lokale Adresse und Konfigurationsweg werden dokumentiert.
+- Produktionsdaten dienen nur dem lokalen Migrationstest und manuellen Probebetrieb. Automatisierte Tests verwenden weiterhin Dummy-Daten; Dump, Zugangsdaten und personenbezogene Inhalte gelangen nicht in Commits oder Testausgaben.
+- Beim ersten Start sind automatische Mailimporte, Mahnversand, Export-/Integrationsjobs und andere externe Hintergrundaktionen abgeschaltet. Das Testprofil muss diese Trennung technisch durchsetzen; Produktionskonten aus dem Dump dürfen keine unbeabsichtigten Hintergrundaktionen auslösen.
+- Ein explizit konfiguriertes Einkaufspostfach ermöglicht anschließend den vom Nutzer ausgelösten Anfrageversand und den gezielten Abruf seiner Antworten. Die Agenten verschicken keine ungefragt ausgewählten echten Anfragen an Lieferanten.
+- Hochgeladene Dateien fehlen im vorgefundenen SQL-Dump. Fehlende historische Anhänge müssen verständlich angezeigt werden; neue Testunterlagen werden lokal hochgeladen. Eine Produktionsdateikopie wird nicht vorausgesetzt.
+- Abnahme: Restore ohne Fehler, Flyway-Migration und Hibernate-Schemaprüfung erfolgreich, Backend und UI lokal erreichbar, Login und vollständiger Beschaffungsablauf mit lokaler DB prüfbar. Versand/Antwortimport werden über kontrollierte Mail-Testdienste automatisiert geprüft; ein echter Postfach-Test setzt die vom Nutzer eingerichteten Zugangsdaten voraus.
