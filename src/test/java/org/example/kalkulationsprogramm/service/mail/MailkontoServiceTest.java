@@ -159,6 +159,7 @@ class MailkontoServiceTest {
 
     @Test
     void passtDokumenteResolverAnBestehendesSystemSettingsKontoAn() {
+        when(settings.nutztDokumentMailKonto()).thenReturn(true);
         when(settings.getDokumentMailKonto()).thenReturn(
                 new SystemSettingsService.MailKonto("docs-smtp.test.invalid", 587, "docs@example.com", "pw",
                         "docs@example.com", "Belege"));
@@ -170,6 +171,39 @@ class MailkontoServiceTest {
         assertEquals("DOKUMENTE", konto.id());
         assertEquals("docs@example.com", konto.smtp().username());
         assertEquals("docs-user", konto.imap().username());
+    }
+
+    @Test
+    void dokumenteAbrufIstNurMitEigenstaendigAktiviertemKontoAktiv() {
+        when(settings.nutztDokumentMailKonto()).thenReturn(true);
+        when(settings.getDokumentImapZugang()).thenReturn(
+                new SystemSettingsService.ImapZugang("docs-imap.test.invalid", 993, "docs-user", "pw"));
+
+        assertTrue(service.imapAbrufAktiv("DOKUMENTE"));
+
+        verify(settings, never()).getStandardImapZugang();
+    }
+
+    @Test
+    void dokumenteAbrufFaelltBeiInaktivemKontoNichtAufHauptZurueck() {
+        when(settings.nutztDokumentMailKonto()).thenReturn(false);
+
+        assertFalse(service.imapAbrufAktiv("DOKUMENTE"));
+        MailkontoService.KontoZugang konto = service.resolve("DOKUMENTE");
+
+        assertFalse(konto.aktiv());
+        verify(settings, never()).getDokumentImapZugang();
+        verify(settings, never()).getStandardImapZugang();
+    }
+
+    @Test
+    void einkaufAbrufAktiviertSichNurBeiAktivemDatensatz() {
+        EinkaufMailkonto konto = new EinkaufMailkonto();
+        konto.setId("EINKAUF");
+        konto.setAktiv(true);
+        when(repository.findById("EINKAUF")).thenReturn(Optional.of(konto));
+
+        assertTrue(service.imapAbrufAktiv("EINKAUF"));
     }
 
     @Test

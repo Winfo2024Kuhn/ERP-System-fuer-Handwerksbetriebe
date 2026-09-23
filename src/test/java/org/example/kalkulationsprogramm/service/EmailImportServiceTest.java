@@ -127,6 +127,53 @@ class EmailImportServiceTest {
         }
     }
 
+    @Nested
+    class ImportZeitplan {
+
+        @Test
+        void ruftKontenGetrenntMitPolicyGateUndFehlerisolierungAb() {
+            ReflectionTestUtils.setField(service, "emailFeaturesEnabled", true);
+            lenient().when(systemSettingsService.isImapConfigured()).thenReturn(true);
+            lenient().when(mailkontoService.imapAbrufAktiv(anyString())).thenReturn(true);
+            EmailImportService spy = spy(service);
+            doThrow(new IllegalStateException("Einkaufkonto nicht verfügbar"))
+                    .when(spy).doImport("EINKAUF");
+            doReturn(2).when(spy).doImport("HAUPT");
+            doReturn(1).when(spy).doImport("DOKUMENTE");
+
+            spy.importNewEmails();
+
+            var calls = inOrder(localTestMailPolicy, mailkontoService, spy);
+            calls.verify(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+            calls.verify(mailkontoService).imapAbrufAktiv("EINKAUF");
+            calls.verify(spy).doImport("EINKAUF");
+            calls.verify(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
+            calls.verify(mailkontoService).imapAbrufAktiv("HAUPT");
+            calls.verify(spy).doImport("HAUPT");
+            calls.verify(localTestMailPolicy).pruefeNetzwerkzugriff("DOKUMENTE");
+            calls.verify(mailkontoService).imapAbrufAktiv("DOKUMENTE");
+            calls.verify(spy).doImport("DOKUMENTE");
+            verify(spy, never()).doImport();
+        }
+
+        @Test
+        void lokalesProfilOhneOptInStopptNetzwerkpfadeVorDemImport() {
+            ReflectionTestUtils.setField(service, "emailFeaturesEnabled", true);
+            lenient().when(systemSettingsService.isImapConfigured()).thenReturn(true);
+            EmailImportService spy = spy(service);
+            doThrow(new IllegalStateException("local-test gesperrt"))
+                    .when(localTestMailPolicy).pruefeNetzwerkzugriff(any());
+
+            spy.importNewEmails();
+
+            verify(spy, never()).doImport(anyString());
+            verify(mailkontoService, never()).imapAbrufAktiv(anyString());
+            verify(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
+            verify(localTestMailPolicy).pruefeNetzwerkzugriff("DOKUMENTE");
+            verify(localTestMailPolicy).pruefeNetzwerkzugriff("EINKAUF");
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 2.3.2 Verknüpft Antworten mit Eltern-E-Mail
     // ═══════════════════════════════════════════════════════════════

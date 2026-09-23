@@ -142,18 +142,22 @@ public class EmailImportService {
         if (!emailFeaturesEnabled) {
             return;
         }
-        if (!systemSettingsService.isImapConfigured()) {
-            log.debug("[EmailImport] IMAP nicht konfiguriert (siehe System-Einstellungen → E-Mail)");
-            return;
-        }
 
-        try {
-            int imported = doImport();
-            if (imported > 0) {
-                log.info("[EmailImport] {} neue E-Mails importiert", imported);
+        for (String kontoId : List.of("EINKAUF", "HAUPT", "DOKUMENTE")) {
+            try {
+                // Die lokale Testmail-Policy muss vor dem Resolver laufen, da dieser Zugangsdaten lädt.
+                localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
+                if (!mailkontoService.imapAbrufAktiv(kontoId)) {
+                    continue;
+                }
+                int imported = doImport(kontoId);
+                if (imported > 0) {
+                    log.info("[EmailImport] {} neue E-Mails aus Konto {} importiert", imported, kontoId);
+                }
+            } catch (Exception e) {
+                // Ein fehlerhaftes oder gesperrtes Konto darf die übrigen Konten nicht stoppen.
+                log.error("[EmailImport] Fehler beim Import von Konto {}: {}", kontoId, e.getMessage());
             }
-        } catch (Exception e) {
-            log.error("[EmailImport] Fehler beim Import: {}", e.getMessage());
         }
     }
 
