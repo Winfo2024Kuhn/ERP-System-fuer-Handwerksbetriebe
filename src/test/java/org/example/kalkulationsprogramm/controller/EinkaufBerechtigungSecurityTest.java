@@ -91,7 +91,7 @@ class EinkaufBerechtigungSecurityTest {
                         .with(SecurityMockMvcRequestPostProcessors.csrf())
                         .contentType("application/json").content("{\"rechte\":[\"LESEN\"]}"))
                 .andExpect(status().isOk());
-        verify(service).setzeRechte(eq(8L), eq(Set.of(EinkaufBerechtigung.LESEN)));
+        verify(service).setzeRechte(any(Authentication.class), eq(8L), eq(Set.of(EinkaufBerechtigung.LESEN)));
     }
 
     private static RequestPostProcessor authentication(long id, FrontendUserRole role) {

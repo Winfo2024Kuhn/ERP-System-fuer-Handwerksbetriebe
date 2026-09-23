@@ -25,13 +25,13 @@ public class EinkaufBerechtigungController {
     }
 
     @GetMapping("/api/settings/einkauf-berechtigungen/{profileId}")
-    public Set<EinkaufBerechtigung> profilRechte(@PathVariable Long profileId) {
-        return berechtigungService.profilRechte(profileId);
+    public Set<EinkaufBerechtigung> profilRechte(Authentication authentication, @PathVariable Long profileId) {
+        return berechtigungService.profilRechte(authentication, profileId);
     }
 
     @PutMapping("/api/settings/einkauf-berechtigungen/{profileId}")
-    public Set<EinkaufBerechtigung> setzeProfilRechte(@PathVariable Long profileId,
+    public Set<EinkaufBerechtigung> setzeProfilRechte(Authentication authentication, @PathVariable Long profileId,
             @RequestBody EinkaufBerechtigungDto request) {
-        return berechtigungService.setzeRechte(profileId, request.rechte());
+        return berechtigungService.setzeRechte(authentication, profileId, request.rechte());
     }
 }

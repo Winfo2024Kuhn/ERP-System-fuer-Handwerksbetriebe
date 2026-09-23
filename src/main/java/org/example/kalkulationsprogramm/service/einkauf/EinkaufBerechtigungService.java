@@ -34,12 +34,15 @@ public class EinkaufBerechtigungService {
         return Set.copyOf(wirksameRechte(aktuellesProfil(auth)));
     }
 
-    public Set<EinkaufBerechtigung> profilRechte(Long profileId) {
+    public Set<EinkaufBerechtigung> profilRechte(Authentication auth, Long profileId) {
+        aktuellesAdminProfil(auth);
         return Set.copyOf(ladeProfil(profileId).getEinkaufBerechtigungen());
     }
 
     @Transactional
-    public Set<EinkaufBerechtigung> setzeRechte(Long profileId, Set<EinkaufBerechtigung> rechte) {
+    public Set<EinkaufBerechtigung> setzeRechte(Authentication auth, Long profileId,
+            Set<EinkaufBerechtigung> rechte) {
+        aktuellesAdminProfil(auth);
         FrontendUserProfile profil = ladeProfil(profileId);
         Set<EinkaufBerechtigung> gesetzt = rechte == null ? Set.of() : new LinkedHashSet<>(rechte);
         if (gesetzt.contains(null)) {
@@ -59,6 +62,14 @@ public class EinkaufBerechtigungService {
         return profileRepository.findById(principal.getId())
                 .filter(FrontendUserProfile::isActive)
                 .orElseThrow(() -> new AccessDeniedException("Dein Benutzerprofil ist nicht mehr aktiv."));
+    }
+
+    private FrontendUserProfile aktuellesAdminProfil(Authentication auth) {
+        FrontendUserProfile profil = aktuellesProfil(auth);
+        if (!profil.hasRole(FrontendUserRole.ADMIN)) {
+            throw new AccessDeniedException("Nur aktive Admins dürfen Einkaufsrechte verwalten.");
+        }
+        return profil;
     }
 
     private FrontendUserProfile ladeProfil(Long profileId) {

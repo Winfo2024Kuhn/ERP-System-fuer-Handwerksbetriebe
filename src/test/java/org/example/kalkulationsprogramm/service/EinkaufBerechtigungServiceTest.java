@@ -2,6 +2,8 @@ package org.example.kalkulationsprogramm.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.LinkedHashSet;
@@ -83,6 +85,49 @@ class EinkaufBerechtigungServiceTest {
 
         assertThat(service.verlange(authentication(7L, FrontendUserRole.USER), EinkaufBerechtigung.BEARBEITEN))
                 .isEqualTo(7L);
+    }
+
+    @Test
+    void herabgestufterAdminKannMitAlterAdminSessionKeineProfilrechteMehrLesenOderSetzen() {
+        FrontendUserProfile aktuellesProfil = profile(7L, Set.of(FrontendUserRole.USER), Set.of());
+        when(profileRepository.findById(7L)).thenReturn(Optional.of(aktuellesProfil));
+        Authentication alteAdminSession = authentication(7L, FrontendUserRole.ADMIN);
+
+        assertThatThrownBy(() -> service.profilRechte(alteAdminSession, 8L))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.setzeRechte(alteAdminSession, 8L, Set.of(EinkaufBerechtigung.LESEN)))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(profileRepository, never()).save(aktuellesProfil);
+    }
+
+    @Test
+    void deaktivierterAdminKannMitAlterSessionKeineProfilrechteMehrLesenOderSetzen() {
+        FrontendUserProfile aktuellesProfil = profile(7L, Set.of(FrontendUserRole.ADMIN), Set.of());
+        aktuellesProfil.setActive(false);
+        when(profileRepository.findById(7L)).thenReturn(Optional.of(aktuellesProfil));
+        Authentication alteAdminSession = authentication(7L, FrontendUserRole.ADMIN);
+
+        assertThatThrownBy(() -> service.profilRechte(alteAdminSession, 8L))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.setzeRechte(alteAdminSession, 8L, Set.of(EinkaufBerechtigung.LESEN)))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(profileRepository, never()).save(aktuellesProfil);
+    }
+
+    @Test
+    void aktuellerAktiverAdminDarfAndereProfileRechteLesenUndSetzen() {
+        FrontendUserProfile aktuellesProfil = profile(7L, Set.of(FrontendUserRole.ADMIN), Set.of());
+        FrontendUserProfile zielProfil = profile(8L, Set.of(FrontendUserRole.USER), Set.of());
+        when(profileRepository.findById(7L)).thenReturn(Optional.of(aktuellesProfil));
+        when(profileRepository.findById(8L)).thenReturn(Optional.of(zielProfil));
+        when(profileRepository.save(zielProfil)).thenReturn(zielProfil);
+        Authentication aktuelleAdminSession = authentication(7L, FrontendUserRole.ADMIN);
+
+        assertThat(service.profilRechte(aktuelleAdminSession, 8L)).isEmpty();
+        assertThat(service.setzeRechte(aktuelleAdminSession, 8L, Set.of(EinkaufBerechtigung.LESEN)))
+                .containsExactly(EinkaufBerechtigung.LESEN);
+        assertThat(zielProfil.getEinkaufBerechtigungen()).containsExactly(EinkaufBerechtigung.LESEN);
+        verify(profileRepository).save(zielProfil);
     }
 
     private static FrontendUserProfile profile(long id, Set<FrontendUserRole> roles,
