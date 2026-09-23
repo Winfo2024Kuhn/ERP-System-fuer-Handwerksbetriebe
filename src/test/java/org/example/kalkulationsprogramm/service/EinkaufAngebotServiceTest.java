@@ -110,6 +110,21 @@ class EinkaufAngebotServiceTest {
                 fixture.service().erfassen(5L, fixture.request(), 9L).emailId());
     }
 
+    @Test
+    void fehlendeListenAusJsonWerdenNormalisiertUndLeerePositionenFachlichAbgewiesen() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var request = mapper.readValue("{\"anfrageRevisionId\":22,\"waehrung\":\"EUR\"}",
+                org.example.kalkulationsprogramm.dto.Einkauf.EinkaufAngebotDto.Erfassung.class);
+        org.junit.jupiter.api.Assertions.assertTrue(request.positionen().isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(request.kosten().isEmpty());
+        var fixture = quellmailFixture(true, true, "ANFRAGE", 11L, 5L, 22L);
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().erfassen(5L, request, 9L));
+        var withPosition = mapper.readValue("{\"anfrageRevisionId\":22,\"waehrung\":\"EUR\",\"emailId\":42,"
+                        + "\"positionen\":[{\"anfragePositionId\":33,\"originalNummer\":\"P1\",\"originalText\":\"Profil\"}]}",
+                org.example.kalkulationsprogramm.dto.Einkauf.EinkaufAngebotDto.Erfassung.class);
+        assertDoesNotThrow(() -> fixture.service().erfassen(5L, withPosition, 9L));
+    }
+
     private SourceFixture quellmailFixture(boolean vorhanden, boolean bestaetigt, String typ,
             Long anfrageId, Long beteiligungId, Long revisionId) {
         var offers = mock(org.example.kalkulationsprogramm.repository.EinkaufAngebotRepository.class);

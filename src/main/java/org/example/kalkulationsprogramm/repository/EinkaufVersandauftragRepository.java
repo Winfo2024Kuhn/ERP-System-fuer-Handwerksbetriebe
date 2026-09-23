@@ -14,6 +14,10 @@ import java.util.List;
 
 public interface EinkaufVersandauftragRepository extends JpaRepository<EinkaufVersandauftrag, Long> {
     Optional<EinkaufVersandauftrag> findByIdempotenzKey(UUID idempotenzKey);
+    // A locking current read also sees the winning transaction under MySQL REPEATABLE READ.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<EinkaufVersandauftrag> findFirstByTypAndVorgangIdAndRevisionIdAndBeteiligungIdOrderByIdAsc(
+            String typ, Long vorgangId, Long revisionId, Long beteiligungId);
     List<EinkaufVersandauftrag> findAllByStatus(EinkaufVersandauftrag.Status status);
     @Query("select a.id from EinkaufVersandauftrag a where a.status = :status order by a.erstelltAm, a.id")
     List<Long> findeIdsByStatus(@Param("status") EinkaufVersandauftrag.Status status, Pageable pageable);

@@ -126,6 +126,15 @@ public class EinkaufKommunikationService {
                 .orElseThrow(() -> new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen."));
         if (!Instant.now().isBefore(vorschauSnapshot.getGueltigBis()))
             throw new IllegalArgumentException("Die Vorschau ist abgelaufen. Bitte neu erstellen.");
+        // Serialize approvals for the same participation, not just requests sharing an idempotency key.
+        var gesperrt = beteiligungen.sperreVersandbeteiligung(beteiligungId, anfrageId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Lieferantenbeteiligung nicht gefunden."));
+        var bereitsBeauftragt = outbox.pruefeBeteiligungsversand(anfrageId, gesperrt.getRevision().getId(),
+                beteiligungId, freigabe.idempotenzKey(), freigabe.vorschauHash());
+        if (bereitsBeauftragt.isPresent()) {
+            var versand = bereitsBeauftragt.get();
+            return new VersandErgebnis(beteiligungId, versand.status(), versand.fehlerCode(), versand.messageId());
+        }
         VersandBasis basis = ladeBasis(anfrageId, beteiligungId);
         if (!basis.revision().getId().equals(vorschauSnapshot.getRevisionId())
                 || !basis.revision().getId().equals(freigabe.version()))
@@ -155,10 +164,14 @@ public class EinkaufKommunikationService {
     public Page<NachrichtDto> verlauf(String typ, Long vorgangId, Pageable pageable) {
         if (typ == null || !List.of("ANFRAGE", "BESTELLUNG").contains(typ) || vorgangId == null || vorgangId <= 0 || pageable == null)
             throw new IllegalArgumentException("Vorgang oder Seitenauswahl ist ungültig.");
-        return zuordnungen.findAllByTypAndVorgangId(typ, vorgangId, pageable).map(link -> emails.findById(link.getEmailId())
-                .map(e -> new NachrichtDto(e.getId(), e.getMessageId(), e.getSubject(), e.getFromAddress(), e.getSentAt(),
-                        link.getTyp(), link.getVorgangId(), link.getBeteiligungId(), link.getRevisionId(), link.getStatus(), link.getQuelle()))
-                .orElse(null));
+        var seite = zuordnungen.findAllByTypAndVorgangId(typ, vorgangId, pageable);
+        var nachrichten = emails.findAllById(seite.stream().map(link -> link.getEmailId()).toList()).stream()
+                .collect(java.util.stream.Collectors.toMap(Email::getId, java.util.function.Function.identity()));
+        return seite.map(link -> {
+            var e = nachrichten.get(link.getEmailId());
+            return e == null ? null : new NachrichtDto(e.getId(), e.getMessageId(), e.getSubject(), e.getFromAddress(), e.getSentAt(),
+                    link.getTyp(), link.getVorgangId(), link.getBeteiligungId(), link.getRevisionId(), link.getStatus(), link.getQuelle());
+        });
     }
 
     private VersandBasis ladeBasis(Long anfrageId, Long beteiligungId) {
@@ -172,16 +185,6 @@ public class EinkaufKommunikationService {
         if (!revision.getId().equals(beteiligung.getRevision().getId())) throw new IllegalStateException("Nur Lieferanten der aktuellen Anfragefassung können versendet werden.");
         if (!List.of("AUSSTEHEND").contains(beteiligung.getStatus())) throw new IllegalStateException("Diese Lieferantenanfrage wurde bereits beantwortet oder versendet.");
         return new VersandBasis(anfrage, revision, beteiligung);
-    }
-    private Beleg beleg(VersandBasis basis) {
-        return new Beleg("ANFRAGE", basis.anfrage().getPaNummer(), basis.revision().getNummer(), basis.beteiligung().getKontakt(),
-                basis.revision().getPositionen().stream().map(p -> new PdfPosition(String.valueOf(p.getId()), p.getSnapshot(),
-                        p.getHerkuenfte().stream().map(h -> new PdfHerkunft(h.getBedarf().getId(),
-                                h.getBedarf().getLiefergruppe().projektId() == null ? null : String.valueOf(h.getBedarf().getLiefergruppe().projektId()),
-                                h.getMenge(), p.getSnapshot().basis().einheit())).toList(), List.of(), null)).toList(),
-                List.of(), basis.revision().getPositionen().stream().flatMap(p -> p.getHerkuenfte().stream())
-                        .map(h -> h.getBedarf().getLiefergruppe()).distinct().toList(), basis.revision().getAntwortfrist(),
-                basis.revision().getLiefertermin(), null, null, true);
     }
     private record VersandBasis(Einkaufsanfrage anfrage, AnfrageRevision revision, AnfrageLieferant beteiligung) {}
     private record VorschauDaten(VersandBasis basis, Vorschau vorschau, List<EmailService.Attachment> anlagen) {}

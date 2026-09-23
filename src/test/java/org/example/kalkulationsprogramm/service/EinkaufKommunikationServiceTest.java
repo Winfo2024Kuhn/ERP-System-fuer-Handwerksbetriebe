@@ -66,4 +66,30 @@ class EinkaufKommunikationServiceTest {
         verify(previews).findByFreigabeTokenAndAnfrageIdAndBeteiligungId(forged, 11L, 13L);
         verifyNoInteractions(vorlagen, pdf, dateien, worker);
     }
+    @Test
+    void verlaufLaedtNurNachrichtenDerAktuellenSeiteInEinemBatch() {
+        var emails = mock(EmailRepository.class);
+        var links = mock(EinkaufMailZuordnungRepository.class);
+        var page = org.springframework.data.domain.PageRequest.of(1, 2);
+        var first = new org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailZuordnung(2L);
+        var second = new org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailZuordnung(3L);
+        first.automatisch("ANFRAGE", 11L, 13L, 12L, "ANGEBOT", "CODE_ABSENDER");
+        second.automatisch("ANFRAGE", 11L, 13L, 12L, "ANGEBOT", "CODE_ABSENDER");
+        when(links.findAllByTypAndVorgangId("ANFRAGE", 11L, page)).thenReturn(
+                new org.springframework.data.domain.PageImpl<>(java.util.List.of(first, second), page, 5));
+        var mail2 = new org.example.kalkulationsprogramm.domain.Email(); mail2.setId(2L); mail2.setSubject("Zwei");
+        var mail3 = new org.example.kalkulationsprogramm.domain.Email(); mail3.setId(3L); mail3.setSubject("Drei");
+        when(emails.findAllById(java.util.List.of(2L, 3L))).thenReturn(java.util.List.of(mail3, mail2));
+        var service = new EinkaufKommunikationService(mock(EinkaufsanfrageRepository.class), mock(AnfrageRevisionRepository.class),
+                mock(AnfrageLieferantRepository.class), emails, links,
+                mock(org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository.class),
+                mock(EinkaufVorlagenService.class), mock(EinkaufPdfService.class), mock(EinkaufDateiService.class),
+                mock(EinkaufOutboxService.class), mock(EinkaufVersandWorker.class), new ObjectMapper());
+        var result = service.verlauf("ANFRAGE", 11L, page);
+        assertEquals(5, result.getTotalElements());
+        assertEquals(java.util.List.of("Zwei", "Drei"), result.stream().map(n -> n.subject()).toList());
+        verify(emails).findAllById(java.util.List.of(2L, 3L));
+        verifyNoMoreInteractions(emails);
+    }
+
 }

@@ -91,6 +91,20 @@ public class EinkaufOutboxService {
                 }));
     }
 
+    /** Caller holds the participation lock until enqueue commits; explicit retries reuse the existing job. */
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public java.util.Optional<VersandDto> pruefeBeteiligungsversand(Long vorgangId, Long revisionId,
+            Long beteiligungId, UUID key, String freigabeHash) {
+        return repository.findFirstByTypAndVorgangIdAndRevisionIdAndBeteiligungIdOrderByIdAsc(
+                "ANFRAGE", vorgangId, revisionId, beteiligungId).map(auftrag -> {
+                    if (!key.equals(auftrag.getIdempotenzKey()) || !freigabeHash.equals(auftrag.getFreigabeHash())) {
+                        throw new IllegalStateException("Für diese Lieferantenanfrage besteht bereits ein Versandauftrag. "
+                                + "Bitte dessen Status prüfen und bei Bedarf den vorhandenen Auftrag erneut versuchen.");
+                    }
+                    return dto(auftrag);
+                });
+    }
+
     public VersandDto erneutVersuchen(Long id, long version, Long akteurId) {
         if (akteurId == null || akteurId <= 0) throw new IllegalArgumentException("Ein Benutzer ist erforderlich.");
         return transaktion(() -> {

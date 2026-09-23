@@ -63,6 +63,79 @@ class EinkaufMailZuordnungRecoveryIntegrationTest {
     @Autowired private AngebotVersionRepository versions;
     @Autowired private AnfrageLieferantRepository participations;
     @Autowired private AnfrageRevisionRepository revisions;
+    @Autowired private EinkaufVersandauftragRepository dispatches;
+    @Autowired private EinkaufVersandAnnahmeereignisRepository acceptances;
+
+    @Test
+    void zweiGleichzeitigeFreigabenMitVerschiedenenSchluesselnErzeugenNurEinenVersand() throws Exception {
+        // The outbox uses Flyway LONGBLOB columns rather than Hibernate's generic binary DDL.
+        try (var connection = java.sql.DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())) {
+            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
+                    new org.springframework.core.io.ClassPathResource("db/migration/V387__einkauf_versand_outbox.sql"));
+        }
+        var transaction = new TransactionTemplate(transactionManager);
+        long[] ids = transaction.execute(tx -> {
+            var request = new Einkaufsanfrage("PA-RACE-DUMMY", 1L, UUID.randomUUID(), "d".repeat(64));
+            entityManager.persist(request);
+            var revision = new AnfrageRevision(request, 1, null, null, UUID.randomUUID(), "e".repeat(64));
+            entityManager.persist(revision); request.setAktuelleRevision(revision);
+            var contact = new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKontaktDto.Snapshot(
+                    1L, 1L, "Dummy", "test@example.com", "Max Mustermann", null, null);
+            var supplier = new AnfrageLieferant(revision, contact); entityManager.persist(supplier);
+            entityManager.flush();
+            return new long[] {request.getId(), supplier.getId(), revision.getId()};
+        });
+        var templates = mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVorlagenService.class);
+        org.mockito.Mockito.when(templates.rendern(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVorlagenDto.Gerendert(1L, 1, "Dummy", "Dummy", "hash"));
+        var pdf = mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufPdfService.class);
+        byte[] bytes = "dummy-pdf".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        org.mockito.Mockito.when(pdf.erzeugen(org.mockito.ArgumentMatchers.any())).thenReturn(bytes);
+        var files = mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufDateiService.class);
+        org.mockito.Mockito.when(files.speicherePdfSnapshot(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufDateiDto.PdfSnapshotDto(1L, "dummy", bytes.length));
+        org.mockito.Mockito.when(files.ladePdfSnapshotBytes(1L)).thenReturn(bytes);
+        var transport = mock(org.example.kalkulationsprogramm.service.mail.KontoMailTransport.class);
+        org.mockito.Mockito.when(transport.vorbereiten(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(bytes);
+        var outbox = new org.example.kalkulationsprogramm.service.einkauf.EinkaufOutboxService(dispatches, acceptances,
+                mock(org.example.kalkulationsprogramm.service.mail.MailkontoService.class),
+                mock(org.example.kalkulationsprogramm.config.LocalTestMailPolicy.class), transport, new ObjectMapper(), transactionManager);
+        var worker = mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandWorker.class);
+        var communication = new org.example.kalkulationsprogramm.service.einkauf.EinkaufKommunikationService(requests,
+                revisions, participations, emails, links, previews, templates, pdf, files, outbox, worker, new ObjectMapper());
+        var first = transaction.execute(tx -> communication.vorschau(ids[0], ids[1], 1L));
+        var second = transaction.execute(tx -> communication.vorschau(ids[0], ids[1], 1L));
+        var barrier = new java.util.concurrent.CyclicBarrier(2);
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var jobs = new java.util.ArrayList<java.util.concurrent.Future<Boolean>>();
+            for (var preview : List.of(first, second)) {
+                jobs.add(executor.submit(() -> {
+                    try {
+                        return transaction.execute(tx -> {
+                            // Both transactions establish a MySQL REPEATABLE READ snapshot before competing.
+                            requests.count();
+                            try { barrier.await(10, java.util.concurrent.TimeUnit.SECONDS); }
+                            catch (Exception ex) { throw new IllegalStateException(ex); }
+                            communication.senden(ids[0], ids[1], new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKommunikationDto.Freigabe(
+                                    ids[2], preview.vorschauHash(), UUID.randomUUID()), 1L);
+                            return true;
+                        });
+                    } catch (IllegalStateException ex) {
+                        assertTrue(ex.getMessage().contains("Versandauftrag"), ex.getMessage());
+                        return false;
+                    }
+                }));
+            }
+            int successful = 0;
+            for (var job : jobs) if (job.get(20, java.util.concurrent.TimeUnit.SECONDS)) successful++;
+            assertEquals(1, successful);
+        }
+        assertEquals(1, dispatches.findAll().stream().filter(d -> ids[0] == d.getVorgangId()).count());
+        org.mockito.Mockito.verify(worker, org.mockito.Mockito.times(1)).dispatchNachCommit(org.mockito.ArgumentMatchers.anyLong());
+        org.mockito.Mockito.verify(transport, org.mockito.Mockito.times(1)).vorbereiten(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        // No SMTP/IMAP operation is invoked by either approval.
+        org.mockito.Mockito.verifyNoMoreInteractions(transport);
+    }
 
     @Test
     void gespeicherteVorschauBleibtNachNeuerTransaktionExaktGebunden() {
