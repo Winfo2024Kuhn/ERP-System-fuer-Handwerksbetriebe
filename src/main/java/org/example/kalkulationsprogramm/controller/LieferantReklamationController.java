@@ -22,6 +22,7 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufRechnungsabgleichService;
 import java.util.stream.Collectors;
 
 @RestController
@@ -34,6 +35,7 @@ public class LieferantReklamationController {
     private final LieferantDokumentRepository dokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final LieferantBildRepository bildRepository;
+    private final EinkaufRechnungsabgleichService rechnungsabgleichService;
 
     @GetMapping("/lieferant/{lieferantId}")
     public ResponseEntity<List<LieferantReklamationDto>> getByLieferant(@PathVariable Long lieferantId) {
@@ -85,6 +87,13 @@ public class LieferantReklamationController {
         reklamation.setErstelltVon(mitarbeiter);
         reklamation.setBeschreibung(request.getBeschreibung());
         reklamation.setStatus(request.getStatus() != null ? request.getStatus() : ReklamationStatus.OFFEN);
+
+        if (request.getBestellungId() != null || request.getBestellPositionId() != null || request.getRechnungId() != null) {
+            var bezug = rechnungsabgleichService.pruefeReklamationsbezug(lieferantId,request.getBestellungId(),request.getBestellPositionId(),request.getRechnungId());
+            reklamation.setBestellung(bezug.bestellung());
+            reklamation.setBestellPosition(bezug.position());
+            reklamation.setRechnung(bezug.rechnung());
+        }
 
         if (request.getLieferscheinId() != null) {
             var lieferschein = dokumentRepository.findById(request.getLieferscheinId()).orElse(null);
@@ -176,6 +185,9 @@ public class LieferantReklamationController {
         dto.setId(entity.getId());
         dto.setLieferantId(entity.getLieferant().getId());
         dto.setLieferantName(entity.getLieferant().getLieferantenname());
+        dto.setBestellungId(entity.getBestellung() == null ? null : entity.getBestellung().getId());
+        dto.setBestellPositionId(entity.getBestellPosition() == null ? null : entity.getBestellPosition().getId());
+        dto.setRechnungId(entity.getRechnung() == null ? null : entity.getRechnung().getId());
 
         if (entity.getLieferschein() != null) {
             dto.setLieferscheinId(entity.getLieferschein().getId());

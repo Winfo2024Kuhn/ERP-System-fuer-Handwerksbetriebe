@@ -8,4 +8,7 @@ public class CreateReklamationRequest {
     private String beschreibung;
     private Long lieferscheinId; // Optional: ID des verknüpften Lieferscheins
     private ReklamationStatus status; // Optional, default OFFEN
+    private Long bestellungId;
+    private Long bestellPositionId;
+    private Long rechnungId;
 }
