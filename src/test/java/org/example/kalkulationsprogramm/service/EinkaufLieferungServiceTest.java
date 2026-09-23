@@ -63,12 +63,14 @@ class EinkaufLieferungServiceTest {
         when(order.getVersion()).thenReturn(3L);
         when(order.getStatus()).thenReturn(BestellungStatus.BESTELLT);
         when(order.getLieferantId()).thenReturn(7L);
-        when(documents.findById(9L)).thenReturn(Optional.of(document));
+        when(documents.sperreEinkaufsbeleg(9L)).thenReturn(Optional.of(document));
         when(document.getTyp()).thenReturn(LieferantDokumentTyp.LIEFERSCHEIN);
         when(document.getLieferant()).thenReturn(supplier);
         when(supplier.getId()).thenReturn(7L);
         when(revisions.findFirstByBestellung_IdOrderByNummerDesc(5L)).thenReturn(Optional.of(revision));
         when(revision.getPositionen()).thenReturn(List.of(line));
+        when(revision.istAngenommen()).thenReturn(true);
+        when(revisions.findByBestellung_IdOrderByNummerAsc(5L)).thenReturn(List.of(revision));
         when(line.getId()).thenReturn(12L);
         when(line.getMenge()).thenReturn(new BigDecimal("4"));
         when(line.getHerkuenfte()).thenReturn(List.of());

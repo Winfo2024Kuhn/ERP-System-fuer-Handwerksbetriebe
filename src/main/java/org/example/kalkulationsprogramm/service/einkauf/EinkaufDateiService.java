@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 import javax.imageio.ImageIO;
@@ -194,6 +195,29 @@ public class EinkaufDateiService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Der PDF-Snapshot ist nicht als PDF gespeichert.");
         return new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufDateiDto.PdfSnapshotDto(
                 stored.getId(), hash, bytes.length);
+    }
+
+    /** A manually attested external dispatch must reference readable, supplier-owned evidence. */
+    @Transactional
+    public Map<String,Object> pruefeExternenVersandbeleg(Long dateiId, Long lieferantId, Long bestellungId) {
+        EinkaufDatei file = dateien.findById(dateiId).orElseThrow(() -> new NotFoundException("Versandbeleg nicht gefunden."));
+        if (file.getLieferantDokumentId() == null)
+            throw new IllegalArgumentException("Bitte einen Übermittlungsbeleg aus den Lieferantenunterlagen auswählen.");
+        var document = lieferantDokumente.sperreEinkaufsbeleg(file.getLieferantDokumentId())
+                .orElseThrow(() -> new NotFoundException("Lieferantenbeleg nicht gefunden."));
+        if (document.getLieferant() == null || !lieferantId.equals(document.getLieferant().getId())
+                || document.getTyp() != org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.SONSTIG
+                || document.getEinkaufBestellungId() != null)
+            throw new IllegalArgumentException("Der Übermittlungsbeleg gehört nicht zu dieser Bestellung und ihrem Lieferanten.");
+        try {
+            byte[] bytes = readStoredBytes(file);
+            if (bytes.length == 0 || !sha256(bytes).equals(file.getSha256()))
+                throw new IllegalArgumentException("Der Übermittlungsbeleg fehlt oder wurde verändert.");
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Der Übermittlungsbeleg fehlt.", exception);
+        }
+        document.setEinkaufBestellungId(bestellungId);
+        return Map.of("dateiId", file.getId(), "lieferantDokumentId", document.getId(), "sha256", file.getSha256());
     }
 
     @Transactional(readOnly = true)

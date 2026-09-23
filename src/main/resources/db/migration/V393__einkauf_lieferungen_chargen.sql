@@ -30,5 +30,22 @@ CREATE TABLE IF NOT EXISTS einkauf_bestellbestaetigung (
  CONSTRAINT fk_einkauf_ab_dokument FOREIGN KEY(dokument_id) REFERENCES lieferant_dokument(id),
  INDEX idx_einkauf_ab_bestellung(bestellung_id,datum)
 );
-ALTER TABLE lieferant_dokument ADD COLUMN einkauf_bestellung_id BIGINT NULL;
-CREATE INDEX idx_lieferant_dokument_bestellung ON lieferant_dokument(einkauf_bestellung_id);
+SET @einkauf_ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = 'lieferant_dokument'
+       AND column_name = 'einkauf_bestellung_id') = 0,
+    'ALTER TABLE lieferant_dokument ADD COLUMN einkauf_bestellung_id BIGINT NULL',
+    'SELECT 1');
+PREPARE einkauf_stmt FROM @einkauf_ddl;
+EXECUTE einkauf_stmt;
+DEALLOCATE PREPARE einkauf_stmt;
+
+SET @einkauf_ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.statistics
+     WHERE table_schema = DATABASE() AND table_name = 'lieferant_dokument'
+       AND index_name = 'idx_lieferant_dokument_bestellung') = 0,
+    'CREATE INDEX idx_lieferant_dokument_bestellung ON lieferant_dokument(einkauf_bestellung_id)',
+    'SELECT 1');
+PREPARE einkauf_stmt FROM @einkauf_ddl;
+EXECUTE einkauf_stmt;
+DEALLOCATE PREPARE einkauf_stmt;

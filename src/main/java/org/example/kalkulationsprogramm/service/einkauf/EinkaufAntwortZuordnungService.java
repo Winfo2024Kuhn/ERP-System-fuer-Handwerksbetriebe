@@ -186,7 +186,7 @@ public class EinkaufAntwortZuordnungService implements EinkaufAnnahmeereignisCon
             throw new IllegalArgumentException("Die Bestellung wurde noch nicht versandt oder ist storniert.");
         var revision = bestellrevisionen.findFirstByBestellung_IdOrderByNummerDesc(bestellungId)
                 .orElseThrow(() -> new java.util.NoSuchElementException("Bestellfassung nicht gefunden."));
-        if (revisionId == null || !revisionId.equals(revision.getId()) || revision.getVersandId() == null)
+        if (revisionId == null || !revisionId.equals(revision.getId()) || !revision.istAngenommen() || revision.getVersandId() == null && revision.getExternerNachweis().isEmpty())
             throw new IllegalArgumentException("Die Bestellfassung wurde nicht nachweislich versandt oder ist nicht mehr aktuell.");
         String expectedEmail = bestellung.getEmpfaenger() == null ? null : bestellung.getEmpfaenger().email();
         if (expectedEmail == null || email.getFromAddress() == null || !expectedEmail.equalsIgnoreCase(email.getFromAddress()))

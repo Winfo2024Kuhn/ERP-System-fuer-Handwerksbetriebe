@@ -115,6 +115,9 @@ class EinkaufBestellungParallelTest {
         assertEquals(1, jdbcTemplate.queryForObject("select count(*) from information_schema.columns where table_schema=database() and table_name='lieferanten_artikel_preise' and column_name='komponenten_hash'", Integer.class));
         assertEquals(1, jdbcTemplate.queryForObject("select count(*) from information_schema.columns where table_schema=database() and table_name='einkauf_bestellung_revision' and column_name='versand_id'", Integer.class));
         assertEquals(1, jdbcTemplate.queryForObject("select count(*) from information_schema.columns where table_schema=database() and table_name='lieferant_dokument' and column_name='einkauf_bestellung_id'", Integer.class));
+        assertEquals(1, jdbcTemplate.queryForObject("select count(distinct index_name) from information_schema.statistics where table_schema=database() and table_name='lieferanten_artikel_preise' and index_name='ix_lap_scope_current'", Integer.class));
+        assertEquals(1, jdbcTemplate.queryForObject("select count(distinct index_name) from information_schema.statistics where table_schema=database() and table_name='lieferanten_artikel_preise' and index_name='uk_lap_idempotenz_key'", Integer.class));
+        assertEquals(1, jdbcTemplate.queryForObject("select count(distinct index_name) from information_schema.statistics where table_schema=database() and table_name='lieferant_dokument' and index_name='idx_lieferant_dokument_bestellung'", Integer.class));
     }
 
     private static String sha256(byte[] bytes) throws Exception {
@@ -138,12 +141,19 @@ class EinkaufBestellungParallelTest {
                 statement.execute("create table lieferant_dokument (id bigint not null primary key) engine=InnoDB");
                 statement.execute("create table einkaufsanfrage_lieferant (id bigint not null primary key) engine=InnoDB");
                 statement.execute("create table email (id bigint not null primary key, konto_id varchar(30), direction varchar(10)) engine=InnoDB");
+                // Simulate a partially applied migration: these definitions must be skipped safely.
+                statement.execute("alter table lieferanten_artikel_preise add column scope enum('STANDARD','PROJEKT','MENGENSTAFFEL') not null default 'STANDARD', add column projekt_id bigint null");
+                statement.execute("create index ix_lap_scope_current on lieferanten_artikel_preise (artikel_id, lieferant_id, scope, projekt_id, aktuell)");
+                statement.execute("alter table lieferant_dokument add column einkauf_bestellung_id bigint null");
+                statement.execute("create index idx_lieferant_dokument_bestellung on lieferant_dokument(einkauf_bestellung_id)");
             }
             try (var connection = source.getConnection()) {
+                ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V390__einkauf_preishistorie_quellen.sql"));
                 ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V390__einkauf_preishistorie_quellen.sql"));
                 ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V387__einkauf_versand_outbox.sql"));
                 ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V388__einkauf_kommunikation.sql"));
                 ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V392__einkauf_bestellungen.sql"));
+                ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V393__einkauf_lieferungen_chargen.sql"));
                 ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V393__einkauf_lieferungen_chargen.sql"));
             }
             return source;

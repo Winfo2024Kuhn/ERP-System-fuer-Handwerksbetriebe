@@ -110,6 +110,32 @@ public class EinkaufMengenService {
                 b.getBestellt(), b.getGeliefert(), b.getStorniert(), b.ungedeckt(), b.disponierbar());
     }
 
+    public record Vorgangsmenge(BigDecimal reserviert, BigDecimal bestellt, BigDecimal geliefert, BigDecimal storniert) {
+        public static Vorgangsmenge leer() { return new Vorgangsmenge(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO); }
+        public BigDecimal offen() { return bestellt.subtract(geliefert); }
+        Vorgangsmenge buche(Mengenaktion aktion, BigDecimal menge) {
+            return switch (aktion) {
+                case RESERVIEREN -> new Vorgangsmenge(reserviert.add(menge), bestellt, geliefert, storniert);
+                case RESERVIERUNG_FREIGEBEN -> new Vorgangsmenge(reserviert.subtract(menge), bestellt, geliefert, storniert);
+                case BESTELLEN -> new Vorgangsmenge(reserviert.subtract(menge), bestellt.add(menge), geliefert, storniert);
+                case STORNO_BESTAETIGEN -> new Vorgangsmenge(reserviert, bestellt.subtract(menge), geliefert, storniert.add(menge));
+                case LIEFERN -> new Vorgangsmenge(reserviert, bestellt, geliefert.add(menge), storniert);
+                default -> this;
+            };
+        }
+    }
+
+    /** Order-specific balances retain previous revisions and prevent spending another order's shares. */
+    @Transactional(readOnly = true)
+    public Map<Long, Vorgangsmenge> standFuerVorgang(String vorgang) {
+        Map<Long, Vorgangsmenge> result = new java.util.LinkedHashMap<>();
+        for (var booking : buchungRepository.findAllByVorgangsschluesselOrderByIdAsc(vorgang)) {
+            Long id = booking.getBedarf().getId();
+            result.put(id, result.getOrDefault(id, Vorgangsmenge.leer()).buche(booking.getAktion(), booking.getMenge()));
+        }
+        return Map.copyOf(result);
+    }
+
     private static void validiere(List<Herkunft> anteile, Mengenaktion aktion, String vorgang, UUID key, Long actor) {
         if (anteile == null || anteile.isEmpty() || anteile.stream().anyMatch(h -> h == null || h.bedarfId() == null
                 || h.bedarfId() <= 0 || h.menge() == null || h.menge().signum() <= 0 || h.version() < 0

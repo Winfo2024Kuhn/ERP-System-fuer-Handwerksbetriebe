@@ -11,6 +11,13 @@ public class BestellungRevision {
  @Column(name="geaendert_von",nullable=false) private Long geaendertVon;
  @Column(name="geaendert_am",nullable=false) private Instant geaendertAm=Instant.now();
  @Column(name="versand_id") private Long versandId;
+ @Column(name="angenommen_am") private Instant angenommenAm;
+ @JdbcTypeCode(SqlTypes.JSON) @Column(name="externer_nachweis",columnDefinition="json") private Map<String,Object> externerNachweis;
+ public Instant getAngenommenAm(){return angenommenAm;}
+ public boolean istAngenommen(){return angenommenAm!=null;}
+ public void angenommen(Instant zeit){if(angenommenAm==null)angenommenAm=zeit;}
+ public Map<String,Object> getExternerNachweis(){return externerNachweis==null?Map.of():Map.copyOf(externerNachweis);}
+ public void externerNachweis(Map<String,Object> nachweis){if(externerNachweis!=null)throw new IllegalStateException("Versandnachweis besteht bereits.");externerNachweis=Map.copyOf(nachweis);}
  @OneToMany(mappedBy="revision",cascade=CascadeType.ALL) private List<BestellungPosition> positionen=new ArrayList<>();
  protected BestellungRevision() {}
  public BestellungRevision(EinkaufBestellung bestellung,int nummer,Map<String,Object> snapshot,String sha256,Long actor){this.bestellung=bestellung;this.nummer=nummer;this.snapshot=Map.copyOf(snapshot);this.sha256=sha256;this.geaendertVon=actor;}
