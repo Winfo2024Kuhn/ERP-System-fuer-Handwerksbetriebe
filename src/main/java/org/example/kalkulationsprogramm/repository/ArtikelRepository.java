@@ -12,6 +12,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ArtikelRepository extends JpaRepository<Artikel, Long>, JpaSpecificationExecutor<Artikel> {
+    @Query("select a from Artikel a left join fetch a.werkstoff w where lower(trim(a.artikelnummer)) = lower(trim(:nummer))")
+    Optional<Artikel> findHiCadByArtikelnummer(@Param("nummer") String nummer);
+
     @Query("select a from Artikel a join a.artikelpreis n where lower(trim(n.externeArtikelnummer)) = lower(trim(:nummer))")
     Optional<Artikel> findByExterneArtikelnummer(@Param("nummer") String nummer);
 
@@ -38,4 +41,3 @@ public interface ArtikelRepository extends JpaRepository<Artikel, Long>, JpaSpec
     @Query("select distinct a.produktlinie from Artikel a left join a.artikelpreis ap where (ap is null or ap.lieferant.id <> :lieferantId) and a.produktlinie is not null")
     List<String> findDistinctProduktlinieExcludingLieferant(@Param("lieferantId") Long lieferantId);
 }
-

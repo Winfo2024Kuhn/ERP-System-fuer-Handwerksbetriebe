@@ -1,0 +1,229 @@
+package org.example.kalkulationsprogramm.service;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+
+import java.nio.file.Path;
+import java.util.Optional;
+import java.util.HashMap;
+import java.util.List;
+
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBedarf;
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufDatei;
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufAnlageVersion;
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
+import org.example.kalkulationsprogramm.repository.EinkaufAnlageVersionRepository;
+import org.example.kalkulationsprogramm.repository.EinkaufBedarfRepository;
+import org.example.kalkulationsprogramm.repository.EinkaufDateiRepository;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufDateiService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.web.MockMultipartFile;
+
+class EinkaufDateiServiceTest {
+    @TempDir Path uploadRoot;
+    private EinkaufDateiService service;
+
+    @BeforeEach
+    void setUp() {
+        EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        EinkaufBedarfRepository needs = mock(EinkaufBedarfRepository.class);
+        when(needs.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        service = new EinkaufDateiService(files, versions, needs, uploadRoot.toString());
+    }
+
+    @Test
+    void rejectsPathTraversalEvenWhenTheExtensionLooksLikePdf() {
+        MockMultipartFile pdf = new MockMultipartFile("datei", "../../angebot.pdf", "application/pdf",
+                "%PDF-1.7\nDummy PDF".getBytes());
+        assertThrows(IllegalArgumentException.class, () -> service.hochladen(1L, pdf, "A", 1L));
+    }
+
+    @Test
+    void rejectsDoubleExtensionsAndExecutablesMasqueradingAsPdf() {
+        MockMultipartFile executable = new MockMultipartFile("datei", "angebot.exe.pdf", "application/pdf",
+                "MZ\u0000\u0000".getBytes());
+        assertThrows(IllegalArgumentException.class, () -> service.hochladen(1L, executable, "A", 1L));
+    }
+
+    @Test
+    void doesNotAllowReplacingAnExistingRevisionAfterItWasSent() {
+        EinkaufBedarfRepository needs = mock(EinkaufBedarfRepository.class);
+        when(needs.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        when(versions.findByBedarfIdAndRevision(1L, "A")).thenReturn(Optional.of(mock(EinkaufAnlageVersion.class)));
+        var service = new EinkaufDateiService(mock(EinkaufDateiRepository.class), versions, needs, uploadRoot.toString());
+
+        var error = org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.hochladen(1L, pdf("%PDF-1.7\nChanged content".getBytes(), "angebot.pdf"), "A", 1L));
+
+        org.junit.jupiter.api.Assertions.assertEquals(409, error.getStatusCode().value());
+        verify(versions, never()).save(any());
+    }
+
+    @Test
+    void storesEqualBytesOnlyOnceAcrossDifferentRevisions() {
+        EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        EinkaufBedarfRepository needs = mock(EinkaufBedarfRepository.class);
+        when(needs.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        when(versions.findByBedarfIdAndRevision(1L, "A")).thenReturn(Optional.empty());
+        when(versions.findByBedarfIdAndRevision(1L, "B")).thenReturn(Optional.empty());
+        var byHash = new HashMap<String, EinkaufDatei>();
+        when(files.findBySha256(anyString())).thenAnswer(call -> Optional.ofNullable(byHash.get(call.getArgument(0))));
+        when(files.save(any())).thenAnswer(call -> {
+            EinkaufDatei value = call.getArgument(0);
+            byHash.put(value.getSha256(), value);
+            return value;
+        });
+        when(versions.save(any())).thenAnswer(call -> call.getArgument(0));
+        var service = new EinkaufDateiService(files, versions, needs, uploadRoot.toString());
+        byte[] bytes = "%PDF-1.7\nSame dummy file".getBytes();
+
+        service.hochladen(1L, pdf(bytes, "angebot.pdf"), "A", 1L);
+        service.hochladen(1L, pdf(bytes, "angebot.pdf"), "B", 1L);
+
+        verify(files).save(any());
+        org.junit.jupiter.api.Assertions.assertEquals(1, uploadRoot.resolve("einkauf").toFile().list().length);
+    }
+
+    @Test
+    void persistsHiCadPreviewImagesAsDeduplicatedFilesAndReturnsImageMetadata() throws Exception {
+        EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
+        var byHash = new HashMap<String, EinkaufDatei>();
+        when(files.findBySha256(anyString())).thenAnswer(call -> Optional.ofNullable(byHash.get(call.getArgument(0))));
+        when(files.save(any())).thenAnswer(call -> {
+            EinkaufDatei value = call.getArgument(0);
+            byHash.put(value.getSha256(), value);
+            return value;
+        });
+        var service = new EinkaufDateiService(files, mock(EinkaufAnlageVersionRepository.class),
+                mock(EinkaufBedarfRepository.class), uploadRoot.toString());
+        byte[] png = java.util.Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jqGQAAAAASUVORK5CYII=");
+
+        var first = service.speichereImportBild("teil.png", "image/png", png);
+        var second = service.speichereImportBild("anderer-name.png", "image/png", png);
+
+        org.junit.jupiter.api.Assertions.assertEquals(first.byteAnzahl(), second.byteAnzahl());
+        org.junit.jupiter.api.Assertions.assertEquals("image/png", first.mimeTyp());
+        org.junit.jupiter.api.Assertions.assertEquals(1, byHash.size());
+        String storedName = byHash.values().iterator().next().getGespeicherterName();
+        org.junit.jupiter.api.Assertions.assertArrayEquals(png,
+                java.nio.file.Files.readAllBytes(uploadRoot.resolve("einkauf").resolve(storedName)));
+    }
+
+    @Test
+    void refusesAFileThatHasGoneMissingBeforeMailAssembly() {
+        EinkaufDatei file = mock(EinkaufDatei.class);
+        when(file.getGespeicherterName()).thenReturn("missing-file-uuid");
+        EinkaufAnlageVersion version = mock(EinkaufAnlageVersion.class);
+        when(version.getDatei()).thenReturn(file);
+        when(version.isFreigegeben()).thenReturn(true);
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        when(versions.findAllByIdIn(List.of(7L))).thenReturn(List.of(version));
+        var service = new EinkaufDateiService(mock(EinkaufDateiRepository.class), versions,
+                mock(EinkaufBedarfRepository.class), uploadRoot.toString());
+
+        var error = org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.ladeVersandanlagen(List.of(7L)));
+        org.junit.jupiter.api.Assertions.assertEquals(409, error.getStatusCode().value());
+        org.junit.jupiter.api.Assertions.assertEquals("Anlage fehlt, bitte neu hochladen", error.getReason());
+    }
+
+    @Test
+    void positiveVersionIdCannotPassTheSendGateWhenItBelongsToAnotherDemand() {
+        EinkaufBedarf foreignNeed = mock(EinkaufBedarf.class);
+        when(foreignNeed.getId()).thenReturn(99L);
+        EinkaufDatei file = mock(EinkaufDatei.class);
+        when(file.getGespeicherterName()).thenReturn("some-file");
+        EinkaufAnlageVersion version = mock(EinkaufAnlageVersion.class);
+        when(version.getBedarf()).thenReturn(foreignNeed);
+        when(version.getDatei()).thenReturn(file);
+        when(version.isFreigegeben()).thenReturn(true);
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        when(versions.findAllByIdIn(List.of(7L))).thenReturn(List.of(version));
+        var service = new EinkaufDateiService(mock(EinkaufDateiRepository.class), versions,
+                mock(EinkaufBedarfRepository.class), uploadRoot.toString());
+
+        var error = org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.pruefeFreigegebeneBedarfsanlagen(1L, List.of(7L)));
+        org.junit.jupiter.api.Assertions.assertEquals(409, error.getStatusCode().value());
+    }
+
+    @Test
+    void linksExistingEmailAttachmentByReferenceWithoutCopyingBytes() throws Exception {
+        Path emailRoot = uploadRoot.resolve("email-source");
+        java.nio.file.Files.createDirectories(emailRoot);
+        byte[] pdf = "%PDF-1.7\nExisting mail file".getBytes();
+        java.nio.file.Files.write(emailRoot.resolve("source.pdf"), pdf);
+        Email email = mock(Email.class);
+        when(email.getId()).thenReturn(14L);
+        EmailAttachment attachment = mock(EmailAttachment.class);
+        when(attachment.getId()).thenReturn(55L);
+        when(attachment.getOriginalFilename()).thenReturn("source.pdf");
+        when(attachment.getStoredFilename()).thenReturn("source.pdf");
+        when(attachment.getMimeType()).thenReturn("application/pdf");
+        when(attachment.getSizeBytes()).thenReturn((long) pdf.length);
+        when(attachment.getEmail()).thenReturn(email);
+        var attachments = mock(org.example.kalkulationsprogramm.repository.EmailAttachmentRepository.class);
+        when(attachments.findById(55L)).thenReturn(Optional.of(attachment));
+        var files = mock(EinkaufDateiRepository.class);
+        when(files.findBySha256(anyString())).thenReturn(Optional.empty());
+        when(files.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        var versions = mock(EinkaufAnlageVersionRepository.class);
+        when(versions.findByBedarfIdAndRevision(1L, "Mail-1")).thenReturn(Optional.empty());
+        when(versions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        var demands = mock(EinkaufBedarfRepository.class);
+        when(demands.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        var service = new EinkaufDateiService(files, versions, demands, attachments,
+                mock(org.example.kalkulationsprogramm.repository.LieferantDokumentRepository.class),
+                uploadRoot.toString(), emailRoot.toString());
+        service.nutzeEmailAnlage(1L, 55L, "Mail-1", 4L);
+
+        verify(files).save(argThat(file -> file.getGespeicherterName() == null
+                && Long.valueOf(55L).equals(file.getEmailAttachmentId())
+                && file.getByteAnzahl() == pdf.length));
+        org.junit.jupiter.api.Assertions.assertFalse(java.nio.file.Files.exists(uploadRoot.resolve("einkauf")));
+    }
+
+    @Test
+    void reportsMissingHistoricalEmailFileAsConflict() throws Exception {
+        Path emailRoot = uploadRoot.resolve("email-empty");
+        java.nio.file.Files.createDirectories(emailRoot);
+        Email email = mock(Email.class);
+        when(email.getId()).thenReturn(14L);
+        EmailAttachment attachment = mock(EmailAttachment.class);
+        when(attachment.getId()).thenReturn(55L);
+        when(attachment.getOriginalFilename()).thenReturn("source.pdf");
+        when(attachment.getStoredFilename()).thenReturn("missing.pdf");
+        when(attachment.getMimeType()).thenReturn("application/pdf");
+        when(attachment.getEmail()).thenReturn(email);
+        var attachments = mock(org.example.kalkulationsprogramm.repository.EmailAttachmentRepository.class);
+        when(attachments.findById(55L)).thenReturn(Optional.of(attachment));
+        var demands = mock(EinkaufBedarfRepository.class);
+        when(demands.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        var service = new EinkaufDateiService(mock(EinkaufDateiRepository.class),
+                mock(EinkaufAnlageVersionRepository.class), demands, attachments,
+                mock(org.example.kalkulationsprogramm.repository.LieferantDokumentRepository.class),
+                uploadRoot.toString(), emailRoot.toString());
+
+        var error = org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.nutzeEmailAnlage(1L, 55L, "Mail-1", 4L));
+        org.junit.jupiter.api.Assertions.assertEquals(409, error.getStatusCode().value());
+        org.junit.jupiter.api.Assertions.assertEquals("Anlage fehlt, bitte neu hochladen", error.getReason());
+    }
+
+    private static MockMultipartFile pdf(byte[] bytes, String filename) {
+        return new MockMultipartFile("datei", filename, "application/pdf", bytes);
+    }
+}
