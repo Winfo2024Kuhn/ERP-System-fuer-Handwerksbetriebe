@@ -47,23 +47,14 @@ const TEXTBAUSTEIN_MIT_CHIPS = JSON.stringify({
     globalRabatt: 0,
 });
 
-/**
- * Fester "Heute"-Zeitpunkt fuer den Faelligkeits-Chip. Ohne ihn las die Seite ihr
- * Datum beim Laden und der Test rechnete es spaeter erneut aus - laeuft der Test
- * genau ueber Mitternacht, liegen beide Werte einen Tag auseinander und er wird
- * grundlos rot (hier real passiert: erwartet 20.10., angezeigt 19.10.).
- * Mittags gewaehlt, damit keine Zeitzonenverschiebung den Tag kippt.
- */
-const HEUTE = new Date('2026-09-20T12:00:00');
-
-/** Das Faelligkeitsdatum, das der Chip nach der Umstellung auf 30 Tage zeigen muss. */
-function faelligkeitInDreissigTagen(): string {
-    const faellig = new Date(HEUTE);
-    faellig.setDate(faellig.getDate() + 30);
-    return faellig.toLocaleDateString('de-DE');
-}
+// Browser-Uhr und API-Dokument brauchen dasselbe feste Datum: Der API-Stub
+// laeuft in Node und wird von page.clock nicht beeinflusst.
+const DOKUMENTDATUM = '2026-09-20';
+const HEUTE = new Date(`${DOKUMENTDATUM}T12:00:00Z`);
 
 test.describe('Dokument-Editor – Zahlungsziel', () => {
+    test.use({ timezoneId: 'Europe/Berlin' });
+
     test('fragt ab neun Tagen nach, meldet sich als ungespeichert und speichert den Wert mit', async ({ page }, testInfo) => {
         const mitschrift = await stubbeDokumentEditorApi(page);
         await oeffneDokumentEditor(page);
@@ -146,15 +137,18 @@ test.describe('Dokument-Editor – Zahlungsziel', () => {
         // Zweiter Einsatzort derselben Eingabe. Der Textbaustein bringt beide
         // Zahlungsziel-Platzhalter mit, aus denen der Editor Chips macht.
         // Uhr vor dem Laden festnageln, damit der Faelligkeits-Chip und die
-        // Erwartung vom selben Tag ausgehen (siehe HEUTE oben). setFixedTime
-        // friert nur Date.now() ein - Timer wie der Auto-Save laufen weiter.
+        // Erwartung vom selben Tag ausgehen. setFixedTime fixiert die Date-Zeit
+        // im Browser; Timer wie der Auto-Save laufen weiter.
         await page.clock.setFixedTime(HEUTE);
-        const mitschrift = await stubbeDokumentEditorApi(page, { dokument: { positionenJson: TEXTBAUSTEIN_MIT_CHIPS } });
+        const mitschrift = await stubbeDokumentEditorApi(page, {
+            dokument: { datum: DOKUMENTDATUM, positionenJson: TEXTBAUSTEIN_MIT_CHIPS },
+        });
         await oeffneDokumentEditor(page);
 
         const tageChip = page.locator('[data-zahlungsziel-chip="tage"]');
         const datumChip = page.locator('[data-zahlungsziel-chip="datum"]');
         await expect(tageChip).toHaveText('14');
+        await expect(datumChip).toHaveText('4.10.2026');
         await tageChip.click();
 
         const popover = page.getByRole('dialog');
@@ -172,10 +166,11 @@ test.describe('Dokument-Editor – Zahlungsziel', () => {
 
         // Beide Chips, Summenzeile und gespeicherter Wert zeigen denselben Stand.
         await expect(tageChip).toHaveText('30');
-        await expect(datumChip).toHaveText(faelligkeitInDreissigTagen());
+        await expect(datumChip).toHaveText('20.10.2026');
         await expect(zahlungszielFeld(page)).toHaveValue('30');
         await page.getByRole('button', { name: /Speichern/i }).click();
         await expect.poll(() => mitschrift.speicherAufrufe.at(-1)?.zahlungszielTage).toBe(30);
+        expect(mitschrift.speicherAufrufe.at(-1)?.datum).toBe(DOKUMENTDATUM);
     });
 
     test('Klick auf normalen Text im Textbaustein öffnet kein Popover', async ({ page }) => {
