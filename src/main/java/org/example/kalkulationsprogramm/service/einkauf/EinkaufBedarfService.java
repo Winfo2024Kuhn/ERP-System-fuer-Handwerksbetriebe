@@ -81,7 +81,7 @@ public class EinkaufBedarfService {
         pruefeProjektkennung(position, projekt, null);
         ArtikelInProjekt aip = ladeArtikelposition(request.artikelInProjektId(), projekt);
         EinkaufBedarf bedarf = new EinkaufBedarf(position, gruppe,
-                projekt == null ? null : projekt.getId(), aip == null ? null : aip.getId(), false);
+                projekt == null ? null : projekt.getId(), aip == null ? null : aip.getId(), brauchtNachpflege(position));
         EinkaufBedarf gespeichert = bedarfRepository.save(bedarf);
         return toResponse(gespeichert, angefragtFuer(List.of(gespeichert)).get(gespeichert.getId()));
     }
@@ -121,9 +121,12 @@ public class EinkaufBedarfService {
         bedarf.setPosition(position);
         bedarf.setLiefergruppe(request.liefergruppe());
         bedarf.setProjektId(projektId);
+        bedarf.setInterneKennung(position.art() == Positionsart.ZEICHNUNGSTEIL
+                ? position.interneReferenz().trim() : null);
+        bedarf.setBezeichnung(position.bezeichnung());
         bedarf.setBedarfMenge(neueMenge);
         bedarf.setNachpflegeErforderlich(false);
-        EinkaufBedarf gespeichert = bedarfRepository.save(bedarf);
+        EinkaufBedarf gespeichert = bedarfRepository.saveAndFlush(bedarf);
         return toResponse(gespeichert, angefragtFuer(List.of(gespeichert)).get(gespeichert.getId()));
     }
 
@@ -131,7 +134,7 @@ public class EinkaufBedarfService {
     @EventListener
     public void synchronisiereProjektposition(ArtikelInProjekt aip) {
         if (aip == null || aip.getId() == null || aip.getProjekt() == null || aip.getProjekt().getId() == null) return;
-        if (bedarfRepository.findByArtikelInProjektId(aip.getId()).isPresent()) return;
+        EinkaufBedarf bedarf = bedarfRepository.findByArtikelInProjektIdForUpdate(aip.getId()).orElse(null);
         org.example.kalkulationsprogramm.domain.Artikel artikel = aip.getArtikel();
         String name = artikel == null ? null : artikel.getProduktname();
         String referenz = artikel == null ? null : artikel.getArtikelnummer();
@@ -157,18 +160,37 @@ public class EinkaufBedarfService {
                 aip.getAnschnittWinkelRechts(), aip.getKommentar(), null, null, null);
         boolean legacyOrdered = aip.isBestellt() && !aip.isAusLager();
         boolean legacyStock = aip.isAusLager();
-        boolean repair = artikel == null || name == null || referenz == null || menge == null || einheit == null;
+        boolean repair = artikel == null || name == null || name.isBlank() || referenz == null
+                || referenz.isBlank() || menge == null || einheit == null;
         Liefergruppe gruppe = new Liefergruppe(null, null, aip.getProjekt().getId(), null);
-        EinkaufBedarf bedarf = new EinkaufBedarf(snapshot, gruppe, aip.getProjekt().getId(), aip.getId(), repair);
-        bedarf.setHistorischBestellt(legacyOrdered);
-        bedarf.setHistorischAusLager(legacyStock);
-        if (legacyOrdered || legacyStock) {
-            bedarf.setHistorischerHinweis(legacyOrdered
-                    ? "Historisch als bestellt markiert; bitte Beleg und offenen Rest prüfen."
-                    : "Historisch als Lagerentnahme markiert; bitte Lagerdeckung prüfen.");
-            bedarf.setNachpflegeErforderlich(true);
+        if (bedarf == null) {
+            bedarf = new EinkaufBedarf(snapshot, gruppe, aip.getProjekt().getId(), aip.getId(), repair);
+            bedarf.setHistorischBestellt(legacyOrdered);
+            bedarf.setHistorischAusLager(legacyStock);
+            if (legacyOrdered || legacyStock) {
+                bedarf.setHistorischerHinweis(legacyOrdered
+                        ? "Historisch als bestellt markiert; bitte Beleg und offenen Rest prüfen."
+                        : "Historisch als Lagerentnahme markiert; bitte Lagerdeckung prüfen.");
+                bedarf.setNachpflegeErforderlich(true);
+            }
+        } else {
+            BigDecimal bereitsGedeckt = bedarf.getLagergedeckt().add(bedarf.getBestellt()).add(bedarf.getReserviert());
+            if ((menge == null && bereitsGedeckt.signum() > 0)
+                    || (menge != null && menge.compareTo(bereitsGedeckt) < 0)) {
+                throw conflict("Die geänderte Projektmenge liegt unter bereits disponierten Mengen.");
+            }
+            if (positionartIstZeichnungsteil(bedarf.getPosition()) && referenz != null && !referenz.isBlank()
+                    && bedarfRepository.existsByProjektIdAndInterneKennungAndIdNot(
+                            aip.getProjekt().getId(), referenz.trim(), bedarf.getId())) {
+                throw conflict("Diese Teilkennung gibt es in diesem Projekt bereits.");
+            }
+            bedarf.setPosition(snapshot);
+            bedarf.setBezeichnung(name == null || name.isBlank() ? "Nachpflege erforderlich" : name);
+            bedarf.setInterneKennung(positionartIstZeichnungsteil(snapshot) ? referenz : null);
+            bedarf.setBedarfMenge(menge);
+            bedarf.setNachpflegeErforderlich(repair || bedarf.isHistorischBestellt() || bedarf.isHistorischAusLager());
         }
-        bedarfRepository.save(bedarf);
+        bedarfRepository.saveAndFlush(bedarf);
     }
 
     private ArtikelInProjekt ladeArtikelposition(Long id, Projekt projekt) {
@@ -207,6 +229,14 @@ public class EinkaufBedarfService {
 
     private static void validateActor(Long actor) {
         if (actor == null || actor <= 0) throw new IllegalArgumentException("Der handelnde Benutzer fehlt.");
+    }
+    private static boolean brauchtNachpflege(PositionSnapshot position) {
+        return position == null || position.interneReferenz() == null || position.interneReferenz().isBlank()
+                || position.bezeichnung() == null || position.bezeichnung().isBlank()
+                || position.basis() == null || position.basis().menge() == null || position.basis().einheit() == null;
+    }
+    private static boolean positionartIstZeichnungsteil(PositionSnapshot position) {
+        return position != null && position.art() == Positionsart.ZEICHNUNGSTEIL;
     }
     private static BigDecimal nullToZero(BigDecimal value) { return value == null ? ZERO : value; }
     private static ResponseStatusException conflict(String message) {

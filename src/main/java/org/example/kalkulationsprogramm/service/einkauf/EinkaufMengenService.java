@@ -47,6 +47,12 @@ public class EinkaufMengenService {
         this.buchungRepository = buchungRepository;
     }
 
+    /**
+     * The process key is a stable immutable reference shared by all stages of
+     * one persisted purchase order: {@code BESTELLUNG:<bestellungId>}. Keep it
+     * unchanged from reservation through order conversion and release; each
+     * individual mutation still gets its own idempotency UUID.
+     */
     @Transactional
     public void buche(List<Herkunft> anteile, Mengenaktion aktion, String vorgangsschluessel,
             UUID idempotenzKey, Long akteurId) {
@@ -70,13 +76,15 @@ public class EinkaufMengenService {
         }
         Map<Long, EinkaufBedarf> nachId = gesperrt.stream().collect(Collectors.toMap(EinkaufBedarf::getId,
                 Function.identity()));
+        Map<Long, BigDecimal> reservierungenEigenerVorgaenge = ids.stream().collect(Collectors.toMap(
+                Function.identity(), id -> reservierungFuer(id, vorgangsschluessel)));
         for (Herkunft herkunft : sortiert) {
             EinkaufBedarf bedarf = nachId.get(herkunft.bedarfId());
             if (bedarf.getVersion() == null || bedarf.getVersion() != herkunft.version()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Der Einkaufsbedarf wurde zwischenzeitlich geändert.");
             }
-            pruefeBuchung(bedarf, aktion, herkunft.menge());
+            pruefeBuchung(bedarf, aktion, herkunft.menge(), reservierungenEigenerVorgaenge.get(bedarf.getId()));
         }
         List<EinkaufMengenbuchung> buchungen = new ArrayList<>();
         for (Herkunft herkunft : sortiert) {
@@ -123,14 +131,29 @@ public class EinkaufMengenService {
         catch (ArithmeticException ignored) { return false; }
     }
 
-    private static void pruefeBuchung(EinkaufBedarf b, Mengenaktion a, BigDecimal menge) {
+    private BigDecimal reservierungFuer(Long bedarfId, String vorgangsschluessel) {
+        BigDecimal reserviert = BigDecimal.ZERO;
+        for (EinkaufMengenbuchung buchung : buchungRepository
+                .findAllByBedarf_IdAndVorgangsschluesselOrderByIdAsc(bedarfId, vorgangsschluessel)) {
+            switch (buchung.getAktion()) {
+                case RESERVIEREN -> reserviert = reserviert.add(buchung.getMenge());
+                case RESERVIERUNG_FREIGEBEN -> reserviert = reserviert.subtract(buchung.getMenge());
+                case BESTELLEN -> reserviert = reserviert.subtract(buchung.getMenge());
+                default -> { }
+            }
+        }
+        return reserviert.max(BigDecimal.ZERO);
+    }
+
+    private static void pruefeBuchung(EinkaufBedarf b, Mengenaktion a, BigDecimal menge,
+            BigDecimal reservierungDieserVorgang) {
         if (b.isNachpflegeErforderlich() || b.getBedarfMenge() == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Dieser Bedarf muss zuerst nachgepflegt werden.");
         }
         boolean gueltig = switch (a) {
             case RESERVIEREN, LAGER_ENTNEHMEN -> menge.compareTo(b.disponierbar()) <= 0;
-            case RESERVIERUNG_FREIGEBEN -> menge.compareTo(b.getReserviert()) <= 0;
-            case BESTELLEN -> menge.compareTo(b.ungedeckt()) <= 0;
+            case RESERVIERUNG_FREIGEBEN -> menge.compareTo(reservierungDieserVorgang) <= 0;
+            case BESTELLEN -> menge.compareTo(reservierungDieserVorgang) <= 0;
             case STORNO_BESTAETIGEN -> menge.compareTo(b.getBestellt().subtract(b.getGeliefert())) <= 0;
             case LIEFERN -> menge.compareTo(b.getBestellt().subtract(b.getGeliefert())) <= 0;
         };
@@ -143,7 +166,7 @@ public class EinkaufMengenService {
             case RESERVIEREN -> b.setReserviert(b.getReserviert().add(m));
             case RESERVIERUNG_FREIGEBEN -> b.setReserviert(b.getReserviert().subtract(m));
             case BESTELLEN -> {
-                b.setReserviert(b.getReserviert().subtract(b.getReserviert().min(m)));
+                b.setReserviert(b.getReserviert().subtract(m));
                 b.setBestellt(b.getBestellt().add(m));
             }
             case LAGER_ENTNEHMEN -> b.setLagergedeckt(b.getLagergedeckt().add(m));

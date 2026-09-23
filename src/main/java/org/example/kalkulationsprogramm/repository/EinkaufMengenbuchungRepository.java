@@ -8,4 +8,6 @@ import java.util.UUID;
 
 public interface EinkaufMengenbuchungRepository extends JpaRepository<EinkaufMengenbuchung, Long> {
     List<EinkaufMengenbuchung> findAllByIdempotenzKey(UUID idempotenzKey);
+    List<EinkaufMengenbuchung> findAllByBedarf_IdAndVorgangsschluesselOrderByIdAsc(Long bedarfId,
+            String vorgangsschluessel);
 }

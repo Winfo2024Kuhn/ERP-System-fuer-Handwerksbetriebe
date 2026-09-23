@@ -33,4 +33,8 @@ public interface EinkaufBedarfRepository extends JpaRepository<EinkaufBedarf, Lo
     boolean existsByProjektIdAndInterneKennung(Long projektId, String interneKennung);
     boolean existsByProjektIdAndInterneKennungAndIdNot(Long projektId, String interneKennung, Long id);
     Optional<EinkaufBedarf> findByArtikelInProjektId(Long artikelInProjektId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from EinkaufBedarf b where b.artikelInProjektId = :artikelInProjektId")
+    Optional<EinkaufBedarf> findByArtikelInProjektIdForUpdate(@Param("artikelInProjektId") Long artikelInProjektId);
 }

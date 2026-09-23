@@ -3,11 +3,21 @@ package org.example.kalkulationsprogramm.repository;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBedarf;
 import org.example.kalkulationsprogramm.domain.einkauf.Einheit;
 import org.example.kalkulationsprogramm.domain.einkauf.Positionsart;
+import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
+import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufBedarfDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Liefergruppe;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Mengenbasis;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.PositionSnapshot;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufMengenService;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufBedarfService;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufPositionService;
+import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
+import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.hibernate.jpa.HibernatePersistenceProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +71,8 @@ class EinkaufMengenParallelTest {
     @jakarta.annotation.Resource EinkaufBedarfRepository bedarfRepository;
     @jakarta.annotation.Resource EinkaufMengenbuchungRepository buchungRepository;
     @jakarta.annotation.Resource EinkaufMengenService mengenService;
+    @jakarta.annotation.Resource EinkaufBedarfService einkaufBedarfService;
+    @jakarta.annotation.Resource EinkaufPositionService einkaufPositionService;
 
     @AfterEach
     void cleanup() {
@@ -100,25 +112,25 @@ class EinkaufMengenParallelTest {
         UUID reservierungKey = UUID.randomUUID();
         Herkunft reservierung = new Herkunft(bedarf.getId(), bedarf.getVersion(), new BigDecimal("4"));
         mengenService.buche(List.of(reservierung), EinkaufMengenService.Mengenaktion.RESERVIEREN,
-                "ANFRAGE-1", reservierungKey, 1L);
+                "BESTELLUNG:1", reservierungKey, 1L);
         var nachReservierung = mengenService.stand(bedarf.getId());
         assertEquals(0, nachReservierung.ungedeckt().compareTo(new BigDecimal("10.000000")));
         assertEquals(0, nachReservierung.disponierbar().compareTo(new BigDecimal("6.000000")));
         // Same request retry returns the original result even though the entity version advanced.
         mengenService.buche(List.of(reservierung), EinkaufMengenService.Mengenaktion.RESERVIEREN,
-                "ANFRAGE-1", reservierungKey, 1L);
+                "BESTELLUNG:1", reservierungKey, 1L);
         assertEquals(1, buchungRepository.findAllByIdempotenzKey(reservierungKey).size());
         assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> mengenService.buche(List.of(new Herkunft(bedarf.getId(), bedarf.getVersion(),
-                                new BigDecimal("3"))), EinkaufMengenService.Mengenaktion.RESERVIEREN,
-                        "ANFRAGE-1", reservierungKey, 1L));
+                        new BigDecimal("3"))), EinkaufMengenService.Mengenaktion.RESERVIEREN,
+                        "BESTELLUNG:1", reservierungKey, 1L));
 
         Long aktuelleVersion = bedarfRepository.findById(bedarf.getId()).orElseThrow().getVersion();
         mengenService.buche(List.of(new Herkunft(bedarf.getId(), aktuelleVersion, new BigDecimal("4"))),
-                EinkaufMengenService.Mengenaktion.BESTELLEN, "BESTELLUNG-1", UUID.randomUUID(), 1L);
+                EinkaufMengenService.Mengenaktion.BESTELLEN, "BESTELLUNG:1", UUID.randomUUID(), 1L);
         aktuelleVersion = bedarfRepository.findById(bedarf.getId()).orElseThrow().getVersion();
         mengenService.buche(List.of(new Herkunft(bedarf.getId(), aktuelleVersion, new BigDecimal("2"))),
-                EinkaufMengenService.Mengenaktion.LIEFERN, "LIEFERUNG-1", UUID.randomUUID(), 1L);
+                EinkaufMengenService.Mengenaktion.LIEFERN, "BESTELLUNG:1", UUID.randomUUID(), 1L);
 
         var stand = mengenService.stand(bedarf.getId());
         assertEquals(0, stand.bestellt().compareTo(new BigDecimal("4.000000")));
@@ -144,6 +156,133 @@ class EinkaufMengenParallelTest {
         assertEquals(0, mengenService.stand(erster.getId()).reserviert().compareTo(BigDecimal.ZERO));
         assertEquals(0, mengenService.stand(zweiterId).reserviert().compareTo(BigDecimal.ZERO));
         assertEquals(0, buchungRepository.count());
+    }
+
+    @Test
+    void direktbestellungLaesstReservierungenAndererVorgaengeUnveraendert() {
+        EinkaufBedarf bedarf = bedarfRepository.saveAndFlush(bedarf("10"));
+        reserviere(bedarf.getId(), "BESTELLUNG:101", "4");
+        reserviere(bedarf.getId(), "BESTELLUNG:202", "4");
+
+        Long version = bedarfRepository.findById(bedarf.getId()).orElseThrow().getVersion();
+        Long versionOhneReservierungEigenerBestellung = version;
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> mengenService.buche(List.of(new Herkunft(bedarf.getId(), versionOhneReservierungEigenerBestellung, new BigDecimal("2"))),
+                        EinkaufMengenService.Mengenaktion.BESTELLEN, "BESTELLUNG:303", UUID.randomUUID(), 1L));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> mengenService.buche(List.of(new Herkunft(bedarf.getId(), versionOhneReservierungEigenerBestellung, BigDecimal.ONE)),
+                        EinkaufMengenService.Mengenaktion.RESERVIERUNG_FREIGEBEN, "BESTELLUNG:303", UUID.randomUUID(), 1L));
+        assertEquals(0, mengenService.stand(bedarf.getId()).reserviert().compareTo(new BigDecimal("8.000000")));
+
+        reserviere(bedarf.getId(), "BESTELLUNG:303", "2");
+        version = bedarfRepository.findById(bedarf.getId()).orElseThrow().getVersion();
+        mengenService.buche(List.of(new Herkunft(bedarf.getId(), version, new BigDecimal("2"))),
+                EinkaufMengenService.Mengenaktion.BESTELLEN, "BESTELLUNG:303", UUID.randomUUID(), 1L);
+
+        var stand = mengenService.stand(bedarf.getId());
+        assertEquals(0, stand.bestellt().compareTo(new BigDecimal("2.000000")));
+        assertEquals(0, stand.reserviert().compareTo(new BigDecimal("8.000000")));
+        assertEquals(0, stand.disponierbar().compareTo(BigDecimal.ZERO));
+    }
+
+    @Test
+    void bestellungKonvertiertNurReservierungDesGleichenVorgangs() {
+        EinkaufBedarf bedarf = bedarfRepository.saveAndFlush(bedarf("10"));
+        reserviere(bedarf.getId(), "BESTELLUNG:101", "4");
+        reserviere(bedarf.getId(), "BESTELLUNG:202", "4");
+
+        Long version = bedarfRepository.findById(bedarf.getId()).orElseThrow().getVersion();
+        mengenService.buche(List.of(new Herkunft(bedarf.getId(), version, new BigDecimal("4"))),
+                EinkaufMengenService.Mengenaktion.BESTELLEN, "BESTELLUNG:101", UUID.randomUUID(), 1L);
+
+        var stand = mengenService.stand(bedarf.getId());
+        assertEquals(0, stand.bestellt().compareTo(new BigDecimal("4.000000")));
+        assertEquals(0, stand.reserviert().compareTo(new BigDecimal("4.000000")));
+        assertEquals(0, stand.disponierbar().compareTo(new BigDecimal("2.000000")));
+    }
+
+    @Test
+    void konkurrierendeBestellungUndDirektbestellungBehaltenFremdeReservierung() throws Exception {
+        EinkaufBedarf bedarf = bedarfRepository.saveAndFlush(bedarf("10"));
+        reserviere(bedarf.getId(), "BESTELLUNG:101", "4");
+        reserviere(bedarf.getId(), "BESTELLUNG:202", "4");
+        Long version = bedarfRepository.findById(bedarf.getId()).orElseThrow().getVersion();
+
+        var result = new ConcurrentLinkedQueue<String>();
+        var pool = Executors.newFixedThreadPool(2);
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+        pool.submit(() -> bestelleParallel(result, ready, start, bedarf.getId(), version, "BESTELLUNG:101", "4"));
+        pool.submit(() -> bestelleParallel(result, ready, start, bedarf.getId(), version, "BESTELLUNG:202", "4"));
+        assertTrue(ready.await(10, TimeUnit.SECONDS));
+        start.countDown();
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS));
+
+        assertEquals(1, result.stream().filter("erfolg"::equals).count());
+        assertEquals(1, result.stream().filter("konflikt"::equals).count());
+        var stand = mengenService.stand(bedarf.getId());
+        assertEquals(0, stand.reserviert().compareTo(new BigDecimal("4.000000")));
+        assertEquals(0, stand.bestellt().compareTo(new BigDecimal("4.000000")));
+        String winner = hatBuchung(bedarf.getId(), "BESTELLUNG:101") ? "BESTELLUNG:101" : "BESTELLUNG:202";
+        String loser = winner.equals("BESTELLUNG:101") ? "BESTELLUNG:202" : "BESTELLUNG:101";
+        assertEquals(0, reservierungRest(bedarf.getId(), winner).compareTo(BigDecimal.ZERO));
+        assertEquals(0, reservierungRest(bedarf.getId(), loser).compareTo(new BigDecimal("4.000000")));
+    }
+
+    @Test
+    void putAntwortversionKannDirektFuerFolgeputVerwendetWerden() {
+        PositionSnapshot initial = new PositionSnapshot(Positionsart.ARTIKEL, 1L, "A-1", null, null,
+                "Alt", null, null, new Mengenbasis(new BigDecimal("10"), Einheit.STUECK,
+                        new BigDecimal("10"), null, null, null), null, null, null, null, null, null, null);
+        Liefergruppe gruppe = new Liefergruppe(null, null, null, "Testlager");
+        EinkaufBedarf gespeichert = bedarfRepository.saveAndFlush(new EinkaufBedarf(initial, gruppe, null, null, false));
+        PositionSnapshot ersteAenderung = new PositionSnapshot(Positionsart.ARTIKEL, 1L, "A-1", null, null,
+                "Name 1", null, null, new Mengenbasis(new BigDecimal("9"), Einheit.STUECK,
+                        new BigDecimal("9"), null, null, null), null, null, null, null, null, null, null);
+        PositionSnapshot zweiteAenderung = new PositionSnapshot(Positionsart.ARTIKEL, 1L, "A-1", null, null,
+                "Name 2", null, null, new Mengenbasis(new BigDecimal("8"), Einheit.STUECK,
+                        new BigDecimal("8"), null, null, null), null, null, null, null, null, null, null);
+        org.mockito.Mockito.when(einkaufPositionService.validiere(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EinkaufBedarfDto.Response ersteAntwort = einkaufBedarfService.aktualisieren(gespeichert.getId(),
+                new EinkaufBedarfDto.Update(gespeichert.getVersion(), ersteAenderung, gruppe), 1L);
+
+        assertEquals(1L, ersteAntwort.version());
+        EinkaufBedarfDto.Response zweiteAntwort = einkaufBedarfService.aktualisieren(gespeichert.getId(),
+                new EinkaufBedarfDto.Update(ersteAntwort.version(), zweiteAenderung, gruppe), 1L);
+        assertEquals(2L, zweiteAntwort.version());
+        assertEquals("Name 2", bedarfRepository.findById(gespeichert.getId()).orElseThrow().getBezeichnung());
+        assertEquals(1, einkaufBedarfService.suche("Name 2", null,
+                org.springframework.data.domain.PageRequest.of(0, 10)).getTotalElements());
+    }
+
+    @Test
+    void projektpositionAenderungAktualisiertVerknuepftenBedarfPerMysqlLockUndVersion() {
+        EinkaufBedarf bedarf = bedarfRepository.saveAndFlush(bedarf("5"));
+        bedarf.setArtikelInProjektId(991L);
+        bedarfRepository.saveAndFlush(bedarf);
+        long vorherigeVersion = bedarfRepository.findById(bedarf.getId()).orElseThrow().getVersion();
+        Projekt projekt = new Projekt();
+        projekt.setId(1L);
+        Artikel artikel = new Artikel();
+        artikel.setId(1L);
+        artikel.setProduktname("Testprofil aktualisiert");
+        artikel.setArtikelnummer("DUMMY-1");
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        ArtikelInProjekt aip = new ArtikelInProjekt();
+        aip.setId(991L);
+        aip.setProjekt(projekt);
+        aip.setArtikel(artikel);
+        aip.setStueckzahl(7);
+
+        einkaufBedarfService.synchronisiereProjektposition(aip);
+
+        EinkaufBedarf aktualisiert = bedarfRepository.findById(bedarf.getId()).orElseThrow();
+        assertEquals(0, aktualisiert.getBedarfMenge().compareTo(new BigDecimal("7")));
+        assertEquals("Testprofil aktualisiert", aktualisiert.getBezeichnung());
+        assertEquals(vorherigeVersion + 1, aktualisiert.getVersion());
     }
 
     @Test
@@ -188,13 +327,15 @@ class EinkaufMengenParallelTest {
         var pool = Executors.newFixedThreadPool(2);
         var ready = new CountDownLatch(2);
         var start = new CountDownLatch(1);
+        int vorgangNummer = 101;
         for (var action : List.of(first, second)) {
+            String vorgang = "BESTELLUNG:" + vorgangNummer++;
             pool.submit(() -> {
                 ready.countDown();
                 try {
                     start.await();
                     mengenService.buche(List.of(new Herkunft(id, version, new BigDecimal("6"))), action,
-                            "TEST-" + action.name(), UUID.randomUUID(), 1L);
+                            vorgang, UUID.randomUUID(), 1L);
                     result.add(true);
                 } catch (Exception expected) {
                     result.add(false);
@@ -206,6 +347,39 @@ class EinkaufMengenParallelTest {
         pool.shutdown();
         assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS));
         return List.copyOf(result);
+    }
+
+    private void reserviere(Long id, String process, String amount) {
+        Long version = bedarfRepository.findById(id).orElseThrow().getVersion();
+        mengenService.buche(List.of(new Herkunft(id, version, new BigDecimal(amount))),
+                EinkaufMengenService.Mengenaktion.RESERVIEREN, process, UUID.randomUUID(), 1L);
+    }
+
+    private void bestelleParallel(ConcurrentLinkedQueue<String> result, CountDownLatch ready,
+            CountDownLatch start, Long id, Long version, String process, String amount) {
+        ready.countDown();
+        try {
+            start.await();
+            mengenService.buche(List.of(new Herkunft(id, version, new BigDecimal(amount))),
+                    EinkaufMengenService.Mengenaktion.BESTELLEN, process, UUID.randomUUID(), 1L);
+            result.add("erfolg");
+        } catch (Exception expected) {
+            result.add("konflikt");
+        }
+    }
+
+    private boolean hatBuchung(Long bedarfId, String process) {
+        return buchungRepository.findAllByBedarf_IdAndVorgangsschluesselOrderByIdAsc(bedarfId, process).stream()
+                .anyMatch(b -> b.getAktion() == EinkaufMengenService.Mengenaktion.BESTELLEN);
+    }
+
+    private BigDecimal reservierungRest(Long bedarfId, String process) {
+        return buchungRepository.findAllByBedarf_IdAndVorgangsschluesselOrderByIdAsc(bedarfId, process).stream()
+                .map(b -> switch (b.getAktion()) {
+                    case RESERVIEREN -> b.getMenge();
+                    case RESERVIERUNG_FREIGEBEN, BESTELLEN -> b.getMenge().negate();
+                    default -> BigDecimal.ZERO;
+                }).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private static void assertExactlyOneSucceeded(List<Boolean> results) {
@@ -251,6 +425,27 @@ class EinkaufMengenParallelTest {
         @Bean EinkaufMengenService einkaufMengenService(EinkaufBedarfRepository bedarfRepository,
                 EinkaufMengenbuchungRepository buchungRepository) {
             return new EinkaufMengenService(bedarfRepository, buchungRepository);
+        }
+
+        @Bean EinkaufPositionService einkaufPositionService() {
+            return org.mockito.Mockito.mock(EinkaufPositionService.class);
+        }
+
+        @Bean ProjektRepository projektRepository() {
+            return org.mockito.Mockito.mock(ProjektRepository.class);
+        }
+
+        @Bean ArtikelInProjektRepository artikelInProjektRepository() {
+            return org.mockito.Mockito.mock(ArtikelInProjektRepository.class);
+        }
+
+        @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
+
+        @Bean EinkaufBedarfService einkaufBedarfService(EinkaufBedarfRepository bedarfRepository,
+                ArtikelInProjektRepository artikelInProjektRepository, ProjektRepository projektRepository,
+                EinkaufPositionService positionService, ObjectMapper objectMapper) {
+            return new EinkaufBedarfService(bedarfRepository, artikelInProjektRepository, projektRepository,
+                    positionService, objectMapper);
         }
     }
 }

@@ -96,7 +96,9 @@ public class EinkaufBedarf {
     public Long getProjektId() { return projektId; }
     public void setProjektId(Long projektId) { this.projektId = projektId; }
     public String getInterneKennung() { return interneKennung; }
+    public void setInterneKennung(String value) { this.interneKennung = value; }
     public String getBezeichnung() { return bezeichnung; }
+    public void setBezeichnung(String value) { this.bezeichnung = value; }
     public Long getArtikelInProjektId() { return artikelInProjektId; }
     public void setArtikelInProjektId(Long artikelInProjektId) { this.artikelInProjektId = artikelInProjektId; }
     public BigDecimal getBedarfMenge() { return bedarfMenge; }
