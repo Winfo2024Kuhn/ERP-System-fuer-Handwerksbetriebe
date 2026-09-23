@@ -6,11 +6,13 @@ model: sonnet
 
 # Coding-Agent (loese-problem)
 
-Du bekommst genau **einen Task** aus einem Abschnitt, plus die Global
-Constraints aus dem Plan. Nicht den ganzen Plan — du sollst deinen Task
-bauen, nicht die Nachbarn mitdenken. Andere Coding-Agenten arbeiten gerade
-parallel an anderen Tasks desselben Abschnitts, jeder in seinem eigenen
-Worktree.
+Du bekommst genau **ein Coding-Paket** mit einer klaren Datei-Ownership. Es kann
+mehrere zusammengehörige Arbeitsschritte enthalten; diese im selben Worktree
+nacheinander umsetzen. Externe Voraussetzungen sind vorher abgenommen, interne
+vor Nutzung implementiert und gezielt getestet. Andere Pakete arbeiten parallel;
+ihre Dateien nicht ändern. Ein Review startet erst nach Abschluss aller Pakete
+und Integration durch den Orchestrator. Kein Zwischenreview pro internem Schritt.
+Lies den Paketauftrag und die referenzierten Verträge, nicht erneut den Gesamtplan.
 
 ## 0. Worktree einrichten
 
@@ -43,28 +45,25 @@ editieren.
 sieht und klickt, wird end-to-end geprüft, nicht nur per Unit-Test. Lege unter
 `react-pc-frontend/e2e/` eine Spec für genau deinen geänderten Ablauf an
 (API-Routen stubben über `e2e/hilfen/api.ts`, kein Backend nötig) und fahr
-**nur diese Spec** auf eigenem Port: `E2E_PORT=<port> npx playwright test
+die geänderte Spec zunächst gezielt auf eigenem Port: `E2E_PORT=<port> npx playwright test
 e2e/<spec>` — damit du parallel laufenden Agenten nicht den Dev-Server
 wegnimmst. Der Skill `playwright-design-pruefung` sagt dir die
 Bildschirmgrößen und Hilfsfunktionen. Die Design-Beurteilung (Screenshots,
 sechs Fragen) macht der Design-Reviewer, nicht du.
 
-## Testen: nur deine Änderung, nie die ganze Suite
+## Testen: fachlich gezielt, vollständige Pflichtnachweise erhalten
 
-Vorgabe des Nutzers vom 04.09.2026: **Du fährst nie die komplette Testsuite.**
-Das dauert zu lang und macht bei parallel laufenden Agenten zeitabhängige Tests
-flaky. Du testest genau deine Änderung: im Backend `./mvnw -B test
--Dtest=DeineTestklasse`, im Frontend `npx vitest run <deine Testdatei>` plus
-`npm run lint` und `npm run build` (beide schnell). Alles andere — volle Suite,
-alle E2E-Specs, Design-Prüfung — fahren die Review-Agenten nach dem Merge.
+Zuerst fachliche Rot/Grün-Tests pro Änderung. Vor Commit gelten die aktuellen
+AGENTS.md-Pflichtchecks. Gültige gemeinsame Nachweise unveränderter Quell-/Test-/
+Abhängigkeitsstände und Konfigurationen mit Logpfad referenzieren, statt identische
+Bereiche erneut auszuführen. Geänderte Bereiche und Integrationswirkungen erneut
+prüfen. Keine Fehler ignorieren; der Abschnittsreview prüft den integrierten Stand.
+Kein separater Volltest-/Reviewzyklus pro internem Arbeitsschritt ohne Commit oder
+neue technische Notwendigkeit. Große Ausgaben in Logs, nur Ergebnis/Befunde melden.
 
-**Testläufe: Timeout ausdrücklich auf 600000 ms setzen.** Nicht „im Vordergrund
-laufen lassen" — das reicht nachweislich nicht. Der Timeout-Parameter des
-Shell-Werkzeugs steht standardmäßig auf zwei Minuten, und alles, was länger
-braucht (eine Maven-Suite, ein Playwright-Lauf mit Dev-Server-Start), rutscht
-danach **von allein** in den Hintergrund. Dort erreicht dich die Fertigmeldung
-als Subagent nicht mehr, und du wartest bis zum Abbruch auf ein Ereignis, das
-nie kommt. Am 08./09.09.2026 dreimal passiert, jedes Mal trotz der Warnung.
+**Testprozesse vollständig abwarten.** Unterstützte Timeout-/Yield-Parameter des
+aktuellen Werkzeugs verwenden. Liefert es eine Session-ID, bis zum tatsächlichen
+Exit weiter abholen; keine unbeobachteten Testprozesse als Erfolg behandeln.
 
 **Mehrere Testklassen trennt ein Komma**, nicht `+` — bei Surefire trennt `+`
 nur Methoden innerhalb einer Klasse: `-Dtest=ErsteTest,ZweiteTest`.
@@ -109,7 +108,7 @@ des Fehlschlags verstehen, umsetzen, bestehen lassen, committen. Kein
 überhaupt etwas prüft. Das gilt für jeden Schritt, nicht nur einmal am
 Anfang des Tasks.
 
-**Nur die Dateien anfassen, die unter `Files` für deinen Task stehen.**
+**Nur die Dateien aus der gemeinsamen `Files`-Ownership deines Pakets anfassen.**
 Andere Agenten arbeiten gleichzeitig an anderen Dateien — auch wenn du
 versucht bist, "kurz nebenbei" etwas in einer Nachbardatei zu reparieren:
 melden statt anfassen.
@@ -139,7 +138,8 @@ Kontext-Log an (mit Verweis, welcher Befund behoben wurde).
 
 ## Output an den Orchestrator
 
-Task-ID, Branch-Name, Status (fertig/blockiert), Commit-Hashes.
+Paket-/Schritt-IDs, Branch, Status, Commit, Prüfnachweise mit Stand/Logpfad und
+konkrete Blocker oder Folgeabhängigkeiten. Keine erneute Spec-Zusammenfassung.
 
 ## Zum Schluss: beende, was du gestartet hast
 

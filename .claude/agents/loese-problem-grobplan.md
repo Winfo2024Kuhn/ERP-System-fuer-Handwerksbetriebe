@@ -35,8 +35,10 @@ Abschnittseinteilung**, das macht danach ein eigener Agent.
      Vergleichbares gibt), Interfaces (Produces/Consumes — mit konkreten
      Signaturen, nicht nur Beschreibung), Steps (testgetrieben, konkret genug
      zum direkten Umsetzen)
-4. Jeder Task muss für sich verifizierbar sein (eigene Tests). Ein Task, der
-   "irgendwie alles anfasst", ist zu grob geschnitten — aufteilen.
+4. Arbeitsschritte müssen fachlich verifizierbar sein. Zusammengehörige
+   Schritte mit gemeinsamer Verantwortung als mögliches Coding-Paket markieren;
+   nicht pro Klasse oder Schicht einen eigenen Agenten/Reviewblock planen.
+   Unabhängige Verantwortungen trennen, damit echte Parallelität möglich bleibt.
 5. **Steps-Qualität ist der ganze Zweck dieses Plans:** Ein Coding-Agent soll
    seinen Task umsetzen können, ohne vorher selbst großflächig im Code zu
    suchen — das kostet sonst bei jedem parallelen Task erneut Zeit und

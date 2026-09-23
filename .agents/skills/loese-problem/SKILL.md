@@ -14,6 +14,37 @@ bleibst von Anfang bis Ende aktiv — auch für die finale Zielprüfung in
 Schritt 7 brauchst du dich nicht neu einlesen, weil du das Brainstorming
 selbst geführt hast.
 
+## Tokenbudget und Abschnittsschnitt (Nutzervorgabe 23.09.2026)
+
+Ziel ist **weniger Tokens für denselben vollständig geprüften Funktionsumfang**.
+Ein Coding-Paket umfasst zusammengehörige Arbeitsschritte mit einer klaren
+Datei-Ownership; ein Agent setzt interne Abhängigkeiten nacheinander im selben
+Worktree um. Nicht jede Klasse, Schicht oder abhängige Kleinaufgabe braucht einen
+neuen Agenten und Abschnitt.
+
+- Plane möglichst wenige baubare Reviewblöcke. Unabhängige Pakete parallelisieren;
+  abhängige Schritte oder gemeinsame Schreibdateien demselben Paket zuordnen.
+- Verfügbare Agentenslots begrenzen gleichzeitige Arbeit, **nicht** die Paketanzahl
+  eines Reviewblocks. Bei mehr unabhängigen Paketen in mehreren Coding-Wellen
+  arbeiten; dazwischen keinen Review starten. Zusätzliche Abschnittsgrenzen mit
+  konkreten Abhängigkeiten oder Integrationsrisiken begründen.
+- **Alle Coding-Pakete fertig → zusammenführen → ein Code-Review des Blocks.**
+  Bei Frontend zusätzlich ein Designreview für den gesamten betroffenen Block.
+  Das gilt auch für Nachbesserungen und den Start von `review-and-ship`;
+  keine Reviews halbfertiger Nachbar-Worktrees.
+- Übergabe: Paket-ID, Auftragspfad, Basiscommit, Worktree, Ownership, benötigte
+  Verträge und offene Punkte. Vorhandene Spec/Planabschnitte referenzieren; nicht
+  mehrfach kopieren, neu recherchieren oder die volle Unterhaltung vererben.
+- Ergebnis: Commit, Testnachweise, konkrete Blocker/Folgeabhängigkeiten. Logs und
+  große Diffs in Dateien lassen; nur relevante Ausschnitte/Ergebnisse laden.
+- Testnachweise an geprüften Quell-/Test-/Abhängigkeitsstand und Konfiguration
+  binden. Gültige Nachweise unveränderter Bereiche gemeinsam nutzen; geänderte
+  Bereiche und integrierte Wechselwirkungen erneut prüfen. Vorgeschriebene
+  vollständige Tests, E2E, Lint und Builds bleiben Pflicht; Fehler nie ignorieren.
+- Bei Korrekturen denselben Coding-Agenten und Reviewer weiterverwenden und nur
+  Befunde plus Änderungen übergeben. Keine zusätzliche Reviewrolle ohne eigene
+  Prüfverantwortung. Modellvorgaben des Nutzers gelten vor den Tabellen unten.
+
 ## Wann NICHT starten
 
 - Ein-Datei-Fix, klarer Bug, triviale Änderung → normal umsetzen oder `/bugfix`.
@@ -62,8 +93,8 @@ Rundeneinteilung).
 
 Starte `loese-problem-parallelplan` (Sonnet) mit dem Plan. Er ergänzt den
 Plan um die Abschnittseinteilung (siehe `references/plan-format.md`):
-maximal 3 Tasks pro Abschnitt, disjunkte Dateien, plus eine
-Worktree-/Branch-Zuordnung pro Task. Lege außerdem die Kontext-Log-Datei an
+wenige Reviewblöcke mit disjunkten Coding-Paketen und einer
+Worktree-/Branch-Zuordnung pro Paket; zusammengehörige Schritte bündeln. Lege außerdem die Kontext-Log-Datei an
 (`references/kontext-log-format.md`) und den Feature-Branch für das gesamte
 Vorhaben.
 
@@ -71,18 +102,20 @@ Vorhaben.
 
 Für jeden Abschnitt der Reihe nach:
 
-1. **Coding-Agenten parallel starten** — alle Tasks des Abschnitts in
-   **einer einzigen Nachricht**, sonst laufen sie nacheinander. Jeder bekommt
-   den Agenten `loese-problem-coding` (Sonnet) mit: seinem Task-Abschnitt aus
-   dem Plan, den Global Constraints, dem Feature-Branch-Namen (Basis für
+1. **Coding-Agenten parallel starten** — die Pakete des Abschnitts entsprechend
+   den verfügbaren Slots gemeinsam starten. Jeder bekommt
+   den Agenten `loese-problem-coding` (Sonnet) mit: seinem Paketabschnitt aus
+   dem Plan, den relevanten Global Constraints, dem Feature-Branch-Namen (Basis für
    seinen eigenen Task-Branch), dem Pfad zur Kontext-Log-Datei.
-2. **Warten**, bis alle Agenten des Abschnitts zurück sind.
-3. **Ein** Review-Agent für den ganzen Abschnitt: `loese-problem-review` (Opus).
-   Er merged die Task-Branches in den Feature-Branch, testet selbst, prüft
-   die Kriterien und liefert eine Ampel.
+2. **Warten**, bis alle Coding-Pakete des Abschnitts vollständig fertig sind,
+   auch die einer später gestarteten Coding-Welle.
+3. **Fertige Paketbranches zusammenführen**, dann ein Review-Agent für den
+   gesamten integrierten Abschnitt: `loese-problem-review`. Bei Frontend zusätzlich
+   ein `loese-problem-design-review`; beide prüfen denselben fertigen Stand mit
+   getrennter Prüfverantwortung. Erst danach gilt der Abschnitt als abgenommen.
 4. **🔴 und noch keine 2 Nachbesserungen versucht:** Befund an denselben
    Coding-Agenten zurück (neuer Auftrag, nur der Befund + sein Task), dann
-   zurück zu Schritt 3.
+   nach Abschluss aller Korrektur-Agenten zurück zur Integration in Schritt 3.
    **🔴 nach der 2. erfolglosen Nachbesserung:** Pipeline stoppen, verbleibende
    🔴-Befunde dem Nutzer vorlegen. **ENDE.**
 5. **🟢/🟡:** Abschnitt abgenommen, weiter zum nächsten Abschnitt. Keine

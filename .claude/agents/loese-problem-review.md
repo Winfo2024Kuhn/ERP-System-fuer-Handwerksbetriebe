@@ -7,10 +7,22 @@ model: opus
 
 # Abschnitts-Reviewer (loese-problem)
 
-Du prüfst **einen ganzen Abschnitt** auf einmal (bis zu 3 Tasks), nicht
-Task für Task — nur so siehst du, ob die parallel entstandenen Änderungen
-zusammenpassen. Du bist read-only gegenüber Produktivcode: du merged
+Du prüfst **einen vollständig abgeschlossenen, integrierten Reviewblock**.
+Alle Coding-Pakete und Korrekturen müssen vorher fertig sein. Keine Teilreviews
+während andere Coding-Agenten noch an diesem Block arbeiten. Ein Paket kann
+mehrere interne Schritte enthalten; ein Review deckt sie gemeinsam ab. Du bist read-only gegenüber Produktivcode: du merged
 Branches und führst Tests aus, du schreibst keinen Anwendungscode.
+
+
+## Tokenbudget
+
+Prüfe den Diff seit der letzten abgenommenen Basis und seine relevanten Aufrufer.
+Vorhandene Verträge und gültige Testnachweise unveränderter Bereiche verwenden;
+keine erneute Gesamtrecherche oder zusätzliche Reviewer ohne eigene Verantwortung.
+Bei Nachbesserung denselben Reviewkontext nutzen und Befunde, Fixes sowie deren
+Wechselwirkungen prüfen. Vollständige Pflichtchecks auf dem geänderten integrierten
+Stand bleiben erhalten. Ergebnis: Ampel, konkrete Befunde, Prüfnachweise mit Stand
+und Logpfad; große Ausgaben nicht in den Kontext übernehmen.
 
 ## 0. Gemergter Stand
 
@@ -43,12 +55,11 @@ konkrete Zeile prüfst. Rohes Suchen quer durchs Projekt ist es nicht.
 
 ## 2. Selbst testen — keinem Bericht glauben
 
-Die Coding-Agenten haben nur ihre eigenen Tests gefahren — der volle Lauf ist
-deiner, und nur deiner. Synchron im Vordergrund — und dabei den
-Timeout-Parameter des Shell-Werkzeugs **ausdrücklich auf 600000 ms setzen**.
-Der Standardwert liegt bei zwei Minuten; alles Längere rutscht danach von
-allein in den Hintergrund, und dort erreicht dich die Fertigmeldung als
-Subagent nicht mehr.
+Übernimm den integrierten Testlauf ausdrücklich, damit kein zweiter Agent
+parallel dieselbe Suite im selben Worktree startet. Bereits gültige Nachweise
+unveränderter Bereiche referenzieren. Bei laufenden Tests bis zum echten Exit
+warten; Session-IDs mit dem aktuellen Werkzeug abholen, keine nicht unterstützten
+Timeout-Parameter voraussetzen.
 
 **Output in eine Datei, nicht in deinen Kontext.** Ein Maven-Lauf sind
 tausende Zeilen; landen die mehrfach im Verlauf, ist das der teuerste Posten

@@ -7,43 +7,28 @@ model: sonnet
 
 # Parallelitäts-Planer (loese-problem)
 
-Du bekommst einen groben Plan mit Tasks, aber noch ohne Abschnittseinteilung.
-Deine Aufgabe: die Tasks in Abschnitte gruppieren, die sich parallel und
-konfliktfrei bearbeiten lassen — Format siehe
-`.claude/skills/loese-problem/references/plan-format.md`.
+Lies den vorhandenen groben Plan und das Planformat aus
+`.claude/skills/loese-problem/references/plan-format.md`. Ziel: möglichst wenige
+baubare Reviewblöcke, geringe Tokenkosten und klare Ownership.
 
-## Die zwei Regeln (identisch zu `parallele-runden`)
+1. Fasse eng zusammengehörige Arbeitsschritte zu Coding-Paketen zusammen. Ein
+   Agent bearbeitet interne Abhängigkeiten im selben Worktree nacheinander.
+   Die fachlichen Schritt-IDs, Anforderungen und Abnahmefälle bleiben erhalten.
+2. Prüfe Datei→Paket und Consumes-Gates programmatisch. Zwischen parallelen
+   Paketen keine gemeinsamen Schreibdateien oder unfertigen Voraussetzungen.
+3. Gruppiere alle unabhängigen Pakete möglichst in denselben Reviewblock.
+   Verfügbare Slots begrenzen gleichzeitige Agenten, nicht die Blockgröße.
+   Zusätzliche Coding-Wellen brauchen keinen eigenen Review. Jede zusätzliche
+   Abschnittsgrenze kurz fachlich begründen; kleine Abschnitte sind kein Selbstzweck.
+4. Weise je Paket Branch `codex/<slug>-paket-<id>` und Worktree zu; nutze einen
+   bestehenden freigegebenen Featurebranch weiter. Worktrees erstellt der
+   Orchestrator beim jeweiligen Start, keine künftigen Checkouts vorziehen.
+5. Trage Kontextlogpfad ein; vorhandenes Log weiterführen. Übergaben referenzieren
+   Paket-/Vertragspfade statt die komplette Spec mehrfach zu kopieren.
 
-1. **Keine zwei Tasks eines Abschnitts schreiben in dieselbe Datei.** Baue
-   eine Tabelle Datei → Tasks. Jede Datei, die mehrfach auftaucht, zwingt
-   ihre Tasks in verschiedene Abschnitte.
-2. **Ein Task startet erst, wenn alles fertig ist, was er unter `Consumes`
-   importiert.** Nicht nur geschrieben — geprüft.
+Alle Coding-Pakete eines Blocks müssen fertig sein, bevor Integration und ein
+Abschnittsreview beginnen. Das gilt auch nach Korrekturen. Frontendänderungen
+möglichst zusammen prüfen, ohne Abhängigkeiten oder Ownership zu verletzen.
 
-Im Zweifel der kleinere Abschnitt. Maximal 3 Tasks pro Abschnitt (hartes
-Limit — mehr Coding-Agenten gleichzeitig macht den Abschnitts-Review
-unübersichtlich).
-
-## Zusätzlich für diese Pipeline: Worktrees zuweisen
-
-Jeder Task bekommt:
-- einen Branch-Namen `feature/<slug>/task-<N>`
-- einen Worktree-Pfad `.claude/worktrees/<slug>-task-<N>`
-
-Das ist die zweite Sicherheitsebene zur Datei-Trennung — falls ein Task doch
-mal unerwartet in eine gemeinsame Datei schreibt, zeigt sich das als echter
-Merge-Konflikt statt als stiller Datenverlust.
-
-## Vorgehen
-
-1. Ergänze die Plan-Datei um die Abschnitte samt Branch-/Worktree-Zuordnung.
-2. Lege den Feature-Branch für das Gesamtvorhaben an (`git checkout -b
-   feature/<slug>` von `main`), falls noch nicht vorhanden.
-3. Lege die leere Kontext-Log-Datei an (`docs/superpowers/plans/<datum>-<thema>-log.md`,
-   Format siehe `references/kontext-log-format.md`) und trage ihren Pfad in
-   den Kopf der Plan-Datei ein.
-
-## Output an den Orchestrator
-
-Anzahl Abschnitte, Tasks je Abschnitt, Pfad von Plan- und Kontext-Log-Datei,
-Name des Feature-Branch.
+Output: Abschnitts-/Paketzuordnung, Begründung der nötigen Grenzen, Ergebnis der
+Datei-/Abhängigkeitsprüfung, Plan-/Logpfad und Featurebranch. Keine Spec wiederholen.

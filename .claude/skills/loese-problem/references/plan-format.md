@@ -1,117 +1,68 @@
 # Plan-Format für loese-problem
 
-Erweitert das normale `writing-plans`-/`parallele-runden`-Format um eine
-Worktree-Spalte, weil hier jeder Task zusätzlich zur Datei-Trennung ein
-eigenes Worktree bekommt.
+Planung optimiert auf wenige Reviewblöcke und geringen Kontextverbrauch bei
+vollständigem Funktionsumfang. Die Tokenbudget-Regeln aus SKILL.md gelten.
 
 ```markdown
 # Plan: <Thema>
-
 Issue: #<Nummer>
-Feature-Branch: feature/<slug>
+Feature-Branch: codex/<slug>
 Kontext-Log: docs/superpowers/plans/<datum>-<thema>-log.md
 
 ## Global Constraints
+<Gemeinsame Vorgaben einmalig; in Aufträgen darauf verweisen.>
 
-<Regeln, die für alle Tasks gelten — Doku-Pflichtlektüre, Projektregeln, etc.>
+## Abschnitt 1: <baubares gemeinsames Ergebnis>
+Begründung der Grenze: <konkrete Abhängigkeit/Integrationsprüfung>
 
-## Abschnitt 1 (disjunkte Dateien, so breit wie möglich)
-
-### Task 1
-- Branch: <kurzslug>/task-1-<stichwort>
-- Worktree: ../wt/<kurzslug>-task-1
-- Files: <Liste der Dateien, die dieser Task anfasst — exakte Pfade>
-- Vorbild: <existierender ähnlicher Code als Vorlage, Datei+Zeile — oder "keins" wenn es nichts Vergleichbares gibt>
+### Coding-Paket A: <zusammenhängende Verantwortung>
+- Arbeitsschritte: <stabile IDs in interner Reihenfolge>
+- Branch: codex/<slug>-paket-a
+- Worktree: .claude/worktrees/<slug>-paket-a
+- Files: <exakte Vereinigungsmenge; ein Eigentümer>
+- Vorbild: <bekannter Bestandspfad + Symbol>
 - Interfaces:
-  - Produces: <was dieser Task erzeugt, das andere importieren könnten — mit exakter Signatur>
-  - Consumes: <was dieser Task aus anderen Tasks braucht — muss vorher fertig sein>
+  - Produces: <konkrete Verträge>
+  - Consumes extern: <vor Paketstart integriert und geprüft>
+  - Consumes intern: <vor Nutzung fertig implementierter und getesteter Schritt>
 - Steps:
-  - [ ] Schritt 1 (konkret: Datei + Klasse/Funktion + was genau passiert)
-  - [ ] Schritt 2
+  - [ ] <konkrete Änderung + fachlicher Rot/Grün-Test>
+- Abschlussnachweise: <geprüfter Stand, Befehle/Ergebnis, Logpfade>
 
-### Task 2
+### Coding-Paket B
 ...
 
-## Abschnitt 2
-...
-
-## Log
-
-<wird während der Ausführung NICHT hier befüllt — siehe eigene
-Kontext-Log-Datei. Dieser Abschnitt bleibt für eine kurze
-Abschluss-Zusammenfassung pro Abschnitt durch den Review-Agenten reserviert.>
+## Abnahme
+<Ein Code-Review des fertigen integrierten Blocks, bei Frontend ein Designreview.>
 ```
 
-## Regeln für den Abschnittsschnitt
+## Abschnittsschnitt prüfen
 
-Dieselben zwei Regeln wie in `parallele-runden`:
+1. Zusammengehörige Schritte mit gemeinsamen Dateien oder enger Abhängigkeit
+   einem Paket zuordnen; derselbe Agent setzt sie nacheinander um. Pakete müssen
+   fachlich abgrenzbar bleiben. Keine Paketgrenze nur pro Klasse oder Schicht.
+2. Datei→Paket und Abhängigkeiten programmatisch prüfen. Parallele Pakete dürfen
+   keine Schreibdateien teilen und keine noch unfertigen Ergebnisse voneinander
+   benötigen. Jede Voraussetzung liegt in einem früheren abgenommenen Block oder
+   einem früheren Schritt desselben Pakets.
+3. Möglichst viele unabhängige Pakete in denselben Reviewblock. Verfügbare Slots
+   begrenzen nur gleichzeitig laufende Agenten: weitere Pakete in Coding-Wellen
+   ohne Zwischenreview bearbeiten. Es gibt kein starres Drei-Pakete-Limit pro Block.
+4. Jeder fertige Block ist baubar und startfähig, einschließlich passender
+   Entity-/Migrationsänderungen. Zusammengehörige Frontendänderungen bündeln,
+   damit ein Designreview den vollständigen Ablauf prüfen kann.
+5. Erst **alle Coding-Pakete fertig**, dann integrieren und reviewen. Dieselbe
+   Barriere gilt für Korrekturen. Keine unfertigen Änderungen in Folgetasks geben.
 
-1. Keine zwei Tasks eines Abschnitts schreiben in dieselbe Datei.
-2. Ein Task startet erst, wenn alles fertig und geprüft ist, was er unter
-   `Consumes` braucht.
-3. **Jeder Abschnitt muss für sich baubar und grün sein.** Ein Schnitt, der
-   einen Zwischenstand mit Compilerbruch oder nicht startfähiger Anwendung
-   erzeugt („Task A löscht, Task B repariert"), ist falsch — der
-   Abschnitts-Review wird zwangsläufig rot. Solche Paare gehören in denselben
-   Abschnitt, sonst wird der zerstörende Teil verschoben.
+## Übergabe und Wiederaufnahme
 
-   Das gilt besonders für Änderungen, die nur **gemeinsam** einen lauffähigen
-   Stand ergeben und die die Testsuite nicht sehen kann — z.B. ein
-   Entity-Feld und seine Spaltenmigration, oder ein `DROP TABLE` und das
-   Entfernen des Entities, das die Tabelle noch mappt. Läuft im Testprofil
-   kein Flyway, fällt so etwas erst beim echten Start auf.
+Ein Agent bekommt den Pfad seines Paketauftrags, Basiscommit, Worktree und offene
+Punkte; der Auftrag referenziert gemeinsame Verträge. Keine vollständige Kopie
+von Spec, Gesamtplan oder Unterhaltung pro Agent. Abschlüsse nennen Commit,
+Prüfnachweise und Blocker; Details bleiben in Logdateien. Bereits gültige
+Testnachweise unveränderter Bereiche bleiben mit ihrem geprüften Stand verknüpft.
 
-## Branch-Namen: Task-Branches nicht unter den Feature-Branch hängen
-
-`feature/<slug>/task-1` lässt sich **nicht** anlegen, wenn `feature/<slug>`
-schon existiert — Git speichert Zweige als Dateien, und `feature/<slug>` kann
-nicht gleichzeitig Datei und Ordner sein (`cannot lock ref`). Deshalb heißen
-Task-Branches `<kurzslug>/task-<N>-<stichwort>` (z.B. `layout/task-3-projekt`),
-der Feature-Branch bleibt `feature/<slug>`. Die Worktree-Pfade nach
-Projektkonvention unter `../wt/<kurzslug>-task-<N>` (Junction auf
-`node_modules` nicht vergessen).
-
-Zusätzlich hier: jeder Task bekommt ein eigenes Worktree, auch wenn die
-Datei-Trennung schon sauber ist — das ist die zweite Sicherheitsebene, falls
-ein Task doch mal unerwartet eine gemeinsame Datei anfasst (z.B. eine
-generierte Datei). Ein echter Merge-Konflikt beim Zusammenführen der
-Task-Branches ist dann ein sichtbarer Fehler statt eines stillen
-Datenverlusts.
-
-## Regel für Steps: konkret statt vage
-
-Ein Coding-Agent bekommt später nur seinen eigenen Task, nicht den ganzen
-Plan. Jeder Step muss deshalb so konkret sein, dass er direkt umgesetzt
-werden kann, ohne vorher selbst breit im Code zu suchen — das kostet sonst
-bei jedem Task erneut Zeit und Kontext. Konkret heißt: Datei + Klasse/Funktion
-+ was genau passiert, plus ein Vorbild aus dem Bestandscode, wenn es eins
-gibt. Der Coding-Agent darf `graphify` trotzdem nutzen, aber nur um einzelne
-Punkte aus dem Plan gezielt zu prüfen — nicht um sich einen allgemeinen
-Überblick zu verschaffen, den eigentlich schon der Plan liefern sollte.
-
-## Abschnitte schneiden: so wenig Runden wie möglich
-
-**Vorgabe des Nutzers vom 08.09.2026.** Es gibt **keine** Obergrenze von 3 Tasks
-pro Abschnitt mehr. Sind die Dateien disjunkt und die Abhängigkeiten erfüllt,
-gehören auch sechs Tasks in dieselbe Runde.
-
-Der Schnitt entsteht aus der **topologischen Ebene der `Consumes`-Ketten**,
-nicht aus der Reihenfolge im Plandokument: Alles, was keine offene Abhängigkeit
-mehr hat, läuft zusammen. Ein Task, der weit hinten im Dokument steht, aber nur
-Task 1 braucht, gehört in die **zweite** Runde — nicht in die siebte.
-
-**Warum das zählt:** Jede zusätzliche Runde kostet einen vollen Reviewer-Lauf
-(gemessen ~165k Tokens) plus einen kompletten Testsuite-Durchlauf. Real
-passiert: 19 Tasks wurden erst auf 9 Abschnitte verteilt, obwohl die Ketten nur
-5 erzwingen — rund 660k Tokens und die entsprechende Wartezeit für nichts. Der
-Review-Aufwand skaliert mit der Größe des Diffs, nicht mit der Anzahl der Tasks
-darin: **ein** Reviewer für sechs disjunkte Tasks ist deutlich billiger als
-zwei für je drei.
-
-Beim Schneiden zusätzlich beachten:
-
-- Zwei Tasks derselben Runde dürfen sich **keine Datei** teilen. Das
-  programmatisch prüfen, nicht nach Augenmaß.
-- Jede Runde muss für sich compilierbar und lauffähig sein.
-- Frontend-Tasks möglichst in **dieselbe** Runde legen — dann läuft der
-  Design-Reviewer einmal statt dreimal.
+Jedes Paket besitzt einen Worktree. Paketbranches nicht unter einen bestehenden
+Featurebranch hängen: `codex/<slug>/paket-a` kollidiert mit `codex/<slug>` als Git-Ref.
+Branch und Worktree nach Abnahme nur entsprechend dem tatsächlichen Zustand
+wiederverwenden. Kontextlog append-only; Plan enthält die Struktur und Abnahmefälle.
