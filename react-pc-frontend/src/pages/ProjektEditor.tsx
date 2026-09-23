@@ -47,6 +47,7 @@ import { EmailsTab } from "../components/EmailsTab";
 import { Select } from "../components/ui/select-custom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
+import { DecimalInput } from "../components/ui/decimal-input";
 import { Label } from "../components/ui/label";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { PageLayout } from "../components/layout/PageLayout";
@@ -67,10 +68,18 @@ import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDra
 import { AnfrageSearchModal } from '../components/AnfrageSearchModal';
 import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
 import { artikelBezeichnung } from '../components/artikel/artikelBezeichnung';
+import { validateDecimalInput } from '../lib/numberInput';
 
 interface Supplier {
     id: number;
     lieferantenname: string;
+}
+
+interface EinkaufLagerbedarf {
+    id: number;
+    version: number;
+    position: { bezeichnung?: string; basis?: { einheit?: string | null } | null };
+    mengen: { disponierbar: number };
 }
 
 const PAGE_SIZE = 12;
@@ -251,6 +260,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     };
     const [showMaterialModal, setShowMaterialModal] = useState(false);
     const [showLagerArtikelModal, setShowLagerArtikelModal] = useState(false);
+    const [showTeilentnahmeDialog, setShowTeilentnahmeDialog] = useState(false);
+    const [lagerbedarfe, setLagerbedarfe] = useState<EinkaufLagerbedarf[]>([]);
+    const [lagerbedarfId, setLagerbedarfId] = useState('');
+    const [teilentnahmeMenge, setTeilentnahmeMenge] = useState('');
+    const [teilentnahmePreis, setTeilentnahmePreis] = useState('');
+    const [teilentnahmePreisQuelle, setTeilentnahmePreisQuelle] = useState('');
+    const [ladeLagerbedarfe, setLadeLagerbedarfe] = useState(false);
+    const [speichereTeilentnahme, setSpeichereTeilentnahme] = useState(false);
     const [newMaterial, setNewMaterial] = useState<{ beschreibung: string, betrag: string, lieferantId?: string, rechnungsnummer: string }>({ beschreibung: '', betrag: '', rechnungsnummer: '' });
     const [savingMaterial, setSavingMaterial] = useState(false);
     const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
@@ -264,7 +281,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     // Auswahl verloren, sobald ein Filter den Treffer aus der Liste draengt.
     const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<number, Artikel>>({});
     const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<number, string>>({});
-    const [lagerArtikelBeschaffung, setLagerArtikelBeschaffung] = useState<Record<number, 'lager' | 'bestellen'>>({});
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [showSupplierPicker, setShowSupplierPicker] = useState(false);
     const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
@@ -397,6 +413,28 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     useEffect(() => {
         loadEingangsrechnungen();
     }, [loadEingangsrechnungen]);
+
+    useEffect(() => {
+        if (!showTeilentnahmeDialog) return;
+        let aktuell = true;
+        setLadeLagerbedarfe(true);
+        fetch(`/api/einkauf/bedarf?projektId=${encodeURIComponent(String(projekt.id))}&page=0&size=100`)
+            .then(async response => {
+                if (!response.ok) throw new Error('Lagerbedarf konnte nicht geladen werden.');
+                return response.json();
+            })
+            .then((data: { content?: EinkaufLagerbedarf[] }) => {
+                if (!aktuell) return;
+                const verfuegbar = (data.content ?? []).filter(b => b.mengen?.disponierbar > 0 && b.position?.basis?.einheit);
+                setLagerbedarfe(verfuegbar);
+                if (verfuegbar.length > 0) setLagerbedarfId(String(verfuegbar[0].id));
+            })
+            .catch(error => {
+                if (aktuell) toast.error(error instanceof Error ? error.message : 'Lagerbedarf konnte nicht geladen werden.');
+            })
+            .finally(() => { if (aktuell) setLadeLagerbedarfe(false); });
+        return () => { aktuell = false; };
+    }, [showTeilentnahmeDialog, projekt.id, toast]);
 
     // Projekt-Notizen State
     interface ProjektNotizBild {
@@ -785,7 +823,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         setSelectedLagerArtikelKeys(new Set());
         setSelectedLagerArtikelData({});
         setLagerArtikelMengen({});
-        setLagerArtikelBeschaffung({});
     };
 
     /**
@@ -812,11 +849,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 delete next[key];
                 return next;
             });
-            setLagerArtikelBeschaffung(prev => {
-                const next = { ...prev };
-                delete next[key];
-                return next;
-            });
             return;
         }
 
@@ -824,7 +856,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         // Eine frisch angehakte Zeile faengt wieder bei 1 an, auch wenn vorher
         // schon etwas im Mengenfeld stand.
         setLagerArtikelMengen(prev => ({ ...prev, [key]: '1' }));
-        setLagerArtikelBeschaffung(prev => ({ ...prev, [key]: 'lager' }));
     };
 
     /**
@@ -835,10 +866,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
      */
     const handleLagerMengeChange = (artikel: Artikel, value: string) => {
         setLagerArtikelMengen(prev => ({ ...prev, [artikel.id]: value }));
-    };
-
-    const handleLagerBeschaffungChange = (artikel: Artikel, beschaffung: 'lager' | 'bestellen') => {
-        setLagerArtikelBeschaffung(prev => ({ ...prev, [artikel.id]: beschaffung }));
     };
 
     /** Menge einer gewaehlten Zeile als Zahl - NaN, solange die Eingabe unbrauchbar ist. */
@@ -883,7 +910,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     preis: artikel.preis,
                     menge: getLagerMenge(key),
                     einheit: mapEinheitForBackend(artikel.verrechnungseinheit),
-                    ausLager: (lagerArtikelBeschaffung[key] ?? 'lager') === 'lager',
                 };
             })
             .filter((item): item is NonNullable<typeof item> => item !== null);
@@ -1015,13 +1041,66 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             .reduce((sum, a) => sum + (a.gesamtpreis ?? a.preisProStueck ?? 0), 0);
     }, [projekt.artikel]);
 
+    const lagerentnahmenSum = projekt.lagerentnahmenKosten ?? 0;
+
     // Eingangsrechnungen-Summe (zugeordnete Lieferantenrechnungen)
     const eingangsrechnungenSum = useMemo(() => {
         return eingangsrechnungen.reduce((sum, er) => sum + (er.berechneterBetrag ?? 0), 0);
     }, [eingangsrechnungen]);
 
     // Gesamte Materialkosten inkl. Eingangsrechnungen
-    const gesamtMaterialkosten = materialkostenSum + artikelkosten + eingangsrechnungenSum;
+    const gesamtMaterialkosten = materialkostenSum + artikelkosten + lagerentnahmenSum + eingangsrechnungenSum;
+
+    const bestaetigeTeilentnahme = async () => {
+        const bedarf = lagerbedarfe.find(item => String(item.id) === lagerbedarfId);
+        if (!bedarf) {
+            toast.error('Bitte einen verfügbaren Lagerbedarf auswählen.');
+            return;
+        }
+        const menge = validateDecimalInput(teilentnahmeMenge, {
+            label: 'Menge', min: 0.000001, max: bedarf.mengen.disponierbar, required: true,
+        });
+        if (!menge.valid || menge.value === null) {
+            toast.error(menge.valid ? 'Bitte eine Menge größer 0 eingeben.' : menge.message);
+            return;
+        }
+        const preis = validateDecimalInput(teilentnahmePreis, { label: 'Preis je Einheit', min: 0 });
+        if (!preis.valid || (preis.value !== null && !teilentnahmePreisQuelle.trim())
+                || (preis.value === null && teilentnahmePreisQuelle.trim())) {
+            toast.error(!preis.valid ? preis.message : 'Preis und Preisquelle müssen gemeinsam angegeben werden.');
+            return;
+        }
+        setSpeichereTeilentnahme(true);
+        try {
+            const response = await fetch('/api/einkauf/lagerentnahmen', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    anteil: { bedarfId: bedarf.id, version: bedarf.version, menge: menge.value },
+                    preisJeEinheit: preis.value,
+                    preisQuelle: preis.value === null ? null : teilentnahmePreisQuelle.trim(),
+                    entnommenAm: new Date().toISOString(),
+                    idempotenzKey: window.crypto.randomUUID(),
+                }),
+            });
+            if (!response.ok) {
+                const error = await response.json().catch(() => null);
+                throw new Error(typeof error?.message === 'string' ? error.message : 'Lagerentnahme konnte nicht gespeichert werden.');
+            }
+            await onRefresh();
+            setShowTeilentnahmeDialog(false);
+            setTeilentnahmeMenge('');
+            setTeilentnahmePreis('');
+            setTeilentnahmePreisQuelle('');
+            toast.success(preis.value === null
+                ? 'Lagerentnahme gebucht. Die Bewertung steht noch aus.'
+                : 'Lagerentnahme wurde gebucht und bewertet.');
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Lagerentnahme konnte nicht gespeichert werden.');
+        } finally {
+            setSpeichereTeilentnahme(false);
+        }
+    };
 
     const nettoPreis = useMemo(() => {
         return (projekt.bruttoPreis || 0) / 1.19;
@@ -1112,7 +1191,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     sich keinen Platz mehr, der dem Titelblock oder den
                     Knoepfen fehlt. flex-wrap laesst sie selbst umbrechen, wenn
                     der Zeile nicht genug Platz bleibt. */}
-                <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
+                    <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
                     <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Brutto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(projekt.bruttoPreis)}</p>
@@ -1618,7 +1697,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     onClick={() => setShowLagerArtikelModal(true)}
                                     className="border-rose-300 text-rose-700 hover:bg-rose-50"
                                 >
-                                    <Package className="w-4 h-4 mr-2" /> Artikel aus Lager
+                                    <Package className="w-4 h-4 mr-2" /> Materialkosten erfassen
                                 </Button>
                                 <Button size="sm" onClick={() => setShowMaterialModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
                                     <Plus className="w-4 h-4 mr-2" /> Kosten erfassen
@@ -1684,6 +1763,25 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         ) : (
                             <p className="text-slate-500 text-center py-4">Keine Artikel aus dem Lager im Projekt.</p>
                         )}
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <h4 className="text-sm font-medium text-slate-700">Teilentnahmen aus Lager</h4>
+                                <p className="mt-1 text-sm text-slate-500">Neue Entnahmen werden getrennt von historischen Lagerpositionen geführt.</p>
+                            </div>
+                            <p className="font-semibold text-slate-900">
+                                {projekt.lagerentnahmenKosten == null ? 'Bewertung steht aus' : formatCurrency(projekt.lagerentnahmenKosten)}
+                            </p>
+                        </div>
+                        {projekt.lagerentnahmenBewertungOffen && (
+                            <p className="mt-2 text-sm font-medium text-amber-800" role="status">Bewertung offen</p>
+                        )}
+                        <Button size="sm" variant="outline" className="mt-3 border-rose-300 text-rose-700 hover:bg-rose-50"
+                            onClick={() => setShowTeilentnahmeDialog(true)}>
+                            <Package className="mr-2 h-4 w-4" /> Teilentnahme erfassen
+                        </Button>
                     </div>
 
                     {/* Hinweis: Eingangsrechnungen-Summe fließt weiterhin in die Nachkalkulation ein (siehe gesamtMaterialkosten) */}
@@ -3065,6 +3163,50 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             )}
 
             {/* Material Modal */}
+            <Dialog open={showTeilentnahmeDialog} onOpenChange={setShowTeilentnahmeDialog}>
+                <DialogContent className="sm:max-w-xl">
+                    <DialogHeader>
+                        <DialogTitle>Teilentnahme aus Lager</DialogTitle>
+                        <p className="text-sm text-slate-500">Die Menge wird vom verfügbaren Bedarf abgezogen. Ohne Preis bleibt die Bewertung offen.</p>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        {ladeLagerbedarfe ? (
+                            <p role="status" className="text-sm text-slate-500">Lagerbedarf wird geladen …</p>
+                        ) : lagerbedarfe.length === 0 ? (
+                            <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Für dieses Projekt ist kein verfügbarer Lagerbedarf vorhanden.</p>
+                        ) : (
+                            <>
+                                <Select aria-label="Lagerbedarf" value={lagerbedarfId} onChange={value => { setLagerbedarfId(value); setTeilentnahmeMenge(''); }}
+                                    options={lagerbedarfe.map(b => ({
+                                        value: String(b.id),
+                                        label: `${b.position.bezeichnung ?? 'Material'} · ${b.mengen.disponierbar.toLocaleString('de-DE')} ${b.position.basis?.einheit}`,
+                                    }))} />
+                                <DecimalInput label="Entnommene Menge" value={teilentnahmeMenge} onChange={setTeilentnahmeMenge}
+                                    min={0.000001} max={lagerbedarfe.find(b => String(b.id) === lagerbedarfId)?.mengen.disponierbar}
+                                    required placeholder="z. B. 3" />
+                                <p className="text-sm font-medium text-slate-700">Bewertung (optional)</p>
+                                <DecimalInput label="Preis je Einheit in Euro" value={teilentnahmePreis} onChange={setTeilentnahmePreis}
+                                    min={0} placeholder="Leer lassen, wenn der Preis noch offen ist" />
+                                <div className="space-y-1">
+                                    <Label htmlFor="lagerentnahme-preisquelle">Preisquelle</Label>
+                                    <Input id="lagerentnahme-preisquelle" value={teilentnahmePreisQuelle}
+                                        onChange={event => setTeilentnahmePreisQuelle(event.target.value)}
+                                        placeholder="z. B. Lagerbewertung vom 23.09.2026" maxLength={255} />
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowTeilentnahmeDialog(false)} disabled={speichereTeilentnahme}>Abbrechen</Button>
+                        <Button onClick={bestaetigeTeilentnahme} disabled={speichereTeilentnahme || ladeLagerbedarfe || lagerbedarfe.length === 0}
+                            className="bg-rose-600 text-white hover:bg-rose-700">
+                            {speichereTeilentnahme ? 'Buche …' : 'Teilentnahme bestätigen'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Material Modal */}
             <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
                 <DialogContent>
                     <DialogHeader>
@@ -3133,9 +3275,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             >
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Artikel aus Lager hinzufügen</DialogTitle>
+                        <DialogTitle>Materialkosten aus Katalog erfassen</DialogTitle>
                         <p className="text-sm text-slate-500">
-                            Suchen wie in der Materialverwaltung — Menge eintragen und festlegen, ob der Artikel aus dem Lager kommt oder bestellt werden muss.
+                            Artikel auswählen, Menge erfassen und den angezeigten Lieferantenpreis als Materialkosten übernehmen. Dadurch wird keine Bestellung ausgelöst.
                         </p>
                     </DialogHeader>
 
@@ -3166,7 +3308,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             zeilenAktion={(artikel) => {
                                 const key = artikel.id;
                                 const checked = selectedLagerArtikelKeys.has(key);
-                                const beschaffung = lagerArtikelBeschaffung[key] ?? 'lager';
                                 const mengeFehlt = checked && lagerMengeUngueltig(key);
                                 // Dieselbe Bezeichnung, die in der Zeile steht - sonst
                                 // sagt der Screenreader "100x100x4 auswählen", wo
@@ -3197,35 +3338,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             placeholder="1"
                                             className={cn('w-20 h-8 text-sm', mengeFehlt && 'border-amber-400 bg-amber-50')}
                                         />
-                                        {/* Umschalter statt Auswahlliste: Es gibt genau zwei
-                                            Faelle, und ein aufklappendes Menue in jeder der
-                                            15 Zeilen waere ein Klick mehr fuer dieselbe
-                                            Entscheidung. Gleiche Bauart wie die
-                                            Oberflaechen-Schalter in der Suche darueber. */}
-                                        <div className="flex rounded-lg border border-slate-300 overflow-hidden" role="group"
-                                             aria-label={`Bezug für ${name}`}>
-                                            {([
-                                                { wert: 'lager', text: 'Lager' },
-                                                { wert: 'bestellen', text: 'Bestellen' },
-                                            ] as const).map(({ wert, text }) => (
-                                                <button
-                                                    key={wert}
-                                                    type="button"
-                                                    aria-pressed={checked && beschaffung === wert}
-                                                    disabled={!checked}
-                                                    onClick={() => handleLagerBeschaffungChange(artikel, wert)}
-                                                    className={cn(
-                                                        'px-3 py-1.5 min-h-[32px] text-xs transition-colors',
-                                                        !checked && 'opacity-50 cursor-not-allowed text-slate-400',
-                                                        checked && beschaffung === wert
-                                                            ? 'bg-rose-600 text-white'
-                                                            : checked && 'text-slate-700 hover:bg-slate-50',
-                                                    )}
-                                                >
-                                                    {text}
-                                                </button>
-                                            ))}
-                                        </div>
                                     </div>
                                 );
                             }}
@@ -3249,7 +3361,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             disabled={savingLagerArtikel || selectedLagerArtikelKeys.size === 0 || lagerMengenLuecke}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
-                            {savingLagerArtikel ? 'Übernehme...' : `Abschließen (${selectedLagerArtikelKeys.size})`}
+                            {savingLagerArtikel ? 'Speichere...' : `Materialkosten speichern (${selectedLagerArtikelKeys.size})`}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

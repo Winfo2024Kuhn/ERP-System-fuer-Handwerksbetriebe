@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelMengeDto;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
@@ -24,6 +25,7 @@ import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -142,6 +144,19 @@ class ProjektControllerTest {
                                 isNull(),
                                 eq(0),
                                 eq(50));
+        }
+
+        @Test
+        void katalogMaterialkostenPostDelegiertAnKostenpfad() throws Exception {
+                when(projektManagementService.erfasseArtikelKosten(eq(7L), anyList()))
+                                .thenReturn(new ProjektResponseDto());
+
+                mockMvc.perform(post("/api/projekte/7/materialkosten/artikel")
+                                .contentType("application/json")
+                                .content("[{\"artikelId\":3,\"menge\":3,\"einheit\":\"STUECK\",\"preis\":2}]"))
+                                .andExpect(status().isOk());
+
+                verify(projektManagementService).erfasseArtikelKosten(eq(7L), anyList());
         }
 
         @Test

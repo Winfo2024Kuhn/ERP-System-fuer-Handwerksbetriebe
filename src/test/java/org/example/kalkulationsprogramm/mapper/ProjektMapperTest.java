@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.example.kalkulationsprogramm.repository.EinkaufLagerentnahmeRepository;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
 import org.junit.jupiter.api.Test;
 
@@ -12,11 +13,33 @@ import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ProjektMapperTest {
 
     private final ProjektMapper mapper = new ProjektMapper(new ProduktkategorieMapper(),
-            new AnfrageMapper(), mock(KundeMapper.class));
+            new AnfrageMapper(), mock(KundeMapper.class), mock(EinkaufLagerentnahmeRepository.class));
+
+    @Test
+    void mapsNeueLagerentnahmenGetrenntVonHistorischerLagerware() {
+        var entnahmen = mock(EinkaufLagerentnahmeRepository.class);
+        when(entnahmen.sumBewerteteEntnahmen(9L)).thenReturn(new BigDecimal("6.00"));
+        when(entnahmen.existsUnbewerteteByProjektId(9L)).thenReturn(true);
+        ProjektMapper mitEntnahmen = new ProjektMapper(new ProduktkategorieMapper(), new AnfrageMapper(),
+                mock(KundeMapper.class), entnahmen);
+        Projekt projekt = new Projekt();
+        projekt.setId(9L);
+        ArtikelInProjekt historisch = new ArtikelInProjekt();
+        historisch.setAusLager(true);
+        historisch.setPreisProStueck(new BigDecimal("20"));
+        projekt.getArtikelInProjekt().add(historisch);
+
+        ProjektResponseDto dto = mitEntnahmen.toProjektResponseDto(projekt);
+
+        assertEquals(new BigDecimal("6.00"), dto.getLagerentnahmenKosten());
+        assertEquals(true, dto.isLagerentnahmenBewertungOffen());
+        assertEquals(true, dto.getArtikel().getFirst().isAusLager());
+    }
 
     @Test
     void mapsKilogrammOnArtikel() {

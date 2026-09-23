@@ -904,19 +904,9 @@ ProjektManagementService {
         Projekt projekt = projektRepository.findById(projektId)
                 .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
 
-        // Dekrementiere Bestellungen für entfernte Materialkosten (oder alle, da wir
-        // gleich clearen)
-        for (org.example.kalkulationsprogramm.domain.Materialkosten alt : projekt.getMaterialkosten()) {
-            if (alt.getLieferant() != null) {
-                Lieferanten l = alt.getLieferant();
-                if (l.getBestellungen() != null && l.getBestellungen() > 0) {
-                    l.setBestellungen(l.getBestellungen() - 1);
-                    lieferantenRepository.save(l);
-                }
-            }
-        }
-
-        projekt.getMaterialkosten().clear();
+        // Alte PATCH-Aufrufer dürfen Artikel- und Preissnapshots nicht durch eine
+        // Liste manueller Kosten löschen oder neu bewerten.
+        projekt.getMaterialkosten().removeIf(mk -> mk.getArtikelIdSnapshot() == null);
         if (materialDtos != null) {
             List<org.example.kalkulationsprogramm.domain.Materialkosten> materialKosten = materialDtos.stream()
                     .map(dto -> {
@@ -927,24 +917,120 @@ ProjektManagementService {
                         mk.setMonat(dto.getMonat());
                         mk.setBetrag(dto.getBetrag());
                         mk.setRechnungsnummer(dto.getRechnungsnummer());
-
-                        if (dto.getLieferantId() != null) {
-                            Lieferanten lieferant = lieferantenRepository.findById(dto.getLieferantId()).orElse(null);
-                            if (lieferant != null) {
-                                mk.setLieferant(lieferant);
-                                // Increment bestellungen counter
-                                lieferant.setBestellungen(
-                                        lieferant.getBestellungen() == null ? 1 : lieferant.getBestellungen() + 1);
-                                lieferantenRepository.save(lieferant);
-                            }
-                        }
-
                         return mk;
                     }).collect(Collectors.toCollection(ArrayList::new));
             projekt.getMaterialkosten().addAll(materialKosten);
         }
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
+    }
+
+    @Transactional
+    public ProjektResponseDto fuegeManuelleMaterialkostenHinzu(Long projektId,
+            List<MaterialkostenErfassenDto> materialDtos) {
+        Projekt projekt = projektRepository.findById(projektId)
+                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        if (materialDtos == null || materialDtos.isEmpty() || materialDtos.size() > 100) {
+            throw new IllegalArgumentException("Bitte geben Sie mindestens eine Materialkostenposition an.");
+        }
+        for (MaterialkostenErfassenDto dto : materialDtos) {
+            if (dto == null || dto.getBeschreibung() == null || dto.getBeschreibung().isBlank()
+                    || dto.getBeschreibung().length() > 255 || dto.getBetrag() == null
+                    || dto.getBetrag().signum() < 0 || dto.getBetrag().scale() > 2
+                    || dto.getBetrag().compareTo(new BigDecimal("99999999999999999.99")) > 0) {
+                throw new IllegalArgumentException("Bitte geben Sie eine Beschreibung und einen gültigen Betrag an.");
+            }
+            org.example.kalkulationsprogramm.domain.Materialkosten kosten =
+                    new org.example.kalkulationsprogramm.domain.Materialkosten();
+            kosten.setProjekt(projekt);
+            kosten.setBeschreibung(dto.getBeschreibung().trim());
+            kosten.setBetrag(dto.getBetrag());
+            kosten.setRechnungsnummer(dto.getRechnungsnummer());
+            kosten.setMonat(dto.getMonat());
+            kosten.setExterneArtikelnummer(dto.getExterneArtikelnummer());
+            if (dto.getLieferantId() != null) {
+                lieferantenRepository.findById(dto.getLieferantId()).ifPresent(kosten::setLieferant);
+            }
+            projekt.getMaterialkosten().add(kosten);
+        }
+        return mappeMitKilogramm(projektRepository.save(projekt));
+    }
+
+    @Transactional
+    public ProjektResponseDto erfasseArtikelKosten(Long projektId, List<ArtikelMengeDto> artikelAuswahl) {
+        Projekt projekt = projektRepository.findById(projektId)
+                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        if (artikelAuswahl == null || artikelAuswahl.isEmpty() || artikelAuswahl.size() > 100) {
+            throw new IllegalArgumentException("Bitte wählen Sie mindestens einen Artikel aus.");
+        }
+        for (ArtikelMengeDto auswahl : artikelAuswahl) {
+            if (auswahl == null || auswahl.getArtikelId() == null || auswahl.getArtikelId() <= 0
+                    || auswahl.getMenge() == null || auswahl.getMenge().signum() <= 0
+                    || !gueltigeMengeKosten(auswahl.getMenge()) || auswahl.getEinheit() == null) {
+                throw new IllegalArgumentException("Bitte geben Sie gültige Artikel, Einheiten und Mengen an.");
+            }
+            Artikel artikel = artikelRepository.findById(auswahl.getArtikelId())
+                    .orElseThrow(() -> new IllegalArgumentException("Ein ausgewählter Artikel wurde nicht gefunden."));
+            LieferantenArtikelPreise preisstand = artikel.getArtikelpreis().stream()
+                    .filter(LieferantenArtikelPreise::isAktuell)
+                    .filter(p -> p.getPreis() != null && p.getPreis().signum() >= 0)
+                    .filter(p -> auswahl.getLieferantId() == null
+                            ? p.getLieferant() == null
+                            : p.getLieferant() != null && auswahl.getLieferantId().equals(p.getLieferant().getId()))
+                    .max(Comparator.comparing(LieferantenArtikelPreise::getPreisAenderungsdatum,
+                            Comparator.nullsFirst(Comparator.naturalOrder())))
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Für einen ausgewählten Artikel ist kein aktueller Preis vorhanden."));
+            if (auswahl.getPreis() != null && auswahl.getPreis().compareTo(preisstand.getPreis()) != 0) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.CONFLICT,
+                        "Der Artikelpreis hat sich geändert. Bitte aktualisieren Sie die Artikelauswahl.");
+            }
+            BigDecimal menge = auswahl.getMenge().setScale(6, java.math.RoundingMode.UNNECESSARY);
+            BigDecimal einzelpreis = determineUnitPrice(artikel, preisstand.getPreis(),
+                    "METER".equalsIgnoreCase(auswahl.getEinheit()), auswahl.getLaengeProStueck(),
+                    supportsLengthAwareArtikel(artikel));
+            if (einzelpreis == null || einzelpreis.signum() < 0) {
+                throw new IllegalArgumentException("Der Artikelpreis kann nicht für diese Einheit verwendet werden.");
+            }
+            final org.example.kalkulationsprogramm.domain.einkauf.Einheit einheit;
+            try {
+                einheit = org.example.kalkulationsprogramm.domain.einkauf.Einheit.valueOf(
+                        auswahl.getEinheit().toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("Die Artikelauswahl enthält eine ungültige Einheit.", ex);
+            }
+            org.example.kalkulationsprogramm.domain.Materialkosten kosten =
+                    new org.example.kalkulationsprogramm.domain.Materialkosten();
+            kosten.setProjekt(projekt);
+            kosten.setBeschreibung(artikel.getProduktname() == null ? "Artikelkosten" : artikel.getProduktname());
+            kosten.setExterneArtikelnummer(preisstand.getExterneArtikelnummer());
+            kosten.setBetrag(einzelpreis.multiply(menge).setScale(2, java.math.RoundingMode.HALF_UP));
+            kosten.setArtikelIdSnapshot(artikel.getId());
+            kosten.setLieferantenArtikelPreisId(preisstand.getId());
+            kosten.setMengeSnapshot(menge);
+            kosten.setEinheitSnapshot(einheit);
+            kosten.setPreisJeEinheitSnapshot(einzelpreis.setScale(6, java.math.RoundingMode.HALF_UP));
+            kosten.setPreisquelleSnapshot(preisstand.getQuelle() == null ? null : preisstand.getQuelle().name());
+            kosten.setPreisnotizSnapshot(preisstand.getNotiz());
+            if (preisstand.getLieferant() != null) {
+                kosten.setLieferant(preisstand.getLieferant());
+                kosten.setLieferantennameSnapshot(preisstand.getLieferant().getLieferantenname());
+            }
+            projekt.getMaterialkosten().add(kosten);
+        }
+        // Kostenzeilen sind absichtlich keine ArtikelInProjekt-Positionen: sie
+        // veröffentlichen kein Ereignis und lösen keinen Einkaufsbedarf aus.
+        return mappeMitKilogramm(projektRepository.save(projekt));
+    }
+
+    private static boolean gueltigeMengeKosten(BigDecimal menge) {
+        try {
+            menge.setScale(6, java.math.RoundingMode.UNNECESSARY);
+            return menge.compareTo(new BigDecimal("9999999999999.999999")) <= 0;
+        } catch (ArithmeticException exception) {
+            return false;
+        }
     }
 
     @Transactional

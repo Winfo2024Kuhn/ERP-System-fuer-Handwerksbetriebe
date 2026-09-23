@@ -579,6 +579,8 @@ export interface Projekt {
   anlegedatum?: string;
   abschlussdatum?: string;
   bruttoPreis?: number;
+  lagerentnahmenKosten?: number | null;
+  lagerentnahmenBewertungOffen?: boolean;
   bezahlt: boolean;
   abgeschlossen?: boolean;
   strasse?: string;

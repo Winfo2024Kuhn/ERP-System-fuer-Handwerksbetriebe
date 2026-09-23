@@ -137,6 +137,54 @@ class ProjektManagementServiceTest {
     }
 
     @Test
+    void artikelkostenErfassenErzeugtNurMaterialkostenSnapshotOhneBedarfOderBestellung() {
+        Projekt projekt = new Projekt();
+        projekt.setArtikelInProjekt(new ArrayList<>());
+        projekt.setMaterialkosten(new ArrayList<>());
+        when(projektRepository.findById(1L)).thenReturn(Optional.of(projekt));
+        when(projektRepository.save(any(Projekt.class))).thenAnswer(call -> call.getArgument(0));
+        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(8L);
+        lieferant.setLieferantenname("Musterbedarf GmbH");
+        lieferant.setBestellungen(12);
+        Artikel artikel = new Artikel();
+        artikel.setId(3L);
+        artikel.setProduktname("Stahlprofil");
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        artikel.setArtikelpreis(new ArrayList<>());
+        LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
+        preis.setArtikel(artikel);
+        preis.setLieferant(lieferant);
+        preis.setExterneArtikelnummer("ST-123");
+        preis.setPreis(new BigDecimal("2.00"));
+        preis.setAktuell(true);
+        artikel.getArtikelpreis().add(preis);
+        when(artikelRepository.findById(3L)).thenReturn(Optional.of(artikel));
+
+        ArtikelMengeDto auswahl = new ArtikelMengeDto();
+        auswahl.setArtikelId(3L);
+        auswahl.setLieferantId(8L);
+        auswahl.setPreis(new BigDecimal("2.00"));
+        auswahl.setMenge(new BigDecimal("3"));
+        auswahl.setEinheit("STUECK");
+        service.erfasseArtikelKosten(1L, List.of(auswahl));
+
+        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
+        verify(projektRepository).save(captor.capture());
+        Projekt gespeichert = captor.getValue();
+        assertEquals(1, gespeichert.getMaterialkosten().size());
+        assertEquals(0, gespeichert.getMaterialkosten().getFirst().getBetrag().compareTo(new BigDecimal("6.00")));
+        assertEquals("Stahlprofil", gespeichert.getMaterialkosten().getFirst().getBeschreibung());
+        assertEquals("ST-123", gespeichert.getMaterialkosten().getFirst().getExterneArtikelnummer());
+        assertTrue(gespeichert.getArtikelInProjekt().isEmpty());
+        assertEquals(12, lieferant.getBestellungen());
+        verifyNoInteractions(eventPublisher);
+        verify(lieferantenRepository, never()).save(any());
+    }
+
+    @Test
     void verfuegbareAnlegeJahreReichtDieJahreAusDemRepositoryDurch() {
         when(projektRepository.findDistinctAnlegedatumJahre()).thenReturn(List.of(2026, 2025, 2024));
 

@@ -271,6 +271,18 @@ public class ProjektController {
         }
     }
 
+    @PostMapping(value = "/{projektID}/materialkosten")
+    public ResponseEntity<ProjektResponseDto> fuegeManuelleMaterialkostenHinzu(@PathVariable Long projektID,
+            @RequestBody List<MaterialkostenErfassenDto> materialkosten) {
+        try {
+            return ResponseEntity.ok(projektManagementService.fuegeManuelleMaterialkostenHinzu(projektID, materialkosten));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().build();
+        } catch (RuntimeException exception) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+    }
+
     @PatchMapping(value = "/{projektID}/kurzbeschreibung", consumes = MediaType.TEXT_PLAIN_VALUE)
     public ResponseEntity<ProjektResponseDto> updateKurzbeschreibung(@PathVariable Long projektID,
             @RequestBody String kurzbeschreibung) {
@@ -288,7 +300,7 @@ public class ProjektController {
     public ResponseEntity<ProjektResponseDto> fuegeArtikelAlsMaterialkosten(@PathVariable Long projektID,
             @RequestBody List<ArtikelMengeDto> artikelAuswahl) {
         try {
-            ProjektResponseDto dto = projektManagementService.fuegeArtikelMaterialkosten(projektID, artikelAuswahl);
+            ProjektResponseDto dto = projektManagementService.erfasseArtikelKosten(projektID, artikelAuswahl);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
             e.printStackTrace();

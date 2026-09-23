@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektResponseDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenResponseDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
+import org.example.kalkulationsprogramm.repository.EinkaufLagerentnahmeRepository;
 
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieResponseDto;
 import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitResponseDto;
@@ -21,6 +22,7 @@ public class ProjektMapper {
     private final ProduktkategorieMapper produktkategorieMapper;
     private final AnfrageMapper anfrageMapper;
     private final KundeMapper kundeMapper;
+    private final EinkaufLagerentnahmeRepository lagerentnahmeRepository;
 
     public ProjektResponseDto toProjektResponseDto(Projekt projekt) {
         if (projekt == null) {
@@ -28,6 +30,11 @@ public class ProjektMapper {
         }
         ProjektResponseDto dto = new ProjektResponseDto();
         dto.setId(projekt.getId());
+        if (projekt.getId() != null) {
+            dto.setLagerentnahmenKosten(lagerentnahmeRepository.sumBewerteteEntnahmen(projekt.getId()));
+            dto.setLagerentnahmenBewertungOffen(
+                    lagerentnahmeRepository.existsUnbewerteteByProjektId(projekt.getId()));
+        }
         dto.setBauvorhaben(projekt.getBauvorhaben());
         dto.setStrasse(projekt.getStrasse());
         dto.setPlz(projekt.getPlz());
@@ -87,6 +94,14 @@ public class ProjektMapper {
                         mDto.setExterneArtikelnummer(mk.getExterneArtikelnummer());
                         mDto.setMonat(mk.getMonat());
                         mDto.setBetrag(mk.getBetrag());
+                        mDto.setArtikelIdSnapshot(mk.getArtikelIdSnapshot());
+                        mDto.setLieferantenArtikelPreisId(mk.getLieferantenArtikelPreisId());
+                        mDto.setLieferantennameSnapshot(mk.getLieferantennameSnapshot());
+                        mDto.setMengeSnapshot(mk.getMengeSnapshot());
+                        mDto.setEinheitSnapshot(mk.getEinheitSnapshot());
+                        mDto.setPreisJeEinheitSnapshot(mk.getPreisJeEinheitSnapshot());
+                        mDto.setPreisquelleSnapshot(mk.getPreisquelleSnapshot());
+                        mDto.setPreisnotizSnapshot(mk.getPreisnotizSnapshot());
                         return mDto;
                     }).toList();
             dto.setMaterialkosten(mkDtos);
