@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufBedarfDto;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.DokumentSoll;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Liefergruppe;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Mengenbasis;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.PositionSnapshot;
@@ -286,6 +287,74 @@ class EinkaufMengenParallelTest {
     }
 
     @Test
+    void aipSyncBewahrtEinkaufstechnikUndDokumenteBeiNoopUndMengenabgleichUndSchuetztIdentitaetBeiDisposition() {
+        Mengenbasis einkaufsbasis = new Mengenbasis(new BigDecimal("5"), Einheit.STUECK,
+                new BigDecimal("5"), new BigDecimal("6000"), new BigDecimal("2.4"), "fachlich bestätigt");
+        PositionSnapshot angereichert = new PositionSnapshot(Positionsart.ARTIKEL, 1L, "DUMMY-1", "Z-100",
+                "R2", "Testprofil", "S355", "80x8", einkaufsbasis, "GEHRUNG", "45", "45",
+                "Bohrbild", "verzinkt", List.of(new DokumentSoll(
+                        org.example.kalkulationsprogramm.domain.einkauf.Dokumentart.ZEUGNIS_3_1,
+                        "Bestellvorgabe", "v2", true)), List.of(71L));
+        EinkaufBedarf bedarf = new EinkaufBedarf(angereichert, new Liefergruppe(null, null, null, "Testlager"),
+                null, null, false);
+        bedarf.setArtikelInProjektId(991L);
+        bedarf.setReserviert(new BigDecimal("1"));
+        bedarf.setBestellt(new BigDecimal("1"));
+        bedarfRepository.saveAndFlush(bedarf);
+        Long id = bedarf.getId();
+        long versionVorher = bedarfRepository.findById(id).orElseThrow().getVersion();
+
+        Projekt projekt = new Projekt();
+        projekt.setId(1L);
+        Artikel artikel = new Artikel();
+        artikel.setId(1L);
+        artikel.setProduktname("Testprofil");
+        artikel.setArtikelnummer("DUMMY-1");
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        ArtikelInProjekt aip = aip(991L, projekt, artikel, 5);
+        aip.setSchnittForm("GEHRUNG");
+        aip.setAnschnittWinkelLinks("45");
+        aip.setAnschnittWinkelRechts("45");
+        aip.setKommentar("Bohrbild");
+
+        einkaufBedarfService.synchronisiereProjektposition(aip);
+
+        EinkaufBedarf unveraendert = bedarfRepository.findById(id).orElseThrow();
+        assertEquals(versionVorher, unveraendert.getVersion(), "unveränderter Projekt-Save soll keinen Bedarf schreiben");
+        assertEquals(angereichert, unveraendert.getPosition());
+
+        aip.setStueckzahl(7);
+        einkaufBedarfService.synchronisiereProjektposition(aip);
+        EinkaufBedarf mengenUpdate = bedarfRepository.findById(id).orElseThrow();
+        assertEquals(0, mengenUpdate.getBedarfMenge().compareTo(new BigDecimal("7")));
+        assertEquals(new BigDecimal("6000"), mengenUpdate.getPosition().basis().einzelLaengeMm());
+        assertEquals(new BigDecimal("2.4"), mengenUpdate.getPosition().basis().kgJeMeter());
+        assertEquals("verzinkt", mengenUpdate.getPosition().oberflaeche());
+        assertEquals("S355", mengenUpdate.getPosition().werkstoff());
+        assertEquals("80x8", mengenUpdate.getPosition().abmessung());
+        assertEquals("Bohrbild", mengenUpdate.getPosition().bearbeitung());
+        assertEquals(1, mengenUpdate.getPosition().dokumente().size());
+        assertEquals(List.of(71L), mengenUpdate.getPosition().anlageVersionIds());
+        assertEquals(0, mengenUpdate.getReserviert().compareTo(BigDecimal.ONE));
+        assertEquals(0, mengenUpdate.getBestellt().compareTo(BigDecimal.ONE));
+
+        Long technischeVersion = mengenUpdate.getVersion();
+        aip.setSchnittForm("ANDERS");
+        einkaufBedarfService.synchronisiereProjektposition(aip);
+        EinkaufBedarf eingefroren = bedarfRepository.findById(id).orElseThrow();
+        assertEquals(technischeVersion, eingefroren.getVersion());
+        assertEquals("GEHRUNG", eingefroren.getPosition().schnittForm());
+
+        aip.getArtikel().setArtikelnummer("DUMMY-2");
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> einkaufBedarfService.synchronisiereProjektposition(aip));
+        eingefroren = bedarfRepository.findById(id).orElseThrow();
+        assertEquals(technischeVersion, eingefroren.getVersion());
+        assertEquals("GEHRUNG", eingefroren.getPosition().schnittForm());
+        assertEquals("DUMMY-1", eingefroren.getPosition().interneReferenz());
+    }
+
+    @Test
     void migrationUebernimmtLegacyAipEinmaligUndKennzeichnetHistorischeFlags() throws Exception {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword()));
@@ -394,6 +463,15 @@ class EinkaufMengenParallelTest {
                 "Testprofil", null, null, new Mengenbasis(quantity, Einheit.STUECK, quantity, null, null, null),
                 null, null, null, null, null, null, null);
         return new EinkaufBedarf(snapshot, new Liefergruppe(null, null, null, "Testlager"), null, null, false);
+    }
+
+    private static ArtikelInProjekt aip(Long id, Projekt projekt, Artikel artikel, Integer stueckzahl) {
+        ArtikelInProjekt aip = new ArtikelInProjekt();
+        aip.setId(id);
+        aip.setProjekt(projekt);
+        aip.setArtikel(artikel);
+        aip.setStueckzahl(stueckzahl);
+        return aip;
     }
 
     @Configuration

@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -122,8 +123,8 @@ class EinkaufBedarfServiceTest {
         aip.setProjekt(projekt);
         aip.setArtikel(artikel);
         aip.setStueckzahl(7);
-        PositionSnapshot alt = new PositionSnapshot(Positionsart.ARTIKEL, 17L, "A-ALT", null, null,
-                "Schraube", null, null, new Mengenbasis(new BigDecimal("5"), Einheit.STUECK,
+        PositionSnapshot alt = new PositionSnapshot(Positionsart.ARTIKEL, 17L, "A-NEU", null, null,
+                "Schraube neu", null, null, new Mengenbasis(new BigDecimal("5"), Einheit.STUECK,
                         new BigDecimal("5"), null, null, null), null, null, null, null, null, null, null);
         EinkaufBedarf bedarf = new EinkaufBedarf(alt, new Liefergruppe(null, null, 9L, null), 9L, 99L, false);
         bedarf.setId(21L);
@@ -208,5 +209,36 @@ class EinkaufBedarfServiceTest {
         assertEquals("T-NEU", bedarf.getInterneKennung());
         assertEquals("Träger neu", bedarf.getBezeichnung());
         verify(bedarfRepository).existsByProjektIdAndInterneKennungAndIdNot(9L, "T-NEU", 21L);
+    }
+
+    @Test
+    void aktualisierenBerechnetNachpflegeAusSnapshotUndEntferntSieNachBehebung() {
+        PositionSnapshot unvollstaendig = new PositionSnapshot(Positionsart.ARTIKEL, 17L, null, null, null,
+                "Schraube", null, null, new Mengenbasis(new BigDecimal("10"), Einheit.STUECK,
+                        new BigDecimal("10"), null, null, null), null, null, null, null, null, null, null);
+        PositionSnapshot vervollstaendigt = new PositionSnapshot(Positionsart.ARTIKEL, 17L, "A-17", null, null,
+                "Schraube", null, null, new Mengenbasis(new BigDecimal("9"), Einheit.STUECK,
+                        new BigDecimal("9"), null, null, null), null, null, null, null, null, null, null);
+        Liefergruppe liefergruppe = new Liefergruppe(null, null, null, "Werkstatt");
+        EinkaufBedarf bedarf = new EinkaufBedarf(unvollstaendig, liefergruppe, null, null, false);
+        bedarf.setId(55L);
+        bedarf.setVersion(0L);
+        when(bedarfRepository.findByIdForUpdate(55L)).thenReturn(java.util.Optional.of(bedarf));
+        when(positionService.validiere(any(), any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(bedarfRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            var gespeichert = invocation.<EinkaufBedarf>getArgument(0);
+            gespeichert.setVersion(gespeichert.getVersion() + 1L);
+            return gespeichert;
+        });
+        var service = new EinkaufBedarfService(bedarfRepository, artikelInProjektRepository,
+                projektRepository, positionService, new ObjectMapper());
+
+        var unvollstaendigeAntwort = service.aktualisieren(55L,
+                new EinkaufBedarfDto.Update(0L, unvollstaendig, liefergruppe), 5L);
+        assertTrue(unvollstaendigeAntwort.nachpflegeErforderlich());
+
+        var behobeneAntwort = service.aktualisieren(55L,
+                new EinkaufBedarfDto.Update(unvollstaendigeAntwort.version(), vervollstaendigt, liefergruppe), 5L);
+        assertFalse(behobeneAntwort.nachpflegeErforderlich());
     }
 }

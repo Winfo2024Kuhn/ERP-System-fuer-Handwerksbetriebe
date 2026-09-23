@@ -125,7 +125,8 @@ public class EinkaufBedarfService {
                 ? position.interneReferenz().trim() : null);
         bedarf.setBezeichnung(position.bezeichnung());
         bedarf.setBedarfMenge(neueMenge);
-        bedarf.setNachpflegeErforderlich(false);
+        bedarf.setNachpflegeErforderlich(brauchtNachpflege(position)
+                || bedarf.isHistorischBestellt() || bedarf.isHistorischAusLager());
         EinkaufBedarf gespeichert = bedarfRepository.saveAndFlush(bedarf);
         return toResponse(gespeichert, angefragtFuer(List.of(gespeichert)).get(gespeichert.getId()));
     }
@@ -179,18 +180,94 @@ public class EinkaufBedarfService {
                     || (menge != null && menge.compareTo(bereitsGedeckt) < 0)) {
                 throw conflict("Die geänderte Projektmenge liegt unter bereits disponierten Mengen.");
             }
+            PositionSnapshot bisher = bedarf.getPosition();
+            boolean disponiert = bereitsGedeckt.signum() > 0 || bedarf.getGeliefert().signum() > 0;
+            if (disponiert && identitaetGeaendert(bisher, snapshot)) {
+                throw conflict("Die Artikelidentität kann nach der Disposition nicht geändert werden.");
+            }
             if (positionartIstZeichnungsteil(bedarf.getPosition()) && referenz != null && !referenz.isBlank()
                     && bedarfRepository.existsByProjektIdAndInterneKennungAndIdNot(
                             aip.getProjekt().getId(), referenz.trim(), bedarf.getId())) {
                 throw conflict("Diese Teilkennung gibt es in diesem Projekt bereits.");
             }
-            bedarf.setPosition(snapshot);
-            bedarf.setBezeichnung(name == null || name.isBlank() ? "Nachpflege erforderlich" : name);
-            bedarf.setInterneKennung(positionartIstZeichnungsteil(snapshot) ? referenz : null);
-            bedarf.setBedarfMenge(menge);
-            bedarf.setNachpflegeErforderlich(repair || bedarf.isHistorischBestellt() || bedarf.isHistorischAusLager());
+            PositionSnapshot zusammengefuehrt = fuehreAipSnapshotZusammen(bisher, snapshot, disponiert);
+            String neueBezeichnung = name == null || name.isBlank() ? "Nachpflege erforderlich" : name;
+            String neueKennung = positionartIstZeichnungsteil(zusammengefuehrt) && referenz != null
+                    ? referenz.trim() : null;
+            boolean neueNachpflege = repair || bedarf.isHistorischBestellt() || bedarf.isHistorischAusLager();
+            boolean geaendert = !gleicherSnapshot(bisher, zusammengefuehrt)
+                    || !Objects.equals(bedarf.getBezeichnung(), neueBezeichnung)
+                    || !Objects.equals(bedarf.getInterneKennung(), neueKennung)
+                    || !gleicheZahl(bedarf.getBedarfMenge(), menge)
+                    || bedarf.isNachpflegeErforderlich() != neueNachpflege;
+            if (geaendert) {
+                bedarf.setPosition(zusammengefuehrt);
+                bedarf.setBezeichnung(neueBezeichnung);
+                bedarf.setInterneKennung(neueKennung);
+                bedarf.setBedarfMenge(menge);
+                bedarf.setNachpflegeErforderlich(neueNachpflege);
+                bedarfRepository.saveAndFlush(bedarf);
+            }
         }
-        bedarfRepository.saveAndFlush(bedarf);
+    }
+
+    private static PositionSnapshot fuehreAipSnapshotZusammen(PositionSnapshot bisher,
+            PositionSnapshot quelle, boolean disponiert) {
+        if (bisher == null) return quelle;
+        Mengenbasis alteBasis = bisher.basis();
+        Mengenbasis neueBasis = quelle.basis();
+        Mengenbasis basis = neueBasis == null ? alteBasis : new Mengenbasis(neueBasis.menge(), neueBasis.einheit(),
+                neueBasis.stueckzahl(), alteBasis == null ? neueBasis.einzelLaengeMm() : alteBasis.einzelLaengeMm(),
+                alteBasis == null ? neueBasis.kgJeMeter() : alteBasis.kgJeMeter(),
+                alteBasis == null ? neueBasis.faktorQuelle() : alteBasis.faktorQuelle());
+        return new PositionSnapshot(quelle.art(), quelle.artikelId(), quelle.interneReferenz(),
+                bisher.zeichnungsnummer(), bisher.zeichnungsrevision(), quelle.bezeichnung(), bisher.werkstoff(),
+                bisher.abmessung(), basis,
+                disponiert ? bisher.schnittForm() : quelle.schnittForm(),
+                disponiert ? bisher.winkelLinks() : quelle.winkelLinks(),
+                disponiert ? bisher.winkelRechts() : quelle.winkelRechts(),
+                disponiert ? bisher.bearbeitung() : quelle.bearbeitung(), bisher.oberflaeche(),
+                bisher.dokumente(), bisher.anlageVersionIds());
+    }
+
+    private static boolean identitaetGeaendert(PositionSnapshot bisher, PositionSnapshot quelle) {
+        if (bisher == null) return false;
+        return !Objects.equals(bisher.artikelId(), quelle.artikelId())
+                || !Objects.equals(bisher.interneReferenz(), quelle.interneReferenz())
+                || !Objects.equals(bisher.bezeichnung(), quelle.bezeichnung())
+                || (bisher.basis() != null && quelle.basis() != null
+                        && !Objects.equals(bisher.basis().einheit(), quelle.basis().einheit()));
+    }
+
+    private static boolean gleicherSnapshot(PositionSnapshot links, PositionSnapshot rechts) {
+        if (links == rechts) return true;
+        if (links == null || rechts == null) return false;
+        Mengenbasis a = links.basis();
+        Mengenbasis b = rechts.basis();
+        boolean gleicheBasis = a == b || (a != null && b != null
+                && gleicheZahl(a.menge(), b.menge()) && Objects.equals(a.einheit(), b.einheit())
+                && gleicheZahl(a.stueckzahl(), b.stueckzahl())
+                && gleicheZahl(a.einzelLaengeMm(), b.einzelLaengeMm())
+                && gleicheZahl(a.kgJeMeter(), b.kgJeMeter())
+                && Objects.equals(a.faktorQuelle(), b.faktorQuelle()));
+        return Objects.equals(links.art(), rechts.art()) && Objects.equals(links.artikelId(), rechts.artikelId())
+                && Objects.equals(links.interneReferenz(), rechts.interneReferenz())
+                && Objects.equals(links.zeichnungsnummer(), rechts.zeichnungsnummer())
+                && Objects.equals(links.zeichnungsrevision(), rechts.zeichnungsrevision())
+                && Objects.equals(links.bezeichnung(), rechts.bezeichnung())
+                && Objects.equals(links.werkstoff(), rechts.werkstoff())
+                && Objects.equals(links.abmessung(), rechts.abmessung()) && gleicheBasis
+                && Objects.equals(links.schnittForm(), rechts.schnittForm())
+                && Objects.equals(links.winkelLinks(), rechts.winkelLinks())
+                && Objects.equals(links.winkelRechts(), rechts.winkelRechts())
+                && Objects.equals(links.bearbeitung(), rechts.bearbeitung())
+                && Objects.equals(links.oberflaeche(), rechts.oberflaeche())
+                && Objects.equals(links.dokumente(), rechts.dokumente())
+                && Objects.equals(links.anlageVersionIds(), rechts.anlageVersionIds());
+    }
+
+    private static boolean gleicheZahl(BigDecimal links, BigDecimal rechts) {
+        return links == rechts || (links != null && rechts != null && links.compareTo(rechts) == 0);
     }
 
     private ArtikelInProjekt ladeArtikelposition(Long id, Projekt projekt) {
