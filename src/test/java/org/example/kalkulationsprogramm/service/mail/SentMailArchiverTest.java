@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import java.util.Properties;
 
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -36,6 +37,7 @@ import jakarta.mail.internet.MimeMessage;
 class SentMailArchiverTest
 {
     @Mock SystemSettingsService systemSettingsService;
+    @Mock LocalTestMailPolicy localTestMailPolicy;
     @InjectMocks SentMailArchiver archiver;
 
     private static MimeMessage dummyNachricht() throws Exception

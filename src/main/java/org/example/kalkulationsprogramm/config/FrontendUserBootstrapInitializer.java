@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class FrontendUserBootstrapInitializer implements ApplicationRunner {
 
     private final FrontendUserProfileRepository repository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
 
     @Value("${app.admin.username:}")
     private String adminUsername;
@@ -30,8 +33,17 @@ public class FrontendUserBootstrapInitializer implements ApplicationRunner {
     @Value("${app.admin.password:}")
     private String adminPassword;
 
+    @Value("${app.local-test.bootstrap-admin.enabled:false}")
+    private boolean localTestBootstrapEnabled;
+
+
     @Override
     public void run(ApplicationArguments args) {
+        if (environment.acceptsProfiles(Profiles.of("local-test"))
+                && !localTestBootstrapEnabled) {
+            log.info("Bootstrap-Admin ist im local-test-Profil standardmäßig deaktiviert.");
+            return;
+        }
         // Ohne explizit konfigurierte Zugangsdaten (Produktiv-Server via
         // application-local.properties) wird KEIN Admin vorab angelegt.
         // Die Einrichtungsphase bleibt offen: Der erste Nutzer registriert

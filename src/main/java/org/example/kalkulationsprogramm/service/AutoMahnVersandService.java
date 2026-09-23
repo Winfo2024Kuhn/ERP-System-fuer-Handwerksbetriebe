@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Kunde;
@@ -88,6 +89,7 @@ public class AutoMahnVersandService
     private final EmailSignatureService emailSignatureService;
     private final ProjektEmailArchivService projektEmailArchivService;
     private final SentMailArchiver sentMailArchiver;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     /** Warum ein Mahn-Lauf wie ausgegangen ist — fuer den manuellen Trigger. */
     public enum MahnlaufStatus
@@ -457,7 +459,8 @@ public class AutoMahnVersandService
     {
         SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
         EmailService emailService = new EmailService(
-                konto.host(), konto.port(), konto.username(), konto.password())
+                konto.host(), konto.port(), konto.username(), konto.password(), localTestMailPolicy)
+                .mitKontoId("DOKUMENTE")
                 .mitAbsenderName(konto.fromName())
                 .mitSentKopie(sentMailArchiver.fuerDokumentKonto());
         return emailService.sendEmailAndReturnMessageId(empfaenger, null, absender,

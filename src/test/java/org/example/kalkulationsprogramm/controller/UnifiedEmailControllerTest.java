@@ -74,6 +74,7 @@ class UnifiedEmailControllerTest {
     private UnifiedEmailController unifiedEmailController;
 
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
+    @MockBean private org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy;
     @MockBean private EmailRepository emailRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
@@ -148,6 +149,19 @@ class UnifiedEmailControllerTest {
         org.mockito.Mockito.doReturn("reply-message").when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
         mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart())).andExpect(status().isOk());
         mockMvc.perform(get("/api/emails/drafts/42")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void replyUsesLocalTestMailPolicyForMainMailboxBeforeSmtp() throws Exception {
+        prepareDraftSend();
+        storedDraft(7L);
+        given(emailRepository.findById(7L)).willReturn(Optional.of(createTestEmail(7L, "Original", "test@example.com")));
+        org.mockito.Mockito.doThrow(new IllegalStateException("local-test blocks HAUPT"))
+                .when(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
+
+        mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart()))
+                .andExpect(status().isInternalServerError());
+        verify(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
     }
 
     @Test

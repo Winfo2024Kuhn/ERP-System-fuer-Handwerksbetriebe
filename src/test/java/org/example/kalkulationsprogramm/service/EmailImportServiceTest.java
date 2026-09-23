@@ -18,6 +18,7 @@ import jakarta.mail.Address;
 import jakarta.mail.Message;
 import jakarta.mail.internet.InternetAddress;
 import org.example.kalkulationsprogramm.domain.*;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -39,6 +40,7 @@ class EmailImportServiceTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private EmailBlacklistRepository emailBlacklistRepository;
     @Mock private BounceErkennungService bounceErkennungService;
+    @Mock private LocalTestMailPolicy localTestMailPolicy;
 
     @InjectMocks
     private EmailImportService service;

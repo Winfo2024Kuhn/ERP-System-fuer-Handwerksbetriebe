@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
@@ -63,6 +64,7 @@ public class EmailController {
     private final SentMailArchiver sentMailArchiver;
     private final DokumentFreigabeService dokumentFreigabeService;
     private final EmailAbsenderService emailAbsenderService;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     @Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -370,7 +372,8 @@ public class EmailController {
                 ? konto.fromAddress()
                 : request.getFromAddress();
         EmailService service = new EmailService(
-                konto.host(), konto.port(), konto.username(), konto.password())
+                konto.host(), konto.port(), konto.username(), konto.password(), localTestMailPolicy)
+                .mitKontoId(systemSettingsService.nutztDokumentMailKonto() ? "DOKUMENTE" : "HAUPT")
                 .mitAbsenderName(konto.fromName())
                 // Kopie in das Postfach, das die Mail auch verschickt hat.
                 .mitSentKopie(systemSettingsService.nutztDokumentMailKonto()
@@ -487,7 +490,8 @@ public class EmailController {
                 ? konto.fromAddress()
                 : request.getFromAddress();
         EmailService service = new EmailService(
-                konto.host(), konto.port(), konto.username(), konto.password())
+                konto.host(), konto.port(), konto.username(), konto.password(), localTestMailPolicy)
+                .mitKontoId(systemSettingsService.nutztDokumentMailKonto() ? "DOKUMENTE" : "HAUPT")
                 .mitAbsenderName(konto.fromName())
                 // Kopie in das Postfach, das die Mail auch verschickt hat.
                 .mitSentKopie(systemSettingsService.nutztDokumentMailKonto()

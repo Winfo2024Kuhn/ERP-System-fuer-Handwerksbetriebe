@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.config;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -12,6 +13,7 @@ import javax.sql.DataSource;
 public class SchemaFixConfig {
 
     @Bean
+    @ConditionalOnProperty(name = "app.startup-maintenance.enabled", havingValue = "true", matchIfMissing = true)
     public CommandLineRunner schemaFixer(JdbcTemplate jdbcTemplate) {
         return args -> {
             try {

@@ -98,6 +98,7 @@ public class LieferantenController {
     private final org.example.kalkulationsprogramm.service.EmailSignatureService emailSignatureService;
     private final org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -309,7 +310,8 @@ public class LieferantenController {
                 systemSettingsService.getSmtpHost(),
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword())
+                systemSettingsService.getSmtpPassword(), localTestMailPolicy)
+                .mitKontoId("HAUPT")
                 .mitSentKopie(sentMailArchiver);
 
         String htmlBody = dto.getBody() != null ? dto.getBody() : "";

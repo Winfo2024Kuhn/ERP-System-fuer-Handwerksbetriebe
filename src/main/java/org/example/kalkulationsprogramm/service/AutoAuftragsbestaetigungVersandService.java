@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
@@ -74,6 +75,7 @@ public class AutoAuftragsbestaetigungVersandService
     private final ProjektEmailArchivService projektEmailArchivService;
     private final DokumentFreigabeRepository dokumentFreigabeRepository;
     private final SentMailArchiver sentMailArchiver;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     /**
      * Einstieg fuer den asynchronen Versand NACH dem Commit der
@@ -147,7 +149,8 @@ public class AutoAuftragsbestaetigungVersandService
             // liefert getDokumentMailKonto() das Standard-Konto zurueck.
             SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
             EmailService emailService = new EmailService(
-                    konto.host(), konto.port(), konto.username(), konto.password())
+                    konto.host(), konto.port(), konto.username(), konto.password(), localTestMailPolicy)
+                    .mitKontoId("DOKUMENTE")
                     .mitAbsenderName(konto.fromName())
                     .mitSentKopie(sentMailArchiver.fuerDokumentKonto());
 

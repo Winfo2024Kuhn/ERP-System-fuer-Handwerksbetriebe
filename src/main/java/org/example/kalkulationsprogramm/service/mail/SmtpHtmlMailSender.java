@@ -9,6 +9,7 @@ import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -21,6 +22,7 @@ import java.util.Properties;
 public class SmtpHtmlMailSender implements HtmlMailSender {
 
     private final SystemSettingsService systemSettingsService;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     @Override
     public void send(String fromAddress,
@@ -31,6 +33,7 @@ public class SmtpHtmlMailSender implements HtmlMailSender {
         if (toAddress == null || toAddress.isBlank()) {
             return;
         }
+        localTestMailPolicy.pruefeNetzwerkzugriff("HAUPT");
 
         // SMTP-Zugangsdaten zur Laufzeit lesen, damit Aenderungen im
         // System-Setup ohne Spring-Neustart wirksam werden.

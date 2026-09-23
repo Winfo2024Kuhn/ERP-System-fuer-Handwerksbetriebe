@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentAudit;
 import org.example.kalkulationsprogramm.repository.AuditChainStateRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentAuditRepository;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -30,6 +31,7 @@ import java.util.List;
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "app.startup-maintenance.enabled", havingValue = "true", matchIfMissing = true)
 public class AuditChainBackfillRunner {
 
     private final AusgangsGeschaeftsDokumentAuditRepository auditRepository;

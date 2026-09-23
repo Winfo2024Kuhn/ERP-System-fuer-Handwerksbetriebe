@@ -9,6 +9,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.core.env.Environment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +33,8 @@ class FrontendUserBootstrapInitializerTest {
     private FrontendUserProfileRepository repository;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private Environment environment;
     @InjectMocks
     private FrontendUserBootstrapInitializer initializer;
 
@@ -74,6 +77,17 @@ class FrontendUserBootstrapInitializerTest {
         ReflectionTestUtils.setField(initializer, "adminUsername", "max.mustermann");
         ReflectionTestUtils.setField(initializer, "adminPassword", "sicheres-passwort");
         lenient().when(repository.countByUsernameIsNotNull()).thenReturn(1L);
+
+        initializer.run(null);
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void erkenntLocalTestAuchWennProfilNichtUeberActiveProfilesPropertyAktiviertWurde() {
+        ReflectionTestUtils.setField(initializer, "adminUsername", "dummy-admin");
+        ReflectionTestUtils.setField(initializer, "adminPassword", "dummy-password");
+        when(environment.acceptsProfiles(org.springframework.core.env.Profiles.of("local-test"))).thenReturn(true);
 
         initializer.run(null);
 

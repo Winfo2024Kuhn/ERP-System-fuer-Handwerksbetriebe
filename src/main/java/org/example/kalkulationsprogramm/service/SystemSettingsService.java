@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Properties;
 
 import org.example.kalkulationsprogramm.domain.SystemSetting;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.repository.SystemSettingRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class SystemSettingsService {
 
     private final SystemSettingRepository repository;
     private final org.springframework.core.env.Environment environment;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     // Defaults aus application.properties
     @Value("${smtp.host:}")
@@ -545,6 +547,11 @@ public class SystemSettingsService {
      * Sendet optional eine Test-E-Mail.
      */
     public TestResult testSmtp(String host, int port, String username, String password, String testRecipient) {
+        try {
+            localTestMailPolicy.pruefeNetzwerkzugriff("HAUPT");
+        } catch (IllegalStateException blocked) {
+            return TestResult.failure(blocked.getMessage());
+        }
         Properties props = new Properties();
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", String.valueOf(port));
@@ -600,6 +607,11 @@ public class SystemSettingsService {
         }
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             return TestResult.failure("Benutzername und Passwort sind erforderlich.");
+        }
+        try {
+            localTestMailPolicy.pruefeNetzwerkzugriff("HAUPT");
+        } catch (IllegalStateException blocked) {
+            return TestResult.failure(blocked.getMessage());
         }
 
         Properties props = new Properties();

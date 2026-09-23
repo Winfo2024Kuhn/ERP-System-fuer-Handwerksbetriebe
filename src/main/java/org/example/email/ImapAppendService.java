@@ -9,6 +9,7 @@ import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.util.ByteArrayDataSource;
 
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ import java.util.*;
 public class ImapAppendService {
 
     private final SystemSettingsService systemSettingsService;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     public void appendToSent(String from,
                              List<String> to,
@@ -120,6 +122,7 @@ public class ImapAppendService {
             message.saveChanges();
 
             try (Store store = session.getStore("imaps")) {
+                localTestMailPolicy.pruefeNetzwerkzugriff("HAUPT");
                 store.connect(host, port, user, pass);
                 Folder sent = getSentFolder(store);
                 if (sent != null) {

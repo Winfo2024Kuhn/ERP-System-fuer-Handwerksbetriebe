@@ -102,6 +102,8 @@ class LieferantenControllerTest {
   private org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
   @MockBean
   private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
+  @MockBean
+  private org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy;
 
   @Autowired
   private LieferantenController controller;
@@ -134,6 +136,27 @@ class LieferantenControllerTest {
         .andExpect(jsonPath("$[0]").value("a@example.com"))
         .andExpect(jsonPath("$[1]").value("b@example.com"))
         .andExpect(jsonPath("$[2]").value("c@example.com"));
+  }
+
+  @Test
+  void supplierMailUsesLocalTestPolicyForMainMailboxBeforeSmtp() throws Exception {
+    Lieferanten lieferant = new Lieferanten();
+    lieferant.setId(12L);
+    when(lieferantenRepository.findById(12L)).thenReturn(Optional.of(lieferant));
+    when(systemSettingsService.getSmtpHost()).thenReturn("127.0.0.1");
+    when(systemSettingsService.getSmtpPort()).thenReturn(25);
+    when(systemSettingsService.getSmtpUsername()).thenReturn("dummy");
+    when(systemSettingsService.getSmtpPassword()).thenReturn("dummy");
+    when(emailRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    org.mockito.Mockito.doThrow(new IllegalStateException("local-test blocks HAUPT"))
+        .when(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
+
+    MockMultipartFile dto = new MockMultipartFile("dto", "", "application/json", """
+        {"sender":"test@example.com","recipients":["empfaenger@example.com"],"subject":"Test","body":"Hallo"}
+        """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    mockMvc.perform(multipart("/api/lieferanten/12/emails").file(dto))
+        .andExpect(status().isInternalServerError());
+    org.mockito.Mockito.verify(localTestMailPolicy).pruefeNetzwerkzugriff("HAUPT");
   }
 
   @Test

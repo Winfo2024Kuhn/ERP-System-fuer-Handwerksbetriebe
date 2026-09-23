@@ -14,6 +14,7 @@ import java.util.Properties;
 import java.util.UUID;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
@@ -84,6 +85,7 @@ public class EmailImportService {
     private final EmailBlacklistRepository emailBlacklistRepository;
     private final BounceErkennungService bounceErkennungService;
     private final org.example.kalkulationsprogramm.repository.SeenSenderDomainRepository seenSenderDomainRepository;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     // Self-Injection für transactional proxy: importMessage muss durch den
     // Spring-Proxy laufen, damit @Transactional pro Mail eine eigene
@@ -174,6 +176,7 @@ public class EmailImportService {
         int totalImported = 0;
 
         try (Store store = session.getStore("imaps")) {
+            localTestMailPolicy.pruefeNetzwerkzugriff("HAUPT");
             store.connect(host, port, user, pass);
             log.info("[EmailImport] IMAP-Verbindung hergestellt");
 
@@ -1253,6 +1256,7 @@ public class EmailImportService {
         try {
             Session session = Session.getInstance(props);
             Store store = session.getStore("imaps");
+            localTestMailPolicy.pruefeNetzwerkzugriff("HAUPT");
             if (port > 0) {
                 store.connect(host, port, user, pass);
             } else {

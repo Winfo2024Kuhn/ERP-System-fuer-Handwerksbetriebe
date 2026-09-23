@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
+
 import org.example.kalkulationsprogramm.domain.SystemSetting;
 import org.example.kalkulationsprogramm.repository.SystemSettingRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +32,7 @@ class SystemSettingsServiceDateiOrdnerTest {
     void setUp() {
         repository = mock(SystemSettingRepository.class);
         environment = mock(Environment.class);
-        service = new SystemSettingsService(repository, environment);
+        service = new SystemSettingsService(repository, environment, new LocalTestMailPolicy(new org.springframework.mock.env.MockEnvironment()));
         // Property-Fallbacks wie in application.properties
         ReflectionTestUtils.setField(service, "defaultDateiOrdnerPfad", "C:\\Test\\CADdrawings");
         ReflectionTestUtils.setField(service, "defaultDateiOrdnerNetworkUrl", "OVERRIDE_IN_LOCAL");

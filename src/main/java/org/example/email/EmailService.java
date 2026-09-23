@@ -91,6 +91,7 @@ public class EmailService {
     private final int port;
     private final String username;
     private final String password;
+    private final org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy;
 
     /** Optionaler Hook fuer die Sent-Kopie; {@code null} = keine Kopie. */
     private SentCopyHandler sentCopyHandler;
@@ -102,6 +103,9 @@ public class EmailService {
      */
     private String absenderAnzeigename;
 
+    /** Existing callers are legacy/main-account sends unless explicitly scoped. */
+    private String kontoId = "HAUPT";
+
     /**
      * Creates a new {@code EmailService} configured for the given SMTP server.
      *
@@ -110,11 +114,13 @@ public class EmailService {
      * @param username SMTP user name
      * @param password SMTP password
      */
-    public EmailService(String host, int port, String username, String password) {
+    public EmailService(String host, int port, String username, String password,
+            org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy) {
         this.host = host;
         this.port = port;
         this.username = username;
         this.password = password;
+        this.localTestMailPolicy = java.util.Objects.requireNonNull(localTestMailPolicy, "localTestMailPolicy");
     }
 
     /**
@@ -133,6 +139,16 @@ public class EmailService {
     public EmailService mitAbsenderName(String anzeigename) {
         this.absenderAnzeigename = anzeigename;
         return this;
+    }
+
+    /** Marks an explicitly selected mail account, for example the Einkauf inbox. */
+    public EmailService mitKontoId(String kontoId) {
+        this.kontoId = kontoId;
+        return this;
+    }
+
+    private void pruefeNetzwerkzugriff() {
+        localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
     }
 
     /**
@@ -204,6 +220,7 @@ public class EmailService {
             String htmlBody,
             String attachmentFilePath,
             String attachmentFileName) {
+        pruefeNetzwerkzugriff();
         Properties props = new Properties();
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", String.valueOf(port));
@@ -330,6 +347,7 @@ public class EmailService {
             String htmlBody,
             String attachmentFilePath,
             String attachmentFileName) throws MessagingException, IOException {
+        pruefeNetzwerkzugriff();
         Properties props = new Properties();
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", String.valueOf(port));
@@ -410,6 +428,7 @@ public class EmailService {
             java.util.Map<String, java.io.File> inlineCidToFile,
             String attachmentFilePath,
             String attachmentFileName) throws MessagingException, IOException {
+        pruefeNetzwerkzugriff();
         Properties props = new Properties();
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", String.valueOf(port));
@@ -502,6 +521,7 @@ public class EmailService {
             String htmlBody,
             java.util.Map<String, java.io.File> inlineCidToFile,
             java.util.List<Attachment> attachments) throws MessagingException, IOException {
+        pruefeNetzwerkzugriff();
         Properties props = new Properties();
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", String.valueOf(port));

@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -63,7 +65,7 @@ class SystemSettingsServiceDokumentMailTest {
                     : Optional.of(new SystemSetting(key, value, null));
         });
 
-        service = new SystemSettingsService(repository, environment);
+        service = new SystemSettingsService(repository, environment, new LocalTestMailPolicy(new org.springframework.mock.env.MockEnvironment()));
         // Property-Defaults, die sonst Spring injizieren wuerde.
         ReflectionTestUtils.setField(service, "defaultSmtpHost", STANDARD_HOST);
         ReflectionTestUtils.setField(service, "defaultSmtpPort", 465);

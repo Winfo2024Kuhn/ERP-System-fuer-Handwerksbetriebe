@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.mock.env.MockEnvironment;
+import org.junit.jupiter.api.Assertions;
 
 @ExtendWith(MockitoExtension.class)
 class VendorInvoiceIntegrationServiceTest {
@@ -29,7 +32,8 @@ class VendorInvoiceIntegrationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new VendorInvoiceIntegrationService(lieferantenRepository, dokumentRepository);
+        service = new VendorInvoiceIntegrationService(lieferantenRepository, dokumentRepository,
+                new LocalTestMailPolicy(new org.springframework.mock.env.MockEnvironment()));
         ReflectionTestUtils.setField(service, "emailFeaturesEnabled", true);
         ReflectionTestUtils.setField(service, "microsoftEnabled", false);
         ReflectionTestUtils.setField(service, "microsoftTenantId", "");
@@ -50,6 +54,20 @@ class VendorInvoiceIntegrationServiceTest {
 
     @Nested
     class DoppelteRechnungen {
+
+        @Test
+        void localTestBlockiertKonfigurierteVendorNetzwegeVorDemAbruf() {
+            MockEnvironment environment = new MockEnvironment();
+            environment.setActiveProfiles("local-test");
+            VendorInvoiceIntegrationService localService = new VendorInvoiceIntegrationService(
+                    lieferantenRepository, dokumentRepository, new LocalTestMailPolicy(environment));
+            ReflectionTestUtils.setField(localService, "microsoftEnabled", true);
+            ReflectionTestUtils.setField(localService, "microsoftTenantId", "dummy-tenant");
+            ReflectionTestUtils.setField(localService, "microsoftClientId", "dummy-client");
+
+            Assertions.assertThrows(IllegalStateException.class, localService::fetchMicrosoftInvoices);
+            verifyNoInteractions(lieferantenRepository, dokumentRepository);
+        }
 
         @Test
         void microsoftIntegrationGibt0ZurueckWennDeaktiviert() {

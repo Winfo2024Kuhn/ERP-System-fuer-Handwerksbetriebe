@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.EmailImportService;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
@@ -32,11 +33,17 @@ import org.springframework.core.annotation.Order;
 @RequiredArgsConstructor
 public class EmailThreadBackfillRunner {
 
+    @Value("${app.startup-maintenance.enabled:true}")
+    private boolean startupMaintenanceEnabled = true;
+
     private final EmailImportService emailImportService;
 
     @EventListener(ApplicationReadyEvent.class)
     @Order(100) // nach kritischen Bootstrappern (Frontend-User, Schema-Fix)
     public void backfillEmailThreadsOnStartup() {
+        if (!startupMaintenanceEnabled) {
+            return;
+        }
         try {
             log.info("[EmailThreadBackfill] Starte Subject-basierten Backfill für Thread-Erkennung...");
             int verknuepft = emailImportService.backfillParentEmails();

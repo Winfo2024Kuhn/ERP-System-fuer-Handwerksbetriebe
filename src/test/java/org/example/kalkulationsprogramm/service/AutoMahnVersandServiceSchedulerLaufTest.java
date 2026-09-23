@@ -127,7 +127,8 @@ class AutoMahnVersandServiceSchedulerLaufTest
                 formularTextbausteinDefaultService,
                 emailSignatureService,
                 projektEmailArchivService,
-                mock(org.example.kalkulationsprogramm.service.mail.SentMailArchiver.class));
+                mock(org.example.kalkulationsprogramm.service.mail.SentMailArchiver.class),
+                new org.example.kalkulationsprogramm.config.LocalTestMailPolicy(new org.springframework.mock.env.MockEnvironment()));
 
         service.verarbeiteFaelligeMahnungen();
 

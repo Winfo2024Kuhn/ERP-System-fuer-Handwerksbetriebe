@@ -10,6 +10,7 @@ import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,7 @@ public class AnfrageBestaetigungVersandService {
     private final SystemSettingsService systemSettingsService;
     private final SentMailArchiver sentMailArchiver;
     private final EmailOutboundPersistenceService outboundPersistenceService;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     /**
      * Versendet eine Bestätigungsmail an den ersten in der Anfrage hinterlegten
@@ -217,7 +219,8 @@ public class AnfrageBestaetigungVersandService {
                 systemSettingsService.getSmtpHost(),
                 systemSettingsService.getSmtpPort(),
                 systemSettingsService.getSmtpUsername(),
-                systemSettingsService.getSmtpPassword())
+                systemSettingsService.getSmtpPassword(), localTestMailPolicy)
+                .mitKontoId("HAUPT")
                 .mitAbsenderName(systemSettingsService.getMailAbsenderName())
                 .mitSentKopie(sentMailArchiver);
     }

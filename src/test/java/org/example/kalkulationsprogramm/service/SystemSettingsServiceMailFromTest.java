@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
+
 import org.example.kalkulationsprogramm.domain.SystemSetting;
 import org.example.kalkulationsprogramm.repository.SystemSettingRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +34,7 @@ class SystemSettingsServiceMailFromTest {
     @BeforeEach
     void setUp() {
         repository = mock(SystemSettingRepository.class);
-        service = new SystemSettingsService(repository, mock(org.springframework.core.env.Environment.class));
+        service = new SystemSettingsService(repository, mock(org.springframework.core.env.Environment.class), new LocalTestMailPolicy(new org.springframework.mock.env.MockEnvironment()));
     }
 
     @Test

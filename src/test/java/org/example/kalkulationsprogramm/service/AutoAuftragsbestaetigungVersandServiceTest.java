@@ -34,6 +34,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     @Mock ProjektEmailArchivService projektEmailArchivService;
     @Mock org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository dokumentFreigabeRepository;
     @Mock org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
+    @Mock org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy;
 
     private AutoAuftragsbestaetigungVersandService neuService() {
         return new AutoAuftragsbestaetigungVersandService(
@@ -46,7 +47,8 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 emailSignatureService,
                 projektEmailArchivService,
                 dokumentFreigabeRepository,
-                sentMailArchiver);
+                sentMailArchiver,
+                localTestMailPolicy);
     }
 
     @Test

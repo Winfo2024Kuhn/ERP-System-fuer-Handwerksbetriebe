@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
@@ -37,6 +38,7 @@ public class VendorInvoiceIntegrationService {
 
     private final LieferantenRepository lieferantenRepository;
     private final LieferantDokumentRepository dokumentRepository;
+    private final LocalTestMailPolicy localTestMailPolicy;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${email.features.enabled:true}")
@@ -137,6 +139,7 @@ public class VendorInvoiceIntegrationService {
             log.debug("[Microsoft] Integration deaktiviert oder nicht konfiguriert");
             return 0;
         }
+        localTestMailPolicy.pruefeNetzwerkzugriff("VENDOR");
 
         // 1. OAuth Token holen
         String accessToken = getMicrosoftAccessToken();
@@ -237,6 +240,7 @@ public class VendorInvoiceIntegrationService {
             log.debug("[Amazon] Integration deaktiviert oder nicht konfiguriert");
             return 0;
         }
+        localTestMailPolicy.pruefeNetzwerkzugriff("VENDOR");
 
         // 1. Access Token mit Refresh Token holen
         String accessToken = getAmazonAccessToken();

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Properties;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.springframework.stereotype.Component;
 
@@ -59,6 +60,7 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
     private static final String SETTING_AKTIV = "mail.sent-kopie.aktiv";
 
     private final SystemSettingsService systemSettingsService;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     /**
      * Ablage im "Gesendet"-Ordner des Standard-Postfachs.
@@ -72,7 +74,7 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
     @Override
     public void archiviereKopie(MimeMessage versendeteNachricht)
     {
-        archiviereKopie(versendeteNachricht, systemSettingsService.getStandardImapZugang());
+        archiviereKopie(versendeteNachricht, systemSettingsService.getStandardImapZugang(), "HAUPT");
     }
 
     /**
@@ -83,11 +85,11 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
      */
     public EmailService.SentCopyHandler fuerDokumentKonto()
     {
-        return nachricht -> archiviereKopie(nachricht, systemSettingsService.getDokumentImapZugang());
+        return nachricht -> archiviereKopie(nachricht, systemSettingsService.getDokumentImapZugang(), "DOKUMENTE");
     }
 
     void archiviereKopie(MimeMessage versendeteNachricht,
-            SystemSettingsService.ImapZugang zugang)
+            SystemSettingsService.ImapZugang zugang, String kontoId)
     {
         if (versendeteNachricht == null) return;
         if (!istAktiv())
@@ -112,6 +114,7 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
 
         try (Store store = Session.getInstance(props).getStore("imaps"))
         {
+            localTestMailPolicy.pruefeNetzwerkzugriff(kontoId);
             store.connect(zugang.host(), zugang.port(), zugang.username(), zugang.password());
 
             Folder sent = findeSentOrdner(store);

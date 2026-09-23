@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
@@ -98,6 +99,7 @@ public class UnifiedEmailController {
     private final org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     private final SteuerberaterKontaktService steuerberaterKontaktService;
     private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
+    private final LocalTestMailPolicy localTestMailPolicy;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -1580,7 +1582,8 @@ public class UnifiedEmailController {
                     ? systemSettingsService.getDokumentMailKonto()
                     : systemSettingsService.getStandardMailKonto();
             org.example.email.EmailService emailService = new org.example.email.EmailService(
-                    konto.host(), konto.port(), konto.username(), konto.password())
+                    konto.host(), konto.port(), konto.username(), konto.password(), localTestMailPolicy)
+                    .mitKontoId(ueberDokumentKonto ? "DOKUMENTE" : "HAUPT")
                     .mitAbsenderName(konto.fromName())
                     // Kopie in das Postfach, das die Mail auch verschickt hat.
                     .mitSentKopie(ueberDokumentKonto
@@ -1759,7 +1762,8 @@ public class UnifiedEmailController {
                     systemSettingsService.getSmtpHost(),
                     systemSettingsService.getSmtpPort(),
                     systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword())
+                    systemSettingsService.getSmtpPassword(), localTestMailPolicy)
+                    .mitKontoId("HAUPT")
                     .mitSentKopie(sentMailArchiver);
 
             // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)

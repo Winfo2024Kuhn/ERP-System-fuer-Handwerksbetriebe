@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service.mail;
 
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +34,7 @@ class SmtpHtmlMailSenderTest {
         when(systemSettingsService.getSmtpUsername()).thenReturn("info@example.com");
         when(systemSettingsService.getSmtpPassword()).thenReturn("altes-passwort");
 
-        sender = new SmtpHtmlMailSender(systemSettingsService);
+        sender = new SmtpHtmlMailSender(systemSettingsService, new LocalTestMailPolicy(new org.springframework.mock.env.MockEnvironment()));
     }
 
     @Test

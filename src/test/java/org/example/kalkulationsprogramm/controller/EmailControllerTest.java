@@ -48,6 +48,9 @@ class EmailControllerTest {
     private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
 
     @MockBean
+    private org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy;
+
+    @MockBean
     private ProjektDokumentRepository dokumentRepository;
 
     @MockBean

@@ -41,6 +41,7 @@ public class AuditChainRebuildRunner {
 
     @Bean
     @Order(20) // Nach dem AuditChainBackfillRunner (@Order(10)).
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.startup-maintenance.enabled", havingValue = "true", matchIfMissing = true)
     public ApplicationRunner auditChainRebuild() {
         return args -> {
             log.warn("audit.chain.rebuild-on-start=true gesetzt — Audit-Hash-Kette wird "

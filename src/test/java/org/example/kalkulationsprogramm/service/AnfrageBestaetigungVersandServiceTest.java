@@ -17,6 +17,7 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.config.LocalTestMailPolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -44,7 +45,7 @@ class AnfrageBestaetigungVersandServiceTest {
         service = new AnfrageBestaetigungVersandService(
                 emailTextTemplateService, emailSignatureService, systemSettingsService,
                 Mockito.mock(org.example.kalkulationsprogramm.service.mail.SentMailArchiver.class),
-                outboundPersistenceService) {
+                outboundPersistenceService, new LocalTestMailPolicy(new org.springframework.mock.env.MockEnvironment())) {
             @Override
             EmailService baueEmailService() {
                 return emailService;
