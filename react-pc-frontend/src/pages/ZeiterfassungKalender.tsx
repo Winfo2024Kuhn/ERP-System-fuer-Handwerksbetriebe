@@ -84,6 +84,12 @@ const WOCHENTAGE = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const MONATE = ['', 'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
     'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
+function istVollstaendigerJahresSaldo(data: unknown): data is { gesamt: object; urlaub: object } {
+    const saldo = data as { gesamt?: unknown; urlaub?: unknown } | null;
+    return !!saldo && typeof saldo.gesamt === 'object' && saldo.gesamt !== null
+        && typeof saldo.urlaub === 'object' && saldo.urlaub !== null;
+}
+
 export default function ZeiterfassungKalender() {
     const bestaetige = useConfirm();
     const toast = useToast();
@@ -209,8 +215,13 @@ export default function ZeiterfassungKalender() {
             sollStunden: number;
             saldo: number;
         };
+        // Für wen und welches Jahr der Saldo geladen wurde – nach einem Wechsel nie fremde Zahlen zeigen
+        mitarbeiterId: number;
+        jahr: number;
     }
     const [jahresSaldo, setJahresSaldo] = useState<JahresSaldo | null>(null);
+    // Beim schnellen Mitarbeiterwechsel dürfen verspätete Antworten den neuen Stand nicht überschreiben
+    const jahresSaldoAnfrageRef = useRef(0);
 
     useEffect(() => {
         // Load basic data
@@ -246,7 +257,10 @@ export default function ZeiterfassungKalender() {
     }, []);
 
     const loadJahresSaldo = async () => {
+        const anfrage = ++jahresSaldoAnfrageRef.current;
         if (!selectedMitarbeiter) return;
+        const mitarbeiterId = selectedMitarbeiter;
+        const saldoJahr = jahr;
         try {
             // Hole den Login-Token des Mitarbeiters aus der Mitarbeiterliste
             const mitarbeiterRes = await fetch(`/api/mitarbeiter/${selectedMitarbeiter}`);
@@ -271,7 +285,9 @@ export default function ZeiterfassungKalender() {
             const res = await fetch(`/api/zeiterfassung/saldo/${token}?jahr=${jahr}`);
             if (res.ok) {
                 const data = await res.json();
-                setJahresSaldo(data);
+                if (anfrage !== jahresSaldoAnfrageRef.current) return;
+                // Geschäftsführung (ohne Zeitkonto) und nicht gefundene Mitarbeiter liefern kein "gesamt"
+                setJahresSaldo(istVollstaendigerJahresSaldo(data) ? { ...data, mitarbeiterId, jahr: saldoJahr } as JahresSaldo : null);
             }
         } catch (err) {
             console.error('Fehler beim Laden des Jahressaldos:', err);
@@ -731,7 +747,7 @@ export default function ZeiterfassungKalender() {
                         )}
 
                         {/* Jahres-Übersicht */}
-                        {jahresSaldo && !istGeschaeftsfuehrer && (
+                        {jahresSaldo?.mitarbeiterId === selectedMitarbeiter && jahresSaldo.jahr === jahr && !istGeschaeftsfuehrer && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Gesamtstundenkonto */}
                                 <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-4 rounded-lg border border-slate-200 shadow-sm">
