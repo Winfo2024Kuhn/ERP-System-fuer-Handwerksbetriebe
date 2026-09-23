@@ -54,28 +54,65 @@ LEFT JOIN email_text_template_standard s ON s.dokument_typ = t.dokument_typ
 UPDATE email_text_template SET kategorie = 'EINKAUF'
  WHERE dokument_typ LIKE 'EINKAUF\_%';
 
-INSERT IGNORE INTO email_text_template_standard (dokument_typ, template_id)
-SELECT t.dokument_typ, t.id FROM email_text_template t WHERE t.standard = 1;
-
--- Neutrale, editierbare Startfassungen. INSERT IGNORE schützt Betreiberänderungen.
-INSERT IGNORE INTO email_text_template
+-- Neutrale, editierbare Startfassungen nur für Typen ohne vorhandene Fassung.
+INSERT INTO email_text_template
     (dokument_typ, kategorie, name, subject_template, html_body, aktiv, standard, version, created_at, updated_at)
-VALUES
-('EINKAUF_ANFRAGE','EINKAUF','Lieferantenanfrage','Preisanfrage {{ANFRAGENUMMER}} – Lieferung bis {{LIEFERTERMIN}}',
- '<p>{{ANREDE}},</p><p>bitte bieten Sie uns die aufgeführten Positionen bis zum {{ANTWORTFRIST}} an. Bitte nennen Sie Liefertermin, Fracht-, Zuschnitt- und Zeugniskosten getrennt.</p><p>{{POSITIONEN}}</p><p>Antworten Sie gerne direkt auf diese E-Mail.</p>',1,1,0,NOW(6),NOW(6)),
-('EINKAUF_BESTELLUNG','EINKAUF','Bestellung','Bestellung {{BESTELLNUMMER}} zur Anfrage {{ANFRAGENUMMER}}',
- '<p>{{ANREDE}},</p><p>hiermit bestellen wir die folgenden Positionen.</p><p>{{POSITIONEN}}</p><p>Bitte bestätigen Sie den Liefertermin {{LIEFERTERMIN}}.</p>',1,1,0,NOW(6),NOW(6)),
-('EINKAUF_DIREKTBESTELLUNG','EINKAUF','Direktbestellung','Bestellung {{BESTELLNUMMER}}',
- '<p>{{ANREDE}},</p><p>hiermit bestellen wir die folgenden Positionen.</p><p>{{POSITIONEN}}</p><p>Bitte bestätigen Sie den Liefertermin {{LIEFERTERMIN}}.</p>',1,1,0,NOW(6),NOW(6)),
-('EINKAUF_NACHFRAGE','EINKAUF','Nachfrage zum Angebot','Rückfrage zur Anfrage {{ANFRAGENUMMER}}',
- '<p>{{ANREDE}},</p><p>bitte geben Sie uns eine kurze Rückmeldung zu Ihrem Angebot {{LIEFERANTEN_ANGEBOTSNUMMER}}.</p><p>{{POSITIONEN}}</p>',1,1,0,NOW(6),NOW(6)),
-('EINKAUF_ZEUGNIS_NACHFORDERUNG','EINKAUF','Werkstoffzeugnis nachfordern','Werkstoffzeugnis zu Bestellung {{BESTELLNUMMER}}',
- '<p>{{ANREDE}},</p><p>bitte senden Sie uns die noch fehlenden Werkstoffzeugnisse zu.</p><p>{{ZEUGNISSE}}</p>',1,1,0,NOW(6),NOW(6)),
-('EINKAUF_BESTAETIGUNG_NACHFRAGE','EINKAUF','Auftragsbestätigung nachfragen','Auftragsbestätigung zu Bestellung {{BESTELLNUMMER}}',
- '<p>{{ANREDE}},</p><p>bitte senden Sie uns die Auftragsbestätigung zu unserer Bestellung.</p>',1,1,0,NOW(6),NOW(6)),
-('EINKAUF_LIEFERUNG_NACHFRAGE','EINKAUF','Liefertermin nachfragen','Liefertermin zu Bestellung {{BESTELLNUMMER}}',
- '<p>{{ANREDE}},</p><p>bitte teilen Sie uns den aktuellen Liefertermin für unsere Bestellung mit.</p>',1,1,0,NOW(6),NOW(6));
+SELECT 'EINKAUF_ANFRAGE','EINKAUF','Lieferantenanfrage','Preisanfrage {{ANFRAGENUMMER}} – Lieferung bis {{LIEFERTERMIN}}',
+       '<p>{{ANREDE}},</p><p>bitte bieten Sie uns die aufgeführten Positionen bis zum {{ANTWORTFRIST}} an. Bitte nennen Sie Liefertermin, Fracht-, Zuschnitt- und Zeugniskosten getrennt.</p><p>{{POSITIONEN}}</p><p>Antworten Sie gerne direkt auf diese E-Mail.</p>',
+       1,1,0,NOW(6),NOW(6)
+  FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM email_text_template WHERE dokument_typ='EINKAUF_ANFRAGE');
 
+INSERT INTO email_text_template
+    (dokument_typ, kategorie, name, subject_template, html_body, aktiv, standard, version, created_at, updated_at)
+SELECT 'EINKAUF_BESTELLUNG','EINKAUF','Bestellung','Bestellung {{BESTELLNUMMER}} zur Anfrage {{ANFRAGENUMMER}}',
+       '<p>{{ANREDE}},</p><p>hiermit bestellen wir die folgenden Positionen.</p><p>{{POSITIONEN}}</p><p>Bitte bestätigen Sie den Liefertermin {{LIEFERTERMIN}}.</p>',
+       1,1,0,NOW(6),NOW(6)
+  FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM email_text_template WHERE dokument_typ='EINKAUF_BESTELLUNG');
+
+INSERT INTO email_text_template
+    (dokument_typ, kategorie, name, subject_template, html_body, aktiv, standard, version, created_at, updated_at)
+SELECT 'EINKAUF_DIREKTBESTELLUNG','EINKAUF','Direktbestellung','Bestellung {{BESTELLNUMMER}}',
+       '<p>{{ANREDE}},</p><p>hiermit bestellen wir die folgenden Positionen.</p><p>{{POSITIONEN}}</p><p>Bitte bestätigen Sie den Liefertermin {{LIEFERTERMIN}}.</p>',
+       1,1,0,NOW(6),NOW(6)
+  FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM email_text_template WHERE dokument_typ='EINKAUF_DIREKTBESTELLUNG');
+
+INSERT INTO email_text_template
+    (dokument_typ, kategorie, name, subject_template, html_body, aktiv, standard, version, created_at, updated_at)
+SELECT 'EINKAUF_NACHFRAGE','EINKAUF','Nachfrage zum Angebot','Rückfrage zur Anfrage {{ANFRAGENUMMER}}',
+       '<p>{{ANREDE}},</p><p>bitte geben Sie uns eine kurze Rückmeldung zu Ihrem Angebot {{LIEFERANTEN_ANGEBOTSNUMMER}}.</p><p>{{POSITIONEN}}</p>',
+       1,1,0,NOW(6),NOW(6)
+  FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM email_text_template WHERE dokument_typ='EINKAUF_NACHFRAGE');
+
+INSERT INTO email_text_template
+    (dokument_typ, kategorie, name, subject_template, html_body, aktiv, standard, version, created_at, updated_at)
+SELECT 'EINKAUF_ZEUGNIS_NACHFORDERUNG','EINKAUF','Werkstoffzeugnis nachfordern','Werkstoffzeugnis zu Bestellung {{BESTELLNUMMER}}',
+       '<p>{{ANREDE}},</p><p>bitte senden Sie uns die noch fehlenden Werkstoffzeugnisse zu.</p><p>{{ZEUGNISSE}}</p>',
+       1,1,0,NOW(6),NOW(6)
+  FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM email_text_template WHERE dokument_typ='EINKAUF_ZEUGNIS_NACHFORDERUNG');
+
+INSERT INTO email_text_template
+    (dokument_typ, kategorie, name, subject_template, html_body, aktiv, standard, version, created_at, updated_at)
+SELECT 'EINKAUF_BESTAETIGUNG_NACHFRAGE','EINKAUF','Auftragsbestätigung nachfragen','Auftragsbestätigung zu Bestellung {{BESTELLNUMMER}}',
+       '<p>{{ANREDE}},</p><p>bitte senden Sie uns die Auftragsbestätigung zu unserer Bestellung.</p>',
+       1,1,0,NOW(6),NOW(6)
+  FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM email_text_template WHERE dokument_typ='EINKAUF_BESTAETIGUNG_NACHFRAGE');
+
+INSERT INTO email_text_template
+    (dokument_typ, kategorie, name, subject_template, html_body, aktiv, standard, version, created_at, updated_at)
+SELECT 'EINKAUF_LIEFERUNG_NACHFRAGE','EINKAUF','Liefertermin nachfragen','Liefertermin zu Bestellung {{BESTELLNUMMER}}',
+       '<p>{{ANREDE}},</p><p>bitte teilen Sie uns den aktuellen Liefertermin für unsere Bestellung mit.</p>',
+       1,1,0,NOW(6),NOW(6)
+  FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM email_text_template WHERE dokument_typ='EINKAUF_LIEFERUNG_NACHFRAGE');
+
+-- Je Dokumenttyp einen bisherigen Standard bevorzugen, sonst eine bestehende
+-- Fassung deterministisch wählen. Der Unique-Key verhindert weitere Zuordnungen.
 INSERT IGNORE INTO email_text_template_standard (dokument_typ, template_id)
-SELECT dokument_typ, id FROM email_text_template
- WHERE dokument_typ LIKE 'EINKAUF\_%' AND standard = 1;
+SELECT dokument_typ,
+       COALESCE(MIN(CASE WHEN standard = 1 THEN id END), MIN(id))
+  FROM email_text_template
+ GROUP BY dokument_typ;
+
+-- Das separate Mapping ist die Quelle der Eindeutigkeit; Boolean-Flags angleichen.
+UPDATE email_text_template t
+JOIN email_text_template_standard s ON s.dokument_typ = t.dokument_typ
+   SET t.standard = IF(t.id = s.template_id, 1, 0);
