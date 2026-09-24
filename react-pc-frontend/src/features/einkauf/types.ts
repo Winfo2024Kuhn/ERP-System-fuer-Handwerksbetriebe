@@ -23,10 +23,10 @@ export interface BedarfResponse { id: Id; version: number; position: PositionSna
 export interface Page<T> { content: T[]; pageable: { pageNumber: number; pageSize: number; sort: { sorted: boolean; unsorted: boolean; empty: boolean }; offset: number; paged: boolean; unpaged: boolean }; totalPages: number; totalElements: number; last: boolean; size: number; number: number; sort: { sorted: boolean; unsorted: boolean; empty: boolean }; numberOfElements: number; first: boolean; empty: boolean }
 
 export interface AnfrageCreate { positionen: Herkunft[]; empfaenger: KontaktSnapshot[]; antwortfrist: string | null; liefertermin: string | null; zustaendigId: Id | null; idempotenzKey: string }
-export interface AnfrageKopf { id: Id; version: number; paNummer: string; zustaendigId: Id | null; aktuelleRevisionId: Id | null; revisionsNummer: number; status: string; antwortfrist: string | null; liefertermin: string | null }
+export interface AnfrageKopf { id: Id; version: number; paNummer: string; zustaendigId: Id | null; aktuelleRevisionId: Id | null; revisionsNummer: number; status: string; antwortfrist: string | null; liefertermin: string | null; projektIds: Id[]; antworten: number; lieferantenAnzahl: number }
 export interface AnfragePositionszeile { id: Id; snapshot: PositionSnapshot; herkuenfte: Herkunft[] }
-export interface Lieferantenbeteiligung { id: Id; lieferantId: Id; lieferantenname: string; status: string; version: number }
-export interface AnfrageDetail { kopf: AnfrageKopf; positionen: AnfragePositionszeile[]; lieferanten: Lieferantenbeteiligung[] }
+export interface Lieferantenbeteiligung { id: Id; lieferantId: Id; lieferantenname: string; status: string; version: number; kontakt: KontaktSnapshot | null }
+export interface AnfrageDetail { kopf: AnfrageKopf; positionen: AnfragePositionszeile[]; lieferanten: Lieferantenbeteiligung[]; angezeigteRevisionId: Id; historisch: boolean }
 export interface AnfrageRevisionRequest { version: number; inhalt: AnfrageCreate }
 export interface LieferantenstatusRequest { version: number; status: string }
 

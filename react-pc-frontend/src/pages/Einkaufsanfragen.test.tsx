@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -14,4 +15,11 @@ describe('Einkaufsanfragen', () => {
     expect(screen.getByText('1 / 3')).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/einkauf/anfragen?page=0&size=20'));
   });
+});
+
+it('lädt die nächste Seite und macht ältere Anfragen erreichbar',async()=>{
+ const user=userEvent.setup();global.fetch=vi.fn(async(input:RequestInfo|URL)=>({ok:true,json:async()=>({content:[{id:1,paNummer:String(input).includes('page=1')?'PA-ALT':'PA-NEU',revisionsNummer:1,status:'AUSSTEHEND'}],totalPages:2})}as Response));
+ render(<MemoryRouter><ToastProvider><Einkaufsanfragen/></ToastProvider></MemoryRouter>);
+ await screen.findByText('PA-NEU');await user.click(screen.getByRole('button',{name:'Nächste Seite'}));
+ expect(await screen.findByText('PA-ALT')).toBeInTheDocument();expect(screen.getByRole('button',{name:'Nächste Seite'})).toBeDisabled();
 });
