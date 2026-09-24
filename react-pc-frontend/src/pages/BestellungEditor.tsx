@@ -12,6 +12,8 @@ import { EinkaufNavigation } from '../features/einkauf/components/EinkaufNavigat
 import { HiCadImportDialog } from '../features/einkauf/components/HiCadImportDialog';
 import { LagerentnahmeDialog } from '../features/einkauf/components/LagerentnahmeDialog';
 import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
+import { KonfliktAbgleichDialog } from '../features/einkauf/components/KonfliktAbgleichDialog';
+import type { EntwurfKonflikt } from '../features/einkauf/components/KonfliktAbgleichDialog';
 
 const format = (value: number | null | undefined) => (value ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 3 });
 const parseMenge = (value: string) => {
@@ -29,8 +31,10 @@ export default function BestellungEditor() {
   const [fehler, setFehler] = useState(''); const [auswahl, setAuswahl] = useState<Record<number, string>>({});
   const [dialogOffen, setDialogOffen] = useState(false); const [bearbeitung, setBearbeitung] = useState<BedarfResponse | undefined>();
   const [hicadOffen, setHicadOffen] = useState(false); const [direktOffen, setDirektOffen] = useState(false);
+  const [direkteTeilmengen, setDirekteTeilmengen] = useState<Array<{ bedarfId: number; menge: number }>>([]);
   const [entnahme, setEntnahme] = useState<BedarfResponse | null>(null);
   const [projektNamen, setProjektNamen] = useState<Record<number, string>>({});
+  const [anfrageKonflikt, setAnfrageKonflikt] = useState<EntwurfKonflikt | null>(null);
 
   useEffect(() => {
     void einkaufApi.get<Array<{ id: number; auftragsnummer?: string | null; bauvorhaben?: string | null }>>('/api/projekte/simple?size=500')
@@ -55,15 +59,17 @@ export default function BestellungEditor() {
 
   const ausgewählteAnteile = useMemo(() => Object.entries(auswahl).flatMap(([idText, raw]) => {
     const row = daten?.content.find(item => item.id === Number(idText)); const menge = parseMenge(raw);
-    if (!row || !menge) return [];
+    if (!row) return [];
+    if (!menge) return [{ bedarfId: row.id, version: row.version, menge: Number.NaN }];
     return [{ bedarfId: row.id, version: row.version, menge }];
   }), [auswahl, daten]);
 
   const anfrageVorbereiten = async () => {
     if (!ausgewählteAnteile.length) { toast.error('Bitte mindestens einen verfügbaren Bedarf auswählen.'); return; }
-    const ungueltigeMenge = ausgewählteAnteile.some(item => {
-      const row = daten?.content.find(candidate => candidate.id === item.bedarfId);
-      return !row || item.menge > (row.mengen.disponierbar ?? 0);
+    if (ausgewählteAnteile.some(anteil => !Number.isFinite(anteil.menge) || anteil.menge <= 0)) { toast.error('Bitte geben Sie für jeden ausgewählten Bedarf eine gültige Anfragemenge ein.'); return; }
+    const ungueltigeMenge = ausgewählteAnteile.some(anteil => {
+      const zeile = daten?.content.find(kandidat => kandidat.id === anteil.bedarfId);
+      return !zeile || anteil.menge > (zeile.mengen.disponierbar ?? 0);
     });
     if (ungueltigeMenge) { toast.error('Die Anfragemenge darf die aktuell verfügbare Menge nicht überschreiten.'); return; }
     setFehler('');
@@ -75,23 +81,48 @@ export default function BestellungEditor() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Anfrage konnte nicht vorbereitet werden.';
       toast.error(message);
-      if (error instanceof EinkaufApiError && error.status === 409) void ladenBedarfe();
+      if (error instanceof EinkaufApiError && error.status === 409) {
+        try {
+          const aktuelleBedarfe = await Promise.all(ausgewählteAnteile.map(anteil => einkaufApi.get<BedarfResponse>(`/api/einkauf/bedarf/${anteil.bedarfId}`)));
+          const felder: EntwurfKonflikt['felder'] = [];
+          aktuelleBedarfe.forEach(aktuell => {
+            const vorher = daten?.content.find(eintrag => eintrag.id === aktuell.id);
+            const alteVerfuegbarkeit = vorher?.mengen.disponierbar ?? 0;
+            const neueVerfuegbarkeit = aktuell.mengen.disponierbar ?? 0;
+            const entwurfsmenge = auswahl[aktuell.id] ?? '';
+            if (aktuell.version !== vorher?.version || neueVerfuegbarkeit !== alteVerfuegbarkeit) felder.push({ id: `menge-${aktuell.id}`, label: `${aktuell.position.interneReferenz || aktuell.position.bezeichnung} · Anfragemenge`, lokal: `${entwurfsmenge} (Verfügbarkeit zuvor ${format(alteVerfuegbarkeit)})`, server: `Verfügbar ${format(neueVerfuegbarkeit)} ${aktuell.position.basis?.einheit ?? ''}` });
+          });
+          setAnfrageKonflikt({ felder, hinweise: ['Mindestens ein Bedarf wurde während der Anfragevorbereitung geändert. Entscheiden Sie je Bedarf, ob Ihre Teilmenge bestehen bleibt oder Sie die aktuelle verfügbare Menge übernehmen.'], anwenden: wahl => { setAuswahl(aktuell => { const neu = { ...aktuell }; aktuelleBedarfe.forEach(bedarf => { if (wahl[`menge-${bedarf.id}`] === 'server') neu[bedarf.id] = String(bedarf.mengen.disponierbar ?? 0).replace('.', ','); }); return neu; }); setAktualisierung(stand => stand + 1); } });
+        } catch (ladeFehler) { toast.error(ladeFehler instanceof Error ? ladeFehler.message : 'Aktuelle Bedarfe konnten nicht abgeglichen werden.'); }
+      }
     }
   };
   const gespeichert = () => { setDialogOffen(false); setBearbeitung(undefined); setAktualisierung(value => value + 1); };
   const auswahlMengeAendern = (bedarf: BedarfResponse, value: string) => {
     setAuswahl(current => ({ ...current, [bedarf.id]: value }));
   };
+  const direktbestellungOeffnen = () => {
+    const ausgewaehlt = Object.entries(auswahl);
+    if (!ausgewaehlt.length) { setDirekteTeilmengen([]); setDirektOffen(true); return; }
+    const teilmengen: Array<{ bedarfId: number; menge: number }> = [];
+    for (const [idText, entwurf] of ausgewaehlt) {
+      const bedarf = daten?.content.find(eintrag => eintrag.id === Number(idText));
+      const menge = parseMenge(entwurf);
+      if (!bedarf || !menge || menge > (bedarf.mengen.disponierbar ?? 0)) { toast.error('Bitte prüfen Sie für jeden ausgewählten Bedarf eine gültige Menge innerhalb der verfügbaren Restmenge.'); return; }
+      teilmengen.push({ bedarfId: bedarf.id, menge });
+    }
+    setDirekteTeilmengen(teilmengen); setDirektOffen(true);
+  };
 
   return <PageLayout ribbonCategory="Einkauf" title="BEDARF" subtitle="Materialbedarf prüfen, Teilmengen anfragen und bestätigte Lagerentnahmen erfassen."
-    actions={<div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => { setBearbeitung(undefined); setDialogOffen(true); }}>Bedarf erfassen</Button><Button variant="outline" size="sm" onClick={() => setHicadOffen(true)}>HiCAD importieren</Button><Button variant="outline" size="sm" onClick={() => setDirektOffen(true)}>Direktbestellung</Button><Button variant="outline" size="sm" disabled={laden} onClick={() => setAktualisierung(value => value + 1)}><RefreshCw className={`mr-2 h-4 w-4 ${laden ? 'animate-spin' : ''}`} />Aktualisieren</Button></div>}>
+    actions={<div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => { setBearbeitung(undefined); setDialogOffen(true); }}>Bedarf erfassen</Button><Button variant="outline" size="sm" onClick={() => setHicadOffen(true)}>HiCAD importieren</Button><Button variant="outline" size="sm" onClick={direktbestellungOeffnen}>Direktbestellung</Button><Button variant="outline" size="sm" disabled={laden} onClick={() => setAktualisierung(value => value + 1)}><RefreshCw className={`mr-2 h-4 w-4 ${laden ? 'animate-spin' : ''}`} />Aktualisieren</Button></div>}>
     <div className="space-y-4">
       <EinkaufNavigation active="bedarf" />
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <label htmlFor="bedarf-suche" className="min-w-[15rem] flex-1 space-y-1 text-sm font-medium">Bedarf suchen<Input id="bedarf-suche" value={suche} onChange={event => { setSuche(event.target.value); setSeite(0); }} placeholder="Bezeichnung, interne Nummer oder Projekt" /></label>
         <Button variant="outline" size="sm" onClick={() => setAktualisierung(value => value + 1)}><Search className="mr-2 h-4 w-4" />Suchen</Button>
       </div>
-      {ausgewählteAnteile.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3"><p className="text-sm text-rose-900">{ausgewählteAnteile.length} Bedarfe für eine Anfrage ausgewählt.</p><Button size="sm" onClick={() => void anfrageVorbereiten()}>Angebote einholen ({ausgewählteAnteile.length})</Button></div>}
+      {Object.keys(auswahl).length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3"><p className="text-sm text-rose-900">{Object.keys(auswahl).length} Bedarfe für eine Anfrage ausgewählt.</p><Button size="sm" onClick={() => void anfrageVorbereiten()}>Angebote einholen ({Object.keys(auswahl).length})</Button></div>}
       {fehler && <p role="alert" className="text-sm text-rose-700">{fehler}</p>}
       {laden ? <p role="status" className="rounded-lg border border-slate-200 bg-white p-5">Bedarfe werden geladen …</p>
         : !daten?.content.length ? <section className="rounded-lg border border-slate-200 bg-white p-8 text-center"><ClipboardList className="mx-auto mb-3 h-8 w-8 text-slate-400" /><h2 className="font-semibold">Noch kein Bedarf vorhanden</h2><p className="mt-1 text-sm text-slate-600">Erfassen Sie Material oder importieren Sie eine HiCAD-Datei.</p></section>
@@ -111,9 +142,10 @@ export default function BestellungEditor() {
         })}</div>}
       {!laden && daten && daten.totalPages > 1 && <div className="flex items-center justify-center gap-3"><Button size="sm" variant="outline" disabled={seite === 0} onClick={() => setSeite(value => Math.max(0, value - 1))}>Vorige</Button><span className="text-sm text-slate-600">Seite {seite + 1} von {daten.totalPages}</span><Button size="sm" variant="outline" disabled={seite + 1 >= daten.totalPages} onClick={() => setSeite(value => value + 1)}>Weitere</Button></div>}
     </div>
-    {dialogOffen && <BedarfDialog open onClose={() => { setDialogOffen(false); setBearbeitung(undefined); }} onSaved={gespeichert} initial={bearbeitung} />}
+    {dialogOffen && <BedarfDialog offen schliessen={() => { setDialogOffen(false); setBearbeitung(undefined); }} gespeichert={gespeichert} ausgangsbedarf={bearbeitung} />}
+    {anfrageKonflikt && <KonfliktAbgleichDialog konflikt={anfrageKonflikt} onAbbrechen={() => setAnfrageKonflikt(null)} onUebernehmen={wahl => { anfrageKonflikt.anwenden(wahl); setAnfrageKonflikt(null); }} />}
     {hicadOffen && <HiCadImportDialog onClose={() => setHicadOffen(false)} onImported={() => { setHicadOffen(false); setAktualisierung(value => value + 1); toast.success('Ausgewählte HiCAD-Zeilen wurden übernommen.'); }} />}
-    {direktOffen && <DirektbestellungDialog onClose={() => setDirektOffen(false)} onCreated={id => { setDirektOffen(false); navigate(`/bestellungen/${id}`); }} />}
+    {direktOffen && <DirektbestellungDialog initialeTeilmengen={direkteTeilmengen} onClose={() => setDirektOffen(false)} onCreated={id => { setDirektOffen(false); navigate(`/bestellungen/${id}`); }} />}
     {entnahme && <LagerentnahmeDialog bedarf={{ id: entnahme.id, version: entnahme.version, bezeichnung: entnahme.position.bezeichnung ?? 'Materialbedarf', einheit: entnahme.position.basis?.einheit ?? 'STUECK', offen: entnahme.mengen.disponierbar ?? 0 }} onClose={() => setEntnahme(null)} onBestaetigt={() => { setEntnahme(null); setAktualisierung(value => value + 1); }} />}
   </PageLayout>;
 }

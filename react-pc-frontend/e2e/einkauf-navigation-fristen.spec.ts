@@ -7,6 +7,8 @@ test('Einkauf-Navigation führt zu den vorhandenen Bereichen und fällige Anfrag
     const url = new URL(route.request().url()); requests.push(`${route.request().method()} ${url.pathname}${url.search}`);
     if (url.pathname === '/api/auth/me') return route.fulfill({ json: { id: 9, username: 'max.mustermann', displayName: 'Max Mustermann', admin: true, roles: ['ADMIN'], requiresInitialSetup: false } });
     if (url.pathname === '/api/notifications/summary') return route.fulfill({ json: { totalCount: 0, categories: [], recentItems: [] } });
+    if (url.pathname === '/api/einkauf/berechtigungen') return route.fulfill({ json: ['LESEN', 'BEARBEITEN'] });
+    if (url.pathname === '/api/projekte/simple') return route.fulfill({ json: [] });
     if (url.pathname === '/api/auth/me') return route.fulfill({ json: { id: 9 } });
     if (url.pathname === '/api/einkauf/faelligkeiten') return route.fulfill({ json: { content: [
       { typ: 'ANFRAGE_ANTWORTFRIST', vorgangId: 81, nummer: 'PA-81', beteiligungId: 83, frist: null, zustaendigId: 9, hinweis: 'Termin klären' },

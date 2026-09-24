@@ -116,6 +116,21 @@ public class EinkaufDateiService {
         return toDto(version);
     }
 
+    /** Prüft einen Erstanlage-Upload vollständig, bevor ein Bedarf angelegt wird. */
+    public void validiereUpload(MultipartFile datei, String revision) {
+        if (datei == null || datei.isEmpty() || datei.getSize() > MAX_DATEIGROESSE)
+            throw new IllegalArgumentException("Die Datei fehlt oder überschreitet das Limit von 10 MiB.");
+        if (revision == null || revision.isBlank() || revision.length() > 80)
+            throw new IllegalArgumentException("Bitte eine gültige Revision angeben.");
+        String originalName = safeFilename(datei.getOriginalFilename());
+        byte[] bytes;
+        try (var eingabe = datei.getInputStream()) { bytes = eingabe.readNBytes((int) MAX_DATEIGROESSE + 1); }
+        catch (IOException exception) { throw new IllegalArgumentException("Die Datei konnte nicht gelesen werden.", exception); }
+        if (bytes.length == 0 || bytes.length > MAX_DATEIGROESSE)
+            throw new IllegalArgumentException("Die Datei fehlt oder überschreitet das Limit von 10 MiB.");
+        validateFormat(extension(originalName), datei.getContentType(), bytes);
+    }
+
     @Transactional
     public AnlageDto nutzeEmailAnlage(Long bedarfId, Long emailAttachmentId, String revision, Long akteurId) {
         if (emailAttachments == null) throw new IllegalStateException("Der Mailanhang-Zugriff ist nicht verfügbar.");
@@ -439,7 +454,19 @@ public class EinkaufDateiService {
             Files.createDirectories(uploadRoot);
             Files.write(destination, bytes);
             try {
-                return dateien.save(new EinkaufDatei(sha256(bytes), stored, filename, mime, bytes.length));
+                EinkaufDatei gespeichert = dateien.save(new EinkaufDatei(sha256(bytes), stored, filename, mime, bytes.length));
+                if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                    org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                            new org.springframework.transaction.support.TransactionSynchronization() {
+                                @Override public void afterCompletion(int status) {
+                                    if (status != STATUS_COMMITTED) {
+                                        try { Files.deleteIfExists(destination); }
+                                        catch (IOException exception) { throw new IllegalStateException("Die bei einem Rollback neu angelegte Datei konnte nicht entfernt werden.", exception); }
+                                    }
+                                }
+                            });
+                }
+                return gespeichert;
             } catch (RuntimeException exception) {
                 try { Files.deleteIfExists(destination); } catch (IOException cleanup) { exception.addSuppressed(cleanup); }
                 throw exception;

@@ -53,6 +53,12 @@ describe('toPositionPayload', () => {
     expect(toPositionPayload(draft({ interneReferenz: '', zeichnungsnummer: '', zeichnungsrevision: '', anlageVersionIds: [] }))).toMatchObject({ valid: false, field: 'interneReferenz' });
   });
 
+  it('erlaubt eine anlagenfreie Vorbereitung nur für den atomaren Zeichnungsteil-Erstupload', () => {
+    const ohneAnlage = draft({ anlageVersionIds: [] });
+    expect(toPositionPayload(ohneAnlage)).toMatchObject({ valid: false, field: 'anlageVersionIds' });
+    expect(toPositionPayload(ohneAnlage, { anlageBeiErstanlage: true })).toMatchObject({ valid: true, value: { anlageVersionIds: [] } });
+  });
+
   it('requires the document basis and its version before creating a requirement', () => {
     expect(toPositionPayload(draft({ dokumente: [{ art: 'ZEUGNIS_3_1', grundlage: '', grundlageVersion: '', fachlichBestaetigt: false }] }))).toMatchObject({ valid: false, field: 'dokumente' });
   });

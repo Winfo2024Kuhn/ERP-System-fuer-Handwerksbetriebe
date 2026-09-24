@@ -4,12 +4,14 @@ import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufBedarfDto;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBedarfService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufZeichnungsbedarfService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
 import java.util.List;
@@ -22,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 public class EinkaufBedarfController {
     private final EinkaufBedarfService bedarfService;
     private final EinkaufBerechtigungService berechtigungService;
+    private final EinkaufZeichnungsbedarfService zeichnungsbedarfe;
 
     @GetMapping
     public Page<EinkaufBedarfDto.Response> suche(@RequestParam(required = false) String q,
@@ -42,6 +45,15 @@ public class EinkaufBedarfController {
             Authentication authentication) {
         Long akteurId = berechtigungService.verlange(authentication, EinkaufBerechtigung.BEARBEITEN);
         return bedarfService.anlegen(request, akteurId);
+    }
+
+    @PostMapping(value = "/zeichnungsteil", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public EinkaufBedarfDto.Response zeichnungsteilAnlegen(@RequestPart("bedarf") EinkaufBedarfDto.Create request,
+            @RequestPart("datei") MultipartFile datei, @RequestParam String revision,
+            Authentication authentication) {
+        Long akteurId = berechtigungService.verlange(authentication, EinkaufBerechtigung.BEARBEITEN);
+        return zeichnungsbedarfe.anlegen(request, datei, revision, akteurId);
     }
 
     @PutMapping("/{id}")

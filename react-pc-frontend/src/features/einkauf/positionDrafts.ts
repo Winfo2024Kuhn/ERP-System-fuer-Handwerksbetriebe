@@ -34,7 +34,7 @@ export interface DokumentSoll {
 
 export type ValidationResult<T> = { valid: true; value: T } | { valid: false; message: string; field: string };
 
-export function toPositionPayload(draft: PositionDraft): ValidationResult<PositionSnapshot> {
+export function toPositionPayload(draft: PositionDraft, optionen: { anlageBeiErstanlage?: boolean } = {}): ValidationResult<PositionSnapshot> {
   if (draft.art === 'ARTIKEL' && (!Number.isSafeInteger(draft.artikelId) || (draft.artikelId ?? 0) <= 0)) {
     return { valid: false, message: 'Bitte wählen Sie einen Artikel aus dem Katalog.', field: 'artikelId' };
   }
@@ -47,7 +47,7 @@ export function toPositionPayload(draft: PositionDraft): ValidationResult<Positi
     ];
     const fehlend = pflicht.find(([, value]) => !value.trim());
     if (fehlend) return { valid: false, field: fehlend[0], message: fehlend[2] };
-    if (!draft.anlageVersionIds.length || draft.anlageVersionIds.some(id => !Number.isSafeInteger(id) || id <= 0)) {
+    if ((!draft.anlageVersionIds.length && !optionen.anlageBeiErstanlage) || draft.anlageVersionIds.some(id => !Number.isSafeInteger(id) || id <= 0)) {
       return { valid: false, field: 'anlageVersionIds', message: 'Für ein Zeichnungsteil ist mindestens eine gültige Anlagenversion erforderlich.' };
     }
   }

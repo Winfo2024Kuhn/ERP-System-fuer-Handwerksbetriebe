@@ -25,3 +25,12 @@ it('legt eine Direktbestellung mit geprüftem Preisnachweis an, ohne Angebots- o
   await waitFor(() => expect(order).not.toBeNull());
   expect(order).toMatchObject({ lieferantId: 8, paket: [{ bedarfId: 6, version: 2, menge: 2 }], preise: [{ bedarfId: 6, preis: 5.5, einheit: 'METER', basisMenge: 1, preisHistorieId: null, bestaetigtAm: new Date().toLocaleDateString('sv-SE'), bestaetigungsbeleg: 'Angebot ANG-8, PDF' }] });
 });
+
+it('übernimmt ausgewählte Bedarfsanteile und deren Teilmengen in den Direktbestelldialog', async () => {
+  global.fetch = vi.fn(async (eingabe: RequestInfo | URL) => String(eingabe).includes('/api/einkauf/bedarf?')
+    ? ({ ok: true, json: async () => ({ content: [{ id: 6, version: 2, position: { art: 'ARTIKEL', artikelId: 9, interneReferenz: 'MAT-9', bezeichnung: 'Profil', basis: { menge: 8, einheit: 'METER' } }, mengen: { disponierbar: 8 }, liefergruppe: {} }] }) } as Response)
+    : ({ ok: true, json: async () => [] } as Response));
+  render(<ToastProvider><DirektbestellungDialog initialeTeilmengen={[{ bedarfId: 6, menge: 1.25 }]} onClose={vi.fn()} onCreated={vi.fn()} /></ToastProvider>);
+  expect(await screen.findByLabelText('Bedarf MAT-9 auswählen')).toBeChecked();
+  expect(screen.getByLabelText('Menge MAT-9')).toHaveValue('1,25');
+});

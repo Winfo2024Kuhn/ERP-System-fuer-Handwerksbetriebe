@@ -12,7 +12,7 @@ import type { Page } from '../features/einkauf/types';
 
 interface Faelligkeit { typ: string; vorgangId: number; nummer: string | null; beteiligungId: number | null; frist: string | null; zustaendigId: number | null; hinweis: string | null }
 interface Nachfrage { typ: string; vorgangId: number; beteiligungId: number | null; vorlageId: number; vorlageVersion: number; empfaenger: string; subject: string; htmlBody: string; fehlendeNachweise: string[] }
-interface Nutzer { id: number }
+interface Nutzer { id: number; displayName?: string }
 const heute = () => new Date().toLocaleDateString('sv-SE');
 const datum = (value: string | null) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('de-DE') : 'Termin klären';
 const titel = (typ: string) => ({ ANFRAGE_ANTWORTFRIST: 'Antwort auf Anfrage', BESTELLBESTAETIGUNG: 'Auftragsbestätigung', LIEFERTERMIN: 'Liefertermin', ZEUGNIS: 'Zeugnis je Charge' }[typ] ?? 'Einkaufsvorgang');
@@ -61,7 +61,7 @@ export default function EinkaufFaelligkeiten() {
       {laden ? <p role="status" className="rounded-lg border border-slate-200 bg-white p-5">Fällige Vorgänge werden geladen …</p>
         : faelligkeiten.length === 0 ? <section className="rounded-lg border border-slate-200 bg-white p-8 text-center"><CalendarClock className="mx-auto mb-3 h-8 w-8 text-slate-400" /><h2 className="font-semibold">Alles erledigt</h2><p className="mt-1 text-sm text-slate-600">Es sind keine offenen Einkaufsvorgänge fällig.</p></section>
         : <ul className="space-y-3">{faelligkeiten.map(row => <li key={`${row.typ}-${row.vorgangId}-${row.beteiligungId ?? 'gesamt'}`}><article className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[minmax(0,1fr)_auto]">
-          <div className="min-w-0"><p className="text-sm font-semibold text-rose-600">{titel(row.typ)} · {row.nummer ?? `Vorgang ${row.vorgangId}`}</p><h2 className="mt-1 break-words font-semibold text-slate-900">{row.hinweis ?? titel(row.typ)}</h2><p className="mt-1 text-sm text-slate-600">Fällig: {datum(row.frist)} · Zuständig: {row.zustaendigId ? `Mitarbeiter ${row.zustaendigId}` : 'Noch nicht zugeordnet'}</p>
+          <div className="min-w-0"><p className="text-sm font-semibold text-rose-600">{titel(row.typ)} · {row.nummer ?? `Vorgang ${row.vorgangId}`}</p><h2 className="mt-1 break-words font-semibold text-slate-900">{row.hinweis ?? titel(row.typ)}</h2><p className="mt-1 text-sm text-slate-600">Fällig: {datum(row.frist)} · Zuständig: {row.zustaendigId ? (row.zustaendigId === nutzer?.id && nutzer.displayName ? nutzer.displayName : 'Zugewiesene Person') : 'Noch nicht zugeordnet'}</p>
             <Link className="mt-2 inline-flex text-sm font-medium text-rose-700 underline-offset-2 hover:underline" to={linkZumVorgang(row)}>Vorgang {row.nummer ?? row.vorgangId} öffnen</Link></div>
           <div className="flex flex-wrap items-center gap-2 md:justify-end"><Button size="sm" variant="outline" disabled={vorschauLaden === row.vorgangId} onClick={() => void nachfrageVorbereiten(row)}>{vorschauLaden === row.vorgangId ? 'Vorschau wird erstellt …' : 'Nachfrage vorbereiten'}</Button></div>
         </article></li>)}</ul>}

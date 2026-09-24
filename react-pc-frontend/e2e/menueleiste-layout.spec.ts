@@ -112,6 +112,8 @@ async function stubbeMenueleisteApi(page: Page, displayName: string = LANGER_NUT
         recentItems: [],
     }));
 
+    await page.route('**/api/einkauf/berechtigungen', route => json(route, ['LESEN', 'BEARBEITEN']));
+
     // GET liefert die Zuletzt-aufgerufen-Stempel, POST /PROJEKT/{id} schreibt
     // einen neuen -- fuer die leere Liste hier nicht gebraucht, aber
     // fire-and-forget-sicher gestubbt, falls doch aufgerufen.

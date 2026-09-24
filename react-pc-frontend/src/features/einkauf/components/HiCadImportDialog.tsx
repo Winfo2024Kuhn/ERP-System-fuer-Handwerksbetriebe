@@ -14,12 +14,14 @@ const zahl = (value: string) => {
   if (!/^(?:\d+)(?:\.\d{1,6})?$/.test(normal)) return null;
   const number = Number(normal); return Number.isFinite(number) && number > 0 ? number : null;
 };
-const dateiTyp = (file: File) => /\.(sza|tcd)$/i.test(file.name);
+const dateiTyp = (datei: File) => /\.(xls|xlsx)$/i.test(datei.name);
 
 export function HiCadImportDialog({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
   const toast = useToast();
   const [projekt, setProjekt] = useState<StammdatenWahl | null>(null);
   const [datei, setDatei] = useState<File | null>(null);
+  const [spalten, setSpalten] = useState<Record<string, string>>({});
+  const [spaltenZuordnungOffen, setSpaltenZuordnungOffen] = useState(false);
   const [vorschau, setVorschau] = useState<HiCadVorschau | null>(null);
   const [fortschritt, setFortschritt] = useState<HiCadImportFortschritt | null>(null);
   const [auswahl, setAuswahl] = useState<Record<number, boolean>>({});
@@ -33,13 +35,15 @@ export function HiCadImportDialog({ onClose, onImported }: { onClose: () => void
 
   const dateiWaehlen = (file: File | null) => {
     setDatei(file); setVorschau(null); setFortschritt(null); setFehler(''); setDuplikatBestaetigt(false);
-    if (file && file.size > MAX_DATEI) { setDatei(null); setFehler('Die HiCAD-Datei darf höchstens 10 MiB groß sein.'); }
-    else if (file && !dateiTyp(file)) { setDatei(null); setFehler('Bitte eine .sza- oder .tcd-Datei auswählen.'); }
+    if (file && file.size > MAX_DATEI) { const meldung = 'Die HiCAD-Datei darf höchstens 10 MiB groß sein.'; setDatei(null); setFehler(meldung); toast.error(meldung); }
+    else if (file && !dateiTyp(file)) { setDatei(null); const meldung = 'Bitte eine XLS- oder XLSX-Datei auswählen.'; setFehler(meldung); toast.error(meldung); }
   };
   const vorschauLaden = async () => {
-    if (!projekt) { setFehler('Bitte zuerst ein Projekt auswählen.'); return; }
-    if (!datei) { setFehler('Bitte eine HiCAD-Datei auswählen.'); return; }
-    const body = new FormData(); body.append('file', datei);
+    if (!projekt) { const meldung = 'Bitte zuerst ein Projekt auswählen.'; setFehler(meldung); toast.error(meldung); return; }
+    if (!datei) { const meldung = 'Bitte eine HiCAD-Datei auswählen.'; setFehler(meldung); toast.error(meldung); return; }
+      const body = new FormData(); body.append('file', datei);
+      const zuordnung = Object.fromEntries(Object.entries(spalten).filter(([, spalte]) => spalte.trim()).map(([feld, spalte]) => [feld, Number(spalte) - 1]));
+      if (Object.keys(zuordnung).length) body.append('mapping', new Blob([JSON.stringify({ spalten: zuordnung })], { type: 'application/json' }));
     setLaden(true); setFehler('');
     try {
       const response = await fetch(`/api/einkauf/hicad/vorschau?projektId=${projekt.id}`, { method: 'POST', body });
@@ -54,19 +58,25 @@ export function HiCadImportDialog({ onClose, onImported }: { onClose: () => void
   };
   const uebernehmen = async () => {
     if (!vorschau || !fortschritt) return;
-    const rows: HiCadZeilenAuswahl[] = vorschau.zeilen.filter(row => auswahl[row.zeilennummer]).map(row => {
-      const menge = zahl(mengen[row.zeilennummer] ?? '');
-      if (!menge || menge > (fortschrittMap.get(row.zeilennummer)?.verbleibendeMenge ?? 0)) throw new Error(`Bitte eine gültige Teilmenge für Zeile ${row.zeilennummer} eingeben.`);
-      let korrigiert: PositionSnapshot | null = row.vorschlag;
-      const match = artikel[row.zeilennummer];
-      if (korrigiert && match) korrigiert = { ...korrigiert, art: 'ARTIKEL', artikelId: match.id, bezeichnung: match.name };
-      if (korrigiert?.art === 'ZEICHNUNGSTEIL' && (!korrigiert.anlageVersionIds?.length || !bilder[row.zeilennummer]?.length)) throw new Error(`Für Zeichnungsteil Zeile ${row.zeilennummer} muss eine Anlage ausgewählt und freigegeben sein.`);
-      return { zeilennummer: row.zeilennummer, menge, korrigiert, bestaetigteBildDateiIds: bilder[row.zeilennummer] ?? [] };
-    });
-    if (!rows.length) { setFehler('Bitte mindestens eine Zeile zur Übernahme auswählen.'); return; }
+    let zeilen: HiCadZeilenAuswahl[];
+    try {
+      zeilen = vorschau.zeilen.filter(zeile => auswahl[zeile.zeilennummer]).map(zeile => {
+        const teilmenge = zahl(mengen[zeile.zeilennummer] ?? '');
+        if (!teilmenge || teilmenge > (fortschrittMap.get(zeile.zeilennummer)?.verbleibendeMenge ?? 0)) throw new Error(`Bitte eine gültige Teilmenge für Zeile ${zeile.zeilennummer} eingeben.`);
+        let korrigiert: PositionSnapshot | null = zeile.vorschlag;
+        const artikelwahl = artikel[zeile.zeilennummer];
+        if (korrigiert && artikelwahl) korrigiert = { ...korrigiert, art: 'ARTIKEL', artikelId: artikelwahl.id, bezeichnung: artikelwahl.name };
+        if (korrigiert?.art === 'ZEICHNUNGSTEIL' && !bilder[zeile.zeilennummer]?.length) throw new Error(`Bitte geben Sie mindestens ein eingebettetes Bild für Zeichnungsteil Zeile ${zeile.zeilennummer} frei.`);
+        return { zeilennummer: zeile.zeilennummer, menge: teilmenge, korrigiert, bestaetigteBildDateiIds: bilder[zeile.zeilennummer] ?? [] };
+      });
+      if (!zeilen.length) throw new Error('Bitte mindestens eine Zeile zur Übernahme auswählen.');
+    } catch (error) {
+      const meldung = error instanceof Error ? error.message : 'Bitte prüfen Sie die ausgewählten Zeilen.';
+      setFehler(meldung); toast.error(meldung); return;
+    }
     setLaden(true); setFehler('');
     try {
-      await einkaufApi.post(`/api/einkauf/hicad/${vorschau.id}/uebernehmen`, { version: fortschritt.version, zeilen: rows, duplikatBewusst: duplikatBestaetigt, idempotenzKey: crypto.randomUUID() });
+      await einkaufApi.post(`/api/einkauf/hicad/${vorschau.id}/uebernehmen`, { version: fortschritt.version, zeilen, duplikatBewusst: duplikatBestaetigt, idempotenzKey: crypto.randomUUID() });
       onImported();
     } catch (error) { const message = error instanceof Error ? error.message : 'HiCAD-Zeilen konnten nicht übernommen werden.'; setFehler(message); toast.error(message); }
     finally { setLaden(false); }
@@ -75,9 +85,10 @@ export function HiCadImportDialog({ onClose, onImported }: { onClose: () => void
   return <Dialog open onOpenChange={open => { if (!open && !laden) onClose(); }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
     <DialogHeader><DialogTitle>HiCAD-Import prüfen</DialogTitle></DialogHeader>
     <div className="space-y-4">
-      <StammdatenAuswahl art="Projekt" value={projekt} onChange={setProjekt} />
-      <div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-sm font-medium">HiCAD-Datei (.sza oder .tcd)<input className="sr-only" aria-label="HiCAD-Datei" type="file" accept=".sza,.tcd" onChange={event => dateiWaehlen(event.target.files?.[0] ?? null)} /><span className="block"><Button type="button" variant="outline" onClick={event => { const input = event.currentTarget.parentElement?.previousElementSibling; if (input instanceof HTMLInputElement) input.click(); }}>Datei auswählen</Button> <span className="text-slate-600">{datei?.name ?? 'Keine Datei ausgewählt'}{datei ? ` · ${(datei.size / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 2 })} MiB` : ''}</span></span></label>
+      <StammdatenAuswahl art="Projekt" value={projekt} onChange={auswahl => { if (projekt?.id !== auswahl?.id) { setProjekt(auswahl); setVorschau(null); setFortschritt(null); setAuswahl({}); setMengen({}); setBilder({}); setDuplikatBestaetigt(false); } }} />
+      <div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-sm font-medium">HiCAD-Exceldatei (.xls oder .xlsx)<input className="hidden" aria-label="HiCAD-Exceldatei" type="file" accept=".xls,.xlsx" onChange={event => dateiWaehlen(event.target.files?.[0] ?? null)} /><span className="block"><Button type="button" variant="outline" onClick={event => { const eingabe = event.currentTarget.parentElement?.previousElementSibling; if (eingabe instanceof HTMLInputElement) eingabe.click(); }}>Datei auswählen</Button> <span className="text-slate-600">{datei?.name ?? 'Keine Datei ausgewählt'}{datei ? ` · ${(datei.size / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 2 })} MiB` : ''}</span></span></label>
         <Button disabled={laden || !datei || !projekt} onClick={() => void vorschauLaden()}>{laden ? 'Vorschau wird geladen …' : 'Vorschau laden'}</Button></div>
+      <section className="rounded-lg border border-slate-200 p-3"><Button type="button" variant="ghost" aria-expanded={spaltenZuordnungOffen} onClick={() => setSpaltenZuordnungOffen(wert => !wert)}>Spalten manuell zuordnen</Button>{spaltenZuordnungOffen && <><p className="mt-2 text-sm text-slate-600">Tragen Sie die Spaltennummer aus der Tabellenkopfzeile ein. Ohne Angaben erkennt HiCAD die üblichen deutschen Spaltenüberschriften selbst.</p><div className="mt-3 grid gap-3 sm:grid-cols-3">{[['interneReferenz','Interne Nummer'],['zeichnungsnummer','Zeichnungsnummer'],['zeichnungsrevision','Zeichnungsrevision'],['bezeichnung','Bezeichnung'],['werkstoff','Werkstoff'],['abmessung','Abmessung'],['menge','Menge'],['einheit','Einheit'],['stueckzahl','Stückzahl'],['einzelLaengeMm','Einzellänge mm'],['winkelLinks','Linker Winkel'],['winkelRechts','Rechter Winkel']].map(([feld, titel]) => <label key={feld} className="space-y-1 text-sm">{titel}<Input aria-label={`Spalte ${titel}`} inputMode="numeric" value={spalten[feld] ?? ''} onChange={ereignis => setSpalten(aktuell => ({ ...aktuell, [feld]: ereignis.target.value.replace(/[^0-9]/g, '') }))} placeholder="z. B. 1" /></label>)}</div></>}</section>
       {fehler && <p role="alert" className="text-sm text-rose-700">{fehler}</p>}
       {vorschau && <div className="space-y-3"><p className="rounded-md bg-slate-50 p-3 text-sm">{vorschau.zeilen.length} Zeilen gefunden. Vorschau {vorschau.dateiSchonImportiert ? 'wurde bereits importiert; vorhandene Teilmengen bleiben erhalten.' : 'prüfen und nur bestätigte Zeilen übernehmen.'}</p>
         {vorschau.dateiSchonImportiert && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={duplikatBestaetigt} onChange={event => setDuplikatBestaetigt(event.target.checked)} />Erneuten Import bewusst zulassen</label>}

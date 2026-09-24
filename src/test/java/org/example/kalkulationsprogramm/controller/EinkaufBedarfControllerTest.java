@@ -8,6 +8,7 @@ import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBedarfService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufZeichnungsbedarfService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -22,6 +23,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.mock.web.MockPart;
+import org.springframework.http.MediaType;
 
 import java.util.Set;
 
@@ -47,6 +50,7 @@ class EinkaufBedarfControllerTest {
     @Autowired MockMvc mockMvc;
     @MockBean EinkaufBedarfService bedarfService;
     @MockBean EinkaufBerechtigungService berechtigungService;
+    @MockBean EinkaufZeichnungsbedarfService zeichnungsbedarfe;
     @MockBean FrontendUserDetailsService userDetailsService;
 
     @Test
@@ -98,6 +102,19 @@ class EinkaufBedarfControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Bitte geben Sie die Liefergruppe an."))
                 .andExpect(jsonPath("$.fieldErrors[0].field").value("request"));
+    }
+
+    @Test
+    void zeichnungsteilErstanlageErfordertBearbeitungsrechtUndMultipartDatei() throws Exception {
+        when(berechtigungService.verlange(any(Authentication.class), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(7L);
+        when(zeichnungsbedarfe.anlegen(any(), any(), eq("B"), eq(7L))).thenReturn(null);
+        MockPart bedarf = new MockPart("bedarf", "{\"position\":{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"ZT-4\",\"zeichnungsnummer\":\"Z-4\",\"zeichnungsrevision\":\"B\",\"bezeichnung\":\"Träger\",\"basis\":{\"menge\":2,\"einheit\":\"STUECK\",\"stueckzahl\":2},\"dokumente\":[],\"anlageVersionIds\":[]},\"liefergruppe\":{\"projektId\":9}}".getBytes());
+        bedarf.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/einkauf/bedarf/zeichnungsteil")
+                        .file("datei", "%PDF-1.7 Dummy".getBytes()).part(bedarf).param("revision", "B")
+                        .with(authentication(7L)).with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isCreated());
+        verify(zeichnungsbedarfe).anlegen(any(), any(), eq("B"), eq(7L));
     }
 
     private static RequestPostProcessor authentication(long id) {

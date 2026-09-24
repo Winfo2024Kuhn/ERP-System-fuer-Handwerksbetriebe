@@ -26,9 +26,9 @@ export function LagerentnahmeDialog({ bedarf, onClose, onBestaetigt }: {
   const bestaetigen = async () => {
     const amount = lesen(menge);
     const unitPrice = preis.trim() ? lesen(preis) : null;
-    if (!amount || amount > bedarf.offen) { setFehler(`Bitte eine Menge zwischen 0 und ${bedarf.offen.toLocaleString('de-DE')} ${bedarf.einheit} eingeben.`); return; }
-    if (preis.trim() && !unitPrice) { setFehler('Bitte einen gültigen Preis größer als 0 eingeben.'); return; }
-    if (unitPrice && !quelle.trim()) { setFehler('Bitte die Quelle für den Entnahmepreis eintragen.'); return; }
+    if (!amount || amount > bedarf.offen) { const meldung = `Bitte eine Menge zwischen 0 und ${bedarf.offen.toLocaleString('de-DE')} ${bedarf.einheit} eingeben.`; setFehler(meldung); toast.error(meldung); return; }
+    if (preis.trim() && !unitPrice) { const meldung = 'Bitte einen gültigen Preis größer als 0 eingeben.'; setFehler(meldung); toast.error(meldung); return; }
+    if (unitPrice && !quelle.trim()) { const meldung = 'Bitte die Quelle für den Entnahmepreis eintragen.'; setFehler(meldung); toast.error(meldung); return; }
     setLaden(true); setFehler('');
     try {
       const response = await einkaufApi.post<EntnahmeErgebnis>('/api/einkauf/lagerentnahmen', {

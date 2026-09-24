@@ -2,34 +2,33 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../../components/ui/toast';
 import { BedarfDialog } from './BedarfDialog';
+import type { BedarfResponse } from '../types';
 
-it('prüft Menge und Stammdaten, bevor ein Bedarf gespeichert wird', async () => {
-  const saved = vi.fn();
-  global.fetch = vi.fn(async (input: RequestInfo | URL) => String(input).includes('/api/projekte/simple')
-    ? ({ ok: true, json: async () => [] } as Response)
-    : ({ ok: true, status: 201, json: async () => ({ id: 44 }) } as Response));
-  render(<ToastProvider><BedarfDialog open onClose={vi.fn()} onSaved={saved} /></ToastProvider>);
+vi.mock('./StammdatenAuswahl', () => ({ StammdatenAuswahl: ({ art, value, onChange }: { art: string; value: { id: number; name: string } | null; onChange: (value: { id: number; name: string } | null) => void }) => <button type="button" onClick={() => onChange(value ? null : { id: 4, name: 'Projekt Nord · Halle' })}>{art}: {value?.name ?? 'auswählen'}</button> }));
 
-  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '0' } });
+it('meldet ungültige Eingaben mit Feldfehler und Toast vor dem Speichern', async () => {
+  const bedarf = { id: 44, version: 3, position: { art: 'ARTIKEL', artikelId: 9, bezeichnung: 'Stahlträger', basis: { menge: 12, einheit: 'STUECK' }, dokumente: [], anlageVersionIds: [] }, liefergruppe: { lieferadresse: null, bedarfstermin: null, projektId: null, lagerzweck: 'Werkstatt' }, mengen: { bedarf: 12, lagergedeckt: 0, angefragt: 0, reserviert: 0, bestellt: 0, geliefert: 0, storniert: 0, ungedeckt: 12, disponierbar: 12 }, nachpflegeErforderlich: false, historischerHinweis: null } as BedarfResponse;
+  global.fetch = vi.fn(async () => ({ ok: true, json: async () => [] }) as Response);
+  render(<ToastProvider><BedarfDialog offen schliessen={vi.fn()} gespeichert={vi.fn()} ausgangsbedarf={bedarf} /></ToastProvider>);
+  fireEvent.change(screen.getByLabelText('Menge *'), { target: { value: '0' } });
   fireEvent.click(screen.getByRole('button', { name: 'Bedarf speichern' }));
-  expect(global.fetch).not.toHaveBeenCalled();
-  expect(await screen.findByRole('alert')).toHaveTextContent('Bitte eine Menge größer als 0 eingeben.');
-
-  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '10' } });
-  fireEvent.change(screen.getByLabelText('Bezeichnung'), { target: { value: 'Stahlprofil' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Projekt auswählen' }));
-  await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+  expect((await screen.findAllByRole('alert')).some(meldung => meldung.textContent?.includes('Menge'))).toBe(true);
+  expect((global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.some(([, optionen]) => optionen?.method === 'PUT')).toBe(false);
 });
 
-it('lässt ein Zeichnungsteil ohne Zeichnungsnummer und freigegebene Anlage nicht speichern', async () => {
-  global.fetch = vi.fn(async () => ({ ok: true, json: async () => [] }) as Response);
-  render(<ToastProvider><BedarfDialog open onClose={vi.fn()} onSaved={vi.fn()} /></ToastProvider>);
-  fireEvent.click(screen.getByRole('combobox', { name: 'Positionsart' }));
-  fireEvent.click(screen.getByRole('option', { name: 'Zeichnungsteil' }));
-  fireEvent.change(screen.getByLabelText('Bezeichnung'), { target: { value: 'Träger' } });
-  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '2' } });
-  fireEvent.change(screen.getByLabelText('Lagerzweck'), { target: { value: 'Werkstatt' } });
+it('erhält beim Bearbeiten Dokumente, Schnittdaten, Bearbeitung, Oberfläche und Lieferdaten', async () => {
+  const bedarf: BedarfResponse = { id: 44, version: 3, position: { art: 'ARTIKEL', artikelId: 9, interneReferenz: 'MAT-9', zeichnungsnummer: 'Z-9', zeichnungsrevision: 'C', bezeichnung: 'Stahlträger', werkstoff: 'S355', abmessung: 'IPE 200', basis: { menge: 12, einheit: 'METER', stueckzahl: 3, einzelLaengeMm: 4000, kgJeMeter: 22, faktorQuelle: 'Datenblatt' }, schnittForm: 'GEHRUNG', winkelLinks: '30', winkelRechts: '45', bearbeitung: 'Entgraten', oberflaeche: 'Verzinkt', dokumente: [{ art: 'ZEUGNIS_3_1', grundlage: 'EN 10204', grundlageVersion: '2025', fachlichBestaetigt: true }], anlageVersionIds: [81] }, liefergruppe: { lieferadresse: 'Hof Nord', bedarfstermin: '2026-10-02', projektId: 4, lagerzweck: null }, mengen: { bedarf: 12, lagergedeckt: 0, angefragt: 0, reserviert: 0, bestellt: 0, geliefert: 0, storniert: 0, ungedeckt: 12, disponierbar: 12 }, nachpflegeErforderlich: false, historischerHinweis: null };
+  let gespeicherterInhalt: Record<string, unknown> | null = null;
+  global.fetch = vi.fn(async (eingabe: RequestInfo | URL, optionen?: RequestInit) => {
+    const pfad = String(eingabe);
+    if (pfad.includes('/anlagen')) return { ok: true, json: async () => [{ id: 81, dateiname: 'Zeichnung.pdf', revision: 'C', freigegeben: true }] } as Response;
+    if (pfad.includes('/api/projekte/simple')) return { ok: true, json: async () => [{ id: 4, auftragsnummer: 'Projekt Nord', bauvorhaben: 'Halle' }] } as Response;
+    if (optionen?.method === 'PUT') { gespeicherterInhalt = JSON.parse(String(optionen.body)) as Record<string, unknown>; return { ok: true, json: async () => bedarf } as Response; }
+    return { ok: true, json: async () => bedarf } as Response;
+  });
+  render(<ToastProvider><BedarfDialog offen schliessen={vi.fn()} gespeichert={vi.fn()} ausgangsbedarf={bedarf} /></ToastProvider>);
+  fireEvent.click(screen.getByRole('button', { name: 'Projekt: auswählen' }));
   fireEvent.click(screen.getByRole('button', { name: 'Bedarf speichern' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Zeichnungsnummer und mindestens eine ausgewählte, freigegebene Zeichnungsanlage');
-  expect(global.fetch).not.toHaveBeenCalled();
+  await waitFor(() => expect(gespeicherterInhalt).not.toBeNull());
+  expect(gespeicherterInhalt).toMatchObject({ version: 3, position: { dokumente: bedarf.position.dokumente, schnittForm: 'GEHRUNG', winkelLinks: '30', winkelRechts: '45', bearbeitung: 'Entgraten', oberflaeche: 'Verzinkt', basis: { menge: 12, stueckzahl: 3, einzelLaengeMm: 4000, kgJeMeter: 22, faktorQuelle: 'Datenblatt' }, anlageVersionIds: [81] }, liefergruppe: { lieferadresse: 'Hof Nord', bedarfstermin: '2026-10-02', projektId: 4 } });
 });
