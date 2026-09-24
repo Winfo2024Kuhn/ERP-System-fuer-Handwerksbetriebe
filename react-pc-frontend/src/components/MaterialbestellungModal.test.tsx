@@ -50,6 +50,15 @@ describe('Original-1090-Materialmaske', () => {
     expect(writes()[0][1]?.method).toBe('PUT');
     expect(JSON.parse(String(writes()[0][1]?.body))).toMatchObject({ menge: 5, produktname: 'Geändert', projektId: 101 });
   });
+  it('löst die Artikel-Verknüpfung über einen eigenen Knopf neben dem Suchfeld', () => {
+    open({ editPosition: { id: 77, produktname: 'Winkel', menge: 2, einheit: 'm', projektId: 101, artikelId: 71, externeArtikelnummer: 'M-0071' } });
+    const entfernen = screen.getByRole('button', { name: 'Artikel-Verknüpfung entfernen' });
+    expect(entfernen.parentElement?.closest('button')).toBeNull();
+    expect(screen.getByRole('button', { name: '#M-0071' })).toBeInTheDocument();
+    fireEvent.click(entfernen);
+    expect(screen.getByRole('button', { name: 'Artikel suchen...' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Artikel-Verknüpfung entfernen' })).not.toBeInTheDocument();
+  });
   it('lädt die bestehende Artikelsuche', async () => {
     vi.mocked(fetch).mockImplementation(async url => ok(String(url).startsWith('/api/artikel?') ? { artikel: [{ id: 71, produktname: 'IPE 200', verrechnungseinheit: { name: 'STUECK' } }], gesamt: 1 } : []));
     open(); fireEvent.click(screen.getByRole('button', { name: 'Artikel suchen...' }));

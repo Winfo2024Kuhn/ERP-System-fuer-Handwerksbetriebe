@@ -6,7 +6,6 @@ import {
     FolderOpen,
     Loader2,
     Search,
-    X,
 } from 'lucide-react';
 import { Dialog } from './ui/dialog';
 import { useToast } from './ui/toast';
@@ -202,18 +201,10 @@ export function KategorieSearchModal({
         <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }} className="w-[min(42rem,calc(100vw-2rem))] p-0 overflow-hidden" aria-label="Kategorie auswählen">
                 {/* Header */}
                 <div className="p-4 border-b border-slate-200">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                            <Folder className="w-5 h-5 text-rose-600" />
-                            <h2 className="text-lg font-bold text-slate-900">Kategorie auswählen</h2>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className="p-1.5 hover:bg-slate-100 rounded-full transition-colors"
-                            aria-label="Schließen"
-                        >
-                            <X className="w-5 h-5 text-slate-500" />
-                        </button>
+                    {/* Schließen kommt vom gemeinsamen Dialog (oben rechts) – kein zweites X daneben. */}
+                    <div className="flex items-center gap-2 mb-3 pr-10">
+                        <Folder className="w-5 h-5 text-rose-600" />
+                        <h2 className="text-lg font-bold text-slate-900">Kategorie auswählen</h2>
                     </div>
 
                     {/* Suche */}

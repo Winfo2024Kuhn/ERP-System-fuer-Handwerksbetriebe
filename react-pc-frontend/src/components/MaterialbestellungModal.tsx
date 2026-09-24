@@ -597,43 +597,37 @@ const PositionRow: React.FC<PositionRowProps> = ({
                             <label className="block text-xs font-medium text-slate-500 mb-1">
                                 Artikel aus Stammdaten {position.artikelId && <span className="text-rose-600">·  verknüpft</span>}
                             </label>
-                            <button
-                                type="button"
-                                onClick={onArtikelSuchen}
-                                className={cn(
-                                    'w-full flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm text-left transition-colors',
-                                    position.artikelId
-                                        ? 'border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100'
-                                        : 'border-slate-300 bg-white text-slate-500 hover:border-rose-300 hover:bg-rose-50'
-                                )}
-                            >
-                                <Search className="w-4 h-4 flex-shrink-0" />
-                                <span className="flex-1 truncate">
-                                    {position.artikelId
-                                        ? `#${position.externeArtikelnummer || position.artikelId}`
-                                        : 'Artikel suchen...'}
-                                </span>
-                                {position.artikelId && (
-                                    <span
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={e => {
-                                            e.stopPropagation();
-                                            onUpdate({ artikelId: null, externeArtikelnummer: undefined });
-                                        }}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                e.stopPropagation();
-                                                onUpdate({ artikelId: null, externeArtikelnummer: undefined });
-                                            }
-                                        }}
-                                        className="p-0.5 hover:bg-rose-200 rounded cursor-pointer"
-                                        aria-label="Artikel-Verknüpfung entfernen"
-                                    >
-                                        <X className="w-3 h-3" />
+                            {/* Entfernen-X als eigener Knopf neben dem Suchfeld: ein Knopf im Knopf ist per Tastatur und Screenreader nicht erreichbar. */}
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={onArtikelSuchen}
+                                    className={cn(
+                                        'flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm text-left transition-colors',
+                                        position.artikelId
+                                            ? 'border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100'
+                                            : 'border-slate-300 bg-white text-slate-500 hover:border-rose-300 hover:bg-rose-50'
+                                    )}
+                                >
+                                    <Search className="w-4 h-4 flex-shrink-0" />
+                                    <span className="flex-1 truncate">
+                                        {position.artikelId
+                                            ? `#${position.externeArtikelnummer || position.artikelId}`
+                                            : 'Artikel suchen...'}
                                     </span>
+                                </button>
+                                {position.artikelId && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onUpdate({ artikelId: null, externeArtikelnummer: undefined })}
+                                        className="p-1.5 rounded-md text-rose-700 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                        aria-label="Artikel-Verknüpfung entfernen"
+                                        title="Artikel-Verknüpfung entfernen"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
                                 )}
-                            </button>
+                            </div>
                         </div>
                         <div className="col-span-12 md:col-span-7">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Produktname *</label>

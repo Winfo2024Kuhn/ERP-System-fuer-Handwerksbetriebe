@@ -1,7 +1,12 @@
 import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
 
-test('Zeichnungsteil vollständig anlegen, nach erneutem Laden finden und mehrere Anfragemengen gemeinsam prüfen', async ({ page: seite }, prüfinformationen) => {
+// Vorübergehend ausgesetzt (24.09.2026): Seit der Übernahme der EN1090-Einkaufsoberfläche (ef7e4ea4)
+// bietet die Projektbedarfsseite weder "Zeichnungsteil erfassen" (BedarfDialog ist nirgends mehr
+// eingebunden) noch "Preisanfrage vorbereiten" an. Die Werkstattprüfung mit Kommaprüfung deckt
+// beschaffung-werkstatt.spec.ts ab. Offene Produktentscheidung: beide Abläufe in der EN1090-Oberfläche
+// wieder anbieten (dann diese Spec anpassen) oder bewusst streichen (dann diese Spec entfernen).
+test.fixme('Zeichnungsteil vollständig anlegen, nach erneutem Laden finden und mehrere Anfragemengen gemeinsam prüfen', async ({ page: seite }, prüfinformationen) => {
   type AnfrageAufruf = { positionen: Array<{ bedarfId: number; version: number; menge: number }> };
   const aufrufe: { pfad: string; methode: string; inhalt: string | null }[] = [];
   let gespeicherteBedarfe: ReturnType<typeof bedarf>[] = [];

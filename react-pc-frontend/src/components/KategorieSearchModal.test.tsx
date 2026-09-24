@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KategorieSearchModal } from './KategorieSearchModal';
 import { ToastProvider } from './ui/toast';
@@ -27,5 +27,16 @@ describe('Kategorien aus dem Artikelstamm', () => {
         expect(screen.queryByText('Keine Kategorien verfügbar')).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Erneut laden' }));
         expect(await screen.findByRole('button', { name: 'Stahl', exact: true })).toBeVisible();
+    });
+
+    it('hat genau ein Schließen-X, das den Dialog schließt', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => antwort([])));
+        const onClose = vi.fn();
+        render(<ToastProvider><KategorieSearchModal isOpen onClose={onClose} onSelect={vi.fn()} /></ToastProvider>);
+        const dialog = await screen.findByRole('dialog', { name: 'Kategorie auswählen' });
+        const schliessen = within(dialog).getAllByRole('button', { name: /schließen/i });
+        expect(schliessen).toHaveLength(1);
+        fireEvent.click(schliessen[0]);
+        expect(onClose).toHaveBeenCalledTimes(1);
     });
 });

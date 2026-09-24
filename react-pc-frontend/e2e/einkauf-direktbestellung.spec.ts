@@ -7,10 +7,13 @@ test(`erstellt eine Direktbestellung mit ${preisOffen ? 'offenem Preis' : 'beleg
   page.on('response', response => { if (!['localhost', '127.0.0.1'].includes(new URL(response.url()).hostname)) fremd.push(response.url()); });
   await page.route('**/api/auth/me', route => route.fulfill({ json: { id: 1, displayName: 'Max Mustermann', username: 'test@example.com', active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false } }));
   await page.route('**/api/notifications/summary', route => route.fulfill({ json: {} }));
-  await page.route('**/api/bestellungen-uebersicht', route => route.fulfill({ json: { offeneAnfragen: [], laufendeBestellungen: [], abgeschlossen: [], zugeordnet: [], ausgeblendet: [] } }));
-  await page.route('**/api/bestellungen-uebersicht/belege-offen', route => route.fulfill({ json: [] }));
-  await page.route('**/api/einkauf/bestellungen?page=0&size=20', route => route.fulfill({ json: { content: [] } }));
-  await page.route('**/api/einkauf/bedarf?**', route => route.fulfill({ json: { totalPages: 1, content: [{ id: 6, version: 2, position: { art: 'ARTIKEL', artikelId: 9, interneReferenz: 'MAT-9', bezeichnung: 'Profil', basis: { menge: 2, einheit: 'METER' } }, mengen: { disponierbar: 2 }, liefergruppe: { lieferadresse: null, bedarfstermin: null, projektId: null, lagerzweck: null } }] } }));
+  // Werkstatt-/Vorratsbedarf ohne Projekt: in der EN1090-Oberfläche startet die Direktbestellung auf der Bedarfsseite "Ohne Projektzuordnung".
+  const bedarf = { id: 6, version: 2, position: { art: 'ARTIKEL', artikelId: 9, interneReferenz: 'MAT-9', bezeichnung: 'Profil', werkstoff: null, abmessung: null, basis: { menge: 2, einheit: 'METER', stueckzahl: null, einzelLaengeMm: null, kgJeMeter: null, faktorQuelle: null }, schnittForm: null, winkelLinks: null, winkelRechts: null, bearbeitung: null, oberflaeche: null, dokumente: [], anlageVersionIds: [] },
+    mengen: { bedarf: 2, lagergedeckt: 0, angefragt: 0, reserviert: 0, bestellt: 0, geliefert: 0, storniert: 0, ungedeckt: 2, disponierbar: 2 }, nachpflegeErforderlich: false, historischerHinweis: null,
+    liefergruppe: { lieferadresse: null, bedarfstermin: null, projektId: null, lagerzweck: 'Werkstatt / auf Vorrat' } };
+  await page.route('**/api/einkauf/bedarf?**', route => route.fulfill({ json: { totalPages: 1, content: [bedarf] } }));
+  await page.route('**/api/einkauf/bedarf/6', route => route.fulfill({ json: bedarf }));
+  await page.route('**/api/projekte/simple?**', route => route.fulfill({ json: [] }));
   await page.route('**/api/lieferanten?**', route => route.fulfill({ json: { lieferanten: [{ id: 8, lieferantenname: 'Musterstahl', istAktiv: true }] } }));
   await page.route('**/api/lieferanten/8', route => route.fulfill({ json: { id: 8, lieferantenname: 'Musterstahl', eigeneKundennummer: '0008' } }));
   await page.route('**/api/lieferanten/8/einkauf-kontakte', route => route.fulfill({ json: [{ id: 4, version: 1, name: 'Einkauf', email: 'einkauf@example.test', standardBestellung: true, aktiv: true }] }));
@@ -20,8 +23,9 @@ test(`erstellt eine Direktbestellung mit ${preisOffen ? 'offenem Preis' : 'beleg
     revisionen: [{ id: 222, nummer: 1, version: 0, snapshot: {}, verworfen: false, angenommenAm: null, externerNachweis: null, positionen: [{ id: 223, snapshot: { interneReferenz: 'MAT-9', bezeichnung: 'Profil', basis: { einheit: 'METER' } }, menge: 2, nettoEinzelpreis: preisOffen ? null : 5.5, herkuenfte: [{ bedarfId: 6, version: 2, menge: 2 }] }] }],
   } }));
   for (const path of ['revisionen/222/versandstatus', 'storno-anfragen', 'mengen']) await page.route(`**/api/einkauf/bestellungen/22/${path}`, route => route.fulfill({ json: [] }));
-  await page.goto('/bestellungen');
-  await page.getByRole('button', { name: 'Direktbestellung vorbereiten' }).click();
+  await page.goto('/bestellungen/bedarf/vorrat');
+  await page.getByRole('button', { name: 'Bestellung vorbereiten', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Direktbestellung vorbereiten' })).toBeVisible();
   await expect(page.getByText('MAT-9 · Profil')).toBeVisible();
   await page.getByLabel('Bedarf MAT-9 auswählen').check();
   await page.getByRole('button', { name: 'Lieferant wählen' }).click();

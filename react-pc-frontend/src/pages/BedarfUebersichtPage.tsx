@@ -159,7 +159,8 @@ export default function BedarfUebersichtPage() {
                             )}
                         </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-4 lg:gap-6 items-end">
+                    {/* Spalten so breit wie ihr Inhalt: "Bedarfspositionen" passt sonst auf 14 Zoll nicht in ein Drittel. */}
+                    <div className="grid grid-cols-[repeat(3,max-content)] justify-between gap-4 lg:gap-6 items-end">
                         <KennzahlBlock label="Projekte" wert={summen.projekte.toString()} />
                         <KennzahlBlock label="Bedarfspositionen" wert={summen.zeilenSumme.toString()} />
                         <KennzahlBlock

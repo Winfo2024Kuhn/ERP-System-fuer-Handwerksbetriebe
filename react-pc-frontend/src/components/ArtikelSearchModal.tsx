@@ -245,7 +245,8 @@ export function ArtikelSearchModal({
     return (
         <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }} className="w-[calc(100vw-2rem)] h-[calc(100vh-2rem)] p-0 overflow-hidden" aria-labelledby="artikelsuche-title">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-rose-50 to-white shrink-0">
+            {/* pr-16 lässt Platz für das Schließen-X des gemeinsamen Dialogs – kein zweites X im Kopf. */}
+            <div className="flex items-center justify-between pl-6 pr-16 py-4 border-b border-slate-200 bg-gradient-to-r from-rose-50 to-white shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-rose-100 text-rose-600 rounded-lg">
                         <Package className="w-5 h-5" />
@@ -275,9 +276,6 @@ export function ArtikelSearchModal({
                                 : `${selected.size} Artikel übernehmen`}
                         </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={onClose}>
-                        <X className="w-5 h-5" />
-                    </Button>
                 </div>
             </div>
 

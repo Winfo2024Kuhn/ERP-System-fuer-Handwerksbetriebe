@@ -43,10 +43,10 @@ for (const sucheMitWiederholung of [false, true]) {
       }
       return route.fulfill({ json: [] });
     });
-    await page.goto('/bestellungen/bedarf');
-    await page.getByRole('button', { name: 'Für Werkstatt / auf Vorrat', exact: true }).click();
-    await page.getByRole('button', { name: 'Material hinzufügen' }).click();
-    const material = page.getByRole('dialog', { name: 'Materialbedarf erfassen', exact: true });
+    // EN1090-Oberfläche: Werkstatt-/Vorratsbedarf liegt unter /bestellungen/bedarf/vorrat ("Ohne Projektzuordnung").
+    await page.goto('/bestellungen/bedarf/vorrat');
+    await page.getByRole('button', { name: 'Position hinzufügen' }).click();
+    const material = page.getByRole('dialog', { name: 'Materialbestellung', exact: true });
     await expect(material.getByText('Warengruppe', { exact: true })).toHaveCount(0);
     expect(kategorienAufrufe).toBe(0);
     await material.getByRole('button', { name: 'Artikel suchen...', exact: true }).click();
@@ -83,8 +83,8 @@ for (const sucheMitWiederholung of [false, true]) {
     expect(artikelFilter).toContain('12');
     expect(kategorienAufrufe).toBe(sucheMitWiederholung ? 2 : 1);
     expect(falscheKategorieRouten).toEqual([]);
-    await designPruefung(page, testInfo, `beschaffung-kategorie-${sucheMitWiederholung ? 'suche-retry' : 'baum'}-uebernommen`, { primaerAktion: material.getByRole('button', { name: 'Bedarf speichern', exact: true }) });
-    await material.getByRole('button', { name: 'Bedarf speichern', exact: true }).click();
+    await designPruefung(page, testInfo, `beschaffung-kategorie-${sucheMitWiederholung ? 'suche-retry' : 'baum'}-uebernommen`, { primaerAktion: material.getByRole('button', { name: 'Alle speichern', exact: true }) });
+    await material.getByRole('button', { name: 'Alle speichern', exact: true }).click();
     await expect(material).toHaveCount(0);
     expect(saves).toHaveLength(1);
     expect(saves[0]).toMatchObject({ position: { art: 'ARTIKEL', artikelId: 41, bezeichnung: 'Winkel 40 × 40', basis: { menge: 1, einheit: 'METER', kgJeMeter: 2.42 } }, liefergruppe: { projektId: null } });
