@@ -126,9 +126,47 @@ public class EinkaufsanfrageService implements EinkaufAnfrageMengenProvider {
         return kopf.getAktuelleRevision() == null ? new Detail(toKopf(kopf, null), List.of(), List.of()) : toDetail(kopf, kopf.getAktuelleRevision());
     }
 
+    public List<Revisionsinfo> revisionen(Long id) {
+        ladeKopf(id);
+        return revisionen.findByAnfrageIdOrderByNummerAsc(id).stream()
+                .map(r -> new Revisionsinfo(r.getId(), r.getNummer(), r.getStatus(), r.getAntwortfrist(), r.getLiefertermin())).toList();
+    }
+
+    public Detail revisionLaden(Long id, Long revisionId) {
+        Einkaufsanfrage kopf = ladeKopf(id);
+        if (revisionId == null || revisionId <= 0) throw new IllegalArgumentException("Die Revisions-ID ist ungültig.");
+        AnfrageRevision revision = revisionen.findByIdAndAnfrageId(revisionId, id)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfragefassung wurde nicht gefunden."));
+        return toDetail(kopf, revision);
+    }
+
+    private Einkaufsanfrage ladeKopf(Long id) {
+        if (id == null || id <= 0) throw new IllegalArgumentException("Die Anfrage-ID ist ungültig.");
+        Einkaufsanfrage kopf = anfragen.findById(id)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden."));
+        if (kopf.isGeloescht()) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden.");
+        return kopf;
+    }
+
     public Page<Kopf> suchen(Pageable pageable) {
         if (pageable == null) throw new IllegalArgumentException("Die Seitenauswahl fehlt.");
-        return anfragen.findAllByGeloeschtAmIsNullOrderByAngelegtAmDesc(pageable).map(k -> toKopf(k, k.getAktuelleRevision()));
+        var seite = anfragen.findAllByGeloeschtAmIsNullOrderByAngelegtAmDesc(pageable);
+        var ids = seite.stream().map(Einkaufsanfrage::getAktuelleRevision).filter(Objects::nonNull).map(AnfrageRevision::getId).toList();
+        Map<Long, List<Long>> projekte = new HashMap<>();
+        Map<Long, long[]> antworten = new HashMap<>();
+        if (!ids.isEmpty()) {
+            for (Object[] row : revisionen.projekteFuerRevisionen(ids))
+                projekte.computeIfAbsent((Long) row[0], key -> new ArrayList<>()).add((Long) row[1]);
+            for (Object[] row : revisionen.antwortenFuerRevisionen(ids))
+                antworten.put((Long) row[0], new long[] {((Number) row[1]).longValue(), ((Number) row[2]).longValue()});
+        }
+        return seite.map(k -> {
+            Kopf kopf = toKopf(k, k.getAktuelleRevision());
+            long[] zahlen = antworten.getOrDefault(kopf.aktuelleRevisionId(), new long[2]);
+            return new Kopf(kopf.id(), kopf.version(), kopf.paNummer(), kopf.zustaendigId(), kopf.aktuelleRevisionId(),
+                    kopf.revisionsNummer(), kopf.status(), kopf.antwortfrist(), kopf.liefertermin(),
+                    projekte.getOrDefault(kopf.aktuelleRevisionId(), List.of()).stream().sorted().toList(), zahlen[1], zahlen[0]);
+        });
     }
 
     @Override
@@ -248,8 +286,16 @@ public class EinkaufsanfrageService implements EinkaufAnfrageMengenProvider {
         List<Positionszeile> positions = revision.getPositionen().stream().map(p -> new Positionszeile(p.getId(), p.getSnapshot(),
                 p.getHerkuenfte().stream().map(h -> new Herkunft(h.getBedarf().getId(), h.getBedarfVersion(), h.getMenge())).toList())).toList();
         List<Lieferantenbeteiligung> participations = revision.getLieferanten().stream()
-                .map(l -> new Lieferantenbeteiligung(l.getId(), l.getKontakt().lieferantId(), l.getKontakt().lieferantenname(), l.getStatus(), l.getVersion() == null ? 0 : l.getVersion())).toList();
-        return new Detail(toKopf(head, revision), positions, participations);
+                .map(l -> new Lieferantenbeteiligung(l.getId(), l.getKontakt().lieferantId(), l.getKontakt().lieferantenname(), l.getStatus(), l.getVersion() == null ? 0 : l.getVersion(), l.getKontakt())).toList();
+        Kopf basis = toKopf(head, revision);
+        var projektIds = revision.getPositionen().stream().flatMap(p -> p.getHerkuenfte().stream())
+                .map(h -> h.getBedarf().getProjektId()).filter(Objects::nonNull).distinct().sorted().toList();
+        Kopf kopf = new Kopf(basis.id(), basis.version(), basis.paNummer(), basis.zustaendigId(),
+                head.getAktuelleRevision() == null ? null : head.getAktuelleRevision().getId(), basis.revisionsNummer(),
+                basis.status(), basis.antwortfrist(), basis.liefertermin(), projektIds,
+                revision.getLieferanten().stream().filter(l -> l.getAntwortAm() != null).count(), participations.size());
+        return new Detail(kopf, positions, participations, revision.getId(),
+                !Objects.equals(kopf.aktuelleRevisionId(), revision.getId()));
     }
     private Kopf toKopf(Einkaufsanfrage h, AnfrageRevision r) {
         return new Kopf(h.getId(), h.getVersion() == null ? 0 : h.getVersion(), h.getPaNummer(), h.getZustaendigId(),

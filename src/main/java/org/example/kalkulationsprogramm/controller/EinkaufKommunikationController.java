@@ -48,6 +48,20 @@ public class EinkaufKommunikationController {
         return kommunikation.senden(id, beteiligungId, request, akteur);
     }
 
+    @GetMapping("/anfragen/{id}/revisionen/{revisionId}/versandstatus")
+    public List<BeteiligungsVersand> versandstatus(@PathVariable Long id, @PathVariable Long revisionId, Authentication authentication) {
+        rechte.verlange(authentication, EinkaufBerechtigung.LESEN);
+        return kommunikation.versandstatus(id, revisionId);
+    }
+
+    @PostMapping("/anfragen/{id}/lieferanten/{beteiligungId}/versand/{versandId}/erneut")
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto erneutSenden(
+            @PathVariable Long id, @PathVariable Long beteiligungId, @PathVariable Long versandId,
+            @RequestBody VersandWiederholung request, Authentication authentication) {
+        Long akteur = rechte.verlange(authentication, EinkaufBerechtigung.ANFRAGE_SENDEN);
+        return kommunikation.erneutSenden(id, beteiligungId, versandId, request, akteur);
+    }
+
     @GetMapping("/pdf-vorschau/{dateiId}")
     public ResponseEntity<Resource> pdfVorschau(@PathVariable Long dateiId, Authentication authentication) {
         rechte.verlange(authentication, EinkaufBerechtigung.LESEN);

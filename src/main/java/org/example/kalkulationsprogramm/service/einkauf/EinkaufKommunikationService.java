@@ -161,6 +161,30 @@ public class EinkaufKommunikationService {
     }
 
     @Transactional(readOnly = true)
+    public List<BeteiligungsVersand> versandstatus(Long anfrageId, Long revisionId) {
+        if (anfrageId == null || anfrageId <= 0 || revisionId == null || revisionId <= 0)
+            throw new IllegalArgumentException("Anfrage und Revision sind ungültig.");
+        var revision = revisionen.findByIdAndAnfrageId(revisionId, anfrageId)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfragefassung wurde nicht gefunden."));
+        if (revision.getAnfrage().isGeloescht()) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden.");
+        return outbox.anfrageStatus(anfrageId, revisionId);
+    }
+
+    @Transactional
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto erneutSenden(
+            Long anfrageId, Long beteiligungId, Long versandId, VersandWiederholung request, Long akteurId) {
+        if (anfrageId == null || anfrageId <= 0 || request == null || request.version() < 0)
+            throw new IllegalArgumentException("Die Versandwiederholung ist ungültig.");
+        anfragen.findByIdForUpdate(anfrageId)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden."));
+        var basis = ladeBasis(anfrageId, beteiligungId);
+        var result = outbox.anfrageErneutVersuchen(versandId, request.version(), akteurId,
+                anfrageId, basis.revision().getId(), beteiligungId);
+        worker.dispatchNachCommit(result.id());
+        return result;
+    }
+
+    @Transactional(readOnly = true)
     public Page<NachrichtDto> verlauf(String typ, Long vorgangId, Pageable pageable) {
         if (typ == null || !List.of("ANFRAGE", "BESTELLUNG").contains(typ) || vorgangId == null || vorgangId <= 0 || pageable == null)
             throw new IllegalArgumentException("Vorgang oder Seitenauswahl ist ungültig.");

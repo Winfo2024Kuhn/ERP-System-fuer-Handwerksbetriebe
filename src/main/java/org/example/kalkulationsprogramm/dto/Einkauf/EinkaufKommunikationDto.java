@@ -16,5 +16,7 @@ public final class EinkaufKommunikationDto {
     public record NachrichtDto(Long emailId, String messageId, String subject, String fromAddress,
             java.time.LocalDateTime sentAt, String typ, Long vorgangId, Long beteiligungId, Long revisionId,
             String status, String quelle) {}
+    public record BeteiligungsVersand(Long beteiligungId, EinkaufVersandDto.VersandDto versand) {}
+    public record VersandWiederholung(long version) {}
     public record VersandErgebnis(Long beteiligungId, String status, String fehlerCode, String messageId) {}
 }

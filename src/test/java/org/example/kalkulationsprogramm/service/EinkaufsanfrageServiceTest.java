@@ -218,6 +218,53 @@ class EinkaufsanfrageServiceTest {
         assertEquals(new BigDecimal("10"), bedarf.getBedarfMenge());
     }
 
+    @Test void historischeFassungBleibtLesbarUndBehaeltAktuellenKopf() {
+        var head = new org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage("PA-2026-00001", 9L, UUID.randomUUID(), "hash");
+        head.setId(22L); head.setVersion(4L);
+        var alt = new org.example.kalkulationsprogramm.domain.einkauf.AnfrageRevision(head, 1, LocalDate.of(2026, 9, 25), null, UUID.randomUUID(), "old");
+        var neu = new org.example.kalkulationsprogramm.domain.einkauf.AnfrageRevision(head, 2, null, null, UUID.randomUUID(), "new");
+        alt.setId(31L); neu.setId(32L); head.setAktuelleRevision(neu);
+        var kontakt = new Snapshot(3L, 4L, "Dummy Lieferant", "test@example.com", null, null, "00017");
+        alt.addLieferant(new org.example.kalkulationsprogramm.domain.einkauf.AnfrageLieferant(alt, kontakt));
+        when(anfragen.findById(22L)).thenReturn(Optional.of(head));
+        when(revisionen.findByIdAndAnfrageId(31L, 22L)).thenReturn(Optional.of(alt));
+        when(revisionen.findByAnfrageIdOrderByNummerAsc(22L)).thenReturn(List.of(alt, neu));
+        var detail = service.revisionLaden(22L, 31L);
+        assertEquals(32L, detail.kopf().aktuelleRevisionId());
+        assertEquals(31L, detail.angezeigteRevisionId());
+        assertEquals(true, detail.historisch());
+        assertEquals(1, detail.kopf().revisionsNummer());
+        assertEquals("00017", detail.lieferanten().getFirst().kontakt().eigeneKundennummer());
+        assertEquals(List.of(31L, 32L), service.revisionen(22L).stream().map(r -> r.id()).toList());
+        verify(anfragen, never()).saveAndFlush(any());
+    }
+
+    @Test void fremdeOderGeloeschteRevisionBleibtGesperrt() {
+        var head = new org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage("PA-2026-00001", 9L, UUID.randomUUID(), "hash");
+        head.setId(22L);
+        when(anfragen.findById(22L)).thenReturn(Optional.of(head));
+        assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class, () -> service.revisionLaden(22L, 99L));
+        assertThrows(IllegalArgumentException.class, () -> service.revisionLaden(22L, -1L));
+        head.markiereGeloescht(java.time.Instant.now());
+        assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class, () -> service.revisionen(22L));
+        verify(revisionen, never()).findByAnfrageIdOrderByNummerAsc(any());
+    }
+
+    @Test void listeLaedtProjektUndAntwortzahlenImBatchNurFuerAktuelleRevisionen() {
+        var head = new org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage("PA-2026-00001", 9L, UUID.randomUUID(), "hash");
+        head.setId(22L);
+        var rev = new org.example.kalkulationsprogramm.domain.einkauf.AnfrageRevision(head, 2, null, null, UUID.randomUUID(), "new");
+        rev.setId(32L); head.setAktuelleRevision(rev);
+        var page = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(anfragen.findAllByGeloeschtAmIsNullOrderByAngelegtAmDesc(page)).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(head)));
+        when(revisionen.projekteFuerRevisionen(List.of(32L))).thenReturn(List.<Object[]>of(new Object[]{32L, 8L}, new Object[]{32L, 7L}));
+        when(revisionen.antwortenFuerRevisionen(List.of(32L))).thenReturn(List.<Object[]>of(new Object[]{32L, 3L, 2L}));
+        var kopf = service.suchen(page).getContent().getFirst();
+        assertEquals(List.of(7L, 8L), kopf.projektIds());
+        assertEquals(2, kopf.antworten());
+        assertEquals(3, kopf.lieferantenAnzahl());
+    }
+
     private static org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.PositionSnapshot testPosition(BigDecimal menge) {
         return new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.PositionSnapshot(
                 org.example.kalkulationsprogramm.domain.einkauf.Positionsart.ARTIKEL, 5L, "A-5", null, null,

@@ -105,10 +105,31 @@ public class EinkaufOutboxService {
                 });
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public java.util.List<org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKommunikationDto.BeteiligungsVersand> anfrageStatus(Long vorgangId, Long revisionId) {
+        return repository.leseStatus("ANFRAGE", vorgangId, revisionId).stream().map(a ->
+                new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKommunikationDto.BeteiligungsVersand(a.getBeteiligungId(),
+                        new VersandDto(a.getId(), a.getVersion(), a.getTyp(), a.getVorgangId(), a.getRevisionId(),
+                                a.getStatus().name(), a.getFehlerCode(), a.getErstelltAm(), a.getAngenommenAm(),
+                                a.getArchiviertAm() != null, a.getMessageId()))).toList();
+    }
+
+    public VersandDto anfrageErneutVersuchen(Long id, long version, Long akteurId, Long vorgangId, Long revisionId, Long beteiligungId) {
+        return erneutVersuchen(id, version, akteurId, vorgangId, revisionId, beteiligungId);
+    }
+
     public VersandDto erneutVersuchen(Long id, long version, Long akteurId) {
+        return erneutVersuchen(id, version, akteurId, null, null, null);
+    }
+
+    private VersandDto erneutVersuchen(Long id, long version, Long akteurId, Long vorgangId, Long revisionId, Long beteiligungId) {
         if (akteurId == null || akteurId <= 0) throw new IllegalArgumentException("Ein Benutzer ist erforderlich.");
         return transaktion(() -> {
             EinkaufVersandauftrag a = sperre(id);
+            if (vorgangId != null && (!"ANFRAGE".equals(a.getTyp()) || !vorgangId.equals(a.getVorgangId())
+                    || !java.util.Objects.equals(revisionId, a.getRevisionId())
+                    || !java.util.Objects.equals(beteiligungId, a.getBeteiligungId())))
+                throw new org.example.kalkulationsprogramm.exception.NotFoundException("Der Versandauftrag gehört nicht zu dieser Lieferantenanfrage.");
             if (a.getVersion() != version) throw new IllegalStateException("Der Versandauftrag wurde zwischenzeitlich geändert.");
             if (a.getStatus() != EinkaufVersandauftrag.Status.FEHLGESCHLAGEN) {
                 throw new IllegalStateException("Nur sicher fehlgeschlagene Versandaufträge können erneut versucht werden.");

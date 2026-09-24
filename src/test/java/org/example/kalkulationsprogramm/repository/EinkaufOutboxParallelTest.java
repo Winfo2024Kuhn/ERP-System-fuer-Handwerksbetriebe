@@ -69,6 +69,29 @@ class EinkaufOutboxParallelTest {
     @jakarta.annotation.Resource PlatformTransactionManager transactionManager;
 
     @Test
+    void statusProjektionUndWiederholungBleibenAnExakteLieferantenanfrageGebunden() {
+        var auftrag = new EinkaufVersandauftrag("ANFRAGE", 731L, 738L, 739L, "EINKAUF",
+                java.util.UUID.randomUUID(), "payload", "mime", "token", "{}".getBytes(), "MIME".getBytes(),
+                "<scoped-status@erp.local>", 2L);
+        auftrag.sicherFehlgeschlagen("SMTP_CONNECT");
+        Long id = repository.saveAndFlush(auftrag).getId();
+        var gelesen = outbox.anfrageStatus(731L, 738L);
+        assertEquals(1, gelesen.size());
+        assertEquals(739L, gelesen.getFirst().beteiligungId());
+        assertEquals("FEHLGESCHLAGEN", gelesen.getFirst().versand().status());
+        assertEquals(0, outbox.anfrageStatus(731L, 999L).size());
+        org.junit.jupiter.api.Assertions.assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,
+                () -> outbox.anfrageErneutVersuchen(id, 0, 2L, 731L, 738L, 999L));
+        assertEquals("FEHLGESCHLAGEN", outbox.anfrageStatus(731L, 738L).getFirst().versand().status());
+        var wiederholung = outbox.anfrageErneutVersuchen(id, 0, 2L, 731L, 738L, 739L);
+        assertEquals("VORBEREITET", wiederholung.status());
+        assertEquals(1L, wiederholung.version());
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> outbox.anfrageErneutVersuchen(id, 1, 2L, 731L, 738L, 739L));
+        verifyNoInteractions(transport);
+    }
+
+    @Test
     void workerDispatchWirdErstNachCommitDerVorbereitetenOutboxVerbreitet() {
         var id = new java.util.concurrent.atomic.AtomicReference<Long>();
 

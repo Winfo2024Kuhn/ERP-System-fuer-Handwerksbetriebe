@@ -34,6 +34,22 @@ class EinkaufKommunikationControllerTest {
     }
 
     @Test
+    void statusUndGezielteWiederholungPruefenGetrennteRechteVorServicezugriff() {
+        var service = mock(EinkaufKommunikationService.class);
+        var rights = mock(EinkaufBerechtigungService.class);
+        var auth = mock(Authentication.class);
+        var controller = new EinkaufKommunikationController(service, mock(EinkaufAntwortZuordnungService.class), rights,
+                mock(EmailImportService.class), mock(EinkaufDateiService.class));
+        when(rights.verlange(auth, EinkaufBerechtigung.LESEN)).thenThrow(new org.springframework.security.access.AccessDeniedException("kein Recht"));
+        when(rights.verlange(auth, EinkaufBerechtigung.ANFRAGE_SENDEN)).thenThrow(new org.springframework.security.access.AccessDeniedException("kein Recht"));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> controller.versandstatus(1L, 2L, auth));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> controller.erneutSenden(1L, 3L, 4L, new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKommunikationDto.VersandWiederholung(0), auth));
+        verifyNoInteractions(service);
+    }
+
+    @Test
     void manuellerAbrufIstAusdruecklichAufEinkaufskontoBegrenzt() {
         var imports = mock(EmailImportService.class);
         var rights = mock(EinkaufBerechtigungService.class);
