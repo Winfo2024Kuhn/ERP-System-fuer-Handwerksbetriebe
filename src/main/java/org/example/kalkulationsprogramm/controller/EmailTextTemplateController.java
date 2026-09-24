@@ -117,12 +117,14 @@ public class EmailTextTemplateController {
 
     @PostMapping
     public ResponseEntity<EmailTextTemplateDto> create(@Valid @RequestBody EmailTextTemplateDto dto) {
+        pruefeEinkaufsentwurf(dto);
         EmailTextTemplate saved = service.create(dto);
         return ResponseEntity.ok(EmailTextTemplateDto.fromEntity(saved));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<EmailTextTemplateDto> update(@PathVariable Long id, @Valid @RequestBody EmailTextTemplateDto dto) {
+        pruefeEinkaufsentwurf(dto);
         try {
             EmailTextTemplate saved = service.update(id, dto);
             return ResponseEntity.ok(EmailTextTemplateDto.fromEntity(saved));
@@ -130,6 +132,20 @@ public class EmailTextTemplateController {
             return ResponseEntity.notFound().build();
         }
     }
+
+    private void pruefeEinkaufsentwurf(EmailTextTemplateDto dto) {
+        if (dto.getDokumentTyp() != null && dto.getDokumentTyp().trim().toUpperCase(java.util.Locale.ROOT).startsWith("EINKAUF_")) {
+            try { einkaufVorlagenService.entwurfVorschau(dto.getDokumentTyp(), dto.getSubjectTemplate(), dto.getHtmlBody()); }
+            catch (IllegalArgumentException ex) { throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, ex.getMessage()); }
+        }
+    }
+
+    @PostMapping("/einkauf-vorschau")
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVorlagenDto.Gerendert einkaufVorschau(@RequestBody Einkaufsentwurf request) {
+        try { return einkaufVorlagenService.entwurfVorschau(request.dokumentTyp(), request.subjectTemplate(), request.htmlBody()); }
+        catch (IllegalArgumentException ex) { throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, ex.getMessage()); }
+    }
+    public record Einkaufsentwurf(String dokumentTyp, String subjectTemplate, String htmlBody) {}
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {

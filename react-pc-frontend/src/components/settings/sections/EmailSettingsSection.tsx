@@ -6,6 +6,7 @@ import {
     Inbox,
     Loader2,
     Mail,
+    Save,
     Send,
     Settings2,
     TestTube,
@@ -24,6 +25,7 @@ import {
 } from '../settingsUi';
 import { parseErrorMessage } from '../settingsApi';
 import type { TestResult } from '../settingsApi';
+import { MailkontoFields, type MailkontoDraft, type MailkontoPasswordState } from '../MailkontoFields';
 
 interface ServerSettings {
     host: string;
@@ -44,6 +46,14 @@ interface DokumentMailSettings {
     /** Posteingangs-Server für die Kopie im Gesendet-Ordner. Leer = wie beim Versand. */
     imapHost: string;
 }
+
+interface EinkaufMailSettings extends MailkontoDraft { version: number; smtpPasswordSet: boolean; imapPasswordSet: boolean; letzterAbruf: string | null; letzterFehler: string | null }
+
+const leeresEinkaufMailkonto: EinkaufMailSettings = {
+    aktiv: false, fromAddress: '', fromName: '', smtpHost: '', smtpPort: 465, smtpUsername: '', smtpTls: 'TLS',
+    imapHost: '', imapPort: 993, imapUsername: '', imapTls: 'TLS', inbox: 'INBOX', sent: 'Sent',
+    version: 0, smtpPasswordSet: false, imapPasswordSet: false, letzterAbruf: null, letzterFehler: null,
+};
 
 /**
  * Alles rund um E-Mail: das Haupt-Postfach, das optionale eigene Postfach für
@@ -87,6 +97,19 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
     const [dokumentMailTesting, setDokumentMailTesting] = useState(false);
     const [dokumentMailTestResult, setDokumentMailTestResult] = useState<TestResult | null>(null);
 
+    const [einkaufMail, setEinkaufMail] = useState<EinkaufMailSettings>(leeresEinkaufMailkonto);
+    const [einkaufPasswoerter, setEinkaufPasswoerter] = useState<MailkontoPasswordState>({
+        smtpPassword: '', imapPassword: '', smtpPasswordSet: false, imapPasswordSet: false,
+    });
+    const [einkaufSpeichert, setEinkaufSpeichert] = useState(false);
+    const [einkaufMailAdmin, setEinkaufMailAdmin] = useState(true);
+    const [einkaufVerbindungPrueft, setEinkaufVerbindungPrueft] = useState(false);
+    const [einkaufTestmailSendet, setEinkaufTestmailSendet] = useState(false);
+    const [einkaufEmpfaenger, setEinkaufEmpfaenger] = useState('');
+    const [einkaufTestmailBestaetigt, setEinkaufTestmailBestaetigt] = useState(false);
+    const [einkaufVerbindungErgebnis, setEinkaufVerbindungErgebnis] = useState<TestResult | null>(null);
+    const [einkaufTestmailErgebnis, setEinkaufTestmailErgebnis] = useState<TestResult | null>(null);
+
     // --- Erweitert: Versand- und Empfangs-Server getrennt ---
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [smtpSettings, setSmtpSettings] = useState<ServerSettings>({
@@ -115,11 +138,12 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
     const loadSettings = useCallback(async () => {
         setLoading(true);
         try {
-            const [smtpRes, imapRes, mailFromRes, dokumentMailRes] = await Promise.all([
+            const [smtpRes, imapRes, mailFromRes, dokumentMailRes, einkaufMailRes] = await Promise.all([
                 fetch('/api/settings/smtp'),
                 fetch('/api/settings/imap'),
                 fetch('/api/settings/mail-from'),
                 fetch('/api/settings/dokument-mail'),
+                fetch('/api/settings/einkauf-mail'),
             ]);
 
             if (smtpRes.ok) {
@@ -176,6 +200,19 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
                     fromName: data?.fromName || '',
                     imapHost: data?.imapHost && data.imapHost !== data.host ? data.imapHost : '',
                 });
+            }
+
+            if (einkaufMailRes.ok) {
+                const data = await einkaufMailRes.json();
+                setEinkaufMail({
+                    ...leeresEinkaufMailkonto, ...data,
+                    smtpTls: data.smtpTls || 'TLS', imapTls: data.imapTls || 'TLS',
+                });
+                setEinkaufPasswoerter({ smtpPassword: '', imapPassword: '',
+                    smtpPasswordSet: !!data.smtpPasswordSet, imapPasswordSet: !!data.imapPasswordSet });
+            } else if (einkaufMailRes.status === 403) {
+                setEinkaufMailAdmin(false);
+                toast.error('Das Einkaufs-Mailkonto können nur Admins verwalten.');
             }
         } catch {
             toast.error('E-Mail-Einstellungen konnten nicht geladen werden.');
@@ -308,6 +345,89 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
             setDokumentMailTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
         } finally {
             setDokumentMailTesting(false);
+        }
+    };
+
+    const handleSaveEinkaufMail = async () => {
+        setEinkaufSpeichert(true);
+        try {
+            const res = await fetch('/api/settings/einkauf-mail', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    version: einkaufMail.version, aktiv: einkaufMail.aktiv,
+                    fromAddress: einkaufMail.fromAddress, fromName: einkaufMail.fromName,
+                    smtpHost: einkaufMail.smtpHost, smtpPort: einkaufMail.smtpPort,
+                    smtpUsername: einkaufMail.smtpUsername, smtpTls: einkaufMail.smtpTls,
+                    imapHost: einkaufMail.imapHost, imapPort: einkaufMail.imapPort,
+                    imapUsername: einkaufMail.imapUsername, imapTls: einkaufMail.imapTls,
+                    inbox: einkaufMail.inbox, sent: einkaufMail.sent,
+                    smtpPassword: einkaufPasswoerter.smtpPassword || undefined,
+                    imapPassword: einkaufPasswoerter.imapPassword || undefined,
+                }),
+            });
+            if (!res.ok) {
+                toast.error(await parseErrorMessage(res, 'Einkaufs-Mailkonto konnte nicht gespeichert werden.'));
+                return;
+            }
+            const data = await res.json();
+            setEinkaufMail({ ...leeresEinkaufMailkonto, ...data });
+            setEinkaufPasswoerter({ smtpPassword: '', imapPassword: '', smtpPasswordSet: !!data.smtpPasswordSet, imapPasswordSet: !!data.imapPasswordSet });
+            toast.success('Einkaufs-Mailkonto gespeichert.');
+        } catch {
+            toast.error('Verbindung zum Server fehlgeschlagen.');
+        } finally {
+            setEinkaufSpeichert(false);
+        }
+    };
+
+    const handleEinkaufVerbindungTest = async () => {
+        setEinkaufVerbindungPrueft(true);
+        setEinkaufVerbindungErgebnis(null);
+        try {
+            const res = await fetch('/api/settings/einkauf-mail/verbindung-testen', { method: 'PUT' });
+            if (!res.ok) throw new Error(await parseErrorMessage(res, 'Verbindung zum Einkaufs-Postfach konnte nicht geprüft werden.'));
+            const result = await res.json();
+            const success = !!result.smtpErfolgreich && !!result.imapErfolgreich;
+            const message = `SMTP ${result.smtpErfolgreich ? 'verbunden' : 'fehlgeschlagen'}, IMAP ${result.imapErfolgreich ? 'verbunden' : 'fehlgeschlagen'}`;
+            setEinkaufVerbindungErgebnis({ success, message });
+            if (success) toast.success(message); else toast.error(message);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Verbindung zum Einkaufs-Postfach konnte nicht geprüft werden.';
+            setEinkaufVerbindungErgebnis({ success: false, message });
+            toast.error(message);
+        } finally {
+            setEinkaufVerbindungPrueft(false);
+        }
+    };
+
+    const handleEinkaufTestmail = async () => {
+        if (!einkaufEmpfaenger.trim() || !einkaufEmpfaenger.includes('@')) {
+            toast.error('Bitte eine gültige Testempfänger-Adresse eintragen.');
+            return;
+        }
+        if (!einkaufTestmailBestaetigt) {
+            toast.error('Bitte bestätigen Sie den Testempfänger.');
+            return;
+        }
+        setEinkaufTestmailSendet(true);
+        setEinkaufTestmailErgebnis(null);
+        try {
+            const res = await fetch('/api/settings/einkauf-mail/testmail', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ empfaenger: einkaufEmpfaenger.trim(), empfaengerBestaetigt: einkaufTestmailBestaetigt }),
+            });
+            if (!res.ok) throw new Error(await parseErrorMessage(res, 'Testmail konnte nicht gesendet werden.'));
+            const result = await res.json();
+            const success = result.status === 'ANGENOMMEN';
+            const message = success ? 'Testmail wurde angenommen.' : `Testmail: ${result.fehlerCode || result.status || 'Versand fehlgeschlagen.'}`;
+            setEinkaufTestmailErgebnis({ success, message });
+            if (success) toast.success(message); else toast.error(message);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Testmail konnte nicht gesendet werden.';
+            setEinkaufTestmailErgebnis({ success: false, message });
+            toast.error(message);
+        } finally {
+            setEinkaufTestmailSendet(false);
         }
     };
 
@@ -596,143 +716,45 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 </label>
 
                 {dokumentMail.aktiv && (
-                    <div className="mt-6 pt-6 border-t border-slate-100">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <Label htmlFor="dokumentMailHost">Mail-Server für den Versand</Label>
-                                <Input
-                                    id="dokumentMailHost"
-                                    placeholder="z.B. mail.ihre-domain.de"
-                                    value={dokumentMail.host}
-                                    onChange={(e) =>
-                                        setDokumentMail((prev) => ({ ...prev, host: e.target.value }))
-                                    }
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Steht in der Anleitung Ihres Mail-Anbieters, oft als „SMTP-Server“.
-                                </p>
-                            </div>
-                            <div>
-                                <Label htmlFor="dokumentMailPort">Port</Label>
-                                <Input
-                                    id="dokumentMailPort"
-                                    type="number"
-                                    // Leeres Feld bleibt leer, damit der Anwender die Zahl
-                                    // überhaupt tippen kann. Erst beim Speichern greift der
-                                    // Rückfall auf 465 (siehe Backend).
-                                    value={dokumentMail.port === 0 ? '' : dokumentMail.port}
-                                    onChange={(e) =>
-                                        setDokumentMail((prev) => ({
-                                            ...prev,
-                                            port: parseInt(e.target.value, 10) || 0,
-                                        }))
-                                    }
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    465 verwenden. Port 587 wird noch nicht unterstützt.
-                                </p>
-                            </div>
-                            <div>
-                                <Label htmlFor="dokumentMailUser">E-Mail-Adresse des Postfachs</Label>
-                                <Input
-                                    id="dokumentMailUser"
-                                    type="email"
-                                    autoComplete="username"
-                                    placeholder="rechnungen@ihre-domain.de"
-                                    value={dokumentMail.username}
-                                    onChange={(e) =>
-                                        setDokumentMail((prev) => ({ ...prev, username: e.target.value }))
-                                    }
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Die vollständige Adresse, mit der Sie sich beim Postfach anmelden.
-                                </p>
-                            </div>
-                            <PasswordField
-                                id="dokumentMailPassword"
-                                label="Passwort"
-                                value={dokumentMailPassword}
-                                onChange={setDokumentMailPassword}
-                                isSet={dokumentMail.passwordSet}
-                                placeholder="Passwort des Postfachs"
-                            />
-                        </div>
-
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <Label htmlFor="dokumentMailName">Angezeigter Name</Label>
-                                <Input
-                                    id="dokumentMailName"
-                                    placeholder="z.B. Bauschlosserei Kuhn"
-                                    value={dokumentMail.fromName}
-                                    onChange={(e) =>
-                                        setDokumentMail((prev) => ({ ...prev, fromName: e.target.value }))
-                                    }
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Steht beim Kunden im Posteingang vor der Adresse.
-                                </p>
-                            </div>
-                            <div>
-                                <Label htmlFor="dokumentMailImapHost">Posteingangs-Server (optional)</Label>
-                                <Input
-                                    id="dokumentMailImapHost"
-                                    placeholder={dokumentMail.host || 'wie beim Versand'}
-                                    value={dokumentMail.imapHost}
-                                    onChange={(e) =>
-                                        setDokumentMail((prev) => ({ ...prev, imapHost: e.target.value }))
-                                    }
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Nur nötig, wenn Ihr Anbieter dafür einen anderen Servernamen
-                                    verwendet. Wird gebraucht, damit versendete Rechnungen auch im
-                                    Gesendet-Ordner des Postfachs landen.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="mt-4">
-                            <Label htmlFor="dokumentMailFrom">Absender-Adresse (optional)</Label>
-                            <Input
-                                id="dokumentMailFrom"
-                                type="email"
-                                placeholder={dokumentMail.username || 'rechnungen@ihre-domain.de'}
-                                value={dokumentMail.fromAddress}
-                                onChange={(e) =>
-                                    setDokumentMail((prev) => ({ ...prev, fromAddress: e.target.value }))
-                                }
-                                className="sm:max-w-md"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">
-                                Leer lassen → es wird die Adresse des Postfachs oben verwendet. Eine
-                                abweichende Adresse muss zur <strong>selben Domain</strong> gehören,
-                                sonst hält der Empfänger die Mail für gefälscht und sie landet erst
-                                recht im Spam.
-                            </p>
-                        </div>
-
-                        <div className="mt-6 pt-4 border-t border-slate-100">
+                    <div className="mt-6 pt-6 border-t border-slate-100 space-y-5">
+                        <MailkontoFields
+                            mode="document"
+                            value={{
+                                aktiv: dokumentMail.aktiv,
+                                fromAddress: dokumentMail.fromAddress,
+                                fromName: dokumentMail.fromName,
+                                smtpHost: dokumentMail.host,
+                                smtpPort: dokumentMail.port,
+                                smtpUsername: dokumentMail.username,
+                                smtpTls: 'TLS',
+                                imapHost: dokumentMail.imapHost,
+                                imapPort: 993,
+                                imapUsername: dokumentMail.username,
+                                imapTls: 'TLS',
+                                inbox: 'INBOX',
+                                sent: 'Sent',
+                            }}
+                            onChange={next => setDokumentMail(previous => ({
+                                ...previous, host: next.smtpHost, port: next.smtpPort,
+                                username: next.smtpUsername, fromAddress: next.fromAddress,
+                                fromName: next.fromName, imapHost: next.imapHost,
+                            }))}
+                            passwordState={{
+                                smtpPassword: dokumentMailPassword, imapPassword: '',
+                                smtpPasswordSet: dokumentMail.passwordSet, imapPasswordSet: dokumentMail.passwordSet,
+                            }}
+                            onPasswordChange={next => setDokumentMailPassword(next.smtpPassword)}
+                            disabled={dokumentMailSaving}
+                        />
+                        <div className="pt-4 border-t border-slate-100">
                             <Label htmlFor="dokumentMailTest">Test-E-Mail Empfänger (optional)</Label>
                             <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                                <Input
-                                    id="dokumentMailTest"
-                                    type="email"
-                                    placeholder="ihre@private-adresse.de"
-                                    value={dokumentMailTestRecipient}
-                                    onChange={(e) => setDokumentMailTestRecipient(e.target.value)}
-                                    className="sm:max-w-md"
-                                />
-                                <Button
-                                    variant="outline"
-                                    onClick={handleTestDokumentMail}
+                                <Input id="dokumentMailTest" type="email" placeholder="ihre@private-adresse.de"
+                                    value={dokumentMailTestRecipient} onChange={event => setDokumentMailTestRecipient(event.target.value)} className="sm:max-w-md" />
+                                <Button variant="outline" onClick={handleTestDokumentMail}
                                     disabled={dokumentMailTesting || !dokumentMail.host.trim()}
-                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                                >
-                                    {dokumentMailTesting ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                        <TestTube className="w-4 h-4" />
-                                    )}
+                                    className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                                    {dokumentMailTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
                                     {dokumentMailTesting ? 'Teste...' : 'Verbindung testen'}
                                 </Button>
                             </div>
@@ -744,6 +766,70 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 <SaveButton onClick={handleSaveDokumentMail} saving={dokumentMailSaving}>
                     Postfach speichern
                 </SaveButton>
+            </SettingsCard>
+
+            <SettingsCard
+                icon={<Inbox className="w-5 h-5 text-rose-600" />}
+                title="Einkaufs-Postfach"
+                description="Dieses Postfach ist für Einkaufsanfragen und den getrennten Eingang von Lieferantenmails vorgesehen. Verbindung prüfen sendet keine E-Mail."
+            >
+                {!einkaufMailAdmin ? (
+                    <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Das Einkaufs-Mailkonto können nur Admins verwalten.
+                    </p>
+                ) : <>
+                    <label className="mb-5 flex items-start gap-3 text-sm text-slate-800">
+                        <input type="checkbox" checked={einkaufMail.aktiv} disabled={einkaufSpeichert}
+                            onChange={event => setEinkaufMail(current => ({ ...current, aktiv: event.target.checked }))}
+                            className="mt-1 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+                        <span><strong>Einkaufs-Postfach aktivieren</strong><span className="block text-xs text-slate-500">SMTP und IMAP werden getrennt geprüft. Der Einkauf bleibt vom Haupt- und Dokument-Postfach getrennt.</span></span>
+                    </label>
+                    <MailkontoFields value={einkaufMail} onChange={next => setEinkaufMail(current => ({ ...current, ...next }))}
+                        passwordState={einkaufPasswoerter} onPasswordChange={setEinkaufPasswoerter} disabled={einkaufSpeichert} />
+                    <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                        <Button onClick={handleSaveEinkaufMail} disabled={einkaufSpeichert}
+                            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700">
+                            {einkaufSpeichert ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            {einkaufSpeichert ? 'Speichert …' : 'Einkauf-Einstellungen speichern'}
+                        </Button>
+                        <Button variant="outline" onClick={handleEinkaufVerbindungTest}
+                            disabled={einkaufVerbindungPrueft || !einkaufMail.version || !einkaufMail.aktiv}
+                            title={!einkaufMail.version || !einkaufMail.aktiv ? 'Erst speichern und aktivieren, dann die Verbindung prüfen.' : undefined}
+                            className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                            {einkaufVerbindungPrueft ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
+                            {einkaufVerbindungPrueft ? 'Prüft …' : 'Verbindung prüfen'}
+                        </Button>
+                    </div>
+                    <TestResultBanner result={einkaufVerbindungErgebnis} className="mt-3" />
+                    <div className="mt-5 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <h4 className="font-semibold text-slate-900">Testmail bewusst senden</h4>
+                        <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                            <div className="flex-1 space-y-1">
+                                <Label htmlFor="einkaufTestempfaenger">Testempfänger</Label>
+                                <Input id="einkaufTestempfaenger" type="email" autoComplete="email" placeholder="test@example.com"
+                                    value={einkaufEmpfaenger} onChange={event => setEinkaufEmpfaenger(event.target.value)} />
+                            </div>
+                            <Button variant="outline" onClick={handleEinkaufTestmail}
+                                disabled={einkaufTestmailSendet || !einkaufMail.aktiv || !einkaufMail.version || !einkaufEmpfaenger.includes('@') || !einkaufTestmailBestaetigt}
+                                className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                                {einkaufTestmailSendet ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                {einkaufTestmailSendet ? 'Sendet …' : 'Testmail senden'}
+                            </Button>
+                        </div>
+                        <label className="flex items-start gap-2 text-sm text-slate-700">
+                            <input type="checkbox" checked={einkaufTestmailBestaetigt} onChange={event => setEinkaufTestmailBestaetigt(event.target.checked)}
+                                className="mt-1 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+                            Ich bestätige, dass die Testmail an diese Adresse gesendet werden darf.
+                        </label>
+                        <TestResultBanner result={einkaufTestmailErgebnis} />
+                    </div>
+                    <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                        <p><strong>Posteingang:</strong> {einkaufMail.inbox || '—'}</p>
+                        <p><strong>Gesendet:</strong> {einkaufMail.sent || '—'}</p>
+                        <p><strong>Letzter Abruf:</strong> {einkaufMail.letzterAbruf ? new Date(einkaufMail.letzterAbruf).toLocaleString('de-DE') : 'Noch kein Abruf'}</p>
+                        {einkaufMail.letzterFehler && <p className="text-rose-700"><strong>Letzter Fehler:</strong> {einkaufMail.letzterFehler}</p>}
+                    </div>
+                </>}
             </SettingsCard>
 
             {/* === Erweitert: Versand- und Empfangs-Server getrennt === */}

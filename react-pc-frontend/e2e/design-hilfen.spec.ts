@@ -1,5 +1,5 @@
 import { test, expect } from './hilfen/test';
-import { designPruefung, keinHorizontalerUeberlauf, keineUeberschneidungen, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
+import { designPruefung, uebergaengeAusklingenLassen, keinHorizontalerUeberlauf, keineUeberschneidungen, keinTextGekuerzt, keinTextLaeuftUeber } from './hilfen/design';
 
 /**
  * Rote-dann-gruene Specs fuer die drei Design-Pruefungen aus Spec E
@@ -701,5 +701,43 @@ test.describe('keineUeberschneidungen (Abschnitt 10)', () => {
             <div class="toast" role="status">Ein Fehler ist aufgetreten</div>
         `);
         await expect(keineUeberschneidungen(page)).rejects.toThrow();
+    });
+});
+
+
+test.describe('Designprüfung wartet auf verzögert gestartete Übergänge', () => {
+    test('wartet auf das erst nach zwei Frames öffnende Vorschaupanel', async ({ page }) => {
+        await page.setContent(`<style>
+            #panel { width: 0; height: 40px; overflow: hidden; transition: width 500ms linear; }
+            #inhalt { width: 300px; }
+        </style><div id="panel"><div id="inhalt">Vorschau</div></div>`);
+        await page.evaluate(() => {
+            const panel = document.getElementById('panel')!;
+            panel.getBoundingClientRect();
+            requestAnimationFrame(() => requestAnimationFrame(() => { panel.style.width = '300px'; }));
+        });
+        await uebergaengeAusklingenLassen(page);
+        // Sofort messen: eine wartende Playwright-Zusicherung würde den Helperfehler verdecken.
+        expect(await page.locator('#panel').evaluate(el => el.getBoundingClientRect().width)).toBe(300);
+        await keinHorizontalerUeberlauf(page);
+    });
+
+    test('wartet auch auf einen Folgeübergang und ignoriert endlose Spinner', async ({ page }) => {
+        await page.setContent(`<style>
+            @keyframes drehen { to { transform: rotate(360deg); } }
+            #spinner { width: 10px; height: 10px; animation: drehen 1s linear infinite; }
+            #panel { width: 100px; height: 40px; overflow: hidden; transition: width 100ms linear; }
+        </style><div id="spinner"></div><div id="panel">Vorschau</div>`);
+        await page.evaluate(() => {
+            const panel = document.getElementById('panel')!;
+            panel.getBoundingClientRect();
+            panel.addEventListener('transitionend', () => {
+                requestAnimationFrame(() => requestAnimationFrame(() => { panel.style.width = '300px'; }));
+            }, { once: true });
+            panel.style.width = '200px';
+        });
+        await uebergaengeAusklingenLassen(page);
+        expect(await page.locator('#panel').evaluate(el => el.getBoundingClientRect().width)).toBe(300);
+        await keinHorizontalerUeberlauf(page);
     });
 });

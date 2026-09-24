@@ -28,6 +28,13 @@ public class EinkaufsanfrageController {
     @GetMapping("/{id}") public Detail laden(@PathVariable Long id, Authentication authentication) {
         berechtigungen.verlange(authentication, EinkaufBerechtigung.LESEN); return anfragen.laden(id);
     }
+    @GetMapping("/{id}/revisionen") public List<Revisionsinfo> revisionen(@PathVariable Long id, Authentication authentication) {
+        berechtigungen.verlange(authentication, EinkaufBerechtigung.LESEN); return anfragen.revisionen(id);
+    }
+    @GetMapping("/{id}/revisionen/{revisionId}") public Detail revisionLaden(@PathVariable Long id,
+            @PathVariable Long revisionId, Authentication authentication) {
+        berechtigungen.verlange(authentication, EinkaufBerechtigung.LESEN); return anfragen.revisionLaden(id, revisionId);
+    }
     @PostMapping @ResponseStatus(HttpStatus.CREATED) public Detail anlegen(@RequestBody Create request, Authentication authentication) {
         return anfragen.anlegen(request, berechtigungen.verlange(authentication, EinkaufBerechtigung.BEARBEITEN));
     }

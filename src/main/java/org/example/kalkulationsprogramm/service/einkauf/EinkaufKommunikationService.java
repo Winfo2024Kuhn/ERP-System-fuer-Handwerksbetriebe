@@ -108,7 +108,9 @@ public class EinkaufKommunikationService {
                 basis.revision().getId(), templateId, gerendert.version(), gerendert.subject(), gerendert.htmlBody(),
                 empfaenger, attachmentIds, frozenPdfId, sha256(pdfBytes), inhaltHash, erstelltAm,
                 erstelltAm.plus(Duration.ofDays(1))));
-        Vorschau preview = new Vorschau(basis.revision().getId(), token, gerendert.subject(), gerendert.htmlBody(), empfaenger, frozenPdfId, attachmentIds);
+        Vorschau preview = new Vorschau(basis.revision().getId(), token, gerendert.subject(), gerendert.htmlBody(), empfaenger,
+                frozenPdfId, attachmentIds, basis.revision().getNummer(), kontakt.eigeneKundennummer(),
+                basis.revision().getAntwortfrist(), basis.revision().getLiefertermin(), dateien.metadaten(attachmentIds));
         return new VorschauDaten(basis, preview, List.copyOf(attachments));
     }
 
@@ -158,6 +160,30 @@ public class EinkaufKommunikationService {
         var result = outbox.einreihen(versandSnapshot, freigabe.idempotenzKey(), akteurId);
         worker.dispatchNachCommit(result.id());
         return new VersandErgebnis(beteiligungId, result.status(), result.fehlerCode(), result.messageId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<BeteiligungsVersand> versandstatus(Long anfrageId, Long revisionId) {
+        if (anfrageId == null || anfrageId <= 0 || revisionId == null || revisionId <= 0)
+            throw new IllegalArgumentException("Anfrage und Revision sind ungültig.");
+        var revision = revisionen.findByIdAndAnfrageId(revisionId, anfrageId)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfragefassung wurde nicht gefunden."));
+        if (revision.getAnfrage().isGeloescht()) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden.");
+        return outbox.anfrageStatus(anfrageId, revisionId);
+    }
+
+    @Transactional
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto erneutSenden(
+            Long anfrageId, Long beteiligungId, Long versandId, VersandWiederholung request, Long akteurId) {
+        if (anfrageId == null || anfrageId <= 0 || request == null || request.version() < 0)
+            throw new IllegalArgumentException("Die Versandwiederholung ist ungültig.");
+        anfragen.findByIdForUpdate(anfrageId)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die Anfrage wurde nicht gefunden."));
+        var basis = ladeBasis(anfrageId, beteiligungId);
+        var result = outbox.anfrageErneutVersuchen(versandId, request.version(), akteurId,
+                anfrageId, basis.revision().getId(), beteiligungId);
+        worker.dispatchNachCommit(result.id());
+        return result;
     }
 
     @Transactional(readOnly = true)

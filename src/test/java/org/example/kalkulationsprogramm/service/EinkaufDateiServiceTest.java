@@ -254,4 +254,27 @@ class EinkaufDateiServiceTest {
     private static MockMultipartFile pdf(byte[] bytes, String filename) {
         return new MockMultipartFile("datei", filename, "application/pdf", bytes);
     }
+
+    @Test
+    void metadatenEnthaltenDateinameRevisionUndFreigabeUndFehlendeIdsScheitern() {
+        var versions = mock(EinkaufAnlageVersionRepository.class);
+        var needs = mock(EinkaufBedarfRepository.class);
+        var need = mock(EinkaufBedarf.class); when(need.getId()).thenReturn(1L);
+        var file = new EinkaufDatei("dummy", "dummy", "Profil.pdf", "application/pdf", 20);
+        org.springframework.test.util.ReflectionTestUtils.setField(file, "id", 8L);
+        var version = new EinkaufAnlageVersion(need, file, "B");
+        org.springframework.test.util.ReflectionTestUtils.setField(version, "id", 18L);
+        version.setFreigegeben(true);
+        when(needs.existsById(1L)).thenReturn(true);
+        when(versions.findByBedarfIdOrderByIdAsc(1L)).thenReturn(List.of(version));
+        when(versions.findAllByIdIn(List.of(18L))).thenReturn(List.of(version));
+        var local = new EinkaufDateiService(mock(EinkaufDateiRepository.class), versions, needs, uploadRoot.toString());
+        var dto = local.auflisten(1L).getFirst();
+        org.junit.jupiter.api.Assertions.assertEquals("Profil.pdf", dto.dateiname());
+        org.junit.jupiter.api.Assertions.assertEquals("B", dto.revision());
+        org.junit.jupiter.api.Assertions.assertTrue(dto.freigegeben());
+        org.junit.jupiter.api.Assertions.assertEquals(List.of(dto), local.metadaten(List.of(18L)));
+        assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class, () -> local.metadaten(List.of(999L)));
+        assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class, () -> local.auflisten(999L));
+    }
 }

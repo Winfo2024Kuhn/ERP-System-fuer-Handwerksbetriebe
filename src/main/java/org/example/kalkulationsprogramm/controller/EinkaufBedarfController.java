@@ -30,6 +30,12 @@ public class EinkaufBedarfController {
         return bedarfService.suche(q, projektId, pageable);
     }
 
+    @GetMapping("/{id}")
+    public EinkaufBedarfDto.Response laden(@PathVariable Long id, Authentication authentication) {
+        berechtigungService.verlange(authentication, EinkaufBerechtigung.LESEN);
+        return bedarfService.laden(id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public EinkaufBedarfDto.Response anlegen(@RequestBody EinkaufBedarfDto.Create request,

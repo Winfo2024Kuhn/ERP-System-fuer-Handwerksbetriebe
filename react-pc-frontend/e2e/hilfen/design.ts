@@ -97,14 +97,21 @@ export async function designPruefung(
  */
 export async function uebergaengeAusklingenLassen(page: Page, maxMs = 1500): Promise<void> {
     await page.evaluate(async (grenze) => {
-        const endlich = document.getAnimations().filter((a) => {
-            const timing = a.effect?.getComputedTiming();
-            return timing != null && Number.isFinite(timing.endTime as number) && a.playState === 'running';
-        });
-        if (endlich.length === 0) return;
-        const alleFertig = Promise.all(endlich.map((a) => a.finished.catch(() => undefined)));
-        const zeitLimit = new Promise((r) => setTimeout(r, grenze));
-        await Promise.race([alleFertig, zeitLimit]);
+        const ende = performance.now() + grenze;
+        let ruhigeFrames = 0;
+        // Komponenten starten Übergänge teils erst nach zwei requestAnimationFrame-Aufrufen.
+        // Nach deren Ende erneut prüfen: transitionend kann einen Folgeübergang anstoßen.
+        while (performance.now() < ende) {
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+            const aktiv = document.getAnimations().some(animation => {
+                const timing = animation.effect?.getComputedTiming();
+                return timing != null && Number.isFinite(timing.endTime as number)
+                    && (animation.pending || animation.playState === 'running');
+            });
+            ruhigeFrames = aktiv ? 0 : ruhigeFrames + 1;
+            if (ruhigeFrames >= 3) return;
+        }
+        throw new Error(`Layout ist nach ${grenze} ms noch in Bewegung.`);
     }, maxMs);
 }
 

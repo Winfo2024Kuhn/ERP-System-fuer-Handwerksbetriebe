@@ -15,5 +15,6 @@ public interface EinkaufsanfrageRepository extends JpaRepository<Einkaufsanfrage
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Einkaufsanfrage a where a.id = :id")
     Optional<Einkaufsanfrage> findByIdForUpdate(@Param("id") Long id);
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "aktuelleRevision")
     Page<Einkaufsanfrage> findAllByGeloeschtAmIsNullOrderByAngelegtAmDesc(Pageable pageable);
 }

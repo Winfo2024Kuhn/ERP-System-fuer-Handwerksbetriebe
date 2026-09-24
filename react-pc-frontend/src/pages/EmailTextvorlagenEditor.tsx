@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
@@ -23,7 +24,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { useToast } from '../components/ui/toast';
 
-type Kategorie = 'DOKUMENT' | 'MAHNWESEN' | 'WEBSITE' | 'SYSTEM';
+type Kategorie = 'DOKUMENT' | 'MAHNWESEN' | 'WEBSITE' | 'EINKAUF' | 'SYSTEM';
 
 interface EmailTemplate {
   id?: number | string;
@@ -33,6 +34,8 @@ interface EmailTemplate {
   subjectTemplate: string;
   htmlBody: string;
   aktiv?: boolean;
+  standard?: boolean;
+  version?: number;
 }
 
 interface DokumentTypOption {
@@ -50,12 +53,13 @@ interface PlaceholderDef {
 /* Reihenfolge der Kategorien in der UI — bewusst hartkodiert, damit
    "Dokumente" oben stehen (die mit Abstand häufigsten Vorlagen) und
    "System" als generischer Sammeltopf unten. */
-const KATEGORIE_REIHENFOLGE: Kategorie[] = ['DOKUMENT', 'MAHNWESEN', 'WEBSITE', 'SYSTEM'];
+const KATEGORIE_REIHENFOLGE: Kategorie[] = ['DOKUMENT', 'MAHNWESEN', 'WEBSITE', 'EINKAUF', 'SYSTEM'];
 
 const KATEGORIE_LABEL: Record<Kategorie, string> = {
   DOKUMENT: 'Dokumente',
   MAHNWESEN: 'Mahnwesen',
   WEBSITE: 'Webseite & Anfragen',
+  EINKAUF: 'Einkauf',
   SYSTEM: 'System'
 };
 
@@ -66,6 +70,7 @@ const KATEGORIE_BADGE: Record<Kategorie, string> = {
   DOKUMENT: 'bg-rose-50 text-rose-700 border border-rose-100',
   MAHNWESEN: 'bg-slate-100 text-slate-700 border border-slate-200',
   WEBSITE: 'bg-rose-100 text-rose-800 border border-rose-200',
+  EINKAUF: 'bg-rose-50 text-rose-700 border border-rose-100',
   SYSTEM: 'bg-slate-50 text-slate-500 border border-slate-100'
 };
 
@@ -337,7 +342,7 @@ function TemplateEditorPanel({
               placeholder="Dokumenttyp wählen"
             />
             <p className="text-xs text-slate-400">
-              Pro Dokumenttyp kann genau eine aktive Vorlage existieren.
+              Pro Dokumenttyp gibt es eine aktive Vorlage. Varianten können als Standard festgelegt werden.
             </p>
           </div>
         </div>
@@ -429,9 +434,45 @@ function TemplateEditorPanel({
           />
           Vorlage aktiv (wird beim Versand verwendet)
         </label>
+        {template.dokumentTyp.startsWith('EINKAUF_') && <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer"><input type="checkbox" className="h-4 w-4 accent-rose-600" checked={template.standard === true} onChange={event => onChange({ ...template, standard: event.target.checked })} />Standard für diesen Einkaufstyp</label>}
       </div>
     </Card>
   );
+}
+
+type EinkaufPreview = { subject: string; htmlBody: string };
+async function loadEinkaufPreview(template: EmailTemplate, signal?: AbortSignal): Promise<EinkaufPreview> {
+  const response = await fetch('/api/email-textvorlagen/einkauf-vorschau', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+    body: JSON.stringify({ dokumentTyp: template.dokumentTyp, subjectTemplate: template.subjectTemplate, htmlBody: template.htmlBody })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.detail || error?.message || 'Vorlage ungültig. Bitte Betreff und erlaubte Platzhalter prüfen.');
+  }
+  return response.json();
+}
+function EinkaufsVorlagenVorschau({ template }: { template: EmailTemplate }) {
+  const [result, setResult] = useState<{ source: string; data?: EinkaufPreview; error?: string } | null>(null);
+  const source = JSON.stringify([template.dokumentTyp, template.subjectTemplate, template.htmlBody]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const [dokumentTyp, subjectTemplate, htmlBody] = JSON.parse(source) as string[];
+      loadEinkaufPreview({ dokumentTyp, subjectTemplate, htmlBody, name: '' }, controller.signal)
+        .then(data => { if (!controller.signal.aborted) setResult({ source, data }); })
+        .catch(error => { if (!controller.signal.aborted) setResult({ source, error: error.message }); });
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [source]);
+  const current = result?.source === source ? result : null;
+  return <Card className="mt-4 space-y-3 border-slate-200 p-5" aria-label="Servervorschau mit Beispieldaten">
+    <h3 className="font-semibold">Servervorschau mit Beispieldaten</h3>
+    <p className="text-sm text-slate-600">Gleiche Platzhalterprüfung wie beim Versand. Die Empfängerdaten werden später vor der Sendefreigabe angezeigt.</p>
+    {!current && <p role="status">Vorschau wird geprüft …</p>}
+    {current?.error && <p role="alert" className="text-sm text-rose-700">{current.error}</p>}
+    {current?.data && <><p className="font-medium">Betreff: {current.data.subject}</p><div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(current.data.htmlBody) }} /></>}
+  </Card>;
 }
 
 /* ─── View Mode: Preview ─── */
@@ -605,7 +646,7 @@ function TemplateView({
         </div>
         <div
           className="min-h-[400px] p-6 bg-white prose prose-slate max-w-none"
-          dangerouslySetInnerHTML={{ __html: preview || '' }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(preview || '') }}
         />
       </Card>
     </div>
@@ -692,7 +733,8 @@ export default function EmailTextvorlagenEditor() {
       name: template.name.trim(),
       subjectTemplate: template.subjectTemplate,
       htmlBody: template.htmlBody,
-      aktiv: template.aktiv !== false
+      aktiv: template.aktiv !== false,
+      standard: template.standard === true
     };
 
     const isUpdate = Boolean(template.id);
@@ -702,6 +744,7 @@ export default function EmailTextvorlagenEditor() {
     const method = isUpdate ? 'PUT' : 'POST';
 
     try {
+      if (template.dokumentTyp.startsWith('EINKAUF_')) await loadEinkaufPreview(template);
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -724,7 +767,7 @@ export default function EmailTextvorlagenEditor() {
       toast.success('Vorlage gespeichert.');
     } catch (error) {
       console.warn('Speichern fehlgeschlagen', error);
-      toast.error('Speichern fehlgeschlagen.');
+      toast.error(error instanceof Error ? error.message : 'Speichern fehlgeschlagen.');
     }
   };
 
@@ -762,6 +805,19 @@ export default function EmailTextvorlagenEditor() {
     () => templates.find((tpl) => String(tpl.id) === String(selectedId)) || null,
     [templates, selectedId]
   );
+
+
+  const previewTyp = editing?.dokumentTyp ?? activeTemplate?.dokumentTyp;
+  useEffect(() => {
+    const typ = previewTyp;
+    if (!typ) return;
+    let aktiv = true;
+    fetch(typ.startsWith('EINKAUF_') ? `/api/email-textvorlagen/placeholders/${encodeURIComponent(typ)}` : '/api/email-textvorlagen/placeholders').then(async response => {
+      if (!response.ok) throw new Error('Einkaufs-Platzhalter konnten nicht geladen werden.');
+      return await response.json() as PlaceholderDef[];
+    }).then(data => { if (aktiv) setPlaceholders(data.map(p => ({ ...p, token: p.token.startsWith('{{') ? p.token : `{{${p.token}}}` }))); }).catch(() => { if (aktiv) setPlaceholders([]); });
+    return () => { aktiv = false; };
+  }, [previewTyp]);
 
   const previewHtml = useMemo(
     () => (activeTemplate ? renderPreview(activeTemplate.htmlBody, useSampleData) : ''),
@@ -810,7 +866,7 @@ export default function EmailTextvorlagenEditor() {
   );
 
   const availableDokumentTypenForNew = dokumenttypOptions.filter(
-    (option) => !usedDokumentTypen.has(option.value)
+    (option) => option.value.startsWith('EINKAUF_') || !usedDokumentTypen.has(option.value)
   );
 
   const startNewTemplate = () => {
@@ -925,8 +981,8 @@ export default function EmailTextvorlagenEditor() {
               <div className="text-xs text-slate-600 space-y-1">
                 <p className="font-medium text-slate-700">Wie funktioniert das?</p>
                 <p>
-                  Pro Dokumenttyp (Rechnung, Anfrage, Auftrag, ...) können Sie genau eine
-                  E-Mail-Vorlage hinterlegen. Beim Versand werden Platzhalter wie{' '}
+                  Für Einkaufstypen können Sie mehrere Varianten und einen Standard hinterlegen.
+                  Andere Dokumenttypen verwenden jeweils eine E-Mail-Vorlage. Beim Versand werden Platzhalter wie{' '}
                   <code className="px-1 bg-white rounded text-rose-700">{'{{KUNDENNAME}}'}</code>{' '}
                   automatisch durch die echten Daten ersetzt.
                 </p>
@@ -938,7 +994,7 @@ export default function EmailTextvorlagenEditor() {
         {/* Main */}
         <div>
           {editing ? (
-            <TemplateEditorPanel
+            <><TemplateEditorPanel
               template={editing}
               onChange={(tpl) => setEditing(tpl)}
               onSave={saveTemplate}
@@ -963,9 +1019,9 @@ export default function EmailTextvorlagenEditor() {
               }
               placeholders={placeholders}
               isNew={!editing.id}
-            />
+            />{editing.dokumentTyp.startsWith('EINKAUF_') && <EinkaufsVorlagenVorschau template={editing} />}</>
           ) : activeTemplate ? (
-            <TemplateView
+            <>{activeTemplate.dokumentTyp.startsWith('EINKAUF_') ? <><div className="flex items-center justify-between"><h2 className="font-semibold">{activeTemplate.name}</h2><Button variant="outline" onClick={() => setEditing({ ...activeTemplate })}>Bearbeiten</Button></div><EinkaufsVorlagenVorschau template={activeTemplate} /></> : <TemplateView
               template={activeTemplate}
               dokumenttypLabel={dokumenttypLabel(activeTemplate.dokumentTyp)}
               kategorie={activeTemplate.kategorie ?? dokumenttypKategorie(activeTemplate.dokumentTyp)}
@@ -977,7 +1033,7 @@ export default function EmailTextvorlagenEditor() {
               onCopy={handleCopy}
               onEdit={() => setEditing({ ...activeTemplate })}
               onDelete={() => deleteTemplate(activeTemplate)}
-            />
+            />}</>
           ) : (
             <Card className="p-16 text-center border-dashed border-slate-200 shadow-inner">
               <Mail className="w-12 h-12 text-slate-200 mx-auto mb-3" />

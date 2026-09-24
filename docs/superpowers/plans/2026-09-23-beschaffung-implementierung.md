@@ -90,7 +90,7 @@ Der vorhandene Featurebranch `codex/beschaffung-konzept` bleibt Integrationsbasi
 | 7 – Bestellung, Lieferungen und KI | 19 → 21 → 22 → 24; 20 | Abgenommen; Sol grün nach 2 Nachbesserungen, 3468 Backendtests / 0 Fehler |
 | 8 – Unterlagen, Rechnungsprüfung und Fristen | 25 → 23; 26 | Abgenommen; Sol grün nach 2 Nachbesserungen, 3491 Backendtests / 0 Fehler |
 | 9 – Gemeinsame Oberflächenbausteine | 27 | Abgenommen; Sol-Code grün, Design gelb ohne Blocker nach 1 Nachbesserung; 3492 Backend-, 1654 Unit-, 687 E2E-Tests grün |
-| 10 – Einstellungen und Anfrageseiten | 29; 30 → 31 | Abschnitt 9 abgenommen |
+| 10 – Einstellungen und Anfrageseiten | 29; 30 → 31 | Abgenommen; Sol-Code grün, Design gelb ohne Blocker; 2 Nachbesserungen plus ausdrücklich freigegebene Testreparatur; 3502 Backend-,1673 Unit-,720 E2E-Tests grün |
 | 11 – Bestellseiten, Vergleich und Mailcenter | 33 → 34 → 32; 35 | Abschnitt 10 abgenommen |
 | 12 – Bedarfsseite und Navigation | 28 → 36 | Abschnitt 11 abgenommen |
 | 13 – Gesamtabnahme und lokaler Probebetrieb | 37 → 39 | Abschnitt 12 abgenommen |
@@ -722,16 +722,18 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 - Vorbild: `EmailSettingsSection.tsx:59,252,581`, bestehende `PasswordField`, `TestResultBanner`, `SaveButton`.
 - Interfaces – Produces: `MailkontoFields({value:MailkontoDraft,onChange,passwordState,disabled})` gemeinsam für Dokument- und Einkaufskarte; `EinkaufBerechtigungen({profileId:number})`. Consumes1,9,27.
 - Steps:
-  - [ ] Tests SMTP+IMAP getrennt, Passwort unverändert bei leerem Edit, Response enthält nur passwordSet, Verbindungstest sendet nichts, Testmail verlangt Empfänger, Nichtadmin bekommt keine editierbaren Zugänge.
-  - [ ] Wiederkehrende Server-/Port-/TLS-/Absender-/Passwortfelder aus bestehendem Dokumentformular extrahieren; Einkaufs-Postfach-Karte mit Aktivierung, Inbox/Sent, letzterAbruf/Fehler. Haupt-/Dokumentkontoverträge bleiben, gemeinsame Felder verhindern dritte Formular-Kopie.
-  - [ ] Getrennte Aktionen „Verbindung prüfen“ und „Testmail senden“; keine automatische Testmail bei Speichern. `EinkaufBerechtigungen` in `BenutzerEditor.tsx:343` unter dem Bearbeitungsformular mounten mit `profileId={selectedUser.id}` sobald gespeichertes Profil gewählt ist, bei Neuanlage erst nach erfolgreichem Save. Vorbild `BenutzerEditor.tsx:159,166` verwendet bereits selectedUser und `/api/frontend-users`. Rechtekarte lädt Grants des konkret gewählten Profils; Sende-/Bestell-/Prüfrechte einzeln bearbeitbar, ADMIN-Zugang bleibt erforderlich.
-  - [ ] E2E konfiguriert Dummyserver, prüft Fehler/Status und Maskierung; drei Größen, Designprüfung, alle Componenttests grün.
+  - [x] Tests SMTP+IMAP getrennt, Passwort unverändert bei leerem Edit, Response enthält nur passwordSet, Verbindungstest sendet nichts, Testmail verlangt Empfänger, Nichtadmin bekommt keine editierbaren Zugänge.
+  - [x] Wiederkehrende Server-/Port-/TLS-/Absender-/Passwortfelder aus bestehendem Dokumentformular extrahieren; Einkaufs-Postfach-Karte mit Aktivierung, Inbox/Sent, letzterAbruf/Fehler. Haupt-/Dokumentkontoverträge bleiben, gemeinsame Felder verhindern dritte Formular-Kopie.
+  - [x] Getrennte Aktionen „Verbindung prüfen“ und „Testmail senden“; keine automatische Testmail bei Speichern. `EinkaufBerechtigungen` in `BenutzerEditor.tsx:343` unter dem Bearbeitungsformular mounten mit `profileId={selectedUser.id}` sobald gespeichertes Profil gewählt ist, bei Neuanlage erst nach erfolgreichem Save. Vorbild `BenutzerEditor.tsx:159,166` verwendet bereits selectedUser und `/api/frontend-users`. Rechtekarte lädt Grants des konkret gewählten Profils; Sende-/Bestell-/Prüfrechte einzeln bearbeitbar, ADMIN-Zugang bleibt erforderlich.
+  - [x] E2E konfiguriert Dummyserver, prüft Fehler/Status und Maskierung; drei Größen, Designprüfung, alle Componenttests grün.
 
 ### Coding-Paket 10B: 30 → 31
 
 Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 
 ### Task 30: Lieferantenkontakte und Vorlageneditor für Einkauf
+
+- Ownershippräzisierung Abschnitt10: bestehende `react-pc-frontend/e2e/lieferant-layout.spec.ts` an den neuen fünften Einkauf-Tab anpassen; ursprüngliche Layoutabsicht weiterhin vollständig prüfen.
 
 - Branch: `codex/beschaffung-task-30`
 - Worktree: `.claude/worktrees/beschaffung-task-30`
@@ -741,12 +743,20 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 - Vorbild: `LieferantenEditor.tsx` Stammdaten-/Bearbeitenlayout, `EmailTextvorlagenEditor.tsx:631,646,792` Metadaten/Gruppierung.
 - Interfaces – Produces: `LieferantKontakte({lieferantId:number,readOnly:boolean})`; Editor nutzt `placeholders?dokumentTyp=` und Standard-/Variantenmetadata. Consumes8,12,27.
 - Steps:
-  - [ ] Tests Standardanfrage/Bestelladresse unabhängig von Rechnungsabsender, neutrale Anrede, eigeneKundennummer mit führenden Nullen; mehrere Varianten pro Einkaufstyp, Direktvorlage ohne PA, falscher Token blockiert Versandvorschau.
-  - [ ] Kontaktbereich im bestehenden Lieferanteneditor integrieren, Adressen sichtbar prüfen/ändern; keine automatische Personenextraktion aus Vertretertext.
-  - [ ] Einkauf als vorhandene Kategorie; Variantenauswahl/Defaultwechsel in vorhandenem Editor, kontextsensitive Tokens und echte Backendvorschau. Ein Verkaufs-ANFRAGENUMMER-Label darf Einkäufer nicht auf Website verweisen. Bestehende Verkaufs-/Mahnvorlagen unverändert nutzbar.
-  - [ ] E2E bearbeitet Vorlage, erzeugt Vorschau, prüft erhaltenen Alttext in gesendeter Fassung nach weiterer Vorlagenänderung (Stubvertrag und Backendintegration Task37). Component/E2E/Design grün.
+  - [x] Tests Standardanfrage/Bestelladresse unabhängig von Rechnungsabsender, neutrale Anrede, eigeneKundennummer mit führenden Nullen; mehrere Varianten pro Einkaufstyp, Direktvorlage ohne PA, falscher Token blockiert Versandvorschau.
+  - [x] Kontaktbereich im bestehenden Lieferanteneditor integrieren, Adressen sichtbar prüfen/ändern; keine automatische Personenextraktion aus Vertretertext.
+  - [x] Einkauf als vorhandene Kategorie; Variantenauswahl/Defaultwechsel in vorhandenem Editor, kontextsensitive Tokens und echte Backendvorschau. Ein Verkaufs-ANFRAGENUMMER-Label darf Einkäufer nicht auf Website verweisen. Bestehende Verkaufs-/Mahnvorlagen unverändert nutzbar.
+  - [x] E2E bearbeitet Vorlage, erzeugt Vorschau, prüft erhaltenen Alttext in gesendeter Fassung nach weiterer Vorlagenänderung (Stubvertrag und Backendintegration Task37). Component/E2E/Design grün.
 
 ### Task 31: Anfrageliste und Detail mit Sendefreigabe/Verlauf
+
+- Zusätzlich vom Nutzer freigegebene Root-Testreparatur nach R2: `react-pc-frontend/e2e/hilfen/design.ts` und `react-pc-frontend/e2e/design-hilfen.spec.ts`; verzögert startende und verkettete Animationen vor Designmessungen vollständig abwarten, bestehende Layoutprüfungen unverändert beibehalten.
+
+- Root-R2-Ownership zusätzlich: `KonfliktAbgleichDialog.tsx`, `konfliktAbgleich.ts`, `AnfrageEntwurfEditor.test.tsx` und bestehende Anfrage-E2E für feldweise Entscheidung bei gleichzeitiger Änderung, inklusive hinzugefügter/entfernter Positionen und Empfänger.
+
+- Root-R1-Ownership: zusätzlich gemeinsamer `AnfrageEntwurfEditor.tsx`, DTO-/API-/Drafthelfer und E2E `einkauf-anfragen-bearbeiten.spec.ts`, `einkauf-vorlagen-validierung.spec.ts`; Backend `EinkaufBedarfController/Service`, `EinkaufDateiController/Service`, `EinkaufAnlageVersionRepository`, `EinkaufVorlagenService`, `EmailTextTemplateController` und zugehörige Tests. Bedarf-GET und Anlagenmetadaten ermöglichen echte Position-/Anlagenbearbeitung; technische Änderungen werden ausdrücklich am Bedarf gespeichert, die angefragte Teilmenge bleibt separat. Vorlagenentwurf wird serverseitig mit derselben Tokenprüfung wie beim Versand gerendert. Versandvorschau enthält fachliche Fassung, Kundennummer, Fristen und freigegebene Dateiversionen.
+
+- Ownershippräzisierung Abschnitt10 (Root übernimmt Backend): additive Lese-/Wiederholungsverträge in `EinkaufsanfrageDto`, `EinkaufKommunikationDto`, `EinkaufsanfrageService`, `EinkaufKommunikationService`, `EinkaufOutboxService`, beiden Anfrage-/Kommunikationscontrollern sowie `EinkaufsanfrageRepository`, `AnfrageRevisionRepository`, `EinkaufVersandauftragRepository` und ihren gezielten Service-/Controller-/MySQL-Tests. Historische Fassung, Kontakt-Snapshot, gebündelte Projekt-/Antwortzahlen und scoped Versandstatus/Wiederholung machen die vorgesehenen Seiten tatsächlich nutzbar. Separater Root-Worktree `beschaffung-task-31-backend`, gemeinsame Integration erst nach allen Paketen. Keine neue Migration.
 
 - Branch: `codex/beschaffung-task-30`
 - Worktree: `.claude/worktrees/beschaffung-task-30`
@@ -757,10 +767,10 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 - Vorbild: `DetailLayout.tsx:10`, `EmailCenter.tsx:97`, bestehender Dokumentpreview; Bestandsgroßdialog aus BestellungEditor nicht kopieren.
 - Interfaces – Produces: Routen `/einkaufsanfragen`, `/einkaufsanfragen/:id`; `VersandVorschauDialog({vorschau,onFreigeben:(hash:string)=>Promise<void>,onSchliessen})`; `KommunikationsVerlauf({typ:'ANFRAGE'|'BESTELLUNG',vorgangId:number})`. Consumes12–16,27,30.
 - Steps:
-  - [ ] Tests drei Lieferanten, gleiche Revision/interne Nummer, jeder eigener Empfänger/Code; Erfolg1/Fehler1/unklar1 getrennt; neue Revision nach Versand, alte Antworten sichtbar und nicht still gültig; kein Bestellstatus durch Anfrage.
-  - [ ] Lauffähige Seiten sofort in App.tsx unter `/einkaufsanfragen` und `/einkaufsanfragen/:id` registrieren, damit eigene E2E direkt navigieren können. Liste mit Frist/Projekt/Antwortzähler; Detail aus DetailLayout mit Positionen, Lieferanten & Antworten, Vergleichverweis, Verlauf. Empfänger, unsereKundennummer, Anlagenrevisionen und Fristen in Freigabe sichtbar. Noch lieferantenneutralen Entwurf aus Task28 hier mit Kontaktwahl/Fristen/Positioneditor vervollständigen und per versioniertem RevisionRequest speichern, erst dann Versandvorschau zulassen.
-  - [ ] Vorschau aus Server laden, hashgebunden freigeben, Polling nur aktiver Jobs; erneuter gezielter Versand nur sicher fehlgeschlagene Beteiligung. Änderungen invalidieren Vorschau. Historische Revision read-only und direkt wählbar.
-  - [ ] Manuelle Zuordnungsprüfung für Mail/PDF-Vorschlag mit Fundstelle und Lieferant/Absender sichtbar; unbekannte Mail niemals per UI automatisch bestätigen. E2E prüft kompletten Dialog und Reload; Tests/Design grün.
+  - [x] Tests drei Lieferanten, gleiche Revision/interne Nummer, jeder eigener Empfänger/Code; Erfolg1/Fehler1/unklar1 getrennt; neue Revision nach Versand, alte Antworten sichtbar und nicht still gültig; kein Bestellstatus durch Anfrage.
+  - [x] Lauffähige Seiten sofort in App.tsx unter `/einkaufsanfragen` und `/einkaufsanfragen/:id` registrieren, damit eigene E2E direkt navigieren können. Liste mit Frist/Projekt/Antwortzähler; Detail aus DetailLayout mit Positionen, Lieferanten & Antworten, Vergleichverweis, Verlauf. Empfänger, unsereKundennummer, Anlagenrevisionen und Fristen in Freigabe sichtbar. Noch lieferantenneutralen Entwurf aus Task28 hier mit Kontaktwahl/Fristen/Positioneditor vervollständigen und per versioniertem RevisionRequest speichern, erst dann Versandvorschau zulassen.
+  - [x] Vorschau aus Server laden, hashgebunden freigeben, Polling nur aktiver Jobs; erneuter gezielter Versand nur sicher fehlgeschlagene Beteiligung. Änderungen invalidieren Vorschau. Historische Revision read-only und direkt wählbar.
+  - [x] Manuelle Zuordnungsprüfung für Mail/PDF-Vorschlag mit Fundstelle und Lieferant/Absender sichtbar; unbekannte Mail niemals per UI automatisch bestätigen. E2E prüft kompletten Dialog und Reload; Tests/Design grün.
 
 ## Abschnitt 11: Bestellseiten, Vergleich und Mailcenter
 
@@ -771,6 +781,8 @@ Abnahmegrenze: Bestell- und Vergleichsziele muessen fuer die Bedarfsaktionen und
 Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 
 ### Task 33: Echte Bestellungen und Direktbestellung im bestehenden Einkaufsbereich
+
+- Zusätzliche Root-Ownership Abschnitt11, separater Worktree `beschaffung-task-33-backend`: additive Bestell-/Lieferungslese-DTOs, neuer `EinkaufBestellstatusController/Service`, `EinkaufBestellungDto/Service`, `EinkaufBestellfreigabeController/Service`, `BestellBestaetigung`, `EinkaufLieferungRepository`, `EinkaufOutboxService`, `EinkaufVersandWorker` und zugehörige Controller-/Service-/MySQL-Regressionen. Reale Revisionannahme/externe Nachweise, Vorgangsmengen, Lieferposition-/Chargen-IDs, Bestätigungen, scoped Versandstatus/Wiederholung/Klärung und vollständige Vorschau-Metadaten für die geplanten Seiten. Keine neue Migration. Gemeinsame Integration erst nach beiden Luna-Paketen und Rootpaket.
 
 - Branch: `codex/beschaffung-task-33`
 - Worktree: `.claude/worktrees/beschaffung-task-33`
@@ -898,6 +910,7 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
   - [ ] Migrationhistorie beginnt im vorhandenen Repo erst beiV208 und ist keine vollständige Leerschema-Baseline. Datenfreie Test-DDL aus dem unveränderten V376-Entitymodell des Ausgangscommits per Hibernate-Schemaexport generieren, als `src/test/resources/db/baseline-v376.sql` mit Herkunftshash speichern (nur Struktur, keine Produktionsdaten). Test-DB damit initialisieren, Flywaybaseline376 setzen und ausschließlich neue Migrationen377–396 anwenden, danach finales Hibernatevalidate. Task39 prüft zusätzlich echten Upgrade367→396. Keine aktuelle Final-Entity-DDL erzeugen und danach neue Migrationen versehentlich überspringen.
   - [ ] GreenMail2.1.14 mit Authentifizierung aktiviert, getrennten Konten und dynamischen localhost-Portmappings (internSMTP3025/IMAP3143/SMTPS3465/IMAPS3993/API8080); eigener Testtruststore, niemals TrustAll im Produkt. Alle Ressourcen nach Run nur anhand eigener Containerlabels aufräumen.
   - [ ] Browser legt Artikel/Zeichnungsteil/Bedarf10 an, fragt4 bei3 Dummy-Lieferanten an, empfängt geänderte Betreff-/Referenzantworten über IMAP, erfasst/vergleicht Angebote und bestätigt Quellen/Preis, bestellt4, prüft echte SMTP-Nachricht/PDF/Anlagen und DB-Mengen; neue Revision/Reload unverändert.
+  - [ ] Nutzerpräzisierung §15 ausdrücklich integriert abnehmen: Im Projekt erst manuelle Materialkosten (Beschreibung/Betrag), dann Katalogartikel (z. B. Bohrer, Menge und bestätigter Preis) speichern und neu laden. Kosten/Produkt bleiben erhalten, Bedarf, Reservierung und Bestellungen bleiben unverändert. Vorhandene interne Beschaffungsmengen separat prüfen; keine Lagerverwaltung oder Lagerbestandsabfrage als Voraussetzung für diese Kostenwege.
   - [ ] Zweiter Ablauf Direktbestellung, konkurrierende Lagerentnahme/Reservierung, unklarer DATA-Ausgang ohne zweiten Versand, Sent-APPEND-Fehler, erneuter IMAP-Import, deaktivierte KI, HiCAD-Teilimport, Teillieferungen/Zeugnisprüfung/Teilrechnung+Gutschrift+Reklamation/Fälligkeitsentwurf.
   - [ ] Parametrisierte API-Sicherheit für jede neue Mutation/Download: anonymous401, fehlendes Recht403, fremde verschachtelte IDs, CSRF, ungültige Nummern/Mengen/XSS/SQL-Literal/Upload. MySQL-Paralleltests und FlywayUpgrade der datenfreien V376-Dummystruktur, Hibernate validate. Keine Produktionsdatenfixtures.
   - [ ] Abnahmematrix unten mit Testnamen/Resultaten füllen. Vollständige verpflichtende Backend-/Frontend-/Lint-/E2E-/Builds laufen lassen, vorhandene17Backend-Skips gesondert als Bestand dokumentieren und keine neuen Skips einführen; wenn projektrelevanter Pflichtfall dadurch fehlt, testbar machen. Designreview alle3Größen. Erst grüne fachliche Ergebnisse erlauben den finalen Review/Commit.
@@ -945,6 +958,7 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 |19 Zuschläge/Gültigkeit/Preis|17–19,22,32|keine Doppeladdition/keine Istkosten|
 |20 Rechnung/Reklamation/Fristen|23–26,34,36|Teilrechnung/Gutschrift/keine Autonachfrage|
 |§14 lokaler Probebetrieb|38,39|isolierte reale Kopie/Flyway/Startstop/keine Schedules|
+|§15 einfache Materialkostenerfassung|5,37|manuell und Artikelstamm, Reload, keinerlei Beschaffungsmengen-/Bestelländerung|
 
 ## Ergänzende Ausführungshinweise
 

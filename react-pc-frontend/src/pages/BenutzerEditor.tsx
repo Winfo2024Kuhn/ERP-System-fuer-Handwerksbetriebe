@@ -17,6 +17,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { EinkaufBerechtigungen } from '../components/settings/EinkaufBerechtigungen';
 
 interface FrontendUser {
     id: number;
@@ -256,11 +257,16 @@ export default function BenutzerEditor() {
                 }),
             });
             if (res.ok) {
+                const savedProfile = await res.json().catch(() => null) as { id?: number } | null;
                 await loadData();
                 setFormData(prev => ({ ...prev, password: '' }));
                 if (!formData.id) {
-                    // Reset form after creating new user
-                    handleNewUser();
+                    if (typeof savedProfile?.id === 'number' && savedProfile.id > 0) {
+                        setSelectedUserId(savedProfile.id);
+                        setFormData(prev => ({ ...prev, id: savedProfile.id!, password: '' }));
+                    } else {
+                        handleNewUser();
+                    }
                 }
             } else {
                 toast.error('Fehler beim Speichern.');
@@ -536,6 +542,9 @@ export default function BenutzerEditor() {
                             </Button>
                         </div>
                     </div>
+                    {selectedUser && !selectedUser.roles?.includes('ADMIN') && (
+                        <EinkaufBerechtigungen key={selectedUser.id} profileId={selectedUser.id} />
+                    )}
                 </Card>
             </div>
         </PageLayout>

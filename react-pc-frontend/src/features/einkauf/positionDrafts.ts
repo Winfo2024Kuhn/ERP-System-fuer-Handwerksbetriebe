@@ -102,3 +102,17 @@ export function toPositionPayload(draft: PositionDraft): ValidationResult<Positi
     },
   };
 }
+
+/** Converts a persisted technical snapshot without inventing zero quantities. */
+export function fromPositionSnapshot(position: PositionSnapshot): PositionDraft {
+  const zahl = (value: number | null | undefined) => value == null ? '' : String(value).replace('.', ',');
+  return { art: position.art, artikelId: position.artikelId, interneReferenz: position.interneReferenz ?? '',
+    zeichnungsnummer: position.zeichnungsnummer ?? '', zeichnungsrevision: position.zeichnungsrevision ?? '',
+    bezeichnung: position.bezeichnung ?? '', werkstoff: position.werkstoff ?? '', abmessung: position.abmessung ?? '',
+    menge: zahl(position.basis?.menge), einheit: position.basis?.einheit ?? 'STUECK',
+    stueckzahl: zahl(position.basis?.stueckzahl), einzelLaengeMm: zahl(position.basis?.einzelLaengeMm),
+    kgJeMeter: zahl(position.basis?.kgJeMeter), faktorQuelle: position.basis?.faktorQuelle ?? '',
+    schnittForm: position.schnittForm ?? '', winkelLinks: position.winkelLinks ?? '', winkelRechts: position.winkelRechts ?? '',
+    bearbeitung: position.bearbeitung ?? '', oberflaeche: position.oberflaeche ?? '',
+    dokumente: position.dokumente ?? [], anlageVersionIds: position.anlageVersionIds ?? [] };
+}

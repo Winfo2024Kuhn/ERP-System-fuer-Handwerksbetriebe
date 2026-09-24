@@ -1533,3 +1533,251 @@ Zeit: 2026-09-24T00:06:21.236388+00:00
 - Vollbackend 3492/0/17, Desktop 1654 Unit und 687 E2E, Lint/Typcheck/Build Exit0; Nachweise im vorherigen Block. Design eigene 12/12 E2E und 18 Bilder in drei Größen geprüft, Server beendet.
 - Optionale Hinweise: stabile Dokumentzeilen-Keys bei späterer Bearbeitung; deaktivierte Artikelanlage erklären; echte Seitenkopfzeile kompakt halten. Kein weiterer Korrekturlauf nötig. Graphify Exit0 /tmp/beschaffung-abschnitt9-r1-graphify.log, erzeugte Dateien bleiben uncommitted.
 - Nächster Abschnitt 10: Pakete 29 und 30→31 parallel mit Luna, gemeinsamer Sol-Code-/Designreview erst nach beiden fertigen Paketen.
+
+
+## Abschnitt 10 — zwei Coding-Pakete gestartet
+
+Zeit: 2026-09-24T00:07:52.469511+00:00
+
+- Abschnitt 9 als 98b95669c329560b8fa5835eab6bdbcb7cb449d6 gepusht. Auf dieser Basis eigene Worktrees/Branches für Task29 und Task30 angelegt; Luna paket10a bearbeitet Einstellungen/Rechte, Luna paket10b Kontakte/Vorlagen→Anfrageseiten. Aufträge /tmp/beschaffung-paket-10a-auftrag.md und /tmp/beschaffung-paket-10b-auftrag.md.
+- Gemeinsame Nachweisdateien /tmp/beschaffung-frontend-testnachweise.json und /tmp/beschaffung-backend-testnachweise.json auf geprüften Abschnitt9-Stand aktualisiert. Neue Frontendstände brauchen vollständige eigene Nachweise; Lint/E2E nicht gleichzeitig im selben Checkout.
+- Root übernimmt notwendige spätere Reparaturen gemäß Nutzerauftrag. Gemeinsamer Sol-Code-/Designreview erst nach beiden vollständig fertigen Paketen; keine Statuspings. Keine realen Mails oder Tests auf Produktionskopie.
+
+
+## Gesamtabnahme — Nutzerpräzisierung als eigener Prüffall
+
+Zeit: 2026-09-24T00:11:50.842793+00:00
+
+- Task37 und Abnahmematrix konkretisieren den bereits freigegebenen §15-Kostenablauf: manuelle Beschreibung/Betrag und Artikelstamm/Menge/Preis jeweils speichern und neu laden; keine Veränderung an Bedarfen, Reservierungen oder Bestellungen. Kein neuer Funktionsumfang.
+- Vorhandene interne Beschaffungsmengenprüfungen bleiben separat erhalten. Automatisierte Gesamtabnahme weiterhin ausschließlich Dummy-DB/Testmail; tatsächliche lokale Kopie erst nach Task37. Privater Migrationsbericht bleibt maßgeblich, keine Vorabmutation der Kopie.
+
+
+## Abschnitt 10 — bestehende Lieferanten-Layoutregression
+
+Zeit: 2026-09-24T00:32:18.927999+00:00
+
+- Paket10b meldet Vollsuite687 grün/3 fehlgeschlagen: bestehende e2e/lieferant-layout.spec.ts erwartet genau vier Tabs, Einkauf ergänzt den fünften. Ownership gezielt auf diese Fixture erweitert, Soll und Layoutprüfung anpassen, danach volle E2E erneut. Kein Commit mit rotem Check. Paket10a vollständig fertig dd2a95e6; noch keine Integration/kein Review vor Abschluss10b.
+
+
+## Abschnitt 10 — Root schließt gemeldete Backend-Vertragslücken
+
+Zeit: 2026-09-24T00:49:52.711471+00:00
+
+- Paket10b meldete fehlende historische Revisionen und Versandstatus als tatsächlichen Umsetzungsblocker. Keine Verschiebung zugesagter Task31-Funktionen. Root implementiert additive Backend-Verträge in eigenem Worktree/Branch codex/beschaffung-task-31-backend auf98b95669; Frontend bleibt bei10b. Keine vorgezogene Reviewrunde.
+- GET Anfrage/{id}/revisionen und /revisionen/{revisionId}; Detail ergänzt angezeigteRevisionId/historisch, aktuelleRevisionId bleibt tatsächlicher aktueller Kopf. Kontakt-Snapshot je Beteiligung. Kopf ergänzt projektIds/antworten/lieferantenAnzahl mit Batch-Lesen für Listen.
+- GET Anfrage/{id}/revisionen/{revisionId}/versandstatus liefert Beteiligungs-ID + bestehenden VersandDto ohne MIME/Snapshot-BLOBs. Scoped POST .../lieferanten/{beteiligungId}/versand/{versandId}/erneut mit Version nur für sicher fehlgeschlagenen aktuellen Auftrag; Wiederverwendung der vorhandenen Outbox und Dispatch-after-commit. Aktive Zustände VORBEREITET/LAEUFT; unklar nie wiederholen.
+- Roter Controller-Vorhernachweis /tmp/beschaffung-10-root-api-red.log. Root ergänzt Historien-/Scope-/Rechteregression und echtes Dummy-MySQL für Statusprojektion/Wiederholschutz. Gezielte Tests laufen; anschließend volle Backend-Suite.
+- Frontend muss echte Statuswerte AUSSTEHEND statt erfundenem ENTWURF verwenden; Historie, Revisionserstellung, Teilmengen und aktives Polling vollständig umsetzen.
+
+
+## Abschnitt 10 — Root-Backend fertig
+
+Zeit: 2026-09-24T00:54:26.914112+00:00
+
+- Commit5b94535f auf codex/beschaffung-task-31-backend: historische Anfragefassungen, Kontakt-Snapshots, gebündelte Projekte/Antwortzahlen, schlanke Versandstatusprojektion und scoped sichere Wiederholung. 14 eigene Dateien, keine Migration.
+- Vorher-RED /tmp/beschaffung-10-root-api-red.log, gezielte28Tests/0Fehler /tmp/beschaffung-10-root-api-targeted.log, Vollbackend3498/0Fehler/17bekannteSkips Exit0 /tmp/beschaffung-10-root-backend-full.log. Echter Dummy-MySQL-Test liest Statusprojektion und verwirft fremde Beteiligung/zweite Wiederholung. Keine realen Mails.
+- PC/Mobile unverändert mit gültigen Tree-Nachweisen von98b95669; staged Diff geprüft /tmp/beschaffung-10-root-backend-staged.diff. Frontend10b konsumiert neue Verträge in seinem eigenen Paket; noch keine Integration/kein Review.
+
+
+## Abschnitt 10a — Task 29 (Rolle: Coding-Agent)
+
+Zeit: 2026-09-24T00:29:15Z
+Branch: codex/beschaffung-task-29
+Commit(s): dd2a95e6c05e606770fa031c934f262c2f7c628f
+Status: fertig
+
+Was gemacht wurde:
+- Gemeinsame `MailkontoFields` für Dokument- und Einkaufs-Postfach ergänzt; SMTP und IMAP getrennt, TLS/STARTTLS und Ordner auswählbar, gespeicherte Kennwörter bleiben write-only und bei leerem Edit erhalten.
+- Einkaufs-Mailkonto mit Aktivierung, Inbox/Gesendet, letztem Abruf/Fehler, Speichern, separatem SMTP-/IMAP-Verbindungstest ohne Versand und bestätigter Testmail mit Pflichtempfänger ergänzt. Oberfläche sperrt Kontoverwaltung bei 403.
+- Einkaufsrechte für ein ausgewähltes Profil einzeln lad- und speicherbar ergänzt. Neue Profile werden erst nach erfolgreichem Speichern für die Rechtekarte ausgewählt; ADMIN-Profile verwenden weiterhin Admin-Zugang.
+- Produces/Follow-up API-Vertrag: `/api/settings/einkauf-mail` GET/PUT mit `MailkontoDto.Response/Update` (`version`, `aktiv`, Absender, SMTP-/IMAP-Felder, Ordner, `smtpPasswordSet`/`imapPasswordSet`, letzter Abruf/Fehler; keine Passwortwerte im Response); `PUT /api/settings/einkauf-mail/verbindung-testen` antwortet mit `smtpErfolgreich`, `imapErfolgreich`, `fehlerCode` und verschickt nichts; `PUT /api/settings/einkauf-mail/testmail` erwartet `{empfaenger, empfaengerBestaetigt}` und liefert `status/messageId/fehlerCode`. Profilrechte: GET/PUT `/api/settings/einkauf-berechtigungen/{profileId}`, PUT-Body `{rechte: string[]}` mit `LESEN`, `BEARBEITEN`, `ANFRAGE_SENDEN`, `BESTELLUNG_FREIGEBEN`, `ZEUGNIS_PRUEFEN`.
+- TDD: neue Komponententests zunächst rot auf fehlenden Komponenten; der konkrete Neuanlage-Fall war rot, weil nach erfolgreichem Anlegen keine Rechtekarte erschien, danach grün.
+- Playwright-Spec stubbt alle API-Antworten und prüft Verbindungstest-Fehlerstatus ohne Testmail, write-only Passwortantwort, Pflichtempfänger und bestätigten Testversand. Die drei Desktop-Projekte liefen grün; `designPruefung` Screenshots entstanden je Bildschirmgröße.
+- Graphify synchronisiert. Build-Ausgaben in `src/main/resources/static` entfernt und nicht gestaged. Unveränderte Backend-/Mobile-Nachweise anhand aller jeweiligen Tree-Hashes geprüft; Backend hashes entsprechen `/tmp/beschaffung-backend-testnachweise.json`, Mobile-Hash entspricht `/tmp/beschaffung-frontend-testnachweise.json`.
+- Vollchecks: PC Unit `1659 passed / 153 files`; E2E `693 passed`; Lint, E2E-Typecheck und Build Exit 0. Playwright/Vite-Prozess nach Abschluss beendet; es läuft kein Dienst auf Port 5210.
+
+Bedenken / Abweichungen vom Plan:
+- Keine fachlichen Blocker. Graphify meldete beim Update einen Syntaxfehler in der unberührten `react-pc-frontend/src/components/TiptapEditor.tsx:963`; außerdem sind die neu erzeugten Graphify-Artefakte wegen der Task-Datei-Ownership nicht Teil des Commits und bleiben im Worktree ungestaged. Build ist grün mit bestehender Chunk-Größenwarnung (>500 kB).
+- Exakte Nachweise: Unit `/tmp/beschaffung-task29-unit-full.log`; E2E `/tmp/beschaffung-task29-e2e-full.log`; Lint `/tmp/beschaffung-task29-lint-final.log`; E2E-Typecheck `/tmp/beschaffung-task29-typecheck-e2e-final.log`; Build `/tmp/beschaffung-task29-build-final2.log`; gezielter Post-Save-RED `/tmp/beschaffung-task29-new-user-red.log`; Einzel-Spec `/tmp/beschaffung-task29-e2e-r4.log`; Backend-Nachweis `/tmp/beschaffung-9-r1-root-backend-full.log`; unveränderte Mobile-Nachweise `/tmp/beschaffung-mobile-unit.log`, `/tmp/beschaffung-mobile-lint.log`, `/tmp/beschaffung-task1-mobile-e2e.log`; PC/Mobile-Hashmanifest `/tmp/beschaffung-frontend-testnachweise.json`.
+
+
+## Coding-Paket 10b – Task 30→31
+
+- Zeitpunkt: 2026-09-24 01:02:04 UTC
+- Branch: `codex/beschaffung-task-30`
+- Worktree: `.claude/worktrees/beschaffung-task-30`
+- Status: fertig
+- Commit: `025859845872054fd1b188636ece82a999bcf72f`
+- Umsetzung: Einkaufskontakte im Lieferanteneditor und Einkaufsvorlagenvarianten; Anfrageliste/-detail; hashgebundene Versandfreigabe, Verlauf, Versandstatus-Polling nur für `VORBEREITET`/`LAEUFT`, sicherer Retry nur für `FEHLGESCHLAGEN`; Revisionsliste, historische schreibgeschützte Auswahl und versionierte Revisionsanlage mit Fristen, Kontaktsnapshots und Teilmengen. Die Liste zeigt Projekt-IDs sowie Antwort-/Lieferantenzähler. Layout-E2E aktualisiert auf fünf Tabs einschließlich Einkauf.
+- API-Verträge konsumiert: Revisionsliste und Revisionsdetail unter `/api/einkauf/anfragen/{id}/revisionen`; Detailfelder `angezeigteRevisionId`, `historisch`, Kontakt-Snapshot; Versandstatus unter `/revisionen/{revisionId}/versandstatus`; Retry über `/lieferanten/{beteiligungId}/versand/{versandId}/erneut` mit `{version}`; aktive Status `VORBEREITET`, `LAEUFT`, terminal `ANGENOMMEN`, `FEHLGESCHLAGEN`, `UNKLAR`; Kopf-Felder `projektIds`, `antworten`, `lieferantenAnzahl`.
+- Checks: Frontend Unit 157 Dateien / 1664 Tests grün (`/tmp/beschaffung-p10b-unit-full-final.log`); vollständige Playwright-E2E 696 grün (`/tmp/beschaffung-p10b-e2e-full-final.log`); Lint grün (`/tmp/beschaffung-p10b-lint-final2.log`); Build grün (`/tmp/beschaffung-p10b-build-final3.log`); E2E-Typecheck grün (`/tmp/beschaffung-p10b-typecheck-e2e-final.log`); Graphify synchronisiert (`/tmp/beschaffung-p10b-graphify.log`). Gezielter E2E-Lauf ebenfalls grün (`/tmp/beschaffung-p10b-e2e-targeted-r3.log`).
+- Backend- und Mobile-Quellen in diesem Worktree unverändert gegenüber Basiscommit `98b95669c329560b8fa5835eab6bdbcb7cb449d6`; Nachweise verwendet aus `/tmp/beschaffung-backend-testnachweise.json` und `/tmp/beschaffung-frontend-testnachweise.json`. Root meldete parallel die aktualisierten Backend-Verträge und 3498/3498 Tests grün auf separatem Branch (`/tmp/beschaffung-10-root-backend-full.log`).
+- Bedenken: Kein offener Testfehler. Graphify meldete eine bestehende Syntax-Extraktionswarnung in `react-pc-frontend/src/components/TiptapEditor.tsx` (Zeile 963); die Synchronisierung wurde erfolgreich abgeschlossen. Playwright-Ausgabe enthält gelegentliche nicht blockierende Proxy-`ECONNREFUSED`-Meldungen für ungemockte Auth/Notifications; alle 696 E2E liefen erfolgreich durch. Build meldet weiterhin den vorhandenen großen JS-Chunk.
+- Prozessabschluss: Playwright/WebServer vom Testlauf wurde beendet; keine manuell gestarteten Dienste verbleiben.
+
+
+## Abschnitt 10 — vollständig integriert, gemeinsamer R0
+
+Zeit: 2026-09-24T01:05:30.903688+00:00
+
+- Pakete29 dd2a95e6 und30→31 8634d312 sowie Root-Backend5b94535f gemeinsam --no-ff --no-commit auf98b95669 integriert. Keine Produktkonflikte.
+- Ursprünglicher10b-Commit02585984 enthielt entgegen Ownership erzeugte Graphdaten. Root hat ausschließlich diese beiden Dateien aus dem noch ungepushten Paketcommit entfernt; Produktcode/Tests unverändert, neuerCommit8634d312. Alle ursprünglichen Root-Dokument-/Graphinhalte beim nötigen sauberen Octopus-Merge zwischengesichert und bytegenau wiederhergestellt; keine Fremdänderung verworfen. Temporäre Stashes aufgelöst. Sicherheitskopien /tmp/beschaffung-10-integration-backup.
+- Identischer integrierter Indextree f4f7d078a9621124872f4e63889b951951bb8d58 in Root und Designworktree .claude/worktrees/beschaffung-design10. Sol review10 übernimmt integrierte Unit/Lint/Build/Typecheck; Sol design10 übernimmt volle E2E/Browser auf5220. Backend exakt geprüfte3498/0/17 wiederverwenden, Mobile unverändert.
+- R0 erst jetzt nach allen fertigen Paketen, keine Produktedits durch Root während Review. Noch keine Abschnittsabnahme/kein Featurepush.
+
+
+## Abschnitt 10 — R0 Code rot, Root repariert nach gebündeltem Review
+
+Zeit: 2026-09-24T01:12:41.120439+00:00
+
+- Sol-Codebericht /tmp/beschaffung-abschnitt10-r0-review-report.md: sechs Blocker in Anfrage-/Vorlagenoberflächen (Top-level-Historienfelder falsch gelesen; gemeinsamer Positionseditor/Teilmengen fehlen; kein409-Abgleich; manuelle Mailzuordnung fehlt; lokale statt serverseitige Vorlagenvorschau; Liste nur erste20). Zwei Warnungen Anlagenmetadaten/erste100Auswahldaten.
+- Integrierte1669Unit, Lint/Build/Typecheck grün; Backend3498/0/17 unverändert grün. Tests deckten falsche DTO-Struktur als falsche Fixture ab. Root muss reale Backendformen in Regressionen verwenden.
+- Designreview läuft noch getrennt auf unverändertem Stand. Keine Nachbesserung während Review, Root bereitet konkrete Korrekturen anhand bekannter Befunde vor. R1 wird erste formale Korrekturrunde; noch keine Abnahme/keinPush.
+## Abschnitt 10 — Design-Review (Design-Reviewer)
+
+
+Zeit: 2026-09-24T01:20:21Z
+Worktree: `/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10`; Index-Tree `f4f7d078a9621124872f4e63889b951951bb8d58`.
+AMPEL: 🔴
+
+## 🛑 Kritisch (blockiert)
+
+1. **Versandfreigabe ohne prüfbare Pflichtangaben.** [`VersandVorschauDialog.tsx`](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/src/features/einkauf/components/VersandVorschauDialog.tsx) zeigt Empfänger, Betreff, Nachricht und nur die Zahl der Anlagen. In der echten 14-Zoll-Vorschau fehlt die eigene Kundennummer, Antwortfrist, Liefertermin und pro Anlage Dateiname, Revision und Freigabestatus. Die Anzeige „an Revision 0 gebunden“ widerspricht der unmittelbar sichtbaren Anfragefassung 2. Vor dem irreversiblen Senden lassen sich diese Daten nicht finden oder prüfen (Frage 5). Nachweis: `/tmp/beschaffung-abschnitt10-r0-screens/anfrage-vorschau--pc-14zoll.png` (ebenso Übergang und Monitor). Erwartet: tatsächliche Anfragefassung und alle genannten Angaben im Freigabedialog; bei fehlenden Angaben keine Freigabe.
+2. **Neue historische Hinweisfarbe außerhalb des Design-Systems.** [`EinkaufsanfrageDetail.tsx`](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/src/pages/EinkaufsanfrageDetail.tsx) setzt `text-amber-800` für die schreibgeschützte Fassung. Die drei historischen Screenshots zeigen eine braun/amber Warnzeile; zulässig sind Rose/Slate. Erwartet: Hinweis in der vorhandenen Rose/Slate-Palette, visuell eindeutig.
+3. **Wichtige Aktion für zweiten Empfänger auf 14 Zoll unter dem Fold.** `/tmp/beschaffung-abschnitt10-r0-screens/anfrage-detail--pc-14zoll.png`: bei zwei Lieferanten ist nur die erste „Vorschau und Freigabe“ vollständig sichtbar, die zweite unten abgeschnitten. Dasselbe nach Revisions-Save. Frage 5 verlangt die Task-Aktion ohne Scrollen sichtbar. Erwartet: beide Empfängeraktionen oder eine gemeinsame klar erkennbare Aktion im sichtbaren Bereich bei 1440×900.
+
+## 💡 Hinweise (blockiert nicht)
+
+- Der Knopf „Anfrage speichern und Vorschau öffnen“ speichert und navigiert zum Detail; eine Vorschau öffnet erst ein weiterer Klick. Wortlaut oder Ablauf angleichen (`/tmp/beschaffung-abschnitt10-r0-neuanfrage-screens/neue-anfrage--pc-14zoll.png`).
+- Mehrere neue Oberflächen zeigen rohe Statuswerte wie `AUSSTEHEND` und ISO-Daten (`2026-10-01`). In Liste und DatePicker werden Daten bereits deutsch formatiert; den Detailkopf und Verlauf ebenso lesbar machen.
+- In Benutzerverwaltung stehen zwei gefüllte Rose-Aktionen „Speichern“ und „Rechte speichern“ dicht beieinander (`/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/test-results/design/einkauf-berechtigungen--pc-14zoll.png`); die zweite Aktion als separat erkennbare Nebenaktion gestalten.
+- Der globale Ribbon-Link zu `/einkaufsanfragen` fehlt derzeit; `RibbonNav.tsx` listet unter Einkauf nur Bedarf und Bestellungen. Die Navigation ist ausdrücklich Task 36 / Abschnitt 12 und wird als Folgeintegration dokumentiert, nicht als Abschnitt-10-Blocker.
+- Die neuen Kontaktfelder passen ins bestehende Layout; die bunten KPI-Karten im Lieferantenkopf stammen aus dem vorhandenen Altbereich und wurden in Abschnitt 10 nicht eingeführt.
+- `einkauf-anfragen.spec.ts` und `einkauf-kontakte-vorlagen.spec.ts` enthalten keine `designPruefung`-Screenshots für ihre neuen Abläufe. Die unten gelisteten manuellen Browserbilder belegen diesen Review, ersetzen aber noch keinen dauerhaften Screenshot- und Überlaufwächter in den Specs.
+
+## E2E und Browser
+
+- `E2E_PORT=5220 npm run test:e2e -- --workers=1`: **702/702 grün**, pc-14zoll / pc-uebergang / pc-monitor, Exit 0; Log `/tmp/beschaffung-abschnitt10-r0-e2e.log`. Einzelne ungemockte Auth-/Notifications-Proxy-`ECONNREFUSED`-Zeilen hatten keine roten Tests.
+- Manuelle Playwright-Fahrten mit Dummy-API: Kontakt gespeichert und nach Reload sichtbar; neue Anfrage angelegt und nach Reload sichtbar; Revision 3 gespeichert und nach Reload sichtbar; historische Fassung gelesen; Vorschau je Größe geöffnet. Bestehende E2E prüft hashgebundene Freigabe und Verlauf nach Reload; keine echte Mail und kein externer Host verwendet. Browser-Logs: `/tmp/beschaffung-abschnitt10-r0-browser.log`, `/tmp/beschaffung-abschnitt10-r0-revision-browser.log`, `/tmp/beschaffung-abschnitt10-r0-neuanfrage-browser.log`.
+- In allen 42 manuellen Browserbildern `document.documentElement.scrollWidth - innerWidth = 0` und `main.scrollWidth - main.clientWidth = 0`. Visuell kein Überlappen interaktiver Elemente festgestellt. Vertikale Fold-Befunde sind oben gesondert genannt.
+- Playwright-Browser in jedem Skript geschlossen; eigener Vite-Server auf Port 5220 mit Strg+C beendet; `lsof` zeigt dort keinen Listener. Keine Produktdatei geändert oder committet.
+
+## Sechs Fragen je angeschautem Screenshot
+
+Spalten: **1 Farben**, **2 Design-System**, **3 Look-and-Feel**, **4 UX**, **5 Auffindbarkeit**, **6 Überschneidungen**. Jeder aufgeführte Pfad wurde mit dem Read-Tool geöffnet. Aussagen zu geerbten Seitenelementen sind als solche gekennzeichnet.
+
+| Screenshot / Größe | 1 Farben | 2 Design-System | 3 Look-and-Feel | 4 UX | 5 Auffindbarkeit | 6 Überschneidungen |
+|---|---|---|---|---|---|---|
+| Anfragenliste [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/anfragen-liste--pc-14zoll.png) | Status nicht farblich codiert; Rose am Link/Knopf | Rose/Slate, Lucide und Header passen | Ruhige Tabelle; auf 1920 gut zentriert | Neue Anfrage und Datensatzlink eindeutig | Neue Anfrage im Kopf sofort sichtbar | Keine Überlagerung/kein Überlauf |
+| Anfragenliste [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/anfragen-liste--pc-uebergang.png) | Status nicht farblich codiert; Rose am Link/Knopf | Rose/Slate, Lucide und Header passen | Ruhige Tabelle; auf 1920 gut zentriert | Neue Anfrage und Datensatzlink eindeutig | Neue Anfrage im Kopf sofort sichtbar | Keine Überlagerung/kein Überlauf |
+| Anfragenliste [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/anfragen-liste--pc-monitor.png) | Status nicht farblich codiert; Rose am Link/Knopf | Rose/Slate, Lucide und Header passen | Ruhige Tabelle; auf 1920 gut zentriert | Neue Anfrage und Datensatzlink eindeutig | Neue Anfrage im Kopf sofort sichtbar | Keine Überlagerung/kein Überlauf |
+| Anfragedetail [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-detail--pc-14zoll.png) | Zwei rote Versandknöpfe konkurrieren, Status nur Text | Rose/Slate, Lucide; Datum als ISO statt deutsch | Spalten ruhig und ausgerichtet | Je Lieferant eigene Vorschau; zwei Primärknöpfe | Erster Versand sichtbar; zweiter auf 1440 unter Fold | Keine Überlagerung/kein Überlauf |
+| Anfragedetail [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-detail--pc-uebergang.png) | Zwei rote Versandknöpfe konkurrieren, Status nur Text | Rose/Slate, Lucide; Datum als ISO statt deutsch | Spalten ruhig und ausgerichtet | Je Lieferant eigene Vorschau; zwei Primärknöpfe | Erster Versand sichtbar; zweiter bei dieser Größe sichtbar | Keine Überlagerung/kein Überlauf |
+| Anfragedetail [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-detail--pc-monitor.png) | Zwei rote Versandknöpfe konkurrieren, Status nur Text | Rose/Slate, Lucide; Datum als ISO statt deutsch | Spalten ruhig und ausgerichtet | Je Lieferant eigene Vorschau; zwei Primärknöpfe | Erster Versand sichtbar; zweiter bei dieser Größe sichtbar | Keine Überlagerung/kein Überlauf |
+| Versandvorschau [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-vorschau--pc-14zoll.png) | Rose für Versand, Slate für Daten | Rose/Slate, gestalteter Dialog | Dialog ruhig und gut lesbar | Pflichtdaten zu Fristen/Kundennummer/Anlagenrevision fehlen; „Revision 0“ irreführend | Pflichtdaten vor Freigabe nicht auffindbar | Dialog und Aktionen vollständig, kein Überlauf |
+| Versandvorschau [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-vorschau--pc-uebergang.png) | Rose für Versand, Slate für Daten | Rose/Slate, gestalteter Dialog | Dialog ruhig und gut lesbar | Pflichtdaten zu Fristen/Kundennummer/Anlagenrevision fehlen; „Revision 0“ irreführend | Pflichtdaten vor Freigabe nicht auffindbar | Dialog und Aktionen vollständig, kein Überlauf |
+| Versandvorschau [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-vorschau--pc-monitor.png) | Rose für Versand, Slate für Daten | Rose/Slate, gestalteter Dialog | Dialog ruhig und gut lesbar | Pflichtdaten zu Fristen/Kundennummer/Anlagenrevision fehlen; „Revision 0“ irreführend | Pflichtdaten vor Freigabe nicht auffindbar | Dialog und Aktionen vollständig, kein Überlauf |
+| Revisionseditor [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-revision-editor--pc-14zoll.png) | Rose hebt Entwurf hervor | Rose/Slate und eigener DatePicker | Formular klar gegliedert | Teilmengen und Fristen sichtbar; Kontakte nur abwählbar | Speichern auf 1440 unter Fold | Kein horizontaler Überlauf |
+| Revisionseditor [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-revision-editor--pc-uebergang.png) | Rose hebt Entwurf hervor | Rose/Slate und eigener DatePicker | Formular klar gegliedert | Teilmengen und Fristen sichtbar; Kontakte nur abwählbar | Speichern bei dieser Größe sichtbar | Kein horizontaler Überlauf |
+| Revisionseditor [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-revision-editor--pc-monitor.png) | Rose hebt Entwurf hervor | Rose/Slate und eigener DatePicker | Formular klar gegliedert | Teilmengen und Fristen sichtbar; Kontakte nur abwählbar | Speichern bei dieser Größe sichtbar | Kein horizontaler Überlauf |
+| Historische Fassung [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-historisch--pc-14zoll.png) | Warnhinweis in Amber statt Rose/Slate | Neue Amber-Farbe bricht Palette | Lesemodus klar abgesetzt | Schreibschutz und Zuordnung verständlich | Historische Auswahl und Hinweis sichtbar | Kein Überlauf/keine Überdeckung |
+| Historische Fassung [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-historisch--pc-uebergang.png) | Warnhinweis in Amber statt Rose/Slate | Neue Amber-Farbe bricht Palette | Lesemodus klar abgesetzt | Schreibschutz und Zuordnung verständlich | Historische Auswahl und Hinweis sichtbar | Kein Überlauf/keine Überdeckung |
+| Historische Fassung [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/anfrage-historisch--pc-monitor.png) | Warnhinweis in Amber statt Rose/Slate | Neue Amber-Farbe bricht Palette | Lesemodus klar abgesetzt | Schreibschutz und Zuordnung verständlich | Historische Auswahl und Hinweis sichtbar | Kein Überlauf/keine Überdeckung |
+| Lieferantenkontakte [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/lieferant-kontakte--pc-14zoll.png) | Neuer Bereich Rose/Slate; alte KPI bunt | Neues Kontaktformular nutzt vorhandene Felder | Kontaktkarte gut in Detailseite eingebettet | Rechnungsadresse getrennt; Pflicht-E-Mail klar | Speichern auf 1440 unter Fold | Kein Überlauf/keine Überschneidung |
+| Lieferantenkontakte [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/lieferant-kontakte--pc-uebergang.png) | Neuer Bereich Rose/Slate; alte KPI bunt | Neues Kontaktformular nutzt vorhandene Felder | Kontaktkarte gut in Detailseite eingebettet | Rechnungsadresse getrennt; Pflicht-E-Mail klar | Speichern bei dieser Größe sichtbar | Kein Überlauf/keine Überschneidung |
+| Lieferantenkontakte [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/lieferant-kontakte--pc-monitor.png) | Neuer Bereich Rose/Slate; alte KPI bunt | Neues Kontaktformular nutzt vorhandene Felder | Kontaktkarte gut in Detailseite eingebettet | Rechnungsadresse getrennt; Pflicht-E-Mail klar | Speichern bei dieser Größe sichtbar | Kein Überlauf/keine Überschneidung |
+| Gespeicherter Kontakt [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/lieferant-kontakt-gespeichert--pc-14zoll.png) | Kontakt neutral, Bearbeiten rose umrandet | Neue Karte Rose/Slate; alte KPI bunt | Kontakt und Rechnungs-E-Mail gut trennbar | Gespeicherte Adresse nach Reload sichtbar | Bearbeiten am Kontakt sichtbar | Kein Überlauf/keine Überschneidung |
+| Gespeicherter Kontakt [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/lieferant-kontakt-gespeichert--pc-uebergang.png) | Kontakt neutral, Bearbeiten rose umrandet | Neue Karte Rose/Slate; alte KPI bunt | Kontakt und Rechnungs-E-Mail gut trennbar | Gespeicherte Adresse nach Reload sichtbar | Bearbeiten am Kontakt sichtbar | Kein Überlauf/keine Überschneidung |
+| Gespeicherter Kontakt [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/lieferant-kontakt-gespeichert--pc-monitor.png) | Kontakt neutral, Bearbeiten rose umrandet | Neue Karte Rose/Slate; alte KPI bunt | Kontakt und Rechnungs-E-Mail gut trennbar | Gespeicherte Adresse nach Reload sichtbar | Bearbeiten am Kontakt sichtbar | Kein Überlauf/keine Überschneidung |
+| Einkaufsvorlagen [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-vorlagen--pc-14zoll.png) | Rose für Auswahl/Aktion | Bestehender Editor, Lucide, Systemschrift | Auf 1920 stabil, auf 1440 gut gefüllt | Variante und Bearbeiten erkennbar | Bearbeiten ohne Scrollen sichtbar | Kein Überlauf/keine Überschneidung |
+| Einkaufsvorlagen [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-vorlagen--pc-uebergang.png) | Rose für Auswahl/Aktion | Bestehender Editor, Lucide, Systemschrift | Auf 1920 stabil, auf 1440 gut gefüllt | Variante und Bearbeiten erkennbar | Bearbeiten ohne Scrollen sichtbar | Kein Überlauf/keine Überschneidung |
+| Einkaufsvorlagen [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-vorlagen--pc-monitor.png) | Rose für Auswahl/Aktion | Bestehender Editor, Lucide, Systemschrift | Auf 1920 stabil, auf 1440 gut gefüllt | Variante und Bearbeiten erkennbar | Bearbeiten ohne Scrollen sichtbar | Kein Überlauf/keine Überschneidung |
+| Vorlageneditor [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-vorlage-editor--pc-14zoll.png) | Rose für Aktionen und Tokenleiste | Bestehender Editor und eigene Auswahl | Formular ausgerichtet; Toolbar dicht | Speichern erreichbar; Neue Vorlage konkurriert optisch | Speichern am Editor-Kopf sichtbar | Kein Überlauf/keine Überschneidung |
+| Vorlageneditor [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-vorlage-editor--pc-uebergang.png) | Rose für Aktionen und Tokenleiste | Bestehender Editor und eigene Auswahl | Formular ausgerichtet; Toolbar dicht | Speichern erreichbar; Neue Vorlage konkurriert optisch | Speichern am Editor-Kopf sichtbar | Kein Überlauf/keine Überschneidung |
+| Vorlageneditor [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-vorlage-editor--pc-monitor.png) | Rose für Aktionen und Tokenleiste | Bestehender Editor und eigene Auswahl | Formular ausgerichtet; Toolbar dicht | Speichern erreichbar; Neue Vorlage konkurriert optisch | Speichern am Editor-Kopf sichtbar | Kein Überlauf/keine Überschneidung |
+| Benutzerprofil oben [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-berechtigungen--pc-14zoll.png) | Rose an Profil/Aktionen | Bestehende Benutzerseite | Zweispaltig, ruhig | Einkaufsrechte erst nach Profilwahl | Rechtekarte unten außerhalb Startansicht | Kein Überlauf/keine Überschneidung |
+| Benutzerprofil oben [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-berechtigungen--pc-uebergang.png) | Rose an Profil/Aktionen | Bestehende Benutzerseite | Zweispaltig, ruhig | Einkaufsrechte erst nach Profilwahl | Rechtekarte unten außerhalb Startansicht | Kein Überlauf/keine Überschneidung |
+| Benutzerprofil oben [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-berechtigungen--pc-monitor.png) | Rose an Profil/Aktionen | Bestehende Benutzerseite | Zweispaltig, ruhig | Einkaufsrechte erst nach Profilwahl | Rechtekarte unten außerhalb Startansicht | Kein Überlauf/keine Überschneidung |
+| Mailkonto oben [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-mailkonto--pc-14zoll.png) | Rose an Aktivierung/Aktion | Bestehende Settings-Karten | Langes Formular, klar gegliedert | Dokument- und Einkaufs-Postfach erkennbar getrennt | Einkaufsfelder sichtbar; Speichern weiter unten | Kein Überlauf/keine Überschneidung |
+| Mailkonto oben [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-mailkonto--pc-uebergang.png) | Rose an Aktivierung/Aktion | Bestehende Settings-Karten | Langes Formular, klar gegliedert | Dokument- und Einkaufs-Postfach erkennbar getrennt | Einkaufsfelder sichtbar; Speichern weiter unten | Kein Überlauf/keine Überschneidung |
+| Mailkonto oben [pc-monitor](/tmp/beschaffung-abschnitt10-r0-screens/einkauf-mailkonto--pc-monitor.png) | Rose an Aktivierung/Aktion | Bestehende Settings-Karten | Langes Formular, klar gegliedert | Dokument- und Einkaufs-Postfach erkennbar getrennt | Einkaufsfelder sichtbar; Speichern weiter unten | Kein Überlauf/keine Überschneidung |
+| Revision nach Reload [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-revision-screens/anfrage-revision-gespeichert--pc-14zoll.png) | Rose/Slate; Status nur Text | Header/DetailLayout passen | Wie Detailansicht stabil | Revision 3 nach Speichern und Reload sichtbar | Erster Versand sichtbar; zweiter auf 1440 unter Fold | Kein horizontaler Überlauf |
+| Revision nach Reload [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-revision-screens/anfrage-revision-gespeichert--pc-uebergang.png) | Rose/Slate; Status nur Text | Header/DetailLayout passen | Wie Detailansicht stabil | Revision 3 nach Speichern und Reload sichtbar | Erster Versand sichtbar; zweiter bei dieser Größe sichtbar | Kein horizontaler Überlauf |
+| Revision nach Reload [pc-monitor](/tmp/beschaffung-abschnitt10-r0-revision-screens/anfrage-revision-gespeichert--pc-monitor.png) | Rose/Slate; Status nur Text | Header/DetailLayout passen | Wie Detailansicht stabil | Revision 3 nach Speichern und Reload sichtbar | Erster Versand sichtbar; zweiter bei dieser Größe sichtbar | Kein horizontaler Überlauf |
+| Neue Anfrage [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-neuanfrage-screens/neue-anfrage--pc-14zoll.png) | Rose zeigt Speicheraktion | Rose/Slate, Lucide, eigene DatePicker | Klares einspaltiges Formular | Bedarf/Lieferant/Fristen klar; Knopf verspricht unmittelbar Vorschau | Speichern auf allen Größen sichtbar | Kein Überlauf/keine Überschneidung |
+| Neue Anfrage [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-neuanfrage-screens/neue-anfrage--pc-uebergang.png) | Rose zeigt Speicheraktion | Rose/Slate, Lucide, eigene DatePicker | Klares einspaltiges Formular | Bedarf/Lieferant/Fristen klar; Knopf verspricht unmittelbar Vorschau | Speichern auf allen Größen sichtbar | Kein Überlauf/keine Überschneidung |
+| Neue Anfrage [pc-monitor](/tmp/beschaffung-abschnitt10-r0-neuanfrage-screens/neue-anfrage--pc-monitor.png) | Rose zeigt Speicheraktion | Rose/Slate, Lucide, eigene DatePicker | Klares einspaltiges Formular | Bedarf/Lieferant/Fristen klar; Knopf verspricht unmittelbar Vorschau | Speichern auf allen Größen sichtbar | Kein Überlauf/keine Überschneidung |
+| Neue Anfrage nach Reload [pc-14zoll](/tmp/beschaffung-abschnitt10-r0-neuanfrage-screens/neue-anfrage-gespeichert--pc-14zoll.png) | Rose/Slate; Status nur Text | DetailLayout passt | Ruhiges Ergebnis | Datensatz nach Save und Reload vorhanden; Vorschau öffnet nicht automatisch | Erster Versand sichtbar; zweiter auf 1440 unter Fold | Kein horizontaler Überlauf |
+| Neue Anfrage nach Reload [pc-uebergang](/tmp/beschaffung-abschnitt10-r0-neuanfrage-screens/neue-anfrage-gespeichert--pc-uebergang.png) | Rose/Slate; Status nur Text | DetailLayout passt | Ruhiges Ergebnis | Datensatz nach Save und Reload vorhanden; Vorschau öffnet nicht automatisch | Erster Versand sichtbar; zweiter bei dieser Größe sichtbar | Kein horizontaler Überlauf |
+| Neue Anfrage nach Reload [pc-monitor](/tmp/beschaffung-abschnitt10-r0-neuanfrage-screens/neue-anfrage-gespeichert--pc-monitor.png) | Rose/Slate; Status nur Text | DetailLayout passt | Ruhiges Ergebnis | Datensatz nach Save und Reload vorhanden; Vorschau öffnet nicht automatisch | Erster Versand sichtbar; zweiter bei dieser Größe sichtbar | Kein horizontaler Überlauf |
+| Mailkonto nach Aktionen [pc-14zoll](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/test-results/design/einkauf-mailkonto--pc-14zoll.png) | Erfolg grün, Fehler rot getrennt | Rose/Slate-Felder; gestaltete Meldungen | Felder ruhig, Toasts oben rechts | Save/Test/Testmail getrennt; Ergebnis sichtbar | Aktionen nach Scrollen in Karte sichtbar | Kein Überlauf/keine Überdeckung |
+| Mailkonto nach Aktionen [pc-uebergang](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/test-results/design/einkauf-mailkonto--pc-uebergang.png) | Erfolg grün, Fehler rot getrennt | Rose/Slate-Felder; gestaltete Meldungen | Felder ruhig, Toasts oben rechts | Save/Test/Testmail getrennt; Ergebnis sichtbar | Aktionen nach Scrollen in Karte sichtbar | Kein Überlauf/keine Überdeckung |
+| Mailkonto nach Aktionen [pc-monitor](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/test-results/design/einkauf-mailkonto--pc-monitor.png) | Erfolg grün, Fehler rot getrennt | Rose/Slate-Felder; gestaltete Meldungen | Felder ruhig, Toasts oben rechts | Save/Test/Testmail getrennt; Ergebnis sichtbar | Aktionen nach Scrollen in Karte sichtbar | Kein Überlauf/keine Überdeckung |
+| Einkaufsrechte nach Save [pc-14zoll](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/test-results/design/einkauf-berechtigungen--pc-14zoll.png) | Rose an Checkboxen/Aktionen | Zwei gefüllte Rose-Speichern auf einer Ansicht | Karte klar lesbar | Rechte separat speicherbar; zwei Primäraktionen konkurrieren | Rechte speichern in fokussierter Ansicht sichtbar | Kein Überlauf/keine Überdeckung |
+| Einkaufsrechte nach Save [pc-uebergang](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/test-results/design/einkauf-berechtigungen--pc-uebergang.png) | Rose an Checkboxen/Aktionen | Zwei gefüllte Rose-Speichern auf einer Ansicht | Karte klar lesbar | Rechte separat speicherbar; zwei Primäraktionen konkurrieren | Rechte speichern in fokussierter Ansicht sichtbar | Kein Überlauf/keine Überdeckung |
+| Einkaufsrechte nach Save [pc-monitor](/Users/marvinkuhn/dev/ERP-System-fuer-Handwerksbetriebe/.claude/worktrees/beschaffung-design10/react-pc-frontend/test-results/design/einkauf-berechtigungen--pc-monitor.png) | Rose an Checkboxen/Aktionen | Zwei gefüllte Rose-Speichern auf einer Ansicht | Karte klar lesbar | Rechte separat speicherbar; zwei Primäraktionen konkurrieren | Rechte speichern in fokussierter Ansicht sichtbar | Kein Überlauf/keine Überdeckung |
+
+Angeschaut: sämtliche 48 in der Tabelle verlinkten Bilder.
+
+
+## Abschnitt 10 – Root übernimmt R1 (24.09.2026)
+Nutzerauftrag: Korrekturen persönlich fortsetzen, keine weitere wartende Coding-Delegation. R0 abgeschlossen: Code/Design rot; erste Nachbesserung in bestehenden Paketworktrees Task30 und Root-Backend31. Task29 bleibt unverändert. Integration erst nach allen Korrekturen und Checks.
+Zusätzliche Ownership Backend31: Bedarf-GET, Anlagenmetadaten-GET, servergerenderte Vorlagenentwurfsprüfung und Versandvorschau-Metadaten samt Tests. Task30: gemeinsamer AnfrageEntwurfEditor, reale Detail-DTO-Felder, Teilmengen/Bedarfseditor, expliziter Konfliktabgleich, Mailfundstelle/Absenderprüfung/manuelle Zuordnung, Listenpaginierung, Servervorschau und Versanddetails samt Regressionen. R1-Code noch in Prüfung; keine Abnahme behauptet. Keine Produktivdaten oder echten Mailserver in Tests.
+
+
+## Abschnitt 10 R1 – Root-Frontendkorrektur fertig
+Zeit: 2026-09-24T01:52:26.563337+00:00
+Task30/31-Branch codex/beschaffung-task-30, Commit 7de361ba5067fc7c6ae5d2dbd666e9561e07db48. 19 eigene Frontenddateien; erzeugte Graphdaten und .graphify-venv ausdrücklich ausgeschlossen. Neuer gemeinsamer Anfrageeditor mit Teilmengen, PositionsEditor/Anlagen, Kontaktwahl, explizitem Bedarfsspeichern und 409-Abgleich. Reale top-level Historienfelder, manuelle Mailzuordnung, paginierte Listen, servergeprüfte Vorlagenvarianten und vollständige Versandvorschau.
+Vollnachweise: Unit1666/157Dateien (/tmp/beschaffung-10-r1-pc-unit.log), E2E705/705 (/tmp/beschaffung-10-r1-pc-e2e-final.log); Lint/Typecheck grün (/tmp/beschaffung-10-r1-pc-lint-final.log, -typecheck-final.log); Build grün (/tmp/beschaffung-10-r1-pc-build.log), Ausgabe /tmp/beschaffung-10-r1-pc-build. Die letzte Änderung nach Unit/Build betraf ausschließlich den mehrdeutigen Bearbeiten-Selektor eines neuen E2E-Tests; E2E/Lint/Typecheck danach vollständig grün. Keine offenen fehlgeschlagenen Checks. Pflicht-Designprüfungen persistent in neuen E2E-Szenarien.
+Backend-R1-Gesamttest läuft noch im separaten Root-Backendworktree. Noch keine Integration und kein vorgezogener Review.
+
+
+## Abschnitt 10 R1 – alle Pakete fertig und gemeinsam integriert
+Zeit: 2026-09-24T01:53:53.652020+00:00
+Task29 unverändert dd2a95e6; Task30/31 Rootkorrektur7de361ba; Backend31 Rootkorrektur4d93b8fdf1818a0b137dae9588026fe272ad573f. Neuer vollständiger Backendnachweis3502 Tests/0Fehler/17bekannteSkips, BUILD SUCCESS (/tmp/beschaffung-10-r1-backend-final.log). Metadatentest korrigiert, alle Prüfungen grün. 12 explizite eigene Backenddateien; keine Migration, Secrets oder fremde Dateien.
+Gemeinsame Integration auf98b95669 mit --no-ff --no-commit in Root und Designworktree. Identischer Indextree2f1dd726a665123f35371c6fc587e5ff2b9dbc81. Rootplan/-kontextlog bleiben separat uncommitted, erzeugte Graphdaten erhalten. R1-Code-/Designreview beginnt erst jetzt nach allen Paketabschlüssen, keine vorgezogenen Reviews. Code besitzt integrierte Unit/Lint/Build/Typecheck, Design besitzt integrierte E2E/Browser; Backend/Mobile nur gültige Nachweise wiederverwenden.
+
+
+## Abschnitt 10 R2 – Root korrigiert verbleibenden Konfliktabgleich
+R1-Codebericht rot wegen stiller Übernahme neuer Versionsnummern bei veraltetem Entwurf; übrige R0-Codeblocker behoben. Root übernimmt zweite und letzte formale Nachbesserung persönlich im Task30-Worktree. Der fertig integrierte R1-Stand bleibt während des noch laufenden Designreviews unverändert; keine R2-Integration und kein neuer Review vor Abschluss aller Korrekturen/Prüfungen. Zusätzliche Ownership: wiederverwendbarer Konflikt-Abgleichdialog und gezielte Regressionen, realer Lieferanten-Detailvertrag für eigeneKundennummer, Mailsuche mit Offset-Paginierung. Backend unverändert, Vollnachweis3502/0/17 weiter gültig.
+
+
+## Abschnitt 10 R1 – gemeinsame Reviews abgeschlossen
+Zeit: 2026-09-24T02:09:06.088526+00:00
+Code rot: noch potenzieller Datenverlust beim 409-Abgleich durch Versionsübernahme ohne Feldvergleich. Warnungen: echte eigeneKundennummer im Lieferanten-Detail statt nicht vorhandenem Listenfeld laden; Mailsuche paginieren. Übrige R0-Codeblocker behoben. Vollständige integrierte Unit1671, Lint, Build, Typecheck grün. Bericht /tmp/beschaffung-abschnitt10-r1-review-report.md.
+Design rot allein wegen Race im Test nach erfolgreichem Speichern: reload lief vor Router-Navigation. Integrierte E2E708grün/3rot (identische Ursache in drei Größen); alle bisherigen visuellen Blocker behoben,30Screenshots geprüft. Bericht /tmp/beschaffung-abschnitt10-r1-design-report.md. Kein nutzloser isolierter R1-Wiederholungslauf; konkreter Race wird mit URL-Warten in R2 behoben. Alle R1-Reviewer jetzt fertig.
+R2 isoliert in Task30: feldweiser Pflichtabgleich plus Aufnahme/Entfernung von Positionen und Empfängern, tatsächliche Kundennummer, weitere Mailtreffer, Regressionen gleichzeitiger Anfrage- und technischer Bedarfsänderungen. Gezielte Unit6/6 und E2E9/9 in allen3Größen bereits grün; vollständige Paketprüfungen laufen. Root-R1-Integration während des Reviews unverändert gelassen.
+
+
+## Abschnitt 10 R2 – Rootkorrektur vollständig geprüft und integriert
+Zeit: 2026-09-24T02:14:50.051936+00:00
+Task30/31 jetzt fca4a213d7def34adc95faaae227903e2a11d676, 7 explizite eigene Dateien; kein Graph/Secret/Buildasset. Vollständige Unit1668/158Dateien (/tmp/beschaffung-10-r2-pc-unit.log), E2E708/708 (/tmp/beschaffung-10-r2-pc-e2e.log), Lint/Typecheck/Build alle Exit0 (/tmp/beschaffung-10-r2-pc-lint.log, -typecheck.log, -build.log), Buildausgabe /tmp/beschaffung-10-r2-pc-build. Gezielte Konkurrenzregressionen Unit6/6, E2E9/9 in3Größen. Keine offenen fehlgeschlagenen Checks.
+Task29 dd2a95e6 und Backend31 4d93b8fd unverändert. Backend3502/0/17-Nachweis gültig. Beide Root-Dokumente vor Abbruch der R1-Integration nach /tmp/abschnitt10-r1-* gesichert und exakt wiederhergestellt; erzeugte Graphdaten erhalten. R2 erst nach fertiger Korrektur gemeinsam in Root und Designworktree auf98b95669 --no-ff --no-commit integriert. Zweiter/letzter formaler Korrekturdurchlauf.
+
+
+## Abschnitt 10 R2 – Code grün, Design-Vollsuite noch blockiert
+Sol-Code-/ERP-Review vollständig abgeschlossen: GRÜN ohne Befunde, Bericht /tmp/beschaffung-abschnitt10-r2-review-report.md. Integrierte Unit1673/1673,161Dateien; Lint/Typecheck/Build Exit0 in /tmp/beschaffung-10-r2-review-pc-{unit,lint,typecheck-e2e,build}.log. Backend3502/0/17 weiter exakt gültig. Indextree8c0bb156bd4eeb9335201e83ae8ecad90ae03cd8. Keine fehlenden eigenen Paketchecks.
+Designvollsuite zunächst712/714grün,2Fehler im unveränderten Dokument-Editor-Layouttest. Isolierter unveränderter Nachlauf9/9grün; vollständiger unveränderter Nachlauf läuft erneut und hat denselben Befund. Reviewerdiagnose: LivePreviewPanel.tsx260–265 animiert Breite500ms; Designhelper misst vor Animationsende119px internen Überstand in overflow-hidden. Keine sichtbare Seitenüberbreite auf Fehlerbild. Neue Einkaufsfälle bestehen. Keine Produkt-/Teständerung zur Umgehung und kein Absenken der Ampel. Letzter formaler Korrekturdurchlauf R2; abschließender Designbericht steht noch aus. Featurebranch weiterhin98b95669, Integration absichtlich ohne Commit/Push bis ehrlicher gemeinsamer Abnahme.
+Vorausschauende Leseprüfung für Abschnitt11 ist erledigt, noch kein Paket gestartet: BestellrevisionDTO zeigt tatsächliche Annahme/externe Nachweise noch nicht, Liefer-/Chargen-/Bestätigungslisten fehlen ebenso wie scoped Bestellversandstatus/-wiederholung/-klärung. Root hat konkret additive API-Verträge in /tmp/beschaffung-11-backend-vertrag.md vorbereitet und übernimmt diese Backenddateien im separaten künftigen Worktreebeschaffung-task-33-backend nach erfolgreichem Abschnitt10-Gate. Task35-Kommunikationsdateien bleiben disjunkt. Pakete11a/11b,12a,13a bleiben bestehende Auftragspfade; keine Wiederholungsplanung nötig.
+
+
+## Abschnitt 10 R2 – Pipelinegrenze erreicht, Freigabe für zusätzliche Testreparatur erforderlich
+Zeit: 2026-09-24T02:36:00Z (genauer Append-Zeitpunkt durch Logwerkzeug).
+Sol-Designreview abschließend ROT, /tmp/beschaffung-abschnitt10-r2-design-report.md. Alle neuen Einkaufs-E2E und9neue Ansichten in3Größen grün. Erster Gesamtlauf712/714; isolierter Dokument-Editor-Nachlauf9/9; zweiter unveränderter Gesamtlauf reproduziert beide Animations-Messfehler und wurde nach eindeutigem Befund kontrolliert beendet, kein weiterer nutzloser Testlauf. Port5220 frei, keine Produktänderungen durch Reviewer. Ursache: Designprüfung misst während500msBreitenanimation des LivePreviewPanel den absichtlich abgeschnittenen Zwischenzustand. Nächster konkreter Fix: vor Layoutmessung tatsächliches Animationsende abwarten, Layoutassertion vollständig erhalten; gezielte Regression und vollständige E2E danach, bestehende Code-/Backendnachweise nur bei unverändertem Tree wiederverwenden.
+Skill loese-problem Schritt5.4 verlangt: „🔴 nach der 2. erfolglosen Nachbesserung: Pipeline stoppen, verbleibende 🔴-Befunde dem Nutzer vorlegen. ENDE.“ R2 ist zweite formale Nachbesserung. Deshalb noch keine Abschnitt10-Abnahme, kein Integrationcommit/Push, Abschnitt11 nicht gestartet. Nutzer wird um ausdrückliche Ausnahme für diese zusätzliche Testreparatur und Fortsetzung11–13 gebeten. Keine Fremdänderungen zurückgesetzt, erzeugte Graphdaten bewusst uncommitted. Root besitzt alle fachlichen R1/R2-Reparaturen; Code/ERP1673Unit/Lint/Typecheck/Build grün. Pendingmerge kann nach erlaubtem Fix ordentlich fortgesetzt werden; beide Root-Dokumente vor eventuellem mergeabort sichern, Graphdaten erhalten.
+
+
+Zeitkorrektur zum unmittelbar vorstehenden Stoppeintrag: Maßgeblich ist der automatisch ermittelte Append-Zeitpunkt2026-09-24T02:34:36.857398+00:00; die dort vorangestellte Zeit02:36:00Z war falsch. Keine Änderung des technischen Status.
+
+
+## Abschnitt10 – zusätzliche Rootreparatur ausdrücklich freigegeben
+Nutzerantwort auf konkrete Ausnahmerückfrage: „löse du problem“. Root behebt den verbleibenden Testfehler selbst und setzt danach Abschnitte11–13 fort. Keine erneute Freigabe für denselben Schritt nötig. Präzisierte Ursache aus echtem Code: LivePreviewPanel öffnet nach zwei requestAnimationFrame-Aufrufen, der Designhelper liest document.getAnimations nur einmal vor diesem Start. Das ist ein Messrennen beim Öffnen (nicht notwendigerweise beim Ausblenden). Root besitzt zusätzlich ausschließlich e2e/hilfen/design.ts und e2e/design-hilfen.spec.ts; bestehende Assertions bleiben vollständig aktiv. Zuerst deterministische Browserregression für verzögerten Start/Folgeanimation, dann gemeinsamer Helperfix. Alle Produktpakete bereits fertig, keine vorgezogenen Reviews. Root ergänzt den bestehenden Pendingmerge direkt, ohne Fremdänderungen anzutasten; Re-Review durch dieselben Sol-Reviewer nach abgeschlossener Korrektur.
+
+
+## Abschnitt10 – zusätzliche Testkorrektur fertig, gemeinsame Abnahme gestartet
+Root-Indextree und Design-Indextree d61d118dc0a298bab0ffa6f7fea81b4623041465, nur zwei zusätzliche E2E-Dateien gegenüber R2. Neue Regressionen verzögerter Öffnungsstart und Folgeanimation neben Endlosspinner: alterHelper6/6rot, neuerHelper147/147gezielteTestsgrün in3Größen. /tmp/beschaffung-10-extra-regression-red.log und -green.log. Lint/TypecheckExit0 (/tmp/beschaffung-10-extra-lint.log,-typecheck.log). Keine Produktdatei/Abhängigkeit/Unit verändert, gültige1673Unit/Build/3502Backend-Nachweise weiter gültig. Bestehende Sol-Reviewer besitzen fertigen Stand: Code Zusatzdiff, Design vollständigerE2E-Lauf Port5220 plus Dokumenteditorbilder3Größen; bisherige Einkaufsbilder unverändert weiterverwenden. Kein Review vor fertiger Korrektur, keine doppelte Vollsuite. Nutzerfreigabe für diese zusätzliche Reparatur ist bereits erteilt.
+
+
+## Abschnitt10 vollständig abgenommen
+Root hat alle fachlichen R1/R2-Korrekturen und die ausdrücklich zusätzlich freigegebene Animations-Testkorrektur selbst umgesetzt. Gemeinsamer Code-/ERP-Review GRÜN ohne Befunde (/tmp/beschaffung-abschnitt10-extra-review-report.md unter Weiterverwendung des R2-Berichts), Design GELB ohne Blocker (/tmp/beschaffung-abschnitt10-extra-design-report.md). Gelbe unveränderte Hinweise: RohstatusPRUEFEN in manuellem Maildialog und kurz gleichzeitig sichtbare alte Konflikt-/Erfolgstoasts. Alle fachlichen Aufgaben29–31 abgeschlossen. Vollständige DesktopE2E720/720grün, /tmp/beschaffung-abschnitt10-extra-e2e.log, 5.4Minuten; sechs neue Dokumenteditorbilder in3Größen geprüft, bisherige Einkaufsbilder gültig. Port5220frei. Unit1673/1673, Lint/Typecheck/Buildgrün; Backend3502/0/17Bestandsskips, unverändert exakt gültig. GraphifyupdateExit0 /tmp/beschaffung-10-extra-graphify.log. Kein roter Check offen. Bestätigte zusätzliche Nachbesserung betraf nur zwei E2E-Dateien, keine abgeschwächte Layoutprüfung.
+Integration als gemeinsamer Merge aus Task29dd2a95e6, Task30fca4a213, Backend314d93b8fd plus Root-Testkorrektur und eigene Plan-/Logfortschreibung. Erzeugte Graphdaten und Secrets bleiben ausdrücklich uncommitted. Nächster Abschnitt11: Luna33→34→32 und Luna35 parallel, Root ergänzt die bereits konkretisierten Backendverträge gemäß /tmp/beschaffung-11-backend-vertrag.md; Review erst nach allen3Paketen.

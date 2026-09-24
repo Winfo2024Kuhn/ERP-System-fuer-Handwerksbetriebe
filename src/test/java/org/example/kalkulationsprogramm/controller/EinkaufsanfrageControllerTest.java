@@ -81,6 +81,16 @@ class EinkaufsanfrageControllerTest {
         org.mockito.Mockito.verify(service).loeschen(22L, 0L, 4L);
     }
 
+    @Test void historischeFassungUndListeVerlangenLeserecht() throws Exception {
+        when(berechtigungen.verlange(any(Authentication.class), eq(EinkaufBerechtigung.LESEN)))
+                .thenThrow(new AccessDeniedException("keine Berechtigung"));
+        mockMvc.perform(get("/api/einkauf/anfragen/22/revisionen").with(authentication()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/einkauf/anfragen/22/revisionen/31").with(authentication()))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(service);
+    }
+
     private static RequestPostProcessor authentication() {
         FrontendUserPrincipal principal = new FrontendUserPrincipal(4L, "test@example.com", "Max Mustermann", "{noop}dummy", true, Set.of(FrontendUserRole.USER));
         Authentication auth = new UsernamePasswordAuthenticationToken(principal, principal.getPassword(), principal.getAuthorities());

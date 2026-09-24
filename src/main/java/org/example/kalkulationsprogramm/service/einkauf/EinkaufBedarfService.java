@@ -65,6 +65,13 @@ public class EinkaufBedarfService {
         return page.map(bedarf -> toResponse(bedarf, angefragt.get(bedarf.getId())));
     }
 
+    @Transactional(readOnly = true)
+    public EinkaufBedarfDto.Response laden(Long id) {
+        if (id == null || id <= 0) throw new IllegalArgumentException("Die Bedarfs-ID ist ungültig.");
+        var bedarf = bedarfRepository.findById(id).orElseThrow(() -> new NotFoundException("Der Einkaufsbedarf wurde nicht gefunden."));
+        return toResponse(bedarf, angefragtFuer(List.of(bedarf)).get(id));
+    }
+
     @Transactional
     public EinkaufBedarfDto.Response anlegen(EinkaufBedarfDto.Create request, Long akteurId) {
         if (request == null || request.liefergruppe() == null) {
