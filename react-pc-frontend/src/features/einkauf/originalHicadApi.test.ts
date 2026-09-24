@@ -43,6 +43,33 @@ describe('Zuschnitt-Optimierung (FFD)', () => {
     });
 });
 
+describe('Anschnittwinkel 0° (gerader Schnitt)', () => {
+    const bild = { dateiId: 88, dateiname: 'anschnitt.png', mimeTyp: 'image/png', byteAnzahl: 10, url: '/api/einkauf/hicad/12/bilder/88' };
+
+    it('behandelt 0, 0°, 0,0° und 0.0° wie keinen Winkel', async () => {
+        const { echterWinkel } = await adapter();
+        for (const nullGrad of ['0', '0°', '0,0°', '0.0°', ' 0 ° ', '', null, undefined]) expect(echterWinkel(nullGrad)).toBeNull();
+        expect(echterWinkel('45°')).toBe('45°');
+        expect(echterWinkel('22,5°')).toBe('22,5°');
+        expect(echterWinkel('0,5°')).toBe('0,5°');
+    });
+
+    it('zeigt eine Zeile mit 0°/0° wie einen normalen Fixzuschnitt ohne Winkel und ohne Anschnittbild', async () => {
+        const { saegelisteZeile } = await adapter();
+        const z = saegelisteZeile(zeile(20, snapshot({ winkelLinks: '0°', winkelRechts: '0,0°' }), { bilder: [bild] }))!;
+        expect(z).toMatchObject({ anzahl: 2, laengeMm: 2835.7, anschnittSteg: undefined, anschnittFlansch: undefined,
+            anschnittbildStegUrl: null, anschnittbildFlanschUrl: null, bildDateiIds: [88] });
+    });
+
+    it('zeigt bei 45°/0° nur die 45°-Seite', async () => {
+        const { saegelisteZeile } = await adapter();
+        expect(saegelisteZeile(zeile(21, snapshot({ winkelLinks: '45°', winkelRechts: '0' }), { bilder: [bild] })))
+            .toMatchObject({ anschnittSteg: '45°', anschnittbildStegUrl: '/api/einkauf/hicad/12/bilder/88' });
+        expect(saegelisteZeile(zeile(22, snapshot({ schnittForm: 'Anschnitt Flansch', winkelLinks: '0.0°', winkelRechts: '45°' }))))
+            .toMatchObject({ anschnittFlansch: '45°', anschnittSteg: undefined });
+    });
+});
+
 describe('HiCAD-Vorschau mit Datenbank-API', () => {
     it('übersetzt Importzeilen in Profilgruppen mit Kopfdaten, Schnittbildern, Winkeln und Stammartikel', async () => {
         const fetcher = vi.fn(async (url: string) => {
@@ -63,8 +90,9 @@ describe('HiCAD-Vorschau mit Datenbank-API', () => {
         expect(preview.gruppen.map(g => g.bezeichnung)).toEqual(['Rohr 76.1x4', 'HEB 220']);
         const rohr = preview.gruppen[0];
         expect(rohr).toMatchObject({ werkstoff: 'S235JRH', summeStueck: 3, summeMeter: 6.44, berechneteStaebe: 2, artikelId: null });
-        expect(rohr.zeilen[1]).toMatchObject({ posNr: '1101', anzahl: 2, laengeMm: 2835.7, anschnittSteg: '– 0°',
-            anschnittbildStegUrl: '/api/einkauf/hicad/12/bilder/88', anschnittbildFlanschUrl: null, bildDateiIds: [88], benennung: 'Stütze' });
+        // 0° ist ein gerader Schnitt: keine Winkelanzeige, kein Anschnittbild – die Bild-ID bleibt für die Übernahme.
+        expect(rohr.zeilen[1]).toMatchObject({ posNr: '1101', anzahl: 2, laengeMm: 2835.7, anschnittSteg: undefined,
+            anschnittbildStegUrl: null, anschnittbildFlanschUrl: null, bildDateiIds: [88], benennung: 'Stütze' });
         const traeger = preview.gruppen[1];
         expect(traeger).toMatchObject({ artikelId: 6, artikelProduktname: 'HEB220', verpackungseinheitM: 12 });
         expect(traeger.zeilen[0]).toMatchObject({ anschnittFlansch: '45° 45°', anschnittSteg: undefined });
@@ -128,6 +156,24 @@ describe('HiCAD-Übernahme in den Projektbedarf', () => {
         expect(bedarf.position).toMatchObject({ art: 'ARTIKEL', artikelId: 6, bezeichnung: 'HEB 220', werkstoff: 'S235JR', zeichnungsnummer: 'Z-4711',
             basis: { menge: 12, einheit: 'METER', stueckzahl: 1, einzelLaengeMm: 12000 } });
         expect(bedarf.position.bearbeitung).toContain('Stangenware · 1 Stk à 12 m');
+    });
+
+    it('legt Gruppen mit Artikel und Freitext-Gruppen ohne Lieferant an', async () => {
+        const { api, preview } = await ladeVorschau();
+        const [rohr, traeger] = preview.gruppen;
+        const fetcher = vi.fn(async () => ok([{ id: 1 }, { id: 2 }, { id: 3 }]));
+        vi.stubGlobal('fetch', fetcher);
+        const ergebnis = await api.uebernehmeHicad({ preview, projektId: 7, idempotenzKey: 'k', entscheidungen: {
+            [rohr.groupKey]: entscheidung(),
+            [traeger.groupKey]: entscheidung({ artikelId: 6, artikelProduktname: 'HEB 220', artikelnummer: 'ST-0815' }),
+        } });
+
+        expect(ergebnis.angelegtePositionen).toBe(3);
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        const zeilen = JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).zeilen;
+        expect(zeilen.map((z: { korrigiert: { art: string; artikelId: number | null; beschaffungsdetails: { lieferantId: number | null } } }) =>
+            [z.korrigiert.art, z.korrigiert.artikelId, z.korrigiert.beschaffungsdetails.lieferantId]))
+            .toEqual([['FREITEXT', null, null], ['FREITEXT', null, null], ['ARTIKEL', 6, null]]);
     });
 
     it('prüft alle Stangenlängen vor dem ersten Schreibzugriff', async () => {

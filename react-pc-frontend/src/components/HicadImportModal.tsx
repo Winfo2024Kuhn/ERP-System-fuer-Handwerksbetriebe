@@ -29,7 +29,8 @@ import {
     type PreviewResponse,
 } from '../features/einkauf/originalHicadApi';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
-import { ArtikelSearchModal, type ArtikelSuchErgebnis } from './ArtikelSearchModal';
+import { ArtikelAuswahlDialog } from './artikel/ArtikelAuswahlDialog';
+import type { Artikel } from '../types';
 
 interface ProjektRef {
     id: number;
@@ -72,6 +73,8 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
     // Picker-States
     const [lieferantPickerFuer, setLieferantPickerFuer] = useState<string | null>(null);
     const [artikelPickerFuer, setArtikelPickerFuer] = useState<string | null>(null);
+    // Stabil, weil ArtikelAuswahlDialog seinen Escape-Zuhoerer daran neu haengt.
+    const schliesseArtikelPicker = useCallback(() => setArtikelPickerFuer(null), []);
 
     // Live-Neuberechnung der Zuschnitt-Optimierung (FFD) bei Stangenlaengen-Aenderung
     const [optimiereLaufend, setOptimiereLaufend] = useState<Record<string, boolean>>({});
@@ -117,6 +120,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                     aggregieren: g.defaultAggregieren,
                     artikelId: g.artikelId ?? null,
                     artikelProduktname: g.artikelProduktname ?? null,
+                    artikelnummer: g.artikelnummer ?? null,
                     lieferantId: null,
                     lieferantName: null,
                     stangenlaengeM: g.verpackungseinheitM ?? null,
@@ -148,16 +152,8 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
     const handleConfirm = async () => {
         if (!preview) return;
 
-        // Gruppen, bei denen kein Artikel gematcht ist UND kein Lieferant zugeordnet → warnen
-        const ohneLieferant = preview.gruppen.filter(
-            g => !entscheidungen[g.groupKey]?.artikelId && !entscheidungen[g.groupKey]?.lieferantId,
-        );
-        if (ohneLieferant.length > 0) {
-            toast.warning(
-                `${ohneLieferant.length} Gruppe(n) ohne Artikel-Match und ohne Lieferant – bitte Lieferant wählen.`,
-            );
-            return;
-        }
+        // Kein Lieferant ist Pflicht: Gruppen mit Artikel haben eine interne Artikelnummer,
+        // Gruppen ohne Artikel werden als Freitext angelegt. Der Lieferant bleibt optional.
 
         // Stangenlängen vollständig prüfen, bevor irgendetwas angelegt wird.
         for (const g of preview.gruppen) {
@@ -258,6 +254,8 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
 
     if (!isOpen) return null;
 
+    const artikelPickerGruppe = preview?.gruppen.find(g => g.groupKey === artikelPickerFuer);
+
     const hatPreview = preview != null;
 
     // Zusammenfassung für Header/Footer
@@ -265,13 +263,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
     const gruppenMitArtikel = preview
         ? preview.gruppen.filter(g => entscheidungen[g.groupKey]?.artikelId).length
         : 0;
-    const gruppenOhneZuordnung = preview
-        ? preview.gruppen.filter(
-              g =>
-                  !entscheidungen[g.groupKey]?.artikelId &&
-                  !entscheidungen[g.groupKey]?.lieferantId,
-          ).length
-        : 0;
+    const gruppenAlsFreitext = gruppenGesamt - gruppenMitArtikel;
 
     return (
         <>
@@ -456,10 +448,10 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                             tone="emerald"
                                             label={`${gruppenMitArtikel} mit Stammartikel`}
                                         />
-                                        {gruppenOhneZuordnung > 0 && (
+                                        {gruppenAlsFreitext > 0 && (
                                             <StatusChip
-                                                tone="amber"
-                                                label={`${gruppenOhneZuordnung} ohne Zuordnung`}
+                                                tone="slate"
+                                                label={`${gruppenAlsFreitext} als Freitext`}
                                             />
                                         )}
                                     </div>
@@ -482,9 +474,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                 key={g.groupKey}
                                                 className={cn(
                                                     'bg-white border rounded-xl p-4 transition-colors',
-                                                    hatArtikel
-                                                        ? 'border-slate-200 hover:border-slate-300'
-                                                        : 'border-amber-200 hover:border-amber-300',
+                                                    'border-slate-200 hover:border-slate-300',
                                                 )}
                                             >
                                                 {/* Kopfzeile der Gruppe */}
@@ -504,10 +494,16 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
                                                                     <CheckCircle2 className="w-3 h-3" />
                                                                     {e.artikelProduktname || 'Stammartikel'}
+                                                                    {e.artikelnummer && (
+                                                                        <span className="font-mono text-emerald-600">· Nr. {e.artikelnummer}</span>
+                                                                    )}
                                                                 </span>
                                                             ) : (
-                                                                <span className="px-2 py-0.5 text-xs rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
-                                                                    Freitext – kein Stammartikel
+                                                                <span
+                                                                    className="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-medium"
+                                                                    title="Wird mit der Bezeichnung aus HiCAD angelegt. Ein Artikel lässt sich jederzeit zuordnen."
+                                                                >
+                                                                    als Freitext
                                                                 </span>
                                                             )}
                                                         </div>
@@ -549,13 +545,14 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                             variant="outline"
                                                             size="sm"
                                                             onClick={() => setLieferantPickerFuer(g.groupKey)}
+                                                            title="Optional – ohne Lieferant wird die Position trotzdem angelegt."
                                                             className={cn(
                                                                 e.lieferantName &&
                                                                     'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100',
                                                             )}
                                                         >
                                                             <Truck className="w-4 h-4 mr-1.5" />
-                                                            {e.lieferantName || 'Lieferant'}
+                                                            {e.lieferantName || 'Lieferant (optional)'}
                                                         </Button>
                                                     </div>
                                                 </div>
@@ -706,14 +703,21 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                 }}
             />
 
-            <ArtikelSearchModal
-                isOpen={artikelPickerFuer != null}
-                onClose={() => setArtikelPickerFuer(null)}
-                onSelect={(a: ArtikelSuchErgebnis) => {
+            <ArtikelAuswahlDialog
+                einzelauswahl
+                offen={artikelPickerFuer != null}
+                titel="Artikel zuordnen"
+                beschreibung={artikelPickerGruppe
+                    ? `Welcher Artikel ist „${artikelPickerGruppe.bezeichnung}“? Anklicken und übernehmen.`
+                    : undefined}
+                onSchliessen={schliesseArtikelPicker}
+                onArtikelGewaehlt={(a: Artikel) => {
                     if (artikelPickerFuer) {
                         updateEntscheidung(artikelPickerFuer, {
                             artikelId: a.id,
-                            artikelProduktname: a.produktname,
+                            artikelProduktname: [a.produktname, a.abmessung && !a.produktname.includes(a.abmessung) ? a.abmessung : null]
+                                .filter(Boolean).join(' '),
+                            artikelnummer: a.artikelnummer ?? null,
                         });
                     }
                     setArtikelPickerFuer(null);
@@ -783,12 +787,12 @@ function StatusChip({
     tone,
     label,
 }: {
-    tone: 'emerald' | 'amber';
+    tone: 'emerald' | 'slate';
     label: string;
 }) {
     const tones: Record<typeof tone, string> = {
         emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        amber: 'bg-amber-50 text-amber-800 border-amber-200',
+        slate: 'bg-slate-50 text-slate-600 border-slate-200',
     };
     return (
         <span
@@ -801,7 +805,7 @@ function StatusChip({
                 className={cn(
                     'w-1.5 h-1.5 rounded-full',
                     tone === 'emerald' && 'bg-emerald-500',
-                    tone === 'amber' && 'bg-amber-500',
+                    tone === 'slate' && 'bg-slate-400',
                 )}
             />
             {label}

@@ -38,6 +38,8 @@ export interface ProfilGruppe {
     werkstoff?: string;
     artikelId?: number | null;
     artikelProduktname?: string | null;
+    /** Interne Artikelnummer des zugeordneten Stammartikels (nur Anzeige). */
+    artikelnummer?: string | null;
     verpackungseinheitM?: number | null;
     defaultAggregieren: boolean;
     summeMeter?: number;
@@ -68,6 +70,9 @@ export interface GruppenEntscheidung {
     aggregieren: boolean;
     artikelId: number | null;
     artikelProduktname: string | null;
+    /** Interne Artikelnummer des zugeordneten Artikels (nur Anzeige). */
+    artikelnummer?: string | null;
+    /** Optional: Ohne Lieferant wird die Position trotzdem angelegt. */
     lieferantId: number | null;
     lieferantName: string | null;
     stangenlaengeM: number | null;
@@ -95,7 +100,7 @@ const DEFAULT_AGGREGIEREN_PREFIXES = ['FRR', 'FRQ', 'RR', 'RQ', 'L '];
 
 interface HiCadKopf { zeichnungsnummer: string | null; auftragsnummer: string | null; auftragstext: string | null; kunde: string | null }
 interface HiCadVorschauMitKopf { id: number; dateiHash: string; dateiSchonImportiert: boolean; zeilen: HiCadZeile[]; kopf?: HiCadKopf | null }
-interface ArtikelTreffer { id: number; produktname: string; werkstoffName?: string | null; verpackungseinheit?: number | string | null }
+interface ArtikelTreffer { id: number; produktname: string; artikelnummer?: string | null; werkstoffName?: string | null; verpackungseinheit?: number | string | null }
 
 const vergleichswert = (text?: string | null) => (text ?? '').replace(/\s+/g, '').toLowerCase();
 /** Kaufmännisch runden (HALF_UP wie im Backend); toPrecision entfernt Binär-Rundungsreste wie 6,43499… */
@@ -141,14 +146,30 @@ export function optimiereStangen(zeilen: SaegelisteZeile[], stangenlaengeM: numb
     return { anzahlStangen: belegung.length, belegtMm: belegt / 10, verschnittMm: verschnitt / 10, ueberlange };
 }
 
+/**
+ * 0° ist in HiCAD ein gerader Schnitt, kein Anschnitt („0“, „0°“, „0,0°“, „0.0°“).
+ * Das Backend liefert solche Seiten schon als `null`; hier wird es für ältere Importe zusätzlich abgesichert.
+ */
+export function echterWinkel(winkel?: string | null): string | null {
+    const text = winkel?.trim();
+    if (!text) return null;
+    const zahl = Number(text.replace(/°/g, '').replace(',', '.').trim());
+    return Number.isFinite(zahl) && zahl === 0 ? null : text;
+}
+
 /** Übersetzt eine gespeicherte Importzeile in eine Sägelisten-Zeile; unlesbare Zeilen liefern `null`. */
 export function saegelisteZeile(zeile: HiCadZeile): SaegelisteZeile | null {
     const p = zeile.vorschlag;
     const menge = p?.basis?.menge;
     if (!p || menge == null || !(menge > 0)) return null;
     const profil = p.abmessung?.trim() || p.bezeichnung?.trim() || 'Ohne Bezeichnung';
-    const winkel = [p.winkelLinks, p.winkelRechts].some(Boolean) ? `${p.winkelLinks ?? '–'} ${p.winkelRechts ?? '–'}` : undefined;
-    const bilder = zeile.bilder.map(bild => bild.url);
+    const links = echterWinkel(p.winkelLinks);
+    const rechts = echterWinkel(p.winkelRechts);
+    // Nur echte Winkel anzeigen; bei 45°/0° bleibt allein die 45°-Seite stehen.
+    const winkel = links && rechts ? `${links} ${rechts}` : (links ?? rechts ?? undefined);
+    // Ohne echten Winkel ist die Zeile ein normaler Fixzuschnitt: kein Anschnittbild in der Anzeige.
+    // Die Bild-IDs bleiben für die Übernahme erhalten, weil das Backend alle Bilder der Zeile bestätigt haben will.
+    const bilder = winkel ? zeile.bilder.map(bild => bild.url) : [];
     const nurFlansch = p.schnittForm === 'Anschnitt Flansch';
     const anzahl = p.basis?.einheit === 'STUECK' ? menge : (p.basis?.stueckzahl ?? menge);
     const laengeMm = p.basis?.einzelLaengeMm ?? undefined;
@@ -210,7 +231,7 @@ async function ergaenzeStammartikel(gruppen: ProfilGruppe[]): Promise<ProfilGrup
         const artikel = passenderArtikel(gruppe, Array.isArray(antwort?.artikel) ? antwort.artikel : []);
         if (!artikel) return gruppe;
         const ve = Number(artikel.verpackungseinheit);
-        return mitSummen({ ...gruppe, artikelId: artikel.id, artikelProduktname: artikel.produktname,
+        return mitSummen({ ...gruppe, artikelId: artikel.id, artikelProduktname: artikel.produktname, artikelnummer: artikel.artikelnummer ?? null,
             verpackungseinheitM: Number.isFinite(ve) && ve > 0 ? ve : null });
     }));
     return ergebnisse.map((ergebnis, index) => ergebnis.status === 'fulfilled' ? ergebnis.value : gruppen[index]);

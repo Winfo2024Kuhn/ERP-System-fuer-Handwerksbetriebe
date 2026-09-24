@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from './ui/toast';
 import { ConfirmProvider } from './ui/confirm-dialog';
@@ -22,14 +23,16 @@ const vorschau = (werte: Partial<PreviewResponse> = {}): PreviewResponse => ({
 });
 
 const oeffne = async (onSuccess = vi.fn(), onClose = vi.fn()) => {
-    render(<ToastProvider><ConfirmProvider>
+    render(<MemoryRouter><ToastProvider><ConfirmProvider>
         <HicadImportModal isOpen onClose={onClose} onSuccess={onSuccess} projekt={{ id: 7, bauvorhaben: 'Neubau Max Mustermann', auftragsnummer: 'A-0001' }} />
-    </ConfirmProvider></ToastProvider>);
+    </ConfirmProvider></ToastProvider></MemoryRouter>);
     fireEvent.change(document.getElementById('hicad-file-input')!, { target: { files: [new File(['x'], 'saegeliste.xlsx')] } });
     fireEvent.click(screen.getByRole('button', { name: /Analysieren/ }));
 };
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); });
+
+const ohneArtikel = () => vorschau({ gruppen: [{ ...vorschau().gruppen[0], artikelId: null, artikelProduktname: null }] });
 
 describe('HiCAD-Import prüfen (EN1090-Fenster)', () => {
     it('zeigt die Profilgruppen und legt die Positionen im aktuellen Projekt an', async () => {
@@ -75,5 +78,46 @@ describe('HiCAD-Import prüfen (EN1090-Fenster)', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }));
         await waitFor(() => expect(screen.queryByText('Sägeliste schon importiert')).not.toBeInTheDocument());
         expect(api.uebernehmeHicad).not.toHaveBeenCalled();
+    });
+
+    it('legt eine Gruppe ohne Artikel und ohne Lieferant als Freitext an', async () => {
+        api.ladeHicadVorschau.mockResolvedValue(ohneArtikel());
+        api.uebernehmeHicad.mockResolvedValue({ angelegtePositionen: 1, erledigteGruppen: ['heb 220||s235jr'] });
+        const onSuccess = vi.fn();
+        await oeffne(onSuccess);
+
+        expect(await screen.findByText('als Freitext')).toBeInTheDocument();
+        expect(screen.getByText('1 als Freitext')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Lieferant \(optional\)/ })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /1 Position anlegen/ }));
+        await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+        expect(api.uebernehmeHicad).toHaveBeenCalledWith(expect.objectContaining({ entscheidungen: {
+            'heb 220||s235jr': expect.objectContaining({ artikelId: null, lieferantId: null }) } }));
+    });
+
+    it('ordnet den Artikel über das normale Artikel-Auswahlfenster zu und legt ohne Lieferant an', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('/filteroptionen')
+            ? { ok: true, json: async () => ({ produktlinien: [], werkstoffe: [], profilformen: [] }) }
+            : { ok: true, json: async () => ({ artikel: [{ id: 42, produktname: 'HEB 220', abmessung: '220 x 220', artikelnummer: 'ST-0815',
+                werkstoffName: 'S235JR', positionsEinheit: 'lfm', preisHinweis: 'OK', guenstigsterPreis: 55 }], gesamt: 1, seite: 0, seitenGroesse: 20 }) }));
+        api.ladeHicadVorschau.mockResolvedValue(ohneArtikel());
+        api.uebernehmeHicad.mockResolvedValue({ angelegtePositionen: 1, erledigteGruppen: ['heb 220||s235jr'] });
+        await oeffne();
+
+        fireEvent.click(await screen.findByRole('button', { name: /Artikel zuordnen/ }));
+        const dialog = await screen.findByRole('dialog', { name: 'Artikel zuordnen' });
+        expect(within(dialog).getByText(/Welcher Artikel ist „HEB 220“/)).toBeInTheDocument();
+        expect(within(dialog).queryByLabelText(/Menge für/)).not.toBeInTheDocument();
+        fireEvent.click(await within(dialog).findByLabelText('HEB 220 auswählen'));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Übernehmen' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Artikel zuordnen' })).not.toBeInTheDocument());
+        expect(screen.getByText('HEB 220 220 x 220')).toBeInTheDocument();
+        expect(screen.getByText('· Nr. ST-0815')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Artikel ändern/ })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /1 Position anlegen/ }));
+        await waitFor(() => expect(api.uebernehmeHicad).toHaveBeenCalledWith(expect.objectContaining({ entscheidungen: {
+            'heb 220||s235jr': expect.objectContaining({ artikelId: 42, artikelnummer: 'ST-0815', lieferantId: null }) } })));
     });
 });

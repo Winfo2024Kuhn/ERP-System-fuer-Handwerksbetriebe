@@ -42,11 +42,32 @@ const FOKUSSIERBAR = 'a[href], button:not([disabled]), input:not([disabled]), '
  */
 const SUCHFELD = '#filter-q';
 
-export interface ArtikelAuswahlDialogProps {
+interface ArtikelAuswahlDialogBasis {
     offen: boolean;
     onSchliessen: () => void;
+}
+
+/** Standard: mehrere Artikel mit Menge fuer Dokumentpositionen (Dokumenteditor). */
+interface MehrfachAuswahlProps extends ArtikelAuswahlDialogBasis {
+    einzelauswahl?: false;
     onUebernehmen: (auswahl: ArtikelAuswahl[]) => void;
 }
+
+/**
+ * Genau ein Artikel, ohne Menge — etwa um einer HiCAD-Profilgruppe ihren
+ * Stammartikel zuzuordnen. Zurueck kommt das volle Artikel-Objekt der Suche,
+ * damit der Aufrufer selbst nimmt, was er braucht (Artikelnummer, Werkstoff …).
+ */
+interface EinzelAuswahlProps extends ArtikelAuswahlDialogBasis {
+    einzelauswahl: true;
+    onArtikelGewaehlt: (artikel: Artikel) => void;
+    /** Ueberschrift des Fensters, Standard „Artikel zuordnen“. */
+    titel?: string;
+    /** Zeile unter der Ueberschrift. */
+    beschreibung?: string;
+}
+
+export type ArtikelAuswahlDialogProps = MehrfachAuswahlProps | EinzelAuswahlProps;
 
 const zuAuswahl = (artikel: Artikel, menge: number): ArtikelAuswahl => ({
     artikelId: artikel.id,
@@ -69,7 +90,9 @@ const zuAuswahl = (artikel: Artikel, menge: number): ArtikelAuswahl => ({
     einzelpreis: artikel.positionsEinzelpreis ?? 0,
 });
 
-export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: ArtikelAuswahlDialogProps) {
+export function ArtikelAuswahlDialog(props: ArtikelAuswahlDialogProps) {
+    const { offen, onSchliessen } = props;
+    const einzeln = props.einzelauswahl === true;
     // artikelId -> Menge. Wer drin steht, ist ausgewaehlt.
     const [gewaehlt, setGewaehlt] = useState<Map<number, number>>(new Map());
     // Die vollen Artikeldaten der ausgewaehlten Zeilen. Ohne diese Kopie waere
@@ -152,8 +175,9 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
 
     const umschalten = (artikel: Artikel) => {
         setGewaehlt((prev) => {
-            const naechste = new Map(prev);
-            if (naechste.has(artikel.id)) naechste.delete(artikel.id);
+            // Einzelauswahl: Ein Klick ersetzt die bisherige Wahl, statt sie zu ergaenzen.
+            const naechste = einzeln ? new Map<number, number>() : new Map(prev);
+            if (prev.has(artikel.id)) naechste.delete(artikel.id);
             else naechste.set(artikel.id, 1);
             return naechste;
         });
@@ -195,6 +219,12 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
     const mengenLuecke = [...gewaehlt.keys()].some(mengeUngueltig);
 
     const uebernehmen = () => {
+        if (props.einzelauswahl) {
+            const [artikelId] = [...gewaehlt.keys()];
+            const artikel = artikelId == null ? undefined : gemerkt.get(artikelId);
+            if (artikel) props.onArtikelGewaehlt(artikel);
+            return;
+        }
         // Zweiter Riegel neben setzeMenge: Der Knopf ist in diesem Fall zwar
         // gesperrt, aber eine Position mit Menge 0 im Angebot waere teuer genug,
         // um sie nicht von einem disabled-Attribut allein abhaengig zu machen.
@@ -205,8 +235,31 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
                 return artikel ? zuAuswahl(artikel, menge) : null;
             })
             .filter((a): a is ArtikelAuswahl => a !== null);
-        onUebernehmen(auswahl);
+        props.onUebernehmen(auswahl);
     };
+
+    /** Einzelauswahl: Auswahlknopf und interne Artikelnummer, keine Menge und kein Kundentext. */
+    const einzelZeilenAktion = (artikel: Artikel) => (
+        <div className="flex items-center gap-3">
+            <input
+                type="radio"
+                name="artikel-einzelauswahl"
+                checked={gewaehlt.has(artikel.id)}
+                onChange={() => umschalten(artikel)}
+                aria-label={`${artikel.produktname} auswählen`}
+                className="w-4 h-4 accent-rose-600"
+            />
+            {artikel.artikelnummer && (
+                <span className="text-xs text-slate-500 font-mono">Nr. {artikel.artikelnummer}</span>
+            )}
+        </div>
+    );
+
+    const titel = props.einzelauswahl ? (props.titel ?? 'Artikel zuordnen') : 'Material auswählen';
+    const beschreibung = props.einzelauswahl
+        ? (props.beschreibung ?? 'Suche wie in der Materialverwaltung — Artikel anklicken, übernehmen.')
+        : 'Suche wie in der Materialverwaltung — Menge eintragen, übernehmen.';
+    const einzelGewaehlt = einzeln ? gemerkt.get([...gewaehlt.keys()][0] ?? -1) : undefined;
 
     const zeilenAktion = (artikel: Artikel) => {
         const ausgewaehlt = gewaehlt.has(artikel.id);
@@ -275,10 +328,10 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
             <div className="flex items-start justify-between px-6 py-4 border-b border-slate-200">
                 <div>
                     <h2 id="material-auswahl-titel" className="text-xl font-bold text-slate-900">
-                        Material auswählen
+                        {titel}
                     </h2>
                     <p className="text-sm text-slate-500 mt-0.5">
-                        Suche wie in der Materialverwaltung — Menge eintragen, übernehmen.
+                        {beschreibung}
                     </p>
                 </div>
                 <button onClick={onSchliessen} className="p-2 hover:bg-slate-100 rounded-md" aria-label="Schließen">
@@ -293,11 +346,17 @@ export function ArtikelAuswahlDialog({ offen, onSchliessen, onUebernehmen }: Art
                     Arbeit weg. Im Auswahlfenster bedeutet der Klick auf die
                     Zeile dasselbe wie die Checkbox: an- bzw. abwaehlen. */}
                 <ArtikelSuche urlSync={false} seitenGroesse={20}
-                              zeilenAktion={zeilenAktion} onZeilenKlick={umschalten} />
+                              zeilenAktion={einzeln ? einzelZeilenAktion : zeilenAktion}
+                              onZeilenKlick={umschalten}
+                              zeilenGedrueckt={einzeln ? (artikel) => gewaehlt.has(artikel.id) : undefined} />
             </div>
 
             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200">
-                <span className="text-sm text-slate-500">{gewaehlt.size} ausgewählt</span>
+                <span className="text-sm text-slate-500">
+                    {einzeln
+                        ? (einzelGewaehlt ? `Gewählt: ${einzelGewaehlt.produktname}` : 'Noch kein Artikel gewählt')
+                        : `${gewaehlt.size} ausgewählt`}
+                </span>
                 <div className="flex items-center gap-3">
                     {mengenLuecke && (
                         <span className="text-xs text-amber-700">

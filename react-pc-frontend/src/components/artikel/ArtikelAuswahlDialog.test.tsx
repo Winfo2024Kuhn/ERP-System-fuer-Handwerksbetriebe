@@ -379,4 +379,44 @@ describe('ArtikelAuswahlDialog', () => {
             await waitFor(() => expect(document.activeElement).toBe(knopf));
         });
     });
+
+    describe('Einzelauswahl (z. B. HiCAD-Artikelzuordnung)', () => {
+        it('zeigt eigene Überschrift, keine Mengenfelder und gibt genau einen Artikel zurück', async () => {
+            const onArtikelGewaehlt = vi.fn();
+            render(
+                <ArtikelAuswahlDialog einzelauswahl offen titel="Artikel zuordnen"
+                                      onSchliessen={() => {}} onArtikelGewaehlt={onArtikelGewaehlt} />,
+                { wrapper: MemoryRouter },
+            );
+
+            expect(screen.getByRole('dialog', { name: 'Artikel zuordnen' })).toBeInTheDocument();
+            await userEvent.click(await screen.findByLabelText('T-Stahl auswählen'));
+            expect(screen.queryByLabelText('Menge für T-Stahl')).not.toBeInTheDocument();
+            expect(screen.getByText('Gewählt: T-Stahl')).toBeInTheDocument();
+
+            // Ein zweiter Artikel ersetzt die Wahl, statt sie zu ergänzen.
+            await userEvent.click(screen.getByLabelText('Vierkantrohr auswählen'));
+            expect(screen.getByLabelText('T-Stahl auswählen')).not.toBeChecked();
+            await userEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+
+            expect(onArtikelGewaehlt).toHaveBeenCalledTimes(1);
+            expect(onArtikelGewaehlt.mock.calls[0][0]).toMatchObject({ id: 8, produktname: 'Vierkantrohr', abmessung: '40 x 40 x 2' });
+        });
+
+        it('wählt per Zeilenklick und sperrt Übernehmen, solange nichts gewählt ist', async () => {
+            const onArtikelGewaehlt = vi.fn();
+            render(
+                <ArtikelAuswahlDialog einzelauswahl offen onSchliessen={() => {}} onArtikelGewaehlt={onArtikelGewaehlt} />,
+                { wrapper: MemoryRouter },
+            );
+
+            expect(screen.getByRole('dialog', { name: 'Artikel zuordnen' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Übernehmen' })).toBeDisabled();
+            const zeile = await screen.findByRole('button', { name: 'T-Stahl an- oder abwählen' });
+            await userEvent.click(zeile);
+            expect(zeile).toHaveAttribute('aria-pressed', 'true');
+            await userEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+            expect(onArtikelGewaehlt.mock.calls[0][0]).toMatchObject({ id: 7 });
+        });
+    });
 });
