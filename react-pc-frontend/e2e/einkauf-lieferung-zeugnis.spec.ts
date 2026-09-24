@@ -64,16 +64,17 @@ test('erfasst die zweite Teillieferung und ordnet ein Zeugnis mehreren Chargen z
   await page.route('**/api/einkauf/zeugnisse/602/pruefen', route => route.fulfill({ json: { id: 702, erwartungId: 111, ergebnis: 'ABGELEHNT', begruendung: 'Falsche Schmelznummer', grundlageVersion: '2026', akteurId: 1, geprueftAm: '2026-09-24T12:00:00Z', materialFreigegeben: false } }));
 
   await page.goto('/einkauf/lieferungen');
-  await expect(page.getByText('2 von 4 geliefert · 2 offen')).toBeVisible();
+  await expect(page.getByText('2 von 5 geliefert · 3 offen')).toBeVisible();
   await expect(page.getByText('Zeugnis 3.1 fehlt · EN 10204', { exact: false })).toBeVisible();
   await expect(page.getByText('Material nicht freigegeben')).toBeVisible();
 
   await page.getByRole('button', { name: 'Lieferung erfassen' }).click();
-  await page.getByLabel('Menge (STUECK)').fill('2');
-  await page.getByLabel('Charge').fill('CH-2');
-  await page.getByLabel('Schmelznummer').fill('SM-2');
+  const position = page.getByRole('group', { name: /Stahlträger/ });
+  await position.getByLabel('Menge (STUECK)').fill('2');
+  await position.getByLabel('Charge', { exact: true }).fill('CH-2');
+  await position.getByLabel('Schmelznummer').fill('SM-2');
   await page.getByRole('button', { name: 'Lieferung erfassen' }).last().click();
-  await expect(page.getByText('4 von 5 geliefert · 0 offen')).toBeVisible();
+  await expect(page.getByText('4 von 5 geliefert · 1 offen')).toBeVisible();
   expect(createdPayloads[0]).toMatchObject({ version: 5, positionen: [{ bestellPositionId: 9, menge: 2, charge: 'CH-2', projektAnteile: [{ bedarfId: 15, version: 2, menge: 2 }] }] });
 
   await page.getByRole('button', { name: /Zeugnisse und Prüfung anzeigen/ }).click();
@@ -93,6 +94,7 @@ test('erfasst die zweite Teillieferung und ordnet ein Zeugnis mehreren Chargen z
   await page.getByRole('button', { name: 'Prüfung speichern' }).click();
   await expect(page.getByText('Nur Personen mit Zeugnis-Prüfrecht können Zeugnisse prüfen und Material freigeben.')).toHaveCount(0);
   expect(fremdeAntworten).toEqual([]);
+  await page.getByRole('button', { name: 'Aktualisieren' }).scrollIntoViewIfNeeded();
   await designPruefung(page, testInfo, 'einkauf-lieferungen', { primaerAktion: page.getByRole('button', { name: 'Aktualisieren' }) });
 });
 

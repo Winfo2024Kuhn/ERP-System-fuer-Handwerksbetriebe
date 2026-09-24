@@ -60,5 +60,6 @@ test('gleicht eine Teilrechnung ab und legt eine Reklamation mit echten Bestellb
   await expect(page.getByText('Reklamation mit Belegbezug erstellt.')).toBeVisible();
   expect(belegPayloads[1]).toMatchObject({ bestellungId: 73, bestellPositionId: 9, rechnungId: 60 });
   expect(fremdeAntworten).toEqual([]);
+  await page.getByRole('button', { name: 'Aktualisieren' }).scrollIntoViewIfNeeded();
   await designPruefung(page, testInfo, 'einkauf-rechnungsabgleich', { primaerAktion: page.getByRole('button', { name: 'Aktualisieren' }) });
 });

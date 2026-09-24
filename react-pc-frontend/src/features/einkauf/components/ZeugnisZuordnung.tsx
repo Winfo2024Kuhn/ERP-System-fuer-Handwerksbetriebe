@@ -64,7 +64,7 @@ export function ZeugnisZuordnung({ bestellungId }: { bestellungId: number }) {
     }
     setSpeichert(true); setFehler('');
     try {
-      await Promise.all(selectedExpected.map(expected => einkaufApi.post(
+      await Promise.all(selectedExpected.map(expected => einkaufApi.postVoid(
         `/api/einkauf/zeugnisse/${expected.id}/eingang/${datei.dateiId}`, {})));
       const response = await einkaufApi.post<ZeugnisZuordnungResponse>(`/api/einkauf/zeugnisse/${datei.dateiId}/zuordnen`, {
         dokumentId: datei.dateiId,

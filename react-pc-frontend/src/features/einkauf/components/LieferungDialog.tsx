@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../components/ui/button';
+import { DatePicker } from '../../../components/ui/datepicker';
 import { DecimalInput } from '../../../components/ui/decimal-input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 import { Input } from '../../../components/ui/input';
 import { useToast } from '../../../components/ui/toast';
+import { heuteIso, parseIsoDatum } from '../../../lib/datum';
 import { validateDecimalInput } from '../../../lib/numberInput';
 import { einkaufApi } from '../api';
 import type { BestellungMitNachweisen, Bestellmenge, Lieferung } from '../bestellTypes';
@@ -12,7 +14,6 @@ import type { BestellBelegDatei } from '../belegApi';
 
 interface ZeileEntwurf { menge: string; charge: string; schmelznummer: string }
 interface Props { bestellungId: number; onClose: () => void; onSaved: () => void }
-const isoHeute = () => new Date().toLocaleDateString('sv-SE');
 
 export function LieferungDialog({ bestellungId, onClose, onSaved }: Props) {
   const toast = useToast();
@@ -20,7 +21,7 @@ export function LieferungDialog({ bestellungId, onClose, onSaved }: Props) {
   const [mengen, setMengen] = useState<Bestellmenge[]>([]);
   const [lieferungen, setLieferungen] = useState<Lieferung[]>([]);
   const [zeilen, setZeilen] = useState<Record<number, ZeileEntwurf>>({});
-  const [datum, setDatum] = useState(isoHeute());
+  const [datum, setDatum] = useState(heuteIso);
   const [lieferschein, setLieferschein] = useState<BestellBelegDatei | null>(null);
   const [fehler, setFehler] = useState('');
   const [laedt, setLaedt] = useState(true);
@@ -62,8 +63,9 @@ export function LieferungDialog({ bestellungId, onClose, onSaved }: Props) {
 
   const speichern = async () => {
     if (!bestellung || !revision) { setFehler('Es gibt keine angenommene Bestellfassung für den Wareneingang.'); return; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(datum) || Number.isNaN(Date.parse(`${datum}T12:00:00`))) {
-      setFehler('Bitte geben Sie das Eingangsdatum im Format JJJJ-MM-TT ein.'); return;
+    if (!parseIsoDatum(datum)) {
+      const message = 'Bitte wählen Sie ein gültiges Eingangsdatum aus.';
+      setFehler(message); toast.error(message); return;
     }
     const positions: Array<{ bestellPositionId: number; menge: number; charge: string | null; schmelznummer: string | null; projektAnteile: Array<{ bedarfId: number; version: number; menge: number }> }> = [];
     const needRemaining = new Map(openByNeed);
@@ -115,7 +117,7 @@ export function LieferungDialog({ bestellungId, onClose, onSaved }: Props) {
       {laedt ? <p role="status">Bestellung wird geladen …</p> : !revision ? <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">Für diese Bestellung liegt keine angenommene Fassung vor.</p> : <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
         <p className="text-sm text-slate-700">Bestellung {bestellung?.nummer} · angenommene Fassung {revision.nummer}</p>
         <label className="block text-sm font-medium text-slate-700">Eingangsdatum
-          <Input aria-label="Eingangsdatum" type="text" inputMode="numeric" placeholder="JJJJ-MM-TT" value={datum} onChange={event => setDatum(event.target.value)} />
+          <DatePicker aria-label="Eingangsdatum" value={datum} onChange={setDatum} required disabled={speichert} />
         </label>
         <BelegAuswahl bestellungId={bestellungId} typ="LIEFERSCHEIN" value={lieferschein} onChange={setLieferschein} />
         {revision.positionen.map(line => {

@@ -34,8 +34,9 @@ it('erfasst eine Teillieferung mit positiver Menge, Charge und Bestellungsversio
   await userEvent.type(await screen.findByLabelText('Menge (STUECK)'), '2');
   await userEvent.type(screen.getByLabelText('Charge'), 'CH-1');
   await userEvent.type(screen.getByLabelText('Schmelznummer'), 'SM-1');
-  await userEvent.clear(screen.getByLabelText('Eingangsdatum'));
-  await userEvent.type(screen.getByLabelText('Eingangsdatum'), '2026-09-24');
+  await userEvent.click(screen.getByRole('button', { name: /Eingangsdatum/ }));
+  await userEvent.type(screen.getByPlaceholderText('TT.MM.JJJJ'), '24.09.2026');
+  await userEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
   await userEvent.click(screen.getByRole('button', { name: 'Lieferung erfassen' }));
 
   await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
