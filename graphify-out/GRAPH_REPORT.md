@@ -1,16 +1,16 @@
 # Graph Report - ERP-System-fuer-Handwerksbetriebe  (2026-09-24)
 
 ## Corpus Check
-- 2297 files · ~1,479,798 words
+- 2342 files · ~1,515,348 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 20714 nodes · 71653 edges · 638 communities (411 shown, 112 thin omitted)
-- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 8942 edges (avg confidence: 0.81)
+- 21009 nodes · 72360 edges · 616 communities (410 shown, 91 thin omitted)
+- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 8955 edges (avg confidence: 0.81)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `cff134f7`
+- Built from commit: `d2402dac`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,78 +22,78 @@
 - KontoMailTransportTest
 - index.tsx
 - org.springframework.data.jpa.repository.Query
-- EmailAttachmentProcessingServiceTest
+- EmailAttachmentProcessingService
 - einkauf/types.ts
 - EinkaufBestellWorkflowRegressionTest
-- card.tsx
+- DokumentUebersichtEditor.tsx
 - AnfrageRevision
-- org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
-- Kategorie
+- AusgangsGeschaeftsDokumentAudit
+- LieferantRolle
 - EinkaufZeugnisErwartung
 - LieferantDokument
 - VoiceInputButton.tsx
 - EmailSettingsSection.tsx
 - ProjektEditor.tsx
 - Profilform
-- EinkaufBestellungService
+- EinkaufBestellung
 - EinkaufOutboxService
 - FormularwesenMain.tsx
-- org.springframework.test.web.servlet.MockMvc
+- Verrechnungseinheit
 - EinkaufPdfPositionsRenderer
 - AusgangsGeschaeftsDokumentErstellenDto
-- org.springframework.transaction.annotation.Transactional
+- lombok.RequiredArgsConstructor
 - cn
-- BelegVorschlagServiceTest
-- Verbrauchsgegenstand
+- Kostenstelle
+- ZaehlerstandErfassungsPdfService
 - AutoAuftragsbestaetigungVersandServiceTest
 - VerrechnungslohnRechnerDialog.tsx
-- ArtikelSearchModal.tsx
+- LieferantenDetailsModal.tsx
 - Beleg
-- EmailThreadEntryDtoSerialisierungTest
+- BestellungEditor.tsx
 - BestellungenUebersicht.tsx
 - .annehmen
 - Mietobjekt
-- BelegServiceTest
+- HiCadImportService
 - ArtikelSuche.tsx
 - OffenePostenController
 - EinkaufDateiService
 - EmailDraftService
 - KundenDetailService
 - EinstellungenPage.test.tsx
-- LieferantReklamationController
+- LieferantenController
 - com.fasterxml.jackson.databind.JsonNode
-- EinkaufKommunikationService
+- EinkaufMailantwortVorschau
 - ProjektGeschaeftsdokument
 - index.test.tsx
 - BeitraegeWebsiteClientTest
-- org.springframework.http.ResponseEntity
+- org.springframework.web.bind.annotation.GetMapping
 - EmailKiClassificationServiceTest
-- useToast
+- react-pc-frontend/src/components/ui/toast.tsx
 - .bucheAbwesenheit
-- EinkaufBedarfRepository
+- EinkaufMengenService
 - design_system.py
 - AutoAuftragsbestaetigungVersandService
-- BelegPosition
+- EinkaufPositionService
 - BestellungPosition
-- BelegeKasseExportPdfService.java
+- BestellungPdfService
 - DatensatzLockService
-- Anfrage
-- .freigeben
-- .toDto
-- EinkaufBestellung
-- org.springframework.web.bind.annotation.ExceptionHandler
+- AnfrageController
+- EinkaufKommunikationService
+- org.springframework.web.bind.annotation.PostMapping
+- EinkaufBestellfreigabeService
+- jakarta.servlet.http.HttpServletRequest
 - ZeitkontoWechselService
 - AutoMahnVersandServiceTest
-- ZeitkontoPausenServiceTest
+- ZeitkontoService
 - PreisUebernahmeServiceTest
-- VerrechnungslohnServiceTest
+- ZeitkontoVersion
 - useDokumentVerlauf.ts
 - Mitarbeiter
 - LangzeitkrankmeldungServiceTest
 - DateiSpeicherService
-- DokumentFreigabeService
+- AusgangsGeschaeftsDokumentService
 - .buche
-- org.springframework.data.jpa.repository.JpaRepository
+- Zeitbuchung
 - MietabrechnungPdfService
 - LeistungCreateDto
 - react-pc-frontend/package.json
@@ -102,65 +102,65 @@
 - LieferantEmailResolver
 - WebsiteAnalyticsSnapshot
 - BounceErkennungServiceTest
-- SvSatzTyp
+- Lieferanten
 - lombok.Data
 - StandaloneRagIndexer
 - BelegService
-- Kostenposition
+- SystemSettingsController
 - Textbaustein
 - EinkaufBedarf
 - ArtikelImportService
-- LieferantEinkaufKontakt
+- LieferantEinkaufKontaktService
 - UrlaubsantragService
-- ArtikelDokumentService
-- MitarbeiterStundenlohnDto
-- BeitraegeWebsiteClient
-- ArtikelControllerTest
-- ZeiterfassungApiService
+- org.springframework.core.io.Resource
+- MitarbeiterService
+- org.springframework.http.ResponseEntity
+- ArtikelWerkstoffe
+- ZeiterfassungApiServiceZeitkontoTest
 - ArtikelService
 - AnfrageNotizenPage.tsx
-- .zaehle
+- org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 - LieferantVorauskasseAutoAssignerTest
 - src/types.ts
 - ArbeitszeitartDto
 - EinkaufVergleichService
-- Paragraph
+- BelegeKasseExportPdfService
 - artikel_dokumenttexte_backfill.py
-- EmailTextTemplate
+- EmailTextTemplateController.java
 - org.junit.jupiter.params.ParameterizedTest
 - feldmann_import.py
 - Monatsabschluss.tsx
-- Projekt
-- RechnungsuebersichtController
+- ProjektRepository
+- RechnungsuebersichtService
 - EinkaufLagerentnahme
 - BestellungsUebersichtController
 - Krankenkasse
 - Leistungseditor.tsx
-- AngebotPosition
-- ZeitkontoKorrektur
-- DatevExportService
-- EinkaufMengenbuchung
-- KalenderEintrag
+- AnfragePosition
+- org.springframework.data.jpa.repository.JpaRepository
+- DatevExportServiceTest
+- AusgangsGeschaeftsDokumentController
+- KalenderService
 - ScannerModal.tsx
-- Lieferanten
+- LieferantenArtikelPreise
 - LocalRagService
-- AngebotVersion
-- Gerendert
-- AnfrageFunnelServiceTest
-- .assignToProjekt
+- EinkaufAngebotService
+- EinkaufFaelligkeitDto
+- AnfrageFunnelService
+- ZeiterfassungApiService
 - SchrittText.tsx
 - UnifiedEmailControllerTest
 - EinkaufVorlagenService
-- hilfen/api.ts
-- FirmeninformationService
+- website-design.spec.ts
+- .render
 - StuecklistePdfService
 - SteuerberaterKontakt
-- KasseDatevExportServiceTest
+- SteuerberaterExportService
 - .generatePdf
 - README.md
-- BeitragAssistent.tsx
-- SpamModelStats
-- HiCadImportService
+- bildbearbeitung.ts
+- procurementMock.ts
+- HiCadImportService.java
 - RAG-Indexierung manuell (ohne Server)
 - KundeController
 - GaebImportService
@@ -168,84 +168,84 @@
 - OfflineService.ts
 - EmailImportServiceTest
 - SteuerberaterEmailProcessingService
-- GeminiDokumentAnalyseService
+- ProjektAuswertungPdfServiceTest
 - UI/UX Pro Max - Design Intelligence
-- Gewerk
+- ByteArrayResource
 - .invokeZugferdExtraktion
-- jakarta.persistence.Entity
-- org.springframework.data.jpa.repository.Lock
-- KassenbuchungService
-- SpamFilterService
+- EinkaufAnalyseJob
+- EinkaufAntwortZuordnungService
+- Art
+- ArtikelController
 - compilerOptions
-- Zeitbuchung
+- ProjektManagementService
 - AnfrageFunnelSpamFilterServiceTest
 - TagesbuchungenPage.tsx
 - devDependencies
 - compilerOptions
-- TagesSollService
-- .render
+- FeiertagService
+- EmailController
 - BelegKiAnalyseServiceTest
 - EmailSignature
-- SchnittbilderRepository
+- ArtikelDokument
 - lieferant-layout.spec.ts
 - dependencies
 - PositionSnapshot
 - KassenbuchAbschlussServiceTest
 - dokument-editor-seite.spec.ts
 - LocalTestDatabaseGuardTest
-- Verteilungsschluessel
+- AngebotVersion
 - .findFirmeninformation
 - devDependencies
 - DatevDto
 - BelegScannerPage.tsx
 - SpracheingabeServiceTest
-- EmailThreadService
-- ContentBlockDto
-- Dokumenttyp
-- EmailImportService
-- SteuerberaterExportService
+- ZeitbuchungAutoStopServiceTest
+- org.junit.jupiter.api.Nested
+- Paragraph
+- VendorInvoiceIntegrationService
+- AngebotPosition
 - .nettoNachRabatt
 - EmailAbsender
-- @playwright/test
-- .handleIncomingEmail
+- react-zeiterfassung/e2e/hilfen/design.ts
+- ArtikelControllerTest
 - compilerOptions
 - compilerOptions
 - EmailBackfillEventListener
-- BeitragKiServiceTest
-- EinkaufVersandauftragRepository
-- .beleg
+- BeitragKiService
+- EinkaufAngebotsAnalyseServiceTest.java
+- EmailTextvorlagenEditor.tsx
 - TagesSheet.tsx
 - MitarbeiterEditor.tsx
-- SpamBayesService
-- MitarbeiterService
+- WebPushService
+- ErfolgsanalyseEditor.tsx
 - compilerOptions
 - OutOfOfficeResponder
-- react-pc-frontend/src/App.tsx
+- useToast
 - EmailSignatureServiceTest
-- VerrechnungslohnService
+- KundeControllerTest.java
 - MonatsSaldoService
-- .findeDuplikate
-- .erstelleEmail
+- KundeControllerTest
+- SystemSettingsControllerDokumentMailTest
 - MietabrechnungValidationException
 - What You Must Do When Invoked
 - RechnungPdfService
-- LieferantDokumentTypConverter
+- EinkaufZeugnisDto
 - LieferantenControllerTest
-- .aktualisiereDokumenttexte
+- Artikel
 - projekt-detail-layout.spec.ts
-- BwaPosition
+- .buildMitarbeiter
 - feldmann_db_import.py
-- org.springframework.core.io.Resource
+- DatevExportService
 - ProjektAuswertungPdfService
 - uebersichten-layout.spec.ts
-- TagesSollServiceTest
-- MonatsabschlussAudit
-- EinkaufMailZuordnungRecoveryIntegrationTest
-- MieteMapper
-- useConfirm
+- TagesSollService
+- LodasDateiWriter
+- AngebotKostenbestandteil
+- Verbrauchsart
+- PhasenZeitleiste.tsx
 - BelegPdfService
 - .speichern
-- EmailAttachmentProcessingService
+- Projekt
 - email
 - Projekt-Kontext: Open-Source ERP für Handwerksbetriebe
 - toast-bei-dialog.spec.ts
@@ -255,18 +255,18 @@
 - kalenderDaten.ts
 - org.springframework.context.annotation.Bean
 - InsightsTab.tsx
-- ZugferdDaten
+- PdfAiExtractorService
 - SystemSettingsService
 - sw.ts
-- KassenbuchController
-- org.springframework.core.annotation.Order
-- org.junit.jupiter.api.AfterEach
+- EinkaufVergleichService.java
+- CloudflareAccessJwtFilter
+- LocalTestAfterCommitAsyncTest.java
 - launcher.ps1
 - BelegKostenstellenAnteil
-- AbteilungDokumentBerechtigungRepository
+- EinkaufRechnungsabgleichWorkflowTest
 - dependencies
 - Zeitkontenmodell
-- LieferantenDetailService
+- LoadDetails
 - bearbeiten-leiste.spec.ts
 - lieferant-dokument-modal.spec.ts
 - scripts
@@ -276,47 +276,47 @@
 - MwstRechnerPage.tsx
 - .mcp.json
 - mvnw
-- KasseShortcutController
-- LoadDetails
+- DatevExportMysqlTest
+- .computeEntryHash
 - SteuerberaterBelegExportModal.tsx
-- .save
+- .berechne
 - MockIntersectionObserver
-- ZeitbuchungAudit
+- ZeitverwaltungController
 - OpenFile Launcher - Installations-Paket
 - OllamaServiceTest
-- MitarbeiterController
+- idsBridge.ts
 - BeitraegeTab.test.tsx
 - BeitragRichtextEditor.tsx
 - MockIntersectionObserver
 - Phase 2: Zweiter unabhängiger Review (Gegenchecks)
-- ZeiterfassungFilterChainMatcherTest
-- .findSingleton
-- MonatsabschlussUebersichtService
-- BeitragAssistent.test.tsx
+- idsBridge.test.ts
+- Direkt
+- MonatsSaldo
+- BeitragAssistent.tsx
 - backup-database.ps1
 - install-scheduled-tasks.ps1
 - BwaUpload
 - scripts
-- EntityLastAccessed
+- jakarta.persistence.Entity
 - Review & Ship (parallelisiert)
-- org.springframework.security.test.context.support.WithMockUser
+- DokumentGeneratorController
 - .put
 - email-center-layout.spec.ts
-- org.springframework.context.annotation.Import
-- Kostenstelle
-- .fuehreMahnlaufAus
+- org.springframework.test.web.servlet.MockMvc
+- KalenderEintrag
+- .vergleichen
 - start-kalkulationsprogramm.ps1
 - update-production.ps1
 - rag-index.sh
-- EmailSignatureService
+- NamedTemplates
 - ListFolders
-- TextbausteinDto
+- org.springframework.scheduling.annotation.Async
 - EmailProcessingType
 - .sanitizePlainText
 - V345__stammdaten_aluminium.sql
-- TextbausteinEditor.tsx
+- Kundeneditor.tsx
 - Lieferantenarten
-- EinkaufAudit
+- PreiseEintragenModal.tsx
 - EmailHashUtil
 - V347__stammdaten_rohrvarianten.sql
 - V351__kassenbuch_festschreibung.sql
@@ -330,7 +330,7 @@
 - EmailBodyExtractionException
 - SECURITY.md
 - V208__spam_bayes_model.sql
-- DatevExportController
+- .exportieren
 - neue-buchung.spec.ts
 - lieferant_dokument_projekt_anteil
 - V217__formular_template_textbaustein_default.sql
@@ -352,14 +352,15 @@
 - V348__artikelnummern_und_suchtext_bestand.sql
 - V360__lieferantenpreise_100er_staffel_wuerth.sql
 - V363__datensatz_lock.sql
-- .plainTextToHtml
+- DatevKonfiguration
 - org.example:Kalkulationsprogramm
 - projekt_geschaeftsdokument
-- FirmaController
-- ContactServiceTest
-- .extractFirstEmailAddress
+- org.springframework.transaction.annotation.Transactional
+- ids.ts
+- serverPlugin.ts
+- ArbeitsgangErstellenDto
 - zeitbuchung
-- EmailImportIdentitaet
+- .laden
 - firmeninformation
 - firmeninformation
 - einkauf_bedarf
@@ -374,11 +375,11 @@
 - BelegKiKostenkontoServiceTest
 - 📦 update-production.ps1
 - Kalkulationsprogramm - Deployment Guide
-- LieferantDokumentProjektAnteil
+- BestellBestaetigung
 - Ablauf
 - Security-Audit
 - Repository Guidelines
-- website/api.ts
+- EinkaufAngebotServiceTest
 - V377__einkauf_berechtigungen.sql
 - V383__einkauf_mailkonto.sql
 - EinkaufVorlagenMigrationMysqlTest
@@ -389,7 +390,7 @@
 - Projekt-Kontext: Open-Source ERP für Handwerksbetriebe
 - Button Design Guidelines
 - Sicherheitstests (OWASP Top 10)
-- DocumentEditorHeader.tsx
+- .policy
 - Monatsabschluss
 - Bugfix-Workflow
 - graphify reference: extra exports and benchmark
@@ -405,8 +406,8 @@
 - kasse-refactoring.spec.ts
 - Kriterien für loese-problem (Coding + Review, gemeinsame Quelle)
 - Dokumentations-Sync
-- BereitsBezahlteRechnungOhneFaelligkeitsdatum
-- Transkribieren
+- ZugferdExtractorServiceTest
+- LocalTestDatabaseGuard
 - mitarbeiter
 - VerfahrensdokumentationService
 - langzeitkrankmeldungen.spec.ts
@@ -419,7 +420,7 @@
 - New Feature Workflow Skill
 - Pre-Merge Testing Skill
 - KassenbuchungControllerTest
-- SteuerpruefungZ3ExportService
+- EinkaufBelegService
 - WebConfig
 - Backend & Architektur-Richtlinien
 - Scheduled Tasks
@@ -432,9 +433,9 @@
 - Sicherheits- & Datenschutz-Richtlinien
 - graphify reference: add a URL and watch a folder
 - graphify reference: commit hook and native CLAUDE.md integration
-- EinkaufMailkonto
+- LocalTestMailPolicy
 - Kontext-Log für loese-problem
-- Typ
+- LocalTestAfterCommitAsyncTest
 - Konfiguration
 - Manuelle Script-Ausführung
 - React + TypeScript + Vite
@@ -445,36 +446,35 @@
 - Plan-Format für loese-problem
 - Wartung
 - Voraussetzungen
-- org.springframework.stereotype.Component
+- EmailImportService
 - extraction-spec.md
-- Snapshot
-- MonatsabschlussUebersichtDto
+- EinkaufBerechtigungService
+- .fixture
 - react-zeiterfassung/src/components/ui/toast.tsx
-- DokumentnummerService
+- ZeiterfassungKalender.test.tsx
 - Produktkategorie
 - react-zeiterfassung/src/App.tsx
-- zeitkonto-task-9b.spec.ts
-- BelegAuswahl.tsx
-- Zahlungsart
+- @playwright/test
+- V367SchemaTest
+- MwstRechnerService
 - MonatsabschlussBerechtigungServiceTest
-- LangzeitkrankmeldungRepositoryTest
-- GeminiDokumentAnalyseServiceTest
+- .zaehlerAusAuftragsnummer
+- ObjectMapper
 - DatabaseConstraintMetadataService
-- urlaubsantrag-krankmeldung-hinweis.spec.ts
-- LoeschGrund
-- react-chartjs-2
+- DatevPersonalnummer
+- react-router-dom
+- tailwind-merge
 - react
 - .erstelleKunde
 - kassenbuch-journal.spec.ts
 - @tiptap/extension-text-align
-- @tiptap/extension-underline
-- org.springframework.core.task.TaskExecutor
-- LieferantDokumentRepositorySearchTest
+- @eslint/js
+- org.springframework.scheduling.annotation.EnableAsync
+- @testing-library/jest-dom
 - eslint-plugin-react-hooks
-- jsdom
-- @testing-library/user-event
+- @types/react-dom
+- typescript
 - @types/node
-- vite
 - eslint
 - Playwright-Design-Prüfung
 - eslint-plugin-react-hooks
@@ -485,12 +485,10 @@
 - vite
 - @vitejs/plugin-basic-ssl
 - email-draft-attachments.spec.ts
-- ZugferdExtractorService
-- BelegController
-- WebsiteAnalyticsSnapshotService
+- .findCaller
 - ProjektSimple
-- DateiControllerTest
-- .setupStandardMocks
+- BildVorschauService
+- MonatsSaldoServiceTest
 - DatevBereich
 - V381__hicad_bedarfsimport.sql
 - @eslint/js
@@ -498,45 +496,25 @@
 - materialkosten
 - vitest
 - ValuePlaceholderKonfigurationTest.java
-- .typFuer
-- VerrechnungslohnUebernehmenRequest
 - Lohnabrechnung
-- LieferantMapperTest
 - DatevBereich.test.tsx
-- OutOfOfficeController
-- .baueMahnPdf
-- SchnittbilderController
-- .beleg
+- VorlagenDaten
+- Kategorie
 - JahresvergleichCharts.tsx
-- Abwesenheit
+- AbwesenheitRepository
 - artikel_in_projekt
-- .parseAntwort
+- EinkaufAngebotsAnalyseService
 - ZeitkontoMigrationTest
-- .archiviereVersandteEmail
 - Config
-- Anrede
-- .testAuth
-- Subscribe
-- .status
 - AenderungsgrundKatalog
 - App.benachrichtigungen.test.ts
 - LohnabrechnungServiceTest
-- .teilfeld
 - DokumentnummerCounter
-- @tiptap/extension-highlight
 - @tiptap/starter-kit
-- EmailHtmlBackfillRunner
-- @vitest/coverage-v8
-- .loescheGewerk
-- .delete
-- EmailBlacklistEntry
+- org.springframework.stereotype.Component
 - LohnQuelle
-- MitarbeiterNotiz
-- IdEmailOnly
-- Filters
-- .draftError
 - beleg-pruefen.spec.ts
-- website/api.test.ts
+- SchrittBilder.tsx
 - useVerlaufTastatur
 
 ## God Nodes (most connected - your core abstractions)
@@ -544,9 +522,9 @@
 2. `Email` - 269 edges
 3. `Lieferanten` - 254 edges
 4. `Projekt` - 248 edges
-5. `useToast()` - 226 edges
-6. `cn()` - 208 edges
-7. `Button()` - 175 edges
+5. `useToast()` - 245 edges
+6. `cn()` - 225 edges
+7. `Button()` - 185 edges
 8. `Artikel` - 167 edges
 9. `Beleg` - 165 edges
 10. `EmailRepository` - 153 edges
@@ -566,447 +544,447 @@
 ## Import Cycles
 - None detected.
 
-## Communities (638 total, 112 thin omitted)
+## Communities (616 total, 91 thin omitted)
 
 ### Community 0 - "org.junit.jupiter.api.Test"
 Cohesion: 0.01
-Nodes (52): org.junit.jupiter.api.Test, RestExceptionHandlerTest, Testentitaet, AnalyticsSnapshotIngressControllerTest, EinkaufBestellfreigabeSecurityTest, EinkaufKommunikationControllerTest, EmailDraftControllerTest, ZeitkontoPausenMigrationTest (+44 more)
+Nodes (60): org.junit.jupiter.api.Test, AntwortVorschau, RestExceptionHandlerTest, Testentitaet, AnalyticsSnapshotIngressControllerTest, EinkaufBestellfreigabeSecurityTest, EinkaufKommunikationControllerTest, EmailDraftControllerTest (+52 more)
 
 ### Community 1 - "org.junit.jupiter.api.DisplayName"
 Cohesion: 0.01
-Nodes (120): org.junit.jupiter.api.DisplayName, org.junit.jupiter.api.Nested, EmailBeautifyRequest, FormularTemplateSaveRequest, FormularTemplateUpdateRequest, MitarbeiterErstellenDto, Liste, Loeschen (+112 more)
+Nodes (113): org.junit.jupiter.api.DisplayName, org.springframework.util.AntPathMatcher, EmailBeautifyRequest, FormularTemplateUpdateRequest, MitarbeiterErstellenDto, UrlaubsHinweiseSicherheitTest, ZeiterfassungFilterChainMatcherTest, MockMultipartFile (+105 more)
 
 ### Community 2 - ".erstelleEmail"
 Cohesion: 0.04
 Nodes (17): AllCapsBetreff, BekannteKundenEmails, DomainBlacklist, EnsembleIntegration, ErstkontaktHeuristik, GefaehrlicheDateitypen, ImageSpam, IsSpamMethode (+9 more)
 
 ### Community 3 - "lombok.Getter"
-Cohesion: 0.03
-Nodes (58): jakarta.validation.constraints.AssertTrue, lombok.Getter, lombok.Setter, ArtikelHilfsstoffe, DatevPersonalnummer, Entity, Table, Entity (+50 more)
+Cohesion: 0.02
+Nodes (79): lombok.Getter, lombok.Setter, GetMapping, ArtikelHilfsstoffe, Entity, LieferantBild, Entity, PrePersist (+71 more)
 
 ### Community 4 - "KontoMailTransportTest"
-Cohesion: 0.06
-Nodes (19): org.junit.jupiter.api.AfterAll, org.junit.jupiter.api.BeforeAll, SecureRandom, Override, KontoZugang, Ausgang, ABBRUCH_NACH_DATA, ABGELEHNT_NACH_DATA (+11 more)
+Cohesion: 0.07
+Nodes (17): org.junit.jupiter.api.AfterAll, org.junit.jupiter.api.BeforeAll, SecureRandom, Ausgang, ABBRUCH_NACH_DATA, ABGELEHNT_NACH_DATA, ANGENOMMEN, AUTH_FEHLER (+9 more)
 
 ### Community 5 - "index.tsx"
 Cohesion: 0.02
-Nodes (204): AlternativGruppeBox(), AlternativGruppeBoxProps, AlternativGruppeDialog(), AlternativGruppeDialogProps, props, CLOSURE_BLOCK_ID, gruppenNameVergeben(), gruppiereAlsAlternativen() (+196 more)
+Nodes (187): AlternativGruppeBox(), AlternativGruppeBoxProps, AlternativGruppeDialog(), AlternativGruppeDialogProps, props, CLOSURE_BLOCK_ID, gruppenNameVergeben(), gruppiereAlsAlternativen() (+179 more)
 
 ### Community 6 - "org.springframework.data.jpa.repository.Query"
-Cohesion: 0.03
-Nodes (21): org.springframework.data.jpa.repository.Modifying, org.springframework.data.jpa.repository.Query, org.springframework.data.jpa.repository.QueryHints, Email, EmailDirection, IN, OUT, EmailProcessingStatus (+13 more)
+Cohesion: 0.02
+Nodes (47): org.mockito.ArgumentCaptor, org.mockito.junit.jupiter.MockitoSettings, org.springframework.data.jpa.repository.Query, org.springframework.data.jpa.repository.QueryHints, CategoryDto, Authentication, NotificationController, NotificationSummaryDto (+39 more)
 
-### Community 7 - "EmailAttachmentProcessingServiceTest"
-Cohesion: 0.15
-Nodes (12): AtomaresDokumentErstellen, BackfillXmlAufPdf, BereitsVerarbeiteteAnhaenge, DateipfadAufloesung, DokumenttypErkennung, EmailAttachmentProcessingServiceTest, EmailAttachment, LieferantDokumentTyp (+4 more)
+### Community 7 - "EmailAttachmentProcessingService"
+Cohesion: 0.10
+Nodes (17): EmailAttachmentProcessingService, EmailAttachment, LieferantDokument, LieferantDokumentTyp, org.springframework.transaction.annotation.Transactional, AtomaresDokumentErstellen, BackfillXmlAufPdf, BereitsVerarbeiteteAnhaenge (+9 more)
 
 ### Community 8 - "einkauf/types.ts"
 Cohesion: 0.01
-Nodes (191): EXC_LABEL, MaterialbestellungModal(), MaterialbestellungModalProps, PositionRow(), PositionRowProps, ProjektRef, ZuschnittBlockProps, Projekt (+183 more)
+Nodes (144): AnfrageAngeboteEintrag, Angebotssumme, AngebotsVergleichDaten, AngebotVersionMitPositionsIds, Vergleich, VergleichsRechenschritt, bedarf(), detail() (+136 more)
 
 ### Community 9 - "EinkaufBestellWorkflowRegressionTest"
-Cohesion: 0.12
-Nodes (21): EinkaufBestellWorkflowRegressionTest.Config, ExternerNachweis, Aenderung, Direkt, Entwurf, Klaerung, Pruefung, Detail (+13 more)
+Cohesion: 0.15
+Nodes (15): EinkaufBestellWorkflowRegressionTest.Config, Vorschau, ExternerNachweis, Aenderung, Entwurf, Freigabe, Transactional, VersandDto (+7 more)
 
-### Community 10 - "card.tsx"
+### Community 10 - "DokumentUebersichtEditor.tsx"
 Cohesion: 0.02
-Nodes (132): AusgangsrechnungUploadModal(), DocumentPreviewModal(), PreviewDoc, Eingangsrechnung, EingangsrechnungenTab(), EingangsrechnungenTabProps, formatDate(), formatEuro() (+124 more)
+Nodes (104): AngeboteEinholenModal(), AngeboteEinholenModalProps, BedarfPosition, defaultFristIso(), firstProjektIdAusAuswahl(), firstProjektIdVon(), firstProjektName(), formatMenge() (+96 more)
 
 ### Community 11 - "AnfrageRevision"
 Cohesion: 0.06
-Nodes (18): AnfrageRevision, Entity, Table, Einkaufsanfrage, Entity, Table, org.springframework.data.jpa.repository.EntityGraph, NachfrageEntwurf (+10 more)
+Nodes (18): AnfrageRevision, Entity, Table, Einkaufsanfrage, Entity, Table, AnfrageRevisionRepository, org.springframework.data.jpa.repository.EntityGraph (+10 more)
 
-### Community 12 - "org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest"
-Cohesion: 0.04
-Nodes (53): org.junit.jupiter.api.condition.EnabledIfSystemProperty, org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase, org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest, org.springframework.jdbc.core.JdbcTemplate, org.springframework.test.context.ActiveProfiles, org.springframework.test.context.DynamicPropertyRegistry, org.springframework.test.context.DynamicPropertySource, org.springframework.test.context.TestPropertySource (+45 more)
+### Community 12 - "AusgangsGeschaeftsDokumentAudit"
+Cohesion: 0.06
+Nodes (26): org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase, org.springframework.test.context.ActiveProfiles, org.springframework.test.context.TestPropertySource, AusgangsGeschaeftsDokumentAudit, Entity, Table, AusgangsGeschaeftsDokumentAuditAktion, DIGITAL_ANGENOMMEN (+18 more)
 
-### Community 13 - "Kategorie"
-Cohesion: 0.07
-Nodes (20): Entity, Inheritance, Table, Kategorie, LieferantRolle, ALUMINIUM_NE, BESCHICHTUNG_VERZINKEN, EDELSTAHL (+12 more)
+### Community 13 - "LieferantRolle"
+Cohesion: 0.08
+Nodes (18): ArtikelKategorieController, LieferantRolle, ALUMINIUM_NE, BESCHICHTUNG_VERZINKEN, EDELSTAHL, FERTIGTEILE_ZUKAUF, IT, LACKIERER (+10 more)
 
 ### Community 14 - "EinkaufZeugnisErwartung"
-Cohesion: 0.02
-Nodes (59): Dokumentart, CE_NACHWEIS, LEISTUNGSERKLAERUNG, ZEUGNIS_2_1, ZEUGNIS_2_2, ZEUGNIS_3_1, ZEUGNIS_3_2, EinkaufAnforderungsVorlage (+51 more)
+Cohesion: 0.03
+Nodes (32): EinkaufCharge, Entity, Table, EinkaufDokumentPruefung, Entity, Table, Status, ANGENOMMEN (+24 more)
 
 ### Community 15 - "LieferantDokument"
-Cohesion: 0.05
-Nodes (25): AusgangsDokumentUebersichtDto, DokumentUebersichtController, EingangsDokumentUebersichtDto, Entity, PrePersist, Table, LieferantDokument, LieferantDokumentTyp (+17 more)
+Cohesion: 0.02
+Nodes (53): Deprecated, jakarta.persistence.AttributeConverter, jakarta.persistence.Converter, org.springframework.test.annotation.DirtiesContext, EingangsDokumentUebersichtDto, Override, LieferantDokumentTypConverter, Entity (+45 more)
 
 ### Community 16 - "VoiceInputButton.tsx"
 Cohesion: 0.07
 Nodes (27): formatiereDauer(), starteAufnahmeMock, transkribiereMock, unterstuetztMock, VoiceInputButton(), VoiceInputButtonProps, Zustand, AufnahmeSitzung (+19 more)
 
 ### Community 17 - "EmailSettingsSection.tsx"
-Cohesion: 0.07
-Nodes (38): MailkontoDraft, MailkontoFields(), MailkontoFieldsProps, MailkontoPasswordState, MailTls, passwords, value, DateiOrdnerSection() (+30 more)
+Cohesion: 0.04
+Nodes (62): IdsLieferant, IdsLieferantenAuswahlModal(), Props, form, mock, ApiErrorBody, cleanUrlInput(), extractFehlerMeldung() (+54 more)
 
 ### Community 18 - "ProjektEditor.tsx"
 Cohesion: 0.02
-Nodes (163): AddressAutocomplete(), AddressAutocompleteProps, AddressValue, dedupe(), DEFAULT_COUNTRIES, mapNominatimItem(), mapPhotonFeature(), NominatimItem (+155 more)
+Nodes (126): AnfrageSearchModal(), AnfrageSearchModalProps, mockFetch, artikelBezeichnung(), DocumentEditorHeaderProps, DocumentEditorKopfdatenProps, KontextDaten, DocumentCard() (+118 more)
 
 ### Community 19 - "Profilform"
-Cohesion: 0.05
-Nodes (31): fromValue(), Profilform, BLECH, BREITFLACHSTAHL, FLACHSTAB, HEA_PROFIL, HEB_PROFIL, HEM_PROFIL (+23 more)
-
-### Community 20 - "EinkaufBestellungService"
 Cohesion: 0.08
-Nodes (23): EinkaufBestellungController, Detail, PostMapping, PutMapping, RequestMapping, ResponseStatus, RestController, AusAngebot (+15 more)
+Nodes (25): Profilform, BLECH, BREITFLACHSTAHL, FLACHSTAB, HEA_PROFIL, HEB_PROFIL, HEM_PROFIL, I_PROFIL (+17 more)
+
+### Community 20 - "EinkaufBestellung"
+Cohesion: 0.05
+Nodes (28): PutMapping, BestellungStatus, BESTELLT, ENTWURF, GELIEFERT, STORNIERT, TEILGELIEFERT, EinkaufBestellung (+20 more)
 
 ### Community 21 - "EinkaufOutboxService"
 Cohesion: 0.04
-Nodes (35): EinkaufVersandAnnahmeereignis, Typ, VERSAND_ANGENOMMEN, EinkaufVersandauftrag, Entity, Table, EinkaufVersandversuch, Ergebnis (+27 more)
+Nodes (28): EinkaufVersandauftrag, Entity, Table, EinkaufVersandversuch, Ergebnis, ANGENOMMEN, ARCHIV_FEHLER, ARCHIVIERT (+20 more)
 
 ### Community 22 - "FormularwesenMain.tsx"
 Cohesion: 0.05
-Nodes (63): ADD_BLOCKS, BlocksSidebar(), BlocksSidebarProps, BLOCK_CATEGORIES, BLOCK_ICONS, BLOCK_LABELS, DEFAULT_ITEMS, DEFAULT_TABLE_COLUMNS (+55 more)
+Nodes (56): ADD_BLOCKS, BlocksSidebar(), BlocksSidebarProps, BLOCK_CATEGORIES, BLOCK_ICONS, BLOCK_LABELS, DEFAULT_ITEMS, DEFAULT_TABLE_COLUMNS (+48 more)
 
-### Community 23 - "org.springframework.test.web.servlet.MockMvc"
-Cohesion: 0.03
-Nodes (66): MonatsabschlussUebersichtSecurityTest.Filters, org.apache.commons.text.similarity.JaroWinklerSimilarity, org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc, org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest, org.springframework.test.web.servlet.MockMvc, ArtikelPreisHinweis, KEIN_AUFSCHLAG, KEIN_GEWICHT (+58 more)
+### Community 23 - "Verrechnungseinheit"
+Cohesion: 0.06
+Nodes (35): com.fasterxml.jackson.annotation.JsonCreator, com.fasterxml.jackson.annotation.JsonFormat, Fertigungszustand, BLANK, GEBEIZT, GESCHLIFFEN, KALTGEFERTIGT, KALTGEWALZT (+27 more)
 
 ### Community 24 - "EinkaufPdfPositionsRenderer"
-Cohesion: 0.13
-Nodes (12): com.lowagie.text.Document, com.lowagie.text.Image, Beleg, EinkaufPdfDto, PdfHerkunft, PdfKosten, PdfPosition, EinkaufPdfPositionsRenderer (+4 more)
+Cohesion: 0.09
+Nodes (16): com.lowagie.text.Document, com.lowagie.text.Image, Beleg, Datei, EinkaufBelegDto, Beleg, EinkaufPdfDto, PdfHerkunft (+8 more)
 
 ### Community 25 - "AusgangsGeschaeftsDokumentErstellenDto"
-Cohesion: 0.06
-Nodes (13): AusgangsGeschaeftsDokumentErstellenDto, Abrechnungsverlauf, Aktualisieren, Buchen, EnsureAnfrageDokument, Erstellen, AusgangsGeschaeftsDokument, org.junit.jupiter.params.ParameterizedTest (+5 more)
+Cohesion: 0.04
+Nodes (18): AusgangsGeschaeftsDokumentErstellenDto, AusgangsGeschaeftsDokumentUpdateDto, Create, Delete, UsernamePasswordAuthenticationToken, Update, Abrechnungsverlauf, Aktualisieren (+10 more)
 
-### Community 26 - "org.springframework.transaction.annotation.Transactional"
+### Community 26 - "lombok.RequiredArgsConstructor"
 Cohesion: 0.02
-Nodes (113): com.fasterxml.jackson.databind.ObjectMapper, jakarta.annotation.PostConstruct, jakarta.persistence.EntityManager, jakarta.validation.Validator, java.net.http.HttpClient, java.net.URI, java.util.regex.Pattern, java.util.zip.ZipOutputStream (+105 more)
+Nodes (94): com.fasterxml.jackson.databind.node.ArrayNode, com.fasterxml.jackson.databind.node.ObjectNode, com.fasterxml.jackson.databind.ObjectMapper, com.lowagie.text.pdf.PdfWriter, jakarta.annotation.PostConstruct, jakarta.persistence.EntityManager, jakarta.validation.Validator, java.net.http.HttpClient (+86 more)
 
 ### Community 27 - "cn"
 Cohesion: 0.02
-Nodes (193): RFC-2047, KategorieTree(), CreateReklamationModalProps, getPdfjsLib(), LivePreviewPanel(), LivePreviewPanelProps, deriveOrderRecipientName(), EmailComposeForm() (+185 more)
+Nodes (205): RFC-2047, KategorieTree(), CreateReklamationModalProps, AttachmentProps, EmailAttachmentCard(), EmailAttachmentCardProps, getAttachmentIcon(), isImageAttachment() (+197 more)
 
-### Community 28 - "BelegVorschlagServiceTest"
-Cohesion: 0.13
-Nodes (13): Pageable, BelegVorschlagService, Quelle, HISTORIE, KI, LIEFERANT_STANDARD, Vorschlaege, Vorschlag (+5 more)
+### Community 28 - "Kostenstelle"
+Cohesion: 0.09
+Nodes (20): Kostenstelle, KostenstellenTyp, GEMEINKOSTEN, LAGER, PROJEKT, SONSTIG, Pageable, KostenstelleRepository (+12 more)
 
-### Community 29 - "Verbrauchsgegenstand"
-Cohesion: 0.12
-Nodes (11): Verbrauchsgegenstand, Zaehlerstand, VerbrauchsgegenstandRepository, ZaehlerstandRepository, RaumVerbrauchService, PdfPCell, PdfPTable, ZaehlerstandErfassungsPdfService (+3 more)
+### Community 29 - "ZaehlerstandErfassungsPdfService"
+Cohesion: 0.28
+Nodes (4): Document, PdfPCell, PdfPTable, ZaehlerstandErfassungsPdfService
 
 ### Community 30 - "AutoAuftragsbestaetigungVersandServiceTest"
 Cohesion: 0.11
 Nodes (3): DefaultsForDokumenttyp, AutoAuftragsbestaetigungVersandServiceTest, AusgangsGeschaeftsDokument
 
 ### Community 31 - "VerrechnungslohnRechnerDialog.tsx"
-Cohesion: 0.06
-Nodes (37): StundensatzEditModalProps, clampPercent(), dezimal, eur, formatEingabe(), formatEur(), formatHours(), leseFehlermeldung() (+29 more)
-
-### Community 32 - "ArtikelSearchModal.tsx"
 Cohesion: 0.07
-Nodes (29): ArtikelSearchModal(), ArtikelSearchModalProps, ArtikelSuchErgebnis, formatCurrency(), formatKg(), getVerrechnungseinheitLabel(), PickerButton(), PickerButtonProps (+21 more)
+Nodes (28): clampPercent(), dezimal, eur, formatEingabe(), formatEur(), formatHours(), leseFehlermeldung(), parseDecimal() (+20 more)
+
+### Community 32 - "LieferantenDetailsModal.tsx"
+Cohesion: 0.15
+Nodes (11): formatEuro(), formatProzent(), LieferantenDetailsInhalt(), LieferantenDetailsModal(), LieferantenDetailsModalProps, LieferantUmsatz, SortFeld, SortRichtung (+3 more)
 
 ### Community 33 - "Beleg"
-Cohesion: 0.05
-Nodes (49): Beleg, Entity, PrePersist, Table, Transient, BelegAufteilungsModus, TEILWEISE, VOLLSTAENDIG (+41 more)
+Cohesion: 0.02
+Nodes (77): java.time.YearMonth, lombok.EqualsAndHashCode, lombok.ToString, org.junit.jupiter.params.provider.CsvSource, Beleg, Entity, PrePersist, Table (+69 more)
+
+### Community 34 - "BestellungEditor.tsx"
+Cohesion: 0.03
+Nodes (101): defaultEinstellung(), KasseEinstellungenDialog(), EditPosition, EXC_LABEL, MaterialbestellungModal(), MaterialbestellungModalProps, PositionRowProps, ProjektRef (+93 more)
 
 ### Community 35 - "BestellungenUebersicht.tsx"
-Cohesion: 0.04
-Nodes (56): AttachmentProps, EmailAttachmentCard(), EmailAttachmentCardProps, getAttachmentIcon(), isImageAttachment(), Kostenstelle, KostenstelleSelectModal(), KostenstelleSelectModalProps (+48 more)
+Cohesion: 0.07
+Nodes (26): ProjectSelectModal(), BestellungenUebersicht(), BestellungsUebersicht, DocumentPreviewModalProps, DokumentenKette, DokumentRef, formatDate(), formatEuro() (+18 more)
 
 ### Community 36 - ".annehmen"
-Cohesion: 0.05
-Nodes (26): EinkaufLieferungController, PostMapping, RequestMapping, RestController, BestellBestaetigung, Entity, Table, EinkaufLieferung (+18 more)
+Cohesion: 0.07
+Nodes (21): PostMapping, EinkaufLieferung, Entity, Table, Charge, EinkaufBestellstatusDto, Lieferposition, Lieferung (+13 more)
 
 ### Community 37 - "Mietobjekt"
-Cohesion: 0.06
-Nodes (26): Mietobjekt, Mietpartei, MietparteiRolle, EIGENTUEMER, MIETER, Raum, AnnualAccountingPartyDto, AnnualAccountingShareDto (+18 more)
+Cohesion: 0.03
+Nodes (62): java.math.MathContext, Kostenposition, KostenpositionBerechnung, BETRAG, VERBRAUCHSFAKTOR, Kostenstelle, Mietobjekt, Mietpartei (+54 more)
 
-### Community 38 - "BelegServiceTest"
-Cohesion: 0.11
-Nodes (6): UmbuchungCreateRequest, Beleg, BelegServiceTest, Abteilung, Mitarbeiter, SuppressWarnings
+### Community 38 - "HiCadImportService"
+Cohesion: 0.08
+Nodes (15): DataFormatter, org.apache.poi.openxml4j.opc.PackageRelationship, org.apache.poi.poifs.filesystem.DirectoryEntry, org.apache.poi.ss.usermodel.Cell, org.apache.poi.ss.usermodel.DataFormatter, org.apache.poi.ss.usermodel.Row, org.apache.poi.ss.usermodel.Sheet, org.apache.poi.ss.usermodel.Workbook (+7 more)
 
 ### Community 39 - "ArtikelSuche.tsx"
-Cohesion: 0.03
-Nodes (72): ArtikelAuswahl, ArtikelAuswahlDialog(), ArtikelAuswahlDialogProps, TREFFER, zuAuswahl(), artikelBezeichnung(), ArtikelSuche(), ArtikelSucheHandle (+64 more)
-
-### Community 40 - "OffenePostenController"
-Cohesion: 0.35
-Nodes (5): EingangsrechnungDto, OffenePostenController, AnteilDto, DokumentKetteRefDto, EingangsrechnungDto
+Cohesion: 0.04
+Nodes (64): ArtikelAuswahl, ArtikelAuswahlDialog(), ArtikelAuswahlDialogProps, TREFFER, zuAuswahl(), ArtikelSuche(), ArtikelSucheHandle, ArtikelSucheProps (+56 more)
 
 ### Community 41 - "EinkaufDateiService"
 Cohesion: 0.05
-Nodes (19): org.junit.jupiter.params.provider.NullSource, EinkaufAnlageVersion, Entity, Table, EinkaufDatei, EinkaufAnlageVersionRepository, org.springframework.data.jpa.repository.EntityGraph, EinkaufDateiRepository (+11 more)
+Nodes (24): org.junit.jupiter.params.provider.NullSource, EinkaufAnlageVersion, Entity, Table, EinkaufDatei, AnlageDto, EinkaufAnlageVersionRepository, org.springframework.data.jpa.repository.EntityGraph (+16 more)
 
 ### Community 42 - "EmailDraftService"
-Cohesion: 0.06
-Nodes (23): jakarta.persistence.PrePersist, jakarta.persistence.PreUpdate, EmailDraftController, DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping (+15 more)
+Cohesion: 0.07
+Nodes (18): EmailDraftController, DeleteMapping, ExceptionHandler, GetMapping, PostMapping, PutMapping, RequestMapping, ResponseStatusException (+10 more)
 
 ### Community 43 - "KundenDetailService"
-Cohesion: 0.10
-Nodes (13): KundeAggregierteEmailDto, KundeAnfrageKurzDto, KundeDetailDto, KundeEmailAttachmentDto, KundeEmailQuelleDto, KundeKommunikationDto, KundeProjektKurzDto, KundeStatistikDto (+5 more)
+Cohesion: 0.07
+Nodes (17): Entity, PrePersist, Table, KundeNotiz, AusgangsGeschaeftsDokumentResponseDto, KundeNotizRepository, Mahnstufe, Anfrage (+9 more)
 
 ### Community 44 - "EinstellungenPage.test.tsx"
 Cohesion: 0.12
 Nodes (25): Camera, CameraProps, ABZEICHEN, Bereich, EinstellungenPage(), FEHLERTEXT, benachrichtigungMock, frageBenachrichtigungenAnMock (+17 more)
 
-### Community 45 - "LieferantReklamationController"
-Cohesion: 0.12
-Nodes (16): GetMapping, LieferantReklamation, lombok.Data, Mitarbeiter, PostMapping, RequestMapping, RestController, LieferantReklamationController (+8 more)
+### Community 45 - "LieferantenController"
+Cohesion: 0.04
+Nodes (20): ApplicationEventPublisher, Kostenstelle, LieferantDokument, Mitarbeiter, Resource, Response, LieferantBildDto, LieferantenController (+12 more)
 
 ### Community 46 - "com.fasterxml.jackson.databind.JsonNode"
-Cohesion: 0.05
-Nodes (18): com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.node.ArrayNode, com.fasterxml.jackson.databind.node.ObjectNode, EinkaufAnalyseController, EmailAttachment, Entity, Table, Override (+10 more)
+Cohesion: 0.08
+Nodes (6): com.fasterxml.jackson.databind.JsonNode, EinkaufAudit, Override, EinkaufAuditRepository, BelegKiKostenkontoService, EmailThreadEntryDtoSerialisierungTest
 
-### Community 47 - "EinkaufKommunikationService"
-Cohesion: 0.05
-Nodes (18): AnlageSnapshot, EinkaufMailantwortVorschau, EinkaufVersandAngenommen, EinkaufMailantwortVorschauRepository, AntwortBasis, AntwortInhalt, EingabeAntwort, EinkaufKommunikationService (+10 more)
+### Community 47 - "EinkaufMailantwortVorschau"
+Cohesion: 0.09
+Nodes (5): EinkaufMailantwortVorschau, EinkaufMailantwortVorschauRepository, EinkaufMailantwortVersandListener, Override, EinkaufMailantwortVersandListenerTest
 
 ### Community 48 - "ProjektGeschaeftsdokument"
-Cohesion: 0.13
-Nodes (8): Mahnstufe, ERSTE_MAHNUNG, ZAHLUNGSERINNERUNG, ZWEITE_MAHNUNG, ProjektGeschaeftsdokument, AutoMahnVersandService, Projekt, ProjektGeschaeftsdokument
+Cohesion: 0.05
+Nodes (26): OffeneRechnung, Anrede, DAMEN_HERREN, FAMILIE, FIRMA, FRAU, HERR, fromString() (+18 more)
 
 ### Community 49 - "index.test.tsx"
-Cohesion: 0.03
-Nodes (59): ARTIKEL_TREFFER, dokumentAntwort, jsonAntwort(), mockFetch(), mockFetchMitFehlschlagendemSpeichern(), mockFetchNeuesDokument(), SeiteMitSeitenLock(), zahlungszielEingeben() (+51 more)
+Cohesion: 0.02
+Nodes (94): ARTIKEL_TREFFER, dokumentAntwort, jsonAntwort(), mockFetch(), mockFetchMitFehlschlagendemSpeichern(), mockFetchNeuesDokument(), SeiteMitSeitenLock(), zahlungszielEingeben() (+86 more)
 
 ### Community 50 - "BeitraegeWebsiteClientTest"
 Cohesion: 0.05
-Nodes (6): java.net.http.HttpResponse, BildAntwort, BeitraegeWebsiteException, BeitraegeControllerTest, BeitraegeWebsiteClientTest, SuppressWarnings
+Nodes (13): BodyPublisher, java.net.http.HttpRequest, java.net.http.HttpResponse, BeitragDetailDto, BeitragUpsertRequest, BeitraegeWebsiteClient, BildAntwort, Builder (+5 more)
 
-### Community 51 - "org.springframework.http.ResponseEntity"
-Cohesion: 0.01
-Nodes (78): org.springframework.data.jpa.domain.Specification, org.springframework.http.ResponseEntity, org.springframework.orm.ObjectOptimisticLockingFailureException, org.springframework.web.bind.annotation.DeleteMapping, org.springframework.web.bind.annotation.GetMapping, org.springframework.web.bind.annotation.PostMapping, org.springframework.web.bind.annotation.PutMapping, org.springframework.web.bind.annotation.RequestMapping (+70 more)
+### Community 51 - "org.springframework.web.bind.annotation.GetMapping"
+Cohesion: 0.03
+Nodes (42): org.springframework.orm.ObjectOptimisticLockingFailureException, org.springframework.validation.annotation.Validated, org.springframework.web.bind.annotation.GetMapping, org.springframework.web.bind.annotation.RequestMapping, org.springframework.web.bind.annotation.RestController, AusgangsGeschaeftsDokumentAuditController, Bericht, BestellungController (+34 more)
 
 ### Community 52 - "EmailKiClassificationServiceTest"
-Cohesion: 0.07
-Nodes (14): Anfrage, GetMapping, PostMapping, Projekt, Anfrage, Projekt, ClassificationResult, Anfrage (+6 more)
+Cohesion: 0.08
+Nodes (12): Anfrage, GetMapping, PostMapping, Projekt, ClassificationResult, Anfrage, Projekt, EmailKiClassificationControllerTest (+4 more)
 
-### Community 53 - "useToast"
+### Community 53 - "react-pc-frontend/src/components/ui/toast.tsx"
 Cohesion: 0.02
-Nodes (317): Harness(), ArtikelImportModal(), ArtikelImportModalProps, autoMapHeaders(), createInitialMappings(), DEFAULT_HEADER_CANDIDATES, FIELD_DEFINITIONS, FieldDefinition (+309 more)
+Nodes (249): Harness(), AnalyzeResponse, AusgangsrechnungUploadModalProps, GESCHAEFTSDOKUMENTART_OPTIONS, Projekt, Step, CreateReklamationBezug, CreateReklamationModal() (+241 more)
 
 ### Community 54 - ".bucheAbwesenheit"
-Cohesion: 0.12
-Nodes (8): AbwesenheitController, DeleteMapping, PostMapping, RequestMapping, RestController, AbwesenheitService, AbwesenheitServiceTest, Mitarbeiter
+Cohesion: 0.13
+Nodes (4): DeleteMapping, PostMapping, AbwesenheitServiceTest, Mitarbeiter
 
-### Community 55 - "EinkaufBedarfRepository"
-Cohesion: 0.04
-Nodes (47): EinkaufRechnungsabgleichWorkflowTest.Config, EinkaufRechnungsabgleichController, GetMapping, RequestMapping, RestController, Abgleich, Abweichung, EinkaufRechnungsabgleichDto (+39 more)
+### Community 55 - "EinkaufMengenService"
+Cohesion: 0.05
+Nodes (26): BestellungRevisionRepository, EinkaufBestellungRepository, EinkaufKommunikationVorschauRepository, EinkaufLieferungRepository, EinkaufAnfrageMengenProvider, EinkaufAuditService, EinkaufBestellstatusService, EinkaufLieferungService (+18 more)
 
 ### Community 56 - "design_system.py"
 Cohesion: 0.05
 Nodes (42): BM25, detect_domain(), _load_csv(), Lowercase, split, remove punctuation, filter short words, Build BM25 index from documents, Score all documents against query, Load CSV and return list of dicts, Core search function using BM25 (+34 more)
 
-### Community 57 - "AutoAuftragsbestaetigungVersandService"
-Cohesion: 0.09
-Nodes (4): org.jsoup.nodes.Element, AutoAuftragsbestaetigungVersandService, Document, SuppressWarnings
-
-### Community 58 - "BelegPosition"
-Cohesion: 0.14
-Nodes (9): lombok.EqualsAndHashCode, lombok.ToString, BelegPosition, Entity, PrePersist, Table, BelegPositionRepository, beleg_position (+1 more)
+### Community 58 - "EinkaufPositionService"
+Cohesion: 0.08
+Nodes (13): EinkaufPositionService, Beschaffungsdetails, Mengenbasis, PositionSnapshot, EinkaufBedarfServiceTest, EinkaufBeschaffungsdetailsTest, Beschaffungsdetails, PositionSnapshot (+5 more)
 
 ### Community 59 - "BestellungPosition"
 Cohesion: 0.03
-Nodes (18): BestellungHerkunft, Entity, Table, BestellungPosition, Entity, Table, BestellungRevision, Entity (+10 more)
+Nodes (16): BestellungHerkunft, Entity, Table, BestellungPosition, Entity, Table, BestellungRevision, Entity (+8 more)
 
-### Community 60 - "BelegeKasseExportPdfService.java"
-Cohesion: 0.14
-Nodes (8): com.lowagie.text.pdf.PdfWriter, BestellungResponseDto, BestellungPdfService, Color, Document, PdfPCell, BestellungPdfServiceTest, BestellungServiceMappingTest
+### Community 60 - "BestellungPdfService"
+Cohesion: 0.17
+Nodes (6): BestellungPdfService, Color, Document, PdfPCell, PdfPCell, BestellungPdfServiceTest
 
 ### Community 61 - "DatensatzLockService"
 Cohesion: 0.10
-Nodes (12): DatensatzLock, ausText(), SperrbarerTyp, AUSGANG, EINGANG, DatensatzLockDto, DatensatzLockRepository, DatensatzLockService (+4 more)
+Nodes (11): DatensatzLock, ausText(), SperrbarerTyp, AUSGANG, EINGANG, DatensatzLockDto, DatensatzLockRepository, DatensatzLockService (+3 more)
 
-### Community 62 - "Anfrage"
-Cohesion: 0.02
-Nodes (62): org.mustangproject.Item, AnfrageController, AnfrageNotizBildDto, AnfrageNotizDto, AnfrageNotiz, AnfrageNotizBild, DeleteMapping, GetMapping (+54 more)
-
-### Community 63 - ".freigeben"
-Cohesion: 0.08
-Nodes (16): EinkaufKommunikationVorschau, EinkaufVersandDto, Entscheidung, BEREITS_ANGENOMMEN, NACHWEISLICH_NICHT_GESENDET, KontoZugangReferenz, VersandSnapshot, Attachment (+8 more)
-
-### Community 64 - ".toDto"
-Cohesion: 0.07
-Nodes (19): RaumVerbrauchController, MietobjektDto, MietparteiDto, RaumDto, VerbrauchsgegenstandDto, ZaehlerstandDto, Kostenposition, Kostenstelle (+11 more)
-
-### Community 65 - "EinkaufBestellung"
+### Community 62 - "AnfrageController"
 Cohesion: 0.04
-Nodes (36): BestellungStatus, BESTELLT, ENTWURF, GELIEFERT, STORNIERT, TEILGELIEFERT, EinkaufBestellung, Entity (+28 more)
+Nodes (36): org.mustangproject.Item, AnfrageController, AnfrageNotizBildDto, AnfrageNotizDto, AnfrageNotiz, AnfrageNotizBild, DeleteMapping, GetMapping (+28 more)
 
-### Community 66 - "org.springframework.web.bind.annotation.ExceptionHandler"
+### Community 63 - "EinkaufKommunikationService"
 Cohesion: 0.07
-Nodes (21): com.fasterxml.jackson.annotation.JsonInclude, jakarta.servlet.http.HttpServletRequest, jakarta.validation.ConstraintViolationException, org.springframework.boot.web.servlet.error.ErrorAttributes, org.springframework.boot.web.servlet.error.ErrorController, org.springframework.dao.OptimisticLockingFailureException, org.springframework.http.converter.HttpMessageNotReadableException, org.springframework.stereotype.Controller (+13 more)
+Nodes (17): EinkaufKommunikationVorschau, AnlageSnapshot, KontoZugangReferenz, Freigabe, Attachment, AntwortBasis, AntwortInhalt, EingabeAntwort (+9 more)
+
+### Community 64 - "org.springframework.web.bind.annotation.PostMapping"
+Cohesion: 0.05
+Nodes (30): org.springframework.web.bind.annotation.DeleteMapping, org.springframework.web.bind.annotation.PostMapping, org.springframework.web.bind.annotation.PutMapping, org.springframework.web.bind.annotation.ResponseStatus, GeschaeftsdatenRequest, Response, LieferantDokumentController, UpdateDokumentRequest (+22 more)
+
+### Community 65 - "EinkaufBestellfreigabeService"
+Cohesion: 0.09
+Nodes (12): EinkaufBestellfreigabeService, BestellungRevision, EinkaufVersandAngenommen, Herkunft, ResponseStatusException, Storno, VersandDto, Vorschau (+4 more)
+
+### Community 66 - "jakarta.servlet.http.HttpServletRequest"
+Cohesion: 0.11
+Nodes (11): jakarta.servlet.http.HttpServletRequest, org.springframework.boot.web.servlet.error.ErrorAttributes, org.springframework.boot.web.servlet.error.ErrorController, org.springframework.dao.OptimisticLockingFailureException, org.springframework.http.converter.HttpMessageNotReadableException, org.springframework.stereotype.Controller, org.springframework.web.bind.annotation.RestControllerAdvice, EinkaufMailkontoController (+3 more)
 
 ### Community 67 - "ZeitkontoWechselService"
-Cohesion: 0.13
-Nodes (10): Auswahl, Mehrere, Monat, ZeitkontoWechselErgebnisDto, Arbeitszeit, Mitarbeiter, ResponseStatusException, ZeitkontoWechselService (+2 more)
+Cohesion: 0.08
+Nodes (16): Arbeitszeit, Create, ZeitkontoStatusDto, ZeitkontoVersionDto, Auswahl, Mehrere, Monat, ZeitkontoWechselErgebnisDto (+8 more)
 
 ### Community 68 - "AutoMahnVersandServiceTest"
-Cohesion: 0.17
-Nodes (3): AutoMahnVersandServiceTest, Firmeninformation, ProjektGeschaeftsdokument
+Cohesion: 0.11
+Nodes (9): MahnlaufErgebnis, MahnlaufStatus, AUSGEFUEHRT, LAEUFT_BEREITS, VERFAHREN_INAKTIV, MahnwesenControllerTest, AutoMahnVersandServiceTest, Firmeninformation (+1 more)
 
-### Community 69 - "ZeitkontoPausenServiceTest"
-Cohesion: 0.10
-Nodes (19): Entity, Table, ZeitkontoPause, ZeitkontoVersionDto, Ausschalten, ZeitkontoWechselDto, org.springframework.data.jpa.repository.Lock, ZeitkontoPauseRepository (+11 more)
+### Community 69 - "ZeitkontoService"
+Cohesion: 0.11
+Nodes (19): Entity, Table, ZeitkontoPause, Ausschalten, ZeitkontoWechselDto, org.springframework.data.jpa.repository.Lock, ZeitkontoPauseRepository, ResponseStatusException (+11 more)
 
 ### Community 70 - "PreisUebernahmeServiceTest"
-Cohesion: 0.09
-Nodes (10): Position, Preisbasis, PreisUebernahmeService, PreisUebernahmeEventListenerTest, Artikel, TransactionTemplate, PreisUebernahmeNachCommitTest, Artikel (+2 more)
+Cohesion: 0.16
+Nodes (3): Artikel, Position, PreisUebernahmeServiceTest
+
+### Community 71 - "ZeitkontoVersion"
+Cohesion: 0.04
+Nodes (42): Entity, Table, SvSatz, SvSatzTyp, AV_GESAMT, INSOLVENZGELDUMLAGE, KV_GESAMT, MINIJOB_AG_KV (+34 more)
 
 ### Community 72 - "useDokumentVerlauf.ts"
-Cohesion: 0.12
-Nodes (31): AenderungsAuftrag, DokumentSchritt, DokumentStand, DokumentVerlauf, DokumentVerlaufOptionen, meldungAus(), aufbauen(), neuerBlock() (+23 more)
+Cohesion: 0.13
+Nodes (30): AenderungsAuftrag, DokumentSchritt, DokumentVerlauf, DokumentVerlaufOptionen, meldungAus(), aufbauen(), neuerBlock(), neuerStand() (+22 more)
 
 ### Community 73 - "Mitarbeiter"
 Cohesion: 0.03
-Nodes (73): org.junit.jupiter.api.BeforeEach, org.junit.jupiter.api.extension.ExtendWith, org.mockito.junit.jupiter.MockitoExtension, org.springframework.security.crypto.password.PasswordEncoder, ErfassungsQuelle, ADMIN_KORREKTUR, DESKTOP, IMPORT (+65 more)
+Nodes (70): org.junit.jupiter.api.BeforeEach, org.junit.jupiter.api.extension.ExtendWith, org.mockito.junit.jupiter.MockitoExtension, ArbeitsgangController, Abteilung, RequestMapping, RestController, EingangsrechnungDto (+62 more)
 
 ### Community 74 - "LangzeitkrankmeldungServiceTest"
-Cohesion: 0.06
-Nodes (16): Entity, Langzeitkrankmeldung, Entity, LangzeitkrankmeldungPhase, LangzeitkrankmeldungStatus, ABGEBROCHEN, BEENDET, LAUFEND (+8 more)
+Cohesion: 0.05
+Nodes (26): Entity, Langzeitkrankmeldung, Entity, LangzeitkrankmeldungPhase, LangzeitkrankmeldungPhaseTyp, KRANKENGELD, LOHNFORTZAHLUNG, WIEDEREINGLIEDERUNG (+18 more)
 
 ### Community 75 - "DateiSpeicherService"
-Cohesion: 0.04
-Nodes (25): DokumentGruppe, BILDER, DIVERSE_DOKUMENTE, DOKUMENTATION_1090, EINGANGSRECHNUNGEN, GESCHAEFTSDOKUMENTE, KALKULATIONSDOKUMENTE, PLANUNGSDOKUMENTE (+17 more)
-
-### Community 76 - "DokumentFreigabeService"
 Cohesion: 0.03
-Nodes (32): CategoryDto, Authentication, NotificationController, NotificationSummaryDto, RecentItemDto, DokumentFreigabe, Entity, PrePersist (+24 more)
+Nodes (22): Dokument, Entity, Inheritance, ProjektDokument, ZugferdArtikelPosition, ZugferdDaten, CategoryAggregation, CustomerAggregation (+14 more)
+
+### Community 76 - "AusgangsGeschaeftsDokumentService"
+Cohesion: 0.03
+Nodes (20): AbrechnungsverlaufDto, DokumentFreigabe, Entity, PrePersist, Table, Transient, FreigabeQuellTyp, ANFRAGE (+12 more)
 
 ### Community 77 - ".buche"
-Cohesion: 0.17
-Nodes (8): CreateRequest, EigenbelegDaten, ErzeugtesPdf, Beleg, BelegKategorie, Mitarbeiter, Sachkonto, KassenbuchungServiceTest
+Cohesion: 0.12
+Nodes (9): CreateRequest, ErzeugtesPdf, Ableitung, Beleg, KassenbuchungService, BelegKategorie, Mitarbeiter, Sachkonto (+1 more)
 
-### Community 78 - "org.springframework.data.jpa.repository.JpaRepository"
-Cohesion: 0.03
-Nodes (67): org.springframework.data.jpa.repository.JpaRepository, org.springframework.stereotype.Repository, ArbeitsgangController, Abteilung, DeleteMapping, GetMapping, PostMapping, PutMapping (+59 more)
+### Community 78 - "Zeitbuchung"
+Cohesion: 0.05
+Nodes (38): org.springframework.boot.test.context.SpringBootTest, PutMapping, Arbeitsgang, Entity, ArbeitsgangStundensatz, Entity, BuchungsTyp, ARBEIT (+30 more)
 
 ### Community 79 - "MietabrechnungPdfService"
-Cohesion: 0.12
-Nodes (19): com.lowagie.text.pdf.PdfPageEventHelper, com.lowagie.text.pdf.PdfPTable, java.text.DecimalFormat, java.text.NumberFormat, FooterPageEvent, Color, Document, Font (+11 more)
+Cohesion: 0.15
+Nodes (12): com.lowagie.text.pdf.PdfPageEventHelper, java.text.DecimalFormat, FooterPageEvent, Color, Document, Font, Kostenposition, Kostenstelle (+4 more)
 
 ### Community 80 - "LeistungCreateDto"
 Cohesion: 0.06
-Nodes (22): DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, RestController, LeistungController, Entity (+14 more)
+Nodes (23): DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, RestController, LeistungController, Entity (+15 more)
 
 ### Community 81 - "react-pc-frontend/package.json"
 Cohesion: 0.40
 Nodes (4): name, private, type, version
 
 ### Community 82 - "org.springframework.security.core.Authentication"
-Cohesion: 0.01
-Nodes (148): NachfrageRequest, org.springframework.data.domain.Page, org.springframework.data.domain.Pageable, org.springframework.security.core.Authentication, GetMapping, PutMapping, Uebersicht, Druckauswahl (+140 more)
+Cohesion: 0.02
+Nodes (107): org.springframework.data.domain.Page, org.springframework.data.domain.Pageable, org.springframework.security.core.Authentication, ZuordnungRequest, GetMapping, Uebersicht, Druckauswahl, Eingabefehler (+99 more)
 
 ### Community 83 - "FrontendUserProfile"
-Cohesion: 0.04
-Nodes (27): com.fasterxml.jackson.annotation.JsonProperty, jakarta.persistence.Transient, org.springframework.boot.ApplicationArguments, org.springframework.boot.ApplicationRunner, org.springframework.boot.context.event.ApplicationReadyEvent, org.springframework.context.annotation.Profile, org.springframework.context.event.EventListener, org.springframework.core.env.Environment (+19 more)
+Cohesion: 0.05
+Nodes (20): Override, Override, AuthController, BootstrapStatusResponse, CredentialsUpdateRequest, MeResponse, MitarbeiterInfo, RegisterRequest (+12 more)
 
 ### Community 84 - "LieferantEmailResolver"
-Cohesion: 0.22
+Cohesion: 0.21
 Nodes (3): Cache, LieferantEmailResolver, LieferantEmailResolverTest
 
 ### Community 85 - "WebsiteAnalyticsSnapshot"
-Cohesion: 0.08
-Nodes (20): com.fasterxml.jackson.annotation.JsonIgnoreProperties, WebsiteAnalyticsSnapshot, BeitragBildDto, AnalyticsSnapshotRequestDto, BrowserCount, CityCount, DeviceCount, FunnelStep (+12 more)
+Cohesion: 0.09
+Nodes (19): com.fasterxml.jackson.annotation.JsonIgnoreProperties, WebsiteAnalyticsSnapshot, AnalyticsSnapshotRequestDto, BrowserCount, CityCount, DeviceCount, FunnelStep, TopPage (+11 more)
 
 ### Community 86 - "BounceErkennungServiceTest"
 Cohesion: 0.10
 Nodes (5): jakarta.mail.Part, java.nio.charset.Charset, BounceErkennungService, BounceErkennungServiceTest, MimeMessage
 
-### Community 87 - "SvSatzTyp"
-Cohesion: 0.10
-Nodes (20): Entity, Table, SvSatz, SvSatzTyp, AV_GESAMT, INSOLVENZGELDUMLAGE, KV_GESAMT, MINIJOB_AG_KV (+12 more)
+### Community 87 - "Lieferanten"
+Cohesion: 0.08
+Nodes (12): Entity, Lieferanten, PreisUebernahmeEvent, Position, Preisbasis, PreisUebernahmeService, PreisuebernahmeAusKiAnalyse, PreisUebernahmeEventListenerTest (+4 more)
 
 ### Community 88 - "lombok.Data"
-Cohesion: 0.06
-Nodes (77): lombok.AllArgsConstructor, lombok.Builder, lombok.Data, lombok.NoArgsConstructor, FolderStatsDto, AbteilungBerechtigungDto, Response, TypBerechtigung (+69 more)
+Cohesion: 0.05
+Nodes (79): com.fasterxml.jackson.annotation.JsonProperty, jakarta.persistence.Transient, lombok.AllArgsConstructor, lombok.Builder, lombok.Data, lombok.NoArgsConstructor, FolderStatsDto, AbteilungBerechtigungDto (+71 more)
 
 ### Community 89 - "StandaloneRagIndexer"
 Cohesion: 0.15
 Nodes (6): org.junit.jupiter.api.Timeout, ChunkEntry, ObjectMapper, RawChunk, StandaloneRagIndexer, StandaloneRagIndexerTest
 
 ### Community 90 - "BelegService"
-Cohesion: 0.06
-Nodes (14): BelegService, Response, UpdateRequest, BelegServiceKasseValidationTest, Beleg, Mitarbeiter, Beleg, BelegServiceZahlungsstatusTest (+6 more)
+Cohesion: 0.03
+Nodes (32): AbteilungBerechtigungController, GetMapping, PutMapping, RequestMapping, Response, RestController, UpdateRequest, AbteilungDokumentBerechtigung (+24 more)
 
-### Community 91 - "Kostenposition"
-Cohesion: 0.06
-Nodes (16): org.springframework.web.bind.annotation.ResponseStatus, KostenVerteilungController, Kostenposition, KostenpositionDto, KostenstelleDto, KostenpositionRepository, Kostenposition, Kostenstelle (+8 more)
+### Community 91 - "SystemSettingsController"
+Cohesion: 0.08
+Nodes (14): DateiOrdnerRequest, DateiOrdnerResponse, DateiOrdnerTestRequest, DokumentMailTestRequest, EmailAccountRequest, FunnelSpamFilterRequest, FunnelSpamFilterResponse, GeminiSettingsRequest (+6 more)
 
 ### Community 92 - "Textbaustein"
-Cohesion: 0.08
-Nodes (20): FormularTemplateTextbausteinDefault, Entity, Table, Entity, PrePersist, PreUpdate, Table, Textbaustein (+12 more)
+Cohesion: 0.04
+Nodes (44): Dokumenttyp, ABSCHLAGSRECHNUNG, ANGEBOT, AUFTRAGSBESTAETIGUNG, ERSTE_MAHNUNG, GUTSCHRIFT, NACHTRAGSANGEBOT, RECHNUNG (+36 more)
 
 ### Community 93 - "EinkaufBedarf"
-Cohesion: 0.05
-Nodes (21): ConcurrentLinkedQueue, EinkaufMengenParallelTest.TestConfig, EinkaufBedarf, Entity, Table, Liefergruppe, EinkaufAnfrageMengenProvider, EinkaufBedarfService (+13 more)
+Cohesion: 0.04
+Nodes (27): ConcurrentLinkedQueue, EinkaufMengenParallelTest.TestConfig, EinkaufBedarf, Entity, Table, EinkaufMengenbuchung, Entity, Table (+19 more)
 
 ### Community 94 - "ArtikelImportService"
 Cohesion: 0.19
 Nodes (5): ArtikelImportService, Charset, ImportAnalysisResult, ArtikelImportServiceTest, Artikel
 
-### Community 95 - "LieferantEinkaufKontakt"
+### Community 95 - "LieferantEinkaufKontaktService"
 Cohesion: 0.15
-Nodes (8): LieferantEinkaufKontakt, EinkaufKontaktDto, KontaktZweck, ANFRAGE, BESTELLUNG, LieferantEinkaufKontaktRepository, Kontakt, LieferantEinkaufKontaktServiceTest
+Nodes (10): LieferantEinkaufKontakt, EinkaufKontaktDto, Kontakt, KontaktZweck, ANFRAGE, BESTELLUNG, LieferantEinkaufKontaktRepository, Kontakt (+2 more)
 
 ### Community 96 - "UrlaubsantragService"
+Cohesion: 0.05
+Nodes (30): GetMapping, PostMapping, PutMapping, RestController, UrlaubsantragController, Entity, Status, ABGELEHNT (+22 more)
+
+### Community 97 - "org.springframework.core.io.Resource"
 Cohesion: 0.06
-Nodes (24): GetMapping, PostMapping, PutMapping, RestController, UrlaubsantragController, Entity, Status, ABGELEHNT (+16 more)
+Nodes (14): java.security.Principal, org.springframework.core.io.Resource, DateiController, ArtikelDokumentTyp, DATENBLATT, MONTAGEANLEITUNG, SONSTIGES, VORSCHAUBILD (+6 more)
 
-### Community 97 - "ArtikelDokumentService"
-Cohesion: 0.10
-Nodes (13): ArtikelDokument, Entity, Table, ArtikelDokumentTyp, DATENBLATT, MONTAGEANLEITUNG, SONSTIGES, VORSCHAUBILD (+5 more)
+### Community 98 - "MitarbeiterService"
+Cohesion: 0.05
+Nodes (18): DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, RestController, MitarbeiterController, MitarbeiterDokumentResponseDto (+10 more)
 
-### Community 99 - "BeitraegeWebsiteClient"
+### Community 99 - "org.springframework.http.ResponseEntity"
+Cohesion: 0.03
+Nodes (39): org.springframework.http.ResponseEntity, org.springframework.web.bind.annotation.ExceptionHandler, org.springframework.web.bind.annotation.PatchMapping, org.springframework.web.bind.MethodArgumentNotValidException, org.springframework.web.multipart.MultipartFile, SpracheingabeService.AufnahmeZuGross, AnfrageFunnelController, DeleteMapping (+31 more)
+
+### Community 100 - "ArtikelWerkstoffe"
 Cohesion: 0.13
-Nodes (11): BodyPublisher, java.net.http.HttpRequest, AltTextRequest, BeitraegeController, StatusRequest, TitelbildRequest, BeitragDetailDto, BeitragUpsertRequest (+3 more)
+Nodes (10): ArtikelPreisHinweis, KEIN_AUFSCHLAG, KEIN_GEWICHT, KEIN_PREIS, OK, ArtikelWerkstoffe, ArtikelPositionsPreisService, ArtikelPositionsVorschlag (+2 more)
 
-### Community 100 - "ArtikelControllerTest"
-Cohesion: 0.10
-Nodes (5): ArtikelWerkstoffe, ArtikelControllerTest, Artikel, ArtikelPositionsPreisServiceTest, Artikel
-
-### Community 101 - "ZeiterfassungApiService"
+### Community 101 - "ZeiterfassungApiServiceZeitkontoTest"
 Cohesion: 0.06
-Nodes (12): UrlaubsverfallService, Mitarbeiter, ZeiterfassungApiService, Arbeitsgang, Mitarbeiter, Projekt, ZeiterfassungApiServiceConcurrencyTest, Mitarbeiter (+4 more)
+Nodes (13): UrlaubsverfallService, EntityManager, Mitarbeiter, TagesSollCharakterisierungMonatsSaldoTest, Arbeitsgang, Mitarbeiter, Projekt, ZeiterfassungApiServiceConcurrencyTest (+5 more)
 
 ### Community 102 - "ArtikelService"
-Cohesion: 0.12
-Nodes (7): ArtikelCreateDto, ArtikelService, Artikel, Override, ResponseStatusException, ArtikelServiceTest, SuppressWarnings
+Cohesion: 0.07
+Nodes (15): jakarta.persistence.TypedQuery, org.jsoup.safety.Safelist, Entity, Table, Werkstoff, ArtikelCreateDto, ImportAnalysisResult, KategorieRepository (+7 more)
 
 ### Community 103 - "AnfrageNotizenPage.tsx"
 Cohesion: 0.07
 Nodes (31): ConfirmOptions, ConfirmProvider(), Context, Example(), useConfirm(), ImageViewer(), ImageViewerProps, mobileOverlayStyle (+23 more)
 
-### Community 104 - ".zaehle"
-Cohesion: 0.12
-Nodes (10): org.springframework.data.repository.Repository, Entity, Table, Kassenzaehlung, KassenzaehlungRepository, Beleg, Response, KassenzaehlungService (+2 more)
-
-### Community 105 - "LieferantVorauskasseAutoAssignerTest"
-Cohesion: 0.26
-Nodes (3): LieferantVorauskasseAutoAssigner, LieferantDokument, LieferantVorauskasseAutoAssignerTest
+### Community 104 - "org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest"
+Cohesion: 0.08
+Nodes (11): org.apache.commons.text.similarity.JaroWinklerSimilarity, org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest, org.springframework.data.jpa.repository.JpaSpecificationExecutor, org.springframework.data.jpa.repository.Lock, ArtikelRepository, ArtikelMatchingService, ArtikelDokumenttexteRepositoryTest, ArtikelCascadeDeletionTest (+3 more)
 
 ### Community 106 - "src/types.ts"
-Cohesion: 0.03
-Nodes (129): EmailHistoryProps, AufteilungsSektion(), BelegDetailModal(), buildSachkontoOptions(), buildZahlungsartOptions(), formatDate(), formatDateTime(), formatEuro() (+121 more)
+Cohesion: 0.02
+Nodes (140): EmailHistoryProps, AufteilungsSektion(), BelegDetailModal(), buildSachkontoOptions(), buildZahlungsartOptions(), formatDate(), formatDateTime(), formatEuro() (+132 more)
 
 ### Community 107 - "ArbeitszeitartDto"
-Cohesion: 0.15
-Nodes (8): GetMapping, PostMapping, PutMapping, Arbeitszeitart, Entity, Table, ArbeitszeitartDto, Arbeitszeitart
+Cohesion: 0.12
+Nodes (15): ArbeitszeitartController, DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, RestController, Arbeitszeitart (+7 more)
 
 ### Community 108 - "EinkaufVergleichService"
-Cohesion: 0.11
+Cohesion: 0.10
 Nodes (9): AngebotSumme, EinkaufVergleichDto, Rechenschritt, EinkaufVergleichService, Herkunft, Mengenbasis, Vergleich, KostenBerechnung (+1 more)
 
-### Community 109 - "Paragraph"
-Cohesion: 0.14
-Nodes (6): com.lowagie.text.pdf.PdfPCell, Paragraph, BelegeKasseExportPdfService, Document, PdfPCell, Document
+### Community 109 - "BelegeKasseExportPdfService"
+Cohesion: 0.16
+Nodes (4): com.lowagie.text.pdf.PdfPCell, BelegeKasseExportPdfService, Document, PdfPCell
 
 ### Community 110 - "artikel_dokumenttexte_backfill.py"
 Cohesion: 0.10
 Nodes (30): abmessung_mit_einheit(), alle_artikel(), baue_beschreibung(), baue_kurzbeschreibung(), enum_anzeigename(), enum_name(), ErpClient, escape() (+22 more)
 
-### Community 111 - "EmailTextTemplate"
-Cohesion: 0.07
-Nodes (18): jakarta.persistence.Query, Einkaufsentwurf, EmailTextTemplateController, EmailTextTemplate, EmailTextTemplateKategorie, DOKUMENT, EINKAUF, MAHNWESEN (+10 more)
+### Community 111 - "EmailTextTemplateController.java"
+Cohesion: 0.10
+Nodes (10): Einkaufsentwurf, EmailTextTemplateController, EmailTextTemplateKategorie, DOKUMENT, EINKAUF, MAHNWESEN, SYSTEM, WEBSITE (+2 more)
 
 ### Community 112 - "org.junit.jupiter.params.ParameterizedTest"
-Cohesion: 0.13
-Nodes (8): EinkaufBestellstatusControllerTest.FilterBeans, org.junit.jupiter.params.ParameterizedTest, org.junit.jupiter.params.provider.CsvSource, org.junit.jupiter.params.provider.ValueSource, EinkaufBestellstatusControllerTest, Import, AggregatVersionTest, WirtschaftsjahrTest
+Cohesion: 0.12
+Nodes (10): EinkaufBestellstatusControllerTest.FilterBeans, org.junit.jupiter.api.condition.EnabledIfSystemProperty, org.junit.jupiter.params.ParameterizedTest, org.junit.jupiter.params.provider.ValueSource, org.springframework.test.context.DynamicPropertyRegistry, org.springframework.test.context.DynamicPropertySource, VersandDto, EinkaufBestellstatusControllerTest (+2 more)
 
 ### Community 113 - "feldmann_import.py"
 Cohesion: 0.10
@@ -1016,136 +994,132 @@ Nodes (28): artikel_index(), baue_beschreibung(), baue_kurzbeschreibung(), entfe
 Cohesion: 0.13
 Nodes (24): antwort(), api, json(), AuswahlStand, Einzelergebnis, ExportRequest, Filter, Hinweis (+16 more)
 
-### Community 115 - "Projekt"
-Cohesion: 0.02
-Nodes (70): AbrechnungsverlaufDto, org.mockito.ArgumentCaptor, org.springframework.data.domain.Sort, AusgangsGeschaeftsDokument, Entity, PrePersist, PreUpdate, Table (+62 more)
+### Community 115 - "ProjektRepository"
+Cohesion: 0.03
+Nodes (84): org.springframework.core.task.TaskExecutor, Anfrage, Entity, PrePersist, Table, AnfrageDokument, Entity, Inheritance (+76 more)
 
-### Community 116 - "RechnungsuebersichtController"
+### Community 116 - "RechnungsuebersichtService"
 Cohesion: 0.10
-Nodes (14): EingangsrechnungDto, lombok.AllArgsConstructor, lombok.Data, lombok.NoArgsConstructor, MergePdfRequest, RechnungsuebersichtController, AusgangsrechnungDto, org.springframework.data.jpa.repository.EntityGraph (+6 more)
+Nodes (11): lombok.AllArgsConstructor, lombok.Data, lombok.NoArgsConstructor, MergePdfRequest, AusgangsrechnungDto, org.springframework.data.jpa.repository.EntityGraph, AusgangsrechnungDto, ResponseStatusException (+3 more)
 
 ### Community 117 - "EinkaufLagerentnahme"
 Cohesion: 0.07
-Nodes (11): Bewertung, EinkaufLagerentnahme, BewertungDto, BewertungRequest, EinkaufLagerentnahmeDto, EntnahmeDto, EntnahmeRequest, EinkaufLagerentnahmeRepository (+3 more)
+Nodes (9): Bewertung, EinkaufLagerentnahme, BewertungDto, EinkaufLagerentnahmeDto, EntnahmeRequest, EinkaufLagerentnahmeRepository, ProjektKostenStatus, EinkaufLagerentnahmeService (+1 more)
 
 ### Community 118 - "BestellungsUebersichtController"
 Cohesion: 0.06
-Nodes (31): AusblendenRequest, BelegZuordnungDto, BelegZuordnungRequest, BestellungsUebersichtController, BestellungsUebersichtDto, DokumentenKette, DokumentRef, GeschaeftsdatenDto (+23 more)
+Nodes (28): BelegZuordnungDto, BelegZuordnungRequest, BestellungsUebersichtController, BestellungsUebersichtDto, DokumentenKette, DokumentRef, GeschaeftsdatenDto, Beleg (+20 more)
 
 ### Community 119 - "Krankenkasse"
-Cohesion: 0.13
-Nodes (12): GetMapping, RequestMapping, RestController, LohnStammdatenController, Entity, Table, Krankenkasse, KrankenkasseDto (+4 more)
+Cohesion: 0.05
+Nodes (27): DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, RestController, LohnStammdatenController, Gewerk (+19 more)
 
 ### Community 120 - "Leistungseditor.tsx"
 Cohesion: 0.09
-Nodes (29): CategoryMultiSelectModal(), CategoryMultiSelectModalProps, SelectedCategory, mockFetch, mockHauptkategorien, mockSearchResults, TreeNode(), TreeNodeProps (+21 more)
+Nodes (28): CategoryMultiSelectModal(), CategoryMultiSelectModalProps, SelectedCategory, mockFetch, mockHauptkategorien, mockSearchResults, TreeNode(), TreeNodeProps (+20 more)
 
-### Community 121 - "AngebotPosition"
-Cohesion: 0.05
-Nodes (14): AnfrageHerkunft, Entity, Table, AnfragePosition, Entity, Table, AngebotKostenbestandteil, Entity (+6 more)
+### Community 121 - "AnfragePosition"
+Cohesion: 0.11
+Nodes (6): AnfrageHerkunft, Entity, Table, AnfragePosition, Entity, Table
 
-### Community 122 - "ZeitkontoKorrektur"
-Cohesion: 0.06
-Nodes (17): DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, RestController, ZeitkontoKorrekturController, KorrekturTyp (+9 more)
+### Community 122 - "org.springframework.data.jpa.repository.JpaRepository"
+Cohesion: 0.02
+Nodes (82): org.springframework.data.jpa.repository.JpaRepository, org.springframework.stereotype.Repository, GetMapping, lombok.Data, RequestMapping, RestController, LieferantReklamationController, LieferscheinSearchDto (+74 more)
 
-### Community 123 - "DatevExportService"
-Cohesion: 0.06
-Nodes (31): Buchung, DatevExportSecurityTest.Filters, Hinweis, Referenz, DatevExportRepository, EntityManager, DatevExportService, Datei (+23 more)
+### Community 123 - "DatevExportServiceTest"
+Cohesion: 0.16
+Nodes (7): DatevExportRepository, EntityManager, DatevExportServiceTest, BeforeEach, ExportRequest, PlatformTransactionManager, Test
 
-### Community 124 - "EinkaufMengenbuchung"
-Cohesion: 0.08
-Nodes (13): EinkaufMengenbuchung, Entity, Table, Mengenstand, Response, EinkaufMengenbuchungRepository, Mengenaktion, BESTELLEN (+5 more)
+### Community 124 - "AusgangsGeschaeftsDokumentController"
+Cohesion: 0.09
+Nodes (4): AusgangsGeschaeftsDokumentController, HttpServletRequest, DatensatzLockController, EntityLastAccessedController
 
-### Community 125 - "KalenderEintrag"
-Cohesion: 0.04
-Nodes (34): nl.martijndwars.webpush.PushService, PushService, DeleteMapping, GetMapping, KalenderEintrag, PostMapping, PutMapping, RequestMapping (+26 more)
+### Community 125 - "KalenderService"
+Cohesion: 0.13
+Nodes (13): DeleteMapping, GetMapping, KalenderEintrag, PostMapping, PutMapping, RequestMapping, RestController, KalenderController (+5 more)
 
 ### Community 126 - "ScannerModal.tsx"
 Cohesion: 0.11
 Nodes (22): CameraHandle, ScannerModal(), ScannerModalProps, solveHomography(), Corners, detectDocumentCorners(), detectDocumentCornersOnCanvasSync(), ensureLoaded() (+14 more)
 
-### Community 127 - "Lieferanten"
-Cohesion: 0.02
-Nodes (69): com.fasterxml.jackson.annotation.JsonCreator, com.fasterxml.jackson.annotation.JsonFormat, jakarta.persistence.TypedQuery, org.springframework.boot.test.context.SpringBootTest, org.springframework.data.jpa.repository.JpaSpecificationExecutor, Artikel, Entity, Inheritance (+61 more)
+### Community 127 - "LieferantenArtikelPreise"
+Cohesion: 0.06
+Nodes (22): Entity, PrePersist, Table, LieferantenArtikelPreise, PreisScope, MENGENSTAFFEL, PROJEKT, STANDARD (+14 more)
 
 ### Community 128 - "LocalRagService"
-Cohesion: 0.16
-Nodes (5): CachedChunk, ChunkEntry, CodeChunkResult, LocalRagService, RawChunk
+Cohesion: 0.09
+Nodes (15): Override, ChatRequest, KiHilfeController, MessageDto, PageContextDto, ChatMessage, ChatResult, KiHilfeService (+7 more)
 
-### Community 129 - "AngebotVersion"
-Cohesion: 0.04
-Nodes (32): EinkaufAngebotController, GetMapping, PostMapping, PutMapping, RequestMapping, ResponseStatus, RestController, AngebotVersion (+24 more)
+### Community 129 - "EinkaufAngebotService"
+Cohesion: 0.13
+Nodes (13): EinkaufAngebotController, PostMapping, PutMapping, RequestMapping, ResponseStatus, RestController, Abweichungsfreigabe, Erfassung (+5 more)
 
-### Community 130 - "Gerendert"
-Cohesion: 0.11
-Nodes (13): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal, EinkaufFaelligkeitDto, Faelligkeit, NachfrageEntwurf (+5 more)
+### Community 130 - "EinkaufFaelligkeitDto"
+Cohesion: 0.29
+Nodes (5): EinkaufFaelligkeitDto, Faelligkeit, NachfrageEntwurf, NachfrageRequest, EinkaufFaelligkeitControllerTest
 
-### Community 131 - "AnfrageFunnelServiceTest"
-Cohesion: 0.10
-Nodes (8): KundenZaehler, KundenZaehlerRepository, AdressTeile, Kunde, Result, SpamFilterChatBackend, AnfrageFunnelServiceTest, KundennummerServiceTest
-
-### Community 132 - ".assignToProjekt"
-Cohesion: 0.15
-Nodes (4): EmailZuordnungTest, Anfrage, Projekt, EmailLieferantVerknuepfungServiceTest
+### Community 131 - "AnfrageFunnelService"
+Cohesion: 0.09
+Nodes (13): jakarta.validation.constraints.AssertTrue, AnfrageFunnelRequestDto, KundenZaehlerRepository, AdressTeile, AnfrageFunnelService, Anfrage, AnfrageNotiz, Kunde (+5 more)
 
 ### Community 133 - "SchrittText.tsx"
-Cohesion: 0.11
-Nodes (23): erzeugeBeitragsvorschlag(), BeitragVorschau(), BeitragVorschauProps, MONATE, monatUndJahr(), standard, SchrittText(), SchrittTextProps (+15 more)
+Cohesion: 0.12
+Nodes (22): BeitragVorschau(), BeitragVorschauProps, MONATE, monatUndJahr(), standard, SchrittText(), SchrittTextProps, entwurf (+14 more)
 
 ### Community 134 - "UnifiedEmailControllerTest"
-Cohesion: 0.06
-Nodes (15): Override, MailKonto, AttachmentDownloadTests, BlockSender, Delete, EmailSendAttachmentTests, GetThread, Inbox (+7 more)
+Cohesion: 0.04
+Nodes (21): EmailThreadDto, AttachmentDto, EmailThreadEntryDto, EmailDraftRepository, EmailThreadService, AttachmentDownloadTests, BlockSender, Delete (+13 more)
 
 ### Community 135 - "EinkaufVorlagenService"
-Cohesion: 0.14
-Nodes (6): VorlagenKontext, EinkaufVorlagenService, PositionSnapshot, SafeVarargs, EmailTextTemplateControllerTest, EinkaufVorlagenServiceTest
+Cohesion: 0.05
+Nodes (32): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal, jakarta.persistence.Query, NachfrageRequest, EinkaufFaelligkeitController (+24 more)
 
-### Community 136 - "hilfen/api.ts"
-Cohesion: 0.12
-Nodes (17): BEISPIEL_BEITRAG, BeitragStand, blockiereFremdeNetzwerkzugriffe(), json(), Mitschrift, oeffneNeuigkeiten(), PIXEL_PNG, stubbeWebsiteApi() (+9 more)
+### Community 136 - "website-design.spec.ts"
+Cohesion: 0.19
+Nodes (11): json(), oeffneNeuigkeiten(), stubbeWebsiteApi(), inhalt(), projektsuche(), warteAufProjektsuche(), alsRgb(), echterHintergrund() (+3 more)
 
-### Community 137 - "FirmeninformationService"
-Cohesion: 0.10
-Nodes (5): FirmeninformationDto, FirmeninformationService, FirmaControllerLogoTest, EmailTextTemplateServiceTest, FirmeninformationServiceTest
+### Community 137 - ".render"
+Cohesion: 0.07
+Nodes (9): EmailContent, FirmeninformationDto, Firmeninformation, AnfrageBestaetigungVersandServiceTest, Anfrage, SuppressWarnings, EmailTextTemplateServiceTest, FirmeninformationServiceTest (+1 more)
 
 ### Community 138 - "StuecklistePdfService"
 Cohesion: 0.15
 Nodes (10): com.lowagie.text.pdf.PdfPCellEvent, CheckboxCellEvent, Artikel, ArtikelInProjekt, Font, Override, PdfPCell, Rectangle (+2 more)
 
 ### Community 139 - "SteuerberaterKontakt"
-Cohesion: 0.10
-Nodes (14): Entity, Table, SteuerberaterAnsprechpartner, Entity, Table, SteuerberaterKontakt, SteuerberaterAnsprechpartnerDto, SteuerberaterKontaktDto (+6 more)
+Cohesion: 0.16
+Nodes (10): Entity, Table, SteuerberaterAnsprechpartner, Entity, Table, SteuerberaterKontakt, SteuerberaterAnsprechpartnerDto, SteuerberaterAnsprechpartner (+2 more)
 
-### Community 140 - "KasseDatevExportServiceTest"
-Cohesion: 0.17
-Nodes (7): KasseEinstellung, KasseDatevExportService, Parameter, Beleg, BelegKategorie, Kostenstelle, KasseDatevExportServiceTest
+### Community 140 - "SteuerberaterExportService"
+Cohesion: 0.05
+Nodes (25): java.util.zip.ZipOutputStream, Buchungssatz, BuchungssatzAbleitung, Konten, KasseEinstellung, KasseDatevExportService, Parameter, Beleg (+17 more)
 
 ### Community 141 - ".generatePdf"
-Cohesion: 0.16
-Nodes (8): PdfPTable, ProjektListenPdfService, Kunde, Projekt, ProjektRepositoryAuftragsartTest, Kunde, Projekt, ProjektListenPdfServiceTest
+Cohesion: 0.17
+Nodes (7): PdfPTable, Kunde, Projekt, ProjektRepositoryAuftragsartTest, Kunde, Projekt, ProjektListenPdfServiceTest
 
 ### Community 142 - "README.md"
 Cohesion: 0.04
 Nodes (44): 19 Highlights auf einen Blick, 🏗️ Architektur, ⏱️ Automatische Zeitkalkulation per Lineare Regression, 📓 Bautagebuch & Anfrage-Tagebuch – durchgehend dokumentieren, von der ersten Anfrage bis zur Abnahme, 🤝 Beitragen, 📂 CAD- & Excel-Dateien direkt aus dem Browser öffnen – wie ein gemeinsamer Cloudspeicher, 🔒 Datenschutz & KI-Hinweis, 🏗️ Deployment & Betrieb (+36 more)
 
-### Community 143 - "BeitragAssistent.tsx"
-Cohesion: 0.11
-Nodes (22): BeitragAssistentProps, fehlertext(), LEERER_STAND, Projekt, Schritt, berechneAusgabeMasse(), Bildbearbeitung, Masse (+14 more)
+### Community 143 - "bildbearbeitung.ts"
+Cohesion: 0.16
+Nodes (15): berechneAusgabeMasse(), Bildbearbeitung, Masse, MAX_BREITE_KI, MAX_BREITE_UPLOAD, STANDARD_BEARBEITUNG, quelle, zeichne() (+7 more)
 
-### Community 144 - "SpamModelStats"
-Cohesion: 0.11
-Nodes (11): Entity, Table, SpamModelStats, Entity, Table, SpamTokenCount, SpamModelStatsRepository, SpamTokenCountRepository (+3 more)
+### Community 144 - "procurementMock.ts"
+Cohesion: 0.12
+Nodes (32): articles, assignments, body(), bytes(), categories, comparison(), Data, emails (+24 more)
 
-### Community 145 - "HiCadImportService"
+### Community 145 - "HiCadImportService.java"
 Cohesion: 0.04
-Nodes (36): DataFormatter, org.apache.poi.openxml4j.opc.PackageRelationship, org.apache.poi.poifs.filesystem.DirectoryEntry, org.apache.poi.poifs.filesystem.Entry, org.apache.poi.ss.usermodel.Cell, org.apache.poi.ss.usermodel.DataFormatter, org.apache.poi.ss.usermodel.Row, org.apache.poi.ss.usermodel.Workbook (+28 more)
+Nodes (26): org.apache.poi.poifs.filesystem.Entry, HiCadImportController, GetMapping, RequestMapping, RestController, HiCadImport, Entity, Table (+18 more)
 
 ### Community 146 - "RAG-Indexierung manuell (ohne Server)"
 Cohesion: 0.10
 Nodes (19): 1. **Gemini API Key prüfen**, 1. **StandaloneRagIndexer** (Empfohlen für schnelle CLI-Läufe), 2. **Nur bestimmte Chunks re-indexieren**, 2. **RagIndexingRunner** (Spring Boot ApplicationRunner), 3. **Chunking optimieren**, Cache-Datei (`.rag-cache.json`), Cache leeren, Configuration (application.properties) (+11 more)
 
 ### Community 147 - "KundeController"
-Cohesion: 0.18
+Cohesion: 0.20
 Nodes (3): KundeNotiz, KundeController, KundeNotizDto
 
 ### Community 148 - "GaebImportService"
@@ -1161,52 +1135,52 @@ Cohesion: 0.05
 Nodes (52): FailedEntriesModal(), FailedEntriesModalProps, formatTime(), TYP_ICON, TYP_LABEL, NetworkStatusBadge(), NetworkStatusBadgeProps, Arbeitsgang (+44 more)
 
 ### Community 151 - "EmailImportServiceTest"
-Cohesion: 0.05
-Nodes (14): AusgangsordnerVerarbeitung, BlacklistSkip, EmailImportServiceTest, FallbackMessageId, FehlerBehandlung, ImportZeitplan, ApplicationEventPublisher, LieferantenNewsletter (+6 more)
+Cohesion: 0.06
+Nodes (13): com.sun.mail.imap.IMAPFolder, AusgangsordnerVerarbeitung, BlacklistSkip, EmailImportServiceTest, FallbackMessageId, FehlerBehandlung, ApplicationEventPublisher, LieferantenNewsletter (+5 more)
 
 ### Community 152 - "SteuerberaterEmailProcessingService"
-Cohesion: 0.18
+Cohesion: 0.20
 Nodes (6): org.apache.pdfbox.pdmodel.PDDocument, EmailAttachment, Mitarbeiter, PDDocument, SteuerberaterKontakt, SteuerberaterEmailProcessingService
 
-### Community 153 - "GeminiDokumentAnalyseService"
+### Community 153 - "ProjektAuswertungPdfServiceTest"
 Cohesion: 0.09
-Nodes (6): java.util.concurrent.locks.ReentrantLock, GeminiDokumentAnalyseService, AnalyzeResponse, MultiInvoiceAnalyzeResponse, PDDocument, Position
+Nodes (7): BuildKategoriePfadTests, GeneratePdfKopfUndHinweisTests, GeneratePdfValidierungTests, GroupByLabelTests, Mitarbeiter, Produktkategorie, ProjektAuswertungPdfServiceTest
 
 ### Community 154 - "UI/UX Pro Max - Design Intelligence"
 Cohesion: 0.04
 Nodes (44): 1. Accessibility (CRITICAL), 1. The Two Gulfs of Interaction (Don Norman), 2. Nielsen's Usability Heuristics (Top 5 for this ERP), 2. Touch & Interaction (CRITICAL), 3. Performance (HIGH), 4. Layout & Responsive (HIGH), 5. Typography & Color (MEDIUM), 6. Animation (MEDIUM) (+36 more)
 
-### Community 155 - "Gewerk"
-Cohesion: 0.15
-Nodes (10): PostMapping, PutMapping, Gewerk, Entity, Table, GewerkDto, GewerkRepository, GewerkService (+2 more)
+### Community 155 - "ByteArrayResource"
+Cohesion: 0.12
+Nodes (7): ByteArrayResource, EinkaufBedarfControllerTest.FilterBeans, ArtikelDokumentDatei, DateiAuslieferung, EinkaufBedarfControllerTest, EmailSendAttachmentTests, MockMultipartFile
 
 ### Community 156 - ".invokeZugferdExtraktion"
 Cohesion: 0.19
 Nodes (3): LieferantDokument, XmlDokumentTypErkennung, ZugferdDokumentTypErkennung
 
-### Community 157 - "jakarta.persistence.Entity"
-Cohesion: 0.05
-Nodes (8): jakarta.persistence.Embeddable, jakarta.persistence.Entity, jakarta.persistence.Table, AuditChainState, EinkaufAnalyseJob, EinkaufAnalyseVorschlag, SeenSenderDomain, EinkaufAnalyseJobRepository
+### Community 157 - "EinkaufAnalyseJob"
+Cohesion: 0.07
+Nodes (3): EinkaufAnalyseJob, EinkaufAnalyseVorschlag, EinkaufAnalyseJobRepository
 
-### Community 158 - "org.springframework.data.jpa.repository.Lock"
-Cohesion: 0.05
-Nodes (21): org.springframework.data.jpa.repository.Lock, AnfrageLieferant, Entity, Table, EinkaufMailZuordnung, Zuordnungsergebnis, LieferantenstatusRequest, AnfrageLieferantRepository (+13 more)
+### Community 158 - "EinkaufAntwortZuordnungService"
+Cohesion: 0.04
+Nodes (28): EinkaufMailZuordnungRecoveryIntegrationTest.Config, java.security.SecureRandom, AnfrageLieferant, Entity, Table, EinkaufMailZuordnung, Zuordnungsergebnis, LieferantenstatusRequest (+20 more)
 
-### Community 159 - "KassenbuchungService"
-Cohesion: 0.10
-Nodes (10): OffeneRechnung, Art, EIGENES_GELD_EINGELEGT, GELD_AUSGEGEBEN, GELD_EINGENOMMEN, GELD_PRIVAT_ENTNOMMEN, VON_BANK_GEHOLT, ZUR_BANK_GEBRACHT (+2 more)
+### Community 159 - "Art"
+Cohesion: 0.29
+Nodes (7): Art, EIGENES_GELD_EINGELEGT, GELD_AUSGEGEBEN, GELD_EINGENOMMEN, GELD_PRIVAT_ENTNOMMEN, VON_BANK_GEHOLT, ZUR_BANK_GEBRACHT
 
-### Community 160 - "SpamFilterService"
+### Community 160 - "ArtikelController"
 Cohesion: 0.13
-Nodes (4): ScanResult, SpamFilterService, SpamKeyword, InquiryDetectionServiceTest
+Nodes (5): org.springframework.data.jpa.domain.Specification, ArtikelController, SortField, ArtikelSuchePreisvorschlagTest, Artikel
 
 ### Community 161 - "compilerOptions"
 Cohesion: 0.06
 Nodes (33): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, forceConsistentCasingInFileNames, jsx, lib, module, moduleDetection (+25 more)
 
-### Community 162 - "Zeitbuchung"
-Cohesion: 0.02
-Nodes (41): jakarta.transaction.Transactional, org.springframework.web.bind.annotation.PatchMapping, AuftragsnummerValidierungResponse, NaechsteAuftragsnummerResponse, ProjektController, ProjektNotizBildDto, ProjektNotizCreateDto, ProjektNotizDto (+33 more)
+### Community 162 - "ProjektManagementService"
+Cohesion: 0.03
+Nodes (19): jakarta.transaction.Transactional, AuftragsnummerValidierungResponse, ArtikelInProjekt, Entity, ArtikelMengeDto, MaterialkostenErfassenDto, MaterialKilogrammDto, ProjektResponseDto (+11 more)
 
 ### Community 163 - "AnfrageFunnelSpamFilterServiceTest"
 Cohesion: 0.23
@@ -1218,71 +1192,67 @@ Nodes (14): Arbeitsgang, Buchung, formatDauer(), formatMinutenToTime(), getEntry
 
 ### Community 165 - "devDependencies"
 Cohesion: 0.06
-Nodes (33): autoprefixer, postcss, devDependencies, autoprefixer, eslint, @eslint/js, eslint-plugin-react-refresh, globals (+25 more)
+Nodes (35): autoprefixer, postcss, devDependencies, autoprefixer, eslint, eslint-plugin-react-refresh, globals, jsdom (+27 more)
 
 ### Community 166 - "compilerOptions"
 Cohesion: 0.06
 Nodes (32): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, jsx, lib, module, moduleDetection, moduleResolution (+24 more)
 
-### Community 167 - "TagesSollService"
-Cohesion: 0.11
-Nodes (9): Feiertag, Entity, Table, FeiertagRepository, ArbeitszeitVorschau, Arbeitszeit, TagesSollService, TagesWerte (+1 more)
+### Community 167 - "FeiertagService"
+Cohesion: 0.13
+Nodes (7): Feiertag, Entity, Table, FeiertagRepository, FeiertagService, Feiertag, FeiertagServiceTest
 
-### Community 168 - ".render"
-Cohesion: 0.16
-Nodes (7): EmailContent, EmailTemplateController, EmailTemplateRequest, EmailTemplateResponse, AnfrageBestaetigungVersandServiceTest, Anfrage, SuppressWarnings
+### Community 168 - "EmailController"
+Cohesion: 0.17
+Nodes (5): DokumentAbsenderResponse, EmailController, EmailTemplateController, EmailTemplateRequest, EmailTemplateResponse
 
 ### Community 169 - "BelegKiAnalyseServiceTest"
-Cohesion: 0.07
-Nodes (12): org.junit.jupiter.params.provider.Arguments, org.junit.jupiter.params.provider.MethodSource, org.junit.jupiter.params.provider.NullAndEmptySource, org.mockito.junit.jupiter.MockitoSettings, DokumentMailRequest, AnalyzeResponse, ZahlungsartMapper, SystemSettingsControllerDokumentMailTest (+4 more)
+Cohesion: 0.10
+Nodes (10): org.junit.jupiter.params.provider.Arguments, org.junit.jupiter.params.provider.MethodSource, org.junit.jupiter.params.provider.NullAndEmptySource, BelegKiAnalyseService, AnalyzeResponse, ZahlungsartMapper, BelegKiAnalyseServiceTest, AnalyzeResponse (+2 more)
 
 ### Community 170 - "EmailSignature"
-Cohesion: 0.07
-Nodes (12): EmailSignatureController, EmailSignature, GetMapping, PostMapping, RequestMapping, RestController, SaveSignatureRequest, EmailSignature (+4 more)
+Cohesion: 0.06
+Nodes (14): EmailSignatureController, DeleteMapping, EmailSignature, GetMapping, PostMapping, RequestMapping, RestController, SaveSignatureRequest (+6 more)
 
-### Community 171 - "SchnittbilderRepository"
-Cohesion: 0.16
-Nodes (6): org.apache.pdfbox.pdmodel.PDPage, Entity, Schnittbilder, SchnittbilderRepository, EinkaufPdfServiceTest, PdfPosition
+### Community 171 - "ArtikelDokument"
+Cohesion: 0.12
+Nodes (7): ArtikelDokument, Entity, Table, Artikel, LadeDatei, LadeHoch, LadeVorschaubildUrls
 
 ### Community 172 - "lieferant-layout.spec.ts"
-Cohesion: 0.06
-Nodes (39): DUMMY_ANFRAGE_DETAIL, json(), stubAnfrageApi(), BELEG, oeffneBelegUndFindeKontoAusloeser(), PIXEL_PNG_BYTES, SACHKONTEN, SPACELOSES_WORT (+31 more)
+Cohesion: 0.07
+Nodes (32): DUMMY_ANFRAGE_DETAIL, json(), stubAnfrageApi(), BELEG, oeffneBelegUndFindeKontoAusloeser(), PIXEL_PNG_BYTES, SACHKONTEN, SPACELOSES_WORT (+24 more)
 
 ### Community 173 - "dependencies"
 Cohesion: 0.06
-Nodes (33): chart.js, @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities, dompurify, @radix-ui/react-dropdown-menu, react-dropzone, dependencies (+25 more)
+Nodes (35): chart.js, @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities, dompurify, @radix-ui/react-dropdown-menu, react-chartjs-2, react-dropzone (+27 more)
 
 ### Community 174 - "PositionSnapshot"
-Cohesion: 0.04
-Nodes (41): AssertTrue, org.springframework.core.io.ByteArrayResource, Einheit, KILOGRAMM, METER, QUADRATMETER, STUECK, TONNE (+33 more)
+Cohesion: 0.05
+Nodes (40): Dokumentart, CE_NACHWEIS, LEISTUNGSERKLAERUNG, ZEUGNIS_2_1, ZEUGNIS_2_2, ZEUGNIS_3_1, ZEUGNIS_3_2, Einheit (+32 more)
 
 ### Community 175 - "KassenbuchAbschlussServiceTest"
-Cohesion: 0.08
-Nodes (15): java.time.YearMonth, org.junit.jupiter.params.provider.EnumSource, Entity, Table, KassenbuchMonatsabschluss, KassenbuchMonatsabschlussRepository, Beleg, Vorschau (+7 more)
+Cohesion: 0.06
+Nodes (22): org.junit.jupiter.params.provider.EnumSource, Entity, Table, KassenbuchMonatsabschluss, Entity, Table, Kassenzaehlung, KassenbuchMonatsabschlussRepository (+14 more)
 
 ### Community 176 - "dokument-editor-seite.spec.ts"
 Cohesion: 0.10
 Nodes (19): DREI_POSITIONEN, AcquireVerhalten, json(), lockDto(), stubbeDatensatzLock(), HEUTE, TEXTBAUSTEIN_MIT_CHIPS, zahlungszielEingeben() (+11 more)
 
-### Community 177 - "LocalTestDatabaseGuardTest"
-Cohesion: 0.18
-Nodes (8): org.springframework.boot.env.EnvironmentPostProcessor, org.springframework.boot.SpringApplication, org.springframework.core.env.ConfigurableEnvironment, org.springframework.core.Ordered, org.springframework.mock.env.MockEnvironment, Override, LocalTestDatabaseGuard, LocalTestDatabaseGuardTest
-
-### Community 178 - "Verteilungsschluessel"
-Cohesion: 0.08
-Nodes (17): KostenpositionBerechnung, BETRAG, VERBRAUCHSFAKTOR, Verteilungsschluessel, VerteilungsschluesselEintrag, VerteilungsschluesselTyp, FLAECHE, PROZENTUAL (+9 more)
+### Community 178 - "AngebotVersion"
+Cohesion: 0.07
+Nodes (5): AngebotVersion, Entity, Table, Angebot, Uebersicht
 
 ### Community 179 - ".findFirmeninformation"
-Cohesion: 0.24
-Nodes (4): QuittungDaten, BelegPdfServiceTest, Firmeninformation, Mitarbeiter
+Cohesion: 0.21
+Nodes (5): EigenbelegDaten, QuittungDaten, BelegPdfServiceTest, Firmeninformation, Mitarbeiter
 
 ### Community 180 - "devDependencies"
 Cohesion: 0.08
 Nodes (25): fake-indexeddb, devDependencies, eslint-plugin-react-refresh, fake-indexeddb, globals, jsdom, @testing-library/jest-dom, @testing-library/user-event (+17 more)
 
 ### Community 181 - "DatevDto"
-Cohesion: 0.20
-Nodes (10): Datei, DatevDto, ExportRequest, Hinweis, Konfiguration, Personalnummer, Referenz, Stand (+2 more)
+Cohesion: 0.33
+Nodes (8): Datei, DatevDto, ExportRequest, Hinweis, Referenz, Stand, Vorpruefung, Zuordnung
 
 ### Community 182 - "BelegScannerPage.tsx"
 Cohesion: 0.09
@@ -1292,25 +1262,25 @@ Nodes (18): Lieferant, LieferantApiItem, SupplierSelectionModal(), SupplierSelec
 Cohesion: 0.15
 Nodes (4): Override, SuppressWarnings, SpracheingabeServiceTest, ZaehlenderStrom
 
-### Community 184 - "EmailThreadService"
-Cohesion: 0.11
-Nodes (6): EmailThreadDto, AttachmentDto, EmailThreadEntryDto, EmailThreadService, InlineAttachmentUtil, EmailThreadServiceTest
+### Community 184 - "ZeitbuchungAutoStopServiceTest"
+Cohesion: 0.18
+Nodes (5): AutoStoppeWennNoetig, Mitarbeiter, MonatsSaldoInvalidierung, PruefUndStoppeOffeneBuchungen, ZeitbuchungAutoStopServiceTest
 
-### Community 185 - "ContentBlockDto"
-Cohesion: 0.07
-Nodes (27): AbrechnungspositionRequest, AbrechnungsverlaufRequest, AbschlagInfoRequest, DocBlockRequest, DokumentGeneratorController, FormBlockRequest, GeneratePdfRequest, ResponseEntity (+19 more)
+### Community 185 - "org.junit.jupiter.api.Nested"
+Cohesion: 0.04
+Nodes (35): org.junit.jupiter.api.Nested, FormBlockDto, KopfdatenDto, LayoutDto, RechnungDto, RaumMapping, VerbrauchsgegenstandMapping, Delete (+27 more)
 
-### Community 186 - "Dokumenttyp"
-Cohesion: 0.09
-Nodes (18): Dokumenttyp, ABSCHLAGSRECHNUNG, ANGEBOT, AUFTRAGSBESTAETIGUNG, ERSTE_MAHNUNG, GUTSCHRIFT, NACHTRAGSANGEBOT, RECHNUNG (+10 more)
+### Community 186 - "Paragraph"
+Cohesion: 0.21
+Nodes (9): ColumnText, com.lowagie.text.pdf.BaseFont, com.lowagie.text.pdf.PdfContentByte, com.lowagie.text.pdf.PdfTemplate, com.lowagie.text.Rectangle, Paragraph, TextSplitter, Rectangle (+1 more)
 
-### Community 187 - "EmailImportService"
-Cohesion: 0.06
-Nodes (13): com.sun.mail.imap.IMAPFolder, jakarta.mail.Address, jakarta.mail.BodyPart, jakarta.mail.Message, ServerSocket, GetMapping, PostMapping, RequestMapping (+5 more)
+### Community 187 - "VendorInvoiceIntegrationService"
+Cohesion: 0.17
+Nodes (6): GetMapping, PostMapping, RequestMapping, RestController, VendorInvoiceController, VendorInvoiceIntegrationService
 
-### Community 188 - "SteuerberaterExportService"
-Cohesion: 0.13
-Nodes (11): Beleg, KasseEinstellung, LieferantDokument, Mitarbeiter, OffenerPunkt, Vorpruefung, ZipOutputStream, SteuerberaterExportService (+3 more)
+### Community 188 - "AngebotPosition"
+Cohesion: 0.10
+Nodes (8): AngebotPosition, Entity, Table, Angebot, EinkaufAngebotDto, Position, Uebersicht, ZeugnisZusage
 
 ### Community 189 - ".nettoNachRabatt"
 Cohesion: 0.17
@@ -1318,11 +1288,11 @@ Nodes (4): RabattRechner, NormalisiereProzent, RabattRechnerTest, Rundung
 
 ### Community 190 - "EmailAbsender"
 Cohesion: 0.15
-Nodes (5): EmailAbsender, EmailAbsenderDto, EmailAbsenderService, EmailAbsender, EmailAbsenderServiceTest
+Nodes (6): EmailAbsender, EmailAbsenderDto, EmailAbsenderRepository, EmailAbsenderService, EmailAbsender, EmailAbsenderServiceTest
 
-### Community 191 - "@playwright/test"
-Cohesion: 0.07
-Nodes (20): messages, port, designPruefung(), DesignPruefungOptionen, keineUeberschneidungen(), keinHorizontalerUeberlauf(), keinTextGekuerzt(), keinTextLaeuftUeber() (+12 more)
+### Community 191 - "react-zeiterfassung/e2e/hilfen/design.ts"
+Cohesion: 0.10
+Nodes (16): designPruefung(), DesignPruefungOptionen, keineUeberschneidungen(), keinHorizontalerUeberlauf(), keinTextGekuerzt(), keinTextLaeuftUeber(), Rahmen, uebergaengeAusklingenLassen() (+8 more)
 
 ### Community 193 - "compilerOptions"
 Cohesion: 0.09
@@ -1333,92 +1303,100 @@ Cohesion: 0.09
 Nodes (22): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, lib, module, moduleDetection, moduleResolution, noEmit (+14 more)
 
 ### Community 195 - "EmailBackfillEventListener"
-Cohesion: 0.12
-Nodes (13): org.springframework.scheduling.annotation.Async, org.springframework.transaction.event.TransactionalEventListener, EmailAddressChangedEvent, EntityType, ANFRAGE, ANGEBOT, KUNDE, LIEFERANT (+5 more)
+Cohesion: 0.20
+Nodes (8): EmailAddressChangedEvent, EntityType, ANFRAGE, ANGEBOT, KUNDE, LIEFERANT, PROJEKT, EmailBackfillEventListener
 
-### Community 196 - "BeitragKiServiceTest"
+### Community 196 - "BeitragKiService"
 Cohesion: 0.11
-Nodes (9): org.springframework.mock.web.MockMultipartFile, BeitragKiAnfrage, ChatNachricht, BeitragKiEntwurf, BeitragKiControllerTest, MockMultipartFile, BeitragKiServiceTest, AusgangsGeschaeftsDokument (+1 more)
+Nodes (10): BeitragKiAnfrage, ChatNachricht, BeitragKiEntwurf, BeitragKiService, SafeVarargs, BeitragKiControllerTest, MockMultipartFile, BeitragKiServiceTest (+2 more)
 
-### Community 197 - "EinkaufVersandauftragRepository"
-Cohesion: 0.05
-Nodes (14): EinkaufBestellungParallelTest.Config, EinkaufVersandauftragRepository, Status, StatusProjektion, EinkaufStornoanfrageAnnahmeListener, Override, Config, EinkaufBestellungParallelTest (+6 more)
+### Community 197 - "EinkaufAngebotsAnalyseServiceTest.java"
+Cohesion: 0.12
+Nodes (4): EinkaufAngebot, Entity, Table, EinkaufAngebotRepository
 
-### Community 198 - ".beleg"
-Cohesion: 0.18
-Nodes (6): Buchungssatz, BuchungssatzAbleitung, Konten, BuchungssatzAbleitungTest, Beleg, Sachkonto
+### Community 198 - "EmailTextvorlagenEditor.tsx"
+Cohesion: 0.13
+Nodes (20): DokumentTypOption, EinkaufPreview, EinkaufsVorlagenVorschau(), EmailTemplate, EmailTextvorlagenEditor(), emptyTemplate(), escapeHtml(), highlightPlaceholder() (+12 more)
 
 ### Community 199 - "TagesSheet.tsx"
 Cohesion: 0.27
 Nodes (9): Drawer(), DrawerClose(), DrawerContent(), DrawerDescription(), DrawerFooter(), DrawerHeader(), DrawerOverlay(), DrawerTitle() (+1 more)
 
 ### Community 200 - "MitarbeiterEditor.tsx"
-Cohesion: 0.03
-Nodes (96): datumZuTage(), EmailValidityDialog(), EmailValidityDialogProps, formatDate(), QUICK_OPTIONS, tageBisDatum(), Beschaeftigungsart, BeschaeftigungsState (+88 more)
+Cohesion: 0.02
+Nodes (105): datumZuTage(), EmailValidityDialog(), EmailValidityDialogProps, formatDate(), QUICK_OPTIONS, tageBisDatum(), Beschaeftigungsart, BeschaeftigungsState (+97 more)
 
-### Community 202 - "MitarbeiterService"
-Cohesion: 0.14
-Nodes (5): MitarbeiterDokumentResponseDto, MitarbeiterNotizDto, MitarbeiterDokument, MitarbeiterService, Mitarbeiter
+### Community 201 - "WebPushService"
+Cohesion: 0.16
+Nodes (8): nl.martijndwars.webpush.PushService, PushService, GetMapping, RequestMapping, RestController, PushSubscribeRequest, PushSubscriptionController, WebPushService
+
+### Community 202 - "ErfolgsanalyseEditor.tsx"
+Cohesion: 0.10
+Nodes (19): CHART_COLORS, ConversionRateDto, ErfolgsanalyseEditor(), formatCurrency(), formatPercent(), KategorieUmsatzVergleich, KostenstelleVergleich, KundenSortField (+11 more)
 
 ### Community 203 - "compilerOptions"
 Cohesion: 0.08
 Nodes (25): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, jsx, lib, module, moduleDetection, moduleResolution (+17 more)
 
 ### Community 204 - "OutOfOfficeResponder"
-Cohesion: 0.12
-Nodes (9): Entity, Table, OooReplyLog, Entity, Table, OutOfOfficeSchedule, OooReplyLogRepository, OutOfOfficeScheduleRepository (+1 more)
+Cohesion: 0.06
+Nodes (19): DeleteMapping, GetMapping, PostMapping, RequestMapping, RestController, OutOfOfficeController, SaveOooRequest, Entity (+11 more)
 
-### Community 205 - "react-pc-frontend/src/App.tsx"
-Cohesion: 0.03
-Nodes (61): App(), router, AuthContext, AuthContextValue, AuthProvider(), AuthUser, LoginResult, parseResponseMessage() (+53 more)
+### Community 205 - "useToast"
+Cohesion: 0.01
+Nodes (227): App(), router, AuthContext, AuthContextValue, AuthProvider(), AuthUser, LoginResult, parseResponseMessage() (+219 more)
 
-### Community 207 - "VerrechnungslohnService"
-Cohesion: 0.13
-Nodes (10): Modus, HOCHRECHNUNG, RUECKWIRKEND, DatenLuecke, KostenstelleAnteil, MitarbeiterLohnZeile, MitarbeiterStundenZeile, SollUndAusklammerung (+2 more)
+### Community 206 - "EmailSignatureServiceTest"
+Cohesion: 0.17
+Nodes (4): EmailSignatureImageRepository, EmailSignatureRepository, EmailSignatureServiceTest, EmailSignature
+
+### Community 207 - "KundeControllerTest.java"
+Cohesion: 0.18
+Nodes (5): Kunde, KundeDuplikatException, KundeDuplikatResponseDto, KundeDuplikatTrefferDto, KundeListItemDto
 
 ### Community 208 - "MonatsSaldoService"
 Cohesion: 0.05
-Nodes (33): GetMapping, PostMapping, RequestMapping, RestController, MonatsabschlussController, MonatsSaldo, Audit, Berechtigung (+25 more)
+Nodes (36): org.hibernate.annotations.Immutable, PreRemove, GetMapping, PostMapping, RequestMapping, RestController, MonatsabschlussController, Aktion (+28 more)
 
-### Community 209 - ".findeDuplikate"
-Cohesion: 0.08
-Nodes (14): Kunde, KundeDuplikatException, KundeDuplikatGrund, EMAIL_GLEICH, MOBILTELEFON_GLEICH, NAME_PLZ_GLEICH, NAME_STRASSE_GLEICH, TELEFON_GLEICH (+6 more)
-
-### Community 210 - ".erstelleEmail"
-Cohesion: 0.11
-Nodes (10): FindPossibleAssignments, Anfrage, Projekt, KeineZuordnung, KeywordMatching, KeywordMinimumlaenge, KundeEmailZuordnung, LieferantZuordnung (+2 more)
+### Community 209 - "KundeControllerTest"
+Cohesion: 0.09
+Nodes (11): KundeDuplikatGrund, EMAIL_GLEICH, MOBILTELEFON_GLEICH, NAME_PLZ_GLEICH, NAME_STRASSE_GLEICH, TELEFON_GLEICH, KundeDuplikatService, ApplicationEventPublisher (+3 more)
 
 ### Community 212 - "What You Must Do When Invoked"
 Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
 ### Community 213 - "RechnungPdfService"
-Cohesion: 0.09
-Nodes (18): ColumnText, com.lowagie.text.Element, com.lowagie.text.Font, com.lowagie.text.Paragraph, com.lowagie.text.pdf.BaseFont, com.lowagie.text.pdf.ColumnText, com.lowagie.text.pdf.PdfContentByte, com.lowagie.text.pdf.PdfTemplate (+10 more)
+Cohesion: 0.10
+Nodes (17): com.lowagie.text.Element, com.lowagie.text.Font, com.lowagie.text.Paragraph, com.lowagie.text.pdf.ColumnText, com.lowagie.text.pdf.PdfPTable, java.awt.Color, java.text.NumberFormat, ProjektListenPdfService (+9 more)
 
-### Community 214 - "LieferantDokumentTypConverter"
-Cohesion: 0.43
-Nodes (4): jakarta.persistence.AttributeConverter, jakarta.persistence.Converter, Override, LieferantDokumentTypConverter
+### Community 214 - "EinkaufZeugnisDto"
+Cohesion: 0.12
+Nodes (17): Status, ANGEFORDERT, EINGEGANGEN, ERWARTET, GEPRUEFT, KLAERUNG_NOETIG, ZUGEORDNET, ChargeStatusDto (+9 more)
 
 ### Community 215 - "LieferantenControllerTest"
-Cohesion: 0.14
-Nodes (6): Entity, LieferantBild, LieferantBildRepository, ApplicationEventPublisher, LieferantDokument, LieferantenControllerTest
+Cohesion: 0.09
+Nodes (6): EmailAttachment, ProjektEmailDto, LieferantenDetailService, ApplicationEventPublisher, LieferantDokument, LieferantenControllerTest
+
+### Community 216 - "Artikel"
+Cohesion: 0.09
+Nodes (9): Artikel, Entity, Inheritance, Transient, ArtikelDokumenttexteRequest, Override, ArtikelServiceContract, ArtikelDokumenttexteControllerTest (+1 more)
 
 ### Community 217 - "projekt-detail-layout.spec.ts"
 Cohesion: 0.09
 Nodes (18): keinTextGekuerzt(), json(), KATEGORIEN, oeffneProjekteMitMenueleiste(), stubbeMenueleisteApi(), ARBEITSGANG_LANG, BESCHREIBUNG_LANG, DOK_ERSTELLT_VON_LANG (+10 more)
 
-### Community 218 - "BwaPosition"
-Cohesion: 0.29
-Nodes (4): BwaPosition, Entity, Table, BwaPositionRepository
+### Community 218 - ".buildMitarbeiter"
+Cohesion: 0.14
+Nodes (5): AlleEingangsrechnungen, Bezahlt, Genehmigen, Mitarbeiter, OffeneEingangsrechnungen
 
 ### Community 219 - "feldmann_db_import.py"
 Cohesion: 0.23
 Nodes (16): artikel_index(), eine(), kategorie_index(), lieferant_id(), main(), phase_artikel(), phase_dateien(), phase_kategorien() (+8 more)
 
-### Community 220 - "org.springframework.core.io.Resource"
-Cohesion: 0.13
-Nodes (5): java.security.Principal, org.springframework.core.io.Resource, DateiController, BildVorschauService, ImportBildRessource
+### Community 220 - "DatevExportService"
+Cohesion: 0.20
+Nodes (11): Buchung, Hinweis, Referenz, DatevExportService, Datei, ExportRequest, Konfiguration, ResponseStatusException (+3 more)
 
 ### Community 221 - "ProjektAuswertungPdfService"
 Cohesion: 0.36
@@ -1428,33 +1406,37 @@ Nodes (4): Color, PdfPCell, PdfPTable, ProjektAuswertungPdfService
 Cohesion: 0.17
 Nodes (14): ANFRAGEN_MIX, AUTH_ME, json(), kartenBox(), KUNDEN_MIX, LIEFERANTEN_MIX, metaZeile(), NOTIFICATIONS_LEER (+6 more)
 
-### Community 224 - "MonatsabschlussAudit"
-Cohesion: 0.22
-Nodes (8): org.hibernate.annotations.Immutable, PreRemove, Aktion, ABSCHLIESSEN, OEFFNEN, Entity, Table, MonatsabschlussAudit
+### Community 223 - "TagesSollService"
+Cohesion: 0.07
+Nodes (6): ArbeitszeitVorschau, Arbeitszeit, TagesSollService, TagesWerte, ZeitverwaltungControllerTest, TagesSollServiceTest
 
-### Community 225 - "EinkaufMailZuordnungRecoveryIntegrationTest"
-Cohesion: 0.13
-Nodes (8): EinkaufMailZuordnungRecoveryIntegrationTest.Config, EinkaufDateiDto, PdfSnapshotDto, EinkaufImportMailListener, EinkaufImportZuordnungsService, EinkaufEmailImportiert, EinkaufMailZuordnungRecoveryIntegrationTest, EntityManager
+### Community 224 - "LodasDateiWriter"
+Cohesion: 0.18
+Nodes (8): PutMapping, Konfiguration, PlatformTransactionManager, TransactionTemplate, Buchung, LodasDateiWriter, Schluessel, LodasDateiWriterTest
 
-### Community 226 - "MieteMapper"
-Cohesion: 0.13
-Nodes (14): java.math.MathContext, MietabrechnungController, Verbrauchsart, GAS, HEIZUNG, SONSTIGES, STROM, WASSER (+6 more)
+### Community 225 - "AngebotKostenbestandteil"
+Cohesion: 0.16
+Nodes (4): AngebotKostenbestandteil, Entity, Table, Kosten
 
-### Community 227 - "useConfirm"
-Cohesion: 0.03
-Nodes (85): ArtikelDokumente(), ArtikelDokumenteProps, BILD_ENDUNGEN, formatDatum(), istBildDatei(), leseFehlermeldung(), VORSCHAUBILD, ZULASSUNG (+77 more)
+### Community 226 - "Verbrauchsart"
+Cohesion: 0.20
+Nodes (7): Verbrauchsart, GAS, HEIZUNG, SONSTIGES, STROM, WASSER, AnnualAccountingConsumptionDto
+
+### Community 227 - "PhasenZeitleiste.tsx"
+Cohesion: 0.10
+Nodes (19): formatDatum(), Phase, PHASEN_BADGE, PHASEN_LABEL, PhasenTyp, istLaufend(), PhasenZeitleiste(), PhasenZeitleisteProps (+11 more)
 
 ### Community 228 - "BelegPdfService"
 Cohesion: 0.15
 Nodes (3): BelegPdfService, Document, PdfPCell
 
 ### Community 229 - ".speichern"
-Cohesion: 0.09
-Nodes (23): DatevKonfigurationSecurityTest.Filters, JpaRepository, DatevKonfiguration, Entity, Table, DatevKonfigurationRepository, Lock, Query (+15 more)
+Cohesion: 0.26
+Nodes (8): Lock, Query, Query, DatevKonfigurationServiceTest, Konfiguration, Personalnummer, Test, Zuordnung
 
-### Community 230 - "EmailAttachmentProcessingService"
-Cohesion: 0.20
-Nodes (6): DokumentBetragsvorzeichen, EmailAttachmentProcessingService, EmailAttachment, LieferantDokument, LieferantDokumentTyp, org.springframework.transaction.annotation.Transactional
+### Community 230 - "Projekt"
+Cohesion: 0.04
+Nodes (20): org.springframework.data.domain.Sort, AusgangsDokumentUebersichtDto, DokumentUebersichtController, AusgangsGeschaeftsDokument, Entity, PrePersist, PreUpdate, Table (+12 more)
 
 ### Community 231 - "email"
 Cohesion: 0.10
@@ -1474,7 +1456,7 @@ Nodes (19): Dialog(), ErwarteterBestand, FehlerHinweis(), KassenbuchAbschlussLei
 
 ### Community 235 - "FormularTemplateService"
 Cohesion: 0.07
-Nodes (18): org.springframework.validation.annotation.Validated, FormularTemplateController, DeleteMapping, GetMapping, PostMapping, PutMapping, RestController, FormularTemplateCopyRequest (+10 more)
+Nodes (15): FormularTemplateController, DeleteMapping, GetMapping, PostMapping, PutMapping, RestController, FormularTemplateCopyRequest, FormularTemplateDto (+7 more)
 
 ### Community 236 - "SteuerberaterEmailProcessingServiceTest"
 Cohesion: 0.23
@@ -1485,60 +1467,52 @@ Cohesion: 0.06
 Nodes (80): ART_ICONS, KalenderIcon, VERKNUEPFUNG_ICONS, addiereMonate(), addiereTage(), anzahlText(), formatDatumLang(), formatDatumOhneJahr() (+72 more)
 
 ### Community 238 - "org.springframework.context.annotation.Bean"
-Cohesion: 0.05
-Nodes (46): EinkaufOutboxParallelTest.Config, EmailKontoImportTest.TestConfig, HiCadImportParallelTest.TestConfig, java.util.concurrent.ConcurrentLinkedQueue, javax.sql.DataSource, org.springframework.context.annotation.Bean, org.springframework.context.annotation.ComponentScan.Filter, org.springframework.context.annotation.Configuration (+38 more)
+Cohesion: 0.02
+Nodes (95): AssertTrue, EinkaufBestellungParallelTest.Config, EinkaufOutboxParallelTest.Config, EmailKontoImportTest.TestConfig, HiCadImportParallelTest.TestConfig, java.util.concurrent.ConcurrentLinkedQueue, javax.sql.DataSource, org.springframework.boot.autoconfigure.condition.ConditionalOnProperty (+87 more)
 
 ### Community 239 - "InsightsTab.tsx"
 Cohesion: 0.12
-Nodes (14): PageHeader(), PageHeaderProps, ladeAnalyticsAktuell(), ladeAnalyticsVerlauf(), formatiereTag(), formatiereZeitpunkt(), InsightsTab(), schnappschuss (+6 more)
-
-### Community 240 - "ZugferdDaten"
-Cohesion: 0.21
-Nodes (3): ZugferdDaten, PdfAiExtractorService, ZugferdConverterService
+Nodes (14): formatiereTag(), formatiereZeitpunkt(), InsightsTab(), schnappschuss, verlauf, vergleichstext(), ZEITRAEUME, AnalyticsSnapshot (+6 more)
 
 ### Community 241 - "SystemSettingsService"
 Cohesion: 0.03
-Nodes (43): MockEnvironment, org.springframework.boot.test.context.runner.ApplicationContextRunner, ImapAppendService, Store, DateiOrdnerRequest, DateiOrdnerResponse, DateiOrdnerTestRequest, DokumentMailResponse (+35 more)
+Nodes (28): MockEnvironment, org.springframework.boot.test.context.runner.ApplicationContextRunner, ImapAppendService, Store, DokumentMailResponse, ImapSettingsResponse, ImapTestRequest, MailFromResponse (+20 more)
 
 ### Community 242 - "sw.ts"
 Cohesion: 0.27
 Nodes (12): Appointment, checkAndNotify(), CheckNotificationsMessage, cleanupOldSentEntries(), fetchAndCheckAppointments(), formatDate(), hasBeenSent(), markAsSent() (+4 more)
 
-### Community 243 - "KassenbuchController"
-Cohesion: 0.22
-Nodes (6): GetMapping, PostMapping, RequestMapping, RestController, KassenbuchController, KassenbuchGesperrtException
+### Community 243 - "EinkaufVergleichService.java"
+Cohesion: 0.18
+Nodes (7): Kosten, Kosten, EinkaufBelegKostenRechner, Ergebnis, Einheit, Kosten, Mengenbasis
 
-### Community 244 - "org.springframework.core.annotation.Order"
-Cohesion: 0.11
-Nodes (16): Filter, jakarta.servlet.FilterChain, jakarta.servlet.http.HttpServletResponse, OncePerRequestFilter, org.springframework.core.annotation.Order, org.springframework.security.config.annotation.web.builders.HttpSecurity, org.springframework.security.config.annotation.web.configuration.EnableWebSecurity, org.springframework.security.web.SecurityFilterChain (+8 more)
+### Community 244 - "CloudflareAccessJwtFilter"
+Cohesion: 0.05
+Nodes (38): com.nimbusds.jose.proc.SecurityContext, com.nimbusds.jwt.proc.ConfigurableJWTProcessor, Filter, jakarta.servlet.FilterChain, jakarta.servlet.http.HttpServletResponse, OncePerRequestFilter, org.springframework.core.annotation.Order, org.springframework.security.config.annotation.web.builders.HttpSecurity (+30 more)
 
-### Community 245 - "org.junit.jupiter.api.AfterEach"
-Cohesion: 0.08
-Nodes (12): org.junit.jupiter.api.AfterEach, org.springframework.context.annotation.AnnotationConfigApplicationContext, org.springframework.transaction.support.AbstractPlatformTransactionManager, org.springframework.transaction.support.DefaultTransactionStatus, org.springframework.transaction.TransactionDefinition, Override, LocalTestAfterCommitAsyncTest, Observation (+4 more)
+### Community 245 - "LocalTestAfterCommitAsyncTest.java"
+Cohesion: 0.18
+Nodes (8): org.springframework.context.annotation.AnnotationConfigApplicationContext, org.springframework.transaction.support.AbstractPlatformTransactionManager, org.springframework.transaction.support.DefaultTransactionStatus, org.springframework.transaction.TransactionDefinition, Override, TestTransactionManager, Override, TestTransactionManager
 
 ### Community 246 - "launcher.ps1"
 Cohesion: 0.26
 Nodes (7): Ensure-MappedDrive(), Get-MatchingRoot(), Get-NetUseMappedRoot(), L(), Normalize-UNC(), Try-NetUse(), TryOpen-Explorer()
 
 ### Community 247 - "BelegKostenstellenAnteil"
-Cohesion: 0.09
-Nodes (14): BelegKostenstellenAnteil, Entity, PrePersist, PreUpdate, Table, Transient, BelegKostenstellenAnteilRepository, BelegKostenstellenAnteilRepositoryTest (+6 more)
+Cohesion: 0.13
+Nodes (10): BelegKostenstellenAnteil, Entity, PrePersist, PreUpdate, Table, Transient, BelegKostenstellenAnteilRepository, BelegKostenstellenAnteilRepositoryTest (+2 more)
 
-### Community 248 - "AbteilungDokumentBerechtigungRepository"
-Cohesion: 0.16
-Nodes (11): AbteilungBerechtigungController, GetMapping, PutMapping, RequestMapping, Response, RestController, UpdateRequest, AbteilungDokumentBerechtigung (+3 more)
+### Community 248 - "EinkaufRechnungsabgleichWorkflowTest"
+Cohesion: 0.30
+Nodes (6): EinkaufRechnungsabgleichWorkflowTest.Config, EinkaufRechnungsabgleichWorkflowTest, BeforeEach, LieferantDokumentTyp, Test, Testcontainers
 
 ### Community 249 - "dependencies"
 Cohesion: 0.07
 Nodes (29): html5-qrcode, idb, jscanify, jspdf, dependencies, clsx, html5-qrcode, idb (+21 more)
 
 ### Community 250 - "Zeitkontenmodell"
-Cohesion: 0.06
-Nodes (25): DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, ResponseStatus, RestController, ZeitkontenmodellController (+17 more)
-
-### Community 251 - "LieferantenDetailService"
 Cohesion: 0.07
-Nodes (17): Entity, PrePersist, Table, LieferantNotiz, LieferantAttachmentViewDto, Response, LieferantDetailDto, LieferantKommunikationDto (+9 more)
+Nodes (21): DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, ResponseStatus, RestController, ZeitkontenmodellController (+13 more)
 
 ### Community 252 - "bearbeiten-leiste.spec.ts"
 Cohesion: 0.24
@@ -1549,8 +1523,8 @@ Cohesion: 0.24
 Nodes (9): AcquireVerhalten, dialog(), DUMMY_DOKUMENT, DUMMY_LIEFERANT, json(), lockDto(), MINI_PDF, oeffneDokumentModal() (+1 more)
 
 ### Community 254 - "scripts"
-Cohesion: 0.18
-Nodes (11): scripts, build, dev, lint, preview, test, test:coverage, test:e2e (+3 more)
+Cohesion: 0.15
+Nodes (13): scripts, build, dev, lint, preview, preview:original, test, test:coverage (+5 more)
 
 ### Community 255 - "TextbausteinEditor.test.ts"
 Cohesion: 0.31
@@ -1561,8 +1535,8 @@ Cohesion: 0.18
 Nodes (10): background_color, description, display, icons, name, orientation, scope, short_name (+2 more)
 
 ### Community 257 - "EmailSignatureImage"
-Cohesion: 0.12
-Nodes (4): EmailSignatureImage, Entity, Table, EmailSignatureImageRepository
+Cohesion: 0.13
+Nodes (3): EmailSignatureImage, Entity, Table
 
 ### Community 258 - "MwstRechnerPage.tsx"
 Cohesion: 0.18
@@ -1576,33 +1550,29 @@ Nodes (9): API_KEY, /bin/zsh, npx, github, magic, playwright, shadcn, @21st-dev/
 Cohesion: 0.38
 Nodes (8): mvnw script, clean(), die(), exec_maven(), hash_string(), set_java_home(), trim(), verbose()
 
-### Community 261 - "KasseShortcutController"
-Cohesion: 0.13
-Nodes (10): BankAbhebungRequest, EinstellungRequest, EinstellungResponse, GetMapping, PutMapping, RequestMapping, RestController, KasseShortcutController (+2 more)
-
-### Community 262 - "LoadDetails"
-Cohesion: 0.29
-Nodes (4): Anfrage, Kunde, Projekt, LoadDetails
+### Community 261 - "DatevExportMysqlTest"
+Cohesion: 0.14
+Nodes (11): Personalnummer, DatevExportMysqlTest, BeforeEach, DynamicPropertyRegistry, DynamicPropertySource, EntityManager, ExportRequest, PlatformTransactionManager (+3 more)
 
 ### Community 263 - "SteuerberaterBelegExportModal.tsx"
 Cohesion: 0.15
 Nodes (19): buildAnredeZeile(), DANGEROUS_TAGS, DOKUMENT_TYP_LABELS, escapeHtml(), ExportEntry, formatDateDe(), formatEuro(), FrontendUserSelection (+11 more)
 
-### Community 264 - ".save"
-Cohesion: 0.20
-Nodes (4): Mitarbeiter, Mitarbeiter, MitarbeiterMenschenServiceTest, MitarbeiterServiceGeschaeftsfuehrerTest
-
-### Community 266 - "ZeitbuchungAudit"
-Cohesion: 0.11
-Nodes (11): AuditAktion, ERSTELLT, GEAENDERT, STORNIERT, Entity, Table, ZeitbuchungAudit, Entity (+3 more)
+### Community 266 - "ZeitverwaltungController"
+Cohesion: 0.10
+Nodes (5): Produktkategorie, Resource, ZeitverwaltungController, Mitarbeiter, ZeitbuchungAuditService
 
 ### Community 267 - "OpenFile Launcher - Installations-Paket"
 Cohesion: 0.11
 Nodes (17): Datei wird nicht geöffnet, 🗑️ Deinstallation, 🔍 Fehlersuche, 📦 Inhalt, 🚀 Installation auf einem Client, 📝 Lizenz, 🔧 Massenverteilung (für IT-Admins), ⭐ Methode 1: Batch-Datei (am einfachsten!) (+9 more)
 
-### Community 269 - "MitarbeiterController"
-Cohesion: 0.16
-Nodes (7): GetMapping, PostMapping, PutMapping, RequestMapping, RestController, MitarbeiterController, MitarbeiterDto
+### Community 268 - "OllamaServiceTest"
+Cohesion: 0.18
+Nodes (5): Override, LocalSpamFilterChatBackend, OllamaService, ObjectMapper, OllamaServiceTest
+
+### Community 269 - "idsBridge.ts"
+Cohesion: 0.21
+Nodes (13): idsConfig, IdsCredentials, leseProjektZuordnung(), WUERTH_ID, createIdsConfigStore(), load(), properties(), save() (+5 more)
 
 ### Community 270 - "BeitraegeTab.test.tsx"
 Cohesion: 0.25
@@ -1616,17 +1586,21 @@ Nodes (3): BeitragRichtextEditor(), BeitragRichtextEditorProps, FARBEN
 Cohesion: 0.12
 Nodes (16): 1a. Secrets-Scan (KRITISCH – bei Fund sofort abbrechen), 1b. Backend-Check, 1c. Desktop-Frontend-Check, 1d. Mobile-Frontend-Check, 2a. Architektur & Code-Qualität, 2b. Frontend-Qualität, 2c. Flyway-Migrationen, 2d. Test-Coverage-Check (+8 more)
 
-### Community 274 - "ZeiterfassungFilterChainMatcherTest"
+### Community 274 - "idsBridge.test.ts"
 Cohesion: 0.21
-Nodes (3): org.springframework.util.AntPathMatcher, UrlaubsHinweiseSicherheitTest, ZeiterfassungFilterChainMatcherTest
+Nodes (11): createIdsBridge(), servers, setup(), element(), escapeXml(), parseIdsCart(), serializeIdsCart(), getProcurementPreviewState() (+3 more)
 
-### Community 275 - ".findSingleton"
-Cohesion: 0.06
-Nodes (14): EhegattengehaltSchedulerService, KasseSaldoService, Beleg, KasseShortcutService, LohnZahlungResult, Beleg, Mitarbeiter, KasseShortcutControllerTest (+6 more)
+### Community 275 - "Direkt"
+Cohesion: 0.19
+Nodes (10): AusAngebot, Detail, Direkt, EinkaufBestellungDto, BestellungStatus, LieferantenBestellstatus, Position, Revision (+2 more)
 
-### Community 276 - "MonatsabschlussUebersichtService"
-Cohesion: 0.06
-Nodes (26): Kennzahlen, GetMapping, Jahresvergleich, PostMapping, RequestMapping, RestController, SammelRequest, SammelResponse (+18 more)
+### Community 276 - "MonatsSaldo"
+Cohesion: 0.03
+Nodes (52): Kennzahlen, org.springframework.data.jpa.repository.Modifying, GetMapping, Jahresvergleich, PostMapping, RequestMapping, RestController, SammelRequest (+44 more)
+
+### Community 277 - "BeitragAssistent.tsx"
+Cohesion: 0.19
+Nodes (8): legeBeitragAn(), BeitragAssistent(), BeitragAssistentProps, fehlertext(), LEERER_STAND, Projekt, Schritt, mockSchrittTextMounts
 
 ### Community 278 - "backup-database.ps1"
 Cohesion: 0.42
@@ -1637,44 +1611,44 @@ Cohesion: 0.36
 Nodes (4): Create-AutoStartTask(), Create-BackupTask(), Create-WeeklyRestartTask(), Remove-ExistingTask()
 
 ### Community 280 - "BwaUpload"
-Cohesion: 0.08
-Nodes (13): BwaTyp, JAEHRLICH, MONATLICH, BwaUpload, Entity, PrePersist, Table, BwaUploadRepository (+5 more)
+Cohesion: 0.14
+Nodes (8): BwaTyp, JAEHRLICH, MONATLICH, BwaUpload, Entity, PrePersist, Table, BwaUploadRepository
 
 ### Community 281 - "scripts"
 Cohesion: 0.22
 Nodes (9): scripts, build, dev, lint, preview, test, test:coverage, test:e2e (+1 more)
 
-### Community 282 - "EntityLastAccessed"
-Cohesion: 0.20
-Nodes (6): EntityLastAccessed, EntityLastAccessedId, Override, EntityLastAccessedRepository, EntityLastAccessedService, EntityLastAccessedServiceTest
+### Community 282 - "jakarta.persistence.Entity"
+Cohesion: 0.06
+Nodes (19): jakarta.persistence.Embeddable, jakarta.persistence.Entity, jakarta.persistence.PrePersist, jakarta.persistence.PreUpdate, jakarta.persistence.Table, EinkaufVersandAnnahmeereignis, Typ, VERSAND_ANGENOMMEN (+11 more)
 
 ### Community 283 - "Review & Ship (parallelisiert)"
 Cohesion: 0.12
 Nodes (15): 0a. Claude-Reviewer (erp-code-reviewer Subagent), 0b. Sofort weiter zu Phase 1, 1b. Backend kompilieren + testen, 1c. Desktop-Frontend, 1d. Mobile-Frontend (nur wenn Mobile-Diff), 1e. Fehlende Tests schreiben, Abschlussbericht (nach erfolgreichem Push), Merksätze (+7 more)
 
-### Community 284 - "org.springframework.security.test.context.support.WithMockUser"
-Cohesion: 0.07
-Nodes (16): FirmaControllerSecurityTest.EchteFilterBeans, MonatsabschlussSecurityTest.Filters, org.springframework.security.test.context.support.WithMockUser, ProjektWartungControllerSecurityTest.EchteFilterBeans, PreisNachtragErgebnis, FirmaControllerSecurityTest, Filters, org.springframework.boot.test.context.TestConfiguration (+8 more)
+### Community 284 - "DokumentGeneratorController"
+Cohesion: 0.29
+Nodes (9): AbrechnungspositionRequest, AbrechnungsverlaufRequest, AbschlagInfoRequest, DocBlockRequest, DokumentGeneratorController, FormBlockRequest, GeneratePdfRequest, ResponseEntity (+1 more)
 
 ### Community 285 - ".put"
-Cohesion: 0.12
-Nodes (5): org.springframework.test.web.servlet.RequestBuilder, LangzeitkrankmeldungController, LangzeitkrankmeldungAnlegenRequest, LangzeitkrankmeldungDto, LangzeitkrankmeldungControllerTest
+Cohesion: 0.09
+Nodes (5): org.springframework.test.web.servlet.RequestBuilder, LangzeitkrankmeldungController, LangzeitkrankmeldungAnlegenRequest, LangzeitkrankmeldungControllerTest, LieferantEinkaufKontaktControllerTest
 
 ### Community 286 - "email-center-layout.spec.ts"
 Cohesion: 0.40
 Nodes (5): json(), MOCK_EMAILS, MOCK_STATS, RUNDMAIL_EMPFAENGER, stubEmailApi()
 
-### Community 287 - "org.springframework.context.annotation.Import"
-Cohesion: 0.05
-Nodes (38): com.nimbusds.jose.proc.SecurityContext, com.nimbusds.jwt.proc.ConfigurableJWTProcessor, EinkaufBerechtigungSecurityTest.FilterBeans, EinkaufMailkontoHttpTest.FilterBeans, EinkaufPdfControllerTest.FilterBeans, EinkaufsanfrageControllerTest.FilterBeans, EmailDraftSecurityTest.FilterBeans, org.springframework.boot.test.context.TestConfiguration (+30 more)
+### Community 287 - "org.springframework.test.web.servlet.MockMvc"
+Cohesion: 0.02
+Nodes (94): DatevExportSecurityTest.Filters, DatevKonfigurationSecurityTest.Filters, EinkaufBerechtigungSecurityTest.FilterBeans, EinkaufMailkontoHttpTest.FilterBeans, EinkaufPdfControllerTest.FilterBeans, EinkaufsanfrageControllerTest.FilterBeans, EmailDraftSecurityTest.FilterBeans, FirmaControllerSecurityTest.EchteFilterBeans (+86 more)
 
-### Community 288 - "Kostenstelle"
+### Community 288 - "KalenderEintrag"
 Cohesion: 0.20
-Nodes (3): Kostenstelle, MieteKostenstelleRepository, JahrAggregation
+Nodes (6): Entity, PrePersist, PreUpdate, Table, KalenderEintrag, KalenderEintragRepository
 
-### Community 289 - ".fuehreMahnlaufAus"
-Cohesion: 0.25
-Nodes (6): MahnlaufErgebnis, MahnlaufStatus, AUSGEFUEHRT, LAEUFT_BEREITS, VERFAHREN_INAKTIV, MahnwesenControllerTest
+### Community 289 - ".vergleichen"
+Cohesion: 0.22
+Nodes (10): GetMapping, Abgleich, Abweichung, BelegPosition, BelegZuordnung, EinkaufRechnungsabgleichDto, Mengenstand, PositionAbgleich (+2 more)
 
 ### Community 290 - "start-kalkulationsprogramm.ps1"
 Cohesion: 0.47
@@ -1684,9 +1658,9 @@ Nodes (3): Test-ServerRunning(), Wait-ForServerReady(), Write-Log()
 Cohesion: 0.53
 Nodes (4): Invoke-FrontendBuild(), Write-Error-Custom(), Write-Info(), Write-Success()
 
-### Community 295 - "TextbausteinDto"
-Cohesion: 0.23
-Nodes (3): TextbausteinController, TextbausteinDto, TextbausteinService
+### Community 295 - "org.springframework.scheduling.annotation.Async"
+Cohesion: 0.29
+Nodes (5): org.springframework.scheduling.annotation.Async, org.springframework.transaction.event.TransactionalEventListener, AnalyseAngefordert, EinkaufAnalyseWorker, EinkaufAnalyseWorkerTest
 
 ### Community 296 - "EmailProcessingType"
 Cohesion: 0.33
@@ -1696,13 +1670,17 @@ Nodes (5): EmailProcessingType, ANFRAGE, LIEFERANT, PROJEKT, STEUERBERATER
 Cohesion: 0.33
 Nodes (4): tmp_auftrag, tmp_maszahl, tmp_paar, tmp_wand
 
-### Community 299 - "TextbausteinEditor.tsx"
-Cohesion: 0.22
-Nodes (15): addDays(), ANREDE_LABELS, EMPTY_TEMPLATE, escapeHtml(), formatAdresse(), formatAnrede(), formatDate(), highlightPlaceholder() (+7 more)
+### Community 299 - "Kundeneditor.tsx"
+Cohesion: 0.03
+Nodes (93): AddressAutocomplete(), AddressAutocompleteProps, AddressValue, dedupe(), DEFAULT_COUNTRIES, mapNominatimItem(), mapPhotonFeature(), NominatimItem (+85 more)
 
 ### Community 301 - "Lieferantenarten"
 Cohesion: 0.40
 Nodes (4): Lieferantenarten, ARICHTEKT, LIEFERANT, STATIKER
+
+### Community 302 - "PreiseEintragenModal.tsx"
+Cohesion: 0.21
+Nodes (10): AngebotDetailRow, AngebotsZelle, formatNumber(), LieferantSpalte, parseDezimal(), parseInt10(), PositionZeile, PreiseEintragenModal() (+2 more)
 
 ### Community 304 - "V347__stammdaten_rohrvarianten.sql"
 Cohesion: 0.40
@@ -1724,36 +1702,52 @@ Nodes (9): einkaufsanfrage, einkaufsanfrage_herkunft, einkaufsanfrage_lieferant,
 Cohesion: 0.22
 Nodes (5): Sicherheitslücken melden, Sicherheitsmaßnahmen im Projekt, Sicherheitsrichtlinie, Unterstützte Versionen, VapidKeyGenerator
 
-### Community 316 - "DatevExportController"
-Cohesion: 0.32
-Nodes (6): DatevExportController, ExportRequest, PostMapping, RequestMapping, RestController, Vorpruefung
+### Community 316 - ".exportieren"
+Cohesion: 0.50
+Nodes (3): ExportRequest, PostMapping, Vorpruefung
 
 ### Community 318 - "neue-buchung.spec.ts"
 Cohesion: 0.33
 Nodes (4): json(), kassenbuch, sachkonten, stub()
 
-### Community 356 - "FirmaController"
-Cohesion: 0.09
-Nodes (16): FirmaController, DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, RestController, KostenstellenTyp (+8 more)
+### Community 341 - "DatevKonfiguration"
+Cohesion: 0.22
+Nodes (6): JpaRepository, DatevKonfiguration, Entity, Table, DatevKonfigurationRepository, BeforeEach
 
-### Community 357 - "ContactServiceTest"
-Cohesion: 0.18
-Nodes (8): AnfrageSuche, ContactServiceTest, Deduplizierung, Anfrage, Kunde, Projekt, KombiSuche, ProjektSuche
+### Community 356 - "org.springframework.transaction.annotation.Transactional"
+Cohesion: 0.04
+Nodes (15): org.springframework.transaction.annotation.Transactional, ScanResult, AusblendenRequest, DeleteMapping, PostMapping, DeleteMapping, DeleteMapping, DeleteMapping (+7 more)
+
+### Community 357 - "ids.ts"
+Cohesion: 0.29
+Nodes (7): createIdsDraftStore(), directories, IdsCart, IdsDraft, IdsItem, IdsProjektZuordnung, PunchoutForm
+
+### Community 359 - "serverPlugin.ts"
+Cohesion: 0.15
+Nodes (13): connectedIds(), IdsHandler, listen(), servers, setup(), previewConnection, loadIdsCredentials(), listen() (+5 more)
+
+### Community 363 - "ArbeitsgangErstellenDto"
+Cohesion: 0.24
+Nodes (5): PostMapping, ArbeitsgangErstellenDto, ArbeitsgangStundensatzDto, Arbeitsgang, ErstelleArbeitsgang
+
+### Community 367 - ".laden"
+Cohesion: 0.25
+Nodes (4): GetMapping, Konfiguration, Personalnummer, ResponseStatusException
 
 ### Community 402 - "einkauf_bedarf"
 Cohesion: 0.22
 Nodes (8): einkauf_bedarf, einkauf_mengenbuchung, artikel_in_projekt, projekt, einkauf_anlage_version, einkauf_datei, email_attachment, lieferant_dokument
 
 ### Community 405 - "BelegAudit"
-Cohesion: 0.05
-Nodes (25): BelegAudit, Entity, Table, BelegAuditAktion, ERFASST, FESTGESCHRIEBEN, GEAENDERT, KASSE_GEZAEHLT (+17 more)
+Cohesion: 0.06
+Nodes (28): org.springframework.data.repository.Repository, BelegAudit, Entity, Table, BelegAuditAktion, ERFASST, FESTGESCHRIEBEN, GEAENDERT (+20 more)
 
 ### Community 456 - "loese-problem — Multi-Agent-Pipeline"
 Cohesion: 0.11
 Nodes (17): Deutsch und Umlaute — auch im Code, Drei Schleifen, jede mit fester Obergrenze, loese-problem — Multi-Agent-Pipeline, Referenzen, Rollen & Modelle, Schritt 0: Brainstorming, Schritt 1: Spec schreiben, Schritt 2: Issue anlegen (+9 more)
 
 ### Community 457 - "BelegKiKostenkontoServiceTest"
-Cohesion: 0.20
+Cohesion: 0.21
 Nodes (5): AgentErgebnis, BelegKiKostenkontoServiceTest, Beleg, Sachkonto, SuppressWarnings
 
 ### Community 458 - "📦 update-production.ps1"
@@ -1764,9 +1758,9 @@ Nodes (13): 📝 Anpassungen, Backups, Deployment Scripts, Fehlerbehandlung, Mit
 Cohesion: 0.15
 Nodes (13): Backup-Datei dekomprimieren, Backup-Status prüfen, Backup-Wiederherstellung, Datenbank wiederherstellen, Deinstallation, Kalkulationsprogramm - Deployment Guide, Log-Dateien prüfen, Monitoring (+5 more)
 
-### Community 461 - "LieferantDokumentProjektAnteil"
-Cohesion: 0.10
-Nodes (13): Deprecated, Entity, PrePersist, Table, Transient, LieferantDokumentProjektAnteil, LieferantDokument, Response (+5 more)
+### Community 461 - "BestellBestaetigung"
+Cohesion: 0.18
+Nodes (3): BestellBestaetigung, Entity, Table
 
 ### Community 463 - "Ablauf"
 Cohesion: 0.17
@@ -1780,9 +1774,9 @@ Nodes (11): 0. Secrets & API-Keys (höchste Priorität), 1. Personenbezogene Dat
 Cohesion: 0.17
 Nodes (12): Allgemeine Regeln, Build, Test, and Run, Coding Style & Naming, Commit & Pull Requests, Frontend Implementation, Image Viewer Design Guidelines, ImageViewer-Komponenten-API, Localization & Language (+4 more)
 
-### Community 466 - "website/api.ts"
-Cohesion: 0.19
-Nodes (14): anfrage(), DokumentAntwort, NotizAntwort, WebsiteApiFehler, AnalyticsSnapshot, AnalyticsTotals, BeitragBild, BeitragDetail (+6 more)
+### Community 466 - "EinkaufAngebotServiceTest"
+Cohesion: 0.25
+Nodes (4): EinkaufAngebotServiceTest, org.junit.jupiter.params.ParameterizedTest, org.junit.jupiter.params.provider.CsvSource, SourceFixture
 
 ### Community 467 - "V377__einkauf_berechtigungen.sql"
 Cohesion: 0.50
@@ -1820,9 +1814,9 @@ Nodes (11): Button Design Guidelines, Button-Größen, DatePicker Design, DatePi
 Cohesion: 0.20
 Nodes (10): 1. SQL Injection (A03:2021 – Injection), 2. Cross-Site Scripting / XSS (A03:2021 – Injection), 3. Path Traversal (A01:2021 – Broken Access Control), 4. Unsichere Deserialisierung & Mass Assignment (A08:2021), 5. Input-Validierung (A03:2021 – Injection), 6. Datei-Upload-Sicherheit, Sichere Coding-Muster (Backend), Sichere Coding-Muster (Frontend) (+2 more)
 
-### Community 479 - "DocumentEditorHeader.tsx"
-Cohesion: 0.22
-Nodes (8): DocumentEditorHeader(), DocumentEditorHeaderProps, verlaufProps, props, schritte, VerlaufKnoepfe(), VerlaufKnoepfeProps, VerlaufsEintrag
+### Community 479 - ".policy"
+Cohesion: 0.33
+Nodes (3): java.net.ServerSocket, ServerSocket, LocalTestMailPolicyTest
 
 ### Community 480 - "Monatsabschluss"
 Cohesion: 0.18
@@ -1861,8 +1855,8 @@ Cohesion: 0.14
 Nodes (3): EinkaufBelegZuordnung, Entity, Table
 
 ### Community 489 - "BeitraegeTab.tsx"
-Cohesion: 0.26
-Nodes (17): aktualisiereBeitrag(), alsJson(), holeJson(), ladeBeitraege(), ladeBeitrag(), ladeBildHoch(), legeBeitragAn(), loescheBild() (+9 more)
+Cohesion: 0.16
+Nodes (24): aktualisiereBeitrag(), alsJson(), anfrage(), DokumentAntwort, erzeugeBeitragsvorschlag(), holeJson(), ladeAnalyticsAktuell(), ladeAnalyticsVerlauf() (+16 more)
 
 ### Community 490 - "Pre-Merge-Checkliste"
 Cohesion: 0.25
@@ -1884,9 +1878,13 @@ Nodes (6): API-/Schnittstellen-Design, Kriterien für loese-problem (Coding + Re
 Cohesion: 0.29
 Nodes (6): Dokumentations-Sync, Hinweise, Schritt 1: Commits analysieren, Schritt 2: Dokumentation prüfen, Schritt 3: Updates durchführen, Schritt 4: Zusammenfassung
 
-### Community 496 - "Transkribieren"
-Cohesion: 0.18
-Nodes (3): SpracheingabeErgebnis, Mitarbeiter, Transkribieren
+### Community 495 - "ZugferdExtractorServiceTest"
+Cohesion: 0.25
+Nodes (3): BereitsBezahlteRechnungOhneFaelligkeitsdatum, FallbackBeiUngueltigemPdf, ZugferdExtractorServiceTest
+
+### Community 496 - "LocalTestDatabaseGuard"
+Cohesion: 0.31
+Nodes (6): org.springframework.boot.env.EnvironmentPostProcessor, org.springframework.boot.SpringApplication, org.springframework.core.env.ConfigurableEnvironment, org.springframework.core.Ordered, Override, LocalTestDatabaseGuard
 
 ### Community 497 - "mitarbeiter"
 Cohesion: 0.16
@@ -1909,7 +1907,7 @@ Cohesion: 0.33
 Nodes (5): Aktualisierung:, Befehlsübersicht:, Graphify Knowledge Graph Richtlinien, OBERSTE REGEL: GRAPHIFY VOR JEDER CODE-SUCHE, Wrapper im Projektroot:
 
 ### Community 502 - "EmailSignatureControllerTest"
-Cohesion: 0.22
+Cohesion: 0.24
 Nodes (3): PutMapping, EmailSignatureControllerTest, EmailSignature
 
 ### Community 503 - "Installation"
@@ -1931,6 +1929,10 @@ Nodes (5): 1. Understand the Requirements, 2. Design & Architecture, 3. Implemen
 ### Community 507 - "Pre-Merge Testing Skill"
 Cohesion: 0.33
 Nodes (5): A. Backend (Java), B. Frontend - PC Version (`react-pc-frontend`), C. Frontend - Zeiterfassung (`react-zeiterfassung`), D. Full System Check, Pre-Merge Testing Skill
+
+### Community 509 - "EinkaufBelegService"
+Cohesion: 0.38
+Nodes (4): EinkaufBelegService, Beleg, Datei, ObjectMapper
 
 ### Community 510 - "WebConfig"
 Cohesion: 0.31
@@ -1962,7 +1964,7 @@ Nodes (5): Anwendung, DetailLayout, EmailHistory, GoogleMapsEmbed, React Templat
 
 ### Community 517 - "react-pc-frontend/e2e/hilfen/test.ts"
 Cohesion: 0.07
-Nodes (24): AnfrageAufruf, admin, mailkonto, JsonWert, ÜbernahmeInhalt, bestellung, E2eErwartung, designPruefung() (+16 more)
+Nodes (31): AnfrageAufruf, admin, mailkonto, JsonWert, ÜbernahmeInhalt, bestellung, E2eErwartung, BEISPIEL_BEITRAG (+23 more)
 
 ### Community 518 - "react-zeiterfassung/package.json"
 Cohesion: 0.40
@@ -1980,17 +1982,17 @@ Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and wat
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 523 - "EinkaufMailkonto"
-Cohesion: 0.07
-Nodes (4): EinkaufMailkonto, UsernamePasswordAuthenticationToken, MailkontoServiceTest, MailSecretServiceTest
+### Community 523 - "LocalTestMailPolicy"
+Cohesion: 0.03
+Nodes (53): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only, jakarta.mail.Transport, org.springframework.boot.context.event.ApplicationReadyEvent, org.springframework.context.event.EventListener, EmailThreadBackfillRunner, LocalTestMailPolicy (+45 more)
 
 ### Community 524 - "Kontext-Log für loese-problem"
 Cohesion: 0.50
 Nodes (3): Block-Vorlage, Kontext-Log für loese-problem, Lock-Protokoll (Bash)
 
-### Community 525 - "Typ"
-Cohesion: 0.29
-Nodes (7): Typ, ARBEIT, FORTBILDUNG, KRANKHEIT, PAUSE, URLAUB, ZEITAUSGLEICH
+### Community 525 - "LocalTestAfterCommitAsyncTest"
+Cohesion: 0.39
+Nodes (3): LocalTestAfterCommitAsyncTest, Observation, ObservedEmailBackfillListener
 
 ### Community 526 - "Konfiguration"
 Cohesion: 0.50
@@ -2024,61 +2026,57 @@ Nodes (3): Backup-Verzeichnis bereinigen, Log-Dateien bereinigen, Wartung
 Cohesion: 0.67
 Nodes (3): Hardware-Anforderungen, Software-Anforderungen, Voraussetzungen
 
-### Community 536 - "org.springframework.stereotype.Component"
+### Community 536 - "EmailImportService"
 Cohesion: 0.03
-Nodes (66): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only, jakarta.mail.Folder, jakarta.mail.internet.MimeMessage, jakarta.mail.internet.MimeMultipart, jakarta.mail.Session, jakarta.mail.Store (+58 more)
+Nodes (33): jakarta.mail.Address, jakarta.mail.BodyPart, jakarta.mail.Folder, jakarta.mail.internet.MimeMessage, jakarta.mail.internet.MimeMultipart, jakarta.mail.Message, jakarta.mail.Session, jakarta.mail.Store (+25 more)
 
-### Community 538 - "Snapshot"
-Cohesion: 0.07
-Nodes (25): EinkaufBestellfreigabeDto, Freigabe, Storno, VersandErgebnis, VorschauErgebnis, Charge, EinkaufBestellstatusDto, Lieferposition (+17 more)
+### Community 538 - "EinkaufBerechtigungService"
+Cohesion: 0.04
+Nodes (47): EinkaufBelegController, RequestMapping, RestController, EinkaufBestellstatusController, RequestMapping, RestController, EinkaufLieferungController, RequestMapping (+39 more)
 
-### Community 539 - "MonatsabschlussUebersichtDto"
-Cohesion: 0.30
-Nodes (11): Einzelergebnis, Jahresvergleich, JahresvergleichMonat, Kennzahlen, MonatsabschlussUebersichtDto, Referenz, SammelResponse, Stand (+3 more)
+### Community 539 - ".fixture"
+Cohesion: 0.43
+Nodes (4): EinkaufBestellfreigabeRegressionTest, Fixture, BestellungRevision, BestellungStatus
 
 ### Community 541 - "react-zeiterfassung/src/components/ui/toast.tsx"
 Cohesion: 0.05
 Nodes (46): formatLocalDate(), MobileDatePicker(), MobileDatePickerProps, MONTHS, WEEKDAYS, cn(), Option, Select() (+38 more)
 
-### Community 542 - "DokumentnummerService"
-Cohesion: 0.23
-Nodes (4): DokumentnummerService, TransactionTemplate, DokumentnummerServiceTest, TransactionTemplate
+### Community 542 - "ZeiterfassungKalender.test.tsx"
+Cohesion: 0.33
+Nodes (4): mockFetch, setup(), status(), { toast, confirm }
 
 ### Community 543 - "Produktkategorie"
-Cohesion: 0.07
+Cohesion: 0.08
 Nodes (11): org.springframework.data.jpa.repository.EntityGraph, Entity, Produktkategorie, ProduktkategorieMapper, ProduktkategorieService, ProduktkategorieMapperTest, Arbeitsgang, Produktkategorie (+3 more)
 
 ### Community 544 - "react-zeiterfassung/src/App.tsx"
 Cohesion: 0.08
 Nodes (29): App(), clearAuth(), deleteCookie(), getCookie(), loadAuth(), saveAuth(), setCookie(), BelegPositionenAuswahlPage() (+21 more)
 
-### Community 545 - "zeitkonto-task-9b.spec.ts"
-Cohesion: 0.33
-Nodes (4): arbeitszeit, ergebnis, modell, zeitkonto
+### Community 545 - "@playwright/test"
+Cohesion: 0.06
+Nodes (19): messages, EINSTELLUNG, json(), stub(), ANTRAG_MIT_HINWEIS, ANTRAG_OHNE_HINWEIS, json(), stubbeApi() (+11 more)
 
-### Community 546 - "BelegAuswahl.tsx"
-Cohesion: 0.33
-Nodes (10): BestellBeleg, BestellBelegDatei, jsonRequest(), ladeBestellBelege(), ladeBestellBelegHoch(), ladeNeueBestellDatei(), registriereBestellBeleg(), BelegAuswahl() (+2 more)
+### Community 547 - "MwstRechnerService"
+Cohesion: 0.47
+Nodes (3): lombok.Value, MwstErgebnis, MwstRechnerService
 
-### Community 547 - "Zahlungsart"
-Cohesion: 0.31
-Nodes (4): Entity, Table, Zahlungsart, ZahlungsartRepository
+### Community 548 - "MonatsabschlussBerechtigungServiceTest"
+Cohesion: 0.20
+Nodes (3): OffenerMonat, Mitarbeiter, MonatsabschlussBerechtigungServiceTest
 
-### Community 550 - "GeminiDokumentAnalyseServiceTest"
-Cohesion: 0.12
-Nodes (9): AnalysiereDokumentStoesstPreisuebernahmeAn, GeminiDokumentAnalyseServiceTest, AnalyzeResponse, ObjectMapper, org.junit.jupiter.params.ParameterizedTest, org.junit.jupiter.params.provider.CsvSource, JsonTruncationHandling, ZahlungsartParsing (+1 more)
+### Community 550 - "ObjectMapper"
+Cohesion: 0.19
+Nodes (5): AnalyzeResponse, ObjectMapper, JsonTruncationHandling, ZahlungsartParsing, ZusammenstellungKlassifizierung
 
 ### Community 551 - "DatabaseConstraintMetadataService"
-Cohesion: 0.09
-Nodes (18): java.util.concurrent.locks.ReentrantReadWriteLock, org.hibernate.PropertyValueException, org.springframework.dao.DataIntegrityViolationException, ConstraintErrorDetail, ConstraintMessageResolver, ColumnMetadata, ConstraintMetadata, ConstraintMetadataBuilder (+10 more)
+Cohesion: 0.07
+Nodes (24): com.fasterxml.jackson.annotation.JsonInclude, jakarta.validation.ConstraintViolationException, java.util.concurrent.locks.ReentrantReadWriteLock, org.hibernate.PropertyValueException, org.springframework.dao.DataIntegrityViolationException, org.springframework.web.bind.annotation.ControllerAdvice, RestExceptionHandler, ApiError (+16 more)
 
-### Community 552 - "urlaubsantrag-krankmeldung-hinweis.spec.ts"
+### Community 552 - "DatevPersonalnummer"
 Cohesion: 0.50
-Nodes (4): ANTRAG_MIT_HINWEIS, ANTRAG_OHNE_HINWEIS, json(), stubbeApi()
-
-### Community 553 - "LoeschGrund"
-Cohesion: 0.22
-Nodes (9): LoeschGrund, BENUTZER_NOTIZ_VORHANDEN, DATEI_VORHANDEN, EMAIL_VERSENDET, EMAIL_VORHANDEN, GESCHAEFTSDOKUMENT_VORHANDEN, IN_PROJEKT_UMGEWANDELT, NICHT_GEFUNDEN (+1 more)
+Nodes (4): DatevPersonalnummer, Entity, Table, DatevPersonalnummerRepository
 
 ### Community 556 - ".erstelleKunde"
 Cohesion: 0.22
@@ -2088,13 +2086,9 @@ Nodes (4): Kunde, KundeMapperTest, ToListItem, ToResponseDto
 Cohesion: 0.28
 Nodes (8): BELEG, json(), KASSE_EINSTELLUNG, KASSENBUCH, oeffneKassenbuch(), SACHKONTEN, stub(), ZAHLUNGSARTEN
 
-### Community 562 - "org.springframework.core.task.TaskExecutor"
-Cohesion: 0.08
-Nodes (17): org.springframework.boot.autoconfigure.condition.ConditionalOnProperty, org.springframework.boot.autoconfigure.SpringBootApplication, org.springframework.boot.CommandLineRunner, org.springframework.context.annotation.Primary, org.springframework.core.task.TaskExecutor, org.springframework.scheduling.annotation.EnableAsync, org.springframework.scheduling.annotation.EnableScheduling, org.springframework.scheduling.TaskScheduler (+9 more)
-
-### Community 563 - "LieferantDokumentRepositorySearchTest"
+### Community 562 - "org.springframework.scheduling.annotation.EnableAsync"
 Cohesion: 0.31
-Nodes (4): org.springframework.test.annotation.DirtiesContext, EmailAttachment, LieferantDokument, LieferantDokumentRepositorySearchTest
+Nodes (4): org.springframework.boot.autoconfigure.SpringBootApplication, org.springframework.scheduling.annotation.EnableAsync, KalkulationsprogrammApplication, EmailHtmlBackfillMain
 
 ### Community 571 - "Playwright-Design-Prüfung"
 Cohesion: 0.22
@@ -2112,17 +2106,17 @@ Nodes (3): Arbeitsweise und Geschmack des Nutzers, Eingabefelder: verbindliche N
 Cohesion: 0.25
 Nodes (6): Attachment, Draft, foto, json(), plan, setup()
 
-### Community 581 - "BelegController"
-Cohesion: 0.07
-Nodes (22): lombok.Value, BelegController, DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, Response (+14 more)
-
-### Community 583 - "WebsiteAnalyticsSnapshotService"
-Cohesion: 0.28
-Nodes (6): BrowserCount, CityCount, DeviceCount, FunnelStep, TopPage, WebsiteAnalyticsSnapshotService
-
-### Community 585 - "DateiControllerTest"
+### Community 581 - ".findCaller"
 Cohesion: 0.05
-Nodes (12): ByteArrayResource, EinkaufBedarfControllerTest.FilterBeans, java.awt.image.BufferedImage, ArtikelDokumentDatei, BufferedImage, DateiAuslieferung, DateiControllerTest, EinkaufBedarfControllerTest (+4 more)
+Nodes (28): BelegController, DeleteMapping, GetMapping, PostMapping, PutMapping, RequestMapping, Response, RestController (+20 more)
+
+### Community 585 - "BildVorschauService"
+Cohesion: 0.12
+Nodes (7): java.awt.image.BufferedImage, BildVorschauService, BufferedImage, BildVorschauServiceTest, BufferedImage, org.junit.jupiter.params.ParameterizedTest, org.junit.jupiter.params.provider.ValueSource
+
+### Community 586 - "MonatsSaldoServiceTest"
+Cohesion: 0.10
+Nodes (6): Berechnung, CacheVerhalten, Fehlerfaelle, EntityManager, Mitarbeiter, MonatsSaldoServiceTest
 
 ### Community 587 - "DatevBereich"
 Cohesion: 0.32
@@ -2132,105 +2126,85 @@ Nodes (11): DatevBereich(), aendern(), herunterladen(), invalidieren(), laden(),
 Cohesion: 0.43
 Nodes (3): java.lang.reflect.Parameter, org.springframework.beans.factory.annotation.Value, ValuePlaceholderKonfigurationTest
 
-### Community 596 - "VerrechnungslohnUebernehmenRequest"
-Cohesion: 0.41
-Nodes (3): AbteilungAufschlag, VerrechnungslohnUebernehmenRequest, Abteilung
-
 ### Community 597 - "Lohnabrechnung"
-Cohesion: 0.14
-Nodes (10): Entity, PrePersist, Table, Lohnabrechnung, LohnabrechnungStatus, ANALYSIERT, FEHLER, IMPORTIERT (+2 more)
-
-### Community 598 - "LieferantMapperTest"
-Cohesion: 0.24
-Nodes (3): LieferantMapperTest, ToDetailItem, ToListItem
+Cohesion: 0.10
+Nodes (12): GetMapping, Entity, PrePersist, Table, Lohnabrechnung, LohnabrechnungStatus, ANALYSIERT, FEHLER (+4 more)
 
 ### Community 599 - "DatevBereich.test.tsx"
 Cohesion: 0.20
 Nodes (8): check(), exportIds, fetchMock, ids, kategorien, openExport(), { toast }, Konfiguration
 
-### Community 600 - "OutOfOfficeController"
-Cohesion: 0.22
-Nodes (7): DeleteMapping, GetMapping, PostMapping, RequestMapping, RestController, OutOfOfficeController, SaveOooRequest
+### Community 603 - "VorlagenDaten"
+Cohesion: 0.16
+Nodes (7): org.jsoup.nodes.Element, Document, SuppressWarnings, VorlagenDaten, AutoAuftragsbestaetigungVersandServicePreview, AusgangsGeschaeftsDokument, Kunde
 
-### Community 603 - ".baueMahnPdf"
-Cohesion: 0.14
-Nodes (7): VorlagenDaten, AutoAuftragsbestaetigungVersandServicePreview, AusgangsGeschaeftsDokument, Kunde, AutoMahnVersandServicePreview, Kunde, ProjektGeschaeftsdokument
-
-### Community 604 - "SchnittbilderController"
-Cohesion: 0.27
-Nodes (5): GetMapping, RequestMapping, RestController, SchnittbilderController, SchnittbildResponseDto
+### Community 604 - "Kategorie"
+Cohesion: 0.09
+Nodes (15): GetMapping, RequestMapping, RestController, SchnittbilderController, Entity, Inheritance, Table, Kategorie (+7 more)
 
 ### Community 606 - "JahresvergleichCharts.tsx"
 Cohesion: 0.29
 Nodes (8): JahresvergleichCharts(), JahresvergleichChartsProps, monatNamenKurz, monatNamenLang, TabType, mockDaten, zahl(), Jahresvergleich
 
-### Community 607 - "Abwesenheit"
-Cohesion: 0.07
-Nodes (19): org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager, GetMapping, Abwesenheit, Entity, Table, AbwesenheitsTyp, FORTBILDUNG, KRANKHEIT (+11 more)
+### Community 607 - "AbwesenheitRepository"
+Cohesion: 0.06
+Nodes (21): org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager, AbwesenheitController, GetMapping, RequestMapping, RestController, Abwesenheit, Entity, Table (+13 more)
+
+### Community 609 - "EinkaufAngebotsAnalyseService"
+Cohesion: 0.11
+Nodes (6): AnalyseQuelle, EinkaufAngebotsAnalyseService, GeminiDokumentAnalyseServiceGateway, EmailAttachment, FunctionalInterface, EinkaufAngebotsAnalyseServiceTest
 
 ### Community 613 - "Config"
 Cohesion: 0.24
 Nodes (7): Config, Bean, Configuration, DriverManagerDataSource, EntityManagerFactory, LocalContainerEntityManagerFactoryBean, PlatformTransactionManager
 
-### Community 614 - "Anrede"
-Cohesion: 0.25
-Nodes (7): Anrede, DAMEN_HERREN, FAMILIE, FIRMA, FRAU, HERR, fromString()
-
 ### Community 618 - "AenderungsgrundKatalog"
-Cohesion: 0.36
+Cohesion: 0.43
 Nodes (4): AenderungsgrundKatalog, Entity, Table, AenderungsgrundKatalogRepository
 
 ### Community 622 - "DokumentnummerCounter"
-Cohesion: 0.38
+Cohesion: 0.47
 Nodes (4): DokumentnummerCounter, Entity, Table, DokumentnummerCounterRepository
 
-### Community 629 - "EmailBlacklistEntry"
-Cohesion: 0.33
-Nodes (3): EmailBlacklistEntry, Entity, Table
+### Community 625 - "org.springframework.stereotype.Component"
+Cohesion: 0.08
+Nodes (17): org.springframework.boot.ApplicationArguments, org.springframework.boot.ApplicationRunner, org.springframework.context.annotation.Profile, org.springframework.context.ApplicationEventPublisher, org.springframework.core.env.Environment, org.springframework.stereotype.Component, RagIndexingRunner, DesktopIntegration (+9 more)
 
 ### Community 630 - "LohnQuelle"
-Cohesion: 0.33
-Nodes (6): LohnQuelle, KALKULATORISCH, LOHNABRECHNUNG, STAMMSTUNDENLOHN, STUNDENLOHN_HOCHRECHNUNG, MitarbeiterLohnZeile
-
-### Community 631 - "MitarbeiterNotiz"
 Cohesion: 0.40
-Nodes (3): Entity, PrePersist, MitarbeiterNotiz
-
-### Community 633 - "Filters"
-Cohesion: 0.50
-Nodes (3): Filters, org.springframework.boot.test.context.TestConfiguration, org.springframework.context.annotation.Bean
+Nodes (5): LohnQuelle, KALKULATORISCH, LOHNABRECHNUNG, STAMMSTUNDENLOHN, STUNDENLOHN_HOCHRECHNUNG
 
 ### Community 636 - "beleg-pruefen.spec.ts"
 Cohesion: 0.50
 Nodes (4): beleg, json(), sachkonten, stub()
 
-### Community 638 - "website/api.test.ts"
-Cohesion: 0.22
-Nodes (4): ladeProjektBilder(), SchrittBilder(), dokumente, notizen
+### Community 638 - "SchrittBilder.tsx"
+Cohesion: 0.24
+Nodes (7): ladeProjektBilder(), GewaehltesBild, SchrittBilder(), SchrittBilderProps, dokumente, notizen, ProjektBild
 
 ### Community 642 - "useVerlaufTastatur"
 Cohesion: 0.39
 Nodes (6): darfVerlaufTasteGreifen(), istRueckgaengigTaste(), istWiederholenTaste(), aufbauen(), useVerlaufTastatur(), VerlaufTastaturOptionen
 
 ## Knowledge Gaps
-- **2319 isolated node(s):** `@21st-dev/magic`, `API_KEY`, `/bin/zsh`, `@playwright/mcp`, `org.example:Kalkulationsprogramm` (+2314 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 4417 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **112 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **2398 isolated node(s):** `@21st-dev/magic`, `API_KEY`, `/bin/zsh`, `@playwright/mcp`, `org.example:Kalkulationsprogramm` (+2393 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 4519 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **91 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `mitarbeiter` connect `mitarbeiter` to `LangzeitkrankmeldungServiceTest`, `DatevBereich.test.tsx`?**
-  _High betweenness centrality (0.260) - this node is a cross-community bridge._
-- **Why does `zeitkonto_version` connect `LangzeitkrankmeldungServiceTest` to `UrlaubsantragService`, `ZeitkontoPausenServiceTest`, `VerrechnungslohnServiceTest`, `Mitarbeiter`, `mitarbeiter`, `.bucheAbwesenheit`, `Zeitkontenmodell`, `TagesSollServiceTest`?**
-  _High betweenness centrality (0.260) - this node is a cross-community bridge._
-- **Why does `useToast()` connect `useToast` to `index.tsx`, `einkauf/types.ts`, `card.tsx`, `EmailSettingsSection.tsx`, `ProjektEditor.tsx`, `FormularwesenMain.tsx`, `cn`, `VerrechnungslohnRechnerDialog.tsx`, `ArtikelSearchModal.tsx`, `BelegAuswahl.tsx`, `BestellungenUebersicht.tsx`, `ArtikelSuche.tsx`, `TextbausteinEditor.tsx`, `index.test.tsx`, `MitarbeiterEditor.tsx`, `DatevBereich`, `react-pc-frontend/src/App.tsx`, `Monatsabschluss`, `useConfirm`, `BeitraegeTab.tsx`, `src/types.ts`, `KassenbuchAbschlussLeiste.tsx`, `Monatsabschluss.tsx`, `Leistungseditor.tsx`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
+  _High betweenness centrality (0.265) - this node is a cross-community bridge._
+- **Why does `zeitkonto_version` connect `LangzeitkrankmeldungServiceTest` to `UrlaubsantragService`, `ZeitkontoService`, `ZeiterfassungApiServiceZeitkontoTest`, `ZeitkontoVersion`, `Mitarbeiter`, `MonatsSaldoServiceTest`, `MonatsSaldoService`, `mitarbeiter`, `.bucheAbwesenheit`, `ZeitbuchungAutoStopServiceTest`, `Zeitkontenmodell`, `TagesSollService`?**
+  _High betweenness centrality (0.264) - this node is a cross-community bridge._
+- **Why does `Mitarbeiter` connect `Mitarbeiter` to `org.junit.jupiter.api.Test`, `org.junit.jupiter.api.DisplayName`, `lombok.Getter`, `AnfrageFunnelService`, `DatevExportMysqlTest`, `org.springframework.data.jpa.repository.Query`, `ZeitverwaltungController`, `LocalTestMailPolicy`, `SteuerberaterExportService`, `LieferantDokument`, `MonatsSaldo`, `BelegAudit`, `BwaUpload`, `lombok.RequiredArgsConstructor`, `.put`, `org.springframework.test.web.servlet.MockMvc`, `KalenderEintrag`, `Beleg`, `ProjektManagementService`, `MonatsabschlussBerechtigungServiceTest`, `OffenePostenController`, `ArtikelDokument`, `PositionSnapshot`, `KassenbuchAbschlussServiceTest`, `org.springframework.web.bind.annotation.GetMapping`, `.findFirmeninformation`, `ZeitbuchungAutoStopServiceTest`, `AnfrageController`, `ZeitkontoWechselService`, `.findCaller`, `ZeitkontoService`, `ZeitkontoVersion`, `WebPushService`, `LangzeitkrankmeldungServiceTest`, `DateiSpeicherService`, `.buche`, `Zeitbuchung`, `MonatsSaldoService`, `org.springframework.security.core.Authentication`, `FrontendUserProfile`, `Lohnabrechnung`, `DatevKonfiguration`, `BelegService`, `BelegKostenstellenAnteil`, `.buildMitarbeiter`, `AbwesenheitRepository`, `UrlaubsantragService`, `TagesSollService`, `MitarbeiterService`, `org.springframework.http.ResponseEntity`, `BelegPdfService`, `ZeiterfassungApiServiceZeitkontoTest`, `Projekt`, `Zeitkontenmodell`, `SteuerberaterEmailProcessingServiceTest`, `BelegeKasseExportPdfService`, `ProjektRepository`, `EinkaufLagerentnahme`, `BestellungsUebersichtController`, `Krankenkasse`, `org.springframework.data.jpa.repository.JpaRepository`, `DatevExportServiceTest`, `KassenbuchungControllerTest`, `KalenderService`?**
+  _High betweenness centrality (0.043) - this node is a cross-community bridge._
 - **What connects `@21st-dev/magic`, `API_KEY`, `/bin/zsh` to the rest of the system?**
-  _2319 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _2398 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `org.junit.jupiter.api.Test` be split into smaller, more focused modules?**
-  _Cohesion score 0.00987271540469974 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.009419777677825612 - nodes in this community are weakly interconnected._
 - **Should `org.junit.jupiter.api.DisplayName` be split into smaller, more focused modules?**
-  _Cohesion score 0.009164086687306502 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.008559861191440138 - nodes in this community are weakly interconnected._
 - **Should `.erstelleEmail` be split into smaller, more focused modules?**
   _Cohesion score 0.041292041292041295 - nodes in this community are weakly interconnected._
