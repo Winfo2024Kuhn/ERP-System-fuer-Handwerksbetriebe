@@ -1,5 +1,5 @@
 import { validateNumberDrafts } from '../../lib/numberDrafts';
-import type { Beschaffungsdetails, Dokumentart, Einheit, PositionSnapshot, Positionsart } from './types';
+import type { Beschaffungsdetails, Dokumentart, Einheit, Mengenbasis, PositionSnapshot, Positionsart } from './types';
 
 export interface PositionDraft {
   art: Positionsart;
@@ -28,6 +28,9 @@ export interface PositionDraft {
    * Zuschnitt gebunden, zu dem sie erfasst wurden, damit sie nach einem Wechsel nicht an fremdem Material hängen.
    */
   beschaffungsdetails?: GebundeneBeschaffungsdetails | null;
+  /** Nicht im Formular bearbeitet: HiCAD-Positionsnummer sowie Gewicht/Mantelfläche zur gespeicherten Menge. */
+  positionsnummer?: string | null;
+  gesamtwerte?: Gesamtwerte | null;
 }
 
 /** Artikel und Zuschnitt, zu denen Beschaffungsdetails erfasst wurden. */
@@ -42,6 +45,30 @@ export function passendeBeschaffungsdetails(details: Beschaffungsdetails | null 
   if (!details || jetzt.art !== erfasstFuer.art || (jetzt.artikelId ?? null) !== (erfasstFuer.artikelId ?? null)) return null;
   if ((jetzt.schnittForm || '') === (erfasstFuer.schnittForm || '')) return details;
   return { ...details, schnittbildId: null, schnittAchseId: null };
+}
+
+/**
+ * Gewicht und Mantelfläche gelten für eine bestimmte Menge. Ändert sich die Menge in derselben Einheit,
+ * werden sie anteilig umgerechnet (kg 3, m² 4 Nachkommastellen wie im Backend); bei anderer Einheit entfallen sie.
+ * Fehlende Werte bleiben weg (nicht `null`), damit Positionen ohne diese Angaben unverändert bleiben.
+ */
+export type Gesamtwerte = Pick<Mengenbasis, 'menge' | 'einheit' | 'gesamtgewichtKg' | 'mantelflaecheM2'>;
+
+export function anteiligeGesamtwerte(bisher: Gesamtwerte | null | undefined, menge: number | null, einheit: Einheit):
+  Pick<Mengenbasis, 'gesamtgewichtKg' | 'mantelflaecheM2'> {
+  if (!bisher || bisher.einheit !== einheit || menge == null || !(bisher.menge != null && bisher.menge > 0)) {
+    return {};
+  }
+  const anteil = (wert: number | null | undefined, stellen: number) => {
+    if (wert == null) return null;
+    if (menge === bisher.menge) return wert;
+    const faktor = 10 ** stellen;
+    const ergebnis = Math.round(Number((wert * menge / bisher.menge!).toPrecision(12)) * faktor) / faktor;
+    return ergebnis > 0 ? ergebnis : null;
+  };
+  const gesamtgewichtKg = anteil(bisher.gesamtgewichtKg, 3);
+  const mantelflaecheM2 = anteil(bisher.mantelflaecheM2, 4);
+  return { ...(gesamtgewichtKg != null && { gesamtgewichtKg }), ...(mantelflaecheM2 != null && { mantelflaecheM2 }) };
 }
 
 export interface DokumentSoll {
@@ -113,6 +140,7 @@ export function toPositionPayload(draft: PositionDraft, optionen: { anlageBeiErs
         einzelLaengeMm: numbers.values.einzelLaengeMm,
         kgJeMeter: numbers.values.kgJeMeter,
         faktorQuelle: draft.faktorQuelle.trim() || null,
+        ...anteiligeGesamtwerte(draft.gesamtwerte, numbers.values.menge!, draft.einheit),
       },
       schnittForm: draft.schnittForm || null,
       winkelLinks: draft.winkelLinks.trim() || null,
@@ -123,6 +151,7 @@ export function toPositionPayload(draft: PositionDraft, optionen: { anlageBeiErs
       anlageVersionIds: draft.anlageVersionIds,
       beschaffungsdetails: draft.beschaffungsdetails ? passendeBeschaffungsdetails(draft.beschaffungsdetails.werte,
         draft.beschaffungsdetails.erfasstFuer, { art: draft.art, artikelId: draft.artikelId, schnittForm: draft.schnittForm }) : null,
+      ...(draft.positionsnummer?.trim() && { positionsnummer: draft.positionsnummer.trim() }),
     },
   };
 }
@@ -140,5 +169,14 @@ export function fromPositionSnapshot(position: PositionSnapshot): PositionDraft 
     bearbeitung: position.bearbeitung ?? '', oberflaeche: position.oberflaeche ?? '',
     dokumente: position.dokumente ?? [], anlageVersionIds: position.anlageVersionIds ?? [],
     beschaffungsdetails: position.beschaffungsdetails ? { werte: position.beschaffungsdetails,
-      erfasstFuer: { art: position.art, artikelId: position.artikelId, schnittForm: position.schnittForm } } : null };
+      erfasstFuer: { art: position.art, artikelId: position.artikelId, schnittForm: position.schnittForm } } : null,
+    ...(position.positionsnummer && { positionsnummer: position.positionsnummer }),
+    ...gesamtwerteAus(position.basis) };
+}
+
+/** Nur Positionen mit Gewicht oder Mantelfläche tragen Gesamtwerte – sonst bleibt der Entwurf wie bisher. */
+function gesamtwerteAus(basis: Mengenbasis | null | undefined): { gesamtwerte?: Gesamtwerte } {
+  if (!basis || (basis.gesamtgewichtKg == null && basis.mantelflaecheM2 == null)) return {};
+  return { gesamtwerte: { menge: basis.menge, einheit: basis.einheit,
+    gesamtgewichtKg: basis.gesamtgewichtKg ?? null, mantelflaecheM2: basis.mantelflaecheM2 ?? null } };
 }

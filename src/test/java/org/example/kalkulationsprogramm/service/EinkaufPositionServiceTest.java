@@ -50,6 +50,25 @@ class EinkaufPositionServiceTest {
     }
 
     @Test
+    void artikelBehaeltHiCadPositionsnummerUndTeilmengeTeiltGewichtUndMantelflaeche() {
+        var basis=new Mengenbasis(new BigDecimal("40.331"),Einheit.KILOGRAMM,new BigDecimal("2"),new BigDecimal("2835.7"),null,null,
+                new BigDecimal("40.331"),new BigDecimal("2.5727"));
+        var eingabe=new PositionSnapshot(Positionsart.ARTIKEL,41L,"1101",null,null,"Rohr",null,null,basis,null,null,null,null,null,
+                List.of(),List.of(),null," 1101 ");
+        var geprueft=service.validiere(eingabe,17L);
+        assertEquals("INT-41",geprueft.interneReferenz());
+        assertEquals("1101",geprueft.positionsnummer());
+        assertEquals(new BigDecimal("2.5727"),geprueft.basis().mantelflaecheM2());
+        var haelfte=service.mitTeilmenge(geprueft,new BigDecimal("20.1655"));
+        assertEquals("1101",haelfte.positionsnummer());
+        assertEquals(new BigDecimal("20.166"),haelfte.basis().gesamtgewichtKg());
+        assertEquals(new BigDecimal("1.2864"),haelfte.basis().mantelflaecheM2());
+        var zuLang=new PositionSnapshot(Positionsart.FREITEXT,null,null,null,null,"Rohr",null,null,basis,null,null,null,null,null,
+                List.of(),List.of(),null,"1".repeat(501));
+        assertThrows(IllegalArgumentException.class,()->service.validiere(zuLang,17L));
+    }
+
+    @Test
     void teilmengeVertraegtPraeziseEinzellaengenMitSechsstelligerGesamtmenge() {
         var original=position(Positionsart.ARTIKEL,41L,"A-41","Profil",null,
                 new Mengenbasis(new BigDecimal("6.000740"),Einheit.METER,new BigDecimal("6"),new BigDecimal("1000.1234"),null,null),List.of(),List.of());

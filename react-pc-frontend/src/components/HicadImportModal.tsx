@@ -10,6 +10,7 @@ import {
     Scissors,
     Truck,
     Upload,
+    Weight,
     X,
 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -21,8 +22,11 @@ import { cn } from '../lib/utils';
 import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 import { validateDecimalInput } from '../lib/numberInput';
 import {
+    anlageInKg,
+    gruppenKgJeMeter,
     HicadUebernahmeFehler,
     ladeHicadVorschau,
+    positionsnummern,
     optimiereZuschnitt,
     uebernehmeHicad,
     type GruppenEntscheidung,
@@ -50,6 +54,8 @@ const formatNumber = (val: number | null | undefined, digits = 2) =>
     val != null ? val.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '-';
 const formatLaenge = (val: number | null | undefined) =>
     val != null ? val.toLocaleString('de-DE', { maximumFractionDigits: 1 }) : '–';
+const formatKg = (val: number) => `${formatNumber(val)} kg`;
+const formatFlaeche = (val: number) => `${formatNumber(val)} m²`;
 const STANGE_REGELN = { label: 'die Stangenlänge', required: true, integer: true, min: 1, max: 50 } as const;
 /** Gleiche Grenze wie im Backend (HiCadImportService.MAX_FILE_BYTES) – vor dem Upload prüfen. */
 const MAX_DATEI_BYTES = 10 * 1024 * 1024;
@@ -494,6 +500,10 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                             g.berechneteStaebe ??
                                             (g.summeMeter ? Math.ceil(g.summeMeter / Math.max(stangeM, 1)) : 0);
                                         const hatArtikel = !!e.artikelId;
+                                        const inKg = anlageInKg(g, e);
+                                        const kgJeMeter = aggregieren ? gruppenKgJeMeter(g)?.kgJeMeter ?? null : null;
+                                        const stangenKg = kgJeMeter != null ? staebe * stangeM * kgJeMeter : null;
+                                        const posListe = positionsnummern(g);
 
                                         return (
                                             <div
@@ -532,6 +542,17 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                                     als Freitext
                                                                 </span>
                                                             )}
+                                                            {inKg !== 'keine' && (
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-medium"
+                                                                    title={inKg === 'alle'
+                                                                        ? 'Ohne Artikel wird nach Gewicht bestellt: Menge in kg aus der HiCAD-Profilsummenliste.'
+                                                                        : 'Nur Zuschnitte mit Gewicht aus der Profilsummenliste werden in kg angelegt, die übrigen in Stück.'}
+                                                                >
+                                                                    <Weight className="w-3 h-3" />
+                                                                    {inKg === 'alle' ? 'wird in kg angelegt' : 'teilweise in kg (Gewicht fehlt)'}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="flex items-center gap-3 text-sm text-slate-600 mt-2 flex-wrap">
                                                             <span>
@@ -547,6 +568,23 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                                 </strong>{' '}
                                                                 m gesamt
                                                             </span>
+                                                            {g.summeKg != null && (
+                                                                <>
+                                                                    <span className="text-slate-300">·</span>
+                                                                    <span>
+                                                                        <strong className="text-slate-900">{formatKg(g.summeKg)}</strong>
+                                                                    </span>
+                                                                </>
+                                                            )}
+                                                            {g.summeMantelflaecheM2 != null && (
+                                                                <>
+                                                                    <span className="text-slate-300">·</span>
+                                                                    <span>
+                                                                        Mantelfläche{' '}
+                                                                        <strong className="text-slate-900">{formatFlaeche(g.summeMantelflaecheM2)}</strong>
+                                                                    </span>
+                                                                </>
+                                                            )}
                                                             {g.zeilen.length > 1 && (
                                                                 <>
                                                                     <span className="text-slate-300">·</span>
@@ -671,6 +709,17 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                                 )}
                                                             </span>
                                                         </div>
+                                                        {(inKg === 'alle' && stangenKg != null || posListe) && (
+                                                            <p className="mt-2 text-xs text-slate-600">
+                                                                {inKg === 'alle' && stangenKg != null && (
+                                                                    <span className="font-medium text-rose-700">
+                                                                        Wird als {formatKg(stangenKg)} angelegt (ganze Stangen inkl. Verschnitt)
+                                                                    </span>
+                                                                )}
+                                                                {inKg === 'alle' && stangenKg != null && posListe && <span className="text-slate-300"> · </span>}
+                                                                {posListe && <span>Pos {posListe}</span>}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -689,10 +738,20 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                                     key={idx}
                                                                     className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-md bg-slate-50 border border-slate-200 text-slate-700 font-medium"
                                                                 >
+                                                                    {z.posNr != null && z.posNr !== '' && (
+                                                                        <span className="font-mono text-slate-500">Pos {z.posNr}</span>
+                                                                    )}
                                                                     <span className="text-rose-600 font-semibold">
                                                                         {z.anzahl}×
                                                                     </span>
                                                                     <span>{formatLaenge(z.laengeMm)} mm</span>
+                                                                    {(z.gesamtGewichtKg != null || z.mantelflaecheM2 != null) && (
+                                                                        <span className="pl-1.5 border-l border-slate-200 font-normal text-slate-500 tabular-nums">
+                                                                            {[z.gesamtGewichtKg != null ? formatKg(z.gesamtGewichtKg) : null,
+                                                                                z.mantelflaecheM2 != null ? formatFlaeche(z.mantelflaecheM2) : null]
+                                                                                .filter(Boolean).join(' · ')}
+                                                                        </span>
+                                                                    )}
                                                                     {hatAnschnitt && (
                                                                         <span className="inline-flex items-center gap-1 pl-1 ml-0.5 border-l border-slate-200">
                                                                             <AnschnittChip label="Steg" text={z.anschnittSteg} bildUrl={z.anschnittbildStegUrl} />

@@ -45,5 +45,6 @@ export function materialGewicht(bedarf: BedarfResponse): number | null {
   if (basis.einheit === 'KILOGRAMM') return basis.menge;
   if (basis.einheit === 'TONNE') return basis.menge * 1000;
   if (basis.einheit === 'METER' && basis.kgJeMeter != null) return basis.menge * basis.kgJeMeter;
-  return null;
+  // z. B. HiCAD-Stückpositionen mit Katalogartikel: Gewicht aus der Profilsummenliste.
+  return basis.gesamtgewichtKg ?? null;
 }

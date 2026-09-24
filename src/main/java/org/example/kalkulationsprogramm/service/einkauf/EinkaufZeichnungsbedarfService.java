@@ -43,6 +43,6 @@ public class EinkaufZeichnungsbedarfService {
                 position.zeichnungsnummer(), position.zeichnungsrevision(), position.bezeichnung(),
                 position.werkstoff(), position.abmessung(), position.basis(), position.schnittForm(),
                 position.winkelLinks(), position.winkelRechts(), position.bearbeitung(), position.oberflaeche(),
-                position.dokumente(), anlagen, position.beschaffungsdetails());
+                position.dokumente(), anlagen, position.beschaffungsdetails(), position.positionsnummer());
     }
 }

@@ -5,7 +5,11 @@ export type Dokumentart = 'ZEUGNIS_2_1' | 'ZEUGNIS_2_2' | 'ZEUGNIS_3_1' | 'ZEUGN
 export type Zahl = number;
 export type Id = number;
 
-export interface Mengenbasis { menge: Zahl | null; einheit: Einheit | null; stueckzahl: Zahl | null; einzelLaengeMm: Zahl | null; kgJeMeter: Zahl | null; faktorQuelle: string | null }
+/** gesamtgewichtKg/mantelflaecheM2: optionale Gesamtwerte für genau diese Menge (z. B. aus der HiCAD-Profilsummenliste). */
+export interface Mengenbasis {
+  menge: Zahl | null; einheit: Einheit | null; stueckzahl: Zahl | null; einzelLaengeMm: Zahl | null; kgJeMeter: Zahl | null; faktorQuelle: string | null;
+  gesamtgewichtKg?: Zahl | null; mantelflaecheM2?: Zahl | null;
+}
 export interface DokumentSoll { art: Dokumentart; grundlage: string | null; grundlageVersion: string | null; fachlichBestaetigt: boolean }
 export interface Beschaffungsdetails {
   lieferantId: Id | null; kategorieId: Id | null; schnittbildId: Id | null;
@@ -17,6 +21,8 @@ export interface PositionSnapshot {
   basis: Mengenbasis | null; schnittForm: string | null; winkelLinks: string | null; winkelRechts: string | null;
   bearbeitung: string | null; oberflaeche: string | null; dokumente: DokumentSoll[]; anlageVersionIds: Id[];
   beschaffungsdetails?: Beschaffungsdetails | null;
+  /** Positionsnummer aus der Konstruktion (HiCAD „Pos.“, bei Stangenware mehrere, z. B. „1100, 1102“). */
+  positionsnummer?: string | null;
 }
 export interface Herkunft { bedarfId: Id | null; version: number; menge: Zahl | null }
 export interface Liefergruppe { lieferadresse: string | null; bedarfstermin: string | null; projektId: Id | null; lagerzweck: string | null }

@@ -545,6 +545,163 @@ class HiCadImportServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(preview.zeilen().stream().allMatch(zeile -> zeile.hinweise().isEmpty()));
     }
 
+    @Test
+    void liestGewichtUndMantelflaecheJePosAusDerProfilsummenliste() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        HiCadImportService service = new HiCadImportService(imports, mock(EinkaufBedarfService.class),
+                mock(EinkaufDateiService.class));
+
+        var preview = service.vorschau(17L, new MockMultipartFile("file", "stueckliste.xlsx", "application/octet-stream",
+                mitProfilsummenliste(hiCadWorkbook(null), true)), null, 4L);
+
+        assertEquals(3, preview.zeilen().size());
+        var rohr = preview.zeilen().get(0).vorschlag();
+        assertEquals("1100", rohr.positionsnummer());
+        assertEquals(new java.math.BigDecimal("5.431"), rohr.basis().gesamtgewichtKg());
+        assertEquals(new java.math.BigDecimal("0.3477"), rohr.basis().mantelflaecheM2());
+        // „Ges.gew.“ und „Fl. (m²)“ sind Gesamtwerte der Position (Anzahl 2).
+        var stuetze = preview.zeilen().get(1).vorschlag();
+        assertEquals("1101", stuetze.positionsnummer());
+        assertEquals(new java.math.BigDecimal("40.331"), stuetze.basis().gesamtgewichtKg());
+        assertEquals(new java.math.BigDecimal("2.5727"), stuetze.basis().mantelflaecheM2());
+        // Ohne „Ges.gew.“ gilt Anzahl × „Gew. (kg)“.
+        var traeger = preview.zeilen().get(2).vorschlag();
+        assertEquals(new java.math.BigDecimal("347.381"), traeger.basis().gesamtgewichtKg());
+        assertEquals(new java.math.BigDecimal("6.3483"), traeger.basis().mantelflaecheM2());
+        // Die Stückmenge bleibt in der Vorschau unverändert; kg entsteht erst bei der Übernahme ohne Artikel.
+        assertEquals(org.example.kalkulationsprogramm.domain.einkauf.Einheit.STUECK, traeger.basis().einheit());
+        preview.zeilen().forEach(zeile -> org.junit.jupiter.api.Assertions.assertTrue(
+                zeile.hinweise().stream().noneMatch(h -> h.contains("Profilsummenliste"))));
+    }
+
+    @Test
+    void fehlendeProfilsummenlisteOderPosLassenGewichtLeerOhneFehler() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        HiCadImportService service = new HiCadImportService(imports, mock(EinkaufBedarfService.class),
+                mock(EinkaufDateiService.class));
+
+        var ohneBlatt = service.vorschau(17L, new MockMultipartFile("file", "stueckliste.xlsx", "application/octet-stream",
+                hiCadWorkbook(null)), null, 4L);
+        ohneBlatt.zeilen().forEach(zeile -> {
+            assertEquals(null, zeile.vorschlag().basis().gesamtgewichtKg());
+            assertEquals(null, zeile.vorschlag().basis().mantelflaecheM2());
+            org.junit.jupiter.api.Assertions.assertTrue(zeile.hinweise().stream().noneMatch(h -> h.contains("Profilsummenliste")));
+        });
+        assertEquals("1200", ohneBlatt.zeilen().get(2).vorschlag().positionsnummer());
+
+        var ohnePos = service.vorschau(17L, new MockMultipartFile("file", "stueckliste.xlsx", "application/octet-stream",
+                mitProfilsummenliste(hiCadWorkbook(null), false)), null, 4L);
+        var traeger = ohnePos.zeilen().get(2);
+        assertEquals(null, traeger.vorschlag().basis().gesamtgewichtKg());
+        org.junit.jupiter.api.Assertions.assertTrue(traeger.hinweise().stream()
+                .anyMatch(h -> h.contains("Pos. 1200 fehlt in der Profilsummenliste")));
+        assertEquals(new java.math.BigDecimal("5.431"), ohnePos.zeilen().get(0).vorschlag().basis().gesamtgewichtKg());
+    }
+
+    @Test
+    void uebernahmeOhneArtikelLegtBedarfInKilogrammAnMitArtikelInStueck() {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        EinkaufBedarfService bedarfe = mock(EinkaufBedarfService.class);
+        HiCadImport imported = new HiCadImport(17L, "e".repeat(64), 4L, false);
+        org.springframework.test.util.ReflectionTestUtils.setField(imported, "id", 8L);
+        org.springframework.test.util.ReflectionTestUtils.setField(imported, "version", 0L);
+        String json = "{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"1101\",\"positionsnummer\":\"1101\","
+                + "\"zeichnungsnummer\":\"Z-4711\",\"zeichnungsrevision\":\"Ungeprüft\",\"bezeichnung\":\"Stütze\","
+                + "\"abmessung\":\"Rohr 76.1x4\",\"basis\":{\"menge\":2,\"einheit\":\"STUECK\",\"stueckzahl\":2,"
+                + "\"einzelLaengeMm\":2835.7,\"gesamtgewichtKg\":40.331,\"mantelflaecheM2\":2.5727},"
+                + "\"dokumente\":[],\"anlageVersionIds\":[]}";
+        HiCadImportZeile freitext = new HiCadImportZeile(3, "HiCAD row", json);
+        HiCadImportZeile artikel = new HiCadImportZeile(4, "HiCAD row", json);
+        freitext.setBildDateiIdsJson("[]");
+        artikel.setBildDateiIdsJson("[]");
+        imported.addZeile(freitext);
+        imported.addZeile(artikel);
+        when(imports.findByIdForUpdate(8L)).thenReturn(Optional.of(imported));
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(bedarfe.anlegen(any(), eq(4L))).thenReturn(new EinkaufBedarfDto.Response(300L, 0L, null, null, null, false, null));
+        when(bedarfe.aktualisieren(org.mockito.ArgumentMatchers.anyLong(), any(), eq(4L)))
+                .thenAnswer(invocation -> new EinkaufBedarfDto.Response(invocation.getArgument(0), 1L, null, null, null, false, null));
+        HiCadImportService service = new HiCadImportService(imports, bedarfe, mock(EinkaufDateiService.class));
+        var basis = new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Mengenbasis(
+                new java.math.BigDecimal("2"), org.example.kalkulationsprogramm.domain.einkauf.Einheit.STUECK,
+                new java.math.BigDecimal("2"), new java.math.BigDecimal("2835.7"), null, null,
+                new java.math.BigDecimal("999"), new java.math.BigDecimal("99"));
+        var alsFreitext = new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.PositionSnapshot(
+                org.example.kalkulationsprogramm.domain.einkauf.Positionsart.FREITEXT, null, "1101", "Z-4711", null,
+                "Rohr 76.1x4", "S235JRH", "Rohr 76.1x4", basis, null, null, null, "HiCAD · Pos 1101", null,
+                List.of(), List.of(), null, "1101");
+        var mitArtikel = new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.PositionSnapshot(
+                org.example.kalkulationsprogramm.domain.einkauf.Positionsart.ARTIKEL, 55L, "1101", "Z-4711", null,
+                "Rohr 76.1x4", "S235JRH", "Rohr 76.1x4", basis, null, null, null, "HiCAD · Pos 1101", null,
+                List.of(), List.of(), null, "1101");
+
+        service.uebernehmen(8L, new HiCadImportDto.Uebernahme(0L, List.of(
+                new HiCadImportDto.ZeilenAuswahl(3, new java.math.BigDecimal("1"), alsFreitext, List.of()),
+                new HiCadImportDto.ZeilenAuswahl(4, null, mitArtikel, List.of())), false, UUID.randomUUID()), 4L);
+
+        org.mockito.ArgumentCaptor<EinkaufBedarfDto.Update> updates = org.mockito.ArgumentCaptor.forClass(EinkaufBedarfDto.Update.class);
+        verify(bedarfe, times(2)).aktualisieren(org.mockito.ArgumentMatchers.anyLong(), updates.capture(), eq(4L));
+        var kg = updates.getAllValues().get(0).position();
+        assertEquals(org.example.kalkulationsprogramm.domain.einkauf.Einheit.KILOGRAMM, kg.basis().einheit());
+        // Teilmenge 1 von 2 Stück: anteilig aus der gespeicherten Importzeile, nicht aus der Client-Korrektur.
+        assertEquals(0, new java.math.BigDecimal("20.166").compareTo(kg.basis().menge()));
+        assertEquals(0, java.math.BigDecimal.ONE.compareTo(kg.basis().stueckzahl()));
+        assertEquals(new java.math.BigDecimal("2835.7"), kg.basis().einzelLaengeMm());
+        assertEquals(new java.math.BigDecimal("1.2864"), kg.basis().mantelflaecheM2());
+        assertEquals("1101", kg.positionsnummer());
+        var stueck = updates.getAllValues().get(1).position();
+        assertEquals(org.example.kalkulationsprogramm.domain.einkauf.Einheit.STUECK, stueck.basis().einheit());
+        assertEquals(0, new java.math.BigDecimal("2").compareTo(stueck.basis().menge()));
+        assertEquals(new java.math.BigDecimal("40.331"), stueck.basis().gesamtgewichtKg());
+        assertEquals(new java.math.BigDecimal("2.5727"), stueck.basis().mantelflaecheM2());
+        assertEquals("1101", stueck.positionsnummer());
+    }
+
+    /** Ergänzt eine Dummy-Profilsummenliste mit Gruppenüberschriften und Summenzeilen (Formeln) wie in HiCAD. */
+    private static byte[] mitProfilsummenliste(byte[] mappe, boolean mitTraeger) throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(mappe));
+                ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("Profilsummenliste");
+            sheet.createRow(0).createCell(0).setCellValue("Profilsummenliste");
+            String[] header = {"Pos.", "Anzahl", "Bezeichnung", "Länge (mm)", "Material", "Typ", "Benennung",
+                    "Beschichtung", "Fl. (m²)", "Gew. (kg)", "Ges.gew."};
+            var headerRow = sheet.createRow(7);
+            for (int i = 0; i < header.length; i++) headerRow.createCell(i).setCellValue(header[i]);
+            int zeile = 9;
+            sheet.createRow(zeile++).createCell(0).setCellValue("Rohr 76.1x4, S235JRH");
+            Object[][] rohre = {{1100, 1, 0.347720968944, 5.430502997547, 5.430502997547},
+                    {1101, 2, 2.572661643226, 20.165616215494, 40.331232430988}};
+            for (Object[] werte : rohre) {
+                var row = sheet.createRow(zeile++);
+                row.createCell(0).setCellValue((Integer) werte[0]);
+                row.createCell(1).setCellValue((Integer) werte[1]);
+                row.createCell(2).setCellValue("Rohr 76.1x4");
+                row.createCell(4).setCellValue("S235JRH");
+                row.createCell(8).setCellValue((Double) werte[2]);
+                row.createCell(9).setCellValue((Double) werte[3]);
+                row.createCell(10).setCellValue((Double) werte[4]);
+            }
+            var summe = sheet.createRow(zeile++);
+            summe.createCell(0).setCellValue("");
+            summe.createCell(1).setCellFormula("SUBTOTAL(9,B11:B12)");
+            summe.createCell(8).setCellFormula("SUBTOTAL(9,I11:I12)");
+            if (mitTraeger) {
+                sheet.createRow(zeile++).createCell(0).setCellValue("HEB 220, S235JR");
+                var traeger = sheet.createRow(zeile++);
+                traeger.createCell(0).setCellValue(1200);
+                traeger.createCell(1).setCellValue(1);
+                traeger.createCell(2).setCellValue("HEB 220");
+                traeger.createCell(8).setCellValue(6.348327987644);
+                traeger.createCell(9).setCellValue(347.380967046885);
+                sheet.createRow(zeile).createCell(10).setCellFormula("SUBTOTAL(9,K15:K15)");
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        }
+    }
+
     /** Dummy-HiCAD-Mappe: Blatt „Einstellungen“ zuerst, Positionsliste im Blatt „Sägeliste“ ab Zeile 8. */
     private static byte[] hiCadWorkbook(byte[] anschnittBild) throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

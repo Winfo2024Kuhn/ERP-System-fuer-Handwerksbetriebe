@@ -222,3 +222,61 @@ describe('HiCAD-Übernahme in den Projektbedarf', () => {
         expect(JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).duplikatBewusst).toBe(true);
     });
 });
+
+describe('Gewicht und Mantelfläche aus der Profilsummenliste', () => {
+    const mitProfilsumme = {
+        ...vorschau,
+        zeilen: [
+            zeile(9, snapshot({ interneReferenz: '1100', positionsnummer: '1100', bezeichnung: 'Rohr 76.1x4', schnittForm: null, winkelRechts: null,
+                basis: { menge: 1, einheit: 'STUECK', stueckzahl: null, einzelLaengeMm: 763.6, kgJeMeter: 7.111053, faktorQuelle: null,
+                    gesamtgewichtKg: 5.431, mantelflaecheM2: 0.3477 } })),
+            zeile(10, snapshot({ positionsnummer: '1101', schnittForm: null, winkelRechts: null,
+                basis: { menge: 2, einheit: 'STUECK', stueckzahl: 2, einzelLaengeMm: 2835.7, kgJeMeter: null, faktorQuelle: null,
+                    gesamtgewichtKg: 40.331, mantelflaecheM2: 2.5727 } })),
+            zeile(11, snapshot({ interneReferenz: '1200', positionsnummer: '1200', bezeichnung: 'HEB 220', abmessung: 'HEB 220', werkstoff: 'S235JR',
+                schnittForm: null, winkelRechts: null, basis: { menge: 1, einheit: 'STUECK', stueckzahl: 1, einzelLaengeMm: 5076.5, kgJeMeter: null, faktorQuelle: null } })),
+        ],
+    };
+    const ladeVorschau = async () => {
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('vorschau') ? ok(mitProfilsumme, 201)
+            : url === '/api/einkauf/hicad/12' ? ok(fortschritt) : ok({ artikel: [] })));
+        const api = await adapter();
+        return { api, preview: await api.ladeHicadVorschau(new File(['x'], 'saegeliste.xlsx'), 7) };
+    };
+
+    it('zeigt je Zeile Pos.-Nummer, Gewicht und Mantelfläche und summiert sie je Gruppe', async () => {
+        const { api, preview } = await ladeVorschau();
+        const [rohr, traeger] = preview.gruppen;
+        expect(rohr.zeilen[1]).toMatchObject({ posNr: '1101', anzahl: 2, gesamtGewichtKg: 40.331, gewichtProStueckKg: 20.166, mantelflaecheM2: 2.5727 });
+        expect(rohr).toMatchObject({ summeKg: 45.762, summeMantelflaecheM2: 2.9204 });
+        expect(api.positionsnummern(rohr)).toBe('1100, 1101');
+        expect(api.anlageInKg(rohr, { artikelId: null, aggregieren: false })).toBe('alle');
+        expect(api.anlageInKg(rohr, { artikelId: 6, aggregieren: false })).toBe('keine');
+        // Ohne Gewicht aus der Profilsummenliste bleibt der Träger in Stück.
+        expect(traeger.summeKg).toBeUndefined();
+        expect(api.anlageInKg(traeger, { artikelId: null, aggregieren: false })).toBe('keine');
+    });
+
+    it('gibt die Pos.-Nummer an jeden Fixzuschnitt mit – mit und ohne Artikel', async () => {
+        const { api, preview } = await ladeVorschau();
+        const [rohr] = preview.gruppen;
+        const ohne = api.fixzuschnittAuswahl(rohr, entscheidung(), 'HiCAD');
+        const mit = api.fixzuschnittAuswahl(rohr, entscheidung({ artikelId: 6 }), 'HiCAD');
+        expect(ohne.map(z => z.korrigiert?.positionsnummer)).toEqual(['1100', '1101']);
+        expect(mit[1].korrigiert).toMatchObject({ art: 'ARTIKEL', artikelId: 6, positionsnummer: '1101',
+            basis: { menge: 2, einheit: 'STUECK', gesamtgewichtKg: 40.331, mantelflaecheM2: 2.5727 } });
+    });
+
+    it('legt Stangenware ohne Artikel in kg (ganze Stangen) und mit Artikel in Metern an', async () => {
+        const { api, preview } = await ladeVorschau();
+        const [rohr] = preview.gruppen;
+        const ohne = api.stangenwareBedarf(rohr, entscheidung({ aggregieren: true, stangenlaengeM: 6 }), 7, 'HiCAD');
+        // 2 Stangen à 6 m × 7,111422 kg/m (gewichtet aus 45,762 kg auf 6,435 m)
+        expect(ohne.position).toMatchObject({ art: 'FREITEXT', positionsnummer: '1100, 1101',
+            basis: { menge: 85.337, einheit: 'KILOGRAMM', stueckzahl: 2, einzelLaengeMm: 6000, kgJeMeter: 7.111422,
+                faktorQuelle: 'HiCAD-Profilsummenliste', gesamtgewichtKg: 85.337, mantelflaecheM2: 2.9204 } });
+        const mit = api.stangenwareBedarf(rohr, entscheidung({ aggregieren: true, stangenlaengeM: 6, artikelId: 6 }), 7, 'HiCAD');
+        expect(mit.position).toMatchObject({ art: 'ARTIKEL', positionsnummer: '1100, 1101',
+            basis: { menge: 12, einheit: 'METER', gesamtgewichtKg: 85.337, mantelflaecheM2: 2.9204 } });
+    });
+});

@@ -20,6 +20,8 @@ export interface SaegelisteZeile {
     anschnittFlansch?: string;
     gewichtProStueckKg?: number;
     gesamtGewichtKg?: number;
+    /** Mantelfläche der ganzen Position in m² (HiCAD-Profilsummenliste). */
+    mantelflaecheM2?: number;
     /** URLs der Schnittbilder aus der HiCAD-Excel (null, wenn nicht vorhanden). */
     anschnittbildStegUrl?: string | null;
     anschnittbildFlanschUrl?: string | null;
@@ -44,6 +46,9 @@ export interface ProfilGruppe {
     defaultAggregieren: boolean;
     summeMeter?: number;
     summeStueck?: number;
+    /** Summe der bekannten Positionsgewichte (kg) und Mantelflächen (m²); `undefined`, wenn keine Zeile Werte hat. */
+    summeKg?: number;
+    summeMantelflaecheM2?: number;
     berechneteStaebe?: number;
     zeilen: SaegelisteZeile[];
 }
@@ -174,16 +179,20 @@ export function saegelisteZeile(zeile: HiCadZeile): SaegelisteZeile | null {
     const anzahl = p.basis?.einheit === 'STUECK' ? menge : (p.basis?.stueckzahl ?? menge);
     const laengeMm = p.basis?.einzelLaengeMm ?? undefined;
     const kgJeMeter = p.basis?.kgJeMeter ?? null;
-    const gewicht = kgJeMeter != null && laengeMm != null ? rund(kgJeMeter * laengeMm / 1000, 2) : undefined;
+    const gesamtAusProfilsumme = p.basis?.gesamtgewichtKg ?? null;
+    // Gewicht aus der Profilsummenliste hat Vorrang; sonst aus dem Stückgewicht der Sägeliste.
+    const gewicht = gesamtAusProfilsumme != null && anzahl > 0 ? rund(gesamtAusProfilsumme / anzahl, 3)
+        : kgJeMeter != null && laengeMm != null ? rund(kgJeMeter * laengeMm / 1000, 2) : undefined;
+    const gesamtGewichtKg = gesamtAusProfilsumme ?? (gewicht == null ? undefined : rund(gewicht * anzahl, 2));
     return {
         zeilennummer: zeile.zeilennummer, snapshot: p, bildDateiIds: zeile.bilder.map(bild => bild.dateiId),
         artikelKandidat: zeile.artikelKandidaten.length === 1 ? zeile.artikelKandidaten[0] : null,
-        posNr: p.interneReferenz ?? undefined, anzahl, bezeichnung: profil, benennung: p.bezeichnung,
+        posNr: p.positionsnummer ?? p.interneReferenz ?? undefined, anzahl, bezeichnung: profil, benennung: p.bezeichnung,
         laengeMm, werkstoff: p.werkstoff ?? undefined,
         anschnittSteg: nurFlansch ? undefined : winkel, anschnittFlansch: nurFlansch ? winkel : undefined,
         anschnittbildStegUrl: nurFlansch ? null : bilder[0] ?? null,
         anschnittbildFlanschUrl: nurFlansch ? bilder[0] ?? null : bilder[1] ?? null,
-        gewichtProStueckKg: gewicht, gesamtGewichtKg: gewicht == null ? undefined : rund(gewicht * anzahl, 2),
+        gewichtProStueckKg: gewicht, gesamtGewichtKg, mantelflaecheM2: p.basis?.mantelflaecheM2 ?? undefined,
     };
 }
 
@@ -213,7 +222,48 @@ export function mitSummen(gruppe: ProfilGruppe): ProfilGruppe {
     const summeStueck = gruppe.zeilen.reduce((summe, z) => summe + (z.anzahl > 0 ? z.anzahl : 0), 0);
     const summeMm = gruppe.zeilen.reduce((summe, z) => summe + Math.max(0, z.anzahl) * Math.max(0, z.laengeMm ?? 0), 0);
     const stange = gruppe.verpackungseinheitM && gruppe.verpackungseinheitM > 0 ? gruppe.verpackungseinheitM : FALLBACK_STANGE_M;
-    return { ...gruppe, summeStueck, summeMeter: rund(summeMm / 1000, 2), berechneteStaebe: optimiereStangen(gruppe.zeilen, stange).anzahlStangen };
+    return { ...gruppe, summeStueck, summeMeter: rund(summeMm / 1000, 2), berechneteStaebe: optimiereStangen(gruppe.zeilen, stange).anzahlStangen,
+        summeKg: summeBekannt(gruppe.zeilen.map(z => z.gesamtGewichtKg), 3),
+        summeMantelflaecheM2: summeBekannt(gruppe.zeilen.map(z => z.mantelflaecheM2), 4) };
+}
+
+function summeBekannt(werte: Array<number | undefined>, stellen: number): number | undefined {
+    const bekannt = werte.filter((wert): wert is number => wert != null && wert > 0);
+    return bekannt.length ? rund(bekannt.reduce((summe, wert) => summe + wert, 0), stellen) : undefined;
+}
+
+/** Pos.-Nummern einer Gruppe in Listenreihenfolge, ohne Doppelte (z. B. „1100, 1102, 1104“). */
+export function positionsnummern(gruppe: ProfilGruppe): string | null {
+    const nummern = [...new Set(gruppe.zeilen.map(z => String(z.posNr ?? '').trim()).filter(Boolean))];
+    return nummern.length ? nummern.join(', ') : null;
+}
+
+/**
+ * Gewicht je Meter einer Gruppe, gewichtet über alle Zuschnitte mit bekanntem Gewicht.
+ * Das Gewicht aus der Profilsummenliste hat Vorrang vor dem Stückgewicht der Sägeliste.
+ */
+export function gruppenKgJeMeter(gruppe: ProfilGruppe): { kgJeMeter: number; quelle: string } | null {
+    let gewicht = 0; let meter = 0; let ausProfilsumme = false;
+    for (const zeile of gruppe.zeilen) {
+        const laenge = zeile.anzahl * (zeile.laengeMm ?? 0) / 1000;
+        const basis = zeile.snapshot?.basis;
+        const kg = basis?.gesamtgewichtKg ?? (basis?.kgJeMeter != null ? basis.kgJeMeter * laenge : null);
+        if (kg == null || !(kg > 0) || !(laenge > 0)) continue;
+        gewicht += kg; meter += laenge;
+        if (basis?.gesamtgewichtKg != null) ausProfilsumme = true;
+    }
+    return meter > 0 ? { kgJeMeter: rund(gewicht / meter, 6), quelle: ausProfilsumme ? 'HiCAD-Profilsummenliste' : 'HiCAD-Stückgewicht' } : null;
+}
+
+/**
+ * Wird die Gruppe ohne Artikel nach Gewicht angelegt? Fixzuschnitt: das Backend rechnet jede Zeile mit
+ * Gewicht aus der Profilsummenliste in kg um. Stangenware: kg über die Stangen, sobald ein Gewicht bekannt ist.
+ */
+export function anlageInKg(gruppe: ProfilGruppe, e: Pick<GruppenEntscheidung, 'artikelId' | 'aggregieren'>): 'alle' | 'teilweise' | 'keine' {
+    if (e.artikelId) return 'keine';
+    if (e.aggregieren) return gruppenKgJeMeter(gruppe) ? 'alle' : 'keine';
+    const mitGewicht = gruppe.zeilen.filter(z => (z.snapshot?.basis?.gesamtgewichtKg ?? 0) > 0).length;
+    return mitGewicht === 0 ? 'keine' : mitGewicht === gruppe.zeilen.length ? 'alle' : 'teilweise';
 }
 
 /** Katalogartikel ohne Leerzeichen/Groß-Klein-Unterschied; ein abweichender Werkstoff ist kein Treffer. */
@@ -295,8 +345,10 @@ export function fixzuschnittAuswahl(gruppe: ProfilGruppe, e: GruppenEntscheidung
         const p = zeile.snapshot;
         if (!p || zeile.zeilennummer == null || p.basis?.menge == null) throw new Error(`Die Zeile „${gruppe.bezeichnung}“ ist nicht mehr lesbar. Bitte die Datei neu einlesen.`);
         const benennung = zeile.benennung && vergleichswert(zeile.benennung) !== vergleichswert(gruppe.bezeichnung) ? ` · ${zeile.benennung}` : '';
+        // Menge bleibt in Stück; ohne Artikel rechnet das Backend mit dem Gewicht der Importzeile in kg um.
         const korrigiert: PositionSnapshot = {
             ...p, art: e.artikelId ? 'ARTIKEL' : 'FREITEXT', artikelId: e.artikelId ?? null,
+            positionsnummer: p.positionsnummer ?? (zeile.posNr != null ? String(zeile.posNr) : null),
             bezeichnung: gruppe.bezeichnung, zeichnungsrevision: null, anlageVersionIds: [],
             bearbeitung: kommentar(prefix, `Pos ${zeile.posNr ?? '-'}${benennung}`),
             beschaffungsdetails: beschaffung(e),
@@ -305,19 +357,21 @@ export function fixzuschnittAuswahl(gruppe: ProfilGruppe, e: GruppenEntscheidung
     });
 }
 
-/** Stangenware: ein Bedarf in Metern über die optimierte Stangenzahl (selbst schneiden). */
+/**
+ * Stangenware: ein Bedarf über die optimierte Stangenzahl (selbst schneiden). Mit Artikel in Metern, ohne Artikel
+ * in kg: Gekauft werden ganze Stangen, also Stangen × Stangenlänge × kg/m (inkl. Verschnitt) – nicht nur die
+ * Summe der Teilegewichte. Die Mantelfläche ist die Summe der Teile (das, was beschichtet wird).
+ */
 export function stangenwareBedarf(gruppe: ProfilGruppe, e: GruppenEntscheidung, projektId: number, prefix: string, zeichnungsnr?: string): BedarfCreate {
     const stangeM = e.stangenlaengeM ?? gruppe.verpackungseinheitM ?? FALLBACK_STANGE_M;
     if (!Number.isInteger(stangeM) || stangeM < 1 || stangeM > 50) throw new Error(`Bitte für „${gruppe.bezeichnung}“ eine Stangenlänge zwischen 1 und 50 ganzen Metern eingeben.`);
     const plan = optimiereStangen(gruppe.zeilen, stangeM);
     if (plan.anzahlStangen < 1) throw new Error(`Für „${gruppe.bezeichnung}“ fehlen Zuschnittlängen – bitte als Fixzuschnitt anlegen.`);
-    let gewicht = 0; let meterMitGewicht = 0;
-    for (const zeile of gruppe.zeilen) {
-        const kg = zeile.snapshot?.basis?.kgJeMeter;
-        const meter = zeile.anzahl * (zeile.laengeMm ?? 0) / 1000;
-        if (kg != null && kg > 0 && meter > 0) { gewicht += kg * meter; meterMitGewicht += meter; }
-    }
-    const kgJeMeter = meterMitGewicht > 0 ? rund(gewicht / meterMitGewicht, 6) : null;
+    const gewicht = gruppenKgJeMeter(gruppe);
+    const kgJeMeter = gewicht?.kgJeMeter ?? null;
+    const meter = plan.anzahlStangen * stangeM;
+    const stangenKg = kgJeMeter == null ? null : rund(meter * kgJeMeter, 3);
+    const inKg = !e.artikelId && stangenKg != null && stangenKg > 0;
     let hinweis = `Stangenware · ${plan.anzahlStangen} Stk à ${stangeM} m (${format(gruppe.summeMeter ?? plan.belegtMm / 1000)} m benötigt, `
         + `${gruppe.summeStueck ?? 0} Zuschnitte, ${format(plan.verschnittMm / 1000)} m Verschnitt)`;
     if (plan.ueberlange > 0) hinweis += ` · ${plan.ueberlange} Zuschnitt(e) länger als die Stange`;
@@ -326,8 +380,10 @@ export function stangenwareBedarf(gruppe: ProfilGruppe, e: GruppenEntscheidung, 
             art: e.artikelId ? 'ARTIKEL' : 'FREITEXT', artikelId: e.artikelId ?? null, interneReferenz: null,
             zeichnungsnummer: zeichnungsnr ?? null, zeichnungsrevision: null, bezeichnung: gruppe.bezeichnung,
             werkstoff: gruppe.werkstoff ?? null, abmessung: gruppe.bezeichnung,
-            basis: { menge: plan.anzahlStangen * stangeM, einheit: 'METER', stueckzahl: plan.anzahlStangen, einzelLaengeMm: stangeM * 1000,
-                kgJeMeter, faktorQuelle: kgJeMeter == null ? null : 'HiCAD-Stückgewicht' },
+            basis: { menge: inKg ? stangenKg : meter, einheit: inKg ? 'KILOGRAMM' : 'METER', stueckzahl: plan.anzahlStangen, einzelLaengeMm: stangeM * 1000,
+                kgJeMeter, faktorQuelle: gewicht?.quelle ?? null,
+                gesamtgewichtKg: stangenKg, mantelflaecheM2: gruppe.summeMantelflaecheM2 ?? summeBekannt(gruppe.zeilen.map(z => z.mantelflaecheM2), 4) ?? null },
+            positionsnummer: positionsnummern(gruppe),
             schnittForm: null, winkelLinks: null, winkelRechts: null, bearbeitung: kommentar(prefix, hinweis), oberflaeche: null,
             dokumente: [], anlageVersionIds: [], beschaffungsdetails: beschaffung(e),
         },

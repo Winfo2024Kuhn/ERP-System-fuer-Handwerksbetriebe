@@ -20,6 +20,18 @@ describe('Materialbedarf aus der EN1090-Maske', () => {
     const result = materialbedarfPayload(materialPositionAusBedarf(source), 9, source);
     expect(result).toMatchObject({ version: 7, position: source.position, liefergruppe: source.liefergruppe });
   });
+  it('behält die HiCAD-Positionsnummer und rechnet Gewicht und Mantelfläche bei geänderter Menge anteilig um', () => {
+    const source = { id: 6, version: 2, position: { art: 'FREITEXT', artikelId: null, bezeichnung: 'Rohr 76.1x4', positionsnummer: '1101',
+      basis: { menge: 40.331, einheit: 'KILOGRAMM', stueckzahl: 2, einzelLaengeMm: 2835.7, kgJeMeter: null, faktorQuelle: null, gesamtgewichtKg: 40.331, mantelflaecheM2: 2.5727 },
+      schnittForm: null, winkelLinks: null, winkelRechts: null, dokumente: [], anlageVersionIds: [] }, liefergruppe: { projektId: 9 } } as unknown as BedarfResponse;
+    const unveraendert = materialbedarfPayload(materialPositionAusBedarf(source), 9, source);
+    expect(unveraendert.position).toMatchObject({ positionsnummer: '1101', basis: { gesamtgewichtKg: 40.331, mantelflaecheM2: 2.5727 } });
+    const halbiert = materialbedarfPayload({ ...materialPositionAusBedarf(source), menge: '20,1655' }, 9, source);
+    expect(halbiert.position.basis).toMatchObject({ menge: 20.1655, gesamtgewichtKg: 20.166, mantelflaecheM2: 1.2864 });
+    const andereEinheit = materialbedarfPayload({ ...materialPositionAusBedarf(source), einheit: 'STUECK', menge: '2' }, 9, source);
+    expect(andereEinheit.position.basis).not.toHaveProperty('mantelflaecheM2');
+    expect(andereEinheit.position.positionsnummer).toBe('1101');
+  });
   describe('Beschaffungsdetails beim Bearbeiten', () => {
     const details = { lieferantId: 8, kategorieId: 3, schnittbildId: 5, schnittAchseId: 2, externeArtikelnummer: 'MS-4711' };
     const source = { id: 5, version: 7, position: { art: 'ARTIKEL', artikelId: 17, bezeichnung: 'Profil', basis: { menge: 4, einheit: 'STUECK', stueckzahl: 4, einzelLaengeMm: null, kgJeMeter: null, faktorQuelle: null }, schnittForm: 'B', winkelLinks: '45', winkelRechts: '90', dokumente: [], anlageVersionIds: [], beschaffungsdetails: details }, liefergruppe: { projektId: 9 } } as unknown as BedarfResponse;

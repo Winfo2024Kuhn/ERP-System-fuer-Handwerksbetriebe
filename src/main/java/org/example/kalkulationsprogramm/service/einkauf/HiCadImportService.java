@@ -78,6 +78,8 @@ public class HiCadImportService {
     private static final int MAX_CELL_TEXT = 4_000;
     private static final int MAX_HEADER_SEARCH_ROWS = 30;
     private static final Set<String> SAEGELISTE_BLATTNAMEN = Set.of("sägeliste", "saegeliste");
+    private static final Set<String> PROFILSUMMENLISTE_BLATTNAMEN = Set.of("profilsummenliste");
+    private static final String FAKTORQUELLE_PROFILSUMMEN = "HiCAD-Profilsummenliste";
     private static final Set<String> ZEICHNUNGSNUMMER_LABELS = Set.of("zeichnungsnr.", "zeichnungsnr", "zeichnungsnummer");
     private static final Set<String> AUFTRAGSNUMMER_LABELS = Set.of("auftragsnr.", "auftragsnr", "auftragsnummer");
     private static final Set<String> AUFTRAGSTEXT_LABELS = Set.of("auftragstext");
@@ -216,7 +218,9 @@ public class HiCadImportService {
                     throw new IllegalArgumentException("Die Teilmenge darf höchstens sechs Nachkommastellen haben.");
                 selectedQuantity = selectedQuantity.setScale(6);
             }
-            snapshot = withQuantity(snapshot, selectedQuantity, remaining);
+            snapshot = withQuantity(snapshot, original.basis(), selectedQuantity, remaining);
+            // Ohne Katalogartikel wird nach Gewicht bestellt: Menge in kg aus der HiCAD-Profilsummenliste.
+            if (snapshot.artikelId() == null && snapshot.art() != Positionsart.ARTIKEL) snapshot = alsGewichtsbedarf(snapshot);
             List<Long> imageIds = parseBildIds(row.getBildDateiIdsJson());
             List<Long> confirmedIds = selection.bestaetigteBildDateiIds() == null ? List.of() : selection.bestaetigteBildDateiIds();
             if (!new java.util.HashSet<>(confirmedIds).equals(new java.util.HashSet<>(imageIds)) || confirmedIds.size() != imageIds.size())
@@ -301,6 +305,7 @@ public class HiCadImportService {
                 try { rows.add(new ParsedRow(number + 1, raw, toSnapshot(row, columns, formatter, kopfZeichnungsnummer), List.of(), List.of())); }
                 catch (IllegalArgumentException error) { rows.add(new ParsedRow(number + 1, raw, emptySnapshot(), List.of(error.getMessage()), List.of())); }
             }
+            if (positionsliste) ergaenzeProfilsummen(rows, leseProfilsummen(workbook, formatter));
             attachEmbeddedPictures(workbook, sheetIndex, rows, anschnittSpalten(columns));
             return new Parsed(rows, !positionsliste || columns.containsKey("interneReferenz"), kopf);
         } catch (IOException e) {
@@ -310,11 +315,105 @@ public class HiCadImportService {
 
     /** HiCAD-Stahlbau-Exporte haben viele Blätter; die Positionsliste steht im Blatt „Sägeliste“. */
     private static int tabellenblattIndex(Workbook workbook) {
+        int index = blattIndex(workbook, SAEGELISTE_BLATTNAMEN);
+        return index < 0 ? 0 : index;
+    }
+
+    private static int blattIndex(Workbook workbook, Set<String> namen) {
         for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
             String name = Normalizer.normalize(workbook.getSheetName(i), Normalizer.Form.NFC).trim().toLowerCase(Locale.ROOT);
-            if (SAEGELISTE_BLATTNAMEN.contains(name)) return i;
+            if (namen.contains(name)) return i;
         }
-        return 0;
+        return -1;
+    }
+
+    /**
+     * Liest das HiCAD-Blatt „Profilsummenliste“: je Pos.-Nummer Anzahl, Gesamtgewicht („Ges.gew.“, sonst
+     * Anzahl × „Gew. (kg)“) und Mantelfläche („Fl. (m²)“, Gesamtwert der Position). Gruppenüberschriften
+     * („HEB 220, S235JR“) und Summenzeilen ohne Pos. werden übersprungen, bevor ihre Formeln gelesen werden.
+     * Ein fehlerhaftes Zusatzblatt bricht den Import nicht ab, sondern wird als Hinweis gemeldet.
+     */
+    private static Profilsummen leseProfilsummen(Workbook workbook, DataFormatter formatter) {
+        int index = blattIndex(workbook, PROFILSUMMENLISTE_BLATTNAMEN);
+        if (index < 0) return Profilsummen.KEIN_BLATT;
+        Sheet sheet = workbook.getSheetAt(index);
+        if (sheet.getLastRowNum() > MAX_ROWS)
+            return Profilsummen.fehler("Die Profilsummenliste enthält mehr als 10.000 Zeilen und wurde nicht gelesen.");
+        Row header = findeUeberschriftenzeile(sheet, formatter);
+        if (header == null || header.getLastCellNum() > MAX_COLUMNS)
+            return Profilsummen.fehler("Die Profilsummenliste hat mehr als 20 Spalten und wurde nicht gelesen.");
+        Map<String, Integer> columns = detectMapping(header, formatter);
+        if (!columns.containsKey("position") || !(columns.containsKey("gesamtgewichtKg") || columns.containsKey("gewichtKg")
+                || columns.containsKey("mantelflaecheM2")))
+            return Profilsummen.fehler("In der Profilsummenliste fehlen die Spalten „Pos.“, „Ges.gew.“ oder „Fl. (m²)“.");
+        Map<String, ProfilSumme> jePosition = new java.util.HashMap<>();
+        for (int number = header.getRowNum() + 1; number <= sheet.getLastRowNum(); number++) {
+            Row row = sheet.getRow(number);
+            if (row == null || empty(row) || ohnePositionOderBezeichnung(row, columns)) continue;
+            if (row.getLastCellNum() > MAX_COLUMNS)
+                return Profilsummen.fehler("Die Profilsummenliste hat mehr als 20 Spalten und wurde nicht gelesen.");
+            try {
+                String position = value(row, columns, "position", formatter);
+                BigDecimal anzahl = positivOderNull(decimalOrNull(value(row, columns, "stueckzahl", formatter)));
+                BigDecimal gewicht = positivOderNull(decimalOrNull(value(row, columns, "gesamtgewichtKg", formatter)));
+                BigDecimal stueckgewicht = positivOderNull(decimalOrNull(value(row, columns, "gewichtKg", formatter)));
+                if (gewicht == null && stueckgewicht != null) gewicht = anzahl == null ? stueckgewicht : stueckgewicht.multiply(anzahl);
+                BigDecimal flaeche = positivOderNull(decimalOrNull(value(row, columns, "mantelflaecheM2", formatter)));
+                if (position == null || position.length() > 128) continue;
+                jePosition.merge(position, new ProfilSumme(anzahl, gewicht, flaeche), ProfilSumme::plus);
+            } catch (IllegalArgumentException unlesbar) {
+                // Einzelne unlesbare Zeile (z. B. Formel): Die Position bleibt ohne Gewicht und bekommt einen Hinweis.
+            }
+        }
+        return new Profilsummen(true, Map.copyOf(jePosition), null);
+    }
+
+    /**
+     * Übernimmt Gesamtgewicht und Mantelfläche je Pos.-Nummer in die Sägelisten-Zeilen. Weicht die Stückzahl
+     * der Sägeliste von der Profilsummenliste ab, werden beide Werte anteilig umgerechnet.
+     */
+    private static void ergaenzeProfilsummen(List<ParsedRow> rows, Profilsummen summen) {
+        if (!summen.blattVorhanden()) return;
+        for (int i = 0; i < rows.size(); i++) {
+            ParsedRow row = rows.get(i);
+            PositionSnapshot snapshot = row.snapshot();
+            if (snapshot.basis() == null || snapshot.positionsnummer() == null) continue;
+            List<String> hints = new ArrayList<>(row.hints());
+            if (summen.fehler() != null) {
+                hints.add(summen.fehler());
+                rows.set(i, new ParsedRow(row.rowNumber(), row.raw(), snapshot, List.copyOf(hints), row.images()));
+                continue;
+            }
+            ProfilSumme summe = summen.jePosition().get(snapshot.positionsnummer());
+            if (summe == null || (summe.gewichtKg() == null && summe.flaecheM2() == null)) {
+                hints.add("Pos. " + snapshot.positionsnummer() + " fehlt in der Profilsummenliste – kein Gewicht und keine Mantelfläche.");
+                rows.set(i, new ParsedRow(row.rowNumber(), row.raw(), snapshot, List.copyOf(hints), row.images()));
+                continue;
+            }
+            Mengenbasis basis = snapshot.basis();
+            BigDecimal stueck = basis.stueckzahl() != null ? basis.stueckzahl()
+                    : basis.einheit() == Einheit.STUECK ? basis.menge() : null;
+            BigDecimal anteil = BigDecimal.ONE;
+            if (summe.anzahl() != null && stueck != null && stueck.compareTo(summe.anzahl()) != 0) {
+                anteil = stueck.divide(summe.anzahl(), 12, java.math.RoundingMode.HALF_UP);
+                hints.add("Anzahl weicht von der Profilsummenliste ab; Gewicht und Mantelfläche wurden anteilig übernommen.");
+            }
+            BigDecimal gewicht = gerundet(summe.gewichtKg(), anteil, 3);
+            BigDecimal flaeche = gerundet(summe.flaecheM2(), anteil, 4);
+            rows.set(i, new ParsedRow(row.rowNumber(), row.raw(), snapshot.mitBasis(new Mengenbasis(basis.menge(),
+                    basis.einheit(), basis.stueckzahl(), basis.einzelLaengeMm(), basis.kgJeMeter(), basis.faktorQuelle(),
+                    gewicht, flaeche)), List.copyOf(hints), row.images()));
+        }
+    }
+
+    private static BigDecimal gerundet(BigDecimal wert, BigDecimal anteil, int stellen) {
+        if (wert == null) return null;
+        BigDecimal result = wert.multiply(anteil).setScale(stellen, java.math.RoundingMode.HALF_UP);
+        return result.signum() > 0 ? result : null;
+    }
+
+    private static BigDecimal positivOderNull(BigDecimal wert) {
+        return wert == null || wert.signum() <= 0 ? null : wert;
     }
 
     /**
@@ -420,7 +519,8 @@ public class HiCadImportService {
                 value(row, map, "werkstoff", formatter), abmessung, basis, schnittForm,
                 firstNonBlank(value(row, map, "winkelLinks", formatter), steg.links(), flansch.links()),
                 firstNonBlank(value(row, map, "winkelRechts", formatter), steg.rechts(), flansch.rechts()),
-                null, value(row, map, "oberflaeche", formatter), List.of(), List.of());
+                null, value(row, map, "oberflaeche", formatter), List.of(), List.of(), null,
+                positionsliste ? value(row, map, "position", formatter) : null);
     }
 
     /** HiCAD liefert Längen mit bis zu 12 Nachkommastellen; für den Einkauf reicht eine Nachkommastelle. */
@@ -627,7 +727,12 @@ public class HiCadImportService {
             default -> throw new IllegalArgumentException("Die Einheit „" + value + "“ wird nicht unterstützt.");
         };
     }
-    private static PositionSnapshot withQuantity(PositionSnapshot position, BigDecimal selected, BigDecimal available) {
+    /**
+     * Setzt die gewählte (Teil-)Menge in der Einheit der Importzeile. Gewicht und Mantelfläche stammen aus der
+     * gespeicherten Importzeile (nicht aus der Korrektur des Clients) und werden anteilig mitgeführt.
+     */
+    private static PositionSnapshot withQuantity(PositionSnapshot position, Mengenbasis importBasis,
+            BigDecimal selected, BigDecimal available) {
         if (selected == null || selected.signum() <= 0) throw new IllegalArgumentException("Die Teilmenge muss größer als 0 sein.");
         Mengenbasis old = position.basis();
         if (old == null || old.menge() == null || selected.compareTo(available) > 0)
@@ -635,22 +740,39 @@ public class HiCadImportService {
         BigDecimal pieces = old.stueckzahl();
         if (old.einheit() == Einheit.STUECK && selected.stripTrailingZeros().scale() > 0) throw new IllegalArgumentException("Die Stückzahl muss ganzzahlig sein.");
         if (old.einheit() == Einheit.STUECK) pieces = selected;
-        Mengenbasis basis = new Mengenbasis(selected.setScale(6), old.einheit(), pieces,
-                old.einzelLaengeMm(), old.kgJeMeter(), old.faktorQuelle());
-        return new PositionSnapshot(position.art(), position.artikelId(), position.interneReferenz(), position.zeichnungsnummer(),
-                position.zeichnungsrevision(), position.bezeichnung(), position.werkstoff(), position.abmessung(), basis,
-                position.schnittForm(), position.winkelLinks(), position.winkelRechts(), position.bearbeitung(),
-                position.oberflaeche(), position.dokumente(), position.anlageVersionIds(), position.beschaffungsdetails());
+        Mengenbasis anteilig = importBasis.mitAnteiligenGesamtwerten(selected.setScale(6), importBasis.einheit(), pieces);
+        Mengenbasis basis = new Mengenbasis(selected.setScale(6), old.einheit(), pieces, old.einzelLaengeMm(),
+                old.kgJeMeter(), old.faktorQuelle(), anteilig.gesamtgewichtKg(), anteilig.mantelflaecheM2());
+        return position.mitBasis(basis);
+    }
+
+    /**
+     * Freitext und Zeichnungsteil ohne Artikel: Die Menge wird das Gesamtgewicht in kg. Stückzahl und Länge
+     * bleiben als Information erhalten. Ohne Gewicht aus der Profilsummenliste bleibt die Stückmenge.
+     */
+    private static PositionSnapshot alsGewichtsbedarf(PositionSnapshot position) {
+        Mengenbasis basis = position.basis();
+        if (basis == null || basis.gesamtgewichtKg() == null || basis.gesamtgewichtKg().signum() <= 0
+                || basis.einheit() == Einheit.KILOGRAMM) return position;
+        BigDecimal kg = basis.gesamtgewichtKg();
+        BigDecimal stueck = basis.stueckzahl() != null ? basis.stueckzahl()
+                : basis.einheit() == Einheit.STUECK ? basis.menge() : null;
+        BigDecimal kgJeMeter = basis.kgJeMeter();
+        if (kgJeMeter == null && stueck != null && basis.einzelLaengeMm() != null)
+            kgJeMeter = kgJeMeter(kg.divide(stueck, 6, java.math.RoundingMode.HALF_UP), basis.einzelLaengeMm());
+        String quelle = basis.kgJeMeter() == null && kgJeMeter != null ? FAKTORQUELLE_PROFILSUMMEN : basis.faktorQuelle();
+        return position.mitBasis(new Mengenbasis(kg.setScale(6, java.math.RoundingMode.HALF_UP), Einheit.KILOGRAMM, stueck,
+                basis.einzelLaengeMm(), kgJeMeter, quelle, kg, basis.mantelflaecheM2()));
     }
     private static PositionSnapshot emptySnapshot() {
         return new PositionSnapshot(Positionsart.ZEICHNUNGSTEIL, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, List.of(), List.of());
+                null, null, null, null, null, List.of(), List.of(), null, null);
     }
     private static PositionSnapshot withAttachments(PositionSnapshot position, List<Long> ids) {
         return new PositionSnapshot(position.art(), position.artikelId(), position.interneReferenz(), position.zeichnungsnummer(),
                 position.zeichnungsrevision(), position.bezeichnung(), position.werkstoff(), position.abmessung(), position.basis(),
                 position.schnittForm(), position.winkelLinks(), position.winkelRechts(), position.bearbeitung(), position.oberflaeche(),
-                position.dokumente(), ids, position.beschaffungsdetails());
+                position.dokumente(), ids, position.beschaffungsdetails(), position.positionsnummer());
     }
     private List<Long> parseBildIds(String jsonValue) {
         if (jsonValue == null || jsonValue.isBlank()) return List.of();
@@ -695,6 +817,9 @@ public class HiCadImportService {
         alias(aliases, "anschnittSteg", "anschnitt(steg)", "anschnittsteg");
         alias(aliases, "anschnittFlansch", "anschnitt(flansch)", "anschnittflansch");
         alias(aliases, "gewichtKg", "gew.(kg)", "gew(kg)", "gewicht(kg)", "stückgewicht(kg)", "stueckgewicht(kg)");
+        alias(aliases, "gesamtgewichtKg", "ges.gew.", "ges.gew", "ges.gew.(kg)", "gesamtgewicht", "gesamtgewicht(kg)");
+        alias(aliases, "mantelflaecheM2", "fl.(m²)", "fl.(m2)", "fl.[m²]", "fläche(m²)", "flaeche(m2)", "mantelfläche",
+                "mantelflaeche", "mantelfläche(m²)", "mantelflaeche(m2)");
         alias(aliases, "oberflaeche", "beschichtung", "oberfläche", "oberflaeche");
         return Map.copyOf(aliases);
     }
@@ -740,6 +865,17 @@ public class HiCadImportService {
         catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
     private record Parsed(List<ParsedRow> rows, boolean katalogAbgleich, HiCadImportDto.Kopfdaten kopf) {}
+    /** Werte einer Pos. aus der Profilsummenliste; mehrfach vorkommende Pos. werden aufsummiert. */
+    private record ProfilSumme(BigDecimal anzahl, BigDecimal gewichtKg, BigDecimal flaecheM2) {
+        ProfilSumme plus(ProfilSumme other) {
+            return new ProfilSumme(summe(anzahl, other.anzahl), summe(gewichtKg, other.gewichtKg), summe(flaecheM2, other.flaecheM2));
+        }
+        private static BigDecimal summe(BigDecimal a, BigDecimal b) { return a == null ? b : b == null ? a : a.add(b); }
+    }
+    private record Profilsummen(boolean blattVorhanden, Map<String, ProfilSumme> jePosition, String fehler) {
+        static final Profilsummen KEIN_BLATT = new Profilsummen(false, Map.of(), null);
+        static Profilsummen fehler(String grund) { return new Profilsummen(true, Map.of(), grund); }
+    }
     private record Anschnitt(String links, String rechts) {
         boolean vorhanden() { return links != null || rechts != null; }
     }

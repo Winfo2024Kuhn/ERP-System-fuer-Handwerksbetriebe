@@ -69,6 +69,9 @@ interface BedarfsZeile {
     kommentar?: string | null;
     kilogramm?: number | null;
     gesamtKilogramm?: number | null;
+    /** HiCAD-Positionsnummer(n), z. B. „1200“ oder „1100, 1102“. */
+    positionsnummer?: string | null;
+    mantelflaecheM2?: number | null;
     fixmassMm?: number | null;
     schnittbildId?: number | null;
     schnittbildBildUrl?: string | null;
@@ -110,6 +113,11 @@ const STORAGE_PREFIX = 'bedarf-checkliste-v1-';
 const formatKg = (val: number | null | undefined): string | null => {
     if (val == null || val <= 0) return null;
     return `${val.toLocaleString('de-DE', { maximumFractionDigits: 1 })} kg`;
+};
+
+const formatMantelflaeche = (val: number | null | undefined): string | null => {
+    if (val == null || val <= 0) return null;
+    return `Mantelfläche ${val.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`;
 };
 
 export default function ProjektBedarfPage() {
@@ -514,6 +522,11 @@ export default function ProjektBedarfPage() {
                                                         <p className="font-medium text-slate-900 truncate">
                                                             {z.produktname ?? 'Unbenannt'}
                                                         </p>
+                                                        {z.positionsnummer && (
+                                                            <p className="text-xs font-mono text-slate-500 mt-0.5" title="Positionsnummer aus HiCAD">
+                                                                Pos {z.positionsnummer}
+                                                            </p>
+                                                        )}
                                                         {z.kategorieName && (
                                                             <p className="text-xs text-slate-500 mt-0.5">
                                                                 {z.kategorieName}
@@ -586,6 +599,11 @@ export default function ProjektBedarfPage() {
                                             </td>
                                             <td className="px-4 py-3 text-right text-slate-700 tabular-nums">
                                                 {formatKg(z.kilogramm) ?? <span className="text-slate-300">—</span>}
+                                                {formatMantelflaeche(z.mantelflaecheM2) && (
+                                                    <p className="text-[11px] text-slate-500 mt-0.5 whitespace-nowrap">
+                                                        {formatMantelflaeche(z.mantelflaecheM2)}
+                                                    </p>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <MengenInput

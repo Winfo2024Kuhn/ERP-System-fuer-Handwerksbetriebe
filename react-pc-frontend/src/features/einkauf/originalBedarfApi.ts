@@ -23,6 +23,7 @@ export function bedarfszeile(bedarf: BedarfResponse, projekt?: ProjektKurz) {
         menge: p.basis?.menge ?? bedarf.mengen.bedarf ?? 0, stueckzahl: p.basis?.stueckzahl ?? 0,
         einheit: p.basis?.einheit ? einheiten[p.basis.einheit] : '',
         kilogramm: materialGewicht(bedarf) ?? undefined, fixmassMm: p.basis?.einzelLaengeMm ?? null,
+        positionsnummer: p.positionsnummer ?? null, mantelflaecheM2: p.basis?.mantelflaecheM2 ?? null,
         schnittForm: p.schnittForm ?? undefined,
         anschnittWinkelLinks: p.winkelLinks ?? undefined, anschnittWinkelRechts: p.winkelRechts ?? undefined,
         zeugnisAnforderung: p.dokumente[0]?.art ?? null,

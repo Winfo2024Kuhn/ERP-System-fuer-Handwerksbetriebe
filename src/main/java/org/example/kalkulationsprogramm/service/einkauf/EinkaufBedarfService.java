@@ -246,7 +246,7 @@ public class EinkaufBedarfService {
                 disponiert ? bisher.winkelLinks() : quelle.winkelLinks(),
                 disponiert ? bisher.winkelRechts() : quelle.winkelRechts(),
                 disponiert ? bisher.bearbeitung() : quelle.bearbeitung(), bisher.oberflaeche(),
-                bisher.dokumente(), bisher.anlageVersionIds(), bisher.beschaffungsdetails());
+                bisher.dokumente(), bisher.anlageVersionIds(), bisher.beschaffungsdetails(), bisher.positionsnummer());
     }
 
     private static boolean identitaetGeaendert(PositionSnapshot bisher, PositionSnapshot quelle) {

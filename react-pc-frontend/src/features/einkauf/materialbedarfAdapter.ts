@@ -1,6 +1,6 @@
 import { formatDecimalInput } from '../../lib/numberInput';
 import { validateNumberDrafts } from '../../lib/numberDrafts';
-import { passendeBeschaffungsdetails } from './positionDrafts';
+import { anteiligeGesamtwerte, passendeBeschaffungsdetails } from './positionDrafts';
 import type { BedarfResponse, BedarfCreate, BedarfUpdate, Dokumentart, Einheit, PositionSnapshot } from './types';
 
 export interface MaterialPosition {
@@ -96,7 +96,8 @@ export function materialbedarfPayload(draft: MaterialPosition, projektId: number
         zeichnungsnummer: previous?.zeichnungsnummer ?? null, zeichnungsrevision: previous?.zeichnungsrevision ?? null,
         bezeichnung: draft.produktname.trim(), werkstoff: draft.werkstoffName?.trim() || null, abmessung: draft.produkttext.trim() || null,
         basis: { menge: numbers.values.menge, einheit: draft.einheit, stueckzahl,
-            einzelLaengeMm: numbers.values.fixmass, kgJeMeter: draft.kgJeMeter, faktorQuelle: draft.faktorQuelle },
+            einzelLaengeMm: numbers.values.fixmass, kgJeMeter: draft.kgJeMeter, faktorQuelle: draft.faktorQuelle,
+            ...anteiligeGesamtwerte(previous?.basis, numbers.values.menge, draft.einheit) },
         schnittForm,
         winkelLinks: unveraenderteWinkel ? previous.winkelLinks : draft.sonderzuschnitt ? formatDecimalInput(numbers.values.links ?? 90) : null,
         winkelRechts: unveraenderteWinkel ? previous.winkelRechts : draft.sonderzuschnitt ? formatDecimalInput(numbers.values.rechts ?? 90) : null,
@@ -108,6 +109,7 @@ export function materialbedarfPayload(draft: MaterialPosition, projektId: number
         anlageVersionIds: previous?.anlageVersionIds ?? [],
         beschaffungsdetails: previous ? passendeBeschaffungsdetails(previous.beschaffungsdetails, previous,
             { art, artikelId: draft.artikelId, schnittForm }) : null,
+        ...(previous?.positionsnummer && { positionsnummer: previous.positionsnummer }),
     };
     const liefergruppe = { projektId, lagerzweck: projektId ? null : basis?.liefergruppe.lagerzweck || 'Werkstatt / auf Vorrat',
         lieferadresse: basis?.liefergruppe.lieferadresse ?? null, bedarfstermin: basis?.liefergruppe.bedarfstermin ?? null };

@@ -92,6 +92,16 @@ describe('Original-Bedarf mit Datenbank-API', () => {
         expect(bedarfszeile(mitDetails).externeArtikelnummer).toBe('LIEF-0815');
     });
 
+    it('übernimmt HiCAD-Positionsnummer, Mantelfläche und das Positionsgewicht auch bei Stückpositionen', async () => {
+        const { bedarfszeile } = await adapter();
+        const b = bedarf(1);
+        const hicad = { ...b, position: { ...b.position, art: 'ARTIKEL', artikelId: 6, positionsnummer: '1200',
+            basis: { menge: 1, einheit: 'STUECK', stueckzahl: 1, einzelLaengeMm: 5076.5, kgJeMeter: null, faktorQuelle: null,
+                gesamtgewichtKg: 347.381, mantelflaecheM2: 6.3483 } } } as BedarfResponse;
+        expect(bedarfszeile(hicad)).toMatchObject({ positionsnummer: '1200', mantelflaecheM2: 6.3483, kilogramm: 347.381, einheit: 'Stück' });
+        expect(bedarfszeile(b)).toMatchObject({ positionsnummer: null, mantelflaecheM2: null, kilogramm: 25 });
+    });
+
     it('verschleiert fehlgeschlagene Backendantworten nicht als leere Bedarfsliste', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503 })));
         const { ladeBedarfszeilen } = await adapter();

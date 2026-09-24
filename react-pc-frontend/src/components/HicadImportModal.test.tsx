@@ -142,4 +142,25 @@ describe('HiCAD-Import prüfen (EN1090-Fenster)', () => {
         await waitFor(() => expect(api.uebernehmeHicad).toHaveBeenCalledWith(expect.objectContaining({ entscheidungen: {
             'heb 220||s235jr': expect.objectContaining({ artikelId: 42, artikelnummer: 'ST-0815', lieferantId: null }) } })));
     });
+    it('zeigt Pos.-Nummer, Gewicht und Mantelfläche und kennzeichnet Gruppen ohne Artikel als kg-Anlage', async () => {
+        const basis = { menge: 1, einheit: 'STUECK' as const, stueckzahl: 1, einzelLaengeMm: 5076.5, kgJeMeter: null, faktorQuelle: null,
+            gesamtgewichtKg: 347.381, mantelflaecheM2: 6.3483 };
+        const gruppe = { ...vorschau().gruppen[0], artikelId: null, artikelProduktname: null, summeKg: 347.381, summeMantelflaecheM2: 6.3483,
+            zeilen: [{ ...vorschau().gruppen[0].zeilen[0], gesamtGewichtKg: 347.381, mantelflaecheM2: 6.3483,
+                snapshot: { art: 'ZEICHNUNGSTEIL' as const, artikelId: null, interneReferenz: '1200', zeichnungsnummer: null, zeichnungsrevision: null,
+                    bezeichnung: 'HEB 220', werkstoff: 'S235JR', abmessung: 'HEB 220', basis, schnittForm: null, winkelLinks: null, winkelRechts: null,
+                    bearbeitung: null, oberflaeche: null, dokumente: [], anlageVersionIds: [], positionsnummer: '1200' } }] };
+        api.ladeHicadVorschau.mockResolvedValue(vorschau({ gruppen: [gruppe] }));
+        await oeffne();
+
+        expect(await screen.findByText('wird in kg angelegt')).toBeInTheDocument();
+        expect(screen.getByText('347,38 kg')).toBeInTheDocument();
+        expect(screen.getByText('6,35 m²')).toBeInTheDocument();
+        expect(screen.getByText('Pos 1200')).toBeInTheDocument();
+        expect(screen.getByText('347,38 kg · 6,35 m²')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Stangenware/ }));
+        // 1 Stange à 12 m (Verpackungseinheit) × 68,43 kg/m aus 347,381 kg auf 5,0765 m
+        expect(screen.getByText(/Wird als 821,15 kg angelegt/)).toBeInTheDocument();
+    });
 });

@@ -13,7 +13,7 @@ type JsonWert = null | boolean | number | string | JsonWert[] | { [kennung: stri
 type Aufruf = { pfad: string; methode: string; inhalt: JsonWert };
 type ÜbernahmeInhalt = {
   version: number; duplikatBewusst: boolean; idempotenzKey: string;
-  zeilen: Array<{ zeilennummer: number; menge: number; bestaetigteBildDateiIds: number[]; korrigiert: { art: string; artikelId: number | null } }>;
+  zeilen: Array<{ zeilennummer: number; menge: number; bestaetigteBildDateiIds: number[]; korrigiert: { art: string; artikelId: number | null; positionsnummer?: string | null } }>;
 };
 type StangenwareInhalt = {
   position: { art: string; artikelId: number | null; bezeichnung: string; basis: { menge: number; einheit: string; stueckzahl: number; einzelLaengeMm: number }; beschaffungsdetails: { lieferantId: number | null } };
@@ -35,13 +35,14 @@ async function beantworteSeitenGrundlagen(pfad: string, route: Parameters<Parame
 }
 
 /** Positions-Snapshot einer Sägelisten-Zeile, wie ihn POST /api/einkauf/hicad/vorschau liefert. */
-const sägezeile = (zeilennummer: number, werte: { referenz: string; benennung: string; profil: string; werkstoff: string; anzahl: number; laengeMm: number; kgJeMeter: number; winkelLinks?: string | null; winkelRechts?: string | null; bildIds?: number[] }) => ({
+const sägezeile = (zeilennummer: number, werte: { referenz: string; benennung: string; profil: string; werkstoff: string; anzahl: number; laengeMm: number; kgJeMeter: number; winkelLinks?: string | null; winkelRechts?: string | null; bildIds?: number[]; gesamtgewichtKg?: number; mantelflaecheM2?: number }) => ({
   zeilennummer,
   rohtext: `${werte.referenz};${werte.benennung};${werte.profil};${werte.werkstoff};${werte.anzahl};${werte.laengeMm}`,
   vorschlag: {
-    art: 'ZEICHNUNGSTEIL', artikelId: null, interneReferenz: werte.referenz, zeichnungsnummer: 'Z-019', zeichnungsrevision: 'A',
+    art: 'ZEICHNUNGSTEIL', artikelId: null, interneReferenz: werte.referenz, positionsnummer: werte.referenz, zeichnungsnummer: 'Z-019', zeichnungsrevision: 'A',
     bezeichnung: werte.benennung, werkstoff: werte.werkstoff, abmessung: werte.profil,
-    basis: { menge: werte.anzahl, einheit: 'STUECK', stueckzahl: werte.anzahl, einzelLaengeMm: werte.laengeMm, kgJeMeter: werte.kgJeMeter, faktorQuelle: 'HiCAD' },
+    basis: { menge: werte.anzahl, einheit: 'STUECK', stueckzahl: werte.anzahl, einzelLaengeMm: werte.laengeMm, kgJeMeter: werte.kgJeMeter, faktorQuelle: 'HiCAD',
+      gesamtgewichtKg: werte.gesamtgewichtKg ?? null, mantelflaecheM2: werte.mantelflaecheM2 ?? null },
     schnittForm: werte.winkelLinks || werte.winkelRechts ? 'Anschnitt Steg' : null,
     winkelLinks: werte.winkelLinks ?? null, winkelRechts: werte.winkelRechts ?? null,
     bearbeitung: null, oberflaeche: null, dokumente: [], anlageVersionIds: [],
@@ -55,7 +56,7 @@ const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQ
 test('HiCAD-Sägeliste: Gruppen prüfen, Artikel zuordnen, nur offene Zeilen anlegen – Lagerentnahme erst nach Bestätigung', async ({ page: seite }, prüfinformationen) => {
   const aufrufe: Aufruf[] = [];
   let offeneMenge = 10; let entnahmen = 0;
-  const bedarf = () => ({ id: 6, version: 4, position: { art: 'ARTIKEL', artikelId: null, interneReferenz: 'MAT-6', bezeichnung: 'Stahlprofil', basis: { menge: 10, einheit: 'STUECK' }, dokumente: [], anlageVersionIds: [] }, liefergruppe: { projektId: 19, lieferadresse: null, bedarfstermin: null, lagerzweck: null }, mengen: { bedarf: 10, lagergedeckt: 10 - offeneMenge, angefragt: 0, reserviert: 0, bestellt: 0, geliefert: 0, storniert: 0, ungedeckt: offeneMenge, disponierbar: offeneMenge }, nachpflegeErforderlich: false, historischerHinweis: null });
+  const bedarf = () => ({ id: 6, version: 4, position: { art: 'ARTIKEL', artikelId: null, interneReferenz: 'MAT-6', positionsnummer: 'P-101', bezeichnung: 'Stahlprofil', basis: { menge: 10, einheit: 'STUECK', mantelflaecheM2: 6.3483 }, dokumente: [], anlageVersionIds: [] }, liefergruppe: { projektId: 19, lieferadresse: null, bedarfstermin: null, lagerzweck: null }, mengen: { bedarf: 10, lagergedeckt: 10 - offeneMenge, angefragt: 0, reserviert: 0, bestellt: 0, geliefert: 0, storniert: 0, ungedeckt: offeneMenge, disponierbar: offeneMenge }, nachpflegeErforderlich: false, historischerHinweis: null });
   await seite.route('**/api/**', async route => {
     const adresse = new URL(route.request().url()); const pfad = adresse.pathname; const methode = route.request().method(); let inhalt: JsonWert = null;
     try { inhalt = route.request().postDataJSON() as JsonWert; } catch { inhalt = null; }
@@ -75,7 +76,8 @@ test('HiCAD-Sägeliste: Gruppen prüfen, Artikel zuordnen, nur offene Zeilen anl
         // Schon vollständig übernommen (siehe Fortschritt): taucht nicht mehr auf.
         sägezeile(4, { referenz: 'P-103', benennung: 'Konsole', profil: 'IPE 200', werkstoff: 'S355', anzahl: 1, laengeMm: 1234, kgJeMeter: 22.4 }),
         // RR-Profil: wird als Stangenware (selbst schneiden) vorgeschlagen.
-        sägezeile(5, { referenz: 'P-104', benennung: 'Geländerholm', profil: 'RR 40x40x3', werkstoff: 'S235JR', anzahl: 4, laengeMm: 1500, kgJeMeter: 3.3 }),
+        // Mit Gewicht und Mantelfläche aus der Profilsummenliste: ohne Artikel wird in kg angelegt.
+        sägezeile(5, { referenz: 'P-104', benennung: 'Geländerholm', profil: 'RR 40x40x3', werkstoff: 'S235JR', anzahl: 4, laengeMm: 1500, kgJeMeter: 3.3, gesamtgewichtKg: 19.8, mantelflaecheM2: 0.936 }),
       ],
     } });
     if (pfad === '/api/einkauf/hicad/3') return route.fulfill({ json: { id: 3, version: 4, duplikat: false, zeilen: [
@@ -123,6 +125,15 @@ test('HiCAD-Sägeliste: Gruppen prüfen, Artikel zuordnen, nur offene Zeilen anl
   await expect(fenster.getByAltText('Anschnitt Steg')).toHaveCount(1);
   await expect(rohr.getByText('Stangenware (selbst schneiden)')).toBeVisible();
   await expect(rohr.getByText('1 Stange bestellen')).toBeVisible();
+  // HiCAD-Positionsnummern je Zuschnitt; Gewicht und Mantelfläche aus der Profilsummenliste je Gruppe.
+  await expect(ipe.getByText('Pos P-101')).toBeVisible();
+  await expect(ipe.getByText('Pos P-102')).toBeVisible();
+  await expect(rohr.getByText('wird in kg angelegt')).toBeVisible();
+  await expect(rohr.getByText('19,80 kg', { exact: true })).toBeVisible();
+  await expect(rohr.getByText('0,94 m²')).toBeVisible();
+  await expect(rohr.getByText(/Wird als 19,80 kg angelegt/)).toBeVisible();
+  await expect(rohr.getByText('Pos P-104')).toBeVisible();
+  await expect(ipe.getByText('wird in kg angelegt')).toHaveCount(0);
 
   // Artikel über die normale Artikelauswahl (Einzelauswahl) zuordnen, Lieferant bleibt leer.
   await ipe.getByRole('button', { name: 'Artikel zuordnen' }).click();
@@ -163,14 +174,20 @@ test('HiCAD-Sägeliste: Gruppen prüfen, Artikel zuordnen, nur offene Zeilen anl
   expect(übernahme.idempotenzKey).toBeTruthy();
   expect(übernahme.zeilen.map(zeile => [zeile.zeilennummer, zeile.menge, zeile.bestaetigteBildDateiIds])).toEqual([[2, 2, [52]], [3, 3, [53]]]);
   expect(übernahme.zeilen.every(zeile => zeile.korrigiert.art === 'ARTIKEL' && zeile.korrigiert.artikelId === 77)).toBe(true);
-  // Stangenware: ein Meter-Bedarf über die optimierte Stangenzahl, als Freitext und ohne Lieferant.
+  // Die HiCAD-Positionsnummer bleibt auch bei zugeordnetem Artikel erhalten.
+  expect(übernahme.zeilen.map(zeile => zeile.korrigiert.positionsnummer)).toEqual(['P-101', 'P-102']);
+  // Stangenware ohne Artikel: ein kg-Bedarf über ganze Stangen (1 × 6 m × 3,3 kg/m), als Freitext und ohne Lieferant.
   const stangenware = aufrufe.filter(aufruf => aufruf.pfad === '/api/einkauf/bedarf' && aufruf.methode === 'POST').map(aufruf => aufruf.inhalt as StangenwareInhalt);
   expect(stangenware).toHaveLength(1);
-  expect(stangenware[0].position).toMatchObject({ art: 'FREITEXT', artikelId: null, bezeichnung: 'RR 40x40x3', basis: { menge: 6, einheit: 'METER', stueckzahl: 1, einzelLaengeMm: 6000 }, beschaffungsdetails: { lieferantId: null } });
+  expect(stangenware[0].position).toMatchObject({ art: 'FREITEXT', artikelId: null, bezeichnung: 'RR 40x40x3', positionsnummer: 'P-104',
+    basis: { menge: 19.8, einheit: 'KILOGRAMM', stueckzahl: 1, einzelLaengeMm: 6000, gesamtgewichtKg: 19.8, mantelflaecheM2: 0.936 }, beschaffungsdetails: { lieferantId: null } });
   expect(stangenware[0].liefergruppe.projektId).toBe(19);
 
   // Lagerentnahme: erst beim Speichern der Werkstattprüfung, nicht schon beim Eintippen.
   const zeile = seite.getByRole('row').filter({ hasText: 'Stahlprofil' });
+  // Bedarfsliste zeigt HiCAD-Positionsnummer und Mantelfläche.
+  await expect(zeile.getByText('Pos P-101')).toBeVisible();
+  await expect(zeile.getByText('Mantelfläche 6,35 m²')).toBeVisible();
   await zeile.getByLabel('Vorhandene Menge').fill('3');
   await zeile.getByLabel('Vorhandene Menge').press('Enter');
   await expect(zeile.getByLabel('Bestellmenge')).toHaveValue('7');

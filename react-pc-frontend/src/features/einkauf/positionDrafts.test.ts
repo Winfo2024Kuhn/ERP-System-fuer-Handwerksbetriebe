@@ -22,6 +22,16 @@ describe('toPositionPayload', () => {
     expect(toPositionPayload(draft({ menge: '2,5' }))).toMatchObject({ valid: true });
   });
 
+  it('reicht HiCAD-Positionsnummer, Gewicht und Mantelfläche unverändert durch den Bearbeiten-Dialog', () => {
+    const gespeichert = toPositionPayload(draft({ positionsnummer: '1200', gesamtwerte: { menge: 2.5, einheit: 'METER', gesamtgewichtKg: 26, mantelflaecheM2: 1.5 } }));
+    expect(gespeichert).toMatchObject({ valid: true, value: { positionsnummer: '1200', basis: { gesamtgewichtKg: 26, mantelflaecheM2: 1.5 } } });
+    const zurueck = fromPositionSnapshot((gespeichert as { value: PositionSnapshot }).value);
+    expect(zurueck).toMatchObject({ positionsnummer: '1200', gesamtwerte: { gesamtgewichtKg: 26, mantelflaecheM2: 1.5 } });
+    expect(positionsWertText('gesamtwerte', zurueck.gesamtwerte, [])).toBe('26 kg · Mantelfläche 1,5 m²');
+    expect(fromPositionSnapshot({ ...(gespeichert as { value: PositionSnapshot }).value, positionsnummer: null,
+      basis: { menge: 1, einheit: 'STUECK', stueckzahl: 1, einzelLaengeMm: null, kgJeMeter: null, faktorQuelle: null } })).not.toHaveProperty('gesamtwerte');
+  });
+
   it('nennt das tatsächlich ungültige Zahlenfeld', () => {
     expect(toPositionPayload(draft({ winkelLinks: '400' }))).toMatchObject({ valid: false, field: 'winkelLinks' });
   });

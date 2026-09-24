@@ -19,7 +19,7 @@ export const positionsFelder: Record<keyof PositionDraft, string> = {
   bezeichnung: 'Bezeichnung', werkstoff: 'Werkstoff', abmessung: 'Abmessung', menge: 'Bedarfsmenge', einheit: 'Einheit', stueckzahl: 'Stückzahl',
   einzelLaengeMm: 'Einzellänge in mm', kgJeMeter: 'Gewicht je Meter', faktorQuelle: 'Quelle des Faktors', schnittForm: 'Schnittform',
   winkelLinks: 'Linker Winkel', winkelRechts: 'Rechter Winkel', bearbeitung: 'Bearbeitung', oberflaeche: 'Oberfläche', dokumente: 'Geforderte Nachweise', anlageVersionIds: 'Anlagenversionen',
-  beschaffungsdetails: 'Lieferant und Zuschnitt',
+  beschaffungsdetails: 'Lieferant und Zuschnitt', positionsnummer: 'Positionsnummer', gesamtwerte: 'Gewicht und Mantelfläche',
 };
 export function positionsWertText(key: keyof PositionDraft, value: PositionDraft[keyof PositionDraft], anlagen: EinkaufAnlage[]): string {
   if (key === 'anlageVersionIds') return (value as number[]).map(id => { const a = anlagen.find(item => item.id === id); return a ? `${a.dateiname} · Revision ${a.revision} · ${a.freigegeben ? 'Freigegeben' : 'Nicht freigegeben'}` : 'Dateiversion nicht mehr verfügbar'; }).join('\n') || 'Keine Anlagen';
@@ -31,6 +31,13 @@ export function positionsWertText(key: keyof PositionDraft, value: PositionDraft
       d.externeArtikelnummer && `Artikelnummer beim Lieferanten: ${d.externeArtikelnummer}`].filter(Boolean) : [];
     return teile.join('\n') || 'Nicht angegeben';
   }
+  if (key === 'gesamtwerte') {
+    const g = value as PositionDraft['gesamtwerte'];
+    const zahl = (wert: number) => wert.toLocaleString('de-DE', { maximumFractionDigits: 4 });
+    const teile = g ? [g.gesamtgewichtKg != null && `${zahl(g.gesamtgewichtKg)} kg`,
+      g.mantelflaecheM2 != null && `Mantelfläche ${zahl(g.mantelflaecheM2)} m²`].filter(Boolean) : [];
+    return teile.join(' · ') || 'Nicht angegeben';
+  }
   if (key === 'dokumente') return (value as PositionDraft['dokumente']).map(d => `${d.art.replaceAll('_', ' ')} · ${d.grundlage} · ${d.grundlageVersion} · ${d.fachlichBestaetigt ? 'Bestätigt' : 'Offen'}`).join('\n') || 'Keine Nachweise';
-  return value === null || value === '' ? 'Nicht angegeben' : String(value).replaceAll('_', ' ');
+  return value == null || value === '' ? 'Nicht angegeben' : String(value).replaceAll('_', ' ');
 }

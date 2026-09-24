@@ -71,7 +71,7 @@ final class EinkaufBelegKostenRechner {
     }
     static Mengenbasis basis(BestellungPosition line,BigDecimal quantity,Einheit unit) {
         var old=line.getPosition().basis();
-        return new Mengenbasis(quantity,unit,unit==Einheit.STUECK?quantity:old.stueckzahl(),old.einzelLaengeMm(),old.kgJeMeter(),old.faktorQuelle());
+        return old.mitAnteiligenGesamtwerten(quantity,unit,unit==Einheit.STUECK?quantity:old.stueckzahl());
     }
     static Kosten kosten(Map<String,Object> map) {
         return new Kosten(string(map.get("schluessel")),string(map.get("art")),decimal(map.get("betrag")),string(map.get("basis")),
