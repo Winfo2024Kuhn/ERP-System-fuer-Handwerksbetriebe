@@ -11,9 +11,11 @@ import { einkaufApi, EinkaufApiError } from '../api';
 import { fromPositionSnapshot, toPositionPayload, type PositionDraft } from '../positionDrafts';
 import type { AnfrageDetail, BedarfResponse, KontaktSnapshot, EinkaufAnlage } from '../types';
 import { PositionsEditor } from './PositionsEditor';
+import { KonfliktAbgleichDialog, type EntwurfKonflikt, type AbgleichFeld } from './KonfliktAbgleichDialog';
+import { abgleichFeld, abgeglichenerWert, gleich, kontaktText, positionsFelder, positionsWertText } from '../konfliktAbgleich';
 
 type Auswahl = { bedarf: BedarfResponse; menge: string };
-type Lieferant = { id: number; lieferantenname: string; kundenNummer?: string };
+type Lieferant = { id: number; lieferantenname: string; eigeneKundennummer?: string };
 type Kontakt = { id: number; email: string; name?: string | null; anrede?: string | null; standardAnfrage: boolean; aktiv: boolean };
 type Liste<T> = { content: T[]; totalPages: number };
 const text = (error: unknown) => error instanceof Error ? error.message : 'Die Anfrage konnte nicht bearbeitet werden.';
@@ -27,6 +29,7 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
   const [empfaenger, setEmpfaenger] = useState<KontaktSnapshot[]>(initial?.lieferanten.flatMap(l => l.kontakt ? [l.kontakt] : []) ?? []);
   const [antwortfrist, setAntwortfrist] = useState(initial?.kopf.antwortfrist ?? '');
   const [liefertermin, setLiefertermin] = useState(initial?.kopf.liefertermin ?? '');
+  const [zustaendigId, setZustaendigId] = useState(initial?.kopf.zustaendigId ?? null);
   const [version, setVersion] = useState(initial?.kopf.version ?? 0);
   const [laedt, setLaedt] = useState(Boolean(initial));
   const [busy, setBusy] = useState(false);
@@ -42,7 +45,7 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
   const [kontakte, setKontakte] = useState<Kontakt[]>([]);
   const [kontaktId, setKontaktId] = useState('');
   const [bearbeitung, setBearbeitung] = useState<{ id: number; draft: PositionDraft; anlagen: EinkaufAnlage[] } | null>(null);
-  const [konflikt, setKonflikt] = useState<{ kopf?: AnfrageDetail; bedarfe: BedarfResponse[] } | null>(null);
+  const [konflikt, setKonflikt] = useState<EntwurfKonflikt | null>(null);
   const [key, setKey] = useState(() => crypto.randomUUID());
   const melden = (error: unknown) => { setFehler(text(error)); toast.error(text(error)); };
 
@@ -72,8 +75,9 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
 
   const kontaktWaehlen = async (lieferant: Lieferant) => {
     try {
-      const items = await einkaufApi.get<Kontakt[]>(`/api/lieferanten/${lieferant.id}/einkauf-kontakte`);
-      setKontakte(items.filter(k => k.aktiv)); setKontaktLieferant(lieferant);
+      const [items, detail] = await Promise.all([einkaufApi.get<Kontakt[]>(`/api/lieferanten/${lieferant.id}/einkauf-kontakte`),
+        einkaufApi.get<{ eigeneKundennummer?: string }>(`/api/lieferanten/${lieferant.id}`)]);
+      setKontakte(items.filter(k => k.aktiv)); setKontaktLieferant({ ...lieferant, eigeneKundennummer: detail.eigeneKundennummer });
       setKontaktId(String(items.find(k => k.aktiv && k.standardAnfrage)?.id ?? ''));
     } catch (error) { melden(error); }
   };
@@ -82,7 +86,7 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
     if (!kontakt || !kontaktLieferant) return;
     const l = kontaktLieferant;
     setEmpfaenger(old => [...old.filter(k => k.lieferantId !== l.id), { lieferantId: l.id, kontaktId: kontakt.id,
-      lieferantenname: l.lieferantenname, email: kontakt.email, name: kontakt.name ?? null, anrede: kontakt.anrede ?? null, eigeneKundennummer: l.kundenNummer ?? null }]);
+      lieferantenname: l.lieferantenname, email: kontakt.email, name: kontakt.name ?? null, anrede: kontakt.anrede ?? null, eigeneKundennummer: l.eigeneKundennummer ?? null }]);
     setKontaktLieferant(null); setKey(crypto.randomUUID());
   };
   const positionBearbeiten = async (item: Auswahl) => {
@@ -91,12 +95,75 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
       setBearbeitung({ id: item.bedarf.id, draft: fromPositionSnapshot(item.bedarf.position), anlagen });
     } catch (error) { melden(error); }
   };
-  const konfliktLaden = async () => {
-    const [kopf, aktuell] = await Promise.all([
-      initial ? einkaufApi.get<AnfrageDetail>(`/api/einkauf/anfragen/${initial.kopf.id}`) : Promise.resolve(undefined),
-      Promise.all(Object.keys(auswahl).map(id => einkaufApi.get<BedarfResponse>(`/api/einkauf/bedarf/${id}`))),
-    ]);
-    setKonflikt({ kopf, bedarfe: aktuell });
+  const konfliktLaden = async (bedarfKonflikt = false) => {
+    const kopf = !bedarfKonflikt && initial ? await einkaufApi.get<AnfrageDetail>(`/api/einkauf/anfragen/${initial.kopf.id}`) : undefined;
+    const serverHerkuenfte = kopf?.positionen.flatMap(p => p.herkuenfte) ?? [];
+    const ids = [...new Set([...Object.keys(auswahl).map(Number), ...serverHerkuenfte.map(h => h.bedarfId).filter((id): id is number => id !== null)])];
+    const aktuell = await Promise.all(ids.map(async id => {
+      const [bedarf, anlagen] = await Promise.all([einkaufApi.get<BedarfResponse>(`/api/einkauf/bedarf/${id}`), einkaufApi.get<EinkaufAnlage[]>(`/api/einkauf/bedarfe/${id}/anlagen`)]);
+      return { bedarf, anlagen };
+    }));
+    const bedarfMap = new Map(aktuell.map(item => [item.bedarf.id, item]));
+    const felder: AbgleichFeld[] = [];
+    const hinweise: string[] = [];
+    const aktualisiereBedarfe = (ausgewaehlt: Record<number, Auswahl>) => Object.fromEntries(Object.entries(ausgewaehlt).map(([id, item]) => [id, { ...item, bedarf: bedarfMap.get(Number(id))!.bedarf }]));
+    if (bedarfKonflikt && bearbeitung) {
+      const aktuellBearbeitet = bedarfMap.get(bearbeitung.id)!;
+      const server = fromPositionSnapshot(aktuellBearbeitet.bedarf.position);
+      const lokal = bearbeitung.draft;
+      const keys = Object.keys(positionsFelder) as (keyof PositionDraft)[];
+      for (const key of keys) abgleichFeld(felder, key, positionsFelder[key], lokal[key], server[key], value => positionsWertText(key, value, aktuellBearbeitet.anlagen));
+      hinweise.push(`Bedarf ${aktuellBearbeitet.bedarf.position.bezeichnung}: bisher Version ${auswahl[bearbeitung.id].bedarf.version}, aktuell ${aktuellBearbeitet.bedarf.version}.`);
+      setKonflikt({ felder, hinweise, anwenden: wahl => {
+        const draft = { ...lokal };
+        for (const key of keys) Object.assign(draft, { [key]: abgeglichenerWert(wahl, key, lokal[key], server[key]) });
+        setBearbeitung({ ...bearbeitung, draft, anlagen: aktuellBearbeitet.anlagen });
+        setAuswahl(aktualisiereBedarfe(auswahl));
+      } });
+      return;
+    }
+    for (const { bedarf, anlagen } of aktuell) {
+      const vorher = auswahl[bedarf.id]?.bedarf;
+      hinweise.push(`${bedarf.position.bezeichnung}: aktuelle Version ${bedarf.version}, verfügbar ${bedarf.mengen.disponierbar?.toLocaleString('de-DE')}.`);
+      if (vorher && !gleich(vorher.position, bedarf.position)) {
+        const alt = fromPositionSnapshot(vorher.position), neu = fromPositionSnapshot(bedarf.position);
+        const geaendert = (Object.keys(positionsFelder) as (keyof PositionDraft)[]).filter(key => !gleich(alt[key], neu[key]));
+        hinweise.push(`Aktuelle Bedarfsangaben gelten für die neue Fassung:\n${geaendert.map(key => `${positionsFelder[key]}: ${positionsWertText(key, alt[key], anlagen)} → ${positionsWertText(key, neu[key], anlagen)}`).join('\n')}`);
+      }
+    }
+    if (!kopf) {
+      setKonflikt({ felder, hinweise, anwenden: () => setAuswahl(aktualisiereBedarfe(auswahl)) });
+      return;
+    }
+    const serverAuswahl: Record<number, Auswahl> = Object.fromEntries(serverHerkuenfte.map(h => [h.bedarfId!, { bedarf: bedarfMap.get(h.bedarfId!)!.bedarf, menge: dezimal(h.menge ?? 0) }]));
+    const auswahlIds = [...new Set([...Object.keys(auswahl), ...Object.keys(serverAuswahl)])];
+    for (const id of auswahlIds) abgleichFeld(felder, `menge-${id}`, `Anfragemenge ${bedarfMap.get(Number(id))!.bedarf.position.bezeichnung}`, auswahl[Number(id)]?.menge, serverAuswahl[Number(id)]?.menge, value => value ?? 'Nicht enthalten');
+    const serverEmpfaenger = kopf.lieferanten.flatMap(l => l.kontakt ? [l.kontakt] : []);
+    const empfaengerIds = [...new Set([...empfaenger, ...serverEmpfaenger].map(k => k.lieferantId))];
+    for (const id of empfaengerIds) {
+      const lokal = empfaenger.find(k => k.lieferantId === id), server = serverEmpfaenger.find(k => k.lieferantId === id);
+      abgleichFeld(felder, `empfaenger-${id}`, `Empfänger ${server?.lieferantenname ?? lokal?.lieferantenname}`, lokal, server, kontaktText);
+    }
+    const neueAntwortfrist = kopf.kopf.antwortfrist ?? '', neuerLiefertermin = kopf.kopf.liefertermin ?? '';
+    const datum = (value: string) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('de-DE') : 'Nicht angegeben';
+    abgleichFeld(felder, 'antwortfrist', 'Antwortfrist', antwortfrist, neueAntwortfrist, datum);
+    abgleichFeld(felder, 'liefertermin', 'Liefertermin', liefertermin, neuerLiefertermin, datum);
+    hinweise.unshift(`Anfrage: bisher Version ${version}, aktuell ${kopf.kopf.version}. Hinzugefügte und entfernte Positionen oder Empfänger werden ebenfalls abgeglichen.`);
+    setKonflikt({ felder, hinweise, anwenden: wahl => {
+      const neu: Record<number, Auswahl> = {};
+      for (const id of auswahlIds) {
+        const menge = abgeglichenerWert(wahl, `menge-${id}`, auswahl[Number(id)]?.menge, serverAuswahl[Number(id)]?.menge);
+        if (menge !== undefined) neu[Number(id)] = { bedarf: bedarfMap.get(Number(id))!.bedarf, menge };
+      }
+      setAuswahl(neu);
+      setEmpfaenger(empfaengerIds.flatMap(id => {
+        const kontakt = abgeglichenerWert(wahl, `empfaenger-${id}`, empfaenger.find(k => k.lieferantId === id), serverEmpfaenger.find(k => k.lieferantId === id));
+        return kontakt ? [kontakt] : [];
+      }));
+      setAntwortfrist(abgeglichenerWert(wahl, 'antwortfrist', antwortfrist, neueAntwortfrist));
+      setLiefertermin(abgeglichenerWert(wahl, 'liefertermin', liefertermin, neuerLiefertermin));
+      setZustaendigId(kopf.kopf.zustaendigId); setVersion(kopf.kopf.version);
+    } });
   };
   const bedarfSpeichern = async () => {
     if (!bearbeitung) return;
@@ -112,7 +179,7 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
       setBearbeitung(null); setKey(crypto.randomUUID()); toast.success('Bedarfsposition gespeichert. Die Anfragemenge bleibt separat.');
     } catch (error) {
       melden(error);
-      if (error instanceof EinkaufApiError && error.status === 409) try { await konfliktLaden(); } catch (loadingError) { melden(loadingError); }
+      if (error instanceof EinkaufApiError && error.status === 409) try { await konfliktLaden(true); } catch (loadingError) { melden(loadingError); }
     } finally { setBusy(false); }
   };
   const speichern = async () => {
@@ -130,7 +197,7 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
     setBusy(true);
     try {
       const inhalt = { positionen, empfaenger, antwortfrist: antwortfrist || null, liefertermin: liefertermin || null,
-        zustaendigId: initial?.kopf.zustaendigId ?? null, idempotenzKey: key };
+        zustaendigId, idempotenzKey: key };
       const saved = await einkaufApi.post<AnfrageDetail>(initial ? `/api/einkauf/anfragen/${initial.kopf.id}/revisionen` : '/api/einkauf/anfragen',
         initial ? { version, inhalt } : inhalt);
       toast.success('Anfragefassung gespeichert.'); onSaved(saved);
@@ -139,10 +206,6 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
       if (error instanceof EinkaufApiError && error.status === 409) try { await konfliktLaden(); } catch (loadingError) { melden(loadingError); }
     } finally { setBusy(false); }
   };
-  const konfliktPanel = konflikt && <section className="space-y-2 rounded border border-rose-200 bg-rose-50 p-3" aria-label="Änderungen abgleichen"><h3 className="font-semibold">Zwischenzeitliche Änderungen prüfen</h3><p>Ihre Eingaben bleiben erhalten. Aktuelle Anfrageversion: {konflikt.kopf?.kopf.version ?? 'Neuanlage'}.</p>{konflikt.bedarfe.map(b => <p key={b.id}>{b.position.bezeichnung}: bisher Version {auswahl[b.id]?.bedarf.version}, jetzt {b.version}; verfügbar {b.mengen.disponierbar?.toLocaleString('de-DE')}</p>)}<Button variant="outline" onClick={() => {
-      setAuswahl(old => Object.fromEntries(Object.entries(old).map(([id, item]) => [id, { ...item, bedarf: konflikt.bedarfe.find(b => b.id === Number(id)) ?? item.bedarf }])));
-      if (konflikt.kopf) setVersion(konflikt.kopf.kopf.version); setKonflikt(null); setKey(crypto.randomUUID()); setFehler('');
-    }}>Aktuellen Stand übernehmen, Eingaben behalten</Button></section>;
   return <section className="space-y-5 rounded-lg border border-slate-200 bg-white p-4">
     <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white py-3">
       <div><h2 className="font-semibold">{initial ? 'Neue Anfragefassung' : 'Neue Anfrage vorbereiten'}</h2><p className="text-sm text-slate-600">Bedarfe, Teilmengen und Kontakte prüfen. Versand folgt erst nach Freigabe.</p></div>
@@ -150,7 +213,7 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
     </div>
     {fehler && <p role="alert" className="text-sm text-rose-700">{fehler}</p>}
     {laedt && <p role="status">Aktuelle Bedarfspositionen werden geladen …</p>}
-    {konfliktPanel}
+    {konflikt && <KonfliktAbgleichDialog konflikt={konflikt} onAbbrechen={() => setKonflikt(null)} onUebernehmen={wahl => { konflikt.anwenden(wahl); setKonflikt(null); setKey(crypto.randomUUID()); setFehler(''); }} />}
     <div><label className="text-sm font-medium" htmlFor="bedarf-suche">Bedarf suchen</label><Input id="bedarf-suche" value={bedarfSuche} onChange={e => { setBedarfSuche(e.target.value); setBedarfSeite(0); }} />
       <div className="mt-2 divide-y divide-slate-100">{bedarfe.content.map(b => <label key={b.id} className="flex items-center gap-2 py-2 text-sm"><input type="checkbox" checked={Boolean(auswahl[b.id])} onChange={e => {
         setAuswahl(old => { const next = { ...old }; if (e.target.checked) next[b.id] = { bedarf: b, menge: dezimal(b.mengen.disponierbar ?? 0) }; else delete next[b.id]; return next; }); setKey(crypto.randomUUID());
@@ -165,6 +228,6 @@ export function AnfrageEntwurfEditor({ initial, onSaved, onCancel }: {
     <section aria-label="Ausgewählte Empfänger"><h3 className="font-medium">Ausgewählte Empfänger</h3>{empfaenger.map(k => <div key={k.lieferantId} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 py-2 text-sm"><p>{k.lieferantenname} · {k.email} · Kundennummer {k.eigeneKundennummer || 'nicht hinterlegt'}</p><Button size="sm" variant="outline" onClick={() => { setEmpfaenger(old => old.filter(e => e.lieferantId !== k.lieferantId)); setKey(crypto.randomUUID()); }}>Empfänger entfernen</Button></div>)}</section>
     <div className="grid gap-4 sm:grid-cols-2"><div><label className="text-sm font-medium" htmlFor="anfrage-antwortfrist">Antwortfrist</label><DatePicker id="anfrage-antwortfrist" value={antwortfrist} onChange={v => { setAntwortfrist(v); setKey(crypto.randomUUID()); }} /></div><div><label className="text-sm font-medium" htmlFor="anfrage-liefertermin">Gewünschter Liefertermin</label><DatePicker id="anfrage-liefertermin" value={liefertermin} onChange={v => { setLiefertermin(v); setKey(crypto.randomUUID()); }} /></div></div>
     <Dialog open={Boolean(kontaktLieferant)} onOpenChange={open => { if (!open) setKontaktLieferant(null); }}><DialogContent><DialogHeader><DialogTitle>Einkaufskontakt {kontaktLieferant?.lieferantenname}</DialogTitle></DialogHeader><Select aria-label={`Einkaufskontakt ${kontaktLieferant?.lieferantenname}`} value={kontaktId} options={kontakte.map(k => ({ value: String(k.id), label: `${k.name || 'Einkauf'} · ${k.email}` }))} onChange={setKontaktId} /><DialogFooter><Button disabled={!kontaktId} title={!kontaktId ? 'Bitte einen aktiven Kontakt auswählen.' : undefined} onClick={kontaktUebernehmen}>Kontakt übernehmen</Button></DialogFooter></DialogContent></Dialog>
-    <Dialog open={Boolean(bearbeitung)} onOpenChange={open => { if (!open) setBearbeitung(null); }} className="max-w-5xl"><DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>Bedarfsposition bearbeiten</DialogTitle></DialogHeader>{fehler && <p role="alert" className="text-sm text-rose-700">{fehler}</p>}{konfliktPanel}<p className="text-sm text-slate-600">Änderungen werden ausdrücklich am Bedarf gespeichert. Die angefragte Teilmenge geben Sie separat an.</p>{bearbeitung && <PositionsEditor value={bearbeitung.draft} anlagen={bearbeitung.anlagen} onChange={draft => setBearbeitung({ ...bearbeitung, draft })} />}<DialogFooter><Button variant="outline" onClick={() => setBearbeitung(null)}>Zurück</Button><Button disabled={busy || Boolean(konflikt)} onClick={() => void bedarfSpeichern()}>Bedarf speichern</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={Boolean(bearbeitung) && !konflikt} onOpenChange={open => { if (!open) setBearbeitung(null); }} className="max-w-5xl"><DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>Bedarfsposition bearbeiten</DialogTitle></DialogHeader>{fehler && <p role="alert" className="text-sm text-rose-700">{fehler}</p>}<p className="text-sm text-slate-600">Änderungen werden ausdrücklich am Bedarf gespeichert. Die angefragte Teilmenge geben Sie separat an.</p>{bearbeitung && <PositionsEditor value={bearbeitung.draft} anlagen={bearbeitung.anlagen} onChange={draft => setBearbeitung({ ...bearbeitung, draft })} />}<DialogFooter><Button variant="outline" onClick={() => setBearbeitung(null)}>Zurück</Button><Button disabled={busy || Boolean(konflikt)} onClick={() => void bedarfSpeichern()}>Bedarf speichern</Button></DialogFooter></DialogContent></Dialog>
   </section>;
 }
