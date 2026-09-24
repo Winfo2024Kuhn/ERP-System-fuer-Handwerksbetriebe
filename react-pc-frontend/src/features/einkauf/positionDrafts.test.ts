@@ -11,6 +11,15 @@ const draft = (overrides: Partial<PositionDraft> = {}): PositionDraft => ({
 });
 
 describe('toPositionPayload', () => {
+  it('weist widersprüchliche Meter- und Zuschnittmengen vor Übernahme ab', () => {
+    expect(toPositionPayload(draft({ menge: '5' }))).toMatchObject({ valid: false, field: 'menge' });
+    expect(toPositionPayload(draft({ menge: '2,5' }))).toMatchObject({ valid: true });
+  });
+
+  it('nennt das tatsächlich ungültige Zahlenfeld', () => {
+    expect(toPositionPayload(draft({ winkelLinks: '400' }))).toMatchObject({ valid: false, field: 'winkelLinks' });
+  });
+
   it('wandelt deutsches Komma und beide Winkel in den vollständigen Snapshot um', () => {
     expect(toPositionPayload(draft())).toEqual({ valid: true, value: {
       art: 'ZEICHNUNGSTEIL', artikelId: null, interneReferenz: 'ZT-014', zeichnungsnummer: 'W-14',

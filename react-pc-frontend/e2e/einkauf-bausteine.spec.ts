@@ -51,8 +51,59 @@ test('neu angelegten Artikel ohne bekannten Preis direkt als Materialposition ü
   await page.getByRole('button', { name: 'Artikel neu anlegen' }).click();
   await page.getByPlaceholder('z.B. Quadratrohr 40x40x2').fill('Quadratrohr');
   await page.getByRole('button', { name: 'Artikel anlegen' }).click();
-  await expect(page.getByText('Artikelstamm-ID 92')).toBeVisible();
+  await expect(page.getByText('Artikel aus dem Stamm ausgewählt', { exact: false })).toBeVisible();
   await page.getByLabel('Menge *').fill('1');
   await page.getByRole('button', { name: 'Materialangaben übernehmen' }).click();
   await expect(page.getByLabel('Übernommene Position')).toContainText('"artikelId":92');
+});
+
+
+test('Zeichnungsteil mit freigegebener Dateiversion und konsistenter Zuschnittmenge übernehmen', async ({ page }, testInfo) => {
+  await page.goto('/e2e/harness/einkauf-bausteine.html');
+  await page.getByRole('combobox', { name: 'Positionsart' }).click();
+  await page.getByRole('option', { name: 'Zeichnungsteil' }).click();
+  await page.getByLabel('Bezeichnung *').fill('Dummy Träger');
+  await page.getByLabel('Projektkennung *').fill('DUMMY-ZT');
+  await page.getByLabel('Zeichnungsnummer').fill('Z-17');
+  await page.getByLabel('Zeichnungsrevision').fill('B');
+  await page.getByRole('combobox', { name: 'Einheit', exact: true }).click();
+  await page.getByRole('option', { name: 'Meter', exact: true }).click();
+  await page.getByLabel('Menge *').fill('5');
+  await page.getByLabel('Stückzahl', { exact: true }).fill('2');
+  await page.getByLabel('Einzellänge in mm').fill('1250');
+  await page.getByRole('combobox', { name: 'Dateiversion auswählen' }).click();
+  await page.getByRole('option', { name: 'Traeger.pdf · Revision B · Freigegeben' }).click();
+  await page.getByRole('button', { name: 'Version hinzufügen' }).click();
+  await page.getByRole('button', { name: 'Materialangaben übernehmen' }).click();
+  await expect(page.getByText('Stückzahl und Einzellänge ergeben 2,5 m.', { exact: false })).toBeVisible();
+  await expect(page.getByLabel('Übernommene Position')).toHaveCount(0);
+  await page.getByLabel('Menge *').fill('2,5');
+  await page.getByRole('button', { name: 'Materialangaben übernehmen' }).click();
+  await expect(page.getByLabel('Übernommene Position')).toContainText('"art":"ZEICHNUNGSTEIL"');
+  await expect(page.getByLabel('Übernommene Position')).toContainText('"menge":2.5');
+  await expect(page.getByLabel('Übernommene Position')).toContainText('"anlageVersionIds":[41]');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await designPruefung(page, testInfo, 'einkauf-zeichnungsteil', { primaerAktion: page.getByRole('button', { name: 'Materialangaben übernehmen' }) });
+});
+
+test('Lieferant bei unbekanntem Preis an die Artikelanlage übergeben', async ({ page }) => {
+  const creates: Record<string, unknown>[] = [];
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/lieferanten') return route.fulfill({ json: { lieferanten: [{ id: 7, lieferantenname: 'Dummy Lieferant' }] } });
+    if (path === '/api/artikel' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON(); creates.push(body);
+      return route.fulfill({ json: { id: 92, ...body, preis: null } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.goto('/e2e/harness/einkauf-bausteine.html');
+  await page.getByRole('button', { name: 'Artikel neu anlegen' }).click();
+  await page.getByPlaceholder('z.B. Quadratrohr 40x40x2').fill('Dummy Profil');
+  await page.getByText('Lieferant wählen', { exact: true }).click();
+  await page.getByRole('button', { name: 'Dummy Lieferant', exact: true }).click();
+  await page.getByRole('button', { name: 'Artikel anlegen' }).click();
+  await expect.poll(() => creates.length).toBe(1);
+  expect(creates[0]).toMatchObject({ lieferantId: 7, externeArtikelnummer: '' });
+  expect(creates[0]).not.toHaveProperty('preis');
 });

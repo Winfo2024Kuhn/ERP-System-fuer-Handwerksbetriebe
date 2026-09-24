@@ -65,7 +65,13 @@ export function toPositionPayload(draft: PositionDraft): ValidationResult<Positi
       winkelRechts: { label: 'Rechter Winkel', required: false, min: 0, max: 360, maxDecimalPlaces: 2 },
     },
   );
-  if (!numbers.valid) return { valid: false, message: numbers.message, field: 'menge' };
+  if (!numbers.valid) return { valid: false, message: numbers.message, field: numbers.field };
+  if (draft.einheit === 'METER' && numbers.values.stueckzahl !== null && numbers.values.einzelLaengeMm !== null) {
+    const meter = Math.round(numbers.values.stueckzahl * numbers.values.einzelLaengeMm * 1000) / 1000000;
+    if (Math.abs(numbers.values.menge! - meter) > 0.0000001) {
+      return { valid: false, field: 'menge', message: `Stückzahl und Einzellänge ergeben ${meter.toLocaleString('de-DE', { maximumFractionDigits: 6 })} m. Bitte passen Sie die Menge oder den Zuschnitt an.` };
+    }
+  }
 
   return {
     valid: true,
