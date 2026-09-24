@@ -1,5 +1,4 @@
 import { LadefehlerPanel } from '../components/ui/ladefehler-panel';
-import { HiCadImportDialog } from '../features/einkauf/components/HiCadImportDialog';
 import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
 import { ladeBedarfszeilen, nutztEchtesBackend, speichereWerkstatt, druckeBedarfsliste } from '../features/einkauf/originalBedarfApi';
 import type { BedarfResponse } from '../features/einkauf/types';
@@ -669,12 +668,11 @@ export default function ProjektBedarfPage() {
             )}
 
             {/* Modals */}
-            {nutztEchtesBackend && hicadOffen && <HiCadImportDialog projekt={projekt ? { id: projekt.id, name: projekt.bauvorhaben ?? `Projekt #${projekt.id}` } : undefined} schließen={() => setHicadOffen(false)} übernommen={() => { setHicadOffen(false); void ladeZeilen(); }} />}
-            {!nutztEchtesBackend && projekt && (
+            {projekt && (
                 <HicadImportModal
                     isOpen={hicadOffen}
                     onClose={() => setHicadOffen(false)}
-                    onSuccess={() => { setHicadOffen(false); ladeZeilen(); }}
+                    onSuccess={() => { setHicadOffen(false); void ladeZeilen(); }}
                     projekt={{
                         id: projekt.id,
                         bauvorhaben: projekt.bauvorhaben ?? `Projekt #${projekt.id}`,

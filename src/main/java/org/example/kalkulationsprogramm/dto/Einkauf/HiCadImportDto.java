@@ -9,7 +9,15 @@ public final class HiCadImportDto {
     public record Zeile(int zeilennummer, String rohtext, PositionSnapshot vorschlag,
             List<Long> artikelKandidaten, boolean bereitsUebernommen, List<String> hinweise, List<BildVorschlag> bilder) {}
     public record BildVorschlag(Long dateiId, String dateiname, String mimeTyp, long byteAnzahl, String url) {}
-    public record Vorschau(Long id, String dateiHash, boolean dateiSchonImportiert, List<Zeile> zeilen) {}
+    /** Kopfblock der HiCAD-Sägeliste (oberhalb der Überschriftenzeile); alle Werte optional. */
+    public record Kopfdaten(String zeichnungsnummer, String auftragsnummer, String auftragstext, String kunde) {
+        public static final Kopfdaten LEER = new Kopfdaten(null, null, null, null);
+    }
+    public record Vorschau(Long id, String dateiHash, boolean dateiSchonImportiert, List<Zeile> zeilen, Kopfdaten kopf) {
+        public Vorschau(Long id, String dateiHash, boolean dateiSchonImportiert, List<Zeile> zeilen) {
+            this(id, dateiHash, dateiSchonImportiert, zeilen, Kopfdaten.LEER);
+        }
+    }
     public record ImportFortschritt(Long id, long version, boolean duplikat, List<ZeilenFortschritt> zeilen) {}
     public record ZeilenFortschritt(int zeilennummer, java.math.BigDecimal gesamtmenge,
             java.math.BigDecimal uebernommeneMenge, java.math.BigDecimal verbleibendeMenge, boolean vollstaendigUebernommen) {}

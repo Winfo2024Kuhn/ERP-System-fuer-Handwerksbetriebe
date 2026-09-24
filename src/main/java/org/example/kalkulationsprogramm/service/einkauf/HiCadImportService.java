@@ -79,6 +79,9 @@ public class HiCadImportService {
     private static final int MAX_HEADER_SEARCH_ROWS = 30;
     private static final Set<String> SAEGELISTE_BLATTNAMEN = Set.of("sägeliste", "saegeliste");
     private static final Set<String> ZEICHNUNGSNUMMER_LABELS = Set.of("zeichnungsnr.", "zeichnungsnr", "zeichnungsnummer");
+    private static final Set<String> AUFTRAGSNUMMER_LABELS = Set.of("auftragsnr.", "auftragsnr", "auftragsnummer");
+    private static final Set<String> AUFTRAGSTEXT_LABELS = Set.of("auftragstext");
+    private static final Set<String> KUNDE_LABELS = Set.of("kunde");
     private static final Set<String> KOPFBLOCK_LABELS = Set.of("titel", "zeichnungsnr.", "zeichnungsnr", "zeichnungsnummer",
             "kunde", "auftragsnr.", "auftragsnr", "auftragsnummer", "auftragstext", "ersteller", "erstelltam", "benennung");
     /** Winkelangabe wie „45°“ oder „22,5°“; beschränkte, possessive Quantifizierer (ReDoS-sicher). */
@@ -142,7 +145,7 @@ public class HiCadImportService {
                 p.row().snapshot(), p.candidates(), false, p.hints(), p.row().images().stream()
                         .map(image -> new BildVorschlag(image.id(), image.dateiname(), image.mimeTyp(), image.byteAnzahl(),
                                 "/api/einkauf/hicad/" + persisted.getId() + "/bilder/" + image.id())).toList())).toList();
-        return new Vorschau(persisted.getId(), hash, duplicate, List.copyOf(previewRows));
+        return new Vorschau(persisted.getId(), hash, duplicate, List.copyOf(previewRows), parsed.kopf());
     }
 
     @Transactional
@@ -280,8 +283,12 @@ public class HiCadImportService {
             Map<String, Integer> columns = requested == null ? detected : mitPositionsspalte(validateMapping(requested), detected);
             if (!columns.containsKey("menge")) throw new IllegalArgumentException("Bitte ordnen Sie die Mengenspalte zu.");
             boolean positionsliste = columns.containsKey("position");
-            String kopfZeichnungsnummer = columns.containsKey("zeichnungsnummer") ? null
-                    : kopfwert(sheet, header.getRowNum(), formatter, ZEICHNUNGSNUMMER_LABELS);
+            String blattZeichnungsnummer = kopfwert(sheet, header.getRowNum(), formatter, ZEICHNUNGSNUMMER_LABELS);
+            String kopfZeichnungsnummer = columns.containsKey("zeichnungsnummer") ? null : blattZeichnungsnummer;
+            HiCadImportDto.Kopfdaten kopf = new HiCadImportDto.Kopfdaten(blattZeichnungsnummer,
+                    kopfwert(sheet, header.getRowNum(), formatter, AUFTRAGSNUMMER_LABELS),
+                    kopfwert(sheet, header.getRowNum(), formatter, AUFTRAGSTEXT_LABELS),
+                    kopfwert(sheet, header.getRowNum(), formatter, KUNDE_LABELS));
             List<ParsedRow> rows = new ArrayList<>();
             for (int number = header.getRowNum() + 1; number <= sheet.getLastRowNum(); number++) {
                 Row row = sheet.getRow(number);
@@ -295,7 +302,7 @@ public class HiCadImportService {
                 catch (IllegalArgumentException error) { rows.add(new ParsedRow(number + 1, raw, emptySnapshot(), List.of(error.getMessage()), List.of())); }
             }
             attachEmbeddedPictures(workbook, sheetIndex, rows);
-            return new Parsed(rows, !positionsliste || columns.containsKey("interneReferenz"));
+            return new Parsed(rows, !positionsliste || columns.containsKey("interneReferenz"), kopf);
         } catch (IOException e) {
             throw new IllegalArgumentException("Die Excel-Datei ist beschädigt oder das Format wird nicht unterstützt.", e);
         }
@@ -712,7 +719,7 @@ public class HiCadImportService {
         try { return MessageDigest.getInstance("SHA-256").digest(bytes); }
         catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
-    private record Parsed(List<ParsedRow> rows, boolean katalogAbgleich) {}
+    private record Parsed(List<ParsedRow> rows, boolean katalogAbgleich, HiCadImportDto.Kopfdaten kopf) {}
     private record Anschnitt(String links, String rechts) {
         boolean vorhanden() { return links != null || rechts != null; }
     }

@@ -14,61 +14,22 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { DecimalInput } from './ui/decimal-input';
 import { useToast } from './ui/toast';
+import { useConfirm } from './ui/confirm-dialog';
 import { cn } from '../lib/utils';
+import { toSafeResourceUrl } from '../lib/htmlSanitizer';
+import { validateDecimalInput } from '../lib/numberInput';
+import {
+    HicadUebernahmeFehler,
+    ladeHicadVorschau,
+    optimiereZuschnitt,
+    uebernehmeHicad,
+    type GruppenEntscheidung,
+    type PreviewResponse,
+} from '../features/einkauf/originalHicadApi';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { ArtikelSearchModal, type ArtikelSuchErgebnis } from './ArtikelSearchModal';
-
-// ==================== TYPES (aus HicadImportDtos.java) ====================
-interface SaegelisteZeile {
-    posNr?: number;
-    anzahl: number;
-    bezeichnung: string;
-    laengeMm?: number;
-    werkstoff?: string;
-    anschnittSteg?: string;
-    anschnittFlansch?: string;
-    gewichtProStueckKg?: number;
-    gesamtGewichtKg?: number;
-    /** URLs der Schnittbilder aus der HiCAD-Excel (null, wenn nicht vorhanden). */
-    anschnittbildStegUrl?: string | null;
-    anschnittbildFlanschUrl?: string | null;
-}
-
-interface ProfilGruppe {
-    groupKey: string;
-    bezeichnung: string;
-    werkstoff?: string;
-    artikelId?: number | null;
-    artikelProduktname?: string | null;
-    verpackungseinheitM?: number | null;
-    defaultAggregieren: boolean;
-    summeMeter?: number;
-    summeStueck?: number;
-    berechneteStaebe?: number;
-    zeilen: SaegelisteZeile[];
-}
-
-interface PreviewResponse {
-    zeichnungsnr?: string;
-    auftragsnummer?: string;
-    auftragstext?: string;
-    kunde?: string;
-    ersteller?: string;
-    erstelltAm?: string;
-    erkannteProjektId?: number | null;
-    erkannteProjektName?: string | null;
-    gruppen: ProfilGruppe[];
-}
-
-interface GruppenEntscheidung {
-    aggregieren: boolean;
-    artikelId: number | null;
-    artikelProduktname: string | null;
-    lieferantId: number | null;
-    lieferantName: string | null;
-    stangenlaengeM: number | null;
-}
 
 interface ProjektRef {
     id: number;
@@ -86,15 +47,27 @@ interface HicadImportModalProps {
 
 const formatNumber = (val: number | null | undefined, digits = 2) =>
     val != null ? val.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '-';
+const formatLaenge = (val: number | null | undefined) =>
+    val != null ? val.toLocaleString('de-DE', { maximumFractionDigits: 1 }) : '–';
+const STANGE_REGELN = { label: 'die Stangenlänge', required: true, integer: true, min: 1, max: 50 } as const;
+const neuerSchluessel = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadImportModalProps) {
     const toast = useToast();
+    const confirm = useConfirm();
 
     const [file, setFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [preview, setPreview] = useState<PreviewResponse | null>(null);
     const [entscheidungen, setEntscheidungen] = useState<Record<string, GruppenEntscheidung>>({});
+    const [stangenEntwurf, setStangenEntwurf] = useState<Record<string, string>>({});
+    // Wiederholte Übernahme nach Teilfehler: gleiche Idempotenz, bereits angelegte Gruppen überspringen.
+    const idempotenzKey = useRef(neuerSchluessel());
+    const [erledigteGruppen, setErledigteGruppen] = useState<string[]>([]);
+    const angelegtRef = useRef(0);
 
     // Picker-States
     const [lieferantPickerFuer, setLieferantPickerFuer] = useState<string | null>(null);
@@ -109,14 +82,20 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
         setFile(null);
         setPreview(null);
         setEntscheidungen({});
+        setStangenEntwurf({});
+        setErledigteGruppen([]);
+        idempotenzKey.current = neuerSchluessel();
         setUploading(false);
         setSubmitting(false);
     }, []);
 
     const handleClose = useCallback(() => {
+        // Wurde nach einem Teilfehler schon etwas angelegt, muss die Seite trotzdem neu laden.
+        const schonAngelegt = angelegtRef.current > 0;
+        angelegtRef.current = 0;
         reset();
-        onClose();
-    }, [onClose, reset]);
+        if (schonAngelegt) onSuccess(); else onClose();
+    }, [onClose, onSuccess, reset]);
 
     // ==================== UPLOAD → PREVIEW ====================
     const handleUpload = async () => {
@@ -126,18 +105,10 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
         }
         setUploading(true);
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const res = await fetch('/api/bestellungen/import/hicad/preview', {
-                method: 'POST',
-                body: formData,
-            });
-            if (!res.ok) {
-                const reason = res.headers.get('X-Error-Reason') || 'Upload fehlgeschlagen';
-                throw new Error(reason);
-            }
-            const data: PreviewResponse = await res.json();
+            const data = await ladeHicadVorschau(file, projekt.id);
             setPreview(data);
+            setErledigteGruppen([]);
+            idempotenzKey.current = neuerSchluessel();
 
             // Default-Entscheidungen pro Gruppe initialisieren
             const init: Record<string, GruppenEntscheidung> = {};
@@ -152,6 +123,12 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                 };
             });
             setEntscheidungen(init);
+            setStangenEntwurf(Object.fromEntries(data.gruppen.map(g => [g.groupKey, String(g.verpackungseinheitM ?? 6)])));
+
+            if (data.unlesbareZeilen?.length) {
+                const erste = data.unlesbareZeilen[0];
+                toast.warning(`${data.unlesbareZeilen.length} Zeile(n) der Sägeliste konnten nicht gelesen werden und fehlen in der Vorschau (z. B. Zeile ${erste.zeilennummer}: ${erste.grund})`);
+            }
 
             // Warnung, falls HiCAD-Datei ein anderes Projekt erkennt
             if (data.erkannteProjektId && data.erkannteProjektId !== projekt.id) {
@@ -161,7 +138,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
             }
         } catch (err) {
             console.error(err);
-            toast.error(err instanceof Error ? err.message : 'Upload fehlgeschlagen');
+            toast.error(err instanceof Error ? err.message : 'Die HiCAD-Sägeliste konnte nicht gelesen werden.');
         } finally {
             setUploading(false);
         }
@@ -182,44 +159,49 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
             return;
         }
 
+        // Stangenlängen vollständig prüfen, bevor irgendetwas angelegt wird.
+        for (const g of preview.gruppen) {
+            if (!entscheidungen[g.groupKey]?.aggregieren || erledigteGruppen.includes(g.groupKey)) continue;
+            const pruefung = validateDecimalInput(stangenEntwurf[g.groupKey] ?? '', STANGE_REGELN);
+            if (!pruefung.valid) {
+                toast.error(`${g.bezeichnung}: ${pruefung.message}`);
+                return;
+            }
+        }
+
+        if (preview.dateiSchonImportiert && erledigteGruppen.length === 0) {
+            const trotzdem = await confirm({
+                title: 'Sägeliste schon importiert',
+                message: 'Diese Datei wurde in diesem Projekt schon einmal importiert. Sollen die Positionen trotzdem noch einmal angelegt werden?',
+                confirmLabel: 'Noch einmal anlegen',
+                cancelLabel: 'Abbrechen',
+                variant: 'warning',
+            });
+            if (!trotzdem) return;
+        }
+
         setSubmitting(true);
         try {
-            const body = {
+            const result = await uebernehmeHicad({
+                preview,
+                entscheidungen,
                 projektId: projekt.id,
-                kommentarPrefix: preview.auftragsnummer
-                    ? `HiCAD ${preview.auftragsnummer}`
-                    : 'HiCAD-Import',
-                gruppen: preview.gruppen.map(g => {
-                    const e = entscheidungen[g.groupKey];
-                    return {
-                        groupKey: g.groupKey,
-                        projektId: projekt.id,
-                        lieferantId: e?.lieferantId ?? null,
-                        artikelId: e?.artikelId ?? null,
-                        kategorieId: null,
-                        aggregieren: e?.aggregieren ?? g.defaultAggregieren,
-                        stangenlaengeM: e?.stangenlaengeM ?? g.verpackungseinheitM ?? null,
-                    };
-                }),
-                preview: preview.gruppen,
-            };
-
-            const res = await fetch('/api/bestellungen/import/hicad/confirm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
+                idempotenzKey: idempotenzKey.current,
+                erledigteGruppen,
+                duplikatBewusst: !!preview.dateiSchonImportiert,
             });
-            if (!res.ok) {
-                const reason = res.headers.get('X-Error-Reason') || 'Import fehlgeschlagen';
-                throw new Error(reason);
-            }
-            const result = await res.json();
-            toast.success(`${result.angelegtePositionen} Positionen angelegt`);
+            const gesamt = angelegtRef.current + result.angelegtePositionen;
+            angelegtRef.current = 0;
+            toast.success(`${gesamt} ${gesamt === 1 ? 'Position' : 'Positionen'} angelegt`);
+            reset();
             onSuccess();
-            handleClose();
         } catch (err) {
             console.error(err);
-            toast.error(err instanceof Error ? err.message : 'Import fehlgeschlagen');
+            if (err instanceof HicadUebernahmeFehler) {
+                angelegtRef.current += err.angelegtePositionen;
+                setErledigteGruppen(err.erledigteGruppen);
+            }
+            toast.error(err instanceof Error ? err.message : 'Die Positionen konnten nicht angelegt werden.');
         } finally {
             setSubmitting(false);
         }
@@ -241,13 +223,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
             optimiereReqId.current[groupKey] = myReqId;
             setOptimiereLaufend(prev => ({ ...prev, [groupKey]: true }));
             try {
-                const res = await fetch('/api/bestellungen/import/hicad/optimiere', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ stangenlaengeM, zeilen: gruppe.zeilen }),
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data: { anzahlStangen: number; verschnittMm: number; ueberlange: number } = await res.json();
+                const data = await optimiereZuschnitt(stangenlaengeM, gruppe.zeilen);
                 // Stale-Response ignorieren (falls inzwischen ein neuerer Request lief)
                 if (optimiereReqId.current[groupKey] !== myReqId) return;
                 setPreview(prev => {
@@ -261,13 +237,16 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                 });
             } catch (err) {
                 console.warn('Zuschnitt-Optimierung fehlgeschlagen', err);
+                if (optimiereReqId.current[groupKey] === myReqId) {
+                    toast.error(`Die Stangenzahl für „${gruppe.bezeichnung}“ konnte nicht neu berechnet werden.`);
+                }
             } finally {
                 if (optimiereReqId.current[groupKey] === myReqId) {
                     setOptimiereLaufend(prev => ({ ...prev, [groupKey]: false }));
                 }
             }
         }, 400);
-    }, [preview]);
+    }, [preview, toast]);
 
     // Timer aufräumen beim Unmount
     useEffect(() => {
@@ -430,7 +409,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
 
                             <p className="mt-6 flex items-center gap-2 text-xs text-slate-500 max-w-md text-center">
                                 <Info className="w-3.5 h-3.5 shrink-0" />
-                                Die Datei wird nur zur Analyse gelesen – es wird noch nichts gespeichert.
+                                Die Datei wird nur zur Analyse gelesen – es werden noch keine Positionen angelegt.
                             </p>
                         </div>
                     )}
@@ -628,13 +607,16 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                             <span className="text-slate-300">·</span>
                                                             <label className="flex items-center gap-2 text-slate-700">
                                                                 <span>Stange à</span>
-                                                                <Input
-                                                                    type="number"
+                                                                <DecimalInput
+                                                                    integer
                                                                     min={1}
-                                                                    step={1}
-                                                                    value={stangeM}
-                                                                    onChange={ev => {
-                                                                        const neu = parseInt(ev.target.value, 10) || null;
+                                                                    max={50}
+                                                                    aria-label={`Stangenlänge für ${g.bezeichnung} in Metern`}
+                                                                    value={stangenEntwurf[g.groupKey] ?? String(stangeM)}
+                                                                    onChange={entwurf => {
+                                                                        setStangenEntwurf(prev => ({ ...prev, [g.groupKey]: entwurf }));
+                                                                        const pruefung = validateDecimalInput(entwurf, STANGE_REGELN);
+                                                                        const neu = pruefung.valid ? pruefung.value : null;
                                                                         updateEntscheidung(g.groupKey, {
                                                                             stangenlaengeM: neu,
                                                                         });
@@ -687,7 +669,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                                                     <span className="text-rose-600 font-semibold">
                                                                         {z.anzahl}×
                                                                     </span>
-                                                                    <span>{z.laengeMm} mm</span>
+                                                                    <span>{formatLaenge(z.laengeMm)} mm</span>
                                                                     {hatAnschnitt && (
                                                                         <span className="inline-flex items-center gap-1 pl-1 ml-0.5 border-l border-slate-200">
                                                                             <AnschnittChip label="Steg" text={z.anschnittSteg} bildUrl={z.anschnittbildStegUrl} />
@@ -761,7 +743,7 @@ function AnschnittChip({
             {links && <span className="text-[10px] text-rose-600 tabular-nums">{links}</span>}
             {bildUrl && (
                 <img
-                    src={bildUrl}
+                    src={toSafeResourceUrl(bildUrl)}
                     alt={`Anschnitt ${label}`}
                     className="h-5 w-auto rounded bg-white border border-slate-200 object-contain"
                 />

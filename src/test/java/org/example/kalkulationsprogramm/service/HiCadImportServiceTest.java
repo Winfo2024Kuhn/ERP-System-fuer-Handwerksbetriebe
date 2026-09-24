@@ -485,6 +485,7 @@ class HiCadImportServiceTest {
 
         assertEquals(3, preview.zeilen().size());
         assertEquals(List.of(9, 10, 11), preview.zeilen().stream().map(HiCadImportDto.Zeile::zeilennummer).toList());
+        assertEquals(new HiCadImportDto.Kopfdaten("Z-4711", "A-0001", "Dummy-Treppe", "Max Mustermann"), preview.kopf());
         var rohr = preview.zeilen().get(0).vorschlag();
         assertEquals("1100", rohr.interneReferenz());
         assertEquals("Z-4711", rohr.zeichnungsnummer());
