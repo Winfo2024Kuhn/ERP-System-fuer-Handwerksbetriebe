@@ -146,14 +146,17 @@ class MonatsabschlussMysqlTest {
     }
     @Test void echteSqlErfasstFehlendeCachezeilenHistorieUndIgnoriertFallbackUndKontolose() {
         var from = month.minusMonths(2);
-        jdbc.update("UPDATE mitarbeiter SET eintrittsdatum=?, fuehrt_zeitkonto=FALSE, aktiv=FALSE WHERE id=?", from.atDay(1), person.getId());
+        jdbc.update("UPDATE mitarbeiter SET eintrittsdatum=?, fuehrt_zeitkonto=TRUE, aktiv=FALSE WHERE id=?", from.atDay(1), person.getId());
         version(person.getId(), from.atDay(1), month.minusMonths(1).atEndOfMonth());
         var fallback = employee(null, "MENSCH"); version(fallback, LocalDate.of(1000,1,1), null);
-        employee(from.atDay(1), "MENSCH");
+        var withoutAccount = employee(from.atDay(1), "MENSCH");
+        jdbc.update("UPDATE mitarbeiter SET fuehrt_zeitkonto=FALSE WHERE id=?", withoutAccount);
+        version(withoutAccount, from.atDay(1), null);
         var system = employee(from.atDay(1), "SYSTEM"); version(system, from.atDay(1), null);
         var current = employee(YearMonth.now().atDay(1), "MENSCH"); version(current, YearMonth.now().atDay(1), null);
         var result = salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1));
-        assertThat(result).hasSize(2); assertThat(result).allSatisfy(r -> assertThat(r.getAnzahl()).isEqualTo(1));
+        assertThat(result).hasSize(2); assertThat(result).as("Kontolose Menschen bleiben trotz gültiger Historie ausgeschlossen")
+                .allSatisfy(r -> assertThat(r.getAnzahl()).isEqualTo(1));
         assertThat(result.getFirst().getMonat()).isEqualTo(from.getMonthValue());
         service.abschliessen(person.getId(), from.getYear(), from.getMonthValue(), null);
         assertThat(salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1))).hasSize(1);
@@ -163,7 +166,7 @@ class MonatsabschlussMysqlTest {
     long employee(LocalDate entry, String art) {
         return tx.execute(status -> {
             var m = new Mitarbeiter(); m.setVorname("Max"); m.setNachname("Mustermann");
-            m.setArt(MitarbeiterArt.valueOf(art)); m.setEintrittsdatum(entry); m.setFuehrtZeitkonto(false);
+            m.setArt(MitarbeiterArt.valueOf(art)); m.setEintrittsdatum(entry); m.setFuehrtZeitkonto(true);
             em.persist(m); em.flush(); return m.getId();
         });
     }

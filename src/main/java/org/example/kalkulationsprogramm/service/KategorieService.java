@@ -120,6 +120,7 @@ public class KategorieService {
     private KategorieResponseDto toDto(Kategorie kategorie) {
         KategorieResponseDto dto = new KategorieResponseDto();
         dto.setId(kategorie.getId());
+        dto.setParentId(kategorie.getParentKategorie() == null ? null : kategorie.getParentKategorie().getId());
         dto.setBezeichnung(kategorie.getBeschreibung());
         dto.setLeaf(!kategorieRepository.existsByParentKategorie_Id(kategorie.getId()));
         dto.setTypischeRollen(kategorie.getTypischeRollen());

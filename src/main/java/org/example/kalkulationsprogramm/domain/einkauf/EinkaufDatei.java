@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.domain.einkauf;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -13,8 +15,10 @@ import jakarta.persistence.UniqueConstraint;
 public class EinkaufDatei {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "sha256", nullable = false, length = 64)
     private String sha256;
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "gespeicherter_name", length = 36)
     private String gespeicherterName;
     @Column(name = "original_name", nullable = false, length = 255)

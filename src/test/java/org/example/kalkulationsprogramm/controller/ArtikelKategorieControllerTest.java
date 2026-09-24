@@ -38,6 +38,19 @@ class ArtikelKategorieControllerTest {
     private KategorieService kategorieService;
 
     @Test
+    void alleKategorienLiefernWurzelUndKindMitParentId() throws Exception {
+        var repository=org.mockito.Mockito.mock(org.example.kalkulationsprogramm.repository.KategorieRepository.class);
+        var root=new org.example.kalkulationsprogramm.domain.Kategorie();root.setId(1);root.setBeschreibung("Profile");
+        var child=new org.example.kalkulationsprogramm.domain.Kategorie();child.setId(2);child.setBeschreibung("Rohre");child.setParentKategorie(root);
+        when(repository.findAll()).thenReturn(java.util.List.of(root,child));
+        var response=new KategorieService(repository).alleKategorien();
+        when(kategorieService.alleKategorien()).thenReturn(response);
+        mockMvc.perform(get("/api/artikel/kategorien/alle")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].parentId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$[1].parentId").value(1));
+    }
+
+    @Test
     void aktualisiereRollenSpeichertUndLiefertDto() throws Exception {
         KategorieResponseDto dto = new KategorieResponseDto();
         dto.setId(5);

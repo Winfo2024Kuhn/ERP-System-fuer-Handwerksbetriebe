@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.domain.einkauf;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -61,9 +63,11 @@ public class EinkaufLagerentnahme {
     @Column(name = "entnommen_am", nullable = false)
     private Instant entnommenAm;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "idempotenz_key", nullable = false, columnDefinition = "char(36)")
     private UUID idempotenzKey;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "payload_hash", nullable = false, length = 64)
     private String payloadHash;
 

@@ -116,6 +116,21 @@ public class EinkaufDateiService {
         return toDto(version);
     }
 
+    /** Prüft einen Erstanlage-Upload vollständig, bevor ein Bedarf angelegt wird. */
+    public void validiereUpload(MultipartFile datei, String revision) {
+        if (datei == null || datei.isEmpty() || datei.getSize() > MAX_DATEIGROESSE)
+            throw new IllegalArgumentException("Die Datei fehlt oder überschreitet das Limit von 10 MiB.");
+        if (revision == null || revision.isBlank() || revision.length() > 80)
+            throw new IllegalArgumentException("Bitte eine gültige Revision angeben.");
+        String originalName = safeFilename(datei.getOriginalFilename());
+        byte[] bytes;
+        try (var eingabe = datei.getInputStream()) { bytes = eingabe.readNBytes((int) MAX_DATEIGROESSE + 1); }
+        catch (IOException exception) { throw new IllegalArgumentException("Die Datei konnte nicht gelesen werden.", exception); }
+        if (bytes.length == 0 || bytes.length > MAX_DATEIGROESSE)
+            throw new IllegalArgumentException("Die Datei fehlt oder überschreitet das Limit von 10 MiB.");
+        validateFormat(extension(originalName), datei.getContentType(), bytes);
+    }
+
     @Transactional
     public AnlageDto nutzeEmailAnlage(Long bedarfId, Long emailAttachmentId, String revision, Long akteurId) {
         if (emailAttachments == null) throw new IllegalStateException("Der Mailanhang-Zugriff ist nicht verfügbar.");
@@ -232,6 +247,22 @@ public class EinkaufDateiService {
         if (dokument.getAttachment() != null) return resolveEmailAttachment(dokument.getAttachment());
         Path directory = uploadRoot.getParent().resolve("lieferanten").resolve(dokument.getLieferant().getId().toString()).normalize();
         return secureStoredPath(directory, dokument.getGespeicherterDateiname());
+    }
+
+    @Transactional
+    public ImportBildDto speichereImportAnlage(MultipartFile datei) {
+        validiereUpload(datei, "HiCAD");
+        String name = safeFilename(datei.getOriginalFilename());
+        byte[] inhalt;
+        try (var eingabe = datei.getInputStream()) { inhalt = eingabe.readNBytes((int) MAX_DATEIGROESSE + 1); }
+        catch (IOException fehler) { throw new IllegalArgumentException("Die Anlage konnte nicht gelesen werden.", fehler); }
+        if (inhalt.length == 0 || inhalt.length > MAX_DATEIGROESSE)
+            throw new IllegalArgumentException("Die Anlage fehlt oder überschreitet 10 MiB.");
+        String medientyp = validateFormat(extension(name), datei.getContentType(), inhalt);
+        EinkaufDatei gespeichert = dateien.sperreBySha256(sha256(inhalt))
+                .map(bestand -> reuseOrRepair(bestand, inhalt, name, medientyp))
+                .orElseGet(() -> writeNewFile(inhalt, name, medientyp));
+        return new ImportBildDto(gespeichert.getId(), gespeichert.getOriginalName(), gespeichert.getMimeTyp(), gespeichert.getByteAnzahl());
     }
 
     @Transactional
@@ -439,7 +470,9 @@ public class EinkaufDateiService {
             Files.createDirectories(uploadRoot);
             Files.write(destination, bytes);
             try {
-                return dateien.save(new EinkaufDatei(sha256(bytes), stored, filename, mime, bytes.length));
+                EinkaufDatei gespeichert = dateien.save(new EinkaufDatei(sha256(bytes), stored, filename, mime, bytes.length));
+                entferneNeueDateiBeiRollback(destination);
+                return gespeichert;
             } catch (RuntimeException exception) {
                 try { Files.deleteIfExists(destination); } catch (IOException cleanup) { exception.addSuppressed(cleanup); }
                 throw exception;
@@ -468,7 +501,9 @@ public class EinkaufDateiService {
             existing.setEmailAttachmentId(null);
             // Die unveränderliche Lieferantenherkunft bleibt auch bei expliziter Dateiwiederherstellung erhalten.
             try {
-                return dateien.save(existing);
+                EinkaufDatei gespeichert = dateien.save(existing);
+                entferneNeueDateiBeiRollback(destination);
+                return gespeichert;
             } catch (RuntimeException exception) {
                 try { Files.deleteIfExists(destination); } catch (IOException cleanup) { exception.addSuppressed(cleanup); }
                 throw exception;
@@ -476,6 +511,18 @@ public class EinkaufDateiService {
         } catch (IOException exception) {
             throw new IllegalStateException("Die Datei konnte nicht gespeichert werden.", exception);
         }
+    }
+
+    private void entferneNeueDateiBeiRollback(Path neuAngelegterPfad) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) return;
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCompletion(int status) {
+                        if (status == STATUS_COMMITTED) return;
+                        try { Files.deleteIfExists(neuAngelegterPfad); }
+                        catch (IOException fehler) { throw new IllegalStateException("Die neue Datei konnte beim Zurückrollen nicht entfernt werden.", fehler); }
+                    }
+                });
     }
 
     private byte[] readStoredBytes(EinkaufDatei file) throws IOException {

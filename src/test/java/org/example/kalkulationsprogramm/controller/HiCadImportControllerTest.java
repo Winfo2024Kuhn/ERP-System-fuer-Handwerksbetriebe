@@ -15,6 +15,23 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 
 class HiCadImportControllerTest {
     @Test
+    void technischeAnlageErfordertBearbeitungsrechtVorJedemUpload() {
+        var dienst = mock(HiCadImportService.class);
+        var rechte = mock(EinkaufBerechtigungService.class);
+        var anmeldung = new UsernamePasswordAuthenticationToken("dummy", "dummy");
+        var datei = new MockMultipartFile("datei", "zeichnung.pdf", "application/pdf", "%PDF-1.7 Dummy".getBytes());
+        when(rechte.verlange(anmeldung, EinkaufBerechtigung.BEARBEITEN))
+                .thenThrow(new org.springframework.security.access.AccessDeniedException("Kein Recht"));
+        var steuerung = new HiCadImportController(dienst, rechte);
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> steuerung.anlageErgänzen(3L, 2, datei, anmeldung));
+        org.mockito.Mockito.verifyNoInteractions(dienst);
+        org.mockito.Mockito.doReturn(4L).when(rechte).verlange(anmeldung, EinkaufBerechtigung.BEARBEITEN);
+        steuerung.anlageErgänzen(3L, 2, datei, anmeldung);
+        org.mockito.Mockito.verify(dienst).anlageErgänzen(3L, 2, datei, 4L);
+    }
+
+    @Test
     void previewDelegatesOnlyAfterTheEditPermissionCheck() {
         HiCadImportService service = mock(HiCadImportService.class);
         EinkaufBerechtigungService permissions = mock(EinkaufBerechtigungService.class);

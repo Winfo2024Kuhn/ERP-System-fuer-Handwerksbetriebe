@@ -16,8 +16,8 @@ public class AnfrageRevision {
     @Column(name = "antwortfrist") private LocalDate antwortfrist;
     @Column(name = "liefertermin") private LocalDate liefertermin;
     @Column(nullable = false, length = 24) private String status = "ENTWURF";
-    @JdbcTypeCode(SqlTypes.VARCHAR) @Column(name = "idempotenz_key", nullable = false, length = 36, unique = true) private java.util.UUID idempotenzKey;
-    @Column(name = "payload_hash", nullable = false, length = 64) private String payloadHash;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "idempotenz_key", nullable = false, length = 36, unique = true) private java.util.UUID idempotenzKey;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "payload_hash", nullable = false, length = 64) private String payloadHash;
     protected AnfrageRevision() {}
     public AnfrageRevision(Einkaufsanfrage anfrage, int nummer, LocalDate antwortfrist, LocalDate liefertermin, java.util.UUID idempotenzKey, String payloadHash) {
         this.anfrage = anfrage; this.nummer = nummer; this.antwortfrist = antwortfrist; this.liefertermin = liefertermin; this.idempotenzKey = idempotenzKey; this.payloadHash = payloadHash;

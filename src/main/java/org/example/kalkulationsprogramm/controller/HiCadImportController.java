@@ -31,6 +31,13 @@ public class HiCadImportController {
         return imports.vorschau(projektId, file, mapping, actor);
     }
 
+    @PostMapping("/{id}/zeilen/{zeilennummer}/anlagen")
+    public HiCadImportDto.BildVorschlag anlageErgänzen(@PathVariable Long id, @PathVariable int zeilennummer,
+            @RequestPart("datei") MultipartFile datei, Authentication auth) {
+        Long akteur = berechtigungen.verlange(auth, EinkaufBerechtigung.BEARBEITEN);
+        return imports.anlageErgänzen(id, zeilennummer, datei, akteur);
+    }
+
     @PostMapping("/{id}/uebernehmen")
     public List<EinkaufBedarfDto.Response> uebernehmen(@PathVariable Long id,
             @RequestBody HiCadImportDto.Uebernahme request, Authentication auth) {

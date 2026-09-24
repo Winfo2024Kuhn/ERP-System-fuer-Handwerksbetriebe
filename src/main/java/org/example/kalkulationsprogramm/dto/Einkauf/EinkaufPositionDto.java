@@ -20,11 +20,25 @@ public final class EinkaufPositionDto {
             boolean fachlichBestaetigt) {
     }
 
+    /** Supplier and workshop details retained with the immutable purchase position. */
+    public record Beschaffungsdetails(Long lieferantId, Long kategorieId, Long schnittbildId,
+            Long schnittAchseId, String externeArtikelnummer) {}
+
     public record PositionSnapshot(Positionsart art, Long artikelId, String interneReferenz,
             String zeichnungsnummer, String zeichnungsrevision, String bezeichnung, String werkstoff,
             String abmessung, Mengenbasis basis, String schnittForm, String winkelLinks,
             String winkelRechts, String bearbeitung, String oberflaeche, List<DokumentSoll> dokumente,
-            List<Long> anlageVersionIds) {
+            List<Long> anlageVersionIds, Beschaffungsdetails beschaffungsdetails) {
+        public PositionSnapshot(Positionsart art, Long artikelId, String interneReferenz,
+                String zeichnungsnummer, String zeichnungsrevision, String bezeichnung, String werkstoff,
+                String abmessung, Mengenbasis basis, String schnittForm, String winkelLinks,
+                String winkelRechts, String bearbeitung, String oberflaeche, List<DokumentSoll> dokumente,
+                List<Long> anlageVersionIds) {
+            this(art, artikelId, interneReferenz, zeichnungsnummer, zeichnungsrevision, bezeichnung,
+                    werkstoff, abmessung, basis, schnittForm, winkelLinks, winkelRechts, bearbeitung,
+                    oberflaeche, dokumente, anlageVersionIds, null);
+        }
+
         public PositionSnapshot {
             dokumente = dokumente == null ? List.of() : List.copyOf(dokumente);
             anlageVersionIds = anlageVersionIds == null ? List.of() : List.copyOf(anlageVersionIds);

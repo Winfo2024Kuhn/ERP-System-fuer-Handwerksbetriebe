@@ -2016,3 +2016,31 @@ Zeit: 2026-09-24T11:37:10.359367+00:00
 - Befunde umfassen reale Excel-Formate, Zeichnungserstellung/Anlagenfreigabe, HiCAD-Bildvertrag und Fehleranzeige, vollständige Mengenauswahlprüfung, bewussten 409-Abgleich, deutsches Dateifeld und verständliche Zuständigkeit. Root ergänzt verlustfreie technische Bearbeitung, Übernahme der ausgewählten Direktbestellanteile und vollständige Mapping-/Rechte-/Sprachprüfung.
 - Derselbe Luna-Coder coding12 übernimmt die gebündelte R1 mit explizit freigegebener zusätzlicher Ownership für erforderliche Backend-Erstellung und gemeinsame UI-Anbindung. Kein weiterer Abschnitt startet vor der Abnahme.
 - Vorbereiteter lokaler Snapshot: /tmp/beschaffung-13-snapshot-vor-migration.json; V367,139Tabellen,122erfolgreicheHistorienzeilen, gzip/Hash geprüft. Ausschließlich isolierte Kopie gelesen; keine Migration vorgenommen.
+
+## 24.09.2026 – Abschnitt 12 R1 integriert, erneute Reviews
+
+Der Nutzer hat die weitere Arbeit von `coding12` ausdrücklich beendet und Root mit dem Abschluss beauftragt. Gleichzeitig traf dessen fertige Übergabe ein: `6eba0f831bff0a7cd427569426df0ce1b19fa17b` auf `83cc0713210f4e8abf90708c51b8e3d9c9dc668a`. Der Agent erhält keine weiteren Aufträge; verbleibende Nachbesserungen dieses Abschnitts übernimmt Root gemäß dieser neueren Nutzervorgabe.
+
+Root hat den vollständigen Abschnitt konfliktfrei in den Hauptcheckout integriert. Die 28 Produkt-/Testdateien bleiben bis zur Reviewabnahme als vorbereiteter Merge erhalten; absichtlich uncommittete Graphdaten sind unberührt. Alle 2.465 Produkt-/Test-/Konfigurationsdateien stimmen zwischen Coder-, Haupt- und Designcheckout überein. Originalprotokolle und SHA-256 sind geprüft: Backend 3.594 Tests ohne Fehler mit 17 bekannten Skips; Frontend 1.733 Tests in 185 Dateien; Playwright 762 bestanden; Lint, E2E-Typprüfung und Build jeweils Exitcode 0. Keine Wiederholung gültiger Tests.
+
+Nachweise: `/tmp/beschaffung-12-r1-source-manifest.json`, `/tmp/beschaffung-12-r1-integration-bindung.json`; dauerhafte Sicherung unter `handoff-2026-09-24-abschnitt11/fortsetzung-12/r1`. Die bestehenden Sol-Reviewer `review12_code` und `review12_design` prüfen jetzt R1; Abnahme steht noch aus.
+
+
+## Abschnitt 12 R2 und vorgezogener lokaler Probebetrieb
+
+Zeit: 2026-09-24T13:37:30.441564+00:00
+
+Root hat die zweite Nachbesserung selbst umgesetzt: Reparaturdateien werden bei Rollback sicher entfernt, HiCAD erlaubt freie Artikelwahl/neue Artikel und bestätigte technische Anlagen, Lagerentnahme verlangt nach409 einen bewussten aktuellen Stand. Einheiten/Bezeichner sind deutsch; lange Dialoge halten Titel und Aktionen sichtbar. Backend3597/0Fehler/17Bestandsskips, PC1736, Lint/Typen/Buildgrün. Voll-E2E759grün/3Fehler durch alte Test-Erwartung „stueck“; nach reiner Erwartungskorrektur alle drei gezieltgrün. Kein einzelner finaler762erVollauf behauptet. Quellen/Originalprotokolle unter fortsetzung-12/r2. Sol-Code-R2grün, Design-R2 läuft.
+
+Auf die Nutzeranweisung, das Programm jetzt selbst auszuprobieren, wurde der lokale Betriebsanteil ausAbschnitt13 vorgezogen: Snapshot unverändert wiederverwendet; exakte V209-NULL-Nachbedingungen hergestellt; nur drei Historienzeilen bedingt abgeglichen. Flyway validiert152Migrationen und migrierte367→397. V396 hatte bestätigten MySQL-Syntaxfehler (eigene Dummyinstanz); vor erster Anwendung schmal korrigiert. Anschließend elf Entity-Mappings für SQLCHAR und eine UUID-VARCHAR-Abbildung berichtigt. Diese Startkorrekturen gehören zuAbschnitt13, sind nicht Teil der12erReviewfreigabe. Hibernatevalidate bleibt aktiv.
+
+Lokale Vorschau läuft mitPID84097 unter http://127.0.0.1:8099, Frontend/Backend auf demselben Ursprung, Datenbank ausschließlich erp-beschaffung-db:3309. Aktueller Frontend-Build index-KMc-g0nX.js, vorhandene Anmeldedaten, keine Kennwortrücksetzung. Keine fachliche Automation auf dieser Kopie. Root/Assets/Bootstrapstatus200; HTML-Reload/Login liefert bestehend404mitkorrektemSPAHTML (Einstiegüber/200). Privater Nachweis/Config/Prozess/Log unter erp-db-clone/2026-09-23-beschaffung/lokaler-start-20260924. Echter Mailversand, Hintergrundjobs und Startwartungen aus. Der Nutzer kann die Vorschau während des Abschlusses verwenden; nicht unangekündigt stoppen.
+
+
+## Abschnitt 12 R2 — Design-Restbefund und Skill-Stopp
+
+Zeit: 2026-09-24T13:39:10.646508+00:00
+
+Code-/ERP-Review grün; Designreview rot: Escape im neu eingebetteten CreateArticleModal schließt den übergeordneten HiCAD-Dialog und verwirft Projekt/Datei/Vorschau. In drei Desktopgrößen reproduziert. Erwartet: nur obersten Dialog schließen, Fokus zurück, Entwurf erhalten. Bericht und Bilder dauerhaft unter fortsetzung-12/r2. Die drei R1-Designbefunde sind behoben, gezielte12E2Egrün.
+
+Dies ist die zweite Nachbesserung nachR0/R1. Gemäß loese-problem Schritt5.4 wird die Pipeline angehalten und der konkrete Restbefund dem Nutzer vorgelegt; keine dritte Nachbesserung, kein Abschnitt13-Codingpaket, kein PR/Merge/Issueabschluss begonnen. Vorbereiteter12-Merge samt Root-Korrekturen bleibt erhalten; nichts verworfen. Die auf Nutzerwunsch bereits laufende lokale Vorschau http://127.0.0.1:8099 bleibt aktiv. Abschnitt13 enthält vorgezogene, noch nicht formal abgenommene Startkorrekturen (V396, elf Entities) und private Betriebsnachweise.

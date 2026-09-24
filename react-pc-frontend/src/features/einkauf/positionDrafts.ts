@@ -1,8 +1,8 @@
 import { validateNumberDrafts } from '../../lib/numberDrafts';
-import type { Dokumentart, Einheit, PositionSnapshot } from './types';
+import type { Beschaffungsdetails, Dokumentart, Einheit, PositionSnapshot, Positionsart } from './types';
 
 export interface PositionDraft {
-  art: 'ARTIKEL' | 'ZEICHNUNGSTEIL';
+  art: Positionsart;
   artikelId: number | null;
   interneReferenz: string;
   zeichnungsnummer: string;
@@ -23,6 +23,25 @@ export interface PositionDraft {
   oberflaeche: string;
   dokumente: DokumentSoll[];
   anlageVersionIds: number[];
+  /**
+   * Nicht im Formular bearbeitet (Lieferant, Kategorie, Schnittbild …). Die Angaben bleiben an den Artikel und
+   * Zuschnitt gebunden, zu dem sie erfasst wurden, damit sie nach einem Wechsel nicht an fremdem Material hängen.
+   */
+  beschaffungsdetails?: GebundeneBeschaffungsdetails | null;
+}
+
+/** Artikel und Zuschnitt, zu denen Beschaffungsdetails erfasst wurden. */
+export interface BeschaffungsBezug { art: Positionsart; artikelId: number | null; schnittForm: string | null }
+export interface GebundeneBeschaffungsdetails { werte: Beschaffungsdetails; erfasstFuer: BeschaffungsBezug }
+
+/**
+ * Liefert die Beschaffungsdetails nur, solange Positionsart und Katalogartikel unverändert sind. Schnittbild und
+ * Schnittachse gelten zusätzlich nur für denselben Sonderzuschnitt; sonst werden sie verworfen.
+ */
+export function passendeBeschaffungsdetails(details: Beschaffungsdetails | null | undefined, erfasstFuer: BeschaffungsBezug, jetzt: BeschaffungsBezug): Beschaffungsdetails | null {
+  if (!details || jetzt.art !== erfasstFuer.art || (jetzt.artikelId ?? null) !== (erfasstFuer.artikelId ?? null)) return null;
+  if ((jetzt.schnittForm || '') === (erfasstFuer.schnittForm || '')) return details;
+  return { ...details, schnittbildId: null, schnittAchseId: null };
 }
 
 export interface DokumentSoll {
@@ -34,7 +53,10 @@ export interface DokumentSoll {
 
 export type ValidationResult<T> = { valid: true; value: T } | { valid: false; message: string; field: string };
 
-export function toPositionPayload(draft: PositionDraft): ValidationResult<PositionSnapshot> {
+export function toPositionPayload(draft: PositionDraft, optionen: { anlageBeiErstanlage?: boolean } = {}): ValidationResult<PositionSnapshot> {
+  if (draft.art === 'FREITEXT' && !draft.bezeichnung.trim()) {
+    return { valid: false, message: 'Bitte geben Sie eine Bezeichnung für das Material ein.', field: 'bezeichnung' };
+  }
   if (draft.art === 'ARTIKEL' && (!Number.isSafeInteger(draft.artikelId) || (draft.artikelId ?? 0) <= 0)) {
     return { valid: false, message: 'Bitte wählen Sie einen Artikel aus dem Katalog.', field: 'artikelId' };
   }
@@ -47,7 +69,7 @@ export function toPositionPayload(draft: PositionDraft): ValidationResult<Positi
     ];
     const fehlend = pflicht.find(([, value]) => !value.trim());
     if (fehlend) return { valid: false, field: fehlend[0], message: fehlend[2] };
-    if (!draft.anlageVersionIds.length || draft.anlageVersionIds.some(id => !Number.isSafeInteger(id) || id <= 0)) {
+    if ((!draft.anlageVersionIds.length && !optionen.anlageBeiErstanlage) || draft.anlageVersionIds.some(id => !Number.isSafeInteger(id) || id <= 0)) {
       return { valid: false, field: 'anlageVersionIds', message: 'Für ein Zeichnungsteil ist mindestens eine gültige Anlagenversion erforderlich.' };
     }
   }
@@ -99,6 +121,8 @@ export function toPositionPayload(draft: PositionDraft): ValidationResult<Positi
       oberflaeche: draft.oberflaeche.trim() || null,
       dokumente: draft.dokumente,
       anlageVersionIds: draft.anlageVersionIds,
+      beschaffungsdetails: draft.beschaffungsdetails ? passendeBeschaffungsdetails(draft.beschaffungsdetails.werte,
+        draft.beschaffungsdetails.erfasstFuer, { art: draft.art, artikelId: draft.artikelId, schnittForm: draft.schnittForm }) : null,
     },
   };
 }
@@ -114,5 +138,7 @@ export function fromPositionSnapshot(position: PositionSnapshot): PositionDraft 
     kgJeMeter: zahl(position.basis?.kgJeMeter), faktorQuelle: position.basis?.faktorQuelle ?? '',
     schnittForm: position.schnittForm ?? '', winkelLinks: position.winkelLinks ?? '', winkelRechts: position.winkelRechts ?? '',
     bearbeitung: position.bearbeitung ?? '', oberflaeche: position.oberflaeche ?? '',
-    dokumente: position.dokumente ?? [], anlageVersionIds: position.anlageVersionIds ?? [] };
+    dokumente: position.dokumente ?? [], anlageVersionIds: position.anlageVersionIds ?? [],
+    beschaffungsdetails: position.beschaffungsdetails ? { werte: position.beschaffungsdetails,
+      erfasstFuer: { art: position.art, artikelId: position.artikelId, schnittForm: position.schnittForm } } : null };
 }

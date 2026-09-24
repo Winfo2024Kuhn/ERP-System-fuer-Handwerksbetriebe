@@ -23,7 +23,7 @@ public class EinkaufBelegPosition {
     @Column(name="original_einzelpreis",precision=19,scale=6) private BigDecimal originalEinzelpreis;
     @Column(name="preis_basis_menge",precision=19,scale=6) private BigDecimal preisBasisMenge;
     @Column(name="nur_preis_korrektur",nullable=false) private boolean nurPreisKorrektur;
-    @Column(length=3) private String waehrung;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(length=3) private String waehrung;
     @JdbcTypeCode(SqlTypes.JSON) @Column(name="kosten_snapshot", nullable=false, columnDefinition="json") private List<Map<String,Object>> kosten=List.of();
     @JdbcTypeCode(SqlTypes.JSON) @Column(name="quellen_snapshot", nullable=false, columnDefinition="json") private List<Map<String,Object>> quellen=List.of();
     @Column(nullable=false) private boolean pruefen;

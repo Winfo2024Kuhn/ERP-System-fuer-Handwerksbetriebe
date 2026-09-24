@@ -8,6 +8,7 @@ import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBedarfService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService;
+import org.example.kalkulationsprogramm.service.einkauf.EinkaufZeichnungsbedarfService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -22,6 +23,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.mock.web.MockPart;
+import org.springframework.http.MediaType;
 
 import java.util.Set;
 
@@ -47,7 +50,34 @@ class EinkaufBedarfControllerTest {
     @Autowired MockMvc mockMvc;
     @MockBean EinkaufBedarfService bedarfService;
     @MockBean EinkaufBerechtigungService berechtigungService;
+    @MockBean EinkaufZeichnungsbedarfService zeichnungsbedarfe;
+    @MockBean org.example.kalkulationsprogramm.service.einkauf.EinkaufWerkstattService werkstatt;
+    @MockBean org.example.kalkulationsprogramm.service.einkauf.EinkaufPdfService pdf;
     @MockBean FrontendUserDetailsService userDetailsService;
+
+    @Test
+    void speichernUebertraegtBeschaffungsdetailsOhneVerlustAnDenService() throws Exception {
+        when(berechtigungService.verlange(any(Authentication.class), eq(EinkaufBerechtigung.BEARBEITEN)))
+                .thenReturn(7L);
+        mockMvc.perform(post("/api/einkauf/bedarf")
+                        .with(authentication(7L)).with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                            {"position":{"art":"FREITEXT","bezeichnung":"Testprofil","werkstoff":"S235",
+                            "basis":{"menge":2,"einheit":"STUECK"},
+                            "beschaffungsdetails":{"lieferantId":7,"kategorieId":8,"schnittbildId":9,
+                            "schnittAchseId":10,"externeArtikelnummer":"00012-34"}},
+                            "liefergruppe":{"lagerzweck":"Werkstatt"}}
+                            """))
+                .andExpect(status().isCreated());
+        var captured = org.mockito.ArgumentCaptor.forClass(
+                org.example.kalkulationsprogramm.dto.Einkauf.EinkaufBedarfDto.Create.class);
+        verify(bedarfService).anlegen(captured.capture(), eq(7L));
+        org.junit.jupiter.api.Assertions.assertEquals(7L,
+                captured.getValue().position().beschaffungsdetails().lieferantId());
+        org.junit.jupiter.api.Assertions.assertEquals("00012-34",
+                captured.getValue().position().beschaffungsdetails().externeArtikelnummer());
+        org.junit.jupiter.api.Assertions.assertEquals("S235", captured.getValue().position().werkstoff());
+    }
 
     @Test
     void anonymerZugriffAufBedarfeIstGesperrt() throws Exception {
@@ -98,6 +128,66 @@ class EinkaufBedarfControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Bitte geben Sie die Liefergruppe an."))
                 .andExpect(jsonPath("$.fieldErrors[0].field").value("request"));
+    }
+
+    @Test
+    void zeichnungsteilErstanlageErfordertBearbeitungsrechtUndMultipartDatei() throws Exception {
+        when(berechtigungService.verlange(any(Authentication.class), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(7L);
+        when(zeichnungsbedarfe.anlegen(any(), any(), eq("B"), eq(7L))).thenReturn(null);
+        MockPart bedarf = new MockPart("bedarf", "{\"position\":{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"ZT-4\",\"zeichnungsnummer\":\"Z-4\",\"zeichnungsrevision\":\"B\",\"bezeichnung\":\"Träger\",\"basis\":{\"menge\":2,\"einheit\":\"STUECK\",\"stueckzahl\":2},\"dokumente\":[],\"anlageVersionIds\":[]},\"liefergruppe\":{\"projektId\":9}}".getBytes());
+        bedarf.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/einkauf/bedarf/zeichnungsteil")
+                        .file("datei", "%PDF-1.7 Dummy".getBytes()).part(bedarf).param("revision", "B")
+                        .with(authentication(7L)).with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isCreated());
+        verify(zeichnungsbedarfe).anlegen(any(), any(), eq("B"), eq(7L));
+    }
+
+    @Test
+    void werkstattpruefungErfordertCsrfUndBearbeitungsrecht() throws Exception {
+        String payload = "{\"positionen\":[{\"bedarfId\":1,\"version\":0,\"vorhanden\":4}]}";
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/einkauf/bedarf/werkstattpruefung")
+                .with(authentication(7L)).contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(werkstatt);
+        when(berechtigungService.verlange(any(), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(7L);
+        when(werkstatt.pruefen(any(), eq(7L))).thenReturn(java.util.List.of());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/einkauf/bedarf/werkstattpruefung")
+                .with(authentication(7L)).with(SecurityMockMvcRequestPostProcessors.csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+        verify(werkstatt).pruefen(any(), eq(7L));
+    }
+
+    @Test
+    void ohneProjektFilterWirdExplizitWeitergegeben() throws Exception {
+        when(bedarfService.suche(eq(null), eq(null), eq(true), any())).thenReturn(Page.empty());
+        mockMvc.perform(get("/api/einkauf/bedarf?ohneProjekt=true").with(authentication(7L)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").isArray());
+        verify(bedarfService).suche(eq(null), eq(null), eq(true), any());
+    }
+
+    @Test
+    void bedarfslisteIstGeschuetzterPdfDownload() throws Exception {
+        when(pdf.bedarfsliste(java.util.List.of(1L, 2L)))
+                .thenReturn(new org.springframework.core.io.ByteArrayResource("%PDF-Dummy".getBytes()));
+        mockMvc.perform(get("/api/einkauf/bedarf/pdf?bedarfIds=1,2").with(authentication(7L)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType(MediaType.APPLICATION_PDF));
+        verify(berechtigungService).verlange(any(), eq(EinkaufBerechtigung.LESEN));
+        mockMvc.perform(get("/api/einkauf/bedarf/pdf?bedarfIds=1,2")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void bedarfslisteAkzeptiertIdsImPostBodyOhneLangeUrl() throws Exception {
+        when(pdf.bedarfsliste(java.util.List.of(1L,2L)))
+                .thenReturn(new org.springframework.core.io.ByteArrayResource("%PDF-Dummy".getBytes()));
+        mockMvc.perform(post("/api/einkauf/bedarf/pdf").with(authentication(7L))
+                .with(SecurityMockMvcRequestPostProcessors.csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"bedarfIds\":[1,2]}"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType(MediaType.APPLICATION_PDF));
+        verify(berechtigungService).verlange(any(),eq(EinkaufBerechtigung.LESEN));
     }
 
     private static RequestPostProcessor authentication(long id) {

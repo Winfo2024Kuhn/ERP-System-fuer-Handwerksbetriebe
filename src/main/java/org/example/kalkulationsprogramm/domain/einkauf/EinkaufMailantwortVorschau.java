@@ -12,7 +12,7 @@ import org.hibernate.type.SqlTypes;
 @Entity
 @Table(name = "einkauf_mailantwort_vorschau")
 public class EinkaufMailantwortVorschau {
-    @Id @Column(name = "freigabe_token", length = 64, updatable = false) private String freigabeToken;
+    @Id @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "freigabe_token", length = 64, updatable = false) private String freigabeToken;
     @Column(name = "email_id", nullable = false, updatable = false) private Long emailId;
     @Column(name = "konto_id", nullable = false, length = 16, updatable = false) private String kontoId;
     @Column(name = "einkauf_typ", nullable = false, length = 24, updatable = false) private String einkaufTyp;
@@ -29,7 +29,7 @@ public class EinkaufMailantwortVorschau {
     @Column(name = "html_body", nullable = false, columnDefinition = "LONGTEXT", updatable = false) private String htmlBody;
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "json", updatable = false) private List<AnlageSnapshot> anlagen;
-    @Column(name = "inhalt_sha256", nullable = false, length = 64, updatable = false) private String inhaltSha256;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "inhalt_sha256", nullable = false, length = 64, updatable = false) private String inhaltSha256;
     @Column(name = "versand_id", unique = true) private Long versandId;
     @Column(name = "angenommen_am") private Instant angenommenAm;
     @Column(name = "erstellt_am", nullable = false, updatable = false) private Instant erstelltAm;

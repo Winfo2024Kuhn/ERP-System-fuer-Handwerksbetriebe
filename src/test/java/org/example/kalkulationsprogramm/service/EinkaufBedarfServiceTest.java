@@ -44,6 +44,27 @@ class EinkaufBedarfServiceTest {
     @Mock EinkaufPositionService positionService;
 
     @Test
+    void freierBedarfOhneArtikelnummerIstVollstaendig() {
+        var input = new PositionSnapshot(Positionsart.FREITEXT, null, null, null, null, "Schweißdraht", null, null,
+                new Mengenbasis(new BigDecimal("10"), Einheit.KILOGRAMM, null, null, null, null), null,null,null,null,null,List.of(),List.of());
+        when(positionService.validiere(input, null)).thenReturn(input);
+        when(bedarfRepository.save(any())).thenAnswer(i -> {var b=i.<EinkaufBedarf>getArgument(0);b.setId(1L);b.setVersion(0L);return b;});
+        var service=new EinkaufBedarfService(bedarfRepository,artikelInProjektRepository,projektRepository,positionService,new ObjectMapper());
+        var result=service.anlegen(new EinkaufBedarfDto.Create(input,new Liefergruppe(null,null,null,"Werkstatt"),null),7L);
+        assertFalse(result.nachpflegeErforderlich());
+    }
+
+    @Test
+    void filterOhneProjektIstGetrenntUndSchliesstProjektIdAus() {
+        var page=PageRequest.of(0,20);
+        when(bedarfRepository.sucheOhneProjekt(null,page)).thenReturn(new PageImpl<>(List.of()));
+        var service=new EinkaufBedarfService(bedarfRepository,artikelInProjektRepository,projektRepository,positionService,new ObjectMapper());
+        assertTrue(service.suche(null,null,true,page).isEmpty());
+        assertThrows(IllegalArgumentException.class,()->service.suche(null,1L,true,page));
+        verify(bedarfRepository).sucheOhneProjekt(null,page);
+    }
+
+    @Test
     void neuerBedarfStartetMitVollstaendigUngedeckterMenge() {
         PositionSnapshot input = new PositionSnapshot(Positionsart.ARTIKEL, 17L, "A-17", null, null,
                 "Schraube", null, null, new Mengenbasis(new BigDecimal("10"), Einheit.STUECK,

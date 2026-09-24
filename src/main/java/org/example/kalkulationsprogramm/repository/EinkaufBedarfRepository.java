@@ -30,6 +30,13 @@ public interface EinkaufBedarfRepository extends JpaRepository<EinkaufBedarf, Lo
             """)
     Page<EinkaufBedarf> suche(@Param("q") String q, @Param("projektId") Long projektId, Pageable pageable);
 
+    @Query("""
+            select b from EinkaufBedarf b where b.projektId is null
+              and (:q is null or lower(b.bezeichnung) like lower(concat('%', :q, '%'))
+                   or lower(b.interneKennung) like lower(concat('%', :q, '%')))
+            """)
+    Page<EinkaufBedarf> sucheOhneProjekt(@Param("q") String q, Pageable pageable);
+
     boolean existsByProjektIdAndInterneKennung(Long projektId, String interneKennung);
     boolean existsByProjektIdAndInterneKennungAndIdNot(Long projektId, String interneKennung, Long id);
     Optional<EinkaufBedarf> findByArtikelInProjektId(Long artikelInProjektId);

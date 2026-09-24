@@ -37,6 +37,16 @@ class KategorieServiceTest {
     private KategorieService kategorieService;
 
     @Test
+    void alleKategorienEnthaltenParentIdFuerDenNavigationsbaum() {
+        var root=new Kategorie();root.setId(1);root.setBeschreibung("Profile");
+        var child=new Kategorie();child.setId(2);child.setBeschreibung("Rohre");child.setParentKategorie(root);
+        when(kategorieRepository.findAll()).thenReturn(java.util.List.of(root,child));
+        var tree=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(kategorieService.alleKategorien());
+        assertTrue(tree.get(0).path("parentId").isNull());
+        assertEquals(1,tree.get(1).path("parentId").asInt());
+    }
+
+    @Test
     void erstelleKategorieUebernimmtTypischeRollen() {
         KategorieCreateDto dto = new KategorieCreateDto();
         dto.setBezeichnung("Schrauben");

@@ -114,6 +114,68 @@ class EinkaufBestellWorkflowRegressionTest {
   delivery=new EinkaufLieferungService(orders,revisions,deliveries,needs,amounts,documents,em,audit,json);
  }
 
+ @Test void angebotFuerReineFreitextpositionKannBestelltWerden() {
+  var ids=tx(()->{
+   var need=needs.findById(needId).orElseThrow();
+   var basis=new Mengenbasis(new BigDecimal("4"),Einheit.KILOGRAMM,null,null,null,null);
+   var position=new PositionSnapshot(Positionsart.FREITEXT,null,null,null,null,"Schweißdraht",null,null,basis,null,null,null,null,null,List.of(),List.of());
+   need.setPosition(position);need.setBedarfMenge(new BigDecimal("4"));em.flush();
+   var request=new Einkaufsanfrage("PA-"+UUID.randomUUID().toString().substring(0,8),9L,UUID.randomUUID(),"f".repeat(64));em.persist(request);
+   var revision=new AnfrageRevision(request,1,null,LocalDate.now().plusDays(7),UUID.randomUUID(),"a".repeat(64));em.persist(revision);request.setAktuelleRevision(revision);
+   var requestLine=new AnfragePosition(revision,position,new BigDecimal("4"));
+   requestLine.addHerkunft(new AnfrageHerkunft(requestLine,need,need.getVersion(),new BigDecimal("4")));revision.addPosition(requestLine);em.persist(requestLine);
+   var participation=new AnfrageLieferant(revision,recipient);em.persist(participation);
+   var offer=new EinkaufAngebot(participation);em.persist(offer);
+   var offerVersion=new AngebotVersion(offer,revision,1,"DUMMY-ANGEBOT",LocalDate.now(),LocalDate.now().plusDays(7),"EUR",null,null,null,null,null);
+   var line=new AngebotPosition(offerVersion,requestLine,"1","Draht",basis,null,null,LocalDate.now().plusDays(3),List.of(),List.of());
+   offerVersion.addPosition(line);offerVersion.addKosten(new AngebotKostenbestandteil(offerVersion,line,"material","MATERIAL",new BigDecimal("10"),"KG",BigDecimal.ONE,null,false,false,"Dummy Angebot"));
+   offerVersion.bestaetigen(9L);offer.addVersion(offerVersion);em.persist(offerVersion);em.flush();
+   return List.of(offerVersion.getId(),request.getId(),need.getVersion());
+  });
+  var comparison=mock(EinkaufVergleichService.class);
+  when(comparison.vergleiche(eq(ids.get(1)),any())).thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVergleichDto.Vergleich(ids.get(1),LocalDate.now(),List.of(
+   new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVergleichDto.AngebotSumme(ids.getFirst(),new BigDecimal("40"),true,true,true,List.of(),List.of())),ids.getFirst()));
+  var numbers=mock(DokumentnummerService.class);when(numbers.naechsteEinkaufsnummer(any(),any())).thenReturn("B-FREITEXT-"+needId);
+  var service=new EinkaufBestellungService(orders,revisions,offers,comparison,needs,amounts,numbers,new EinkaufAuditService(audits),json,mock(LieferantenArtikelPreiseRepository.class));
+  var result=tx(()->service.ausAngebot(new AusAngebot(ids.getFirst(),List.of(new Herkunft(needId,ids.get(2),new BigDecimal("4"))),"Dummy Angebot geprüft",UUID.randomUUID()),9L));
+  var line=result.revisionen().getFirst().positionen().getFirst();
+  assertEquals(Positionsart.FREITEXT,line.snapshot().art());
+  assertEquals(0,line.nettoEinzelpreis().compareTo(new BigDecimal("10")));
+  accept(result.id());assertAmount(result.id(),"4","0","0");
+ }
+
+ @Test void freierBedarfWerkstattUndVersandOhnePreisBewahrenMengenUndNull() {
+  tx(() -> {
+   var need=needs.findById(needId).orElseThrow();
+   var position=new PositionSnapshot(Positionsart.FREITEXT,null,null,null,null,"Schweißdraht",null,null,
+    new Mengenbasis(new BigDecimal("10"),Einheit.KILOGRAMM,null,null,null,null),null,null,null,null,null,List.of(),List.of());
+   need.setPosition(position);need.setBedarfMenge(new BigDecimal("10"));return null;
+  });
+  var workshop=new EinkaufWerkstattService(needs,new EinkaufAuditService(audits),json);
+  long before=needs.findById(needId).orElseThrow().getVersion();
+  tx(()->workshop.pruefen(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufBedarfDto.Werkstattpruefung(List.of(
+   new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufBedarfDto.Werkstattposition(needId,before,new BigDecimal("4")))),9L));
+  var need=needs.findById(needId).orElseThrow();assertTrue(need.getVersion()>before);
+  var request=new Direkt(supplierId,recipient,List.of(new Herkunft(needId,need.getVersion(),new BigDecimal("6"))),List.of(),null,null,null,UUID.randomUUID());
+  Long id=tx(()->ordering.direkt(request,9L).id());
+  assertNull(tx(()->ordering.lade(id)).revisionen().getFirst().positionen().getFirst().nettoEinzelpreis());
+  assertEquals(0,needs.findById(needId).orElseThrow().disponierbar().signum());
+  accept(id);
+  assertAmount(id,"6","0","0");
+  var captor=org.mockito.ArgumentCaptor.forClass(org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPdfDto.Beleg.class);
+  verify(pdf).erzeugen(captor.capture());
+  assertNull(captor.getValue().nettoSumme());
+  assertNull(captor.getValue().positionen().getFirst().nettoSumme());
+  assertEquals(0,captor.getValue().positionen().getFirst().technik().basis().menge().compareTo(new BigDecimal("6")));
+  var current=needs.findById(needId).orElseThrow();
+  var amendment=new Direkt(supplierId,recipient,List.of(new Herkunft(needId,current.getVersion(),new BigDecimal("6"))),
+   List.of(),LocalDate.now().plusDays(3),null,"Neuer Liefertermin",UUID.randomUUID());
+  var amended=tx(()->ordering.aendern(id,new Aenderung(version(id),amendment,"Liefertermin angepasst"),9L));
+  assertNull(amended.revisionen().getLast().positionen().getFirst().nettoEinzelpreis());
+  accept(id);
+  assertAmount(id,"6","0","0");
+ }
+
  @Test void revisionTeilstornoUndLieferungNutzenNurEigeneMengenUndBewahrenSnapshots() {
   Long a=tx(()->ordering.direkt(content("10"),9L).id());
   var draft=tx(()->ordering.lade(a));
@@ -614,7 +676,7 @@ class EinkaufBestellWorkflowRegressionTest {
   UUID eventKey=UUID.randomUUID();
   var event=tx(()->{var revision=revisions.findFirstByBestellung_IdOrderByNummerDesc(id).orElseThrow();
    dispatches.findById(queued.id()).orElseThrow().angenommen(Instant.now());
-   var accepted=new EinkaufVersandAngenommen(eventKey,queued.id(),"BESTELLUNG",id,revision.getId(),null,Instant.now());
+   var accepted=new EinkaufVersandAngenommen(eventKey,queued.id(),"BESTELLUNG",id,revision.getId(),dispatches.findById(queued.id()).orElseThrow().getBeteiligungId(),Instant.now());
    approval.versandAngenommen(accepted);return accepted;});
   tx(()->{approval.versandAngenommen(event);return null;});
  }

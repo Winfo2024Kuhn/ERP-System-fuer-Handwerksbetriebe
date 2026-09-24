@@ -15,8 +15,8 @@ public class Einkaufsanfrage {
     @Version @Column(nullable = false) private Long version;
     @Column(name = "pa_nummer", nullable = false, length = 32) private String paNummer;
     @Column(name = "zustaendig_id") private Long zustaendigId;
-    @JdbcTypeCode(SqlTypes.VARCHAR) @Column(name = "idempotenz_key", nullable = false, length = 36) private UUID idempotenzKey;
-    @Column(name = "payload_hash", nullable = false, length = 64) private String payloadHash;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "idempotenz_key", nullable = false, length = 36) private UUID idempotenzKey;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "payload_hash", nullable = false, length = 64) private String payloadHash;
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "aktuelle_revision_id") private AnfrageRevision aktuelleRevision;
     @Column(name = "angelegt_am", nullable = false, updatable = false) private Instant angelegtAm = Instant.now();
     @Column(name = "geloescht_am") private Instant geloeschtAm;

@@ -82,6 +82,21 @@ class EinkaufMengenParallelTest {
     }
 
     @Test
+    void beschaffungsdetailsBleibenNachSpeichernUndNeuemDatenbankLesenErhalten() {
+        var original = bedarf("2");
+        var p = original.getPosition();
+        var details = new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Beschaffungsdetails(
+                7L, 8L, 9L, 10L, "00012-34");
+        original.setPosition(new PositionSnapshot(p.art(), p.artikelId(), p.interneReferenz(),
+                p.zeichnungsnummer(), p.zeichnungsrevision(), p.bezeichnung(), p.werkstoff(), p.abmessung(),
+                p.basis(), p.schnittForm(), p.winkelLinks(), p.winkelRechts(), p.bearbeitung(), p.oberflaeche(),
+                p.dokumente(), p.anlageVersionIds(), details));
+        var saved = bedarfRepository.saveAndFlush(original);
+        var loaded = bedarfRepository.findById(saved.getId()).orElseThrow();
+        assertEquals(details, loaded.getPosition().beschaffungsdetails());
+    }
+
+    @Test
     void zweiParalleleReservierungenKoennenGemeinsamenBedarfNichtUeberziehen() throws Exception {
         EinkaufBedarf bedarf = bedarfRepository.saveAndFlush(bedarf("10"));
 

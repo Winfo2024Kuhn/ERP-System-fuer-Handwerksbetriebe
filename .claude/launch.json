@@ -13,8 +13,22 @@
     {
       "name": "zeiterfassung-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "react-zeiterfassung"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "react-zeiterfassung"
+      ],
       "port": 5173
+    },
+    {
+      "name": "pc-frontend",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "ERP_BACKEND_URL=${ERP_BACKEND_URL:-http://127.0.0.1:8096} exec npm run dev --prefix react-pc-frontend -- --port 5180 --strictPort"
+      ],
+      "port": 5180
     }
   ]
 }

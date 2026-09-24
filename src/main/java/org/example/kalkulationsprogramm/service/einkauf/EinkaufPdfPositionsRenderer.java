@@ -73,6 +73,14 @@ public class EinkaufPdfPositionsRenderer {
     }
 
     public byte[] renderEntnahmeliste(List<EntnahmeZeile> zeilen, Image logo) {
+        return renderArbeitsblatt(zeilen, logo, false);
+    }
+
+    public byte[] renderBedarfsliste(List<EntnahmeZeile> zeilen, Image logo) {
+        return renderArbeitsblatt(zeilen, logo, true);
+    }
+
+    private byte[] renderArbeitsblatt(List<EntnahmeZeile> zeilen, Image logo, boolean werkstatt) {
         if (zeilen == null || zeilen.isEmpty()) {
             throw new IllegalArgumentException("Bitte wählen Sie mindestens einen Bedarf für die Entnahmeliste aus.");
         }
@@ -81,15 +89,15 @@ public class EinkaufPdfPositionsRenderer {
             PdfWriter.getInstance(document, output);
             document.open();
             addLogo(document, logo);
-            Paragraph title = new Paragraph("Lagerentnahme – Arbeitsblatt", font(Font.BOLD, 16, ROSE));
+            Paragraph title = new Paragraph(werkstatt ? "Bedarfsliste – Werkstattprüfung" : "Lagerentnahme – Arbeitsblatt", font(Font.BOLD, 16, ROSE));
             title.setSpacingAfter(8);
             document.add(title);
-            document.add(new Paragraph("Ausdruck bestätigt keine Entnahme. Bitte Istmenge prüfen und Entnahme anschließend in der Anwendung bestätigen.", font(Font.NORMAL, 9, Color.DARK_GRAY)));
+            document.add(new Paragraph(werkstatt ? "Bitte vorhandene Mengen prüfen und fehlende Mengen eintragen. Die Rückmeldung anschließend in der Anwendung speichern." : "Ausdruck bestätigt keine Entnahme. Bitte Istmenge prüfen und Entnahme anschließend in der Anwendung bestätigen.", font(Font.NORMAL, 9, Color.DARK_GRAY)));
             document.add(new Paragraph(" "));
             PdfPTable table = new PdfPTable(new float[] { 1.4f, 3.5f, 1.4f, 1.1f, 1f, 1.5f });
             table.setWidthPercentage(100);
             table.setHeaderRows(1);
-            for (String label : List.of("Bedarf", "Material", "Menge geplant", "Einheit", "Erledigt", "Istmenge")) {
+            for (String label : List.of("Bedarf", "Material", "Benötigt", "Einheit", werkstatt ? "Vorhanden" : "Erledigt", werkstatt ? "Zu bestellen" : "Istmenge")) {
                 PdfPCell cell = cell(label, Font.BOLD, Color.WHITE, ROSE);
                 table.addCell(cell);
             }
@@ -97,11 +105,18 @@ public class EinkaufPdfPositionsRenderer {
                 PositionSnapshot p = zeile.position();
                 String material = p == null ? zeile.bezeichnung() : text(p.bezeichnung());
                 if (p != null) material += "\n" + join(p.interneReferenz(), p.werkstoff(), p.abmessung());
+                if (werkstatt) material += "\n" + text(zeile.kontext()) + "\n" + technik(p, List.of())
+                        + (p == null ? "" : "\n" + join(p.zeichnungsnummer(), p.zeichnungsrevision(), p.schnittForm()));
+                if (werkstatt && p != null && p.basis() != null) {
+                    var basis = p.basis();
+                    material += "\n" + profilmenge(basis.stueckzahl() == null ? 0 : basis.stueckzahl().intValue(),
+                            basis.einzelLaengeMm(), basis.menge(), zeile.einheit());
+                }
                 table.addCell(cell(String.valueOf(zeile.bedarfId()), Font.NORMAL, Color.BLACK, Color.WHITE));
                 table.addCell(cell(material, Font.NORMAL, Color.BLACK, Color.WHITE));
                 table.addCell(cell(format(zeile.menge()), Font.NORMAL, Color.BLACK, Color.WHITE));
                 table.addCell(cell(zeile.einheit(), Font.NORMAL, Color.BLACK, Color.WHITE));
-                table.addCell(cell("[ ]", Font.NORMAL, Color.BLACK, Color.WHITE));
+                table.addCell(cell(werkstatt ? "________" : "[ ]", Font.NORMAL, Color.BLACK, Color.WHITE));
                 table.addCell(cell("________________", Font.NORMAL, Color.BLACK, Color.WHITE));
             }
             document.add(table);
@@ -113,7 +128,11 @@ public class EinkaufPdfPositionsRenderer {
     }
 
     public record EntnahmeZeile(Long bedarfId, String bezeichnung, PositionSnapshot position,
-            BigDecimal menge, String einheit) {}
+            BigDecimal menge, String einheit, String kontext) {
+        public EntnahmeZeile(Long bedarfId, String bezeichnung, PositionSnapshot position, BigDecimal menge, String einheit) {
+            this(bedarfId, bezeichnung, position, menge, einheit, null);
+        }
+    }
 
     public static PdfPCell gemeinsameZelle(String text, Font font, Color hintergrund) {
         PdfPCell cell = new PdfPCell(new Phrase(text == null ? "" : text, font));
@@ -144,11 +163,19 @@ public class EinkaufPdfPositionsRenderer {
     }
 
     public static String profilmenge(int stueckzahl, BigDecimal laengeMm, BigDecimal menge, String einheit) {
-        if (stueckzahl > 0 && laengeMm != null) {
-            return stueckzahl + " Stk à " + format(laengeMm) + " mm"
-                    + (menge == null ? "" : " (gesamt: " + format(menge) + " m)");
+        String unit = einheit == null ? "" : switch (einheit.toUpperCase(Locale.ROOT)) {
+            case "STUECK" -> "Stk";
+            case "METER" -> "m";
+            case "KILOGRAMM" -> "kg";
+            case "QUADRATMETER" -> "m²";
+            default -> einheit;
+        };
+        String quantity = format(menge) + (unit.isBlank() ? "" : " " + unit);
+        if (laengeMm != null) {
+            String length = (stueckzahl > 0 ? stueckzahl + " Stk à " : "Einzellänge: ") + format(laengeMm) + " mm";
+            return length + (menge == null ? "" : " (gesamt: " + quantity + ")");
         }
-        return format(menge) + (einheit == null ? "" : " " + einheit);
+        return quantity;
     }
 
     private void addPositions(Document document, Beleg beleg) throws DocumentException {
@@ -174,7 +201,8 @@ public class EinkaufPdfPositionsRenderer {
                     p.basis().einzelLaengeMm(), p.basis().menge(), p.basis().einheit() == null ? null : p.basis().einheit().name());
             List<String> materialRows = textRows(material);
             List<String> technicalRows = textRows(technik(p, position.herkuenfte()));
-            List<String> costRows = anfrage ? List.of("") : textRows(kosten(position.kosten()));
+            List<String> costRows = anfrage ? List.of("") : textRows(position.nettoSumme() == null && position.kosten().isEmpty() ? "Preis offen"
+                    : position.kosten().isEmpty() ? geld(position.nettoSumme()) + " EUR" : kosten(position.kosten()));
             int rowCount = Math.max(materialRows.size(), Math.max(technicalRows.size(), costRows.size()));
             Color background = positionIndex % 2 == 0 ? Color.WHITE : LIGHT;
             for (int row = 0; row < rowCount; row++) {

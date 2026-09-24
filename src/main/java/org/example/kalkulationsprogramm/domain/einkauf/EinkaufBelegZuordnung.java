@@ -16,7 +16,7 @@ public class EinkaufBelegZuordnung {
     @Column(nullable=false,length=24) private String art;
     @Column(name="bezugs_dokument_id") private Long bezugsDokumentId;
     @Column(name="idempotenz_key",nullable=false,length=36) @JdbcTypeCode(SqlTypes.VARCHAR) private UUID idempotenzKey;
-    @Column(name="payload_hash",nullable=false,length=64) private String payloadHash;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name="payload_hash",nullable=false,length=64) private String payloadHash;
     @Column(name="akteur_id",nullable=false) private Long akteurId;
     @Column(name="zugeordnet_am",nullable=false) private Instant zugeordnetAm=Instant.now();
     protected EinkaufBelegZuordnung(){}

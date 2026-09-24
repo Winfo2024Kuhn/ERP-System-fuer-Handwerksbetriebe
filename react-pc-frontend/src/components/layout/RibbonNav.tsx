@@ -1,15 +1,17 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings,
-    ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
+    ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut, CalendarClock,
     Calendar, CalendarDays, Plane, Shield, Receipt, Wallet, Stethoscope
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../../auth/AuthContext';
+
+const EINKAUF_PFADE = new Set(['/bestellungen', '/bestellungen/bedarf', '/einkauf/anfragen', '/einkauf/lieferungen', '/einkauf/faelligkeiten']);
 
 // Navigation structure with subgroups for better organization
 interface NavItem {
@@ -94,6 +96,9 @@ const NAVIGATION: NavCategory[] = [
                 items: [
                     { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
                     { name: 'Bedarf', href: '/bestellungen/bedarf', icon: List },
+                    { name: 'Anfragen', href: '/einkauf/anfragen', icon: FileText },
+                    { name: 'Lieferungen & Zeugnisse', href: '/einkauf/lieferungen', icon: Truck },
+                    { name: 'Das ist fällig', href: '/einkauf/faelligkeiten', icon: CalendarClock },
                 ]
             }
         ]
@@ -180,6 +185,17 @@ export function RibbonNavigation() {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, isAdmin, logout } = useAuth();
+    const [einkaufsrechte, setEinkaufsrechte] = useState<string[]>([]);
+    useEffect(() => {
+        let aktiv = true;
+        void fetch('/api/einkauf/berechtigungen').then(async antwort => {
+            if (!antwort.ok) throw new Error('Einkaufsrechte konnten nicht geladen werden.');
+            const rechte: unknown = await antwort.json();
+            if (!Array.isArray(rechte) || rechte.some(recht => typeof recht !== 'string')) throw new Error('Die Einkaufsrechte haben ein ungültiges Format.');
+            if (aktiv) setEinkaufsrechte(rechte);
+        }).catch(() => { if (aktiv) setEinkaufsrechte([]); });
+        return () => { aktiv = false; };
+    }, []);
 
     const visibleNavigation = useMemo<NavCategory[]>(() => {
         return NAVIGATION
@@ -188,12 +204,12 @@ export function RibbonNavigation() {
                 subgroups: category.subgroups
                     .map((subgroup) => ({
                         ...subgroup,
-                        items: subgroup.items.filter((item) => isAdmin || !ADMIN_ONLY_PATHS.has(item.href)),
+                        items: subgroup.items.filter((item) => (isAdmin || !ADMIN_ONLY_PATHS.has(item.href)) && (!EINKAUF_PFADE.has(item.href) || einkaufsrechte.includes('LESEN'))),
                     }))
                     .filter((subgroup) => subgroup.items.length > 0),
             }))
             .filter((category) => category.subgroups.length > 0);
-    }, [isAdmin]);
+    }, [isAdmin, einkaufsrechte]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
     // Track the pathname when the user explicitly clicked a tab.

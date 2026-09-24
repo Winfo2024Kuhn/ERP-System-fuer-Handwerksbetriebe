@@ -29,7 +29,11 @@ public class EinkaufBestellungService {
   Map<Long,Herkunft> selected=index(r.paket());
   Set<Long> validOrigins=offer.getAnfrageRevision().getPositionen().stream().flatMap(p->p.getHerkuenfte().stream()).map(h->h.getBedarf().getId()).collect(Collectors.toSet());
   if(!validOrigins.equals(selected.keySet())) throw bad("Das Bestellpaket muss der vollständigen geprüften Angebotsauswahl entsprechen.");
-  if(offer.getPositionen().stream().noneMatch(p->p.getAnfragePosition().getSnapshot().artikelId()!=null)) throw conflict("Mindestens eine Position hat keine eindeutige Artikelzuordnung.");
+  if (offer.getPositionen().stream().anyMatch(p -> {
+   var position = p.getAnfragePosition().getSnapshot();
+   return position == null || position.art() == null
+     || position.art() == Positionsart.ARTIKEL && position.artikelId() == null;
+  })) throw conflict("Mindestens eine Position hat keine gültige Materialzuordnung.");
   bedarfe.findeAlleFuerUpdate(selected.keySet().stream().sorted().toList());
   EinkaufBestellung order=new EinkaufBestellung(nummern.naechsteEinkaufsnummer("B",LocalDate.now()),supplierId,offer.getId(),request.getId(),offer.getAngebot().getBeteiligung().getKontakt(),r.idempotenzKey(),hash,actor);
   bestellungen.saveAndFlush(order);
@@ -60,12 +64,17 @@ public class EinkaufBestellungService {
   List<Long> ids=r.paket().stream().map(Herkunft::bedarfId).distinct().sorted().toList(); if(ids.size()!=r.paket().size())throw bad("Ein Bedarf darf nur einmal ausgewählt werden.");
   List<EinkaufBedarf> locked=bedarfe.findeAlleFuerUpdate(ids);if(locked.size()!=ids.size())throw new NoSuchElementException("Ein Einkaufsbedarf wurde nicht gefunden.");
   Map<Long,EinkaufBedarf> byId=locked.stream().collect(Collectors.toMap(EinkaufBedarf::getId,x->x));
-  for(Herkunft h:r.paket()){EinkaufBedarf b=byId.get(h.bedarfId());Direktpreis p=directPrices.get(h.bedarfId());if(b.getVersion()==null||b.getVersion()!=h.version()||b.getPosition()==null||b.getPosition().artikelId()==null)throw conflict("Bedarf oder Artikelzuordnung ist nicht mehr aktuell.");if(p==null||p.preis()==null||p.preis().signum()<=0||p.basisMenge()==null||p.basisMenge().signum()<=0||b.getPosition().basis()==null||p.einheit()!=b.getPosition().basis().einheit()||p.bestaetigungsbeleg()==null||p.bestaetigungsbeleg().isBlank()||p.bestaetigtAm()==null||p.bestaetigtAm().isAfter(LocalDate.now())||p.gueltigBis()!=null&&p.gueltigBis().isBefore(LocalDate.now()))throw conflict("Für jede Position braucht es einen belegten aktuellen Lieferantenpreis auf derselben Einheitenbasis.");if(p.preisHistorieId()!=null&&!preise.findById(p.preisHistorieId()).filter(old->old.getArtikel()!=null&&old.getArtikel().getId().equals(b.getPosition().artikelId())&&old.getLieferant()!=null&&old.getLieferant().getId().equals(r.lieferantId())&&old.isAktuell()&&old.getPreis()!=null&&old.getPreis().compareTo(p.preis())==0).isPresent())throw conflict("Der ausgewählte Preisstand passt nicht zu Artikel, Lieferant und Betrag.");}
+  if (!ids.containsAll(directPrices.keySet())) throw bad("Ein Preis gehört nicht zum ausgewählten Bedarf.");
+  for (Herkunft h : r.paket()) {
+   EinkaufBedarf b = byId.get(h.bedarfId());
+   pruefeBedarf(b, h);
+   pruefeDirektpreis(directPrices.get(h.bedarfId()), b, r.lieferantId());
+  }
   EinkaufBestellung order=new EinkaufBestellung(nummern.naechsteEinkaufsnummer("B",LocalDate.now()),r.lieferantId(),null,null,r.empfaenger(),r.idempotenzKey(),hash,actor);bestellungen.saveAndFlush(order);
   mengen.buche(r.paket().stream().map(h->new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft(h.bedarfId(),h.version(),h.menge())).toList(),EinkaufMengenService.Mengenaktion.RESERVIEREN,"BESTELLUNG:"+order.getId(),UUID.randomUUID(),actor);
   bedarfe.flush(); Map<Long,EinkaufBedarf> reservedNeeds=bedarfe.findeAlleFuerUpdate(ids).stream().collect(Collectors.toMap(EinkaufBedarf::getId,x->x));
   BestellungRevision revision=new BestellungRevision(order,1,snapshot("DIREKT", r.bedingungen(), null, null, r.liefertermin(), r.bestaetigungsfrist(), r.idempotenzKey()),hash,actor);
-  for(Herkunft h:r.paket()){EinkaufBedarf b=byId.get(h.bedarfId());Direktpreis p=directPrices.get(h.bedarfId());BigDecimal unitPrice=p.preis().divide(p.basisMenge(),6,java.math.RoundingMode.HALF_UP);List<Map<String,Object>> costs=List.of(Map.of("art","MATERIAL","preis",unitPrice,"beleg",p.bestaetigungsbeleg()));BestellungPosition line=new BestellungPosition(revision,b.getPosition(),h.menge(),unitPrice,"EUR",costs,map(b.getLiefergruppe()));long reservedVersion=reservedNeeds.get(h.bedarfId()).getVersion();line.addHerkunft(new BestellungHerkunft(line,h.bedarfId(),reservedVersion,h.menge(),h.version(),reservedVersion));revision.addPosition(line);}
+  for(Herkunft h:r.paket()){EinkaufBedarf b=byId.get(h.bedarfId());Direktpreis p=directPrices.get(h.bedarfId());BigDecimal unitPrice=einzelpreis(p);List<Map<String,Object>> costs=preiskosten(p,unitPrice);BestellungPosition line=new BestellungPosition(revision,EinkaufPositionService.teilmengeSnapshot(b.getPosition(),h.menge()),h.menge(),unitPrice,"EUR",costs,map(b.getLiefergruppe()));long reservedVersion=reservedNeeds.get(h.bedarfId()).getVersion();line.addHerkunft(new BestellungHerkunft(line,h.bedarfId(),reservedVersion,h.menge(),h.version(),reservedVersion));revision.addPosition(line);}
   order.addRevision(revision);bestellungen.saveAndFlush(order);audit.protokolliere("BESTELLUNG",order.getId(),"DIREKT_ENTWURF",actor,null,json.valueToTree(detail(order)),r.bedingungen());return detail(order);
  }
  @Transactional(readOnly=true) public Page<Detail> suche(Pageable pageable){if(pageable==null)throw bad("Seiteneinstellungen fehlen.");return bestellungen.suche(pageable).map(this::detail);}
@@ -103,11 +112,58 @@ public class EinkaufBestellungService {
   Map<Long,BigDecimal> old=new HashMap<>();mengen.standFuerVorgang("BESTELLUNG:"+id).forEach((need,stand)->old.put(need,stand.bestellt()));
   Map<Long,Herkunft> requested=index(r.inhalt().paket());Map<Long,Direktpreis> prices=r.inhalt().preise().stream().collect(Collectors.toMap(Direktpreis::bedarfId,x->x,(a,b)->{throw bad("Ein Bedarf hat mehrere Preisstände.");}));
   List<Long> ids=requested.keySet().stream().sorted().toList();List<EinkaufBedarf> locked=bedarfe.findeAlleFuerUpdate(ids);if(locked.size()!=ids.size())throw new NoSuchElementException("Ein Bedarf fehlt.");Map<Long,EinkaufBedarf> byId=locked.stream().collect(Collectors.toMap(EinkaufBedarf::getId,x->x));Map<Long,BigDecimal> unitPrices=new HashMap<>();
-  List<org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft> additions=new ArrayList<>();for(Herkunft h:requested.values()){EinkaufBedarf b=byId.get(h.bedarfId());if(b.getVersion()==null||b.getVersion()!=h.version()||b.getPosition()==null||b.getPosition().artikelId()==null||b.getPosition().basis()==null)throw conflict("Ein Bedarf oder seine Artikelzuordnung ist veraltet.");Direktpreis price=prices.get(h.bedarfId());if(price==null||price.preis()==null||price.preis().signum()<=0||price.basisMenge()==null||price.basisMenge().signum()<=0||price.einheit()!=b.getPosition().basis().einheit()||price.bestaetigtAm()==null||price.bestaetigtAm().isAfter(LocalDate.now())||price.gueltigBis()!=null&&price.gueltigBis().isBefore(LocalDate.now())||price.bestaetigungsbeleg()==null||price.bestaetigungsbeleg().isBlank())throw conflict("Jede geänderte Position braucht einen aktuellen, belegten Preis auf derselben Einheitenbasis.");if(price.preisHistorieId()!=null&&!preise.findById(price.preisHistorieId()).filter(p->p.getArtikel()!=null&&Objects.equals(p.getArtikel().getId(),b.getPosition().artikelId())&&p.getLieferant()!=null&&Objects.equals(p.getLieferant().getId(),order.getLieferantId())&&p.isAktuell()&&p.getPreis()!=null&&p.getPreis().compareTo(price.preis())==0).isPresent())throw conflict("Der ausgewählte Preisstand passt nicht zu Artikel, Lieferant und Betrag.");unitPrices.put(h.bedarfId(),price.preis().divide(price.basisMenge(),6,java.math.RoundingMode.HALF_UP));BigDecimal delta=h.menge().subtract(old.getOrDefault(h.bedarfId(),BigDecimal.ZERO));if(delta.signum()>0)additions.add(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft(h.bedarfId(),h.version(),delta));}
+  if (!ids.containsAll(prices.keySet())) throw bad("Ein Preis gehört nicht zum ausgewählten Bedarf.");
+  List<org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft> additions = new ArrayList<>();
+  for (Herkunft h : requested.values()) {
+   EinkaufBedarf b = byId.get(h.bedarfId());
+   pruefeBedarf(b, h);
+   Direktpreis price = prices.get(h.bedarfId());
+   pruefeDirektpreis(price, b, order.getLieferantId());
+   unitPrices.put(h.bedarfId(), einzelpreis(price));
+   BigDecimal delta = h.menge().subtract(old.getOrDefault(h.bedarfId(), BigDecimal.ZERO));
+   if (delta.signum() > 0) additions.add(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Herkunft(h.bedarfId(), h.version(), delta));
+  }
   if(!additions.isEmpty()){mengen.buche(additions,EinkaufMengenService.Mengenaktion.RESERVIEREN,"BESTELLUNG:"+id,r.inhalt().idempotenzKey(),actor);bedarfe.flush();locked=bedarfe.findeAlleFuerUpdate(ids);byId=locked.stream().collect(Collectors.toMap(EinkaufBedarf::getId,x->x));}
   BestellungRevision next=new BestellungRevision(order,previous.getNummer()+1,snapshot("AENDERUNG", r.inhalt().bedingungen(), null, null, r.inhalt().liefertermin(), r.inhalt().bestaetigungsfrist(), r.inhalt().idempotenzKey()),hash,actor);
-  for(Herkunft h:r.inhalt().paket()){EinkaufBedarf b=byId.get(h.bedarfId());Direktpreis p=prices.get(h.bedarfId());BigDecimal unitPrice=unitPrices.get(h.bedarfId());BestellungPosition line=new BestellungPosition(next,b.getPosition(),h.menge(),unitPrice,"EUR",List.of(Map.of("art","MATERIAL","preis",unitPrice,"beleg",p.bestaetigungsbeleg())),map(b.getLiefergruppe()));long currentVersion=b.getVersion();line.addHerkunft(new BestellungHerkunft(line,h.bedarfId(),currentVersion,h.menge(),h.version(),currentVersion));next.addPosition(line);}
+  for(Herkunft h:r.inhalt().paket()){EinkaufBedarf b=byId.get(h.bedarfId());Direktpreis p=prices.get(h.bedarfId());BigDecimal unitPrice=unitPrices.get(h.bedarfId());BestellungPosition line=new BestellungPosition(next,EinkaufPositionService.teilmengeSnapshot(b.getPosition(),h.menge()),h.menge(),unitPrice,"EUR",preiskosten(p,unitPrice),map(b.getLiefergruppe()));long currentVersion=b.getVersion();line.addHerkunft(new BestellungHerkunft(line,h.bedarfId(),currentVersion,h.menge(),h.version(),currentVersion));next.addPosition(line);}
   order.addRevision(next);bestellungen.saveAndFlush(order);audit.protokolliere("BESTELLUNG",id,"REVISION_ERSTELLT",actor,json.valueToTree(detail(order)),json.valueToTree(detail(order)),r.grund());return detail(order);
+ }
+
+ private void pruefeBedarf(EinkaufBedarf b, Herkunft h) {
+  if (b.getVersion() == null || b.getVersion() != h.version() || b.getPosition() == null
+      || b.getPosition().basis() == null || b.getPosition().basis().einheit() == null
+      || b.isNachpflegeErforderlich()
+      || b.getPosition().art() == Positionsart.ARTIKEL && b.getPosition().artikelId() == null)
+   throw conflict("Der Bedarf ist unvollständig oder wurde inzwischen geändert.");
+  EinkaufPositionService.teilmengeSnapshot(b.getPosition(), h.menge());
+ }
+
+ private void pruefeDirektpreis(Direktpreis p, EinkaufBedarf b, Long lieferantId) {
+  if (p == null) return; // Missing price is explicitly unknown, never zero.
+  if (p.preis() == null || p.preis().signum() <= 0 || p.preis().scale() > 6
+      || p.preis().compareTo(new BigDecimal("9999999999999.999999")) > 0
+      || p.basisMenge() == null || p.basisMenge().signum() <= 0 || p.basisMenge().scale() > 6
+      || p.einheit() != b.getPosition().basis().einheit()
+      || p.bestaetigungsbeleg() == null || p.bestaetigungsbeleg().isBlank() || p.bestaetigungsbeleg().length() > 1000
+      || p.bestaetigtAm() == null || p.bestaetigtAm().isAfter(LocalDate.now())
+      || p.gueltigBis() != null && p.gueltigBis().isBefore(LocalDate.now()))
+   throw conflict("Ein eingetragener Preis braucht einen aktuellen Beleg und dieselbe Einheitenbasis.");
+  if (p.preisHistorieId() != null && !preise.findById(p.preisHistorieId()).filter(old ->
+      old.getArtikel() != null && Objects.equals(old.getArtikel().getId(), b.getPosition().artikelId())
+      && old.getLieferant() != null && Objects.equals(old.getLieferant().getId(), lieferantId)
+      && old.isAktuell() && old.getPreis() != null && old.getPreis().compareTo(p.preis()) == 0).isPresent())
+   throw conflict("Der ausgewählte Preisstand passt nicht zu Artikel, Lieferant und Betrag.");
+  BigDecimal unit = einzelpreis(p);
+  if (unit.signum() <= 0 || unit.compareTo(new BigDecimal("9999999999999.999999")) > 0)
+   throw conflict("Der Einzelpreis liegt außerhalb des gültigen Bereichs.");
+ }
+
+ private BigDecimal einzelpreis(Direktpreis p) {
+  return p == null ? null : p.preis().divide(p.basisMenge(), 6, java.math.RoundingMode.HALF_UP);
+ }
+
+ private List<Map<String,Object>> preiskosten(Direktpreis p, BigDecimal unitPrice) {
+  return p == null ? List.of() : List.of(Map.of("art", "MATERIAL", "preis", unitPrice, "beleg", p.bestaetigungsbeleg()));
  }
 
  private Detail existing(UUID key,String hash){EinkaufBestellung e=bestellungen.findByIdempotenzKey(key).orElse(null);if(e==null)return null;if(!e.getPayloadHash().equals(hash))throw conflict("Der Idempotenzschlüssel gehört zu einem anderen Bestellinhalt.");return detail(e);}

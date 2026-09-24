@@ -8,6 +8,10 @@ const anlagen: EinkaufAnlage[] = [{ id: 41, dateiId: 4, bedarfId: 1, revision: '
 const init: PositionDraft = { art: 'ZEICHNUNGSTEIL', artikelId: null, interneReferenz: 'ZT-1', zeichnungsnummer: 'W1', zeichnungsrevision: 'A', bezeichnung: 'Träger', werkstoff: 'S235JR', abmessung: 'IPE 120', menge: '0', einheit: 'METER', stueckzahl: '0', einzelLaengeMm: '0', kgJeMeter: '', faktorQuelle: '', schnittForm: 'GERADE', winkelLinks: '', winkelRechts: '', bearbeitung: '', oberflaeche: '', dokumente: [{ art: 'ZEUGNIS_3_1', grundlage: 'EN 10204', grundlageVersion: '2025', fachlichBestaetigt: true }], anlageVersionIds: [41] };
 
 describe('PositionsEditor', () => {
+  it('zeigt freie Materialien ohne falsche Artikelzuordnung', () => {
+    render(<PositionsEditor value={{ ...init, art: 'FREITEXT', artikelId: null }} onChange={vi.fn()} />);
+    expect(screen.getByRole('combobox', { name: 'Positionsart' })).toHaveTextContent('Freies Material');
+  });
   it('macht den Zeichnungsteil aus einer Artikelposition erreichbar', () => {
     const onChange = vi.fn();
     render(<PositionsEditor value={{ ...init, art: 'ARTIKEL', artikelId: 8 }} onChange={onChange} />);

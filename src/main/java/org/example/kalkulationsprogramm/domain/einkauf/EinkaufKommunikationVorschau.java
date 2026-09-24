@@ -13,6 +13,7 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "einkauf_kommunikation_vorschau")
 public class EinkaufKommunikationVorschau {
     @Id
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "freigabe_token", length = 64, updatable = false)
     private String freigabeToken;
     @Column(name = "anfrage_id", nullable = false, updatable = false) private Long anfrageId;
@@ -27,8 +28,8 @@ public class EinkaufKommunikationVorschau {
     @Column(name = "anlage_version_ids", nullable = false, columnDefinition = "json", updatable = false)
     private List<Long> anlageVersionIds;
     @Column(name = "pdf_datei_id", nullable = false, updatable = false) private Long pdfDateiId;
-    @Column(name = "pdf_sha256", nullable = false, length = 64, updatable = false) private String pdfSha256;
-    @Column(name = "inhalt_sha256", nullable = false, length = 64, updatable = false) private String inhaltSha256;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "pdf_sha256", nullable = false, length = 64, updatable = false) private String pdfSha256;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "inhalt_sha256", nullable = false, length = 64, updatable = false) private String inhaltSha256;
     @Column(name = "erstellt_am", nullable = false, updatable = false) private Instant erstelltAm;
     @Column(name = "gueltig_bis", nullable = false, updatable = false) private Instant gueltigBis;
 

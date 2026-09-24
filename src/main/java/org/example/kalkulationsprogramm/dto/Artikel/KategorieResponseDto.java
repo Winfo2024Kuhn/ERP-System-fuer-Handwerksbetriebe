@@ -10,6 +10,7 @@ import java.util.Set;
 @Setter
 public class KategorieResponseDto {
     private Integer id;
+    private Integer parentId;
     private String bezeichnung;
     private boolean leaf;
 

@@ -66,6 +66,17 @@ public class EinkaufBedarfService {
     }
 
     @Transactional(readOnly = true)
+    public Page<EinkaufBedarfDto.Response> suche(String q, Long projektId, boolean ohneProjekt, Pageable p) {
+        if (!ohneProjekt) return suche(q, projektId, p);
+        if (projektId != null) throw new IllegalArgumentException("Projekt und ohne Projekt können nicht gleichzeitig gewählt werden.");
+        if (q != null && q.length() > 255) throw new IllegalArgumentException("Die Suche ist zu lang.");
+        if (p == null) throw new IllegalArgumentException("Die Seiteneinstellungen fehlen.");
+        var page = bedarfRepository.sucheOhneProjekt(blankToNull(q), p);
+        var angefragt = angefragtFuer(page.getContent());
+        return page.map(b -> toResponse(b, angefragt.get(b.getId())));
+    }
+
+    @Transactional(readOnly = true)
     public EinkaufBedarfDto.Response laden(Long id) {
         if (id == null || id <= 0) throw new IllegalArgumentException("Die Bedarfs-ID ist ungültig.");
         var bedarf = bedarfRepository.findById(id).orElseThrow(() -> new NotFoundException("Der Einkaufsbedarf wurde nicht gefunden."));
@@ -235,7 +246,7 @@ public class EinkaufBedarfService {
                 disponiert ? bisher.winkelLinks() : quelle.winkelLinks(),
                 disponiert ? bisher.winkelRechts() : quelle.winkelRechts(),
                 disponiert ? bisher.bearbeitung() : quelle.bearbeitung(), bisher.oberflaeche(),
-                bisher.dokumente(), bisher.anlageVersionIds());
+                bisher.dokumente(), bisher.anlageVersionIds(), bisher.beschaffungsdetails());
     }
 
     private static boolean identitaetGeaendert(PositionSnapshot bisher, PositionSnapshot quelle) {
@@ -271,7 +282,8 @@ public class EinkaufBedarfService {
                 && Objects.equals(links.bearbeitung(), rechts.bearbeitung())
                 && Objects.equals(links.oberflaeche(), rechts.oberflaeche())
                 && Objects.equals(links.dokumente(), rechts.dokumente())
-                && Objects.equals(links.anlageVersionIds(), rechts.anlageVersionIds());
+                && Objects.equals(links.anlageVersionIds(), rechts.anlageVersionIds())
+                && Objects.equals(links.beschaffungsdetails(), rechts.beschaffungsdetails());
     }
 
     private static boolean gleicheZahl(BigDecimal links, BigDecimal rechts) {
@@ -316,7 +328,8 @@ public class EinkaufBedarfService {
         if (actor == null || actor <= 0) throw new IllegalArgumentException("Der handelnde Benutzer fehlt.");
     }
     private static boolean brauchtNachpflege(PositionSnapshot position) {
-        return position == null || position.interneReferenz() == null || position.interneReferenz().isBlank()
+        return position == null || (position.art() != Positionsart.FREITEXT
+                && (position.interneReferenz() == null || position.interneReferenz().isBlank()))
                 || position.bezeichnung() == null || position.bezeichnung().isBlank()
                 || position.basis() == null || position.basis().menge() == null || position.basis().einheit() == null;
     }

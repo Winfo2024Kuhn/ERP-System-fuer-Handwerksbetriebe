@@ -1,5 +1,5 @@
 /** DTOs mirror the public records in dto/Einkauf; Java BigDecimal/Long values arrive as JSON numbers. */
-export type Positionsart = 'ARTIKEL' | 'ZEICHNUNGSTEIL';
+export type Positionsart = 'ARTIKEL' | 'ZEICHNUNGSTEIL' | 'FREITEXT';
 export type Einheit = 'STUECK' | 'METER' | 'KILOGRAMM' | 'TONNE' | 'QUADRATMETER';
 export type Dokumentart = 'ZEUGNIS_2_1' | 'ZEUGNIS_2_2' | 'ZEUGNIS_3_1' | 'ZEUGNIS_3_2' | 'LEISTUNGSERKLAERUNG' | 'CE_NACHWEIS';
 export type Zahl = number;
@@ -7,11 +7,14 @@ export type Id = number;
 
 export interface Mengenbasis { menge: Zahl | null; einheit: Einheit | null; stueckzahl: Zahl | null; einzelLaengeMm: Zahl | null; kgJeMeter: Zahl | null; faktorQuelle: string | null }
 export interface DokumentSoll { art: Dokumentart; grundlage: string | null; grundlageVersion: string | null; fachlichBestaetigt: boolean }
+/** Lieferant und Werkstattangaben einer Position; das Backend übernimmt sie beim Speichern unverändert. */
+export interface Beschaffungsdetails { lieferantId: Id | null; kategorieId: Id | null; schnittbildId: Id | null; schnittAchseId: Id | null; externeArtikelnummer: string | null }
 export interface PositionSnapshot {
   art: Positionsart; artikelId: Id | null; interneReferenz: string | null; zeichnungsnummer: string | null;
   zeichnungsrevision: string | null; bezeichnung: string | null; werkstoff: string | null; abmessung: string | null;
   basis: Mengenbasis | null; schnittForm: string | null; winkelLinks: string | null; winkelRechts: string | null;
   bearbeitung: string | null; oberflaeche: string | null; dokumente: DokumentSoll[]; anlageVersionIds: Id[];
+  beschaffungsdetails?: Beschaffungsdetails | null;
 }
 export interface Herkunft { bedarfId: Id | null; version: number; menge: Zahl | null }
 export interface Liefergruppe { lieferadresse: string | null; bedarfstermin: string | null; projektId: Id | null; lagerzweck: string | null }

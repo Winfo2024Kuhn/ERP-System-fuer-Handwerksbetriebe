@@ -1,985 +1,152 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { PdfCanvasViewer } from "../components/ui/PdfCanvasViewer";
-import {
-    ChevronDown,
-    ChevronRight,
-    Download,
-    ExternalLink,
-    Eye,
-    File,
-    Loader2,
-    Mail,
-    Package,
-    Paperclip,
-    RefreshCw,
-    Send,
-    Trash2,
-    Upload,
-    X,
-} from "lucide-react";
-import { Button } from "../components/ui/button";
-import { AiButton } from "../components/ui/ai-button";
-import { Card } from "../components/ui/card";
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ClipboardList, FileWarning, RefreshCw, Search } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { PageLayout } from '../components/layout/PageLayout';
-import { Select } from '../components/ui/select-custom';
-import { cn } from "../lib/utils";
-import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
-import { useConfirm } from '../components/ui/confirm-dialog';
+import { einkaufApi, EinkaufApiError } from '../features/einkauf/api';
+import type { BedarfResponse, Page } from '../features/einkauf/types';
+import { einheitenAnzeige } from '../features/einkauf/einheiten';
+import { BedarfDialog } from '../features/einkauf/components/BedarfDialog';
+import { EinkaufNavigation } from '../features/einkauf/components/EinkaufNavigation';
+import { HiCadImportDialog } from '../features/einkauf/components/HiCadImportDialog';
+import { LagerentnahmeDialog } from '../features/einkauf/components/LagerentnahmeDialog';
+import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
+import { KonfliktAbgleichDialog } from '../features/einkauf/components/KonfliktAbgleichDialog';
+import type { EntwurfKonflikt } from '../features/einkauf/components/KonfliktAbgleichDialog';
 
-// Statische Icon-Pfade
-const BASE_URL = '/react-textbausteine/';
-const ICON_PDF = `${BASE_URL}pdf_icon.jpg`;
-const ICON_EXCEL = `${BASE_URL}excel_image.jpg`;
-const ICON_TENADO = `${BASE_URL}tenado_logo.jpg`;
-const ICON_HICAD = `${BASE_URL}hicad_logo.png`;
-
-// Dateinamens-Hilfsfunktionen
-const getFileExtension = (filename: string): string => {
-    return filename.split('.').pop()?.toLowerCase() || '';
+const formatiere = (wert: number | null | undefined) => (wert ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 3 });
+const leseMenge = (wert: string) => {
+  const normalisiert = wert.trim().replace(/\s/g, '').replace(',', '.');
+  if (!/^(?:\d+)(?:\.\d{1,6})?$/.test(normalisiert)) return null;
+  const ergebnis = Number(normalisiert);
+  return Number.isFinite(ergebnis) && ergebnis > 0 ? ergebnis : null;
 };
 
-const isImageFile = (filename: string): boolean => {
-    const ext = getFileExtension(filename);
-    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
-};
-
-const isPdfFile = (filename: string): boolean => {
-    return getFileExtension(filename) === 'pdf';
-};
-
-const getFileIconUrl = (filename: string): string | null => {
-    const ext = getFileExtension(filename);
-    if (ext === 'pdf') return ICON_PDF;
-    if (['xlsx', 'xls', 'xlsm', 'xlsb'].includes(ext)) return ICON_EXCEL;
-    if (ext === 'tcd') return ICON_TENADO;
-    if (ext === 'sza') return ICON_HICAD;
-    return null;
-};
-
-// Interface für hochgeladene Dateien
-interface UploadedFile {
-    file: File;
-    previewUrl?: string;
-}
-
-// Frontend-Profil aus localStorage
-const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
-
-interface FrontendUserSelection {
-    id: number;
-    displayName: string;
-}
-
-const getCurrentFrontendUser = (): FrontendUserSelection | null => {
-    try {
-        const raw = localStorage.getItem(FRONTEND_USER_STORAGE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.id === 'number') {
-            return parsed as FrontendUserSelection;
-        }
-    } catch (err) {
-        console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
-    }
-    return null;
-};
-
-// Signatur-Wrapper
-const wrapSignatureHtml = (rawHtml: string): string => {
-    const trimmed = (rawHtml || '').trim();
-    if (!trimmed) return '';
-    if (/email-signature/i.test(trimmed)) {
-        return trimmed;
-    }
-    return `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${trimmed}</div>`;
-};
-
-// HTML für E-Mail-Versand vorbereiten
-const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = rawHtml || '';
-    wrapper.querySelectorAll('script, style').forEach(n => n.remove());
-    wrapper.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
-    return wrapper.innerHTML.trim();
-};
-
-// ==================== TYPES ====================
-interface Bestellung {
-    id: number;
-    artikelId: number;
-    externeArtikelnummer?: string;
-    produktname?: string;
-    produkttext?: string;
-    werkstoffName?: string;
-    kategorieName?: string;
-    rootKategorieId?: number;
-    rootKategorieName?: string;
-    stueckzahl: number;
-    menge?: number;
-    einheit?: string;
-    projektId?: number;
-    projektName?: string;
-    projektNummer?: string;
-    kundenName?: string;
-    lieferantName?: string;
-    lieferantId?: number;
-    bestellt: boolean;
-    bestelltAm?: string;
-    kommentar?: string;
-    kilogramm?: number;
-    gesamtKilogramm?: number;
-    schnittForm?: string;
-    anschnittWinkelLinks?: string;
-    anschnittWinkelRechts?: string;
-}
-
-interface LieferantGruppe {
-    lieferantId: number | null;
-    lieferantName: string;
-    items: Bestellung[];
-}
-
-// ==================== ATTACHMENT PREVIEW MODAL ====================
-interface AttachmentPreviewModalProps {
-    file: UploadedFile | null;
-    onClose: () => void;
-}
-
-const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({ file, onClose }) => {
-    if (!file) return null;
-
-    const filename = file.file.name;
-    const isImage = isImageFile(filename);
-    const isPdf = isPdfFile(filename);
-    const iconUrl = getFileIconUrl(filename);
-
-    return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-                    <h3 className="font-semibold text-slate-900 truncate">{filename}</h3>
-                    <Button variant="ghost" size="sm" onClick={onClose}>
-                        <X className="w-5 h-5" />
-                    </Button>
-                </div>
-                <div className="flex-1 overflow-auto p-6 flex items-center justify-center bg-slate-100">
-                    {isImage && file.previewUrl && (
-                        <img src={file.previewUrl} alt={filename} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
-                    )}
-                    {isPdf && file.previewUrl && (
-                        <PdfCanvasViewer url={file.previewUrl} className="w-full h-[70vh] rounded-lg overflow-y-auto overflow-x-hidden" />
-                    )}
-                    {!isImage && !isPdf && (
-                        <div className="text-center">
-                            {iconUrl ? (
-                                <img src={iconUrl} alt="Icon" className="w-24 h-24 mx-auto mb-4 object-contain" />
-                            ) : (
-                                <File className="w-24 h-24 mx-auto mb-4 text-slate-400" />
-                            )}
-                            <p className="text-slate-600">Vorschau nicht verfügbar</p>
-                            <p className="text-sm text-slate-400 mt-2">{filename}</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// ==================== EMAIL MODAL ====================
-interface BestellungEmailModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    lieferantId: number;
-    lieferantName: string;
-    onSuccess: () => void;
-}
-
-const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
-    isOpen,
-    onClose,
-    lieferantId,
-    lieferantName,
-    onSuccess,
-}) => {
-    const toast = useToast();
-    const confirmDialog = useConfirm();
-    const editorRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const [lieferantenEmails, setLieferantenEmails] = useState<string[]>([]);
-    const [recipient, setRecipient] = useState('');
-    const [customRecipient, setCustomRecipient] = useState('');
-    const [showCustomRecipient, setShowCustomRecipient] = useState(false);
-    const [cc, setCc] = useState('');
-    const [ccManual, setCcManual] = useState('');
-    const [fromAddress, setFromAddress] = useState('');
-    const [fromAddresses, setFromAddresses] = useState<string[]>([]);
-    const [subject, setSubject] = useState('');
-    const [body, setBody] = useState('');
-    const [signature, setSignature] = useState('');
-    const [sending, setSending] = useState(false);
-    const [beautifying, setBeautifying] = useState(false);
-    const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-    const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
-
-    const pdfPreviewUrl = `/api/bestellungen/lieferant/${lieferantId}/pdf`;
-
-    // Signatur laden
-    const loadSignature = useCallback(async () => {
-        const user = getCurrentFrontendUser();
-        if (!user) return '';
-        try {
-            const res = await fetch(`/api/email/signatures/default?frontendUserId=${user.id}`);
-            if (!res.ok) return '';
-            const data = await res.json();
-            const rawHtml = data?.html || '';
-            return wrapSignatureHtml(rawHtml);
-        } catch {
-            return '';
-        }
-    }, []);
-
-    // Modal initialisieren
-    useEffect(() => {
-        if (!isOpen) return;
-
-        // Reset
-        setSubject(`Bestellanfrage: ${lieferantName}`);
-        setSending(false);
-        setBeautifying(false);
-        setUploadedFiles([]);
-        setPreviewFile(null);
-        setShowCustomRecipient(false);
-        setCustomRecipient('');
-        setCc('');
-        setCcManual('');
-        setLieferantenEmails([]);
-        setRecipient('');
-
-        // Lieferanten-spezifische E-Mails laden
-        fetch(`/api/lieferanten/${lieferantId}`)
-            .then(async res => {
-                if (!res.ok) {
-                    throw new Error('Lieferant konnte nicht geladen werden');
-                }
-                return res.json();
-            })
-            .then(data => {
-                const emails = Array.isArray(data?.kundenEmails)
-                    ? data.kundenEmails.filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
-                    : [];
-                setLieferantenEmails(emails);
-                if (emails.length > 0) {
-                    setRecipient(emails[0]);
-                    setShowCustomRecipient(false);
-                } else {
-                    setShowCustomRecipient(true);
-                }
-            })
-            .catch((error) => {
-                console.error(error);
-                setShowCustomRecipient(true);
-            });
-
-        // Absender-Adressen laden – User-Adresse steht durch frontendUserId
-        // an erster Stelle und wird damit als Default uebernommen.
-        const userForAddresses = getCurrentFrontendUser();
-        const addressesUrl = userForAddresses?.id
-            ? `/api/email/from-addresses?frontendUserId=${userForAddresses.id}`
-            : '/api/email/from-addresses';
-        fetch(addressesUrl)
-            .then(res => res.json())
-            .then(data => {
-                const addresses = Array.isArray(data) ? data : [];
-                setFromAddresses(addresses);
-                if (addresses.length > 0) setFromAddress(addresses[0]);
-            })
-            .catch(console.error);
-
-        // Signatur laden und Body initialisieren
-        loadSignature().then(sig => {
-            setSignature(sig);
-            const initialBody = `<p>Sehr geehrte Damen und Herren,</p><p><br></p><p>bitte erstellen Sie uns ein Angebot für die angehängten Positionen.</p><p><br></p>${sig}`;
-            setBody(initialBody);
-        });
-    }, [isOpen, lieferantId, lieferantName, loadSignature]);
-
-    // AI Verschönerung
-    const handleBeautify = async () => {
-        if (!editorRef.current) return;
-        const currentContent = editorRef.current.innerHTML;
-
-        // Extrahiere nur den Text vor der Signatur
-        const sigIndex = currentContent.indexOf('email-signature');
-        const textToBeautify = sigIndex > -1
-            ? currentContent.substring(0, currentContent.lastIndexOf('<div', sigIndex))
-            : currentContent;
-
-        setBeautifying(true);
-        try {
-            const res = await fetch('/api/email/beautify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: textToBeautify }),
-            });
-            if (!res.ok) throw new Error('Beautify failed');
-            const data = await res.json();
-            const beautified = data.suggestion || data.beautifiedText || '';
-            if (beautified) {
-                const newBody = `${beautified}${signature}`;
-                setBody(newBody);
-            }
-        } catch (err) {
-            console.error('Beautify error:', err);
-            toast.error('Formulierung fehlgeschlagen. Bitte erneut versuchen.');
-        } finally {
-            setBeautifying(false);
-        }
-    };
-
-    // Datei-Upload Handler
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files) return;
-
-        const newFiles: UploadedFile[] = [];
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const previewUrl = (isImageFile(file.name) || isPdfFile(file.name))
-                ? URL.createObjectURL(file)
-                : undefined;
-            newFiles.push({ file, previewUrl });
-        }
-        setUploadedFiles(prev => [...prev, ...newFiles]);
-        e.target.value = '';
-    };
-
-    // Datei entfernen
-    const removeFile = (index: number) => {
-        setUploadedFiles(prev => {
-            const updated = [...prev];
-            if (updated[index].previewUrl) {
-                URL.revokeObjectURL(updated[index].previewUrl!);
-            }
-            updated.splice(index, 1);
-            return updated;
-        });
-    };
-
-    // Senden
-    const handleSend = async () => {
-        const finalRecipient = (showCustomRecipient ? customRecipient : recipient).trim();
-        if (!finalRecipient) {
-            toast.warning('Bitte Empfänger auswählen oder eingeben');
-            return;
-        }
-        if (!subject.trim()) {
-            toast.warning('Bitte Betreff eingeben');
-            return;
-        }
-
-        setSending(true);
-
-        try {
-            const user = getCurrentFrontendUser();
-            const formData = new FormData();
-
-            const dtoPayload = {
-                // Leerer sender = Backend loest aus frontendUserId auf.
-                sender: fromAddress || null,
-                recipients: [finalRecipient],
-                cc: (cc === 'manual' ? ccManual : cc)
-                    .split(',')
-                    .map(value => value.trim())
-                    .filter(Boolean),
-                subject: subject.trim(),
-                body: prepareHtmlForSending(editorRef.current?.innerHTML || body),
-                direction: 'OUT',
-                benutzer: user?.displayName || '',
-                frontendUserId: user?.id || null,
-                lieferantId,
-            };
-
-            formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
-
-            const bestellungPdfRes = await fetch(pdfPreviewUrl);
-            if (!bestellungPdfRes.ok) {
-                throw new Error('Bestell-PDF konnte nicht geladen werden');
-            }
-            const bestellungPdfBlob = await bestellungPdfRes.blob();
-            const safeLieferantName = (lieferantName || 'lieferant').replace(/[^a-zA-Z0-9äöüÄÖÜß]+/g, '_');
-            formData.append('attachments', bestellungPdfBlob, `Bestellung_${safeLieferantName}.pdf`);
-
-            // Zusätzliche Anhänge
-            uploadedFiles.forEach(uf => {
-                formData.append('attachments', uf.file);
-            });
-
-            const res = await fetch('/api/emails/send', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!res.ok) throw new Error('Senden fehlgeschlagen');
-
-            const isNewEmail = !lieferantenEmails.some(
-                email => email.toLowerCase() === finalRecipient.toLowerCase()
-            );
-
-            if (isNewEmail) {
-                const shouldSave = await confirmDialog({
-                    title: 'E-Mail-Adresse speichern?',
-                    message: `Soll die Adresse ${finalRecipient} beim Lieferanten ${lieferantName} gespeichert werden?`,
-                    confirmLabel: 'Speichern',
-                    cancelLabel: 'Nicht speichern',
-                    variant: 'info',
-                });
-
-                if (shouldSave) {
-                    const saveRes = await fetch(`/api/lieferanten/${lieferantId}/emails`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email: finalRecipient }),
-                    });
-
-                    if (saveRes.ok) {
-                        toast.success('E-Mail versendet und Adresse gespeichert');
-                    } else {
-                        toast.warning('E-Mail versendet, Adresse konnte nicht gespeichert werden');
-                    }
-                } else {
-                    toast.success('E-Mail versendet');
-                }
-            } else {
-                toast.success('E-Mail versendet');
-            }
-
-            onSuccess();
-            onClose();
-        } catch (err) {
-            console.error('Send error:', err);
-            toast.error('Fehler beim Senden');
-        } finally {
-            setSending(false);
-        }
-    };
-
-    // Cleanup
-    useEffect(() => {
-        return () => {
-            uploadedFiles.forEach(uf => {
-                if (uf.previewUrl) URL.revokeObjectURL(uf.previewUrl);
-            });
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    if (!isOpen) return null;
-
-    return (
-        <>
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-rose-50 shrink-0">
-                        <div className="flex items-center gap-3">
-                            <Mail className="w-5 h-5 text-rose-600" />
-                            <h2 className="text-lg font-semibold text-slate-900">
-                                Bestellung an {lieferantName} senden
-                            </h2>
-                        </div>
-                        <div className="flex items-center gap-2">
-                             <Button variant="ghost" onClick={onClose} disabled={sending}>
-                                 Abbrechen
-                             </Button>
-                             <Button
-                                 onClick={handleSend}
-                                 disabled={sending || (!recipient && !customRecipient)}
-                                 className="bg-rose-600 text-white hover:bg-rose-700"
-                             >
-                                 {sending ? (
-                                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                 ) : (
-                                     <Send className="w-4 h-4 mr-2" />
-                                 )}
-                                 {sending ? 'Senden...' : 'E-Mail senden'}
-                             </Button>
-                            <Button variant="ghost" size="sm" onClick={onClose}>
-                                <X className="w-5 h-5" />
-                            </Button>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 overflow-auto p-6 space-y-4">
-                        {/* Bestellungs-PDF automatisch angehängt */}
-                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg">
-                            <p className="text-sm text-rose-700 font-medium mb-2">
-                                <Paperclip className="w-4 h-4 inline-block mr-1" />
-                                Automatisch angehängt: Bestellungs-PDF
-                            </p>
-                            <a
-                                href={pdfPreviewUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 text-rose-600 hover:underline text-sm"
-                            >
-                                <Eye className="w-4 h-4" />
-                                PDF-Vorschau öffnen
-                                <ExternalLink className="w-3 h-3" />
-                            </a>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Empfänger */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Empfänger *</label>
-                                {!showCustomRecipient ? (
-                                    <div className="space-y-2">
-                                        <Select
-                                            value={recipient}
-                                            onChange={(value) => {
-                                                if (value === '__custom__') {
-                                                    setShowCustomRecipient(true);
-                                                } else {
-                                                    setRecipient(value);
-                                                }
-                                            }}
-                                            options={[
-                                                ...lieferantenEmails.map(email => ({ value: email, label: email })),
-                                                { value: '__custom__', label: 'Andere E-Mail eingeben...' }
-                                            ]}
-                                            placeholder="Empfänger wählen"
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="flex gap-2">
-                                        <Input
-                                            value={customRecipient}
-                                            onChange={e => setCustomRecipient(e.target.value)}
-                                            placeholder="E-Mail-Adresse eingeben"
-                                            className="flex-1"
-                                        />
-                                        <Button variant="outline" size="sm" onClick={() => setShowCustomRecipient(false)}>
-                                            Zurück
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* CC */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">CC</label>
-                                <Select
-                                    value={cc}
-                                    onChange={(value) => setCc(value)}
-                                    options={[
-                                        { value: '', label: 'Keine' },
-                                        ...lieferantenEmails.map(email => ({ value: email, label: email })),
-                                        { value: 'manual', label: 'Manuell eingeben' }
-                                    ]}
-                                    placeholder="CC wählen"
-                                />
-                                {cc === 'manual' && (
-                                    <Input
-                                        value={ccManual}
-                                        onChange={e => setCcManual(e.target.value)}
-                                        placeholder="CC E-Mail-Adresse"
-                                        className="mt-2"
-                                    />
-                                )}
-                            </div>
-
-                            {/* Von */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Von</label>
-                                <Select
-                                    value={fromAddress}
-                                    onChange={(value) => setFromAddress(value)}
-                                    options={fromAddresses.map(addr => ({ value: addr, label: addr }))}
-                                    placeholder="Absender wählen"
-                                />
-                            </div>
-
-                            {/* Betreff */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Betreff</label>
-                                <Input
-                                    value={subject}
-                                    onChange={e => setSubject(e.target.value)}
-                                    placeholder="Betreff"
-                                />
-                            </div>
-                        </div>
-
-                        {/* E-Mail Body Editor */}
-                        <div>
-                            <div className="flex items-center justify-between mb-1">
-                                <label className="block text-sm font-medium text-slate-700">Nachricht</label>
-                                <AiButton 
-                                    onClick={handleBeautify}
-                                    isLoading={beautifying}
-                                    label="KI Formulierung"
-                                />
-                            </div>
-                            <div
-                                ref={editorRef}
-                                contentEditable
-                                suppressContentEditableWarning
-                                dangerouslySetInnerHTML={{ __html: body }}
-                                onBlur={() => setBody(editorRef.current?.innerHTML || '')}
-                                className="min-h-[250px] p-4 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 prose prose-sm max-w-none"
-                            />
-                        </div>
-
-                        {/* Zusätzliche Anhänge */}
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <label className="block text-sm font-medium text-slate-700">
-                                    <Paperclip className="w-4 h-4 inline-block mr-1" />
-                                    Zusätzliche Anhänge
-                                </label>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    <Upload className="w-4 h-4 mr-1" />
-                                    Dateien hinzufügen
-                                </Button>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    multiple
-                                    onChange={handleFileUpload}
-                                    className="hidden"
-                                    title="Dateien als zusätzlichen Anhang auswählen"
-                                    aria-label="Dateien als zusätzlichen Anhang auswählen"
-                                />
-                            </div>
-
-                            {uploadedFiles.length > 0 && (
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
-                                    {uploadedFiles.map((uf, idx) => {
-                                        const iconUrl = getFileIconUrl(uf.file.name);
-                                        const isImg = isImageFile(uf.file.name);
-                                        return (
-                                            <div key={idx} className="relative group border border-slate-200 rounded-lg p-2 bg-slate-50">
-                                                <div
-                                                    className="w-full h-16 flex items-center justify-center cursor-pointer"
-                                                    onClick={() => setPreviewFile(uf)}
-                                                >
-                                                    {isImg && uf.previewUrl ? (
-                                                        <img src={uf.previewUrl} alt="" className="max-h-full max-w-full object-contain rounded" />
-                                                    ) : iconUrl ? (
-                                                        <img src={iconUrl} alt="" className="h-12 object-contain" />
-                                                    ) : (
-                                                        <File className="w-10 h-10 text-slate-400" />
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-slate-600 truncate mt-1 text-center">{uf.file.name}</p>
-                                                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button
-                                                        onClick={() => setPreviewFile(uf)}
-                                                        className="p-1 bg-white rounded shadow hover:bg-slate-100"
-                                                        title="Vorschau"
-                                                    >
-                                                        <Eye className="w-3 h-3 text-slate-600" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => removeFile(idx)}
-                                                        className="p-1 bg-white rounded shadow hover:bg-red-100"
-                                                        title="Entfernen"
-                                                    >
-                                                        <Trash2 className="w-3 h-3 text-red-600" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-
-                </div>
-            </div>
-
-            {/* Attachment Preview Modal */}
-            <AttachmentPreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
-        </>
-    );
-};
-
-// ==================== PROJEKT GRUPPE COMPONENT ====================
-interface LieferantGruppeCardProps {
-    gruppe: LieferantGruppe;
-    onToggleBestellt: (id: number, bestellt: boolean) => Promise<void>;
-    onEmailClick: (lieferantId: number, lieferantName: string) => void;
-}
-
-const LieferantGruppeCard: React.FC<LieferantGruppeCardProps> = ({
-    gruppe,
-    onToggleBestellt,
-    onEmailClick,
-}) => {
-    const [expanded, setExpanded] = useState(true);
-
-    const totalKg = useMemo(() => {
-        return gruppe.items.reduce((sum, b) => sum + (b.kilogramm || 0), 0);
-    }, [gruppe.items]);
-
-    const formatKg = (kg: number) => {
-        return kg.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    };
-
-    const projektAnzahl = useMemo(() => {
-        const ids = new Set(gruppe.items.map(item => item.projektId).filter((id): id is number => !!id));
-        return ids.size;
-    }, [gruppe.items]);
-
-    const handlePdfExport = () => {
-        if (gruppe.lieferantId) {
-            window.open(`/api/bestellungen/lieferant/${gruppe.lieferantId}/pdf`, '_blank');
-        }
-    };
-
-    return (
-        <Card className="overflow-hidden">
-            {/* Header */}
-            <div
-                className="flex items-center justify-between p-4 bg-slate-50 border-b border-slate-200 cursor-pointer"
-                onClick={() => setExpanded(!expanded)}
-            >
-                <div className="flex items-center gap-3">
-                    {expanded ? (
-                        <ChevronDown className="w-5 h-5 text-slate-500" />
-                    ) : (
-                        <ChevronRight className="w-5 h-5 text-slate-500" />
-                    )}
-                    <div>
-                        <h3 className="font-semibold text-slate-900">
-                            {gruppe.lieferantName || 'Ohne Lieferant'}
-                        </h3>
-                        <div className="flex items-center gap-4 text-sm text-slate-500">
-                            {projektAnzahl > 0 && (
-                                <span>{projektAnzahl} Projekte</span>
-                            )}
-                            <span>{gruppe.items.length} Positionen</span>
-                            {totalKg > 0 && (
-                                <span>{formatKg(totalKg)} kg</span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handlePdfExport}
-                        disabled={!gruppe.lieferantId}
-                    >
-                        <Download className="w-4 h-4 mr-1" />
-                        PDF
-                    </Button>
-                    <Button
-                        size="sm"
-                        onClick={() => gruppe.lieferantId && onEmailClick(gruppe.lieferantId, gruppe.lieferantName)}
-                        disabled={!gruppe.lieferantId}
-                        className="bg-rose-600 text-white hover:bg-rose-700"
-                    >
-                        <Mail className="w-4 h-4 mr-1" />
-                        E-Mail
-                    </Button>
-                </div>
-            </div>
-
-            {/* Table */}
-            {expanded && (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead className="bg-slate-100">
-                            <tr>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Bestellt</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Projektnummer</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Projekt</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Kunde</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Artikelnummer</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Produkt</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Produkttext</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Kommentar</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Werkstoff</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Kategorie</th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-600">Menge</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {gruppe.items.map((b) => (
-                                <tr key={b.id} className={cn(
-                                    "hover:bg-slate-50 transition-colors",
-                                    b.bestellt && "bg-green-50"
-                                )}>
-                                    <td className="px-4 py-3">
-                                        <input
-                                            type="checkbox"
-                                            checked={b.bestellt}
-                                            onChange={e => onToggleBestellt(b.id, e.target.checked)}
-                                            className="w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500"
-                                            title={`Position ${b.produktname || ''} als bestellt markieren`}
-                                            aria-label={`Position ${b.produktname || ''} als bestellt markieren`}
-                                        />
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {b.projektNummer || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-900 font-medium">
-                                        {b.projektName || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {b.kundenName || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-900 font-mono text-xs">
-                                        {b.externeArtikelnummer || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-900 font-medium">
-                                        {b.produktname || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
-                                        {b.produkttext || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
-                                        {b.kommentar || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {b.werkstoffName || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {b.kategorieName || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-900">
-                                        {b.menge ? `${b.menge} ${b.einheit || ''}` : '-'}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </Card>
-    );
-};
-
-// ==================== MAIN COMPONENT ====================
 export default function BestellungEditor() {
-    const [bestellungen, setBestellungen] = useState<Bestellung[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [emailModal, setEmailModal] = useState<{ lieferantId: number; lieferantName: string } | null>(null);
+  const meldungen = useToast(); const navigiere = useNavigate();
+  const [daten, setzeDaten] = useState<Page<BedarfResponse> | null>(null);
+  const [suche, setzeSuche] = useState(''); const [seite, setzeSeite] = useState(0);
+  const [aktualisierung, setzeAktualisierung] = useState(0); const [laden, setzeLaden] = useState(true);
+  const [fehler, setzeFehler] = useState(''); const [auswahl, setzeAuswahl] = useState<Record<number, string>>({});
+  const [dialogOffen, setzeDialogOffen] = useState(false); const [bearbeitung, setzeBearbeitung] = useState<BedarfResponse | undefined>();
+  const [hicadOffen, setzeHicadOffen] = useState(false); const [direktOffen, setzeDirektOffen] = useState(false);
+  const [direkteTeilmengen, setzeDirekteTeilmengen] = useState<Array<{ bedarfId: number; menge: number }>>([]);
+  const [entnahme, setzeEntnahme] = useState<BedarfResponse | null>(null);
+  const [projektNamen, setzeProjektNamen] = useState<Record<number, string>>({});
+  const [anfrageKonflikt, setzeAnfrageKonflikt] = useState<EntwurfKonflikt | null>(null);
 
-    const loadBestellungen = useCallback(async () => {
-        setLoading(true);
+  useEffect(() => {
+    void einkaufApi.get<Array<{ id: number; auftragsnummer?: string | null; bauvorhaben?: string | null }>>('/api/projekte/simple?size=500')
+      .then(einträge => setzeProjektNamen(Object.fromEntries(einträge.map(eintrag => [eintrag.id, [eintrag.auftragsnummer, eintrag.bauvorhaben].filter(Boolean).join(' · ') || 'Projekt']))))
+      .catch(() => undefined);
+  }, []);
+
+  const ladenBedarfe = useCallback(async () => {
+    setzeLaden(true); setzeFehler('');
+    try {
+      const parameter = new URLSearchParams({ page: String(seite), size: '20', sort: 'id,desc' });
+      if (suche.trim()) parameter.set('q', suche.trim());
+      const ergebnis = await einkaufApi.get<Page<BedarfResponse>>(`/api/einkauf/bedarf?${parameter}`);
+      setzeDaten(ergebnis);
+      setzeAuswahl(aktuell => Object.fromEntries(Object.entries(aktuell).filter(([id]) => ergebnis.content.some(eintrag => eintrag.id === Number(id)))));
+    } catch (fehlerursache) {
+      const meldung = fehlerursache instanceof Error ? fehlerursache.message : 'Bedarfe konnten nicht geladen werden.';
+      setzeFehler(meldung); meldungen.error(meldung);
+    } finally { setzeLaden(false); }
+  }, [seite, suche, meldungen]);
+  useEffect(() => { void ladenBedarfe(); }, [ladenBedarfe, aktualisierung]);
+
+  const ausgewählteAnteile = useMemo(() => Object.entries(auswahl).flatMap(([idText, eingabe]) => {
+    const zeile = daten?.content.find(eintrag => eintrag.id === Number(idText)); const menge = leseMenge(eingabe);
+    if (!zeile) return [];
+    if (!menge) return [{ bedarfId: zeile.id, version: zeile.version, menge: Number.NaN }];
+    return [{ bedarfId: zeile.id, version: zeile.version, menge }];
+  }), [auswahl, daten]);
+
+  const anfrageVorbereiten = async () => {
+    if (!ausgewählteAnteile.length) { meldungen.error('Bitte mindestens einen verfügbaren Bedarf auswählen.'); return; }
+    if (ausgewählteAnteile.some(anteil => !Number.isFinite(anteil.menge) || anteil.menge <= 0)) { meldungen.error('Bitte geben Sie für jeden ausgewählten Bedarf eine gültige Anfragemenge ein.'); return; }
+    const ungültigeMenge = ausgewählteAnteile.some(anteil => {
+      const zeile = daten?.content.find(kandidat => kandidat.id === anteil.bedarfId);
+      return !zeile || anteil.menge > (zeile.mengen.disponierbar ?? 0);
+    });
+    if (ungültigeMenge) { meldungen.error('Die Anfragemenge darf die aktuell verfügbare Menge nicht überschreiten.'); return; }
+    setzeFehler('');
+    try {
+      const angelegt = await einkaufApi.post<{ kopf: { id: number } }>('/api/einkauf/anfragen', {
+        positionen: ausgewählteAnteile, empfaenger: [], antwortfrist: null, liefertermin: null, zustaendigId: null, idempotenzKey: crypto.randomUUID(),
+      });
+      navigiere(`/einkaufsanfragen/${angelegt.kopf.id}`);
+    } catch (fehlerursache) {
+      const meldung = fehlerursache instanceof Error ? fehlerursache.message : 'Anfrage konnte nicht vorbereitet werden.';
+      meldungen.error(meldung);
+      if (fehlerursache instanceof EinkaufApiError && fehlerursache.status === 409) {
         try {
-            const res = await fetch('/api/bestellungen/offen');
-            const data = res.ok ? await res.json() : [];
-            setBestellungen(Array.isArray(data) ? data : []);
-        } catch (err) {
-            console.error('Error loading Bestellungen:', err);
-            setBestellungen([]);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+          const aktuelleBedarfe = await Promise.all(ausgewählteAnteile.map(anteil => einkaufApi.get<BedarfResponse>(`/api/einkauf/bedarf/${anteil.bedarfId}`)));
+          const felder: EntwurfKonflikt['felder'] = [];
+          aktuelleBedarfe.forEach(aktuell => {
+            const vorher = daten?.content.find(eintrag => eintrag.id === aktuell.id);
+            const alteVerfügbarkeit = vorher?.mengen.disponierbar ?? 0;
+            const neueVerfügbarkeit = aktuell.mengen.disponierbar ?? 0;
+            const entwurfsmenge = auswahl[aktuell.id] ?? '';
+            if (aktuell.version !== vorher?.version || neueVerfügbarkeit !== alteVerfügbarkeit) felder.push({ id: `menge-${aktuell.id}`, label: `${aktuell.position.interneReferenz || aktuell.position.bezeichnung} · Anfragemenge`, lokal: `${entwurfsmenge} (Verfügbarkeit zuvor ${formatiere(alteVerfügbarkeit)})`, server: `Verfügbar ${formatiere(neueVerfügbarkeit)} ${einheitenAnzeige(aktuell.position.basis?.einheit)}` });
+          });
+          setzeAnfrageKonflikt({ felder, hinweise: ['Mindestens ein Bedarf wurde während der Anfragevorbereitung geändert. Entscheiden Sie je Bedarf, ob Ihre Teilmenge bestehen bleibt oder Sie die aktuelle verfügbare Menge übernehmen.'], anwenden: wahl => { setzeAuswahl(aktuell => { const neu = { ...aktuell }; aktuelleBedarfe.forEach(bedarf => { if (wahl[`menge-${bedarf.id}`] === 'server') neu[bedarf.id] = String(bedarf.mengen.disponierbar ?? 0).replace('.', ','); }); return neu; }); setzeAktualisierung(stand => stand + 1); } });
+        } catch (ladeFehler) { meldungen.error(ladeFehler instanceof Error ? ladeFehler.message : 'Aktuelle Bedarfe konnten nicht abgeglichen werden.'); }
+      }
+    }
+  };
+  const gespeichert = () => { setzeDialogOffen(false); setzeBearbeitung(undefined); setzeAktualisierung(wert => wert + 1); };
+  const auswahlMengeÄndern = (bedarf: BedarfResponse, wert: string) => {
+    setzeAuswahl(aktuell => ({ ...aktuell, [bedarf.id]: wert }));
+  };
+  const direktbestellungÖffnen = () => {
+    const ausgewählt = Object.entries(auswahl);
+    if (!ausgewählt.length) { setzeDirekteTeilmengen([]); setzeDirektOffen(true); return; }
+    const teilmengen: Array<{ bedarfId: number; menge: number }> = [];
+    for (const [idText, entwurf] of ausgewählt) {
+      const bedarf = daten?.content.find(eintrag => eintrag.id === Number(idText));
+      const menge = leseMenge(entwurf);
+      if (!bedarf || !menge || menge > (bedarf.mengen.disponierbar ?? 0)) { meldungen.error('Bitte prüfen Sie für jeden ausgewählten Bedarf eine gültige Menge innerhalb der verfügbaren Restmenge.'); return; }
+      teilmengen.push({ bedarfId: bedarf.id, menge });
+    }
+    setzeDirekteTeilmengen(teilmengen); setzeDirektOffen(true);
+  };
 
-    useEffect(() => {
-        loadBestellungen();
-    }, [loadBestellungen]);
-
-    // Group by supplier
-    const lieferantGruppen = useMemo(() => {
-        const gruppiert: Record<string, LieferantGruppe> = {};
-        bestellungen.forEach(b => {
-            const key = b.lieferantId != null
-                ? `lieferant-${b.lieferantId}`
-                : `ohne-${(b.lieferantName || 'lieferant').toLowerCase()}`;
-            if (!gruppiert[key]) {
-                gruppiert[key] = {
-                    lieferantId: b.lieferantId || null,
-                    lieferantName: b.lieferantName || 'Ohne Lieferant',
-                    items: [],
-                };
-            }
-            gruppiert[key].items.push(b);
-        });
-
-        return Object.values(gruppiert).sort((a, b) =>
-            a.lieferantName.localeCompare(b.lieferantName, 'de-DE')
-        );
-    }, [bestellungen]);
-
-    const handleToggleBestellt = async (id: number, bestellt: boolean) => {
-        try {
-            await fetch(`/api/bestellungen/${id}?bestellt=${bestellt}`, {
-                method: 'PATCH',
-            });
-            // Reload to get updated data
-            loadBestellungen();
-        } catch (err) {
-            console.error('Error updating Bestellung:', err);
-        }
-    };
-
-    const handleEmailClick = (lieferantId: number, lieferantName: string) => {
-        setEmailModal({ lieferantId, lieferantName });
-    };
-
-    return (
-
-        <PageLayout
-            ribbonCategory="Einkauf"
-            title="Bestellungen"
-            subtitle="Offene Bestellungen nach Lieferanten verwalten und versenden."
-            actions={
-                <Button variant="outline" size="sm" onClick={loadBestellungen} disabled={loading}>
-                    <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
-                    Aktualisieren
-                </Button>
-            }
-        >
-
-            {/* Content */}
-            {loading ? (
-                <div className="flex items-center justify-center py-12">
-                    <RefreshCw className="w-8 h-8 text-rose-600 animate-spin" />
-                </div>
-            ) : lieferantGruppen.length === 0 ? (
-                <Card className="p-12 text-center">
-                    <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                    <p className="text-slate-500 text-lg">Keine offenen Bestellungen vorhanden.</p>
-                </Card>
-            ) : (
-                <div className="space-y-6">
-                    {lieferantGruppen.map((gruppe) => (
-                        <LieferantGruppeCard
-                            key={gruppe.lieferantId || gruppe.lieferantName || 'ohne-lieferant'}
-                            gruppe={gruppe}
-                            onToggleBestellt={handleToggleBestellt}
-                            onEmailClick={handleEmailClick}
-                        />
-                    ))}
-                </div>
-            )}
-
-            {/* Email Modal */}
-            {emailModal && (
-                <BestellungEmailModal
-                    isOpen={true}
-                    onClose={() => setEmailModal(null)}
-                    lieferantId={emailModal.lieferantId}
-                    lieferantName={emailModal.lieferantName}
-                    onSuccess={loadBestellungen}
-                />
-            )}
-        </PageLayout>
-    );
+  return <PageLayout ribbonCategory="Einkauf" title="BEDARF" subtitle="Materialbedarf prüfen, Teilmengen anfragen und bestätigte Lagerentnahmen erfassen."
+    actions={<div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => { setzeBearbeitung(undefined); setzeDialogOffen(true); }}>Bedarf erfassen</Button><Button variant="outline" size="sm" onClick={() => setzeHicadOffen(true)}>HiCAD importieren</Button><Button variant="outline" size="sm" onClick={direktbestellungÖffnen}>Direktbestellung</Button><Button variant="outline" size="sm" disabled={laden} onClick={() => setzeAktualisierung(wert => wert + 1)}><RefreshCw className={`mr-2 h-4 w-4 ${laden ? 'animate-spin' : ''}`} />Aktualisieren</Button></div>}>
+    <div className="space-y-4">
+      <EinkaufNavigation active="bedarf" />
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <label htmlFor="bedarf-suche" className="min-w-[15rem] flex-1 space-y-1 text-sm font-medium">Bedarf suchen<Input id="bedarf-suche" value={suche} onChange={ereignis => { setzeSuche(ereignis.target.value); setzeSeite(0); }} placeholder="Bezeichnung, interne Nummer oder Projekt" /></label>
+        <Button variant="outline" size="sm" onClick={() => setzeAktualisierung(wert => wert + 1)}><Search className="mr-2 h-4 w-4" />Suchen</Button>
+      </div>
+      {Object.keys(auswahl).length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3"><p className="text-sm text-rose-900">{Object.keys(auswahl).length} Bedarfe für eine Anfrage ausgewählt.</p><Button size="sm" onClick={() => void anfrageVorbereiten()}>Angebote einholen ({Object.keys(auswahl).length})</Button></div>}
+      {fehler && <p role="alert" className="text-sm text-rose-700">{fehler}</p>}
+      {laden ? <p role="status" className="rounded-lg border border-slate-200 bg-white p-5">Bedarfe werden geladen …</p>
+        : !daten?.content.length ? <section className="rounded-lg border border-slate-200 bg-white p-8 text-center"><ClipboardList className="mx-auto mb-3 h-8 w-8 text-slate-400" /><h2 className="font-semibold">Noch kein Bedarf vorhanden</h2><p className="mt-1 text-sm text-slate-600">Erfassen Sie Material oder importieren Sie eine HiCAD-Datei.</p></section>
+        : <div className="space-y-3">{daten.content.map(zeile => {
+          const position = zeile.position; const einheit = einheitenAnzeige(position.basis?.einheit);
+          const verfügbar = zeile.mengen.disponierbar ?? 0; const ausgewählt = Object.hasOwn(auswahl, zeile.id);
+          const kennung = position.interneReferenz || `BED-${zeile.id}`;
+          return <article key={zeile.id} className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="min-w-0"><div className="flex min-w-0 items-start gap-3"><input type="checkbox" aria-label={`Bedarf ${kennung} auswählen`} checked={ausgewählt} disabled={verfügbar <= 0} onChange={ereignis => setzeAuswahl(aktuell => ereignis.target.checked ? { ...aktuell, [zeile.id]: String(verfügbar).replace('.', ',') } : Object.fromEntries(Object.entries(aktuell).filter(([id]) => Number(id) !== zeile.id)))} /><div className="min-w-0"><p className="text-sm font-semibold text-rose-600">{kennung} · {position.art === 'ZEICHNUNGSTEIL' ? 'Zeichnungsteil' : 'Artikel'}</p><h2 className="break-words font-semibold text-slate-900">{position.bezeichnung ?? 'Unbenannter Bedarf'}</h2><p className="mt-1 text-sm text-slate-600">{zeile.liefergruppe.projektId ? projektNamen[zeile.liefergruppe.projektId] || 'Projekt zugeordnet' : zeile.liefergruppe.lagerzweck || 'Kein Projekt zugeordnet'}{position.werkstoff ? ` · ${position.werkstoff}` : ''}{position.abmessung ? ` · ${position.abmessung}` : ''}</p></div></div>
+              {zeile.nachpflegeErforderlich && <p className="mt-2 flex items-center gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-900"><FileWarning className="h-4 w-4 shrink-0" />Altdaten bitte nachpflegen. <button className="font-medium underline" onClick={() => navigiere('/bestellungen')}>Bisherige Bestellungen öffnen</button></p>}
+              {position.art === 'ZEICHNUNGSTEIL' && position.anlageVersionIds.length === 0 && <p role="alert" className="mt-2 text-sm text-rose-700">Für dieses Zeichnungsteil fehlt eine freigegebene Zeichnungsanlage. <button className="font-medium underline" onClick={() => { setzeBearbeitung(zeile); setzeDialogOffen(true); }}>Anlage ergänzen</button></p>}
+              <dl className="mt-3 grid gap-2 sm:grid-cols-5"><div className="rounded-md bg-slate-50 p-2"><dt className="text-xs text-slate-600">Soll</dt><dd className="font-medium tabular-nums">{formatiere(zeile.mengen.bedarf)} {einheit}</dd></div><div className="rounded-md bg-slate-50 p-2"><dt className="text-xs text-slate-600">Offen</dt><dd className="font-medium tabular-nums">{formatiere(zeile.mengen.ungedeckt)} {einheit}</dd></div><div className="rounded-md bg-slate-50 p-2"><dt className="text-xs text-slate-600">Reserviert</dt><dd className="font-medium tabular-nums">{formatiere(zeile.mengen.reserviert)} {einheit}</dd></div><div className="rounded-md bg-slate-50 p-2"><dt className="text-xs text-slate-600">Bestellt</dt><dd className="font-medium tabular-nums">{formatiere(zeile.mengen.bestellt)} {einheit}</dd></div><div className="rounded-md bg-slate-50 p-2"><dt className="text-xs text-slate-600">Angefragt</dt><dd className="font-medium tabular-nums">{formatiere(zeile.mengen.angefragt)} {einheit}</dd></div></dl>
+              {ausgewählt && <label className="mt-3 block max-w-xs space-y-1 text-sm font-medium">Anfragemenge {kennung}<Input aria-label={`Anfragemenge ${kennung}`} inputMode="decimal" value={auswahl[zeile.id] ?? ''} onFocus={ereignis => { if (ereignis.currentTarget.value === '0' || ereignis.currentTarget.value === '0,00') auswahlMengeÄndern(zeile, ''); }} onChange={ereignis => auswahlMengeÄndern(zeile, ereignis.target.value)} placeholder={`Menge in ${einheit}`} /><span className="font-normal text-slate-600">Verfügbar: {formatiere(verfügbar)} {einheit}</span></label>}
+            </div>
+            <div className="flex flex-wrap items-start gap-2 lg:justify-end"><Button size="sm" variant="outline" onClick={() => { setzeBearbeitung(zeile); setzeDialogOffen(true); }}>Bearbeiten</Button><Button size="sm" variant="outline" disabled={verfügbar <= 0} onClick={() => setzeEntnahme(zeile)}>Lagerentnahme erfassen {kennung}</Button></div>
+          </article>;
+        })}</div>}
+      {!laden && daten && daten.totalPages > 1 && <div className="flex items-center justify-center gap-3"><Button size="sm" variant="outline" disabled={seite === 0} onClick={() => setzeSeite(wert => Math.max(0, wert - 1))}>Vorige</Button><span className="text-sm text-slate-600">Seite {seite + 1} von {daten.totalPages}</span><Button size="sm" variant="outline" disabled={seite + 1 >= daten.totalPages} onClick={() => setzeSeite(wert => wert + 1)}>Weitere</Button></div>}
+    </div>
+    {dialogOffen && <BedarfDialog offen schließen={() => { setzeDialogOffen(false); setzeBearbeitung(undefined); }} gespeichert={gespeichert} ausgangsbedarf={bearbeitung} />}
+    {anfrageKonflikt && <KonfliktAbgleichDialog konflikt={anfrageKonflikt} onAbbrechen={() => setzeAnfrageKonflikt(null)} onUebernehmen={wahl => { anfrageKonflikt.anwenden(wahl); setzeAnfrageKonflikt(null); }} />}
+    {hicadOffen && <HiCadImportDialog schließen={() => setzeHicadOffen(false)} übernommen={() => { setzeHicadOffen(false); setzeAktualisierung(wert => wert + 1); meldungen.success('Ausgewählte HiCAD-Zeilen wurden übernommen.'); }} />}
+    {direktOffen && <DirektbestellungDialog initialeTeilmengen={direkteTeilmengen} onClose={() => setzeDirektOffen(false)} onCreated={id => { setzeDirektOffen(false); navigiere(`/bestellungen/${id}`); }} />}
+    {entnahme && <LagerentnahmeDialog bedarf={{ id: entnahme.id, version: entnahme.version, bezeichnung: entnahme.position.bezeichnung ?? 'Materialbedarf', einheit: entnahme.position.basis?.einheit ?? 'STUECK', offen: entnahme.mengen.disponierbar ?? 0 }} schließen={() => setzeEntnahme(null)} bestätigt={() => { setzeEntnahme(null); setzeAktualisierung(wert => wert + 1); }} />}
+  </PageLayout>;
 }

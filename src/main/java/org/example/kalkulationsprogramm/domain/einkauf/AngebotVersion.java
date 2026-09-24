@@ -1,6 +1,8 @@
 package org.example.kalkulationsprogramm.domain.einkauf;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -19,7 +21,7 @@ public class AngebotVersion {
     @Column(name = "angebotsnummer", length = 120) private String angebotsnummer;
     private LocalDate datum;
     @Column(name = "gueltig_bis") private LocalDate gueltigBis;
-    @Column(nullable = false, length = 3) private String waehrung;
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(nullable = false, length = 3) private String waehrung;
     @Column(name = "zahlungsbedingungen", length = 2000) private String zahlungsbedingungen;
     @Column(name = "skonto_prozent", precision = 9, scale = 6) private BigDecimal skontoProzent;
     @Column(name = "skonto_tage") private Integer skontoTage;

@@ -15,10 +15,10 @@ public class AnfrageLieferant {
     @Version @Column(nullable = false) private Long version;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "revision_id", nullable = false) private AnfrageRevision revision;
     @JdbcTypeCode(SqlTypes.JSON) @Column(name = "kontakt_snapshot", nullable = false, columnDefinition = "json") private Snapshot kontakt;
-    @Column(name = "rueckmeldecode", nullable = false, length = 32, unique = true) private String rueckmeldecode = neuerCode();
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "rueckmeldecode", nullable = false, length = 32, unique = true) private String rueckmeldecode = neuerCode();
     @Column(nullable = false, length = 24) private String status = "AUSSTEHEND";
     @Column(name = "antwort_am") private java.time.Instant antwortAm;
-    @Column(name = "versand_annahmeereignis", length = 36) private java.util.UUID versandAnnahmeereignis;
+    @JdbcTypeCode(SqlTypes.VARCHAR) @Column(name = "versand_annahmeereignis", length = 36) private java.util.UUID versandAnnahmeereignis;
     @JdbcTypeCode(SqlTypes.JSON) @Column(name = "versandversuche", nullable = false, columnDefinition = "json") private java.util.List<String> versandversuche = new java.util.ArrayList<>();
     protected AnfrageLieferant() {}
     public AnfrageLieferant(AnfrageRevision revision, Snapshot kontakt) { this.revision = revision; this.kontakt = kontakt; }

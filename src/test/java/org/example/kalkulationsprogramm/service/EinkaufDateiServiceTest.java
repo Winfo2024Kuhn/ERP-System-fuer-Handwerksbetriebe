@@ -115,6 +115,83 @@ class EinkaufDateiServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals(1, uploadRoot.resolve("einkauf").toFile().list().length);
     }
 
+    @Test
+    void entferntEineNeuAngelegteDateiBeiTransaktionsrollback() throws Exception {
+        EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        EinkaufBedarfRepository needs = mock(EinkaufBedarfRepository.class);
+        when(needs.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        when(files.sperreBySha256(anyString())).thenReturn(Optional.empty());
+        when(files.save(any())).thenAnswer(call -> call.getArgument(0));
+        when(versions.findByBedarfIdAndRevision(1L, "R1")).thenReturn(Optional.empty());
+        when(versions.save(any())).thenAnswer(call -> call.getArgument(0));
+        var service = new EinkaufDateiService(files, versions, needs, uploadRoot.toString());
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.hochladen(1L, pdf("%PDF-1.7\nRollback-Datei".getBytes(), "zeichnung.pdf"), "R1", 7L);
+            org.junit.jupiter.api.Assertions.assertEquals(1, uploadRoot.resolve("einkauf").toFile().list().length);
+        } finally {
+            var synchronisierungen = org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations();
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+            synchronisierungen.forEach(synchronisierung -> synchronisierung.afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(0, uploadRoot.resolve("einkauf").toFile().list().length);
+    }
+
+    @Test
+    void entferntNurNeueReparaturdateiBeimZurückrollen() throws Exception {
+        byte[] inhalt = "%PDF-1.7\nWiederhergestellte Zeichnung".getBytes();
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(inhalt));
+        Path altpfad = uploadRoot.resolve("einkauf").resolve("beschädigte-bestandsdatei");
+        java.nio.file.Files.createDirectories(altpfad.getParent());
+        java.nio.file.Files.writeString(altpfad, "Beschädigter Altinhalt");
+        var bestand = new EinkaufDatei(hash, altpfad.getFileName().toString(), "alt.pdf", "application/pdf", inhalt.length);
+        var dateien = mock(EinkaufDateiRepository.class);
+        when(dateien.sperreBySha256(hash)).thenReturn(Optional.of(bestand));
+        when(dateien.save(any())).thenAnswer(aufruf -> aufruf.getArgument(0));
+        var versionen = mock(EinkaufAnlageVersionRepository.class);
+        when(versionen.save(any())).thenAnswer(aufruf -> aufruf.getArgument(0));
+        var bedarfe = mock(EinkaufBedarfRepository.class);
+        when(bedarfe.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        var dienst = new EinkaufDateiService(dateien, versionen, bedarfe, uploadRoot.toString());
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            dienst.hochladen(1L, pdf(inhalt, "zeichnung.pdf"), "R2", 7L);
+            org.junit.jupiter.api.Assertions.assertEquals(2, altpfad.getParent().toFile().list().length);
+        } finally {
+            var synchronisierungen = org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations();
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+            synchronisierungen.forEach(eintrag -> eintrag.afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(1, altpfad.getParent().toFile().list().length);
+        org.junit.jupiter.api.Assertions.assertEquals("Beschädigter Altinhalt", java.nio.file.Files.readString(altpfad));
+    }
+
+    @Test
+    void erhaeltDeduplizierteDateiBeiTransaktionsrollback() throws Exception {
+        byte[] bytes = "%PDF-1.7\nGemeinsam genutzte Datei".getBytes();
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        Path dateipfad = uploadRoot.resolve("einkauf").resolve("bestehende-datei");
+        java.nio.file.Files.createDirectories(dateipfad.getParent()); java.nio.file.Files.write(dateipfad, bytes);
+        EinkaufDatei bestehendeDatei = new EinkaufDatei(hash, "bestehende-datei", "bestehend.pdf", "application/pdf", bytes.length);
+        EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
+        when(files.sperreBySha256(hash)).thenReturn(Optional.of(bestehendeDatei));
+        EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
+        when(versions.findByBedarfIdAndRevision(1L, "R2")).thenReturn(Optional.empty());
+        when(versions.save(any())).thenAnswer(call -> call.getArgument(0));
+        EinkaufBedarfRepository needs = mock(EinkaufBedarfRepository.class);
+        when(needs.findByIdForUpdate(1L)).thenReturn(Optional.of(mock(EinkaufBedarf.class)));
+        var service = new EinkaufDateiService(files, versions, needs, uploadRoot.toString());
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try { service.hochladen(1L, pdf(bytes, "gleich.pdf"), "R2", 7L); }
+        finally {
+            var synchronisierungen = org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations();
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+            synchronisierungen.forEach(synchronisierung -> synchronisierung.afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(dateipfad));
+    }
+
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.NullSource
     @org.junit.jupiter.params.provider.ValueSource(longs = 7L)

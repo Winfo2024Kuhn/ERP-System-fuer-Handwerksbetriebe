@@ -12,9 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -38,11 +36,21 @@ public class EinkaufPdfService {
 
     @Transactional(readOnly = true)
     public Resource entnahmeliste(List<Long> bedarfIds) {
-        if (bedarfIds == null || bedarfIds.isEmpty() || bedarfIds.size() > 500
+        return arbeitsblatt(bedarfIds, false);
+    }
+
+    @Transactional(readOnly = true)
+    public Resource bedarfsliste(List<Long> bedarfIds) {
+        return arbeitsblatt(bedarfIds, true);
+    }
+
+    private Resource arbeitsblatt(List<Long> bedarfIds, boolean werkstatt) {
+        int limit = werkstatt ? 5000 : 500;
+        if (bedarfIds == null || bedarfIds.isEmpty() || bedarfIds.size() > limit
                 || bedarfIds.stream().anyMatch(id -> id == null || id <= 0)) {
-            throw new IllegalArgumentException("Bitte wählen Sie bis zu 500 gültige Bedarfe aus.");
+            throw new IllegalArgumentException("Bitte wählen Sie bis zu " + limit + " gültige Bedarfe aus.");
         }
-        List<Long> uniqueIds = new ArrayList<>(new HashSet<>(bedarfIds));
+        List<Long> uniqueIds = bedarfIds.stream().distinct().sorted().toList();
         Map<Long, EinkaufBedarf> bedarfe = new HashMap<>();
         bedarfRepository.findAllById(uniqueIds).forEach(b -> bedarfe.put(b.getId(), b));
         if (bedarfe.size() != uniqueIds.size()) {
@@ -53,9 +61,10 @@ public class EinkaufPdfService {
             var position = bedarf.getPosition();
             var basis = position == null ? null : position.basis();
             return new EinkaufPdfPositionsRenderer.EntnahmeZeile(bedarf.getId(), bedarf.getBezeichnung(), position,
-                    basis == null ? null : basis.menge(), basis == null || basis.einheit() == null ? "" : basis.einheit().name());
+                    basis == null ? null : basis.menge(), basis == null || basis.einheit() == null ? "" : basis.einheit().name(),
+                    bedarf.getProjektId() == null ? "Für Werkstatt / auf Vorrat" : "Projekt " + bedarf.getProjektId());
         }).toList();
-        return new ByteArrayResource(renderer.renderEntnahmeliste(zeilen, loadLogo()));
+        return new ByteArrayResource(werkstatt ? renderer.renderBedarfsliste(zeilen, loadLogo()) : renderer.renderEntnahmeliste(zeilen, loadLogo()));
     }
 
     private Image loadLogo() {

@@ -35,3 +35,13 @@ it('zeigt die konkrete Revisionsvorschau und verlangt deren Bestätigung vor der
   await waitFor(() => expect(onReleased).toHaveBeenCalled());
   expect(global.fetch).toHaveBeenCalledWith('/api/einkauf/bestellungen/73/freigeben', expect.objectContaining({ method: 'POST' }));
 });
+
+it('erlaubt die bewusste Freigabe einer Bestellung mit offenen Preisen', async () => {
+  const user = userEvent.setup(); const onReleased = vi.fn();
+  render(<ToastProvider><BestellfreigabeDialog bestellungId={73} hatOffenePreise onClose={vi.fn()} onReleased={onReleased} /></ToastProvider>);
+  expect(screen.getByText(/Diese Bestellung enthält offene Preise/)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Vorschau laden' }));
+  await user.click(await screen.findByRole('checkbox', { name: /PDF und Empfänger geprüft/i }));
+  await user.click(screen.getByRole('button', { name: 'Bestellung freigeben' }));
+  await waitFor(() => expect(onReleased).toHaveBeenCalled());
+});

@@ -20,7 +20,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://localhost:8080',
+        // Port 8080 ist lokal oft durch andere Dienste belegt – dann per ERP_BACKEND_URL umlenken.
+        target: process.env.ERP_BACKEND_URL || 'https://localhost:8080',
         changeOrigin: true,
         secure: false,
       },

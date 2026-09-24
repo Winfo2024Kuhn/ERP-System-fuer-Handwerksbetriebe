@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonIncludeProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung;
@@ -82,7 +82,9 @@ public class FrontendUserProfile {
     // Links this PC frontend profile to an employee for document upload tracking
     @OneToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "mitarbeiter_id")
-    @JsonIgnoreProperties({"abteilungen", "zeitkonten", "buchungen", "antraege", "dokumente", "hibernateLazyInitializer", "handler"})
+    // Nur die von der Benutzerverwaltung genutzten Felder serialisieren – alles andere
+    // (Krankenkasse als Lazy-Proxy → 500, Lohn- und Personaldaten) bleibt draußen.
+    @JsonIncludeProperties({"id", "vorname", "nachname"})
     private Mitarbeiter mitarbeiter;
 
     @Transient

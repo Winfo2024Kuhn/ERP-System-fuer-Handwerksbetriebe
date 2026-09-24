@@ -132,6 +132,26 @@ public class HiCadImportService {
     }
 
     @Transactional
+    public BildVorschlag anlageErgänzen(Long importId, int zeilennummer, MultipartFile datei, Long akteurId) {
+        if (importId == null || importId <= 0 || zeilennummer <= 0 || akteurId == null || akteurId <= 0)
+            throw new IllegalArgumentException("Import, Zeile und Benutzer müssen gültig sein.");
+        HiCadImport vorgang = imports.findByIdForUpdate(importId)
+                .orElseThrow(() -> new NotFoundException("Der Import wurde nicht gefunden."));
+        if (!akteurId.equals(vorgang.getAkteurId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        HiCadImportZeile zeile = vorgang.getZeilen().stream().filter(eintrag -> eintrag.getZeilennummer() == zeilennummer)
+                .findFirst().orElseThrow(() -> new NotFoundException("Die Zeile gehört nicht zu diesem Import."));
+        if (zeile.isUebernommen()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Die Zeile wurde bereits vollständig übernommen.");
+        List<Long> anlagen = new ArrayList<>(parseBildIds(zeile.getBildDateiIdsJson()));
+        if (anlagen.size() >= 50) throw new IllegalArgumentException("Pro Zeile sind höchstens 50 Anlagen erlaubt.");
+        var gespeichert = dateien.speichereImportAnlage(datei);
+        if (!anlagen.contains(gespeichert.id())) anlagen.add(gespeichert.id());
+        zeile.setBildDateiIdsJson(serialize(anlagen));
+        imports.save(vorgang);
+        return new BildVorschlag(gespeichert.id(), gespeichert.dateiname(), gespeichert.mimeTyp(), gespeichert.byteAnzahl(),
+                "/api/einkauf/hicad/" + importId + "/bilder/" + gespeichert.id());
+    }
+
+    @Transactional
     public List<EinkaufBedarfDto.Response> uebernehmen(Long importId, Uebernahme request, Long akteurId) {
         if (importId == null || importId <= 0 || request == null || request.idempotenzKey() == null)
             throw new IllegalArgumentException("Import und Idempotenzschlüssel müssen angegeben werden.");
@@ -195,6 +215,7 @@ public class HiCadImportService {
                 var version = dateien.anhaengenImportBild(newNeed.id(), imageId,
                         "HiCAD-" + imp.getImportInstanz().substring(0, 8) + "-Z" + selection.zeilennummer()
                                 + "-B" + imageIndex++ + "-" + request.idempotenzKey().toString().substring(0, 8), akteurId);
+                dateien.freigeben(version.id(), akteurId);
                 versionIds.add(version.id());
             }
             PositionSnapshot finalSnapshot = withAttachments(snapshot, versionIds);
@@ -475,7 +496,7 @@ public class HiCadImportService {
         return new PositionSnapshot(position.art(), position.artikelId(), position.interneReferenz(), position.zeichnungsnummer(),
                 position.zeichnungsrevision(), position.bezeichnung(), position.werkstoff(), position.abmessung(), basis,
                 position.schnittForm(), position.winkelLinks(), position.winkelRechts(), position.bearbeitung(),
-                position.oberflaeche(), position.dokumente(), position.anlageVersionIds());
+                position.oberflaeche(), position.dokumente(), position.anlageVersionIds(), position.beschaffungsdetails());
     }
     private static PositionSnapshot emptySnapshot() {
         return new PositionSnapshot(Positionsart.ZEICHNUNGSTEIL, null, null, null, null, null, null, null, null,
@@ -485,7 +506,7 @@ public class HiCadImportService {
         return new PositionSnapshot(position.art(), position.artikelId(), position.interneReferenz(), position.zeichnungsnummer(),
                 position.zeichnungsrevision(), position.bezeichnung(), position.werkstoff(), position.abmessung(), position.basis(),
                 position.schnittForm(), position.winkelLinks(), position.winkelRechts(), position.bearbeitung(), position.oberflaeche(),
-                position.dokumente(), ids);
+                position.dokumente(), ids, position.beschaffungsdetails());
     }
     private List<Long> parseBildIds(String jsonValue) {
         if (jsonValue == null || jsonValue.isBlank()) return List.of();

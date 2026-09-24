@@ -38,6 +38,34 @@ import org.springframework.mock.web.MockMultipartFile;
 
 class HiCadImportServiceTest {
     @Test
+    void ergänztTechnischeAnlageNurAnEigenerOffenerImportzeile() {
+        var importe = mock(HiCadImportRepository.class);
+        var dateien = mock(EinkaufDateiService.class);
+        var vorgang = new HiCadImport(17L, "dateihash", 4L, false);
+        var zeile = new HiCadImportZeile(2, "Zeichnung", "{}");
+        zeile.setBildDateiIdsJson("[]"); vorgang.addZeile(zeile);
+        when(importe.findByIdForUpdate(3L)).thenReturn(Optional.of(vorgang));
+        var datei = new MockMultipartFile("datei", "zeichnung.pdf", "application/pdf", "%PDF-1.7 Dummy".getBytes());
+        when(dateien.speichereImportAnlage(datei)).thenReturn(new EinkaufDateiService.ImportBildDto(81L, "zeichnung.pdf", "application/pdf", 15));
+        var dienst = new HiCadImportService(importe, mock(EinkaufBedarfService.class), dateien);
+        var fremderBenutzer = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> dienst.anlageErgänzen(3L, 2, datei, 8L));
+        assertEquals(403, fremderBenutzer.getStatusCode().value());
+        assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,
+                () -> dienst.anlageErgänzen(3L, 9, datei, 4L));
+        verify(dateien, never()).speichereImportAnlage(any());
+        var anlage = dienst.anlageErgänzen(3L, 2, datei, 4L);
+        assertEquals("[81]", zeile.getBildDateiIdsJson());
+        assertEquals("/api/einkauf/hicad/3/bilder/81", anlage.url());
+        dienst.anlageErgänzen(3L, 2, datei, 4L);
+        assertEquals("[81]", zeile.getBildDateiIdsJson());
+        zeile.setUebernommen(true);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> dienst.anlageErgänzen(3L, 2, datei, 4L));
+        verify(dateien, times(2)).speichereImportAnlage(datei);
+    }
+
+    @Test
     void previewsGermanQuantitiesWithoutCreatingDemand() throws Exception {
         HiCadImportRepository imports = mock(HiCadImportRepository.class);
         when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));

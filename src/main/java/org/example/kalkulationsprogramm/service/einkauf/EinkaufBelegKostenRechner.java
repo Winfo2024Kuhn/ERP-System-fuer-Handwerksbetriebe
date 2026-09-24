@@ -62,7 +62,8 @@ final class EinkaufBelegKostenRechner {
         }
         for(var item:flatActual.entrySet())if(item.getValue().signum()!=0
                 &&(!headerKeys.contains(item.getKey())||usedHeaderAllowances.add(item.getKey())))agreed=agreed.add(flatAllowed.get(item.getKey()));
-        return new Ergebnis(agreed.setScale(2,RoundingMode.HALF_UP),actual.setScale(2,RoundingMode.HALF_UP),complete);
+        return new Ergebnis(complete ? agreed.setScale(2,RoundingMode.HALF_UP) : null,
+                complete ? actual.setScale(2,RoundingMode.HALF_UP) : null, complete);
     }
     static String lineIdentity(BestellungPosition line) {
         var origins=line.getHerkuenfte().stream().map(BestellungHerkunft::getBedarfId).distinct().sorted().toList();

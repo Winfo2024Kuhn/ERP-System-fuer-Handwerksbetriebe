@@ -10,6 +10,8 @@ public final class EinkaufBedarfDto {
 
     public record Create(PositionSnapshot position, Liefergruppe liefergruppe, Long artikelInProjektId) {}
     public record Update(long version, PositionSnapshot position, Liefergruppe liefergruppe) {}
+    public record Werkstattposition(Long bedarfId, Long version, BigDecimal vorhanden) {}
+    public record Werkstattpruefung(java.util.List<Werkstattposition> positionen) {}
     public record Mengenstand(BigDecimal bedarf, BigDecimal lagergedeckt, BigDecimal angefragt,
             BigDecimal reserviert, BigDecimal bestellt, BigDecimal geliefert, BigDecimal storniert,
             BigDecimal ungedeckt, BigDecimal disponierbar) {}

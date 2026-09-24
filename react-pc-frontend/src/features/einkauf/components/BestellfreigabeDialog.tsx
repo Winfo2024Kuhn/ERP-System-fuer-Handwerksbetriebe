@@ -9,7 +9,7 @@ import { einkaufApi } from '../api';
 import type { VersandDto } from '../types';
 import type { BestellVorschau } from '../bestellTypes';
 
-export function BestellfreigabeDialog({ bestellungId, onClose, onReleased }: { bestellungId: number; onClose: () => void; onReleased: (versand: VersandDto) => void }) {
+export function BestellfreigabeDialog({ bestellungId, onClose, onReleased, hatOffenePreise = false }: { hatOffenePreise?: boolean; bestellungId: number; onClose: () => void; onReleased: (versand: VersandDto) => void }) {
   const toast = useToast(); const [vorschau, setVorschau] = useState<BestellVorschau | null>(null); const [busy, setBusy] = useState(false); const [geprueft, setGeprueft] = useState(false); const [pdfOpen, setPdfOpen] = useState(false);
   const melden = (error: unknown) => toast.error(error instanceof Error ? error.message : 'Bestellvorschau konnte nicht erstellt werden.');
   const laden = async () => {
@@ -35,6 +35,7 @@ export function BestellfreigabeDialog({ bestellungId, onClose, onReleased }: { b
   return <Dialog open onOpenChange={open => { if (!open) { if (pdfOpen) setPdfOpen(false); else onClose(); } }} className="w-[min(46rem,calc(100vw-2rem))]">
     <DialogHeader className="px-6 pt-6"><DialogTitle>Bestellung prüfen und freigeben</DialogTitle><DialogDescription>Kontrollieren Sie Fassung, Empfänger, Liefertermin und Anlagen. Der Versand startet erst nach Ihrer Freigabe.</DialogDescription></DialogHeader>
     <DialogContent className="overflow-y-auto px-6 py-4">
+      {hatOffenePreise && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Diese Bestellung enthält offene Preise. Sie kann trotzdem freigegeben und versandt werden. Eine vollständige Bestellsumme steht noch nicht fest.</p>}
       {!vorschau ? <div className="flex justify-center py-5"><Button onClick={() => void laden()} disabled={busy}>{busy ? 'Vorschau wird erstellt …' : 'Vorschau laden'}</Button></div> : <div className="space-y-4">
         <section className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Fassung {vorschau.revisionsNummer ?? '–'}</p><h3 className="mt-1 font-semibold">{vorschau.subject}</h3><p className="mt-2 break-all text-sm text-slate-700">Empfänger: {vorschau.empfaenger}</p><p className="mt-1 text-sm text-slate-700">Eigene Kundennummer: {vorschau.eigeneKundennummer ?? 'Nicht angegeben'}</p><p className="mt-1 text-sm text-slate-700">Liefertermin: {vorschau.liefertermin ? new Date(`${vorschau.liefertermin}T00:00:00`).toLocaleDateString('de-DE') : 'Nicht angegeben'}</p><p className="mt-1 text-sm text-slate-700">Bestätigungsfrist: {vorschau.antwortfrist ? new Date(`${vorschau.antwortfrist}T00:00:00`).toLocaleDateString('de-DE') : 'Nicht angegeben'}</p>
           <p className="mt-3 text-sm text-slate-600">Nachrichtentext und unveränderlicher Bestellsnapshot sind für diese Vorschau zusammen vorbereitet.</p>

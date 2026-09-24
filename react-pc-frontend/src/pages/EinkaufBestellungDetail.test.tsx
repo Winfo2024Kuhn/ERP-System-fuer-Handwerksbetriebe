@@ -59,3 +59,19 @@ it('beendet nach Ladefehler den Ladezustand und bietet Wiederholen an', async ()
   expect(screen.getByRole('button', { name: 'Erneut laden' })).toBeInTheDocument();
   expect(screen.getAllByRole('alert')[0]).toHaveTextContent('Bestellung konnte nicht geladen werden');
 });
+
+it('zeigt unbekannte Bestellpreise ausdrücklich offen statt als null Euro an', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = vi.fn(async (input, init) => {
+    if (String(input) !== '/api/einkauf/bestellungen/73') return { ok: true, json: async () => [] } as Response;
+    const response = await originalFetch(input, init);
+    const order = await response.json();
+    order.revisionen[0].positionen[0].nettoEinzelpreis = null;
+    return { ok: true, json: async () => order } as Response;
+  });
+  render(<MemoryRouter initialEntries={['/bestellungen/73']}><ToastProvider><Routes><Route path="/bestellungen/:id" element={<EinkaufBestellungDetail />} /></Routes></ToastProvider></MemoryRouter>);
+  expect(await screen.findByText('Preis offen')).toBeInTheDocument();
+  expect(screen.queryByText(/0,00\s*€/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau und Freigabe' }));
+  expect(screen.getByText(/Diese Bestellung enthält offene Preise/)).toBeInTheDocument();
+});

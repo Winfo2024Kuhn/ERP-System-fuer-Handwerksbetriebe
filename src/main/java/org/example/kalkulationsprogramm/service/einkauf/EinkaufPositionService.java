@@ -60,6 +60,7 @@ public class EinkaufPositionService {
         pruefeText(input.bearbeitung(), "Bearbeitung", MAX_TEXT, false);
         pruefeText(input.oberflaeche(), "Oberfläche", 128, false);
 
+        pruefeBeschaffungsdetails(input.beschaffungsdetails());
         Mengenbasis basis = pruefeMengenbasis(input.basis());
         List<DokumentSoll> dokumente = pruefeDokumente(input.dokumente());
         List<Long> anlagen = pruefeAnlagen(input.anlageVersionIds());
@@ -78,7 +79,13 @@ public class EinkaufPositionService {
                     input.zeichnungsnummer(), input.zeichnungsrevision(), artikel.getProduktname(),
                     artikel.getWerkstoff() == null ? input.werkstoff() : artikel.getWerkstoff().getName(),
                     input.abmessung(), basis, input.schnittForm(), input.winkelLinks(), input.winkelRechts(),
-                    input.bearbeitung(), input.oberflaeche(), dokumente, anlagen);
+                    input.bearbeitung(), input.oberflaeche(), dokumente, anlagen, input.beschaffungsdetails());
+        } else if (input.art() == Positionsart.FREITEXT) {
+            pruefeText(input.bezeichnung(), "Bezeichnung", 255, true);
+            snapshot = new PositionSnapshot(input.art(), null, input.interneReferenz(),
+                    input.zeichnungsnummer(), input.zeichnungsrevision(), input.bezeichnung().trim(),
+                    input.werkstoff(), input.abmessung(), basis, input.schnittForm(), input.winkelLinks(),
+                    input.winkelRechts(), input.bearbeitung(), input.oberflaeche(), dokumente, anlagen, input.beschaffungsdetails());
         } else {
             pruefeText(input.bezeichnung(), "Bezeichnung", 255, true);
             if (projektId == null || projektId <= 0) {
@@ -96,7 +103,7 @@ public class EinkaufPositionService {
             snapshot = new PositionSnapshot(input.art(), null, input.interneReferenz().trim(),
                     input.zeichnungsnummer().trim(), input.zeichnungsrevision().trim(), input.bezeichnung(),
                     input.werkstoff(), input.abmessung(), basis, input.schnittForm(), input.winkelLinks(),
-                    input.winkelRechts(), input.bearbeitung(), input.oberflaeche(), dokumente, anlagen);
+                    input.winkelRechts(), input.bearbeitung(), input.oberflaeche(), dokumente, anlagen, input.beschaffungsdetails());
         }
         return snapshot;
     }
@@ -133,6 +140,15 @@ public class EinkaufPositionService {
                 });
         (position.anlageVersionIds() == null ? List.<Long>of() : position.anlageVersionIds()).stream()
                 .sorted().forEach(id -> add(teile, id));
+        if (position.beschaffungsdetails() != null) {
+            var details = position.beschaffungsdetails();
+            add(teile, "beschaffungsdetails");
+            add(teile, details.lieferantId());
+            add(teile, details.kategorieId());
+            add(teile, details.schnittbildId());
+            add(teile, details.schnittAchseId());
+            add(teile, details.externeArtikelnummer());
+        }
         add(teile, liefergruppe.lieferadresse());
         add(teile, liefergruppe.bedarfstermin());
         add(teile, liefergruppe.projektId());
@@ -141,6 +157,10 @@ public class EinkaufPositionService {
     }
 
     public PositionSnapshot mitTeilmenge(PositionSnapshot position, BigDecimal menge) {
+        return teilmengeSnapshot(position, menge);
+    }
+
+    public static PositionSnapshot teilmengeSnapshot(PositionSnapshot position, BigDecimal menge) {
         Objects.requireNonNull(position, "position");
         if (position.basis() == null) {
             throw new IllegalArgumentException("Die Mengenbasis fehlt.");
@@ -154,10 +174,19 @@ public class EinkaufPositionService {
         if (alt.einheit() == Einheit.STUECK) {
             pruefeGanzzahlig(menge, "Stückzahl");
             stueckzahl = menge;
-        } else if (alt.einzelLaengeMm() != null && stueckzahl != null) {
-            BigDecimal meterJeStueck = alt.einzelLaengeMm().divide(TAUSEND, 6, RoundingMode.UNNECESSARY);
-            BigDecimal neueStueckzahl = menge.divide(meterJeStueck, 6, RoundingMode.UNNECESSARY);
-            pruefeGanzzahlig(neueStueckzahl, "Profilstückzahl");
+        } else if (stueckzahl != null) {
+            // Derive pieces from the original quantity in its own unit (also kg),
+            // retaining the six-decimal rounding used for persisted quantities.
+            boolean meterprofil = alt.einheit() == Einheit.METER && alt.einzelLaengeMm() != null;
+            BigDecimal neueStueckzahl = meterprofil
+                    ? menge.multiply(TAUSEND).divide(alt.einzelLaengeMm(), 0, RoundingMode.HALF_UP)
+                    : stueckzahl.multiply(menge).divide(alt.menge(), 0, RoundingMode.HALF_UP);
+            BigDecimal erwarteteMenge = meterprofil
+                    ? alt.einzelLaengeMm().multiply(neueStueckzahl).divide(TAUSEND, 6, RoundingMode.HALF_UP)
+                    : alt.menge().multiply(neueStueckzahl).divide(stueckzahl, 6, RoundingMode.HALF_UP);
+            if (neueStueckzahl.signum() <= 0 || erwarteteMenge.compareTo(menge) != 0) {
+                throw new IllegalArgumentException("Die Teilmenge muss einer ganzen Anzahl Profilstücke entsprechen.");
+            }
             stueckzahl = neueStueckzahl;
         }
         Mengenbasis teilbasis = new Mengenbasis(menge.setScale(6, RoundingMode.HALF_UP), alt.einheit(),
@@ -166,7 +195,23 @@ public class EinkaufPositionService {
                 position.zeichnungsnummer(), position.zeichnungsrevision(), position.bezeichnung(),
                 position.werkstoff(), position.abmessung(), teilbasis, position.schnittForm(),
                 position.winkelLinks(), position.winkelRechts(), position.bearbeitung(), position.oberflaeche(),
-                position.dokumente(), position.anlageVersionIds());
+                position.dokumente(), position.anlageVersionIds(), position.beschaffungsdetails());
+    }
+
+    private static void pruefeBeschaffungsdetails(
+            org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Beschaffungsdetails details) {
+        if (details == null) return;
+        pruefeReferenz(details.lieferantId(), "Lieferant");
+        pruefeReferenz(details.kategorieId(), "Kategorie");
+        pruefeReferenz(details.schnittbildId(), "Schnittbild");
+        pruefeReferenz(details.schnittAchseId(), "Schnittachse");
+        pruefeText(details.externeArtikelnummer(), "Lieferanten-Artikelnummer", 255, false);
+    }
+
+    private static void pruefeReferenz(Long id, String feld) {
+        if (id != null && (id <= 0 || id == Long.MAX_VALUE)) {
+            throw new IllegalArgumentException(feld + ": Die Kennung ist ungültig.");
+        }
     }
 
     private static Mengenbasis pruefeMengenbasis(Mengenbasis basis) {

@@ -34,6 +34,53 @@ class EinkaufPositionServiceTest {
     }
 
     @Test
+    void meterTeilstueckVerwendetExakteEinzellaengeVorDemRunden() {
+        var original=position(Positionsart.ARTIKEL,41L,"A-41","Profil",null,
+                new Mengenbasis(new BigDecimal("2.000247"),Einheit.METER,new BigDecimal("2"),new BigDecimal("1000.1234"),null,null),List.of(),List.of());
+        var result=service.mitTeilmenge(original,new BigDecimal("1.000123"));
+        assertEquals(0,result.basis().stueckzahl().compareTo(BigDecimal.ONE));
+    }
+
+    @Test
+    void kilogrammTeilmengeVerwendetGewichtsanteilFuerProfilstuecke() {
+        var original=position(Positionsart.ARTIKEL,41L,"A-41","Profil",null,
+                new Mengenbasis(new BigDecimal("40"),Einheit.KILOGRAMM,new BigDecimal("4"),new BigDecimal("6000"),null,null),List.of(),List.of());
+        var result=service.mitTeilmenge(original,new BigDecimal("20"));
+        assertEquals(0,result.basis().stueckzahl().compareTo(new BigDecimal("2")));
+    }
+
+    @Test
+    void teilmengeVertraegtPraeziseEinzellaengenMitSechsstelligerGesamtmenge() {
+        var original=position(Positionsart.ARTIKEL,41L,"A-41","Profil",null,
+                new Mengenbasis(new BigDecimal("6.000740"),Einheit.METER,new BigDecimal("6"),new BigDecimal("1000.1234"),null,null),List.of(),List.of());
+        assertEquals(0,service.mitTeilmenge(original,new BigDecimal("6.000740")).basis().stueckzahl().compareTo(new BigDecimal("6")));
+        assertEquals(0,service.mitTeilmenge(original,new BigDecimal("1.000123")).basis().stueckzahl().compareTo(BigDecimal.ONE));
+        assertThrows(IllegalArgumentException.class,()->service.mitTeilmenge(original,new BigDecimal("0.5")));
+    }
+
+    @Test
+    void freiePositionBrauchtKeinenKatalogUndKeinProjekt() throws Exception {
+        var input = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+                {"art":"FREITEXT","bezeichnung":"Schweißdraht","basis":{"menge":10,"einheit":"KILOGRAMM"}}
+                """, PositionSnapshot.class);
+        var result = service.validiere(input, null);
+        assertEquals("Schweißdraht", result.bezeichnung());
+        assertNull(result.artikelId());
+        assertEquals(0, result.basis().menge().compareTo(new BigDecimal("10")));
+    }
+
+    @Test
+    void freiePositionErfordertBezeichnungPositiveMengeUndEinheit() throws Exception {
+        for (String input : List.of(
+                "{\"art\":\"FREITEXT\",\"bezeichnung\":\" \",\"basis\":{\"menge\":10,\"einheit\":\"KILOGRAMM\"}}",
+                "{\"art\":\"FREITEXT\",\"bezeichnung\":\"Draht\",\"basis\":{\"menge\":0,\"einheit\":\"KILOGRAMM\"}}",
+                "{\"art\":\"FREITEXT\",\"bezeichnung\":\"Draht\",\"basis\":{\"menge\":10}}")) {
+            var position = new com.fasterxml.jackson.databind.ObjectMapper().readValue(input, PositionSnapshot.class);
+            assertThrows(IllegalArgumentException.class, () -> service.validiere(position, null));
+        }
+    }
+
+    @Test
     void katalogpositionNutztInterneArtikelnummerStattLieferantennummer() {
         Artikel artikel = artikel(41L, "INT-41", "Profil", "EXT-LIEF-77");
         when(artikelRepository.findById(41L)).thenReturn(Optional.of(artikel));

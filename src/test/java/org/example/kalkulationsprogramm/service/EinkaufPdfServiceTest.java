@@ -45,6 +45,17 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 class EinkaufPdfServiceTest {
     @Test
+    void profilmengeZeigtEinzellaengeUndDieTatsaechlicheEinheit() {
+        String pieces=EinkaufPdfPositionsRenderer.profilmenge(4,new BigDecimal("1234.5"),new BigDecimal("4"),"STUECK");
+        assertTrue(pieces.contains("1234,5 mm"));
+        assertTrue(pieces.contains("gesamt: 4 Stk"));
+        assertFalse(pieces.contains("gesamt: 4 m"));
+        String length=EinkaufPdfPositionsRenderer.profilmenge(0,new BigDecimal("1234.5"),new BigDecimal("8"),"METER");
+        assertTrue(length.contains("1234,5 mm"));
+        assertTrue(length.contains("8 m"));
+    }
+
+    @Test
     void erzeugtMehrseitigesAnfragePdfMitTechnikUndOhneLieferantenpreise() throws Exception {
         FirmeninformationService firma = mock(FirmeninformationService.class);
         when(firma.loadLogoImage()).thenReturn(null);
@@ -194,6 +205,35 @@ class EinkaufPdfServiceTest {
         }
         verify(repository).findAllById(List.of(42L));
         verifyNoMoreInteractions(repository);
+    }
+
+    @Test
+    void bedarfslisteHatWerkstattfelderUndTechnischenKontext() throws Exception {
+        var repository = mock(EinkaufBedarfRepository.class);
+        var need = new EinkaufBedarf(position("BEDARF").technik(), new Liefergruppe("Werkstatt", null, 12L, null), 12L, null, false);
+        need.setId(42L);
+        when(repository.findAllById(List.of(42L))).thenReturn(List.of(need));
+        var service = new EinkaufPdfService(new EinkaufPdfPositionsRenderer(null, null), null, repository);
+        try (var doc = Loader.loadPDF(service.bedarfsliste(List.of(42L)).getInputStream().readAllBytes())) {
+            String text = new PDFTextStripper().getText(doc).replaceAll("\\s+", " ");
+            assertTrue(text.contains("Bedarfsliste"));
+            assertTrue(text.contains("Vorhanden"));
+            assertTrue(text.contains("Zu bestellen"));
+            assertTrue(text.contains("Projekt 12"));
+            assertTrue(text.contains("Bohrungen und Sägen"));
+            assertTrue(text.contains("4 Stk à 6000 mm"), text);
+        }
+    }
+
+    @Test
+    void bestellPdfBenenntOffenePreiseOhneNullsumme() throws Exception {
+        var service = new EinkaufPdfService(new EinkaufPdfPositionsRenderer(null, null), null, null);
+        var beleg = new Beleg("BESTELLUNG", "B-2026-01", 1, null, List.of(position("1")), List.of(), List.of(), null, null, null, null, true);
+        try (var doc = Loader.loadPDF(service.erzeugen(beleg))) {
+            String text = new PDFTextStripper().getText(doc);
+            assertTrue(text.contains("Preis offen"));
+            assertFalse(text.contains("0,00 EUR"));
+        }
     }
 
     private static PdfPosition position(String id) {
