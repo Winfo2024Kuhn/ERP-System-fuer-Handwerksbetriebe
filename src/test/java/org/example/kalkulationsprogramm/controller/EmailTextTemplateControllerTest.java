@@ -44,4 +44,22 @@ class EmailTextTemplateControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].token").value("ANFRAGENUMMER"));
     }
+
+    @Test
+    void serverVorschauRendertUndBlockiertUngueltigeVorlageVorPersistenz() throws Exception {
+        var realRenderer = new EinkaufVorlagenService(org.mockito.Mockito.mock(
+                org.example.kalkulationsprogramm.repository.EmailTextTemplateRepository.class));
+        mvc = MockMvcBuilders.standaloneSetup(new EmailTextTemplateController(templates, realRenderer)).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/email-textvorlagen/einkauf-vorschau")
+                .contentType("application/json").content("""
+                    {"dokumentTyp":"EINKAUF_ANFRAGE","subjectTemplate":"Anfrage {{ANFRAGENUMMER}}","htmlBody":"<p>{{POSITIONEN}}</p>"}
+                    """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.subject").value("Anfrage PA-2026-00001"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/email-textvorlagen")
+                .contentType("application/json").content("""
+                    {"dokumentTyp":" einkauf_anfrage ","name":"Dummy","subjectTemplate":"{{PA_NUMMER}}","htmlBody":"Text"}
+                    """))
+                .andExpect(status().isBadRequest());
+        org.mockito.Mockito.verifyNoInteractions(templates);
+    }
 }

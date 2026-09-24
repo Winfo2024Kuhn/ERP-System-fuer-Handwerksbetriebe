@@ -108,7 +108,9 @@ public class EinkaufKommunikationService {
                 basis.revision().getId(), templateId, gerendert.version(), gerendert.subject(), gerendert.htmlBody(),
                 empfaenger, attachmentIds, frozenPdfId, sha256(pdfBytes), inhaltHash, erstelltAm,
                 erstelltAm.plus(Duration.ofDays(1))));
-        Vorschau preview = new Vorschau(basis.revision().getId(), token, gerendert.subject(), gerendert.htmlBody(), empfaenger, frozenPdfId, attachmentIds);
+        Vorschau preview = new Vorschau(basis.revision().getId(), token, gerendert.subject(), gerendert.htmlBody(), empfaenger,
+                frozenPdfId, attachmentIds, basis.revision().getNummer(), kontakt.eigeneKundennummer(),
+                basis.revision().getAntwortfrist(), basis.revision().getLiefertermin(), dateien.metadaten(attachmentIds));
         return new VorschauDaten(basis, preview, List.copyOf(attachments));
     }
 

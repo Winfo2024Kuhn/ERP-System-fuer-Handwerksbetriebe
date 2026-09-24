@@ -25,6 +25,12 @@ public class EinkaufDateiController {
     private final EinkaufDateiService service;
     private final EinkaufBerechtigungService berechtigungen;
 
+    @GetMapping("/bedarfe/{bedarfId}/anlagen")
+    public List<AnlageDto> auflisten(@PathVariable Long bedarfId, Authentication authentication) {
+        berechtigungen.verlange(authentication, EinkaufBerechtigung.LESEN);
+        return service.auflisten(bedarfId);
+    }
+
     @PostMapping("/bedarfe/{bedarfId}/anlagen")
     public ResponseEntity<AnlageDto> hochladen(@PathVariable Long bedarfId, @RequestPart("datei") MultipartFile datei,
             @RequestParam String revision, Authentication authentication) {

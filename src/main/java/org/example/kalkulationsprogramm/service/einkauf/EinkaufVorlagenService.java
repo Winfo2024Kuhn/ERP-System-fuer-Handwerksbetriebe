@@ -49,6 +49,32 @@ public class EinkaufVorlagenService {
     public Gerendert rendern(Long templateId, VorlagenKontext kontext) {
         EmailTextTemplate template = repository.findById(templateId)
                 .orElseThrow(() -> new IllegalArgumentException("Einkaufsvorlage nicht gefunden"));
+        return rendern(template, kontext);
+    }
+
+    public Gerendert entwurfVorschau(String typ, String betreff, String html) {
+        if (typ == null) throw new IllegalArgumentException("Bitte eine Einkaufs-Vorlagenart angeben.");
+        typ = typ.trim().toUpperCase(java.util.Locale.ROOT);
+        var erlaubt = ERLAUBT.get(typ);
+        if (erlaubt == null) throw new IllegalArgumentException("Unbekannte Einkaufs-Vorlagenart.");
+        if (betreff == null || betreff.isBlank() || betreff.length() > 500 || html == null || html.length() > 100000)
+            throw new IllegalArgumentException("Bitte Betreff (höchstens 500 Zeichen) und Nachricht (höchstens 100.000 Zeichen) prüfen.");
+        var template = new EmailTextTemplate();
+        template.setId(0L); template.setDokumentTyp(typ); template.setSubjectTemplate(betreff); template.setHtmlBody(html);
+        var werte = new LinkedHashMap<String, String>();
+        for (String token : erlaubt) if (!LISTEN.contains(token)) werte.put(token, "Beispiel " + token.replace('_', ' '));
+        if (erlaubt.contains("ANFRAGENUMMER")) werte.put("ANFRAGENUMMER", "PA-2026-00001");
+        if (erlaubt.contains("BESTELLNUMMER")) werte.put("BESTELLNUMMER", "B-2026-00001");
+        werte.put("LIEFERANTENNAME", "Musterlieferant"); werte.put("ANREDE", "Guten Tag");
+        werte.put("EIGENE_KUNDENNUMMER_BEIM_LIEFERANTEN", "00017");
+        var position = new PositionSnapshot(org.example.kalkulationsprogramm.domain.einkauf.Positionsart.ARTIKEL,
+                1L, "A-00001", null, null, "Beispielprofil", "S235", "40 × 40 mm", null,
+                null, null, null, null, null,
+                List.of(new DokumentSoll(org.example.kalkulationsprogramm.domain.einkauf.Dokumentart.ZEUGNIS_3_1, "EN 10204", "2004", false)), List.of());
+        return rendern(template, new VorlagenKontext(typ, werte, List.of(position), "VORSCHAU-KEIN-VERSAND"));
+    }
+
+    private Gerendert rendern(EmailTextTemplate template, VorlagenKontext kontext) {
         if (!template.isAktiv()) throw new IllegalArgumentException("Einkaufsvorlage ist inaktiv");
         if (kontext == null || kontext.typ() == null || !template.getDokumentTyp().equals(kontext.typ())) {
             throw new IllegalArgumentException("Vorlagenart und Einkaufsvorgang passen nicht zusammen");

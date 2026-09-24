@@ -67,6 +67,23 @@ public class EinkaufDateiService {
         this.emailAttachmentRoot = Path.of(emailAttachmentRoot).toAbsolutePath().normalize();
     }
 
+    @Transactional(readOnly = true)
+    public List<AnlageDto> auflisten(Long bedarfId) {
+        if (bedarfId == null || bedarfId <= 0) throw new IllegalArgumentException("Die Bedarfs-ID ist ungültig.");
+        if (!bedarfe.existsById(bedarfId)) throw new NotFoundException("Der Einkaufsbedarf wurde nicht gefunden.");
+        return versionen.findByBedarfIdOrderByIdAsc(bedarfId).stream().map(this::toDto).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnlageDto> metadaten(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        if (ids.size() > 1000 || ids.stream().anyMatch(id -> id == null || id <= 0))
+            throw new IllegalArgumentException("Die Anlagenauswahl ist ungültig.");
+        var gefunden = versionen.findAllByIdIn(ids.stream().distinct().toList());
+        if (gefunden.size() != ids.stream().distinct().count()) throw new NotFoundException("Eine ausgewählte Anlagenversion wurde nicht gefunden.");
+        return gefunden.stream().map(this::toDto).toList();
+    }
+
     @Transactional
     public AnlageDto hochladen(Long bedarfId, MultipartFile datei, String revision, Long akteurId) {
         if (bedarfId == null || bedarfId <= 0 || akteurId == null || akteurId <= 0)

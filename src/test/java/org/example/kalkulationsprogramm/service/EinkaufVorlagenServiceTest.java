@@ -172,4 +172,23 @@ class EinkaufVorlagenServiceTest {
         assertThat(rendered.htmlBody()).contains("&lt;img src=x onerror=alert(1)&gt;: ZEUGNIS_3_1 — EN 10204")
                 .doesNotContain("<img");
     }
+
+    @Test
+    void entwurfPrueftDieselbenTokensUndStrukturiertenListenOhneSpeichern() {
+        var result = service.entwurfVorschau(" einkauf_anfrage ", "Anfrage {{ANFRAGENUMMER}}",
+                "<p>{{ANREDE}} {{LIEFERANTENNAME}}</p>{{POSITIONEN}}{{ZEUGNISSE}}<script>alert(1)</script>");
+        assertThat(result.subject()).isEqualTo("Anfrage PA-2026-00001");
+        assertThat(result.htmlBody()).contains("Beispielprofil", "EN 10204", "VORSCHAU-KEIN-VERSAND").doesNotContain("<script>");
+        org.mockito.Mockito.verifyNoInteractions(repository);
+    }
+
+    @Test
+    void entwurfWeistFremdeTokensUndBetreffListenSchonVorSpeichernAb() {
+        assertThatThrownBy(() -> service.entwurfVorschau("EINKAUF_ANFRAGE", "{{PA_NUMMER}}", "Text"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("PA_NUMMER");
+        assertThatThrownBy(() -> service.entwurfVorschau("EINKAUF_ANFRAGE", "{{POSITIONEN}}", "Text"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Betreff");
+        assertThatThrownBy(() -> service.entwurfVorschau(null, "Betreff", "Text"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }
