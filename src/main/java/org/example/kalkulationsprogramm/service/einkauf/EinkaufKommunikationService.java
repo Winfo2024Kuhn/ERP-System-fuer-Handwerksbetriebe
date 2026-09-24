@@ -13,6 +13,8 @@ import java.time.Instant;
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailZuordnung;
+import org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailantwortVorschau;
 import org.example.kalkulationsprogramm.domain.einkauf.AnfrageLieferant;
 import org.example.kalkulationsprogramm.domain.einkauf.AnfrageRevision;
 import org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage;
@@ -27,6 +29,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageLieferantRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRevisionRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.EinkaufMailZuordnungRepository;
+import org.example.kalkulationsprogramm.repository.EinkaufMailantwortVorschauRepository;
 import org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository;
 import org.example.kalkulationsprogramm.repository.EinkaufsanfrageRepository;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufOutboxService;
@@ -44,22 +47,28 @@ public class EinkaufKommunikationService {
     private final EmailRepository emails;
     private final EinkaufMailZuordnungRepository zuordnungen;
     private final EinkaufKommunikationVorschauRepository vorschauen;
+    private final EinkaufMailantwortVorschauRepository antwortVorschauen;
+    private final org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandAuftraege;
     private final EinkaufVorlagenService vorlagen;
     private final EinkaufPdfService pdf;
     private final EinkaufDateiService dateien;
     private final EinkaufOutboxService outbox;
     private final EinkaufVersandWorker worker;
+    private final EinkaufMailantwortVersandListener mailantwortListener;
     private final ObjectMapper objectMapper;
 
     public EinkaufKommunikationService(EinkaufsanfrageRepository anfragen, AnfrageRevisionRepository revisionen,
             AnfrageLieferantRepository beteiligungen, EmailRepository emails, EinkaufMailZuordnungRepository zuordnungen,
-            EinkaufKommunikationVorschauRepository vorschauen, EinkaufVorlagenService vorlagen,
+            EinkaufKommunikationVorschauRepository vorschauen, EinkaufMailantwortVorschauRepository antwortVorschauen,
+            org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository versandAuftraege, EinkaufVorlagenService vorlagen,
             EinkaufPdfService pdf, EinkaufDateiService dateien,
-            EinkaufOutboxService outbox, EinkaufVersandWorker worker, ObjectMapper objectMapper) {
+            EinkaufOutboxService outbox, EinkaufVersandWorker worker, EinkaufMailantwortVersandListener mailantwortListener, ObjectMapper objectMapper) {
         this.anfragen = anfragen; this.revisionen = revisionen; this.beteiligungen = beteiligungen;
         this.emails = emails; this.zuordnungen = zuordnungen; this.vorschauen = vorschauen;
+        this.antwortVorschauen = antwortVorschauen;
+        this.versandAuftraege = versandAuftraege;
         this.vorlagen = vorlagen; this.pdf = pdf;
-        this.dateien = dateien; this.outbox = outbox; this.worker = worker; this.objectMapper = objectMapper;
+        this.dateien = dateien; this.outbox = outbox; this.worker = worker; this.mailantwortListener = mailantwortListener; this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -161,6 +170,203 @@ public class EinkaufKommunikationService {
         worker.dispatchNachCommit(result.id());
         return new VersandErgebnis(beteiligungId, result.status(), result.fehlerCode(), result.messageId());
     }
+
+    @Transactional
+    public AntwortVorschau antwortVorschau(Long emailId, Antwort request) {
+        AntwortBasis basis = ladeAntwortBasis(emailId);
+        EingabeAntwort antwort = pruefeAntwort(request);
+        var attachments = dateien.ladeVersandanlagen(antwort.anlageIds());
+        var anlagen = new java.util.ArrayList<EinkaufMailantwortVorschau.AnlageSnapshot>();
+        for (int index = 0; index < attachments.size(); index++) {
+            anlagen.add(new EinkaufMailantwortVorschau.AnlageSnapshot(antwort.anlageIds().get(index), sha256(attachments.get(index).data())));
+        }
+        dateien.pruefePaketgroesse(antwort.anlageIds(), 0);
+        String token = token();
+        String hash = antwortInhaltHash(basis, antwort, anlagen);
+        Instant erstelltAm = Instant.now();
+        antwortVorschauen.saveAndFlush(new EinkaufMailantwortVorschau(token, basis.email().getId(), basis.email().getKontoId(),
+                basis.zuordnung().getTyp(), basis.zuordnung().getVorgangId(), basis.zuordnung().getBeteiligungId(),
+                basis.zuordnung().getRevisionId(), basis.email().getMessageId(), basis.inReplyTo(), basis.references(),
+                basis.empfaenger(), antwort.subject(), antwort.htmlBody(), anlagen, hash,
+                erstelltAm, erstelltAm.plus(Duration.ofDays(1))));
+        return new AntwortVorschau(token, antwort.subject(), antwort.htmlBody(), basis.empfaenger(), antwort.anlageIds(),
+                basis.inReplyTo(), basis.references());
+    }
+
+    @Transactional
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto antworten(Long emailId, Antwort request, Long akteurId) {
+        if (akteurId == null || akteurId <= 0 || request == null || request.idempotenzKey() == null
+                || request.vorschauHash() == null || request.vorschauHash().isBlank())
+            throw new IllegalArgumentException("Die freigegebene Einkaufsantwort ist unvollständig.");
+        AntwortBasis basis = ladeAntwortBasis(emailId, true);
+        var snapshot = antwortVorschauen.findByFreigabeTokenAndEmailId(request.vorschauHash(), emailId)
+                .orElseThrow(() -> new IllegalArgumentException("Die Antwortvorschau ist abgelaufen. Bitte neu erstellen."));
+        if (!Instant.now().isBefore(snapshot.getGueltigBis()))
+            throw new IllegalArgumentException("Die Antwortvorschau ist abgelaufen. Bitte neu erstellen.");
+        EingabeAntwort antwort = pruefeAntwort(request);
+        if (!snapshot.getSubject().equals(antwort.subject()) || !snapshot.getHtmlBody().equals(antwort.htmlBody())
+                || !snapshot.getAnlagen().stream().map(EinkaufMailantwortVorschau.AnlageSnapshot::anlageId).toList().equals(antwort.anlageIds())
+                || !snapshot.getKontoId().equals(basis.email().getKontoId())
+                || !snapshot.getEinkaufTyp().equals(basis.zuordnung().getTyp())
+                || !snapshot.getVorgangId().equals(basis.zuordnung().getVorgangId())
+                || !Objects.equals(snapshot.getBeteiligungId(), basis.zuordnung().getBeteiligungId())
+                || !Objects.equals(snapshot.getRevisionId(), basis.zuordnung().getRevisionId())
+                || !snapshot.getSourceMessageId().equals(basis.email().getMessageId())
+                || !snapshot.getInReplyTo().equals(basis.inReplyTo())
+                || !snapshot.getReferences().equals(basis.references())
+                || !snapshot.getEmpfaenger().equals(basis.empfaenger()))
+            throw new IllegalStateException("Die E-Mail oder Antwort wurde seit der Vorschau geändert. Bitte neu prüfen.");
+        if (!snapshot.getInhaltSha256().equals(antwortInhaltHash(basis, antwort, snapshot.getAnlagen())))
+            throw new IllegalStateException("Der freigegebene Antwortinhalt wurde verändert. Bitte neu prüfen.");
+
+        if (snapshot.getVersandId() != null) {
+            var prior = versandAuftraege.findById(snapshot.getVersandId())
+                    .orElseThrow(() -> new IllegalStateException("Der gespeicherte Antwortversand fehlt."));
+            worker.dispatchNachCommit(prior.getId());
+            return new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto(prior.getId(), prior.getVersion(),
+                    prior.getTyp(), prior.getVorgangId(), prior.getRevisionId(), prior.getStatus().name(), prior.getFehlerCode(),
+                    prior.getErstelltAm(), prior.getAngenommenAm(), prior.getArchiviertAm() != null, prior.getMessageId());
+        }
+        var attachments = dateien.ladeVersandanlagen(antwort.anlageIds());
+        if (attachments.size() != snapshot.getAnlagen().size())
+            throw new IllegalStateException("Die freigegebenen Anlagen haben sich geändert. Bitte neu prüfen.");
+        for (int index = 0; index < attachments.size(); index++) {
+            if (!snapshot.getAnlagen().get(index).sha256().equals(sha256(attachments.get(index).data())))
+                throw new IllegalStateException("Eine freigegebene Anlage hat sich geändert. Bitte neu prüfen.");
+        }
+        dateien.pruefePaketgroesse(antwort.anlageIds(), 0);
+        var nachricht = new Nachricht(null, basis.empfaenger(), antwort.subject(), antwort.htmlBody(), basis.inReplyTo(),
+                basis.references(), attachments);
+        var versandSnapshot = new VersandSnapshot("ANTWORT", emailId, basis.zuordnung().getRevisionId(),
+                basis.zuordnung().getBeteiligungId(), new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.KontoZugangReferenz("EINKAUF"),
+                nachricht, snapshot.getFreigabeToken());
+        var versand = outbox.einreihen(versandSnapshot, request.idempotenzKey(), akteurId);
+        snapshot.setVersandId(versand.id());
+        antwortVorschauen.saveAndFlush(snapshot);
+        worker.dispatchNachCommit(versand.id());
+        return versand;
+    }
+
+    @Transactional
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto antwortErneutSenden(
+            Long emailId, Long versandId, VersandWiederholung request, Long akteurId) {
+        if (akteurId == null || akteurId <= 0 || request == null || versandId == null || versandId <= 0)
+            throw new IllegalArgumentException("Die Versandangaben sind ungültig.");
+        AntwortBasis basis = ladeAntwortBasis(emailId, true);
+        var snapshot = antwortVorschauen.findByVersandIdAndEmailIdForUpdate(versandId, emailId)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Der Einkaufsantwortversand wurde nicht gefunden."));
+        pruefeAntwortBindung(snapshot, basis);
+        var versand = outbox.kommunikationErneutVersuchen(versandId, request.version(), akteurId, "ANTWORT", emailId,
+                basis.zuordnung().getRevisionId(), basis.zuordnung().getBeteiligungId());
+        worker.dispatchNachCommit(versand.id());
+        return versand;
+    }
+
+    @Transactional
+    public void antwortKlaeren(Long emailId, Long versandId,
+            org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.Klaerung request, Long akteurId) {
+        if (akteurId == null || akteurId <= 0 || request == null || versandId == null || versandId <= 0)
+            throw new IllegalArgumentException("Die Versandklärung ist ungültig.");
+        AntwortBasis basis = ladeAntwortBasis(emailId, true);
+        var snapshot = antwortVorschauen.findByVersandIdAndEmailIdForUpdate(versandId, emailId)
+                .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Der Einkaufsantwortversand wurde nicht gefunden."));
+        pruefeAntwortBindung(snapshot, basis);
+        outbox.kommunikationKlaeren(versandId, request, akteurId, "ANTWORT", emailId,
+                basis.zuordnung().getRevisionId(), basis.zuordnung().getBeteiligungId(), mailantwortListener::verarbeite);
+    }
+
+    @Transactional(readOnly = true)
+    public org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto antwortVersandstatus(Long emailId) {
+        if (emailId == null || emailId <= 0) throw new IllegalArgumentException("Die E-Mail-ID ist ungültig.");
+        var snapshot = antwortVorschauen.findFirstByEmailIdOrderByErstelltAmDesc(emailId).orElse(null);
+        if (snapshot == null || snapshot.getVersandId() == null) return null;
+        if (!"EINKAUF".equals(snapshot.getKontoId())) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die Antwort wurde nicht gefunden.");
+        var versand = versandAuftraege.findById(snapshot.getVersandId())
+                .orElseThrow(() -> new IllegalStateException("Der Antwortversand fehlt."));
+        return new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto(versand.getId(), versand.getVersion(),
+                versand.getTyp(), versand.getVorgangId(), versand.getRevisionId(), versand.getStatus().name(), versand.getFehlerCode(),
+                versand.getErstelltAm(), versand.getAngenommenAm(), versand.getArchiviertAm() != null, versand.getMessageId());
+    }
+
+    private void pruefeAntwortBindung(EinkaufMailantwortVorschau snapshot, AntwortBasis basis) {
+        if (!"EINKAUF".equals(snapshot.getKontoId()) || !snapshot.getKontoId().equals(basis.email().getKontoId())
+                || !snapshot.getEinkaufTyp().equals(basis.zuordnung().getTyp())
+                || !snapshot.getVorgangId().equals(basis.zuordnung().getVorgangId())
+                || !Objects.equals(snapshot.getBeteiligungId(), basis.zuordnung().getBeteiligungId())
+                || !Objects.equals(snapshot.getRevisionId(), basis.zuordnung().getRevisionId())
+                || !snapshot.getSourceMessageId().equals(basis.email().getMessageId())
+                || !snapshot.getInReplyTo().equals(basis.inReplyTo())
+                || !snapshot.getReferences().equals(basis.references())
+                || !snapshot.getEmpfaenger().equals(basis.empfaenger()))
+            throw new IllegalStateException("Der Versand gehört nicht mehr zur aktuellen Einkaufszuordnung.");
+        var input = new EingabeAntwort(snapshot.getSubject(), snapshot.getHtmlBody(), snapshot.getAnlagen().stream()
+                .map(EinkaufMailantwortVorschau.AnlageSnapshot::anlageId).toList());
+        if (!snapshot.getInhaltSha256().equals(antwortInhaltHash(basis, input, snapshot.getAnlagen())))
+            throw new IllegalStateException("Der gespeicherte Antwortinhalt passt nicht mehr zum Einkaufsversand.");
+    }
+
+    private AntwortBasis ladeAntwortBasis(Long emailId) {
+        return ladeAntwortBasis(emailId, false);
+    }
+
+    private AntwortBasis ladeAntwortBasis(Long emailId, boolean lockZuordnung) {
+        if (emailId == null || emailId <= 0) throw new IllegalArgumentException("Die E-Mail-ID ist ungültig.");
+        Email email = emails.findById(emailId).orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException("Die E-Mail wurde nicht gefunden."));
+        if (!"EINKAUF".equals(email.getKontoId())) throw new org.example.kalkulationsprogramm.exception.NotFoundException("Die E-Mail wurde nicht gefunden.");
+        EinkaufMailZuordnung zuordnung = (lockZuordnung ? zuordnungen.findByEmailIdForUpdate(emailId) : zuordnungen.findByEmailId(emailId))
+                .filter(z -> z.getTyp() != null && z.getVorgangId() != null && !"PRUEFEN".equals(z.getStatus()))
+                .orElseThrow(() -> new IllegalStateException("Diese Einkaufsnachricht muss zuerst eindeutig zugeordnet werden."));
+        String recipient = email.getDirection() == EmailDirection.OUT ? email.getRecipient()
+                : (email.getReplyToAddress() == null || email.getReplyToAddress().isBlank() ? email.getFromAddress() : email.getReplyToAddress());
+        recipient = emailAddress(recipient);
+        if (recipient == null || email.getMessageId() == null || !validMessageId(email.getMessageId()))
+            throw new IllegalStateException("Absender oder Originalheader der Einkaufsnachricht sind ungültig.");
+        List<String> references = parseReferences(email.getReferences());
+        if (!references.contains(email.getMessageId())) references = java.util.stream.Stream.concat(references.stream(), java.util.stream.Stream.of(email.getMessageId())).toList();
+        return new AntwortBasis(email, zuordnung, recipient, email.getMessageId(), references);
+    }
+
+    private EingabeAntwort pruefeAntwort(Antwort request) {
+        if (request == null || request.subject() == null || request.subject().isBlank() || request.subject().length() > 998
+                || request.subject().contains("\r") || request.subject().contains("\n")
+                || request.htmlBody() == null || request.htmlBody().length() > 10000
+                || request.anlageIds().size() > 50 || request.anlageIds().stream().anyMatch(id -> id == null || id <= 0)
+                || request.anlageIds().stream().distinct().count() != request.anlageIds().size())
+            throw new IllegalArgumentException("Betreff, Nachricht oder Anlagen der Einkaufsantwort sind ungültig.");
+        String cleanHtml = org.example.kalkulationsprogramm.util.EmailHtmlSanitizer.sanitizeDetailHtml(request.htmlBody());
+        return new EingabeAntwort(request.subject().trim(), cleanHtml, request.anlageIds());
+    }
+
+    private String antwortInhaltHash(AntwortBasis basis, EingabeAntwort antwort,
+            List<EinkaufMailantwortVorschau.AnlageSnapshot> anlagen) {
+        try {
+            var payload = new AntwortInhalt(basis.email().getId(), basis.email().getKontoId(), basis.zuordnung().getTyp(),
+                    basis.zuordnung().getVorgangId(), basis.zuordnung().getBeteiligungId(), basis.zuordnung().getRevisionId(),
+                    basis.email().getMessageId(), basis.inReplyTo(), basis.references(), basis.empfaenger(), antwort.subject(),
+                    antwort.htmlBody(), anlagen);
+            return sha256(objectMapper.writeValueAsBytes(payload));
+        } catch (Exception ex) { throw new IllegalStateException("Die Antwortvorschau konnte nicht gebunden werden.", ex); }
+    }
+
+    private static String emailAddress(String raw) {
+        if (raw == null) return null;
+        try {
+            var addresses = jakarta.mail.internet.InternetAddress.parse(raw, true);
+            if (addresses.length != 1 || addresses[0].getAddress() == null || !addresses[0].getAddress().contains("@")) return null;
+            return addresses[0].getAddress();
+        } catch (Exception ex) { return null; }
+    }
+    private static boolean validMessageId(String value) { return value.length() <= 512 && value.matches("<[^<>\\s]{1,500}>"); }
+    private static List<String> parseReferences(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return java.util.Arrays.stream(value.replace('\r', ' ').replace('\n', ' ').trim().split("\\s+"))
+                .filter(EinkaufKommunikationService::validMessageId).distinct().toList();
+    }
+    private record AntwortBasis(Email email, EinkaufMailZuordnung zuordnung, String empfaenger, String inReplyTo, List<String> references) {}
+    private record EingabeAntwort(String subject, String htmlBody, List<Long> anlageIds) {}
+    private record AntwortInhalt(Long emailId, String kontoId, String typ, Long vorgangId, Long beteiligungId, Long revisionId,
+            String sourceMessageId, String inReplyTo, List<String> references, String empfaenger, String subject, String htmlBody,
+            List<EinkaufMailantwortVorschau.AnlageSnapshot> anlagen) {}
 
     @Transactional(readOnly = true)
     public List<BeteiligungsVersand> versandstatus(Long anfrageId, Long revisionId) {

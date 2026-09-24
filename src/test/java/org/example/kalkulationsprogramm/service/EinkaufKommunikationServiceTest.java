@@ -25,6 +25,8 @@ class EinkaufKommunikationServiceTest {
         var emails = mock(EmailRepository.class);
         var zuordnungen = mock(EinkaufMailZuordnungRepository.class);
         var previews = mock(org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository.class);
+        var replyPreviews = mock(org.example.kalkulationsprogramm.repository.EinkaufMailantwortVorschauRepository.class);
+        var dispatches = mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class);
         var vorlagen = mock(EinkaufVorlagenService.class);
         var pdf = mock(EinkaufPdfService.class);
         var dateien = mock(EinkaufDateiService.class);
@@ -35,8 +37,8 @@ class EinkaufKommunikationServiceTest {
         var sent = new VersandDto(77L, 2, "ANFRAGE", 11L, 12L, "ANGENOMMEN", null,
                 Instant.EPOCH, Instant.EPOCH, true, "<mail@erp.local>");
         when(outbox.findeWiederholungsauftrag(key, token, 11L, 13L)).thenReturn(Optional.of(sent));
-        var service = new EinkaufKommunikationService(anfragen, revisionen, beteiligungen, emails, zuordnungen, previews,
-                vorlagen, pdf, dateien, outbox, worker, new ObjectMapper());
+        var service = new EinkaufKommunikationService(anfragen, revisionen, beteiligungen, emails, zuordnungen, previews, replyPreviews, dispatches,
+                vorlagen, pdf, dateien, outbox, worker, mock(EinkaufMailantwortVersandListener.class), new ObjectMapper());
 
         var result = service.senden(11L, 13L, new Freigabe(12, token, key), 5L);
 
@@ -49,6 +51,8 @@ class EinkaufKommunikationServiceTest {
     void clientErfundeneJsonFreigabeKannKeineAnderePDFVorschauFreigeben() {
         var outbox = mock(EinkaufOutboxService.class);
         var previews = mock(org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository.class);
+        var replyPreviews = mock(org.example.kalkulationsprogramm.repository.EinkaufMailantwortVorschauRepository.class);
+        var dispatches = mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class);
         var vorlagen = mock(EinkaufVorlagenService.class);
         var pdf = mock(EinkaufPdfService.class);
         var dateien = mock(EinkaufDateiService.class);
@@ -57,8 +61,8 @@ class EinkaufKommunikationServiceTest {
         String forged = "{\"templateId\":3,\"pdfDateiId\":999,\"snapshotHash\":\"self-made\"}";
         var service = new EinkaufKommunikationService(mock(EinkaufsanfrageRepository.class),
                 mock(AnfrageRevisionRepository.class), mock(AnfrageLieferantRepository.class),
-                mock(EmailRepository.class), mock(EinkaufMailZuordnungRepository.class), previews,
-                vorlagen, pdf, dateien, outbox, worker, new ObjectMapper());
+                mock(EmailRepository.class), mock(EinkaufMailZuordnungRepository.class), previews, replyPreviews, dispatches,
+                vorlagen, pdf, dateien, outbox, worker, mock(EinkaufMailantwortVersandListener.class), new ObjectMapper());
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
                 () -> service.senden(11L, 13L, new Freigabe(12, forged, key), 5L));
@@ -83,8 +87,10 @@ class EinkaufKommunikationServiceTest {
         var service = new EinkaufKommunikationService(mock(EinkaufsanfrageRepository.class), mock(AnfrageRevisionRepository.class),
                 mock(AnfrageLieferantRepository.class), emails, links,
                 mock(org.example.kalkulationsprogramm.repository.EinkaufKommunikationVorschauRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EinkaufMailantwortVorschauRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class),
                 mock(EinkaufVorlagenService.class), mock(EinkaufPdfService.class), mock(EinkaufDateiService.class),
-                mock(EinkaufOutboxService.class), mock(EinkaufVersandWorker.class), new ObjectMapper());
+                mock(EinkaufOutboxService.class), mock(EinkaufVersandWorker.class), mock(EinkaufMailantwortVersandListener.class), new ObjectMapper());
         var result = service.verlauf("ANFRAGE", 11L, page);
         assertEquals(5, result.getTotalElements());
         assertEquals(java.util.List.of("Zwei", "Drei"), result.stream().map(n -> n.subject()).toList());

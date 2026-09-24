@@ -113,6 +113,7 @@ export interface EmailComposeFormProps {
     /** Vom Benutzer im Pop-up gewählte Gültigkeit des digitalen Annahme-Links (nur Angebote). */
     gueltigkeitTage?: number;
     onSuccess?: () => void;
+    onControlledSubmit?: (payload: { subject: string; htmlBody: string; attachments: readonly File[] }) => Promise<boolean | void>;
     variant?: 'default' | 'modal';
     /** Existing draft ID to resume editing */
     draftId?: number;
@@ -205,6 +206,7 @@ export function EmailComposeForm({
     initialAttachments,
     geschaeftsdokument: initialGeschaeftsdokument = false,
     onSuccess,
+    onControlledSubmit,
     draftId: initialDraftId,
     zuordnungWaehlbar = false,
     variant = 'default',
@@ -896,6 +898,17 @@ export function EmailComposeForm({
         // Antworten: eine Antwort erbt die Zuordnung der Ursprungsmail.
         if (zuordnungWaehlbar && !zuordnung && !replyEmailId) {
             setShowZuordnungWarnung(true);
+            return;
+        }
+        if (onControlledSubmit) {
+            setSending(true); setError(null);
+            try {
+                const submitted = await onControlledSubmit({ subject: subject.trim(), htmlBody: prepareHtmlForSending(editorRef.current?.innerHTML || body), attachments: uploadedFiles.flatMap(item => item.file ? [item.file] : []) });
+                if (submitted === false) return;
+                onSuccess?.(); onClose();
+            }
+            catch (err) { setError(err instanceof Error ? err.message : 'Die Antwort konnte nicht gesendet werden.'); }
+            finally { setSending(false); }
             return;
         }
         await sendeEmail();

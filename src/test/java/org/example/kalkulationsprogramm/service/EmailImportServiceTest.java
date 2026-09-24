@@ -76,6 +76,19 @@ class EmailImportServiceTest {
     }
 
     @Test
+    void manuellerImportUndNeuklassifikationBleibenAufAusgewaehltesKontoBegrenzt() {
+        EmailImportService scoped = spy(service);
+        doReturn(3).when(scoped).doImport("DOKUMENTE");
+        doReturn(2).when(scoped).reprocessSpam("DOKUMENTE");
+
+        assertThat(scoped.triggerImport("DOKUMENTE")).isEqualTo(5);
+        verify(scoped).doImport("DOKUMENTE");
+        verify(scoped).reprocessSpam("DOKUMENTE");
+        assertThatThrownBy(() -> scoped.triggerImport("UNBEKANNT"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void einkaufImportBehältBestehendeProjektAnfrageLieferantZuordnungOhneRechnungsautomation() {
         Email email = erstelleEmail(3202L, "<einkauf@example.test>", "kontakt@example.test");
         email.setKontoId("EINKAUF");

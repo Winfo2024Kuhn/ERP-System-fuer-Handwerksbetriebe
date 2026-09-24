@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.List;
 import org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung;
 import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKommunikationDto.*;
+import org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.VersandDto;
 import org.example.kalkulationsprogramm.service.EmailImportService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufAntwortZuordnungService;
 import org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService;
@@ -86,6 +87,41 @@ public class EinkaufKommunikationController {
             @PathVariable Long emailId, Authentication authentication) {
         rechte.verlange(authentication, EinkaufBerechtigung.BEARBEITEN);
         return zuordnung.zuordnen(emailId);
+    }
+
+    @PostMapping("/mail/{emailId}/antwort-vorschau")
+    public AntwortVorschau antwortVorschau(@PathVariable Long emailId, @RequestBody Antwort request, Authentication authentication) {
+        rechte.verlange(authentication, EinkaufBerechtigung.ANFRAGE_SENDEN);
+        return kommunikation.antwortVorschau(emailId, request);
+    }
+
+    @PostMapping("/mail/{emailId}/antworten")
+    public VersandDto antworten(@PathVariable Long emailId, @RequestBody Antwort request, Authentication authentication) {
+        Long akteur = rechte.verlange(authentication, EinkaufBerechtigung.ANFRAGE_SENDEN);
+        return kommunikation.antworten(emailId, request, akteur);
+    }
+
+    @PostMapping("/mail/{emailId}/antworten/{versandId}/erneut")
+    public VersandDto antwortErneutSenden(@PathVariable Long emailId, @PathVariable Long versandId,
+            @RequestBody VersandWiederholung request, Authentication authentication) {
+        Long akteur = rechte.verlange(authentication, EinkaufBerechtigung.ANFRAGE_SENDEN);
+        return kommunikation.antwortErneutSenden(emailId, versandId, request, akteur);
+    }
+
+    @PostMapping("/mail/{emailId}/antworten/{versandId}/klaeren")
+    public ResponseEntity<Void> antwortKlaeren(@PathVariable Long emailId, @PathVariable Long versandId,
+            @RequestBody org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVersandDto.Klaerung request,
+            Authentication authentication) {
+        Long akteur = rechte.verlange(authentication, EinkaufBerechtigung.ANFRAGE_SENDEN);
+        kommunikation.antwortKlaeren(emailId, versandId, request, akteur);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/mail/{emailId}/antwortstatus")
+    public ResponseEntity<VersandDto> antwortVersandstatus(@PathVariable Long emailId, Authentication authentication) {
+        rechte.verlange(authentication, EinkaufBerechtigung.LESEN);
+        VersandDto status = kommunikation.antwortVersandstatus(emailId);
+        return status == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(status);
     }
 
     @PostMapping("/mail/abruf")

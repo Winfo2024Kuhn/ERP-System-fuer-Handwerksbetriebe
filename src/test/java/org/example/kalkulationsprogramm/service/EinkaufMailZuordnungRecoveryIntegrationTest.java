@@ -102,7 +102,11 @@ class EinkaufMailZuordnungRecoveryIntegrationTest {
                 mock(org.example.kalkulationsprogramm.config.LocalTestMailPolicy.class), transport, new ObjectMapper(), transactionManager);
         var worker = mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandWorker.class);
         var communication = new org.example.kalkulationsprogramm.service.einkauf.EinkaufKommunikationService(requests,
-                revisions, participations, emails, links, previews, templates, pdf, files, outbox, worker, new ObjectMapper());
+                revisions, participations, emails, links, previews,
+                mock(org.example.kalkulationsprogramm.repository.EinkaufMailantwortVorschauRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class),
+                templates, pdf, files, outbox, worker,
+                mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufMailantwortVersandListener.class), new ObjectMapper());
         var first = transaction.execute(tx -> communication.vorschau(ids[0], ids[1], 1L));
         var second = transaction.execute(tx -> communication.vorschau(ids[0], ids[1], 1L));
         var barrier = new java.util.concurrent.CyclicBarrier(2);

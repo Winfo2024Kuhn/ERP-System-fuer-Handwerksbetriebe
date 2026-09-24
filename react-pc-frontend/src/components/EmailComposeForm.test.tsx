@@ -69,8 +69,8 @@ function mockFetch() {
         if (url.startsWith('/api/emails/contacts')) {
             return jsonResponse([]);
         }
-        if (url.startsWith('/api/emails/') || url === '/api/emails/send') {
-            return jsonResponse({ id: 999 });
+        if (url.startsWith('/api/emails/contacts')) {
+            return jsonResponse([]);
         }
         if (url.startsWith('/api/emails/drafts')) {
             return jsonResponse({ id: 1 });
@@ -89,6 +89,21 @@ function jsonResponse(data: unknown) {
 async function sendeAb() {
     await userEvent.click(screen.getByRole('button', { name: /E-Mail senden/i }));
 }
+
+describe('EmailComposeForm – kontrollierter Einkaufsversand', () => {
+    it('übergibt Betreff und HTML an die Vorschau und umgeht generischen Mailversand', async () => {
+        const controlledSubmit = vi.fn().mockResolvedValue(undefined);
+        gesendeteRequests = [];
+        const fetchMock = mockFetch();
+        vi.stubGlobal('fetch', fetchMock);
+        render(<EmailComposeForm onClose={vi.fn()} onControlledSubmit={controlledSubmit}
+            initialRecipient="lieferant@example.com" initialSubject="Antwort" initialBody="Danke" />);
+        await userEvent.click(screen.getByRole('button', { name: /E-Mail senden/i }));
+        await waitFor(() => expect(controlledSubmit).toHaveBeenCalledTimes(1));
+        expect(controlledSubmit.mock.calls[0][0]).toMatchObject({ subject: 'Antwort', htmlBody: expect.any(String), attachments: [] });
+        expect(gesendeteRequests.some(request => request.url === '/api/emails/send' || /\/api\/emails\/\d+\/reply/.test(request.url))).toBe(false);
+    });
+});
 
 describe('EmailComposeForm – Rueckfrage "E-Mail-Adresse speichern?"', () => {
     beforeEach(() => {

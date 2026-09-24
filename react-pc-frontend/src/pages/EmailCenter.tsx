@@ -4,7 +4,7 @@ import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
 import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
 import { AssignModal } from '../features/email/EmailAssignmentDialog';
 import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
-import { getSenderName, getDisplayName, isImageAttachment, type EmailItem, type FolderType } from '../features/email/emailCenterModel';
+import { emailEndpointWithMailbox, getSenderName, getDisplayName, isImageAttachment, type EmailItem, type EmailMailbox, type FolderType } from '../features/email/emailCenterModel';
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
@@ -48,10 +48,12 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
+import { stripHtmlTags, unescapeHtmlEntities } from '../lib/htmlSanitizer';
 import { extractDisplayName, extractEmailAddress, formatRecipient, formatRecipientList, escapeHtml, parseRecipientList } from '../lib/emailAddress';
 import { refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
+import { EmailEinkaufBezug } from '../features/einkauf/components/EmailEinkaufBezug';
 import EmailSettings from '../components/EmailSettings';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useToast } from '../components/ui/toast';
@@ -120,6 +122,24 @@ export default function EmailCenter() {
     const activeFolder: FolderType = VALID_FOLDERS.includes(folderParam as FolderType)
         ? (folderParam as FolderType)
         : 'inbox';
+    const mailboxValue = searchParams.get('kontoId');
+    const kontoFilter: EmailMailbox | undefined = ['HAUPT', 'DOKUMENTE', 'EINKAUF'].includes(mailboxValue ?? '')
+        ? mailboxValue as EmailMailbox : undefined;
+    const setKontoFilter = (kontoId?: EmailMailbox) => setSearchParams(kontoId ? { kontoId } : {}, { replace: true });
+    const [importingMailbox, setImportingMailbox] = useState(false);
+    const importMailbox = async () => {
+        if (!kontoFilter || importingMailbox) return;
+        setImportingMailbox(true);
+        try {
+            const endpoint = kontoFilter === 'EINKAUF' ? '/api/einkauf/mail/abruf' : `/api/emails/import?kontoId=${encodeURIComponent(kontoFilter)}`;
+            const response = await fetch(endpoint, { method: 'POST' });
+            if (!response.ok) throw new Error('Das ausgewählte Postfach konnte nicht abgerufen werden.');
+            toast.success('Postfach wurde abgerufen.');
+            await refreshEmailsSilently();
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Das Postfach konnte nicht abgerufen werden.');
+        } finally { setImportingMailbox(false); }
+    };
 
     // Navigate helper: updates URL (which drives activeFolder)
     const setActiveFolder = useCallback(async (folder: FolderType) => {
@@ -271,7 +291,7 @@ export default function EmailCenter() {
     const selectionVersionRef = useRef(0);
 
     // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background
-    const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; hasMore: boolean; timestamp: number }>>(new Map());
+    const folderCacheRef = useRef<Map<string, { emails: EmailItem[]; hasMore: boolean; timestamp: number }>>(new Map());
     // Ref to guard against stale async responses when switching folders quickly
     const activeFolderRef = useRef<FolderType>(activeFolder);
     // IDs die gerade optimistisch entfernt werden (Spam, Löschen, Blockieren) – verhindert
@@ -511,10 +531,11 @@ export default function EmailCenter() {
             'unassigned': '/api/emails/unassigned',
         };
         const base = endpointMap[activeFolder] || '/api/emails/inbox';
-        const endpoint = `${base}?offset=0&limit=${PAGE_SIZE}`;
+        const endpoint = emailEndpointWithMailbox(`${base}?offset=0&limit=${PAGE_SIZE}`, kontoFilter);
+        const cacheKey = `${activeFolder}:${kontoFilter ?? 'ALLE'}`;
 
         // Show cached data instantly if available
-        const cached = folderCacheRef.current.get(activeFolder);
+        const cached = folderCacheRef.current.get(cacheKey);
         if (cached) {
             setEmails(cached.emails);
             setHasMore(cached.hasMore);
@@ -553,7 +574,7 @@ export default function EmailCenter() {
                 const more = data.length >= PAGE_SIZE;
                 setEmails(data);
                 setHasMore(more);
-                folderCacheRef.current.set(activeFolder, { emails: data, hasMore: more, timestamp: Date.now() });
+                folderCacheRef.current.set(cacheKey, { emails: data, hasMore: more, timestamp: Date.now() });
             } else {
                 if (!cached) { setEmails([]); setHasMore(false); }
             }
@@ -563,7 +584,7 @@ export default function EmailCenter() {
         } finally {
             setLoading(false);
         }
-    }, [activeFolder]);
+    }, [activeFolder, kontoFilter]);
 
     // Naechste Seite asynchron nachladen (Infinite Scroll)
     const loadMoreEmails = useCallback(async () => {
@@ -587,7 +608,7 @@ export default function EmailCenter() {
             'unassigned': '/api/emails/unassigned',
         };
         const base = endpointMap[activeFolder] || '/api/emails/inbox';
-        const endpoint = `${base}?offset=${offset}&limit=${PAGE_SIZE}`;
+        const endpoint = emailEndpointWithMailbox(`${base}?offset=${offset}&limit=${PAGE_SIZE}`, kontoFilter);
 
         setLoadingMore(true);
         try {
@@ -615,7 +636,7 @@ export default function EmailCenter() {
                 const fresh = data.filter((e: EmailItem) => !existing.has(e.id));
                 const merged = [...prev, ...fresh];
                 const more = data.length >= PAGE_SIZE;
-                folderCacheRef.current.set(activeFolder, { emails: merged, hasMore: more, timestamp: Date.now() });
+                folderCacheRef.current.set(`${activeFolder}:${kontoFilter ?? 'ALLE'}`, { emails: merged, hasMore: more, timestamp: Date.now() });
                 setHasMore(more);
                 return merged;
             });
@@ -624,7 +645,7 @@ export default function EmailCenter() {
         } finally {
             setLoadingMore(false);
         }
-    }, [activeFolder, emails.length, hasMore, loading, loadingMore]);
+    }, [activeFolder, kontoFilter, emails.length, hasMore, loading, loadingMore]);
 
     // Load stats for folder counts
     const loadStats = useCallback(async () => {
@@ -697,7 +718,7 @@ export default function EmailCenter() {
             };
             const base = endpointMap[activeFolder] || '/api/emails/inbox';
             const refreshLimit = Math.max(emails.length, PAGE_SIZE);
-            const endpoint = `${base}?offset=0&limit=${refreshLimit}`;
+            const endpoint = emailEndpointWithMailbox(`${base}?offset=0&limit=${refreshLimit}`, kontoFilter);
             const res = await fetch(endpoint);
             if (activeFolderRef.current !== activeFolder) return; // folder changed, discard stale response
             if (res.ok) {
@@ -718,12 +739,12 @@ export default function EmailCenter() {
                 const more = data.length >= refreshLimit;
                 setEmails(data);
                 setHasMore(more);
-                folderCacheRef.current.set(activeFolder, { emails: data, hasMore: more, timestamp: Date.now() });
+                folderCacheRef.current.set(`${activeFolder}:${kontoFilter ?? 'ALLE'}`, { emails: data, hasMore: more, timestamp: Date.now() });
             }
         } catch (err) {
             console.error('Silent refresh failed', err);
         }
-    }, [activeFolder, emails.length, loadDrafts]);
+    }, [activeFolder, kontoFilter, emails.length, loadDrafts]);
 
     // Load emails + stats when folder changes (single effect, no duplicates)
     // Drafts werden immer geladen, damit das Entwurf-Badge in allen Ordnern sichtbar ist
@@ -1305,7 +1326,7 @@ export default function EmailCenter() {
         setGlobalSearchLoading(true);
         const timeout = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=0&limit=${PAGE_SIZE}`);
+                const res = await fetch(emailEndpointWithMailbox(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=0&limit=${PAGE_SIZE}`, kontoFilter));
                 if (res.ok) {
                     const data = await res.json();
                     const arr: EmailItem[] = Array.isArray(data) ? data : [];
@@ -1324,7 +1345,7 @@ export default function EmailCenter() {
             }
         }, 350);
         return () => clearTimeout(timeout);
-    }, [isGlobalSearch, searchQuery]);
+    }, [isGlobalSearch, searchQuery, kontoFilter]);
 
     // Naechste Seite der globalen Suche nachladen
     const loadMoreSearch = useCallback(async () => {
@@ -1333,7 +1354,7 @@ export default function EmailCenter() {
         const offset = globalSearchResults.length;
         setSearchLoadingMore(true);
         try {
-            const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=${offset}&limit=${PAGE_SIZE}`);
+            const res = await fetch(emailEndpointWithMailbox(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=${offset}&limit=${PAGE_SIZE}`, kontoFilter));
             if (!res.ok) { setSearchHasMore(false); return; }
             const data = await res.json();
             const arr: EmailItem[] = Array.isArray(data) ? data : [];
@@ -1348,7 +1369,7 @@ export default function EmailCenter() {
         } finally {
             setSearchLoadingMore(false);
         }
-    }, [isGlobalSearch, searchQuery, searchLoadingMore, globalSearchLoading, searchHasMore, globalSearchResults.length]);
+    }, [isGlobalSearch, searchQuery, kontoFilter, searchLoadingMore, globalSearchLoading, searchHasMore, globalSearchResults.length]);
 
     // IntersectionObserver: triggert loadMore wenn Sentinel sichtbar wird
     useEffect(() => {
@@ -1663,6 +1684,28 @@ export default function EmailCenter() {
                     replyQuote={replyQuote}
                     draftId={activeDraftId}
                     replyEmailId={replyToEmailId}
+                    onControlledSubmit={replyToEmailId && replyToEmail?.kontoId === 'EINKAUF' ? async ({ subject, htmlBody, attachments }) => {
+                        if (attachments.length) throw new Error('Einkaufsantworten können nur freigegebene Einkaufsanlagen enthalten.');
+                        const previewResponse = await fetch(`/api/einkauf/mail/${replyToEmailId}/antwort-vorschau`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ subject, htmlBody, anlageIds: [] }),
+                        });
+                        if (!previewResponse.ok) throw new Error('Die Einkaufsantwort konnte nicht geprüft werden.');
+                        const preview = await previewResponse.json();
+                        const summary = `An: ${preview.empfaenger}\nBetreff: ${preview.subject}\n\n${stripHtmlTags(unescapeHtmlEntities(String(preview.htmlBody))).replace(/\s+/g, ' ').trim()}`;
+                        if (!await confirmDialog({ title: 'Einkaufsantwort prüfen', message: summary, confirmLabel: 'Antwort senden' })) return false;
+                        const sendResponse = await fetch(`/api/einkauf/mail/${replyToEmailId}/antworten`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ subject, htmlBody, anlageIds: [], vorschauHash: preview.vorschauHash, idempotenzKey: crypto.randomUUID() }),
+                        });
+                        if (!sendResponse.ok) throw new Error('Der Versand wurde abgelehnt. Bitte Vorschau neu prüfen.');
+                        const versand = await sendResponse.json();
+                        window.dispatchEvent(new Event('einkauf-mailantwort-aktualisieren'));
+                        if (versand.status === 'FEHLGESCHLAGEN') toast.error('Antwort konnte nicht zugestellt werden. Du kannst sie erneut versuchen.');
+                        else if (versand.status === 'UNKLAR') toast.error('Der Versandstatus ist unklar. Bitte prüfe den Nachweis, bevor du weiterarbeitest.');
+                        else toast.success('Einkaufsantwort wurde beauftragt.');
+                        return true;
+                    } : undefined}
                     projektId={activeDraft?.projektId ?? (replyToEmail ?? forwardEmail)?.projektId}
                     anfrageId={activeDraft?.anfrageId ?? (replyToEmail ?? forwardEmail)?.anfrageId}
                     // Im E-Mail-Center ist der Vorgang nicht durch die Seite vorgegeben –
@@ -1816,6 +1859,7 @@ export default function EmailCenter() {
         if (selectedEmail) {
             return (
                 <>
+                    <EmailEinkaufBezug email={selectedEmail} />
                     <EmailDetailHeader
                         email={selectedEmail}
                         folder={activeFolder}
@@ -1972,6 +2016,27 @@ export default function EmailCenter() {
                 )}
                 {/* Search */}
                 <div className="p-3 border-b border-slate-200 space-y-2">
+                    <div role="group" aria-label="Postfach filtern" className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+                        {([
+                            { id: undefined, label: 'Alle Postfächer' },
+                            { id: 'HAUPT' as const, label: 'Hauptpostfach' },
+                            { id: 'DOKUMENTE' as const, label: 'Dokumente' },
+                            { id: 'EINKAUF' as const, label: 'Einkaufspostfach' },
+                        ]).map(option => (
+                            <button
+                                key={option.id ?? 'ALLE'}
+                                type="button"
+                                aria-pressed={kontoFilter === option.id}
+                                onClick={() => setKontoFilter(option.id)}
+                                className={cn(
+                                    'rounded-md px-2 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                                    kontoFilter === option.id ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-600 hover:bg-white/70'
+                                )}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
                     <div className="relative">
                         {isGlobalSearch ? (
                             <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-rose-500" />
@@ -2033,6 +2098,10 @@ export default function EmailCenter() {
                             {sortOrder === 'desc' ? <ArrowDownAZ className="w-3.5 h-3.5" /> : <ArrowUpAZ className="w-3.5 h-3.5" />}
                         </button>
                     </div>
+                    {kontoFilter && <Button variant="outline" size="sm" className="w-full" onClick={() => void importMailbox()} disabled={importingMailbox}>
+                        <RefreshCw className={cn("mr-2 h-3.5 w-3.5", importingMailbox && "animate-spin")} />
+                        {importingMailbox ? 'Postfach wird abgerufen…' : `${kontoFilter === 'EINKAUF' ? 'Einkauf' : kontoFilter === 'DOKUMENTE' ? 'Dokumente' : 'Haupt'}postfach abrufen`}
+                    </Button>}
                     {/* Lese-Filter (im Gesendet-Ordner ausgeblendet) */}
                     {activeFolder !== 'sent' && !isDraftFolderView && (
                         <div className="flex items-center gap-1 bg-slate-50 rounded-md p-0.5">
