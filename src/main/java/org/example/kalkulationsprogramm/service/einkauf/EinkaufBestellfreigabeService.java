@@ -10,7 +10,7 @@ import org.example.email.EmailService;import org.example.kalkulationsprogramm.do
 
  @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED) public Vorschau vorschau(Long orderId,Long templateId){EinkaufBestellung order=orders.findById(orderId).orElseThrow(()->new NoSuchElementException("Bestellung nicht gefunden."));BestellungRevision revision=latest(orderId);pruefeOffeneRevision(order,revision);validateContent(order,revision);List<PositionSnapshot> snapshots=revision.getPositionen().stream().map(BestellungPosition::getPosition).toList();List<Long> attachments=snapshots.stream().flatMap(p->p.anlageVersionIds().stream()).distinct().sorted().toList();List<Liefergruppe> groups=revision.getPositionen().stream().map(p->json.convertValue(p.getLiefergruppe(),Liefergruppe.class)).distinct().toList();
   String type=order.getAngebotsversionId()==null?"EINKAUF_DIREKTBESTELLUNG":"EINKAUF_BESTELLUNG";Map<String,String> values=new LinkedHashMap<>();values.put("LIEFERANTENNAME",safe(order.getEmpfaenger().lieferantenname()));values.put("ANSPRECHPARTNER",safe(order.getEmpfaenger().name()));values.put("ANREDE",safe(order.getEmpfaenger().anrede()));values.put("LIEFERADRESSE",groups.stream().map(Liefergruppe::lieferadresse).filter(Objects::nonNull).findFirst().orElse(""));values.put("EIGENE_KUNDENNUMMER_BEIM_LIEFERANTEN",safe(order.getEmpfaenger().eigeneKundennummer()));values.put("BESTELLNUMMER",order.getNummer());values.put("RUECKMELDECODE","BESTELLUNG:"+order.getNummer());if(order.getAnfrageRevisionId()!=null){var source=offers.findById(order.getAngebotsversionId()).orElseThrow();values.put("ANFRAGENUMMER",source.getAnfrageRevision().getAnfrage().getPaNummer());values.put("LIEFERANTEN_ANGEBOTSNUMMER",safe(source.getAngebotsnummer()));}
-  Gerendert rendered=templates.rendern(templateId,new VorlagenKontext(type,values,snapshots,"BESTELLUNG:"+order.getNummer()));List<PdfPosition> pdfPositions=revision.getPositionen().stream().map(p->new PdfPosition(String.valueOf(p.getId()),p.getPosition(),p.getHerkuenfte().stream().map(h->new PdfHerkunft(h.getBedarfId(),null,h.getMenge(),p.getPosition().basis()==null?null:p.getPosition().basis().einheit())).toList(),List.of(),p.getNettoEinzelpreis()==null?null:p.getNettoEinzelpreis().multiply(p.getMenge()))).toList();byte[] pdfBytes=pdf.erzeugen(new Beleg("BESTELLUNG",order.getNummer(),revision.getNummer(),order.getEmpfaenger(),pdfPositions,List.of(),groups,null,null,(String)revision.getSnapshot().get("bedingungen"),null,true));files.pruefePaketgroesse(attachments,pdfBytes.length);var stored=files.speicherePdfSnapshot(pdfBytes,order.getNummer()+"-Bestellung-"+revision.getNummer()+".pdf");String token=token();String hash=sha256(token+"|"+order.getId()+"|"+order.getVersion()+"|"+revision.getId()+"|"+rendered.subject()+"|"+rendered.htmlBody()+"|"+stored.dateiId()+"|"+sha256(pdfBytes)+"|"+attachments);Instant now=Instant.now();previews.saveAndFlush(new EinkaufKommunikationVorschau(token,orderId,orderId,revision.getId(),templateId,rendered.version(),rendered.subject(),rendered.htmlBody(),order.getEmpfaenger().email(),attachments,stored.dateiId(),sha256(pdfBytes),hash,now,now.plus(Duration.ofDays(1))));return new Vorschau(order.getVersion(),token,rendered.subject(),rendered.htmlBody(),order.getEmpfaenger().email(),stored.dateiId(),attachments);}
+  Gerendert rendered=templates.rendern(templateId,new VorlagenKontext(type,values,snapshots,"BESTELLUNG:"+order.getNummer()));List<PdfPosition> pdfPositions=revision.getPositionen().stream().map(p->new PdfPosition(String.valueOf(p.getId()),p.getPosition(),p.getHerkuenfte().stream().map(h->new PdfHerkunft(h.getBedarfId(),null,h.getMenge(),p.getPosition().basis()==null?null:p.getPosition().basis().einheit())).toList(),List.of(),p.getNettoEinzelpreis()==null?null:p.getNettoEinzelpreis().multiply(p.getMenge()))).toList();byte[] pdfBytes=pdf.erzeugen(new Beleg("BESTELLUNG",order.getNummer(),revision.getNummer(),order.getEmpfaenger(),pdfPositions,List.of(),groups,null,null,(String)revision.getSnapshot().get("bedingungen"),null,true));files.pruefePaketgroesse(attachments,pdfBytes.length);var stored=files.speicherePdfSnapshot(pdfBytes,order.getNummer()+"-Bestellung-"+revision.getNummer()+".pdf");String token=token();String hash=sha256(token+"|"+order.getId()+"|"+order.getVersion()+"|"+revision.getId()+"|"+rendered.subject()+"|"+rendered.htmlBody()+"|"+stored.dateiId()+"|"+sha256(pdfBytes)+"|"+attachments);Instant now=Instant.now();previews.saveAndFlush(new EinkaufKommunikationVorschau(token,orderId,orderId,revision.getId(),templateId,rendered.version(),rendered.subject(),rendered.htmlBody(),order.getEmpfaenger().email(),attachments,stored.dateiId(),sha256(pdfBytes),hash,now,now.plus(Duration.ofDays(1))));return new Vorschau(order.getVersion(),token,rendered.subject(),rendered.htmlBody(),order.getEmpfaenger().email(),stored.dateiId(),attachments,revision.getNummer(),order.getEmpfaenger().eigeneKundennummer(),localDate(revision.getSnapshot().get("bestaetigungsfrist")),localDate(revision.getSnapshot().get("liefertermin")),files.metadaten(attachments));}
 
  @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED) public VersandDto freigeben(Long orderId,Freigabe r,Long actor){if(r==null||r.idempotenzKey()==null||r.vorschauHash()==null||actor==null||actor<=0)throw bad("Vorschau, Idempotenzschlüssel und Benutzer sind erforderlich.");EinkaufBestellung order=EinkaufBestellSperren.sperre(orderId,List.of(),orders,revisions,needs);
   var retry=outboxRepo.findByIdempotenzKey(r.idempotenzKey());
@@ -86,6 +86,31 @@ import org.example.email.EmailService;import org.example.kalkulationsprogramm.do
   EinkaufBestellSperren.aktualisiereStatus(order,amounts.standFuerVorgang("BESTELLUNG:"+id));
   audit.protokolliere("BESTELLUNG",id,"STORNO_BESTAETIGT",actor,null,json.valueToTree(request),request.grund());
   return new StornoErgebnis(id,order.getStatus(),"Die belegten, noch nicht gelieferten Mengen wurden freigegeben.");
+ }
+
+ @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+ public VersandDto erneutSenden(Long id,Long versandId,long version,Long actor) {
+  var order=EinkaufBestellSperren.sperre(id,List.of(),orders,revisions,needs);
+  var revision=pruefeAktuellenVersand(id,versandId);
+  var result=outbox.bestellungErneutVersuchen(versandId,version,actor,id,revision.getId(),participationId(order));
+  audit.protokolliere("BESTELLUNG",id,"VERSAND_ERNEUT_FREIGEGEBEN",actor,null,json.valueToTree(result),"Sicher fehlgeschlagenen Auftrag erneut freigegeben");
+  worker.dispatchNachCommit(result.id());
+  return result;
+ }
+
+ @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+ public void versandKlaeren(Long id,Long versandId,Klaerung request,Long actor) {
+  var order=EinkaufBestellSperren.sperre(id,List.of(),orders,revisions,needs);
+  var revision=pruefeAktuellenVersand(id,versandId);
+  outbox.bestellungKlaeren(versandId,request,actor,id,revision.getId(),participationId(order),this::versandAngenommen);
+  audit.protokolliere("BESTELLUNG",id,"VERSAND_GEKLAERT",actor,null,json.valueToTree(request),request.beleg());
+ }
+
+ private BestellungRevision pruefeAktuellenVersand(Long id,Long versandId) {
+  var revision=latest(id);
+  if(versandId==null||versandId<=0||!Objects.equals(revision.getVersandId(),versandId))
+   throw new org.example.kalkulationsprogramm.exception.NotFoundException("Versandauftrag gehört nicht zur aktuellen Bestellfassung.");
+  return revision;
  }
 
  private void bucheAnnahme(EinkaufBestellung order,BestellungRevision revision,UUID key,Long actor,Instant zeit) {

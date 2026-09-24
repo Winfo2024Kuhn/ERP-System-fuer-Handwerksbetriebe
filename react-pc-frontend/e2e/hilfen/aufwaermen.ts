@@ -16,7 +16,7 @@ import { blockiereFremdeNetzwerkzugriffe } from './api';
  * und jeder Test sieht einen warmen Server -- so, wie es der Nutzer auch tut,
  * der nie den allerersten Request nach dem Serverstart abbekommt.
  *
- * Ohne Backend liefern die /api-Routen Fehler; das ist hier egal, es geht nur
+ * /api-Routen werden vor dem lokalen Backend blockiert; hier geht es nur
  * um die Kompilierung der Frontend-Module.
  *
  * Nachtrag Abschnitt 10 (Code-Reviewer, Abschnitt 4: "die groesste
@@ -38,6 +38,7 @@ export default async function aufwaermen(config: FullConfig): Promise<void> {
     try {
         const page = await browser.newPage();
         await blockiereFremdeNetzwerkzugriffe(page);
+        await page.route('**/api/**', route => route.abort('blockedbyclient'));
         for (const pfad of ['/', '/dokument-editor', '/lieferanten']) {
             try {
                 await page.goto(`${baseURL}${pfad}`, { waitUntil: 'networkidle', timeout: 90_000 });

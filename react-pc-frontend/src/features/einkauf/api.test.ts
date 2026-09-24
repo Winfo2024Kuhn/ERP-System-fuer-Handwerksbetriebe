@@ -4,6 +4,11 @@ import { einkaufApi, EinkaufApiError } from './api';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('einkaufApi', () => {
+  it('accepts empty HTTP 200 from a command without a response body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+    await expect(einkaufApi.postVoid('/api/einkauf/bestellungen/12/extern-gesendet', { version: 4 })).resolves.toBeUndefined();
+  });
+
   it('sends JSON through the shared fetch interceptor and decodes a typed response', async () => {
     const payload = { id: 12, version: 3, verworfen: false };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));

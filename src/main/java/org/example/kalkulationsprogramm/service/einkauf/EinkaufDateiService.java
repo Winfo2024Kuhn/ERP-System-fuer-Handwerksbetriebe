@@ -109,7 +109,7 @@ public class EinkaufDateiService {
         String extension = extension(originalName);
         String mime = validateFormat(extension, datei.getContentType(), bytes);
         String hash = sha256(bytes);
-        EinkaufDatei dateiEntity = dateien.findBySha256(hash)
+        EinkaufDatei dateiEntity = dateien.sperreBySha256(hash)
                 .map(existing -> reuseOrRepair(existing, bytes, originalName, mime))
                 .orElseGet(() -> writeNewFile(bytes, originalName, mime));
         EinkaufAnlageVersion version = versionen.save(new EinkaufAnlageVersion(bedarf, dateiEntity, revision.trim()));
@@ -150,6 +150,88 @@ public class EinkaufDateiService {
         String mime = validateFormat(extension(name), null, bytes);
         EinkaufDatei stored = reuseOrReference(bytes, name, mime, null, dokumentId);
         return saveVersion(bedarf, stored, revision);
+    }
+
+    /** Liefert nur die Verfügbarkeit; ein fehlender Altbeleg bleibt in der Auswahl sichtbar. */
+    public boolean lieferantenbelegVerfuegbar(LieferantDokument dokument) {
+        try {
+            Path path = lieferantenbelegPfad(dokument);
+            return dokument.getEffektiverDateiname() != null
+                    && dokument.getEffektiverDateiname().toLowerCase(Locale.ROOT).endsWith(".pdf")
+                    && Files.isRegularFile(path) && Files.size(path) > 0 && Files.size(path) <= MAX_DATEIGROESSE;
+        } catch (IOException | IllegalArgumentException | ResponseStatusException exception) { return false; }
+    }
+
+    /** Kein künstlicher Bedarf: der Lieferantenbeleg selbst ist die unveränderliche Herkunft. */
+    @Transactional
+    public EinkaufDatei registriereLieferantenbeleg(LieferantDokument dokument) {
+        String name = safeFilename(dokument.getEffektiverDateiname());
+        byte[] bytes = readBounded(lieferantenbelegPfad(dokument));
+        if (!"pdf".equals(extension(name))) throw new IllegalArgumentException("Bitte einen PDF-Beleg auswählen.");
+        validateFormat("pdf", null, bytes);
+        String hash = sha256(bytes);
+        EinkaufDatei stored = dateien.sperreBySha256(hash).orElse(null);
+        if (stored != null && stored.getLieferantDokumentId() != null
+                && !dokument.getId().equals(stored.getLieferantDokumentId()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Diese Datei ist bereits einem anderen Lieferantenbeleg zugeordnet. Bitte den ursprünglichen Beleg verwenden.");
+        if (stored == null) {
+            stored = new EinkaufDatei(hash, null, name, "application/pdf", bytes.length,
+                    dokument.getAttachment() == null ? null : dokument.getAttachment().getId(), dokument.getId());
+        } else {
+            // Eine bisher nur technische Datei darf erstmals Herkunft bekommen; bestehende Belegbindungen nie ersetzen.
+            stored.setLieferantDokumentId(dokument.getId());
+            stored.setGespeicherterName(null);
+            stored.setEmailAttachmentId(dokument.getAttachment() == null ? null : dokument.getAttachment().getId());
+        }
+        return dateien.save(stored);
+    }
+
+    @Transactional
+    public LieferantDokument ladeLieferantenbelegHoch(org.example.kalkulationsprogramm.domain.Lieferanten lieferant,
+            org.example.kalkulationsprogramm.domain.LieferantDokumentTyp typ, MultipartFile upload) {
+        if (upload == null || upload.isEmpty() || upload.getSize() > MAX_DATEIGROESSE)
+            throw new IllegalArgumentException("Bitte einen PDF-Beleg bis 10 MiB auswählen.");
+        String name = safeFilename(upload.getOriginalFilename());
+        if (!"pdf".equals(extension(name))) throw new IllegalArgumentException("Bitte einen PDF-Beleg auswählen.");
+        byte[] bytes;
+        try (var input = upload.getInputStream()) { bytes = input.readNBytes((int) MAX_DATEIGROESSE + 1); }
+        catch (IOException exception) { throw new IllegalArgumentException("Der Beleg konnte nicht gelesen werden.", exception); }
+        if (bytes.length == 0 || bytes.length > MAX_DATEIGROESSE)
+            throw new IllegalArgumentException("Bitte einen PDF-Beleg bis 10 MiB auswählen.");
+        validateFormat("pdf", upload.getContentType(), bytes);
+        var prior = dateien.findBySha256(sha256(bytes));
+        if (prior.isPresent() && prior.get().getLieferantDokumentId() != null)
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Diese Datei wurde schon als Lieferantenbeleg erfasst. Bitte den vorhandenen Beleg auswählen.");
+        Path directory = uploadRoot.getParent().resolve("lieferanten").resolve(lieferant.getId().toString()).normalize();
+        String storedName = UUID.randomUUID() + ".pdf";
+        Path destination = secureStoredPath(directory, storedName);
+        try {
+            Files.createDirectories(directory);
+            Files.write(destination, bytes, java.nio.file.StandardOpenOption.CREATE_NEW);
+            if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                        new org.springframework.transaction.support.TransactionSynchronization() {
+                            @Override public void afterCompletion(int status) {
+                                if (status != STATUS_COMMITTED) { try { Files.deleteIfExists(destination); } catch (IOException ignored) { /* DB rollback remains authoritative. */ } }
+                            }
+                        });
+            }
+            LieferantDokument document = new LieferantDokument();
+            document.setLieferant(lieferant); document.setTyp(typ);
+            document.setOriginalDateiname(name); document.setGespeicherterDateiname(storedName);
+            return lieferantDokumente.saveAndFlush(document);
+        } catch (IOException | RuntimeException exception) {
+            try { Files.deleteIfExists(destination); } catch (IOException cleanup) { exception.addSuppressed(cleanup); }
+            throw new IllegalStateException("Der Beleg konnte nicht gespeichert werden.", exception);
+        }
+    }
+
+    private Path lieferantenbelegPfad(LieferantDokument dokument) {
+        if (dokument.getAttachment() != null) return resolveEmailAttachment(dokument.getAttachment());
+        Path directory = uploadRoot.getParent().resolve("lieferanten").resolve(dokument.getLieferant().getId().toString()).normalize();
+        return secureStoredPath(directory, dokument.getGespeicherterDateiname());
     }
 
     @Transactional
@@ -384,7 +466,7 @@ public class EinkaufDateiService {
             existing.setMimeTyp(mime);
             existing.setByteAnzahl(uploadedBytes.length);
             existing.setEmailAttachmentId(null);
-            existing.setLieferantDokumentId(null);
+            // Die unveränderliche Lieferantenherkunft bleibt auch bei expliziter Dateiwiederherstellung erhalten.
             try {
                 return dateien.save(existing);
             } catch (RuntimeException exception) {

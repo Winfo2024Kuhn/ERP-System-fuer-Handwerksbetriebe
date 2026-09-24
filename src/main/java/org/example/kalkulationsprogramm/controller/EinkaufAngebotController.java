@@ -24,6 +24,12 @@ public class EinkaufAngebotController {
     public VersionDto erfassen(@PathVariable Long id, @RequestBody Erfassung request, Authentication authentication) {
         return service.erfassen(id, request, rechte.verlange(authentication, EinkaufBerechtigung.BEARBEITEN));
     }
+    @GetMapping("/anfragen/{id}/angebote")
+    public java.util.List<org.example.kalkulationsprogramm.dto.Einkauf.EinkaufAngebotDto.Uebersicht> auflisten(
+            @PathVariable Long id, Authentication authentication) {
+        rechte.verlange(authentication, EinkaufBerechtigung.LESEN);
+        return service.auflisten(id);
+    }
     @GetMapping("/angebote/{id}")
     public Angebot laden(@PathVariable Long id, Authentication authentication) {
         rechte.verlange(authentication, EinkaufBerechtigung.LESEN);

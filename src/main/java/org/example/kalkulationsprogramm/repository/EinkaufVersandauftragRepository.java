@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.List;
 
 public interface EinkaufVersandauftragRepository extends JpaRepository<EinkaufVersandauftrag, Long> {
+    Optional<EinkaufVersandauftrag> findByTypAndVorgangIdAndFreigabeHash(String typ, Long vorgangId, String freigabeHash);
     Optional<EinkaufVersandauftrag> findByIdempotenzKey(UUID idempotenzKey);
     // A locking current read also sees the winning transaction under MySQL REPEATABLE READ.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -28,6 +29,11 @@ public interface EinkaufVersandauftragRepository extends JpaRepository<EinkaufVe
             + "a.erstelltAm as erstelltAm, a.angenommenAm as angenommenAm, a.archiviertAm as archiviertAm, a.messageId as messageId "
             + "from EinkaufVersandauftrag a where a.typ = :typ and a.vorgangId = :vorgangId and a.revisionId = :revisionId order by a.id")
     List<StatusProjektion> leseStatus(@Param("typ") String typ, @Param("vorgangId") Long vorgangId, @Param("revisionId") Long revisionId);
+    @Query("select a.id as id, a.version as version, a.typ as typ, a.vorgangId as vorgangId, "
+            + "a.revisionId as revisionId, a.beteiligungId as beteiligungId, a.status as status, a.fehlerCode as fehlerCode, "
+            + "a.erstelltAm as erstelltAm, a.angenommenAm as angenommenAm, a.archiviertAm as archiviertAm, a.messageId as messageId "
+            + "from EinkaufVersandauftrag a where a.typ = :typ and a.vorgangId = :vorgangId order by a.id")
+    List<StatusProjektion> leseVorgangStatus(@Param("typ") String typ, @Param("vorgangId") Long vorgangId);
     List<EinkaufVersandauftrag> findAllByStatus(EinkaufVersandauftrag.Status status);
     @Query("select a.id from EinkaufVersandauftrag a where a.status = :status order by a.erstelltAm, a.id")
     List<Long> findeIdsByStatus(@Param("status") EinkaufVersandauftrag.Status status, Pageable pageable);
