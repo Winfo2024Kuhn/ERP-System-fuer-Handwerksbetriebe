@@ -18,6 +18,8 @@ interface LieferantSearchModalProps {
     onClose: () => void;
     onSelect: (lieferant: LieferantSuchErgebnis) => void;
     currentLieferantId?: number;
+    /** Suchtext, der beim Öffnen bereits gesetzt sein soll. */
+    initialSearch?: string;
     /** Nur aktive Lieferanten anzeigen (Default: true) */
     nurAktive?: boolean;
 }
@@ -31,6 +33,7 @@ export function LieferantSearchModal({
     onClose,
     onSelect,
     currentLieferantId,
+    initialSearch = '',
     nurAktive = true,
 }: LieferantSearchModalProps) {
     const [searchTerm, setSearchTerm] = useState('');
@@ -67,13 +70,14 @@ export function LieferantSearchModal({
 
     useEffect(() => {
         if (isOpen) {
-            setSearchTerm('');
-            loadLieferanten('');
+            const suche = initialSearch.trim();
+            setSearchTerm(suche);
+            loadLieferanten(suche);
         }
         return () => {
             if (abortRef.current) abortRef.current.abort();
         };
-    }, [isOpen, loadLieferanten]);
+    }, [isOpen, initialSearch, loadLieferanten]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -83,6 +87,16 @@ export function LieferantSearchModal({
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };
     }, [searchTerm, isOpen, loadLieferanten]);
+
+    // Fluchtweg per Tastatur – ohne den bliebe nur der Klick auf das X.
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
 
     const handleSelect = (l: LieferantSuchErgebnis) => {
         onSelect(l);

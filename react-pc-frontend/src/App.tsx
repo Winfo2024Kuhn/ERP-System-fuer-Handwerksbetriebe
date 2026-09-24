@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Outlet, Navigate, Route } from 'react-router-dom';
 import { MainLayout } from './components/layout/MainLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
@@ -12,12 +12,14 @@ import Leistungseditor from './pages/Leistungseditor';
 import Kundeneditor from './pages/Kundeneditor';
 import LieferantenEditor from './pages/LieferantenEditor';
 import ArtikelEditor from './pages/ArtikelEditor';
-
+import ArtikelDetail from './pages/ArtikelDetail';
+import ArbeitsgangEditor from './pages/ArbeitsgangEditor';
 import ProduktkategorieEditor from './pages/ProduktkategorieEditor';
 import ProjektEditor from './pages/ProjektEditor';
 import AnfrageEditor from './pages/AnfrageEditor';
 import BestellungenUebersicht from './pages/BestellungenUebersicht';
 import ErfolgsanalyseEditor from './pages/ErfolgsanalyseEditor';
+import KostenstellenControllingEditor from './pages/KostenstellenControllingEditor';
 import FormularwesenEditor from './pages/FormularwesenEditor';
 import OffenePostenEditor from './pages/OffenePostenEditor';
 import EmailCenter from './pages/EmailCenter';
@@ -27,45 +29,44 @@ import MietabrechnungEditor from './pages/MietabrechnungEditor';
 import BenutzerEditor from './pages/BenutzerEditor';
 import MitarbeiterEditor from './pages/MitarbeiterEditor';
 import ZeiterfassungKalender from './pages/ZeiterfassungKalender';
+import Monatsabschluss from './pages/Monatsabschluss';
 import ZeiterfassungAuswertung from './pages/ZeiterfassungAuswertung';
 import ZeiterfassungZeitkonten from './pages/ZeiterfassungZeitkonten';
 import ZeiterfassungFeiertage from './pages/ZeiterfassungFeiertage';
 import ZeiterfassungSteuerberater from './pages/ZeiterfassungSteuerberater';
 import Urlaubsantraege from './pages/Urlaubsantraege';
+import Langzeitkrankmeldungen from './pages/Langzeitkrankmeldungen';
 import AbteilungBerechtigungenEditor from './pages/AbteilungBerechtigungenEditor';
 import TerminKalender from './pages/TerminKalender';
 import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
+import BelegeKasseEditor from './pages/BelegeKasseEditor';
 import DokumentUebersichtEditor from './pages/DokumentUebersichtEditor';
 import FirmaEditor from './pages/FirmaEditor';
+import IdsWarenkorbPage from './pages/IdsWarenkorbPage';
 import BestellungEditor from './pages/BestellungEditor';
+import PreisanfragenPage from './pages/PreisanfragenPage';
 import BedarfUebersichtPage from './pages/BedarfUebersichtPage';
 import ProjektBedarfPage from './pages/ProjektBedarfPage';
-import PreisanfragenPage from './pages/PreisanfragenPage';
 import DocumentEditorPage from './pages/DocumentEditorPage';
 import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
 import EinstellungenEditor from './pages/EinstellungenEditor';
 import LoginPage from './pages/LoginPage';
 import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
-import WpkDashboardPage from './pages/WpkDashboardPage';
-import BetriebsmittelPage from './pages/BetriebsmittelPage';
-import SchweisserZertifikatePage from './pages/SchweisserZertifikatePage';
-import WpsPage from './pages/WpsPage';
-import WerkstoffzeugnissePage from './pages/WerkstoffzeugnissePage';
-import OrganigrammPage from './pages/OrganigrammPage';
-import KiAssistentPage from './pages/KiAssistentPage';
+import WebsiteEditor from './pages/WebsiteEditor';
+import Einkaufsanfragen from './pages/Einkaufsanfragen';
+import EinkaufsanfrageDetail from './pages/EinkaufsanfrageDetail';
+import EinkaufBestellungDetail from './pages/EinkaufBestellungDetail';
+import EinkaufLieferungen from './pages/EinkaufLieferungen';
+import EinkaufFaelligkeiten from './pages/EinkaufFaelligkeiten';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
 installSessionInterceptor();
 
-export default function App() {
-  return (
-    <ToastProvider>
-      <ConfirmProvider>
-        <AuthProvider>
-          <BrowserRouter>
-            <SessionGuard />
-            <Routes>
+// Data router preserves the route tree and lets editors await saving before navigation.
+const router = createBrowserRouter(createRoutesFromElements(
+  <Route element={<><SessionGuard /><Outlet /></>}>
+
               {/* Public pages */}
               <Route path="/login" element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
 
@@ -83,20 +84,32 @@ export default function App() {
                 <Route path="/mitarbeiter" element={<ErrorBoundary><MitarbeiterEditor /></ErrorBoundary>} />
                 <Route path="/lieferanten" element={<ErrorBoundary><LieferantenEditor /></ErrorBoundary>} />
                 <Route path="/artikel" element={<ErrorBoundary><ArtikelEditor /></ErrorBoundary>} />
-
+                <Route path="/artikel/:id" element={<ErrorBoundary><ArtikelDetail /></ErrorBoundary>} />
+                <Route path="/arbeitsgaenge" element={<ErrorBoundary><ArbeitsgangEditor /></ErrorBoundary>} />
                 <Route path="/produktkategorien" element={<ErrorBoundary><ProduktkategorieEditor /></ErrorBoundary>} />
                 <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
                 <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
                 <Route path="/bestellungen" element={<ErrorBoundary><BestellungenUebersicht /></ErrorBoundary>} />
+                <Route path="/bestellungen/:id" element={<ErrorBoundary><EinkaufBestellungDetail /></ErrorBoundary>} />
+                <Route path="/einkauf/lieferungen" element={<ErrorBoundary><EinkaufLieferungen /></ErrorBoundary>} />
+                <Route path="/einkauf/faelligkeiten" element={<ErrorBoundary><EinkaufFaelligkeiten /></ErrorBoundary>} />
+                <Route path="/einkaufsanfragen" element={<ErrorBoundary><Einkaufsanfragen /></ErrorBoundary>} />
+                <Route path="/einkauf/anfragen" element={<Navigate to="/einkaufsanfragen" replace />} />
+                <Route path="/einkaufsanfragen/:id" element={<ErrorBoundary><EinkaufsanfrageDetail /></ErrorBoundary>} />
+                <Route path="/bestellungen/ids/:id?" element={<ErrorBoundary><IdsWarenkorbPage /></ErrorBoundary>} />
                 <Route path="/bestellungen/bedarf" element={<ErrorBoundary><BedarfUebersichtPage /></ErrorBoundary>} />
                 <Route path="/bestellungen/bedarf/projekt/:projektId" element={<ErrorBoundary><ProjektBedarfPage /></ErrorBoundary>} />
                 <Route path="/bestellungen/bedarf/legacy" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
                 <Route path="/einkauf/preisanfragen" element={<ErrorBoundary><PreisanfragenPage /></ErrorBoundary>} />
+                <Route path="/bestellungen/bedarf/vorrat" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
                 <Route path="/kalender" element={<ErrorBoundary><TerminKalender /></ErrorBoundary>} />
                 <Route path="/analyse" element={<ErrorBoundary><ErfolgsanalyseEditor /></ErrorBoundary>} />
+                <Route path="/kostenstellen" element={<ErrorBoundary><KostenstellenControllingEditor /></ErrorBoundary>} />
+                <Route path="/website" element={<RequireAdmin><ErrorBoundary><WebsiteEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/formulare" element={<ErrorBoundary><FormularwesenEditor /></ErrorBoundary>} />
                 <Route path="/offeneposten" element={<ErrorBoundary><OffenePostenEditor /></ErrorBoundary>} />
                 <Route path="/rechnungsuebersicht" element={<ErrorBoundary><RechnungsuebersichtEditor /></ErrorBoundary>} />
+                <Route path="/belege-kasse" element={<ErrorBoundary><BelegeKasseEditor /></ErrorBoundary>} />
                 <Route path="/dokumentuebersicht" element={<ErrorBoundary><DokumentUebersichtEditor /></ErrorBoundary>} />
                 <Route path="/emails" element={<Navigate to="/emails/inbox" replace />} />
                 <Route path="/emails/:folder" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
@@ -107,29 +120,30 @@ export default function App() {
                 <Route path="/benutzer" element={<RequireAdmin><ErrorBoundary><BenutzerEditor /></ErrorBoundary></RequireAdmin>} />
 
                 {/* Zeiterfassung & Admin */}
+                <Route path="/monatsabschluss" element={<ErrorBoundary><Monatsabschluss /></ErrorBoundary>} />
                 <Route path="/zeitbuchungen" element={<ErrorBoundary><ZeiterfassungKalender /></ErrorBoundary>} />
                 <Route path="/auswertung" element={<ErrorBoundary><ZeiterfassungAuswertung /></ErrorBoundary>} />
                 <Route path="/steuerberater" element={<ErrorBoundary><ZeiterfassungSteuerberater /></ErrorBoundary>} />
                 <Route path="/zeitkonten" element={<ErrorBoundary><ZeiterfassungZeitkonten /></ErrorBoundary>} />
                 <Route path="/feiertage" element={<ErrorBoundary><ZeiterfassungFeiertage /></ErrorBoundary>} />
                 <Route path="/urlaubsantraege" element={<ErrorBoundary><Urlaubsantraege /></ErrorBoundary>} />
+                <Route path="/langzeitkrankmeldungen" element={<ErrorBoundary><Langzeitkrankmeldungen /></ErrorBoundary>} />
                 <Route path="/abteilung-berechtigungen" element={<RequireAdmin><ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
-                <Route path="/organigramm" element={<ErrorBoundary><OrganigrammPage /></ErrorBoundary>} />
                 <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />
-                <Route path="/ki-assistent" element={<ErrorBoundary><KiAssistentPage /></ErrorBoundary>} />
-
-                {/* EN 1090 */}
-                <Route path="/en1090/wpk" element={<ErrorBoundary><WpkDashboardPage /></ErrorBoundary>} />
-                <Route path="/en1090/schweisser" element={<ErrorBoundary><SchweisserZertifikatePage /></ErrorBoundary>} />
-                <Route path="/en1090/wps" element={<ErrorBoundary><WpsPage /></ErrorBoundary>} />
-                <Route path="/en1090/werkstoffzeugnisse" element={<ErrorBoundary><WerkstoffzeugnissePage /></ErrorBoundary>} />
-                <Route path="/betriebsmittel" element={<ErrorBoundary><BetriebsmittelPage /></ErrorBoundary>} />
 
                 <Route path="*" element={<Navigate to="/projekte" replace />} />
               </Route>
-            </Routes>
-          </BrowserRouter>
+
+  </Route>
+));
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <ConfirmProvider>
+        <AuthProvider>
+          <RouterProvider router={router} />
         </AuthProvider>
       </ConfirmProvider>
     </ToastProvider>

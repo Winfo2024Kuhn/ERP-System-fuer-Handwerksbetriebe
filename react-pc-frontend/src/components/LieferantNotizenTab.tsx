@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Search, Trash2, StickyNote, Calendar } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -38,9 +38,23 @@ export function LieferantNotizenTab({ lieferantId, notizen: initialNotizen, onNo
         }
     }, [lieferantId]);
 
+    // Gesucht wird live beim Tippen. Die kurze Pause bündelt schnelle Eingaben,
+    // damit nicht jeder Tastenanschlag einen Request auslöst. Der erste Durchlauf
+    // wird übersprungen – die Notizen kommen beim Öffnen bereits als Prop.
+    const ersterDurchlauf = useRef(true);
+    useEffect(() => {
+        if (ersterDurchlauf.current) {
+            ersterDurchlauf.current = false;
+            return;
+        }
+        const timer = setTimeout(() => loadNotizen(searchQuery), 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery, loadNotizen]);
+
+    // Enter im Suchfeld darf das Formular nicht abschicken – sonst lädt der Browser
+    // die Seite neu. Gesucht wird ohnehin schon live.
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        loadNotizen(searchQuery);
     };
 
     const handleCreate = async () => {
@@ -112,9 +126,6 @@ export function LieferantNotizenTab({ lieferantId, notizen: initialNotizen, onNo
                             className="pl-9"
                         />
                     </div>
-                    <Button type="submit" variant="outline" size="sm">
-                        Suchen
-                    </Button>
                 </form>
                 <Button
                     onClick={() => setIsAdding(true)}

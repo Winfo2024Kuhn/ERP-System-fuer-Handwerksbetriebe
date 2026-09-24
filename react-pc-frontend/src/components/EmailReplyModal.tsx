@@ -269,7 +269,9 @@ export function EmailReplyModal({
             const formData = new FormData();
             
             const dtoPayload = {
-                sender: 'bauschlosserei-kuhn@t-online.de', // TODO: Settings
+                // Leerer sender = Backend loest die Adresse aus dem
+                // eingeloggten Benutzer (frontendUserId) auf.
+                sender: null,
                 recipients: [recipient.trim()],
                 subject: subject.trim(),
                 body: prepareHtmlForSending(fullBody),

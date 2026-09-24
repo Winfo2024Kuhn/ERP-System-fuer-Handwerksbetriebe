@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { serviceLineTotal } from './document-editor/helpers';
 import type { DocBlock } from './document-editor/types';
 
 const formatCurrencyValue = (val: number | null | undefined) =>
@@ -24,7 +25,9 @@ interface TeilrechnungPositionRowProps {
 }
 
 export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSelect, onToggleExpand, disabled }: TeilrechnungPositionRowProps) {
-    const lineTotal = (block.quantity || 0) * (block.price || 0);
+    // serviceLineTotal statt quantity*price: sonst zeigt die Auswahlzeile den
+    // vollen Preis, obwohl auf der Position ein Rabatt liegt.
+    const lineTotal = serviceLineTotal(block);
     const hasLangtext = !!(block.content && stripHtml(block.content).trim());
 
     return (

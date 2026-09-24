@@ -69,4 +69,59 @@ describe('ImageViewer', () => {
         render(<ImageViewer src="/test.jpg" onClose={() => {}} />);
         expect(screen.getByAltText('Vollbild')).toBeInTheDocument();
     });
+
+    it('startet bei 100% Zoom', () => {
+        render(<ImageViewer src="/test.jpg" onClose={() => {}} />);
+        expect(screen.getByText('100%')).toBeInTheDocument();
+    });
+
+    it('vergrößert das Bild bei Klick auf Vergrößern', async () => {
+        const user = userEvent.setup();
+        render(<ImageViewer src="/test.jpg" onClose={() => {}} />);
+        await user.click(screen.getByTitle('Vergrößern (+)'));
+        expect(screen.getByText('150%')).toBeInTheDocument();
+    });
+
+    it('verkleinert nicht unter 100%', async () => {
+        const user = userEvent.setup();
+        render(<ImageViewer src="/test.jpg" onClose={() => {}} />);
+        const out = screen.getByTitle('Verkleinern (-)');
+        expect(out).toBeDisabled();
+        await user.click(screen.getByTitle('Vergrößern (+)'));
+        expect(screen.getByText('150%')).toBeInTheDocument();
+        await user.click(screen.getByTitle('Verkleinern (-)'));
+        expect(screen.getByText('100%')).toBeInTheDocument();
+    });
+
+    it('setzt den Zoom mit dem Prozent-Button zurück', async () => {
+        const user = userEvent.setup();
+        render(<ImageViewer src="/test.jpg" onClose={() => {}} />);
+        await user.click(screen.getByTitle('Vergrößern (+)'));
+        await user.click(screen.getByTitle('Vergrößern (+)'));
+        expect(screen.getByText('200%')).toBeInTheDocument();
+        await user.click(screen.getByTitle('Zoom zurücksetzen (0)'));
+        expect(screen.getByText('100%')).toBeInTheDocument();
+    });
+
+    it('blendet Pfeil-Navigation aus, wenn gezoomt ist', async () => {
+        const user = userEvent.setup();
+        const images = [
+            { url: '/bild1.jpg', name: 'Bild 1' },
+            { url: '/bild2.jpg', name: 'Bild 2' },
+        ];
+        render(<ImageViewer src="/bild1.jpg" images={images} startIndex={0} onClose={() => {}} />);
+        expect(screen.getByTitle('Nächstes Bild (→)')).toBeInTheDocument();
+        await user.click(screen.getByTitle('Vergrößern (+)'));
+        expect(screen.queryByTitle('Nächstes Bild (→)')).not.toBeInTheDocument();
+    });
+
+    it('toggelt Zoom per Doppelklick auf das Bild', async () => {
+        const user = userEvent.setup();
+        render(<ImageViewer src="/test.jpg" alt="Foto" onClose={() => {}} />);
+        const img = screen.getByAltText('Foto');
+        await user.dblClick(img);
+        expect(screen.getByText('250%')).toBeInTheDocument();
+        await user.dblClick(img);
+        expect(screen.getByText('100%')).toBeInTheDocument();
+    });
 });

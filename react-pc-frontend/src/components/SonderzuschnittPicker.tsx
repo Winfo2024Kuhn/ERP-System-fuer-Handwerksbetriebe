@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, Ruler, Scissors, X } from 'lucide-react';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
+import { DecimalInput } from './ui/decimal-input';
+import { useToast } from './ui/toast';
+import { validateNumberDrafts } from '../lib/numberDrafts';
+import { formatDecimalInput } from '../lib/numberInput';
+import { toSafeResourceUrl } from '../lib/htmlSanitizer';
+import { nutztEchtesBackend } from '../features/einkauf/originalBedarfApi';
 import { cn } from '../lib/utils';
 
 interface SchnittAchse {
@@ -15,13 +20,15 @@ interface Schnittbild {
     bildUrlSchnittbild: string;
     schnittAchseId: number;
     schnittAchseBildUrl?: string;
+    form?: string;
 }
 
 export interface SonderzuschnittAuswahl {
     schnittbildId: number;
     schnittbildBildUrl: string;
-    schnittAchseId: number;
-    schnittAchseBildUrl: string;
+    schnittAchseId: number | null;
+    schnittAchseBildUrl: string | null;
+    schnittForm?: string;
     anschnittWinkelLinks: number;
     anschnittWinkelRechts: number;
 }
@@ -50,6 +57,7 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
     artikelId,
     initial,
 }) => {
+    const toast = useToast();
     const [achsen, setAchsen] = useState<SchnittAchse[]>([]);
     const [schnittbilder, setSchnittbilder] = useState<Schnittbild[]>([]);
     const [selectedAchseId, setSelectedAchseId] = useState<number | null>(null);
@@ -65,14 +73,19 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
         try {
             const params = new URLSearchParams();
             if (artikelId) params.set('artikelId', String(artikelId));
-            else if (kategorieId) params.set('kategorieId', String(kategorieId));
+            else if (kategorieId) params.set(nutztEchtesBackend ? 'subKategorieId' : 'kategorieId', String(kategorieId));
+            if (nutztEchtesBackend) {
+                const res = await fetch(`/api/schnittbilder?${params.toString()}`);
+                if (!res.ok) throw new Error('Schnittbilder konnten nicht geladen werden.');
+                setSchnittbilder(await res.json()); return;
+            }
             const res = await fetch(`/api/schnitt-achsen?${params.toString()}`);
             const data: SchnittAchse[] = res.ok ? await res.json() : [];
             setAchsen(data);
-        } finally {
+        } catch { toast.error('Schnittbilder konnten nicht geladen werden.'); } finally {
             setLoadingAchsen(false);
         }
-    }, [artikelId, kategorieId]);
+    }, [artikelId, kategorieId, toast]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -81,26 +94,27 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
         setSelectedAchseId(initial?.schnittAchseId ?? null);
         setSelectedSchnittbildId(initial?.schnittbildId ?? null);
         setWinkelLinks(
-            initial?.anschnittWinkelLinks != null ? String(initial.anschnittWinkelLinks) : '',
+            initial?.anschnittWinkelLinks != null ? formatDecimalInput(initial.anschnittWinkelLinks) : '',
         );
         setWinkelRechts(
-            initial?.anschnittWinkelRechts != null ? String(initial.anschnittWinkelRechts) : '',
+            initial?.anschnittWinkelRechts != null ? formatDecimalInput(initial.anschnittWinkelRechts) : '',
         );
     }, [isOpen, ladeAchsen, initial]);
 
     // Schnittbilder der gewählten Achse laden
     useEffect(() => {
+        if (nutztEchtesBackend) return;
         if (!isOpen || selectedAchseId == null) {
             setSchnittbilder([]);
             return;
         }
         setLoadingSchnitte(true);
         fetch(`/api/schnittbilder?schnittAchseId=${selectedAchseId}`)
-            .then((r) => (r.ok ? r.json() : []))
+            .then((r) => { if (!r.ok) throw new Error('Schnittbilder konnten nicht geladen werden.'); return r.json(); })
             .then((data: Schnittbild[]) => setSchnittbilder(data))
-            .catch(() => setSchnittbilder([]))
+            .catch(() => { setSchnittbilder([]); toast.error('Schnittbilder konnten nicht geladen werden.'); })
             .finally(() => setLoadingSchnitte(false));
-    }, [isOpen, selectedAchseId]);
+    }, [isOpen, selectedAchseId, toast]);
 
     const selectedAchse = useMemo(
         () => achsen.find((a) => a.id === selectedAchseId) ?? null,
@@ -111,19 +125,23 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
         [schnittbilder, selectedSchnittbildId],
     );
 
-    const canSubmit = selectedAchse != null && selectedSchnittbild != null;
+    const canSubmit = (nutztEchtesBackend || selectedAchse != null) && selectedSchnittbild != null;
 
     const handleSubmit = () => {
-        if (!selectedAchse || !selectedSchnittbild) return;
-        const links = winkelLinks.trim() === '' ? 90 : Number(winkelLinks);
-        const rechts = winkelRechts.trim() === '' ? 90 : Number(winkelRechts);
-        if (Number.isNaN(links) || Number.isNaN(rechts)) return;
+        if ((!nutztEchtesBackend && !selectedAchse) || !selectedSchnittbild) return;
+        const result = validateNumberDrafts({ links: winkelLinks, rechts: winkelRechts }, {
+            links: { label: 'Winkel links', min: -360, max: 360, maxDecimalPlaces: 2 },
+            rechts: { label: 'Winkel rechts', min: -360, max: 360, maxDecimalPlaces: 2 },
+        });
+        if (!result.valid) { toast.error(result.message); return; }
+        const links = result.values.links ?? 90; const rechts = result.values.rechts ?? 90;
 
         onSubmit({
             schnittbildId: selectedSchnittbild.id,
             schnittbildBildUrl: selectedSchnittbild.bildUrlSchnittbild,
-            schnittAchseId: selectedAchse.id,
-            schnittAchseBildUrl: selectedAchse.bildUrl,
+            schnittAchseId: selectedAchse?.id ?? null,
+            schnittAchseBildUrl: selectedAchse?.bildUrl ?? null,
+            ...(selectedSchnittbild.form ? { schnittForm: selectedSchnittbild.form } : {}),
             anschnittWinkelLinks: links,
             anschnittWinkelRechts: rechts,
         });
@@ -155,7 +173,7 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                                 Sonderzuschnitt
                             </p>
                             <h2 id="sonderzuschnitt-title" className="text-lg font-bold text-slate-900 leading-tight">
-                                Achse + Schnittbild + Winkel wählen
+                                {nutztEchtesBackend ? 'Schnittbild + Winkel wählen' : 'Achse + Schnittbild + Winkel wählen'}
                             </h2>
                         </div>
                     </div>
@@ -172,8 +190,8 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* Schritt 1: Achse */}
-                    <section>
+                    {/* Schritt 1: Achse (nur der explizite Original-Testvertrag) */}
+                    {!nutztEchtesBackend && <section>
                         <div className="flex items-center gap-2 mb-3">
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-600 text-white text-xs font-bold">
                                 1
@@ -220,7 +238,7 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                                             )}
                                         >
                                             <img
-                                                src={a.bildUrl}
+                                                src={toSafeResourceUrl(a.bildUrl) ?? undefined}
                                                 alt={`Achse ${a.id}`}
                                                 className="w-full h-10 object-contain"
                                                 onError={(e) => {
@@ -238,22 +256,22 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                                 })}
                             </div>
                         )}
-                    </section>
+                    </section>}
 
                     {/* Schritt 2: Schnittbild */}
-                    <section className={cn(selectedAchseId == null && 'opacity-40 pointer-events-none')}>
+                    <section className={cn(!nutztEchtesBackend && selectedAchseId == null && 'opacity-40 pointer-events-none')}>
                         <div className="flex items-center gap-2 mb-3">
                             <span
                                 className={cn(
                                     'inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold',
-                                    selectedAchseId != null ? 'bg-rose-600 text-white' : 'bg-slate-200 text-slate-500',
+                                    (nutztEchtesBackend || selectedAchseId != null) ? 'bg-rose-600 text-white' : 'bg-slate-200 text-slate-500',
                                 )}
                             >
                                 2
                             </span>
                             <h3 className="font-semibold text-slate-900">Schnittbild wählen</h3>
                         </div>
-                        {loadingSchnitte ? (
+                        {(loadingSchnitte || (nutztEchtesBackend && loadingAchsen)) ? (
                             <div className="text-center text-slate-500 py-6">
                                 <Loader2 className="w-5 h-5 mx-auto mb-2 animate-spin text-rose-400" />
                                 Schnittbilder werden geladen…
@@ -261,7 +279,7 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                         ) : schnittbilder.length === 0 ? (
                             <div className="text-center text-slate-500 py-6 border-2 border-dashed border-slate-200 rounded-xl">
                                 <p className="text-sm">
-                                    Für diese Achse sind noch keine Schnittbilder hinterlegt.
+                                    Für diese Auswahl sind noch keine Schnittbilder hinterlegt.
                                 </p>
                             </div>
                         ) : (
@@ -281,7 +299,7 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                                             )}
                                         >
                                             <img
-                                                src={sb.bildUrlSchnittbild}
+                                                src={toSafeResourceUrl(sb.bildUrlSchnittbild) ?? undefined}
                                                 alt={`Schnittbild ${sb.id}`}
                                                 className="w-full h-10 object-contain"
                                                 onError={(e) => {
@@ -320,28 +338,24 @@ export const SonderzuschnittPicker: React.FC<Props> = ({
                                 <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
                                     <Ruler className="w-3 h-3" /> Winkel links
                                 </label>
-                                <Input
-                                    type="number"
+                                <DecimalInput
                                     value={winkelLinks}
-                                    onChange={(e) => setWinkelLinks(e.target.value)}
+                                    aria-label="Winkel links"
+                                    onChange={setWinkelLinks}
                                     placeholder="90"
-                                    min="0"
-                                    max="180"
-                                    step="any"
+
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
                                     <Ruler className="w-3 h-3" /> Winkel rechts
                                 </label>
-                                <Input
-                                    type="number"
+                                <DecimalInput
                                     value={winkelRechts}
-                                    onChange={(e) => setWinkelRechts(e.target.value)}
+                                    aria-label="Winkel rechts"
+                                    onChange={setWinkelRechts}
                                     placeholder="90"
-                                    min="0"
-                                    max="180"
-                                    step="any"
+
                                 />
                             </div>
                         </div>

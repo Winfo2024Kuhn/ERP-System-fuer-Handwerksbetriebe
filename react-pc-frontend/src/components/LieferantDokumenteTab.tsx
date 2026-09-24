@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2 } from "lucide-react";
+import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
@@ -11,6 +11,7 @@ import LieferantDokumentModal from "./LieferantDokumentModal";
 import { LieferantDokumentImportModal } from "./LieferantDokumentImportModal";
 import { ZuordnungModal } from "./ZuordnungModal";
 import { prependUniqueById } from "../lib/optimisticUploads";
+import { useAuth } from "../auth/AuthContext";
 
 // Typ-Konfiguration mit Farben
 const DOK_TYP_CONFIG: Record<string, { label: string; color: string; bgColor: string; borderColor: string }> = {
@@ -37,6 +38,7 @@ interface LieferantDokumenteTabProps {
 
 export default function LieferantDokumenteTab({ lieferantId, lieferantName, dokumente: initialDokumente }: LieferantDokumenteTabProps) {
     const navigate = useNavigate();
+    const { isAdmin } = useAuth();
     const [dokumente, setDokumente] = useState<LieferantDokument[]>(initialDokumente || []);
     const [loading, setLoading] = useState(!initialDokumente);
     const [searchQuery, setSearchQuery] = useState("");
@@ -68,6 +70,20 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
     const handleDokumentSelect = (dok: LieferantDokument) => {
         setSelectedDokument(dok);
         setShowDokumentModal(true);
+    };
+
+    const handleLoescheDokument = async (dok: LieferantDokument) => {
+        const label = dok.geschaeftsdaten?.dokumentNummer || dok.originalDateiname || `ID ${dok.id}`;
+        if (!window.confirm(`Dokument „${label}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+        const res = await fetch(`/api/lieferant-dokumente/${dok.id}`, { method: 'DELETE' });
+        if (res.ok) {
+            setDokumente(prev => prev.filter(d => d.id !== dok.id));
+        } else if (res.status === 422) {
+            const body = await res.json().catch(() => ({}));
+            alert(body.message || 'Dieses Dokument kann aus GoBD-Gründen nicht gelöscht werden. Bitte Typ zuerst auf "Sonstiges" ändern.');
+        } else {
+            alert('Löschen fehlgeschlagen. Bitte Seite neu laden und erneut versuchen.');
+        }
     };
 
     // Dokumente laden falls nicht übergeben
@@ -460,6 +476,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                                 onSelect={() => handleDokumentSelect(dok)}
                                 onNavigate={navigate}
                                 onBearbeiten={() => setZuordnungDokument(dok)}
+                                onDelete={isAdmin ? () => handleLoescheDokument(dok) : undefined}
                             />
                         ))}
                     </div>
@@ -680,9 +697,10 @@ interface DokumentCardProps {
     onSelect: () => void;
     onNavigate: (path: string) => void;
     onBearbeiten: () => void;
+    onDelete?: () => void;
 }
 
-function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten }: DokumentCardProps) {
+function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, onDelete }: DokumentCardProps) {
     const config = getConfig(dokument.typ);
     const hasProject = dokument.projektAnteile.length > 0;
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
@@ -694,16 +712,27 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNaviga
                 <span className={cn("text-xs font-semibold uppercase px-2 py-0.5 rounded-full", config.color, "bg-white/80")}>
                     {config.label}
                 </span>
-                {confidence !== undefined && (
-                    <span className={cn(
-                        "text-xs px-1.5 py-0.5 rounded",
-                        confidence >= 0.9 ? "bg-green-100 text-green-700" :
-                            confidence >= 0.7 ? "bg-yellow-100 text-yellow-700" :
-                                "bg-red-100 text-red-700"
-                    )}>
-                        {Math.round(confidence * 100)}%
-                    </span>
-                )}
+                <div className="flex items-center gap-1">
+                    {confidence !== undefined && (
+                        <span className={cn(
+                            "text-xs px-1.5 py-0.5 rounded",
+                            confidence >= 0.9 ? "bg-green-100 text-green-700" :
+                                confidence >= 0.7 ? "bg-yellow-100 text-yellow-700" :
+                                    "bg-red-100 text-red-700"
+                        )}>
+                            {Math.round(confidence * 100)}%
+                        </span>
+                    )}
+                    {onDelete && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                            title="Dokument löschen (nur Admin)"
+                            className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Dokumentnummer */}

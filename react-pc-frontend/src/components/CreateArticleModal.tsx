@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { X, Search, Info } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Search } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -7,10 +7,13 @@ import { Select } from "./ui/select-custom";
 import { CategoryTreeModal } from "./CategoryTreeModal";
 import { SupplierSelectModal } from "./SupplierSelectModal";
 import { useToast } from './ui/toast';
+import type { Artikel } from '../types';
+import { validateNumberDrafts } from '../lib/numberDrafts';
 
 interface CreateArticleModalProps {
     onClose: () => void;
     onSave: () => void;
+    onCreated?: (artikel: Artikel) => void;
 }
 
 const VERRECHNUNGSEINHEITEN = [
@@ -20,113 +23,41 @@ const VERRECHNUNGSEINHEITEN = [
     { value: "STUECK", label: "Stück" }
 ];
 
-// Wurzel-Kategorie "Werkstoffe" — siehe project memory: Werkstoffe sind
-// lieferanten-neutral (werden bei mehreren Lieferanten angefragt). Backend
-// verwirft Lieferantendaten in ArtikelService.erstelleArtikel ohnehin.
-const ROOT_KATEGORIE_WERKSTOFFE = 1;
-
-interface KategorieDto {
-    id: number;
-    beschreibung: string;
-    parentId: number | null;
-}
-
-export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps) {
+export function CreateArticleModal({ onClose, onSave, onCreated }: CreateArticleModalProps) {
     const toast = useToast();
     const [formData, setFormData] = useState({
         produktname: "",
         produktlinie: "",
         produkttext: "",
         externeArtikelnummer: "",
-        verpackungseinheit: 1,
+        verpackungseinheit: '1',
         preiseinheit: "1",
         verrechnungseinheit: "STUECK",
         kategorieId: 0,
         kategorieName: "",
-        werkstoffId: 0 as number | null, // We only have names in options, need ID map or just use ID if passed
+        werkstoffId: 0 as number | null,
         werkstoffName: "",
-        preis: 0,
+        preis: '',
         lieferantId: 0,
         lieferantName: ""
     });
 
-    // We need Werkstoff IDs actually. The current props pass strings.
-    // Let's fetch proper Werkstoff objects map.
-    const [werkstoffe, setWerkstoffe] = useState<{id: number, name: string}[]>([]);
-    const [kategorien, setKategorien] = useState<KategorieDto[]>([]);
+    // Werkstoffe mit ID, weil der Artikel die ID braucht - nicht nur den Namen.
+    const [werkstoffe, setWerkstoffe] = useState<{ id: number, name: string }[]>([]);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    // Set aller Kategorie-Ids, deren Wurzel "Werkstoffe" ist —
-    // wird aus dem Kategorie-Baum hochtraversiert und einmal gecacht.
-    const werkstoffKategorieIds = useMemo(() => {
-        const byId = new Map<number, KategorieDto>(kategorien.map(k => [k.id, k]));
-        const istUnterWerkstoffWurzel = (id: number): boolean => {
-            let current: KategorieDto | undefined = byId.get(id);
-            const seen = new Set<number>();
-            while (current && current.parentId != null && !seen.has(current.id)) {
-                seen.add(current.id);
-                current = byId.get(current.parentId);
-            }
-            return current?.id === ROOT_KATEGORIE_WERKSTOFFE;
-        };
-        const result = new Set<number>();
-        for (const k of kategorien) {
-            if (istUnterWerkstoffWurzel(k.id)) result.add(k.id);
-        }
-        return result;
-    }, [kategorien]);
-
-    const istWerkstoff = formData.kategorieId > 0
-        && werkstoffKategorieIds.has(formData.kategorieId);
-
     useEffect(() => {
-        // Fetch full werkstoff objects to get IDs
-        fetch('/api/werkstoffe?full=true').then(async res => {
-             if(res.ok) {
-                 const data = await res.json();
-                 setWerkstoffe(data);
-             } else {
-                 // Fallback if endpoint doesn't exist, maybe try searching or just mapping names
-                 // For now, assume the passed strings are all we have and we might need to find IDs another way
-                 // Or assume backend can take name? No, DTO has Id.
-                 // Let's try to fetch all via existing endpoint if possible or mock.
-                 // Actually /artikel/werkstoffe returns strings.
-                 // Let's assume we can't easily set werkstoff ID without a proper endpoint.
-                 // I'll assume the backend service can look it up by name if I change DTO, but I didn't.
-                 // I'll fetch ALL articles to find werkstoffe? No too heavy.
-                 // I will add a fetch for IDs logic if needed, or just skip Werkstoff ID for now if not critical.
-                 // Wait, I can modify backend to accept Werkstoff Name? Or add an endpoint. 
-                 // Easier: I'll just list strings in UI and if user selects one, I try to find ID from a pre-fetched list? 
-                 // Let's assume there is an endpoint /api/werkstoffe/all or similar.
-                 // Since I can't check easily, I will create a small helper endpoint or just try to use the index? No.
-                 // I'll search for werkstoff by name on backend? 
-                 // Let's create a quick endpoint on backend or assume 0.
-                 // Better: I'll update ArtikelController to expose Werkstoff with IDs.
-             }
-        });
-        
-        // Quick fix: Fetch werkstoffe with IDs.
-        // Since I cannot change backend easily in this file without switching context, 
-        // I will check if I can use the existing string list and maybe the backend accepts name?
-        // The DTO has `werkstoffId`.
-        // I will add a `GET /artikel/werkstoffe/map` endpoint to Backend.
-    }, []);
-
-    // Fetch Werkstoff Map
-    useEffect(() => {
-        // We will implement this endpoint in backend next step.
-        fetch('/artikel/werkstoffe/details').then(r => r.json()).then(d => setWerkstoffe(d)).catch(() => {});
-    }, []);
-
-    // Kategorien-Baum laden, damit wir Werkstoff-Kategorien serverseitig
-    // sauber erkennen koennen (rekursiv via parentId).
-    useEffect(() => {
-        fetch('/api/kategorien')
-            .then(r => r.ok ? r.json() : [])
-            .then((data: KategorieDto[]) => setKategorien(Array.isArray(data) ? data : []))
-            .catch(() => setKategorien([]));
+        fetch('/api/artikel/werkstoffe/details')
+            .then(res => {
+                if (!res.ok) throw new Error("Werkstoffe konnten nicht geladen werden");
+                return res.json();
+            })
+            // Bei einem Fehler antwortet der Server mit einem Objekt statt einer
+            // Liste - ohne diese Pruefung wuerde die Auswahlliste die Seite abschiessen.
+            .then(data => setWerkstoffe(Array.isArray(data) ? data : []))
+            .catch(err => console.error("Fehler beim Laden der Werkstoffe", err));
     }, []);
 
     const handleChange = (key: string, value: string | number | boolean | null) => {
@@ -138,33 +69,41 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
             toast.warning("Produktname ist erforderlich.");
             return;
         }
+
+        const zahlen = validateNumberDrafts({ verpackungseinheit: formData.verpackungseinheit, preis: formData.preis }, {
+            verpackungseinheit: { label: 'VPE (Menge)', required: true, min: 1, integer: true },
+            preis: { label: 'Preis', min: 0 },
+        });
+        if (!zahlen.valid) {
+            toast.warning(zahlen.message);
+            return;
+        }
         
         setLoading(true);
         try {
-            // Bei Werkstoff-Kategorien: Lieferanten-Daten gar nicht mit
-            // hochsenden — sie wuerden vom Backend (ArtikelService) ohnehin
-            // verworfen. Konsistente UX zur ausgeblendeten Eingabe.
             const payload = {
                 produktname: formData.produktname,
                 produktlinie: formData.produktlinie,
                 produkttext: formData.produkttext,
-                externeArtikelnummer: istWerkstoff ? "" : formData.externeArtikelnummer,
-                verpackungseinheit: formData.verpackungseinheit,
+                externeArtikelnummer: formData.externeArtikelnummer,
+                verpackungseinheit: zahlen.values.verpackungseinheit,
                 preiseinheit: formData.preiseinheit,
                 verrechnungseinheit: formData.verrechnungseinheit,
                 kategorieId: formData.kategorieId || null,
                 werkstoffId: formData.werkstoffId || null,
-                preis: istWerkstoff ? null : formData.preis,
-                lieferantId: istWerkstoff ? null : (formData.lieferantId || null)
+                ...(zahlen.values.preis === null ? {} : { preis: zahlen.values.preis }),
+                lieferantId: formData.lieferantId || null
             };
 
-            const res = await fetch('/artikel', {
+            const res = await fetch('/api/artikel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
             if (!res.ok) throw new Error("Fehler beim Speichern");
+            const savedArticle = await res.json() as Artikel;
+            onCreated?.(savedArticle);
             onSave();
             onClose();
         } catch (err) {
@@ -214,20 +153,18 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         />
                     </div>
 
-                    <div className={`grid grid-cols-1 ${istWerkstoff ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-4`}>
-                        {!istWerkstoff && (
-                            <div className="space-y-1.5">
-                                <Label>Artikelnummer (Extern)</Label>
-                                <Input
-                                    value={formData.externeArtikelnummer}
-                                    onChange={e => handleChange('externeArtikelnummer', e.target.value)}
-                                    placeholder="Lieferanten-Nr."
-                                />
-                            </div>
-                        )}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                            <Label>Artikelnummer (Extern)</Label>
+                            <Input 
+                                value={formData.externeArtikelnummer} 
+                                onChange={e => handleChange('externeArtikelnummer', e.target.value)} 
+                                placeholder="Lieferanten-Nr." 
+                            />
+                        </div>
                         <div className="space-y-1.5">
                             <Label>Kategorie</Label>
-                            <div
+                            <div 
                                 className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50"
                                 onClick={() => setShowCategoryModal(true)}
                             >
@@ -237,31 +174,18 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         </div>
                         <div className="space-y-1.5">
                             <Label>Werkstoff</Label>
-                            <Select
-                                options={werkstoffSelectOptions}
-                                value={String(formData.werkstoffId || "")}
+                            <Select 
+                                options={werkstoffSelectOptions} 
+                                value={String(formData.werkstoffId || "")} 
                                 onChange={v => {
                                     const w = werkstoffe.find(x => String(x.id) === v);
                                     handleChange('werkstoffId', Number(v));
                                     handleChange('werkstoffName', w?.name || "");
-                                }}
-                                placeholder="Werkstoff wählen"
+                                }} 
+                                placeholder="Werkstoff wählen" 
                             />
                         </div>
                     </div>
-
-                    {istWerkstoff && (
-                        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            <div>
-                                <p className="font-medium">Werkstoff – lieferanten-neutral</p>
-                                <p className="text-xs text-amber-700 mt-0.5">
-                                    Lieferanten-Artikelnummer, Preis und Lieferant werden bei Werkstoffen nicht hinterlegt.
-                                    Sie werden später per Preisanfrage bei mehreren Lieferanten ermittelt.
-                                </p>
-                            </div>
-                        </div>
-                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-100">
                         <div className="space-y-1.5">
@@ -275,10 +199,10 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         <div className="space-y-1.5">
                             <Label>VPE (Menge)</Label>
                             <Input 
-                                type="number" 
-                                min="1"
+                                inputMode="decimal"
                                 value={formData.verpackungseinheit} 
-                                onChange={e => handleChange('verpackungseinheit', parseInt(e.target.value) || 1)} 
+                                onFocus={() => { if (formData.verpackungseinheit === '0' || formData.verpackungseinheit === '0,00') handleChange('verpackungseinheit', ''); }}
+                                onChange={e => handleChange('verpackungseinheit', e.target.value)}
                             />
                         </div>
                         <div className="space-y-1.5">
@@ -291,40 +215,39 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         </div>
                     </div>
 
-                    {!istWerkstoff && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <Label>Preis (€)</Label>
-                                <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.preis}
-                                    onChange={e => handleChange('preis', parseFloat(e.target.value) || 0)}
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label>Lieferant (Optional)</Label>
-                                <div
-                                    className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50"
-                                    onClick={() => setShowSupplierModal(true)}
-                                >
-                                    <span className="truncate">{formData.lieferantName || "Lieferant wählen"}</span>
-                                    {formData.lieferantId ? (
-                                        <X
-                                            className="w-4 h-4 text-slate-400 hover:text-red-500"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleChange('lieferantId', 0);
-                                                handleChange('lieferantName', "");
-                                            }}
-                                        />
-                                    ) : (
-                                        <Search className="w-4 h-4 text-slate-400" />
-                                    )}
-                                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <Label>Preis (€)</Label>
+                            <Input 
+                                inputMode="decimal"
+                                placeholder="Optional"
+                                value={formData.preis} 
+                                onFocus={() => { if (formData.preis === '0' || formData.preis === '0,00') handleChange('preis', ''); }}
+                                onChange={e => handleChange('preis', e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Lieferant (Optional)</Label>
+                            <div 
+                                className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50"
+                                onClick={() => setShowSupplierModal(true)}
+                            >
+                                <span className="truncate">{formData.lieferantName || "Lieferant wählen"}</span>
+                                {formData.lieferantId ? (
+                                    <X 
+                                        className="w-4 h-4 text-slate-400 hover:text-red-500" 
+                                        onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            handleChange('lieferantId', 0); 
+                                            handleChange('lieferantName', ""); 
+                                        }} 
+                                    />
+                                ) : (
+                                    <Search className="w-4 h-4 text-slate-400" />
+                                )}
                             </div>
                         </div>
-                    )}
+                    </div>
                 </div>
 
                 <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-xl">

@@ -1,0 +1,42 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { expect, it, vi } from 'vitest';
+import FirmaEditor from './FirmaEditor';
+import { ToastProvider } from '../components/ui/toast';
+import { ConfirmProvider } from '../components/ui/confirm-dialog';
+it('erhält leere Tagesentwürfe und prüft ganze Tage sowie Komma-Prozente vor dem Speichern', async () => {
+    const user = userEvent.setup();
+    const firma = { id: 1, firmenname: 'Testbetrieb', firmenfarbe: '#500010', mahnverfahrenAktiv: true, tageBisZahlungserinnerung: 7, tageBisErsteMahnung: 7, tageBisZweiteMahnung: 7, mahnverfahrenNeuesZahlungszielTage: 7, bgSatzOverride: 0 };
+    const fetcher = vi.fn().mockImplementation(async (url, init) => ({ ok: true, json: async () => url === '/api/firma' ? init ? JSON.parse(init.body) : firma : [] }));
+    vi.stubGlobal('fetch', fetcher);
+    render(<ToastProvider><ConfirmProvider><FirmaEditor /></ConfirmProvider></ToastProvider>);
+    const days = await screen.findByRole('textbox', { name: 'Tage nach Fälligkeit' });
+    await user.clear(days);
+    expect(days).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+    await user.type(days, '8,5');
+    await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+    await user.clear(days); await user.type(days, '8');
+    await user.click(screen.getByRole('button', { name: 'Firmenfarbe wählen' }));
+    expect(screen.getByRole('dialog', { name: 'Firmenfarbe wählen auswählen' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Rose (#e11d48)' }));
+    await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT' && JSON.parse(init.body).tageBisZahlungserinnerung === 8)).toBe(true));
+    await user.click(screen.getByRole('button', { name: /Unfallversicherung/ }));
+    const bg = screen.getByRole('textbox', { name: 'Tatsächlicher BG-Satz (aus Bescheid)' });
+    await user.click(bg); expect(bg).toHaveValue('');
+    await user.type(bg, '8,');
+    const before = fetcher.mock.calls.filter(([, init]) => init?.method === 'PUT').length;
+    await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(before);
+    await user.type(bg, '5'); await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT' && JSON.parse(init.body).bgSatzOverride === 8.5)).toBe(true));
+});
+
+it('zeigt fehlgeschlagene Ladeanfragen im eigenen Toast',async()=>{
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:503,json:async()=>[]}));
+ render(<ToastProvider><ConfirmProvider><FirmaEditor/></ConfirmProvider></ToastProvider>);
+ expect(await screen.findByText('Firmendaten konnten nicht geladen werden.')).toBeVisible();
+});

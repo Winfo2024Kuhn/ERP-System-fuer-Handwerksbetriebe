@@ -1,0 +1,134 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Settings, Coins, AlertTriangle, Plus } from 'lucide-react';
+import { Card } from '../ui/card';
+import { Button } from '../ui/button';
+import { useToast } from '../ui/toast';
+import type { Sachkonto } from '../../types';
+import { formatEuro } from './belegFormat';
+import { LohnZahlungModal, NeueBuchungDialog, type SaldoInfo } from './NeueBuchungDialog';
+import { KasseEinstellungenDialog } from './KasseEinstellungenDialog';
+
+// Saldo-Bar + zentraler Buchungsdialog + Settings (Issue #59).
+//
+// Die Komponente kapselt den zentralen Buchungsdialog, Ehegattengehalt und
+// das Settings-Modal.
+// Sie ruft `onChanged()` nach erfolgreicher Buchung auf, damit der Parent
+// die Beleg-Liste und den Kassenbuch-View neu lädt.
+
+interface KasseShortcutsProps {
+    sachkonten: Sachkonto[];
+    onChanged: () => void;
+    /** Im Kassenbuch kommt der Stand aus dem gemeinsamen Abruf im Tab. */
+    saldo?: SaldoInfo | null;
+    zeigeSaldo?: boolean;
+}
+
+export function KasseShortcuts({ sachkonten, onChanged, saldo: gemeinsamerSaldo, zeigeSaldo = true }: KasseShortcutsProps) {
+    const externGeladen = gemeinsamerSaldo !== undefined;
+    const [eigenerSaldo, setSaldo] = useState<SaldoInfo | null>(null);
+    const saldo = externGeladen ? gemeinsamerSaldo : eigenerSaldo;
+    const [openModal, setOpenModal] = useState<null | 'buchung' | 'lohn' | 'settings'>(null);
+    const toast = useToast();
+
+    const loadSaldo = useCallback(async () => {
+        try {
+            const res = await fetch('/api/buchhaltung/kasse/saldo');
+            if (res.ok) setSaldo(await res.json());
+        } catch (e) {
+            console.error('Saldo laden fehlgeschlagen', e);
+        }
+    }, []);
+
+    // Initial-Load via async-Wrapper, damit der set-state-in-effect-Lint
+    // nicht anschlägt — Standard-Pattern für „fetch on mount".
+    useEffect(() => {
+        if (externGeladen) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch('/api/buchhaltung/kasse/saldo');
+                if (res.ok && !cancelled) setSaldo(await res.json());
+            } catch (e) {
+                console.error('Saldo laden fehlgeschlagen', e);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [externGeladen]);
+
+    const refreshAlles = useCallback(() => {
+        if (!externGeladen) void loadSaldo();
+        onChanged();
+    }, [externGeladen, loadSaldo, onChanged]);
+
+    const showToast = (kind: 'ok' | 'err', text: string) => kind === 'ok' ? toast.success(text) : toast.error(text);
+
+    const saldoUnterMindestbestand = saldo != null && saldo.saldo < saldo.mindestbestand;
+
+    return (
+        <Card className="p-4 bg-gradient-to-r from-rose-50 to-white border-rose-200">
+            <div className="flex flex-wrap items-center gap-4">
+                {zeigeSaldo && <div className="flex items-center gap-3 mr-4">
+                    <div className="bg-rose-100 text-rose-700 rounded-lg p-2">
+                        <Coins className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <div className="text-xs uppercase tracking-wide text-rose-700 font-semibold">Aktueller Kassenstand</div>
+                        <div className="flex items-baseline gap-2">
+                            <span className={`text-2xl font-bold ${saldoUnterMindestbestand ? 'text-red-700' : 'text-slate-900'}`}>
+                                {saldo ? `${formatEuro(saldo.saldo)} €` : '–'}
+                            </span>
+                            {saldo && saldo.mindestbestand > 0 && (
+                                <span className="text-xs text-slate-500">
+                                    Mindestbestand: {formatEuro(saldo.mindestbestand)} €
+                                </span>
+                            )}
+                            {saldoUnterMindestbestand && (
+                                <span className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-0.5">
+                                    <AlertTriangle className="w-3 h-3" /> unter Mindestbestand
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>}
+
+                <div className="flex flex-wrap items-center gap-2 ml-auto">
+                    <Button size="sm" onClick={() => setOpenModal('buchung')}
+                        className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700">
+                        <Plus className="w-4 h-4 mr-2" /> Neue Buchung
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setOpenModal('settings')}
+                        className="text-rose-700 hover:bg-rose-100"
+                        title="Mindestbestand & Automatik einstellen">
+                        <Settings className="w-4 h-4" />
+                    </Button>
+                </div>
+            </div>
+
+            {openModal === 'buchung' && (
+                <NeueBuchungDialog
+                    offen
+                    sachkonten={sachkonten}
+                    onClose={() => setOpenModal(null)}
+                    onGebucht={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
+                />
+            )}
+            {openModal === 'lohn' && (
+                <LohnZahlungModal
+                    onClose={() => setOpenModal(null)}
+                    onSuccess={(msg) => { setOpenModal(null); refreshAlles(); showToast('ok', msg); }}
+                    onError={(m) => showToast('err', m)}
+                />
+            )}
+            {openModal === 'settings' && (
+                <KasseEinstellungenDialog
+                    sachkonten={sachkonten}
+                    onClose={() => setOpenModal(null)}
+                    onSaved={() => { setOpenModal(null); refreshAlles(); showToast('ok', 'Einstellungen gespeichert'); }}
+                    onError={(m) => showToast('err', m)}
+                    onPayOnce={() => setOpenModal('lohn')}
+                />
+            )}
+
+        </Card>
+    );
+}

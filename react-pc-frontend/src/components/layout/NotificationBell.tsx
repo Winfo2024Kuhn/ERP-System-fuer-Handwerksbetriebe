@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X, Package, CheckCircle2,
-    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck
+    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck, Clock, CalendarCheck
 } from 'lucide-react';
 
 // ── Types & Pure-Logic Helpers ───────────────────────────────────────────
@@ -12,7 +12,7 @@ import {
 // kann und Vites Fast-Refresh-Regel hier nicht bricht.
 
 import type { CategoryDto, RecentItemDto, NotificationSummary } from './notification-helpers';
-import { dismissItem, dismissCategory, filterDismissed } from './notification-helpers';
+import { dismissItem, dismissCategory, filterDismissed, gcOrphanedDismissals } from './notification-helpers';
 
 // ── Icon map ─────────────────────────────────────────────────────────────
 
@@ -28,6 +28,8 @@ const RECENT_TYPE_COLORS: Record<string, string> = {
     REKLAMATION: 'text-pink-500',
     FREIGABE_ANGENOMMEN: 'text-emerald-500',
     ANFRAGE_WEBSEITE: 'text-rose-600',
+    ZEIT_AUTO_BEENDET: 'text-amber-600',
+    MONATSABSCHLUSS: 'text-rose-600',
 };
 
 const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -42,6 +44,8 @@ const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string
     REKLAMATION: AlertTriangle,
     FREIGABE_ANGENOMMEN: CheckCircle2,
     ANFRAGE_WEBSEITE: Globe,
+    ZEIT_AUTO_BEENDET: Clock,
+    MONATSABSCHLUSS: CalendarCheck,
 };
 
 // ── Gruppen-Definition ─────────────────────────────────────────────────
@@ -69,6 +73,18 @@ const GROUPS: NotificationGroup[] = [
         accentBg: 'bg-rose-100',
         types: ['ANFRAGEN_WEBSEITE'],
         recentTypes: ['ANFRAGE_WEBSEITE'],
+    },
+    {
+        // Direkt hinter den Webseiten-Anfragen: Hier steht geschätzte statt
+        // gestempelter Arbeitszeit in den Zeitkonten. Das muss auffallen,
+        // bevor der Monat abgerechnet wird.
+        id: 'zeiterfassung',
+        label: 'Zeiten prüfen',
+        icon: Clock,
+        accentText: 'text-amber-700',
+        accentBg: 'bg-amber-100',
+        types: ['ZEITEN_AUTO_BEENDET', 'MONATSABSCHLUSS'],
+        recentTypes: ['ZEIT_AUTO_BEENDET', 'MONATSABSCHLUSS'],
     },
     {
         id: 'posteingaenge',
@@ -171,6 +187,10 @@ export function NotificationBell() {
             if (signal.aborted) return;
 
             setRawData(summary);
+            // Aufräumen vor dem Filter: dismissed Keys, die das Backend nicht
+            // mehr ausliefert, fliegen aus dem localStorage. filterDismissed
+            // selbst bleibt pure.
+            gcOrphanedDismissals(summary.recentItems);
             const filtered = filterDismissed(summary);
             // Animate if count increased (but not on the very first load)
             if (filtered.totalCount > prevCountRef.current && prevCountRef.current > 0) {
@@ -282,7 +302,7 @@ export function NotificationBell() {
     const handleMarkColumnRead = (e: React.MouseEvent, groupItems: RecentItemDto[], groupCats: CategoryDto[]) => {
         e.stopPropagation();
         groupItems.forEach(item => {
-            dismissItem(item.type, item.title);
+            dismissItem(item);
             if (item.type === 'EMAIL') {
                 const match = item.link.match(/\/emails\/\w+\/(\d+)/);
                 if (match) {
@@ -300,7 +320,7 @@ export function NotificationBell() {
     };
 
     const handleItemClick = (item: RecentItemDto) => {
-        dismissItem(item.type, item.title);
+        dismissItem(item);
         // Immediately update local display
         if (rawData) setData(filterDismissed(rawData));
         handleNavigate(item.link, item.type);

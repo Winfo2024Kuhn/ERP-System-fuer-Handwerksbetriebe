@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from './ui/button';
-import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Euro, Trash2, RefreshCw } from 'lucide-react';
+import { X, Search, FileText, PlusCircle, Building2, User, Hash, MapPin, ChevronLeft, Plus, Check, Folder, Trash2, RefreshCw, Info } from 'lucide-react';
 import { CategoryMultiSelectModal } from './CategoryMultiSelectModal';
 import { EmailListInput } from './EmailListInput';
 import { AddressAutocomplete } from './AddressAutocomplete';
 import { KundeAnlegenForm } from './KundeAnlegenForm';
 import type { Kunde, Anfrage } from '../types';
+import { baueAuftragsnummerHinweis, type NaechsteAuftragsnummerResponse } from './auftragsnummerHinweis';
 
 interface SelectedCategory {
     id: number;
@@ -22,13 +23,11 @@ interface ProjektErstellenPayload {
 
     kundenId?: number;
     auftragsnummer: string;
-    bruttoPreis?: number;
     strasse?: string;
     plz?: string;
     ort?: string;
     anfrageIds?: number[];
     projektArt?: string;
-    excKlasse?: string | null;
 }
 
 interface ProjektBearbeiten {
@@ -44,7 +43,6 @@ interface ProjektBearbeiten {
     ort?: string;
     abgeschlossen?: boolean;
     projektArt?: string;
-    excKlasse?: string | null;
     kundenEmails?: string[];
     kundeDto?: {
         id: number;
@@ -109,9 +107,10 @@ const KundenAuswahlView: React.FC<{
         return () => clearTimeout(timer);
     }, [searchTerm, searchKunden]);
 
+    // Enter im Suchfeld darf das Formular nicht abschicken – sonst lädt der Browser
+    // die Seite neu. Gesucht wird ohnehin schon live (siehe Debounce oben).
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        searchKunden();
     };
 
     return (
@@ -131,10 +130,6 @@ const KundenAuswahlView: React.FC<{
                     placeholder="Kunde suchen (Name, Kundennummer)..."
                     className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
-                <Button type="submit" size="sm" className="bg-rose-600 text-white hover:bg-rose-700">
-                    <Search className="w-4 h-4 mr-1" />
-                    Suchen
-                </Button>
             </form>
 
             <div className="max-h-[300px] overflow-y-auto space-y-2">
@@ -224,6 +219,12 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     const [auftragsnummerZaehler, setAuftragsnummerZaehler] = useState('');
     const [auftragsnummerError, setAuftragsnummerError] = useState<string | null>(null);
     const [validatingAuftragsnummer, setValidatingAuftragsnummer] = useState(false);
+    // Erklärung zur vorgeschlagenen Nummer (nur bei Kundenbezug befüllt)
+    const [auftragsnummerHinweis, setAuftragsnummerHinweis] = useState<string | null>(null);
+    // Laufende Nummer des jüngsten Vorschlag-Requests — ältere Antworten werden verworfen.
+    const letzteNummernAnfrage = useRef(0);
+    // Zuletzt vorgeschlagener Zähler: weicht das Feld davon ab, passt der Hinweis nicht mehr.
+    const vorgeschlagenerZaehler = useRef<string | null>(null);
 
     // Manuelle Auftragsnummervergabe: Prefix editierbar
     const [manuelleAuftragsnummer, setManuelleAuftragsnummer] = useState(false);
@@ -239,26 +240,42 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         kunde: '',
         kundennummer: '',
         auftragsnummer: '',
-        bruttoPreis: undefined,
         strasse: '',
         plz: '',
         ort: '',
         projektArt: 'PAUSCHAL', // Default: Pauschalpreis
-        excKlasse: null,
     });
 
-    // Nächste Auftragsnummer laden
-    const loadNaechsteAuftragsnummer = useCallback(async () => {
+    // Nächste Auftragsnummer laden. Mit kundeId folgt der Vorschlag der Kunden-Syntax
+    // (YYYY/MM/NNNCC) und wir erklären dem Benutzer darunter, wie sie zustande kommt.
+    // Bewusst ohne Dependencies: die Funktion hängt am Reset-Effect, der bei einer
+    // instabilen Referenz das halb ausgefüllte Formular leeren würde. Kunde und Name
+    // kommen deshalb als Argumente herein statt aus dem State.
+    const loadNaechsteAuftragsnummer = useCallback(async (kundeId?: number | string | null, kundeName?: string) => {
+        // Beim Öffnen aus einer Anfrage laufen zwei Ladevorgänge fast gleichzeitig los (einmal
+        // ohne, einmal mit Kunde). Ohne Reihenfolge-Schutz könnte die kundenlose Antwort zuletzt
+        // eintreffen und die Kunden-Nummer samt Hinweis wieder überschreiben.
+        const meineAnfrage = ++letzteNummernAnfrage.current;
         try {
             const today = new Date().toISOString().split('T')[0];
-            const res = await fetch(`/api/projekte/naechste-auftragsnummer?datum=${today}`);
+            const params = new URLSearchParams({ datum: today });
+            if (kundeId) params.append('kundeId', String(kundeId));
+            const res = await fetch(`/api/projekte/naechste-auftragsnummer?${params.toString()}`);
+            if (meineAnfrage !== letzteNummernAnfrage.current) return;
             if (res.ok) {
-                const data = await res.json();
+                const data: NaechsteAuftragsnummerResponse = await res.json();
+                if (meineAnfrage !== letzteNummernAnfrage.current) return;
+                const zaehler = String(data.zaehler).padStart(5, '0');
                 setAuftragsnummerPrefix(data.prefix);
-                setAuftragsnummerZaehler(String(data.zaehler).padStart(5, '0'));
+                setAuftragsnummerZaehler(zaehler);
+                vorgeschlagenerZaehler.current = zaehler;
+                setAuftragsnummerHinweis(baueAuftragsnummerHinweis(data, kundeName));
             }
         } catch (err) {
             console.error('Fehler beim Laden der Auftragsnummer:', err);
+            if (meineAnfrage === letzteNummernAnfrage.current) {
+                setAuftragsnummerHinweis(null);
+            }
         }
     }, []);
 
@@ -346,6 +363,8 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             setAuftragsnummerPrefix('');
             setAuftragsnummerZaehler('');
             setAuftragsnummerError(null);
+            setAuftragsnummerHinweis(null);
+            vorgeschlagenerZaehler.current = null;
             setManuelleAuftragsnummer(false);
             setPrefixJahr('');
             setPrefixMonat('');
@@ -356,12 +375,10 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 kunde: '',
                 kundennummer: '',
                 auftragsnummer: '',
-                bruttoPreis: undefined,
                 strasse: '',
                 plz: '',
                 ort: '',
                 projektArt: 'PAUSCHAL',
-                excKlasse: null,
             });
             setError(null);
         } else if (editProjekt) {
@@ -406,12 +423,10 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 kundennummer: editProjekt.kundennummer || '',
                 kundenId: editProjekt.kundenId,
                 auftragsnummer: editProjekt.auftragsnummer || '',
-                bruttoPreis: editProjekt.bruttoPreis,
                 strasse: editProjekt.strasse || '',
                 plz: editProjekt.plz || '',
                 ort: editProjekt.ort || '',
                 projektArt: editProjekt.projektArt || 'PAUSCHAL',
-                excKlasse: editProjekt.excKlasse ?? null,
             });
 
             // Produktkategorien aus bestehendem Projekt laden
@@ -442,6 +457,18 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             loadNaechsteAuftragsnummer();
         }
     }, [isOpen, editProjekt, loadNaechsteAuftragsnummer]);
+
+    // Sobald der Kunde feststeht (direkt gewählt oder über eine Anfrage), die Nummer nach der
+    // Kunden-Syntax neu vorschlagen: gleicher Kunde im selben Jahr behält seine Kundennummer und
+    // zählt hinten hoch, ein neuer Kunde bekommt die nächste freie Kundennummer.
+    // Im Edit-Modus bleibt die vergebene Nummer unangetastet (GoBD), bei manueller Vergabe
+    // ebenso — dort hat der Benutzer die Nummer bewusst selbst in der Hand.
+    useEffect(() => {
+        if (!isOpen || isEditMode || manuelleAuftragsnummer) return;
+        if (!selectedKunde?.id) return;
+        loadNaechsteAuftragsnummer(selectedKunde.id, selectedKunde.name);
+        setAuftragsnummerError(null);
+    }, [isOpen, isEditMode, manuelleAuftragsnummer, selectedKunde?.id, selectedKunde?.name, loadNaechsteAuftragsnummer]);
 
     // Beim Auswählen einer Anfrage: Produktkategorien aus AB/Angebot vorschlagen
     // (immer Leaf-Kategorien, AB hat Vorrang vor Angebot). Im Edit-Modus nicht überschreiben.
@@ -549,7 +576,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     const handleUseKundeAdresseChange = (checked: boolean) => {
         setUseKundeAdresse(checked);
         if (checked) {
-            // Priorisiere Anfrages-Objektadresse wenn Anfrage ausgewählt
+            // Priorisiere Anfrage-Objektadresse wenn Anfrage ausgewählt
             if (selectedAnfrage && (selectedAnfrage.projektStrasse || selectedAnfrage.projektPlz || selectedAnfrage.projektOrt)) {
                 setFormData(prev => ({
                     ...prev,
@@ -574,7 +601,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         handleKundeSelect(kunde);
     };
 
-    const handleInputChange = (field: keyof ProjektErstellenPayload, value: string | number | null | undefined) => {
+    const handleInputChange = (field: keyof ProjektErstellenPayload, value: string | number | undefined) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
@@ -621,7 +648,9 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 })),
                 // Alle E-Mails kombinieren: Kunden-E-Mails + zusätzliche E-Mails
                 kundenEmails: [...(selectedKunde?.kundenEmails || []), ...zusaetzlicheEmails],
-                abgeschlossen: isEditMode ? abgeschlossen : false,
+                // "Beendet" bewusst NICHT mitschicken: Der Haken läuft über seinen eigenen
+                // Endpunkt (siehe unten). So kann ein Speichern mit veraltetem Formularstand
+                // ein zwischenzeitlich beendetes Projekt nicht wieder aufreißen.
                 ...(isEditMode ? {} : {
                     anlegedatum: new Date().toISOString().split('T')[0],
                     zeitPositionen: [],
@@ -645,6 +674,14 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             }
 
             const result = await res.json();
+
+            // Haken "Beendet" nur anfassen, wenn der Benutzer ihn hier wirklich umgestellt hat.
+            if (isEditMode && abgeschlossen !== (editProjekt!.abgeschlossen || false)) {
+                await fetch(`/api/projekte/${editProjekt!.id}/abgeschlossen?abgeschlossen=${abgeschlossen}`, {
+                    method: 'PATCH',
+                });
+            }
+
             onSuccess(isEditMode ? editProjekt!.id : result.id);
             onClose();
         } catch (err) {
@@ -922,6 +959,15 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                     {auftragsnummerError && (
                                         <p className="text-xs text-red-600 mt-1">{auftragsnummerError}</p>
                                     )}
+                                    {/* Erklärt die vorgeschlagene Nummer, solange sie nicht von Hand
+                                        vergeben wird und keine Fehlermeldung im Weg steht. */}
+                                    {auftragsnummerHinweis && !auftragsnummerError && !manuelleAuftragsnummer
+                                        && auftragsnummerZaehler === vorgeschlagenerZaehler.current && (
+                                            <p className="flex items-start gap-1.5 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-2 mt-1.5">
+                                                <Info className="w-4 h-4 mt-px shrink-0" />
+                                                <span>{auftragsnummerHinweis}</span>
+                                            </p>
+                                        )}
                                     {/* Checkbox für manuelle Vergabe */}
                                     <label className="flex items-center gap-2 mt-2 cursor-pointer">
                                         <input
@@ -936,8 +982,10 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                                     setPrefixJahr(auftragsnummerPrefix ? auftragsnummerPrefix.split('/')[0] : String(now.getFullYear()));
                                                     setPrefixMonat(auftragsnummerPrefix ? auftragsnummerPrefix.split('/')[1] : String(now.getMonth() + 1).padStart(2, '0'));
                                                 } else {
-                                                    // Bei Deaktivierung: Prefix auf aktuelles Datum zurücksetzen
-                                                    loadNaechsteAuftragsnummer();
+                                                    // Bei Deaktivierung: zurück auf den automatischen
+                                                    // Vorschlag — mit Kunde, damit wieder die
+                                                    // Kunden-Syntax greift statt der reinen Fortlaufnummer.
+                                                    loadNaechsteAuftragsnummer(selectedKunde?.id, selectedKunde?.name);
                                                     setPrefixJahr('');
                                                     setPrefixMonat('');
                                                 }
@@ -950,23 +998,9 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Projekt beendet - nur im Edit-Modus */}
-                            {isEditMode && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        <Euro className="w-4 h-4 inline-block mr-1" />
-                                        Bruttopreis (€)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        value={formData.bruttoPreis ?? ''}
-                                        onChange={e => handleInputChange('bruttoPreis', e.target.value ? parseFloat(e.target.value) : undefined)}
-                                        placeholder="0,00"
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                    />
-                                </div>
-                            )}
+                            {/* Der Auftragspreis wird nicht von Hand gepflegt: Er ergibt sich
+                                automatisch aus Angebot/Auftragsbestätigung/Nachtragsangebot –
+                                und wenn es die nicht gibt, aus der Summe der Rechnungen. */}
 
                             {/* Projekt beendet - nur im Edit-Modus */}
                             {isEditMode && (
@@ -1019,36 +1053,6 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                             }`}>
                                                 {art.produktiv ? 'Produktiv' : 'Unproduktiv'}
                                             </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* EN 1090 Ausführungsklasse */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    EN 1090 Ausführungsklasse <span className="text-slate-400 font-normal">(optional)</span>
-                                </label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {[
-                                        { value: null, label: 'Keine', desc: 'Kein EN 1090' },
-                                        { value: 'EXC_1', label: 'EXC 1', desc: 'Einfache Bauteile' },
-                                        { value: 'EXC_2', label: 'EXC 2', desc: 'Typischer Stahlbau' },
-                                    ].map(klasse => (
-                                        <button
-                                            key={klasse.value ?? 'none'}
-                                            type="button"
-                                            onClick={() => handleInputChange('excKlasse', klasse.value as string | undefined)}
-                                            className={`p-3 rounded-lg border-2 text-left transition-all ${
-                                                formData.excKlasse === klasse.value
-                                                    ? 'border-rose-500 bg-rose-50'
-                                                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                                            }`}
-                                        >
-                                            <p className={`font-semibold text-sm ${formData.excKlasse === klasse.value ? 'text-rose-700' : 'text-slate-700'}`}>
-                                                {klasse.label}
-                                            </p>
-                                            <p className="text-xs text-slate-500 mt-0.5">{klasse.desc}</p>
                                         </button>
                                     ))}
                                 </div>
@@ -1189,7 +1193,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                         />
                                         <span className={`text-sm ${(selectedKunde || selectedAnfrage) ? 'text-slate-700 group-hover:text-rose-600' : 'text-slate-400'}`}>
                                             {selectedAnfrage && (selectedAnfrage.projektStrasse || selectedAnfrage.projektPlz || selectedAnfrage.projektOrt)
-                                                ? 'Anfrages-Objektadresse übernehmen'
+                                                ? 'Anfrage-Objektadresse übernehmen'
                                                 : 'Kundenadresse übernehmen'}
                                         </span>
                                     </label>

@@ -19,6 +19,7 @@ import { DokumentLoeschenDialog } from './dokument/DokumentLoeschenDialog';
 import { DokumentVerlaufDrawer } from './dokument/DokumentVerlaufDrawer';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
+import { istRechnungAmVorgaengerGesperrt } from '../lib/abrechnungsverlauf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -30,6 +31,7 @@ import type {
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../types';
 import type { DocBlock } from './document-editor/types';
 import { TeilrechnungPositionRow, getAllServiceBlocks, filterBlocksBySelectedIds } from './TeilrechnungPositionRow';
+import { serviceLineTotal, nettoNachGlobalRabatt, calculateNettoNachRabatt } from './document-editor/helpers';
 
 // ============ Farbkonfiguration ============
 
@@ -70,7 +72,6 @@ interface DokumentHierarchieProps {
     /** Wenn true, werden Rechnungserstellungs-Aktionen ausgeblendet */
     hideRechnungActions?: boolean;
     onRefresh: () => void;
-    confirmDialog: (opts: { title?: string; message: string; variant?: 'danger' | 'warning' | 'info'; confirmLabel?: string }) => Promise<boolean>;
     toast: { error: (msg: string) => void; success: (msg: string) => void };
 }
 
@@ -81,7 +82,6 @@ export function DokumentHierarchie({
     allowedTypes,
     hideRechnungActions,
     onRefresh,
-    confirmDialog,
     toast,
 }: DokumentHierarchieProps) {
     // URL-Param für den Dokument-Editor: projektId oder anfrageId
@@ -109,6 +109,9 @@ export function DokumentHierarchie({
 
     // Teilrechnung Positions-Auswahl
     const [basisDokBlocks, setBasisDokBlocks] = useState<DocBlock[]>([]);
+    // Pauschalrabatt des Basisdokuments. Eine Teilrechnung muss ihn erben, weil sich
+    // der Restbetrag aus dem RABATTIERTEN betragNetto des Basisdokuments ableitet.
+    const [basisDokGlobalRabatt, setBasisDokGlobalRabatt] = useState<number>(0);
     const [selectedBlockIds, setSelectedBlockIds] = useState<Set<string>>(new Set());
     const [expandedBlockIds, setExpandedBlockIds] = useState<Set<string>>(new Set());
 
@@ -187,6 +190,7 @@ export function DokumentHierarchie({
         setShowRechnungDialog(true);
         setAbrechnungsverlauf(null);
         setBasisDokBlocks([]);
+        setBasisDokGlobalRabatt(0);
         setSelectedBlockIds(new Set());
         setExpandedBlockIds(new Set());
         try {
@@ -202,6 +206,7 @@ export function DokumentHierarchie({
                         const parsed = JSON.parse(dokData.positionenJson);
                         const blocks: DocBlock[] = Array.isArray(parsed) ? parsed : (parsed.blocks || []);
                         setBasisDokBlocks(blocks);
+                        setBasisDokGlobalRabatt(Array.isArray(parsed) ? 0 : (parsed.globalRabatt || 0));
                         // Alle SERVICE-Blocks standardmäßig auswählen
                         const allIds = new Set<string>();
                         for (const b of blocks) {
@@ -257,11 +262,11 @@ export function DokumentHierarchie({
                     return;
                 }
                 const filteredBlocks = filterBlocksBySelectedIds(basisDokBlocks, selectedBlockIds);
-                positionenJson = JSON.stringify({ blocks: filteredBlocks, globalRabatt: 0 });
+                // Pauschalrabatt des Basisdokuments erben — sonst uebersteigt die
+                // Teilrechnung den (rabattierten) Restbetrag und wird abgewiesen.
+                positionenJson = JSON.stringify({ blocks: filteredBlocks, globalRabatt: basisDokGlobalRabatt });
                 // Betrag aus gewählten Positionen berechnen für Abrechnungsverlauf
-                betrag = getAllServiceBlocks(basisDokBlocks)
-                    .filter(b => selectedBlockIds.has(b.id))
-                    .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0);
+                betrag = calculateNettoNachRabatt(filteredBlocks, basisDokGlobalRabatt);
             }
 
             const response = await fetch('/api/ausgangs-dokumente', {
@@ -292,7 +297,7 @@ export function DokumentHierarchie({
             setRechnungLoading(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rechnungBasisDok, rechnungTyp, abschlagsBetrag, berechneterAbschlagNetto, abrechnungsverlauf, editorParam, createPayloadIds, onRefresh, toast, selectedBlockIds, basisDokBlocks]);
+    }, [rechnungBasisDok, rechnungTyp, abschlagsBetrag, berechneterAbschlagNetto, abrechnungsverlauf, editorParam, createPayloadIds, onRefresh, toast, selectedBlockIds, basisDokBlocks, basisDokGlobalRabatt]);
 
     // ============ Knoten ein-/ausklappen ============
 
@@ -312,6 +317,15 @@ export function DokumentHierarchie({
         const typConfig = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dok.typ);
         const hasChildren = children.length > 0;
         const isCollapsed = collapsedIds.has(dok.id);
+
+        // Abgerechnet wird immer am untersten Dokument des Vorgangs: Sobald unter
+        // einem Angebot eine Auftragsbestätigung hängt, entstehen die Rechnungen
+        // dort. Sonst liefen zwei Abrechnungsstände (einer am Angebot, einer an
+        // der AB) unabhängig nebeneinander und der Restbetrag stimmte in keinem.
+        // Ausnahme: Wurde hier schon abgerechnet, bleibt der Vorgang hier — an der
+        // AB fehlten diese Beträge im Verlauf. Spiegelt validiereAbrechnungsbasis()
+        // im AusgangsGeschaeftsDokumentService.
+        const rechnungGesperrt = istRechnungAmVorgaengerGesperrt(children.map(c => c.dok));
 
         return (
             <div key={dok.id}>
@@ -495,55 +509,41 @@ export function DokumentHierarchie({
                                 Öffnen (neuer Tab)
                             </button>
 
-                            {/* Umwandeln / Rechnung erstellen */}
-                            {(dok.typ === 'ANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG') && (
+                            {/* Rechnung erstellen.
+                                Kein "→ Auftragsbestätigung" hier: Diese Ansicht läuft im
+                                Anfrage-Kontext, und eine Auftragsbestätigung bestätigt einen
+                                Auftrag — den gibt es erst, wenn aus der Anfrage ein Projekt
+                                geworden ist. Die AB entsteht deshalb ausschließlich im
+                                Projekt-Editor oder automatisch bei digitaler Angebotsannahme. */}
+                            {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG')
+                                && !hideRechnungActions && (
                                 <>
                                     <hr className="my-1 border-slate-100" />
                                     <p className="px-4 py-1 text-xs text-slate-400 font-medium">Umwandeln in:</p>
 
-                                    {dok.typ === 'ANGEBOT' && (
-                                        <button
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2"
-                                            onClick={async () => {
-                                                if (await confirmDialog({ title: "In Auftragsbestätigung umwandeln", message: `Anfrage ${dok.dokumentNummer} in Auftragsbestätigung umwandeln?`, variant: "info", confirmLabel: "Umwandeln" })) {
-                                                    try {
-                                                        const response = await fetch('/api/ausgangs-dokumente', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({
-                                                                typ: 'AUFTRAGSBESTAETIGUNG',
-                                                                ...createPayloadIds,
-                                                                vorgaengerId: dok.id,
-                                                                betreff: dok.betreff,
-                                                                betragNetto: dok.betragNetto,
-                                                            }),
-                                                        });
-                                                        if (response.ok) {
-                                                            const newDoc = await response.json();
-                                                            onRefresh();
-                                                            window.open(`/dokument-editor?${editorParam}&dokumentId=${newDoc.id}`, '_blank');
-                                                        }
-                                                    } catch (e) { console.error(e); }
-                                                }
-                                                setActionMenuId(null);
-                                            }}
-                                        >
-                                            → Auftragsbestätigung
-                                        </button>
-                                    )}
-
-                                    {/* Rechnung erstellen → Dialog */}
-                                    {!hideRechnungActions && (
+                                    {/* Hängt schon eine Auftragsbestätigung darunter, wird dort
+                                        abgerechnet — der Eintrag bleibt sichtbar, erklärt aber
+                                        den Weg, statt kommentarlos zu verschwinden. */}
                                     <button
-                                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
+                                        className={cn(
+                                            'w-full text-left px-4 py-2 text-sm flex flex-col items-start gap-0.5',
+                                            rechnungGesperrt
+                                                ? 'text-slate-400 cursor-not-allowed'
+                                                : 'text-slate-700 hover:bg-rose-50 hover:text-rose-700'
+                                        )}
+                                        disabled={rechnungGesperrt}
                                         onClick={() => {
                                             handleOpenRechnungDialog(dok);
                                             setActionMenuId(null);
                                         }}
                                     >
-                                        → Rechnung erstellen
+                                        <span>→ Rechnung erstellen</span>
+                                        {rechnungGesperrt && (
+                                            <span className="text-xs text-slate-400">
+                                                Rechnung bitte an der Auftragsbestätigung anlegen
+                                            </span>
+                                        )}
                                     </button>
-                                    )}
                                 </>
                             )}
 
@@ -1013,11 +1013,12 @@ export function DokumentHierarchie({
                                             Summe ({selectedBlockIds.size} von {getAllServiceBlocks(basisDokBlocks).length} Positionen)
                                         </span>
                                         <span className="text-base font-bold text-rose-700">
-                                            {formatCurrency(
+                                            {formatCurrency(nettoNachGlobalRabatt(
                                                 getAllServiceBlocks(basisDokBlocks)
-                                                    .filter(b => selectedBlockIds.has(b.id))
-                                                    .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0)
-                                            )}
+                                                    .filter(b => !b.optional && selectedBlockIds.has(b.id))
+                                                    .reduce((sum, b) => sum + serviceLineTotal(b), 0),
+                                                basisDokGlobalRabatt
+                                            ))}
                                         </span>
                                     </div>
                                 )}

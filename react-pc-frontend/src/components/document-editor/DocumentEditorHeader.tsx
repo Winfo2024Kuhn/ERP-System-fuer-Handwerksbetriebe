@@ -1,12 +1,20 @@
-import { X, Save, Upload, Download, FileText, Wrench, Clock, Printer, Minus, FolderOpen, Percent, Mail } from 'lucide-react';
+import { X, Save, Upload, Download, FileText, Wrench, Clock, Package, Printer, Minus, FolderOpen, Percent, Mail, FileEdit, Lock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import type { AusgangsGeschaeftsDokument } from './types';
+import { VerlaufKnoepfe, type VerlaufKnoepfeProps } from './VerlaufKnoepfe';
 
 interface DocumentEditorHeaderProps {
     dokumentNummer: string;
     kontextInfo: string;
     isLocked: boolean;
+    /**
+     * true nur fuer eine tatsaechlich gebuchte Rechnung (Design-Review
+     * Abschnitt 7-2, Befund 1) -- NICHT dasselbe wie isLocked, das auch bei
+     * Fremdsperre, eigenem "Fertig" oder einem Sperrfehler true ist. Das
+     * Badge zeigt "Gebucht" ausschliesslich, wenn dieser Prop true ist.
+     */
+    istGebucht: boolean;
     saving: boolean;
     saveSuccess: boolean;
     hasUnsavedChanges: boolean;
@@ -18,21 +26,30 @@ interface DocumentEditorHeaderProps {
     onOpenTextbausteinPicker: () => void;
     onOpenLeistungPicker: () => void;
     onOpenStundensatzPicker: () => void;
+    onOpenMaterialPicker: () => void;
     onAddSeparator: () => void;
     onAddSectionHeader: () => void;
     onOpenRabattDialog: () => void;
     onExport: () => void;
     onPrint: () => void;
     onSendEmail: () => void;
+    onSendDraft: () => void;
     onGaebImport: () => void;
     fileInputRef: React.RefObject<HTMLInputElement | null>;
     onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    /**
+     * Optional -- ohne diese Prop rendert der Header exakt wie bisher (kein
+     * Rueckgaengig/Wiederholen). Gesetzt wird sie erst von der Integration im
+     * Dokumenteditor selbst.
+     */
+    verlauf?: VerlaufKnoepfeProps;
 }
 
 export function DocumentEditorHeader({
     dokumentNummer,
     kontextInfo,
     isLocked,
+    istGebucht,
     saving,
     saveSuccess,
     hasUnsavedChanges,
@@ -43,15 +60,18 @@ export function DocumentEditorHeader({
     onOpenTextbausteinPicker,
     onOpenLeistungPicker,
     onOpenStundensatzPicker,
+    onOpenMaterialPicker,
     onAddSeparator,
     onAddSectionHeader,
     onOpenRabattDialog,
     onExport,
     onPrint,
     onSendEmail,
+    onSendDraft,
     onGaebImport,
     fileInputRef,
     onFileChange,
+    verlauf,
 }: DocumentEditorHeaderProps) {
     return (
         <div className="bg-white border-b border-slate-200 px-3 h-11 flex items-center justify-between gap-2 flex-shrink-0">
@@ -59,18 +79,23 @@ export function DocumentEditorHeader({
             <div className="flex items-center gap-2 min-w-0">
                 <button
                     onClick={onClose}
+                    aria-label="Editor schließen"
                     className="p-1.5 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
                 >
                     <X className="w-4 h-4 text-slate-400" />
                 </button>
                 <div className="h-4 w-px bg-slate-200 flex-shrink-0" />
-                <h1 className="text-sm font-bold text-slate-800 truncate">
+                <h1
+                    className="text-sm font-bold text-slate-800 truncate flex-shrink-0"
+                    title={dokumentNummer || 'Neues Dokument'}
+                    data-kuerzung-erlaubt="true"
+                >
                     {dokumentNummer || 'Neues Dokument'}
                 </h1>
                 {/* Status badges */}
-                {isLocked && (
+                {istGebucht && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[10px] font-semibold flex-shrink-0">
-                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                        <Lock className="w-2.5 h-2.5" />
                         Gebucht
                     </span>
                 )}
@@ -85,7 +110,11 @@ export function DocumentEditorHeader({
                         Ungespeichert
                     </span>
                 )}
-                <span className="text-[11px] text-slate-400 truncate hidden lg:block">
+                <span
+                    className="text-[11px] text-slate-400 truncate hidden lg:block"
+                    title={kontextInfo}
+                    data-kuerzung-erlaubt="true"
+                >
                     {kontextInfo}
                 </span>
             </div>
@@ -93,6 +122,10 @@ export function DocumentEditorHeader({
             {/* Center: action buttons */}
             {!isLocked && (
                 <div className="flex items-center gap-0.5 flex-shrink-0">
+                    {verlauf && (<>
+                        <VerlaufKnoepfe {...verlauf} />
+                        <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                    </>)}
                     <Button
                         variant="ghost"
                         size="sm"
@@ -122,6 +155,16 @@ export function DocumentEditorHeader({
                     >
                         <Clock className="w-3 h-3" />
                         Stundensätze
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onOpenMaterialPicker}
+                        disabled={isLocked}
+                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                    >
+                        <Package className="w-3 h-3" />
+                        Material
                     </Button>
                     <div className="w-px h-5 bg-slate-200 mx-0.5" />
                     <Button
@@ -213,6 +256,21 @@ export function DocumentEditorHeader({
                 >
                     <Printer className="w-3 h-3" />
                     Drucken
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onSendDraft}
+                    disabled={emailLoading}
+                    className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
+                    title="Entwurf mit Wasserzeichen senden – Dokument bleibt offen und änderbar"
+                >
+                    {emailLoading ? (
+                        <div className="w-3 h-3 border-2 border-slate-300 border-t-rose-500 rounded-full animate-spin" />
+                    ) : (
+                        <FileEdit className="w-3 h-3" />
+                    )}
+                    Entwurf
                 </Button>
                 <Button
                     variant="ghost"

@@ -5,7 +5,7 @@ import {
     Briefcase, Clock, Mail, Package, MoreHorizontal,
     X, FileText, User, Truck, ShoppingCart, FileCheck,
     BarChart3, Euro, Home, Layers, List, Calendar,
-    CalendarDays, Plane, Shield, FileJson, ChevronRight
+    CalendarDays, Plane, Shield, FileJson, ChevronRight, Stethoscope
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -40,6 +40,7 @@ const SUBMENU_ITEMS: Record<string, NavItem[]> = {
         { name: 'Auswertung', href: '/auswertung', icon: BarChart3 },
         { name: 'Zeitkonten', href: '/zeitkonten', icon: Clock },
         { name: 'Urlaub', href: '/urlaubsantraege', icon: Plane },
+        { name: 'Lange Krankheit', href: '/langzeitkrankmeldungen', icon: Stethoscope },
     ],
     '/emails': [
         { name: 'E-Mail Center', href: '/emails', icon: Mail },
@@ -232,7 +233,7 @@ export function MobileBottomNav() {
                     </div>
 
                     {/* Sheet Content */}
-                    <div className="overflow-y-auto overscroll-contain pb-safe max-h-[calc(80vh-80px)]">
+                    <div className="overflow-y-auto overscroll-contain max-h-[calc(80vh-80px)]">
                         {filteredMoreSections.map((section) => (
                             <div key={section.label} className="px-4 py-3">
                                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 mb-2">
@@ -280,7 +281,7 @@ export function MobileBottomNav() {
                 <div className="absolute inset-0 bg-white/80 backdrop-blur-xl border-t border-slate-200/50 shadow-lg" />
 
                 {/* Safe Area Spacer for iOS */}
-                <div className="relative flex items-center justify-around px-2 h-16 pb-safe">
+                <div className="relative flex items-center justify-around px-2 h-16">
                     {PRIMARY_TABS.map((tab) => {
                         const isActive = activeTab === tab.href;
                         const hasSubmenu = !!filteredSubmenuItems[tab.href];

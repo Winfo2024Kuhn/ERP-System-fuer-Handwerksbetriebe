@@ -1,33 +1,28 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { EmailNavigationGuard } from '../features/email/EmailNavigationGuard';
+import { getThreadPreview } from '../features/email/threadQuotes';
+import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
+import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
+import { AssignModal } from '../features/email/EmailAssignmentDialog';
+import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
+import { emailEndpointWithMailbox, getSenderName, getDisplayName, isImageAttachment, type EmailItem, type EmailMailbox, type FolderType } from '../features/email/emailCenterModel';
+import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
     Mail,
     RefreshCw,
     Trash2,
     Inbox,
-    Send,
-    AlertCircle,
     Paperclip,
-    Clock,
     Download,
     FolderPlus,
     Search,
-    Briefcase,
-    FileText,
-    ChevronDown,
-    ChevronRight,
     File,
-    PenSquare,
     FileEdit,
     ShieldAlert,
     ShieldCheck,
     ShieldX,
-    Settings,
     Star,
-    Package,
-    Reply,
-    Forward,
     Newspaper,
     Globe,
     X,
@@ -39,8 +34,6 @@ import {
     ArrowDownAZ,
     ArrowUpAZ,
     CheckCircle2,
-    Scale,
-    Sparkles
 } from 'lucide-react';
 import {
     DndContext,
@@ -49,389 +42,32 @@ import {
     useSensor,
     useSensors,
     useDraggable,
-    useDroppable,
     type DragStartEvent,
     type DragEndEvent
 } from '@dnd-kit/core';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
+import { stripHtmlTags, unescapeHtmlEntities } from '../lib/htmlSanitizer';
+import { extractDisplayName, extractEmailAddress, formatRecipient, formatRecipientList, escapeHtml, parseRecipientList } from '../lib/emailAddress';
 import { refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
+import { EmailEinkaufBezug } from '../features/einkauf/components/EmailEinkaufBezug';
 import EmailSettings from '../components/EmailSettings';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { EmailThreadView } from '../components/EmailThreadView';
 import type { EmailThread } from '../components/EmailThreadView';
-import { PreiseEintragenModal } from '../components/PreiseEintragenModal';
 
-
-/** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
-interface EmailAttachment {
-    id: number;
-    originalFilename?: string;
-    filename?: string;
-    storedFilename?: string;
-    mimeType?: string;
-    fileSize?: number;
-    contentId?: string;
-    inline?: boolean;
-}
-
-/** Prüft ob ein Dateiname auf ein gängiges Bildformat hindeutet. */
-function isImageAttachment(filename: string): boolean {
-    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(filename);
-}
-
-
-interface EmailItem {
-    id: number;
-    type: string;
-    containerId?: number;
-    direction: 'IN' | 'OUT';
-    subject?: string;
-    sender?: string;
-    fromAddress?: string;
-    body?: string;
-    htmlBody?: string;
-    sentAt?: string;
-    attachments?: EmailAttachment[];
-    replies?: EmailItem[];
-    zuordnungTyp?: string;
-    projektName?: string;
-    anfrageName?: string;
-    lieferantName?: string;
-    isRead?: boolean;
-    recipient?: string;
-    spamScore?: number;
-    // Assignment IDs
-    projektId?: number;
-    anfrageId?: number;
-    lieferantId?: number;
-    // Computed folder from backend
-    folder?: FolderType;
-    // Thread-Informationen
-    parentEmailId?: number;   // null/undefined = Thread-Wurzel
-    replyCount?: number;      // Anzahl direkter Antworten
-    isStarred?: boolean;
-    // Rückverweis auf Preisanfrage-Lieferant (wenn Mail als Antwort zugeordnet ist)
-    preisanfrageLieferantRef?: PreisanfrageLieferantRef;
-}
-
-/**
- * Backend-Feld `preisanfrageLieferantRef` aus UnifiedEmailDto. Wird gefüllt, wenn
- * diese E-Mail als Antwort auf eine versendete Preisanfrage erkannt wurde.
- */
-interface PreisanfrageLieferantRef {
-    preisanfrageId: number;
-    preisanfrageNummer?: string;
-    palId: number;
-    lieferantId?: number;
-    lieferantenname?: string;
-}
-
-// Folder Types
-type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'unassigned';
-
-
-
-
-const getSenderName = (email: EmailItem) => {
-    if (email.lieferantName) return email.lieferantName;
-    if (email.projektName) return email.projektName;
-    if (email.anfrageName) return email.anfrageName;
-    if (email.fromAddress) {
-        const match = email.fromAddress.match(/^"?(.*?)"? <.*>$/);
-        if (match && match[1]) return match[1];
-        return email.fromAddress;
-    }
-    return email.sender || 'Unbekannt';
-};
-
-const getRecipientName = (email: EmailItem) => {
-    if (email.recipient) {
-        const match = email.recipient.match(/^"?(.*?)"? <.*>$/);
-        if (match && match[1]) return match[1];
-        return email.recipient;
-    }
-    return 'Unbekannt';
-};
-
-const getDisplayName = (email: EmailItem) => {
-    if (email.direction === 'OUT') {
-        return getRecipientName(email);
-    }
-    return getSenderName(email);
-};
-
-
-// Assignment Modal Component
-interface AssignModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onAssign: (type: 'projekt' | 'anfrage', targetId: number) => Promise<void>;
-    emailSubject: string;
-    emailId?: number;
-}
-
-interface EntityOption {
-    id: number;
-    name: string;
-    type: string;
-    projektNummer?: string;
-    anfrageNummer?: string;
-}
-
-function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId }: AssignModalProps) {
-    const toast = useToast();
-    const [searchType, setSearchType] = useState<'projekt' | 'anfrage'>('projekt');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [results, setResults] = useState<{ id: number; bauvorhaben?: string; name?: string; kunde?: string }[]>([]);
-    const [suggestions, setSuggestions] = useState<{ projekte: EntityOption[], anfragen: EntityOption[] }>({ projekte: [], anfragen: [] });
-    const [loading, setLoading] = useState(false);
-    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-    const [assigning, setAssigning] = useState(false);
-
-    // Load suggestions when modal opens
-    useEffect(() => {
-        if (isOpen && emailId) {
-            setLoadingSuggestions(true);
-            fetch(`/api/emails/${emailId}/possible-assignments`)
-                .then(res => res.json())
-                .then(data => {
-                    setSuggestions({
-                        projekte: data.projekte || [],
-                        anfragen: data.anfragen || []
-                    });
-                })
-                .catch(err => console.error('Failed to load suggestions:', err))
-                .finally(() => setLoadingSuggestions(false));
-        }
-    }, [isOpen, emailId]);
-
-    useEffect(() => {
-        if (!isOpen) {
-            setSearchQuery('');
-            setResults([]);
-        }
-    }, [isOpen]);
-
-    const fetchResults = useCallback(async () => {
-        if (!searchQuery.trim()) {
-            setResults([]);
-            setLoading(false);
-            return;
-        }
-        setLoading(true);
-        try {
-            const endpoint = searchType === 'projekt'
-                ? `/api/projekte/suche?q=${encodeURIComponent(searchQuery)}`
-                : `/api/anfragen?q=${encodeURIComponent(searchQuery)}`;
-            const res = await fetch(endpoint);
-            if (res.ok) {
-                setResults(await res.json());
-            }
-        } catch (err) {
-            console.error('Search failed:', err);
-        } finally {
-            setLoading(false);
-        }
-    }, [searchQuery, searchType]);
-
-    useEffect(() => {
-        const timeout = setTimeout(fetchResults, 300);
-        return () => clearTimeout(timeout);
-    }, [fetchResults]);
-
-    const handleSelect = async (type: 'projekt' | 'anfrage', id: number) => {
-        setAssigning(true);
-        try {
-            await onAssign(type, id);
-            onClose();
-        } catch {
-            toast.error('Zuordnung fehlgeschlagen');
-        } finally {
-            setAssigning(false);
-        }
-    };
-
-    const currentSuggestions = searchType === 'projekt' ? suggestions.projekte : suggestions.anfragen;
-    const hasSuggestions = currentSuggestions.length > 0;
-
-    return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-lg">
-                <DialogHeader>
-                    <DialogTitle>E-Mail zuordnen</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                    <p className="text-sm text-slate-600 truncate">"{emailSubject}"</p>
-
-                    <div className="flex gap-2">
-                        <Button
-                            variant={searchType === 'projekt' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setSearchType('projekt')}
-                            className={searchType === 'projekt' ? 'bg-rose-600 hover:bg-rose-700' : ''}
-                        >
-                            <Briefcase className="w-4 h-4 mr-1" />
-                            Projekt
-                            {suggestions.projekte.length > 0 && (
-                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.projekte.length}</span>
-                            )}
-                        </Button>
-                        <Button
-                            variant={searchType === 'anfrage' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setSearchType('anfrage')}
-                            className={searchType === 'anfrage' ? 'bg-rose-600 hover:bg-rose-700' : ''}
-                        >
-                            <FileText className="w-4 h-4 mr-1" />
-                            Anfrage
-                            {suggestions.anfragen.length > 0 && (
-                                <span className="ml-1 bg-white/20 px-1.5 rounded text-xs">{suggestions.anfragen.length}</span>
-                            )}
-                        </Button>
-                    </div>
-
-                    {/* Suggestions Section */}
-                    {loadingSuggestions ? (
-                        <div className="text-center text-slate-500 py-2">
-                            <RefreshCw className="w-4 h-4 animate-spin mx-auto" />
-                            <p className="text-xs mt-1">Lade Vorschläge...</p>
-                        </div>
-                    ) : hasSuggestions && (
-                        <div className="space-y-1">
-                            <p className="text-xs font-medium text-rose-600">Vorschläge (passende E-Mail-Adresse):</p>
-                            {currentSuggestions.map((item) => (
-                                <button
-                                    key={`suggestion-${item.id}`}
-                                    onClick={() => handleSelect(searchType, item.id)}
-                                    disabled={assigning}
-                                    className="w-full text-left p-3 rounded-lg bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200"
-                                >
-                                    <p className="font-medium text-slate-900">
-                                        {item.projektNummer && <span className="text-rose-600 mr-2">{item.projektNummer}</span>}
-                                        {item.anfrageNummer && <span className="text-rose-600 mr-2">{item.anfrageNummer}</span>}
-                                        {item.name}
-                                    </p>
-                                    <p className="text-xs text-rose-600 flex items-center gap-1">
-                                        <Star className="w-3 h-3 fill-rose-500 text-rose-500" />
-                                        Empfohlen
-                                    </p>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Manual Search Section */}
-                    <div className="pt-2 border-t border-slate-200">
-                        <p className="text-xs text-slate-500 mb-2">Oder manuell suchen:</p>
-                        <Input
-                            placeholder={`${searchType === 'projekt' ? 'Projekt' : 'Anfrage'} suchen...`}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="border-slate-200"
-                        />
-                    </div>
-
-                    <div className="max-h-40 overflow-auto space-y-1">
-                        {loading ? (
-                            <p className="text-center text-slate-500 py-4">Suche...</p>
-                        ) : results.length === 0 && searchQuery ? (
-                            <p className="text-center text-slate-500 py-4">Keine Ergebnisse</p>
-                        ) : (
-                            results.map((item: { id: number; bauvorhaben?: string; name?: string; kunde?: string; kundenName?: string; anfragesnummer?: string }) => (
-                                <button
-                                    key={item.id}
-                                    onClick={() => handleSelect(searchType, item.id)}
-                                    disabled={assigning}
-                                    className="w-full text-left p-3 rounded-lg hover:bg-rose-50 transition-colors border border-slate-200"
-                                >
-                                    <p className="font-medium text-slate-900">{item.bauvorhaben || item.name || item.kundenName}</p>
-                                    {(item.kunde || item.kundenName) && <p className="text-sm text-slate-500">{item.kunde || item.kundenName}</p>}
-                                    {item.anfragesnummer && <p className="text-xs text-slate-400">{item.anfragesnummer}</p>}
-                                </button>
-                            ))
-                        )}
-                    </div>
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-}
 
 // Main EmailCenter Component
-const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'unassigned'];
+const VALID_FOLDERS: FolderType[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'newsletter', 'starred', 'projects', 'offers', 'suppliers', 'tax-advisors', 'unassigned'];
 
 // ─────────────────────────────────────────────────────────────
 // DnD helper components (Drag & Drop für Ordner-Verschieben)
 // ─────────────────────────────────────────────────────────────
-
-interface DroppableFolderButtonProps {
-    folderId: FolderType;
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    count?: number;
-    isActive: boolean;
-    onClick: () => void;
-    /** wenn true, ist dies ein gültiges Drop-Ziel (inbox/trash/spam/newsletter) */
-    droppable: boolean;
-    /** wenn true, läuft gerade ein Drag – Non-Drop-Ordner werden dann visuell ausgegraut */
-    dragActive: boolean;
-    countVariant?: 'rose' | 'amber' | 'slate';
-}
-
-function DroppableFolderButton({
-    folderId,
-    icon: Icon,
-    label,
-    count,
-    isActive,
-    onClick,
-    droppable,
-    dragActive,
-    countVariant = 'slate'
-}: DroppableFolderButtonProps) {
-    const { isOver, setNodeRef } = useDroppable({
-        id: `folder-${folderId}`,
-        disabled: !droppable,
-        data: { folderId }
-    });
-
-    const readOnlyDuringDrag = dragActive && !droppable;
-
-    return (
-        <button
-            ref={setNodeRef}
-            onClick={onClick}
-            title={readOnlyDuringDrag ? 'Automatisch zugeordnet – Drag & Drop nicht möglich' : undefined}
-            className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
-                isActive
-                    ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                    : "text-slate-700 hover:bg-slate-50",
-                isOver && droppable && "bg-rose-100 text-rose-800 ring-2 ring-rose-400 ring-offset-2 ring-offset-slate-50 shadow-lg",
-                readOnlyDuringDrag && "opacity-40 cursor-not-allowed"
-            )}
-        >
-            <Icon className="w-4 h-4" />
-            <span className="flex-1 text-left">{label}</span>
-            {count != null && count > 0 && (
-                <span className={cn(
-                    "text-xs font-semibold px-2 py-0.5 rounded-full min-w-[1.25rem] text-center tabular-nums",
-                    countVariant === 'rose' && (isActive ? "bg-rose-200 text-rose-800" : "bg-rose-100 text-rose-700"),
-                    countVariant === 'amber' && "bg-amber-100 text-amber-700",
-                    countVariant === 'slate' && "bg-slate-100 text-slate-600"
-                )}>
-                    {count}
-                </span>
-            )}
-        </button>
-    );
-}
 
 interface DraggableEmailWrapperProps {
     emailId: number;
@@ -461,24 +97,183 @@ function DraggableEmailWrapper({ emailId, disabled, children }: DraggableEmailWr
 }
 
 export default function EmailCenter() {
+    const hasDataRouter = useContext(UNSAFE_DataRouterContext) !== null;
     const toast = useToast();
     const confirmDialog = useConfirm();
     const { folder: folderParam, emailId: emailIdParam } = useParams<{ folder?: string; emailId?: string }>();
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
 
+    const beforeLeaveComposer = useRef<(() => Promise<boolean>) | null>(null);
+    const leavingComposer = useRef(false);
+    const registerBeforeLeave = useCallback((save: (() => Promise<boolean>) | null) => {
+        beforeLeaveComposer.current = save;
+    }, []);
+    const persistComposer = useCallback(async () => {
+        if (!beforeLeaveComposer.current) return true;
+        if (leavingComposer.current) return false;
+        leavingComposer.current = true;
+        try { return await beforeLeaveComposer.current(); }
+        finally { leavingComposer.current = false; }
+    }, []);
+    const [composerVersion, setComposerVersion] = useState(0);
+
     // Derive activeFolder from URL param
     const activeFolder: FolderType = VALID_FOLDERS.includes(folderParam as FolderType)
         ? (folderParam as FolderType)
         : 'inbox';
+    const mailboxValue = searchParams.get('kontoId');
+    const kontoFilter: EmailMailbox | undefined = ['HAUPT', 'DOKUMENTE', 'EINKAUF'].includes(mailboxValue ?? '')
+        ? mailboxValue as EmailMailbox : undefined;
+    const setKontoFilter = (kontoId?: EmailMailbox) => setSearchParams(kontoId ? { kontoId } : {}, { replace: true });
+    const [importingMailbox, setImportingMailbox] = useState(false);
+    const importMailbox = async () => {
+        if (!kontoFilter || importingMailbox) return;
+        setImportingMailbox(true);
+        try {
+            const endpoint = kontoFilter === 'EINKAUF' ? '/api/einkauf/mail/abruf' : `/api/emails/import?kontoId=${encodeURIComponent(kontoFilter)}`;
+            const response = await fetch(endpoint, { method: 'POST' });
+            if (!response.ok) throw new Error('Das ausgewählte Postfach konnte nicht abgerufen werden.');
+            toast.success('Postfach wurde abgerufen.');
+            await refreshEmailsSilently();
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Das Postfach konnte nicht abgerufen werden.');
+        } finally { setImportingMailbox(false); }
+    };
 
     // Navigate helper: updates URL (which drives activeFolder)
-    const setActiveFolder = useCallback((folder: FolderType) => {
+    const setActiveFolder = useCallback(async (folder: FolderType) => {
+        if (!await persistComposer()) return;
         navigate(`/emails/${folder}`, { replace: false });
-    }, [navigate]);
+    }, [navigate, persistComposer]);
 
     // State
     const [emails, setEmails] = useState<EmailItem[]>([]);
+
+    // Eigene Firmenadressen laden (verhindert Antworten an mich selbst)
+    const [ownAddresses, setOwnAddresses] = useState<string[]>([]);
+    useEffect(() => {
+        let isMounted = true;
+        fetch('/api/emails/from-addresses')
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                if (!isMounted) return;
+                if (Array.isArray(data)) setOwnAddresses(data);
+            })
+            .catch(err => {
+                if (!isMounted) return;
+                console.error('Fehler beim Laden der eigenen Absenderadressen:', err);
+                toast.error('Eigene Absenderadressen konnten nicht geladen werden.');
+            });
+        return () => {
+            isMounted = false;
+        };
+    }, [toast]);
+
+    const isOwnEmail = useCallback((addr?: string) => {
+        if (!addr) return false;
+        const clean = extractEmailAddress(addr).toLowerCase();
+        if (!clean) return false;
+        if (ownAddresses.some(own => own.toLowerCase() === clean)) return true;
+        return clean.includes('bauschlosserei-kuhn') || clean.startsWith('info-bauschlosserei');
+    }, [ownAddresses]);
+
+    const { ref: mailLayoutRef, width: availableWidth } = useEmailPaneWidth();
+
+    // Resizable Spalten & Einklappen (im localStorage gemerkt)
+    const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+        const saved = localStorage.getItem('email_center_sidebar_width');
+        if (saved) {
+            const val = parseInt(saved, 10);
+            if (!isNaN(val) && val >= 180 && val <= 400) return val;
+        }
+        return 240;
+    });
+
+    const [listWidth, setListWidth] = useState<number>(() => {
+        const saved = localStorage.getItem('email_center_list_width');
+        if (saved) {
+            const val = parseInt(saved, 10);
+            if (!isNaN(val) && val >= 280 && val <= 700) return val;
+        }
+        return 380;
+    });
+
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+        return localStorage.getItem('email_center_sidebar_collapsed') === 'true';
+    });
+
+    // Alte Einstellungen dürfen den Lesebereich beim Fensterwechsel nicht verdrängen.
+    const effectiveSidebarWidth = isSidebarCollapsed ? 56 : Math.min(sidebarWidth, Math.max(180, availableWidth * 0.2));
+    const effectiveListWidth = Math.min(listWidth, Math.max(280, availableWidth - effectiveSidebarWidth - 468));
+
+    const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
+    const [isDraggingList, setIsDraggingList] = useState(false);
+
+    const toggleSidebar = useCallback(() => {
+        setIsSidebarCollapsed(prev => {
+            const next = !prev;
+            localStorage.setItem('email_center_sidebar_collapsed', String(next));
+            return next;
+        });
+    }, []);
+
+    const handleSidebarResizeStart = useCallback((e: React.PointerEvent) => {
+        e.preventDefault();
+        setIsDraggingSidebar(true);
+        const startX = e.clientX;
+        const startWidth = effectiveSidebarWidth;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'col-resize';
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const delta = moveEvent.clientX - startX;
+            const newWidth = Math.min(Math.max(startWidth + delta, 180), 400);
+            setSidebarWidth(newWidth);
+            localStorage.setItem('email_center_sidebar_width', String(newWidth));
+        };
+
+        const onPointerUp = () => {
+            setIsDraggingSidebar(false);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    }, [effectiveSidebarWidth]);
+
+    const handleListResizeStart = useCallback((e: React.PointerEvent) => {
+        e.preventDefault();
+        setIsDraggingList(true);
+        const startX = e.clientX;
+        const startWidth = effectiveListWidth;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'col-resize';
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const delta = moveEvent.clientX - startX;
+            const newWidth = Math.min(Math.max(startWidth + delta, 280), 700);
+            setListWidth(newWidth);
+            localStorage.setItem('email_center_list_width', String(newWidth));
+        };
+
+        const onPointerUp = () => {
+            setIsDraggingList(false);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    }, [effectiveListWidth]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isGlobalSearch, setIsGlobalSearch] = useState(false);
     const [globalSearchResults, setGlobalSearchResults] = useState<EmailItem[]>([]);
@@ -493,10 +288,10 @@ export default function EmailCenter() {
     const [selectedEmail, setSelectedEmail] = useState<EmailItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const lastSelectedIdRef = useRef<number | null>(null);
-    const deepLinkFolderSwitchRef = useRef(false);
+    const selectionVersionRef = useRef(0);
 
     // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background
-    const folderCacheRef = useRef<Map<FolderType, { emails: EmailItem[]; hasMore: boolean; timestamp: number }>>(new Map());
+    const folderCacheRef = useRef<Map<string, { emails: EmailItem[]; hasMore: boolean; timestamp: number }>>(new Map());
     // Ref to guard against stale async responses when switching folders quickly
     const activeFolderRef = useRef<FolderType>(activeFolder);
     // IDs die gerade optimistisch entfernt werden (Spam, Löschen, Blockieren) – verhindert
@@ -509,8 +304,9 @@ export default function EmailCenter() {
     useEffect(() => {
         const currentId = selectedEmail?.id ?? null;
         if (prevSelectedRef.current !== currentId) {
+            const previousId = prevSelectedRef.current;
             prevSelectedRef.current = currentId;
-            if (currentId === null && emailIdParam) {
+            if (currentId === null && emailIdParam && Number(emailIdParam) === previousId) {
                 navigate(`/emails/${activeFolder}`, { replace: true });
             }
         }
@@ -523,14 +319,12 @@ export default function EmailCenter() {
     const [replyToEmailId, setReplyToEmailId] = useState<number | undefined>(undefined);
 
     const [showAssignModal, setShowAssignModal] = useState(false);
-    const [preiseEintragenTarget, setPreiseEintragenTarget] = useState<PreisanfrageLieferantRef | null>(null);
     const [folderCounts, setFolderCounts] = useState({
         inbox: 0, sent: 0, drafts: 0, trash: 0, spam: 0, newsletter: 0,
-        starred: 0, projects: 0, offers: 0, suppliers: 0, unassigned: 0
+        starred: 0, projects: 0, offers: 0, suppliers: 0, taxAdvisors: 0, unassigned: 0
     });
     // Gesamt-Counts pro Ordner (fuer Footer "X von Y")
     const [folderTotals, setFolderTotals] = useState<Record<string, number>>({});
-    const [expandedFilters, setExpandedFilters] = useState(true);
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
     // Sentinel fuer Infinite Scroll am Ende der Email-Liste
     const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -571,7 +365,9 @@ export default function EmailCenter() {
     }, [selectedEmailId]);
 
     // Action Handlers
-    const handleComposeNew = () => {
+    const handleComposeNew = async () => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         setSelectedEmail(null);
         setReplyToEmail(null);
         setReplyToEmailId(undefined);
@@ -582,6 +378,8 @@ export default function EmailCenter() {
     };
 
     const handleReply = async (email: EmailItem, replyId?: number) => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         // List DTO has truncated body/no htmlBody – fetch full email for quote
         let fullEmail = email;
         if (!email.htmlBody) {
@@ -590,6 +388,16 @@ export default function EmailCenter() {
                 if (res.ok) fullEmail = await res.json();
             } catch { /* use truncated version as fallback */ }
         }
+
+        const isReplyToOut = fullEmail.direction === 'OUT' || isOwnEmail(fullEmail.fromAddress);
+        if (isReplyToOut) {
+            const parsed = parseRecipientList(fullEmail.recipient);
+            const external = parsed.filter(p => !isOwnEmail(p.email));
+            if (external.length === 0) {
+                toast.info('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.');
+            }
+        }
+
         setReplyToEmail(fullEmail);
         setReplyToEmailId(replyId ?? email.id);
         setForwardEmail(null);
@@ -599,6 +407,8 @@ export default function EmailCenter() {
     };
 
     const handleForward = async (email: EmailItem) => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         let fullEmail = email;
         if (!email.htmlBody) {
             try {
@@ -673,7 +483,9 @@ export default function EmailCenter() {
     }, []);
 
     // Draft öffnen = Compose-Form mit Draft-Daten
-    const handleOpenDraft = (draft: DraftItem) => {
+    const handleOpenDraft = async (draft: DraftItem) => {
+        if (!await persistComposer()) return;
+        setComposerVersion(value => value + 1);
         setSelectedEmail(null);
         setReplyToEmail(null);
         setReplyToEmailId(draft.replyEmailId || undefined);
@@ -715,13 +527,15 @@ export default function EmailCenter() {
             'projects': '/api/emails/projects',
             'offers': '/api/emails/offers',
             'suppliers': '/api/emails/suppliers',
+            'tax-advisors': '/api/emails/tax-advisors',
             'unassigned': '/api/emails/unassigned',
         };
         const base = endpointMap[activeFolder] || '/api/emails/inbox';
-        const endpoint = `${base}?offset=0&limit=${PAGE_SIZE}`;
+        const endpoint = emailEndpointWithMailbox(`${base}?offset=0&limit=${PAGE_SIZE}`, kontoFilter);
+        const cacheKey = `${activeFolder}:${kontoFilter ?? 'ALLE'}`;
 
         // Show cached data instantly if available
-        const cached = folderCacheRef.current.get(activeFolder);
+        const cached = folderCacheRef.current.get(cacheKey);
         if (cached) {
             setEmails(cached.emails);
             setHasMore(cached.hasMore);
@@ -760,7 +574,7 @@ export default function EmailCenter() {
                 const more = data.length >= PAGE_SIZE;
                 setEmails(data);
                 setHasMore(more);
-                folderCacheRef.current.set(activeFolder, { emails: data, hasMore: more, timestamp: Date.now() });
+                folderCacheRef.current.set(cacheKey, { emails: data, hasMore: more, timestamp: Date.now() });
             } else {
                 if (!cached) { setEmails([]); setHasMore(false); }
             }
@@ -770,7 +584,7 @@ export default function EmailCenter() {
         } finally {
             setLoading(false);
         }
-    }, [activeFolder]);
+    }, [activeFolder, kontoFilter]);
 
     // Naechste Seite asynchron nachladen (Infinite Scroll)
     const loadMoreEmails = useCallback(async () => {
@@ -790,10 +604,11 @@ export default function EmailCenter() {
             'projects': '/api/emails/projects',
             'offers': '/api/emails/offers',
             'suppliers': '/api/emails/suppliers',
+            'tax-advisors': '/api/emails/tax-advisors',
             'unassigned': '/api/emails/unassigned',
         };
         const base = endpointMap[activeFolder] || '/api/emails/inbox';
-        const endpoint = `${base}?offset=${offset}&limit=${PAGE_SIZE}`;
+        const endpoint = emailEndpointWithMailbox(`${base}?offset=${offset}&limit=${PAGE_SIZE}`, kontoFilter);
 
         setLoadingMore(true);
         try {
@@ -821,7 +636,7 @@ export default function EmailCenter() {
                 const fresh = data.filter((e: EmailItem) => !existing.has(e.id));
                 const merged = [...prev, ...fresh];
                 const more = data.length >= PAGE_SIZE;
-                folderCacheRef.current.set(activeFolder, { emails: merged, hasMore: more, timestamp: Date.now() });
+                folderCacheRef.current.set(`${activeFolder}:${kontoFilter ?? 'ALLE'}`, { emails: merged, hasMore: more, timestamp: Date.now() });
                 setHasMore(more);
                 return merged;
             });
@@ -830,7 +645,7 @@ export default function EmailCenter() {
         } finally {
             setLoadingMore(false);
         }
-    }, [activeFolder, emails.length, hasMore, loading, loadingMore]);
+    }, [activeFolder, kontoFilter, emails.length, hasMore, loading, loadingMore]);
 
     // Load stats for folder counts
     const loadStats = useCallback(async () => {
@@ -857,7 +672,8 @@ export default function EmailCenter() {
                     unassigned: stats.unassignedCount || 0,
                     projects: stats.projectCount || 0,
                     offers: stats.offerCount || 0,
-                    suppliers: stats.supplierCount || 0
+                    suppliers: stats.supplierCount || 0,
+                    taxAdvisors: stats.taxAdvisorCount || 0
                 });
                 setFolderTotals({
                     inbox: stats.inboxTotal || 0,
@@ -870,7 +686,8 @@ export default function EmailCenter() {
                     unassigned: stats.unassignedTotal || 0,
                     projects: stats.projectTotal || 0,
                     offers: stats.offerTotal || 0,
-                    suppliers: stats.supplierTotal || 0
+                    suppliers: stats.supplierTotal || 0,
+                    'tax-advisors': stats.taxAdvisorTotal || 0
                 });
             }
         } catch (err) {
@@ -896,11 +713,12 @@ export default function EmailCenter() {
                 'projects': '/api/emails/projects',
                 'offers': '/api/emails/offers',
                 'suppliers': '/api/emails/suppliers',
+                'tax-advisors': '/api/emails/tax-advisors',
                 'unassigned': '/api/emails/unassigned',
             };
             const base = endpointMap[activeFolder] || '/api/emails/inbox';
             const refreshLimit = Math.max(emails.length, PAGE_SIZE);
-            const endpoint = `${base}?offset=0&limit=${refreshLimit}`;
+            const endpoint = emailEndpointWithMailbox(`${base}?offset=0&limit=${refreshLimit}`, kontoFilter);
             const res = await fetch(endpoint);
             if (activeFolderRef.current !== activeFolder) return; // folder changed, discard stale response
             if (res.ok) {
@@ -921,12 +739,12 @@ export default function EmailCenter() {
                 const more = data.length >= refreshLimit;
                 setEmails(data);
                 setHasMore(more);
-                folderCacheRef.current.set(activeFolder, { emails: data, hasMore: more, timestamp: Date.now() });
+                folderCacheRef.current.set(`${activeFolder}:${kontoFilter ?? 'ALLE'}`, { emails: data, hasMore: more, timestamp: Date.now() });
             }
         } catch (err) {
             console.error('Silent refresh failed', err);
         }
-    }, [activeFolder, emails.length, loadDrafts]);
+    }, [activeFolder, kontoFilter, emails.length, loadDrafts]);
 
     // Load emails + stats when folder changes (single effect, no duplicates)
     // Drafts werden immer geladen, damit das Entwurf-Badge in allen Ordnern sichtbar ist
@@ -978,61 +796,39 @@ export default function EmailCenter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Deep-link: auto-select email from URL param /emails/:folder/:emailId
+    // The route identifies the view and the selected message independently.
+    // Loading a message must never replace a virtual folder or a search context.
     useEffect(() => {
-        if (!emailIdParam || emails.length === 0) return;
+        if (!emailIdParam) return;
         const emailId = Number(emailIdParam);
-        if (isNaN(emailId)) return;
-
-        const found = emails.find(e => e.id === emailId);
-        if (found) {
-            // Switch folder if the email belongs to a different one
-            if (found.folder && found.folder !== activeFolder) {
-                deepLinkFolderSwitchRef.current = true;
-                setActiveFolder(found.folder);
-            }
-            setSelectedEmail(found);
-            setSelectedIds(new Set([found.id]));
-            if (!found.isRead) {
-                fetch(`/api/emails/${found.id}/mark-read`, { method: 'POST' })
-                    .then(() => {
-                        setEmails(prev => prev.map(e => e.id === found.id ? { ...e, isRead: true } : e));
-                        loadStats();
-                        refreshNotifications();
-                    })
-                    .catch(err => console.error('Failed to mark as read:', err));
-            }
-        } else {
-            // Nicht fetchen wenn die Email gerade optimistisch entfernt wird (Spam, Löschen, Blockieren)
-            if (pendingRemovalsRef.current.has(emailId)) return;
-            // Email not in current folder - try fetching it directly (cross-folder deep-link)
-            fetch(`/api/emails/${emailId}`)
-                .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
-                .then((email: EmailItem) => {
-                    // Switch folder if the email belongs to a different one
-                    if (email.folder && email.folder !== activeFolder) {
-                        deepLinkFolderSwitchRef.current = true;
-                        setActiveFolder(email.folder);
-                    }
-                    setSelectedEmail(email);
-                    setSelectedIds(new Set([email.id]));
-                    if (!email.isRead) {
-                        fetch(`/api/emails/${email.id}/mark-read`, { method: 'POST' })
-                            .then(() => { loadStats(); refreshNotifications(); })
-                            .catch(err => console.error('Failed to mark as read:', err));
-                    }
-                })
-                .catch(() => { /* email not found, ignore */ });
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [emails, emailIdParam]);
+        if (!Number.isSafeInteger(emailId) || emailId <= 0 || pendingRemovalsRef.current.has(emailId)) return;
+        const controller = new AbortController();
+        const selectionVersion = selectionVersionRef.current;
+        fetch(`/api/emails/${emailId}`, { signal: controller.signal })
+            .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
+            .then((email: EmailItem) => {
+                if (controller.signal.aborted || pendingRemovalsRef.current.has(emailId)
+                    || selectionVersionRef.current !== selectionVersion) return;
+                setSelectedEmail(email);
+                setSelectedIds(new Set([email.id]));
+                if (!email.isRead) {
+                    fetch(`/api/emails/${email.id}/mark-read`, { method: 'POST' })
+                        .then(res => {
+                            if (!res.ok) return;
+                            setEmails(prev => prev.map(item => item.id === email.id ? { ...item, isRead: true } : item));
+                            setGlobalSearchResults(prev => prev.map(item => item.id === email.id ? { ...item, isRead: true } : item));
+                            loadStats();
+                            refreshNotifications();
+                        })
+                        .catch(err => console.error('Failed to mark as read:', err));
+                }
+            })
+            .catch(() => { /* keep an already selected list entry if detail loading fails */ });
+        return () => controller.abort();
+    }, [emailIdParam, activeFolder, loadStats]);
 
     useEffect(() => {
-        if (deepLinkFolderSwitchRef.current) {
-            deepLinkFolderSwitchRef.current = false;
-            return;
-        }
-        if (!isComposing) {
+        if (!isComposing && !emailIdParam) {
             setSelectedEmail(null);
             setSelectedIds(new Set());
             lastSelectedIdRef.current = null;
@@ -1042,6 +838,8 @@ export default function EmailCenter() {
 
     // Handlers
     const handleEmailClick = async (e: React.MouseEvent, email: EmailItem) => {
+        if (!await persistComposer()) return;
+        selectionVersionRef.current += 1;
         if (isComposing) {
             // Entwurf wird automatisch gespeichert – kein Bestätigungsdialog nötig
             setIsComposing(false);
@@ -1198,8 +996,8 @@ export default function EmailCenter() {
 
         const count = ids.length;
         const message = count === 1
-            ? `Möchten Sie den Absender "${selectedEmail?.fromAddress}" wirklich sperren?\nAlle E-Mails dieses Absenders werden in Spam verschoben.`
-            : `Möchten Sie die Absender von ${count} E-Mails sperren?\nAlle E-Mails dieser Absender werden in Spam verschoben.`;
+            ? `Möchten Sie den Absender "${selectedEmail?.fromAddress}" wirklich sperren?\nAlle bisherigen E-Mails dieses Absenders werden gelöscht und neue Nachrichten zukünftig komplett blockiert.`
+            : `Möchten Sie die Absender von ${count} E-Mails sperren?\nAlle bisherigen E-Mails dieser Absender werden gelöscht und neue Nachrichten zukünftig komplett blockiert.`;
         if (!await confirmDialog({ title: "Absender sperren", message, variant: "danger", confirmLabel: "Sperren" })) return;
 
         // Optimistic: remove from list immediately
@@ -1398,7 +1196,6 @@ export default function EmailCenter() {
     );
     const [dragActiveEmail, setDragActiveEmail] = useState<EmailItem | null>(null);
     const [dragCount, setDragCount] = useState(0);
-    const [moveMenuAt, setMoveMenuAt] = useState<'detail' | 'bulk' | null>(null);
 
     const handleDragStart = (e: DragStartEvent) => {
         const data = e.active.data.current as { emailId?: number } | undefined;
@@ -1529,7 +1326,7 @@ export default function EmailCenter() {
         setGlobalSearchLoading(true);
         const timeout = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=0&limit=${PAGE_SIZE}`);
+                const res = await fetch(emailEndpointWithMailbox(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=0&limit=${PAGE_SIZE}`, kontoFilter));
                 if (res.ok) {
                     const data = await res.json();
                     const arr: EmailItem[] = Array.isArray(data) ? data : [];
@@ -1548,7 +1345,7 @@ export default function EmailCenter() {
             }
         }, 350);
         return () => clearTimeout(timeout);
-    }, [isGlobalSearch, searchQuery]);
+    }, [isGlobalSearch, searchQuery, kontoFilter]);
 
     // Naechste Seite der globalen Suche nachladen
     const loadMoreSearch = useCallback(async () => {
@@ -1557,7 +1354,7 @@ export default function EmailCenter() {
         const offset = globalSearchResults.length;
         setSearchLoadingMore(true);
         try {
-            const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=${offset}&limit=${PAGE_SIZE}`);
+            const res = await fetch(emailEndpointWithMailbox(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=${offset}&limit=${PAGE_SIZE}`, kontoFilter));
             if (!res.ok) { setSearchHasMore(false); return; }
             const data = await res.json();
             const arr: EmailItem[] = Array.isArray(data) ? data : [];
@@ -1572,7 +1369,7 @@ export default function EmailCenter() {
         } finally {
             setSearchLoadingMore(false);
         }
-    }, [isGlobalSearch, searchQuery, searchLoadingMore, globalSearchLoading, searchHasMore, globalSearchResults.length]);
+    }, [isGlobalSearch, searchQuery, kontoFilter, searchLoadingMore, globalSearchLoading, searchHasMore, globalSearchResults.length]);
 
     // IntersectionObserver: triggert loadMore wenn Sentinel sichtbar wird
     useEffect(() => {
@@ -1594,20 +1391,107 @@ export default function EmailCenter() {
     }, [isGlobalSearch, loadMoreEmails, loadMoreSearch, hasMore, searchHasMore, emails.length, globalSearchResults.length]);
 
     // Filter emails by search
-    // Bei Ordner-Ansicht nur Thread-Wurzeln anzeigen (parentEmailId == null),
-    // damit Antworten nicht doppelt in der Liste erscheinen.
-    // Bei globaler Suche werden alle Treffer gezeigt (Nutzer sucht gezielt nach
-    // einer bestimmten Nachricht).
+    // Bei Ordner-Ansicht eine Zeile pro Thread anzeigen (Wurzel). Die Wurzel ist
+    // entweder die E-Mail ohne parentEmailId ODER die alteste E-Mail im Thread,
+    // deren Parent nicht im geladenen Set ist (z.B. Lieferant-Ordner zeigt nur
+    // direction=IN; die OUT-Wurzel liegt ausserhalb).
+    // Sortierung und Ungelesen-Filter basieren auf Thread-Aggregaten, damit
+    // neue eingehende Antworten den Thread nach oben holen und in "Ungelesen" auftauchen.
+    // Thread-Kunden-Gegenstelle ermitteln: Pro Thread den externen Kunden/Partner finden,
+    // damit auch bei Folgenachrichten/Selbst-Antworten der Thread immer den Kunden zeigt.
+    const threadCounterparts = useMemo(() => {
+        const byId = new Map<number, EmailItem>();
+        for (const e of emails) byId.set(e.id, e);
+
+        const findVisibleRootId = (start: EmailItem): number => {
+            let cur = start;
+            const seen = new Set<number>();
+            while (cur.parentEmailId && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const parent = byId.get(cur.parentEmailId);
+                if (!parent) break;
+                cur = parent;
+            }
+            return cur.id;
+        };
+
+        const counterparts = new Map<number, string>();
+        for (const e of emails) {
+            const rootId = findVisibleRootId(e);
+            if (!counterparts.has(rootId)) {
+                if (e.kundeName) {
+                    counterparts.set(rootId, e.kundeName);
+                } else if (e.lieferantName) {
+                    counterparts.set(rootId, e.lieferantName);
+                } else if (e.direction === 'IN' && e.fromAddress && !isOwnEmail(e.fromAddress)) {
+                    counterparts.set(rootId, extractDisplayName(e.fromAddress));
+                } else if (e.direction === 'OUT' && e.recipient && !isOwnEmail(e.recipient)) {
+                    const parsed = parseRecipientList(e.recipient);
+                    const external = parsed.filter(p => !isOwnEmail(p.email));
+                    if (external.length > 0) {
+                        counterparts.set(rootId, external[0].displayName);
+                    } else {
+                        counterparts.set(rootId, extractDisplayName(e.recipient));
+                    }
+                }
+            }
+        }
+        return counterparts;
+    }, [emails, isOwnEmail]);
+
     const filteredEmails = useMemo(() => {
+        const byId = new Map<number, EmailItem>();
+        for (const e of emails) byId.set(e.id, e);
+
+        // Wandert via parentEmailId nach oben, solange der Parent im geladenen Set ist.
+        const findVisibleRootId = (start: EmailItem): number => {
+            let cur = start;
+            const seen = new Set<number>();
+            while (cur.parentEmailId && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const parent = byId.get(cur.parentEmailId);
+                if (!parent) break;
+                cur = parent;
+            }
+            return cur.id;
+        };
+
+        // Aggregat pro sichtbarer Thread-Wurzel: jungste Aktivitaet + irgendeine ungelesene Mail.
+        // Bevorzugt das Backend-berechnete threadLastActivityAt (deckt Ordner ab, in denen
+        // nicht alle Thread-Mitglieder geladen sind, z.B. "Gesendet").
+        // rootIdByEmail cached findVisibleRootId-Ergebnisse, damit der Walk pro Mail nur einmal laeuft.
+        const rootIdByEmail = new Map<number, number>();
+        const threadAggregates = new Map<number, { latestSentAt: number; anyUnread: boolean }>();
+        const toMs = (iso?: string) => (iso ? new Date(iso).getTime() : 0);
+        for (const e of emails) {
+            const rootId = findVisibleRootId(e);
+            rootIdByEmail.set(e.id, rootId);
+            const ownTs = toMs(e.sentAt);
+            const backendThreadTs = toMs(e.threadLastActivityAt);
+            const ts = Math.max(ownTs, backendThreadTs);
+            const isUnread = !e.isRead;
+            const agg = threadAggregates.get(rootId);
+            if (!agg) {
+                threadAggregates.set(rootId, { latestSentAt: ts, anyUnread: isUnread });
+            } else {
+                if (ts > agg.latestSentAt) agg.latestSentAt = ts;
+                if (isUnread) agg.anyUnread = true;
+            }
+        }
+
+
+
+        const isVisibleRoot = (e: EmailItem) => rootIdByEmail.get(e.id) === e.id;
+
         let base: EmailItem[];
         if (isGlobalSearch) {
             base = globalSearchResults;
         } else if (!searchQuery.trim()) {
-            base = emails.filter(e => !e.parentEmailId);
+            base = emails.filter(isVisibleRoot);
         } else {
             const q = searchQuery.toLowerCase();
             base = emails.filter(e =>
-                !e.parentEmailId && (
+                isVisibleRoot(e) && (
                     e.subject?.toLowerCase().includes(q) ||
                     e.fromAddress?.toLowerCase().includes(q) ||
                     e.recipient?.toLowerCase().includes(q) ||
@@ -1616,15 +1500,21 @@ export default function EmailCenter() {
                 )
             );
         }
-        // Filter nach Lese-Status (Gesendet/Entwürfe haben kein sinnvolles Read-Konzept)
+        // Filter nach Lese-Status (Gesendet/Entwurfe haben kein sinnvolles Read-Konzept).
+        // Ein Thread gilt als ungelesen, sobald mindestens eine seiner E-Mails ungelesen ist.
         if (readFilter !== 'all' && activeFolder !== 'sent') {
-            base = base.filter(e => readFilter === 'unread' ? !e.isRead : !!e.isRead);
+            base = base.filter(e => {
+                const agg = threadAggregates.get(e.id);
+                const anyUnread = agg ? agg.anyUnread : !e.isRead;
+                return readFilter === 'unread' ? anyUnread : !anyUnread;
+            });
         }
-        // Sort by date
+        // Sortierung nach jungster Aktivitat im Thread (statt root.sentAt),
+        // damit neue Antworten den Thread nach oben holen.
         return [...base].sort((a, b) => {
-            const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
-            const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
-            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+            const aTs = threadAggregates.get(a.id)?.latestSentAt ?? (a.sentAt ? new Date(a.sentAt).getTime() : 0);
+            const bTs = threadAggregates.get(b.id)?.latestSentAt ?? (b.sentAt ? new Date(b.sentAt).getTime() : 0);
+            return sortOrder === 'desc' ? bTs - aTs : aTs - bTs;
         });
     }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder]);
 
@@ -1714,21 +1604,46 @@ export default function EmailCenter() {
                 // die korrekte Reihenfolge: [leer] → [Signatur] → [Zitat] erzeugt
                 replyQuote = `<div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:1rem;color:#64748b">
                     <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">---------- Weitergeleitete Nachricht ----------<br/>
-                    Von: ${senderName} &lt;${forwardEmail.fromAddress || ''}&gt;<br/>
-                    Datum: ${date}<br/>
-                    Betreff: ${forwardEmail.subject || ''}<br/>
-                    An: ${forwardEmail.recipient || ''}</p>
+                    Von: ${escapeHtml(senderName)} &lt;${escapeHtml(forwardEmail.fromAddress || '')}&gt;<br/>
+                    Datum: ${escapeHtml(date)}<br/>
+                    Betreff: ${escapeHtml(forwardEmail.subject || '')}<br/>
+                    An: ${escapeHtml(forwardEmail.recipient || '')}</p>
                     ${cleanBody}
                 </div>`;
             } else if (replyToEmail) {
-                const senderName = getSenderName(replyToEmail);
-                const match = replyToEmail.fromAddress?.match(/<(.+)>/);
-                const senderEmail = match ? match[1] : (replyToEmail.fromAddress || '');
+                const isReplyToOut = replyToEmail.direction === 'OUT' || isOwnEmail(replyToEmail.fromAddress);
 
-                initialRecipient = senderEmail ? `"${senderName}" <${senderEmail}>` : senderName;
+                // Wenn auf eine Ausgangsnachricht geantwortet wird (Folgenachricht / etwas vergessen):
+                // Empfänger MUSS der externe Kunde sein, niemals die eigene Firmenadresse!
+                if (isReplyToOut) {
+                    const parsed = parseRecipientList(replyToEmail.recipient);
+                    const external = parsed.filter(p => !isOwnEmail(p.email));
+
+                    if (external.length === 1) {
+                        const r = external[0];
+                        const customerName = replyToEmail.kundeName || (r.displayName !== r.email ? r.displayName : undefined);
+                        initialRecipient = formatRecipient(r.raw, customerName) || r.raw;
+                    } else if (external.length > 1) {
+                        // Bei Rundmails jeden Empfänger einzeln formatieren – keinen pauschalen Kundennamen anwenden!
+                        initialRecipient = external.map(r => {
+                            const nameOverride = r.displayName !== r.email ? r.displayName : undefined;
+                            return formatRecipient(r.raw, nameOverride) || r.raw;
+                        }).join(', ');
+                    } else {
+                        // Alle Empfänger waren eigene Adressen – niemals an sich selbst antworten!
+                        // Empfängerfeld zur bewussten Auswahl freilassen und Hinweis anzeigen.
+                        // Alle Empfänger waren eigene Adressen – niemals an sich selbst antworten!
+                        // Empfängerfeld zur bewussten Auswahl freilassen.
+                        initialRecipient = '';
+                    }
+                } else {
+                    const senderName = getSenderName(replyToEmail);
+                    initialRecipient = formatRecipientList(replyToEmail.fromAddress, senderName) || senderName;
+                }
+
                 initialSubject = replyToEmail.subject?.startsWith('Re:') ? replyToEmail.subject : `Re: ${replyToEmail.subject || ''}`;
 
-                // Zitat aufbauen – Quote separat, Signatur wird in EmailComposeForm dazwischen gesetzt
+                // Zitat aufbauen
                 const date = new Date(replyToEmail.sentAt || '').toLocaleDateString('de-DE', {
                     day: '2-digit', month: '2-digit', year: 'numeric',
                 }) + ', ' + new Date(replyToEmail.sentAt || '').toLocaleTimeString('de-DE', {
@@ -1743,14 +1658,24 @@ export default function EmailCenter() {
                     cleanBody = doc.body.innerHTML;
                 } catch { /* ignore */ }
 
+                const quoteHeader = isReplyToOut
+                    ? (initialRecipient
+                        ? `Am ${date} schrieben Sie an ${initialRecipient}:`
+                        : `Am ${date} schrieben Sie:`)
+                    : `Am ${date} schrieb ${getSenderName(replyToEmail)}:`;
+
                 replyQuote = `<div class="email-quote" style="border-left:3px solid #e2e8f0;padding-left:1rem;color:#64748b;margin-top:0.5rem">
-                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">Am ${date} schrieb ${senderName}:</p>
+                    <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">${escapeHtml(quoteHeader)}</p>
                     ${cleanBody}
                 </div>`;
             }
 
             return (
                 <EmailComposeForm
+                    // Neu mounten, wenn ein anderer Entwurf/eine andere Antwort geöffnet wird –
+                    // sonst bleiben Empfänger, Betreff und Zuordnung des vorherigen stehen.
+                    key={`${composerVersion}-${activeDraftId ?? replyToEmailId ?? 'neu'}`}
+                    onBeforeLeave={registerBeforeLeave}
                     onClose={handleComposeClose}
                     onSuccess={handleComposeSuccess}
                     initialRecipient={initialRecipient}
@@ -1759,8 +1684,33 @@ export default function EmailCenter() {
                     replyQuote={replyQuote}
                     draftId={activeDraftId}
                     replyEmailId={replyToEmailId}
+                    onControlledSubmit={replyToEmailId && replyToEmail?.kontoId === 'EINKAUF' ? async ({ subject, htmlBody, attachments }) => {
+                        if (attachments.length) throw new Error('Einkaufsantworten können nur freigegebene Einkaufsanlagen enthalten.');
+                        const previewResponse = await fetch(`/api/einkauf/mail/${replyToEmailId}/antwort-vorschau`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ subject, htmlBody, anlageIds: [] }),
+                        });
+                        if (!previewResponse.ok) throw new Error('Die Einkaufsantwort konnte nicht geprüft werden.');
+                        const preview = await previewResponse.json();
+                        const summary = `An: ${preview.empfaenger}\nBetreff: ${preview.subject}\n\n${stripHtmlTags(unescapeHtmlEntities(String(preview.htmlBody))).replace(/\s+/g, ' ').trim()}`;
+                        if (!await confirmDialog({ title: 'Einkaufsantwort prüfen', message: summary, confirmLabel: 'Antwort senden', variant: 'send' })) return false;
+                        const sendResponse = await fetch(`/api/einkauf/mail/${replyToEmailId}/antworten`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ subject, htmlBody, anlageIds: [], vorschauHash: preview.vorschauHash, idempotenzKey: crypto.randomUUID() }),
+                        });
+                        if (!sendResponse.ok) throw new Error('Der Versand wurde abgelehnt. Bitte Vorschau neu prüfen.');
+                        const versand = await sendResponse.json();
+                        window.dispatchEvent(new Event('einkauf-mailantwort-aktualisieren'));
+                        if (versand.status === 'FEHLGESCHLAGEN') toast.error('Antwort konnte nicht zugestellt werden. Du kannst sie erneut versuchen.');
+                        else if (versand.status === 'UNKLAR') toast.error('Der Versandstatus ist unklar. Bitte prüfe den Nachweis, bevor du weiterarbeitest.');
+                        else toast.success('Einkaufsantwort wurde beauftragt.');
+                        return true;
+                    } : undefined}
                     projektId={activeDraft?.projektId ?? (replyToEmail ?? forwardEmail)?.projektId}
                     anfrageId={activeDraft?.anfrageId ?? (replyToEmail ?? forwardEmail)?.anfrageId}
+                    // Im E-Mail-Center ist der Vorgang nicht durch die Seite vorgegeben –
+                    // hier darf (und soll) der User Projekt/Anfrage selbst verknüpfen.
+                    zuordnungWaehlbar
                 />
             );
         }
@@ -1909,281 +1859,22 @@ export default function EmailCenter() {
         if (selectedEmail) {
             return (
                 <>
-                    {/* Header */}
-                    <div className="p-6 border-b border-slate-200">
-                        <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                                <h2 className="text-xl font-bold text-slate-900 mb-2 break-words">
-                                    {selectedEmail.subject || '(Kein Betreff)'}
-                                </h2>
-                                <div className="flex items-center gap-3 text-sm text-slate-600">
-                                    <div className={cn(
-                                        "w-9 h-9 rounded-full flex items-center justify-center text-white font-medium text-sm shadow-sm",
-                                        selectedEmail.direction === 'IN' ? "bg-rose-500" : "bg-emerald-500"
-                                    )}>
-                                        {getDisplayName(selectedEmail).charAt(0).toUpperCase()}
-                                    </div>
-                                    <div>
-                                        <p className="font-medium text-slate-900 flex items-center gap-2">
-                                            {getSenderName(selectedEmail)}
-                                            <span className="text-slate-500 font-normal text-xs text-muted-foreground hidden sm:inline-block">
-                                                &lt;{selectedEmail.fromAddress}&gt;
-                                            </span>
-                                        </p>
-                                        <p className="text-xs text-slate-500 mt-0.5">
-                                            An: <span className="text-slate-700">{getRecipientName(selectedEmail)}</span>
-                                        </p>
-                                    </div>
-                                </div>
-                                <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {selectedEmail.sentAt ? (
-                                        <>
-                                            {new Date(selectedEmail.sentAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(selectedEmail.sentAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                                        </>
-                                    ) : ''}
-                                </p>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                {activeFolder === 'trash' && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleMoveToFolder('inbox', [selectedEmail.id])}
-                                        className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-400"
-                                        title="E-Mail aus Papierkorb wiederherstellen"
-                                    >
-                                        <RotateCcw className="w-4 h-4" />
-                                        Wiederherstellen
-                                    </Button>
-                                )}
-                                {/* Verschieben nach – Dropdown (im Gesendet-Ordner ausgeblendet) */}
-                                {activeFolder !== 'sent' && (
-                                    <div className="relative">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => setMoveMenuAt(moveMenuAt === 'detail' ? null : 'detail')}
-                                            className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1"
-                                            title="Verschieben nach..."
-                                        >
-                                            <FolderInput className="w-4 h-4" />
-                                            <ChevronDown className="w-3 h-3" />
-                                        </Button>
-                                        {moveMenuAt === 'detail' && (
-                                            <>
-                                                <div
-                                                    className="fixed inset-0 z-40"
-                                                    onClick={() => setMoveMenuAt(null)}
-                                                />
-                                                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-slate-200 p-1.5 z-50 min-w-[200px]">
-                                                    <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                        <FolderInput className="w-3 h-3" />
-                                                        Verschieben nach
-                                                    </div>
-                                                    {MOVE_TARGETS.filter(t => t.id !== activeFolder).map(t => (
-                                                        <button
-                                                            key={t.id}
-                                                            onClick={() => {
-                                                                setMoveMenuAt(null);
-                                                                handleMoveToFolder(t.id, [selectedEmail.id]);
-                                                            }}
-                                                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
-                                                        >
-                                                            <t.icon className="w-4 h-4 text-rose-500" />
-                                                            {t.label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                                {activeFolder === 'spam' ? (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleMarkNotSpam()}
-                                        className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
-                                        title="Kein Spam"
-                                    >
-                                        <ShieldCheck className="w-4 h-4" />
-                                    </Button>
-                                ) : activeFolder === 'newsletter' ? (
-                                    <>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleMarkSpam()}
-                                            className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                            title="Ist Spam"
-                                        >
-                                            <ShieldX className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleMarkNotNewsletter()}
-                                            className="text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                                            title="Kein Newsletter – in Posteingang"
-                                        >
-                                            <Inbox className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleConfirmNewsletter()}
-                                            className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
-                                            title="Newsletter bestätigen"
-                                        >
-                                            <CheckCircle2 className="w-4 h-4" />
-                                        </Button>
-                                    </>
-                                ) : activeFolder !== 'trash' && activeFolder !== 'sent' && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleMarkSpam()}
-                                        className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                        title="Als Spam markieren"
-                                    >
-                                        <ShieldX className="w-4 h-4" />
-                                    </Button>
-                                )}
-                                {activeFolder !== 'sent' && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleBlockSender()}
-                                        className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                        title="Absender sperren"
-                                    >
-                                        <ShieldAlert className="w-4 h-4" />
-                                    </Button>
-                                )}
-                                {(activeFolder === 'spam' || activeFolder === 'newsletter') && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleMoveToFolder('inbox', [selectedEmail.id])}
-                                        className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                        title="In Posteingang verschieben (kein Spam)"
-                                    >
-                                        <Inbox className="w-4 h-4" /> Kein Spam
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => handleToggleStar(selectedEmail.id, e)}
-                                    className={cn(
-                                        "transition-colors",
-                                        selectedEmail.isStarred
-                                            ? "text-amber-500 hover:text-amber-600 hover:bg-amber-50"
-                                            : "text-slate-400 hover:text-amber-500 hover:bg-amber-50"
-                                    )}
-                                    title={selectedEmail.isStarred ? 'Markierung entfernen' : 'Markieren'}
-                                >
-                                    <Star className={cn("w-4 h-4", selectedEmail.isStarred && "fill-amber-400")} />
-                                </Button>
-                                {activeFolder !== 'sent' && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleReply(selectedEmail)}
-                                        className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                    >
-                                        <Reply className="w-4 h-4" /> Antworten
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleForward(selectedEmail)}
-                                    className="gap-1.5 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                >
-                                    <Forward className="w-4 h-4" /> Weiterleiten
-                                </Button>
-                                {/* Download all attachments as ZIP */}
-                                {selectedEmail.attachments && selectedEmail.attachments.filter(a => !a.inline).length > 1 && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => {
-                                            const a = document.createElement('a');
-                                            a.href = `/api/emails/${selectedEmail.id}/attachments/download-all`;
-                                            a.download = '';
-                                            a.click();
-                                        }}
-                                        className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 gap-1.5"
-                                        title="Alle Anhänge als ZIP herunterladen"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                        <span className="text-xs">ZIP</span>
-                                    </Button>
-                                )}
-                                {activeFolder !== 'sent' && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setShowAssignModal(true)}
-                                        className="gap-1.5 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                                    >
-                                        <FolderPlus className="w-4 h-4" />
-                                        Zuordnen
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => handleDelete(e, selectedEmail)}
-                                    className="text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                    title={activeFolder === 'trash' ? 'Endgültig löschen' : 'In Papierkorb'}
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
-                            </div>
-                        </div>
-                        {selectedEmail.preisanfrageLieferantRef && (
-                            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-9 h-9 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-rose-200">
-                                        <Scale className="w-4 h-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-semibold text-rose-900 truncate">
-                                            Antwort auf Preisanfrage {selectedEmail.preisanfrageLieferantRef.preisanfrageNummer ?? ''}
-                                        </p>
-                                        <p className="text-xs text-rose-700/80 truncate">
-                                            Lieferant: {selectedEmail.preisanfrageLieferantRef.lieferantenname ?? 'Unbekannt'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => navigate(`/einkauf/preisanfragen?open=${selectedEmail.preisanfrageLieferantRef!.preisanfrageId}`)}
-                                        className="gap-1.5 border-rose-300 text-rose-700 hover:bg-white hover:border-rose-400"
-                                        title="Zur Preisanfrage springen"
-                                    >
-                                        <FileText className="w-4 h-4" />
-                                        <span className="hidden sm:inline">Öffnen</span>
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => setPreiseEintragenTarget(selectedEmail.preisanfrageLieferantRef!)}
-                                        className="gap-1.5 bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-200"
-                                    >
-                                        <Sparkles className="w-4 h-4" />
-                                        Preise eintragen
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <EmailEinkaufBezug email={selectedEmail} />
+                    <EmailDetailHeader
+                        email={selectedEmail}
+                        folder={activeFolder}
+                        onReply={() => handleReply(selectedEmail)}
+                        onForward={() => handleForward(selectedEmail)}
+                        onAssign={() => setShowAssignModal(true)}
+                        onStar={() => handleToggleStar(selectedEmail.id)}
+                        onDelete={() => handleDelete(null, selectedEmail)}
+                        onMove={(target) => handleMoveToFolder(target, [selectedEmail.id])}
+                        onSpam={handleMarkSpam}
+                        onNotSpam={handleMarkNotSpam}
+                        onBlock={handleBlockSender}
+                        onNotNewsletter={handleMarkNotNewsletter}
+                        onConfirmNewsletter={handleConfirmNewsletter}
+                    />
 
                     {/* Thread-Verlauf */}
                     {threadLoading ? (
@@ -2214,6 +1905,8 @@ export default function EmailCenter() {
                                     projektId: selectedEmail.projektId,
                                     anfrageId: selectedEmail.anfrageId,
                                     lieferantId: selectedEmail.lieferantId,
+                                    kundeId: selectedEmail.kundeId,
+                                    kundeName: selectedEmail.kundeName,
                                 };
                                 handleReply(replyItem, entry.id);
                             }}
@@ -2265,192 +1958,46 @@ export default function EmailCenter() {
     };
 
     return (
+        <>
+        {hasDataRouter && <EmailNavigationGuard active={isComposing} persist={persistComposer} />}
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex bg-slate-100 overflow-hidden -m-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)]">
-            {/* Left Sidebar - Folders */}
-            <div className="w-64 bg-slate-50/80 border-r border-slate-200/80 flex flex-col flex-shrink-0">
-                {/* Header */}
-                <div className="p-4 border-b border-slate-200/80 bg-white space-y-3">
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 flex items-center justify-center shadow-sm shadow-rose-200">
-                            <Mail className="w-4.5 h-4.5 text-white" />
-                        </div>
-                        <div>
-                            <h2 className="font-bold text-slate-900 text-sm leading-tight">E-Mail Center</h2>
-                            <p className="text-[10px] text-slate-400 leading-tight">Postfach verwalten</p>
-                        </div>
-                    </div>
-                    <Button
-                        onClick={handleComposeNew}
-                        className="w-full bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200/50 gap-2 h-10 font-semibold"
-                    >
-                        <PenSquare className="w-4 h-4" />
-                        Neue E-Mail
-                    </Button>
-                </div>
+        <div ref={mailLayoutRef} className="flex h-full min-h-0 w-full min-w-0 bg-slate-100 overflow-hidden">
+            <EmailFolderSidebar
+                width={effectiveSidebarWidth}
+                collapsed={isSidebarCollapsed}
+                resizing={isDraggingSidebar}
+                activeFolder={activeFolder}
+                counts={folderCounts}
+                dragActive={dragActiveEmail !== null}
+                showSettings={showSettings}
+                onToggle={toggleSidebar}
+                onCompose={handleComposeNew}
+                onSelect={setActiveFolder}
+                onSettings={async () => {
+                    if (!await persistComposer()) return;
+                    setShowSettings(true); setSelectedEmail(null);
+                }}
+            />
 
-                {/* Folders */}
-                <div className="flex-1 overflow-y-auto p-2.5 space-y-0.5">
-                    {/* ═══ ORDNER (Drag & Drop Drop-Ziele) ═══ */}
-                    <div className="px-3 py-1.5 flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordner</span>
-                        <span className="text-[9px] text-slate-300 font-medium">· Drag &amp; Drop</span>
-                    </div>
-
-                    <DroppableFolderButton
-                        folderId="inbox"
-                        icon={Inbox}
-                        label="Posteingang"
-                        count={folderCounts.inbox}
-                        isActive={activeFolder === 'inbox'}
-                        onClick={() => setActiveFolder('inbox')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                        countVariant="rose"
-                    />
-                    <DroppableFolderButton
-                        folderId="trash"
-                        icon={Trash2}
-                        label="Papierkorb"
-                        count={folderCounts.trash}
-                        isActive={activeFolder === 'trash'}
-                        onClick={() => setActiveFolder('trash')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                    />
-                    <DroppableFolderButton
-                        folderId="spam"
-                        icon={ShieldAlert}
-                        label="Spam"
-                        count={folderCounts.spam}
-                        isActive={activeFolder === 'spam'}
-                        onClick={() => setActiveFolder('spam')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                    />
-                    <DroppableFolderButton
-                        folderId="newsletter"
-                        icon={Newspaper}
-                        label="Newsletter"
-                        count={folderCounts.newsletter}
-                        isActive={activeFolder === 'newsletter'}
-                        onClick={() => setActiveFolder('newsletter')}
-                        droppable={true}
-                        dragActive={dragActiveEmail !== null}
-                    />
-
-                    <div className="h-px bg-slate-200 my-2.5" />
-
-                    <DroppableFolderButton
-                        folderId="sent"
-                        icon={Send}
-                        label="Gesendet"
-                        isActive={activeFolder === 'sent'}
-                        onClick={() => setActiveFolder('sent')}
-                        droppable={false}
-                        dragActive={dragActiveEmail !== null}
-                    />
-                    <DroppableFolderButton
-                        folderId="drafts"
-                        icon={FileEdit}
-                        label="Entwürfe"
-                        count={folderCounts.drafts}
-                        isActive={activeFolder === 'drafts'}
-                        onClick={() => setActiveFolder('drafts')}
-                        droppable={false}
-                        dragActive={dragActiveEmail !== null}
-                    />
-                    <DroppableFolderButton
-                        folderId="starred"
-                        icon={Star}
-                        label="Markiert"
-                        count={folderCounts.starred}
-                        isActive={activeFolder === 'starred'}
-                        onClick={() => setActiveFolder('starred')}
-                        droppable={false}
-                        dragActive={dragActiveEmail !== null}
-                        countVariant="amber"
-                    />
-
-                    <div className="h-px bg-slate-200 my-2.5" />
-
-                    {/* ═══ ZUGEORDNET (read-only, auto-assigned) ═══ */}
-                    <div className="px-3 py-1.5 flex items-center justify-between" title="Werden automatisch zugeordnet – kein Drag & Drop möglich">
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Zugeordnet</span>
-                            <span className="text-[9px] text-slate-300 font-medium">· automatisch</span>
-                        </div>
-                        <button onClick={() => setExpandedFilters(!expandedFilters)} className="cursor-pointer p-0.5 rounded hover:bg-slate-100 transition-colors">
-                            {expandedFilters ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-                        </button>
-                    </div>
-
-                    {expandedFilters && (
-                        <>
-                            <DroppableFolderButton
-                                folderId="unassigned"
-                                icon={AlertCircle}
-                                label="Nicht zugeordnet"
-                                count={folderCounts.unassigned}
-                                isActive={activeFolder === 'unassigned'}
-                                onClick={() => setActiveFolder('unassigned')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                                countVariant="amber"
-                            />
-                            <DroppableFolderButton
-                                folderId="projects"
-                                icon={Briefcase}
-                                label="Projekte"
-                                count={folderCounts.projects}
-                                isActive={activeFolder === 'projects'}
-                                onClick={() => setActiveFolder('projects')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                            />
-                            <DroppableFolderButton
-                                folderId="offers"
-                                icon={FileText}
-                                label="Anfragen"
-                                count={folderCounts.offers}
-                                isActive={activeFolder === 'offers'}
-                                onClick={() => setActiveFolder('offers')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                            />
-                            <DroppableFolderButton
-                                folderId="suppliers"
-                                icon={Package}
-                                label="Lieferanten"
-                                count={folderCounts.suppliers}
-                                isActive={activeFolder === 'suppliers'}
-                                onClick={() => setActiveFolder('suppliers')}
-                                droppable={false}
-                                dragActive={dragActiveEmail !== null}
-                            />
-                        </>
+            {/* Splitter 1: Sidebar Resizer */}
+            {!isSidebarCollapsed && (
+                <div
+                    onPointerDown={handleSidebarResizeStart}
+                    className={cn(
+                        "w-1 hover:w-1.5 bg-slate-200/80 hover:bg-rose-400 active:bg-rose-600 cursor-col-resize transition-all select-none relative shrink-0 z-20 group",
+                        isDraggingSidebar && "bg-rose-500 w-1.5"
                     )}
-
-                    <div className="h-px bg-slate-200 my-2.5" />
-
-                    {/* Settings Button */}
-                    <button
-                        onClick={() => { setShowSettings(true); setSelectedEmail(null); }}
-                        className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer",
-                            showSettings
-                                ? "bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200"
-                                : "text-slate-700 hover:bg-slate-50"
-                        )}
-                    >
-                        <Settings className="w-4 h-4" />
-                        <span className="flex-1 text-left">Einstellungen</span>
-                    </button>
+                    title="Ordnerspalte verschieben"
+                >
+                    <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
                 </div>
-            </div>
+            )}
 
             {/* Middle List - Email List */}
-            <div className="w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+            <div
+                style={{ width: effectiveListWidth }}
+                className="bg-white border-r border-slate-200 flex flex-col shrink-0 min-w-[280px]"
+            >
                 {/* Ordner-Header mit "Alle gelesen"-Button */}
                 {!isGlobalSearch && activeFolder !== 'sent' && emails.some(e => !e.isRead) && (
                     <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
@@ -2469,6 +2016,27 @@ export default function EmailCenter() {
                 )}
                 {/* Search */}
                 <div className="p-3 border-b border-slate-200 space-y-2">
+                    <div role="group" aria-label="Postfach filtern" className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+                        {([
+                            { id: undefined, label: 'Alle Postfächer' },
+                            { id: 'HAUPT' as const, label: 'Hauptpostfach' },
+                            { id: 'DOKUMENTE' as const, label: 'Dokumente' },
+                            { id: 'EINKAUF' as const, label: 'Einkaufspostfach' },
+                        ]).map(option => (
+                            <button
+                                key={option.id ?? 'ALLE'}
+                                type="button"
+                                aria-pressed={kontoFilter === option.id}
+                                onClick={() => setKontoFilter(option.id)}
+                                className={cn(
+                                    'rounded-md px-2 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                                    kontoFilter === option.id ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-600 hover:bg-white/70'
+                                )}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
                     <div className="relative">
                         {isGlobalSearch ? (
                             <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-rose-500" />
@@ -2530,6 +2098,10 @@ export default function EmailCenter() {
                             {sortOrder === 'desc' ? <ArrowDownAZ className="w-3.5 h-3.5" /> : <ArrowUpAZ className="w-3.5 h-3.5" />}
                         </button>
                     </div>
+                    {kontoFilter && <Button variant="outline" size="sm" className="w-full" onClick={() => void importMailbox()} disabled={importingMailbox}>
+                        <RefreshCw className={cn("mr-2 h-3.5 w-3.5", importingMailbox && "animate-spin")} />
+                        {importingMailbox ? 'Postfach wird abgerufen…' : `${kontoFilter === 'EINKAUF' ? 'Einkauf' : kontoFilter === 'DOKUMENTE' ? 'Dokumente' : 'Haupt'}postfach abrufen`}
+                    </Button>}
                     {/* Lese-Filter (im Gesendet-Ordner ausgeblendet) */}
                     {activeFolder !== 'sent' && !isDraftFolderView && (
                         <div className="flex items-center gap-1 bg-slate-50 rounded-md p-0.5">
@@ -2662,7 +2234,7 @@ export default function EmailCenter() {
                                             "text-sm truncate",
                                             !email.isRead ? "font-bold text-slate-900" : "font-medium text-slate-700"
                                         )}>
-                                            {getDisplayName(email)}
+                                            {threadCounterparts.get(email.id) || getDisplayName(email)}
                                         </p>
                                         <div className="flex items-center gap-1 shrink-0">
                                             <button
@@ -2687,7 +2259,7 @@ export default function EmailCenter() {
                                         {email.subject || '(Kein Betreff)'}
                                     </p>
                                     <p className="text-xs text-slate-400 line-clamp-2">
-                                        {(email.body || '...').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 150)}
+                                        {getThreadPreview(email.htmlBody || email.body || '') || 'Kein neuer Nachrichtentext'}
                                     </p>
 
                                     {/* Badges */}
@@ -2723,15 +2295,6 @@ export default function EmailCenter() {
                                             <div className="flex items-center gap-1 text-xs text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">
                                                 <FolderPlus className="w-3 h-3" />
                                                 {email.zuordnungTyp}
-                                            </div>
-                                        )}
-                                        {email.preisanfrageLieferantRef && (
-                                            <div
-                                                className="flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
-                                                title={`Antwort auf Preisanfrage ${email.preisanfrageLieferantRef.preisanfrageNummer ?? ''}`}
-                                            >
-                                                <Scale className="w-3 h-3" />
-                                                {email.preisanfrageLieferantRef.preisanfrageNummer ?? 'Preisanfrage'}
                                             </div>
                                         )}
                                         {draftsByEmailId.has(email.id) && (
@@ -2796,8 +2359,20 @@ export default function EmailCenter() {
                 </div>
             </div>
 
+            {/* Splitter 2: List Resizer */}
+            <div
+                onPointerDown={handleListResizeStart}
+                className={cn(
+                    "w-1 hover:w-1.5 bg-slate-200/80 hover:bg-rose-400 active:bg-rose-600 cursor-col-resize transition-all select-none relative shrink-0 z-20 group",
+                    isDraggingList && "bg-rose-500 w-1.5"
+                )}
+                title="Listenbreite verschieben"
+            >
+                <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
+            </div>
+
             {/* Right Pane - Preview/Compose */}
-            <div className="flex-1 bg-slate-50 flex flex-col min-w-0">
+            <div role="region" aria-label="E-Mail lesen und schreiben" className="flex-1 bg-slate-50 flex flex-col min-h-0 min-w-0 overflow-hidden">
                 {renderRightPane()}
             </div>
 
@@ -2808,17 +2383,6 @@ export default function EmailCenter() {
                 onAssign={handleAssign}
                 emailSubject={selectedEmail?.subject || ''}
                 emailId={selectedEmail?.id}
-            />
-
-            {/* Preise eintragen Modal – für Preisanfrage-Antworten */}
-            <PreiseEintragenModal
-                open={preiseEintragenTarget !== null}
-                onClose={() => setPreiseEintragenTarget(null)}
-                preisanfrageId={preiseEintragenTarget?.preisanfrageId ?? null}
-                preisanfrageLieferantId={preiseEintragenTarget?.palId ?? null}
-                onSaved={() => {
-                    toast.success('Preise gespeichert.');
-                }}
             />
 
             {/* Standard ImageViewer for Images */}
@@ -2903,7 +2467,6 @@ export default function EmailCenter() {
             ) : null}
         </DragOverlay>
         </DndContext>
+        </>
     );
 }
-
-

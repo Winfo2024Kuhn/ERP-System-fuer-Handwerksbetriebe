@@ -1,3 +1,4 @@
+import { LadefehlerPanel } from '../components/ui/ladefehler-panel';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Briefcase, ChevronRight, Loader2, Package, Plus, Search, X } from 'lucide-react';
@@ -6,9 +7,10 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { PageLayout } from '../components/layout/PageLayout';
 import { ProjektSearchModal } from '../components/ProjektSearchModal';
+import { ladeBedarfszeilen } from '../features/einkauf/originalBedarfApi';
 import { useToast } from '../components/ui/toast';
 
-interface OffeneBedarfsZeile {
+interface BedarfsZeile {
     id: number;
     projektId?: number | null;
     projektName?: string | null;
@@ -35,22 +37,22 @@ const ZEILEN_OHNE_PROJEKT_KEY = -1;
 export default function BedarfUebersichtPage() {
     const navigate = useNavigate();
     const toast = useToast();
-    const [zeilen, setZeilen] = useState<OffeneBedarfsZeile[]>([]);
+    const [zeilen, setZeilen] = useState<BedarfsZeile[]>([]);
     const [loading, setLoading] = useState(true);
+    const [ladefehler, setLadefehler] = useState<string | null>(null);
     const [filter, setFilter] = useState('');
     const [projektPickerOffen, setProjektPickerOffen] = useState(false);
 
     const ladeBedarfe = useCallback(async () => {
         setLoading(true);
+        setLadefehler(null);
         try {
-            const res = await fetch('/api/bestellungen/offen');
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
+            const data = await ladeBedarfszeilen();
             setZeilen(Array.isArray(data) ? data : []);
         } catch (err) {
-            console.error('Bedarfe konnten nicht geladen werden', err);
-            toast.error('Bedarfe konnten nicht geladen werden.');
-            setZeilen([]);
+            const message = err instanceof Error ? err.message : 'Bedarfe konnten nicht geladen werden.';
+            setLadefehler(message);
+            toast.error(message);
         } finally {
             setLoading(false);
         }
@@ -107,7 +109,7 @@ export default function BedarfUebersichtPage() {
 
     const oeffneProjekt = (projektId: number) => {
         if (projektId === ZEILEN_OHNE_PROJEKT_KEY) {
-            toast.warning('Diese Zeilen sind keinem Projekt zugeordnet.');
+            navigate('/bestellungen/bedarf/vorrat');
             return;
         }
         navigate(`/bestellungen/bedarf/projekt/${projektId}`);
@@ -117,8 +119,9 @@ export default function BedarfUebersichtPage() {
         <PageLayout
             ribbonCategory="Einkauf"
             title="Bedarf je Projekt"
-            subtitle="Welches Projekt braucht noch Material?"
-            actions={
+            subtitle="Gespeicherte Materialbedarfe nach Projekt"
+            actions={<>
+                <Button variant="outline" onClick={() => navigate("/bestellungen/ids")}>Shop-Warenkörbe</Button>
                 <Button
                     className="bg-rose-600 text-white hover:bg-rose-700"
                     onClick={() => setProjektPickerOffen(true)}
@@ -126,7 +129,7 @@ export default function BedarfUebersichtPage() {
                     <Plus className="w-4 h-4" />
                     Bedarf für Projekt anlegen
                 </Button>
-            }
+            </>}
         >
             {/* Filterleiste */}
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100">
@@ -158,7 +161,7 @@ export default function BedarfUebersichtPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-4 lg:gap-6 items-end">
                         <KennzahlBlock label="Projekte" wert={summen.projekte.toString()} />
-                        <KennzahlBlock label="Offene Zeilen" wert={summen.zeilenSumme.toString()} />
+                        <KennzahlBlock label="Bedarfspositionen" wert={summen.zeilenSumme.toString()} />
                         <KennzahlBlock
                             label="Stahlgewicht"
                             wert={`${summen.kgSumme.toLocaleString('de-DE', { maximumFractionDigits: 0 })} kg`}
@@ -173,6 +176,8 @@ export default function BedarfUebersichtPage() {
                     <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin text-rose-400" />
                     Bedarfe werden geladen…
                 </div>
+            ) : ladefehler ? (
+                <LadefehlerPanel message={ladefehler} onRetry={() => void ladeBedarfe()} />
             ) : sichtbar.length === 0 ? (
                 <EmptyState
                     isFiltered={filter.trim().length > 0}
@@ -188,7 +193,7 @@ export default function BedarfUebersichtPage() {
                                 <tr>
                                     <th className="px-4 py-3">Projekt</th>
                                     <th className="px-4 py-3">Kunde</th>
-                                    <th className="px-4 py-3 text-right">Offene Zeilen</th>
+                                    <th className="px-4 py-3 text-right">Bedarfspositionen</th>
                                     <th className="px-4 py-3 text-right">Stahlgewicht</th>
                                     <th className="px-4 py-3 w-10" aria-label="Pfeil"></th>
                                 </tr>
@@ -300,7 +305,7 @@ function EmptyState({
         <div className="py-16 px-6 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50">
             <Package className="w-12 h-12 mx-auto text-rose-200 mb-3" />
             <h3 className="text-lg font-semibold text-slate-800">
-                Aktuell ist nirgends Material offen.
+                Aktuell sind keine Materialbedarfe gespeichert.
             </h3>
             <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
                 Sobald du für ein Projekt einen Bedarf anlegst, taucht es hier auf.

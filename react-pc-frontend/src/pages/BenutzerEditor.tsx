@@ -17,6 +17,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { EinkaufBerechtigungen } from '../components/settings/EinkaufBerechtigungen';
 
 interface FrontendUser {
     id: number;
@@ -27,6 +28,7 @@ interface FrontendUser {
     active: boolean;
     defaultSignature: { id: number; name: string } | null;
     mitarbeiter: { id: number; vorname: string; nachname: string } | null;
+    emailAbsender: { id: number; emailAdresse: string; anzeigename: string | null } | null;
 }
 
 interface EmailSignature {
@@ -38,6 +40,13 @@ interface Mitarbeiter {
     id: number;
     vorname: string;
     nachname: string;
+}
+
+interface EmailAbsenderOption {
+    id: number;
+    emailAdresse: string;
+    anzeigename: string | null;
+    aktiv: boolean;
 }
 
 // ==================== User List Component ====================
@@ -129,6 +138,7 @@ export default function BenutzerEditor() {
     const [users, setUsers] = useState<FrontendUser[]>([]);
     const [signatures, setSignatures] = useState<EmailSignature[]>([]);
     const [mitarbeiterList, setMitarbeiterList] = useState<Mitarbeiter[]>([]);
+    const [absenderListe, setAbsenderListe] = useState<EmailAbsenderOption[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -144,6 +154,7 @@ export default function BenutzerEditor() {
         shortCode: '',
         defaultSignatureId: null as number | null,
         mitarbeiterId: null as number | null,
+        emailAbsenderId: null as number | null,
     });
 
     const selectedUser = users.find(u => u.id === selectedUserId) || null;
@@ -152,10 +163,11 @@ export default function BenutzerEditor() {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [usersRes, signaturesRes, mitarbeiterRes] = await Promise.all([
+            const [usersRes, signaturesRes, mitarbeiterRes, absenderRes] = await Promise.all([
                 fetch('/api/frontend-users'),
                 fetch('/api/email/signatures'),
-                fetch('/api/mitarbeiter')
+                fetch('/api/mitarbeiter'),
+                fetch('/api/firma/email-absender'),
             ]);
             if (usersRes.ok) {
                 const data = await usersRes.json();
@@ -168,6 +180,10 @@ export default function BenutzerEditor() {
             if (mitarbeiterRes.ok) {
                 const data = await mitarbeiterRes.json();
                 setMitarbeiterList(Array.isArray(data) ? data : []);
+            }
+            if (absenderRes.ok) {
+                const data = await absenderRes.json();
+                setAbsenderListe(Array.isArray(data) ? data : []);
             }
         } catch (err) {
             console.error('Fehler beim Laden:', err);
@@ -193,6 +209,7 @@ export default function BenutzerEditor() {
                 shortCode: selectedUser.shortCode || '',
                 defaultSignatureId: selectedUser.defaultSignature?.id || null,
                 mitarbeiterId: selectedUser.mitarbeiter?.id || null,
+                emailAbsenderId: selectedUser.emailAbsender?.id || null,
             });
         }
     }, [selectedUser]);
@@ -210,6 +227,7 @@ export default function BenutzerEditor() {
             shortCode: '',
             defaultSignatureId: null,
             mitarbeiterId: null,
+            emailAbsenderId: null,
         });
     };
 
@@ -235,14 +253,20 @@ export default function BenutzerEditor() {
                     shortCode: formData.shortCode.trim() || null,
                     defaultSignatureId: formData.defaultSignatureId,
                     mitarbeiterId: formData.mitarbeiterId,
+                    emailAbsenderId: formData.emailAbsenderId,
                 }),
             });
             if (res.ok) {
+                const savedProfile = await res.json().catch(() => null) as { id?: number } | null;
                 await loadData();
                 setFormData(prev => ({ ...prev, password: '' }));
                 if (!formData.id) {
-                    // Reset form after creating new user
-                    handleNewUser();
+                    if (typeof savedProfile?.id === 'number' && savedProfile.id > 0) {
+                        setSelectedUserId(savedProfile.id);
+                        setFormData(prev => ({ ...prev, id: savedProfile.id!, password: '' }));
+                    } else {
+                        handleNewUser();
+                    }
                 }
             } else {
                 toast.error('Fehler beim Speichern.');
@@ -460,6 +484,30 @@ export default function BenutzerEditor() {
                             </p>
                         </div>
 
+                        {/* E-Mail-Absender Zuordnung */}
+                        <div className="space-y-2">
+                            <Label htmlFor="absender">Absender-E-Mail</Label>
+                            <Select
+                                value={formData.emailAbsenderId?.toString() || ''}
+                                onChange={(value) => setFormData(prev => ({
+                                    ...prev,
+                                    emailAbsenderId: value ? Number(value) : null
+                                }))}
+                                options={[
+                                    { value: '', label: 'Keine Zuordnung (Default)' },
+                                    ...absenderListe.map((a) => ({
+                                        value: a.id.toString(),
+                                        label: a.aktiv ? a.emailAdresse : `${a.emailAdresse} (deaktiviert)`,
+                                    }))
+                                ]}
+                                placeholder="E-Mail-Adresse wählen"
+                            />
+                            <p className="text-xs text-slate-500">
+                                Wird automatisch als Absender verwendet, wenn dieser Benutzer eine E-Mail verschickt.
+                                Verwaltung der Adressen unter <strong>Firma → E-Mail-Absender</strong>.
+                            </p>
+                        </div>
+
                         {/* Info Box */}
                         <div className="rounded-2xl border border-dashed border-slate-300 p-4 bg-slate-50">
                             <h4 className="text-sm font-semibold text-slate-900 mb-2">Hinweis</h4>
@@ -494,6 +542,9 @@ export default function BenutzerEditor() {
                             </Button>
                         </div>
                     </div>
+                    {selectedUser && !selectedUser.roles?.includes('ADMIN') && (
+                        <EinkaufBerechtigungen key={selectedUser.id} profileId={selectedUser.id} />
+                    )}
                 </Card>
             </div>
         </PageLayout>

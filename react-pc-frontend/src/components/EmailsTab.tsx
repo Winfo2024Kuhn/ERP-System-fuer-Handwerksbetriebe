@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
+import { AlertTriangle, Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
+import { klartextGrund } from '../lib/zustellGrund';
+import { extractDisplayName, formatRecipient } from '../lib/emailAddress';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { EmailComposeModal } from './EmailComposeModal';
@@ -12,6 +14,10 @@ import type { ProjektDetail } from '../types';
 // Generic email type that works across different entities
 export interface GenericEmail {
     id: number;
+    /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+    zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+    /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+    zustellFehler?: string;
     subject?: string;
     from?: string;
     fromAddress?: string;
@@ -92,21 +98,6 @@ function countReplies(email: GenericEmail): number {
         count += countReplies(r);
     }
     return count;
-}
-
-// ─── Helper: extract display name ────────────────────────────
-function extractDisplayName(address?: string): string {
-    if (!address) return 'Unbekannt';
-    const match = address.match(/^"?(.*?)"?\s*<.*>$/);
-    if (match && match[1]) return match[1].trim();
-    return address;
-}
-
-function extractEmail(address?: string): string {
-    if (!address) return '';
-    const match = address.match(/<(.+)>/);
-    if (match) return match[1];
-    return address;
 }
 
 export const EmailsTab: React.FC<EmailsTabProps> = ({
@@ -370,10 +361,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     const replyInitialRecipient = useMemo(() => {
         if (!replyToEmail) return '';
-        const addr = replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender || '';
-        const name = extractDisplayName(addr);
-        const em = extractEmail(addr);
-        return em ? `"${name}" <${em}>` : name;
+        return formatRecipient(replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender || '');
     }, [replyToEmail]);
 
     const replyInitialSubject = useMemo(() => {
@@ -593,6 +581,20 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
                                                 </p>
                                                 {(email.bodyHtml || email.bodyPreview || email.body) && (
                                                     <p className="text-sm text-slate-400 mt-1 line-clamp-2">{getTextPreview(email)}</p>
+                                                )}
+                                                {/* Rueckläufer-Warnung: Ohne diesen Hinweis sieht eine nie
+                                                    angekommene Mail exakt aus wie eine erfolgreich versendete —
+                                                    der Fehler faellt im Alltag sonst gar nicht auf. */}
+                                                {email.zustellStatus === 'UNZUSTELLBAR' && (
+                                                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                                                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-semibold text-rose-700">Nicht angekommen</p>
+                                                            <p className="text-xs text-rose-600 break-words" title={email.zustellFehler}>
+                                                                {klartextGrund(email.zustellFehler)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>

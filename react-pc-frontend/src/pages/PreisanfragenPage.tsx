@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { nutztEchtesBackend } from '../features/einkauf/originalBedarfApi';
+import { ladeOriginalPreisanfragen } from '../features/einkauf/originalPreisanfragenApi';
 import { Download, FileQuestion, Loader2, Plus, Scale, Trash2, Truck } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -19,6 +22,8 @@ type PreisanfrageStatus =
 
 type LieferantStatus =
     | 'VORBEREITET'
+    | 'AUSSTEHEND'
+    | 'ERLEDIGT'
     | 'VERSENDET'
     | 'BEANTWORTET'
     | 'ABGELEHNT';
@@ -34,7 +39,8 @@ interface LieferantListeEintrag {
     status: LieferantStatus;
 }
 
-interface PreisanfrageListeEintrag {
+export interface PreisanfrageListeEintrag {
+    version?: number;
     id: number;
     nummer: string;
     bauvorhaben?: string | null;
@@ -64,10 +70,12 @@ const FILTERS: StatusFilter[] = [
 
 export default function PreisanfragenPage() {
     const toast = useToast();
+    const navigate = useNavigate();
     const confirmDialog = useConfirm();
 
     const [items, setItems] = useState<PreisanfrageListeEintrag[]>([]);
     const [loading, setLoading] = useState(true);
+    const [ladefehler, setLadefehler] = useState(false);
     const [filter, setFilter] = useState<StatusFilter['key']>('ALLE');
     const [modalOpen, setModalOpen] = useState(false);
     const [vergleichFuerId, setVergleichFuerId] = useState<number | null>(null);
@@ -76,17 +84,22 @@ export default function PreisanfragenPage() {
 
     const load = useCallback(async (statusKey: StatusFilter['key']) => {
         setLoading(true);
+        setLadefehler(false);
         try {
             const url = statusKey === 'ALLE'
                 ? '/api/preisanfragen'
                 : `/api/preisanfragen?status=${encodeURIComponent(statusKey)}`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data: unknown = await res.json();
+            const data: unknown = nutztEchtesBackend
+                ? await ladeOriginalPreisanfragen(statusKey)
+                : await fetch(url).then(async res => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return res.json();
+                });
             const list = Array.isArray(data) ? (data as PreisanfrageListeEintrag[]) : [];
             list.sort((a, b) => (b.erstelltAm ?? '').localeCompare(a.erstelltAm ?? ''));
             setItems(list);
         } catch {
+            setLadefehler(true);
             toast.error('Preisanfragen konnten nicht geladen werden.');
             setItems([]);
         } finally {
@@ -108,7 +121,9 @@ export default function PreisanfragenPage() {
         });
         if (!ok) return;
         try {
-            const res = await fetch(`/api/preisanfragen/${id}`, { method: 'DELETE' });
+            const item = items.find(item => item.id === id);
+            if (nutztEchtesBackend && item?.version == null) throw new Error('Bitte die Anfrage neu laden.');
+            const res = await fetch(nutztEchtesBackend ? `/api/einkauf/anfragen/${id}?version=${item!.version}` : `/api/preisanfragen/${id}`, { method: 'DELETE' });
             if (!res.ok) {
                 const reason = res.headers.get('X-Error-Reason') ?? `HTTP ${res.status}`;
                 throw new Error(reason);
@@ -119,7 +134,7 @@ export default function PreisanfragenPage() {
             const msg = err instanceof Error ? err.message : 'Unbekannter Fehler';
             toast.error(`Abbrechen fehlgeschlagen: ${msg}`);
         }
-    }, [confirmDialog, filter, load, toast]);
+    }, [confirmDialog, filter, load, toast, items]);
 
     return (
         <PageLayout
@@ -128,7 +143,7 @@ export default function PreisanfragenPage() {
             subtitle="Angebote von mehreren Lieferanten einholen und vergleichen"
             actions={
                 <Button
-                    onClick={() => setModalOpen(true)}
+                    onClick={() => nutztEchtesBackend ? navigate('/einkaufsanfragen/neu') : setModalOpen(true)}
                     className="bg-rose-600 text-white hover:bg-rose-700"
                 >
                     <Plus className="w-4 h-4" />
@@ -161,8 +176,13 @@ export default function PreisanfragenPage() {
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                     Preisanfragen werden geladen…
                 </div>
+            ) : ladefehler ? (
+                <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-5 text-rose-800">
+                    <p>Preisanfragen konnten nicht geladen werden.</p>
+                    <Button variant="outline" className="mt-3" onClick={() => void load(filter)}>Erneut laden</Button>
+                </div>
             ) : items.length === 0 ? (
-                <EmptyState onCreate={() => setModalOpen(true)} />
+                <EmptyState onCreate={() => nutztEchtesBackend ? navigate('/einkaufsanfragen/neu') : setModalOpen(true)} />
             ) : (
                 <div className="space-y-4">
                     {items.map(pa => (
@@ -171,6 +191,7 @@ export default function PreisanfragenPage() {
                             item={pa}
                             onAbbrechen={() => handleAbbrechen(pa.id, pa.nummer)}
                             onVergleichOeffnen={() => {
+                                if (nutztEchtesBackend) { navigate(`/einkaufsanfragen/${pa.id}`); return; }
                                 setVergleichHintNummer(pa.nummer);
                                 setVergleichFuerId(pa.id);
                             }}
@@ -240,7 +261,7 @@ function PreisanfrageCard({
     onAbbrechen: () => void;
     onVergleichOeffnen: () => void;
 }) {
-    const beantwortet = item.lieferanten.filter(l => l.status === 'BEANTWORTET').length;
+    const beantwortet = item.lieferanten.filter(l => ['BEANTWORTET', 'ABGELEHNT', 'ERLEDIGT'].includes(l.status)).length;
     const istAbgeschlossen = item.status === 'VERGEBEN' || item.status === 'ABGEBROCHEN';
 
     return (
@@ -315,14 +336,14 @@ function PreisanfrageCard({
                             <div className="flex items-center gap-2 shrink-0">
                                 <LieferantStatusPill status={l.status} />
                                 <a
-                                    href={`/api/preisanfragen/lieferant/${l.id}/pdf`}
+                                    href={nutztEchtesBackend ? `/einkaufsanfragen/${item.id}` : `/api/preisanfragen/lieferant/${l.id}/pdf`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 text-xs font-medium text-rose-700 hover:text-rose-800"
-                                    title="Versendetes PDF ansehen"
+                                    title={nutztEchtesBackend ? "Anfrage und Dokumente öffnen" : "Versendetes PDF ansehen"}
                                 >
                                     <Download className="w-3.5 h-3.5" />
-                                    PDF
+                                    {nutztEchtesBackend ? 'Dokumente' : 'PDF'}
                                 </a>
                             </div>
                         </li>
@@ -352,6 +373,8 @@ function StatusPill({ status }: { status: PreisanfrageStatus }) {
 function LieferantStatusPill({ status }: { status: LieferantStatus }) {
     const map: Record<LieferantStatus, { label: string; className: string }> = {
         VORBEREITET: { label: 'Vorbereitet', className: 'bg-slate-100 text-slate-600' },
+        AUSSTEHEND: { label: 'Ausstehend', className: 'bg-slate-100 text-slate-600' },
+        ERLEDIGT: { label: 'Erledigt', className: 'bg-slate-200 text-slate-700' },
         VERSENDET: { label: 'Versendet', className: 'bg-sky-100 text-sky-800' },
         BEANTWORTET: { label: 'Beantwortet', className: 'bg-emerald-100 text-emerald-800' },
         ABGELEHNT: { label: 'Abgelehnt', className: 'bg-rose-100 text-rose-700' },

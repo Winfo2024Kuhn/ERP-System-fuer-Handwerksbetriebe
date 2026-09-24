@@ -1,16 +1,17 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
-    FileText, Gem, Home, Layers, List, Mail, MailPlus, Package, Settings,
-    ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
-    Calendar, CalendarDays, Plane, Shield, Award, ClipboardCheck, FileCheck2, Wrench, Zap, Scale
+    FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings,
+    ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut, CalendarClock,
+    Calendar, CalendarDays, Plane, Shield, Receipt, Wallet, Stethoscope
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../../auth/AuthContext';
-import { useFeatures } from '../../hooks/useFeatures';
+
+const EINKAUF_PFADE = new Set(['/bestellungen', '/bestellungen/bedarf', '/einkauf/anfragen', '/einkauf/lieferungen', '/einkauf/faelligkeiten']);
 
 // Navigation structure with subgroups for better organization
 interface NavItem {
@@ -54,14 +55,15 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Katalog',
                 items: [
                     { name: 'Artikel', href: '/artikel', icon: Package },
+                    { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
                     { name: 'Kategorien', href: '/produktkategorien', icon: Layers },
                 ]
             },
             {
-                label: 'Firma & Organisation',
+                label: 'Administration',
                 items: [
-                    { name: 'Firma & Abteilungen', href: '/firma', icon: Building2 },
                     { name: 'Dokumentenrechte', href: '/abteilung-berechtigungen', icon: Shield },
+                    { name: 'Firma', href: '/firma', icon: Building2 },
                     { name: 'Einstellungen', href: '/einstellungen', icon: Settings },
                 ]
             }
@@ -92,9 +94,11 @@ const NAVIGATION: NavCategory[] = [
             {
                 label: 'Einkauf',
                 items: [
-                    { name: 'Bedarf', href: '/bestellungen/bedarf', icon: List },
-                    { name: 'Preisanfragen', href: '/einkauf/preisanfragen', icon: Scale },
                     { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
+                    { name: 'Bedarf', href: '/bestellungen/bedarf', icon: List },
+                    { name: 'Anfragen', href: '/einkauf/anfragen', icon: FileText },
+                    { name: 'Lieferungen & Zeugnisse', href: '/einkauf/lieferungen', icon: Truck },
+                    { name: 'Das ist fällig', href: '/einkauf/faelligkeiten', icon: CalendarClock },
                 ]
             }
         ]
@@ -106,6 +110,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Übersicht',
                 items: [
                     { name: 'Kalender', href: '/zeitbuchungen', icon: Calendar },
+                    { name: 'Monatsabschluss', href: '/monatsabschluss', icon: FileCheck },
                 ]
             },
             {
@@ -123,9 +128,10 @@ const NAVIGATION: NavCategory[] = [
                 ]
             },
             {
-                label: 'Urlaub',
+                label: 'Abwesenheiten',
                 items: [
-                    { name: 'Anträge', href: '/urlaubsantraege', icon: Plane },
+                    { name: 'Urlaubsanträge', href: '/urlaubsantraege', icon: Plane },
+                    { name: 'Lange Krankheit', href: '/langzeitkrankmeldungen', icon: Stethoscope },
                 ]
             }
         ]
@@ -151,6 +157,7 @@ const NAVIGATION: NavCategory[] = [
                 items: [
                     { name: 'Offene Posten', href: '/offeneposten', icon: Euro },
                     { name: 'Rechnungen', href: '/rechnungsuebersicht', icon: FileText },
+                    { name: 'Belege & Kasse', href: '/belege-kasse', icon: Receipt },
                     { name: 'Mietabrechnung', href: '/miete', icon: Home },
                 ]
             },
@@ -158,64 +165,51 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Auswertung',
                 items: [
                     { name: 'Erfolgsanalyse', href: '/analyse', icon: BarChart3 },
+                    { name: 'Kostenstellen', href: '/kostenstellen', icon: Wallet },
+                ]
+            },
+            {
+                label: 'Website',
+                items: [
+                    { name: 'Neuigkeiten', href: '/website', icon: Globe },
                 ]
             }
         ]
     }
 ];
 
-/** EN 1090 EXC 2 Kategorie – nur sichtbar wenn en1090.features.enabled=true */
-const EN1090_CATEGORY: NavCategory = {
-    category: 'EN 1090',
-    subgroups: [
-        {
-            label: 'Qualitätssicherung',
-            items: [
-                { name: 'WPK-Dashboard', href: '/en1090/wpk', icon: ClipboardCheck },
-                { name: 'Werkstoffzeugnisse', href: '/en1090/werkstoffzeugnisse', icon: FileCheck2 },
-            ]
-        },
-        {
-            label: 'Schweißen',
-            items: [
-                { name: 'Schweißanweisungen', href: '/en1090/wps', icon: Wrench },
-                { name: 'Schweißer-Zertifikate', href: '/en1090/schweisser', icon: Award },
-            ]
-        },
-        {
-            label: 'Prüfungen',
-            items: [
-                { name: 'Betriebsmittel E-Check', href: '/betriebsmittel', icon: Zap },
-            ]
-        }
-    ]
-};
-
-const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer']);
+const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer', '/website']);
 
 
 export function RibbonNavigation() {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, isAdmin, logout } = useAuth();
-    const features = useFeatures();
+    const [einkaufsrechte, setEinkaufsrechte] = useState<string[]>([]);
+    useEffect(() => {
+        let aktiv = true;
+        void fetch('/api/einkauf/berechtigungen').then(async antwort => {
+            if (!antwort.ok) throw new Error('Einkaufsrechte konnten nicht geladen werden.');
+            const rechte: unknown = await antwort.json();
+            if (!Array.isArray(rechte) || rechte.some(recht => typeof recht !== 'string')) throw new Error('Die Einkaufsrechte haben ein ungültiges Format.');
+            if (aktiv) setEinkaufsrechte(rechte);
+        }).catch(() => { if (aktiv) setEinkaufsrechte([]); });
+        return () => { aktiv = false; };
+    }, []);
 
     const visibleNavigation = useMemo<NavCategory[]>(() => {
-        const base = features.en1090
-            ? [...NAVIGATION, EN1090_CATEGORY]
-            : NAVIGATION;
-        return base
+        return NAVIGATION
             .map((category) => ({
                 ...category,
                 subgroups: category.subgroups
                     .map((subgroup) => ({
                         ...subgroup,
-                        items: subgroup.items.filter((item) => isAdmin || !ADMIN_ONLY_PATHS.has(item.href)),
+                        items: subgroup.items.filter((item) => (isAdmin || !ADMIN_ONLY_PATHS.has(item.href)) && (!EINKAUF_PFADE.has(item.href) || einkaufsrechte.includes('LESEN'))),
                     }))
                     .filter((subgroup) => subgroup.items.length > 0),
             }))
             .filter((category) => category.subgroups.length > 0);
-    }, [isAdmin, features.en1090]);
+    }, [isAdmin, einkaufsrechte]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
     // Track the pathname when the user explicitly clicked a tab.
@@ -263,14 +257,21 @@ export function RibbonNavigation() {
     return (
         <div className="flex flex-col bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40 transition-all">
             {/* Top Bar: Logo & Tabs */}
-            <div className="flex items-center px-4 h-16 border-b border-rose-100 bg-white shadow-sm gap-8">
+            {/* gap-4 statt gap-8 (vorher): gibt der Kategorie-Leiste bei 1440px
+                die paar Pixel, die ihr sonst durch die Aussenabstaende der
+                Nachbar-Elemente fehlen (siehe Spec C, Befund 3). */}
+            <div className="flex items-center px-4 h-16 border-b border-rose-100 bg-white shadow-sm gap-2 min-[1680px]:gap-4">
                 {/* Company Logo */}
                 <div className="flex items-center shrink-0">
                     <img src="/firmenlogo_icon.png" alt="Company Logo" className="h-14 w-auto object-contain" />
                 </div>
 
                 {/* Category Tabs */}
-                <div className="flex-1 flex overflow-x-auto overflow-y-hidden no-scrollbar gap-2 h-full items-end">
+                {/* "no-scrollbar" entfernt (vorher): eine still scrollende
+                    Kategorie-Leiste ist keine Loesung -- wenn hier noch etwas
+                    ueberlaeuft, soll es als Scrollbalken sichtbar sein statt
+                    unsichtbar abgeschnitten (Spec C, Befund 3). */}
+                <div className="flex-1 flex overflow-x-auto overflow-y-hidden gap-0.5 min-[1680px]:gap-2 h-full items-end">
                     {visibleNavigation.map((group) => (
                         <button
                             key={group.category}
@@ -284,7 +285,10 @@ export function RibbonNavigation() {
                                 }
                             }}
                             className={cn(
-                                "px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
+                                // px-1.5 bei 1440px, px-2.5 ab 1480px, px-4 ab 1680px:
+                                // spart genug Breite, damit alle fünf Kategorien auch bei breiteren Linux-Systemfonts
+                                // auf CI-Runnern und Bildschirmen zwischen 1440px und 1600px ohne Überlauf nebeneinander passen.
+                                "px-1.5 min-[1480px]:px-2.5 min-[1680px]:px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all rounded-t-lg relative bottom-[-1px]",
                                 activeCategory === group.category
                                     ? "text-rose-700 bg-rose-50 border-t-2 border-x border-rose-200 border-b-transparent shadow-sm z-10"
                                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-transparent border-b-2 border-b-transparent mb-[1px]"
@@ -295,23 +299,23 @@ export function RibbonNavigation() {
                     ))}
                 </div>
 
-                {/* KI-Assistent Button */}
+                {/* KI-Hilfe Button */}
                 <button
-                    onClick={() => navigate('/ki-assistent')}
-                    className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
-                    title="KI-Assistent öffnen"
+                    onClick={() => window.dispatchEvent(new CustomEvent('ki-hilfe-open'))}
+                    className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
+                    title="KI-Hilfe öffnen"
                 >
                     <Gem className="w-4 h-4" />
-                    <span className="text-sm font-medium hidden lg:inline">KI-Assistent</span>
+                    <span className="text-sm font-medium hidden lg:inline">KI-Hilfe</span>
                 </button>
 
                 {/* Notification Bell */}
-                <div className="flex items-center ml-1">
+                <div className="flex items-center">
                     <NotificationBell />
                 </div>
 
                 {/* User Selector */}
-                <div className="relative ml-2 pl-4 border-l border-slate-200">
+                <div className="relative pl-3 border-l border-slate-200">
                     <button
                         onClick={() => setShowUserMenu(!showUserMenu)}
                         className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors group"
@@ -320,7 +324,45 @@ export function RibbonNavigation() {
                             <User className="w-4 h-4" />
                         </div>
                         <div className="text-left hidden md:block">
-                            <p className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 line-clamp-1">
+                            {/* Kuerzung hier ist erlaubt, weil der volle Name im
+                                aufgeklappten Nutzermenue direkt darunter steht (siehe
+                                "showUserMenu"-Panel weiter unten) und zusaetzlich im
+                                title-Attribut steht. data-kuerzung-erlaubt markiert das
+                                als gewollte Ausnahme fuer keinTextGekuerzt (siehe
+                                e2e/hilfen/design.ts) -- ohne das Attribut waere ein
+                                abgeschnittener Name ein Fehler.
+
+                                Task 10b (Abschnitt 7, Design-Review Abschnitt 6 Befund c):
+                                "2xl:max-w-none" (ab 1536px unbegrenzt breit) griff zu frueh --
+                                bei 1536px ist noch nicht genug Platz frei, ein rund 55 Zeichen
+                                langer Name sprengte die Kategorie-Leiste dort um 119px (bei
+                                1650px noch um 5px), weil dieser Block und die Kategorie-Leiste
+                                sich dieselbe Zeile teilen und ein breiterer Name der
+                                Kategorie-Leiste Platz wegnimmt. Zwei Stellschrauben standen zur
+                                Wahl: die Grenze spaeter greifen lassen (z.B. "min-[1780px]:
+                                max-w-none") oder eine feste Obergrenze statt "none" setzen (z.B.
+                                "2xl:max-w-[18rem]"). Gewaehlt: die Grenze verschieben.
+                                Nachgerechnet mit den Design-Review-Messwerten (119px Ueberstand
+                                bei 369px Namensbreite, 247px bei 497px Namensbreite -- linear,
+                                Differenz und Ursache identisch): der Ueberstand waechst 1:1 mit
+                                der Namensbreite, die Kategorie-Leiste vertraegt bei 1536px nur
+                                rund 250px Namensbreite verlustfrei. Eine feste Obergrenze muesste
+                                also klein genug sein (< 15rem), und genau diese Grenze gilt schon
+                                heute unveraendert bei 1440px (max-w-[10rem] = 160px) und
+                                verursacht dort nachweislich 0px Ueberstand, auch bei sehr langen
+                                Namen. Die Grenze auf 1780px zu verschieben nutzt also einfach die
+                                bereits bewaehrte 160px-Kuerzung eine Stufe weiter, statt eine neue
+                                Zahl zu erfinden -- deshalb kein "2xl:max-w-[18rem]": 18rem (288px)
+                                liegt ueber der 250px-Schwelle und haette die Luecke nicht
+                                geschlossen, wie die Nachrechnung zeigt. Ab 1780px ist der
+                                Platzgewinn gegenueber 1536px so gross, dass "max-w-none" laut
+                                denselben Messwerten wieder 0px Ueberstand ergibt (1780px: 0px bzw.
+                                3px je nach Namenslaenge). */}
+                            <p
+                                className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 max-w-[10rem] min-[1780px]:max-w-none truncate"
+                                title={currentUser ? currentUser.displayName : undefined}
+                                data-kuerzung-erlaubt
+                            >
                                 {currentUser ? currentUser.displayName : "Lade..."}
                             </p>
                             <p className="text-xs text-slate-500">{isAdmin ? 'Administrator' : 'Angemeldet'}</p>
@@ -333,7 +375,11 @@ export function RibbonNavigation() {
                             <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
                             <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
                                 <div className="px-4 py-2 border-b border-slate-50 mb-2">
-                                    <p className="text-sm font-semibold text-slate-700 line-clamp-1">{currentUser?.displayName || 'Benutzer'}</p>
+                                    {/* Hier steht der VOLLE Name -- das ist die Begruendung
+                                        dafuer, dass der kompakte Anzeigename oben gekuerzt
+                                        werden darf. Deshalb kein truncate/line-clamp: lieber
+                                        umbrechen als kuerzen. */}
+                                    <p className="text-sm font-semibold text-slate-700 break-words">{currentUser?.displayName || 'Benutzer'}</p>
                                     <p className="text-xs text-slate-500">{currentUser?.username || 'Kein Username'}</p>
                                 </div>
                                 <div className="border-t border-slate-100 mt-2 pt-2 pb-1">
@@ -361,7 +407,16 @@ export function RibbonNavigation() {
                 </div>
 
                 {/* Toggle Button */}
-                <Button variant="ghost" size="sm" onClick={toggleRibbon} className="ml-2 text-slate-400">
+                {/* Nur ein Symbol, deshalb braucht der Knopf einen Namen fuer
+                    Screenreader -- sonst liest er sich als "Schaltflaeche". */}
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleRibbon}
+                    aria-label={isExpanded ? 'Menüleiste einklappen' : 'Menüleiste ausklappen'}
+                    aria-expanded={isExpanded}
+                    className="ml-2 text-slate-400"
+                >
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </Button>
             </div>
@@ -373,7 +428,11 @@ export function RibbonNavigation() {
                     isExpanded ? "max-h-40 opacity-100 border-b border-slate-200" : "max-h-0 opacity-0"
                 )}
             >
-                <div className="px-3 py-2 flex gap-1 overflow-x-auto no-scrollbar">
+                {/* "no-scrollbar" entfernt (Task 8b, Nachtrag aus dem Review von
+                    Abschnitt 2): dasselbe Muster wie bei der Kategorie-Leiste oben --
+                    laeuft hier heute nichts ueber, soll ein kuenftiger Ueberlauf aber
+                    als Scrollbalken sichtbar sein statt lautlos abgeschnitten zu werden. */}
+                <div className="px-3 py-2 flex gap-1 overflow-x-auto">
                     {visibleNavigation.find(g => g.category === activeCategory)?.subgroups.map((subgroup, sgIndex) => (
                         <div key={subgroup.label} className="flex items-center">
                             {/* Subgroup Container */}
@@ -411,8 +470,14 @@ export function RibbonNavigation() {
                                                 )}>
                                                     <item.icon className="w-5 h-5" />
                                                 </div>
+                                                {/* max-w-[5.5rem] + break-words statt truncate:
+                                                    zweizeilig statt gekuerzt -- "Dokumentenrechte"
+                                                    und "Mietabrechnung" stehen sonst als "..." da,
+                                                    unabhaengig von der Fenstergroesse (Spec C,
+                                                    Befund 3). Macht die Menuezeile hoechstens
+                                                    12px hoeher. */}
                                                 <span className={cn(
-                                                    "text-[10px] font-medium text-center leading-tight max-w-[4.5rem] truncate",
+                                                    "text-[10px] font-medium text-center leading-tight max-w-[5.5rem] break-words",
                                                     isActive ? "text-rose-700" : "text-slate-600"
                                                 )}>
                                                     {item.name}

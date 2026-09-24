@@ -59,9 +59,11 @@ export const KategoriePicker: React.FC<KategoriePickerProps> = ({
                     const istGewaehlt = value === k.id;
                     return (
                         <li key={k.id}>
-                            <div
+                            <button
+                                type="button"
+                                aria-expanded={hatKinder ? istOffen : undefined}
                                 className={cn(
-                                    'flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-sm select-none',
+                                    'w-full flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-left text-sm select-none focus-visible:outline-rose-600',
                                     istGewaehlt ? 'bg-rose-100 text-rose-800 font-medium' : 'hover:bg-slate-100 text-slate-700'
                                 )}
                                 style={{ paddingLeft: `${8 + depth * 14}px` }}
@@ -77,7 +79,7 @@ export const KategoriePicker: React.FC<KategoriePickerProps> = ({
                                     <Folder className="w-4 h-4 text-slate-300 shrink-0" />
                                 )}
                                 <span className="truncate">{k.beschreibung}</span>
-                            </div>
+                            </button>
                             {hatKinder && istOffen && renderTree(k.id, depth + 1)}
                         </li>
                     );
@@ -90,6 +92,7 @@ export const KategoriePicker: React.FC<KategoriePickerProps> = ({
         <div className="relative">
             <button
                 type="button"
+                aria-expanded={offen}
                 onClick={() => setOffen(v => !v)}
                 className={cn(
                     'w-full flex items-center justify-between border rounded-md text-left',

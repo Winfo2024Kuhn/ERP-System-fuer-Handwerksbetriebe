@@ -1,13 +1,17 @@
-import { Trash2, Clock, BarChart3 } from 'lucide-react';
+import { Trash2, Clock, BarChart3, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
+import { hatKundentext } from '../artikel/kundentext';
 import { cn } from '../../lib/utils';
 import { formatCurrency, serviceLineTotal } from './helpers';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
 import type { DocBlock, EditorInstance } from './types';
 import type { ZeitprognoseDto } from '../../types';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { KategorieAnalyseModal } from '../KategorieAnalyseModal';
+import { AddBelowButton } from './TextBlock';
+import { WahlpositionMenu } from './WahlpositionMenu';
 
 interface ServiceBlockProps {
     block: DocBlock;
@@ -16,11 +20,24 @@ interface ServiceBlockProps {
     isActive: boolean;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
     onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
-    onUpdate: (id: string, updates: Partial<DocBlock>) => void;
+    onUpdate: (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => void;
     onRemove: (id: string) => void;
-    onToggleOptional: (id: string, current: boolean | undefined) => void;
+    /** Setzt die Leistung auf "fest beauftragt" oder "optional". */
+    onModusWechsel: (id: string, modus: 'fest' | 'optional') => void;
+    /** Oeffnet den Dialog, in dem die Entweder-Oder-Gruppe zusammengestellt wird. */
+    onAlternativOeffnen: (id: string) => void;
     onFocus: (blockId: string) => void;
     onEditorFocus: (editor: EditorInstance | null) => void;
+    /** Optional: oeffnet den AddTypeDialog mit dieser Karte als Anker (Insert direkt darunter). */
+    onAddBelow?: (anchorId: string) => void;
+    /**
+     * Startzustand der Karte. Default `true`: beim Oeffnen eines Dokuments ist
+     * alles zu, damit 20 Positionen auf einen Bildschirm passen. Reine
+     * Ansichtssache — wird bewusst nicht persistiert.
+     */
+    defaultCollapsed?: boolean;
+    /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
+    verlaufsModus?: boolean;
 }
 
 export function ServiceBlock({
@@ -32,13 +49,28 @@ export function ServiceBlock({
     onEditorReady,
     onUpdate,
     onRemove,
-    onToggleOptional,
+    onModusWechsel,
+    onAlternativOeffnen,
     onFocus,
     onEditorFocus,
+    onAddBelow,
+    defaultCollapsed = true,
+    verlaufsModus,
 }: ServiceBlockProps) {
     const total = serviceLineTotal(block);
     const hasDiscount = (block.discount ?? 0) > 0;
 
+    /**
+     * Materialposition ohne Text fuer den Kunden. Der PDF-Druck faellt dann auf
+     * den Titel zurueck (RechnungPdfService:881-889) — und der Titel ist bei
+     * Material die Kurzbeschreibung aus den Stammdaten, also Innensicht. Deshalb
+     * bekommt genau dieser Fall einen sichtbaren Hinweis, der auch zugeklappt zu
+     * sehen ist. Bei Leistungen bleibt der Notnagel unbeanstandet: Dort ist der
+     * Titel ein vom Bediener geschriebener Satz.
+     */
+    const kundentextFehlt = block.artikelId != null && !hatKundentext(block.description);
+
+    const [collapsed, setCollapsed] = useState(defaultCollapsed);
     const [zeitprognose, setZeitprognose] = useState<ZeitprognoseDto | null>(null);
     const [prognoseLoading, setPrognoseLoading] = useState(false);
     const [showAnalyse, setShowAnalyse] = useState(false);
@@ -73,7 +105,7 @@ export function ServiceBlock({
     }, [block.leistungId, block.quantity]);
 
     return (
-        <>
+        <div className="group/card">
         {showAnalyse && zeitprognose?.kategorieId && createPortal(
             <KategorieAnalyseModal
                 kategorie={{
@@ -96,7 +128,18 @@ export function ServiceBlock({
             onClick={() => onFocus(block.id)}
         >
             {/* Header row: pos badge + title + actions */}
-            <div className="flex items-start gap-3 p-4 pb-0">
+            <div className={cn("flex items-start gap-3 p-4 pb-0", collapsed && "pb-4")}>
+                {/* Auf-/Zuklappen */}
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); }}
+                    aria-label={collapsed ? 'Aufklappen' : 'Zuklappen'}
+                    aria-expanded={!collapsed}
+                    className="flex-shrink-0 mt-1.5 w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 transition-colors"
+                >
+                    <ChevronRight className={cn("w-3.5 h-3.5 transition-transform duration-200", !collapsed && "rotate-90")} />
+                </button>
+
                 {/* Position badge */}
                 <div className="flex-shrink-0 mt-0.5">
                     <div className={cn(
@@ -117,30 +160,41 @@ export function ServiceBlock({
                         value={block.title || ''}
                         onChange={(e) => onUpdate(block.id, { title: e.target.value })}
                         disabled={isLocked}
+                        data-verlauf-feld="title"
                         className={cn(
                             "w-full font-semibold text-slate-900 bg-transparent border-none p-0 text-sm focus:ring-0 focus:outline-none placeholder:text-slate-300 disabled:text-slate-400",
                             block.optional && "italic text-slate-500"
                         )}
                     />
+                    {kundentextFehlt && (
+                        <p className="mt-0.5 flex items-start gap-1 text-[11px] text-amber-700">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                            <span>
+                                Kein Text für den Kunden — bitte unten eintragen, sonst steht dieser
+                                Kurztext auf dem Angebot.
+                            </span>
+                        </p>
+                    )}
                 </div>
+
+                {/* Zugeklappt: Summe direkt in der Kopfzeile */}
+                {collapsed && (
+                    <div className={cn(
+                        "flex-shrink-0 pt-1 text-sm font-bold tabular-nums",
+                        block.optional ? "text-amber-600" : "text-slate-900"
+                    )}>
+                        {formatCurrency(block.optional ? 0 : total)} €
+                    </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); onToggleOptional(block.id, block.optional); }}
-                        disabled={isLocked}
-                        className={cn(
-                            "h-7 px-2 text-[11px] gap-1 rounded-md",
-                            block.optional
-                                ? "text-amber-600 bg-amber-50 hover:bg-amber-100"
-                                : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                        )}
-                        title="Als Alternativ-Position markieren (nicht in Summe)"
-                    >
-                        {block.optional ? 'Alternativ' : 'Opt'}
-                    </Button>
+                    <WahlpositionMenu
+                        block={block}
+                        isLocked={isLocked}
+                        onModusWechsel={onModusWechsel}
+                        onAlternativOeffnen={onAlternativOeffnen}
+                    />
                     <Button
                         variant="ghost"
                         size="sm"
@@ -153,12 +207,13 @@ export function ServiceBlock({
                 </div>
             </div>
 
-            {/* Description - always visible */}
+            {/* Description - nur aufgeklappt */}
+            {!collapsed && (
             <div className="px-4 pt-2 pb-3">
-                <div className="pl-[52px]">
+                <div className="pl-[52px] doc-pdf-metrics doc-pdf-metrics--spalte" data-verlauf-feld="description">
                     <TiptapEditor
                         value={block.description || ''}
-                        onChange={(val) => onUpdate(block.id, { description: val })}
+                        onChange={(val, art) => onUpdate(block.id, { description: val }, art)}
                         readOnly={isLocked}
                         hideToolbar={true}
                         compactMode={true}
@@ -167,11 +222,14 @@ export function ServiceBlock({
                             onEditorFocus(editorRefs.current[`${block.id}-desc`]);
                         }}
                         onEditorReady={(editor) => onEditorReady(`${block.id}-desc`, editor)}
+                        verlaufsModus={verlaufsModus}
                     />
                 </div>
             </div>
+            )}
 
-            {/* Calculation row */}
+            {/* Calculation row - nur aufgeklappt */}
+            {!collapsed && (
             <div className="mx-4 mb-4 bg-slate-50 rounded-lg border border-slate-100 p-3">
                 <div className="flex items-center gap-3">
                     {/* Menge + Einheit */}
@@ -181,6 +239,7 @@ export function ServiceBlock({
                             <input
                                 type="number"
                                 min="0"
+                                aria-label="Menge"
                                 value={block.quantity || ''}
                                 onFocus={(e) => { if (e.target.value === '0') e.target.value = ''; }}
                                 onChange={(e) => {
@@ -190,6 +249,7 @@ export function ServiceBlock({
                                     if (!isNaN(num) && num >= 0) onUpdate(block.id, { quantity: num });
                                 }}
                                 disabled={isLocked}
+                                data-verlauf-feld="quantity"
                                 className="w-16 text-center text-sm font-semibold bg-white border border-slate-200 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 disabled:text-slate-400 transition-all"
                             />
                         </div>
@@ -200,6 +260,7 @@ export function ServiceBlock({
                                 value={block.unit || 'Stk'}
                                 onChange={(e) => onUpdate(block.id, { unit: e.target.value })}
                                 disabled={isLocked}
+                                data-verlauf-feld="unit"
                                 className="w-14 text-center text-xs text-slate-600 bg-white border border-slate-200 rounded-md px-1.5 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 transition-all"
                             />
                         </div>
@@ -215,6 +276,7 @@ export function ServiceBlock({
                                 type="number"
                                 step="0.01"
                                 min="0"
+                                aria-label="Einzelpreis"
                                 value={block.price || ''}
                                 onFocus={(e) => { if (e.target.value === '0') e.target.value = ''; }}
                                 onChange={(e) => {
@@ -224,6 +286,7 @@ export function ServiceBlock({
                                     if (!isNaN(num) && num >= 0) onUpdate(block.id, { price: num });
                                 }}
                                 disabled={isLocked}
+                                data-verlauf-feld="price"
                                 className="w-24 text-right text-sm font-semibold bg-white border border-slate-200 rounded-md pl-2 pr-6 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 disabled:text-slate-400 transition-all"
                             />
                             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">€</span>
@@ -273,7 +336,11 @@ export function ServiceBlock({
                     </div>
                 )}
             </div>
+            )}
         </div>
-        </>
+        {!isLocked && onAddBelow && (
+            <AddBelowButton onClick={() => onAddBelow(block.id)} />
+        )}
+        </div>
     );
 }

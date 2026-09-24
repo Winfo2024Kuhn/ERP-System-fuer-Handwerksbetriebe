@@ -3,6 +3,10 @@ import { type Kostenposition, type Kostenstelle } from './types';
 import { MietabrechnungService } from './MietabrechnungService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Input } from '../ui/input';
+import { DecimalInput } from '../ui/decimal-input';
+import { formatDecimalInput } from '../../lib/numberInput';
+import { validateNumberDrafts } from '../../lib/numberDrafts';
+import { Zap } from 'lucide-react';
 import { Label } from '../ui/label';
 import { Select } from '../ui/select-custom';
 import { DatePicker } from '../ui/datepicker';
@@ -26,6 +30,8 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState<Kostenposition | null>(null);
+    const [drafts, setDrafts] = useState({ jahr: String(currentYear), betrag: '0', faktor: '' });
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -45,7 +51,8 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
                     try {
                         positions = await MietabrechnungService.getKostenpositionen(c.id);
                     } catch (e) {
-                        console.error(`Failed to load positions for center ${c.id}`, e);
+                        console.error('Kostenpositionen konnten nicht geladen werden.', e);
+                        toast.error('Kostenpositionen einer Kostenstelle konnten nicht geladen werden.');
                     }
                 }
                 positions.forEach((p) => allPos.push({ ...p, centerName: c.name }));
@@ -53,11 +60,12 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
             await Promise.all(centerPromises);
             setPositions(allPos);
 
-        } catch (err) { console.error(err); } finally { setLoading(false); }
+        } catch { toast.error('Kostenstellen konnten nicht geladen werden.'); } finally { setLoading(false); }
     };
 
     const handleNew = () => {
         if (centers.length === 0) { toast.warning('Erst Kostenstellen anlegen!'); return; }
+        setDrafts({ jahr: filterYear || String(currentYear), betrag: '0', faktor: '' });
         setEditing({
             id: 0,
             kostenstelleId: centers[0].id,
@@ -93,19 +101,25 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
         }
     };
 
-    const handleEdit = (p: Kostenposition) => { setEditing({ ...p }); setModalOpen(true); };
+    const handleEdit = (p: Kostenposition) => { setEditing({ ...p }); setDrafts({ jahr: String(p.abrechnungsJahr ?? currentYear), betrag: p.betrag == null ? '' : formatDecimalInput(p.betrag), faktor: p.verbrauchsfaktor == null ? '' : formatDecimalInput(p.verbrauchsfaktor) }); setModalOpen(true); };
 
     const save = async (e: FormEvent) => {
         e.preventDefault();
-        if (!editing) return;
+        if (!editing || saving) return;
+        const faktor = editing.berechnung === 'VERBRAUCHSFAKTOR';
+        const parsed = validateNumberDrafts({ jahr: drafts.jahr, wert: faktor ? drafts.faktor : drafts.betrag }, { jahr: { label: 'Abrechnungsjahr', required: true, integer: true, min: 1, max: 9999 }, wert: { label: faktor ? 'Verbrauchsfaktor' : 'Betrag', required: true, maxDecimalPlaces: faktor ? 6 : 2 } });
+        if (!parsed.valid) { toast.error(parsed.message); return; }
+        if (!editing.buchungsdatum || !centers.some(c => c.id === editing.kostenstelleId)) { toast.error('Bitte Kostenstelle und Buchungsdatum wählen.'); return; }
+        const payload = { ...editing, abrechnungsJahr: parsed.values.jahr!, betrag: faktor ? 0 : parsed.values.wert!, verbrauchsfaktor: faktor ? parsed.values.wert : null };
+        setSaving(true);
         try {
-            if (editing.id === 0) await MietabrechnungService.createKostenposition(editing.kostenstelleId, editing);
-            else await MietabrechnungService.updateKostenposition(editing.id, editing);
-            setModalOpen(false); loadData();
-        } catch { toast.error('Fehler'); }
+            if (editing.id === 0) await MietabrechnungService.createKostenposition(editing.kostenstelleId, payload);
+            else await MietabrechnungService.updateKostenposition(editing.id, payload);
+            setModalOpen(false); toast.success('Kostenposition gespeichert.'); await loadData();
+        } catch { toast.error('Kostenposition konnte nicht gespeichert werden.'); } finally { setSaving(false); }
     };
 
-    const del = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteKostenposition(id); loadData(); } catch { toast.error('Fehler'); } };
+    const del = async (id: number) => { if (await confirmDialog({ title: 'Löschen', message: 'Möchten Sie diesen Eintrag wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) try { await MietabrechnungService.deleteKostenposition(id); loadData(); } catch { toast.error('Kostenposition konnte nicht gelöscht werden.'); } };
 
     // Filtering
     const yearNum = Number(filterYear) || null;
@@ -147,13 +161,13 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
                 <div className="flex items-center gap-4">
                     <h3 className="text-lg font-semibold text-slate-900">Kostenpositionen</h3>
                     <Select
-                        value={filterYear}
+                        aria-label="Abrechnungsjahr filtern" value={filterYear}
                         onChange={setFilterYear}
                         options={yearOptions}
                         className="w-32"
                     />
                     <Select
-                        value={filterCenterId}
+                        aria-label="Kostenstelle filtern" value={filterCenterId}
                         onChange={setFilterCenterId}
                         options={[{ value: 'all', label: 'Alle Kostenstellen' }, ...centers.map(c => ({ value: String(c.id), label: c.name }))]}
                         className="w-48"
@@ -195,7 +209,7 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
                                     <td className="px-4 py-3">
                                         {istVerbrauch ? (
                                             <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-medium">
-                                                ⚡ Verbrauch
+                                                <Zap className="h-3 w-3" /> Verbrauch
                                             </span>
                                         ) : (
                                             <span className="inline-flex items-center gap-1 bg-slate-50 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full text-xs font-medium">
@@ -207,7 +221,7 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
                                         {formatCurrency(displayBetrag)}
                                         {istVerbrauch && p.verbrauchsfaktor != null && (
                                             <div className="text-xs text-slate-400 mt-0.5">
-                                                Faktor: {p.verbrauchsfaktor} · Menge: {p.verbrauchsmenge ?? '–'}
+                                                Faktor: {formatDecimalInput(p.verbrauchsfaktor)} · Menge: {p.verbrauchsmenge == null ? '–' : formatDecimalInput(p.verbrauchsmenge)}
                                             </div>
                                         )}
                                     </td>
@@ -223,29 +237,30 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
                 {filtered.length === 0 && <div className="p-8 text-center text-slate-400">Keine Einträge gefunden.</div>}
             </div>
 
-            <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-                <DialogContent>
+            <Dialog open={modalOpen} onOpenChange={open => { if (!saving) setModalOpen(open); }} aria-label="Kostenposition" className="w-full max-w-xl">
+                <DialogContent className="overflow-y-auto">
                     <DialogHeader><DialogTitle>Kostenposition</DialogTitle></DialogHeader>
                     {editing && (
-                        <form onSubmit={save} className="space-y-4">
+                        <form noValidate onSubmit={save} className="space-y-4">
                             <div className="space-y-2"><Label>Kostenstelle</Label>
-                                <Select value={String(editing.kostenstelleId)} onChange={val => setEditing({ ...editing, kostenstelleId: Number(val) })} options={centers.map(c => ({ value: String(c.id), label: c.name }))} />
+                                <Select aria-label="Kostenstelle" value={String(editing.kostenstelleId)} onChange={val => setEditing({ ...editing, kostenstelleId: Number(val) })} options={centers.map(c => ({ value: String(c.id), label: c.name }))} />
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2"><Label>Abrechnungsjahr</Label>
-                                    <Input type="number" value={editing.abrechnungsJahr ?? currentYear} onChange={e => setEditing({ ...editing, abrechnungsJahr: parseInt(e.target.value) || currentYear })} required />
+                                    <DecimalInput aria-label="Abrechnungsjahr" integer min={1} max={9999} value={drafts.jahr} onChange={jahr => setDrafts({ ...drafts, jahr })} required />
                                 </div>
-                                <div className="space-y-2"><Label>Buchungsdatum</Label><DatePicker value={editing.buchungsdatum} onChange={value => setEditing({ ...editing, buchungsdatum: value })} placeholder="Datum wählen" /></div>
+                                <div className="space-y-2"><Label>Buchungsdatum</Label><DatePicker aria-label="Buchungsdatum" required value={editing.buchungsdatum} onChange={value => setEditing({ ...editing, buchungsdatum: value })} placeholder="Datum wählen" /></div>
                             </div>
 
                             {/* Berechnungsart Toggle */}
                             <div className="space-y-2">
                                 <Label>Berechnungsart</Label>
                                 <Select
-                                    value={editing.berechnung || 'BETRAG'}
+                                    aria-label="Berechnungsart" value={editing.berechnung || 'BETRAG'}
                                     onChange={(val) => {
                                         const isFaktor = val === 'VERBRAUCHSFAKTOR';
+                                        if (isFaktor && drafts.faktor === '') setDrafts({ ...drafts, faktor: '1' });
                                         setEditing({
                                             ...editing,
                                             berechnung: val as 'BETRAG' | 'VERBRAUCHSFAKTOR',
@@ -268,20 +283,13 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Verbrauchsfaktor (€ pro Einheit)</Label>
-                                        <Input
-                                            type="number"
-                                            step="0.00001"
-                                            value={editing.verbrauchsfaktor ?? ''}
-                                            onChange={e => setEditing({ ...editing, verbrauchsfaktor: parseFloat(e.target.value) || 0 })}
-                                            placeholder="z.B. 2,50 €/m³"
-                                            required
-                                        />
+                                        <DecimalInput aria-label="Verbrauchsfaktor (€ pro Einheit)" value={drafts.faktor} onChange={faktor => setDrafts({ ...drafts, faktor })} placeholder="z. B. 2,50" required />
                                     </div>
                                     {editing.id !== 0 && editing.berechneterBetrag != null && (
                                         <div className="grid grid-cols-2 gap-3 text-sm">
                                             <div className="bg-slate-50 rounded-lg p-2.5">
                                                 <div className="text-slate-500 text-xs">Verbrauchsmenge</div>
-                                                <div className="font-semibold text-slate-900">{editing.verbrauchsmenge ?? '–'}</div>
+                                                <div className="font-semibold text-slate-900">{editing.verbrauchsmenge == null ? '–' : formatDecimalInput(editing.verbrauchsmenge)}</div>
                                             </div>
                                             <div className="bg-slate-50 rounded-lg p-2.5">
                                                 <div className="text-slate-500 text-xs">Berechneter Betrag</div>
@@ -292,16 +300,16 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
                                 </div>
                             ) : (
                                 <div className="space-y-2"><Label>Betrag (€)</Label>
-                                    <Input type="number" step="0.01" value={editing.betrag} onChange={e => setEditing({ ...editing, betrag: parseFloat(e.target.value) || 0 })} required />
+                                    <DecimalInput aria-label="Betrag (€)" value={drafts.betrag} onChange={betrag => setDrafts({ ...drafts, betrag })} required />
                                 </div>
                             )}
 
-                            <div className="space-y-2"><Label>Beschreibung</Label><Input value={editing.beschreibung} onChange={e => setEditing({ ...editing, beschreibung: e.target.value })} /></div>
-                            <div className="space-y-2"><Label>Belegnummer</Label><Input value={editing.belegNummer ?? ''} onChange={e => setEditing({ ...editing, belegNummer: e.target.value || undefined })} /></div>
+                            <div className="space-y-2"><Label>Beschreibung</Label><Input aria-label="Beschreibung" value={editing.beschreibung} onChange={e => setEditing({ ...editing, beschreibung: e.target.value })} /></div>
+                            <div className="space-y-2"><Label>Belegnummer</Label><Input aria-label="Belegnummer" value={editing.belegNummer ?? ''} onChange={e => setEditing({ ...editing, belegNummer: e.target.value || undefined })} /></div>
 
                             <DialogFooter>
-                                <button type="button" onClick={() => setModalOpen(false)} className="border-rose-300 text-rose-700 hover:bg-rose-50 border px-3 py-2 text-sm rounded-md font-medium">Abbrechen</button>
-                                <button type="submit" className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700 px-3 py-2 text-sm rounded-md font-medium">Speichern</button>
+                                <button type="button" disabled={saving} onClick={() => setModalOpen(false)} className="border-rose-300 text-rose-700 hover:bg-rose-50 border px-3 py-2 text-sm rounded-md font-medium">Abbrechen</button>
+                                <button type="submit" disabled={saving} className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700 px-3 py-2 text-sm rounded-md font-medium">Speichern</button>
                             </DialogFooter>
                         </form>
                     )}

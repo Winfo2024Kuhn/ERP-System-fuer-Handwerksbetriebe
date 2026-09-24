@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Gemeinsame Standardgestaltung für Auswahlfelder in unserem Design-System. */
+@layer base {
+  input:where([type="checkbox"], [type="radio"]) {
+    accent-color: #e11d48;
+  }
+}
+
 /* Hide number input spinners globally */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
@@ -125,6 +132,81 @@ body {
 .tiptap-editor-content mark {
   border-radius: 2px;
   padding: 0 2px;
+}
+
+/* ========================================
+   WYSIWYG-Metriken für den Dokumenteditor
+
+   Der Editor soll den Text so setzen und umbrechen wie der PDF-Ausdruck. Ohne
+   diese Regeln greift Tailwinds prose-sm (14px, Zeilenabstand 1,71) und der Text
+   bricht an ganz anderer Stelle um als im Dokument. Die Werte sind 1:1 aus
+   RechnungPdfService übernommen:
+     - Schriftgröße  10pt  (Block-Default in addServiceRow)
+     - Zeilenabstand 1,3   (Paragraph.setLeading(fontSize * 1.3f))
+     - Absatzabstand 2pt   (Paragraph.setSpacingAfter(2f))
+
+   Die Breiten entsprechen den Content-Bereichen der PDF-Seite (1pt = 1,333px):
+     - Bezeichnungsspalte der Positionstabelle: 4.8 von 9.6 Spaltenanteilen ≈ 257pt
+     - Freitext über die volle Contentbreite ≈ 515pt
+   Beides sind Richtwerte für das Standard-Template. Ein Template mit abweichender
+   Tabellenbreite verschiebt den Umbruch entsprechend.
+   ======================================== */
+.doc-pdf-metrics .tiptap-editor-content {
+  font-size: 10pt;
+  line-height: 1.3;
+}
+
+.doc-pdf-metrics .tiptap-editor-content p {
+  margin: 0 0 2pt 0;
+}
+
+/* Tailwind-Preflight setzt global box-sizing: border-box, und der Editor bringt
+   12px Innenabstand je Seite mit (siehe .tiptap-editor-content oben sowie p-3 in
+   TiptapEditor.tsx). Ohne den Aufschlag von 24px wäre die Textbreite um genau
+   diesen Betrag zu schmal und der Umbruch wieder falsch. */
+.doc-pdf-metrics--spalte .tiptap-editor-content {
+  max-width: calc(257pt + 24px);
+}
+
+.doc-pdf-metrics--voll .tiptap-editor-content {
+  max-width: calc(515pt + 24px);
+}
+
+/* Kurze Hervorhebung der Stelle, die ein Rückgängig/Wiederholen verändert hat.
+   Gleicher Rose-Ring wie die aktive Karte (ring-2 ring-rose-500/30). */
+.verlauf-hervorgehoben {
+  box-shadow: 0 0 0 2px rgb(244 63 94 / 0.3);
+  border-radius: 0.75rem;
+  transition: box-shadow 200ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .verlauf-hervorgehoben {
+    transition: none;
+  }
+}
+
+/* ========================================
+   Zahlungsziel-Chip (geschützter Platzhalter im Textbaustein)
+   Styling bewusst per Attribut-Selektor statt class im HTML,
+   damit editor.getHTML() dem serialisierten Markup entspricht.
+   ======================================== */
+[data-zahlungsziel-chip] {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 6px;
+  background-color: #fff1f2; /* rose-50 */
+  border: 1px solid #fecdd3; /* rose-200 */
+  color: #be123c; /* rose-700 */
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+[data-zahlungsziel-chip]:hover {
+  background-color: #ffe4e6; /* rose-100 */
+  border-color: #fda4af; /* rose-300 */
 }
 
 /* ========================================
@@ -490,11 +572,6 @@ body {
   animation: tabBounce 0.3s ease-out;
 }
 
-/* Safe Area Padding for iOS */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
 /* Mobile Glassmorphism Nav */
 .mobile-glass-nav {
   background: rgba(255, 255, 255, 0.85);
@@ -545,4 +622,10 @@ body {
   left: var(--dropdown-left);
   width: var(--dropdown-width);
   z-index: 9999;
+}
+
+/* Dialoge bleiben unabhängig von schwebenden Meldungen im sichtbaren Fenster. */
+.fixed > [role="dialog"][aria-modal="true"],
+[data-app-overlay-container] > [role="dialog"][aria-modal="true"] {
+  max-height: calc(100dvh - 2rem);
 }

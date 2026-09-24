@@ -61,6 +61,8 @@ build_error_log.txt
 !.env.example
 src/main/resources/application-local.properties
 src/main/resources/keystore.p12
+# Lokale IDS-Vorschau-Warenkörbe (enthalten Projektnamen)
+**/ids-carts.local.json*
 
 ### Misc ###
 package-lock.json

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet, Zap, Bell } from 'lucide-react';
+import { useToast } from '../components/ui/toast';
+import { CalendarCheck, Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet, Bell } from 'lucide-react';
 
 interface TypBerechtigung {
     typ: string;
@@ -14,43 +15,49 @@ interface AbteilungBerechtigung {
     abteilungId: number;
     abteilungName: string;
     berechtigungen: TypBerechtigung[];
+    darfMonatAbschliessen: boolean;
     darfRechnungenGenehmigen: boolean;
     darfRechnungenSehen: boolean;
-    darfEcheckApp: boolean;
     darfFreigabeAnnahmePushen: boolean;
+    darfWebseitenAnfragenPushen: boolean;
 }
 
 const DOKUMENT_TYP_LABELS: Record<string, string> = {
     'ANFRAGE': 'Anfrage',
     'AUFTRAGSBESTAETIGUNG': 'Auftragsbestätigung',
     'LIEFERSCHEIN': 'Lieferschein',
-    'RECHNUNG': 'Rechnung',
-    'WERKSTOFFZEUGNIS': 'Werkstoffzeugnis'
+    'RECHNUNG': 'Rechnung'
 };
 
 export default function AbteilungBerechtigungenEditor() {
+    const toast = useToast();
+    // Stabile Referenz, damit loadBerechtigungen keine wechselnde Abhaengigkeit bekommt.
+    const toastRef = useRef(toast);
+    toastRef.current = toast;
+    const [loadError, setLoadError] = useState(false);
     const [berechtigungen, setBerechtigungen] = useState<AbteilungBerechtigung[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState<number | null>(null);
     const [saveSuccess, setSaveSuccess] = useState<number | null>(null);
 
-    const loadBerechtigungen = async () => {
+    const loadBerechtigungen = useCallback(async () => {
+        setLoading(true);
+        setLoadError(false);
         try {
             const res = await fetch('/api/abteilungen/berechtigungen');
-            if (res.ok) {
-                const data = await res.json();
-                setBerechtigungen(data);
-            }
+            if (!res.ok) throw new Error('Berechtigungen konnten nicht geladen werden.');
+            const data = await res.json();
+            setBerechtigungen(data.map((abt: AbteilungBerechtigung) => ({ ...abt, darfMonatAbschliessen: abt.darfMonatAbschliessen === true })));
         } catch (err) {
-            console.error('Fehler beim Laden:', err);
+            setLoadError(true);
+            toastRef.current.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht geladen werden.');
         }
         setLoading(false);
-    };
+    }, []);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         loadBerechtigungen();
-    }, []);
+    }, [loadBerechtigungen]);
 
     const handleToggle = (abteilungId: number, typ: string, field: 'darfSehen' | 'darfScannen') => {
         setBerechtigungen(prev => prev.map(abt => {
@@ -74,14 +81,14 @@ export default function AbteilungBerechtigungenEditor() {
         }));
     };
 
-    const handleToggleRechnungsFlag = (abteilungId: number, field: 'darfRechnungenGenehmigen' | 'darfRechnungenSehen' | 'darfEcheckApp') => {
+    const handleToggleRechnungsFlag = (abteilungId: number, field: 'darfRechnungenGenehmigen' | 'darfRechnungenSehen' | 'darfMonatAbschliessen') => {
         setBerechtigungen(prev => prev.map(abt => {
             if (abt.abteilungId !== abteilungId) return abt;
             return { ...abt, [field]: !abt[field] };
         }));
     };
 
-    const handleTogglePushFlag = (abteilungId: number, field: 'darfFreigabeAnnahmePushen') => {
+    const handleTogglePushFlag = (abteilungId: number, field: 'darfFreigabeAnnahmePushen' | 'darfWebseitenAnfragenPushen') => {
         setBerechtigungen(prev => prev.map(abt => {
             if (abt.abteilungId !== abteilungId) return abt;
             return { ...abt, [field]: !abt[field] };
@@ -96,18 +103,21 @@ export default function AbteilungBerechtigungenEditor() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     berechtigungen: abteilung.berechtigungen,
+                    darfMonatAbschliessen: abteilung.darfMonatAbschliessen,
                     darfRechnungenGenehmigen: abteilung.darfRechnungenGenehmigen,
                     darfRechnungenSehen: abteilung.darfRechnungenSehen,
-                    darfEcheckApp: abteilung.darfEcheckApp,
-                    darfFreigabeAnnahmePushen: abteilung.darfFreigabeAnnahmePushen
+                    darfFreigabeAnnahmePushen: abteilung.darfFreigabeAnnahmePushen,
+                    darfWebseitenAnfragenPushen: abteilung.darfWebseitenAnfragenPushen
                 })
             });
+            if (!res.ok) throw new Error(res.status === 403 ? 'Nur Administratoren dürfen Berechtigungen ändern.' : 'Berechtigungen konnten nicht gespeichert werden.');
             if (res.ok) {
+                toast.success('Berechtigungen gespeichert.');
                 setSaveSuccess(abteilung.abteilungId);
                 setTimeout(() => setSaveSuccess(null), 2000);
             }
         } catch (err) {
-            console.error('Fehler beim Speichern:', err);
+            toast.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht gespeichert werden.');
         }
         setSaving(null);
     };
@@ -153,6 +163,10 @@ export default function AbteilungBerechtigungenEditor() {
                 </div>
             </Card>
 
+            {loadError && <div role="alert" className="mb-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-rose-800">
+                Berechtigungen konnten nicht geladen werden.
+                <Button variant="outline" size="sm" onClick={loadBerechtigungen} className="ml-4">Erneut laden</Button>
+            </div>}
             {/* Berechtigungen per Abteilung */}
             <div className="space-y-6">
                 {berechtigungen.map(abt => (
@@ -178,6 +192,18 @@ export default function AbteilungBerechtigungenEditor() {
                                 )}
                                 {saveSuccess === abt.abteilungId ? 'Gespeichert' : 'Speichern'}
                             </Button>
+                        </div>
+                        <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input type="checkbox" checked={abt.darfMonatAbschliessen}
+                                    disabled={saving === abt.abteilungId}
+                                    onChange={() => handleToggleRechnungsFlag(abt.abteilungId, 'darfMonatAbschliessen')}
+                                    className="mt-1 h-4 w-4 shrink-0 accent-rose-600 focus:ring-2 focus:ring-rose-500" />
+                                <span>
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-900"><CalendarCheck aria-hidden="true" className="h-4 w-4 text-rose-600" />Monate abschließen und wieder öffnen</span>
+                                    <span className="mt-1 block text-sm text-slate-600">Mitarbeiter dieser Abteilung dürfen Monatsstände prüfen und festhalten. Gilt auch für Administratoren nur mit diesem Recht.</span>
+                                </span>
+                            </label>
                         </div>
 
                         {/* Matrix Table */}
@@ -274,30 +300,6 @@ export default function AbteilungBerechtigungenEditor() {
                                     </div>
                                 </label>
                             </div>
-
-                            {/* E-Check App (Mobil) */}
-                            <div className="mt-4 pt-4 border-t border-slate-200">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <Zap className="w-4 h-4 text-yellow-600" />
-                                    <h3 className="font-semibold text-slate-700">E-Check App (Mobile Zeiterfassung)</h3>
-                                </div>
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                    <button
-                                        onClick={() => handleToggleRechnungsFlag(abt.abteilungId, 'darfEcheckApp')}
-                                        className={`w-6 h-6 rounded-md border-2 transition-colors flex-shrink-0 ${
-                                            abt.darfEcheckApp
-                                                ? 'bg-yellow-500 border-yellow-500'
-                                                : 'bg-white border-slate-300 hover:border-slate-400'
-                                        }`}
-                                    >
-                                        {abt.darfEcheckApp && <Check className="w-full h-full text-white p-0.5" />}
-                                    </button>
-                                    <div>
-                                        <span className="text-sm font-medium text-slate-900">Darf E-Check App verwenden</span>
-                                        <p className="text-xs text-slate-500">Mitarbeiter dieser Abteilung sehen den E-Check Menüpunkt in der mobilen Zeiterfassungs-App</p>
-                                    </div>
-                                </label>
-                            </div>
                         </div>
 
                         {/* Push-Benachrichtigungen */}
@@ -325,12 +327,30 @@ export default function AbteilungBerechtigungenEditor() {
                                         </p>
                                     </div>
                                 </label>
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <button
+                                        onClick={() => handleTogglePushFlag(abt.abteilungId, 'darfWebseitenAnfragenPushen')}
+                                        className={`w-6 h-6 rounded-md border-2 transition-colors flex-shrink-0 ${
+                                            abt.darfWebseitenAnfragenPushen
+                                                ? 'bg-green-500 border-green-500'
+                                                : 'bg-white border-slate-300 hover:border-slate-400'
+                                        }`}
+                                    >
+                                        {abt.darfWebseitenAnfragenPushen && <Check className="w-full h-full text-white p-0.5" />}
+                                    </button>
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-900">Neue Anfrage über Webseite</span>
+                                        <p className="text-xs text-slate-500">
+                                            Push aufs Handy-Sperrbildschirm, sobald über das Webseiten-Formular eine neue Anfrage eingeht.
+                                        </p>
+                                    </div>
+                                </label>
                             </div>
                         </div>
                     </Card>
                 ))}
 
-                {berechtigungen.length === 0 && (
+                {!loadError && berechtigungen.length === 0 && (
                     <Card className="p-12 text-center">
                         <Users className="w-12 h-12 mx-auto text-slate-300 mb-4" />
                         <p className="text-slate-500">Keine Abteilungen vorhanden.</p>

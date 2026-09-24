@@ -3,6 +3,7 @@ import {
     dismissItem,
     dismissCategory,
     filterDismissed,
+    __resetDismissStateForTests,
     type NotificationSummary,
 } from './notification-helpers';
 
@@ -14,7 +15,9 @@ import {
  */
 describe('filterDismissed', () => {
     beforeEach(() => {
-        sessionStorage.clear();
+        // Helper hält die internen Storage-Keys privat — bei Key-Rename muss
+        // der Test nicht angefasst werden.
+        __resetDismissStateForTests();
     });
 
     const baseSummary: NotificationSummary = {
@@ -71,7 +74,8 @@ describe('filterDismissed', () => {
     });
 
     it('blendet einzelne Items per dismissItem unabhaengig von Kategorien aus', () => {
-        dismissItem('EMAIL', 'Mail A');
+        const emailItem = baseSummary.recentItems.find(i => i.type === 'EMAIL')!;
+        dismissItem(emailItem);
         const result = filterDismissed(baseSummary);
         expect(result.recentItems.find(i => i.title === 'Mail A')).toBeUndefined();
         // Kategorie bleibt sichtbar, weil nur ein Item dismissed wurde
@@ -95,8 +99,7 @@ describe('filterDismissed', () => {
                 { type: 'URLAUBSANTRAG', title: 'URLAUB: Erika Mustermann', subtitle: '03.06.', timestamp: '2026-05-07T09:00', link: '/urlaubsantraege?antragId=2' },
             ],
         };
-        dismissItem('URLAUBSANTRAG', 'URLAUB: Max Mustermann');
-        dismissItem('URLAUBSANTRAG', 'URLAUB: Erika Mustermann');
+        summary.recentItems.forEach(item => dismissItem(item));
         const result = filterDismissed(summary);
         expect(result.totalCount).toBe(0);
         expect(result.categories).toHaveLength(0);
@@ -114,7 +117,7 @@ describe('filterDismissed', () => {
                 { type: 'URLAUBSANTRAG', title: 'URLAUB: Erika Mustermann', subtitle: '03.06.', timestamp: '2026-05-07T09:00', link: '/urlaubsantraege?antragId=2' },
             ],
         };
-        dismissItem('URLAUBSANTRAG', 'URLAUB: Max Mustermann');
+        dismissItem(summary.recentItems[0]);
         const result = filterDismissed(summary);
         expect(result.categories).toHaveLength(1);
         expect(result.recentItems).toHaveLength(1);

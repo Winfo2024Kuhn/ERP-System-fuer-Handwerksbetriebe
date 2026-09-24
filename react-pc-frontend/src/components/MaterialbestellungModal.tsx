@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
     Briefcase,
     Loader2,
@@ -13,13 +13,19 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { DecimalInput } from './ui/decimal-input';
+import { formatDecimalInput } from '../lib/numberInput';
+import type { BedarfResponse, Einheit } from '../features/einkauf/types';
+import { nutztEchtesBackend } from '../features/einkauf/originalBedarfApi';
+import { neueOriginalPosition as neuePosition, originalEinheit, originalZeugnis, originalBeschaffungsdetails, originalPositionAusBedarf, originalMaterialPayload, speichereOriginalMaterial, type OriginalMaterialPosition as Position } from '../features/einkauf/originalMaterialApi';
+import { materialPositionAusArtikel, MATERIAL_EINHEITEN as EINHEITEN, MATERIAL_ZEUGNISSE as ZEUGNIS_OPTIONEN } from '../features/einkauf/materialbedarfAdapter';
 import { Select } from './ui/select-custom';
 import { useToast } from './ui/toast';
 import { cn } from '../lib/utils';
+import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 import { ProjektSearchModal } from './ProjektSearchModal';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { ArtikelSearchModal, type ArtikelSuchErgebnis } from './ArtikelSearchModal';
-import { KategoriePicker, type KategorieFlach } from './KategoriePicker';
 import { SonderzuschnittPicker, type SonderzuschnittAuswahl } from './SonderzuschnittPicker';
 import { Scissors } from 'lucide-react';
 
@@ -32,88 +38,9 @@ interface ProjektRef {
     excKlasse?: string | null;
 }
 
-const ZEUGNIS_OPTIONEN = [
-    { value: '', label: '— Kein Zeugnis —' },
-    { value: 'WZ_2_1', label: 'Werkszeugnis 2.1' },
-    { value: 'WZ_2_2', label: 'Werkszeugnis 2.2' },
-    { value: 'APZ_3_1', label: 'Abnahmeprüfzeugnis 3.1' },
-    { value: 'APZ_3_2', label: 'Abnahmeprüfzeugnis 3.2' },
-    { value: 'CE_KONFORMITAET', label: 'CE-Kennzeichnung' },
-];
-
-const EINHEITEN = [
-    { value: 'Stück', label: 'Stück' },
-    { value: 'm', label: 'm (Meter)' },
-    { value: 'kg', label: 'kg' },
-    { value: 'l', label: 'l' },
-    { value: 'Paar', label: 'Paar' },
-    { value: 'Paket', label: 'Paket' },
-];
-
 const EXC_LABEL: Record<string, string> = {
     EXC_1: 'EXC 1', EXC_2: 'EXC 2', EXC_3: 'EXC 3', EXC_4: 'EXC 4',
 };
-
-// ========= Position-Row-Typ =========
-interface Position {
-    clientId: string;                   // Lokale ID für Key
-    originalId?: number;                // Falls gesetzt: Ziel für PUT (Batch-Edit)
-    artikelId: number | null;           // Wenn gesetzt: Stammartikel
-    produktname: string;                // Freitext oder aus Artikel übernommen
-    produkttext: string;
-    werkstoffName?: string;
-    externeArtikelnummer?: string;
-    kategorieId: number | null;
-    menge: string;
-    einheit: string;
-    // Zuschnitt: 90° (Standard) vs. Fixzuschnitt vs. Sonderzuschnitt (mit Winkeln).
-    // Sonderzuschnitt impliziert Fixzuschnitt (weil Länge bekannt sein muss).
-    fixzuschnitt: boolean;
-    sonderzuschnitt: boolean;
-    fixmassMm: string;                  // in mm, als String wegen Input
-    schnittbildId: number | null;
-    schnittbildBildUrl?: string | null;
-    schnittAchseId: number | null;
-    schnittAchseBildUrl?: string | null;
-    winkelLinks: string;
-    winkelRechts: string;
-    zeugnis: string;
-    zeugnisVomSystem: string;
-    kommentar: string;
-    // Per-Position-Kontext (nur Batch-Edit): behält Original-Projekt/-Lieferant je Zeile
-    perProjektId?: number | null;
-    perProjektName?: string | null;
-    perProjektNummer?: string | null;
-    perKundenName?: string | null;
-    perExcKlasse?: string | null;
-    perLieferantId?: number | null;
-    perLieferantName?: string | null;
-    exportiertAm?: string | null;       // falls gesperrt
-}
-
-const neuePosition = (): Position => ({
-    clientId: `p-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    artikelId: null,
-    produktname: '',
-    produkttext: '',
-    werkstoffName: undefined,
-    externeArtikelnummer: undefined,
-    kategorieId: null,
-    menge: '1',
-    einheit: 'Stück',
-    fixzuschnitt: false,
-    sonderzuschnitt: false,
-    fixmassMm: '',
-    schnittbildId: null,
-    schnittbildBildUrl: null,
-    schnittAchseId: null,
-    schnittAchseBildUrl: null,
-    winkelLinks: '',
-    winkelRechts: '',
-    zeugnis: '',
-    zeugnisVomSystem: '',
-    kommentar: '',
-});
 
 // ========= Props =========
 /**
@@ -122,6 +49,10 @@ const neuePosition = (): Position => ({
  */
 export interface EditPosition {
     id: number;
+    bedarf?: BedarfResponse;
+    version?: number;
+    schnittForm?: string | null;
+    schnittAchseId?: number | null;
     artikelId?: number | null;
     externeArtikelnummer?: string | null;
     produktname?: string | null;
@@ -134,8 +65,8 @@ export interface EditPosition {
     schnittbildId?: number | null;
     schnittbildBildUrl?: string | null;
     schnittAchseBildUrl?: string | null;
-    anschnittWinkelLinks?: number | null;
-    anschnittWinkelRechts?: number | null;
+    anschnittWinkelLinks?: number | string | null;
+    anschnittWinkelRechts?: number | string | null;
     zeugnisAnforderung?: string | null;
     kommentar?: string | null;
     projektId?: number | null;
@@ -184,7 +115,6 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     const headerKontextVerstecken = projektSperren || (editPosition != null && !istBatchEditModus);
 
     // Stammdaten
-    const [kategorien, setKategorien] = useState<KategorieFlach[]>([]);
 
     // Gemeinsame Auswahl
     const [projekt, setProjekt] = useState<ProjektRef | null>(initialProjekt ?? null);
@@ -200,12 +130,13 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     const [artikelMultiModalOffen, setArtikelMultiModalOffen] = useState(false);
 
     const [saving, setSaving] = useState(false);
+    const [fehler, setFehler] = useState('');
 
     // Reset beim Öffnen
     useEffect(() => {
         if (!isOpen) return;
+        setFehler('');
 
-        fetch('/api/kategorien').then(r => r.json()).then(setKategorien).catch(console.error);
 
         if (istBatchEditModus && editPositions) {
             // Projekt/Lieferant-Header im Batch-Modus ungenutzt — Kontext ist per-Position
@@ -220,37 +151,43 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 produkttext: ep.produkttext ?? '',
                 werkstoffName: ep.werkstoffName ?? undefined,
                 kategorieId: ep.kategorieId ?? null,
-                menge: ep.menge != null ? String(ep.menge) : '1',
-                einheit: ep.einheit || 'Stück',
+                menge: ep.menge != null ? String(ep.menge).replace('.', ',') : '',
+                einheit: originalEinheit(ep.einheit),
                 fixzuschnitt: ep.fixmassMm != null,
                 sonderzuschnitt: ep.schnittbildId != null,
-                fixmassMm: ep.fixmassMm != null ? String(ep.fixmassMm) : '',
+                fixmassMm: ep.fixmassMm != null ? formatDecimalInput(ep.fixmassMm) : '',
                 schnittbildId: ep.schnittbildId ?? null,
+                schnittAchseId: ep.schnittAchseId ?? null,
+                schnittForm: ep.schnittForm ?? '',
                 schnittbildBildUrl: ep.schnittbildBildUrl ?? null,
                 schnittAchseBildUrl: ep.schnittAchseBildUrl ?? null,
-                winkelLinks: ep.anschnittWinkelLinks != null ? String(ep.anschnittWinkelLinks) : '',
-                winkelRechts: ep.anschnittWinkelRechts != null ? String(ep.anschnittWinkelRechts) : '',
-                zeugnis: ep.zeugnisAnforderung ?? '',
+                winkelLinks: ep.anschnittWinkelLinks != null ? String(ep.anschnittWinkelLinks).replace('°', '').replace('.', ',') : '',
+                winkelRechts: ep.anschnittWinkelRechts != null ? String(ep.anschnittWinkelRechts).replace('°', '').replace('.', ',') : '',
+                zeugnis: originalZeugnis(ep.zeugnisAnforderung),
                 kommentar: ep.kommentar ?? '',
-                perProjektId: ep.projektId ?? null,
+                ...(ep.bedarf ? originalPositionAusBedarf(ep.bedarf) : {}),
+                bedarf: ep.bedarf,
+                perProjektId: ep.projektId ?? ep.bedarf?.liefergruppe.projektId ?? null,
                 perProjektName: ep.projektName ?? null,
                 perProjektNummer: ep.projektNummer ?? null,
                 perKundenName: ep.kundenName ?? null,
                 perExcKlasse: ep.excKlasse ?? null,
-                perLieferantId: ep.lieferantId ?? null,
+                perLieferantId: ep.lieferantId ?? originalBeschaffungsdetails(ep.bedarf)?.lieferantId ?? null,
                 perLieferantName: ep.lieferantName ?? null,
                 exportiertAm: ep.exportiertAm ?? null,
             })));
         } else if (editPosition) {
-            setProjekt(editPosition.projektId ? {
-                id: editPosition.projektId,
+            const projektId = editPosition.projektId ?? editPosition.bedarf?.liefergruppe.projektId;
+            const lieferantId = editPosition.lieferantId ?? originalBeschaffungsdetails(editPosition.bedarf)?.lieferantId;
+            setProjekt(projektId ? {
+                id: projektId,
                 bauvorhaben: editPosition.projektName ?? undefined,
                 auftragsnummer: editPosition.projektNummer ?? undefined,
                 kunde: editPosition.kundenName ?? undefined,
                 excKlasse: editPosition.excKlasse ?? null,
             } : null);
-            setLieferant(editPosition.lieferantId ? {
-                id: editPosition.lieferantId,
+            setLieferant(lieferantId ? {
+                id: lieferantId,
                 lieferantenname: editPosition.lieferantName ?? '',
             } as LieferantSuchErgebnis : null);
             setPositionen([{
@@ -262,18 +199,22 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 produkttext: editPosition.produkttext ?? '',
                 werkstoffName: editPosition.werkstoffName ?? undefined,
                 kategorieId: editPosition.kategorieId ?? null,
-                menge: editPosition.menge != null ? String(editPosition.menge) : '1',
-                einheit: editPosition.einheit || 'Stück',
+                menge: editPosition.menge != null ? String(editPosition.menge).replace('.', ',') : '',
+                einheit: originalEinheit(editPosition.einheit),
                 fixzuschnitt: editPosition.fixmassMm != null,
                 sonderzuschnitt: editPosition.schnittbildId != null,
-                fixmassMm: editPosition.fixmassMm != null ? String(editPosition.fixmassMm) : '',
+                fixmassMm: editPosition.fixmassMm != null ? formatDecimalInput(editPosition.fixmassMm) : '',
                 schnittbildId: editPosition.schnittbildId ?? null,
+                schnittAchseId: editPosition.schnittAchseId ?? null,
+                schnittForm: editPosition.schnittForm ?? '',
                 schnittbildBildUrl: editPosition.schnittbildBildUrl ?? null,
                 schnittAchseBildUrl: editPosition.schnittAchseBildUrl ?? null,
-                winkelLinks: editPosition.anschnittWinkelLinks != null ? String(editPosition.anschnittWinkelLinks) : '',
-                winkelRechts: editPosition.anschnittWinkelRechts != null ? String(editPosition.anschnittWinkelRechts) : '',
-                zeugnis: editPosition.zeugnisAnforderung ?? '',
+                winkelLinks: editPosition.anschnittWinkelLinks != null ? String(editPosition.anschnittWinkelLinks).replace('°', '').replace('.', ',') : '',
+                winkelRechts: editPosition.anschnittWinkelRechts != null ? String(editPosition.anschnittWinkelRechts).replace('°', '').replace('.', ',') : '',
+                zeugnis: originalZeugnis(editPosition.zeugnisAnforderung),
                 kommentar: editPosition.kommentar ?? '',
+                ...(editPosition.bedarf ? originalPositionAusBedarf(editPosition.bedarf) : {}),
+                bedarf: editPosition.bedarf,
             }]);
         } else {
             setProjekt(initialProjekt ?? null);
@@ -281,39 +222,6 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             setPositionen([neuePosition()]);
         }
     }, [isOpen, initialProjekt, editPosition, editPositions, istBatchEditModus]);
-
-    // Norm-Vorschlag pro Position nachziehen, wenn Projekt oder Kategorie sich ändert
-    const ladeZeugnisVorschlag = useCallback(async (kategorieId: number, excKlasse: string) => {
-        try {
-            const res = await fetch(`/api/bestellungen/zeugnis-default?kategorieId=${kategorieId}&excKlasse=${excKlasse}`);
-            if (!res.ok) return '';
-            const data = await res.json();
-            return (data?.zeugnisTyp ?? '') as string;
-        } catch {
-            return '';
-        }
-    }, []);
-
-    useEffect(() => {
-        if (!projekt?.excKlasse) return;
-        const excKlasse = projekt.excKlasse;
-        positionen.forEach(pos => {
-            if (!pos.kategorieId) return;
-            ladeZeugnisVorschlag(pos.kategorieId, excKlasse).then(vorschlag => {
-                setPositionen(prev => prev.map(p => {
-                    if (p.clientId !== pos.clientId) return p;
-                    // Nur setzen, wenn User noch nicht manuell etwas anderes gewählt hat
-                    const userHatNichtsGewaehlt = p.zeugnis === '' || p.zeugnis === p.zeugnisVomSystem;
-                    return {
-                        ...p,
-                        zeugnisVomSystem: vorschlag,
-                        zeugnis: userHatNichtsGewaehlt ? vorschlag : p.zeugnis,
-                    };
-                }));
-            });
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [projekt?.id, projekt?.excKlasse, positionen.map(p => `${p.clientId}:${p.kategorieId}`).join(',')]);
 
     // Handlers
     const addLeerePosition = () => setPositionen(prev => [...prev, neuePosition()]);
@@ -327,15 +235,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     };
 
     const artikelUebernehmen = (clientId: string, a: ArtikelSuchErgebnis) => {
-        updatePosition(clientId, {
-            artikelId: a.id,
-            produktname: a.produktname || '',
-            produkttext: a.produkttext || '',
-            werkstoffName: a.werkstoffName || undefined,
-            externeArtikelnummer: a.externeArtikelnummer || undefined,
-            kategorieId: a.kategorieId ?? null,
-            fixmassMm: a.fixmassMm ? String(a.fixmassMm) : '',
-        });
+        updatePosition(clientId, materialPositionAusArtikel(a));
     };
 
     const artikelMultiUebernehmen = (ausgewaehlt: ArtikelSuchErgebnis[]) => {
@@ -345,195 +245,33 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
             const first = prev[0];
             const istErsteLeer = first && !first.artikelId && !first.produktname.trim();
             const rest = istErsteLeer ? prev.slice(1) : prev;
-            const neu: Position[] = ausgewaehlt.map(a => ({
-                ...neuePosition(),
-                artikelId: a.id,
-                produktname: a.produktname || '',
-                produkttext: a.produkttext || '',
-                werkstoffName: a.werkstoffName || undefined,
-                externeArtikelnummer: a.externeArtikelnummer || undefined,
-                kategorieId: a.kategorieId ?? null,
-                fixmassMm: a.fixmassMm ? String(a.fixmassMm) : '',
-            }));
+            const neu: Position[] = ausgewaehlt.map(a => ({ ...neuePosition(), ...materialPositionAusArtikel(a) }));
             return [...rest, ...neu];
         });
     };
 
-    /** Extrahiert die Schnitt-Daten in das Server-Format. Leere Winkel = 90°. */
-    const schnittPayload = (pos: Position) => {
-        const fixmass = pos.fixzuschnitt && pos.fixmassMm ? Number(pos.fixmassMm) : null;
-        if (!pos.sonderzuschnitt || pos.schnittbildId == null) {
-            return {
-                fixmassMm: fixmass,
-                schnittbildId: null,
-                anschnittWinkelLinks: null,
-                anschnittWinkelRechts: null,
-            };
-        }
-        const links = pos.winkelLinks.trim() === '' ? 90 : Number(pos.winkelLinks);
-        const rechts = pos.winkelRechts.trim() === '' ? 90 : Number(pos.winkelRechts);
-        return {
-            fixmassMm: fixmass,
-            schnittbildId: pos.schnittbildId,
-            anschnittWinkelLinks: Number.isNaN(links) ? 90 : links,
-            anschnittWinkelRechts: Number.isNaN(rechts) ? 90 : rechts,
-        };
-    };
-
     const speichern = async () => {
-        // Batch-Edit: PUT pro Position (jede Position behält ihren Projekt/Lieferant-Kontext)
-        if (istBatchEditModus) {
-            const zuSpeichern = positionen.filter(p =>
-                p.originalId != null
-                && !p.exportiertAm
-                && p.produktname.trim()
-                && p.menge
-                && !isNaN(Number(p.menge))
-            );
-            if (zuSpeichern.length === 0) {
-                toast.warning('Keine gültigen Positionen zum Speichern');
-                return;
+        const offen = positionen.filter(pos => !pos.exportiertAm);
+        let payloads: ReturnType<typeof originalMaterialPayload>[];
+        try {
+            if (!offen.length) throw new Error('Keine bearbeitbaren Positionen vorhanden.');
+            payloads = offen.map(pos => originalMaterialPayload(pos,
+                istBatchEditModus ? pos.perProjektId ?? null : projekt?.id ?? null,
+                istBatchEditModus ? pos.perLieferantId ?? null : lieferant?.id ?? null));
+        } catch (error) { const message = error instanceof Error ? error.message : 'Bitte alle Positionen prüfen.'; setFehler(message); toast.error(message); return; }
+        setSaving(true); setFehler('');
+        const gespeichert = new Set<string>();
+        try {
+            for (let index = 0; index < offen.length; index++) {
+                await speichereOriginalMaterial(offen[index], payloads[index]);
+                gespeichert.add(offen[index].clientId);
             }
-
-            setSaving(true);
-            let erfolg = 0;
-            let fehler = 0;
-            let gesperrt = 0;
-
-            for (const pos of zuSpeichern) {
-                const payload = {
-                    projektId: pos.perProjektId ?? null,
-                    lieferantId: pos.perLieferantId ?? null,
-                    kategorieId: pos.kategorieId,
-                    artikelId: pos.artikelId,
-                    produktname: pos.produktname.trim(),
-                    produkttext: pos.produkttext.trim() || null,
-                    menge: Number(pos.menge),
-                    einheit: pos.einheit.trim() || 'Stück',
-                    ...schnittPayload(pos),
-                    zeugnisAnforderung: pos.zeugnis || null,
-                    kommentar: pos.kommentar.trim() || null,
-                };
-                try {
-                    const res = await fetch(`/api/bestellungen/${pos.originalId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload),
-                    });
-                    if (res.ok) erfolg++;
-                    else if (res.status === 409) gesperrt++;
-                    else fehler++;
-                } catch {
-                    fehler++;
-                }
-            }
-
-            setSaving(false);
-
-            if (erfolg > 0 && fehler === 0 && gesperrt === 0) {
-                toast.success(`${erfolg} Position${erfolg > 1 ? 'en' : ''} gespeichert`);
-                onSuccess?.();
-                onClose();
-            } else if (erfolg > 0) {
-                const teile: string[] = [`${erfolg} gespeichert`];
-                if (gesperrt > 0) teile.push(`${gesperrt} gesperrt (bereits exportiert)`);
-                if (fehler > 0) teile.push(`${fehler} fehlgeschlagen`);
-                toast.warning(teile.join(', '));
-                onSuccess?.();
-            } else if (gesperrt > 0 && fehler === 0) {
-                toast.error(`Alle ${gesperrt} Positionen bereits exportiert`);
-            } else {
-                toast.error('Speichern fehlgeschlagen');
-            }
-            return;
-        }
-
-        if (!headerKontextVerstecken && !lieferant) { toast.warning('Bitte Lieferanten auswählen'); return; }
-        const zuSpeichern = positionen.filter(p => p.produktname.trim() && p.menge && !isNaN(Number(p.menge)));
-        if (zuSpeichern.length === 0) { toast.warning('Bitte mindestens eine Position ausfüllen'); return; }
-
-        setSaving(true);
-
-        // Edit-Modus: PUT für genau eine Position
-        if (istEditModus && editPosition) {
-            const pos = zuSpeichern[0];
-            const payload = {
-                projektId: projekt?.id ?? null,
-                lieferantId: lieferant?.id ?? null,
-                kategorieId: pos.kategorieId,
-                artikelId: pos.artikelId,
-                produktname: pos.produktname.trim(),
-                produkttext: pos.produkttext.trim() || null,
-                menge: Number(pos.menge),
-                einheit: pos.einheit.trim() || 'Stück',
-                ...schnittPayload(pos),
-                zeugnisAnforderung: pos.zeugnis || null,
-                kommentar: pos.kommentar.trim() || null,
-            };
-            try {
-                const res = await fetch(`/api/bestellungen/${editPosition.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                setSaving(false);
-                if (res.ok) {
-                    toast.success('Änderungen gespeichert');
-                    onSuccess?.();
-                    onClose();
-                } else if (res.status === 409) {
-                    toast.error(res.headers.get('X-Error-Reason') || 'Position wurde bereits exportiert');
-                } else {
-                    toast.error('Speichern fehlgeschlagen');
-                }
-            } catch {
-                setSaving(false);
-                toast.error('Speichern fehlgeschlagen');
-            }
-            return;
-        }
-
-        // Standard-Modus: POST je Position
-        let erfolg = 0;
-        let fehler = 0;
-
-        for (const pos of zuSpeichern) {
-            try {
-                const payload = {
-                    projektId: projekt?.id ?? null,
-                    lieferantId: lieferant?.id ?? null,
-                    kategorieId: pos.kategorieId,
-                    artikelId: pos.artikelId,
-                    produktname: pos.produktname.trim(),
-                    produkttext: pos.produkttext.trim() || null,
-                    menge: Number(pos.menge),
-                    einheit: pos.einheit.trim() || 'Stück',
-                    ...schnittPayload(pos),
-                    zeugnisAnforderung: pos.zeugnis || null,
-                    kommentar: pos.kommentar.trim() || null,
-                };
-                const res = await fetch('/api/bestellungen/manuell', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                if (res.ok) erfolg++; else fehler++;
-            } catch {
-                fehler++;
-            }
-        }
-
-        setSaving(false);
-        if (erfolg > 0 && fehler === 0) {
-            toast.success(`${erfolg} Position${erfolg > 1 ? 'en' : ''} gespeichert`);
-            onSuccess?.();
-            onClose();
-        } else if (erfolg > 0) {
-            toast.warning(`${erfolg} gespeichert, ${fehler} fehlgeschlagen`);
-            onSuccess?.();
-        } else {
-            toast.error('Speichern fehlgeschlagen');
-        }
+            toast.success('Materialbedarf gespeichert.'); onSuccess?.(); onClose();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Materialbedarf konnte nicht gespeichert werden.';
+            setFehler(message); toast.error(message);
+            if (gespeichert.size) setPositionen(vorher => vorher.filter(pos => !gespeichert.has(pos.clientId)));
+        } finally { setSaving(false); }
     };
 
     if (!isOpen) return null;
@@ -573,7 +311,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                         <Button variant="ghost" onClick={onClose} disabled={saving}>Abbrechen</Button>
                         <Button
                             onClick={speichern}
-                            disabled={saving || (!istBatchEditModus && !headerKontextVerstecken && !lieferant)}
+                            disabled={saving || (!nutztEchtesBackend && !istBatchEditModus && !headerKontextVerstecken && !lieferant)}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
                             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
@@ -688,6 +426,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 </div>
                 )}
 
+                {fehler && <p role="alert" className="px-6 pt-3 text-sm text-rose-700">{fehler}</p>}
                 {/* Positionen-Bereich */}
                 <div className="flex-1 overflow-auto px-6 py-4">
                     <div className="flex items-center justify-between mb-3">
@@ -721,13 +460,12 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                                 key={pos.clientId}
                                 index={idx}
                                 position={pos}
-                                kategorien={kategorien}
                                 onUpdate={patch => updatePosition(pos.clientId, patch)}
                                 onRemove={() => entfernePosition(pos.clientId)}
                                 onArtikelSuchen={() => setArtikelModalFuerZeile(pos.clientId)}
                                 showRemove={!istEditModus}
                                 showKontext={istBatchEditModus}
-                                disabled={istBatchEditModus && pos.exportiertAm != null}
+                                disabled={saving || (istBatchEditModus && pos.exportiertAm != null)}
                             />
                         ))}
                     </div>
@@ -789,7 +527,6 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
 interface PositionRowProps {
     index: number;
     position: Position;
-    kategorien: KategorieFlach[];
     onUpdate: (patch: Partial<Position>) => void;
     onRemove: () => void;
     onArtikelSuchen: () => void;
@@ -801,7 +538,7 @@ interface PositionRowProps {
 }
 
 const PositionRow: React.FC<PositionRowProps> = ({
-    index, position, kategorien, onUpdate, onRemove, onArtikelSuchen, showRemove = true,
+    index, position, onUpdate, onRemove, onArtikelSuchen, showRemove = true,
     showKontext = false, disabled = false,
 }) => {
     return (
@@ -901,6 +638,7 @@ const PositionRow: React.FC<PositionRowProps> = ({
                         <div className="col-span-12 md:col-span-7">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Produktname *</label>
                             <Input
+                                aria-label={`Produktname Position ${index + 1}`}
                                 value={position.produktname}
                                 onChange={e => onUpdate({ produktname: e.target.value })}
                                 placeholder="z. B. IPE 200, S235"
@@ -917,30 +655,21 @@ const PositionRow: React.FC<PositionRowProps> = ({
                     <div className="grid grid-cols-12 gap-3">
                         <div className="col-span-6 md:col-span-3">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Menge *</label>
-                            <Input
-                                type="number"
+                            <DecimalInput
+                                aria-label={`Menge Position ${index + 1}`}
                                 value={position.menge}
-                                onChange={e => onUpdate({ menge: e.target.value })}
+                                onChange={value => onUpdate({ menge: value })}
                                 placeholder="1"
-                                min="0"
-                                step="any"
+
                             />
                         </div>
                         <div className="col-span-6 md:col-span-3">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Einheit</label>
                             <Select
+                                aria-label={`Einheit Position ${index + 1}`}
                                 value={position.einheit}
-                                onChange={v => onUpdate({ einheit: v })}
+                                onChange={v => onUpdate({ einheit: v as Einheit })}
                                 options={EINHEITEN}
-                            />
-                        </div>
-                        <div className="col-span-12 md:col-span-6">
-                            <label className="block text-xs font-medium text-slate-500 mb-1">Warengruppe</label>
-                            <KategoriePicker
-                                kategorien={kategorien}
-                                value={position.kategorieId}
-                                onChange={(id) => onUpdate({ kategorieId: id })}
-                                compact
                             />
                         </div>
                     </div>
@@ -960,10 +689,13 @@ const PositionRow: React.FC<PositionRowProps> = ({
                                 )}
                             </label>
                             <Select
+                                aria-label={`Zeugnis Position ${index + 1}`}
                                 value={position.zeugnis}
-                                onChange={v => onUpdate({ zeugnis: v })}
+                                onChange={v => onUpdate({ zeugnis: v, zeugnisBestaetigt: false })}
                                 options={ZEUGNIS_OPTIONEN}
                             />
+                            {position.zeugnis && <label className="mt-2 flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={position.zeugnisBestaetigt} onChange={event => onUpdate({ zeugnisBestaetigt: event.target.checked })} className="mt-0.5 rounded accent-rose-600" />Zeugnisanforderung fachlich geprüft</label>}
+
                         </div>
                         <div className="col-span-12 md:col-span-4">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Produktbeschreibung</label>
@@ -1023,6 +755,7 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                 fixmassMm: '',
                 sonderzuschnitt: false,
                 schnittbildId: null,
+                schnittForm: '',
                 schnittbildBildUrl: null,
                 schnittAchseId: null,
                 schnittAchseBildUrl: null,
@@ -1041,6 +774,7 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
             onUpdate({
                 sonderzuschnitt: false,
                 schnittbildId: null,
+                schnittForm: '',
                 schnittbildBildUrl: null,
                 schnittAchseId: null,
                 schnittAchseBildUrl: null,
@@ -1055,11 +789,12 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
             sonderzuschnitt: true,
             fixzuschnitt: true,
             schnittbildId: auswahl.schnittbildId,
+            schnittForm: auswahl.schnittForm ?? '',
             schnittbildBildUrl: auswahl.schnittbildBildUrl,
             schnittAchseId: auswahl.schnittAchseId,
             schnittAchseBildUrl: auswahl.schnittAchseBildUrl,
-            winkelLinks: String(auswahl.anschnittWinkelLinks),
-            winkelRechts: String(auswahl.anschnittWinkelRechts),
+            winkelLinks: formatDecimalInput(auswahl.anschnittWinkelLinks),
+            winkelRechts: formatDecimalInput(auswahl.anschnittWinkelRechts),
         });
     };
 
@@ -1111,13 +846,12 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                             <Ruler className="w-3 h-3" />
                             Fixmaß pro Stück (mm) *
                         </label>
-                        <Input
-                            type="number"
+                        <DecimalInput
+                            aria-label="Fixmaß pro Stück (mm)"
                             value={position.fixmassMm}
-                            onChange={(e) => onUpdate({ fixmassMm: e.target.value })}
+                            onChange={value => onUpdate({ fixmassMm: value })}
                             placeholder="z. B. 6000"
-                            min="0"
-                            step="1"
+
                             disabled={disabled}
                         />
                     </div>
@@ -1132,14 +866,14 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                 {position.schnittAchseBildUrl && (
                                     <img
-                                        src={position.schnittAchseBildUrl}
+                                        src={toSafeResourceUrl(position.schnittAchseBildUrl) ?? undefined}
                                         alt="Achse"
                                         className="w-6 h-6 object-contain bg-white border border-rose-200 rounded-lg"
                                     />
                                 )}
                                 {position.schnittbildBildUrl && (
                                     <img
-                                        src={position.schnittbildBildUrl}
+                                        src={toSafeResourceUrl(position.schnittbildBildUrl) ?? undefined}
                                         alt="Schnittbild"
                                         className="w-6 h-6 object-contain bg-white border border-rose-200 rounded-lg"
                                     />
@@ -1205,8 +939,8 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                               schnittbildBildUrl: position.schnittbildBildUrl ?? undefined,
                               schnittAchseId: position.schnittAchseId ?? undefined,
                               schnittAchseBildUrl: position.schnittAchseBildUrl ?? undefined,
-                              anschnittWinkelLinks: position.winkelLinks ? Number(position.winkelLinks) : undefined,
-                              anschnittWinkelRechts: position.winkelRechts ? Number(position.winkelRechts) : undefined,
+                              anschnittWinkelLinks: position.winkelLinks ? Number(position.winkelLinks.replace(',', '.')) : undefined,
+                              anschnittWinkelRechts: position.winkelRechts ? Number(position.winkelRechts.replace(',', '.')) : undefined,
                           }
                         : null
                 }

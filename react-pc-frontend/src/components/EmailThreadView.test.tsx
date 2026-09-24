@@ -83,6 +83,22 @@ describe('EmailThreadView', () => {
         expect(screen.getByText(/Hallo, ich hätte Interesse/)).toBeInTheDocument();
     });
 
+    it('bildet den kompakten Ausschnitt aus dem neuen Inhalt statt einem bereits zitierten Server-Snippet', () => {
+        const thread = makeThread({ focusedEmailId: 0 });
+        thread.emails[0].snippet = 'Alter Text mit alter Signatur';
+        thread.emails[0].htmlBody = '<p>Passt, danke.</p><p>Aktuelle Signatur</p>'
+            + '<div>Am 8. September 2026 schrieb test@example.com:</div>'
+            + '<blockquote type="cite">Alter Text mit alter Signatur</blockquote><p>Neue Ergänzung</p>';
+        render(<EmailThreadView thread={thread} />);
+        const bubble = screen.getByRole('button', { name: 'Nachricht von Max Mustermann öffnen' });
+        expect(bubble).toHaveTextContent('Passt, danke. Aktuelle Signatur Neue Ergänzung');
+        expect(bubble).not.toHaveTextContent('Alter Text');
+        expect(bubble).not.toHaveTextContent('Am 8. September');
+        fireEvent.keyDown(bubble, { key: ' ' });
+        expect(screen.getByRole('button', { name: 'Nachricht von Max Mustermann einklappen' }))
+            .toHaveAttribute('aria-expanded', 'true');
+    });
+
     it('fokussierte E-Mail ist automatisch expandiert', () => {
         const thread = makeThread();
         render(<EmailThreadView thread={thread} />);
@@ -212,6 +228,101 @@ describe('EmailThreadView', () => {
         // Dateiname darf nur einmal erscheinen (Dedup greift)
         const chips = screen.queryAllByText('signatur-logo.png');
         expect(chips.length).toBe(1);
+    });
+
+    // Regression: Ein erneut gesendetes Dokument (gleicher Name + Größe) wurde
+    // von der thread-weiten Dubletten-Filterung ausgeblendet. Der Nutzer sah
+    // seinen Anhang nach dem Antworten nicht mehr und hielt den Versand für
+    // fehlgeschlagen.
+    it('zeigt ein erneut gesendetes Dokument in jeder Nachricht an', () => {
+        const pdfAttachment = {
+            id: 40,
+            originalFilename: 'zeichnungsentwurf.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 245000,
+            inline: false,
+        };
+        const thread = makeThread({
+            focusedEmailId: 2,
+            emails: [
+                {
+                    id: 1,
+                    subject: 'Zeichnungsentwurf',
+                    fromAddress: 'a@example.com',
+                    recipient: 'b@example.com',
+                    sentAt: '2026-03-10T10:00:00',
+                    direction: 'OUT',
+                    snippet: 'Im Anhang der Entwurf.',
+                    attachments: [pdfAttachment],
+                },
+                {
+                    id: 2,
+                    subject: 'Zeichnungsentwurf',
+                    fromAddress: 'a@example.com',
+                    recipient: 'b@example.com',
+                    sentAt: '2026-03-10T11:00:00',
+                    direction: 'OUT',
+                    snippet: 'Ich versuche es nochmal.',
+                    attachments: [{ ...pdfAttachment, id: 41 }], // dieselbe Datei erneut gesendet
+                },
+            ],
+        });
+        render(<EmailThreadView thread={thread} />);
+        // Nachricht 2 ist fokussiert/expandiert → Chip mit Dateinamen muss da sein
+        expect(screen.getByText('zeichnungsentwurf.pdf')).toBeInTheDocument();
+    });
+
+    it('zeigt ein erneut gesendetes großes Bild in jeder Nachricht an', () => {
+        const foto = {
+            id: 50,
+            originalFilename: 'baustelle.jpg',
+            mimeType: 'image/jpeg',
+            sizeBytes: 250000, // über der Signatur-Logo-Grenze von 100 KB
+            inline: false,
+        };
+        const thread = makeThread({
+            focusedEmailId: 2,
+            emails: [
+                {
+                    id: 1, subject: 'Foto', fromAddress: 'a@example.com', recipient: 'b@example.com',
+                    sentAt: '2026-03-10T10:00:00', direction: 'OUT', snippet: 'Erstes Foto.',
+                    attachments: [foto],
+                },
+                {
+                    id: 2, subject: 'Foto', fromAddress: 'a@example.com', recipient: 'b@example.com',
+                    sentAt: '2026-03-10T11:00:00', direction: 'OUT', snippet: 'Nochmal dasselbe Foto.',
+                    attachments: [{ ...foto, id: 51 }],
+                },
+            ],
+        });
+        render(<EmailThreadView thread={thread} />);
+        expect(screen.getByText('baustelle.jpg')).toBeInTheDocument();
+    });
+
+    it('filtert Anhänge ohne Dateityp und ohne Größenangabe nicht weg', () => {
+        const unbekannt = {
+            id: 60,
+            originalFilename: 'unbekannt.dat',
+            sizeBytes: 0,
+            inline: false,
+        };
+        const thread = makeThread({
+            focusedEmailId: 2,
+            emails: [
+                {
+                    id: 1, subject: 'Datei', fromAddress: 'a@example.com', recipient: 'b@example.com',
+                    sentAt: '2026-03-10T10:00:00', direction: 'OUT', snippet: 'Erste Datei.',
+                    attachments: [unbekannt],
+                },
+                {
+                    id: 2, subject: 'Datei', fromAddress: 'a@example.com', recipient: 'b@example.com',
+                    sentAt: '2026-03-10T11:00:00', direction: 'OUT', snippet: 'Dieselbe Datei nochmal.',
+                    attachments: [{ ...unbekannt, id: 61 }],
+                },
+            ],
+        });
+        render(<EmailThreadView thread={thread} />);
+        expect(screen.getByText('unbekannt.dat')).toBeInTheDocument();
     });
 
     it('leerer Thread zeigt keine Bubbles', () => {

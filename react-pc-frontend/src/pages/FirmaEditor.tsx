@@ -1,22 +1,21 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Building2, Wallet, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, Settings, Shield, ShieldCheck, CheckCircle, XCircle, ChevronRight, Pencil, Search, Layers, GitBranch, ExternalLink } from 'lucide-react';
+import { Building2, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, ShieldCheck, AtSign, HeartPulse, CalendarClock, BellRing, Mail, MailWarning, Info, type LucideIcon } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { ColorInput } from '../components/ui/color-input';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { KostenstelleDetailView } from '../components/firma/KostenstelleDetailView';
 import { DatePicker } from '../components/ui/datepicker';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
-import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfigurator';
-import { useFeatures } from '../hooks/useFeatures';
-import { StundensatzEditModal } from '../components/StundensatzEditModal';
-import { type Abteilung, type Arbeitsgang } from '../types';
 import { SteuerpruefungExport } from '../components/firma/SteuerpruefungExport';
+import { LohnStammdatenPanel } from '../components/firma/LohnStammdatenPanel';
 
 // Types
 interface Firmeninformation {
@@ -40,22 +39,49 @@ interface Firmeninformation {
     geschaeftsfuehrer: string;
     fusszeileText: string;
     googleBewertungsLink: string;
+    /** Hausfarbe als Hex mit fuehrendem #, z.B. "#500010". Leer = Standardfarbe. */
+    firmenfarbe: string;
     mahnverfahrenAktiv: boolean;
     tageBisZahlungserinnerung: number;
     tageBisErsteMahnung: number;
     tageBisZweiteMahnung: number;
     mahnverfahrenNeuesZahlungszielTage: number;
+    gewerkId?: number | null;
+    gewerkName?: string | null;
+    bgName?: string | null;
+    bgSatzVorschlag?: number | null;
+    bgSatzOverride?: number | null;
+    bgSatzEffektiv?: number | null;
 }
 
-interface Kostenstelle {
+type FirmenZahlenFeld = 'tageBisZahlungserinnerung' | 'tageBisErsteMahnung' | 'tageBisZweiteMahnung' | 'mahnverfahrenNeuesZahlungszielTage' | 'bgSatzOverride';
+type FirmenEntwurf = Omit<Firmeninformation, FirmenZahlenFeld> & Record<FirmenZahlenFeld, string>;
+const firmenEntwurf = (firma: Firmeninformation): FirmenEntwurf => ({
+    ...firma,
+    tageBisZahlungserinnerung: formatDecimalInput(firma.tageBisZahlungserinnerung ?? 7),
+    tageBisErsteMahnung: formatDecimalInput(firma.tageBisErsteMahnung ?? 7),
+    tageBisZweiteMahnung: formatDecimalInput(firma.tageBisZweiteMahnung ?? 7),
+    mahnverfahrenNeuesZahlungszielTage: formatDecimalInput(firma.mahnverfahrenNeuesZahlungszielTage ?? 7),
+    bgSatzOverride: firma.bgSatzOverride == null ? '' : formatDecimalInput(firma.bgSatzOverride),
+});
+
+interface GewerkOption {
     id: number;
-    bezeichnung: string;
-    typ: 'LAGER' | 'GEMEINKOSTEN' | 'PROJEKT' | 'SONSTIG';
-    beschreibung: string;
-    istFixkosten: boolean;
-    istInvestition: boolean;
+    name: string;
+    bgName: string;
+    bgSatzProzent: number;
     aktiv: boolean;
-    sortierung: number;
+}
+
+interface SteuerberaterAnsprechpartner {
+    id?: number;
+    anrede: string | null;
+    vorname: string;
+    nachname: string;
+    email: string;
+    telefon: string;
+    istLohnAnsprechpartner: boolean;
+    notizen?: string;
 }
 
 interface SteuerberaterKontakt {
@@ -70,7 +96,16 @@ interface SteuerberaterKontakt {
     gueltigAb: string | null;
     gueltigBis: string | null;
     weitereEmails: string[];
+    ansprechpartnerListe: SteuerberaterAnsprechpartner[];
 }
+
+const ANREDE_OPTIONS = [
+    { value: '', label: '(keine)' },
+    { value: 'HERR', label: 'Sehr geehrter Herr' },
+    { value: 'FRAU', label: 'Sehr geehrte Frau' },
+    { value: 'DAMEN_HERREN', label: 'Sehr geehrte Damen und Herren' },
+    { value: 'FAMILIE', label: 'Sehr geehrte Familie' },
+];
 
 
 interface LohnabrechnungDto {
@@ -104,41 +139,67 @@ interface BwaUploadDto {
     steuerberaterName: string;
 }
 
-interface En1090RolleDto {
+interface EmailAbsender {
     id: number;
-    kurztext: string;
-    beschreibung: string | null;
-    sortierung: number;
+    emailAdresse: string;
+    anzeigename: string;
     aktiv: boolean;
+    sortierung: number;
 }
 
-type ActiveTab = 'firma' | 'kostenstellen' | 'steuerberater' | 'en1090rollen' | 'abteilungen' | 'systemsetup' | 'steuerpruefung';
+type ActiveTab = 'firma' | 'steuerberater' | 'absender' | 'steuerpruefung' | 'lohn-stammdaten' | 'unfallversicherung';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
-const KOSTENSTELLEN_TYP_OPTIONS = [
-    { value: 'LAGER', label: 'Lager (Investitionen)' },
-    { value: 'GEMEINKOSTEN', label: 'Gemeinkosten (Fixkosten)' },
-    { value: 'PROJEKT', label: 'Projekt' },
-    { value: 'SONSTIG', label: 'Sonstige' },
-];
+// --- Mahnverfahren-Zeitstrahl (lokale Bausteine, nur in dieser Seite verwendet) ---
+
+
+
+/** Eine Station auf dem Zeitstrahl: Kreis-Marker mit Icon, Label daneben (mobil) bzw. darunter (Desktop). */
+function ZeitstrahlStation({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+    return (
+        <div className="flex shrink-0 items-center gap-3 md:w-32 md:flex-col md:gap-2">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-rose-300 bg-rose-50 text-rose-600">
+                <Icon className="h-5 w-5" />
+            </div>
+            <span className="text-sm font-medium text-slate-700 md:text-center">{label}</span>
+        </div>
+    );
+}
+
+/** Verbindung zwischen zwei Stationen mit Tage-Eingabefeld: mobil vertikal, ab md horizontal. */
+function ZeitstrahlAbstand({ value, onChange, beschriftung }: { value: string; onChange: (tage: string) => void; beschriftung: string }) {
+    return (
+        <div className="flex md:flex-1 md:flex-col">
+            {/* Verbindungslinie: mobil senkrecht unter dem Kreis, ab md waagerecht auf Kreis-Mitte */}
+            <div className="flex w-10 shrink-0 justify-center self-stretch md:h-5 md:w-full md:items-end md:self-auto">
+                <div className="min-h-[3.5rem] w-px bg-rose-200 md:h-px md:min-h-0 md:w-full" />
+            </div>
+            <div className="flex items-center gap-2 py-3 md:mt-2 md:flex-col md:gap-1 md:px-2 md:py-0">
+                <DecimalInput
+                    aria-label={beschriftung}
+                    required integer
+                    min={1}
+                    value={value}
+                    onChange={onChange}
+                    className="w-20 text-center"
+                />
+                <span className="text-xs text-slate-500 md:text-center">{beschriftung}</span>
+            </div>
+        </div>
+    );
+}
 
 export default function FirmaEditor() {
     const toast = useToast();
     const confirmDialog = useConfirm();
-    const features = useFeatures();
+    const showError = toast.error;
     const [activeTab, setActiveTab] = useState<ActiveTab>('firma');
     const [sbSubTab, setSbSubTab] = useState<SteuerberaterSubTab>('kontakte');
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 
     // Firmeninformation State
-    const [firma, setFirma] = useState<Firmeninformation | null>(null);
-
-    // Kostenstellen State
-    const [kostenstellen, setKostenstellen] = useState<Kostenstelle[]>([]);
-    const [showKostenstelleModal, setShowKostenstelleModal] = useState(false);
-    const [editingKostenstelle, setEditingKostenstelle] = useState<Partial<Kostenstelle> | null>(null);
-    const [selectedKostenstelle, setSelectedKostenstelle] = useState<Kostenstelle | null>(null);
+    const [firma, setFirma] = useState<FirmenEntwurf | null>(null);
 
     // Steuerberater State
     const [steuerberater, setSteuerberater] = useState<SteuerberaterKontakt[]>([]);
@@ -154,101 +215,69 @@ export default function FirmaEditor() {
     // BWA State
     const [bwaListe, setBwaListe] = useState<BwaUploadDto[]>([]);
 
-    // EN 1090 Rollen State
-    const [en1090Rollen, setEn1090Rollen] = useState<En1090RolleDto[]>([]);
-    const [showRolleModal, setShowRolleModal] = useState(false);
-    const [editingRolle, setEditingRolle] = useState<Partial<En1090RolleDto> | null>(null);
+    // E-Mail-Absender State
+    const [absenderListe, setAbsenderListe] = useState<EmailAbsender[]>([]);
+    const [showAbsenderModal, setShowAbsenderModal] = useState(false);
+    const [editingAbsender, setEditingAbsender] = useState<Partial<EmailAbsender> | null>(null);
 
-    // Abteilungen & Arbeitsgänge State
-    const [abteilungen, setAbteilungen] = useState<Abteilung[]>([]);
-    const [arbeitsgaenge, setArbeitsgaenge] = useState<Arbeitsgang[]>([]);
-    const [selectedAbteilungId, setSelectedAbteilungId] = useState<number | null>(null);
-    const [newAbteilungName, setNewAbteilungName] = useState('');
-    const [newArbeitsgangBeschr, setNewArbeitsgangBeschr] = useState('');
-    const [creatingAbteilung, setCreatingAbteilung] = useState(false);
-    const [creatingArbeitsgang, setCreatingArbeitsgang] = useState(false);
-    const [editingArbeitsgang, setEditingArbeitsgang] = useState<Arbeitsgang | null>(null);
-    const [agSearchTerm, setAgSearchTerm] = useState('');
-
-    const selectedAbteilung = useMemo(
-        () => abteilungen.find(a => a.id === selectedAbteilungId) || null,
-        [abteilungen, selectedAbteilungId]
-    );
-    const filteredArbeitsgaenge = useMemo(() => {
-        if (!selectedAbteilungId) return [];
-        const base = arbeitsgaenge.filter(a => a.abteilungId === selectedAbteilungId);
-        if (!agSearchTerm.trim()) return base;
-        const term = agSearchTerm.toLowerCase();
-        return base.filter(a => a.beschreibung.toLowerCase().includes(term));
-    }, [arbeitsgaenge, selectedAbteilungId, agSearchTerm]);
+    // Gewerke (fuer Firma-Auswahl)
+    const [gewerke, setGewerke] = useState<GewerkOption[]>([]);
 
     // Load Firmeninformation
     const loadFirma = useCallback(async () => {
         try {
             const res = await fetch('/api/firma');
+            if (!res.ok) throw new Error('Firmendaten konnten nicht geladen werden.');
             if (res.ok) {
-                setFirma(await res.json());
+                setFirma(firmenEntwurf(await res.json()));
             }
         } catch (e) {
             console.error('Fehler beim Laden der Firmendaten', e);
+            showError('Firmendaten konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
-    // Load Kostenstellen
-    const loadKostenstellen = useCallback(async () => {
+    // Load Gewerke (fuer Auswahl im Firma-Tab)
+    const loadGewerke = useCallback(async () => {
         try {
-            const res = await fetch('/api/firma/kostenstellen');
+            const res = await fetch('/api/lohn-stammdaten/gewerke?nurAktive=true');
+            if (!res.ok) throw new Error('Gewerke konnten nicht geladen werden.');
             if (res.ok) {
-                setKostenstellen(await res.json());
+                setGewerke(await res.json());
             }
         } catch (e) {
-            console.error('Fehler beim Laden der Kostenstellen', e);
+            console.error('Fehler beim Laden der Gewerke', e);
+            showError('Gewerke konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
     // Load Steuerberater
     const loadSteuerberater = useCallback(async () => {
         try {
             const res = await fetch('/api/firma/steuerberater');
+            if (!res.ok) throw new Error('Steuerberater konnten nicht geladen werden.');
             if (res.ok) {
                 setSteuerberater(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der Steuerberater', e);
+            showError('Steuerberater konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
-    // Load EN 1090 Rollen
-    const loadEn1090Rollen = useCallback(async () => {
+    // Load E-Mail-Absender
+    const loadAbsender = useCallback(async () => {
         try {
-            const res = await fetch('/api/en1090/rollen');
+            const res = await fetch('/api/firma/email-absender');
+            if (!res.ok) throw new Error('Absender konnten nicht geladen werden.');
             if (res.ok) {
-                setEn1090Rollen(await res.json());
+                setAbsenderListe(await res.json());
             }
         } catch (e) {
-            console.error('Fehler beim Laden der EN-1090-Rollen', e);
+            console.error('Fehler beim Laden der Absender', e);
+            showError('Absender konnten nicht geladen werden.');
         }
-    }, []);
-
-    // Load Abteilungen & Arbeitsgänge
-    const loadAbteilungenData = useCallback(async () => {
-        try {
-            const [abtRes, agRes] = await Promise.all([
-                fetch('/api/abteilungen'),
-                fetch('/api/arbeitsgaenge')
-            ]);
-            if (abtRes.ok) {
-                const data = await abtRes.json();
-                setAbteilungen(Array.isArray(data) ? data : []);
-            }
-            if (agRes.ok) {
-                const data = await agRes.json();
-                setArbeitsgaenge(Array.isArray(data) ? data : []);
-            }
-        } catch (e) {
-            console.error('Fehler beim Laden der Abteilungen', e);
-        }
-    }, []);
+    }, [showError]);
 
     // Load Meta (Years)
     const loadMeta = useCallback(async () => {
@@ -258,6 +287,7 @@ export default function FirmaEditor() {
                 fetch('/api/bwa/jahre')
             ]);
             
+            if (!lohnJahreRes.ok || !bwaJahreRes.ok) throw new Error('Abrechnungsjahre konnten nicht geladen werden.');
             const jahreSet = new Set<number>();
             jahreSet.add(new Date().getFullYear());
 
@@ -273,8 +303,9 @@ export default function FirmaEditor() {
             setVerfuegbareJahre(Array.from(jahreSet).sort((a, b) => b - a));
         } catch (e) {
             console.error('Fehler beim Laden der Jahre', e);
+            showError('Abrechnungsjahre konnten nicht geladen werden.');
         }
-    }, []);
+    }, [showError]);
 
     // Load Lohnabrechnungen List
     const loadLohnabrechnungen = useCallback(async () => {
@@ -284,49 +315,42 @@ export default function FirmaEditor() {
                 url = `/api/lohnabrechnungen/steuerberater/${selectedSbFilter}/jahr/${selectedJahr}`;
             }
             const res = await fetch(url);
+            if (!res.ok) throw new Error('Lohnabrechnungen konnten nicht geladen werden.');
             if (res.ok) {
                 setLohnabrechnungen(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der Lohnabrechnungen', e);
+            showError('Lohnabrechnungen konnten nicht geladen werden.');
         }
-    }, [selectedJahr, selectedSbFilter]);
+    }, [selectedJahr, selectedSbFilter, showError]);
 
     // Load BWA List
     const loadBwaListe = useCallback(async () => {
         try {
             const res = await fetch(`/api/bwa/jahr/${selectedJahr}`);
+            if (!res.ok) throw new Error('Auswertungen konnten nicht geladen werden.');
             if (res.ok) {
                 setBwaListe(await res.json());
             }
         } catch (e) {
             console.error('Fehler beim Laden der BWA-Liste', e);
+            showError('Auswertungen konnten nicht geladen werden.');
         }
-    }, [selectedJahr]);
+    }, [selectedJahr, showError]);
 
     useEffect(() => {
         if (activeTab === 'steuerberater') {
             if (sbSubTab === 'lohnabrechnungen') loadLohnabrechnungen();
             if (sbSubTab === 'bwa') loadBwaListe();
         }
-        if (activeTab === 'abteilungen') loadAbteilungenData();
-    }, [activeTab, sbSubTab, loadLohnabrechnungen, loadBwaListe, loadAbteilungenData]);
-
-    // Auto-select first Abteilung when data loads
-    useEffect(() => {
-        if (abteilungen.length > 0 && selectedAbteilungId === null) {
-            setSelectedAbteilungId(abteilungen[0].id);
-        } else if (abteilungen.length > 0 && !abteilungen.some(a => a.id === selectedAbteilungId)) {
-            setSelectedAbteilungId(abteilungen[0].id);
-        }
-    }, [abteilungen, selectedAbteilungId]);
+    }, [activeTab, sbSubTab, loadLohnabrechnungen, loadBwaListe]);
 
     useEffect(() => {
         setLoading(true);
-        const base = [loadFirma(), loadKostenstellen(), loadSteuerberater(), loadMeta()];
-        if (features.en1090) base.push(loadEn1090Rollen());
-        Promise.all(base).finally(() => setLoading(false));
-    }, [loadFirma, loadKostenstellen, loadSteuerberater, loadMeta, loadEn1090Rollen, features.en1090]);
+        Promise.all([loadFirma(), loadSteuerberater(), loadAbsender(), loadMeta(), loadGewerke()])
+            .finally(() => setLoading(false));
+    }, [loadFirma, loadSteuerberater, loadAbsender, loadMeta, loadGewerke]);
 
     // Logo-Upload-State: Cache-Buster, damit das <img> nach Upload/Löschen neu lädt
     const [logoVersion, setLogoVersion] = useState(0);
@@ -398,65 +422,36 @@ export default function FirmaEditor() {
     // Save Firmeninformation
     const saveFirma = async () => {
         if (!firma) return;
+        const { tageBisZahlungserinnerung, tageBisErsteMahnung, tageBisZweiteMahnung, mahnverfahrenNeuesZahlungszielTage, bgSatzOverride, ...rest } = firma;
+        const zahlen = { tageBisZahlungserinnerung, tageBisErsteMahnung, tageBisZweiteMahnung, mahnverfahrenNeuesZahlungszielTage, bgSatzOverride };
+        const labels: Record<FirmenZahlenFeld, string> = { tageBisZahlungserinnerung: 'Tage nach Fälligkeit', tageBisErsteMahnung: 'Tage nach der Zahlungserinnerung', tageBisZweiteMahnung: 'Tage nach der 1. Mahnung', mahnverfahrenNeuesZahlungszielTage: 'Neues Zahlungsziel', bgSatzOverride: 'Tatsächlicher BG-Satz' };
+        const payload: Partial<Firmeninformation> = { ...rest };
+        for (const key of Object.keys(zahlen) as FirmenZahlenFeld[]) {
+            const optional = key === 'bgSatzOverride';
+            const result = validateDecimalInput(zahlen[key], { label: labels[key], required: !optional, integer: !optional, min: optional ? 0 : 1, ...(optional ? { max: 100 } : {}) });
+            if (!result.valid) { toast.error(result.message); return; }
+            if (key === 'bgSatzOverride') payload[key] = result.value;
+            else if (result.value !== null) payload[key] = result.value;
+        }
+        if (firma.firmenfarbe && !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(firma.firmenfarbe)) { toast.error('Bitte eine gültige Firmenfarbe eingeben, z. B. #500010.'); return; }
         setSaving(true);
         try {
             const res = await fetch('/api/firma', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(firma)
-            });
-            if (res.ok) {
-                setFirma(await res.json());
-            }
-        } catch (e) {
-            console.error('Fehler beim Speichern', e);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    // Save Kostenstelle
-    const saveKostenstelle = async () => {
-        if (!editingKostenstelle) return;
-        setSaving(true);
-        try {
-            const typ = editingKostenstelle.typ || 'GEMEINKOSTEN';
-            const payload = {
-                ...editingKostenstelle,
-                typ,
-                istFixkosten: typ === 'GEMEINKOSTEN',
-                istInvestition: typ === 'LAGER',
-            };
-            const method = payload.id ? 'PUT' : 'POST';
-            const url = payload.id 
-                ? `/api/firma/kostenstellen/${payload.id}`
-                : '/api/firma/kostenstellen';
-            
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                await loadKostenstellen();
-                setShowKostenstelleModal(false);
-                setEditingKostenstelle(null);
+                setFirma(firmenEntwurf(await res.json()));
+                toast.success('Firmendaten gespeichert.');
+            } else {
+                toast.error('Firmendaten konnten nicht gespeichert werden.');
             }
         } catch (e) {
             console.error('Fehler beim Speichern', e);
+            toast.error('Firmendaten konnten nicht gespeichert werden.');
         } finally {
             setSaving(false);
-        }
-    };
-
-    // Delete Kostenstelle
-    const deleteKostenstelle = async (id: number) => {
-        if (!await confirmDialog({ title: 'Kostenstelle löschen', message: 'Kostenstelle wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try {
-            await fetch(`/api/firma/kostenstellen/${id}`, { method: 'DELETE' });
-            await loadKostenstellen();
-        } catch (e) {
-            console.error('Fehler beim Löschen', e);
         }
     };
 
@@ -502,159 +497,72 @@ export default function FirmaEditor() {
     const deleteSteuerberater = async (id: number) => {
         if (!await confirmDialog({ title: 'Steuerberater löschen', message: 'Steuerberater wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
-            await fetch(`/api/firma/steuerberater/${id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/firma/steuerberater/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Steuerberater konnte nicht gelöscht werden.');
             await loadSteuerberater();
         } catch (e) {
             console.error('Fehler beim Löschen', e);
+            toast.error('Steuerberater konnte nicht gelöscht werden.');
         }
     };
 
-    // Init Standard Kostenstellen
-    const initKostenstellen = async () => {
-        try {
-            const res = await fetch('/api/firma/kostenstellen/init', { method: 'POST' });
-            if (res.ok) {
-                setKostenstellen(await res.json());
-            }
-        } catch (e) {
-            console.error('Fehler beim Initialisieren', e);
-        }
-    };
-
-    // EN 1090 Rollen CRUD
-    const saveRolle = async () => {
-        if (!editingRolle?.kurztext?.trim()) return;
+    // Save E-Mail-Absender
+    const saveAbsender = async () => {
+        if (!editingAbsender || !editingAbsender.emailAdresse?.trim()) return;
         setSaving(true);
         try {
-            const method = editingRolle.id ? 'PUT' : 'POST';
-            const url = editingRolle.id ? `/api/en1090/rollen/${editingRolle.id}` : '/api/en1090/rollen';
+            const method = editingAbsender.id ? 'PUT' : 'POST';
+            const url = editingAbsender.id
+                ? `/api/firma/email-absender/${editingAbsender.id}`
+                : '/api/firma/email-absender';
+
+            const payload = {
+                ...editingAbsender,
+                emailAdresse: editingAbsender.emailAdresse.trim(),
+                anzeigename: editingAbsender.anzeigename?.trim() || null,
+                aktiv: editingAbsender.aktiv ?? true,
+                sortierung: editingAbsender.sortierung ?? absenderListe.length,
+            };
+
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...editingRolle, aktiv: editingRolle.aktiv ?? true, sortierung: editingRolle.sortierung ?? 0 })
+                body: JSON.stringify(payload),
             });
             if (res.ok) {
-                await loadEn1090Rollen();
-                setShowRolleModal(false);
-                setEditingRolle(null);
+                await loadAbsender();
+                setShowAbsenderModal(false);
+                setEditingAbsender(null);
+            } else {
+                const text = await res.text();
+                try {
+                    const json = JSON.parse(text);
+                    toast.error(json.message || 'Fehler beim Speichern');
+                } catch {
+                    toast.error('Fehler beim Speichern: ' + text);
+                }
             }
         } catch (e) {
-            console.error('Fehler beim Speichern der Rolle', e);
+            console.error('Fehler beim Speichern des Absenders', e);
+            toast.error('Netzwerkfehler beim Speichern');
         } finally {
             setSaving(false);
         }
     };
 
-    const deleteRolle = async (id: number) => {
-        if (!await confirmDialog({ title: 'Rolle l\u00f6schen', message: 'Rolle wirklich l\u00f6schen? Zuweisungen werden entfernt.', variant: 'danger', confirmLabel: 'L\u00f6schen' })) return;
+    // Delete E-Mail-Absender
+    const deleteAbsender = async (id: number) => {
+        if (!await confirmDialog({ title: 'Absender löschen', message: 'Diese E-Mail-Adresse wirklich aus der Liste entfernen? Benutzer ohne andere Zuweisung müssen anschließend neu zugewiesen werden.', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
-            await fetch(`/api/en1090/rollen/${id}`, { method: 'DELETE' });
-            await loadEn1090Rollen();
-        } catch (e) {
-            console.error('Fehler beim L\u00f6schen', e);
-        }
-    };
-
-    // Abteilung CRUD
-    const handleCreateAbteilung = async () => {
-        if (!newAbteilungName.trim()) return;
-        setCreatingAbteilung(true);
-        try {
-            const res = await fetch('/api/abteilungen', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newAbteilungName.trim() })
-            });
-            if (res.ok) {
-                setNewAbteilungName('');
-                await loadAbteilungenData();
-            } else {
-                toast.error('Fehler beim Erstellen der Abteilung.');
+            const res = await fetch(`/api/firma/email-absender/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                toast.error('Absender konnte nicht gelöscht werden.');
+                return;
             }
+            await loadAbsender();
         } catch (e) {
-            console.error(e);
-            toast.error('Fehler beim Erstellen der Abteilung.');
-        } finally {
-            setCreatingAbteilung(false);
-        }
-    };
-
-    const handleDeleteAbteilung = async (id: number) => {
-        if (!await confirmDialog({ title: 'Abteilung löschen', message: 'Abteilung wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try {
-            const res = await fetch(`/api/abteilungen/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                await loadAbteilungenData();
-            } else if (res.status === 409) {
-                toast.warning('Abteilung kann nicht gelöscht werden – noch Arbeitsgänge zugeordnet.');
-            } else {
-                toast.error('Fehler beim Löschen der Abteilung.');
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const handleCreateArbeitsgang = async () => {
-        if (!newArbeitsgangBeschr.trim() || !selectedAbteilungId) return;
-        setCreatingArbeitsgang(true);
-        try {
-            const res = await fetch('/api/arbeitsgaenge', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ beschreibung: newArbeitsgangBeschr.trim(), abteilungId: selectedAbteilungId })
-            });
-            if (res.ok) {
-                setNewArbeitsgangBeschr('');
-                await loadAbteilungenData();
-            } else {
-                toast.error('Fehler beim Erstellen des Arbeitsgangs.');
-            }
-        } catch (e) {
-            console.error(e);
-            toast.error('Fehler beim Erstellen des Arbeitsgangs.');
-        } finally {
-            setCreatingArbeitsgang(false);
-        }
-    };
-
-    const handleDeleteArbeitsgang = async (id: number) => {
-        if (!await confirmDialog({ title: 'Arbeitsgang löschen', message: 'Arbeitsgang wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try {
-            const res = await fetch(`/api/arbeitsgaenge/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                await loadAbteilungenData();
-            } else if (res.status === 409) {
-                toast.warning('Arbeitsgang kann nicht gelöscht werden – wird noch verwendet.');
-            } else {
-                toast.error('Fehler beim Löschen des Arbeitsgangs.');
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const handleSaveStundensatz = async (arbeitsgangId: number, neuerStundensatz: number) => {
-        const res = await fetch(`/api/arbeitsgaenge/${arbeitsgangId}/stundensatz`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ stundensatz: neuerStundensatz })
-        });
-        if (!res.ok) throw new Error('Speichern fehlgeschlagen');
-        await loadAbteilungenData();
-    };
-
-    const getKostenstelleTypLabel = (typ: string) => {
-        const option = KOSTENSTELLEN_TYP_OPTIONS.find(o => o.value === typ);
-        return option?.label || typ;
-    };
-
-    const getKostenstelleTypColor = (typ: string) => {
-        switch (typ) {
-            case 'LAGER': return 'bg-blue-100 text-blue-700 border-blue-200';
-            case 'GEMEINKOSTEN': return 'bg-rose-100 text-rose-700 border-rose-200';
-            case 'PROJEKT': return 'bg-green-100 text-green-700 border-green-200';
-            default: return 'bg-slate-100 text-slate-700 border-slate-200';
+            console.error('Fehler beim Löschen', e);
+            toast.error('Netzwerkfehler beim Löschen');
         }
     };
 
@@ -662,7 +570,7 @@ export default function FirmaEditor() {
         <PageLayout
             ribbonCategory="Vorlagen & Stammdaten"
             title="FIRMENINFORMATIONEN"
-            subtitle="Firmendaten, Kostenstellen, Steuerberater und Systemkonfiguration"
+            subtitle="Firmendaten, Steuerberater und Systemkonfiguration"
         >
             {loading ? (
                 <div className="flex items-center justify-center py-20">
@@ -685,16 +593,28 @@ export default function FirmaEditor() {
                             Firmendaten
                         </button>
                         <button
-                            onClick={() => setActiveTab('kostenstellen')}
+                            onClick={() => setActiveTab('lohn-stammdaten')}
                             className={cn(
                                 "px-4 py-2 text-sm font-medium rounded-t-lg transition",
-                                activeTab === 'kostenstellen'
+                                activeTab === 'lohn-stammdaten'
                                     ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                             )}
                         >
-                            <Wallet className="w-4 h-4 inline-block mr-2" />
-                            Kostenstellen ({kostenstellen.length})
+                            <HeartPulse className="w-4 h-4 inline-block mr-2" />
+                            Lohn-Stammdaten
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('unfallversicherung')}
+                            className={cn(
+                                "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+                                activeTab === 'unfallversicherung'
+                                    ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                            )}
+                        >
+                            <ShieldCheck className="w-4 h-4 inline-block mr-2" />
+                            Unfallversicherung
                         </button>
                         <button
                             onClick={() => setActiveTab('steuerberater')}
@@ -708,51 +628,17 @@ export default function FirmaEditor() {
                             <Users className="w-4 h-4 inline-block mr-2" />
                             Steuerberater ({steuerberater.length})
                         </button>
-                        {features.en1090 && (
-                            <button
-                                onClick={() => setActiveTab('en1090rollen')}
-                                className={cn(
-                                    "px-4 py-2 text-sm font-medium rounded-t-lg transition",
-                                    activeTab === 'en1090rollen'
-                                        ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
-                                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                                )}
-                            >
-                                <Shield className="w-4 h-4 inline-block mr-2" />
-                                EN 1090 Rollen ({en1090Rollen.length})
-                            </button>
-                        )}
                         <button
-                            onClick={() => setActiveTab('abteilungen')}
+                            onClick={() => setActiveTab('absender')}
                             className={cn(
                                 "px-4 py-2 text-sm font-medium rounded-t-lg transition",
-                                activeTab === 'abteilungen'
+                                activeTab === 'absender'
                                     ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                             )}
                         >
-                            <Layers className="w-4 h-4 inline-block mr-2" />
-                            Abteilungen ({abteilungen.length})
-                        </button>
-                        <button
-                            onClick={() => window.open('/organigramm', '_blank')}
-                            className="px-4 py-2 text-sm font-medium rounded-t-lg transition text-slate-500 hover:text-slate-700 hover:bg-slate-50 flex items-center gap-1"
-                        >
-                            <GitBranch className="w-4 h-4" />
-                            Organigramm
-                            <ExternalLink className="w-3 h-3 ml-1 opacity-50" />
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('systemsetup')}
-                            className={cn(
-                                "px-4 py-2 text-sm font-medium rounded-t-lg transition",
-                                activeTab === 'systemsetup'
-                                    ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
-                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                            )}
-                        >
-                            <Settings className="w-4 h-4 inline-block mr-2" />
-                            System-Setup
+                            <AtSign className="w-4 h-4 inline-block mr-2" />
+                            E-Mail-Absender ({absenderListe.length})
                         </button>
                         <button
                             onClick={() => setActiveTab('steuerpruefung')}
@@ -923,6 +809,27 @@ export default function FirmaEditor() {
                                             Wird in E-Mails über den Platzhalter <code className="bg-slate-100 px-1 rounded">{'{{REVIEW_LINK}}'}</code> als Link „Jetzt Bewertung abgeben" eingefügt.
                                         </p>
                                     </div>
+                                    <div>
+                                        <Label>Firmenfarbe</Label>
+                                        <div className="flex items-center gap-2">
+                                            <ColorInput
+                                                aria-label="Firmenfarbe wählen"
+                                                value={/^#[0-9a-fA-F]{6}$/.test(firma.firmenfarbe || '') ? firma.firmenfarbe : '#500010'}
+                                                onChange={value => setFirma({ ...firma, firmenfarbe: value })}
+                                                className="h-9 w-12 rounded border border-slate-200 bg-white p-1 cursor-pointer"
+                                            />
+                                            <Input
+                                                aria-label="Firmenfarbe als Hex-Wert"
+                                                value={firma.firmenfarbe || ''}
+                                                onChange={e => setFirma({ ...firma, firmenfarbe: e.target.value })}
+                                                placeholder="#500010"
+                                                className="font-mono"
+                                            />
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Akzentfarbe auf Rechnungen: Fortschrittsbalken im Abrechnungsstand und die kleinen Nettobeträge. Leer lassen für die Standardfarbe.
+                                        </p>
+                                    </div>
                                 </div>
 
                                 {/* Steuerliche Daten */}
@@ -1002,47 +909,59 @@ export default function FirmaEditor() {
                                     </label>
                                 </div>
                                 <p className="text-sm text-slate-500">
-                                    Wenn aktiviert, prüft das System täglich überfällige Rechnungen und versendet automatisch
-                                    Zahlungserinnerungen sowie 1. und 2. Mahnungen per E-Mail an den Kunden. Die Tagesangaben
-                                    zählen ab dem Fälligkeitsdatum der Original-Rechnung.
+                                    Wenn aktiviert, verschickt das System automatisch Zahlungserinnerung sowie 1. und 2. Mahnung
+                                    per E-Mail an den Kunden. Jeder Schritt wird erst verschickt, wenn seit dem vorherigen
+                                    Schritt die eingestellte Anzahl an Tagen vergangen ist.
                                 </p>
-                                <div className={cn("grid grid-cols-1 md:grid-cols-4 gap-4 transition-opacity", !firma.mahnverfahrenAktiv && "opacity-50 pointer-events-none")}>
-                                    <div>
-                                        <Label>Zahlungserinnerung nach (Tagen)</Label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            value={firma.tageBisZahlungserinnerung || 7}
-                                            onChange={e => setFirma({ ...firma, tageBisZahlungserinnerung: parseInt(e.target.value) || 7 })}
+                                <div className={cn("space-y-6 transition-opacity", !firma.mahnverfahrenAktiv && "opacity-50 pointer-events-none")}>
+                                    {/* Zeitstrahl: Rechnung fällig -> Zahlungserinnerung -> 1. Mahnung -> 2. Mahnung */}
+                                    <div className="flex flex-col pt-2 md:flex-row md:items-start">
+                                        <ZeitstrahlStation icon={CalendarClock} label="Rechnung fällig" />
+                                        <ZeitstrahlAbstand
+                                            value={firma.tageBisZahlungserinnerung}
+                                            onChange={tage => setFirma({ ...firma, tageBisZahlungserinnerung: tage })}
+                                            beschriftung="Tage nach Fälligkeit"
                                         />
-                                    </div>
-                                    <div>
-                                        <Label>1. Mahnung nach (Tagen)</Label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            value={firma.tageBisErsteMahnung || 14}
-                                            onChange={e => setFirma({ ...firma, tageBisErsteMahnung: parseInt(e.target.value) || 14 })}
+                                        <ZeitstrahlStation icon={BellRing} label="Zahlungserinnerung" />
+                                        <ZeitstrahlAbstand
+                                            value={firma.tageBisErsteMahnung}
+                                            onChange={tage => setFirma({ ...firma, tageBisErsteMahnung: tage })}
+                                            beschriftung="Tage nach der Zahlungserinnerung"
                                         />
-                                    </div>
-                                    <div>
-                                        <Label>2. Mahnung nach (Tagen)</Label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            value={firma.tageBisZweiteMahnung || 21}
-                                            onChange={e => setFirma({ ...firma, tageBisZweiteMahnung: parseInt(e.target.value) || 21 })}
+                                        <ZeitstrahlStation icon={Mail} label="1. Mahnung" />
+                                        <ZeitstrahlAbstand
+                                            value={firma.tageBisZweiteMahnung}
+                                            onChange={tage => setFirma({ ...firma, tageBisZweiteMahnung: tage })}
+                                            beschriftung="Tage nach der 1. Mahnung"
                                         />
+                                        <ZeitstrahlStation icon={MailWarning} label="2. Mahnung" />
                                     </div>
+
+                                    {/* Neues Zahlungsziel auf der Mahnung */}
                                     <div>
-                                        <Label>Neues Zahlungsziel (Tage)</Label>
-                                        <Input
-                                            type="number"
+                                        <Label>Neues Zahlungsziel auf der Mahnung (Tage)</Label>
+                                        <DecimalInput
+                                            aria-label="Neues Zahlungsziel auf der Mahnung (Tage)"
+                                            required integer
                                             min={1}
-                                            value={firma.mahnverfahrenNeuesZahlungszielTage || 7}
-                                            onChange={e => setFirma({ ...firma, mahnverfahrenNeuesZahlungszielTage: parseInt(e.target.value) || 7 })}
+                                            value={firma.mahnverfahrenNeuesZahlungszielTage}
+                                            onChange={value => setFirma({ ...firma, mahnverfahrenNeuesZahlungszielTage: value })}
+                                            className="w-24"
                                         />
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            So viele Tage Zeit geben wir dem Kunden auf jeder Mahnung, den Betrag noch zu überweisen.
+                                        </p>
                                     </div>
+                                </div>
+
+                                {/* Hinweis zur Funktionsweise */}
+                                <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                                    <p className="text-sm text-slate-600">
+                                        Schon überfällige Rechnungen starten mit der Zahlungserinnerung — danach gelten die
+                                        eingestellten Abstände. Automatisch gemahnt werden nur Rechnungen, die mit dem Programm
+                                        geschrieben wurden.
+                                    </p>
                                 </div>
                             </div>
 
@@ -1057,102 +976,6 @@ export default function FirmaEditor() {
                                 </Button>
                             </div>
                         </Card>
-                    )}
-
-                    {activeTab === 'kostenstellen' && (
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <p className="text-slate-500 text-sm">
-                                    Kostenstellen für die Zuordnung von Lieferantenrechnungen
-                                </p>
-                                <div className="flex gap-2">
-                                    {kostenstellen.length === 0 && (
-                                        <Button
-                                            variant="outline"
-                                            onClick={initKostenstellen}
-                                            className="border-rose-300 text-rose-700"
-                                        >
-                                            Standard anlegen
-                                        </Button>
-                                    )}
-                                    <Button
-                                        onClick={() => {
-                                            setEditingKostenstelle({ aktiv: true, sortierung: kostenstellen.length + 1 });
-                                            setShowKostenstelleModal(true);
-                                        }}
-                                        className="bg-rose-600 text-white hover:bg-rose-700"
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Neue Kostenstelle
-                                    </Button>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {selectedKostenstelle ? (
-                                    <div className="col-span-full">
-                                        <KostenstelleDetailView 
-                                            kostenstelle={selectedKostenstelle} 
-                                            onBack={() => setSelectedKostenstelle(null)} 
-                                        />
-                                    </div>
-                                ) : (
-                                    kostenstellen.map(ks => (
-                                    <Card 
-                                        key={ks.id} 
-                                        className="p-4 cursor-pointer hover:shadow-md transition-shadow group"
-                                        onClick={() => setSelectedKostenstelle(ks)}
-                                    >
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <h4 className="font-semibold text-slate-900 group-hover:text-rose-600 transition-colors">{ks.bezeichnung}</h4>
-                                                <span className={cn(
-                                                    "inline-block px-2 py-0.5 text-xs rounded border mt-1",
-                                                    getKostenstelleTypColor(ks.typ)
-                                                )}>
-                                                    {getKostenstelleTypLabel(ks.typ)}
-                                                </span>
-                                            </div>
-                                            <div className="flex gap-1">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setEditingKostenstelle(ks);
-                                                        setShowKostenstelleModal(true);
-                                                    }}
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        deleteKostenstelle(ks.id);
-                                                    }}
-                                                    className="text-red-600 hover:text-red-700"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        {ks.beschreibung && (
-                                            <p className="text-sm text-slate-500 mt-2">{ks.beschreibung}</p>
-                                        )}
-                                        <div className="flex gap-2 mt-2">
-                                            {ks.istFixkosten && (
-                                                <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Fixkosten</span>
-                                            )}
-                                            {ks.istInvestition && (
-                                                <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Investition</span>
-                                            )}
-                                        </div>
-                                    </Card>
-                                )))}
-                            </div>
-                        </div>
                     )}
 
                     {activeTab === 'steuerberater' && (
@@ -1319,10 +1142,10 @@ export default function FirmaEditor() {
                                                                 {la.monat}/{la.jahr}
                                                             </span>
                                                             {la.bruttolohn && (
-                                                                <span>• Brutto: {la.bruttolohn.toFixed(2)} €</span>
+                                                                <span>• Brutto: {la.bruttolohn.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
                                                             )}
                                                             {la.nettolohn && (
-                                                                <span>• Netto: {la.nettolohn.toFixed(2)} €</span>
+                                                                <span>• Netto: {la.nettolohn.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
                                                             )}
                                                         </div>
                                                     </div>
@@ -1397,7 +1220,7 @@ export default function FirmaEditor() {
                                                     <div className="flex justify-between">
                                                         <span className="text-slate-500">Gemeinkosten:</span>
                                                         <span className="font-medium text-slate-900">
-                                                            {(bwa.gesamtGemeinkosten || 0).toFixed(2)} €
+                                                            {(bwa.gesamtGemeinkosten || 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
                                                         </span>
                                                     </div>
                                                 </div>
@@ -1432,376 +1255,204 @@ export default function FirmaEditor() {
                         </div>
                     )}
 
-                    {activeTab === 'abteilungen' && (
-                        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.2fr_1.8fr] gap-6">
-                            {/* Column 1: Abteilungen */}
-                            <Card className="p-6 border-0 shadow-sm rounded-xl">
-                                <div className="mb-4">
-                                    <p className="text-xs uppercase tracking-wide text-slate-500">Betriebsstruktur</p>
-                                    <h4 className="text-lg font-semibold text-slate-900">Abteilungen</h4>
-                                </div>
-
-                                <div className="space-y-2">
-                                    {abteilungen.length === 0 ? (
-                                        <div className="p-8 text-center text-slate-500 border border-dashed rounded-lg">
-                                            <Building2 className="w-8 h-8 mx-auto mb-2 text-rose-200" />
-                                            Keine Abteilungen vorhanden
-                                        </div>
-                                    ) : (
-                                        abteilungen.map(abt => (
-                                            <div
-                                                key={abt.id}
-                                                className={cn(
-                                                    'group flex items-center justify-between gap-2 rounded-lg border px-3 py-2 cursor-pointer transition',
-                                                    'border-slate-200 bg-white hover:border-rose-200 hover:shadow-sm',
-                                                    selectedAbteilungId === abt.id ? 'border-rose-500 bg-rose-50 shadow-sm' : ''
-                                                )}
-                                                onClick={() => setSelectedAbteilungId(abt.id)}
-                                            >
-                                                <div className="flex items-center gap-2 min-w-0">
-                                                    <Building2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                                                    <span className="text-sm font-semibold text-slate-900 truncate">{abt.name}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1 flex-shrink-0">
-                                                    {selectedAbteilungId === abt.id && (
-                                                        <ChevronRight className="w-4 h-4 text-rose-600" />
-                                                    )}
-                                                    <button
-                                                        onClick={e => { e.stopPropagation(); handleDeleteAbteilung(abt.id); }}
-                                                        className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
-                                                        title="Abteilung löschen"
-                                                    >
-                                                        <Trash2 className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-
-                                <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                                    <Input
-                                        value={newAbteilungName}
-                                        onChange={e => setNewAbteilungName(e.target.value)}
-                                        placeholder="Neue Abteilung..."
-                                        onKeyDown={e => e.key === 'Enter' && handleCreateAbteilung()}
-                                    />
-                                    <Button
-                                        className="w-full bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-                                        size="sm"
-                                        onClick={handleCreateAbteilung}
-                                        disabled={!newAbteilungName.trim() || creatingAbteilung}
-                                    >
-                                        <Plus className="w-4 h-4 mr-1" /> Abteilung anlegen
-                                    </Button>
-                                </div>
-                            </Card>
-
-                            {/* Column 2: Arbeitsgänge List */}
-                            <Card className="p-6 border-0 shadow-sm rounded-xl">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div>
-                                        <p className="text-xs uppercase tracking-wide text-slate-500">Arbeitsgänge</p>
-                                        <h4 className="text-lg font-semibold text-slate-900">
-                                            {selectedAbteilung?.name || 'Abteilung auswählen'}
-                                        </h4>
-                                    </div>
-                                </div>
-
-                                {selectedAbteilungId ? (
-                                    <div className="space-y-3">
-                                        <div className="relative">
-                                            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                                            <Input
-                                                value={agSearchTerm}
-                                                onChange={e => setAgSearchTerm(e.target.value)}
-                                                placeholder="Arbeitsgänge durchsuchen..."
-                                                className="pl-9"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            {filteredArbeitsgaenge.length === 0 ? (
-                                                <div className="p-8 text-center text-slate-500 border border-dashed rounded-lg">
-                                                    <Plus className="w-8 h-8 mx-auto mb-2 text-rose-200" />
-                                                    Keine Arbeitsgänge in dieser Abteilung
-                                                </div>
-                                            ) : (
-                                                filteredArbeitsgaenge.map(ag => {
-                                                    const currentYear = new Date().getFullYear();
-                                                    const isOutdated = ag.stundensatzJahr !== null && currentYear - ag.stundensatzJahr >= 1;
-                                                    const hasNoRate = ag.stundensatz === null;
-                                                    return (
-                                                        <div key={ag.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-slate-200 bg-white hover:border-rose-200 hover:shadow-sm transition">
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center gap-2">
-                                                                    <p className="text-sm font-semibold text-slate-900 truncate">{ag.beschreibung}</p>
-                                                                    {(isOutdated || hasNoRate) && (
-                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
-                                                                            Stundensatz veraltet
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <p className="text-sm text-rose-700 mt-0.5">
-                                                                    {ag.stundensatz !== null
-                                                                        ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ag.stundensatz)
-                                                                        : '—'}
-                                                                    <span className="text-slate-400 mx-1">/</span>
-                                                                    <span className="text-slate-600">Stunde</span>
-                                                                    {ag.stundensatzJahr && (
-                                                                        <span className="text-xs text-slate-400 ml-2">({ag.stundensatzJahr})</span>
-                                                                    )}
-                                                                </p>
-                                                            </div>
-                                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                                                <Button variant="ghost" size="sm" className="text-rose-700 hover:bg-rose-100"
-                                                                    onClick={() => setEditingArbeitsgang(ag)} title="Stundensatz bearbeiten">
-                                                                    <Pencil className="w-4 h-4" />
-                                                                </Button>
-                                                                <Button variant="ghost" size="sm" className="text-rose-700 hover:bg-rose-100"
-                                                                    onClick={() => handleDeleteArbeitsgang(ag.id)} title="Löschen">
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                </Button>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="p-10 text-center text-slate-500 border border-dashed rounded-lg">
-                                        Wähle eine Abteilung aus
-                                    </div>
-                                )}
-                            </Card>
-
-                            {/* Column 3: Neuer Arbeitsgang anlegen */}
-                            {selectedAbteilungId ? (
-                                <Card className="p-6 border-0 shadow-sm rounded-xl">
-                                    <div className="flex items-center justify-between gap-3 mb-4">
-                                        <div>
-                                            <p className="text-xs uppercase tracking-wide text-slate-500">Neuanlage</p>
-                                            <h3 className="text-xl font-semibold text-slate-900">Neuer Arbeitsgang</h3>
-                                        </div>
-                                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-100 text-sm font-medium">
-                                            {selectedAbteilung?.name}
-                                        </span>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <Label htmlFor="ag-beschreibung">Bezeichnung</Label>
-                                            <Input
-                                                id="ag-beschreibung"
-                                                value={newArbeitsgangBeschr}
-                                                onChange={e => setNewArbeitsgangBeschr(e.target.value)}
-                                                placeholder="z.B. Montage Metallfassade"
-                                                onKeyDown={e => e.key === 'Enter' && handleCreateArbeitsgang()}
-                                            />
-                                        </div>
-                                        <div className="rounded-xl border border-dashed border-slate-300 p-4 bg-slate-50">
-                                            <h4 className="text-sm font-semibold text-slate-900 mb-1">Hinweis</h4>
-                                            <p className="text-sm text-slate-600 leading-relaxed">
-                                                Nach dem Erstellen können Sie mit dem Stift-Icon den Stundensatz für das aktuelle Jahr festlegen.
-                                            </p>
-                                        </div>
-                                        <div className="flex gap-3 pt-2">
-                                            <Button
-                                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-                                                size="sm"
-                                                onClick={handleCreateArbeitsgang}
-                                                disabled={!newArbeitsgangBeschr.trim() || creatingArbeitsgang}
-                                            >
-                                                <Save className="w-4 h-4 mr-2" />
-                                                {creatingArbeitsgang ? 'Erstellt...' : 'Erstellen'}
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => setNewArbeitsgangBeschr('')}
-                                            >
-                                                <X className="w-4 h-4 mr-2" /> Leeren
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </Card>
-                            ) : (
-                                <Card className="p-10 border border-dashed border-slate-200 shadow-sm rounded-xl text-center text-slate-500">
-                                    Wählen Sie eine Abteilung aus, um einen neuen Arbeitsgang anzulegen.
-                                </Card>
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === 'systemsetup' && (
-                        <div className="space-y-4">
-                            <p className="text-sm text-slate-500">
-                                Gemini API Key und SMTP-Verbindung zentral konfigurieren und direkt im System prüfen.
-                            </p>
-                            <SystemSetupConfigurator />
-                        </div>
-                    )}
-
-                    {activeTab === 'en1090rollen' && features.en1090 && (
+                    {activeTab === 'absender' && (
                         <div className="space-y-4">
                             <div className="flex justify-between items-center">
                                 <p className="text-slate-500 text-sm">
-                                    EN&nbsp;1090 Rollen definieren – z.&thinsp;B. WPK-Leiter, Schweißaufsicht, Monteur. Diese Rollen können Mitarbeitern zugewiesen werden.
+                                    Hier hinterlegen Sie alle E-Mail-Adressen, von denen das System aus E-Mails verschickt.
+                                    Jeder Benutzer bekommt unter „Benutzer" eine dieser Adressen zugewiesen –
+                                    die wird dann automatisch beim Versand als Absender verwendet.
                                 </p>
                                 <Button
-                                    size="sm"
+                                    onClick={() => {
+                                        setEditingAbsender({ aktiv: true, sortierung: absenderListe.length });
+                                        setShowAbsenderModal(true);
+                                    }}
                                     className="bg-rose-600 text-white hover:bg-rose-700"
-                                    onClick={() => { setEditingRolle({ aktiv: true, sortierung: (en1090Rollen.length + 1) * 10 }); setShowRolleModal(true); }}
                                 >
                                     <Plus className="w-4 h-4 mr-2" />
-                                    Neue Rolle
+                                    Neue Absender-Adresse
                                 </Button>
                             </div>
 
-                            {en1090Rollen.length === 0 ? (
-                                <div className="text-center py-16 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                                    <Shield className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-                                    <p className="font-medium">Noch keine Rollen angelegt</p>
-                                    <p className="text-sm mt-1">Standard-Rollen werden beim ersten Start automatisch angelegt.</p>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {en1090Rollen.map(rolle => (
-                                        <Card key={rolle.id} className="p-4 flex flex-col gap-3">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-semibold text-slate-900 truncate">{rolle.kurztext}</p>
-                                                    {rolle.beschreibung && (
-                                                        <p className="text-xs text-slate-500 mt-1 line-clamp-3">{rolle.beschreibung}</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {absenderListe.map(a => (
+                                    <Card key={a.id} className="p-4">
+                                        <div className="flex justify-between items-start gap-2">
+                                            <div className="min-w-0">
+                                                <h4 className="font-semibold text-slate-900 truncate">{a.emailAdresse}</h4>
+                                                {a.anzeigename && (
+                                                    <p className="text-sm text-slate-500 truncate">{a.anzeigename}</p>
+                                                )}
+                                                <div className="flex gap-2 mt-2">
+                                                    {a.aktiv ? (
+                                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Aktiv</span>
+                                                    ) : (
+                                                        <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded">Deaktiviert</span>
                                                     )}
                                                 </div>
-                                                <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ${rolle.aktiv ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                                                    {rolle.aktiv ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                                    {rolle.aktiv ? 'Aktiv' : 'Inaktiv'}
-                                                </span>
                                             </div>
-                                            <div className="flex gap-2 pt-2 border-t border-slate-100">
-                                                <Button size="sm" variant="outline" className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50"
-                                                    onClick={() => { setEditingRolle({ ...rolle }); setShowRolleModal(true); }}>
-                                                    <Edit2 className="w-3 h-3 mr-1" /> Bearbeiten
+                                            <div className="flex gap-1 shrink-0">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        setEditingAbsender(a);
+                                                        setShowAbsenderModal(true);
+                                                    }}
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
                                                 </Button>
-                                                <Button size="sm" variant="ghost" className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                                                    onClick={() => deleteRolle(rolle.id)}>
-                                                    <Trash2 className="w-3 h-3" />
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => deleteAbsender(a.id)}
+                                                    className="text-red-600 hover:text-red-700"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
                                                 </Button>
                                             </div>
-                                        </Card>
-                                    ))}
-                                </div>
-                            )}
+                                        </div>
+                                    </Card>
+                                ))}
+                                {absenderListe.length === 0 && (
+                                    <div className="col-span-full text-center py-8 text-slate-400">
+                                        Noch keine Absender-Adresse angelegt
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
                     {activeTab === 'steuerpruefung' && (
                         <SteuerpruefungExport />
                     )}
+
+                    {activeTab === 'lohn-stammdaten' && (
+                        <Card className="p-6">
+                            <LohnStammdatenPanel />
+                        </Card>
+                    )}
+
+                    {activeTab === 'unfallversicherung' && firma && (
+                        <Card className="p-6 space-y-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900">Gewerk &amp; Unfallversicherung</h3>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Wähle dein Gewerk – wir schlagen dir die passende Berufsgenossenschaft (BG) und einen
+                                    Standard-Beitragssatz vor. Wenn du den genauen Satz aus deinem Beitragsbescheid kennst,
+                                    trägst du ihn unten ein.
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <Label>Gewerk</Label>
+                                    <Select
+                                        value={firma.gewerkId ? String(firma.gewerkId) : ''}
+                                        onChange={(v: string) => {
+                                            const id = v ? Number(v) : null;
+                                            const g = gewerke.find(x => x.id === id);
+                                            setFirma({
+                                                ...firma,
+                                                gewerkId: id,
+                                                gewerkName: g?.name ?? null,
+                                                bgName: g?.bgName ?? null,
+                                                bgSatzVorschlag: g?.bgSatzProzent ?? null,
+                                            });
+                                        }}
+                                        options={[
+                                            { value: '', label: '— Bitte wählen —' },
+                                            ...gewerke.map(g => ({ value: String(g.id), label: `${g.name} (${g.bgName})` })),
+                                        ]}
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Berufsgenossenschaft</Label>
+                                    <Input value={firma.bgName ?? ''} disabled placeholder="— wird durch Gewerk gesetzt —" />
+                                </div>
+                                <div>
+                                    <Label>BG-Satz (Vorschlag)</Label>
+                                    <Input
+                                        value={firma.bgSatzVorschlag != null ? `${Number(firma.bgSatzVorschlag).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : ''}
+                                        disabled
+                                        placeholder="—"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Tatsächlicher BG-Satz (aus Bescheid)</Label>
+                                    <DecimalInput
+                                        aria-label="Tatsächlicher BG-Satz (aus Bescheid)"
+                                        min={0}
+                                        max={100}
+                                        value={firma.bgSatzOverride ?? ''}
+                                        onChange={value => setFirma({ ...firma, bgSatzOverride: value })}
+                                        placeholder={firma.bgSatzVorschlag != null ? `Standard ${Number(firma.bgSatzVorschlag).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : 'optional'}
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">Leer lassen, um den Standard-Satz zu nutzen.</p>
+                                </div>
+                            </div>
+                            <div className="pt-4 border-t flex justify-end">
+                                <Button
+                                    onClick={saveFirma}
+                                    disabled={saving}
+                                    className="bg-rose-600 text-white hover:bg-rose-700"
+                                >
+                                    <Save className="w-4 h-4 mr-2" />
+                                    {saving ? 'Speichert...' : 'Speichern'}
+                                </Button>
+                            </div>
+                        </Card>
+                    )}
                 </>
             )}
 
-            {/* EN 1090 Rolle Modal */}
-            <Dialog open={showRolleModal} onOpenChange={setShowRolleModal}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>{editingRolle?.id ? 'Rolle bearbeiten' : 'Neue EN\u00a01090 Rolle'}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <Label>Kurzbezeichnung *</Label>
-                            <Input
-                                placeholder="z.B. Schweißaufsicht (SAP)"
-                                value={editingRolle?.kurztext || ''}
-                                onChange={e => setEditingRolle(prev => ({ ...prev, kurztext: e.target.value }))}
-                            />
-                        </div>
-                        <div>
-                            <Label>Beschreibung</Label>
-                            <textarea
-                                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[100px] resize-y"
-                                placeholder="Aufgaben und Verantwortlichkeiten dieser Rolle..."
-                                value={editingRolle?.beschreibung || ''}
-                                onChange={e => setEditingRolle(prev => ({ ...prev, beschreibung: e.target.value }))}
-                            />
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <input
-                                type="checkbox"
-                                id="rolle-aktiv"
-                                checked={editingRolle?.aktiv ?? true}
-                                onChange={e => setEditingRolle(prev => ({ ...prev, aktiv: e.target.checked }))}
-                                className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                            />
-                            <label htmlFor="rolle-aktiv" className="text-sm text-slate-700">Rolle ist aktiv und kann Mitarbeitern zugewiesen werden</label>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => { setShowRolleModal(false); setEditingRolle(null); }}>
-                            <X className="w-4 h-4 mr-2" /> Abbrechen
-                        </Button>
-                        <Button
-                            onClick={saveRolle}
-                            disabled={saving || !editingRolle?.kurztext?.trim()}
-                            className="bg-rose-600 text-white hover:bg-rose-700"
-                        >
-                            <Save className="w-4 h-4 mr-2" /> Speichern
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Kostenstelle Modal */}
-            <Dialog open={showKostenstelleModal} onOpenChange={setShowKostenstelleModal}>
+            {/* E-Mail-Absender Modal */}
+            <Dialog open={showAbsenderModal} onOpenChange={setShowAbsenderModal}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>
-                            {editingKostenstelle?.id ? 'Kostenstelle bearbeiten' : 'Neue Kostenstelle'}
+                            {editingAbsender?.id ? 'Absender bearbeiten' : 'Neue Absender-Adresse'}
                         </DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <div>
-                            <Label>Bezeichnung *</Label>
+                            <Label>E-Mail-Adresse *</Label>
                             <Input
-                                value={editingKostenstelle?.bezeichnung || ''}
-                                onChange={e => setEditingKostenstelle({ ...editingKostenstelle, bezeichnung: e.target.value })}
+                                type="email"
+                                value={editingAbsender?.emailAdresse || ''}
+                                onChange={e => setEditingAbsender({ ...editingAbsender, emailAdresse: e.target.value })}
+                                placeholder="info@meinefirma.de"
                             />
                         </div>
                         <div>
-                            <Label>Typ *</Label>
-                            <Select
-                                value={editingKostenstelle?.typ || 'GEMEINKOSTEN'}
-                                onChange={value => setEditingKostenstelle({ ...editingKostenstelle, typ: value as Kostenstelle['typ'] })}
-                                options={KOSTENSTELLEN_TYP_OPTIONS}
-                            />
-                        </div>
-                        <div>
-                            <Label>Beschreibung</Label>
+                            <Label>Anzeigename (optional)</Label>
                             <Input
-                                value={editingKostenstelle?.beschreibung || ''}
-                                onChange={e => setEditingKostenstelle({ ...editingKostenstelle, beschreibung: e.target.value })}
+                                value={editingAbsender?.anzeigename || ''}
+                                onChange={e => setEditingAbsender({ ...editingAbsender, anzeigename: e.target.value })}
+                                placeholder="z. B. Buchhaltung"
                             />
+                            <p className="text-xs text-slate-500 mt-1">
+                                Reine Beschriftung in der Verwaltung – wird nicht im E-Mail-Header verwendet.
+                            </p>
                         </div>
-                        <p className="text-xs text-slate-500">
-                            {(editingKostenstelle?.typ || 'GEMEINKOSTEN') === 'GEMEINKOSTEN'
-                                ? 'Wird als Fixkosten für die Gemeinkostenberechnung verwendet.'
-                                : (editingKostenstelle?.typ || '') === 'LAGER'
-                                    ? 'Wird als Investition gewertet (keine echten Kosten).'
-                                    : (editingKostenstelle?.typ || '') === 'PROJEKT'
-                                        ? 'Kosten werden dem jeweiligen Projekt zugeordnet.'
-                                        : 'Sonstige Kostenzuordnung.'}
-                        </p>
+                        <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={editingAbsender?.aktiv ?? true}
+                                onChange={e => setEditingAbsender({ ...editingAbsender, aktiv: e.target.checked })}
+                                className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                            />
+                            Aktiv (steht für Versand zur Verfügung)
+                        </label>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowKostenstelleModal(false)}>
+                        <Button variant="outline" onClick={() => setShowAbsenderModal(false)}>
                             <X className="w-4 h-4 mr-2" />
                             Abbrechen
                         </Button>
                         <Button
-                            onClick={saveKostenstelle}
-                            disabled={saving || !editingKostenstelle?.bezeichnung}
+                            onClick={saveAbsender}
+                            disabled={saving || !editingAbsender?.emailAdresse?.trim()}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
                             {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
@@ -1819,7 +1470,7 @@ export default function FirmaEditor() {
                             {editingSteuerberater?.id ? 'Steuerberater bearbeiten' : 'Neuer Steuerberater'}
                         </DialogTitle>
                     </DialogHeader>
-                    <div className="grid gap-4 py-4">
+                    <div className="grid gap-4 py-4 overflow-y-auto pr-1 flex-1 min-h-0">
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Name</Label>
@@ -1829,39 +1480,192 @@ export default function FirmaEditor() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label>Ansprechpartner</Label>
-                                <Input 
-                                    value={editingSteuerberater?.ansprechpartner || ''} 
-                                    onChange={e => setEditingSteuerberater(prev => ({ ...prev, ansprechpartner: e.target.value }))}
-                                />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>E-Mail</Label>
-                                <Input 
-                                    value={editingSteuerberater?.email || ''} 
-                                    onChange={e => setEditingSteuerberater(prev => ({ ...prev, email: e.target.value }))}
-                                />
-                            </div>
-                            <div className="space-y-2">
                                 <Label>Telefon</Label>
-                                <Input 
-                                    value={editingSteuerberater?.telefon || ''} 
+                                <Input
+                                    value={editingSteuerberater?.telefon || ''}
                                     onChange={e => setEditingSteuerberater(prev => ({ ...prev, telefon: e.target.value }))}
                                 />
                             </div>
                         </div>
                         <div className="space-y-2">
-                            <Label>Weitere E-Mails (kommagetrennt)</Label>
-                            <Input 
-                                value={editingSteuerberater?.weitereEmails ? editingSteuerberater.weitereEmails.join(', ') : ''} 
-                                onChange={e => setEditingSteuerberater(prev => ({ 
-                                    ...prev, 
-                                    weitereEmails: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                                }))}
-                                placeholder="z.B. buchhaltung@kanzlei.de, sekretariat@kanzlei.de"
+                            <Label>Haupt-E-Mail (für BWA-Erkennung)</Label>
+                            <Input
+                                value={editingSteuerberater?.email || ''}
+                                onChange={e => setEditingSteuerberater(prev => ({ ...prev, email: e.target.value }))}
+                                placeholder="kanzlei@beispiel.de"
                             />
+                        </div>
+                        {/* Weitere E-Mails als Liste mit + und × */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <Label>Weitere E-Mail-Adressen</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setEditingSteuerberater(prev => ({
+                                        ...prev,
+                                        weitereEmails: [...(prev?.weitereEmails || []), '']
+                                    }))}
+                                >
+                                    <Plus className="w-3 h-3 mr-1" />E-Mail hinzufügen
+                                </Button>
+                            </div>
+                            {(editingSteuerberater?.weitereEmails || []).length === 0 && (
+                                <p className="text-xs text-slate-500">Keine weiteren Adressen.</p>
+                            )}
+                            {(editingSteuerberater?.weitereEmails || []).map((mail, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <Input
+                                        value={mail}
+                                        onChange={e => setEditingSteuerberater(prev => {
+                                            const next = [...(prev?.weitereEmails || [])];
+                                            next[idx] = e.target.value;
+                                            return { ...prev, weitereEmails: next };
+                                        })}
+                                        placeholder="weitere@kanzlei.de"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setEditingSteuerberater(prev => ({
+                                            ...prev,
+                                            weitereEmails: (prev?.weitereEmails || []).filter((_, i) => i !== idx)
+                                        }))}
+                                        aria-label="E-Mail entfernen"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Ansprechpartner-Liste */}
+                        <div className="space-y-2 pt-2 border-t border-slate-200">
+                            <div className="flex items-center justify-between">
+                                <Label>Ansprechpartner</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setEditingSteuerberater(prev => {
+                                        const liste = prev?.ansprechpartnerListe || [];
+                                        const istErster = liste.length === 0;
+                                        return {
+                                            ...prev,
+                                            ansprechpartnerListe: [...liste, {
+                                                anrede: 'HERR',
+                                                vorname: '',
+                                                nachname: '',
+                                                email: '',
+                                                telefon: '',
+                                                istLohnAnsprechpartner: istErster,
+                                            }]
+                                        };
+                                    })}
+                                >
+                                    <Plus className="w-3 h-3 mr-1" />Ansprechpartner hinzufügen
+                                </Button>
+                            </div>
+                            {(editingSteuerberater?.ansprechpartnerListe || []).length === 0 && (
+                                <p className="text-xs text-slate-500">Noch kein Ansprechpartner. Mindestens einer wird empfohlen, damit die Stundenaufstellung an die richtige Person geht.</p>
+                            )}
+                            {(editingSteuerberater?.ansprechpartnerListe || []).map((ap, idx) => (
+                                <div key={idx} className="rounded-lg border border-slate-200 p-3 space-y-2 bg-slate-50">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-medium text-slate-600">Ansprechpartner {idx + 1}</span>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setEditingSteuerberater(prev => ({
+                                                ...prev,
+                                                ansprechpartnerListe: (prev?.ansprechpartnerListe || []).filter((_, i) => i !== idx)
+                                            }))}
+                                            aria-label="Ansprechpartner entfernen"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Anrede</Label>
+                                            <Select
+                                                options={ANREDE_OPTIONS}
+                                                value={ap.anrede || ''}
+                                                onChange={v => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], anrede: v || null };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                                placeholder="Anrede"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Vorname</Label>
+                                            <Input
+                                                value={ap.vorname || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], vorname: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Nachname *</Label>
+                                            <Input
+                                                value={ap.nachname || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], nachname: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">E-Mail</Label>
+                                            <Input
+                                                value={ap.email || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], email: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Telefon</Label>
+                                            <Input
+                                                value={ap.telefon || ''}
+                                                onChange={e => setEditingSteuerberater(prev => {
+                                                    const next = [...(prev?.ansprechpartnerListe || [])];
+                                                    next[idx] = { ...next[idx], telefon: e.target.value };
+                                                    return { ...prev, ansprechpartnerListe: next };
+                                                })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
+                                        <input
+                                            type="radio"
+                                            name="lohnAnsprechpartner"
+                                            checked={!!ap.istLohnAnsprechpartner}
+                                            onChange={() => setEditingSteuerberater(prev => {
+                                                const next = (prev?.ansprechpartnerListe || []).map((a, i) => ({
+                                                    ...a,
+                                                    istLohnAnsprechpartner: i === idx,
+                                                }));
+                                                return { ...prev, ansprechpartnerListe: next };
+                                            })}
+                                            className="accent-rose-600"
+                                        />
+                                        <span className="text-slate-700">Zuständig für Löhne (Empfänger der Stundenaufstellung)</span>
+                                    </label>
+                                </div>
+                            ))}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -1902,15 +1706,6 @@ export default function FirmaEditor() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-            {/* Stundensatz Modal (Abteilungen-Tab) */}
-            {editingArbeitsgang && (
-                <StundensatzEditModal
-                    arbeitsgang={editingArbeitsgang}
-                    isOpen={!!editingArbeitsgang}
-                    onClose={() => setEditingArbeitsgang(null)}
-                    onSave={handleSaveStundensatz}
-                />
-            )}
         </PageLayout>
     );
 }

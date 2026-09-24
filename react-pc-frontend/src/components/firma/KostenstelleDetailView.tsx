@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, FileText, Download, Calendar, Euro } from 'lucide-react';
+import { ArrowLeft, FileText, Download, Calendar, CalendarRange, Euro } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 
 interface ZuordnungDto {
     id: number;
+    quelle?: string;
     projektId?: number;
     projektName?: string;
     kostenstelleId: number;
@@ -13,12 +14,19 @@ interface ZuordnungDto {
     prozentanteil: number | null;
     beschreibung: string;
     zugeordnetAm: string;
+
+    // Kostenstreckung über mehrere Jahre (z.B. Zertifizierung alle 3 Jahre)
+    streckungJahre?: number | null;
+    streckungStartJahr?: number | null;
+    jahresanteil?: number | null;
     
     // Extra Info
     lieferantName?: string;
     bestellnummer?: string;
     dokumentDatum?: string;
     geschaeftsdokumentId?: number;
+    dokumentId?: number;
+    belegId?: number;
 }
 
 interface Kostenstelle {
@@ -61,9 +69,14 @@ export function KostenstelleDetailView({ kostenstelle, onBack }: KostenstelleDet
     const formatCurrency = (val: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
     const formatDate = (val?: string) => val ? new Date(val).toLocaleDateString('de-DE') : '-';
 
-    const handleViewPdf = (docId?: number) => {
-        if (!docId) return;
-        window.open(`/api/bestellungen-uebersicht/document/${docId}`, '_blank');
+    const handleViewPdf = (assignment: ZuordnungDto) => {
+        if (assignment.belegId) {
+            window.open(`/api/buchhaltung/belege/${assignment.belegId}/datei`, '_blank');
+            return;
+        }
+        if (assignment.dokumentId) {
+            window.open(`/api/lieferant-dokumente/${assignment.dokumentId}/download`, '_blank');
+        }
     };
 
     return (
@@ -105,13 +118,18 @@ export function KostenstelleDetailView({ kostenstelle, onBack }: KostenstelleDet
                 ) : (
                     <div className="divide-y divide-slate-100">
                         {assignments.map((a) => (
-                            <div key={a.id} className="p-4 hover:bg-slate-50 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                            <div key={`${a.quelle || 'ZUORDNUNG'}-${a.id}`} className="p-4 hover:bg-slate-50 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
                                         <FileText className="w-4 h-4 text-slate-400" />
                                         <span className="font-medium text-slate-900">
-                                            {a.lieferantName || 'Unbekannter Lieferant'}
+                                            {a.lieferantName || (a.belegId ? 'Beleg ohne Lieferant' : 'Unbekannter Lieferant')}
                                         </span>
+                                        {a.belegId && (
+                                            <span className="text-xs bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded">
+                                                Beleg & Kasse
+                                            </span>
+                                        )}
                                         {a.bestellnummer && (
                                             <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
                                                 {a.bestellnummer}
@@ -119,7 +137,7 @@ export function KostenstelleDetailView({ kostenstelle, onBack }: KostenstelleDet
                                         )}
                                     </div>
                                     <p className="text-sm text-slate-600 mb-1">{a.beschreibung}</p>
-                                    <div className="flex gap-3 text-xs text-slate-400">
+                                    <div className="flex flex-wrap gap-3 text-xs text-slate-400">
                                         <span className="flex items-center">
                                             <Calendar className="w-3 h-3 mr-1" />
                                             {formatDate(a.dokumentDatum)}
@@ -128,6 +146,13 @@ export function KostenstelleDetailView({ kostenstelle, onBack }: KostenstelleDet
                                             <Euro className="w-3 h-3 mr-1" />
                                             Anteil: {a.prozentanteil ? `${a.prozentanteil.toFixed(1)}%` : 'Pausschal'}
                                         </span>
+                                        {a.streckungJahre != null && a.streckungJahre > 1 && (
+                                            <span className="flex items-center text-rose-600 font-medium bg-rose-50 px-1.5 py-0.5 rounded">
+                                                <CalendarRange className="w-3 h-3 mr-1" />
+                                                über {a.streckungJahre} Jahre · {formatCurrency(a.jahresanteil ?? (a.betrag / a.streckungJahre))}/Jahr
+                                                {a.streckungStartJahr != null && ` (${a.streckungStartJahr}–${a.streckungStartJahr + a.streckungJahre - 1})`}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">
@@ -137,11 +162,11 @@ export function KostenstelleDetailView({ kostenstelle, onBack }: KostenstelleDet
                                         </span>
                                         <span className="text-xs text-slate-400">Netto</span>
                                     </div>
-                                    {a.geschaeftsdokumentId && (
+                                    {(a.dokumentId || a.belegId) && (
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => handleViewPdf(a.geschaeftsdokumentId)}
+                                            onClick={() => handleViewPdf(a)}
                                             className="text-slate-600 hover:text-rose-600"
                                             title="PDF öffnen"
                                         >

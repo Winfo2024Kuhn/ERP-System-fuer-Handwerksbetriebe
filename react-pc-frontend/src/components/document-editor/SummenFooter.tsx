@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { formatCurrency } from './helpers';
+import { formatCurrency, rabattBetrag as berechneRabattBetrag } from './helpers';
+import { ZahlungszielTageEingabe } from './ZahlungszielTageEingabe';
 import { Calendar, User, Hash, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -22,11 +23,22 @@ interface SummenFooterProps {
     globalRabatt?: number;
     /** If true, the amounts shown are the effective rest (after deducting previous invoices) */
     istRestbetrag?: boolean;
+    /** Zahlungsziel in Tagen (editierbar wenn onZahlungszielChange vorhanden). */
+    zahlungsziel?: number;
+    /** Errechnetes Fälligkeitsdatum als formatierter String (z.B. "25.06.2026"). */
+    zahlungszielDatum?: string;
+    /**
+     * Wird aufgerufen, wenn der Benutzer die Zahlungsziel-Eingabe abschließt.
+     * Liefert zurück, ob der Wert übernommen wurde. Fehlt = read-only.
+     */
+    onZahlungszielChange?: (tage: number) => Promise<boolean>;
 }
 
-export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag }: SummenFooterProps) {
+export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag, zahlungsziel, zahlungszielDatum, onZahlungszielChange }: SummenFooterProps) {
     const hasGlobalRabatt = (globalRabatt ?? 0) > 0;
-    const rabattBetrag = hasGlobalRabatt ? nettosumme * (globalRabatt! / 100) : 0;
+    // Zentrale Rundung wie im PDF und beim Speichern — sonst zeigt der Footer einen
+    // anderen Cent-Betrag als das versendete Dokument.
+    const rabattBetrag = berechneRabattBetrag(nettosumme, globalRabatt);
     const nettoNachRabatt = nettosumme - rabattBetrag;
     const mwstBetrag = nettoNachRabatt * 0.19;
     const bruttosumme = nettoNachRabatt + mwstBetrag;
@@ -75,7 +87,7 @@ export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, 
     const canEditDatum = !isLocked && !!onDatumChange;
 
     return (
-        <div className="bg-white border-t border-slate-200 px-4 h-9 flex items-center justify-between text-[11px] flex-shrink-0">
+        <div data-testid="summenzeile" className="bg-white border-t border-slate-200 px-4 h-9 flex items-center justify-between text-[11px] flex-shrink-0">
             {/* Left: document info + Kopfdaten */}
             <div className="flex items-center gap-2.5 text-slate-400 min-w-0 overflow-visible">
                 <span className="font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded text-[10px] flex-shrink-0">
@@ -169,6 +181,27 @@ export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, 
                 )}
                 <span className="text-slate-300">|</span>
                 <span className="flex-shrink-0">{blockCount} {blockCount === 1 ? 'Block' : 'Blöcke'}</span>
+                {zahlungsziel !== undefined && (
+                    <>
+                        <span className="text-slate-300">|</span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                            <span className="text-slate-500">Zahlungsziel:</span>
+                            {onZahlungszielChange ? (
+                                <ZahlungszielTageEingabe
+                                    tage={zahlungsziel}
+                                    onUebernehmen={onZahlungszielChange}
+                                    className="w-10 rounded border border-slate-200 bg-white px-1 text-center text-[11px] text-slate-700 focus:border-rose-400 focus:outline-none"
+                                />
+                            ) : (
+                                <span className="text-slate-700">{zahlungsziel}</span>
+                            )}
+                            <span className="text-slate-500">Tage</span>
+                            {zahlungszielDatum && (
+                                <span className="text-slate-400">= fällig {zahlungszielDatum}</span>
+                            )}
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Right: summen */}

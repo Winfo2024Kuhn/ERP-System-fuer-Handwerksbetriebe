@@ -7,7 +7,6 @@ interface Projekt {
     auftragsnummer?: string;
     kunde?: string;
     abgeschlossen?: boolean;
-    excKlasse?: string | null;
 }
 
 interface ProjektSearchModalProps {

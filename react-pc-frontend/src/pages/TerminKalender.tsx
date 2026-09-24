@@ -7,6 +7,8 @@ import {
 import { Button } from '../components/ui/button';
 import { SearchableSelect } from '../components/ui/searchable-select';
 import { DatePicker } from '../components/ui/datepicker';
+import { TimeInput, validateTimeInput } from '../components/ui/time-input';
+import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 
 interface Teilnehmer {
@@ -1051,6 +1053,7 @@ interface EventModalProps {
 
 function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onClose, onSave }: EventModalProps) {
     const confirmDialog = useConfirm();
+    const toast = useToast();
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
@@ -1158,7 +1161,16 @@ function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onC
     });
 
     const handleSubmit = async () => {
-        if (!titel.trim()) return;
+        if (!titel.trim()) { toast.error('Bitte einen Titel eingeben.'); return; }
+        if (!eventDatum) { toast.error('Bitte ein Datum auswählen.'); return; }
+        if (!ganztaegig) {
+            const start = validateTimeInput(startZeit, { label: 'Beginn', required: true });
+            const ende = validateTimeInput(endeZeit, { label: 'Ende', required: true });
+            if (!start.valid || !ende.valid) {
+                toast.error(!start.valid ? start.message : !ende.valid ? ende.message : 'Bitte Uhrzeiten prüfen.');
+                return;
+            }
+        }
 
         setSaving(true);
         try {
@@ -1188,11 +1200,11 @@ function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onC
                 body: JSON.stringify(body)
             });
 
-            if (res.ok) {
-                onSave();
-            }
+            if (!res.ok) throw new Error('Termin konnte nicht gespeichert werden.');
+            onSave();
         } catch (err) {
             console.error('Fehler beim Speichern:', err);
+            toast.error('Termin konnte nicht gespeichert werden.');
         }
         setSaving(false);
     };
@@ -1204,11 +1216,11 @@ function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onC
         setDeleting(true);
         try {
             const res = await fetch(`/api/kalender/${eintrag.id}`, { method: 'DELETE' });
-            if (res.ok) {
-                onSave();
-            }
+            if (!res.ok) throw new Error('Termin konnte nicht gelöscht werden.');
+            onSave();
         } catch (err) {
             console.error('Fehler beim Löschen:', err);
+            toast.error('Termin konnte nicht gelöscht werden.');
         }
         setDeleting(false);
     };
@@ -1217,22 +1229,22 @@ function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onC
         <>
             <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
             <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 pointer-events-auto max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+                <div role="dialog" aria-modal="true" aria-label={eintrag ? 'Termin bearbeiten' : 'Neuer Termin'} className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 pointer-events-auto max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     {/* Header */}
-                    <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50 rounded-t-xl sticky top-0">
+                    <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50 rounded-t-xl shrink-0">
                         <div>
                             <h2 className="text-lg font-bold text-slate-900">
                                 {eintrag ? 'Termin bearbeiten' : 'Neuer Termin'}
                             </h2>
                             <p className="text-sm text-slate-500">{formatieresDatum}</p>
                         </div>
-                        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer">
+                        <button aria-label="Termin schließen" onClick={onClose} className="p-2 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer">
                             <X className="w-5 h-5 text-slate-500" />
                         </button>
                     </div>
 
                     {/* Body */}
-                    <div className="p-4 space-y-4">
+                    <div className="p-4 space-y-4 min-h-0 overflow-y-auto">
                         {/* Titel */}
                         <div>
                             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
@@ -1282,10 +1294,9 @@ function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onC
                                         <Clock className="w-3 h-3 inline mr-1" />
                                         Von
                                     </label>
-                                    <input
-                                        type="time"
+                                    <TimeInput aria-label="Von" required
                                         value={startZeit}
-                                        onChange={(e) => setStartZeit(e.target.value)}
+                                        onChange={setStartZeit}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                                     />
                                 </div>
@@ -1293,10 +1304,9 @@ function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onC
                                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                                         Bis
                                     </label>
-                                    <input
-                                        type="time"
+                                    <TimeInput aria-label="Bis" required
                                         value={endeZeit}
-                                        onChange={(e) => setEndeZeit(e.target.value)}
+                                        onChange={setEndeZeit}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                                     />
                                 </div>
@@ -1465,7 +1475,7 @@ function EventModal({ datum, eintrag, mitarbeiter, currentUserMitarbeiterId, onC
                     </div>
 
                     {/* Footer */}
-                    <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50 rounded-b-xl sticky bottom-0">
+                    <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50 rounded-b-xl shrink-0">
                         {eintrag ? (
                             <Button
                                 onClick={handleDelete}

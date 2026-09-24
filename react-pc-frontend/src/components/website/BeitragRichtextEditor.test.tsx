@@ -1,0 +1,82 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi } from 'vitest';
+import { BeitragRichtextEditor } from './BeitragRichtextEditor';
+
+describe('BeitragRichtextEditor', () => {
+    it('zeigt den uebergebenen Text an', () => {
+        render(<BeitragRichtextEditor html="<p>Schiebetor gesetzt.</p>" onChange={() => {}} />);
+
+        expect(screen.getByText('Schiebetor gesetzt.')).toBeInTheDocument();
+    });
+
+    it('hat genau die Knoepfe, deren Ergebnis die Website behaelt', () => {
+        render(<BeitragRichtextEditor html="" onChange={() => {}} />);
+
+        expect(screen.getByRole('button', { name: 'Fett' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Kursiv' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Aufzählung' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Nummerierte Liste' })).toBeInTheDocument();
+        // Ueberschriften und Ausrichtung wirft die Website weg, also gibt es sie hier nicht.
+        expect(screen.queryByRole('button', { name: /Ueberschrift/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Zentriert/ })).not.toBeInTheDocument();
+    });
+
+    it('meldet Aenderungen nach oben', async () => {
+        const user = userEvent.setup();
+        const onChange = vi.fn();
+        render(<BeitragRichtextEditor html="<p>Start</p>" onChange={onChange} />);
+
+        await user.click(screen.getByText('Start'));
+        await user.keyboard('!');
+
+        expect(onChange).toHaveBeenCalled();
+        expect(onChange.mock.calls.at(-1)?.[0]).toContain('Start');
+    });
+
+    it('uebernimmt einen Wechsel des Beitrags von aussen', () => {
+        const { rerender } = render(<BeitragRichtextEditor html="<p>Erster</p>" onChange={() => {}} />);
+
+        rerender(<BeitragRichtextEditor html="<p>Zweiter</p>" onChange={() => {}} />);
+
+        expect(screen.getByText('Zweiter')).toBeInTheDocument();
+        expect(screen.queryByText('Erster')).not.toBeInTheDocument();
+    });
+
+    it('nimmt bei editable={false} keine Eingabe an und meldet nichts nach oben', async () => {
+        const user = userEvent.setup();
+        const onChange = vi.fn();
+        render(<BeitragRichtextEditor html="<p>Start</p>" onChange={onChange} editable={false} />);
+
+        await user.click(screen.getByText('Start'));
+        await user.keyboard('!');
+
+        expect(onChange).not.toHaveBeenCalled();
+        expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    it('sperrt die Werkzeugleiste bei editable={false}', () => {
+        render(<BeitragRichtextEditor html="<p>Start</p>" onChange={() => {}} editable={false} />);
+
+        expect(screen.getByRole('button', { name: 'Fett' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Kursiv' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Aufzählung' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Nummerierte Liste' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Rückgängig' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Wiederholen' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Standard' })).toBeDisabled();
+    });
+
+    it('erlaubt Eingabe wieder, wenn editable von false auf true wechselt', async () => {
+        const user = userEvent.setup();
+        const onChange = vi.fn();
+        const { rerender } = render(
+            <BeitragRichtextEditor html="<p>Start</p>" onChange={onChange} editable={false} />);
+
+        rerender(<BeitragRichtextEditor html="<p>Start</p>" onChange={onChange} editable />);
+        await user.click(screen.getByText('Start'));
+        await user.keyboard('!');
+
+        expect(onChange).toHaveBeenCalled();
+    });
+});

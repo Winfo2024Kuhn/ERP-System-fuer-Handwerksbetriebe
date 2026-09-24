@@ -16,6 +16,7 @@ import {
     FileText,
     FolderOpen,
     Hammer,
+    GitMerge,
     Lock,
     Mail,
     MapPin,
@@ -36,7 +37,8 @@ import {
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import type { Projekt, ProjektDetail, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel } from "../types";
+import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel, ArtikelInProjekt } from "../types";
+import { canCreateEinfacheRechnung, istRechnungAmVorgaengerGesperrt, hatAktiveAuftragsbestaetigung } from "../lib/abrechnungsverlauf";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
 import { ProjektErstellenModal } from "../components/ProjektErstellenModal";
@@ -45,21 +47,28 @@ import { EmailsTab } from "../components/EmailsTab";
 import { Select } from "../components/ui/select-custom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
+import { DecimalInput } from "../components/ui/decimal-input";
 import { Label } from "../components/ui/label";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { PageLayout } from "../components/layout/PageLayout";
 
 import { ImageViewer } from "../components/ui/image-viewer";
+import { ThumbnailImage } from "../components/ui/ThumbnailImage";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import type { DocBlock } from '../components/document-editor/types';
 import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks } from '../components/TeilrechnungPositionRow';
+import { serviceLineTotal, nettoNachGlobalRabatt, calculateNettoNachRabatt } from '../components/document-editor/helpers';
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ZuordnungModal } from '../components/ZuordnungModal';
 import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
 import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDrawer';
+import { AnfrageSearchModal } from '../components/AnfrageSearchModal';
+import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
+import { artikelBezeichnung } from '../components/artikel/artikelBezeichnung';
+import { validateDecimalInput } from '../lib/numberInput';
 
 interface Supplier {
     id: number;
@@ -129,6 +138,7 @@ function flattenTree(nodes: DokumentTreeNode[]): DokumentTreeNode[] {
 
 const TYP_COLORS: Record<string, string> = {
     'ANGEBOT': 'bg-blue-50 text-blue-700 border-blue-200',
+    'NACHTRAGSANGEBOT': 'bg-slate-100 text-slate-700 border-slate-300',
     'AUFTRAGSBESTAETIGUNG': 'bg-purple-50 text-purple-700 border-purple-200',
     'RECHNUNG': 'bg-rose-50 text-rose-700 border-rose-200',
     'TEILRECHNUNG': 'bg-rose-50 text-rose-600 border-rose-200',
@@ -167,25 +177,52 @@ type FreigabeAuditData = {
     akzeptiertEmail: string | null;
     akzeptiertIp: string | null;
     akzeptiertUserAgent: string | null;
+    // Vor-/Nachname der konkret klickenden Person (bei Firmenkunden die
+    // vertretungsberechtigte Person). Für Altbestand (Akzeptanzen vor V317) null.
+    unterzeichnerVorname: string | null;
+    unterzeichnerNachname: string | null;
+    unterzeichnerName: string | null;
     hashOriginal: string | null;
     hashAcceptance: string | null;
 };
 
 // ==================== DETAIL VIEW ====================
 
+type ProjektDetailTab = 'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen';
+const ALLOWED_PROJEKT_TABS: ReadonlyArray<ProjektDetailTab> =
+    ['zeiten', 'materialkosten', 'emails', 'geschaeftsdokumente', 'dokumente', 'beschreibung', 'notizen'];
+function parseProjektTab(raw: string | null): ProjektDetailTab | undefined {
+    return raw && (ALLOWED_PROJEKT_TABS as readonly string[]).includes(raw)
+        ? raw as ProjektDetailTab
+        : undefined;
+}
+
 interface ProjektDetailViewProps {
     projekt: ProjektDetail;
     onBack: () => void;
     onEdit: () => void;
     onRefresh: () => Promise<void>;
-    initialTab?: 'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen';
+    initialTab?: ProjektDetailTab;
 }
 
 const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, onEdit, onRefresh, initialTab }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'zeiten' | 'materialkosten' | 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen'>(initialTab || 'zeiten');
+    const [, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTabState] = useState<ProjektDetailTab>(initialTab || 'zeiten');
+    // Wrapper: hält den aktiven Tab als ?tab= in der URL, damit das Notification-Center
+    // gezielt deeplinken kann und der Tab beim Reload erhalten bleibt.
+    // Functional-Updater liest immer den aktuellsten Param-Snapshot, sodass diese
+    // Callback-Identität stabil bleibt und nicht bei jedem URL-Change neu erzeugt wird.
+    const setActiveTab = useCallback((tab: ProjektDetailTab) => {
+        setActiveTabState(tab);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', tab);
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
     const [kurzbeschreibung, setKurzbeschreibung] = useState(projekt.kurzbeschreibung || '');
     const [savingDesc, setSavingDesc] = useState(false);
 
@@ -218,23 +255,23 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [showLagerArtikelModal, setShowLagerArtikelModal] = useState(false);
     const [newMaterial, setNewMaterial] = useState<{ beschreibung: string, betrag: string, lieferantId?: string, rechnungsnummer: string }>({ beschreibung: '', betrag: '', rechnungsnummer: '' });
     const [savingMaterial, setSavingMaterial] = useState(false);
-    const [lagerArtikel, setLagerArtikel] = useState<Artikel[]>([]);
-    const [loadingLagerArtikel, setLoadingLagerArtikel] = useState(false);
     const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
-    const [lagerArtikelError, setLagerArtikelError] = useState<string | null>(null);
-    const [lagerArtikelSearch, setLagerArtikelSearch] = useState('');
-    const [lagerArtikelPage, setLagerArtikelPage] = useState(0);
-    const [lagerArtikelGesamt, setLagerArtikelGesamt] = useState(0);
-    const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<string>>(new Set());
-    const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<string, Artikel>>({});
-    const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<string, string>>({});
-    const [lagerArtikelBeschaffung, setLagerArtikelBeschaffung] = useState<Record<string, 'lager' | 'bestellen'>>({});
+    // Id der Position, die gerade entfernt wird - sperrt genau ihren Knopf.
+    const [loeschendeArtikelId, setLoeschendeArtikelId] = useState<number | null>(null);
+    // Die Auswahl haengt an der Artikel-Id. Die Trefferliste zeigt eine Zeile je
+    // Artikel (mit dem guenstigsten Anbieter darin) - ein zusammengesetzter
+    // Schluessel aus Artikel und Lieferant haette hier nichts mehr zu unterscheiden.
+    const [selectedLagerArtikelKeys, setSelectedLagerArtikelKeys] = useState<Set<number>>(new Set());
+    // Die vollen Artikeldaten der angehakten Zeilen. Ohne diese Kopie waere die
+    // Auswahl verloren, sobald ein Filter den Treffer aus der Liste draengt.
+    const [selectedLagerArtikelData, setSelectedLagerArtikelData] = useState<Record<number, Artikel>>({});
+    const [lagerArtikelMengen, setLagerArtikelMengen] = useState<Record<number, string>>({});
+    const [lagerArtikelPreise, setLagerArtikelPreise] = useState<Record<number, string>>({});
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [showSupplierPicker, setShowSupplierPicker] = useState(false);
     const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
 
     const [showDokumentTypDialog, setShowDokumentTypDialog] = useState(false);
-    const lagerArtikelFetchSeq = useRef(0);
 
     // Rechnungserstellung Dialog State
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
@@ -246,6 +283,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Teilrechnung Positions-Auswahl
     const [basisDokBlocks, setBasisDokBlocks] = useState<DocBlock[]>([]);
+    // Pauschalrabatt des Basisdokuments. Eine Teilrechnung muss ihn erben: der
+    // Restbetrag leitet sich aus dem RABATTIERTEN betragNetto des Basisdokuments ab —
+    // eine unrabattierte Positionssumme wuerde ihn zwangslaeufig uebersteigen und die
+    // Teilrechnung waere fuer jedes rabattierte Basisdokument blockiert.
+    const [basisDokGlobalRabatt, setBasisDokGlobalRabatt] = useState<number>(0);
     const [selectedBlockIds, setSelectedBlockIds] = useState<Set<string>>(new Set());
     const [expandedBlockIds, setExpandedBlockIds] = useState<Set<string>>(new Set());
     const [bereitsAbgerechneteBlockIds, setBereitsAbgerechneteBlockIds] = useState<Set<string>>(new Set());
@@ -266,10 +308,15 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Teilrechnung: Summe der gewählten Positionen
     const teilrechnungSelectedSum = useMemo(() => {
-        return getAllServiceBlocks(basisDokBlocks)
-            .filter(b => selectedBlockIds.has(b.id))
-            .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0);
-    }, [basisDokBlocks, selectedBlockIds]);
+        // `!b.optional` wie in calculateNetto: der gespeicherte Betrag laesst
+        // Wahl-/Alternativpositionen aussen vor, die Anzeige muss dasselbe tun —
+        // sonst zeigt der Dialog mehr an als abgerechnet wird und die Restbetrag-
+        // Pruefung sperrt die Vollauswahl faelschlich.
+        const roh = getAllServiceBlocks(basisDokBlocks)
+            .filter(b => !b.optional && selectedBlockIds.has(b.id))
+            .reduce((sum, b) => sum + serviceLineTotal(b), 0);
+        return nettoNachGlobalRabatt(roh, basisDokGlobalRabatt);
+    }, [basisDokBlocks, selectedBlockIds, basisDokGlobalRabatt]);
 
     // Teilrechnung: Prüfung ob Gesamtbetrag (gewählte Positionen + bereits abgerechnet) den Basisbetrag überschreitet
     const teilrechnungExceedsRestbetrag = useMemo(() => {
@@ -353,11 +400,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         loadEingangsrechnungen();
     }, [loadEingangsrechnungen]);
 
+
     // Projekt-Notizen State
     interface ProjektNotizBild {
         id: number;
         originalDateiname: string;
         url: string;
+        /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+        thumbnailUrl?: string;
         erstelltAm: string;
     }
     interface ProjektNotiz {
@@ -384,6 +434,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Ausgangs-Geschäftsdokumente State
     const [ausgangsDokumente, setAusgangsDokumente] = useState<AusgangsGeschaeftsDokument[]>([]);
+    const [showAnfrageSearchModal, setShowAnfrageSearchModal] = useState(false);
+    const [showAnfrageMergeDialog, setShowAnfrageMergeDialog] = useState(false);
+    const [selectedMergeAnfrage, setSelectedMergeAnfrage] = useState<Anfrage | null>(null);
+    const [mergingAnfrage, setMergingAnfrage] = useState(false);
+    const [documentManagerKey, setDocumentManagerKey] = useState(0);
 
     // Digitale Freigabe-Stati pro Dokument-ID — gleiche Anzeige wie im AnfrageEditor
     // (DokumentHierarchie). Geladen über /api/ausgangs-dokumente/freigabe-status,
@@ -441,6 +496,57 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     useEffect(() => {
         loadAusgangsDokumente();
     }, [loadAusgangsDokumente]);
+
+    const openAnfrageMergeDialog = () => {
+        if (ausgangsDokumente.length > 0) {
+            toast.error('Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind.');
+            return;
+        }
+        setSelectedMergeAnfrage(null);
+        setShowAnfrageSearchModal(true);
+    };
+
+    const handleAnfrageMerge = async () => {
+        if (!selectedMergeAnfrage) return;
+        setMergingAnfrage(true);
+        try {
+            const res = await fetch(
+                `/api/projekte/${projekt.id}/anfragen/${selectedMergeAnfrage.id}/zusammenfuehren`,
+                { method: 'POST' }
+            );
+            if (!res.ok) {
+                let message = 'Anfrage konnte nicht zusammengeführt werden.';
+                try {
+                    const data = await res.json();
+                    if (typeof data?.message === 'string') message = data.message;
+                } catch {
+                    // Leere oder nicht-json Antwort.
+                }
+                toast.error(message);
+                return;
+            }
+
+            setShowAnfrageMergeDialog(false);
+            setSelectedMergeAnfrage(null);
+            await Promise.all([
+                onRefresh(),
+                loadAusgangsDokumente(),
+                loadNotizen(),
+            ]);
+            const dokumenteRes = await fetch(`/api/projekte/${projekt.id}/dokumente`);
+            if (dokumenteRes.ok) {
+                const dokumente = await dokumenteRes.json();
+                setDokumenteCount(Array.isArray(dokumente) ? dokumente.length : 0);
+            }
+            setDocumentManagerKey(key => key + 1);
+            toast.success('Anfrage wurde vollständig mit dem Projekt zusammengeführt und gelöscht.');
+        } catch (error) {
+            console.error('Anfrage-Zusammenführung fehlgeschlagen:', error);
+            toast.error('Anfrage konnte nicht zusammengeführt werden.');
+        } finally {
+            setMergingAnfrage(false);
+        }
+    };
 
     // Freigabe-Status für alle aktuell geladenen Dokumente nachziehen.
     // Symmetrisch zu DokumentHierarchie — sobald die Dokumentliste sich ändert,
@@ -667,21 +773,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         return new Date(dateStr).toLocaleDateString('de-DE');
     };
 
-    const getLagerArtikelKey = (artikel: Artikel) => `${artikel.id}-${artikel.lieferantId ?? 'none'}`;
-
     const getVerrechnungseinheitName = (einheit?: Artikel['verrechnungseinheit']) => {
         if (!einheit) return 'STUECK';
         return typeof einheit === 'string' ? einheit : einheit.name;
-    };
-
-    const getVerrechnungseinheitLabel = (einheit?: Artikel['verrechnungseinheit']) => {
-        if (!einheit) return 'Stück';
-        if (typeof einheit === 'object') return einheit.anzeigename || einheit.name;
-        if (einheit === 'STUECK') return 'Stück';
-        if (einheit === 'LAUFENDE_METER') return 'Laufende Meter';
-        if (einheit === 'QUADRATMETER') return 'Quadratmeter';
-        if (einheit === 'KILOGRAMM') return 'Kilogramm';
-        return einheit;
     };
 
     const mapEinheitForBackend = (einheit?: Artikel['verrechnungseinheit']) => {
@@ -694,164 +788,78 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         setSelectedLagerArtikelKeys(new Set());
         setSelectedLagerArtikelData({});
         setLagerArtikelMengen({});
-        setLagerArtikelBeschaffung({});
-        setLagerArtikelSearch('');
-        setLagerArtikelPage(0);
-        setLagerArtikelGesamt(0);
-        setLagerArtikelError(null);
+        setLagerArtikelPreise({});
     };
 
-    const loadLagerArtikel = useCallback(async ({ page, query }: { page: number; query: string }) => {
-        const fetchId = ++lagerArtikelFetchSeq.current;
+    /**
+     * Haengt einen Artikel an die Auswahl oder loest ihn wieder.
+     *
+     * Neu angehakt startet er mit Menge 1 und "aus Lager" - das ist der Fall,
+     * den der Bediener am haeufigsten meint. Beides laesst sich in der Zeile
+     * sofort aendern.
+     */
+    const handleToggleLagerArtikel = (artikel: Artikel) => {
+        const key = artikel.id;
+        const abwaehlen = selectedLagerArtikelKeys.has(key);
 
-        setLoadingLagerArtikel(true);
-
-        setLagerArtikelError(null);
-        try {
-            const params = new URLSearchParams();
-            params.set('page', String(page));
-            params.set('size', String(LAGER_ARTIKEL_PAGE_SIZE));
-            params.set('sort', 'produktname');
-            params.set('dir', 'asc');
-            params.set('nurMitLieferantenpreis', 'true');
-            if (query) {
-                params.set('q', query);
-            }
-
-            const res = await fetch(`/api/artikel?${params.toString()}`);
-            if (!res.ok) throw new Error('Artikel konnten nicht geladen werden');
-
-            const data = await res.json();
-            if (fetchId !== lagerArtikelFetchSeq.current) {
-                return;
-            }
-
-            const list: Artikel[] = Array.isArray(data?.artikel) ? data.artikel : [];
-            setLagerArtikel(list);
-
-            const gesamt = typeof data?.gesamt === 'number' ? data.gesamt : 0;
-            const aktuelleSeite = typeof data?.seite === 'number' ? data.seite : page;
-
-            setLagerArtikelPage(aktuelleSeite);
-            setLagerArtikelGesamt(gesamt);
-        } catch (error) {
-            console.error('Fehler beim Laden der Lagerartikel:', error);
-            setLagerArtikel([]);
-            setLagerArtikelGesamt(0);
-            setLagerArtikelError('Lagerartikel konnten nicht geladen werden.');
-        } finally {
-            if (fetchId === lagerArtikelFetchSeq.current) {
-                setLoadingLagerArtikel(false);
-            }
-        }
-    }, []);
-
-    useEffect(() => {
-        if (!showLagerArtikelModal) return;
-        setLagerArtikelPage(0);
-    }, [showLagerArtikelModal, lagerArtikelSearch]);
-
-    useEffect(() => {
-        if (!showLagerArtikelModal) return;
-        const query = lagerArtikelSearch.trim();
-        const timer = setTimeout(() => {
-            loadLagerArtikel({ page: lagerArtikelPage, query });
-        }, 300);
-
-        return () => clearTimeout(timer);
-    }, [showLagerArtikelModal, lagerArtikelSearch, lagerArtikelPage, loadLagerArtikel]);
-
-    const lagerArtikelTotalPages = Math.max(1, Math.ceil(lagerArtikelGesamt / LAGER_ARTIKEL_PAGE_SIZE));
-
-    const lagerArtikelStatusText = useMemo(() => {
-        if (loadingLagerArtikel) return 'Artikel werden geladen...';
-        if (lagerArtikelGesamt === 0) return 'Keine Artikel gefunden.';
-
-        const start = lagerArtikelPage * LAGER_ARTIKEL_PAGE_SIZE + 1;
-        const end = Math.min(start + lagerArtikel.length - 1, lagerArtikelGesamt);
-        return `Zeige ${start}-${end} von ${lagerArtikelGesamt} Artikeln`;
-    }, [loadingLagerArtikel, lagerArtikelGesamt, lagerArtikelPage, lagerArtikel.length]);
-
-    const handleToggleLagerArtikel = (artikel: Artikel, checked: boolean) => {
-        const key = getLagerArtikelKey(artikel);
         setSelectedLagerArtikelKeys(prev => {
             const next = new Set(prev);
-            if (checked) {
-                next.add(key);
-            } else {
-                next.delete(key);
-            }
+            if (abwaehlen) next.delete(key);
+            else next.add(key);
             return next;
         });
 
-        if (checked) {
-            setLagerArtikelMengen(prev => {
-                if (prev[key]) return prev;
-                return { ...prev, [key]: '1' };
-            });
-            setSelectedLagerArtikelData(prev => ({ ...prev, [key]: artikel }));
-            setLagerArtikelBeschaffung(prev => {
-                if (prev[key]) return prev;
-                return { ...prev, [key]: 'lager' };
-            });
-        } else {
+        if (abwaehlen) {
             setSelectedLagerArtikelData(prev => {
-                if (!prev[key]) return prev;
                 const next = { ...prev };
                 delete next[key];
                 return next;
             });
-            setLagerArtikelBeschaffung(prev => {
-                if (!prev[key]) return prev;
-                const next = { ...prev };
-                delete next[key];
-                return next;
-            });
+            setLagerArtikelPreise(prev => { const next = { ...prev }; delete next[key]; return next; });
+            return;
         }
+
+        setSelectedLagerArtikelData(prev => ({ ...prev, [key]: artikel }));
+        // Eine frisch angehakte Zeile faengt wieder bei 1 an, auch wenn vorher
+        // schon etwas im Mengenfeld stand.
+        setLagerArtikelMengen(prev => ({ ...prev, [key]: '1' }));
+        setLagerArtikelPreise(prev => ({ ...prev, [key]: String(artikel.guenstigsterPreis ?? artikel.preis ?? '') }));
     };
 
+    /**
+     * Uebernimmt die Eingabe des Mengenfelds. Der getippte Text bleibt stehen,
+     * auch wenn er (noch) keine gueltige Zahl ist - sonst liesse sich das Feld
+     * gar nicht leeren und aus "12" wuerde beim Korrigieren "112". Die Auswahl
+     * selbst bleibt davon unberuehrt; ueber sie entscheidet allein die Checkbox.
+     */
     const handleLagerMengeChange = (artikel: Artikel, value: string) => {
-        const key = getLagerArtikelKey(artikel);
-        setLagerArtikelMengen(prev => ({ ...prev, [key]: value }));
-
-        const parsed = parseFloat(value.replace(',', '.'));
-        setSelectedLagerArtikelKeys(prev => {
-            const next = new Set(prev);
-            if (!Number.isNaN(parsed) && parsed > 0) {
-                next.add(key);
-            } else {
-                next.delete(key);
-            }
-            return next;
-        });
-
-        setSelectedLagerArtikelData(prev => {
-            const next = { ...prev };
-            if (!Number.isNaN(parsed) && parsed > 0) {
-                next[key] = artikel;
-            } else {
-                delete next[key];
-            }
-            return next;
-        });
-
-        setLagerArtikelBeschaffung(prev => {
-            if (!Number.isNaN(parsed) && parsed > 0) {
-                if (prev[key]) return prev;
-                return { ...prev, [key]: 'lager' };
-            }
-            if (!prev[key]) return prev;
-            const next = { ...prev };
-            delete next[key];
-            return next;
-        });
+        setLagerArtikelMengen(prev => ({ ...prev, [artikel.id]: value }));
     };
 
-    const handleLagerBeschaffungChange = (artikel: Artikel, value: string) => {
-        const key = getLagerArtikelKey(artikel);
-        const beschaffung = value === 'bestellen' ? 'bestellen' : 'lager';
-        setLagerArtikelBeschaffung(prev => ({ ...prev, [key]: beschaffung }));
+    /**
+     * Stueckware laesst sich nicht teilen. Das Backend schneidet eine
+     * Bruchzahl mit `intValue()` ab - aus "0,5 Stück" wuerde dort eine
+     * Position mit 0 Stück und 0 EUR. Meterware und Kilogramm duerfen dagegen
+     * krumm sein.
+     */
+    const istStueckware = (artikel?: Artikel) =>
+        !!artikel && getVerrechnungseinheitName(artikel.verrechnungseinheit) === 'STUECK';
+
+    /** Zeigt eine gewaehlte Zeile gerade keine brauchbare Menge? */
+    const lagerMengeUngueltig = (artikelId: number) => {
+        const menge = validateDecimalInput(lagerArtikelMengen[artikelId] ?? '', {
+            label: 'Menge', min: 0.000001, integer: istStueckware(selectedLagerArtikelData[artikelId]), required: true,
+        });
+        if (!menge.valid || menge.value === null) return true;
+        const preis = validateDecimalInput(lagerArtikelPreise[artikelId] ?? '', {
+            label: 'Preis je Einheit', min: 0, max: 9_999_999_999_999, required: true,
+        });
+        return !preis.valid || preis.value === null;
     };
+
+    // Der Knopf bleibt gesperrt, solange irgendwo eine Menge fehlt: Eine
+    // Position mit Menge 0 wuerde als Materialkosten von 0 EUR im Projekt landen.
+    const lagerMengenLuecke = Array.from(selectedLagerArtikelKeys).some(lagerMengeUngueltig);
 
     const handleSaveLagerArtikel = async () => {
         if (selectedLagerArtikelKeys.size === 0) {
@@ -863,15 +871,16 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             .map((key) => {
                 const artikel = selectedLagerArtikelData[key];
                 if (!artikel) return null;
-                const rawMenge = (lagerArtikelMengen[key] || '1').replace(',', '.');
-                const menge = parseFloat(rawMenge);
+                const menge = validateDecimalInput(lagerArtikelMengen[key] ?? '', { label: 'Menge', min: 0.000001, integer: istStueckware(artikel) });
+                const preis = validateDecimalInput(lagerArtikelPreise[key] ?? '', {
+                    label: 'Preis je Einheit', min: 0, max: 9_999_999_999_999, required: true,
+                });
                 return {
                     artikelId: artikel.id,
-                    lieferantId: artikel.lieferantId,
-                    preis: artikel.preis,
-                    menge,
+                    lieferantId: artikel.guenstigsterLieferantId ?? artikel.lieferantId,
+                    preis: preis.valid ? preis.value : null,
+                    menge: menge.valid ? menge.value : null,
                     einheit: mapEinheitForBackend(artikel.verrechnungseinheit),
-                    ausLager: (lagerArtikelBeschaffung[key] ?? 'lager') === 'lager',
                 };
             })
             .filter((item): item is NonNullable<typeof item> => item !== null);
@@ -881,8 +890,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             return;
         }
 
-        if (payload.some(p => Number.isNaN(p.menge) || p.menge <= 0)) {
-            toast.error('Bitte geben Sie für alle gewählten Artikel eine Menge größer als 0 ein.');
+        if (payload.some(p => p.menge === null || p.preis === null)) {
+            toast.error('Bitte geben Sie für alle gewählten Artikel eine gültige Menge und einen gültigen Preis ein.');
             return;
         }
 
@@ -910,11 +919,49 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         }
     };
 
+    /**
+     * Entfernt eine Lagerposition wieder aus dem Projekt.
+     *
+     * Mit Rueckfrage, weil der Schritt die Nachkalkulation aendert und es
+     * kein Rueckgaengig gibt - der Artikel muesste ueber das Auswahlfenster
+     * neu herausgesucht werden.
+     */
+    const handleDeleteLagerArtikel = async (artikel: ArtikelInProjekt) => {
+        const name = artikel.produktname || artikel.beschreibung || 'Artikel';
+        const bestaetigt = await confirmDialog({
+            title: 'Artikel entfernen',
+            message: `„${name}“ aus dem Projekt entfernen?`,
+            variant: 'danger',
+            confirmLabel: 'Entfernen',
+        });
+        if (!bestaetigt) return;
+
+        setLoeschendeArtikelId(artikel.id);
+        try {
+            const res = await fetch(`/api/projekte/${projekt.id}/materialkosten/artikel/${artikel.id}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) throw new Error('Artikel konnte nicht entfernt werden');
+            toast.success(`${name} entfernt.`);
+            await onRefresh();
+        } catch (error) {
+            console.error('Fehler beim Entfernen des Artikels:', error);
+            toast.error('Artikel konnte nicht entfernt werden.');
+        } finally {
+            setLoeschendeArtikelId(null);
+        }
+    };
+
     const handleSaveMaterial = async () => {
         if (!newMaterial.beschreibung || !newMaterial.betrag) return;
         setSavingMaterial(true);
         try {
-            const betrag = parseFloat(newMaterial.betrag.replace(',', '.'));
+            const gepruefterBetrag = validateDecimalInput(newMaterial.betrag, { label: 'Kosten', min: 0, required: true });
+            if (!gepruefterBetrag.valid || gepruefterBetrag.value === null) {
+                toast.error(gepruefterBetrag.valid ? 'Bitte geben Sie gültige Kosten ein.' : gepruefterBetrag.message);
+                return;
+            }
+            const betrag = gepruefterBetrag.value;
             const payload = [{
                 beschreibung: newMaterial.beschreibung,
                 betrag: betrag,
@@ -924,7 +971,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             }];
 
             const res = await fetch(`/api/projekte/${projekt.id}/materialkosten`, {
-                method: 'PATCH',
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
@@ -932,18 +979,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             if (res.ok) {
                 setShowMaterialModal(false);
                 setNewMaterial({ beschreibung: '', betrag: '', rechnungsnummer: '' });
-                // Trigger refresh if possible, or just notify user
-                // Ideally, we callback to parent to reload project
-                onBack(); // Simple workaround: go back to list to force reload on re-entry (or we could implement a reload callback)
-                // Better: onEdit() effectively reloads? No. 
-                // We'll modify the props to accept onRefresh?
-                // For now, reload via window.location.reload() is too harsh.
-                // Let's rely on the user navigating or implementing a proper refresh later.
-                // Or simply: 
-                window.location.reload();
+                await onRefresh();
+                toast.success('Materialkosten gespeichert.');
+            } else {
+                throw new Error('Materialkosten konnten nicht gespeichert werden.');
             }
         } catch (error) {
-            console.error(error);
+            toast.error(error instanceof Error ? error.message : 'Materialkosten konnten nicht gespeichert werden.');
         } finally {
             setSavingMaterial(false);
         }
@@ -960,9 +1002,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         return projekt.materialkosten.reduce((sum, m) => sum + (m.betrag ?? 0), 0);
     }, [projekt.materialkosten]);
 
+    // Nur Ware aus dem eigenen Lager ist bereits bezahlt und zaehlt sofort.
+    // Bestellte Ware kommt spaeter ueber die Lieferantenrechnung ins Projekt
+    // (siehe eingangsrechnungenSum) - beides zu zaehlen hiesse doppelt zaehlen.
     const artikelkosten = useMemo(() => {
         if (!projekt.artikel) return 0;
-        return projekt.artikel.reduce((sum, a) => sum + (a.gesamtpreis || 0), 0);
+        return projekt.artikel
+            .filter(a => a.ausLager)
+            .reduce((sum, a) => sum + (a.gesamtpreis ?? a.preisProStueck ?? 0), 0);
     }, [projekt.artikel]);
 
     // Eingangsrechnungen-Summe (zugeordnete Lieferantenrechnungen)
@@ -972,6 +1019,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     // Gesamte Materialkosten inkl. Eingangsrechnungen
     const gesamtMaterialkosten = materialkostenSum + artikelkosten + eingangsrechnungenSum;
+
 
     const nettoPreis = useMemo(() => {
         return (projekt.bruttoPreis || 0) / 1.19;
@@ -994,17 +1042,42 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     const header = (
         <Card className="p-6">
-            <div className="flex flex-col xl:flex-row gap-8 justify-between">
-                <div className="flex items-start gap-4">
+            {/* flex-wrap statt starrem xl:flex-row: bei wenig Platz (1440px,
+                langes Bauvorhaben) rutschen zuerst die Kennzahlen in eine
+                zweite Zeile unter den Titel, nie der Knopfblock aus der Karte
+                (siehe docs/superpowers/plans/2026-09-05-layout-14-zoll.md,
+                Task 3 -- Spec-Befund 2: der Knopfblock wurde vorher unabhaengig
+                vom Namen aus der Kopf-Karte gedrueckt, weil die Kennzahlen
+                sich mit flex-1 max-w-4xl den ganzen Restplatz genommen haben). */}
+            <div className="flex flex-wrap items-start gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
                     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                     <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
                         <Briefcase className="w-8 h-8" />
                     </div>
-                    <div>
+                    {/* min-w-0: das aeussere flex-1 min-w-[18rem] deckelt nur den
+                        Titelblock als Ganzes -- dieser innere div behaelt sonst
+                        min-width: auto und wird trotz break-words auf der <h1>
+                        von einem langen Komposita-Bauvorhaben ueber die 18rem
+                        hinausgedrueckt (Nacharbeit Abschnitt 4, Rezeptur). */}
+                    <div className="min-w-0">
+                        {/* Nachbesserung 1 (Design-Review, 🔴): min-w-0 hier am
+                            div reicht bei EINEM einzigen langen Wort nicht --
+                            die <h1> ist selbst Flex-Item in der Zeile darunter
+                            (flex items-center gap-3 flex-wrap) und behaelt ihr
+                            eigenes min-width: auto. break-words senkt die
+                            Mindestinhaltsbreite eines Flex-Items nicht, nur
+                            min-w-0 auf dem Element selbst tut das. Gemessen ohne
+                            diesen Fix: <h1> 999px breit, ragt 583px (1440) bzw.
+                            765px (1920) aus dem Titelblock, "BRUTTO"/"NETTO"
+                            werden unlesbar ueberdeckt. (Zahlendreher korrigiert,
+                            Nachtrag Abschnitt 5/Task 9: hier standen zuvor die
+                            Anfrage-Werte 411px/187px, siehe Design-Review
+                            Runde 2.) */}
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900">{projekt.bauvorhaben}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{projekt.bauvorhaben}</h1>
                             <span className={cn(
                                 "px-2.5 py-0.5 rounded-full text-xs font-medium border",
                                 projekt.bezahlt
@@ -1014,41 +1087,61 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 {projekt.bezahlt ? 'Bezahlt' : 'Offen'}
                             </span>
                         </div>
+                        {/* shrink-0 an den Untertitel-Icons: sonst quetscht ein
+                            langer Text (Kundenname, Adresse) sie platt (Rezeptur).
+                            Task 12 (zweiter Mechanismus): der Wert selbst stand
+                            bisher als nackter Text-Node im Flex-Row-<p> --
+                            "break-words" (overflow-wrap: break-word) senkt laut
+                            CSS-Spezifikation die automatische Mindestbreite eines
+                            Flex-Items NICHT (nur "overflow-wrap: anywhere" tut
+                            das), deshalb braucht der Wert einen eigenen <span>
+                            mit min-w-0, an dem break-words erst wirkt -- exakt
+                            dieselbe Regel wie bei der <h1> oben, nur ohne
+                            eigene Zusicherung bisher. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {projekt.kunde && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {projekt.kunde}</p>}
-                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {adresse}</p>}
-                            {projekt.auftragsnummer && <p className="flex items-center gap-2"><FileText className="w-4 h-4" /> {projekt.auftragsnummer}</p>}
+                            {projekt.kunde && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{projekt.kunde}</span></p>}
+                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{adresse}</span></p>}
+                            {projekt.auftragsnummer && <p className="flex items-center gap-2"><FileText className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{projekt.auftragsnummer}</span></p>}
                         </div>
                     </div>
                 </div>
 
-                {/* Stats Row */}
-                <div className="flex items-center gap-6 flex-1 max-w-4xl">
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                {/* Stats Row -- shrink-0 statt flex-1: die Kennzahlen nehmen
+                    sich keinen Platz mehr, der dem Titelblock oder den
+                    Knoepfen fehlt. flex-wrap laesst sie selbst umbrechen, wenn
+                    der Zeile nicht genug Platz bleibt. */}
+                    <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Brutto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(projekt.bruttoPreis)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Netto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(nettoPreis)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Arbeitskosten</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(arbeitskosten)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 last:border-r-0 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Material</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(gesamtMaterialkosten)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2">
+                    <div className="flex flex-col items-center px-4 py-2 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Gewinn</p>
                         <p className={cn("text-base font-semibold", gewinn >= 0 ? 'text-green-600' : 'text-red-600')}>{formatCurrency(gewinn)}</p>
                     </div>
                 </div>
 
-                <div className="flex items-start gap-2">
+                {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
+                    linken Kartenrand statt nach rechts (Nacharbeit Abschnitt 4 --
+                    im Design-Review gemessen: x=89 statt x=961 bei 1440px). */}
+                <div className="shrink-0 ml-auto flex flex-wrap items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
+                    </Button>
+                    <Button variant="outline" onClick={openAnfrageMergeDialog}>
+                        <GitMerge className="w-4 h-4 mr-2" /> mit Anfrage zusammenführen
                     </Button>
                 </div>
             </div>
@@ -1105,91 +1198,103 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
     const mainContent = (
         <>
-            {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
+            {/* Tab Navigation -- flex-wrap statt overflow-x-auto: eine versteckt
+                scrollende Reiterleiste ist keine Loesung, lieber umbrechen
+                lassen, wenn der Platz doch nicht reicht (siehe
+                docs/superpowers/plans/2026-09-05-layout-14-zoll.md, Task 3).
+                min-w-0 verhindert, dass diese Zeile die Mindestbreite der
+                linken DetailLayout-Spalte wieder hochzieht. */}
+            {/* Nacharbeit Abschnitt 4 (Design-Review Abschnitt 3): gap-2 -> gap-1
+                und px-3 -> px-2 an den Knoepfen (unten) senken den Platzbedarf
+                aller sieben Reiter von 978px auf 899px bei 916px verfuegbarem
+                Platz (1440px) -- damit passen alle sieben in eine Zeile, statt
+                dass "Tagebuch" allein zweizeilig umbricht und die Trennlinie
+                mitten in der Karte schwebt (gemessener Vorschlag des
+                Design-Reviewers). */}
+            <div className="flex flex-wrap min-w-0 gap-0.5 2xl:gap-1 mb-6 border-b border-slate-200 pb-2">
                 <button
                     onClick={() => setActiveTab('zeiten')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'zeiten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <Clock className="w-4 h-4 inline-block mr-2" />
+                    <Clock className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Zeiten ({projekt.zeiten?.length || 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('materialkosten')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'materialkosten'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <Euro className="w-4 h-4 inline-block mr-2" />
-                    Materialkosten ({projekt.materialkosten?.length || 0})
+                    <Euro className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
+                    Material ({(projekt.materialkosten?.length || 0) + (projekt.artikel?.length || 0)})
                 </button>
                 <button
                     onClick={() => setActiveTab('emails')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'emails'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <Mail className="w-4 h-4 inline-block mr-2" />
+                    <Mail className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     E-Mails ({projekt.emails?.length || 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'geschaeftsdokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <FileText className="w-4 h-4 inline-block mr-2" />
-                    Ein-/ Ausgangsgeschäftsdokumente ({ausgangsDokumente.length + eingangsrechnungen.length})
+                    <FileText className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
+                    Geschäftsdokumente ({ausgangsDokumente.length + eingangsrechnungen.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('dokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'dokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <FolderOpen className="w-4 h-4 inline-block mr-2" />
+                    <FolderOpen className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Dateien ({dokumenteCount})
                 </button>
                 <button
                     onClick={() => setActiveTab('beschreibung')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'beschreibung'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <FileText className="w-4 h-4 inline-block mr-2" />
+                    <FileText className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
                     Beschreibung
                 </button>
                 <button
                     onClick={() => setActiveTab('notizen')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-1.5 2xl:px-2 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'notizen'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
-                    <StickyNote className="w-4 h-4 inline-block mr-2" />
-                    Bau Tagebuch ({notizen.length})
+                    <StickyNote className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
+                    Tagebuch ({notizen.length})
                 </button>
             </div>
 
@@ -1197,7 +1302,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             {activeTab === 'notizen' && (
                 <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-medium text-slate-900">Bau Tagebuch</h3>
+                        {/* "Bau Tagebuch" -> "Tagebuch" (Nachbesserung 1,
+                            Design-Review 🟡): passend zum Reiter, der seit
+                            Abschnitt 3 nur noch "Tagebuch" heisst. */}
+                        <h3 className="text-lg font-medium text-slate-900">Tagebuch</h3>
                         <Button onClick={openCreateNotizModal} className="bg-rose-600 text-white hover:bg-rose-700">
                             <Plus className="w-4 h-4 mr-2" /> Neuer Eintrag
                         </Button>
@@ -1247,7 +1355,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             </Button>
                                         </div>
                                     </div>
-                                    <p className="text-slate-700 whitespace-pre-wrap text-sm">{n.notiz}</p>
+                                    <p className="text-slate-700 whitespace-pre-wrap text-sm break-words">{n.notiz}</p>
 
                                     {/* Bilder */}
                                     {n.bilder && n.bilder.length > 0 && (
@@ -1258,10 +1366,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
                                                         className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
                                                     >
-                                                        <img
-                                                            src={bild.url}
+                                                        <ThumbnailImage
+                                                            src={bild.thumbnailUrl || bild.url}
+                                                            fallbackSrc={bild.url}
                                                             alt={bild.originalDateiname}
-                                                            className="w-full h-full object-cover"
+                                                            className="object-cover"
                                                         />
                                                     </button>
                                                     <button
@@ -1427,13 +1536,22 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 <div className="space-y-4">
                                     {categories.map((cat, catIdx) => (
                                         <div key={catIdx} className="border border-slate-200 rounded-lg overflow-hidden">
-                                            {/* Level 1: Product Category */}
-                                            <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
-                                                <div className="flex items-center gap-2">
-                                                    <FolderOpen className="w-4 h-4 text-slate-400" />
-                                                    <span className="font-semibold text-slate-900">{cat.name}</span>
+                                            {/* Level 1: Product Category -- min-w-0/shrink-0/break-words
+                                                (Task 12, Rezeptur): Produktkategorie- und Arbeitsgang-
+                                                Bezeichnungen sind Freitext und koennen lang sein; ohne
+                                                die Rezeptur waechst die linke flex-Haelfte ueber den
+                                                verfuegbaren Platz hinaus und die Zeile laeuft ueber. */}
+                                            <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center gap-3">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <FolderOpen className="w-4 h-4 text-slate-400 shrink-0" />
+                                                    {/* min-w-0 (Nacharbeit Abschnitt 9, Attrappe aus Task 12):
+                                                        der Span ist selbst ein Flex-Item von "flex items-center
+                                                        gap-2 min-w-0" -- das min-w-0 am umschliessenden div
+                                                        wirkt nicht auf ihn. Ohne eigenes min-w-0 blieb break-words
+                                                        wirkungslos (Code-Review Abschnitt 8). */}
+                                                    <span className="font-semibold text-slate-900 break-words min-w-0">{cat.name}</span>
                                                 </div>
-                                                <div className="text-right text-sm">
+                                                <div className="text-right text-sm shrink-0">
                                                     <span className="font-medium text-slate-900 mx-3">{cat.totalHours.toFixed(2)} h</span>
                                                     <span className="text-slate-500">{formatCurrency(cat.totalCost)}</span>
                                                 </div>
@@ -1443,12 +1561,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                 {cat.activities.map((act, actIdx) => (
                                                     <div key={actIdx} className="p-3 pl-8">
                                                         {/* Level 2: Activity */}
-                                                        <div className="flex justify-between items-center mb-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <Hammer className="w-3_5 h-3_5 text-rose-500" /> {/* Using Hammer as icon for activity */}
-                                                                <span className="font-medium text-slate-800">{act.name}</span>
+                                                        <div className="flex justify-between items-center mb-2 gap-3">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <Hammer className="w-3_5 h-3_5 text-rose-500 shrink-0" /> {/* Using Hammer as icon for activity */}
+                                                                {/* min-w-0: gleiche Attrappe wie bei Level 1 (siehe Kommentar oben). */}
+                                                                <span className="font-medium text-slate-800 break-words min-w-0">{act.name}</span>
                                                             </div>
-                                                            <div className="text-right text-xs text-slate-500">
+                                                            <div className="text-right text-xs text-slate-500 shrink-0">
                                                                 <span className="font-medium mx-3">{act.totalHours.toFixed(2)} h</span>
                                                                 <span>{formatCurrency(act.totalCost)}</span>
                                                             </div>
@@ -1457,12 +1576,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         {/* Level 3: Employees */}
                                                         <div className="space-y-1 pl-6 border-l-2 border-slate-100 ml-1.5">
                                                             {act.employees.map((emp, empIdx) => (
-                                                                <div key={empIdx} className="flex justify-between items-center text-sm py-0.5">
-                                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                                        <User className="w-3 h-3 text-slate-400" />
-                                                                        <span>{emp.name}</span>
+                                                                <div key={empIdx} className="flex justify-between items-center text-sm py-0.5 gap-3">
+                                                                    <div className="flex items-center gap-2 text-slate-600 min-w-0">
+                                                                        <User className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                        {/* min-w-0: gleiche Attrappe wie bei Level 1/2 (siehe Kommentar oben). */}
+                                                                        <span className="break-words min-w-0">{emp.name}</span>
                                                                     </div>
-                                                                    <div className="text-right text-slate-600">
+                                                                    <div className="text-right text-slate-600 shrink-0">
                                                                         <span className="font-medium mx-3">{emp.hours.toFixed(2)} h</span>
                                                                         <span className="text-slate-400 text-xs">{formatCurrency(emp.cost)}</span>
                                                                     </div>
@@ -1485,10 +1605,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
             {activeTab === 'materialkosten' && (
                 <div className="space-y-6">
-                    {/* Manuell erfasste Materialkosten */}
+                    {/* Erfasste Materialkosten */}
                     <div className="space-y-3">
                         <div className="flex justify-between items-center mb-2">
-                            <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Manuell erfasste Materialkosten</h4>
+                            <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Erfasste Materialkosten</h4>
                             <div className="flex items-center gap-2">
                                 <Button
                                     size="sm"
@@ -1496,7 +1616,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     onClick={() => setShowLagerArtikelModal(true)}
                                     className="border-rose-300 text-rose-700 hover:bg-rose-50"
                                 >
-                                    <Package className="w-4 h-4 mr-2" /> Artikel aus Lager
+                                    <Package className="w-4 h-4 mr-2" /> Artikel aus Stamm auswählen
                                 </Button>
                                 <Button size="sm" onClick={() => setShowMaterialModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
                                     <Plus className="w-4 h-4 mr-2" /> Kosten erfassen
@@ -1506,61 +1626,75 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
                         {projekt.materialkosten && projekt.materialkosten.length > 0 ? (
                             projekt.materialkosten.map((m) => (
-                                <div key={m.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100">
-                                    <div>
-                                        <p className="font-medium text-slate-900">{m.beschreibung}</p>
-                                        {m.rechnungsnummer && <p className="text-xs text-slate-500">Rech-Nr: {m.rechnungsnummer}</p>}
+                                <div key={m.id} className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-100">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-medium text-slate-900 break-words">{m.beschreibung}</p>
+                                        {m.artikelIdSnapshot != null && m.mengeSnapshot != null && (
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                {m.mengeSnapshot.toLocaleString('de-DE')} {m.einheitSnapshot === 'STUECK' ? 'Stück' : m.einheitSnapshot === 'METER' ? 'm' : m.einheitSnapshot === 'KILOGRAMM' ? 'kg' : m.einheitSnapshot}
+                                                {m.preisJeEinheitSnapshot != null && ` · ${formatCurrency(m.preisJeEinheitSnapshot)} je Einheit`}
+                                                {m.lieferantennameSnapshot && ` · ${m.lieferantennameSnapshot}`}
+                                            </p>
+                                        )}
+                                        {m.rechnungsnummer && <p className="text-xs text-slate-500 break-words">Rech-Nr: {m.rechnungsnummer}</p>}
                                     </div>
-                                    <p className="font-semibold text-slate-900">{formatCurrency(m.betrag)}</p>
+                                    <p className="font-semibold text-slate-900 shrink-0">{formatCurrency(m.betrag)}</p>
                                 </div>
                             ))
                         ) : (
-                            <p className="text-slate-500 text-center py-4">Keine manuell erfassten Materialkosten.</p>
+                            <p className="text-slate-500 text-center py-4">Noch keine Materialkosten erfasst.</p>
                         )}
                     </div>
 
                     <div className="space-y-3">
-                        <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Material im Projekt</h4>
+                        <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Verwendete Artikel</h4>
                         {projekt.artikel && projekt.artikel.length > 0 ? (
-                            projekt.artikel.map((a) => {
-                                const quelleLabel = a.quelle === 'AUS_LAGER'
-                                    ? { text: 'Aus Lager', cls: 'bg-emerald-100 text-emerald-700' }
-                                    : a.quelle === 'BESTELLT'
-                                        ? { text: 'Bestellt', cls: 'bg-sky-100 text-sky-700' }
-                                        : { text: 'Bedarf offen', cls: 'bg-amber-100 text-amber-700' };
-                                const hatPreis = a.quelle === 'AUS_LAGER' && a.preisProStueck != null;
-                                const menge = a.stueckzahl ? `${a.stueckzahl} Stück` : a.meter ? `${a.meter} m` : a.kilogramm ? `${a.kilogramm} kg` : '-';
-                                return (
-                                    <div key={a.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100">
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <p className="font-medium text-slate-900 truncate">{a.produktname || a.beschreibung || 'Artikel'}</p>
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quelleLabel.cls}`}>
-                                                    {quelleLabel.text}
-                                                </span>
-                                            </div>
-                                            <p className="text-xs text-slate-500 mt-0.5">
-                                                {a.externeArtikelnummer ? `Nr. ${a.externeArtikelnummer} · ` : ''}
-                                                {menge}
-                                            </p>
-                                        </div>
-                                        {hatPreis ? (
-                                            <p className="font-semibold text-slate-900">{formatCurrency(a.preisProStueck)}</p>
-                                        ) : (
-                                            <p className="text-xs text-slate-400 italic">wird über Rechnung nachkalkuliert</p>
-                                        )}
+                            projekt.artikel.map((a) => (
+                                <div key={a.id} className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-100">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-medium text-slate-900 break-words">{a.produktname || a.beschreibung || 'Artikel'}</p>
+                                        <p className="text-xs text-slate-500 mt-0.5 break-words">
+                                            {a.externeArtikelnummer ? `Nr. ${a.externeArtikelnummer} · ` : ''}
+                                            {a.lieferantName ? `${a.lieferantName} · ` : ''}
+                                            {a.stueckzahl ? `${a.stueckzahl} Stück` : a.meter ? `${a.meter} m` : a.kilogramm ? `${a.kilogramm} kg` : '-'}
+                                        </p>
                                     </div>
-                                );
-                            })
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        {/* Bestellte Ware steht mit in der Liste, zaehlt aber nicht in
+                                            die Materialkosten - sie kommt erst mit der Lieferantenrechnung.
+                                            Der blasse Preis sagt das schon, der Vermerk daneben sagt warum. */}
+                                        {a.ausLager ? (
+                                            <p className="font-semibold text-slate-900">{formatCurrency(a.gesamtpreis ?? a.preisProStueck ?? 0)}</p>
+                                        ) : (
+                                            <>
+                                                <span className="text-[11px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                                                    wird über die Rechnung abgerechnet
+                                                </span>
+                                                <p className="font-semibold text-slate-400">{formatCurrency(a.gesamtpreis ?? a.preisProStueck ?? 0)}</p>
+                                            </>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteLagerArtikel(a)}
+                                            disabled={loeschendeArtikelId === a.id}
+                                            aria-label={`${a.produktname || 'Artikel'} aus dem Projekt entfernen`}
+                                            title="Aus dem Projekt entfernen"
+                                            className="p-2 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
                         ) : (
-                            <p className="text-slate-500 text-center py-4">Kein Material im Projekt erfasst.</p>
+                            <p className="text-slate-500 text-center py-4">Keine weiteren verwendeten Artikel.</p>
                         )}
                     </div>
 
                     {/* Hinweis: Eingangsrechnungen-Summe fließt weiterhin in die Nachkalkulation ein (siehe gesamtMaterialkosten) */}
                     {eingangsrechnungen.length > 0 && (
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-                            <span className="font-medium">Hinweis:</span> {eingangsrechnungen.length} Eingangsrechnung{eingangsrechnungen.length !== 1 ? 'en' : ''} ({formatCurrency(eingangsrechnungenSum)}) — siehe Tab &quot;Ein-/ Ausgangsgeschäftsdokumente&quot;
+                            <span className="font-medium">Hinweis:</span> {eingangsrechnungen.length} Eingangsrechnung{eingangsrechnungen.length !== 1 ? 'en' : ''} ({formatCurrency(eingangsrechnungenSum)}) — siehe Reiter &quot;Geschäftsdokumente&quot;
                         </div>
                     )}
                 </div>
@@ -1590,10 +1724,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 <span className="text-sm text-slate-500">{ausgangsDokumente.length} Dokument{ausgangsDokumente.length !== 1 ? 'e' : ''}</span>
                                 <Button
                                     size="sm"
-                                    className="bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="bg-rose-600 text-white hover:bg-rose-700"
                                     onClick={() => setShowDokumentTypDialog(true)}
-                                    disabled={ausgangsDokumente.some(d => !d.vorgaengerId)}
-                                    title={ausgangsDokumente.some(d => !d.vorgaengerId) ? 'Es existiert bereits ein Basisdokument' : undefined}
                                 >
                                     <Plus className="w-4 h-4 mr-1" /> Dokument erstellen
                                 </Button>
@@ -1606,6 +1738,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                     const typConfig = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dok.typ);
                                     const hasChildren = node.children.length > 0;
                                     const isChild = node.depth > 0;
+                                    // Abgerechnet wird am untersten Dokument des Vorgangs — Regel und
+                                    // Bestandsdaten-Ausnahme siehe istRechnungAmVorgaengerGesperrt().
+                                    const folgeDokumente = node.children.map(c => c.dokument);
+                                    const rechnungGesperrt = istRechnungAmVorgaengerGesperrt(folgeDokumente);
+                                    const abGesperrt = hatAktiveAuftragsbestaetigung(folgeDokumente);
 
                                     return (
                                         <div
@@ -1741,21 +1878,32 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             {dok.dokumentNummer}
                                                         </p>
                                                         {dok.betreff && (
-                                                            <p className="text-sm text-slate-600 truncate mt-0.5">{dok.betreff}</p>
+                                                            // break-words statt truncate (Nacharbeit Abschnitt 4,
+                                                            // Code-Review-Befund 4): ein realistisch langer Betreff
+                                                            // schnitt sonst unlesbar ab, ohne title als Rueckfallweg.
+                                                            <p className="text-sm text-slate-600 break-words mt-0.5">{dok.betreff}</p>
                                                         )}
-                                                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                                                            <span>
+                                                        {/* flex-wrap (Task 12, Rezeptur): dok.kundenName ist ein
+                                                            Firmenname, kann lang sein -- ohne Umbruch liefe diese
+                                                            Metazeile ueber die Karte hinaus. */}
+                                                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-400 flex-wrap">
+                                                            <span className="shrink-0">
                                                                 <Calendar className="w-3 h-3 inline-block mr-1" />
                                                                 {new Date(dok.datum).toLocaleDateString('de-DE')}
                                                             </span>
+                                                            {/* min-w-0 an beiden Spans (Nacharbeit Abschnitt 9,
+                                                                Attrappe aus Task 12): Flex-Items der umschliessenden
+                                                                "flex-wrap"-Zeile ohne eigenes min-w-0 behalten ihre
+                                                                automatische Mindestbreite -- break-words wirkte
+                                                                bisher nicht. */}
                                                             {dok.kundenName && (
-                                                                <span>
+                                                                <span className="break-words min-w-0">
                                                                     <User className="w-3 h-3 inline-block mr-1" />
                                                                     {dok.kundenName}
                                                                 </span>
                                                             )}
                                                             {dok.erstelltVonName && (
-                                                                <span title="Erstellt von">
+                                                                <span title="Erstellt von" className="break-words min-w-0">
                                                                     <Edit2 className="w-3 h-3 inline-block mr-1" />
                                                                     {dok.erstelltVonName}
                                                                 </span>
@@ -1801,13 +1949,19 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         </button>
 
                                                         {/* Umwandeln - nur für bestimmte Typen */}
-                                                        {(dok.typ === 'ANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG') && (
+                                                        {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT' || dok.typ === 'AUFTRAGSBESTAETIGUNG') && (
                                                             <>
                                                                 <hr className="my-1 border-slate-100" />
                                                                 <p className="px-4 py-1 text-xs text-slate-400 font-medium">Folgedokument erstellen:</p>
-                                                                {dok.typ === 'ANGEBOT' && (
+                                                                {(dok.typ === 'ANGEBOT' || dok.typ === 'NACHTRAGSANGEBOT') && (
                                                                     <button
-                                                                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2"
+                                                                        className={cn(
+                                                                            'w-full text-left px-4 py-2 text-sm flex items-center gap-2',
+                                                                            abGesperrt
+                                                                                ? 'text-slate-400 cursor-not-allowed'
+                                                                                : 'text-slate-700 hover:bg-rose-50 hover:text-rose-700'
+                                                                        )}
+                                                                        disabled={abGesperrt}
                                                                         onClick={async () => {
                                                                             if (await confirmDialog({ title: "Auftragsbestätigung erstellen", message: `Auftragsbestätigung basierend auf ${dok.dokumentNummer} erstellen?`, variant: "info", confirmLabel: "Erstellen" })) {
                                                                                 try {
@@ -1826,20 +1980,38 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                         const newDoc = await response.json();
                                                                                         loadAusgangsDokumente();
                                                                                         window.open(`/dokument-editor?projektId=${projekt.id}&dokumentId=${newDoc.id}`, '_blank');
+                                                                                    } else {
+                                                                                        // Sonst bliebe ein abgelehnter POST (z.B. zweite AB aus
+                                                                                        // einem veralteten zweiten Tab) für den Nutzer unsichtbar.
+                                                                                        toast.error(await response.text() || 'Auftragsbestätigung konnte nicht erstellt werden.');
                                                                                     }
                                                                                 } catch (e) {
                                                                                     console.error(e);
+                                                                                    toast.error('Auftragsbestätigung konnte nicht erstellt werden.');
                                                                                 }
                                                                             }
                                                                             setActionMenuDokument(null);
                                                                         }}
                                                                     >
                                                                         <FileText className="w-4 h-4" />
-                                                                        Auftragsbestätigung
+                                                                        <span className="flex flex-col items-start gap-0.5">
+                                                                            <span>Auftragsbestätigung</span>
+                                                                            {abGesperrt && (
+                                                                                <span className="text-xs text-slate-400">
+                                                                                    Für mehr Leistungen ein Nachtragsangebot anlegen
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
                                                                     </button>
                                                                 )}
                                                                 <button
-                                                                    className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
+                                                                    className={cn(
+                                                                        'w-full text-left px-4 py-2 text-sm flex items-center gap-2',
+                                                                        rechnungGesperrt
+                                                                            ? 'text-slate-400 cursor-not-allowed'
+                                                                            : 'text-slate-700 hover:bg-rose-50 hover:text-rose-700'
+                                                                    )}
+                                                                    disabled={rechnungGesperrt}
                                                                     onClick={async () => {
                                                                         // Menü sofort schließen
                                                                         setActionMenuDokument(null);
@@ -1875,6 +2047,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                             const parsed = JSON.parse(dokData.positionenJson);
                                                                                             const blocks: DocBlock[] = Array.isArray(parsed) ? parsed : (parsed.blocks || []);
                                                                                             setBasisDokBlocks(blocks);
+                                                                                            setBasisDokGlobalRabatt(Array.isArray(parsed) ? 0 : (parsed.globalRabatt || 0));
                                                                                             // Nur noch nicht abgerechnete Positionen vorauswählen
                                                                                             const allIds = new Set<string>();
                                                                                             for (const b of blocks) {
@@ -1898,6 +2071,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                             const parsed = JSON.parse(dokData.positionenJson);
                                                                                             const blocks: DocBlock[] = Array.isArray(parsed) ? parsed : (parsed.blocks || []);
                                                                                             setBasisDokBlocks(blocks);
+                                                                                            setBasisDokGlobalRabatt(Array.isArray(parsed) ? 0 : (parsed.globalRabatt || 0));
                                                                                             const allIds = new Set<string>();
                                                                                             for (const b of blocks) {
                                                                                                 if (b.type === 'SERVICE') allIds.add(b.id);
@@ -1920,7 +2094,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                     }}
                                                                 >
                                                                     <Receipt className="w-4 h-4" />
-                                                                    Rechnung erstellen
+                                                                    <span className="flex flex-col items-start gap-0.5">
+                                                                        <span>Rechnung erstellen</span>
+                                                                        {rechnungGesperrt && (
+                                                                            <span className="text-xs text-slate-400">
+                                                                                Rechnung bitte an der Auftragsbestätigung anlegen
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
                                                                 </button>
                                                             </>
                                                         )}
@@ -2039,6 +2220,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                         {ketteItems.map((kd, idx) => {
                                                             const typConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
                                                                 ANGEBOT: { label: 'Angebot', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+                                                                NACHTRAGSANGEBOT: { label: 'Nachtrag', color: 'text-slate-700', bg: 'bg-slate-100', border: 'border-slate-300' },
                                                                 AUFTRAGSBESTAETIGUNG: { label: 'AB', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
                                                                 LIEFERSCHEIN: { label: 'Lieferschein', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
                                                                 RECHNUNG: { label: 'Rechnung', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
@@ -2076,7 +2258,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
                                                                 EINGANGSRECHNUNG
                                                             </span>
-                                                            <span className="font-semibold text-slate-900 truncate">
+                                                            {/* break-words statt truncate (Nacharbeit Abschnitt 4,
+                                                                Code-Review-Befund 4): der Lieferantenname aus der Spec
+                                                                ("Stahlhandel Beispiel GmbH und Co. KG") schnitt sonst ab,
+                                                                ohne title als Rueckfallweg. */}
+                                                            <span className="font-semibold text-slate-900 break-words">
                                                                 {er.lieferantName || 'Unbekannter Lieferant'}
                                                             </span>
                                                             {er.dokumentNummer && (
@@ -2085,9 +2271,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <p className="text-sm text-slate-500 truncate">{er.dateiname}</p>
+                                                        {/* break-words statt truncate: derselbe Befund, ein
+                                                            realistischer Dateiname (z.B. "lieferantenrechnung-dummy.pdf")
+                                                            ist ohne title nicht lesbar. */}
+                                                        <p className="text-sm text-slate-500 break-words">{er.dateiname}</p>
                                                         {er.beschreibung && (
-                                                            <p className="text-sm text-slate-600 mt-1">{er.beschreibung}</p>
+                                                            <p className="text-sm text-slate-600 mt-1 break-words">{er.beschreibung}</p>
                                                         )}
                                                         <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
                                                             {er.dokumentDatum && (
@@ -2133,9 +2322,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                     <div className="mt-3 pt-3 border-t border-slate-100">
                                                         {/* Zugeordnet von */}
                                                         {er.zugeordnetVonName && (
-                                                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
-                                                                <User className="w-3 h-3" />
-                                                                <span>Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
+                                                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2 flex-wrap">
+                                                                <User className="w-3 h-3 shrink-0" />
+                                                                {/* min-w-0 (Nacharbeit Abschnitt 9, Attrappe aus
+                                                                    Task 12): Flex-Item der Zeile ohne eigenes
+                                                                    min-w-0, break-words wirkte bisher nicht. */}
+                                                                <span className="break-words min-w-0">Zugeordnet von <span className="font-medium text-slate-700">{er.zugeordnetVonName}</span></span>
                                                                 {er.zugeordnetAm && (
                                                                     <span className="text-slate-400">
                                                                         am {new Date(er.zugeordnetAm).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -2149,7 +2341,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             <div className="space-y-1">
                                                                 <p className="text-xs font-medium text-slate-500 mb-1">Weitere Zuordnungen:</p>
                                                                 {andereZuordnungen.map((z, idx) => (
-                                                                    <div key={idx} className="flex items-center gap-2 text-xs">
+                                                                    <div key={idx} className="flex items-center gap-2 text-xs flex-wrap">
                                                                         {z.projektId ? (
                                                                             <button
                                                                                 onClick={() => {
@@ -2174,13 +2366,34 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                             {z.prozent != null && `${z.prozent}%`}
                                                                             {z.berechneterBetrag != null && ` · ${formatCurrency(z.berechneterBetrag)}`}
                                                                         </span>
+                                                                        {/* max-w-[200px] gestrichen (Nacharbeit
+                                                                            Abschnitt 9, Design-Review Abschnitt 8,
+                                                                            Hinweis 3): die Zeile ist ohnehin
+                                                                            flex-wrap -- ohne die Deckelung nimmt die
+                                                                            Beschreibung die Restbreite und rutscht
+                                                                            bei Bedarf als Ganzes in die naechste
+                                                                            Zeile, statt auf drei Zeilen in einer
+                                                                            schmalen Saeule zu stapeln.
+                                                                            min-w-0 nachgezogen (Abschnitt 10,
+                                                                            Code-Review Abschnitt 9, Hinweis 1): eine
+                                                                            definite max-width deckelte bisher die
+                                                                            automatische Mindestbreite dieses
+                                                                            Flex-Items und machte break-words damit
+                                                                            wirksam -- ohne Deckelung UND ohne
+                                                                            min-w-0 faellt der Span auf min-content
+                                                                            zurueck, break-words greift dann nicht
+                                                                            mehr (kriterien.md, sechste Falle). */}
                                                                         {z.beschreibung && (
-                                                                            <span className="text-slate-500 italic truncate max-w-[200px]" title={z.beschreibung}>
+                                                                            <span className="text-slate-500 italic break-words min-w-0">
                                                                                 „{z.beschreibung}"
                                                                             </span>
                                                                         )}
+                                                                        {/* min-w-0 (Nacharbeit Abschnitt 9,
+                                                                            Attrappe aus Task 12): Flex-Item der
+                                                                            "flex-wrap"-Zeile ohne eigenes min-w-0,
+                                                                            break-words wirkte bisher nicht. */}
                                                                         {z.zugeordnetVonName && (
-                                                                            <span className="text-slate-400">
+                                                                            <span className="text-slate-400 break-words min-w-0">
                                                                                 (von {z.zugeordnetVonName})
                                                                             </span>
                                                                         )}
@@ -2220,7 +2433,15 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             Rechnung erstellen
                         </DialogTitle>
                         {rechnungBasisDok && (
-                            <p className="text-sm text-slate-500">
+                            // break-words (Nacharbeit Abschnitt 9, stille Kuerzung):
+                            // dieses <p> steckt in einem "DialogContent overflow-hidden".
+                            // Als Block (kein Flex-Item) wird es zwar auf die Dialogbreite
+                            // gestreckt, aber ein langer, spaceloser Betreff wurde ohne
+                            // break-words nicht umgebrochen und dadurch vom Overflow-Hidden
+                            // der Ancestor-Karte still (ohne "…", ohne data-kuerzung-erlaubt)
+                            // abgeschnitten -- regelwidrig nach den Global Constraints.
+                            // Umbrechen lassen statt markieren, wie dort vorgesehen.
+                            <p className="text-sm text-slate-500 break-words">
                                 Basierend auf: <span className="font-medium text-slate-700">{rechnungBasisDok.dokumentNummer}</span>
                                 {rechnungBasisDok.betreff && <span> &ndash; {rechnungBasisDok.betreff}</span>}
                             </p>
@@ -2376,8 +2597,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             );
                                         })()}
 
-                                        {/* Einfache Rechnung (bei erstem Mal) */}
-                                        {abrechnungsverlauf && abrechnungsverlauf.positionen.length === 0 && (
+                                        {/* Einfache Rechnung – beim ersten Mal sowie nach Storno aller bisherigen Rechnungen */}
+                                        {canCreateEinfacheRechnung(abrechnungsverlauf) && (
                                             <button
                                                 onClick={() => setRechnungTyp('RECHNUNG')}
                                                 className={cn(
@@ -2526,7 +2747,16 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                         )}>
                                                                             {(allSelected || someSelected || allSectionDisabled) && <Check className="w-3 h-3 text-white" />}
                                                                         </div>
-                                                                        <span className={cn("text-sm font-semibold", allSectionDisabled ? "text-slate-400" : "text-slate-700")}>
+                                                                        {/* min-w-0 + break-words (Nacharbeit
+                                                                            Abschnitt 9, stille Kuerzung): dieser Span
+                                                                            ist Flex-Item von "flex items-center
+                                                                            gap-2" ohne Umbruch-Klasse -- ein langer,
+                                                                            spaceloser Bauabschnitt wurde ohne
+                                                                            Umbruch von Overflow-Hidden im umgebenden
+                                                                            DialogContent still abgeschnitten, ohne
+                                                                            data-kuerzung-erlaubt (regelwidrig).
+                                                                            Umbrechen lassen statt markieren. */}
+                                                                        <span className={cn("text-sm font-semibold min-w-0 break-words", allSectionDisabled ? "text-slate-400" : "text-slate-700")}>
                                                                             {block.sectionLabel || 'Bauabschnitt'}
                                                                         </span>
                                                                     </div>
@@ -2730,11 +2960,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             return;
                                         }
                                         const allBlocksWithZeros = zeroOutUnselectedBlocks(basisDokBlocks, selectedBlockIds);
-                                        positionenJson = JSON.stringify({ blocks: allBlocksWithZeros, globalRabatt: 0 });
+                                        // Pauschalrabatt des Basisdokuments erben — sonst uebersteigt die
+                                        // Teilrechnung den (rabattierten) Restbetrag und wird abgewiesen.
+                                        positionenJson = JSON.stringify({ blocks: allBlocksWithZeros, globalRabatt: basisDokGlobalRabatt });
                                         // Betrag aus gewählten Positionen berechnen für Abrechnungsverlauf
-                                        betrag = getAllServiceBlocks(basisDokBlocks)
-                                            .filter(b => selectedBlockIds.has(b.id))
-                                            .reduce((sum, b) => sum + (b.quantity || 0) * (b.price || 0), 0);
+                                        betrag = calculateNettoNachRabatt(allBlocksWithZeros, basisDokGlobalRabatt);
                                     }
 
                                     try {
@@ -2808,7 +3038,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-medium text-slate-900">Projekt-Dateien</h3>
                         </div>
-                        <DocumentManager projektId={projekt.id} />
+                        <DocumentManager key={documentManagerKey} projektId={projekt.id} />
                     </div>
                 </div>
             )}
@@ -2844,11 +3074,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Materialkosten erfassen</DialogTitle>
+                        <p className="text-sm text-slate-500">Diese Position wird nur in der Projektnachkalkulation gespeichert.</p>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                            <Label>Beschreibung</Label>
+                            <Label htmlFor="materialkosten-beschreibung">Beschreibung</Label>
                             <Input
+                                id="materialkosten-beschreibung"
                                 placeholder="z.B. Kleinmaterial"
                                 value={newMaterial.beschreibung}
                                 onChange={e => setNewMaterial(prev => ({ ...prev, beschreibung: e.target.value }))}
@@ -2863,13 +3095,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label>Betrag (€)</Label>
-                            <Input
-                                type="number"
-                                placeholder="0.00"
-                                value={newMaterial.betrag}
-                                onChange={e => setNewMaterial(prev => ({ ...prev, betrag: e.target.value }))}
-                            />
+                            <DecimalInput label="Kosten (€)" value={newMaterial.betrag}
+                                onChange={betrag => setNewMaterial(prev => ({ ...prev, betrag }))} min={0} required placeholder="z. B. 12,50" />
                         </div>
                         <div className="space-y-2">
                             <Label>Lieferant (Optional)</Label>
@@ -2908,151 +3135,79 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
             >
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Artikel aus Lager hinzufügen</DialogTitle>
+                        <DialogTitle>Artikel aus Stamm auswählen</DialogTitle>
                         <p className="text-sm text-slate-500">
-                            Wählen Sie einen oder mehrere Artikel mit hinterlegtem Lieferantenpreis und legen Sie pro Artikel fest, ob er aus Lager kommt oder bestellt werden muss.
+                            Wählen Sie einen Artikel aus und prüfen Sie Menge und Preis. Änderungen gelten nur für dieses Projekt.
                         </p>
                     </DialogHeader>
 
-                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                            <Input
-                                placeholder="Artikel, Nummer, Lieferant oder Werkstoff suchen..."
-                                className="pl-9"
-                                value={lagerArtikelSearch}
-                                onChange={(e) => setLagerArtikelSearch(e.target.value)}
-                            />
-                        </div>
-                        <Button
-                            variant="outline"
-                            onClick={() => loadLagerArtikel({ page: lagerArtikelPage, query: lagerArtikelSearch.trim() })}
-                            disabled={loadingLagerArtikel || savingLagerArtikel}
-                        >
-                            <RefreshCw className={cn('w-4 h-4 mr-2', loadingLagerArtikel && 'animate-spin')} /> Neu laden
-                        </Button>
-                    </div>
+                    {/* Dieselbe Suche wie in der Materialverwaltung statt eines
+                        zweiten, magereren Suchfelds: Wer hier einen Artikel sucht,
+                        kennt die Filter nach Lieferant, Kategorie, Werkstoff und
+                        Ausfuehrung schon von dort.
 
-                    <div className="text-xs text-slate-500">{lagerArtikelStatusText}</div>
+                        onZeilenKlick ist Pflicht, kein Komfort: Ohne ihn faellt
+                        ArtikelSuche auf navigate('/artikel/...') zurueck - der
+                        Klick auf eine Zeile wuerde das Projekt verlassen. Hier
+                        bedeutet er dasselbe wie die Checkbox: an- bzw. abwaehlen.
 
-                    {lagerArtikelError && (
-                        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                            {lagerArtikelError}
-                        </div>
-                    )}
-
-                    <div className="flex-1 min-h-0 border border-slate-200 rounded-lg overflow-hidden">
-                        <div className="h-full overflow-auto">
-                            <table className="min-w-full text-sm">
-                                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[90px]">Auswahl</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Artikel</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Lieferant</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600">Einheit</th>
-                                        <th className="px-3 py-2 text-right font-medium text-slate-600">Preis</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[140px]">Menge</th>
-                                        <th className="px-3 py-2 text-left font-medium text-slate-600 w-[190px]">Bezug</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {lagerArtikel.map((artikel) => {
-                                        const key = getLagerArtikelKey(artikel);
-                                        const checked = selectedLagerArtikelKeys.has(key);
-                                        const beschaffung = lagerArtikelBeschaffung[key] || 'lager';
-                                        return (
-                                            <tr key={key} className={cn('border-b border-slate-100', checked && 'bg-rose-50/50')}>
-                                                <td className="px-3 py-2 align-top">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={checked}
-                                                        onChange={(e) => handleToggleLagerArtikel(artikel, e.target.checked)}
-                                                        title={`Artikel ${artikel.produktname || ''} auswählen`}
-                                                        aria-label={`Artikel ${artikel.produktname || ''} auswählen`}
-                                                        className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2 align-top">
-                                                    <div className="font-medium text-slate-900">{artikel.produktname || '-'}</div>
-                                                    <div className="text-xs text-slate-500 mt-0.5">
-                                                        {artikel.externeArtikelnummer ? `Nr. ${artikel.externeArtikelnummer}` : 'Ohne Artikelnummer'}
-                                                        {artikel.werkstoffName ? ` · ${artikel.werkstoffName}` : ''}
-                                                    </div>
-                                                    {artikel.produkttext && (
-                                                        <div className="text-xs text-slate-400 mt-1 line-clamp-2">{artikel.produkttext}</div>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2 align-top text-slate-700">{artikel.lieferantenname || '-'}</td>
-                                                <td className="px-3 py-2 align-top text-slate-700">{getVerrechnungseinheitLabel(artikel.verrechnungseinheit)}</td>
-                                                <td className="px-3 py-2 align-top text-right font-medium text-slate-900">{formatCurrency(artikel.preis)}</td>
-                                                <td className="px-3 py-2 align-top">
-                                                    <Input
-                                                        type="number"
-                                                        min="0.01"
-                                                        step="0.01"
-                                                        value={lagerArtikelMengen[key] || ''}
-                                                        onChange={(e) => handleLagerMengeChange(artikel, e.target.value)}
-                                                        placeholder="z.B. 5"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2 align-top">
-                                                    <Select
-                                                        value={beschaffung}
-                                                        onChange={(value) => handleLagerBeschaffungChange(artikel, value)}
-                                                        disabled={!checked}
-                                                        options={[
-                                                            { value: 'lager', label: 'Aus Lager' },
-                                                            { value: 'bestellen', label: 'Bestellen' },
-                                                        ]}
-                                                        placeholder="Bezug wählen"
-                                                    />
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-
-                            {!loadingLagerArtikel && lagerArtikel.length === 0 && (
-                                <div className="text-center text-slate-500 py-10">
-                                    Keine Artikel mit Lieferantenpreis gefunden.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs text-slate-500">Seite {lagerArtikelPage + 1} von {lagerArtikelTotalPages}</p>
-                        <div className="flex gap-2 justify-end">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={loadingLagerArtikel || lagerArtikelPage === 0}
-                                onClick={() => setLagerArtikelPage((p) => Math.max(0, p - 1))}
-                            >
-                                <ChevronLeft className="w-4 h-4 mr-1" /> zurück
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={loadingLagerArtikel || lagerArtikelPage >= lagerArtikelTotalPages - 1}
-                                onClick={() => setLagerArtikelPage((p) => p + 1)}
-                            >
-                                Weiter <ChevronRight className="w-4 h-4 ml-1" />
-                            </Button>
-                        </div>
+                        nurMitLieferantenpreis, weil die Auswahl als Materialkosten
+                        gebucht wird - dazu braucht es Lieferant und Preis. */}
+                    {/* Kein eigenes Scrollen: Die Suche laedt ueber
+                        seitenGroesseAusHoehe nur so viele Treffer, wie ganz in
+                        die Liste passen - eine halb abgeschnittene letzte Zeile
+                        gibt es damit nicht mehr. */}
+                    <div className="flex-1 min-h-0 flex flex-col gap-4">
+                        <ArtikelSuche
+                            urlSync={false}
+                            seitenGroesse={LAGER_ARTIKEL_PAGE_SIZE}
+                            seitenGroesseAusHoehe
+                            nurMitLieferantenpreis
+                            onZeilenKlick={handleToggleLagerArtikel}
+                            zeilenGedrueckt={(artikel) => selectedLagerArtikelKeys.has(artikel.id)}
+                            zeilenAktion={(artikel) => <span className="text-xs font-medium text-rose-700">{selectedLagerArtikelKeys.has(artikel.id) ? 'Ausgewählt' : 'Auswählen'}</span>}
+                        />
+                        {selectedLagerArtikelKeys.size > 0 && (
+                            <div className="space-y-3 overflow-y-auto max-h-64 pr-1" aria-label="Ausgewählte Artikelkosten">
+                                {Array.from(selectedLagerArtikelKeys).map(key => {
+                                    const artikel = selectedLagerArtikelData[key];
+                                    if (!artikel) return null;
+                                    const name = artikelBezeichnung(artikel);
+                                    const einheit = getVerrechnungseinheitName(artikel.verrechnungseinheit);
+                                    const einheitText = einheit === 'STUECK' ? 'Stück' : einheit === 'LAUFENDE_METER' ? 'm' : einheit === 'KILOGRAMM' ? 'kg' : einheit;
+                                    return <div key={key} className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_9rem_11rem] gap-3 rounded-lg border border-slate-200 p-3">
+                                        <div className="min-w-0 self-center">
+                                            <p className="font-medium text-slate-900 break-words">{name}</p>
+                                            <p className="text-xs text-slate-500">{artikel.guenstigsterLieferantName ?? artikel.lieferantenname ?? 'Artikelstamm'} · {einheitText}</p>
+                                        </div>
+                                        <DecimalInput label={`Menge für ${name}`} value={lagerArtikelMengen[key] ?? ''}
+                                            onChange={value => handleLagerMengeChange(artikel, value)} min={0.000001} integer={istStueckware(artikel)} required placeholder="1" />
+                                        <DecimalInput label={`Preis je ${einheitText} (€) für ${name}`} value={lagerArtikelPreise[key] ?? ''}
+                                            onChange={value => setLagerArtikelPreise(prev => ({ ...prev, [key]: value }))} min={0} required placeholder="0,00" />
+                                    </div>;
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     <DialogFooter>
+                        <div className="flex-1 text-sm text-slate-500">
+                            {selectedLagerArtikelKeys.size} ausgewählt
+                            {lagerMengenLuecke && (
+                                <span id="lager-mengen-hinweis" role="alert" className="ml-3 text-xs text-amber-700">
+                                    Bitte überall eine Menge größer 0 eintragen — Stückware nur in ganzen Stück.
+                                </span>
+                            )}
+                        </div>
                         <Button variant="outline" onClick={() => setShowLagerArtikelModal(false)} disabled={savingLagerArtikel}>
                             Abbrechen
                         </Button>
                         <Button
                             onClick={handleSaveLagerArtikel}
-                            disabled={savingLagerArtikel || selectedLagerArtikelKeys.size === 0}
+                            disabled={savingLagerArtikel || selectedLagerArtikelKeys.size === 0 || lagerMengenLuecke}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
-                            {savingLagerArtikel ? 'Übernehme...' : `Abschließen (${selectedLagerArtikelKeys.size})`}
+                            {savingLagerArtikel ? 'Speichere...' : `Kosten speichern (${selectedLagerArtikelKeys.size})`}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -3068,11 +3223,26 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </DialogHeader>
                     <div className="grid grid-cols-2 gap-3 py-4">
                         {AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN
-                            .filter((typ) => ['ANGEBOT', 'RECHNUNG', 'AUFTRAGSBESTAETIGUNG'].includes(typ.value))
+                            .filter((typ) => ['ANGEBOT', 'NACHTRAGSANGEBOT', 'AUFTRAGSBESTAETIGUNG', 'RECHNUNG'].includes(typ.value))
                             .map((typ) => {
-                                const isBaseType = typ.value === 'ANGEBOT' || typ.value === 'AUFTRAGSBESTAETIGUNG';
-                                const hasBasisdokument = ausgangsDokumente.some(d => !d.vorgaengerId);
-                                const disabled = isBaseType && hasBasisdokument;
+                                // Basisdokumente sind eigene Wurzel-Vorgänge (ohne vorgaengerId).
+                                // Regel: 1× Angebot zuerst, danach beliebig viele Nachtragsangebote.
+                                // Eigenständige AB/Rechnung nur, solange noch kein Basisdokument existiert.
+                                const roots = ausgangsDokumente.filter(d => !d.vorgaengerId);
+                                const hasAngebotBasis = roots.some(d => d.typ === 'ANGEBOT');
+                                const hasAnyBasis = roots.length > 0;
+                                let disabled: boolean;
+                                let disabledTitle: string;
+                                if (typ.value === 'NACHTRAGSANGEBOT') {
+                                    disabled = !hasAngebotBasis;
+                                    disabledTitle = 'Zuerst ein Angebot anlegen';
+                                } else if (typ.value === 'ANGEBOT') {
+                                    disabled = hasAnyBasis;
+                                    disabledTitle = 'Es existiert bereits ein Basisdokument – weitere nur als Nachtragsangebot';
+                                } else {
+                                    disabled = hasAnyBasis;
+                                    disabledTitle = 'Es existiert bereits ein Basisdokument';
+                                }
                                 return (
                                     <button
                                         key={typ.value}
@@ -3087,7 +3257,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                 ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
                                                 : 'border-slate-200 hover:border-rose-300 hover:bg-rose-50'
                                         }`}
-                                        title={disabled ? 'Es existiert bereits ein Basisdokument' : undefined}
+                                        title={disabled ? disabledTitle : undefined}
                                     >
                                         <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
                                             disabled ? 'bg-slate-100 text-slate-400' : 'bg-rose-100 text-rose-600 group-hover:bg-rose-200'
@@ -3103,6 +3273,66 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <AnfrageSearchModal
+                isOpen={showAnfrageSearchModal}
+                onClose={() => setShowAnfrageSearchModal(false)}
+                kundenId={projekt.kundeDto?.id ?? projekt.kundenId}
+                onSelect={(anfrage) => {
+                    setSelectedMergeAnfrage(anfrage);
+                    setShowAnfrageMergeDialog(true);
+                }}
+            />
+
+            <Dialog
+                open={showAnfrageMergeDialog}
+                onOpenChange={(open) => {
+                    if (mergingAnfrage) return;
+                    setShowAnfrageMergeDialog(open);
+                    if (!open) setSelectedMergeAnfrage(null);
+                }}
+            >
+                <DialogContent className="sm:max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Anfrage endgültig zusammenführen?</DialogTitle>
+                        <p className="text-sm text-slate-500">
+                            Dateien, Geschäftsdokumente, Beschreibung, Bautagebuch und E-Mails werden übernommen.
+                            Anschließend wird die Anfrage gelöscht.
+                        </p>
+                    </DialogHeader>
+
+                    {selectedMergeAnfrage && (
+                        <div className="my-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                            <p className="font-semibold break-words">{selectedMergeAnfrage.bauvorhaben || 'Unbenannte Anfrage'}</p>
+                            <p className="mt-1">
+                                {selectedMergeAnfrage.anfragesnummer
+                                    ? `Anfrage ${selectedMergeAnfrage.anfragesnummer} wird nach erfolgreicher Übernahme dauerhaft gelöscht.`
+                                    : 'Diese Anfrage wird nach erfolgreicher Übernahme dauerhaft gelöscht.'}
+                            </p>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowAnfrageMergeDialog(false)}
+                            disabled={mergingAnfrage}
+                        >
+                            Abbrechen
+                        </Button>
+                        <Button
+                            onClick={handleAnfrageMerge}
+                            disabled={!selectedMergeAnfrage || mergingAnfrage}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            {mergingAnfrage
+                                ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                : <GitMerge className="w-4 h-4 mr-2" />}
+                            Zusammenführen und Anfrage löschen
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 
@@ -3112,40 +3342,53 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 <User className="w-5 h-5 text-rose-500" />
                 Projektdaten
             </h2>
+            {/* Task 12 (Abschnitt 8, "zweiter Mechanismus"): jedes dieser <p>
+                ist ein reiner Block ohne break-words -- der Kasten waechst
+                nicht mit, ein langes Wort malt rechts heraus und landet im
+                Scroll-Ueberlauf von main (DetailLayout hat kein
+                overflow-hidden). Bisher fiel das nicht auf, weil die Werte in
+                der Praxis kurz sind -- ein Komposita-Firmenname oder eine
+                lange Strasse genuegt aber schon. */}
             <div className="space-y-4">
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Kunde</p>
-                    <p className="font-medium text-slate-900">{projekt.kunde || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{projekt.kunde || '-'}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Kundennummer</p>
-                    <p className="font-medium text-slate-900">{projekt.kundennummer || kundeDto?.kundennummer || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{projekt.kundennummer || kundeDto?.kundennummer || '-'}</p>
                 </div>
                 {kundeDto?.ansprechspartner && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Ansprechpartner</p>
-                        <p className="font-medium text-slate-900">{kundeDto.ansprechspartner}</p>
+                        <p className="font-medium text-slate-900 break-words">{kundeDto.ansprechspartner}</p>
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Auftragsnummer</p>
-                    <p className="font-medium text-slate-900">{projekt.auftragsnummer || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{projekt.auftragsnummer || '-'}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Anlagedatum</p>
-                    <p className="font-medium text-slate-900">{formatDate(projekt.anlegedatum)}</p>
+                    <p className="font-medium text-slate-900 break-words">{formatDate(projekt.anlegedatum)}</p>
                 </div>
                 {projekt.abschlussdatum && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Abschlussdatum</p>
-                        <p className="font-medium text-slate-900">{formatDate(projekt.abschlussdatum)}</p>
+                        <p className="font-medium text-slate-900 break-words">{formatDate(projekt.abschlussdatum)}</p>
                     </div>
                 )}
                 {kundenEmails.length > 0 && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Kunden-E-Mails</p>
                         {kundenEmails.map((email) => (
-                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm truncate">
+                            // break-words statt truncate (Nacharbeit Abschnitt 4,
+                            // Code-Review-Befund 4, schlimmster Fall: rechte Spalte
+                            // nur rund 322px breit): eine normale Firmen-E-Mail-
+                            // Adresse passte dort nicht und hatte kein title als
+                            // Rueckfallweg -- ohne title war sie weder lesbar noch
+                            // kopierbar.
+                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm break-words">
                                 {email}
                             </a>
                         ))}
@@ -3165,8 +3408,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                 : kategorie?.verrechnungseinheit;
                             return (
                                 <div key={kategorie?.id || index} className="p-2 bg-rose-50 rounded-lg text-sm space-y-1">
-                                    <div className="text-slate-900">{kategorie?.pfad || kategorie?.bezeichnung || 'Kategorie'}</div>
-                                    <div className="text-rose-700 font-medium">{k.menge} {verrechnungseinheit || ''}</div>
+                                    <div className="text-slate-900 break-words">{kategorie?.pfad || kategorie?.bezeichnung || 'Kategorie'}</div>
+                                    <div className="text-rose-700 font-medium break-words">{k.menge} {verrechnungseinheit || ''}</div>
                                 </div>
                             );
                         })}
@@ -3182,8 +3425,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         Projektadresse
                     </h3>
                     <div className="p-3 bg-slate-50 rounded-lg mb-3">
-                        <p className="font-medium text-slate-900">{projekt.strasse || kundeDto?.strasse || '-'}</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="font-medium text-slate-900 break-words">{projekt.strasse || kundeDto?.strasse || '-'}</p>
+                        <p className="text-sm text-slate-600 break-words">
                             {projekt.plz || kundeDto?.plz} {projekt.ort || kundeDto?.ort}
                         </p>
                     </div>
@@ -3282,6 +3525,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                         hour: '2-digit', minute: '2-digit', second: '2-digit',
                                     })
                                     : '—'}
+                            />
+                            {/* Unterzeichner: konkret klickende Person — bei Firmenkunden die
+                                vertretungsberechtigte Person, nicht zwangsläufig der Kundenstammname. */}
+                            <AuditRow
+                                label="Angenommen von"
+                                value={auditDaten.unterzeichnerName || '—'}
                             />
                             <AuditRow label="E-Mail" value={auditDaten.akzeptiertEmail || '—'} />
                             <AuditRow label="IP-Adresse" value={auditDaten.akzeptiertIp || '—'} mono />
@@ -3400,16 +3649,35 @@ export default function ProjektEditor() {
     const [page, setPage] = useState(0);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
+    const [showProjektlistePdf, setShowProjektlistePdf] = useState(false);
 
     // Filters
     const [filters, setFilters] = useState({
         q: "",
         kunde: "",
-        status: "", // "bezahlt", "offen", ""
+        status: "", // "in-arbeit", "abgeschlossen", ""
+        jahr: "",
     });
+
+    // Jahre mit angelegten Projekten fürs Jahres-Dropdown – gleiche Mechanik wie
+    // auf der Anfragen-Seite (/api/anfragen/jahre).
+    const [verfuegbareJahre, setVerfuegbareJahre] = useState<number[]>([]);
+    useEffect(() => {
+        fetch('/api/projekte/jahre')
+            .then(res => (res.ok ? res.json() : []))
+            .then(data => setVerfuegbareJahre(Array.isArray(data) ? data : []))
+            .catch(() => setVerfuegbareJahre([]));
+    }, []);
+
+    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
+    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
+    // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
+    const ladeVorgangRef = useRef(0);
 
     // Fetch List
     const loadProjekte = useCallback(async () => {
+        const ladeVorgang = ++ladeVorgangRef.current;
+        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -3417,8 +3685,9 @@ export default function ProjektEditor() {
             params.set("size", String(PAGE_SIZE));
             if (filters.q) params.set("q", filters.q);
             if (filters.kunde) params.set("kunde", filters.kunde);
-            if (filters.status === 'bezahlt') params.set("bezahlt", "true");
-            if (filters.status === 'offen') params.set("bezahlt", "false");
+            if (filters.status === 'in-arbeit') params.set("abgeschlossen", "false");
+            if (filters.status === 'abgeschlossen') params.set("abgeschlossen", "true");
+            if (filters.jahr) params.set("jahr", filters.jahr);
 
             const [res, lastAccessed] = await Promise.all([
                 fetch(`/api/projekte?${params.toString()}`),
@@ -3426,6 +3695,7 @@ export default function ProjektEditor() {
             ]);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
+            if (!istAktuell()) return;
 
             // Projekte sortieren: zuletzt aufgerufene zuerst (Stack), dann offene vor abgeschlossenen
             const sortedProjekte = Array.isArray(data.projekte) ? data.projekte : [];
@@ -3447,24 +3717,29 @@ export default function ProjektEditor() {
             if (ids.length > 0) {
                 try {
                     const statusRes = await fetch(`/api/projekte/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`);
+                    if (!istAktuell()) return;
                     if (statusRes.ok) {
                         setFreigabeStatusByProjektId(await statusRes.json() || {});
                     } else {
                         setFreigabeStatusByProjektId({});
                     }
                 } catch {
-                    setFreigabeStatusByProjektId({});
+                    // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
+                    // der aktuelle ist – sonst löscht ein veralteter Request die
+                    // Status-Icons der inzwischen angezeigten Liste.
+                    if (istAktuell()) setFreigabeStatusByProjektId({});
                 }
             } else {
                 setFreigabeStatusByProjektId({});
             }
         } catch (err) {
             console.error(err);
+            if (!istAktuell()) return;
             setProjekte([]);
             setTotal(0);
             setFreigabeStatusByProjektId({});
         } finally {
-            setLoading(false);
+            if (istAktuell()) setLoading(false);
         }
     }, [page, filters]);
 
@@ -3475,11 +3750,13 @@ export default function ProjektEditor() {
     }, [loadProjekte, viewMode]);
 
     // Deep-link: auto-open project from URL param ?projektId=123&tab=notizen
-    const [deepLinkTab, setDeepLinkTab] = useState<ProjektDetailViewProps['initialTab']>(undefined);
+    const [deepLinkTab, setDeepLinkTab] = useState<ProjektDetailTab | undefined>(undefined);
     const lastProcessedProjektId = useRef<string | null>(null);
     useEffect(() => {
         const projektIdParam = searchParams.get('projektId');
-        const tabParam = searchParams.get('tab') as ProjektDetailViewProps['initialTab'];
+        // Whitelist-Validierung statt unchecked `as`-Cast: unbekannte tab-Werte
+        // ignorieren wir, sonst rendert die Detail-View ohne sichtbares Pane.
+        const tabParam = parseProjektTab(searchParams.get('tab'));
         if (!projektIdParam && !tabParam) return;
         // Skip if we already processed this exact projektId
         if (projektIdParam && lastProcessedProjektId.current === projektIdParam) return;
@@ -3507,18 +3784,23 @@ export default function ProjektEditor() {
     }, [searchParams]);
 
     // Handlers
+    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
+    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
+    // Treffer wären da, aber unsichtbar.
     const handleFilterChange = (key: string, value: string) => {
         setFilters((prev) => ({ ...prev, [key]: value }));
+        setPage(0);
     };
 
+    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
+    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
     const handleFilterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPage(0);
-        loadProjekte();
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: "", kunde: "", status: "" });
+        setFilters({ q: "", kunde: "", status: "", jahr: "" });
         setPage(0);
     };
 
@@ -3549,28 +3831,13 @@ export default function ProjektEditor() {
         }
     };
 
-    // Toggle abgeschlossen status directly from card
+    // Haken "Beendet" direkt auf der Karte setzen/entfernen.
+    // Eigener Endpunkt: Nur so merkt sich das System, dass der Benutzer selbst
+    // entschieden hat – die Bezahlt-Automatik überschreibt den Haken danach nicht mehr.
     const handleToggleAbgeschlossen = async (projektId: number, abgeschlossen: boolean) => {
         try {
-            // Find projekt to get required data
-            const projekt = projekte.find(p => p.id === projektId);
-            if (!projekt) return;
-
-            const res = await fetch(`/api/projekte/${projektId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    bauvorhaben: projekt.bauvorhaben,
-                    kunde: projekt.kunde,
-                    kundennummer: projekt.kundennummer,
-                    kundenId: projekt.kundenId,
-                    auftragsnummer: projekt.auftragsnummer,
-                    bruttoPreis: projekt.bruttoPreis,
-                    strasse: projekt.strasse,
-                    plz: projekt.plz,
-                    ort: projekt.ort,
-                    abgeschlossen: abgeschlossen
-                })
+            const res = await fetch(`/api/projekte/${projektId}/abgeschlossen?abgeschlossen=${abgeschlossen}`, {
+                method: 'PATCH',
             });
 
             if (res.ok) {
@@ -3585,6 +3852,16 @@ export default function ProjektEditor() {
     };
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
+    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
+    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
+    // `total` noch der alte Wert.
+    useEffect(() => {
+        if (loading) return;
+        const letzteSeite = totalPages - 1;
+        if (page > letzteSeite) setPage(letzteSeite);
+    }, [loading, totalPages, page]);
 
     const statusText = useMemo(() => {
         if (loading) return 'Projekte werden geladen...';
@@ -3667,6 +3944,10 @@ export default function ProjektEditor() {
             subtitle="Übersicht und Verwaltung Ihrer Projekte."
             actions={
                 <>
+                    <Button variant="outline" size="sm" onClick={() => setShowProjektlistePdf(true)}>
+                        <FileText className="w-4 h-4 mr-2" />
+                        Liste: Projekte in Arbeit
+                    </Button>
                     <Button size="sm" onClick={() => setShowCreateModal(true)} className="bg-rose-600 text-white hover:bg-rose-700">
                         <Plus className="w-4 h-4 mr-2" />
                         Neues Projekt
@@ -3680,7 +3961,7 @@ export default function ProjektEditor() {
         >
             {/* Filter - volle Breite */}
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100">
-                <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Freitext</label>
                         <input
@@ -3707,23 +3988,42 @@ export default function ProjektEditor() {
                             className="mt-1"
                             options={[
                                 { value: "", label: "Alle" },
-                                { value: "offen", label: "Offen" },
-                                { value: "bezahlt", label: "Bezahlt" }
+                                { value: "in-arbeit", label: "In Arbeit" },
+                                { value: "abgeschlossen", label: "Beendet" }
                             ]}
                             value={filters.status}
                             onChange={(val) => handleFilterChange("status", val)}
                             placeholder="Alle"
                         />
                     </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Jahr</label>
+                        <Select
+                            className="mt-1"
+                            options={[
+                                { value: "", label: "Alle Jahre" },
+                                ...verfuegbareJahre.map(jahr => ({
+                                    value: String(jahr),
+                                    label: String(jahr)
+                                }))
+                            ]}
+                            value={filters.jahr}
+                            onChange={(val) => handleFilterChange("jahr", val)}
+                            placeholder="Alle Jahre"
+                        />
+                    </div>
                     <div className="flex items-end gap-3">
-                        <Button type="submit" className="flex-1 bg-rose-600 text-white hover:bg-rose-700">Filtern</Button>
-                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Reset</Button>
+                        {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
+                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Filter zurücksetzen</Button>
                     </div>
                 </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
+                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Alle Filter gelten für die gesamte Liste, nicht nur für die angezeigte Seite.</p>
             </div>
 
-            {/* Grid Content */}
+            {/* Grid Content -- xl:grid-cols-4 -> 2xl:grid-cols-4: bei 1440px
+                (>=lg, <2xl) drei breitere Karten statt vier -- der lange
+                Bauvorhaben-Titel braucht mehr Platz je Karte (Spec-Befund 4,
+                Task 3). Ab 1536px (2xl) wieder vier Karten wie vorher. */}
             {loading ? (
                 <div className="text-center py-8 text-slate-500">Projekte werden geladen...</div>
             ) : projekte.length === 0 ? (
@@ -3732,7 +4032,7 @@ export default function ProjektEditor() {
                     Keine Projekte gefunden.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                     {projekte.map((projekt) => (
                         <ProjektCard
                             key={projekt.id}
@@ -3757,6 +4057,15 @@ export default function ProjektEditor() {
                     </Button>
                 </div>
             </div>
+
+            {/* Liste aller Projekte, bei denen der Haken "Beendet" nicht gesetzt ist */}
+            {showProjektlistePdf && (
+                <DocumentPreviewModal
+                    doc={{ url: '/api/projekte/export-pdf', title: 'Projekte in Arbeit' }}
+                    isPdf
+                    onClose={() => setShowProjektlistePdf(false)}
+                />
+            )}
 
             {/* Create Project Modal */}
             <ProjektErstellenModal
@@ -3886,12 +4195,18 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
     return (
         <Card
             className={cn(
-                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden",
+                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col",
                 projekt.abgeschlossen && "opacity-60 bg-slate-50"
             )}
             onClick={onClick}
         >
-            <div className="p-4 space-y-3">
+            {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3. Tailwinds
+                space-y-3 erzeugt den Selektor "> * + *" (Spezifitaet 0-3-0),
+                der die Margin auf JEDES direkte Kind ausser dem ersten setzt --
+                das schlaegt mt-auto (Spezifitaet 0-1-0) am Meta-Block unten
+                nieder und macht ihn wirkungslos. gap-3 auf dem flex-col-
+                Container umgeht das Spezifitaets-Problem vollstaendig. */}
+            <div className="p-4 gap-3 flex-1 flex flex-col">
                 <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -3910,10 +4225,24 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
                             )}
                             {freigabe && <FreigabeBadge freigabe={freigabe} />}
                         </div>
-                        <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={projekt.bauvorhaben}>
+                        {/* line-clamp-2 statt truncate: bei einem langen Bauvorhaben
+                            (Spec-Befund 4) darf der Titel zwei Zeilen nutzen, statt
+                            fast vollstaendig zu verschwinden. data-kuerzung-erlaubt
+                            markiert den dokumentiert erlaubten Ausnahmefall -- der
+                            volle Name steht im title-Attribut. Kein min-h-[3rem]
+                            mehr (Nacharbeit Abschnitt 4, Design-Review-Befund): das
+                            riss bei kurzen Bauvorhaben eine 24px-Luecke zwischen
+                            Titel und Kundenname. Gleich hohe Karten kommen
+                            stattdessen ueber h-full flex flex-col an der Karte und
+                            mt-auto am Meta-Block unten. */}
+                        <h3
+                            className="font-semibold text-slate-900 mt-2 line-clamp-2 text-base"
+                            title={projekt.bauvorhaben}
+                            data-kuerzung-erlaubt
+                        >
                             {projekt.bauvorhaben || "Unbenannt"}
                         </h3>
-                        <p className="text-sm text-slate-500 truncate">{projekt.kunde || "Kein Kunde"}</p>
+                        <p className="text-sm text-slate-500 break-words">{projekt.kunde || "Kein Kunde"}</p>
                     </div>
                     {/* Checkbox zum Beenden */}
                     <div
@@ -3933,11 +4262,14 @@ function ProjektCard({ projekt, onClick, onToggleAbgeschlossen, freigabe }: {
                     </div>
                 </div>
 
-                <div className="space-y-1 pt-2 border-t border-slate-50">
+                <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                     {projekt.auftragsnummer && (
                         <div className="flex items-center gap-2 text-sm text-slate-600">
                             <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                            <span className="truncate">{projekt.auftragsnummer}</span>
+                            {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit):
+                                dieselbe Rezeptur wie Kundenname zwei Zeilen darueber statt
+                                einer wirkungslosen truncate-Klasse ohne data-kuerzung-erlaubt. */}
+                            <span className="min-w-0 break-words">{projekt.auftragsnummer}</span>
                         </div>
                     )}
                     <div className="flex items-center gap-2 text-sm text-slate-600">

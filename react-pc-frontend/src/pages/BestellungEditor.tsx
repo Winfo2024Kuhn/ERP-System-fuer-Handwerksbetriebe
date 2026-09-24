@@ -1,3 +1,8 @@
+import { LadefehlerPanel } from '../components/ui/ladefehler-panel';
+import { useNavigate } from 'react-router-dom';
+import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
+import type { BedarfResponse } from '../features/einkauf/types';
+import { ladeBedarfszeilen, nutztEchtesBackend, druckeBedarfsliste } from '../features/einkauf/originalBedarfApi';
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { PdfCanvasViewer } from "../components/ui/PdfCanvasViewer";
 import {
@@ -34,6 +39,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { MaterialbestellungModal, type EditPosition } from '../components/MaterialbestellungModal';
 const toEditPosition = (b: Bestellung): EditPosition => ({
+    bedarf: b.bedarf,
     id: b.id,
     artikelId: b.artikelId || null,
     externeArtikelnummer: b.externeArtikelnummer || null,
@@ -151,8 +157,9 @@ const prepareHtmlForSending = (rawHtml: string): string => {
 
 // ==================== TYPES ====================
 interface Bestellung {
+    bedarf?: BedarfResponse;
     id: number;
-    artikelId: number;
+    artikelId?: number;
     externeArtikelnummer?: string;
     produktname?: string;
     produkttext?: string;
@@ -813,7 +820,7 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
         }
     };
 
-    const exportVerfuegbar = groupBy === 'lieferant' && gruppe.lieferantId != null;
+    const exportVerfuegbar = !nutztEchtesBackend && groupBy === 'lieferant' && gruppe.lieferantId != null;
     const hatBearbeitbarePositionen = useMemo(
         () => gruppe.items.some(item => !item.exportiertAm),
         [gruppe.items],
@@ -931,6 +938,7 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
                                         <input
                                             type="checkbox"
                                             checked={b.bestellt}
+                                            disabled={nutztEchtesBackend}
                                             onChange={e => onToggleBestellt(b.id, e.target.checked)}
                                             className="w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500"
                                             title={`Position ${b.produktname || ''} als bestellt markieren`}
@@ -997,8 +1005,12 @@ const GruppeCard: React.FC<GruppeCardProps> = ({
 
 // ==================== MAIN COMPONENT ====================
 export default function BestellungEditor() {
+    const toast = useToast();
+    const navigate = useNavigate();
+    const [direktOffen, setDirektOffen] = useState(false);
     const [bestellungen, setBestellungen] = useState<Bestellung[]>([]);
     const [loading, setLoading] = useState(true);
+    const [ladefehler, setLadefehler] = useState<string | null>(null);
     const [emailModal, setEmailModal] = useState<{ lieferantId: number; lieferantName: string } | null>(null);
     const [bestellpositionModalOffen, setBestellpositionModalOffen] = useState(false);
     const [batchEditGruppe, setBatchEditGruppe] = useState<Gruppe | null>(null);
@@ -1006,6 +1018,7 @@ export default function BestellungEditor() {
     const [groupBy, setGroupBy] = useState<GroupBy>('lieferant');
 
     const markiereLieferantAlsExportiert = useCallback(async (lieferantId: number) => {
+        if (nutztEchtesBackend) return;
         try {
             await fetch(`/api/bestellungen/lieferant/${lieferantId}/markiere-exportiert`, {
                 method: 'POST',
@@ -1017,17 +1030,18 @@ export default function BestellungEditor() {
 
     const loadBestellungen = useCallback(async () => {
         setLoading(true);
+        setLadefehler(null);
         try {
-            const res = await fetch('/api/bestellungen/offen');
-            const data = res.ok ? await res.json() : [];
+            const data = await ladeBedarfszeilen(null);
             setBestellungen(Array.isArray(data) ? data : []);
         } catch (err) {
-            console.error('Error loading Bestellungen:', err);
-            setBestellungen([]);
+            const message = err instanceof Error ? err.message : 'Bedarf konnte nicht geladen werden.';
+            setLadefehler(message);
+            toast.error(message);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [toast]);
 
     useEffect(() => {
         loadBestellungen();
@@ -1076,14 +1090,14 @@ export default function BestellungEditor() {
     }, [bestellungen, groupBy]);
 
     const handleToggleBestellt = async (id: number, bestellt: boolean) => {
+        if (nutztEchtesBackend) { toast.info('Der Bestellstatus wird über die zugehörige Bestellung gesetzt.'); return; }
         try {
-            await fetch(`/api/bestellungen/${id}?bestellt=${bestellt}`, {
-                method: 'PATCH',
-            });
+            const res = await fetch(`/api/bestellungen/${id}?bestellt=${bestellt}`, { method: 'PATCH' });
+            if (!res.ok) throw new Error('Den Bestellstatus bitte über die zugehörige Bestellung ändern.');
             // Reload to get updated data
             loadBestellungen();
         } catch (err) {
-            console.error('Error updating Bestellung:', err);
+            toast.error(err instanceof Error ? err.message : 'Bestellstatus konnte nicht geändert werden.');
         }
     };
 
@@ -1119,6 +1133,11 @@ export default function BestellungEditor() {
                         <Plus className="w-4 h-4 mr-2" />
                         Position hinzufügen
                     </Button>
+                    {nutztEchtesBackend && <>
+                        <Button variant="outline" size="sm" disabled={!bestellungen.length} onClick={() => void druckeBedarfsliste(bestellungen.map(b => b.id)).catch(e => toast.error(e.message))}>Bedarfsliste drucken</Button>
+                        <Button variant="outline" size="sm" onClick={() => navigate('/einkaufsanfragen/neu')}>Angebote einholen</Button>
+                        <Button variant="outline" size="sm" onClick={() => setDirektOffen(true)}>Bestellung vorbereiten</Button>
+                    </>}
                     <Button variant="outline" size="sm" onClick={loadBestellungen} disabled={loading}>
                         <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
                         Aktualisieren
@@ -1164,6 +1183,8 @@ export default function BestellungEditor() {
                 <div className="flex items-center justify-center py-12">
                     <RefreshCw className="w-8 h-8 text-rose-600 animate-spin" />
                 </div>
+            ) : ladefehler ? (
+                <LadefehlerPanel message={ladefehler} onRetry={() => void loadBestellungen()} />
             ) : gruppen.length === 0 ? (
                 <Card className="p-12 text-center">
                     <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
@@ -1186,6 +1207,9 @@ export default function BestellungEditor() {
                 </div>
             )}
 
+            {direktOffen && <DirektbestellungDialog onClose={() => setDirektOffen(false)}
+                initialeTeilmengen={bestellungen.filter(b => (b.bedarf?.mengen.disponierbar ?? 0) > 0).map(b => ({ bedarfId: b.id, menge: b.bedarf!.mengen.disponierbar! }))}
+                onCreated={id => { setDirektOffen(false); navigate(`/bestellungen/${id}`); }} />}
             {/* Manuelle Bestellposition */}
             <MaterialbestellungModal
                 isOpen={bestellpositionModalOffen}

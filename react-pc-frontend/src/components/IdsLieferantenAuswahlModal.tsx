@@ -1,5 +1,7 @@
+import type { PunchoutForm } from '../types/ids';
+import { submitPunchoutForm } from '../lib/idsPunchout';
 import { useEffect, useState } from 'react';
-import { Loader2, Plug, ShoppingCart, X } from 'lucide-react';
+import { FolderOpen, Loader2, Plug, ShoppingCart, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { useToast } from './ui/toast';
 
@@ -8,21 +10,12 @@ interface IdsLieferant {
     name: string;
 }
 
-interface PunchoutForm {
-    action: string;
-    /**
-     * enctype, mit dem die Form an den Lieferanten-Shop POSTet wird.
-     * Pro Lieferanten-Profil unterschiedlich:
-     * - IDS-Connect 2.5: "application/x-www-form-urlencoded"
-     * - Würth Legacy: "multipart/form-data"
-     */
-    enctype?: string;
-    fields: Record<string, string>;
-}
-
 interface Props {
     isOpen: boolean;
     onClose: () => void;
+    /** Aus dem Projektbedarf geöffnet: Der zurückgegebene Warenkorb wird an diesem Projekt geparkt. */
+    projektId?: number;
+    projektName?: string;
 }
 
 /**
@@ -33,9 +26,10 @@ interface Props {
  * der Bauleiter sieht den eingeloggten Warenkorb.
  *
  * Der Shop posted den fertigen Cart später an /api/ids/punchout/.../return
- * zurück, das Backend legt eine Bestellung im Status ENTWURF an.
+ * zurück, das Backend legt eine Bestellung im Status ENTWURF an. Mit
+ * projektId wird der Warenkorb am Projekt geparkt und später von dort bestellt.
  */
-export function IdsLieferantenAuswahlModal({ isOpen, onClose }: Props) {
+export function IdsLieferantenAuswahlModal({ isOpen, onClose, projektId, projektName }: Props) {
     const toast = useToast();
     const [lieferanten, setLieferanten] = useState<IdsLieferant[]>([]);
     const [loading, setLoading] = useState(false);
@@ -62,13 +56,19 @@ export function IdsLieferantenAuswahlModal({ isOpen, onClose }: Props) {
     const handleStart = async (lieferantId: number) => {
         setStarting(lieferantId);
         try {
-            const res = await fetch(`/api/ids/punchout/${lieferantId}/start`, { method: 'POST' });
+            const res = await fetch(`/api/ids/punchout/${lieferantId}/start`, projektId != null
+                ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projektId, projektName }) }
+                : { method: 'POST' });
             if (res.status === 404) {
                 toast.error('Für diesen Lieferanten ist keine Schnittstelle hinterlegt.');
                 return;
             }
             if (res.status === 409) {
                 toast.error('Schnittstelle ist nicht vollständig konfiguriert (Punchout-URL?).');
+                return;
+            }
+            if (res.status === 400 && projektId != null) {
+                toast.error('Das Projekt konnte dem Warenkorb nicht zugeordnet werden.');
                 return;
             }
             if (!res.ok) {
@@ -121,6 +121,16 @@ export function IdsLieferantenAuswahlModal({ isOpen, onClose }: Props) {
                 </div>
 
                 <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
+                    {projektId != null && (
+                        <p className="mb-3 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                            <FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                            <span>
+                                Der Warenkorb wird am Projekt{' '}
+                                <strong className="font-semibold text-slate-900">{projektName || `#${projektId}`}</strong>{' '}
+                                geparkt. Bestellt wird erst, wenn du ihn später dort abschickst.
+                            </span>
+                        </p>
+                    )}
                     {loading ? (
                         <div className="flex items-center justify-center py-10 text-slate-500">
                             <Loader2 className="w-5 h-5 animate-spin mr-2" />
@@ -167,42 +177,4 @@ export function IdsLieferantenAuswahlModal({ isOpen, onClose }: Props) {
             </div>
         </div>
     );
-}
-
-/**
- * Baut eine versteckte Form mit den Punchout-Feldern und submittet sie
- * in ein neues Tab. Wir verwenden form.submit() — keine fetch()-Variante,
- * weil der Lieferanten-Shop ein klassisches Form-POST erwartet und auch
- * die Browser-Session anschließend für den Cart-Return offen halten muss.
- */
-function submitPunchoutForm(form: PunchoutForm) {
-    const f = document.createElement('form');
-    f.method = 'POST';
-    f.action = form.action;
-    f.target = '_blank';
-    // rel="noopener noreferrer" verhindert (a) dass der Lieferanten-Shop ueber
-    // window.opener Zugriff auf unseren ERP-Tab bekommt (Tabnabbing-Schutz) und
-    // (b) dass interne ERP-URLs ueber den Referer-Header an den Shop leaken.
-    f.setAttribute('rel', 'noopener noreferrer');
-    f.style.display = 'none';
-    f.acceptCharset = 'UTF-8';
-    // Würth-Shops verlangen multipart/form-data und weisen sonst mit
-    // "Invalid form enctype" zurück; IDS-Connect-2.5-Standard ist
-    // application/x-www-form-urlencoded. Backend liefert den passenden
-    // Wert pro Lieferanten-Profil.
-    f.enctype = form.enctype || 'application/x-www-form-urlencoded';
-
-    Object.entries(form.fields).forEach(([key, value]) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = value ?? '';
-        f.appendChild(input);
-    });
-
-    document.body.appendChild(f);
-    f.submit();
-    // Form sofort entfernen — der Browser hat die Werte schon zur Übertragung
-    // serialisiert; wir wollen das versteckte DOM-Element nicht im Tree lassen.
-    setTimeout(() => f.remove(), 100);
 }

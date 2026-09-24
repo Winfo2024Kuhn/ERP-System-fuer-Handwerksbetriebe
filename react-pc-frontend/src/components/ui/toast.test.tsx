@@ -1,5 +1,6 @@
+import { StrictMode, useEffect } from 'react';
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ToastProvider, useToast } from './toast';
 import { act } from '@testing-library/react';
 
@@ -87,4 +88,55 @@ describe('Toast', () => {
         expect(screen.getByText('Gespeichert!')).toBeInTheDocument();
         expect(screen.getByText('Fehler aufgetreten')).toBeInTheDocument();
     });
+});
+
+
+describe('Schwebende Meldungen', () => {
+    it('behält auch acht Meldungen in einer begrenzten scrollbaren Fläche erreichbar', async () => {
+        render(<ToastProvider><TestComponent /></ToastProvider>);
+        await act(async () => { for (let i = 0; i < 8; i++) screen.getByText('Error').click(); });
+        expect(screen.getAllByRole('alert')).toHaveLength(8);
+        expect(screen.getAllByRole('button', { name: 'Meldung schließen' })).toHaveLength(8);
+        expect(screen.getByRole('region', { name: 'Meldungen' })).toBeInTheDocument();
+    });
+
+    it('hält die Toast-API stabil, damit Fehlermeldungen keine Formulare neu laden', async () => {
+        const geladen = vi.fn();
+        function Formular() {
+            const toast = useToast();
+            useEffect(geladen, [toast]);
+            return <button onClick={() => toast.error('Prüfen')}>Prüfen</button>;
+        }
+        render(<ToastProvider><Formular /></ToastProvider>);
+        expect(geladen).toHaveBeenCalledTimes(1);
+        await act(async () => { screen.getByRole('button', { name: 'Prüfen' }).click(); });
+        expect(geladen).toHaveBeenCalledTimes(1);
+    });
+
+    it('verändert auch im StrictMode keine globale Layout-Höhe', async () => {
+        const { unmount } = render(<StrictMode><ToastProvider><TestComponent /></ToastProvider></StrictMode>);
+        await act(async () => { screen.getByText('Error').click(); });
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('');
+        act(() => window.dispatchEvent(new Event('resize')));
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('');
+        unmount();
+        expect(document.documentElement.style.getPropertyValue('--pc-toast-height')).toBe('');
+    });
+});
+
+it('blendet Meldungen nach Ablauf aus und beendet Timer beim Unmount', async () => {
+    vi.useFakeTimers();
+    const { unmount } = render(<ToastProvider><TestComponent /></ToastProvider>);
+    try {
+        act(() => screen.getByText('Error').click());
+        expect(screen.getByRole('alert')).toBeVisible();
+        act(() => vi.advanceTimersByTime(5000));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.getByTestId('toast-container')).not.toBeVisible();
+        act(() => screen.getByText('Error').click());
+        unmount();
+        expect(vi.getTimerCount()).toBe(0);
+    } finally {
+        unmount(); vi.useRealTimers();
+    }
 });

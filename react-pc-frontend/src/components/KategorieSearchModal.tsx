@@ -8,6 +8,9 @@ import {
     Search,
     X,
 } from 'lucide-react';
+import { Dialog } from './ui/dialog';
+import { useToast } from './ui/toast';
+import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 
 export interface KategorieSuchErgebnis {
@@ -36,8 +39,10 @@ export function KategorieSearchModal({
     onSelect,
     currentKategorieId,
 }: KategorieSearchModalProps) {
+    const toast = useToast();
     const [kategorien, setKategorien] = useState<KategorieDto[]>([]);
     const [loading, setLoading] = useState(false);
+    const [ladefehler, setLadefehler] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
     const abortRef = useRef<AbortController | null>(null);
@@ -47,19 +52,24 @@ export function KategorieSearchModal({
         const controller = new AbortController();
         abortRef.current = controller;
         setLoading(true);
+        setLadefehler(false);
         try {
-            const res = await fetch('/api/kategorien', { signal: controller.signal });
+            const res = await fetch('/api/artikel/kategorien/alle', { signal: controller.signal });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            setKategorien(Array.isArray(data) ? data : []);
+            if (!Array.isArray(data)) throw new Error('Ungültige Kategorienantwort');
+            setKategorien(data.map((k: { id: number; bezeichnung: string; parentId?: number | null }) => ({
+                id: k.id, beschreibung: k.bezeichnung, parentId: k.parentId ?? null,
+            })));
         } catch (e) {
             if (!(e instanceof DOMException && e.name === 'AbortError')) {
-                console.error('Kategoriesuche fehlgeschlagen:', e);
+                setLadefehler(true);
+                toast.error('Kategorien konnten nicht geladen werden.');
             }
         } finally {
             if (!controller.signal.aborted) setLoading(false);
         }
-    }, []);
+    }, [toast]);
 
     useEffect(() => {
         if (isOpen) {
@@ -189,8 +199,7 @@ export function KategorieSearchModal({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+        <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }} className="w-[min(42rem,calc(100vw-2rem))] p-0 overflow-hidden" aria-label="Kategorie auswählen">
                 {/* Header */}
                 <div className="p-4 border-b border-slate-200">
                     <div className="flex items-center justify-between mb-3">
@@ -230,6 +239,11 @@ export function KategorieSearchModal({
                         <div className="text-center py-12 text-slate-400">
                             <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
                             <p>Kategorien werden geladen...</p>
+                        </div>
+                    ) : ladefehler ? (
+                        <div role="alert" className="py-12 text-center text-slate-600">
+                            <p>Kategorien konnten nicht geladen werden.</p>
+                            <Button variant="outline" className="mt-3" onClick={() => void loadKategorien()}>Erneut laden</Button>
                         </div>
                     ) : kategorien.length === 0 ? (
                         <div className="text-center py-12 text-slate-400">
@@ -284,7 +298,6 @@ export function KategorieSearchModal({
                         ? `${trefferFlach.length} Treffer`
                         : `${kategorien.length} Kategorien`}
                 </div>
-            </div>
-        </div>
+        </Dialog>
     );
 }

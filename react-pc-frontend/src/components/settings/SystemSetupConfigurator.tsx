@@ -1,58 +1,106 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-    Brain,
-    CheckCircle,
-    ChevronDown,
-    ChevronUp,
-    Eye,
-    EyeOff,
-    Inbox,
-    Loader2,
-    Mail,
-    Save,
-    Send,
-    Settings2,
-    TestTube,
-    XCircle
-} from 'lucide-react';
-import { Card } from '../ui/card';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Button } from '../ui/button';
-import { cn } from '../../lib/utils';
-import { useToast } from '../ui/toast';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Brain, Check, FolderOpen, Mail, Smartphone, Plug } from 'lucide-react';
+import { EmailSettingsSection } from './sections/EmailSettingsSection';
+import { DateiOrdnerSection } from './sections/DateiOrdnerSection';
+import { KiSettingsSection } from './sections/KiSettingsSection';
+import { IdsSettingsSection } from './sections/IdsSettingsSection';
+import { ZeiterfassungSection } from './sections/ZeiterfassungSection';
 
-async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
+/**
+ * Die System-Einstellungen als Reiter statt als eine endlose Rolle.
+ *
+ * <p>Vorher standen acht fachlich unabhängige Blöcke — Postfach, Absender,
+ * Rechnungs-Postfach, Server, Datei-Ordner, KI-Key, Webseiten-Anfragen,
+ * Zeiterfassung — untereinander in einer einzigen Komponente. Wer ein Feld
+ * suchte, musste an allen anderen vorbeiscrollen. Jetzt trägt jeder Reiter
+ * genau ein Thema, und ein Häkchen zeigt, was schon eingerichtet ist.</p>
+ *
+ * <p>Jeder Bereich lädt und speichert selbst. Diese Datei kennt nur die
+ * Reiter — dadurch fasst eine Änderung am E-Mail-Bereich die anderen nicht
+ * mehr an.</p>
+ */
+
+type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung' | 'ids';
+
+interface TabDefinition {
+    id: TabId;
+    label: string;
+    icon: React.ReactNode;
+}
+
+const TABS: TabDefinition[] = [
+    { id: 'ids', label: 'IDS-Schnittstellen', icon: <Plug className="w-4 h-4" /> },
+    { id: 'email', label: 'E-Mail', icon: <Mail className="w-4 h-4" /> },
+    { id: 'dateien', label: 'Dateien', icon: <FolderOpen className="w-4 h-4" /> },
+    { id: 'ki', label: 'KI-Funktionen', icon: <Brain className="w-4 h-4" /> },
+    { id: 'zeiterfassung', label: 'Zeiterfassung', icon: <Smartphone className="w-4 h-4" /> },
+];
+
+/** Welche Bereiche sind fertig eingerichtet — für die Häkchen an den Reitern. */
+type SetupStatus = Partial<Record<TabId, boolean>>;
+
+function istGueltigerTab(value: string): value is TabId {
+    return TABS.some((tab) => tab.id === value);
+}
+
+/**
+ * Merkt sich den offenen Reiter in der Adresszeile (z.B. `/einstellungen#ki`).
+ *
+ * <p>Bewusst `replaceState` statt `pushState`: Sonst müsste man den
+ * Zurück-Knopf für jeden angetippten Reiter einmal extra drücken, um die
+ * Seite überhaupt zu verlassen. So bleibt die Adresse trotzdem teilbar und
+ * ein Lesezeichen landet im richtigen Reiter.</p>
+ */
+function useTabInHash(): [TabId, (tab: TabId) => void] {
+    const [activeTab, setActiveTab] = useState<TabId>(() => {
+        const raw = window.location.hash.replace(/^#/, '');
+        return istGueltigerTab(raw) ? raw : 'email';
+    });
+
+    const wechsleTab = useCallback((tab: TabId) => {
+        setActiveTab(tab);
+        window.history.replaceState(null, '', `${window.location.pathname}#${tab}`);
+    }, []);
+
+    return [activeTab, wechsleTab];
+}
+
+/**
+ * Holt nur, was für die Häkchen nötig ist. Die Bereiche laden ihre
+ * vollständigen Daten selbst — hier geht es allein um die Frage
+ * "steht das schon?", damit bei der Ersteinrichtung sichtbar ist, was
+ * noch fehlt.
+ *
+ * <p>Reine Abfrage ohne eigenen Zustand: So bleibt das Setzen des Zustands
+ * im Aufrufer und passiert erst, wenn die Antwort da ist.</p>
+ */
+async function holeSetupStatus(): Promise<SetupStatus> {
     try {
-        const text = await res.text();
-        const data = JSON.parse(text);
-        if (typeof data?.message === 'string' && data.message.trim()) {
-            return data.message;
+        const [smtpRes, geminiRes, dateiOrdnerRes] = await Promise.all([
+            fetch('/api/settings/smtp'),
+            fetch('/api/settings/gemini'),
+            fetch('/api/settings/datei-ordner'),
+        ]);
+        const status: SetupStatus = {};
+        if (smtpRes.ok) {
+            const data = await smtpRes.json();
+            status.email = !!data?.host?.trim() && !!data?.username?.trim() && !!data?.passwordSet;
         }
-        if (text.trim()) return text;
+        if (geminiRes.ok) {
+            const data = await geminiRes.json();
+            status.ki = !!data?.apiKeySet;
+        }
+        if (dateiOrdnerRes.ok) {
+            const data = await dateiOrdnerRes.json();
+            status.dateien = !!data?.pfad?.trim();
+        }
+        return status;
     } catch {
-        // ignore parse errors
+        // Häkchen sind nur ein Hinweis — schlägt der Abruf fehl, bleiben die
+        // Reiter eben unmarkiert. Eine Fehlermeldung wäre hier Lärm, denn die
+        // Bereiche melden Ladefehler bereits selbst.
+        return {};
     }
-    return fallback;
-}
-
-interface SmtpSettings {
-    host: string;
-    port: number;
-    username: string;
-    passwordSet: boolean;
-}
-
-interface ImapSettings {
-    host: string;
-    port: number;
-    username: string;
-    passwordSet: boolean;
-}
-
-interface TestResult {
-    success: boolean;
-    message: string;
 }
 
 interface SystemSetupConfiguratorProps {
@@ -60,810 +108,96 @@ interface SystemSetupConfiguratorProps {
 }
 
 export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProps) {
-    const toast = useToast();
-
-    const [loading, setLoading] = useState(true);
-
-    // Einfache Einrichtung: E-Mail + Passwort gelten gleichzeitig für Versand und Empfang.
-    const [accountEmail, setAccountEmail] = useState('');
-    const [accountPassword, setAccountPassword] = useState('');
-    const [accountShowPassword, setAccountShowPassword] = useState(false);
-    const [accountSaving, setAccountSaving] = useState(false);
-    const [accountPasswordSet, setAccountPasswordSet] = useState(false);
-
-    // Erweitert: Server-Einstellungen separat pro Protokoll
-    const [advancedOpen, setAdvancedOpen] = useState(false);
-
-    const [smtpSettings, setSmtpSettings] = useState<SmtpSettings>({
-        host: 'securesmtp.t-online.de',
-        port: 465,
-        username: '',
-        passwordSet: false,
-    });
-    const [smtpPassword, setSmtpPassword] = useState('');
-    const [smtpShowPassword, setSmtpShowPassword] = useState(false);
-    const [smtpTestRecipient, setSmtpTestRecipient] = useState('');
-    const [smtpSaving, setSmtpSaving] = useState(false);
-    const [smtpTesting, setSmtpTesting] = useState(false);
-    const [smtpTestResult, setSmtpTestResult] = useState<TestResult | null>(null);
-
-    const [imapSettings, setImapSettings] = useState<ImapSettings>({
-        host: 'secureimap.t-online.de',
-        port: 993,
-        username: '',
-        passwordSet: false,
-    });
-    const [imapPassword, setImapPassword] = useState('');
-    const [imapShowPassword, setImapShowPassword] = useState(false);
-    const [imapSaving, setImapSaving] = useState(false);
-    const [imapTesting, setImapTesting] = useState(false);
-    const [imapTestResult, setImapTestResult] = useState<TestResult | null>(null);
-
-    const [geminiApiKeySet, setGeminiApiKeySet] = useState(false);
-    const [geminiApiKey, setGeminiApiKey] = useState('');
-    const [geminiShowKey, setGeminiShowKey] = useState(false);
-    const [geminiSaving, setGeminiSaving] = useState(false);
-    const [geminiTesting, setGeminiTesting] = useState(false);
-    const [geminiTestResult, setGeminiTestResult] = useState<TestResult | null>(null);
-
-    const [funnelSpamFilterAktiv, setFunnelSpamFilterAktiv] = useState(true);
-    const [funnelSpamFilterSaving, setFunnelSpamFilterSaving] = useState(false);
-
-    const loadSettings = useCallback(async () => {
-        setLoading(true);
-        try {
-            const [smtpRes, imapRes, geminiRes, funnelSpamRes] = await Promise.all([
-                fetch('/api/settings/smtp'),
-                fetch('/api/settings/imap'),
-                fetch('/api/settings/gemini'),
-                fetch('/api/settings/anfrage-funnel-spamfilter'),
-            ]);
-
-            if (smtpRes.ok) {
-                const smtpData = await smtpRes.json();
-                setSmtpSettings({
-                    host: smtpData.host || 'securesmtp.t-online.de',
-                    port: smtpData.port || 465,
-                    username: smtpData.username || '',
-                    passwordSet: !!smtpData.passwordSet,
-                });
-                // Einfache Einrichtung spiegelt die SMTP-Daten wider
-                setAccountEmail(smtpData.username || '');
-                setAccountPasswordSet(!!smtpData.passwordSet);
-            }
-
-            if (imapRes.ok) {
-                const imapData = await imapRes.json();
-                setImapSettings({
-                    host: imapData.host || 'secureimap.t-online.de',
-                    port: imapData.port || 993,
-                    username: imapData.username || '',
-                    passwordSet: !!imapData.passwordSet,
-                });
-            }
-
-            if (geminiRes.ok) {
-                const geminiData = await geminiRes.json();
-                setGeminiApiKeySet(!!geminiData.apiKeySet);
-            }
-
-            if (funnelSpamRes.ok) {
-                const data = await funnelSpamRes.json();
-                setFunnelSpamFilterAktiv(data?.aktiv !== false);
-            }
-        } catch {
-            toast.error('Einstellungen konnten nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    const [activeTab, wechsleTab] = useTabInHash();
+    const [status, setStatus] = useState<SetupStatus>({});
+    // Hochzählen erzwingt ein erneutes Laden der Häkchen nach dem Speichern.
+    const [statusVersion, setStatusVersion] = useState(0);
+    const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
     useEffect(() => {
-        loadSettings();
-    }, [loadSettings]);
+        let abgebrochen = false;
+        holeSetupStatus().then((neu) => {
+            // Nicht mehr setzen, wenn die Seite inzwischen verlassen wurde.
+            if (!abgebrochen) setStatus(neu);
+        });
+        return () => {
+            abgebrochen = true;
+        };
+    }, [statusVersion]);
 
-    const handleSaveAccount = async () => {
-        if (!accountEmail.trim()) {
-            toast.error('Bitte E-Mail-Adresse eintragen.');
-            return;
-        }
-        if (!accountPasswordSet && !accountPassword.trim()) {
-            toast.error('Bitte Passwort eintragen.');
-            return;
-        }
-        setAccountSaving(true);
-        try {
-            const res = await fetch('/api/settings/email-account', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: accountEmail.trim(),
-                    password: accountPassword || undefined,
-                }),
-            });
-            if (res.ok) {
-                toast.success('E-Mail-Konto gespeichert.');
-                setAccountPassword('');
-                await loadSettings();
-                onSaved?.();
-            } else {
-                toast.error(await parseErrorMessage(res, 'E-Mail-Konto konnte nicht gespeichert werden.'));
-            }
-        } catch {
-            toast.error('Verbindung zum Server fehlgeschlagen.');
-        } finally {
-            setAccountSaving(false);
-        }
+    /** Nach jedem Speichern die Häkchen nachziehen und die Seite informieren. */
+    const handleSaved = useCallback(() => {
+        setStatusVersion((version) => version + 1);
+        onSaved?.();
+    }, [onSaved]);
+
+    /** Pfeiltasten wandern durch die Reiter, wie es bei Reitern üblich ist. */
+    const handleTabKeyDown = (event: React.KeyboardEvent, index: number) => {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+        event.preventDefault();
+        const richtung = event.key === 'ArrowRight' ? 1 : -1;
+        const nächster = TABS[(index + richtung + TABS.length) % TABS.length];
+        wechsleTab(nächster.id);
+        tabRefs.current[nächster.id]?.focus();
     };
-
-    const handleSaveSmtp = async () => {
-        setSmtpSaving(true);
-        try {
-            const res = await fetch('/api/settings/smtp', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    host: smtpSettings.host,
-                    port: smtpSettings.port,
-                    username: smtpSettings.username,
-                    password: smtpPassword || undefined,
-                }),
-            });
-
-            if (res.ok) {
-                toast.success('SMTP-Einstellungen gespeichert.');
-                setSmtpPassword('');
-                await loadSettings();
-                onSaved?.();
-            } else {
-                toast.error(await parseErrorMessage(res, 'SMTP konnte nicht gespeichert werden.'));
-            }
-        } catch {
-            toast.error('Verbindung zum Server fehlgeschlagen.');
-        } finally {
-            setSmtpSaving(false);
-        }
-    };
-
-    const handleTestSmtp = async () => {
-        setSmtpTesting(true);
-        setSmtpTestResult(null);
-        try {
-            const res = await fetch('/api/settings/smtp/test', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    host: smtpSettings.host,
-                    port: smtpSettings.port,
-                    username: smtpSettings.username,
-                    password: smtpPassword || undefined,
-                    testRecipient: smtpTestRecipient || undefined,
-                }),
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                setSmtpTestResult(data);
-                if (data.success) toast.success(data.message);
-                else toast.error(data.message);
-            } else {
-                setSmtpTestResult({ success: false, message: 'SMTP-Test fehlgeschlagen.' });
-                toast.error('SMTP-Test fehlgeschlagen.');
-            }
-        } catch {
-            setSmtpTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
-            toast.error('Verbindung zum Server fehlgeschlagen.');
-        } finally {
-            setSmtpTesting(false);
-        }
-    };
-
-    const handleSaveImap = async () => {
-        setImapSaving(true);
-        try {
-            const res = await fetch('/api/settings/imap', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    host: imapSettings.host,
-                    port: imapSettings.port,
-                    username: imapSettings.username,
-                    password: imapPassword || undefined,
-                }),
-            });
-            if (res.ok) {
-                toast.success('IMAP-Einstellungen gespeichert.');
-                setImapPassword('');
-                await loadSettings();
-                onSaved?.();
-            } else {
-                toast.error(await parseErrorMessage(res, 'IMAP konnte nicht gespeichert werden.'));
-            }
-        } catch {
-            toast.error('Verbindung zum Server fehlgeschlagen.');
-        } finally {
-            setImapSaving(false);
-        }
-    };
-
-    const handleTestImap = async () => {
-        setImapTesting(true);
-        setImapTestResult(null);
-        try {
-            const res = await fetch('/api/settings/imap/test', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    host: imapSettings.host,
-                    port: imapSettings.port,
-                    username: imapSettings.username,
-                    password: imapPassword || undefined,
-                }),
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setImapTestResult(data);
-                if (data.success) toast.success(data.message);
-                else toast.error(data.message);
-            } else {
-                setImapTestResult({ success: false, message: 'IMAP-Test fehlgeschlagen.' });
-                toast.error('IMAP-Test fehlgeschlagen.');
-            }
-        } catch {
-            setImapTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
-            toast.error('Verbindung zum Server fehlgeschlagen.');
-        } finally {
-            setImapTesting(false);
-        }
-    };
-
-    const handleSaveGemini = async () => {
-        if (!geminiApiKey.trim()) {
-            toast.error('Bitte API Key eingeben.');
-            return;
-        }
-
-        setGeminiSaving(true);
-        try {
-            const res = await fetch('/api/settings/gemini', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ apiKey: geminiApiKey.trim() }),
-            });
-
-            if (res.ok) {
-                toast.success('Gemini API Key gespeichert.');
-                setGeminiApiKey('');
-                await loadSettings();
-                onSaved?.();
-            } else {
-                toast.error(await parseErrorMessage(res, 'Gemini API Key konnte nicht gespeichert werden.'));
-            }
-        } catch {
-            toast.error('Verbindung zum Server fehlgeschlagen.');
-        } finally {
-            setGeminiSaving(false);
-        }
-    };
-
-    const handleTestGemini = async () => {
-        setGeminiTesting(true);
-        setGeminiTestResult(null);
-        try {
-            const res = await fetch('/api/settings/gemini/test', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ apiKey: geminiApiKey || undefined }),
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                setGeminiTestResult(data);
-                if (data.success) toast.success(data.message);
-                else toast.error(data.message);
-            } else {
-                setGeminiTestResult({ success: false, message: 'Gemini-Test fehlgeschlagen.' });
-                toast.error('Gemini-Test fehlgeschlagen.');
-            }
-        } catch {
-            setGeminiTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
-            toast.error('Verbindung zum Server fehlgeschlagen.');
-        } finally {
-            setGeminiTesting(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="flex items-center gap-2 text-slate-500 py-8">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Lade Systemkonfiguration ...
-            </div>
-        );
-    }
 
     return (
-        <div className="space-y-6">
-            {/* === Einfache Einrichtung: E-Mail-Konto === */}
-            <Card className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
-                    <Mail className="w-5 h-5 text-rose-600" />
-                    E-Mail-Konto
-                </h3>
-                <p className="text-sm text-slate-500 mb-5">
-                    E-Mail-Adresse und Passwort hinterlegen – damit kann das System E-Mails versenden (z.B. Rechnungen,
-                    Angebote) und neue Nachrichten aus Ihrem Postfach abholen.
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <Label>E-Mail-Adresse</Label>
-                        <Input
-                            placeholder="info@firma.de"
-                            value={accountEmail}
-                            onChange={(e) => setAccountEmail(e.target.value)}
-                            autoComplete="username"
-                        />
-                    </div>
-                    <div>
-                        <Label>
-                            Passwort
-                            {accountPasswordSet && !accountPassword && (
-                                <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
+        <div>
+            <div role="tablist" aria-label="Bereiche der Einstellungen" className="flex flex-wrap items-center gap-1 border-b border-slate-200 mb-6">
+                {TABS.map((tab, index) => {
+                    const aktiv = activeTab === tab.id;
+                    const eingerichtet = status[tab.id];
+                    return (
+                        <button
+                            key={tab.id}
+                            ref={(el) => {
+                                tabRefs.current[tab.id] = el;
+                            }}
+                            role="tab"
+                            id={`settings-tab-${tab.id}`}
+                            aria-selected={aktiv}
+                            aria-controls={`settings-panel-${tab.id}`}
+                            tabIndex={aktiv ? 0 : -1}
+                            onClick={() => wechsleTab(tab.id)}
+                            onKeyDown={(e) => handleTabKeyDown(e, index)}
+                            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                                aktiv
+                                    ? 'border-rose-600 text-rose-700'
+                                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-200'
+                            }`}
+                        >
+                            {tab.icon}
+                            {tab.label}
+                            {eingerichtet && (
+                                <span
+                                    title="Eingerichtet"
+                                    className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-100 text-emerald-700"
+                                >
+                                    <Check className="w-3 h-3" />
+                                    <span className="sr-only">Eingerichtet</span>
+                                </span>
                             )}
-                        </Label>
-                        <div className="relative">
-                            <Input
-                                type={accountShowPassword ? 'text' : 'password'}
-                                value={accountPassword}
-                                onChange={(e) => setAccountPassword(e.target.value)}
-                                placeholder={accountPasswordSet ? '(leer lassen = unverändert)' : 'Mailbox-Passwort'}
-                                autoComplete="new-password"
-                            />
-                            <button
-                                type="button"
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                onClick={() => setAccountShowPassword((prev) => !prev)}
-                            >
-                                {accountShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                        </button>
+                    );
+                })}
+            </div>
 
-                <p className="mt-3 text-xs text-slate-500">
-                    Bei den meisten Anbietern (T-Online, IONOS, Strato, Gmail) sind Versand und Empfang mit den gleichen
-                    Zugangsdaten erreichbar. Für abweichende Server siehe „Server-Einstellungen (Erweitert)" unten.
-                </p>
-
-                <div className="flex justify-end mt-6">
-                    <Button
-                        onClick={handleSaveAccount}
-                        disabled={accountSaving || !accountEmail.trim() || (!accountPasswordSet && !accountPassword.trim())}
-                        className="bg-rose-600 text-white hover:bg-rose-700"
-                    >
-                        {accountSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Konto speichern
-                    </Button>
-                </div>
-            </Card>
-
-            {/* === Erweitert: Server-Einstellungen separat === */}
-            <Card className="p-0 overflow-hidden">
-                <button
-                    type="button"
-                    onClick={() => setAdvancedOpen((prev) => !prev)}
-                    className="w-full flex items-center justify-between gap-2 p-4 hover:bg-rose-50/50 transition-colors text-left"
-                >
-                    <div className="flex items-center gap-2">
-                        <Settings2 className="w-5 h-5 text-rose-600" />
-                        <span className="font-semibold text-slate-900">Server-Einstellungen (Erweitert)</span>
-                        <span className="text-xs text-slate-500 hidden sm:inline">
-                            – nur ändern wenn Sie wissen, was Sie tun
-                        </span>
-                    </div>
-                    {advancedOpen ? (
-                        <ChevronUp className="w-5 h-5 text-slate-500" />
-                    ) : (
-                        <ChevronDown className="w-5 h-5 text-slate-500" />
-                    )}
-                </button>
-
-                {advancedOpen && (
-                    <div className="border-t border-slate-100 p-6 space-y-8">
-                        {/* SMTP (Versand) */}
-                        <section>
-                            <h4 className="text-base font-semibold text-slate-900 mb-1 flex items-center gap-2">
-                                <Send className="w-4 h-4 text-rose-600" />
-                                Versand-Server (SMTP)
-                            </h4>
-                            <p className="text-sm text-slate-500 mb-4">
-                                Wird genutzt, um E-Mails aus dem System zu verschicken.
-                            </p>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label>SMTP Server</Label>
-                                    <Input
-                                        placeholder="z.B. securesmtp.t-online.de"
-                                        value={smtpSettings.host}
-                                        onChange={(e) => setSmtpSettings((prev) => ({ ...prev, host: e.target.value }))}
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Port</Label>
-                                    <Input
-                                        type="number"
-                                        value={smtpSettings.port}
-                                        onChange={(e) =>
-                                            setSmtpSettings((prev) => ({
-                                                ...prev,
-                                                port: parseInt(e.target.value, 10) || 465,
-                                            }))
-                                        }
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">465 = SSL (empfohlen), 587 = STARTTLS</p>
-                                </div>
-                                <div>
-                                    <Label>Benutzername / E-Mail</Label>
-                                    <Input
-                                        placeholder="info@firma.de"
-                                        value={smtpSettings.username}
-                                        onChange={(e) =>
-                                            setSmtpSettings((prev) => ({ ...prev, username: e.target.value }))
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <Label>
-                                        Passwort
-                                        {smtpSettings.passwordSet && !smtpPassword && (
-                                            <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
-                                        )}
-                                    </Label>
-                                    <div className="relative">
-                                        <Input
-                                            type={smtpShowPassword ? 'text' : 'password'}
-                                            value={smtpPassword}
-                                            onChange={(e) => setSmtpPassword(e.target.value)}
-                                            placeholder={
-                                                smtpSettings.passwordSet
-                                                    ? '(leer lassen = unverändert)'
-                                                    : 'SMTP Passwort'
-                                            }
-                                            autoComplete="new-password"
-                                        />
-                                        <button
-                                            type="button"
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                            onClick={() => setSmtpShowPassword((prev) => !prev)}
-                                        >
-                                            {smtpShowPassword ? (
-                                                <EyeOff className="w-4 h-4" />
-                                            ) : (
-                                                <Eye className="w-4 h-4" />
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 pt-4 border-t border-slate-100">
-                                <Label>Test-E-Mail Empfänger (optional)</Label>
-                                <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                                    <Input
-                                        placeholder="test@example.com"
-                                        value={smtpTestRecipient}
-                                        onChange={(e) => setSmtpTestRecipient(e.target.value)}
-                                        className="sm:max-w-md"
-                                    />
-                                    <Button
-                                        variant="outline"
-                                        onClick={handleTestSmtp}
-                                        disabled={smtpTesting || !smtpSettings.host}
-                                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                                    >
-                                        {smtpTesting ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                        ) : (
-                                            <TestTube className="w-4 h-4" />
-                                        )}
-                                        {smtpTesting ? 'Teste...' : 'SMTP testen'}
-                                    </Button>
-                                </div>
-
-                                {smtpTestResult && (
-                                    <div
-                                        className={cn(
-                                            'mt-3 p-3 rounded-lg flex items-start gap-2 text-sm',
-                                            smtpTestResult.success
-                                                ? 'bg-emerald-50 text-emerald-800'
-                                                : 'bg-red-50 text-red-800'
-                                        )}
-                                    >
-                                        {smtpTestResult.success ? (
-                                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                        ) : (
-                                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                        )}
-                                        {smtpTestResult.message}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="flex justify-end mt-6">
-                                <Button
-                                    onClick={handleSaveSmtp}
-                                    disabled={
-                                        smtpSaving || !smtpSettings.host.trim() || !smtpSettings.username.trim()
-                                    }
-                                    className="bg-rose-600 text-white hover:bg-rose-700"
-                                >
-                                    {smtpSaving ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                        <Save className="w-4 h-4" />
-                                    )}
-                                    SMTP speichern
-                                </Button>
-                            </div>
-                        </section>
-
-                        {/* IMAP (Empfang) */}
-                        <section className="pt-6 border-t border-slate-100">
-                            <h4 className="text-base font-semibold text-slate-900 mb-1 flex items-center gap-2">
-                                <Inbox className="w-4 h-4 text-rose-600" />
-                                Empfangs-Server (IMAP)
-                            </h4>
-                            <p className="text-sm text-slate-500 mb-4">
-                                Wird genutzt, um neue Nachrichten aus Ihrem Postfach in das System zu importieren.
-                            </p>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label>IMAP Server</Label>
-                                    <Input
-                                        placeholder="z.B. secureimap.t-online.de"
-                                        value={imapSettings.host}
-                                        onChange={(e) => setImapSettings((prev) => ({ ...prev, host: e.target.value }))}
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Port</Label>
-                                    <Input
-                                        type="number"
-                                        value={imapSettings.port}
-                                        onChange={(e) =>
-                                            setImapSettings((prev) => ({
-                                                ...prev,
-                                                port: parseInt(e.target.value, 10) || 993,
-                                            }))
-                                        }
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">993 = SSL (empfohlen)</p>
-                                </div>
-                                <div>
-                                    <Label>Benutzername / E-Mail</Label>
-                                    <Input
-                                        placeholder="info@firma.de"
-                                        value={imapSettings.username}
-                                        onChange={(e) =>
-                                            setImapSettings((prev) => ({ ...prev, username: e.target.value }))
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <Label>
-                                        Passwort
-                                        {imapSettings.passwordSet && !imapPassword && (
-                                            <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
-                                        )}
-                                    </Label>
-                                    <div className="relative">
-                                        <Input
-                                            type={imapShowPassword ? 'text' : 'password'}
-                                            value={imapPassword}
-                                            onChange={(e) => setImapPassword(e.target.value)}
-                                            placeholder={
-                                                imapSettings.passwordSet
-                                                    ? '(leer lassen = unverändert)'
-                                                    : 'IMAP Passwort'
-                                            }
-                                            autoComplete="new-password"
-                                        />
-                                        <button
-                                            type="button"
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                            onClick={() => setImapShowPassword((prev) => !prev)}
-                                        >
-                                            {imapShowPassword ? (
-                                                <EyeOff className="w-4 h-4" />
-                                            ) : (
-                                                <Eye className="w-4 h-4" />
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-2 sm:items-center">
-                                <Button
-                                    variant="outline"
-                                    onClick={handleTestImap}
-                                    disabled={imapTesting || !imapSettings.host || !imapSettings.username}
-                                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                                >
-                                    {imapTesting ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                        <TestTube className="w-4 h-4" />
-                                    )}
-                                    {imapTesting ? 'Teste...' : 'IMAP testen'}
-                                </Button>
-
-                                {imapTestResult && (
-                                    <div
-                                        className={cn(
-                                            'p-3 rounded-lg flex items-start gap-2 text-sm flex-1',
-                                            imapTestResult.success
-                                                ? 'bg-emerald-50 text-emerald-800'
-                                                : 'bg-red-50 text-red-800'
-                                        )}
-                                    >
-                                        {imapTestResult.success ? (
-                                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                        ) : (
-                                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                        )}
-                                        {imapTestResult.message}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="flex justify-end mt-6">
-                                <Button
-                                    onClick={handleSaveImap}
-                                    disabled={
-                                        imapSaving || !imapSettings.host.trim() || !imapSettings.username.trim()
-                                    }
-                                    className="bg-rose-600 text-white hover:bg-rose-700"
-                                >
-                                    {imapSaving ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                        <Save className="w-4 h-4" />
-                                    )}
-                                    IMAP speichern
-                                </Button>
-                            </div>
-                        </section>
-                    </div>
-                )}
-            </Card>
-
-            <Card className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
-                    <Brain className="w-5 h-5 text-rose-600" />
-                    Gemini API Key
-                </h3>
-                <p className="text-sm text-slate-500 mb-5">
-                    Der Key wird für KI-Funktionen wie Dokumentenanalyse, Scanner und KI-Hilfe benötigt.
-                </p>
-
-                <div>
-                    <Label>
-                        API Key
-                        {geminiApiKeySet && !geminiApiKey && (
-                            <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
-                        )}
-                    </Label>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                        <div className="relative flex-1 sm:max-w-lg">
-                            <Input
-                                type={geminiShowKey ? 'text' : 'password'}
-                                value={geminiApiKey}
-                                onChange={(e) => setGeminiApiKey(e.target.value)}
-                                placeholder={geminiApiKeySet ? '(leer lassen = unverändert)' : 'AIza...'}
-                            />
-                            <button
-                                type="button"
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                onClick={() => setGeminiShowKey((prev) => !prev)}
-                            >
-                                {geminiShowKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                        </div>
-
-                        <Button variant="outline" onClick={handleTestGemini} disabled={geminiTesting || (!geminiApiKey && !geminiApiKeySet)}>
-                            {geminiTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
-                            {geminiTesting ? 'Teste...' : 'API testen'}
-                        </Button>
-                    </div>
-                </div>
-
-                {geminiTestResult && (
-                    <div
-                        className={cn(
-                            'mt-3 p-3 rounded-lg flex items-start gap-2 text-sm',
-                            geminiTestResult.success ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'
-                        )}
-                    >
-                        {geminiTestResult.success ? (
-                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        ) : (
-                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        )}
-                        {geminiTestResult.message}
-                    </div>
-                )}
-
-                <div className="flex justify-end mt-6">
-                    <Button
-                        onClick={handleSaveGemini}
-                        disabled={geminiSaving || !geminiApiKey.trim()}
-                        className="bg-rose-600 text-white hover:bg-rose-700"
-                    >
-                        {geminiSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Gemini Key speichern
-                    </Button>
-                </div>
-            </Card>
-
-            <Card className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
-                    <Brain className="w-5 h-5 text-rose-600" />
-                    Anfragen von der Webseite
-                </h3>
-                <p className="text-sm text-slate-500 mb-4">
-                    Wenn aktiv, prüft die KI jede neue Anfrage über das Webseiten-Formular und blockiert
-                    offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen, kaputte E-Mail-Adressen).
-                    Ohne Gemini-API-Key passiert nichts – dann gehen alle Anfragen durch.
-                </p>
-
-                <label className="flex items-start gap-3 cursor-pointer select-none">
-                    <input
-                        type="checkbox"
-                        checked={funnelSpamFilterAktiv}
-                        disabled={funnelSpamFilterSaving}
-                        onChange={async (e) => {
-                            const next = e.target.checked;
-                            setFunnelSpamFilterAktiv(next);
-                            setFunnelSpamFilterSaving(true);
-                            try {
-                                const res = await fetch('/api/settings/anfrage-funnel-spamfilter', {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ aktiv: next }),
-                                });
-                                if (res.ok) {
-                                    toast.success(next
-                                        ? 'KI-Filter für Webseiten-Anfragen aktiviert.'
-                                        : 'KI-Filter für Webseiten-Anfragen deaktiviert.');
-                                } else {
-                                    setFunnelSpamFilterAktiv(!next);
-                                    toast.error(await parseErrorMessage(res, 'Speichern fehlgeschlagen.'));
-                                }
-                            } catch {
-                                setFunnelSpamFilterAktiv(!next);
-                                toast.error('Speichern fehlgeschlagen.');
-                            } finally {
-                                setFunnelSpamFilterSaving(false);
-                            }
-                        }}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                    />
-                    <span>
-                        <span className="font-medium text-slate-900">
-                            Spaß-Anfragen automatisch aussortieren
-                        </span>
-                        <span className="block text-xs text-slate-500">
-                            Erkennt z.B. „asdf", „leck mich", Test-Eingaben oder unsinnige E-Mail-Adressen
-                            und meldet der Webseite, dass die Anfrage nicht gesendet werden konnte.
-                        </span>
-                    </span>
-                </label>
-            </Card>
+            {/*
+                Nur der offene Reiter wird gebaut. Dadurch fragt die Seite beim
+                Aufruf auch nur dessen Einstellungen ab statt aller acht Bereiche
+                auf einmal.
+            */}
+            <div
+                role="tabpanel"
+                id={`settings-panel-${activeTab}`}
+                aria-labelledby={`settings-tab-${activeTab}`}
+            >
+                {activeTab === 'ids' && <IdsSettingsSection />}
+                {activeTab === 'email' && <EmailSettingsSection onSaved={handleSaved} />}
+                {activeTab === 'dateien' && <DateiOrdnerSection onSaved={handleSaved} />}
+                {activeTab === 'ki' && <KiSettingsSection onSaved={handleSaved} />}
+                {activeTab === 'zeiterfassung' && <ZeiterfassungSection />}
+            </div>
         </div>
     );
 }

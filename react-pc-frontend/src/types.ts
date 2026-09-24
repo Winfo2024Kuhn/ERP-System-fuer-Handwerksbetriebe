@@ -1,3 +1,5 @@
+import type { KostenstellenSplit } from './components/kasse/KostenstellenSplitsEditor';
+
 export interface TextTemplate {
   id: string;
   name: string;
@@ -35,6 +37,10 @@ export interface Kommunikation {
   attachments?: EmailAttachment[];
   parentEmailId?: number;
   replyCount?: number;
+  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+  zustellFehler?: string;
 }
 
 export interface EmailAttachment {
@@ -50,6 +56,32 @@ export interface KundeStatistik {
   letzteAktivitaet?: string;
   gesamtUmsatz?: number;
   gesamtGewinn?: number;
+}
+
+/** Schlanke Projekt-Karte für die Kunden-Detailseite (Backend: KundeProjektKurzDto). */
+export interface KundeProjektKurz {
+  id: number;
+  bauvorhaben?: string;
+  auftragsnummer?: string;
+  anlegedatum?: string;
+  abschlussdatum?: string;
+  bezahlt: boolean;
+  bruttoPreis?: number;
+}
+
+/** Schlanke Anfrage-Karte für die Kunden-Detailseite (Backend: KundeAnfrageKurzDto). */
+export interface KundeAnfrageKurz {
+  id: number;
+  bauvorhaben?: string;
+  anfragesnummer?: string;
+  anlegedatum?: string;
+  betrag?: number;
+}
+
+export interface KundeNotiz {
+  id: number;
+  text: string;
+  erstelltAm: string;
 }
 
 export interface KundeDetail {
@@ -68,6 +100,10 @@ export interface KundeDetail {
   hatProjekte?: boolean;
   statistik?: KundeStatistik;
   kommunikation?: Kommunikation[];
+  projekte?: KundeProjektKurz[];
+  anfragen?: KundeAnfrageKurz[];
+  geschaeftsdokumente?: AusgangsGeschaeftsDokument[];
+  notizen?: KundeNotiz[];
 }
 
 export interface LieferantStatistik {
@@ -79,7 +115,7 @@ export interface LieferantStatistik {
 }
 
 // ==================== Lieferant Dokumente ====================
-export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'EINGANGSRECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
+export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
 
 export interface LieferantGeschaeftsdaten {
   dokumentNummer?: string;
@@ -157,6 +193,32 @@ export const LIEFERANT_DOKUMENT_TYPEN: { value: LieferantDokumentTyp; label: str
   { value: 'RECHNUNG', label: 'Rechnung', color: 'rose' },
 ];
 
+// ==================== Lieferant-Rollen ====================
+export type LieferantRolle =
+  | 'STAHLHANDEL'
+  | 'SCHRAUBEN_NORMTEILE'
+  | 'BESCHICHTUNG_VERZINKEN'
+  | 'LACKIERER'
+  | 'FERTIGTEILE_ZUKAUF'
+  | 'ALUMINIUM_NE'
+  | 'EDELSTAHL'
+  | 'WERKZEUG_VERBRAUCH'
+  | 'IT'
+  | 'SONSTIGER';
+
+export const LIEFERANT_ROLLEN: { value: LieferantRolle; label: string }[] = [
+  { value: 'STAHLHANDEL', label: 'Stahlhandel' },
+  { value: 'SCHRAUBEN_NORMTEILE', label: 'Schrauben & Normteile' },
+  { value: 'BESCHICHTUNG_VERZINKEN', label: 'Beschichtung / Verzinkerei' },
+  { value: 'LACKIERER', label: 'Lackierer' },
+  { value: 'FERTIGTEILE_ZUKAUF', label: 'Fertigteile & Zukauf' },
+  { value: 'ALUMINIUM_NE', label: 'Aluminium / NE-Metalle' },
+  { value: 'EDELSTAHL', label: 'Edelstahl' },
+  { value: 'WERKZEUG_VERBRAUCH', label: 'Werkzeug & Verbrauch' },
+  { value: 'IT', label: 'IT' },
+  { value: 'SONSTIGER', label: 'Sonstiger / Dienstleister' },
+];
+
 export interface LieferantNotiz {
   id: number;
   text: string;
@@ -166,6 +228,8 @@ export interface LieferantNotiz {
 export interface LieferantReklamationBild {
   id: number;
   url: string;
+  /** Verkleinerte Vorschau für die Galerie. Fehlt sie, wird auf `url` zurückgefallen. */
+  vorschauUrl?: string;
   originalDateiname: string;
 }
 
@@ -217,12 +281,16 @@ export interface ProduktkategorieDto {
   leaf?: boolean;
   parentId?: number | null;
   verrechnungseinheit?: Verrechnungseinheit;
+  typischeRollen?: LieferantRolle[];
 }
 
 export interface Lieferant {
   id: number | string;
   lieferantenTyp?: string;
+  rollen?: LieferantRolle[];
   lieferantenname?: string;
+  /** Zweiter Name, unter dem die Firma im Betrieb bekannt ist. Wird bei der Freitextsuche mitgefunden. */
+  aliasName?: string;
   eigeneKundennummer?: string;
   strasse?: string;
   plz?: string;
@@ -238,30 +306,25 @@ export interface Lieferant {
   erfassungsDatum?: string;
   standardKostenstelleId?: number | null;
   standardKostenstelleName?: string;
+  /**
+   * true = Bei diesem Lieferanten wird im Voraus bezahlt. Eingehende Rechnungen
+   * werden beim Import automatisch als bezahlt markiert und tauchen nicht in den
+   * Offenen Posten auf, damit sie nicht ein zweites Mal überwiesen werden.
+   */
+  vorauskasse?: boolean;
 }
 
-export interface ArtikelLieferantPreis {
+/** Enum-Wert vom Backend: technischer Wert plus Klartext und Erklaerung. */
+export interface Merkmal {
+  name: string;
+  anzeigename: string;
+  erklaerung?: string;
+}
+
+export interface LieferantPreis {
   lieferantId: number;
   lieferantName: string;
   preis?: number;
-  externeArtikelnummer?: string;
-  preisDatum?: string;
-}
-
-export type PreisQuelle = 'RECHNUNG' | 'ANGEBOT' | 'KATALOG' | 'MANUELL' | 'VORSCHLAG';
-
-export interface ArtikelPreisHistorieEintrag {
-  id: number;
-  preis: number;
-  menge?: number;
-  einheit: string | { name: string; anzeigename?: string };
-  quelle: PreisQuelle;
-  lieferantId?: number;
-  lieferantName?: string;
-  externeNummer?: string;
-  belegReferenz?: string;
-  erfasstAm: string;
-  bemerkung?: string;
 }
 
 export interface Artikel {
@@ -270,6 +333,13 @@ export interface Artikel {
   produktlinie?: string;
   produktname: string;
   produkttext?: string;
+  /**
+   * Pfad auf den Datei-Endpunkt des hinterlegten Produktbilds - fertig
+   * aufgebaut vom Backend, hier nicht selbst zusammensetzen. Bei nahezu
+   * allen Bestandsartikeln (noch) nicht gepflegt - das Backend liefert dann
+   * ausdruecklich `null`, nicht nur ein fehlendes Feld.
+   */
+  vorschaubildUrl?: string | null;
   verpackungseinheit?: number;
   preiseinheit?: string;
   verrechnungseinheit?: string | { name: string; anzeigename?: string };
@@ -277,15 +347,121 @@ export interface Artikel {
   preisDatum?: string;
   lieferantId?: number;
   lieferantenname?: string;
-  lieferantenpreise?: ArtikelLieferantPreis[];
-  anzahlLieferanten?: number;
-  durchschnittspreisNetto?: number;
-  durchschnittspreisMenge?: number;
-  durchschnittspreisAktualisiertAm?: string;
   kategorieId?: number;
   kategoriePfad?: string;
   werkstoffName?: string;
   kgProMeter?: number;
+
+  // Guenstigster Preis - die Suche liefert eine Zeile je Artikel
+  guenstigsterPreis?: number;
+  guenstigsterLieferantId?: number;
+  guenstigsterLieferantName?: string;
+  guenstigsterPreisDatum?: string;
+  anzahlLieferanten?: number;
+  lieferantenpreise?: LieferantPreis[];
+
+  // Technische Stammdaten
+  artikelnummer?: string;
+  profilform?: Merkmal;
+  herstellverfahren?: Merkmal;
+  fertigungszustand?: Merkmal;
+  massnorm?: string;
+  werkstoffnorm?: string;
+  durchmesser?: number;
+  hoehe?: number;
+  breite?: number;
+  wandstaerke?: number;
+  abmessung?: string;
+  kgProQm?: number;
+  mantelflaeche?: number;
+  standardlaenge?: number;
+
+  // Eignungen fuer die Kalkulation
+  verzinkungsgeeignet?: boolean;
+  pulverbeschichtungsgeeignet?: boolean;
+  beschichtungshinweis?: string;
+
+  // Angebotsfelder - was der Kunde auf Angebot/Rechnung liest
+  /** Innensicht: hilft beim Wiederfinden im DocumentEditor, steht nicht auf dem Kundendokument. */
+  kurzbeschreibung?: string;
+  /** Rich-Text-HTML, das der Kunde auf PDF und Freigabe-Seite liest. */
+  beschreibung?: string;
+  /** Aufschlag auf den Einkaufspreis in Prozent. */
+  verkaufsaufschlagProzent?: number;
+  /** Einheit der Dokumentposition: lfm, m², kg oder Stk. */
+  positionsEinheit?: string;
+  /** Vorgeschlagener Einzelpreis inklusive Aufschlag. */
+  positionsEinzelpreis?: number;
+  /** OK | KEIN_AUFSCHLAG | KEIN_PREIS | KEIN_GEWICHT */
+  preisHinweis?: 'OK' | 'KEIN_AUFSCHLAG' | 'KEIN_PREIS' | 'KEIN_GEWICHT';
+}
+
+/** Ein Lieferant mit seiner Artikelnummer und seinem aktuellen Preis. */
+export interface ArtikelLieferantEintrag {
+  preisId: number;
+  lieferantId: number;
+  lieferantName: string;
+  externeArtikelnummer?: string;
+  preis?: number;
+  preisDatum?: string;
+  quelle?: Merkmal;
+  notiz?: string;
+  guenstigster: boolean;
+  aufschlagProzent?: number;
+}
+
+/** Ein Preisstand aus der Historie. */
+export interface ArtikelPreisstand {
+  preisId: number;
+  lieferantId?: number;
+  lieferantName?: string;
+  preis?: number;
+  preisDatum?: string;
+  quelle?: Merkmal;
+  notiz?: string;
+  aktuell: boolean;
+}
+
+export interface ArtikelDetail {
+  artikel: Artikel;
+  lieferanten: ArtikelLieferantEintrag[];
+  preisverlauf: ArtikelPreisstand[];
+}
+
+// ==================== Artikel Bilder & Unterlagen ====================
+
+/**
+ * VORSCHAUBILD ist das grosse Produktbild, alle anderen Typen sind
+ * Zusatzunterlagen (siehe {@link ARTIKEL_DOKUMENT_TYPEN} fuer deren
+ * Klartext-Beschriftung in der Oberflaeche).
+ */
+export type ArtikelDokumentTyp =
+  | 'VORSCHAUBILD'
+  | 'ZULASSUNG'
+  | 'ZEICHNUNG'
+  | 'DATENBLATT'
+  | 'MONTAGEANLEITUNG'
+  | 'SONSTIGES';
+
+/** Auswahlbare Typen fuer Zusatzunterlagen - VORSCHAUBILD bekommt eine eigene Upload-Fläche. */
+export const ARTIKEL_DOKUMENT_TYPEN: { value: ArtikelDokumentTyp; label: string }[] = [
+  { value: 'ZULASSUNG', label: 'Zulassung' },
+  { value: 'ZEICHNUNG', label: 'Zeichnung' },
+  { value: 'DATENBLATT', label: 'Datenblatt' },
+  { value: 'MONTAGEANLEITUNG', label: 'Montageanleitung' },
+  { value: 'SONSTIGES', label: 'Sonstiges' },
+];
+
+/** Ein Bild oder eine Unterlage zu einem Artikel (Backend: ArtikelDokumentDto). */
+export interface ArtikelDokument {
+  id: number;
+  originalDateiname: string;
+  typ: ArtikelDokumentTyp;
+  beschreibung?: string;
+  erstelltAm?: string;
+  dateigroesseBytes?: number;
+  /** Fertiger Pfad auf den Datei-Endpunkt - hier nicht selbst zusammensetzen. */
+  url: string;
 }
 
 export interface Abteilung {
@@ -301,27 +477,12 @@ export interface Mitarbeiter {
   plz?: string;
   ort?: string;
   email?: string;
-  telefon?: string;
-  festnetz?: string;
-  qualifikation?: string | null;
   stundenlohn?: number;
-  jahresUrlaub?: number;
   geburtstag?: string;
   eintrittsdatum?: string;
   aktiv?: boolean;
-  abteilungIds?: number[];
-  abteilungNames?: string | null;
-  loginToken?: string;
-  en1090RolleIds?: number[];
-  en1090RolleNames?: string | null;
-}
-
-export interface En1090Rolle {
-  id: number;
-  kurztext: string;
-  beschreibung: string | null;
-  sortierung: number;
-  aktiv: boolean;
+  abteilungId?: number;
+  abteilungName?: string;
 }
 
 export interface Arbeitsgang {
@@ -418,6 +579,8 @@ export interface Projekt {
   anlegedatum?: string;
   abschlussdatum?: string;
   bruttoPreis?: number;
+  lagerentnahmenKosten?: number | null;
+  lagerentnahmenBewertungOffen?: boolean;
   bezahlt: boolean;
   abgeschlossen?: boolean;
   strasse?: string;
@@ -425,8 +588,6 @@ export interface Projekt {
   ort?: string;
   kurzbeschreibung?: string;
   bildUrl?: string;
-  projektArt?: string;
-  excKlasse?: string | null;
 }
 
 export interface ProjektZeit {
@@ -446,6 +607,14 @@ export interface Materialkosten {
   monat?: number;
   betrag: number;
   rechnungsnummer?: string;
+  artikelIdSnapshot?: number;
+  lieferantenArtikelPreisId?: number;
+  lieferantennameSnapshot?: string;
+  mengeSnapshot?: number;
+  einheitSnapshot?: string;
+  preisJeEinheitSnapshot?: number;
+  preisquelleSnapshot?: string;
+  preisnotizSnapshot?: string;
 }
 
 // Nested Produktkategorie object in ProjektProduktkategorie
@@ -490,6 +659,8 @@ export interface ProjektDokument {
   gespeicherterDateiname?: string;  // UUID-prefixed filename for download URL
   dateityp?: string;
   url: string;
+  /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+  thumbnailUrl?: string;
   netzwerkPfad?: string;
   dokumentGruppe: DokumentGruppe;
   uploadDatum?: string;
@@ -518,7 +689,7 @@ export interface ProjektDokument {
 // Geschäftsdokument (Rechnungen, Anfragen, Auftragsbestätigungen, etc.)
 export interface ProjektGeschaeftsdokument {
   id: number;
-  dokumentid: string;              // Dokumentnummer (Rechnungsnummer, Anfragesnummer, etc.)
+  dokumentid: string;              // Dokumentnummer (Rechnungsnummer, Anfragenummer, etc.)
   geschaeftsdokumentart: string;   // Rechnung, Anfrage, Auftragsbestätigung, Zeichnung, Mahnung
   originalDateiname: string;
   url: string;
@@ -568,6 +739,10 @@ export interface ProjektEmailAttachment {
 
 export interface ProjektEmail {
   id: number;
+  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+  zustellFehler?: string;
   subject?: string;
   from?: string;           // Backend liefert "from"
   sender?: string;         // Alias für Kompatibilität
@@ -590,8 +765,6 @@ export interface ProjektEmail {
   replies?: ProjektEmail[];// Thread: Antworten
 }
 
-export type AipQuelle = 'OFFEN' | 'BESTELLT' | 'AUS_LAGER';
-
 export interface ArtikelInProjekt {
   id: number;
   artikelId: number;
@@ -604,11 +777,18 @@ export interface ArtikelInProjekt {
   meter?: number;
   kilogramm?: number;
   einzelpreis?: number;
+  /** Was die Position insgesamt kostet - Einzelpreis mal Menge. */
   gesamtpreis?: number;
-  // Nur bei quelle=AUS_LAGER gesetzt (gleitender Durchschnittspreis).
-  // Bei OFFEN/BESTELLT null — Preis kommt später über Eingangsrechnung.
   preisProStueck?: number;
-  quelle?: AipQuelle;
+  lieferantName?: string;
+  /**
+   * Aus dem eigenen Lager entnommen. Nur diese Positionen zaehlen als
+   * Materialkosten; bestellte Ware kommt spaeter per Lieferantenrechnung
+   * herein und wuerde sonst doppelt in der Nachkalkulation stehen.
+   */
+  ausLager?: boolean;
+  /** false heisst "muss noch bestellt werden" - siehe offene Bestellliste. */
+  bestellt?: boolean;
 }
 
 export interface ProjektDetail extends Projekt {
@@ -679,6 +859,10 @@ export interface AnfrageEmailAttachment {
 
 export interface AnfrageEmail {
   id: number;
+  /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+  zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+  /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+  zustellFehler?: string;
   sender?: string;
   fromAddress?: string;
   recipient?: string;
@@ -798,6 +982,7 @@ export interface OffenerPosten {
 
 export type AusgangsGeschaeftsDokumentTyp =
   | 'ANGEBOT'
+  | 'NACHTRAGSANGEBOT'
   | 'AUFTRAGSBESTAETIGUNG'
   | 'RECHNUNG'
   | 'TEILRECHNUNG'
@@ -811,6 +996,7 @@ export type AusgangsGeschaeftsDokumentTyp =
 
 export const AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN: { value: AusgangsGeschaeftsDokumentTyp; label: string }[] = [
   { value: 'ANGEBOT', label: 'Angebot' },
+  { value: 'NACHTRAGSANGEBOT', label: 'Nachtragsangebot' },
   { value: 'AUFTRAGSBESTAETIGUNG', label: 'Auftragsbestätigung' },
   { value: 'RECHNUNG', label: 'Rechnung' },
   { value: 'TEILRECHNUNG', label: 'Teilrechnung' },
@@ -855,6 +1041,8 @@ export interface AusgangsGeschaeftsDokument {
   kundennummer?: string;
   kundenName?: string;
   rechnungsadresse?: string;
+  /** Nur gesetzt wenn der User die Adresse manuell überschrieben hat. */
+  rechnungsadresseOverride?: string;
   // Vorgänger
   vorgaengerId?: number;
   vorgaengerNummer?: string;
@@ -918,4 +1106,219 @@ export interface AbrechnungsverlaufDto {
   bereitsAbgerechnet: number;
   restbetrag: number;
   bereitsAbgerechneteBlockIds?: string[];
+  /**
+   * Rohes positionenJson des Basisdokuments. Der Dokument-Editor benennt daraus,
+   * welche Leistungen in einer Schlussrechnung entfallen bzw. dazugekommen sind.
+   */
+  basisdokumentPositionenJson?: string | null;
+}
+
+// ===== Belege & Kasse =====
+//
+// Task 9 (reine Verschiebung, kein Verhalten geaendert): Typen 1:1 aus
+// BelegeKasseEditor.tsx uebernommen, damit alle Kasse-Komponenten (dieser und
+// spaeterer Tasks) von hier importieren statt jede ihre eigene Kopie zu
+// pflegen. `KostenstellenSplit` bleibt in KostenstellenSplitsEditor.tsx
+// definiert und wird hier nur re-exportiert -- sonst driften zwei
+// Definitionen auseinander.
+
+export type { KostenstellenSplit };
+
+export type BelegStatus = 'NEU' | 'VALIDIERT' | 'VERWORFEN';
+export type SachkontoTyp = 'AUFWAND' | 'ERTRAG' | 'PRIVAT' | 'NEUTRAL';
+
+export interface Sachkonto {
+  id: number;
+  nummer?: string | null;
+  bezeichnung: string;
+  kontoTyp: SachkontoTyp;
+  beschreibung?: string | null;
+  aktiv: boolean;
+  sortierung: number;
+}
+
+export interface Zahlungsart {
+  id: number;
+  bezeichnung: string;
+  aktiv: boolean;
+  sortierung: number;
+}
+
+export interface AuswertungZeile {
+  sachkontoId: number | null;
+  nummer?: string | null;
+  bezeichnung: string;
+  kontoTyp: SachkontoTyp | null;
+  summe: number;
+  anzahlBelege: number;
+}
+
+export interface Auswertung {
+  von: string | null;
+  bis: string | null;
+  summeAufwand: number;
+  summeErtrag: number;
+  summePrivat: number;
+  summeOhneKonto: number;
+  zeilen: AuswertungZeile[];
+}
+
+export type BelegKategorie =
+  | 'UNZUGEORDNET'
+  | 'KASSE_EINNAHME'
+  | 'KASSE_AUSGABE'
+  | 'PRIVATENTNAHME'
+  | 'PRIVATEINLAGE'
+  | 'BANK'
+  | 'KREDITKARTE'
+  | 'SONSTIGER_BELEG';
+export type KiStatus = 'PENDING' | 'LAEUFT' | 'DONE' | 'FAILED';
+
+export type AufteilungsModus = 'VOLLSTAENDIG' | 'TEILWEISE';
+
+export interface BelegPosition {
+  id: number;
+  sortierung: number;
+  beschreibung?: string | null;
+  menge?: number | null;
+  einheit?: string | null;
+  einzelpreis?: number | null;
+  betragNetto?: number | null;
+  betragBrutto?: number | null;
+  mwstSatz?: number | null;
+  istFuerFirma: boolean;
+}
+
+export interface Beleg {
+  id: number;
+  belegKategorie: BelegKategorie;
+  dokumentTyp?: string | null;
+  istUmbuchung?: boolean | null;
+  status: BelegStatus;
+  kiAnalyseStatus: KiStatus;
+  belegDatum?: string | null;
+  belegNummer?: string | null;
+  beschreibung?: string | null;
+  betragNetto?: number | null;
+  betragBrutto?: number | null;
+  mwstSatz?: number | null;
+  zahlungsart?: string | null;
+  lieferantId?: number | null;
+  lieferantName?: string | null;
+  sachkontoId?: number | null;
+  sachkontoBezeichnung?: string | null;
+  sachkontoNummer?: string | null;
+  sachkontoTyp?: SachkontoTyp | null;
+  kiVorgeschlagenerLieferant?: string | null;
+  kiConfidence?: number | null;
+  // Ergebnis des Kostenkonto-Agenten. Der Server liefert das schon lange mit
+  // (BelegDto.Response) — bis Issue #61 wurde es im UI nur nie angezeigt, der
+  // Buchhalter sah nur "KI fertig" und ein leeres Konto-Feld.
+  kiVorgeschlagenerKostenstelleId?: number | null;
+  kiVorgeschlagenerKostenstelleBezeichnung?: string | null;
+  kiVorgeschlagenerSachkontoId?: number | null;
+  kiVorgeschlagenerSachkontoBezeichnung?: string | null;
+  kiKostenkontoConfidence?: number | null;
+  kiKostenkontoBegruendung?: string | null;
+  kiFehlerText?: string | null;
+  originalDateiname?: string | null;
+  mimeType?: string | null;
+  uploadDatum: string;
+  uploadedByName?: string | null;
+  validiertAm?: string | null;
+  validiertVonName?: string | null;
+  notiz?: string | null;
+  eingangsrechnungId?: number | null;
+  // Beleg-Aufteilung (Issue #58): bei TEILWEISE ist nur ein Teil des Belegs
+  // betrieblich. Die Firma-Felder sind dann gefuellt; bei VOLLSTAENDIG null.
+  aufteilungsModus?: AufteilungsModus | null;
+  betragFirmaNetto?: number | null;
+  betragFirmaBrutto?: number | null;
+  betragFirmaMwst?: number | null;
+  positionen?: BelegPosition[] | null;
+  // Issue #60: Kostenstellen-Splits (mehrere Kostenstellen pro Beleg).
+  kostenstellenSplits?: KostenstellenSplit[] | null;
+  // Festschreibung (GoBD): sobald der Monat abgeschlossen ist, sind Datum,
+  // Betrag, MwSt, Art der Buchung, Zahlungsart, Verwendungszweck und
+  // Belegnummer gesperrt. Die Kontierung bleibt bedienbar.
+  laufendeNummer?: number | null;
+  festgeschrieben?: boolean | null;
+  festgeschriebenAm?: string | null;
+  stornoFuerBelegId?: number | null;
+  storniertDurchBelegId?: number | null;
+  storniertAm?: string | null;
+  stornoGrund?: string | null;
+  // Neu (Spec 2026-09-09, Datenmodell): woher der Beleg stammt und ob er
+  // bereits an eine Ausgangsrechnung gekoppelt ist. Alles optional, aendert
+  // fuer sich genommen kein Verhalten der Task-9-Komponenten.
+  quelle?: 'SCAN' | 'QUITTUNG' | 'EIGENBELEG' | 'TRANSFER' | null;
+  gegenpartei?: string | null;
+  ausgangsrechnungId?: number | null;
+  kiZahlungsart?: string | null;
+  kiBelegdatum?: string | null;
+  kiBetragBrutto?: number | null;
+  kiKostenkontoHinweis?: string | null;
+  eingangsrechnungBezahlt?: boolean | null;
+  eingangsrechnungBezahltAm?: string | null;
+  vorschlagSachkonto?: BelegVorschlag | null;
+  vorschlagKostenstelle?: BelegVorschlag | null;
+}
+
+export interface BelegVorschlag {
+  id: number;
+  nummer?: string | null;
+  bezeichnung: string;
+  quelle: 'KI' | 'HISTORIE' | 'LIEFERANT_STANDARD';
+  begruendung?: string | null;
+}
+
+export interface KasseEinstellung {
+  id?: number | null;
+  mindestbestand: number;
+  ehegattengehaltAktiv: boolean;
+  ehegattengehaltBetrag?: number | null;
+  ehegattengehaltTag?: number | null;
+  ehegattengehaltEmpfaengerName?: string | null;
+  privateinlageSachkontoId?: number | null;
+  datevBeraternummer?: string | null;
+  datevMandantennummer?: string | null;
+  wirtschaftsjahrBeginnMonat?: number | null;
+  kassenkontoNummer?: string | null;
+  bankkontoNummer?: string | null;
+}
+
+export interface KassenBewegung {
+  belegId: number;
+  datum: string;
+  kategorie: BelegKategorie;
+  beschreibung?: string | null;
+  lieferantName?: string | null;
+  betrag: number;
+  saldoNachher: number;
+  // Festschreibung: dauerhafte Belegnummer aus dem Monatsabschluss.
+  // null = der Monat ist noch offen, die Buchung hat noch keine feste Nummer.
+  laufendeNummer?: number | null;
+  festgeschrieben?: boolean | null;
+  sachkontoNummer?: string | null;
+  sachkontoBezeichnung?: string | null;
+  zahlungsart?: string | null;
+  mwstSatz?: number | null;
+  mwstBetrag?: number | null;
+  // Storno-Verweise: die eine Zeile hebt die andere auf.
+  stornoFuerBelegId?: number | null;
+  storniertDurchBelegId?: number | null;
+}
+
+export interface Kassenbuch {
+  saldoStart: number;
+  saldoEnde: number;
+  summeEinnahmen: number;
+  summeAusgaben: number;
+  summePrivatentnahmen: number;
+  summePrivateinlagen: number;
+  bewegungen: KassenBewegung[];
+  /** "JJJJ-MM" des zuletzt abgeschlossenen Monats, oder null. */
+  letzterAbschluss?: string | null;
+  /** Wie viele Bewegungen im Zeitraum noch änderbar sind. */
+  offeneBewegungen?: number;
 }

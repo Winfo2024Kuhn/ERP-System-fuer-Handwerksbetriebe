@@ -10,10 +10,16 @@ import {
     ChevronLeft,
     ChevronRight,
     Filter,
+    Globe,
     Loader2,
+    Mail,
     MapPin,
+    Monitor,
     Package,
+    Phone,
     RefreshCw,
+    Search,
+    Send,
     TrendingUp,
     Users,
     Wallet,
@@ -23,6 +29,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
+import { LieferantenDetailsModal } from '../components/LieferantenDetailsModal';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -76,6 +83,15 @@ interface KategorieUmsatzVergleich {
     verrechnungseinheit?: string;
 }
 
+interface KostenstelleVergleich {
+    id: number;
+    bezeichnung: string;
+    typ: string;
+    summeDiesesJahr: number;
+    summeVorjahr: number;
+    anzahlDiesesJahr: number;
+}
+
 interface MonatsumsatzDto {
     monat: number;
     letztesJahr: number;
@@ -105,7 +121,10 @@ interface OrtHeatmapDto {
 interface TopKundeDto {
     kundenName: string;
     kundennummer?: string;
-    umsatz: number;
+    /** Rechnungssumme inkl. Umsatzsteuer, nur aus fertigen Projekten. */
+    umsatzBrutto: number;
+    /** Rechnungssumme ohne Umsatzsteuer, nur aus fertigen Projekten. */
+    umsatzNetto: number;
     projektAnzahl: number;
     gewinn: number;
 }
@@ -128,6 +147,28 @@ interface UmsatzStatistiken {
     konversion: ConversionRateDto;
     ortHeatmap: OrtHeatmapDto[];
     topKunden: TopKundeDto[];
+}
+
+interface WebsiteAnalyticsSnapshotDto {
+    schemaVersion: number;
+    snapshotDate: string;
+    generatedAt: string;
+    receivedAt: string;
+    totals: {
+        visitors: number;
+        pageviews: number;
+        leadsPhone: number;
+        leadsMail: number;
+        submissions: number;
+    };
+    visitorsToday: number;
+    visitorsYesterday: number;
+    conversion: number;
+    funnel: { name: string; label: string; count: number }[];
+    topPages: { path: string; count: number }[];
+    devices: { device: string; count: number }[];
+    browsers: { browser: string; count: number }[];
+    cities: { city: string; country: string; count: number }[];
 }
 
 const MONATE = [
@@ -354,7 +395,7 @@ function YearPicker({ value, onChange, minYear = 2015, maxYear = new Date().getF
     );
 }
 
-type KundenSortField = 'kundenName' | 'umsatz' | 'projektAnzahl' | 'gewinn';
+type KundenSortField = 'kundenName' | 'umsatzBrutto' | 'umsatzNetto' | 'projektAnzahl' | 'gewinn';
 type SortDirection = 'asc' | 'desc';
 
 export default function ErfolgsanalyseEditor() {
@@ -363,7 +404,7 @@ export default function ErfolgsanalyseEditor() {
     const [monat, setMonat] = useState('');
 
     // Sorting State for Top 10 Kunden
-    const [kundenSortField, setKundenSortField] = useState<KundenSortField>('umsatz');
+    const [kundenSortField, setKundenSortField] = useState<KundenSortField>('umsatzBrutto');
     const [kundenSortDir, setKundenSortDir] = useState<SortDirection>('desc');
 
     // Data State
@@ -372,19 +413,32 @@ export default function ErfolgsanalyseEditor() {
     const [statistiken, setStatistiken] = useState<UmsatzStatistiken | null>(null);
     const [lieferantenkostenJahre, setLieferantenkostenJahre] = useState<LieferantenkostenJahr[]>([]);
     const [lieferantPerformance, setLieferantPerformance] = useState<LieferantPerformance[]>([]);
+    const [websiteAnalytics, setWebsiteAnalytics] = useState<WebsiteAnalyticsSnapshotDto | null>(null);
+    const [kostenstellenVergleich, setKostenstellenVergleich] = useState<KostenstelleVergleich[]>([]);
+
+    // Lieferanten-Details: vollständige Liste inkl. der Plätze hinter den Top 10.
+    // Der markierte Lieferant wird über seinen Platz geführt, nicht über den Namen –
+    // im Bestand gibt es Lieferanten-Dubletten mit identischem Namen.
+    const [lieferantenDetailsOffen, setLieferantenDetailsOffen] = useState(false);
+    const [hervorgehobenerRang, setHervorgehobenerRang] = useState<number | null>(null);
 
     // Lade Daten
     const loadData = useCallback(async () => {
         setLoading(true);
+        // Mit neuen Daten gilt eine neue Rangfolge – die alte Markierung würde
+        // auf einen anderen Lieferanten zeigen.
+        setHervorgehobenerRang(null);
         try {
             const params = new URLSearchParams({ jahr: jahr.toString() });
             if (monat) params.append('monat', monat);
 
-            const [docsRes, statsRes, liefkostenRes, liefPerfRes] = await Promise.all([
+            const [docsRes, statsRes, liefkostenRes, liefPerfRes, websiteRes, kostenstellenRes] = await Promise.all([
                 fetch(`/api/projekte/umsatz?${params.toString()}`),
                 fetch(`/api/projekte/umsatz/statistiken?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
                 fetch('/api/projekte/umsatz/lieferantenkosten-jahresuebersicht'),
                 fetch(`/api/projekte/umsatz/lieferanten-performance?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
+                fetch('/api/website-analytics/latest'),
+                fetch(`/api/bestellungen-uebersicht/kostenstellen/auswertung?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
             ]);
 
             if (docsRes.ok) {
@@ -405,6 +459,25 @@ export default function ErfolgsanalyseEditor() {
             if (liefPerfRes.ok) {
                 const liefPerf = await liefPerfRes.json();
                 setLieferantPerformance(Array.isArray(liefPerf) ? liefPerf : []);
+            }
+
+            if (websiteRes.ok) {
+                // 204 No Content -> noch kein Snapshot vorhanden
+                if (websiteRes.status === 204) {
+                    setWebsiteAnalytics(null);
+                } else {
+                    const snap: WebsiteAnalyticsSnapshotDto = await websiteRes.json();
+                    setWebsiteAnalytics(snap);
+                }
+            } else {
+                setWebsiteAnalytics(null);
+            }
+
+            if (kostenstellenRes.ok) {
+                const ks = await kostenstellenRes.json();
+                setKostenstellenVergleich(Array.isArray(ks) ? ks : []);
+            } else {
+                setKostenstellenVergleich([]);
             }
         } catch (err) {
             console.error('Fehler beim Laden:', err);
@@ -495,6 +568,36 @@ export default function ErfolgsanalyseEditor() {
             ],
         };
     }, [statistiken]);
+
+    // Kostenstellen Vorjahresvergleich Chart Data
+    const kostenstellenChartData = useMemo(() => {
+        if (!kostenstellenVergleich || kostenstellenVergleich.length === 0) return null;
+        // Nur Kostenstellen mit Kosten (dieses oder letztes Jahr), absteigend nach diesem Jahr
+        const relevant = kostenstellenVergleich
+            .filter(k => (k.summeDiesesJahr || 0) > 0 || (k.summeVorjahr || 0) > 0)
+            .sort((a, b) => (b.summeDiesesJahr || 0) - (a.summeDiesesJahr || 0));
+        if (relevant.length === 0) return null;
+
+        return {
+            labels: relevant.map(k => k.bezeichnung),
+            datasets: [
+                {
+                    label: 'Dieses Jahr',
+                    data: relevant.map(k => k.summeDiesesJahr || 0),
+                    backgroundColor: 'rgba(225, 29, 72, 0.8)',
+                    borderColor: 'rgba(225, 29, 72, 1)',
+                    borderWidth: 1,
+                },
+                {
+                    label: 'Letztes Jahr',
+                    data: relevant.map(k => k.summeVorjahr || 0),
+                    backgroundColor: 'rgba(148, 163, 184, 0.8)',
+                    borderColor: 'rgba(148, 163, 184, 1)',
+                    borderWidth: 1,
+                },
+            ],
+        };
+    }, [kostenstellenVergleich]);
 
     // Monatlicher Verlauf Chart Data (mit Lieferantenkosten und Gewinn)
     const verlaufChartData = useMemo(() => {
@@ -624,6 +727,23 @@ export default function ErfolgsanalyseEditor() {
         };
     }, [lieferantenkostenJahre]);
 
+    const zeitraumLabel = useMemo(() => {
+        const monatsName = MONATE.find(m => m.value === monat)?.label;
+        return monat && monatsName ? `${monatsName} ${jahr}` : `${jahr}`;
+    }, [monat, jahr]);
+
+    // Stabile Referenz, damit der Escape-Listener im Modal nicht bei jedem Render neu hängt.
+    const schliesseLieferantenDetails = useCallback(() => setLieferantenDetailsOffen(false), []);
+
+    // Ein aus der Detail-Liste gewählter Lieferant wird nur dann als Extra-Balken
+    // angehängt, wenn er nicht ohnehin schon unter den Top 10 steht.
+    const zusatzLieferant = useMemo(() => {
+        if (hervorgehobenerRang === null || hervorgehobenerRang <= 10) return null;
+        const treffer = lieferantPerformance[hervorgehobenerRang - 1];
+        if (!treffer) return null;
+        return { ...treffer, rang: hervorgehobenerRang };
+    }, [hervorgehobenerRang, lieferantPerformance]);
+
     // Lieferanten Performance Chart Data (pro Lieferant)
     const lieferantPerfChartData = useMemo(() => {
         if (!lieferantPerformance || lieferantPerformance.length === 0) return null;
@@ -631,19 +751,74 @@ export default function ErfolgsanalyseEditor() {
         // Zeige nur Top 10 Lieferanten nach Umsatz
         const top10 = lieferantPerformance.slice(0, 10);
 
-        return {
-            labels: top10.map(d => d.name),
-            datasets: [
-                {
+        if (!zusatzLieferant) {
+            return {
+                labels: top10.map(d => d.name),
+                datasets: [{
                     label: 'Gesamtkosten (Netto €)',
-                    data: top10.map(d => d.netto),
+                    data: top10.map<number | null>(d => d.netto),
                     backgroundColor: 'rgba(225, 29, 72, 0.8)',
                     borderColor: 'rgba(225, 29, 72, 1)',
                     borderWidth: 1,
-                }
+                }],
+            };
+        }
+
+        // Eigener Datensatz statt nur andere Farbe: So erklärt die Legende den Balken,
+        // und die Information hängt nicht allein am Farbton.
+        const luecke = Array<number | null>(top10.length).fill(null);
+        return {
+            labels: [...top10.map(d => d.name), zusatzLieferant.name],
+            datasets: [
+                {
+                    label: 'Gesamtkosten (Netto €)',
+                    data: [...top10.map<number | null>(d => d.netto), null],
+                    backgroundColor: 'rgba(225, 29, 72, 0.8)',
+                    borderColor: 'rgba(225, 29, 72, 1)',
+                    borderWidth: 1,
+                },
+                {
+                    label: `${zusatzLieferant.name} (Platz ${zusatzLieferant.rang})`,
+                    data: [...luecke, zusatzLieferant.netto],
+                    backgroundColor: 'rgba(71, 85, 105, 0.85)',
+                    borderColor: 'rgba(30, 41, 59, 1)',
+                    borderWidth: 2,
+                },
             ],
         };
-    }, [lieferantPerformance]);
+    }, [lieferantPerformance, zusatzLieferant]);
+
+    // Website-Funnel Bar-Chart
+    const websiteFunnelChartData = useMemo(() => {
+        if (!websiteAnalytics?.funnel || websiteAnalytics.funnel.length === 0) return null;
+        return {
+            labels: websiteAnalytics.funnel.map(f => f.label || f.name),
+            datasets: [{
+                label: 'Besucher',
+                data: websiteAnalytics.funnel.map(f => f.count),
+                backgroundColor: [
+                    'rgba(225, 29, 72, 0.85)',
+                    'rgba(225, 29, 72, 0.7)',
+                    'rgba(225, 29, 72, 0.55)',
+                    'rgba(225, 29, 72, 0.4)',
+                ],
+                borderWidth: 0,
+            }],
+        };
+    }, [websiteAnalytics]);
+
+    // Website-Devices Doughnut
+    const websiteDevicesChartData = useMemo(() => {
+        if (!websiteAnalytics?.devices || websiteAnalytics.devices.length === 0) return null;
+        return {
+            labels: websiteAnalytics.devices.map(d => d.device || 'Unbekannt'),
+            datasets: [{
+                data: websiteAnalytics.devices.map(d => d.count),
+                backgroundColor: CHART_COLORS,
+                borderWidth: 0,
+            }],
+        };
+    }, [websiteAnalytics]);
 
     // Sortierte Top-Kunden
     const sortedTopKunden = useMemo(() => {
@@ -653,7 +828,8 @@ export default function ErfolgsanalyseEditor() {
             let valB: number | string = 0;
             switch (kundenSortField) {
                 case 'kundenName': valA = a.kundenName.toLowerCase(); valB = b.kundenName.toLowerCase(); break;
-                case 'umsatz': valA = a.umsatz; valB = b.umsatz; break;
+                case 'umsatzBrutto': valA = a.umsatzBrutto; valB = b.umsatzBrutto; break;
+                case 'umsatzNetto': valA = a.umsatzNetto; valB = b.umsatzNetto; break;
                 case 'projektAnzahl': valA = a.projektAnzahl; valB = b.projektAnzahl; break;
                 case 'gewinn': valA = a.gewinn; valB = b.gewinn; break;
             }
@@ -838,9 +1014,14 @@ export default function ErfolgsanalyseEditor() {
                         {/* 1. Top 10 Kunden */}
                         {sortedTopKunden.length > 0 && (
                             <Card className="p-6 border-0 shadow-sm rounded-xl overflow-hidden">
-                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
-                                    <Users className="w-5 h-5 text-rose-600" />
-                                    <h3 className="text-lg font-bold text-slate-900">Top 10 Kunden ({jahr})</h3>
+                                <div className="mb-4 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                        <Users className="w-5 h-5 text-rose-600" />
+                                        <h3 className="text-lg font-bold text-slate-900">Top 10 Kunden ({zeitraumLabel})</h3>
+                                    </div>
+                                    <p className="text-sm text-slate-500 mt-1 ml-8">
+                                        Zusammengerechnet aus fertigen Projekten – laufende Projekte zählen erst mit, wenn sie beendet sind.
+                                    </p>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full">
@@ -855,9 +1036,15 @@ export default function ErfolgsanalyseEditor() {
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
-                                                    onClick={() => toggleKundenSort('umsatz')}
+                                                    onClick={() => toggleKundenSort('umsatzBrutto')}
                                                 >
-                                                    <span className="inline-flex items-center gap-1 justify-end">Umsatz <SortIcon field="umsatz" /></span>
+                                                    <span className="inline-flex items-center gap-1 justify-end">Brutto <SortIcon field="umsatzBrutto" /></span>
+                                                </th>
+                                                <th
+                                                    className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
+                                                    onClick={() => toggleKundenSort('umsatzNetto')}
+                                                >
+                                                    <span className="inline-flex items-center gap-1 justify-end">Netto <SortIcon field="umsatzNetto" /></span>
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
@@ -887,8 +1074,9 @@ export default function ErfolgsanalyseEditor() {
                                                         </span>
                                                     </td>
                                                     <td className="py-3 px-4 font-medium text-slate-900">{kunde.kundenName}</td>
-                                                    <td className="py-3 px-4 text-right text-slate-700">{formatCurrency(kunde.umsatz)}</td>
-                                                    <td className="py-3 px-4 text-right text-slate-600">{kunde.projektAnzahl}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-700 tabular-nums">{formatCurrency(kunde.umsatzBrutto)}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-700 tabular-nums">{formatCurrency(kunde.umsatzNetto)}</td>
+                                                    <td className="py-3 px-4 text-right text-slate-600 tabular-nums">{kunde.projektAnzahl}</td>
                                                     <td className={`py-3 px-4 text-right font-semibold ${kunde.gewinn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(kunde.gewinn)}</td>
                                                 </tr>
                                             ))}
@@ -999,9 +1187,22 @@ export default function ErfolgsanalyseEditor() {
 
                             {/* Top Lieferanten Bar */}
                             <Card className="p-6 border-0 shadow-sm rounded-xl">
-                                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
-                                    <BarChart3 className="w-5 h-5 text-violet-600" />
-                                    <h2 className="text-lg font-bold text-slate-900">Top 10 Lieferanten</h2>
+                                <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                        <BarChart3 className="w-5 h-5 text-rose-600" />
+                                        <h2 className="text-lg font-bold text-slate-900">
+                                            {zusatzLieferant ? 'Top 10 Lieferanten + 1' : 'Top 10 Lieferanten'}
+                                        </h2>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setLieferantenDetailsOffen(true)}
+                                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    >
+                                        <Search className="w-4 h-4 mr-1.5" />
+                                        Details
+                                    </Button>
                                 </div>
                                 <div className="h-[350px] w-full relative">
                                     {lieferantPerfChartData ? (
@@ -1010,7 +1211,14 @@ export default function ErfolgsanalyseEditor() {
                                             data={lieferantPerfChartData}
                                             options={{
                                                 ...barChartOptions,
-                                                maintainAspectRatio: false
+                                                maintainAspectRatio: false,
+                                                plugins: {
+                                                    ...barChartOptions.plugins,
+                                                    // Sobald ein zusätzlicher Lieferant dazukommt, erklärt die Legende die beiden
+                                                    // Balkenarten. Sie steht oben, weil die schrägen Lieferantennamen unten
+                                                    // den ganzen Platz brauchen.
+                                                    legend: { display: !!zusatzLieferant, position: 'top' as const },
+                                                },
                                             }}
                                         />
                                     ) : (
@@ -1085,11 +1293,262 @@ export default function ErfolgsanalyseEditor() {
                                 </div>
                             </Card>
                         </div>
+
+                        {/* 4b. Kostenstellen Vorjahresvergleich */}
+                        <Card className="p-6 border-0 shadow-sm rounded-xl">
+                            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+                                <Wallet className="w-5 h-5 text-rose-600" />
+                                <h2 className="text-lg font-bold text-slate-900">Kostenstellen (Vorjahresvergleich)</h2>
+                            </div>
+                            <div className="h-[320px] w-full relative">
+                                {kostenstellenChartData ? (
+                                    <Bar
+                                        key={`kostenstellen-${jahr}-${monat}`}
+                                        data={kostenstellenChartData}
+                                        options={{
+                                            ...barChartOptions,
+                                            maintainAspectRatio: false,
+                                            plugins: { legend: { display: true, position: 'bottom' } },
+                                            scales: {
+                                                y: {
+                                                    beginAtZero: true,
+                                                    ticks: {
+                                                        callback: (value: number | string) => formatCurrency(Number(value)),
+                                                    },
+                                                },
+                                            },
+                                        }}
+                                    />
+                                ) : (
+                                    <div className="h-full flex items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                                        Keine Kostenstellen-Daten verfügbar
+                                    </div>
+                                )}
+                            </div>
+                        </Card>
+
+                        {/* 5. Website-Daten (bauschlosserei-kuhn.de) */}
+                        <Card className="p-6 border-0 shadow-sm rounded-xl">
+                            <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+                                <div className="flex items-center gap-3">
+                                    <Globe className="w-5 h-5 text-rose-600" />
+                                    <h2 className="text-lg font-bold text-slate-900">Website-Daten</h2>
+                                </div>
+                                {websiteAnalytics && (
+                                    <p className="text-xs text-slate-500">
+                                        Stand {websiteAnalytics.snapshotDate.split('-').reverse().join('.')}
+                                        {' '}({websiteAnalytics.totals.visitors.toLocaleString('de-DE')} Besucher gesamt)
+                                    </p>
+                                )}
+                            </div>
+
+                            {!websiteAnalytics ? (
+                                <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2 border-2 border-dashed border-slate-100 rounded-xl">
+                                    <Globe className="w-8 h-8 text-slate-300" />
+                                    <p className="font-medium">Noch kein Website-Snapshot vorhanden</p>
+                                    <p className="text-xs">Die Webseite liefert ihren ersten Snapshot heute Nacht (~02:00).</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Website KPIs */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                                        <div className="p-4 rounded-xl bg-rose-50">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Users className="w-4 h-4 text-rose-600" />
+                                                <p className="text-xs font-semibold uppercase text-rose-600">Besucher heute</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-rose-700">
+                                                {websiteAnalytics.visitorsToday.toLocaleString('de-DE')}
+                                            </p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-50">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Users className="w-4 h-4 text-slate-600" />
+                                                <p className="text-xs font-semibold uppercase text-slate-500">Besucher gestern</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-slate-900">
+                                                {websiteAnalytics.visitorsYesterday.toLocaleString('de-DE')}
+                                            </p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-rose-50">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <TrendingUp className="w-4 h-4 text-rose-600" />
+                                                <p className="text-xs font-semibold uppercase text-rose-600">Conversion</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-rose-700">
+                                                {websiteAnalytics.conversion}%
+                                            </p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-50">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Phone className="w-4 h-4 text-rose-600" />
+                                                <p className="text-xs font-semibold uppercase text-slate-500">Klicks Anrufen</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-slate-900">
+                                                {websiteAnalytics.totals.leadsPhone.toLocaleString('de-DE')}
+                                            </p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-50">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Mail className="w-4 h-4 text-rose-600" />
+                                                <p className="text-xs font-semibold uppercase text-slate-500">Klicks E-Mail</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-slate-900">
+                                                {websiteAnalytics.totals.leadsMail.toLocaleString('de-DE')}
+                                            </p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-50">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Send className="w-4 h-4 text-rose-600" />
+                                                <p className="text-xs font-semibold uppercase text-slate-500">Anfragen</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-slate-900">
+                                                {websiteAnalytics.totals.submissions.toLocaleString('de-DE')}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Funnel + Devices */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                                        <div className="lg:col-span-2 p-4 rounded-xl bg-slate-50/50">
+                                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                                <BarChart3 className="w-4 h-4 text-rose-600" />
+                                                Anfrage-Trichter (lifetime)
+                                            </h3>
+                                            <div className="h-[260px] w-full relative">
+                                                {websiteFunnelChartData ? (
+                                                    <Bar
+                                                        key={`web-funnel-${websiteAnalytics.snapshotDate}`}
+                                                        data={websiteFunnelChartData}
+                                                        options={{
+                                                            ...barChartOptions,
+                                                            indexAxis: 'y' as const,
+                                                            maintainAspectRatio: false,
+                                                            plugins: { legend: { display: false } },
+                                                            scales: {
+                                                                x: { beginAtZero: true },
+                                                            },
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div className="h-full flex items-center justify-center text-slate-400">
+                                                        Keine Funnel-Daten
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4 rounded-xl bg-slate-50/50">
+                                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                                <Monitor className="w-4 h-4 text-rose-600" />
+                                                Geräte
+                                            </h3>
+                                            <div className="h-[260px] w-full relative">
+                                                {websiteDevicesChartData ? (
+                                                    <Doughnut
+                                                        key={`web-dev-${websiteAnalytics.snapshotDate}`}
+                                                        data={websiteDevicesChartData}
+                                                        options={{
+                                                            ...doughnutChartOptions,
+                                                            maintainAspectRatio: false,
+                                                            plugins: { legend: { position: 'bottom' as const } },
+                                                            cutout: '60%',
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div className="h-full flex items-center justify-center text-slate-400">
+                                                        Keine Daten
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Top Pages + Browsers + Cities */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="p-4 rounded-xl bg-slate-50/50">
+                                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                                <Package className="w-4 h-4 text-rose-600" />
+                                                Top-Seiten
+                                            </h3>
+                                            {websiteAnalytics.topPages.length === 0 ? (
+                                                <p className="text-sm text-slate-400">Keine Daten</p>
+                                            ) : (
+                                                <ul className="space-y-2">
+                                                    {websiteAnalytics.topPages.slice(0, 8).map((p, idx) => (
+                                                        <li key={`${p.path}-${idx}`} className="flex items-center justify-between gap-2 text-sm">
+                                                            <span className="truncate text-slate-700 font-mono text-xs">{p.path || '/'}</span>
+                                                            <span className="font-semibold text-slate-900 shrink-0">
+                                                                {p.count.toLocaleString('de-DE')}
+                                                            </span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+
+                                        <div className="p-4 rounded-xl bg-slate-50/50">
+                                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                                <Globe className="w-4 h-4 text-rose-600" />
+                                                Browser
+                                            </h3>
+                                            {websiteAnalytics.browsers.length === 0 ? (
+                                                <p className="text-sm text-slate-400">Keine Daten</p>
+                                            ) : (
+                                                <ul className="space-y-2">
+                                                    {websiteAnalytics.browsers.map((b, idx) => (
+                                                        <li key={`${b.browser}-${idx}`} className="flex items-center justify-between gap-2 text-sm">
+                                                            <span className="truncate text-slate-700">{b.browser || 'Unbekannt'}</span>
+                                                            <span className="font-semibold text-slate-900 shrink-0">
+                                                                {b.count.toLocaleString('de-DE')}
+                                                            </span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+
+                                        <div className="p-4 rounded-xl bg-slate-50/50">
+                                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                                <MapPin className="w-4 h-4 text-rose-600" />
+                                                Top-Städte
+                                            </h3>
+                                            {websiteAnalytics.cities.length === 0 ? (
+                                                <p className="text-sm text-slate-400">Keine Daten</p>
+                                            ) : (
+                                                <ul className="space-y-2">
+                                                    {websiteAnalytics.cities.map((c, idx) => (
+                                                        <li key={`${c.city}-${idx}`} className="flex items-center justify-between gap-2 text-sm">
+                                                            <span className="truncate text-slate-700">
+                                                                {c.city || 'Unbekannt'}
+                                                                {c.country && <span className="text-slate-400 ml-1">({c.country})</span>}
+                                                            </span>
+                                                            <span className="font-semibold text-slate-900 shrink-0">
+                                                                {c.count.toLocaleString('de-DE')}
+                                                            </span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </Card>
                     </div>
 
 
                 </>
             )}
+
+            <LieferantenDetailsModal
+                isOpen={lieferantenDetailsOffen}
+                onClose={schliesseLieferantenDetails}
+                lieferanten={lieferantPerformance}
+                zeitraum={zeitraumLabel}
+                hervorgehobenerRang={hervorgehobenerRang}
+                onHervorheben={setHervorgehobenerRang}
+            />
         </PageLayout>
     );
 }

@@ -1,15 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowLeft,
+    Briefcase,
+    Calendar,
     ChevronLeft,
     ChevronRight,
+    Euro,
+    FileText,
     Mail,
     MapPin,
     Phone,
     Plus,
+    Receipt,
     RefreshCw,
     Save,
+    StickyNote,
     User,
     X,
     CreditCard,
@@ -20,11 +26,13 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { type KundeDetail } from '../types';
+import { cn } from '../lib/utils';
+import { type KundeDetail, type KundeProjektKurz, type KundeAnfrageKurz, type AusgangsGeschaeftsDokument } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
 import { AddressAutocomplete } from '../components/AddressAutocomplete';
 import { PhoneInput } from '../components/PhoneInput';
 import { EmailsTab } from '../components/EmailsTab';
+import { KundeNotizenTab } from '../components/KundeNotizenTab';
 import { DetailLayout } from '../components/DetailLayout';
 import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
@@ -60,6 +68,181 @@ const EMPTY_KUNDE: KundeDetail = {
 
 // GoogleMapsEmbed imported from components
 
+// ==================== SHARED HELPERS / KARTEN ====================
+
+const formatCurrencyEUR = (val?: number) =>
+    new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
+
+const formatDateDE = (dateStr?: string) =>
+    dateStr ? new Date(dateStr).toLocaleDateString('de-DE') : '-';
+
+type KundeDetailTab = 'emails' | 'projekte' | 'anfragen' | 'dokumente' | 'notizen';
+
+// Farben & Klartext-Labels für Geschäftsdokument-Typen (gleiche Logik wie im ProjektEditor).
+const DOK_TYP_COLORS: Record<string, string> = {
+    ANGEBOT: 'bg-blue-50 text-blue-700 border-blue-200',
+    NACHTRAGSANGEBOT: 'bg-slate-100 text-slate-700 border-slate-300',
+    AUFTRAGSBESTAETIGUNG: 'bg-purple-50 text-purple-700 border-purple-200',
+    RECHNUNG: 'bg-rose-50 text-rose-700 border-rose-200',
+    TEILRECHNUNG: 'bg-rose-50 text-rose-600 border-rose-200',
+    ABSCHLAGSRECHNUNG: 'bg-orange-50 text-orange-700 border-orange-200',
+    SCHLUSSRECHNUNG: 'bg-rose-100 text-rose-800 border-rose-300',
+    GUTSCHRIFT: 'bg-green-50 text-green-700 border-green-200',
+    STORNO: 'bg-red-50 text-red-700 border-red-200',
+    ZAHLUNGSERINNERUNG: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+    ERSTE_MAHNUNG: 'bg-amber-100 text-amber-800 border-amber-300',
+    ZWEITE_MAHNUNG: 'bg-red-100 text-red-800 border-red-300',
+};
+
+const DOK_TYP_LABELS: Record<string, string> = {
+    ANGEBOT: 'Angebot',
+    NACHTRAGSANGEBOT: 'Nachtragsangebot',
+    AUFTRAGSBESTAETIGUNG: 'Auftragsbestätigung',
+    RECHNUNG: 'Rechnung',
+    TEILRECHNUNG: 'Teilrechnung',
+    ABSCHLAGSRECHNUNG: 'Abschlagsrechnung',
+    SCHLUSSRECHNUNG: 'Schlussrechnung',
+    GUTSCHRIFT: 'Gutschrift',
+    STORNO: 'Storno',
+    ZAHLUNGSERINNERUNG: 'Zahlungserinnerung',
+    ERSTE_MAHNUNG: '1. Mahnung',
+    ZWEITE_MAHNUNG: '2. Mahnung',
+};
+
+const KartenLeerzustand: React.FC<{ icon: React.ReactNode; text: string }> = ({ icon, text }) => (
+    <div className="text-center py-12 text-slate-500">
+        <div className="w-12 h-12 mx-auto mb-3 text-slate-300 flex items-center justify-center">{icon}</div>
+        <p className="text-sm">{text}</p>
+    </div>
+);
+
+const KundenProjektKarte: React.FC<{ projekt: KundeProjektKurz; onOpen: () => void }> = ({ projekt, onOpen }) => (
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
+        {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+            ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard) --
+            space-y-3s "> * + *"-Selektor (Spezifitaet 0-3-0) schlaegt
+            mt-auto (0-1-0) am Meta-Block nieder, gap-3 nicht. */}
+        <div className="p-4 gap-3 flex-1 flex flex-col">
+            <div className="flex items-center gap-2 flex-wrap">
+                <span className={cn(
+                    'text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full',
+                    projekt.bezahlt ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                )}>
+                    {projekt.bezahlt ? 'Bezahlt' : 'Offen'}
+                </span>
+                {projekt.abschlussdatum && (
+                    <span className="text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">
+                        Beendet
+                    </span>
+                )}
+            </div>
+            {/* line-clamp-2 statt truncate: dieselbe lange Bauvorhaben-Kuerzung wie in
+                der Uebersicht (Spec E.3-Ausnahme, Kartentitel), title traegt den vollen
+                Namen. Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4,
+                Design-Review-Befund) -- gleiche Kartenhoehe kommt ueber h-full
+                flex flex-col an der Karte und mt-auto am Meta-Block unten. */}
+            <h3 className="font-semibold text-slate-900 line-clamp-2 text-base" title={projekt.bauvorhaben} data-kuerzung-erlaubt>
+                {projekt.bauvorhaben || 'Unbenannt'}
+            </h3>
+            <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
+                {projekt.auftragsnummer && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                        {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit). */}
+                        <span className="min-w-0 break-words">{projekt.auftragsnummer}</span>
+                    </div>
+                )}
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>{formatDateDE(projekt.anlegedatum)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-medium text-rose-600">
+                    <Euro className="w-4 h-4 shrink-0" />
+                    <span>{formatCurrencyEUR(projekt.bruttoPreis)}</span>
+                </div>
+            </div>
+        </div>
+    </Card>
+);
+
+const KundenAnfrageKarte: React.FC<{ anfrage: KundeAnfrageKurz; onOpen: () => void }> = ({ anfrage, onOpen }) => (
+    <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col" onClick={onOpen}>
+        {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+            ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard). */}
+        <div className="p-4 gap-3 flex-1 flex flex-col">
+            <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                    Anfrage
+                </span>
+            </div>
+            {/* Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4, Design-Review-Befund) --
+                siehe Kommentar in KundenProjektKarte oben. */}
+            <h3 className="font-semibold text-slate-900 line-clamp-2 text-base" title={anfrage.bauvorhaben} data-kuerzung-erlaubt>
+                {anfrage.bauvorhaben || 'Unbenannt'}
+            </h3>
+            <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
+                {anfrage.anfragesnummer && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                        {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit). */}
+                        <span className="min-w-0 break-words">{anfrage.anfragesnummer}</span>
+                    </div>
+                )}
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>{formatDateDE(anfrage.anlegedatum)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-medium text-rose-600">
+                    <Euro className="w-4 h-4 shrink-0" />
+                    <span>{formatCurrencyEUR(anfrage.betrag)}</span>
+                </div>
+            </div>
+        </div>
+    </Card>
+);
+
+const KundenDokumentKarte: React.FC<{ dok: AusgangsGeschaeftsDokument; onOpen: () => void }> = ({ dok, onOpen }) => {
+    const herkunft = dok.projektBauvorhaben
+        ? `Projekt: ${dok.projektBauvorhaben}`
+        : dok.anfrageId ? 'Aus Anfrage' : null;
+    return (
+        <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white" onClick={onOpen}>
+            <div className="p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className={cn(
+                            'text-xs font-semibold px-2 py-0.5 rounded-full border',
+                            DOK_TYP_COLORS[dok.typ] || 'bg-slate-50 text-slate-600 border-slate-200'
+                        )}>
+                            {DOK_TYP_LABELS[dok.typ] || dok.typ}
+                        </span>
+                        {/* break-words statt line-clamp-2 + Marker (Nacharbeit
+                            Abschnitt 4, Code-Review-Befund 3): eine Belegnummer ist
+                            eine Kennung, halb abgeschnitten ist sie wertlos, und es
+                            gibt real keine Nummer, die zwei Zeilen braucht. title
+                            bleibt als Rueckfallweg, aber ohne data-kuerzung-erlaubt
+                            bleibt keinTextGekuerzt() hier scharf -- eine gequetschte
+                            Karte ist wieder ein echter Befund. Die Herkunftszeile
+                            ("Projekt: ...") direkt darunter behaelt Marker + title,
+                            weil sie denselben langen Bauvorhaben-Namen traegt und
+                            faktisch die Titelzeile der Mini-Karte ist. */}
+                        <span className="text-sm font-medium text-slate-900 break-words" title={dok.dokumentNummer}>{dok.dokumentNummer}</span>
+                        {dok.storniert && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-600">storniert</span>
+                        )}
+                    </div>
+                    {herkunft && <p className="text-xs text-slate-500 line-clamp-2" title={herkunft} data-kuerzung-erlaubt>{herkunft}</p>}
+                    <div className="flex items-center gap-1 text-xs text-slate-500">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>{formatDateDE(dok.datum)}</span>
+                    </div>
+                </div>
+                <p className="text-sm font-semibold text-rose-600 shrink-0">{formatCurrencyEUR(dok.betragBrutto)}</p>
+            </div>
+        </Card>
+    );
+};
+
 // ==================== DETAIL VIEW ====================
 
 interface KundenDetailViewProps {
@@ -69,56 +252,96 @@ interface KundenDetailViewProps {
 }
 
 const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEdit }) => {
+    const navigate = useNavigate();
     const initials = kunde.name.slice(0, 2).toUpperCase();
+    const [activeTab, setActiveTab] = useState<KundeDetailTab>('emails');
+
+    const projekte = kunde.projekte || [];
+    const anfragen = kunde.anfragen || [];
+    const dokumente = kunde.geschaeftsdokumente || [];
+    const emailCount = kunde.kommunikation?.length || 0;
 
     // Formatter helpers
     const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
+    const tabs: { key: KundeDetailTab; label: string; icon: React.ReactNode; count: number }[] = [
+        { key: 'emails', label: 'E-Mails', icon: <Mail className="w-4 h-4" />, count: emailCount },
+        { key: 'projekte', label: 'Projekte', icon: <Briefcase className="w-4 h-4" />, count: projekte.length },
+        { key: 'anfragen', label: 'Anfragen', icon: <FileText className="w-4 h-4" />, count: anfragen.length },
+        { key: 'dokumente', label: 'Dokumente', icon: <Receipt className="w-4 h-4" />, count: dokumente.length },
+        { key: 'notizen', label: 'Notizen', icon: <StickyNote className="w-4 h-4" />, count: kunde.notizen?.length || 0 },
+    ];
+
     const header = (
         <Card className="p-6">
-            <div className="flex flex-col xl:flex-row gap-8 justify-between">
-                <div className="flex items-start gap-4">
+            {/* Spec-Befund 2 (Kunde, docs/superpowers/specs/2026-09-04-layout-14-zoll.md):
+                Bei einem langen Kundennamen nahm sich die Kennzahlen-Reihe ("flex-1
+                max-w-md") den Platz, den der Titelblock eigentlich brauchte -- die
+                Kaesten "Gesamtumsatz"/"Gewinn" schrumpften auf rund 26px, Beschriftung
+                und Betrag lagen uebereinander und ueber dem Knopf "Bearbeiten". Jetzt
+                duerfen alle drei Bloecke (Titelblock, Kennzahlen, Knopf) unabhaengig
+                voneinander umbrechen: reicht der Platz nicht, rutscht zuerst die
+                Kennzahlen-Reihe unter den Titel -- nie die Knoepfe aus der Karte. */}
+            <div className="flex flex-wrap items-start gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
                     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                     <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
                         {initials}
                     </div>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-2xl font-bold text-slate-900">{kunde.name}</h1>
+                    <div className="min-w-0">
+                        {/* Nachbesserung 1 (Design-Review, 🔴): min-w-0 auf dem
+                            umschliessenden div reicht bei EINEM einzigen langen
+                            Wort nicht -- die <h1> ist selbst Flex-Item in der
+                            Zeile darunter und behaelt ihr eigenes min-width:
+                            auto. break-words senkt die Mindestinhaltsbreite
+                            eines Flex-Items nicht, nur min-w-0 auf dem Element
+                            selbst tut das. Siehe ausfuehrlicher Kommentar in
+                            ProjektEditor.tsx. */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{kunde.name}</h1>
                             <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
                                 {kunde.kundennummer}
                             </span>
                         </div>
+                        {/* shrink-0 an den Untertitel-Icons (Nacharbeit Abschnitt 4,
+                            Rezeptur): sonst quetscht ein langer Text sie platt.
+                            Task 12 (zweiter Mechanismus): der Wert braucht einen
+                            eigenen <span> mit min-w-0 -- "break-words" allein
+                            senkt die automatische Mindestbreite eines Flex-Items
+                            nicht (nur "overflow-wrap: anywhere" tut das), siehe
+                            ausfuehrlicher Kommentar in ProjektEditor.tsx. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {kunde.ansprechspartner}</p>}
-                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {kunde.strasse}, {kunde.plz} {kunde.ort}</p>
+                            {kunde.ansprechspartner && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{kunde.ansprechspartner}</span></p>}
+                            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{kunde.strasse}, {kunde.plz} {kunde.ort}</span></p>
                         </div>
                     </div>
                 </div>
 
-                {/* Bento Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1 max-w-4xl">
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                {/* Bento Stats Grid -- kein "flex-1 max-w-md" mehr (das zwang die
+                    Kaesten bei wenig Platz auf 26px, siehe Kommentar oben); shrink-0
+                    + min-w je Kasten haelt "Gesamtumsatz"/"Gewinn" lesbar, flex-wrap
+                    laesst die Reihe umbrechen statt sich zu quetschen. */}
+                <div className="flex flex-wrap gap-4 shrink-0">
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 min-w-[7rem]">
                         <p className="text-xs text-slate-500 uppercase tracking-wide">Gesamtumsatz</p>
                         <p className="text-lg font-semibold text-slate-900">{formatCurrency(kunde.statistik?.gesamtUmsatz)}</p>
                     </div>
-                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[7rem]">
                         <p className="text-xs text-emerald-600 uppercase tracking-wide">Gewinn</p>
                         <p className="text-lg font-semibold text-emerald-900">{formatCurrency(kunde.statistik?.gesamtGewinn)}</p>
                     </div>
-                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                        <p className="text-xs text-blue-600 uppercase tracking-wide">Projekte</p>
-                        <p className="text-lg font-semibold text-blue-900">{kunde.statistik?.projektAnzahl || 0}</p>
-                    </div>
-                    <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
-                        <p className="text-xs text-purple-600 uppercase tracking-wide">Anfragen</p>
-                        <p className="text-lg font-semibold text-purple-900">{kunde.statistik?.anfrageAnzahl || 0}</p>
-                    </div>
                 </div>
 
-                <div className="flex items-start">
+                {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
+                    linken Kartenrand statt nach rechts (Rezeptur, Nacharbeit
+                    Abschnitt 4). */}
+                {/* Nachbesserung 1 (Design-Review, 🟡): flex-wrap + gap-2
+                    ergaenzt, um exakt der Rezeptur (Projekt/Anfrage) zu
+                    entsprechen -- heute unsichtbar, weil nur ein Knopf hier
+                    steht, faellt aber auf, sobald ein zweiter dazukommt. */}
+                <div className="flex flex-wrap items-start shrink-0 ml-auto gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -129,31 +352,105 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const mainContent = (
         <>
+            {/* Tab-Leiste: overflow-x-auto raus (eine versteckt scrollende Leiste ist
+                keine Loesung), flex-wrap + min-w-0 rein -- reicht der Platz nicht,
+                rutschen die Reiter in eine zweite Zeile statt seitlich zu verschwinden. */}
+            <div className="flex items-center gap-1 border-b border-slate-200 mb-4 shrink-0 flex-wrap min-w-0" data-testid="kunde-reiterleiste">
+                {tabs.map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => setActiveTab(tab.key)}
+                        className={cn(
+                            'flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px whitespace-nowrap',
+                            activeTab === tab.key
+                                ? 'text-rose-600 border-b-2 border-rose-500'
+                                : 'text-slate-500 hover:text-slate-700'
+                        )}
+                    >
+                        {tab.icon}
+                        {tab.label}
+                        <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{tab.count}</span>
+                    </button>
+                ))}
+            </div>
+
+            {/* Tab-Inhalt */}
             <div className="flex-1 min-h-0 relative">
                 <div className="absolute inset-0 overflow-y-auto pr-2">
-                    <EmailsTab
-                        emails={(kunde.kommunikation || []).map(k => ({
-                            id: k.id,
-                            subject: k.subject,
-                            fromAddress: k.absender,
-                            to: k.empfaenger,
-                            bodyPreview: k.snippet,
-                            bodyHtml: k.body,
-                            direction: k.direction,
-                            sentAt: k.zeitpunkt,
-                            attachments: (k.attachments || []).map(a => ({
-                                id: a.id,
-                                originalFilename: a.filename,
-                                filename: a.filename,
-                                url: a.url,
-                            })),
-                            parentEmailId: k.parentEmailId,
-                            replyCount: k.replyCount,
-                        }))}
-                        kundeId={kunde.id}
-                        showComposeButton={false}
-                        showReplyButton={false}
-                    />
+                    {activeTab === 'emails' && (
+                        <EmailsTab
+                            emails={(kunde.kommunikation || []).map(k => ({
+                                id: k.id,
+                                subject: k.subject,
+                                fromAddress: k.absender,
+                                to: k.empfaenger,
+                                bodyPreview: k.snippet,
+                                bodyHtml: k.body,
+                                direction: k.direction,
+                                sentAt: k.zeitpunkt,
+                                zustellStatus: k.zustellStatus,
+                                zustellFehler: k.zustellFehler,
+                                attachments: (k.attachments || []).map(a => ({
+                                    id: a.id,
+                                    originalFilename: a.filename,
+                                    filename: a.filename,
+                                    url: a.url,
+                                })),
+                                parentEmailId: k.parentEmailId,
+                                replyCount: k.replyCount,
+                            }))}
+                            kundeId={kunde.id}
+                            showComposeButton={false}
+                            showReplyButton={false}
+                        />
+                    )}
+
+                    {activeTab === 'projekte' && (
+                        projekte.length === 0 ? (
+                            <KartenLeerzustand icon={<Briefcase className="w-12 h-12" />} text="Keine Projekte vorhanden." />
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {projekte.map(p => (
+                                    <KundenProjektKarte key={p.id} projekt={p} onOpen={() => navigate(`/projekte?projektId=${p.id}`)} />
+                                ))}
+                            </div>
+                        )
+                    )}
+
+                    {activeTab === 'anfragen' && (
+                        anfragen.length === 0 ? (
+                            <KartenLeerzustand icon={<FileText className="w-12 h-12" />} text="Keine Anfragen vorhanden." />
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {anfragen.map(a => (
+                                    <KundenAnfrageKarte key={a.id} anfrage={a} onOpen={() => navigate(`/anfragen?anfrageId=${a.id}`)} />
+                                ))}
+                            </div>
+                        )
+                    )}
+
+                    {activeTab === 'dokumente' && (
+                        dokumente.length === 0 ? (
+                            <KartenLeerzustand icon={<Receipt className="w-12 h-12" />} text="Keine Geschäftsdokumente vorhanden." />
+                        ) : (
+                            <div className="space-y-3">
+                                {dokumente.map(d => (
+                                    <KundenDokumentKarte
+                                        key={d.id}
+                                        dok={d}
+                                        onOpen={() => {
+                                            if (d.projektId) navigate(`/projekte?projektId=${d.projektId}`);
+                                            else if (d.anfrageId) navigate(`/anfragen?anfrageId=${d.anfrageId}`);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        )
+                    )}
+
+                    {activeTab === 'notizen' && (
+                        <KundeNotizenTab kundeId={kunde.id} notizen={kunde.notizen || []} />
+                    )}
                 </div>
             </div>
         </>
@@ -166,45 +463,69 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                 Kontaktdaten
             </h2>
             <div className="space-y-4">
+                {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
+                    unten (Nachtrag Abschnitt 5) -- nacktes <div> ohne min-w-0,
+                    Wert-<p> ohne break-words, Icon ohne shrink-0. Gleiches Muster
+                    wie LieferantenEditor.tsx Z. 315/324 und die ganze SideInfo von
+                    MitarbeiterEditor.tsx: min-w-0 flex-1 am umschliessenden <div>,
+                    break-words am Wert, shrink-0 am Icon. */}
                 {kunde.ansprechspartner && (
                     <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                        <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                        <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                             <User className="w-4 h-4" />
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Ansprechpartner</p>
-                            <p className="font-medium text-slate-900">{kunde.ansprechspartner}</p>
+                            <p className="font-medium text-slate-900 break-words">{kunde.ansprechspartner}</p>
                         </div>
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Phone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Telefon</p>
-                        <p className="font-medium text-slate-900">{kunde.telefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.telefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Smartphone className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Mobiltelefon</p>
-                        <p className="font-medium text-slate-900">{kunde.mobiltelefon || '-'}</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.mobiltelefon || '-'}</p>
                     </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />
                     </div>
-                    <div>
+                    {/* min-w-0 flex-1 (Task 12, Einheitlichkeit): "flex-1" war
+                        hier bis Task 11 entfernt, weil der Design-Reviewer
+                        gemessen hat, dass es fuer den Ueberlauf wirkungslos ist
+                        (Geometrie mit/ohne "flex-1" auf den Pixel identisch).
+                        Das stimmt, macht die Zeile aber zur einzigen
+                        Abweichung von den vier Geschwistern (Ansprechpartner,
+                        Telefon, Mobiltelefon, Zahlungsziel) -- zwei Muster
+                        nebeneinander in derselben Spalte. "flex-1" schadet
+                        nicht (es aendert nichts an der Breite, siehe Messung
+                        oben), deshalb hier wieder rein: ein Muster pro Spalte
+                        ist wichtiger als die zwei nutzlosen Zeichen zu sparen.
+                        min-w-0 bleibt der Teil, der tatsaechlich traegt. */}
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">E-Mail</p>
                         <div className="flex flex-col">
                             {kunde.kundenEmails && kunde.kundenEmails.length > 0 ? (
                                 kunde.kundenEmails.map(email => (
-                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline">{email}</a>
+                                    // break-words statt truncate: eine E-Mail-Adresse ist
+                                    // keine Ueberschrift, die man kuerzen darf -- lieber
+                                    // umbrechen lassen als in der schmalen
+                                    // Kontaktdaten-Spalte abzuschneiden. Projekt, Anfrage
+                                    // und Lieferant sind an der gleichen Stelle laengst so
+                                    // gebaut -- das ist die letzte der vier.
+                                    <a key={email} href={`mailto:${email}`} className="font-medium text-rose-600 hover:underline break-words block">{email}</a>
                                 ))
                             ) : (
                                 <span className="text-slate-400">-</span>
@@ -213,14 +534,19 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     </div>
                 </div>
 
-                {/* Zahlungsziel */}
+                {/* Zahlungsziel -- trug die Rezeptur bisher gar nicht (Task 12,
+                    Einheitlichkeit): shrink-0 am Icon, min-w-0 flex-1 am
+                    Wert-Container, break-words am Wert, wie die vier
+                    Geschwister-Zeilen oben. Der Wert ist zwar heute nur eine
+                    kurze Zahl, aber dieselbe Spalte soll durchgehend ein
+                    Muster tragen statt zwei nebeneinander. */}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400">
+                    <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <CreditCard className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Zahlungsziel</p>
-                        <p className="font-medium text-slate-900">{kunde.zahlungsziel ?? 8} Tage</p>
+                        <p className="font-medium text-slate-900 break-words">{kunde.zahlungsziel ?? 8} Tage</p>
                     </div>
                 </div>
             </div>
@@ -382,8 +708,8 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
                 <div className="p-6 space-y-6">
                     <div className="flex items-center justify-between gap-3">
                         <div>
@@ -572,8 +898,10 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
     const ortText = [kunde.plz, kunde.ort].filter(Boolean).join(' ');
 
     return (
-        <Card className="p-4 cursor-pointer hover:border-rose-200 hover:shadow-md transition-all bg-white" onClick={onSelect}>
-            <div className="space-y-3">
+        <Card className="p-4 cursor-pointer hover:border-rose-200 hover:shadow-md transition-all bg-white h-full flex flex-col" onClick={onSelect}>
+            {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+                ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard). */}
+            <div className="gap-3 flex-1 flex flex-col">
                 <div>
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase text-slate-500 tracking-wide">{kunde.kundennummer || 'ohne Nr.'}</p>
@@ -585,18 +913,55 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                             {kunde.hatProjekte ? 'Kunde' : 'Anfrager'}
                         </span>
                     </div>
-                    <h3 className="font-semibold text-slate-900 truncate">{kunde.name || '-'}</h3>
-                    {ortText && <p className="text-sm text-slate-500">{ortText}</p>}
+                    {/* line-clamp-2 statt truncate (Spec E.3, Kartentitel-Ausnahme):
+                        ein langer Kundenname (Spec-Befund 4) bricht auf zwei Zeilen um
+                        statt einzeilig abgehackt zu werden, title traegt den vollen Namen.
+                        Kein min-h-[3rem] mehr (Nacharbeit Abschnitt 4, Design-Review-Befund) --
+                        gleiche Kartenhoehe kommt ueber h-full flex flex-col an der Karte
+                        und mt-auto am Meta-Block unten. */}
+                    <h3 className="font-semibold text-slate-900 line-clamp-2" title={kunde.name || '-'} data-kuerzung-erlaubt>{kunde.name || '-'}</h3>
+                    {/* break-words (Task 12, zweiter Mechanismus): reiner
+                        Block-<p> ohne break-words -- ein langer Ortsname malt
+                        sonst rechts heraus statt mit dem Kasten mitzuwachsen. */}
+                    {ortText && <p className="text-sm text-slate-500 break-words">{ortText}</p>}
                 </div>
-                <div className="text-sm text-slate-600 space-y-1">
+                <div className="text-sm text-slate-600 space-y-1 mt-auto">
+                    {/* Task 11 (Abschnitt 7): dieselbe Luecke wie bei der E-Mail-Zeile
+                        zwei Zeilen weiter unten -- ein anonymes Flex-Item mit
+                        min-width: auto, das overflow-wrap: break-word nicht senkt.
+                        Diese Karte ist ausserdem die einzige der sechs ohne
+                        overflow-hidden, ein ueberlaufender Wert schiebt also nicht
+                        nur sich selbst, sondern die ganze Karte und main auf.
+                        Gleiches Muster wie bei der E-Mail-Zeile: Text in ein
+                        <span className="min-w-0 break-words"> fassen, Icon shrink-0. */}
                     {kunde.ansprechspartner && (
-                        <p className="flex items-center gap-2"><User className="w-4 h-4 text-rose-400" />{kunde.ansprechspartner}</p>
+                        <p className="flex items-center gap-2">
+                            <User className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.ansprechspartner}</span>
+                        </p>
                     )}
                     {kunde.telefon && (
-                        <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-rose-400" />{kunde.telefon}</p>
+                        <p className="flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.telefon}</span>
+                        </p>
                     )}
                     {kunde.kundenEmails?.[0] && (
-                        <p className="flex items-center gap-2 truncate"><Mail className="w-4 h-4 text-rose-400" />{kunde.kundenEmails[0]}</p>
+                        // Nachtrag Abschnitt 5 (Task 9, Design-Review Runde 2,
+                        // Befund 2): break-words allein (Nachbesserung 1) reichte
+                        // nicht -- der Text war ein ANONYMES Flex-Item (direkter
+                        // Text-Node in "flex items-center gap-2") mit
+                        // min-width: auto, und overflow-wrap: break-word senkt
+                        // diese Mindestbreite nicht (nur break-all/anywhere tun
+                        // das, siehe .claude/skills/loese-problem/references/
+                        // kriterien.md). Fix: Text in ein eigenes <span> mit
+                        // min-w-0 fassen, dann greift break-words wie beim
+                        // <h1>-Fix aus Abschnitt 4. Kein title als
+                        // Rueckfallweg -- lieber umbrechen.
+                        <p className="flex items-center gap-2">
+                            <Mail className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span className="min-w-0 break-words">{kunde.kundenEmails[0]}</span>
+                        </p>
                     )}
                 </div>
             </div>
@@ -662,7 +1027,14 @@ export const Kundeneditor: React.FC = () => {
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen in den Filterfeldern
+    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte Antwort
+    // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
+    const ladeVorgangRef = useRef(0);
+
     const fetchKunden = useCallback(async () => {
+        const ladeVorgang = ++ladeVorgangRef.current;
+        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -676,14 +1048,16 @@ export const Kundeneditor: React.FC = () => {
             if (!res.ok) throw new Error('Laden fehlgeschlagen');
 
             const data = await res.json();
+            if (!istAktuell()) return;
             setKunden(Array.isArray(data?.kunden) ? data.kunden : []);
             setTotal(typeof data?.gesamt === 'number' ? data.gesamt : 0);
         } catch (err) {
             console.warn('Kunden konnten nicht geladen werden', err);
+            if (!istAktuell()) return;
             setKunden([]);
             setTotal(0);
         } finally {
-            setLoading(false);
+            if (istAktuell()) setLoading(false);
         }
     }, [page, filters]);
 
@@ -691,14 +1065,29 @@ export const Kundeneditor: React.FC = () => {
         fetchKunden();
     }, [fetchKunden]);
 
+    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
+    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
+    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
+    // `total` noch der alte Wert.
+    useEffect(() => {
+        if (loading) return;
+        const letzteSeite = totalPages - 1;
+        if (page > letzteSeite) setPage(letzteSeite);
+    }, [loading, totalPages, page]);
+
+    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
+    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
+    // Treffer wären da, aber unsichtbar.
     const handleFilterChange = (field: keyof FilterState, value: string) => {
         setFilters(prev => ({ ...prev, [field]: value }));
+        setPage(0);
     };
 
+    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
+    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
     const handleFilterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPage(0);
-        fetchKunden();
     };
 
     const handleResetFilters = () => {
@@ -820,7 +1209,7 @@ export const Kundeneditor: React.FC = () => {
                 <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Freitext</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, E-Mail, Nummer, Straße..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
+                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Name, Telefon, E-Mail, Nummer, Straße..." value={filters.q} onChange={e => handleFilterChange('q', e.target.value)} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Kundennummer</label>
@@ -840,9 +1229,9 @@ export const Kundeneditor: React.FC = () => {
                             className="w-full mt-1"
                         />
                     </div>
-                    <div className="flex items-end gap-3">
-                        <button type="submit" className="btn flex-1 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700">Filtern</button>
-                        <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Reset</button>
+                    {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
+                    <div className="flex items-end">
+                        <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Filter zurücksetzen</button>
                     </div>
                 </form>
                 <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
@@ -857,7 +1246,10 @@ export const Kundeneditor: React.FC = () => {
                     Keine Kunden gefunden.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                // xl:grid-cols-4 -> 2xl:grid-cols-4 (Spec-Befund 4): bei 1440 drei
+                // breitere Karten (Platz fuer den zweizeiligen Titel), ab 1536 wieder
+                // vier -- 1920 sieht dadurch unveraendert aus.
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                     {kunden.map(kunde => (
                         <KundenKarte key={kunde.id} kunde={kunde} onSelect={() => handleOpenDetail(kunde)} />
                     ))}

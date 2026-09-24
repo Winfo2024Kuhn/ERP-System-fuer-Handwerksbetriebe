@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
     ArrowLeft,
@@ -13,7 +13,6 @@ import {
     MapPin,
     Plus,
     RefreshCw,
-    Search,
     User,
     Building2,
     X,
@@ -45,16 +44,28 @@ import type {
 import { DokumentHierarchie } from "../components/DokumentHierarchie";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { ImageViewer } from "../components/ui/image-viewer";
+import { ThumbnailImage } from "../components/ui/ThumbnailImage";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
+
+type AnfrageDetailTab = 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen';
+const ALLOWED_ANFRAGE_TABS: ReadonlyArray<AnfrageDetailTab> =
+    ['emails', 'geschaeftsdokumente', 'dokumente', 'beschreibung', 'notizen'];
+function parseTab(raw: string | null): AnfrageDetailTab | undefined {
+    return raw && (ALLOWED_ANFRAGE_TABS as readonly string[]).includes(raw)
+        ? raw as AnfrageDetailTab
+        : undefined;
+}
 
 // Notizen Interfaces
 interface AnfrageNotizBild {
     id: number;
     originalDateiname: string;
     url: string;
+    /** Verkleinertes Vorschaubild (max. 300 px) für die Kachelansicht. */
+    thumbnailUrl?: string;
     erstelltAm: string;
 }
 interface AnfrageNotiz {
@@ -160,12 +171,16 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
     return (
         <Card
             className={cn(
-                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden",
+                "group relative cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white overflow-hidden h-full flex flex-col",
                 anfrage.abgeschlossen && "opacity-60 bg-slate-50"
             )}
             onClick={onClick}
         >
-            <div className="p-4 space-y-3">
+            {/* Nachbesserung 1 (Design-Review): space-y-3 -> gap-3, siehe
+                ausfuehrlicher Kommentar in ProjektEditor.tsx (ProjektCard) --
+                space-y-3s "> * + *"-Selektor (Spezifitaet 0-3-0) schlaegt
+                mt-auto (0-1-0) am Meta-Block nieder, gap-3 nicht. */}
+            <div className="p-4 gap-3 flex-1 flex flex-col">
                 <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -189,10 +204,31 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
                                 </span>
                             )}
                         </div>
-                        <h3 className="font-semibold text-slate-900 mt-2 truncate text-base" title={anfrage.bauvorhaben}>
+                        {/*
+                          truncate (einzeilig) -> line-clamp-2 (Plan Task 4,
+                          Spec D): der volle Name bleibt lesbar statt nach
+                          wenigen Zeichen abzureissen, data-kuerzung-erlaubt
+                          markiert die (einzig hier gewollte) Kuerzung -- der
+                          volle Name steht weiterhin im title-Attribut. Kein
+                          min-h-[3rem] mehr (Nacharbeit Abschnitt 4,
+                          Design-Review-Befund: 24px-Luecke bei kurzen Titeln) --
+                          gleiche Kartenhoehe kommt ueber h-full flex flex-col an
+                          der Karte und mt-auto am Meta-Block unten.
+                        */}
+                        <h3
+                            className="font-semibold text-slate-900 mt-2 line-clamp-2 text-base"
+                            title={anfrage.bauvorhaben}
+                            data-kuerzung-erlaubt
+                        >
                             {anfrage.bauvorhaben || "Unbenannt"}
                         </h3>
-                        <p className="text-sm text-slate-500 truncate">{anfrage.kundenName || "Kein Kunde"}</p>
+                        {/*
+                          Kein sanktionierter Kuerzungsfall (nur Kartentitel
+                          und Menueleisten-Anzeigename duerfen mit "…"
+                          abschneiden, siehe Global Constraints) -- deshalb
+                          hier umbrechen lassen statt truncate + Marker.
+                        */}
+                        <p className="text-sm text-slate-500 break-words">{anfrage.kundenName || "Kein Kunde"}</p>
                     </div>
                     {/* Checkbox zum Beenden */}
                     <div
@@ -212,11 +248,13 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
                     </div>
                 </div>
 
-                <div className="space-y-1 pt-2 border-t border-slate-50">
+                <div className="space-y-1 pt-2 border-t border-slate-50 mt-auto">
                     {anfrage.anfragesnummer && (
                         <div className="flex items-center gap-2 text-sm text-slate-600">
                             <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                            <span className="truncate">{anfrage.anfragesnummer}</span>
+                            {/* min-w-0 + break-words statt truncate (Task 12, Einheitlichkeit):
+                                gleiche Rezeptur wie die Projekt-Uebersichtskarte. */}
+                            <span className="min-w-0 break-words">{anfrage.anfragesnummer}</span>
                         </div>
                     )}
                     <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -271,14 +309,19 @@ const KundenAuswahlView: React.FC<{
         }
     }, [searchTerm]);
 
+    // Gesucht wird live beim Tippen. Die kurze Pause bündelt schnelle Eingaben,
+    // damit nicht jeder Tastenanschlag einen Request auslöst.
     useEffect(() => {
-        searchKunden();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        const timer = setTimeout(() => {
+            searchKunden();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm, searchKunden]);
 
+    // Enter im Suchfeld darf das Formular nicht abschicken – sonst lädt der Browser
+    // die Seite neu. Gesucht wird ohnehin schon live.
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        searchKunden();
     };
 
     return (
@@ -298,10 +341,6 @@ const KundenAuswahlView: React.FC<{
                     placeholder="Kunde suchen (Name, Kundennummer)..."
                     className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
-                <Button type="submit" size="sm" className="bg-rose-600 text-white hover:bg-rose-700">
-                    <Search className="w-4 h-4 mr-1" />
-                    Suchen
-                </Button>
             </form>
 
             <div className="max-h-[300px] overflow-y-auto space-y-2">
@@ -322,17 +361,17 @@ const KundenAuswahlView: React.FC<{
                             onClick={() => onSelect(kunde)}
                             className="p-3 border border-slate-200 rounded-lg hover:border-rose-300 hover:bg-rose-50 cursor-pointer transition-colors group"
                         >
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <p className="font-medium text-slate-900">{kunde.name}</p>
-                                    <p className="text-sm text-slate-500">{kunde.kundennummer}</p>
+                            <div className="flex justify-between items-center gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-medium text-slate-900 break-words">{kunde.name}</p>
+                                    <p className="text-sm text-slate-500 break-words">{kunde.kundennummer}</p>
                                     {(kunde.strasse || kunde.ort) && (
-                                        <p className="text-xs text-slate-400">
+                                        <p className="text-xs text-slate-400 break-words">
                                             {[kunde.strasse, [kunde.plz, kunde.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
                                         </p>
                                     )}
                                 </div>
-                                <Check className="w-5 h-5 text-rose-600 opacity-0 group-hover:opacity-100" />
+                                <Check className="w-5 h-5 text-rose-600 opacity-0 group-hover:opacity-100 shrink-0" />
                             </div>
                         </div>
                     ))
@@ -536,10 +575,10 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                                 </label>
                                 {selectedKunde ? (
                                     <div className="flex items-center gap-3 p-3 bg-rose-50 border border-rose-200 rounded-lg">
-                                        <Building2 className="w-5 h-5 text-rose-600" />
-                                        <div className="flex-1">
-                                            <p className="font-medium text-slate-900">{selectedKunde.name}</p>
-                                            <p className="text-sm text-slate-500">{selectedKunde.kundennummer}</p>
+                                        <Building2 className="w-5 h-5 text-rose-600 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-slate-900 break-words">{selectedKunde.name}</p>
+                                            <p className="text-sm text-slate-500 break-words">{selectedKunde.kundennummer}</p>
                                         </div>
                                         <Button
                                             size="sm"
@@ -664,12 +703,26 @@ interface AnfrageDetailViewProps {
     onEdit: () => void;
     onRefresh: () => void;
     onDeleted?: () => void;
+    initialTab?: AnfrageDetailTab;
 }
 
-const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, onEdit, onRefresh, onDeleted }) => {
+const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, onEdit, onRefresh, onDeleted, initialTab }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
-    const [activeTab, setActiveTab] = useState<'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen'>('emails');
+    const [, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTabState] = useState<AnfrageDetailTab>(initialTab ?? 'emails');
+    // Wrapper: hält den aktiven Tab als ?tab= in der URL, damit das Notification-Center
+    // gezielt deeplinken kann und der Tab beim Reload erhalten bleibt.
+    // Functional-Updater liest immer den aktuellsten Param-Snapshot, sodass diese
+    // Callback-Identität stabil bleibt und nicht bei jedem URL-Change neu erzeugt wird.
+    const setActiveTab = useCallback((tab: AnfrageDetailTab) => {
+        setActiveTabState(tab);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', tab);
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
     const [kurzbeschreibung, setKurzbeschreibung] = useState(anfrage.kurzbeschreibung || '');
     const [savingDesc, setSavingDesc] = useState(false);
 
@@ -934,19 +987,36 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const adresse = [anfrage.projektStrasse, anfrage.projektPlz, anfrage.projektOrt].filter(Boolean).join(', ');
 
     // Header Card
+    // Bauweise wie in ProjektEditor.tsx (Task 3, Plan Abschnitt 3): das
+    // aeussere div wird flex-wrap statt starr xl:flex-row -- reicht der Platz
+    // nicht, rutschen zuerst die Kennzahlen in eine zweite Zeile unter den
+    // Titel, nie die Knoepfe aus der Karte.
     const header = (
         <Card className="p-6">
-            <div className="flex flex-col xl:flex-row gap-8 justify-between">
-                <div className="flex items-start gap-4">
+            <div className="flex flex-wrap items-start gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-[18rem]">
                     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 h-auto py-1 self-start">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                     <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl font-bold shrink-0">
                         <FileText className="w-8 h-8" />
                     </div>
-                    <div>
+                    {/* min-w-0: das aeussere flex-1 min-w-[18rem] deckelt nur den
+                        Titelblock als Ganzes -- dieser innere div behaelt sonst
+                        min-width: auto und wird trotz break-words auf der <h1>
+                        von einem langen Komposita-Bauvorhaben ueber die 18rem
+                        hinausgedrueckt (Nacharbeit Abschnitt 4, Rezeptur). */}
+                    <div className="min-w-0">
+                        {/* Nachbesserung 1 (Design-Review, 🔴): min-w-0 auf dem
+                            umschliessenden div reicht bei EINEM einzigen langen
+                            Wort nicht -- die <h1> ist selbst Flex-Item in der
+                            Zeile darunter und behaelt ihr eigenes min-width:
+                            auto. break-words senkt die Mindestinhaltsbreite
+                            eines Flex-Items nicht, nur min-w-0 auf dem Element
+                            selbst tut das. Siehe ausfuehrlicher Kommentar in
+                            ProjektEditor.tsx. */}
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-2xl font-bold text-slate-900">{anfrage.bauvorhaben}</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 break-words min-w-0">{anfrage.bauvorhaben}</h1>
                             {anfrage.anfragesnummer && (
                                 <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-rose-50 text-rose-700 border-rose-200">
                                     Anfrage {anfrage.anfragesnummer}
@@ -958,27 +1028,36 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                                 </span>
                             )}
                         </div>
+                        {/* Task 12 (zweiter Mechanismus): siehe ausfuehrlicher
+                            Kommentar in ProjektEditor.tsx -- "break-words" senkt
+                            die automatische Mindestbreite eines Flex-Items
+                            nicht (nur "overflow-wrap: anywhere" tut das), daher
+                            braucht der Wert einen eigenen <span> mit min-w-0. */}
                         <div className="mt-1 text-slate-500 space-y-0.5">
-                            {anfrage.kundenName && <p className="flex items-center gap-2"><User className="w-4 h-4" /> {anfrage.kundenName}</p>}
-                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {adresse}</p>}
-                            {anfrage.anlegedatum && <p className="flex items-center gap-2"><Calendar className="w-4 h-4" /> {formatDate(anfrage.anlegedatum)}</p>}
+                            {anfrage.kundenName && <p className="flex items-center gap-2"><User className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{anfrage.kundenName}</span></p>}
+                            {adresse && <p className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{adresse}</span></p>}
+                            {anfrage.anlegedatum && <p className="flex items-center gap-2"><Calendar className="w-4 h-4 shrink-0" /> <span className="min-w-0 break-words">{formatDate(anfrage.anlegedatum)}</span></p>}
                         </div>
                     </div>
                 </div>
 
                 {/* Stats Row */}
-                <div className="flex items-center gap-6 flex-1 max-w-2xl">
-                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200">
+                <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
+                    <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Brutto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(anfrage.betrag)}</p>
                     </div>
-                    <div className="flex flex-col items-center px-4 py-2">
+                    <div className="flex flex-col items-center px-4 py-2 min-w-[7rem]">
                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Netto</p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(nettoPreis)}</p>
                     </div>
                 </div>
 
-                <div className="flex items-start gap-2">
+                {/* ml-auto: ohne das faellt der Knopfblock beim Umbruch an den
+                    linken Kartenrand statt nach rechts (Rezeptur, Nacharbeit
+                    Abschnitt 4 -- am Projekt-Editor gemessen: x=89 statt x=961
+                    bei 1440px). */}
+                <div className="shrink-0 ml-auto flex flex-wrap items-start gap-2">
                     <Button variant="outline" onClick={onEdit}>
                         <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
                     </Button>
@@ -999,11 +1078,16 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const mainContent = (
         <>
             {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
+            {/*
+              overflow-x-auto raus, flex-wrap + min-w-0 rein: eine versteckt
+              scrollende Reiterleiste ist keine Loesung -- lieber umbrechen
+              (Plan Task 4, Spec B). Innenabstand der Reiter von px-4 auf px-3.
+            */}
+            <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-2 min-w-0">
                 <button
                     onClick={() => setActiveTab('emails')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'emails'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1015,7 +1099,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'geschaeftsdokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1027,7 +1111,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('dokumente')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'dokumente'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1039,7 +1123,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('beschreibung')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'beschreibung'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1051,14 +1135,22 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 <button
                     onClick={() => setActiveTab('notizen')}
                     className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
+                        "px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap",
                         activeTab === 'notizen'
                             ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                             : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                     )}
                 >
                     <StickyNote className="w-4 h-4 inline-block mr-2" />
-                    Bau Tagebuch ({notizen.length})
+                    {/* "Bau Tagebuch" -> "Tagebuch" (Nacharbeit Abschnitt 4,
+                        Design-Review-Hinweis 6): der Projekt-Editor sagt seit
+                        Abschnitt 3 nur noch "Tagebuch" -- zwei Namen fuer
+                        dieselbe Sache. Die Anfrage hat genug Platz, der kuerzere
+                        Name ist trotzdem der bessere. Die Ueberschrift im
+                        Tab-Inhalt ("Bau Tagebuch") wurde in Nachbesserung 1
+                        ebenfalls auf "Tagebuch" gezogen (Design-Review 🟡,
+                        Projekt-Editor gleich mit). */}
+                    Tagebuch ({notizen.length})
                 </button>
             </div>
 
@@ -1097,6 +1189,8 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         bodyPreview: e.body,
                         direction: e.direction as 'IN' | 'OUT',
                         sentAt: e.sentAt,
+                        zustellStatus: e.zustellStatus,
+                        zustellFehler: e.zustellFehler,
                         parentEmailId: e.parentEmailId ?? e.parentId,
                         replyCount: e.replyCount,
                         attachments: e.attachments?.map((att) => ({
@@ -1136,7 +1230,6 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     allowedTypes={['ANGEBOT', 'AUFTRAGSBESTAETIGUNG']}
                     hideRechnungActions={true}
                     onRefresh={loadAusgangsDokumente}
-                    confirmDialog={confirmDialog}
                     toast={toast}
                 />
             )}
@@ -1146,7 +1239,10 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
             {activeTab === 'notizen' && (
                 <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-medium text-slate-900">Bau Tagebuch</h3>
+                        {/* "Bau Tagebuch" -> "Tagebuch" (Nachbesserung 1,
+                            Design-Review 🟡): passend zum Reiter, der seit
+                            dieser Nacharbeit nur noch "Tagebuch" heisst. */}
+                        <h3 className="text-lg font-medium text-slate-900">Tagebuch</h3>
                         <Button onClick={openCreateNotizModal} className="bg-rose-600 text-white hover:bg-rose-700">
                             <Plus className="w-4 h-4 mr-2" /> Neuer Eintrag
                         </Button>
@@ -1156,6 +1252,17 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         {notizen.length > 0 ? (
                             notizen.map((n) => (
                                 <div key={n.id} className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm relative group">
+                                    {/* Struktur (Nacharbeit Abschnitt 9, Design-/Code-Review Abschnitt 8):
+                                        Zeichen fuer Zeichen dem ProjektEditor.tsx angeglichen. Vorher steckten
+                                        Notiz-<p>, Bilder und Bild-Upload ALLE als weitere Flex-Items in dieser
+                                        "flex justify-between items-start mb-2"-Kopfzeile, und der Knopfblock
+                                        (Bearbeiten/Loeschen) war zusaetzlich im Autorenblock verschachtelt.
+                                        break-words am Notiz-<p> war dadurch wirkungslos (319px Zeilen- und
+                                        208px Karten-Ueberstand bei einem 120-Zeichen-Wort, auf den Pixel
+                                        identisch mit und ohne die Klasse) -- ein Flex-Item ohne min-w-0 behaelt
+                                        seine automatische Mindestbreite. Fix: die Kopfzeile schliesst jetzt
+                                        direkt nach dem Knopfblock, Notiz/Bilder/Upload sind Geschwister der
+                                        Kopfzeile und damit normale Bloecke, kein Flex-Item mehr. */}
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-xs uppercase">
@@ -1181,86 +1288,87 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
-                                                    onClick={() => openEditNotizModal(n)}
-                                                    title="Bearbeiten"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
-                                                    onClick={() => handleDeleteNotiz(n.id)}
-                                                    title="Löschen"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </div>
                                         </div>
-                                        <p className="text-slate-700 whitespace-pre-wrap text-sm">{n.notiz}</p>
+                                        <div className="flex gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
+                                                onClick={() => openEditNotizModal(n)}
+                                                title="Bearbeiten"
+                                            >
+                                                <Edit2 className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
+                                                onClick={() => handleDeleteNotiz(n.id)}
+                                                title="Löschen"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <p className="text-slate-700 whitespace-pre-wrap text-sm break-words">{n.notiz}</p>
 
-                                        {/* Bilder */}
-                                        {n.bilder && n.bilder.length > 0 && (
-                                            <div className="mt-3 grid grid-cols-4 gap-2">
-                                                {n.bilder.map(bild => (
-                                                    <div key={bild.id} className="relative group/img">
-                                                        <button
-                                                            onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
-                                                            className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
-                                                        >
-                                                            <img
-                                                                src={bild.url}
-                                                                alt={bild.originalDateiname}
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleNotizBildDelete(n.id, bild.id)}
-                                                            className="absolute top-1 right-1 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow opacity-0 group-hover/img:opacity-100 transition-opacity"
-                                                            title="Bild löschen"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                    {/* Bilder */}
+                                    {n.bilder && n.bilder.length > 0 && (
+                                        <div className="mt-3 grid grid-cols-4 gap-2">
+                                            {n.bilder.map(bild => (
+                                                <div key={bild.id} className="relative group/img">
+                                                    <button
+                                                        onClick={() => setNotizBildViewer({ images: n.bilder!.map(b => ({ url: b.url, name: b.originalDateiname })), startIndex: n.bilder!.indexOf(bild) })}
+                                                        className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
+                                                    >
+                                                        <ThumbnailImage
+                                                            src={bild.thumbnailUrl || bild.url}
+                                                            fallbackSrc={bild.url}
+                                                            alt={bild.originalDateiname}
+                                                            className="object-cover"
+                                                        />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleNotizBildDelete(n.id, bild.id)}
+                                                        className="absolute top-1 right-1 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow opacity-0 group-hover/img:opacity-100 transition-opacity"
+                                                        title="Bild löschen"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
 
-                                        {/* Bild Upload */}
-                                        <div className="mt-3 flex items-center gap-2">
-                                            {uploadingNotizBildId === n.id ? (
-                                                <span className="text-rose-600 text-sm flex items-center gap-2">
-                                                    <RefreshCw className="w-4 h-4 animate-spin mr-1" />
-                                                    Wird hochgeladen...
-                                                </span>
-                                            ) : (
-                                                <label className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors">
-                                                    <Upload className="w-3.5 h-3.5" />
-                                                    Bild hinzufügen
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        multiple
-                                                        className="hidden"
-                                                        onChange={async (e) => {
-                                                            const files = e.target.files;
-                                                            if (files && files.length > 0) {
-                                                                const fileArray = Array.from(files);
-                                                                for (const file of fileArray) {
-                                                                    await handleNotizBildUpload(n.id, file);
-                                                                }
+                                    {/* Bild Upload */}
+                                    <div className="mt-3 flex items-center gap-2">
+                                        {uploadingNotizBildId === n.id ? (
+                                            <span className="text-rose-600 text-sm flex items-center gap-2">
+                                                <RefreshCw className="w-4 h-4 animate-spin mr-1" />
+                                                Wird hochgeladen...
+                                            </span>
+                                        ) : (
+                                            <label className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors">
+                                                <Upload className="w-3.5 h-3.5" />
+                                                Bild hinzufügen
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    multiple
+                                                    className="hidden"
+                                                    onChange={async (e) => {
+                                                        const files = e.target.files;
+                                                        if (files && files.length > 0) {
+                                                            const fileArray = Array.from(files);
+                                                            for (const file of fileArray) {
+                                                                await handleNotizBildUpload(n.id, file);
                                                             }
-                                                            e.target.value = '';
-                                                        }}
-                                                    />
-                                                </label>
-                                            )}
-                                        </div>
+                                                        }
+                                                        e.target.value = '';
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
                                     </div>
                                 </div>
                             ))
@@ -1347,38 +1455,49 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
         <>
             <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-rose-500" />
-                Anfragesdaten
+                Anfragedaten
             </h2>
+            {/* Task 12 (Abschnitt 8, "zweiter Mechanismus"): jedes dieser <p>
+                war ein reiner Block ohne break-words -- identisch zum Befund
+                in ProjektEditor.tsx, unentdeckt weil hier nie ein langer
+                Komposita-Wert stand. */}
             <div className="space-y-4">
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Kunde</p>
-                    <p className="font-medium text-slate-900">{anfrage.kundenName || '-'}</p>
+                    <p className="font-medium text-slate-900 break-words">{anfrage.kundenName || '-'}</p>
                 </div>
                 {anfrage.kundennummer && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Kundennummer</p>
-                        <p className="font-medium text-slate-900">{anfrage.kundennummer}</p>
+                        <p className="font-medium text-slate-900 break-words">{anfrage.kundennummer}</p>
                     </div>
                 )}
                 {anfrage.kundenAnsprechpartner && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500">Ansprechpartner</p>
-                        <p className="font-medium text-slate-900">{anfrage.kundenAnsprechpartner}</p>
+                        <p className="font-medium text-slate-900 break-words">{anfrage.kundenAnsprechpartner}</p>
                     </div>
                 )}
                 <div className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-xs text-slate-500">Anfragesnummer</p>
-                    <p className="font-medium text-slate-900">{anfrage.anfragesnummer || '-'}</p>
+                    <p className="text-xs text-slate-500">Anfragenummer</p>
+                    <p className="font-medium text-slate-900 break-words">{anfrage.anfragesnummer || '-'}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500">Anlagedatum</p>
-                    <p className="font-medium text-slate-900">{formatDate(anfrage.anlegedatum)}</p>
+                    <p className="font-medium text-slate-900 break-words">{formatDate(anfrage.anlegedatum)}</p>
                 </div>
                 {kundenEmails.length > 0 && (
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Kunden-E-Mails</p>
                         {kundenEmails.map((email) => (
-                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm truncate">
+                            // break-words statt truncate (Nachbesserung 1,
+                            // Design-Review 🟡): dieselbe Kuerzung wie im
+                            // Projekt-Editor (dort in Abschnitt 4 behoben) stand
+                            // hier noch, unentdeckt, weil die eigene Fixture
+                            // kundenEmails: [] setzt und die Stelle nie
+                            // rendert. Schmale rechte Spalte, kein title als
+                            // Rueckfallweg -- lieber umbrechen.
+                            <a key={email} href={`mailto:${email}`} className="block text-rose-600 hover:underline text-sm break-words">
                                 {email}
                             </a>
                         ))}
@@ -1388,13 +1507,17 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                     <div className="p-3 bg-slate-50 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Telefon</p>
                         <div className="space-y-1">
+                            {/* break-words: eine trennstellenlose Ziffernkette
+                                (Task 11: 32-stellige Fixture bei Kunde/
+                                Lieferant) lief hier sonst ueber die schmale
+                                Spalte, genau wie im Projekt-Editor. */}
                             {anfrage.kundenTelefon && (
-                                <a href={`tel:${anfrage.kundenTelefon}`} className="block text-rose-600 hover:underline text-sm">
+                                <a href={`tel:${anfrage.kundenTelefon}`} className="block text-rose-600 hover:underline text-sm break-words">
                                     {anfrage.kundenTelefon}
                                 </a>
                             )}
                             {anfrage.kundenMobiltelefon && (
-                                <a href={`tel:${anfrage.kundenMobiltelefon}`} className="block text-rose-600 hover:underline text-sm">
+                                <a href={`tel:${anfrage.kundenMobiltelefon}`} className="block text-rose-600 hover:underline text-sm break-words">
                                     {anfrage.kundenMobiltelefon} (Mobil)
                                 </a>
                             )}
@@ -1412,8 +1535,8 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                         Projektadresse
                     </h3>
                     <div className="p-3 bg-slate-50 rounded-lg mb-3">
-                        <p className="font-medium text-slate-900">{anfrage.projektStrasse || anfrage.kundenStrasse || '-'}</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="font-medium text-slate-900 break-words">{anfrage.projektStrasse || anfrage.kundenStrasse || '-'}</p>
+                        <p className="text-sm text-slate-600 break-words">
                             {anfrage.projektPlz || anfrage.kundenPlz} {anfrage.projektOrt || anfrage.kundenOrt}
                         </p>
                     </div>
@@ -1471,6 +1594,10 @@ export default function AnfrageEditor() {
     const [page, setPage] = useState(0);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
+    // Tab aus URL (Notification-Center kann ?tab=emails / ?tab=geschaeftsdokumente
+    // schicken). Wird einmal beim Mount übernommen – danach hält die Detail-View
+    // den eigenen State und schreibt selbst in die URL.
+    const [deepLinkTab] = useState<AnfrageDetailTab | undefined>(() => parseTab(searchParams.get('tab')));
 
     // Deep-link: restore detail view from URL param ?anfrageId=123
     const deepLinkProcessed = useRef(false);
@@ -1537,8 +1664,15 @@ export default function AnfrageEditor() {
             .catch(console.error);
     }, []);
 
+    // Laufende Ladevorgänge durchnummerieren: Beim schnellen Tippen im Freitextfeld
+    // starten mehrere Requests gleichzeitig. Ohne diesen Zähler kann eine späte
+    // Antwort auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
+    const ladeVorgangRef = useRef(0);
+
     // Fetch List
     const loadAnfragen = useCallback(async () => {
+        const ladeVorgang = ++ladeVorgangRef.current;
+        const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -1548,6 +1682,9 @@ export default function AnfrageEditor() {
                 params.set("q", filters.q);
             }
             if (filters.jahr) params.set("jahr", filters.jahr);
+            // Angebots-Status filtert das Backend – nur so landen alle Treffer auf den
+            // vorderen Seiten, statt nur die aktuell geladene Seite auszudünnen.
+            if (filters.freigabe !== 'all') params.set("freigabe", filters.freigabe);
 
             const [res, lastAccessed, funnelRes] = await Promise.all([
                 fetch(`/api/anfragen?${params.toString()}`),
@@ -1556,6 +1693,7 @@ export default function AnfrageEditor() {
             ]);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
+            if (!istAktuell()) return;
 
             // Webseiten-Anfragen (Funnel) ganz oben halten — frische Leads sollen
             // sofort sichtbar sein. Innerhalb der Funnel-Gruppe wieder nach
@@ -1593,6 +1731,7 @@ export default function AnfrageEditor() {
                 try {
                     const idsParam = ids.join(',');
                     const statusRes = await fetch(`/api/anfragen/freigabe-status?ids=${encodeURIComponent(idsParam)}`);
+                    if (!istAktuell()) return;
                     if (statusRes.ok) {
                         const statusJson = await statusRes.json();
                         setFreigabeStatusByAnfrageId(statusJson || {});
@@ -1600,19 +1739,23 @@ export default function AnfrageEditor() {
                         setFreigabeStatusByAnfrageId({});
                     }
                 } catch {
-                    setFreigabeStatusByAnfrageId({});
+                    // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
+                    // der aktuelle ist – sonst löscht ein veralteter Request die
+                    // Status-Icons der inzwischen angezeigten Liste.
+                    if (istAktuell()) setFreigabeStatusByAnfrageId({});
                 }
             } else {
                 setFreigabeStatusByAnfrageId({});
             }
         } catch (err) {
             console.error(err);
+            if (!istAktuell()) return;
             setAnfragen([]);
             setTotal(0);
             setFreigabeStatusByAnfrageId({});
             setFunnelAnfrageIds(new Set());
         } finally {
-            setLoading(false);
+            if (istAktuell()) setLoading(false);
         }
     }, [page, filters]);
 
@@ -1654,14 +1797,19 @@ export default function AnfrageEditor() {
     };
 
     // Handlers
+    // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
+    // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
+    // Treffer wären da, aber unsichtbar.
     const handleFilterChange = (key: string, value: string) => {
         setFilters((prev) => ({ ...prev, [key]: value } as typeof prev));
+        setPage(0);
     };
 
+    // Gefiltert wird bereits live beim Tippen/Auswählen. Der Button ist nur noch
+    // die vertraute Bestätigung – er darf keinen zweiten, konkurrierenden Request starten.
     const handleFilterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPage(0);
-        loadAnfragen();
     };
 
     const handleResetFilters = () => {
@@ -1669,22 +1817,19 @@ export default function AnfrageEditor() {
         setPage(0);
     };
 
-    // Frontend-Filter über Freigabe-Status (Backend filtert nur q/jahr).
-    // Wirkt zusätzlich auf die geladenen Anfragen der aktuellen Seite.
-    const sichtbareAnfragen = useMemo(() => {
-        if (filters.freigabe === 'all') return anfragen;
-        return anfragen.filter(a => {
-            const fs = freigabeStatusByAnfrageId[a.id]?.status;
-            if (filters.freigabe === 'accepted') return fs === 'ACCEPTED';
-            if (filters.freigabe === 'pending') return fs === 'PENDING';
-            if (filters.freigabe === 'expired') return fs === 'EXPIRED' || fs === 'REVOKED';
-            return true;
-        });
-    }, [anfragen, freigabeStatusByAnfrageId, filters.freigabe]);
-
     // Handlers (Refactored to loadDetails below)
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
+    // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
+    // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
+    // `total` noch der alte Wert.
+    useEffect(() => {
+        if (loading) return;
+        const letzteSeite = totalPages - 1;
+        if (page > letzteSeite) setPage(letzteSeite);
+    }, [loading, totalPages, page]);
 
     const statusText = useMemo(() => {
         if (loading) return 'Anfragen werden geladen...';
@@ -1740,6 +1885,7 @@ export default function AnfrageEditor() {
             <>
                 <AnfrageDetailView
                     anfrage={selectedAnfrage}
+                    initialTab={deepLinkTab}
                     onBack={() => {
                         setSelectedAnfrage(null);
                         setViewMode('list');
@@ -1769,8 +1915,8 @@ export default function AnfrageEditor() {
     // ==================== LIST VIEW ====================
     return (
         <PageLayout
-            ribbonCategory="Anfragesmanagement"
-            title="ANFRAGESÜBERSICHT"
+            ribbonCategory="Anfragemanagement"
+            title="ANFRAGENÜBERSICHT"
             subtitle="Übersicht und Verwaltung Ihrer Anfragen."
             actions={
                 <>
@@ -1831,26 +1977,27 @@ export default function AnfrageEditor() {
                         />
                     </div>
                     <div className="flex items-end gap-3">
-                        <Button type="submit" className="flex-1 bg-rose-600 text-white hover:bg-rose-700">Filtern</Button>
-                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Reset</Button>
+                        {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
+                        <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Filter zurücksetzen</Button>
                     </div>
                 </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Status-Filter wirkt auf die geladene Seite.</p>
+                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen. Alle Filter gelten für die gesamte Liste, nicht nur für die angezeigte Seite.</p>
             </div>
 
             {/* Grid Content */}
             {loading ? (
                 <div className="text-center py-8 text-slate-500">Anfragen werden geladen...</div>
-            ) : sichtbareAnfragen.length === 0 ? (
+            ) : anfragen.length === 0 ? (
                 <div className="bg-white p-8 rounded-2xl text-center text-slate-500 border-dashed border-2">
                     <FileText className="w-10 h-10 mx-auto mb-2 text-rose-200" />
-                    {filters.freigabe !== 'all' && anfragen.length > 0
-                        ? 'Keine Anfragen mit diesem Status auf der aktuellen Seite.'
-                        : 'Keine Anfragen gefunden.'}
+                    Keine Anfragen gefunden.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {sichtbareAnfragen.map((anfrage) => (
+                /* xl:grid-cols-4 -> 2xl:grid-cols-4 (Plan Task 4, Spec D): bei
+                   1440 drei breitere Karten statt vier zu schmalen, ab 1536
+                   wieder vier. */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+                    {anfragen.map((anfrage) => (
                         <AnfrageCard
                             key={anfrage.id}
                             anfrage={anfrage}

@@ -29,20 +29,39 @@ export interface NotificationSummary {
     recentItems: RecentItemDto[];
 }
 
-const DISMISS_ITEMS_KEY = 'notification_dismissed_items';
+// localStorage statt sessionStorage: dismissed Items überleben Tab-Reloads
+// und Browser-Neustarts. Vorher tauchten weggeklickte Meldungen nach einem
+// Reload regelmäßig wieder auf — Reloads sind im Arbeitsalltag häufig.
+const DISMISS_ITEMS_KEY = 'notification_dismissed_items_v2';
+// sessionStorage reicht: der "alle gesehen bis count X"-Marker ist
+// counter-basiert und macht über Sessions hinweg wenig Sinn.
 const DISMISS_CATS_KEY = 'notification_dismissed_categories';
 
 /**
- * Blendet ein einzelnes Item für die laufende Browser-Sitzung aus.
+ * Erzeugt einen stabilen Dismiss-Key. `link` ist gegenüber `title` zu
+ * bevorzugen, weil das Backend dort die Entitäts-ID encodet
+ * (?dokumentId=…, /emails/inbox/123, ?antragId=…). Titel können dagegen
+ * von Polling zu Polling minimal variieren (Whitespace, Subject-Update,
+ * "In 3 Min."-Zeitstempel) und führten so dazu, dass dismissed Einträge
+ * beim nächsten Refresh als „neu" galten und wieder auftauchten.
  */
-export function dismissItem(type: string, title: string): void {
+function buildItemKey(item: { type: string; link?: string; title?: string }): string {
+    const id = item.link || item.title || '';
+    return `${item.type}::${id}`;
+}
+
+/**
+ * Blendet ein Item dauerhaft aus (überlebt Reload). Erwartet das komplette
+ * Item-DTO, weil nur darüber der stabile Link als Identifier verfügbar ist.
+ */
+export function dismissItem(item: { type: string; link?: string; title?: string }): void {
+    const key = buildItemKey(item);
     try {
-        const raw = sessionStorage.getItem(DISMISS_ITEMS_KEY) || '[]';
+        const raw = localStorage.getItem(DISMISS_ITEMS_KEY) || '[]';
         const items: string[] = JSON.parse(raw);
-        const key = `${type}::${title}`;
         if (!items.includes(key)) {
             items.push(key);
-            sessionStorage.setItem(DISMISS_ITEMS_KEY, JSON.stringify(items));
+            localStorage.setItem(DISMISS_ITEMS_KEY, JSON.stringify(items));
         }
     } catch {
         /* ignore */
@@ -53,13 +72,44 @@ export function dismissItem(type: string, title: string): void {
  * Markiert eine Kategorie als „erledigt": sie verschwindet, bis der Backend-
  * Counter für dieselbe Kategorie wieder über den hier gespeicherten Wert
  * steigt (=es ist ein echter neuer Eintrag dazugekommen).
+ *
+ * Speichert max(prev, count) — niemals zurückgehen, sonst kann ein
+ * zwischenzeitlich um 1 gesunkener Backend-Wert die Kategorie wieder
+ * aufpoppen lassen, obwohl gar nichts wirklich neu war.
  */
 export function dismissCategory(type: string, count: number): void {
     try {
         const raw = sessionStorage.getItem(DISMISS_CATS_KEY) || '{}';
         const map: Record<string, number> = JSON.parse(raw);
-        map[type] = count;
+        const prev = typeof map[type] === 'number' ? map[type] : 0;
+        map[type] = Math.max(prev, count);
         sessionStorage.setItem(DISMISS_CATS_KEY, JSON.stringify(map));
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Räumt verwaiste Dismiss-Keys aus dem localStorage: alles, was im aktuellen
+ * Backend-Snapshot nicht mehr vorkommt, fliegt raus. Wird explizit aus dem
+ * Poll-Pfad aufgerufen, damit `filterDismissed` selbst pure bleibt.
+ *
+ * Sonst würde die Liste über die Zeit unbegrenzt wachsen, weil dismissed
+ * Items niemals expiren.
+ */
+export function gcOrphanedDismissals(currentItems: ReadonlyArray<RecentItemDto>): void {
+    let stored: string[] = [];
+    try {
+        stored = JSON.parse(localStorage.getItem(DISMISS_ITEMS_KEY) || '[]');
+    } catch {
+        return;
+    }
+    if (stored.length === 0) return;
+    const currentKeys = new Set(currentItems.map(item => buildItemKey(item)));
+    const stillRelevant = stored.filter(key => currentKeys.has(key));
+    if (stillRelevant.length === stored.length) return;
+    try {
+        localStorage.setItem(DISMISS_ITEMS_KEY, JSON.stringify(stillRelevant));
     } catch {
         /* ignore */
     }
@@ -70,12 +120,15 @@ export function dismissCategory(type: string, count: number): void {
  * dismissed Kategorien raus, entfernt Items deren Kategorie weg ist, und
  * berechnet den Total-Counter neu, damit die Glocke konsistent zur
  * sichtbaren Liste ist.
+ *
+ * Pure: liest Storage, schreibt nicht. Aufräumen läuft separat über
+ * {@link gcOrphanedDismissals}.
  */
 export function filterDismissed(data: NotificationSummary): NotificationSummary {
     let dismissedItems: string[] = [];
     let dismissedCats: Record<string, number> = {};
     try {
-        dismissedItems = JSON.parse(sessionStorage.getItem(DISMISS_ITEMS_KEY) || '[]');
+        dismissedItems = JSON.parse(localStorage.getItem(DISMISS_ITEMS_KEY) || '[]');
     } catch {
         /* ignore */
     }
@@ -84,6 +137,8 @@ export function filterDismissed(data: NotificationSummary): NotificationSummary 
     } catch {
         /* ignore */
     }
+    const dismissedItemSet = new Set(dismissedItems);
+
     const categoriesAfterCatDismiss = data.categories.filter(c => {
         const dismissedCount = dismissedCats[c.type];
         if (dismissedCount === undefined) return true;
@@ -102,14 +157,12 @@ export function filterDismissed(data: NotificationSummary): NotificationSummary 
         if (!exclusiveItemTypes || exclusiveItemTypes.length === 0) return true;
         const itemsForCat = data.recentItems.filter(i => exclusiveItemTypes.includes(i.type));
         if (itemsForCat.length === 0) return true; // Backend hat keine Items geliefert → Counter behalten
-        const allDismissed = itemsForCat.every(item =>
-            dismissedItems.includes(`${item.type}::${item.title}`)
-        );
+        const allDismissed = itemsForCat.every(item => dismissedItemSet.has(buildItemKey(item)));
         return !allDismissed;
     });
     const visibleCatTypes = new Set(categories.map(c => c.type));
     const recentItems = data.recentItems
-        .filter(item => !dismissedItems.includes(`${item.type}::${item.title}`))
+        .filter(item => !dismissedItemSet.has(buildItemKey(item)))
         .filter(item => itemTypeBelongsToVisibleCat(item.type, visibleCatTypes, data.categories));
     const totalCount = categories.reduce((sum, c) => sum + c.count, 0);
     return { totalCount, categories, recentItems };
@@ -150,6 +203,15 @@ function itemTypeBelongsToVisibleCat(
     return presentCats.some(t => visibleCatTypes.has(t));
 }
 
+/**
+ * Test-only: setzt beide Dismiss-Speicher in einen sauberen Zustand. Hält die
+ * Storage-Key-Konstanten privat — Tests müssen nicht wissen, wo persistiert wird.
+ */
+export function __resetDismissStateForTests(): void {
+    try { localStorage.removeItem(DISMISS_ITEMS_KEY); } catch { /* ignore */ }
+    try { sessionStorage.removeItem(DISMISS_CATS_KEY); } catch { /* ignore */ }
+}
+
 // Item-Type → mögliche Category-Types, zu denen das Item gehört.
 const ITEM_TO_CAT_TYPES: Record<string, string[]> = {
     EMAIL: ['EMAILS', 'EMAILS_PROJECTS', 'EMAILS_OFFERS', 'EMAILS_SUPPLIERS', 'EMAILS_SPAM', 'EMAILS_NEWSLETTER'],
@@ -163,4 +225,6 @@ const ITEM_TO_CAT_TYPES: Record<string, string[]> = {
     REKLAMATION: ['REKLAMATIONEN'],
     FREIGABE_ANGENOMMEN: ['FREIGABEN_ANGENOMMEN'],
     ANFRAGE_WEBSEITE: ['ANFRAGEN_WEBSEITE'],
+    ZEIT_AUTO_BEENDET: ['ZEITEN_AUTO_BEENDET'],
+    MONATSABSCHLUSS: ['MONATSABSCHLUSS'],
 };

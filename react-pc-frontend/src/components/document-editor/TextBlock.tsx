@@ -1,7 +1,8 @@
-import { FileText, Trash2 } from 'lucide-react';
+import { FileText, Trash2, Plus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
 import { cn } from '../../lib/utils';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
 import type { DocBlock, EditorInstance } from './types';
 
 interface TextBlockProps {
@@ -10,11 +11,20 @@ interface TextBlockProps {
     isActive: boolean;
     editorRefs: React.MutableRefObject<Record<string, EditorInstance | null>>;
     onEditorReady: (editorKey: string, editor: EditorInstance | null) => void;
-    onUpdate: (id: string, updates: Partial<DocBlock>) => void;
+    onUpdate: (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => void;
     onRemove: (id: string) => void;
     onFocus: (blockId: string) => void;
     onEditorFocus: (editor: EditorInstance | null) => void;
-    replacePlaceholders: (text: string) => string;
+    /** Bereitet block.content fuer den Editor auf: {{ZAHLUNGSZIEL}} → Chip, restliche Platzhalter → Klartext. */
+    prepareContent: (text: string) => string;
+    /** Serialisiert Editor-HTML zurueck fuer block.content: Chip → {{ZAHLUNGSZIEL}}. */
+    serializeContent: (html: string) => string;
+    /** Klick auf den Zahlungsziel-Chip: oeffnet das Bearbeitungs-Popover (Anker = Chip-Position). */
+    onZahlungszielChipClick?: (anchor: DOMRect) => void;
+    /** Optional: oeffnet den AddTypeDialog mit dieser Karte als Anker (Insert direkt darunter). */
+    onAddBelow?: (anchorId: string) => void;
+    /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
+    verlaufsModus?: boolean;
 }
 
 export function TextBlock({
@@ -27,9 +37,14 @@ export function TextBlock({
     onRemove,
     onFocus,
     onEditorFocus,
-    replacePlaceholders,
+    prepareContent,
+    serializeContent,
+    onZahlungszielChipClick,
+    onAddBelow,
+    verlaufsModus,
 }: TextBlockProps) {
     return (
+        <div className="group/card">
         <div
             className={cn(
                 "bg-white rounded-xl border-l-[3px] border transition-all duration-200",
@@ -37,6 +52,25 @@ export function TextBlock({
                     ? "border-l-rose-500 border-rose-200 ring-2 ring-rose-500/30 shadow-md shadow-rose-50"
                     : "border-l-rose-300 border-slate-200 hover:border-slate-300 hover:shadow-sm"
             )}
+            onMouseDown={(e) => {
+                // Auf mousedown statt click: der erste Klick in einen noch nicht
+                // aktiven Textbaustein geht beim Fokussieren des Editors
+                // verloren, das Popover braeuchte dann zwei Klicks.
+                if (e.button !== 0) return;
+                if (isLocked || !onZahlungszielChipClick) return;
+                // Der Chip ist `contenteditable="false"`, weshalb ProseMirror den
+                // Editor-Bereich als Ziel meldet — deshalb zusaetzlich ueber die
+                // Klickposition suchen. `elementFromPoint` gibt es in jsdom nicht,
+                // daher optional aufrufen (und erst nach den Wachen oben, damit
+                // normales Tippen keinen Treffertest ausloest).
+                const chip = (e.target as HTMLElement).closest?.('[data-zahlungsziel-chip]')
+                    ?? document.elementFromPoint?.(e.clientX, e.clientY)?.closest('[data-zahlungsziel-chip]');
+                if (!chip) return;
+                // Ohne das holt sich der Editor beim Loslassen den Fokus und das
+                // frisch geoeffnete Eingabefeld im Popover verliert ihn sofort wieder.
+                e.preventDefault();
+                onZahlungszielChipClick(chip.getBoundingClientRect());
+            }}
             onClick={() => onFocus(block.id)}
         >
             <div className="p-4">
@@ -62,10 +96,10 @@ export function TextBlock({
                 </div>
 
                 {/* Editor */}
-                <div className="ml-0.5">
+                <div className="ml-0.5 doc-pdf-metrics doc-pdf-metrics--voll" data-verlauf-feld="content">
                     <TiptapEditor
-                        value={replacePlaceholders(block.content || '')}
-                        onChange={(val) => onUpdate(block.id, { content: val })}
+                        value={prepareContent(block.content || '')}
+                        onChange={(val, art) => onUpdate(block.id, { content: serializeContent(val) }, art)}
                         readOnly={isLocked}
                         hideToolbar={true}
                         compactMode={true}
@@ -74,9 +108,36 @@ export function TextBlock({
                             onEditorFocus(editorRefs.current[block.id]);
                         }}
                         onEditorReady={(editor) => onEditorReady(block.id, editor)}
+                        verlaufsModus={verlaufsModus}
                     />
                 </div>
             </div>
+        </div>
+        {/* "+"-Button: fuegt direkt unter diesem Textbaustein ein neues Element ein. */}
+        {!isLocked && onAddBelow && (
+            <AddBelowButton onClick={() => onAddBelow(block.id)} />
+        )}
+        </div>
+    );
+}
+
+/**
+ * Schmale "+"-Pille unter einer Karte, oeffnet den AddTypeDialog.
+ * Sichtbar bei Hover ueber die Karte (Wrapper mit group/card-Klasse) oder
+ * wenn ein Kind den Fokus haelt.
+ */
+export function AddBelowButton({ onClick }: { onClick: () => void }) {
+    return (
+        <div className="flex justify-center -mt-1 mb-1 opacity-0 group-hover/card:opacity-100 focus-within:opacity-100 transition-opacity">
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onClick(); }}
+                title="Direkt darunter Leistung, Stundensatz oder Textbaustein einfügen"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-dashed border-rose-300 bg-white text-rose-600 text-[11px] font-medium hover:bg-rose-50 hover:border-rose-500 hover:shadow-sm transition-all"
+            >
+                <Plus className="w-3 h-3" />
+                Hier einfügen
+            </button>
         </div>
     );
 }

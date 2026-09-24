@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Check, X } from 'lucide-react';
 import { useEditor } from '@tiptap/react';
 import { TiptapToolbar } from '../TiptapEditor';
+import type { TiptapAenderungsArt } from '../tiptapVerlauf';
+import { useDokumentVerlauf, type DokumentStand, type VerlaufsZiel, type VerlaufsMeldung } from './useDokumentVerlauf';
+import { useVerlaufTastatur } from './useVerlaufTastatur';
 import {
     type AusgangsGeschaeftsDokument,
     type AusgangsGeschaeftsDokumentTyp,
@@ -31,9 +35,105 @@ import {
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 
-import type { DocBlock, DocumentEditorProps, KontextDaten, TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, EditorInstance } from './types';
-import { buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, computeClosureSummary } from './helpers';
+import type { DocBlock, DocumentEditorProps, DocumentEditorHandle, KontextDaten, TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, EditorInstance } from './types';
+import {
+    CLOSURE_BLOCK_ID,
+    syncClosureBlock,
+    insertAtAnchor,
+    insertBeforeNachtexte,
+    insertIntoSection,
+    insertBlocksBeforeClosure,
+    validateRootReorder,
+    gruppiereAlsAlternativen,
+    gruppenNameVergeben,
+    loeseAlternativGruppeAuf,
+    normalisiereAlternativGruppen,
+    ohneAlternativGruppe,
+} from './blockOps';
+
+/**
+ * Zielposition fuer das Einfuegen eines neuen Blocks. Wird vor dem Oeffnen
+ * eines Pickers gesetzt; nach dem Insert auf den Default zurueckgesetzt.
+ *  - 'between-nach': zwischen Vor- und Nachtexte (Standard fuer Header-Icons)
+ *  - 'after':        direkt unterhalb des angegebenen Anker-Blocks
+ *  - 'in-section':   als letztes Kind im angegebenen Bauabschnitt
+ */
+type InsertAnchor =
+    | { kind: 'between-nach' }
+    | { kind: 'after'; id: string }
+    | { kind: 'in-section'; sectionId: string };
+
+const DEFAULT_ANCHOR: InsertAnchor = { kind: 'between-nach' };
+
+function applyInsert(prev: DocBlock[], block: DocBlock, anchor: InsertAnchor): DocBlock[] {
+    switch (anchor.kind) {
+        case 'between-nach':
+            return insertBeforeNachtexte(prev, block);
+        case 'after':
+            return insertAtAnchor(prev, block, anchor.id);
+        case 'in-section':
+            return insertIntoSection(prev, block, anchor.sectionId);
+    }
+}
+
+/** Anzeigename fuer den Verlauf: "Position/Textbaustein/Bauabschnitt/Trennlinie/Abschluss". */
+function blockName(block: DocBlock | undefined): string {
+    switch (block?.type) {
+        case 'TEXT': return 'Textbaustein';
+        case 'SECTION_HEADER': return 'Bauabschnitt';
+        case 'SEPARATOR': return 'Trennlinie';
+        case 'CLOSURE': return 'Abschluss';
+        case 'SERVICE':
+        default:
+            return 'Position';
+    }
+}
+
+/** Welches Feld von `DocBlock` diese Aktualisierung betrifft -- die Block-Komponenten
+ *  schicken pro Aufruf immer genau eines (Task-2-Vertrag). */
+function verlaufsFeldVon(updates: Partial<DocBlock>): VerlaufsZiel['feld'] {
+    if (updates.title !== undefined) return 'title';
+    if (updates.quantity !== undefined) return 'quantity';
+    if (updates.unit !== undefined) return 'unit';
+    if (updates.price !== undefined) return 'price';
+    if (updates.content !== undefined) return 'content';
+    if (updates.description !== undefined) return 'description';
+    if (updates.sectionLabel !== undefined) return 'sectionLabel';
+    return undefined;
+}
+
+/** Wortliste (Plan Task 4): Bezeichnung eines Inhalts-Schritts in Handwerker-Sprache. */
+function bezeichnungFuerAenderung(updates: Partial<DocBlock>, art?: TiptapAenderungsArt): string {
+    const feld = verlaufsFeldVon(updates);
+    switch (feld) {
+        case 'title': return 'Titel geändert';
+        case 'quantity': return 'Menge geändert';
+        case 'unit': return 'Einheit geändert';
+        case 'price': return 'Preis geändert';
+        case 'content':
+        case 'description':
+            return art === 'tippen' ? 'Text geändert' : 'Formatierung geändert';
+        case 'sectionLabel': return 'Bauabschnitt umbenannt';
+        default: return 'Änderung';
+    }
+}
+
+/**
+ * Buendel-Schluessel fuer Inhalts-Aenderungen: gleicher Block + gleiches Feld
+ * buendelt, solange getippt wird. Formatierung, Einfuegen per Zwischenablage
+ * und Bilder (`art !== 'tippen'`) sind laut Spec immer ein eigener Schritt.
+ */
+function buendelSchluesselFuer(id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt): string | null {
+    const feld = verlaufsFeldVon(updates);
+    if (!feld) return null;
+    if ((feld === 'content' || feld === 'description') && art !== 'tippen') return null;
+    return `block:${id}:${feld}`;
+}
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
+import { AlternativGruppeBox } from './AlternativGruppeBox';
+import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
+import { ArtikelAuswahlDialog, type ArtikelAuswahl } from '../artikel/ArtikelAuswahlDialog';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
 import { ClosureBlock } from './ClosureBlock';
@@ -41,8 +141,9 @@ import { SeparatorBlock } from './SeparatorBlock';
 import { SectionHeaderBlock } from './SectionHeaderBlock';
 import { SortableBlock } from './SortableBlock';
 import { SummenFooter } from './SummenFooter';
+import { ZahlungszielTageEingabe } from './ZahlungszielTageEingabe';
 import { LivePreviewPanel } from './LivePreviewPanel';
-import { ExportWarningModal, UnsavedChangesModal, PrintOptionsModal, TextbausteinPickerModal, LeistungPickerModal, StundensatzPickerModal } from './Modals';
+import { ExportWarningModal, UnsavedChangesModal, PrintOptionsModal, TextbausteinPickerModal, LeistungPickerModal, StundensatzPickerModal, AddTypeDialog } from './Modals';
 import { RabattDialog } from './RabattDialog';
 import { KategorieBestaetigenDialog } from './KategorieBestaetigenDialog';
 import { EmailComposeModal } from '../EmailComposeModal';
@@ -50,6 +151,9 @@ import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
 import { useToast } from '../ui/toast';
+import { useConfirm } from '../ui/confirm-dialog';
+import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
+import { useKonfliktMeldung } from '../lock/useKonfliktMeldung';
 
 interface ImportedGaebBlock {
     type: string;
@@ -66,6 +170,10 @@ type PreviewLayoutBlock = FormBlock | (Omit<FormBlock, 'type'> & { type: 'waterm
 type PdfAbrechnungsverlauf = Pick<AbrechnungsverlaufDto, 'basisdokumentNummer' | 'basisdokumentTyp' | 'basisdokumentBetragNetto'> & {
     basisdokumentDatum?: string;
     positionen: Array<Pick<AbrechnungspositionDto, 'dokumentNummer' | 'typ' | 'datum' | 'betragNetto' | 'abschlagsNummer'>>;
+    /** Fortschrittsbalken im Abrechnungsstand drucken. */
+    balkenAnzeigen: boolean;
+    /** Leistungen hinter der Differenzzeile der Schlussrechnung, kommasepariert. */
+    differenzHinweis: string | null;
 };
 
 /** Inline-editable Rechnungsadresse – changes only the document, not the customer table */
@@ -110,12 +218,17 @@ function RechnungsadresseBlock({
     if (editing) {
         return (
             <div className="bg-white rounded-lg border-2 border-rose-300 p-3">
-                <label className="block text-[10px] font-semibold text-rose-500 uppercase tracking-wider mb-1">
+                <label
+                    htmlFor="rechnungsadresse-eingabe"
+                    className="block text-[10px] font-semibold text-rose-500 uppercase tracking-wider mb-1"
+                >
                     Rechnungsadresse bearbeiten
                 </label>
                 <textarea
+                    id="rechnungsadresse-eingabe"
                     ref={textareaRef}
                     value={draft}
+                    data-eigenes-rueckgaengig="true"
                     onChange={(e) => {
                         setDraft(e.target.value);
                         e.target.style.height = 'auto';
@@ -171,8 +284,27 @@ function RechnungsadresseBlock({
     );
 }
 
-export default function DocumentEditor({ projektId, anfrageId, dokumentId, initialDokumentTyp, onClose }: DocumentEditorProps) {
+const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(function DocumentEditor(
+    { projektId, anfrageId, dokumentId, initialDokumentTyp, onClose, readOnly = false, onLockFreigeben },
+    ref
+) {
     const toast = useToast();
+    // Rueckfrage bei langen Zahlungszielen, siehe handleZahlungszielChange.
+    const confirm = useConfirm();
+    // Fuer das Zurueckschreiben der beim Anlegen vergebenen Id in die URL
+    // (syncDocumentIdInUrl) -- MUSS ueber den Router laufen, nicht per
+    // window.history.replaceState, sonst bekommt die Seite (liest dokumentId
+    // aus genau diesen searchParams) die neue Id nie mit und ihr Lock-Hook
+    // bleibt auf 'idle' stehen (Nachbesserung 1, siehe Kontext-Log).
+    const [searchParams, setSearchParams] = useSearchParams();
+    // Fuer den Pfad-Guard in syncDocumentIdInUrl: MUSS die Router-Location
+    // sein, nicht window.location -- ein MemoryRouter (z.B. in Tests, aber
+    // auch technisch denkbar bei zukuenftiger Einbettung) ruehrt
+    // window.location ueberhaupt nicht an.
+    const location = useLocation();
+    // Versionskonflikt (409 mit JSON-Body vom RestExceptionHandler) bekommt
+    // die geteilte Neu-laden-Meldung statt eines rohen JSON-Textes im Toast.
+    const konfliktMeldung = useKonfliktMeldung('Dokument');
     // --- State ---
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -180,8 +312,33 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [dokumentNummer, setDokumentNummer] = useState<string>('');
     const [betreff, setBetreff] = useState('');
     const [datum, setDatum] = useState(new Date().toISOString().split('T')[0]);
+    // Synchroner Spiegel von `datum` für stale-closure-freie Lesezugriffe (z.B.
+    // wenn wir das Datum direkt vor einem Versand bumpen und SOFORT in handleSave
+    // / createPdfRequest verwenden, bevor der nächste React-Render passiert).
+    const datumRef = useRef(datum);
+    useEffect(() => { datumRef.current = datum; }, [datum]);
     const [blocks, setBlocks] = useState<DocBlock[]>([]);
+    // Synchroner Spiegel + Ref-first-Setter (Vorbild datumRef/kontextDatenRef
+    // unten): der Dokumentverlauf liest den Stand synchron aus Refs, bevor der
+    // naechste Render passiert. Ab hier schreibt niemand mehr direkt setBlocks --
+    // entweder ueber verlauf.aendern (Nutzeraktionen) oder ueber setzeBlocks mit
+    // einem aus blocksRef.current berechneten Wert (automatische Aenderungen).
+    const blocksRef = useRef(blocks);
+    useLayoutEffect(() => { blocksRef.current = blocks; }, [blocks]);
+    const setzeBlocks = useCallback((neu: DocBlock[]) => {
+        blocksRef.current = neu;
+        setBlocks(neu);
+    }, []);
     const [kontextDaten, setKontextDaten] = useState<KontextDaten>({});
+    // Gleicher Grund wie bei `datumRef`: `handleSave` haengt `kontextDaten` nicht
+    // in seiner useCallback-Dep-Liste. Eine reine Adressaenderung beruehrt keine
+    // der gelisteten Deps, die Callback-Instanz bliebe also eingefroren und
+    // wuerde die Adresse VOR der Aenderung ans Backend schicken.
+    const kontextDatenRef = useRef(kontextDaten);
+    useEffect(() => { kontextDatenRef.current = kontextDaten; }, [kontextDaten]);
+    // Wird auf true gesetzt sobald der User die Rechnungsadresse manuell bearbeitet hat.
+    // Dann darf loadKontext sie nicht mehr überschreiben.
+    const adresseUserEditedRef = useRef(false);
     const [dokument, setDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
     const [showExportWarning, setShowExportWarning] = useState(false);
     const [showExportFormatDialog, setShowExportFormatDialog] = useState(false);
@@ -191,6 +348,35 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
     const lastSavedStateRef = useRef<string>('');
+    // Die Rechnungsadresse liegt in `kontextDaten` und damit ausserhalb der
+    // State-Signatur, gegen die `lastSavedStateRef` vergleicht. Sie kann dort
+    // auch nicht aufgenommen werden: die Signatur wird beim Laden aus dem
+    // Server-Payload gebaut, die angezeigte Adresse ist bei Dokumenten ohne
+    // `rechnungsadresseOverride` aber ein abgeleiteter Wert (buildAdresse aus
+    // den Kundenstammdaten), der im Payload gar nicht vorkommt. Die Signatur
+    // wuerde also dauerhaft abweichen und jedes solche Dokument schon beim
+    // Oeffnen als geaendert melden. Stattdessen ein eigenes Flag, das additiv
+    // in Dirty-Check und Auto-Save einfliesst und beim Speichern zuruecksetzt.
+    const [adresseGeaendert, setAdresseGeaendert] = useState(false);
+    // Gleicher Grund beim Zahlungsziel: ohne eigenen Wert im Dokument zeigt der
+    // Editor den Kunden-Standard bzw. DEFAULT_ZAHLUNGSZIEL_TAGE an, und diese
+    // Werte kommen erst nach dem Laden asynchron an. In der Signatur wuerden
+    // frisch geladene und neue Dokumente sofort als geaendert gelten.
+    const [zahlungszielGeaendert, setZahlungszielGeaendert] = useState(false);
+    // Bezugswert dafuer: das zuletzt geladene bzw. gespeicherte Zahlungsziel.
+    // Solange nichts als geaendert markiert ist, ist der angezeigte Wert genau
+    // dieser Stand; danach friert er ein, bis wieder gespeichert wurde. Ohne
+    // ihn bliebe ein Hin-und-Zurueck-Tippen im Feld (14 -> 1 -> 14) als
+    // Aenderung stehen -- samt Auto-Save, der ein noch nie gespeichertes
+    // Dokument allein deswegen anlegen wuerde.
+    const gespeichertesZahlungszielRef = useRef<number | undefined>(undefined);
+    useEffect(() => {
+        if (!zahlungszielGeaendert) gespeichertesZahlungszielRef.current = kontextDaten.zahlungsziel;
+    }, [kontextDaten.zahlungsziel, zahlungszielGeaendert]);
+    // Sticky wie `adresseUserEditedRef`: hat der Nutzer das Zahlungsziel einmal
+    // angefasst, darf ein spaeter eintreffender Kontext-Load es nicht mehr
+    // ueberschreiben (siehe loadKontext).
+    const zahlungszielUserEditedRef = useRef(false);
 
     // Vorlagen
     const [textbausteine, setTextbausteine] = useState<TextbausteinApiDto[]>([]);
@@ -202,6 +388,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewStale, setPreviewStale] = useState(false);
+    // Wird nach jedem erfolgreichen Speichern hochgezaehlt und stoesst ein
+    // sofortiges Neu-Rendern der Vorschau an. Noetig fuer Kopfdaten wie die
+    // Rechnungsadresse: sie stecken in `kontextDaten`, nicht in `blocks`, und
+    // werden vom Debounce-Effect auf den Bloecken daher nicht erfasst.
+    const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
+    // Laufende Nummer der jeweils juengsten Preview-Anfrage (siehe handlePreview).
+    const previewRequestIdRef = useRef(0);
+    // Synchroner Spiegel von `previewStale`, weil der Token-Effect ihn im
+    // selben Commit lesen muss, in dem der Stale-Marker ihn setzt.
+    const previewStaleRef = useRef(false);
+    // Spiegelt die aktuell angezeigte Blob-URL, damit sie beim Schliessen des
+    // Editors freigegeben werden kann, ohne den Effect an `previewUrl` zu binden.
+    const previewUrlRef = useRef<string | null>(null);
 
     // UI Layout State
 
@@ -210,6 +409,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [showTextbausteinPicker, setShowTextbausteinPicker] = useState(false);
     const [showLeistungPicker, setShowLeistungPicker] = useState(false);
     const [showStundensatzPicker, setShowStundensatzPicker] = useState(false);
+    // Vollbild-Auswahlfenster fuer Material aus den Artikel-Stammdaten.
+    // Wird UNCONDITIONAL gemountet (siehe Rendering weiter unten) - der Dialog
+    // setzt seine eigene Auswahl beim Uebergang false -> true selbst zurueck.
+    const [materialDialogOffen, setMaterialDialogOffen] = useState(false);
+    // Auswahl-Dialog "Was hinzufuegen?" (Leistung / Stundensatz / Textbaustein),
+    // ausgeloest ueber das "+"-Symbol unter einer Karte oder im Bauabschnitt.
+    const [showAddTypeDialog, setShowAddTypeDialog] = useState(false);
+    // Position fuer den naechsten Insert. Wird ueberschrieben, sobald ein "+"
+    // (Karte/Section) den Picker bzw. AddTypeDialog oeffnet. Header-Icons
+    // resetten bewusst auf 'between-nach'.
+    const pendingAnchorRef = useRef<InsertAnchor>(DEFAULT_ANCHOR);
 
     // Global Toolbar State
     const [activeEditor, setActiveEditor] = useState<ReturnType<typeof useEditor> | null>(null);
@@ -218,10 +428,27 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const setEditorRef = useCallback((editorKey: string, editor: EditorInstance | null) => {
         editorRefs.current[editorKey] = editor;
     }, []);
+    // Editor-Instanzen, die der Nutzer wirklich fokussiert hat (echte
+    // Interaktion) -- siehe istPhantomTiptapAenderung weiter unten. Ein
+    // WeakSet haengt an der Editor-INSTANZ (Objekt-Identitaet), nicht an
+    // einem Key, weil derselbe Aufruf (onEditorFocus) fuer content- und
+    // description-Editoren identisch aussieht und nur die Instanz sie
+    // unterscheidet. Deklaration hier (vor isLocked), Verwendung erst nach
+    // dessen Berechnung -- siehe markiereEditorFokussiert dort.
+    const fokussierteEditorenRef = useRef<WeakSet<NonNullable<EditorInstance>>>(new WeakSet());
 
     // Global Rabatt
     const [globalRabatt, setGlobalRabatt] = useState<number>(0);
+    const globalRabattRef = useRef(globalRabatt);
+    useLayoutEffect(() => { globalRabattRef.current = globalRabatt; }, [globalRabatt]);
+    const setzeGlobalRabatt = useCallback((neu: number) => {
+        globalRabattRef.current = neu;
+        setGlobalRabatt(neu);
+    }, []);
     const [showRabattDialog, setShowRabattDialog] = useState(false);
+
+    // Id der Leistung, von der aus der Alternativ-Dialog geoeffnet wurde (null = zu).
+    const [alternativDialogAnker, setAlternativDialogAnker] = useState<string | null>(null);
 
     // Kategorie-Bestätigung beim Einfügen einer Leistung
     const [pendingLeistungInsert, setPendingLeistungInsert] = useState<{
@@ -229,12 +456,31 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         leistungName: string;
         kategorieId: number;
         kategoriePfad: string;
+        /** Anker-Position zum Zeitpunkt des Picker-Klicks. */
+        anchor: InsertAnchor;
     } | null>(null);
 
     // Abrechnungsverlauf: already-billed amount by other invoices (for Schlussrechnung etc.)
     const [bereitsAbgerechnetDurchAndere, setBereitsAbgerechnetDurchAndere] = useState<number | null>(null);
     // Basisdokument-Nettobetrag (Gesamtauftragssumme aus AB/Anfrage)
     const [basisdokumentBetragNetto, setBasisdokumentBetragNetto] = useState<number | null>(null);
+    /**
+     * Bloecke des Basisdokuments (Angebot/AB). Nur zum Benennen der entfallenen
+     * bzw. zusaetzlichen Leistungen in der Differenzzeile der Schlussrechnung —
+     * der Differenzbetrag selbst wird nicht daraus gerechnet.
+     */
+    const [basisdokumentBlocks, setBasisdokumentBlocks] = useState<DocBlock[]>([]);
+    /**
+     * Fortschrittsbalken im Abrechnungsstand auf der Rechnung zeigen. Liegt in
+     * positionenJson, Standard an — Bestandsrechnungen sehen aus wie bisher.
+     */
+    const [balkenAnzeigen, setBalkenAnzeigen] = useState<boolean>(true);
+    const balkenAnzeigenRef = useRef(balkenAnzeigen);
+    useLayoutEffect(() => { balkenAnzeigenRef.current = balkenAnzeigen; }, [balkenAnzeigen]);
+    const setzeBalkenAnzeigen = useCallback((neu: boolean) => {
+        balkenAnzeigenRef.current = neu;
+        setBalkenAnzeigen(neu);
+    }, []);
     // Detaillierte Abrechnungspositionen für die ClosureBlock-Anzeige
     const [abrechnungsPositionen, setAbrechnungsPositionen] = useState<Array<{
         dokumentNummer: string;
@@ -243,6 +489,25 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         betragNetto: number;
         abschlagsNummer?: number;
     }>>([]);
+
+    // Firmenfarbe aus den Firmeninformationen — Akzent im Abrechnungsstand.
+    // null = noch nicht geladen oder nicht hinterlegt, dann greift die Standardfarbe.
+    const [firmenfarbe, setFirmenfarbe] = useState<string | null>(null);
+
+    useEffect(() => {
+        let abgebrochen = false;
+        fetch('/api/firma')
+            .then(res => (res.ok ? res.json() : null))
+            .then(daten => {
+                if (!abgebrochen && daten?.firmenfarbe) {
+                    setFirmenfarbe(daten.firmenfarbe);
+                }
+            })
+            .catch(() => {
+                // Ohne Farbe zeichnet der Abrechnungsstand in der Standardfarbe.
+            });
+        return () => { abgebrochen = true; };
+    }, []);
 
     // Abschlagsrechnung: user-defined installment amount
     const [abschlagBetragNetto, setAbschlagBetragNetto] = useState<number | null>(null);
@@ -259,6 +524,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const [emailLoading, setEmailLoading] = useState(false);
     const [emailAttachments, setEmailAttachments] = useState<File[]>([]);
     const [emailBody, setEmailBody] = useState<string>('');
+    // Entwurfs-Versand: PDF mit Watermark "ENTWURF", ohne Buchung/Sperrung und
+    // ohne serverseitiges PDF-Speichern. Erlaubt Vorab-Abstimmung mit dem Kunden,
+    // bevor das Dokument GoBD-fest wird.
+    const [draftSendMode, setDraftSendMode] = useState(false);
+    // Snapshot des Draft-Status für den onSuccess-Handler des EmailComposeModal.
+    // Ref statt State, weil der Wert synchron (ohne Re-Render-Race) zwischen
+    // "PDF wurde erzeugt" und "User hat Mail abgeschickt" erhalten bleiben muss.
+    // Nur wenn dieser true ist, darf der /email-versendet-Endpoint NICHT
+    // aufgerufen werden (sonst würde ein Entwurfsversand das Dokument
+    // fälschlich als „E-Mail versendet" markieren).
+    const lastSendWasDraftRef = useRef(false);
 
     // GAEB Import
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -273,17 +549,120 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     // storniert / digital angenommen (Angebot, AB) / gebuchte Rechnung → gesperrt.
     // Wichtig für Auto-Save: ohne digitalAngenommen-Check feuert der 10s-Interval
     // bei angenommenen Angeboten/ABs endlos Server-Fehler-Alerts.
+    // Eigene Variable statt inline in isLocked (Design-Review Abschnitt 7-2,
+    // Befund 1): DocumentEditorHeader zeigte das "Gebucht"-Badge bisher an
+    // isLocked, das auch bei Fremdsperre/eigenem "Fertig"/Sperrfehler true
+    // ist -- "Gebucht" heisst in diesem Produkt "in der Buchhaltung erfasst"
+    // und stand damit faelschlich auf Dokumenten mit gebucht=false. Diese
+    // Variable ist die einzig korrekte Bedingung fuer das Badge und wird als
+    // eigener Prop an den Header gegeben (siehe unten); isLocked bleibt
+    // unveraendert fuers Deaktivieren der Bearbeitungs-Aktionen.
+    const istGebuchteRechnung = !!(dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ));
+    // `readOnly` kommt zusaetzlich von der Seite: haelt sie gerade kein Lock
+    // (z.B. ein Kollege bearbeitet den Datensatz), darf hier trotzdem nur
+    // gelesen werden -- der Editor haelt selbst kein Lock mehr, siehe unten.
     const isLocked = !!(
+        readOnly ||
         dokument?.storniert ||
         dokument?.digitalAngenommen ||
-        (dokument?.gebucht && dokument?.typ && invoiceTypes.includes(dokument.typ))
+        istGebuchteRechnung
     );
     const currentDokumentTyp = dokument?.typ ?? dokumentTyp;
     const showFinalizationPrompt = invoiceTypes.includes(currentDokumentTyp);
 
+    // --- Rückgängig & Wiederholen ---
+    const leseStand = useCallback((): DokumentStand => ({
+        blocks: blocksRef.current,
+        globalRabatt: globalRabattRef.current,
+        datum: datumRef.current,
+        zahlungsziel: kontextDatenRef.current.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
+        rechnungsadresse: kontextDatenRef.current.rechnungsadresse ?? '',
+        balkenAnzeigen: balkenAnzeigenRef.current,
+    }), []);
+
+    const schreibeStand = useCallback((werte: Partial<DokumentStand>) => {
+        if (werte.blocks !== undefined) setzeBlocks(werte.blocks);
+        if (werte.globalRabatt !== undefined) setzeGlobalRabatt(werte.globalRabatt);
+        if (werte.balkenAnzeigen !== undefined) setzeBalkenAnzeigen(werte.balkenAnzeigen);
+        if (werte.datum !== undefined) {
+            datumRef.current = werte.datum;
+            setDatum(werte.datum);
+        }
+        if (werte.zahlungsziel !== undefined || werte.rechnungsadresse !== undefined) {
+            const naechste: KontextDaten = { ...kontextDatenRef.current };
+            if (werte.zahlungsziel !== undefined) {
+                naechste.zahlungsziel = werte.zahlungsziel;
+                // Sticky wie bei der Adresse: ein spaeter eintreffender
+                // Kontext-Load darf ein per Rueckgaengig/Wiederholen gesetztes
+                // Zahlungsziel nicht mehr ueberschreiben. Vergleich gegen den
+                // zuletzt GESPEICHERTEN Wert (nicht unconditional true) --
+                // dieselbe Formel wie in handleZahlungszielChange, damit ein
+                // Rueckgaengig, das exakt auf dem gespeicherten Stand landet,
+                // "Ungespeichert" korrekt wieder loescht (und ein zweites
+                // Rueckgaengig, das DAVON abweicht, es korrekt wieder setzt --
+                // sonst wuerde die zurueckgenommene Aenderung nie gespeichert).
+                zahlungszielUserEditedRef.current = true;
+                setZahlungszielGeaendert(werte.zahlungsziel !== (gespeichertesZahlungszielRef.current ?? DEFAULT_ZAHLUNGSZIEL_TAGE));
+            }
+            if (werte.rechnungsadresse !== undefined) {
+                naechste.rechnungsadresse = werte.rechnungsadresse;
+                // Bewusste Spec-Entscheidung (Abschnitt "Rechnungsadresse"):
+                // gleicher sichtbarer Stand, kein Sonderpfad zum Zuruecksetzen
+                // des Overrides -- unconditional true, wie beim normalen Edit.
+                adresseUserEditedRef.current = true;
+                setAdresseGeaendert(true);
+            }
+            kontextDatenRef.current = naechste;
+            setKontextDaten(naechste);
+        }
+    }, [setzeBlocks, setzeGlobalRabatt, setzeBalkenAnzeigen]);
+
+    const verlauf = useDokumentVerlauf({ leseStand, schreibeStand, gesperrt: isLocked });
+
+    /**
+     * Ersetzt die bisherigen Inline-`onEditorFocus`-Callbacks: markiert die
+     * fokussierte Editor-Instanz als "vom Nutzer beruehrt" (siehe
+     * istPhantomTiptapAenderung) und spiegelt sie weiterhin in die globale
+     * Toolbar (activeEditor).
+     */
+    const markiereEditorFokussiert = useCallback((editor: EditorInstance | null) => {
+        if (editor) fokussierteEditorenRef.current.add(editor);
+        setActiveEditor(isLocked ? null : editor);
+    }, [isLocked]);
+
+    /**
+     * Befund aus dem Abschnitt-1-Review: der setEditable-Effekt in
+     * TiptapEditor.tsx feuert beim Mounten EIN onChange mit Tiptaps
+     * normalisiertem HTML (z.B. '' -> '<p></p>'), bevor der Nutzer irgendetwas
+     * getan hat. Ohne dieses Gate waere das schon beim blossen Oeffnen eines
+     * Dokuments ein Verlaufsschritt, den niemand ausgeloest hat. Gate ueber
+     * den Fokus: nur eine Editor-Instanz, die der Nutzer nachweislich
+     * fokussiert hat (siehe markiereEditorFokussiert), darf einen Schritt
+     * erzeugen -- alles andere (Mount-Aufruf, ein spaeterer erneuter
+     * setEditable-Trigger vor dem ersten Fokus) laeuft automatisch durch.
+     * Betrifft nur content/description (die einzigen Tiptap-Felder); alle
+     * anderen Felder (title/quantity/...) sind normale kontrollierte Inputs
+     * ohne dieses Mount-Verhalten.
+     */
+    const istPhantomTiptapAenderung = useCallback((id: string, updates: Partial<DocBlock>): boolean => {
+        const feld = updates.content !== undefined ? 'content' : updates.description !== undefined ? 'description' : null;
+        if (!feld) return false;
+        const editorKey = feld === 'content' ? id : `${id}-desc`;
+        const editor = editorRefs.current[editorKey];
+        return !editor || !fokussierteEditorenRef.current.has(editor);
+    }, []);
+
     // --- Placeholders ---
-    const replacePlaceholders = useCallback((text: string, isPreview: boolean = true): string => {
+    // keepZahlungszielPlatzhalter: laesst {{ZAHLUNGSZIEL}} und {{ZAHLUNGSZIEL_TAGE}}
+    // unangetastet, damit sie anschliessend als geschuetzte Chips gerendert werden
+    // koennen (Editor-Inhalt) statt als Klartext einzufrieren. PDF/Preview-Pfade
+    // nutzen den Default (false) und loesen beide zu aktuellen Werten auf.
+    const replacePlaceholders = useCallback((text: string, isPreview: boolean = true, keepZahlungszielPlatzhalter: boolean = false): string => {
         if (!text) return text;
+        // Defensiv: Sollte ein Chip-Span im Content stehen (statt des Platzhalters),
+        // zuerst zurueck zum Platzhalter normalisieren — so steht im PDF/Versand
+        // garantiert das aktuelle Datum, nie ein eingefrorener Chip-Text.
+        text = chipHtmlToZahlungszielPlaceholder(text);
         const dokumentTypLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
         const anredeMap: Record<string, string> = {
             'HERR': 'Sehr geehrter Herr',
@@ -303,7 +682,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             'PROJEKTNUMMER': kontextDaten.projektnummer || '',
             'DOKUMENTNUMMER': dokumentnummerValue,
             'RECHNUNGSNUMMER': dokumentnummerValue, // Alias für DOKUMENTNUMMER
-            'DATUM': datum ? new Date(datum).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE'),
+            'DATUM': datumRef.current ? new Date(datumRef.current).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE'),
             'BETREFF': betreff || '',
             'ANREDE': anredeDisplay,
             'ANSPRECHPARTNER': kontextDaten.ansprechpartner || '',
@@ -313,20 +692,143 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             'BEZUGSDOKUMENTNUMMER': kontextDaten.bezugsdokument || '',
             'BEZUGSDOKUMENTTYP': kontextDaten.bezugsdokumentTyp || '',
             'BEZUGSDOKUMENTDATUM': kontextDaten.bezugsdokumentDatum || '',
-            'ZAHLUNGSZIEL': (() => {
-                const days = kontextDaten.zahlungsziel ?? 8;
-                const d = datum ? new Date(datum) : new Date();
-                d.setDate(d.getDate() + days);
-                return d.toLocaleDateString('de-DE');
-            })(),
-            'ZAHLUNGSZIEL_TAGE': String(kontextDaten.zahlungsziel ?? 8)
+            ...(keepZahlungszielPlatzhalter ? {} : {
+                'ZAHLUNGSZIEL': berechneZahlungszielDatum(datumRef.current, kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE),
+                'ZAHLUNGSZIEL_TAGE': String(kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE)
+            })
         };
 
         return text.replace(/\{\{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*\}\}/g, (match, key) => {
             const upperKey = key.toUpperCase();
             return dataMap[upperKey] !== undefined ? dataMap[upperKey] : match;
         });
+        // `datum` wird über `datumRef.current` im Body gelesen (für synchron
+        // gebumptes Versanddatum), bleibt aber in den Deps, damit nachgelagerte
+        // useMemo/useEffect-Verbraucher (Preview, PDF) bei DatePicker-Änderungen
+        // re-erzeugt werden.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [kontextDaten, dokumentTyp, dokumentNummer, datum, betreff]);
+
+    // --- Zahlungsziel: geschuetzter Chip in Textbausteinen ---
+    // {{ZAHLUNGSZIEL}} bleibt in block.content erhalten (friert nicht als
+    // Klartext ein) und wird im Editor als nicht editierbarer Chip angezeigt.
+    // Einzige Wahrheit ist kontextDaten.zahlungsziel — daraus folgen Chip-Text,
+    // PDF-Text und das beim Buchen gespeicherte Faelligkeitsdatum.
+    const zahlungszielTage = kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE;
+    const zahlungszielDatumDisplay = useMemo(
+        () => berechneZahlungszielDatum(datum, zahlungszielTage),
+        [datum, zahlungszielTage]
+    );
+
+    /**
+     * block.content → Editor-HTML: erst alle uebrigen Platzhalter aufloesen
+     * (Zahlungsziel-Platzhalter bleiben stehen), dann beide Zahlungsziel-
+     * Platzhalter in geschuetzte Chips wandeln. Die Reihenfolge ist wichtig:
+     * replacePlaceholders normalisiert Chip-HTML defensiv zurueck zum
+     * Platzhalter — liefe es NACH der Chip-Erzeugung, wuerde es den frisch
+     * erzeugten Chip sofort wieder zerstoeren (Bug: Zahlungsziel stand als
+     * Klartext im Editor statt als Chip).
+     */
+    const prepareEditorContent = useCallback(
+        (text: string) => zahlungszielPlaceholderToChipHtml(
+            replacePlaceholders(text, true, true),
+            zahlungszielDatumDisplay,
+            String(zahlungszielTage)
+        ),
+        [replacePlaceholders, zahlungszielDatumDisplay, zahlungszielTage]
+    );
+
+    /** Editor-HTML → block.content: Chip wieder als Platzhalter serialisieren. */
+    const serializeEditorContent = useCallback(
+        (html: string) => chipHtmlToZahlungszielPlaceholder(html),
+        []
+    );
+
+    /**
+     * Uebernimmt ein neues Zahlungsziel, wenn die Eingabe abgeschlossen ist
+     * (Feld verlassen oder Enter) — nicht bei jedem Tastendruck, sonst stuende
+     * die Rueckfrage unten mitten im Tippen im Weg.
+     *
+     * Liefert zurueck, ob der Wert uebernommen wurde: die Eingabefelder setzen
+     * ihren Entwurf sonst wieder auf den geltenden Wert.
+     */
+    const handleZahlungszielChange = useCallback(async (tage: number): Promise<boolean> => {
+        // Verteidigungslinie ohne Meldung: bei gesperrtem Dokument gibt es gar
+        // kein Eingabefeld (die Summenzeile bekommt `undefined`, der Chip
+        // reagiert nicht), hier kann also niemand ankommen.
+        if (isLocked) return false;
+        // `min`/`max` am Feld halten eine getippte Zahl nicht auf. Ungeprueft
+        // ginge sie jetzt in die Datenbank und von dort in die Faelligkeit:
+        // negativ hiesse "ab sofort ueberfaellig", Mahnwesen inklusive.
+        if (!Number.isInteger(tage) || tage < MIN_ZAHLUNGSZIEL_TAGE || tage > MAX_ZAHLUNGSZIEL_TAGE) {
+            toast.error(`Bitte ein Zahlungsziel zwischen ${MIN_ZAHLUNGSZIEL_TAGE} und ${MAX_ZAHLUNGSZIEL_TAGE} Tagen eingeben.`);
+            return false;
+        }
+        // Laenger als der Standard: nachfragen (Nutzervorgabe 17.09.2026).
+        // Ein langes Zahlungsziel ist erlaubt, soll aber eine bewusste
+        // Entscheidung sein — es heisst spaeter an das eigene Geld kommen.
+        if (tage > ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN) {
+            const bestaetigt = await confirm({
+                title: 'Langes Zahlungsziel',
+                message: `Bei ${tage} Tagen Zahlungsziel ist die Rechnung erst am ${berechneZahlungszielDatum(datumRef.current, tage)} fällig. Üblich sind ${ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN} Tage. Wirklich ${tage} Tage eintragen?`,
+                confirmLabel: `Ja, ${tage} Tage`,
+                cancelLabel: 'Abbrechen',
+                variant: 'warning',
+            });
+            if (!bestaetigt) return false;
+        }
+        // schreibeStand setzt zahlungszielUserEditedRef/zahlungszielGeaendert
+        // (Zurueck auf den gespeicherten Stand ist keine Aenderung mehr: sonst
+        // bliebe "Ungespeichert" stehen und der Auto-Save legte ein noch nie
+        // gespeichertes Dokument allein deswegen an). Kein Bündeln über
+        // schnelle Tastendrücke hinweg, da erst beim Abschluss übernommen wird
+        // (siehe ZahlungszielTageEingabe) -- der Bündel-Schlüssel greift nur,
+        // wenn dieselbe Feld-Änderung kurz hintereinander mehrfach eintrifft.
+        verlauf.aendern({
+            bezeichnung: 'Zahlungsziel geändert',
+            berechne: () => ({ zahlungsziel: tage }),
+            buendelSchluessel: 'kopf:zahlungsziel',
+            ziel: null,
+        });
+        return true;
+    }, [isLocked, toast, confirm, verlauf]);
+
+    /** Position des Chip-Bearbeitungs-Popovers (null = geschlossen). */
+    const [zahlungszielPopover, setZahlungszielPopover] = useState<{ top: number; left: number } | null>(null);
+    const zahlungszielPopoverRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!zahlungszielPopover) return;
+        const handler = (e: MouseEvent) => {
+            const ziel = e.target as HTMLElement;
+            // Ein Chip zaehlt nicht als "draussen": dasselbe mousedown oeffnet
+            // das Popover gerade und laeuft danach bis hierher weiter (es wuerde
+            // sich sonst im selben Moment wieder schliessen), und ein zweiter
+            // Chip im selben Textbaustein setzt es nur um.
+            if (ziel.closest?.('[data-zahlungsziel-chip]')) return;
+            if (zahlungszielPopoverRef.current && !zahlungszielPopoverRef.current.contains(ziel)) {
+                setZahlungszielPopover(null);
+            }
+        };
+        // Escape schliesst das Popover; der Entwurf im Feld wird davon unabhaengig
+        // verworfen (siehe ZahlungszielTageEingabe).
+        const escHandler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setZahlungszielPopover(null);
+        };
+        document.addEventListener('mousedown', handler);
+        document.addEventListener('keydown', escHandler);
+        return () => {
+            document.removeEventListener('mousedown', handler);
+            document.removeEventListener('keydown', escHandler);
+        };
+    }, [zahlungszielPopover]);
+
+    const handleZahlungszielChipClick = useCallback((anchor: DOMRect) => {
+        setZahlungszielPopover({
+            top: anchor.bottom + 8,
+            left: Math.max(8, Math.min(anchor.left, window.innerWidth - 280)),
+        });
+    }, []);
 
     // --- GAEB Import ---
     const handleGaebImportClick = () => {
@@ -380,14 +882,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     }
                 }
 
-                setBlocks(current => {
-                    const firstNachIdx = current.findIndex(b => b.textbausteinRolle === 'NACH');
-                    if (firstNachIdx === -1) return [...current, ...mappedBlocks];
-                    return [
-                        ...current.slice(0, firstNachIdx),
-                        ...mappedBlocks,
-                        ...current.slice(firstNachIdx),
-                    ];
+                verlauf.aendern({
+                    bezeichnung: 'GAEB-Positionen eingefügt',
+                    berechne: stand => ({ blocks: insertBlocksBeforeClosure(stand.blocks, mappedBlocks) }),
+                    buendelSchluessel: null,
+                    ziel: mappedBlocks[0] ? { blockId: mappedBlocks[0].id } : null,
                 });
                 const sectionCount = mappedBlocks.filter(b => b.type === 'SECTION_HEADER').length;
                 showImportToast('success',
@@ -415,9 +914,31 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     };
 
     // --- Load Kontext ---
+    /**
+     * true, sobald der Kontext-Load (Projekt/Anfrage) abgeschlossen ist —
+     * unabhaengig davon, ob er Daten geliefert hat. Der Defaults-Effekt
+     * wartet nur, solange der Load noch LAEUFT: Ein Projekt ohne Kunde/
+     * Auftragsnummer darf die Standard-Textbausteine nicht dauerhaft blockieren.
+     */
+    const [kontextGeladen, setKontextGeladen] = useState(false);
     useEffect(() => {
         const loadKontext = async () => {
             try {
+                // Geerbte Rechnungsanschrift: Wurde in einem Dokument dieses Vorgangs
+                // (z.B. dem Angebot) die Adresse bearbeitet, zeigt ein NEUES Dokument
+                // sie sofort an. Beim Erstellen übernimmt das Backend sie ohnehin —
+                // hier geht es nur darum, vor dem ersten Speichern keine veraltete
+                // Kundenadresse anzuzeigen oder in die PDF-Vorschau zu geben.
+                let geerbteAdresse: string | null = null;
+                if (!dokumentId && (projektId || anfrageId)) {
+                    try {
+                        const basis = projektId ? `projekt/${projektId}` : `anfrage/${anfrageId}`;
+                        const ovRes = await fetch(`/api/ausgangs-dokumente/${basis}/geerbte-rechnungsadresse`);
+                        if (ovRes.ok) {
+                            geerbteAdresse = (await ovRes.json()).rechnungsadresseOverride || null;
+                        }
+                    } catch { /* Fallback: berechnete Kundenadresse anzeigen */ }
+                }
                 if (projektId) {
                     const res = await fetch(`/api/projekte/${projektId}`);
                     if (res.ok) {
@@ -425,43 +946,71 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         const emails: string[] = [];
                         if (projekt.kundenEmails) projekt.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
                         if (projekt.kundeDto?.kundenEmails) projekt.kundeDto.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
-                        setKontextDaten({
+                        setKontextDaten(prev => ({
+                            ...prev,
                             projektnummer: projekt.auftragsnummer,
                             projektBauvorhaben: projekt.bauvorhaben,
                             kundennummer: projekt.kundennummer,
                             kundenName: projekt.kunde,
                             kundeId: projekt.kundenId,
-                            rechnungsadresse: buildAdresse(projekt.kundeDto),
+                            // Wenn User die Adresse bereits bearbeitet hat (vorhandenes Override),
+                            // darf loadKontext sie nicht überschreiben.
+                            rechnungsadresse: adresseUserEditedRef.current
+                                ? prev.rechnungsadresse
+                                : (geerbteAdresse || buildAdresse(projekt.kundeDto)),
                             anrede: projekt.kundeDto?.anrede,
                             ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                             kundenEmails: emails,
-                            zahlungsziel: projekt.kundeDto?.zahlungsziel ?? 8,
-                        });
+                            // Nur bei einem neuen, noch unberuehrten Dokument setzen.
+                            // Bei einem bestehenden Dokument setzt loadDokument das gespeicherte
+                            // Zahlungsziel. Beide Effekte laden parallel: kaeme diese Antwort
+                            // zuletzt an, stuende sonst der Kunden-Standard im Editor, und
+                            // handleSave wuerde ihn ueber den gespeicherten Wert schreiben.
+                            // Dasselbe gilt fuer ein neues Dokument, in dem der Nutzer waehrend
+                            // des Ladens schon getippt hat (wie `adresseUserEditedRef` oben).
+                            // `dokumentId` kommt aus der Closure -- der Effekt haengt bewusst nur
+                            // an projektId/anfrageId (siehe eslint-disable am Ende des Effekts).
+                            ...(dokumentId || zahlungszielUserEditedRef.current
+                                ? {}
+                                : { zahlungsziel: projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
+                        }));
                         setBetreff(projekt.bauvorhaben || '');
                     }
                 } else if (anfrageId) {
                     const res = await fetch(`/api/anfragen/${anfrageId}`);
                     if (res.ok) {
                         const anfrage = await res.json();
-                        const isFollowUp = dokumentTyp !== 'ANGEBOT';
+                        const useAnfrageAsReferenceFallback = !dokumentId && dokumentTyp !== 'ANGEBOT';
                         const emails: string[] = [];
                         if (anfrage.kundenEmails) anfrage.kundenEmails.forEach((e: string) => { if (e && !emails.includes(e)) emails.push(e); });
-                        setKontextDaten({
+                        setKontextDaten(prev => ({
+                            ...prev,
                             kundennummer: anfrage.kundennummer,
                             kundenName: anfrage.kundenName,
                             kundeId: anfrage.kundenId,
-                            rechnungsadresse: buildAdresseFromAnfrage(anfrage),
+                            // Wenn User die Adresse bereits bearbeitet hat, nicht überschreiben.
+                            rechnungsadresse: adresseUserEditedRef.current
+                                ? prev.rechnungsadresse
+                                : (geerbteAdresse || buildAdresseFromAnfrage(anfrage)),
                             anrede: anfrage.kundenAnrede || anfrage.anrede,
                             ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
                             kundenEmails: emails,
-                            zahlungsziel: anfrage.zahlungsziel ?? 8,
-                            ...(isFollowUp ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' } : {})
-                        });
+                            // Wie im Projekt-Zweig: weder ein gespeichertes noch ein vom Nutzer
+                            // bereits eingetipptes Zahlungsziel ueberschreiben.
+                            ...(dokumentId || zahlungszielUserEditedRef.current
+                                ? {}
+                                : { zahlungsziel: anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE }),
+                            ...(useAnfrageAsReferenceFallback
+                                ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' }
+                                : {})
+                        }));
                         setBetreff(anfrage.bauvorhaben || '');
                     }
                 }
             } catch (err) {
                 console.error('Fehler beim Laden der Kontext-Daten:', err);
+            } finally {
+                setKontextGeladen(true);
             }
         };
         loadKontext();
@@ -475,6 +1024,20 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 setLoading(false);
                 return;
             }
+            // Nachbesserung 1: dokumentId wechselt jetzt auch dann, wenn WIR
+            // selbst gerade erst angelegt haben (syncDocumentIdInUrl schreibt
+            // die neue Id ueber den Router in die URL, die Seite reicht sie
+            // als Prop zurueck). dokument.id ist dann bereits exakt diese Id
+            // (setDokument(created) lief im selben handleSave-Aufruf vorher).
+            // Ein erneutes Fetch wuerde hier zwischenzeitliche, noch nicht
+            // gespeicherte Tipp-Aenderungen des Nutzers stillschweigend mit
+            // dem gerade erst gespeicherten Stand ueberschreiben -- also
+            // ueberspringen, wenn wir dieses Dokument schon vollstaendig im
+            // State haben.
+            if (dokument?.id === dokumentId) {
+                setLoading(false);
+                return;
+            }
             try {
                 const res = await fetch(`/api/ausgangs-dokumente/${dokumentId}`);
                 if (res.ok) {
@@ -483,7 +1046,23 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setDokumentNummer(data.dokumentNummer);
                     setDokumentTyp(data.typ);
                     setBetreff(data.betreff || '');
-                    setDatum(data.datum);
+                    // Solange das Dokument noch nicht versendet/gebucht/angenommen/storniert ist,
+                    // läuft das Dokumentdatum mit "heute" mit. Sonst würde der User im Editor
+                    // noch das Anlage-Datum von vor X Tagen sehen, obwohl beim Versand sowieso
+                    // auf heute gebumpt wird. So bleibt UI und gerendertes PDF konsistent –
+                    // und das Zahlungsziel passt unmittelbar zur tatsächlichen Bearbeitungszeit.
+                    const heuteIso = new Date().toISOString().split('T')[0];
+                    const istNochNichtVersendet = !data.gebucht && !data.digitalAngenommen && !data.storniert && !data.versandDatum;
+                    const datumZuVerwenden = istNochNichtVersendet && data.datum && data.datum < heuteIso
+                        ? heuteIso
+                        : data.datum;
+                    setDatum(datumZuVerwenden);
+                    datumRef.current = datumZuVerwenden;
+                    // Sobald ein Override vorhanden ist: als "user-edited" markieren,
+                    // damit loadKontext die Adresse nicht überschreibt.
+                    if (data.rechnungsadresseOverride) {
+                        adresseUserEditedRef.current = true;
+                    }
 
                     if (data.gebucht) {
                         setKontextDaten({
@@ -493,7 +1072,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             projektnummer: data.projektnummer,
                             projektBauvorhaben: data.projektBauvorhaben,
                             bezugsdokument: data.vorgaengerNummer,
-                            zahlungsziel: data.zahlungszielTage ?? 8
+                            zahlungsziel: data.zahlungszielTage ?? DEFAULT_ZAHLUNGSZIEL_TAGE
                         });
                     } else {
                         if (data.projektId) {
@@ -506,11 +1085,12 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     kundennummer: projekt.kundennummer,
                                     kundenName: projekt.kunde,
                                     kundeId: projekt.kundenId,
-                                    rechnungsadresse: buildAdresse(projekt.kundeDto),
+                                    // Override hat Vorrang vor berechneter Kundenadresse
+                                    rechnungsadresse: data.rechnungsadresseOverride || buildAdresse(projekt.kundeDto),
                                     anrede: projekt.kundeDto?.anrede,
                                     ansprechpartner: projekt.kundeDto?.ansprechspartner || projekt.kundeDto?.ansprechpartner,
                                     bezugsdokument: data.vorgaengerNummer,
-                                    zahlungsziel: data.zahlungszielTage ?? projekt.kundeDto?.zahlungsziel ?? 8
+                                    zahlungsziel: data.zahlungszielTage ?? projekt.kundeDto?.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE
                                 });
                             }
                         } else if (data.anfrageId) {
@@ -522,10 +1102,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     kundennummer: anfrage.kundennummer,
                                     kundenName: anfrage.kundenName,
                                     kundeId: anfrage.kundenId,
-                                    rechnungsadresse: buildAdresseFromAnfrage(anfrage),
+                                    // Override hat Vorrang vor berechneter Kundenadresse
+                                    rechnungsadresse: data.rechnungsadresseOverride || buildAdresseFromAnfrage(anfrage),
                                     anrede: anfrage.kundenAnrede || anfrage.anrede,
                                     ansprechpartner: anfrage.kundenAnsprechpartner || anfrage.kundenAnsprechspartner,
-                                    zahlungsziel: data.zahlungszielTage ?? anfrage.zahlungsziel ?? 8,
+                                    zahlungsziel: data.zahlungszielTage ?? anfrage.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE,
                                     ...(isFollowUp ? { bezugsdokument: anfrage.anfragesnummer, bezugsdokumentTyp: 'Angebot' } : {})
                                 });
                             }
@@ -533,16 +1114,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             const kundeRes = await fetch(`/api/kunden/${data.kundeId}`);
                             if (kundeRes.ok) {
                                 const kunde = await kundeRes.json();
-                                setKontextDaten({
+                                setKontextDaten(prev => ({
                                     kundennummer: kunde.kundennummer || data.kundennummer,
                                     kundenName: kunde.name || `${kunde.vorname || ''} ${kunde.nachname || ''}`.trim(),
                                     kundeId: data.kundeId,
-                                    rechnungsadresse: buildAdresse(kunde),
+                                    // Gespeichertes Override hat Vorrang
+                                    rechnungsadresse: adresseUserEditedRef.current
+                                        ? prev.rechnungsadresse
+                                        : (data.rechnungsadresseOverride || buildAdresse(kunde)),
                                     anrede: kunde.anrede,
                                     ansprechpartner: kunde.ansprechspartner || kunde.ansprechpartner,
                                     bezugsdokument: data.vorgaengerNummer,
-                                    zahlungsziel: data.zahlungszielTage ?? kunde.zahlungsziel ?? 8
-                                });
+                                    zahlungsziel: data.zahlungszielTage ?? kunde.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE
+                                }));
                             }
                         } else {
                             setKontextDaten({
@@ -552,38 +1136,38 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 projektnummer: data.projektnummer,
                                 projektBauvorhaben: data.projektBauvorhaben,
                                 bezugsdokument: data.vorgaengerNummer,
-                                zahlungsziel: data.zahlungszielTage ?? 8
+                                zahlungsziel: data.zahlungszielTage ?? DEFAULT_ZAHLUNGSZIEL_TAGE
                             });
                         }
                     }
 
-                    // Fetch predecessor type
-                    if (data.anfrageId && !data.gebucht) {
-                        // Already loaded above
+                    // Ein expliziter Vorgänger ist die verbindliche Quelle fuer
+                    // Bezugsnummer, -typ und -datum. Der Request wird abgewartet,
+                    // damit umgewandelte Standardtexte nicht vorher mit leerem
+                    // {{BEZUGSDOKUMENTDATUM}} erzeugt und eingefroren werden.
+                    if (data.vorgaengerId) {
+                        try {
+                            const vorgaengerRes = await fetch(`/api/ausgangs-dokumente/${data.vorgaengerId}`);
+                            if (vorgaengerRes.ok) {
+                                const vorgaenger: AusgangsGeschaeftsDokument = await vorgaengerRes.json();
+                                const typLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === vorgaenger.typ)?.label || vorgaenger.typ;
+                                setKontextDaten(prev => ({
+                                    ...prev,
+                                    ...buildBezugsdokumentKontext(vorgaenger, typLabel)
+                                }));
+                            }
+                        } catch (err) {
+                            console.error('Fehler beim Laden des Bezugsdokuments:', err);
+                        }
                     } else if (data.anfrageId && data.typ !== 'ANGEBOT') {
                         setKontextDaten(prev => ({ ...prev, bezugsdokumentTyp: 'Angebot' }));
-                    } else if (data.vorgaengerId) {
-                        fetch(`/api/ausgangs-dokumente/${data.vorgaengerId}`)
-                            .then(r => r.ok ? r.json() : null)
-                            .then(vorgaenger => {
-                                if (vorgaenger) {
-                                    const typLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === vorgaenger.typ)?.label || vorgaenger.typ;
-                                    const vorgaengerDatum = vorgaenger.datum
-                                        ? new Date(vorgaenger.datum).toLocaleDateString('de-DE')
-                                        : '';
-                                    setKontextDaten(prev => ({
-                                        ...prev,
-                                        bezugsdokumentTyp: typLabel,
-                                        bezugsdokument: prev.bezugsdokument || vorgaenger.dokumentNummer,
-                                        bezugsdokumentDatum: vorgaengerDatum
-                                    }));
-                                }
-                            })
-                            .catch(console.error);
                     }
 
                     let loadedBlocks: DocBlock[] = [];
                     let loadedGlobalRabatt = 0;
+                    // Ladebaseline fuer baueDokumentSignatur unten -- die State-Variable
+                    // balkenAnzeigen ist zu diesem Zeitpunkt noch nicht aktualisiert.
+                    let geladenerBalken = true;
                     if (data.positionenJson) {
                         try {
                             const parsed = JSON.parse(data.positionenJson);
@@ -594,12 +1178,26 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 // New format: { blocks, globalRabatt, abschlagInfo }
                                 loadedBlocks = parsed.blocks;
                                 loadedGlobalRabatt = parsed.globalRabatt || 0;
+                                // Fehlendes Flag = an: Bestandsrechnungen behalten ihren Balken.
+                                geladenerBalken = parsed.abrechnungsstandBalkenAnzeigen !== false;
+                                setzeBalkenAnzeigen(geladenerBalken);
                                 if (parsed.abschlagInfo) {
                                     setAbschlagInfo(parsed.abschlagInfo);
                                 }
+                                // Vom Backend beim Umwandeln gesetzt: alte Standard-
+                                // Textbausteine wurden entfernt, die fuer den neuen Typ
+                                // konfigurierten sollen einmalig nachgeladen werden.
+                                // Das Flag verschwindet beim ersten Speichern automatisch,
+                                // weil der Save-Payload nur {blocks, globalRabatt,
+                                // abschlagInfo} neu aufbaut.
+                                if (parsed.standardTextbausteineErneuern === true) {
+                                    setStandardTexteErneuern(true);
+                                }
                             }
-                            setBlocks(loadedBlocks.filter(b => b.type !== 'CLOSURE'));
-                            setGlobalRabatt(loadedGlobalRabatt);
+                            // Automatische Aenderung (Laden), kein Nutzer-Schritt: ref-first
+                            // setzen, nicht ueber verlauf.aendern.
+                            setzeBlocks(loadedBlocks.filter(b => b.type !== 'CLOSURE'));
+                            setzeGlobalRabatt(loadedGlobalRabatt);
                         } catch (e) {
                             console.error('Fehler beim Parsen der Positionen:', e);
                         }
@@ -610,13 +1208,18 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         setAbschlagBetragNetto(data.betragNetto);
                     }
 
-                    // Reset saved-state ref so loaded data doesn't count as "unsaved"
+                    // Reset saved-state ref so loaded data doesn't count as "unsaved".
+                    // CLOSURE-Marker ausschliessen, da er per useEffect zur Laufzeit
+                    // eingefuegt wird und nicht Teil der persistierten Daten ist.
                     setTimeout(() => {
-                        lastSavedStateRef.current = JSON.stringify({
-                            blocks: loadedBlocks,
+                        const persistedLoaded = loadedBlocks.filter(b => b.id !== CLOSURE_BLOCK_ID && b.type !== 'CLOSURE');
+                        lastSavedStateRef.current = baueDokumentSignatur({
+                            blocks: persistedLoaded,
                             datum: data.datum,
                             betreff: data.betreff || '',
-                            dokumentTyp: data.typ
+                            dokumentTyp: data.typ,
+                            globalRabatt: loadedGlobalRabatt,
+                            balkenAnzeigen: geladenerBalken,
                         });
                         setHasUnsavedChanges(false);
                     }, 0);
@@ -642,6 +1245,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 if (verlauf.basisdokumentBetragNetto != null) {
                                     setBasisdokumentBetragNetto(verlauf.basisdokumentBetragNetto);
                                 }
+                                // Bloecke der AB fuer den Positionsvergleich der Differenzzeile
+                                setBasisdokumentBlocks(parseBlocksAusPositionenJson(verlauf.basisdokumentPositionenJson));
                                 // Detaillierte Positionen speichern für ClosureBlock-Anzeige
                                 const anderePosDetails = (verlauf.positionen || [])
                                     .filter((pos: AbrechnungspositionDto) => pos.id !== data.id && !pos.storniert)
@@ -666,6 +1271,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             }
         };
         loadDokument();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dokumentId]);
 
     // --- Load Vorlagen ---
@@ -690,74 +1296,128 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     }, []);
 
     // --- Auto-Load Standard-Textbausteine je Dokumenttyp ---
-    // Beim Anlegen eines neuen Dokuments oder beim Umwandeln (z.B. Angebot -> AB)
-    // werden die in der Vorlage konfigurierten Vor-/Nachtexte automatisch als TEXT-Bloecke
-    // vor bzw. nach den Leistungen eingefuegt bzw. ausgetauscht. Manuell hinzugefuegte
-    // Texte (textbausteinRolle == undefined) bleiben dabei erhalten.
+    // Vor-/Nachtexte werden beim erstmaligen Anlegen eines Dokuments aus der
+    // Formular-Vorlage geladen (dokumentId noch nicht gesetzt). Sobald ein
+    // Dokument einmal gespeichert wurde, ist der User Herr ueber den Inhalt:
+    // nichts wird beim erneuten Oeffnen automatisch hinzugefuegt oder ersetzt –
+    // selbst wenn der User Vor-/Nachtexte komplett geloescht hat.
+    // EINZIGE AUSNAHME: frisch umgewandelte Dokumente (z.B. AB -> Abschlags-
+    // rechnung). Das Backend entfernt beim Typwechsel die alten Standard-
+    // Textbausteine und setzt das Flag "standardTextbausteineErneuern" ins
+    // positionenJson — dann (und nur dann) laedt der Editor die fuer den neuen
+    // Typ konfigurierten Defaults einmalig nach. Beim ersten Speichern wird das
+    // Flag automatisch verworfen (Save-Payload baut das JSON neu auf).
+    const [standardTexteErneuern, setStandardTexteErneuern] = useState(false);
     const lastAppliedDefaultsTypRef = useRef<string | null>(null);
+    /** Typ, fuer den gerade ein Defaults-Fetch laeuft (verhindert Doppel-Fetches). */
+    const defaultsInFlightTypRef = useRef<string | null>(null);
     useEffect(() => {
         if (loading) return;
         if (!dokumentTyp) return;
-        if (dokument?.gebucht) return;
+        // Gebuchte oder digital angenommene Dokumente sind unveraenderlich —
+        // auch das Umwandlungs-Flag darf deren Inhalt nicht mehr anfassen
+        // (z.B. Auto-AB nach digitaler Angebotsannahme).
+        if (dokument?.gebucht || dokument?.digitalAngenommen) return;
 
         // Warten, bis der Kontext (Kunde / Projekt) geladen ist, damit
-        // {{KUNDENNAME}}, {{BAUVORHABEN}} etc. korrekt aufgeloest werden.
-        const kontextBereit = !!kontextDaten.kundenName
-            || !!kontextDaten.projektnummer
-            || !!kontextDaten.projektBauvorhaben
-            || !!kontextDaten.kundennummer;
-        if (!kontextBereit && !!(projektId || anfrageId)) return;
+        // {{KUNDENNAME}}, {{BAUVORHABEN}} etc. korrekt aufgeloest werden —
+        // aber nur, solange der Kontext-Load noch laeuft (siehe helpers.ts).
+        if (mussAufKontextWarten(kontextDaten, kontextGeladen, !!(projektId || anfrageId))) return;
+
+        // setKontextDaten aus dem Vorgaenger-Request ist asynchron. Deshalb
+        // reicht es nicht, den Request in loadDokument nur abzuwarten: Der
+        // Defaults-Effekt kann vorher noch einen Zwischenrender mit leerem
+        // Bezugsdatum sehen und den Platzhalter dauerhaft zu "" aufloesen.
+        if (mussAufBezugsdokumentWarten(dokument?.vorgaengerId, kontextDaten)) return;
 
         if (lastAppliedDefaultsTypRef.current === dokumentTyp) return;
 
-        // Bestehendes Dokument: nur ersetzen, wenn die vorhandenen Default-Textbausteine
-        // explizit zu einem anderen Dokumenttyp gehoeren (Umwandlungs-Fall) oder gar
-        // nicht vorhanden sind und das Dokument aus einem Vorgaenger entstanden ist
-        // (Backend hat beim Umwandeln die alten Textbausteine entfernt).
-        // Legacy-Bausteine ohne Typ-Marker bleiben unangetastet, da sie user-editiert
-        // sein koennten.
-        if (dokumentId) {
-            const vorOrNach = blocks.filter(b => b.textbausteinRolle != null);
-            const hasMatchingTyp = vorOrNach.some(b => b.textbausteinDokumenttyp === dokumentTyp);
-            if (hasMatchingTyp) return;
-
-            if (vorOrNach.length === 0) {
-                // Nur fuer umgewandelte Dokumente nachgenerieren.
-                if (!dokument?.vorgaengerId) return;
-            } else {
-                const hasStaleTyp = vorOrNach.some(
-                    b => b.textbausteinDokumenttyp != null && b.textbausteinDokumenttyp !== dokumentTyp,
-                );
-                // Nur bei explizit anderem Typ-Marker ersetzen.
-                if (!hasStaleTyp) return;
-            }
+        // Bestehende Dokumente erhalten keine neuen Defaults. Sie durchlaufen
+        // den Fetch nur fuer die eng begrenzte Reparatur des frueher zu ""
+        // aufgeloesten {{BEZUGSDOKUMENTDATUM}}-Platzhalters.
+        const nurLeeresBezugsdatumReparieren = !!dokumentId && !standardTexteErneuern;
+        if (nurLeeresBezugsdatumReparieren && !dokument?.vorgaengerId) {
+            lastAppliedDefaultsTypRef.current = dokumentTyp;
+            return;
         }
 
         const typLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
 
-        let aborted = false;
+        // Laeuft fuer diesen Typ schon ein Fetch? Dann nichts doppelt starten.
+        // WICHTIG: Der "applied"-Marker wird erst NACH erfolgreichem setBlocks
+        // gesetzt (nicht optimistisch vorab). Die fruehere Variante markierte
+        // vor dem Fetch und brach bei jedem Effekt-Re-Run (z.B. Kontext-Update
+        // waehrend des Fetches) ohne Revert ab — die Vor-/Nachtexte blieben
+        // dann dauerhaft aus.
+        if (defaultsInFlightTypRef.current === dokumentTyp) return;
+        defaultsInFlightTypRef.current = dokumentTyp;
+
         (async () => {
             try {
-                const tplRes = await fetch(
-                    `/api/formulare/templates/selection?dokumenttyp=${encodeURIComponent(typLabel)}`,
-                );
-                if (aborted || tplRes.status !== 200) return;
-                const templateName = (await tplRes.text()).trim();
-                if (!templateName) return;
-
-                const dfRes = await fetch(
-                    `/api/formulare/templates/${encodeURIComponent(templateName)}/textbaustein-defaults/resolve?dokumenttyp=${encodeURIComponent(typLabel)}`,
-                );
-                if (aborted || !dfRes.ok) return;
-                const data: {
+                type DefaultsResponse = {
                     vortexte: Array<{ id: number; name: string; html?: string; beschreibung?: string }>;
                     nachtexte: Array<{ id: number; name: string; html?: string; beschreibung?: string }>;
-                } = await dfRes.json();
+                };
 
-                if (aborted) return;
+                // Fallback-Reihenfolge der Dokumenttyp-Labels (Nachtragsangebot
+                // faellt auf die Angebots-Defaults zurueck, siehe helpers.ts).
+                const labelKandidaten = defaultsLabelKandidaten(dokumentTyp, typLabel);
+
+                let data: DefaultsResponse | null = null;
+                for (const label of labelKandidaten) {
+                    const tplRes = await fetch(
+                        `/api/formulare/templates/selection?dokumenttyp=${encodeURIComponent(label)}`,
+                    );
+                    if (tplRes.status !== 200) continue;
+                    const templateName = (await tplRes.text()).trim();
+                    if (!templateName) continue;
+
+                    const dfRes = await fetch(
+                        `/api/formulare/templates/${encodeURIComponent(templateName)}/textbaustein-defaults/resolve?dokumenttyp=${encodeURIComponent(label)}`,
+                    );
+                    if (!dfRes.ok) continue;
+                    const kandidat: DefaultsResponse = await dfRes.json();
+                    data = kandidat;
+                    if ((kandidat.vortexte?.length || 0) > 0 || (kandidat.nachtexte?.length || 0) > 0) break;
+                }
+
+                if (!data) return;
+                if (nurLeeresBezugsdatumReparieren) {
+                    const defaultsByKey = new Map<string, { html?: string; beschreibung?: string }>();
+                    for (const item of data.vortexte || []) defaultsByKey.set(`VOR:${item.id}`, item);
+                    for (const item of data.nachtexte || []) defaultsByKey.set(`NACH:${item.id}`, item);
+
+                    setzeBlocks(blocksRef.current.map(block => {
+                        if (!block.textbausteinRolle || block.textbausteinId == null) return block;
+                        const item = defaultsByKey.get(`${block.textbausteinRolle}:${block.textbausteinId}`);
+                        const rawHtml = item?.html || item?.beschreibung || '';
+                        const reparierterInhalt = repariereLeeresBezugsdatumInStandardtext(
+                            block.content || '',
+                            rawHtml,
+                            kontextDaten.bezugsdokumentDatum || '',
+                            html => replacePlaceholders(html, false, true),
+                        );
+                        if (reparierterInhalt === (block.content || '')) return block;
+
+                        return {
+                            ...block,
+                            content: reparierterInhalt,
+                        };
+                    }));
+                    // Automatische Aenderung, kein Nutzer-Schritt -- trifft dieser
+                    // Fetch erst ein, nachdem der Nutzer schon etwas geaendert hat,
+                    // beginnt der Verlauf laut Spec neu (Randfall).
+                    verlauf.leeren();
+                    lastAppliedDefaultsTypRef.current = dokumentTyp;
+                    return;
+                }
+
                 const buildBlock = (item: { id: number; html?: string; beschreibung?: string }, rolle: 'VOR' | 'NACH'): DocBlock => {
                     const rawHtml = item.html || item.beschreibung || '';
-                    const resolvedHtml = replacePlaceholders(rawHtml, false);
+                    // Zahlungsziel-Platzhalter NICHT aufloesen: sie bleiben in
+                    // block.content erhalten und werden im Editor als geschuetzte
+                    // Chips gerendert (sonst friert "8 Tage" als Klartext ein).
+                    const resolvedHtml = replacePlaceholders(rawHtml, false, true);
                     return {
                         id: crypto.randomUUID(),
                         type: 'TEXT',
@@ -770,62 +1430,115 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     };
                 };
 
-                const vorBlocks = data.vortexte.map(v => buildBlock(v, 'VOR'));
-                const nachBlocks = data.nachtexte.map(n => buildBlock(n, 'NACH'));
+                const vorBlocks = (data.vortexte || []).map(v => buildBlock(v, 'VOR'));
+                const nachBlocks = (data.nachtexte || []).map(n => buildBlock(n, 'NACH'));
 
-                lastAppliedDefaultsTypRef.current = dokumentTyp;
-
-                setBlocks(prev => {
-                    // Vorhandene Default-Bloecke entfernen, manuell eingefuegte Texte bleiben
-                    const cleaned = prev.filter(b => b.textbausteinRolle == null);
-                    if (vorBlocks.length === 0 && nachBlocks.length === 0) return cleaned;
-                    const firstLeistungIdx = cleaned.findIndex(
-                        b => b.type === 'SERVICE' || b.type === 'SECTION_HEADER',
-                    );
-                    if (firstLeistungIdx === -1) {
+                // Vorhandene Default-Bloecke entfernen, manuell eingefuegte Texte bleiben
+                const cleaned = blocksRef.current.filter(b => b.textbausteinRolle == null);
+                const firstLeistungIdx = cleaned.findIndex(
+                    b => b.type === 'SERVICE' || b.type === 'SECTION_HEADER',
+                );
+                const naechsteBlocks = vorBlocks.length === 0 && nachBlocks.length === 0
+                    ? cleaned
+                    : firstLeistungIdx === -1
                         // Noch keine Leistungen: Vor- und Nachtexte einfach anhaengen
-                        return [...cleaned, ...vorBlocks, ...nachBlocks];
-                    }
-                    return [
-                        ...cleaned.slice(0, firstLeistungIdx),
-                        ...vorBlocks,
-                        ...cleaned.slice(firstLeistungIdx),
-                        ...nachBlocks,
-                    ];
-                });
+                        ? [...cleaned, ...vorBlocks, ...nachBlocks]
+                        : [
+                            ...cleaned.slice(0, firstLeistungIdx),
+                            ...vorBlocks,
+                            ...cleaned.slice(firstLeistungIdx),
+                            ...nachBlocks,
+                        ];
+                setzeBlocks(naechsteBlocks);
+                // Automatische Aenderung, kein Nutzer-Schritt -- trifft dieser Fetch
+                // erst ein, nachdem der Nutzer schon etwas geaendert hat, beginnt der
+                // Verlauf laut Spec neu (Randfall).
+                verlauf.leeren();
+                // Erfolg: erst jetzt als "angewendet" markieren und das
+                // Umwandlungs-Flag verbrauchen — die Defaults des neuen Typs sind drin.
+                lastAppliedDefaultsTypRef.current = dokumentTyp;
+                setStandardTexteErneuern(false);
             } catch {
-                // Stumm: fehlende Defaults sind kein Fehler.
+                // Stumm: fehlende Defaults sind kein Fehler. Der Marker wurde noch
+                // nicht gesetzt, ein spaeterer Re-Render (z.B. nach Reconnect)
+                // versucht das Laden automatisch erneut.
+            } finally {
+                if (defaultsInFlightTypRef.current === dokumentTyp) {
+                    defaultsInFlightTypRef.current = null;
+                }
             }
         })();
-        return () => { aborted = true; };
-        // blocks bewusst NICHT in den Deps (sonst Re-Run bei jedem Tastendruck);
-        // der Closure-Wert aus dem Render nach loadDokument reicht aus.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loading, dokumentId, dokumentTyp, replacePlaceholders, kontextDaten, projektId, anfrageId, dokument]);
+    // verlauf.leeren ist ueber seinen eigenen useCallback stabil (siehe
+    // useDokumentVerlauf.ts); das umschliessende `verlauf`-Objekt selbst ist
+    // das NICHT (frisches Objekt-Literal bei jedem Render) -- es in die
+    // Dep-Liste aufzunehmen wuerde diesen schweren, mehrstufigen Fetch-Effekt
+    // bei jedem Render neu anstossen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, dokumentId, dokumentTyp, replacePlaceholders, kontextDaten, projektId, anfrageId, dokument, standardTexteErneuern, kontextGeladen, setzeBlocks, verlauf.leeren]);
 
+    // Nachbesserung 1 (Kontext-Log): frueher per window.history.replaceState
+    // geschrieben -- das aendert die URL, ohne dass react-router (und damit
+    // der ueber useSearchParams lesende Seiten-Lock-Hook) je davon erfaehrt.
+    // Ein frisch angelegtes Dokument blieb dadurch ohne Seiten-Heartbeat und
+    // verlor sein Soft-Lock nach STALE_AFTER (90s) -- der naechste Autosave
+    // scheiterte dann mit 409, ohne dass der Editor das noch reparieren
+    // konnte (das alte tryAcquireLock-Retry ist ja weg). Jetzt ueber
+    // setSearchParams, damit die Seite (und ihr Lock-Hook) die neue Id
+    // tatsaechlich mitbekommt.
     const syncDocumentIdInUrl = useCallback((savedDocumentId?: number) => {
         if (!savedDocumentId) return;
-        try {
-            const url = new URL(window.location.href);
-            if (!url.pathname.endsWith('/dokument-editor')) return;
+        if (!location.pathname.endsWith('/dokument-editor')) return;
 
-            const idAsString = String(savedDocumentId);
-            if (url.searchParams.get('dokumentId') === idAsString) return;
+        const idAsString = String(savedDocumentId);
+        if (searchParams.get('dokumentId') === idAsString) return;
 
-            url.searchParams.set('dokumentId', idAsString);
-            window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-        } catch (err) {
-            console.warn('Konnte dokumentId nicht in URL synchronisieren:', err);
-        }
-    }, []);
+        const naechste = new URLSearchParams(searchParams);
+        naechste.set('dokumentId', idAsString);
+        setSearchParams(naechste, { replace: true });
+    }, [searchParams, setSearchParams, location]);
+
+    // Das Lock selbst haelt jetzt ausschliesslich die Seite (useDatensatzLock,
+    // anderer Task) -- der Editor holt und pingt keins mehr. Frueher gab es
+    // hier zusaetzlich einen eigenen, nie gestoppten Heartbeat (alle 30s auf
+    // dem alten, mittlerweile abgeloesten Sperr-Endpunkt) UND ein eigenes
+    // Acquire (tryAcquireLock, als 409-Retry in handleSave). Beides geriet mit dem
+    // Seiten-Hook aus dem Takt und ist raus (Issue #82, Abschnitt 6a): ein
+    // 409 beim Speichern bedeutet jetzt entweder eine echte Fremdsperre oder
+    // eine abgelaufene Seiten-Sperre -- in beiden Faellen kann der Editor
+    // hier nichts reparieren, siehe handleSave unten.
 
     // --- Save ---
     const handleSave = useCallback(async (): Promise<AusgangsGeschaeftsDokument | null> => {
         if (isLocked) return null;
         setSaving(true);
+        // Adresse EINMAL zum Start festhalten: sie geht so in den Request und
+        // dient nach der Antwort als Vergleichswert. Aendert der User waehrend
+        // des Roundtrips erneut, bleibt das Dirty-Flag stehen, statt die zweite
+        // Aenderung stillschweigend zu verwerfen (Lost Update).
+        const gesendeteAdresse = kontextDatenRef.current.rechnungsadresse;
+        const adresseUnveraendert = () => kontextDatenRef.current.rechnungsadresse === gesendeteAdresse;
+        // Zahlungsziel genauso festhalten. Immer den angezeigten Wert schicken,
+        // damit Datenbank (Offene Posten, Mahnwesen) und PDF uebereinstimmen.
+        // `undefined` (Kontext nicht geladen) faellt aus dem JSON heraus und das
+        // Backend behaelt seinen Wert — nie still DEFAULT_ZAHLUNGSZIEL_TAGE speichern.
+        // Bewusste Nebenwirkung: ein Dokument ohne eigenen Wert folgte bisher
+        // dauerhaft dem Kundenstamm; mit dem ersten Speichern friert der
+        // angezeigte Wert fest ein. Fuer Rechnungen ist genau das richtig — im
+        // PDF steht dann derselbe Wert wie in der Faelligkeit.
+        const gesendetesZahlungsziel = kontextDatenRef.current.zahlungsziel;
+        const zahlungszielUnveraendert = () => kontextDatenRef.current.zahlungsziel === gesendetesZahlungsziel;
         try {
-            const htmlInhalt = blocksToHtml(blocks);
-            const blockNetto = calculateNetto(blocks);
+            // CLOSURE-Marker wird NICHT persistiert: er ist ein UI-Konstrukt, der per
+            // useEffect bei Bedarf wieder eingefuegt wird. Damit bleibt positionenJson
+            // bytegenau kompatibel mit bestehenden Dokumenten.
+            const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+            const htmlInhalt = blocksToHtml(persistedBlocks);
+            // Pauschalrabatt MUSS hier einfliessen: `betragNetto` ist der Wert, der
+            // persistiert wird und aus dem das Backend den Bruttobetrag ableitet.
+            // Projekt-Dokumentliste, Offene Posten, Projekt-Bruttopreis und die
+            // Rechnungs-E-Mail lesen ausschliesslich diesen Wert — ein nur in
+            // positionenJson abgelegter globalRabatt kaeme dort nie an.
+            const blockNetto = calculateNettoNachRabatt(persistedBlocks, globalRabatt);
             // Für Schlussrechnung: effektiven Restbetrag verwenden (Blocksumme minus bereits abgerechnete)
             let betragNetto = blockNetto;
             if (dokumentTyp === 'SCHLUSSRECHNUNG' && bereitsAbgerechnetDurchAndere !== null) {
@@ -835,56 +1548,107 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 betragNetto = abschlagBetragNetto;
             }
             const positionenData = JSON.stringify({
-                blocks,
+                blocks: persistedBlocks,
                 globalRabatt,
+                abrechnungsstandBalkenAnzeigen: balkenAnzeigen,
                 ...(abschlagInfo ? { abschlagInfo } : {})
             });
 
             if (dokument?.id) {
-                const res = await fetch(`/api/ausgangs-dokumente/${dokument.id}`, {
+                const id = dokument.id;
+                const body = JSON.stringify({
+                    datum: datumRef.current,
+                    betreff,
+                    betragNetto,
+                    htmlInhalt,
+                    positionenJson: positionenData,
+                    zahlungszielTage: gesendetesZahlungsziel,
+                    // Nur mitschicken wenn User die Adresse bewusst geändert hat.
+                    // Ueber das Ref lesen, nicht ueber den State — siehe kontextDatenRef.
+                    ...(adresseUserEditedRef.current
+                        ? { rechnungsadresseOverride: gesendeteAdresse ?? null }
+                        : {})
+                });
+                const doPut = () => fetch(`/api/ausgangs-dokumente/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        datum,
-                        betreff,
-                        betragNetto,
-                        htmlInhalt,
-                        positionenJson: positionenData
-                    })
+                    body,
                 });
+                const res = await doPut();
+                // Frueher wurde hier bei 409 automatisch neu ge-acquired
+                // (tryAcquireLock) -- das gehoert jetzt der Seite, die ueber
+                // useDatensatzLock den Heartbeat durchgehend am Laufen haelt.
+                // Ein 409 hier bedeutet also entweder eine echte Fremdsperre
+                // oder eine tatsaechlich abgelaufene Seiten-Sperre; beides
+                // kann der Editor selbst nicht reparieren.
+                //
+                // Zwei GRUNDVERSCHIEDENE Ursachen stecken hinter demselben
+                // Statuscode (Nachbesserung 1, Kontext-Log): der Lock-Check
+                // in update() liefert einen reinen Text-Body ("Dokument wird
+                // gerade von ... bearbeitet"), ein echter Versionskonflikt
+                // (RestExceptionHandler.handleOptimisticLockingFailure) einen
+                // JSON-Body. Ohne diese Unterscheidung landete beim
+                // Versionskonflikt der rohe JSON-Text im Toast. Der
+                // Content-Type verraet zuverlaessig, welcher Fall vorliegt.
+                if (res.status === 409) {
+                    const istJson = (res.headers.get('content-type') || '').includes('application/json');
+                    if (istJson) {
+                        await konfliktMeldung.pruefeAntwort(res);
+                    } else {
+                        const konfliktText = await res.text().catch(() => '');
+                        toast.warning(konfliktText || 'Dieses Dokument wird gerade von einem anderen Benutzer bearbeitet. Bitte kurz warten und es erneut versuchen.');
+                    }
+                    return null;
+                }
                 if (res.ok) {
                     const updated = await res.json();
                     setDokument(updated);
                     setDokumentNummer(updated.dokumentNummer);
                     syncDocumentIdInUrl(updated.id);
-                    const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
+                    if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    // Bezugswert auf den tatsaechlich persistierten Wert setzen --
+                    // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
+                    // hat. Sonst haelt die Ref den Stand von VOR dem Speichern, und
+                    // ein Zuruecktippen auf diesen alten Wert loeschte das
+                    // Dirty-Flag, obwohl in der Datenbank etwas anderes steht.
+                    gespeichertesZahlungszielRef.current = gesendetesZahlungsziel;
+                    if (zahlungszielUnveraendert()) setZahlungszielGeaendert(false);
+                    setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
-                    const autoWps = Number(updated.autoZugewieseneWps ?? 0);
-                    if (autoWps > 0) {
-                        toast.success(
-                            `${autoWps} Schweißanweisung${autoWps === 1 ? '' : 'en'} automatisch dem Projekt zugeordnet (EN 1090).`,
-                        );
-                    }
                     return updated;
                 } else {
-                    const errorText = await res.text();
+                    const errorText = await res.text().catch(() => '');
                     console.error('Fehler beim Speichern:', res.status, errorText);
-                    alert(`Fehler beim Speichern: ${errorText || res.statusText}`);
+                    toast.error(`Speichern fehlgeschlagen: ${errorText || res.statusText}`);
                 }
             } else {
                 const dto: AusgangsGeschaeftsDokumentErstellen = {
                     typ: dokumentTyp,
-                    datum,
+                    datum: datumRef.current,
                     betreff,
                     betragNetto,
                     htmlInhalt,
                     positionenJson: positionenData,
+                    zahlungszielTage: gesendetesZahlungsziel,
                     projektId,
-                    anfrageId
+                    anfrageId,
+                    // Hat der User die Adresse schon vor dem ersten Speichern bearbeitet,
+                    // gilt seine Fassung — sonst erbt das Backend die zuletzt geänderte
+                    // Rechnungsanschrift des Vorgangs.
+                    // Wie im PUT-Pfad an `adresseUserEditedRef` gekoppelt statt an
+                    // die Truthiness der Adresse. Hinweis: eine bewusst geleerte
+                    // Adresse laesst sich beim ANLEGEN trotzdem nicht ausdruecken —
+                    // das Backend wertet leer als "erbe vom Vorgang" (siehe
+                    // AusgangsGeschaeftsDokumentService#erstellen). Beim Speichern
+                    // eines bestehenden Dokuments greift der Reset dagegen.
+                    ...(adresseUserEditedRef.current
+                        ? { rechnungsadresseOverride: gesendeteAdresse ?? undefined }
+                        : {})
                 };
                 const res = await fetch('/api/ausgangs-dokumente', {
                     method: 'POST',
@@ -893,64 +1657,172 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 });
                 if (res.ok) {
                     const created = await res.json();
+                    // Reihenfolge nicht tauschen: setDokument(created) muss VOR
+                    // syncDocumentIdInUrl(created.id) stehen und beide im selben React-Batch
+                    // landen. Der Lade-Effekt prueft dokument?.id === dokumentId, um beim
+                    // Prop-Wechsel undefined -> neue Id NICHT neu zu laden (sonst Zustand weg,
+                    // siehe 6a Nachbesserung 1). Steht die URL-Id vor dem Dokument im State,
+                    // greift der Guard nicht (Code-Review 6, 2. Durchgang).
                     setDokument(created);
                     setDokumentNummer(created.dokumentNummer);
                     syncDocumentIdInUrl(created.id);
-                    const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+                    const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
+                    if (adresseUnveraendert()) setAdresseGeaendert(false);
+                    // Bezugswert auf den tatsaechlich persistierten Wert setzen --
+                    // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
+                    // hat. Sonst haelt die Ref den Stand von VOR dem Speichern, und
+                    // ein Zuruecktippen auf diesen alten Wert loeschte das
+                    // Dirty-Flag, obwohl in der Datenbank etwas anderes steht.
+                    gespeichertesZahlungszielRef.current = gesendetesZahlungsziel;
+                    if (zahlungszielUnveraendert()) setZahlungszielGeaendert(false);
+                    setPreviewRefreshToken(t => t + 1);
                     notifyDokumentChanged({ projektId, anfrageId, dokumentId: created.id });
-                    const autoWps = Number(created.autoZugewieseneWps ?? 0);
-                    if (autoWps > 0) {
-                        toast.success(
-                            `${autoWps} Schweißanweisung${autoWps === 1 ? '' : 'en'} automatisch dem Projekt zugeordnet (EN 1090).`,
-                        );
-                    }
                     return created;
+                } else {
+                    const errorText = await res.text().catch(() => '');
+                    console.error('Fehler beim Erstellen:', res.status, errorText);
+                    toast.error(`Speichern fehlgeschlagen: ${errorText || res.statusText}`);
                 }
             }
         } catch (err) {
             console.error('Fehler beim Speichern:', err);
+            toast.error('Speichern fehlgeschlagen — Verbindung pruefen und erneut versuchen.');
         } finally {
             setSaving(false);
         }
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, bereitsAbgerechnetDurchAndere, globalRabatt]);
+    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, konfliktMeldung, bereitsAbgerechnetDurchAndere, globalRabatt, balkenAnzeigen]);
+
+    // Imperatives Handle fuer die Seite (Task 7a, Issue #82): der
+    // Untaetigkeits-Timer der Seite (useIdleTimer + useDatensatzLock) darf
+    // die Sperre erst freigeben, NACHDEM ungespeicherte Aenderungen
+    // gespeichert wurden -- "niemals freigeben, solange ungespeicherte
+    // Aenderungen im Editor liegen" (Spec). Ohne ungespeicherte Aenderungen
+    // ist es bewusst ein No-op (kein Leerlauf-Request bei jedem Idle-Ablauf
+    // eines rein lesend offenen Dokuments). `isLocked` zusaetzlich geprueft,
+    // weil `handleSave` selbst bei isLocked ohnehin `null` liefert (siehe
+    // oben) -- der fruehe Ausstieg hier spart den Aufruf ganz.
+    useImperativeHandle(ref, () => ({
+        speichernFuerFreigabe: async () => {
+            if (isLocked || !hasUnsavedChanges) return;
+            await handleSave();
+        },
+    }), [isLocked, hasUnsavedChanges, handleSave]);
+
+    /**
+     * Setzt das Dokumentdatum auf heute, sofern das Dokument noch bearbeitbar
+     * ist. Wird unmittelbar vor jedem finalen Versand (Export, Druck, Mail –
+     * jeweils ohne Entwurfs-Modus) aufgerufen, damit Rechnungsdatum und das
+     * darauf basierende Zahlungsziel zum tatsächlichen Versandtag passen.
+     * `datumRef` wird synchron mitgezogen, damit handleSave / createPdfRequest
+     * im selben Tick bereits den neuen Wert verwenden.
+     */
+    const bumpDatumAufHeute = useCallback((): void => {
+        if (isLocked) return;
+        const heute = new Date().toISOString().split('T')[0];
+        if (datumRef.current === heute) return;
+        datumRef.current = heute;
+        setDatum(heute);
+    }, [isLocked]);
 
     // --- Change Detection ---
+    // CLOSURE-Marker beim State-Vergleich ausblenden, damit das automatische
+    // Einfuegen/Entfernen des Markers nicht als "ungespeicherte Aenderung" zaehlt.
     useEffect(() => {
-        const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+        const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+        const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
         if (lastSavedStateRef.current === '') {
             lastSavedStateRef.current = currentState;
             return;
         }
-        setHasUnsavedChanges(currentState !== lastSavedStateRef.current);
-    }, [blocks, datum, betreff, dokumentTyp]);
+        // `adresseGeaendert` und `zahlungszielGeaendert` additiv, sonst wuerde
+        // ein Undo, das die Bloecke exakt auf den gespeicherten Stand
+        // zuruecksetzt, das Dirty-Flag loeschen und die geaenderte Adresse
+        // bzw. das geaenderte Zahlungsziel ginge beim Schliessen verloren.
+        setHasUnsavedChanges(currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert);
+    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, adresseGeaendert, zahlungszielGeaendert]);
 
     // --- Auto-Save ---
     useEffect(() => {
         if (isLocked) return;
         const intervalId = setInterval(() => {
-            const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
-            if (currentState !== lastSavedStateRef.current && !saving) {
-                console.log('Auto-Save: Speichere Änderungen...');
+            const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
+            if ((currentState !== lastSavedStateRef.current || adresseGeaendert || zahlungszielGeaendert) && !saving) {
                 handleSave();
             }
         }, 10000);
         return () => clearInterval(intervalId);
-    }, [blocks, datum, betreff, dokumentTyp, saving, isLocked, handleSave]);
+    }, [blocks, datum, betreff, dokumentTyp, globalRabatt, balkenAnzeigen, saving, isLocked, handleSave, adresseGeaendert, zahlungszielGeaendert]);
+
+    // --- Tab schliessen (X-Button-Ablauf, Issue #82) ---
+    // Feste Reihenfolge laut Spec: (1) Warnung bei ungespeicherten Aenderungen
+    // (siehe handleClose/UnsavedChangesModal), (2) speichern, (3) Sperre der
+    // Seite aktiv freigeben, (4) Tab schliessen versuchen, (5) existiert der
+    // Tab danach noch (z.B. macOS Safari blockiert window.close() aus
+    // Skripten): ruhige Vollbild-Seite statt des Editors zeigen.
+    // `onLockFreigeben` kommt von der Seite (useDatensatzLock, anderer Task)
+    // und ist optional: ohne ihn (Aufrufer, die das neue Lock-Fundament noch
+    // nicht verdrahtet haben) bleibt das bisherige Verhalten unveraendert --
+    // die Seite entscheidet ueber `onClose`, ob sie per `navigate(-1)`
+    // zurueckgeht oder den Tab schliesst (siehe DocumentEditorProps).
+    const [zeigeTabSchliessenHinweis, setZeigeTabSchliessenHinweis] = useState(false);
+    const mountedRef = useRef(true);
+    // Haelt die Timer-Id des 150ms-Waits unten fest, damit sie beim Unmount
+    // (z.B. weil ein Elternteil den Editor doch noch wegnimmt, bevor der
+    // Timer feuert) sauber abgeraeumt wird -- sonst laeuft ein verwaister
+    // Timer weiter und versucht spaeter, State auf einer laengst
+    // ungemounteten Komponente zu setzen.
+    const tabSchliessenTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            if (tabSchliessenTimerRef.current != null) {
+                window.clearTimeout(tabSchliessenTimerRef.current);
+                tabSchliessenTimerRef.current = null;
+            }
+        };
+    }, []);
+
+    const tabSchliessen = useCallback(async () => {
+        if (!onLockFreigeben) {
+            onClose();
+            return;
+        }
+        try {
+            await onLockFreigeben();
+        } catch (err) {
+            console.error('Sperre konnte nicht freigegeben werden:', err);
+            toast.error('Sperre konnte nicht freigegeben werden. Bitte Seite neu laden.');
+            return;
+        }
+        window.close();
+        // window.close() wird vom Browser nicht ueberall zuverlaessig
+        // ausgefuehrt (z.B. macOS Safari, wenn das Skript den Tab nicht
+        // zweifelsfrei selbst geoeffnet hat). Existiert die Komponente nach
+        // kurzer Wartezeit noch, zeigen wir statt stumm nichts zu tun eine
+        // Bestaetigung, dass Speichern und Freigeben trotzdem geklappt haben.
+        tabSchliessenTimerRef.current = window.setTimeout(() => {
+            tabSchliessenTimerRef.current = null;
+            if (mountedRef.current) setZeigeTabSchliessenHinweis(true);
+        }, 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onClose, onLockFreigeben]);
 
     // --- Close Handler ---
     const handleClose = useCallback(() => {
         if (hasUnsavedChanges) {
             setShowUnsavedWarning(true);
         } else {
-            onClose();
+            void tabSchliessen();
         }
-    }, [hasUnsavedChanges, onClose]);
+    }, [hasUnsavedChanges, tabSchliessen]);
 
     // --- Keyboard Shortcut ---
     useEffect(() => {
@@ -971,7 +1843,135 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         setShowTextbausteinPicker(false);
         setShowLeistungPicker(false);
         setShowStundensatzPicker(false);
+        setShowAddTypeDialog(false);
+        // Defense-in-Depth: bei Lock-Uebernahme alle UI-Anker zuruecksetzen,
+        // damit beim Entsperren kein stale Anker aus einem abgebrochenen
+        // Picker-Flow im Ref haengen bleibt.
+        pendingAnchorRef.current = DEFAULT_ANCHOR;
+        // Verlauf leeren: auch bei einem reinen Soft-Lock-Wechsel (Fremdsperre,
+        // eigenes "Fertig", Untaetigkeit), weil der Stand danach fremd
+        // veraendert sein kann -- ein "Rueckgaengig" auf einen dann veralteten
+        // Schritt waere falsch.
+        verlauf.leeren();
+    // Gleicher Grund wie beim Standard-Textbausteine-Effekt oben: verlauf.leeren
+    // ist stabil, das `verlauf`-Objekt selbst nicht.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLocked, verlauf.leeren]);
+
+    // --- Rückgängig & Wiederholen: Tastatur + "Stelle zeigen" ---
+    // Wurzel-Element des Editor-Bereichs (Bloecke, Rechnungsadresse) --
+    // ausserhalb (Kopf-/Fusszeile, Dialoge) bleibt das normale Verhalten des
+    // fokussierten Elements unangetastet.
+    const editorWurzelRef = useRef<HTMLDivElement>(null);
+
+    const [sprung, setSprung] = useState<{ text: string; ziel: VerlaufsZiel | null; nummer: number } | null>(null);
+    const sprungZaehlerRef = useRef(0);
+
+    /** Meldet einen Rückgängig-/Wiederholen-Sprung fuer Ansage + "Stelle zeigen". */
+    const zeigeSprung = useCallback((richtung: 'Rückgängig' | 'Wiederholen', meldung: VerlaufsMeldung | null) => {
+        if (!meldung) return;
+        sprungZaehlerRef.current += 1;
+        setSprung({ text: `${richtung}: ${meldung.bezeichnung}`, ziel: meldung.ziel, nummer: sprungZaehlerRef.current });
+    }, []);
+
+    // Die meisten Dialoge des Editors tragen kein role="dialog"/aria-modal --
+    // deshalb hier explizit gebuendelt statt ueber darfVerlaufTasteGreifens
+    // eigene [aria-modal]-Suche (die deckt nur AddTypeDialog,
+    // AlternativGruppeDialog, ArtikelAuswahlDialog und den globalen
+    // Bestaetigungsdialog ab).
+    const einDialogOffen = showExportWarning || showExportFormatDialog || showPrintOptions
+        || showUnsavedWarning || showAddTypeDialog || showTextbausteinPicker
+        || showLeistungPicker || showStundensatzPicker || showRabattDialog
+        || alternativDialogAnker !== null || pendingLeistungInsert !== null
+        || showFormatDialog || showValidityDialog || showEmailModal || materialDialogOffen;
+
+    useVerlaufTastatur({
+        aktiv: !isLocked && !einDialogOffen,
+        wurzelRef: editorWurzelRef,
+        onRueckgaengig: () => zeigeSprung('Rückgängig', verlauf.rueckgaengig()),
+        onWiederholen: () => zeigeSprung('Wiederholen', verlauf.wiederholen()),
+    });
+
+    // "Stelle zeigen": Karte in den sichtbaren Bereich scrollen, kurz
+    // hervorheben und bei Inhalts-Feldern den Cursor dorthin setzen.
+    useEffect(() => {
+        if (!sprung || !sprung.ziel) return;
+        const wurzel = editorWurzelRef.current;
+        if (!wurzel) return;
+        const ziel = sprung.ziel;
+
+        const karten = Array.from(wurzel.querySelectorAll<HTMLElement>('[data-block-id]'));
+        const karte = karten.find(el => el.dataset.blockId === ziel.blockId)
+            ?? (ziel.sectionId ? karten.find(el => el.dataset.blockId === ziel.sectionId) : undefined);
+        if (!karte) return; // Stelle existiert nicht mehr (z.B. Einfuegen zurueckgenommen) -- nicht scrollen.
+
+        const reduziert = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (typeof karte.scrollIntoView === 'function') {
+            karte.scrollIntoView({ block: 'center', behavior: reduziert ? 'auto' : 'smooth' });
+        }
+        karte.classList.add('verlauf-hervorgehoben');
+        const timer = window.setTimeout(() => karte.classList.remove('verlauf-hervorgehoben'), 1200);
+
+        if (ziel.feld === 'content' || ziel.feld === 'description') {
+            const editorKey = ziel.feld === 'content' ? ziel.blockId : `${ziel.blockId}-desc`;
+            const ed = editorRefs.current[editorKey];
+            if (ed && !ed.isDestroyed) ed.commands.focus();
+        } else if (ziel.feld) {
+            karte.querySelector<HTMLInputElement>(`[data-verlauf-feld="${ziel.feld}"]`)?.focus();
+        }
+
+        return () => window.clearTimeout(timer);
+    }, [sprung]);
+
+    /** Props fuer die Verlauf-Knoepfe in der Kopfleiste. */
+    const verlaufKnoepfeProps = useMemo(() => ({
+        kannRueckgaengig: verlauf.kannRueckgaengig,
+        kannWiederholen: verlauf.kannWiederholen,
+        naechstesRueckgaengig: verlauf.naechstesRueckgaengig,
+        naechstesWiederholen: verlauf.naechstesWiederholen,
+        schritte: verlauf.schritte,
+        onRueckgaengig: (anzahl: number) => zeigeSprung('Rückgängig', verlauf.rueckgaengig(anzahl)),
+        onWiederholen: () => zeigeSprung('Wiederholen', verlauf.wiederholen()),
+    }), [verlauf, zeigeSprung]);
+
+    /**
+     * Oeffnet das "+"-Auswahl-Dialog (Was hinzufuegen?) mit der angegebenen
+     * Zielposition. Wird vom Plus-Symbol unter Karten und im Bauabschnitt
+     * verwendet.
+     */
+    const openAddTypeDialogAt = useCallback((anchor: InsertAnchor) => {
+        if (isLocked) return;
+        pendingAnchorRef.current = anchor;
+        setShowAddTypeDialog(true);
     }, [isLocked]);
+
+    /** Schliesst das AddType-Dialog und setzt den Anker zurueck. */
+    const closeAddTypeDialog = useCallback(() => {
+        pendingAnchorRef.current = DEFAULT_ANCHOR;
+        setShowAddTypeDialog(false);
+    }, []);
+
+    /**
+     * Wechselt vom AddType-Dialog zum konkreten Picker, ohne den vorher
+     * gesetzten pendingAnchorRef zu verlieren. Wichtig: Wir resetten den
+     * Anker NICHT in closeAddTypeDialog, weil der Picker ihn noch braucht.
+     */
+    const openPickerForType = useCallback((picker: 'TEXTBAUSTEIN' | 'LEISTUNG' | 'STUNDENSATZ') => {
+        setShowAddTypeDialog(false);
+        if (picker === 'TEXTBAUSTEIN') setShowTextbausteinPicker(true);
+        else if (picker === 'LEISTUNG') setShowLeistungPicker(true);
+        else setShowStundensatzPicker(true);
+    }, []);
+
+    /** Plus-Symbol unter einer Karte (Textbaustein/Leistung) auf Root oder im Bauabschnitt. */
+    const handleAddBelow = useCallback((anchorId: string) => {
+        openAddTypeDialogAt({ kind: 'after', id: anchorId });
+    }, [openAddTypeDialogAt]);
+
+    /** Plus-Symbol auf dem Bauabschnitt selbst (fuegt am Ende der Section ein). */
+    const handleAddIntoSection = useCallback((sectionId: string) => {
+        openAddTypeDialogAt({ kind: 'in-section', sectionId });
+    }, [openAddTypeDialogAt]);
 
     // --- DnD ---
     const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -1038,128 +2038,187 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         const overContainer = findBlockContainer(blocks, overId);
 
         if (!activeContainer || !overContainer) return;
+        if (activeContainer !== overContainer) return; // Cross-container drag handled by drop zones, not by sorting overlap
 
-        if (activeContainer === overContainer) {
-            // Same container: reorder
-            if (activeContainer === 'root') {
-                // Root-level reorder
-                setBlocks((items) => {
-                    const oldIndex = items.findIndex((item) => item.id === activeId);
-                    const newIndex = items.findIndex((item) => item.id === overId);
-                    if (oldIndex === -1 || newIndex === -1) return items;
-                    const newOrder = arrayMove(items, oldIndex, newIndex);
-                    return newOrder;
-                });
-            } else {
-                // Within a section: reorder children
-                setBlocks(prev => prev.map(b => {
-                    if (b.id === activeContainer && b.children) {
-                        const oldIndex = b.children.findIndex(c => c.id === activeId);
-                        const newIndex = b.children.findIndex(c => c.id === overId);
-                        if (oldIndex === -1 || newIndex === -1) return b;
-                        return { ...b, children: arrayMove(b.children, oldIndex, newIndex) };
-                    }
-                    return b;
-                }));
+        // Verschieben ist eine Nutzeraktion: Stand ref-first lesen, Ergebnis
+        // (inkl. Validierung) VOR dem Schreiben ausrechnen. Ungueltig ⇒ nur
+        // Toast, kein Schritt ("Aktion, die den Stand nicht veraendert").
+        // toast.warning() bewusst AUSSERHALB eines State-Updaters (StrictMode
+        // wuerde ihn sonst doppelt zeigen).
+        const aktuelleBlocks = blocksRef.current;
+
+        if (activeContainer === 'root') {
+            // Root-level reorder mit CLOSURE-Constraint:
+            //  - Leistungen (SERVICE) und Bauabschnitte (SECTION_HEADER) muessen
+            //    vor dem CLOSURE-Block bleiben.
+            //  - CLOSURE selbst darf nicht vor die letzte Leistung/Bauabschnitt wandern.
+            //  - Textbausteine, Separatoren etc. duerfen frei umsortiert werden.
+            // Validation in blockOps.validateRootReorder (testabar mit Vitest).
+            const oldIndex = aktuelleBlocks.findIndex((item) => item.id === activeId);
+            const newIndex = aktuelleBlocks.findIndex((item) => item.id === overId);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const newOrder = arrayMove(aktuelleBlocks, oldIndex, newIndex);
+
+            const validation = validateRootReorder(newOrder, activeId);
+            if (!validation.ok) {
+                if (validation.reason === 'SERVICE_AFTER_CLOSURE') {
+                    toast.warning('Leistungen und Bauabschnitte müssen vor dem Abschluss bleiben.');
+                } else {
+                    toast.warning('Der Abschluss muss nach allen Leistungen und Bauabschnitten stehen.');
+                }
+                return;
             }
+            const bewegterBlock = aktuelleBlocks.find(b => b.id === activeId);
+            // Varianten einer Auswahl muessen nebeneinander bleiben — wurde
+            // etwas dazwischen gezogen, ruecken sie wieder zusammen.
+            const naechsteBlocks = normalisiereAlternativGruppen(newOrder);
+            verlauf.aendern({
+                bezeichnung: `${blockName(bewegterBlock)} verschoben`,
+                berechne: () => ({ blocks: naechsteBlocks }),
+                buendelSchluessel: null,
+                ziel: { blockId: activeId },
+            });
+        } else {
+            // Within a section: reorder children
+            const section = aktuelleBlocks.find(b => b.id === activeContainer);
+            const bewegterBlock = section?.children?.find(c => c.id === activeId);
+            if (!section?.children) return;
+            const oldIndex = section.children.findIndex(c => c.id === activeId);
+            const newIndex = section.children.findIndex(c => c.id === overId);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const naechsteBlocks = normalisiereAlternativGruppen(aktuelleBlocks.map(b => (
+                b.id === activeContainer && b.children
+                    ? { ...b, children: arrayMove(b.children, oldIndex, newIndex) }
+                    : b
+            )));
+            verlauf.aendern({
+                bezeichnung: `${blockName(bewegterBlock)} verschoben`,
+                berechne: () => ({ blocks: naechsteBlocks }),
+                buendelSchluessel: null,
+                ziel: { blockId: activeId, sectionId: activeContainer },
+            });
         }
-        // Cross-container drag handled by drop zones, not by sorting overlap
     }
 
     /** Move a SERVICE block from wherever it is into a target section */
     const moveServiceToSection = useCallback((serviceId: string, sectionId: string) => {
-        setBlocks(prev => {
-            // Find the service block
-            let serviceBlock: DocBlock | null = null;
-
-            // Check root level
-            const rootItem = prev.find(b => b.id === serviceId);
-            if (rootItem && rootItem.type === 'SERVICE') {
-                serviceBlock = rootItem;
-            }
-
-            // Check inside other sections
-            if (!serviceBlock) {
-                for (const b of prev) {
-                    if (b.type === 'SECTION_HEADER' && b.children) {
-                        const child = b.children.find(c => c.id === serviceId);
-                        if (child) {
-                            serviceBlock = child;
-                            break;
-                        }
+        // Find the service block (fuer die Bezeichnung und um fruehzeitig
+        // auszusteigen, wenn es ihn gar nicht mehr gibt).
+        const aktuelleBlocks = blocksRef.current;
+        let serviceBlock: DocBlock | null = null;
+        const rootItem = aktuelleBlocks.find(b => b.id === serviceId);
+        if (rootItem && rootItem.type === 'SERVICE') {
+            serviceBlock = rootItem;
+        }
+        if (!serviceBlock) {
+            for (const b of aktuelleBlocks) {
+                if (b.type === 'SECTION_HEADER' && b.children) {
+                    const child = b.children.find(c => c.id === serviceId);
+                    if (child) {
+                        serviceBlock = child;
+                        break;
                     }
                 }
             }
+        }
+        if (!serviceBlock) return;
 
-            if (!serviceBlock) return prev;
+        verlauf.aendern({
+            bezeichnung: 'Position in Bauabschnitt verschoben',
+            berechne: stand => {
+                // Remove from current location
+                let newBlocks = stand.blocks
+                    .filter(b => b.id !== serviceId)
+                    .map(b => {
+                        if (b.type === 'SECTION_HEADER' && b.children) {
+                            return { ...b, children: b.children.filter(c => c.id !== serviceId) };
+                        }
+                        return b;
+                    });
 
-            // Remove from current location
-            let newBlocks = prev
-                .filter(b => b.id !== serviceId)
-                .map(b => {
-                    if (b.type === 'SECTION_HEADER' && b.children) {
-                        return { ...b, children: b.children.filter(c => c.id !== serviceId) };
+                // Add to target section's children
+                newBlocks = newBlocks.map(b => {
+                    if (b.id === sectionId && b.type === 'SECTION_HEADER') {
+                        return { ...b, children: [...(b.children || []), serviceBlock!] };
                     }
                     return b;
                 });
 
-            // Add to target section's children
-            newBlocks = newBlocks.map(b => {
-                if (b.id === sectionId && b.type === 'SECTION_HEADER') {
-                    return { ...b, children: [...(b.children || []), serviceBlock!] };
-                }
-                return b;
-            });
-
-            return newBlocks;
+                // Container-Wechsel: die Variante verlaesst ihre Gruppe, im Ziel steht
+                // sie zunaechst allein. Beides regelt die Invariante.
+                return { blocks: normalisiereAlternativGruppen(newBlocks) };
+            },
+            buendelSchluessel: null,
+            ziel: { blockId: serviceId, sectionId },
         });
-    }, []);
+    }, [verlauf]);
 
     /** Remove a SERVICE from a section back to root level (placed right after the section) */
     const ejectChildFromSection = useCallback((sectionId: string, childId: string) => {
-        setBlocks(prev => {
-            const section = prev.find(b => b.id === sectionId);
-            const child = section?.children?.find(c => c.id === childId);
-            if (!child) return prev;
+        const section = blocksRef.current.find(b => b.id === sectionId);
+        const child = section?.children?.find(c => c.id === childId);
+        if (!child) return;
 
-            // Remove from section
-            const newBlocks = prev.map(b => {
-                if (b.id === sectionId && b.children) {
-                    return { ...b, children: b.children.filter(c => c.id !== childId) };
+        verlauf.aendern({
+            bezeichnung: `${blockName(child)} aus Bauabschnitt geholt`,
+            berechne: stand => {
+                // Remove from section
+                const newBlocks = stand.blocks.map(b => {
+                    if (b.id === sectionId && b.children) {
+                        return { ...b, children: b.children.filter(c => c.id !== childId) };
+                    }
+                    return b;
+                });
+
+                // Insert right after the section
+                const sectionIndex = newBlocks.findIndex(b => b.id === sectionId);
+                if (sectionIndex !== -1) {
+                    newBlocks.splice(sectionIndex + 1, 0, child);
+                } else {
+                    newBlocks.push(child);
                 }
-                return b;
-            });
 
-            // Insert right after the section
-            const sectionIndex = newBlocks.findIndex(b => b.id === sectionId);
-            if (sectionIndex !== -1) {
-                newBlocks.splice(sectionIndex + 1, 0, child);
-            } else {
-                newBlocks.push(child);
-            }
-
-            return newBlocks;
+                // Die herausgeworfene Variante wechselt den Container: im Bauabschnitt
+                // bleibt evtl. nur eine zurueck, auf Root-Ebene steht sie allein.
+                return { blocks: normalisiereAlternativGruppen(newBlocks) };
+            },
+            buendelSchluessel: null,
+            ziel: { blockId: childId },
         });
-    }, []);
+    }, [verlauf]);
 
-    // Fuegt einen neuen Block vor dem ersten NACH-Textbaustein ein,
-    // damit neue Leistungen / Section-Header / Subtotals immer zwischen
-    // Vor- und Nachtexten landen. Wenn keine Nachtexte existieren,
-    // wird der Block ans Ende angehaengt.
-    const insertBeforeNachtexte = (prev: DocBlock[], block: DocBlock): DocBlock[] => {
-        const firstNachIdx = prev.findIndex(b => b.textbausteinRolle === 'NACH');
-        if (firstNachIdx === -1) {
-            return [...prev, block];
-        }
-        return [
-            ...prev.slice(0, firstNachIdx),
-            block,
-            ...prev.slice(firstNachIdx),
-        ];
-    };
+    // Hinweis: insertBeforeNachtexte und insertAtAnchor sind nach blockOps.ts ausgelagert,
+    // damit sie in der Vitest-Suite (blockOps.test.ts) direkt mit 100% Branch-Coverage
+    // getestet werden koennen.
+
+    // CLOSURE-Sync: fuegt den virtuellen Abschluss-Block automatisch nach der
+    // letzten Leistung/Section ein, sobald mindestens eine Leistung vorhanden ist.
+    // Entfernt ihn wieder, wenn keine Leistung mehr existiert ODER wenn die
+    // berechnete Nettosumme 0 ist (nur optionale Leistungen / alle Preise 0€).
+    // Wichtig: Reihenfolge bestehender Bloecke wird NICHT veraendert – nur das
+    // CLOSURE-Marker-Element wird ein-/ausgeblendet (Identity-preserved return
+    // wenn nichts zu tun -> kein Re-Render-Loop).
+    useEffect(() => {
+        if (loading) return;
+        // Automatische Aenderung, kein Nutzer-Schritt: liest blocksRef.current
+        // statt `prev` (Ref-first) und setzt nur, wenn sich die Referenz
+        // tatsaechlich aendert -- sonst haengt jeder Rueckgaengig/Wiederholen-
+        // Sprung eine unsichtbare, identische Extra-Runde an.
+        const prev = blocksRef.current;
+        // Wenn gesamtNetto === 0, soll KEIN CLOSURE im Array sein – sonst
+        // hinge ein leerer SortableBlock-Wrapper inkl. Drag-Handle im DOM.
+        // computeClosureSummary direkt hier (noch keine Component-Variable,
+        // closureSummary wird erst weiter unten gebildet).
+        const gesamtNetto = computeClosureSummary(prev).gesamtNetto;
+        const naechste = gesamtNetto <= 0
+            ? (prev.some(b => b.id === CLOSURE_BLOCK_ID) ? prev.filter(b => b.id !== CLOSURE_BLOCK_ID) : prev)
+            : syncClosureBlock(prev);
+        if (naechste !== prev) setzeBlocks(naechste);
+    }, [blocks, loading, setzeBlocks]);
 
     // --- Block Actions ---
-    const addBlock = (type: DocBlock['type'], payload?: Partial<DocBlock>) => {
+    /** Default-Bezeichnung je Typ (Wortliste) -- `bezeichnung` ueberschreibt sie (Stundensatz vs. Leistung, beide type SERVICE). */
+    const addBlock = (type: DocBlock['type'], payload?: Partial<DocBlock>, bezeichnung?: string) => {
         if (isLocked) return;
 
         const allServices = getAllServiceBlocks(blocks);
@@ -1184,6 +2243,16 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             fontSize: rawBlock.fontSize ?? 10,
         };
 
+        // Anker fuer die Einfuegeposition. Wird vom Aufrufer ueber
+        // pendingAnchorRef gesetzt:
+        //  - Header-Icons:          { kind: 'between-nach' }
+        //  - Karten-Plus-Button:    { kind: 'after', id }
+        //  - Bauabschnitt-Plus:     { kind: 'in-section', sectionId }
+        const anchor = pendingAnchorRef.current;
+        // Nach dem Lesen sofort zuruecksetzen, damit der naechste Aufruf
+        // (z.B. Header-Icon ohne expliziten Set) wieder den Default trifft.
+        pendingAnchorRef.current = DEFAULT_ANCHOR;
+
         // Wenn eine Leistung mit Produktkategorie in ein Projekt eingefügt wird,
         // den User fragen ob die Kategorie dem Projekt zugeordnet werden soll
         if (type === 'SERVICE' && newBlock.leistungId && newBlock.kategorieId && projektId) {
@@ -1193,17 +2262,71 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 leistungName: leistung?.name || newBlock.title || 'Leistung',
                 kategorieId: newBlock.kategorieId,
                 kategoriePfad: leistung?.kategoriePfad || `Kategorie #${newBlock.kategorieId}`,
+                anchor,
             });
             return;
         }
 
-        setBlocks(prev => insertBeforeNachtexte(prev, newBlock));
+        // SUBTOTAL/CLOSURE entstehen nie ueber addBlock (synthetisch bzw.
+        // CLOSURE-Sync) -- der Fallback deckt sie nur type-sicher ab.
+        const label = bezeichnung ?? `${blockName({ ...newBlock, type })} eingefügt`;
+        verlauf.aendern({
+            bezeichnung: label,
+            berechne: stand => ({ blocks: applyInsert(stand.blocks, newBlock, anchor) }),
+            buendelSchluessel: null,
+            ziel: anchor.kind === 'in-section'
+                ? { blockId: newBlock.id, sectionId: anchor.sectionId }
+                : { blockId: newBlock.id },
+        });
+    };
+
+    /**
+     * Uebernimmt die Auswahl aus dem Materialfenster als SERVICE-Bloecke.
+     *
+     * Bewusst NICHT ueber addBlock: addBlock fragt bei leistungId+kategorieId
+     * nach der Projektkategorie zurueck (siehe oben) - fuer Material gibt es
+     * diese Rueckfrage nicht. Ausserdem koennte addBlock nur einen Block pro
+     * Aufruf einfuegen; bei mehreren ausgewaehlten Artikeln wuerde ein
+     * wiederholter Aufruf jedes Mal auf einem veralteten blocks-State rechnen
+     * und die Positionsnummern durcheinanderbringen. Deshalb werden alle
+     * Bloecke in einem einzigen Zustandswechsel eingefuegt.
+     */
+    const uebernehmeMaterial = (auswahl: ArtikelAuswahl[]) => {
+        if (isLocked || auswahl.length === 0) return;
+        const neueBloecke: DocBlock[] = auswahl.map((a) => ({
+            id: crypto.randomUUID(),
+            type: 'SERVICE',
+            title: a.titel,
+            description: a.beschreibungHtml,
+            quantity: a.menge,
+            unit: a.einheit,
+            price: a.einzelpreis,
+            fontSize: 10,
+            fett: false,
+            optional: false,
+            artikelId: a.artikelId,
+        }));
+        verlauf.aendern({
+            bezeichnung: 'Material eingefügt',
+            berechne: stand => ({ blocks: insertBlocksBeforeClosure(stand.blocks, neueBloecke) }),
+            buendelSchluessel: null,
+            ziel: { blockId: neueBloecke[0].id },
+        });
+        setMaterialDialogOffen(false);
     };
 
     const handleKategorieBestaetigt = async (kategorieId: number) => {
         if (!pendingLeistungInsert || !projektId) return;
         const finalBlock = { ...pendingLeistungInsert.block, kategorieId };
-        setBlocks(prev => insertBeforeNachtexte(prev, finalBlock));
+        const anchor = pendingLeistungInsert.anchor;
+        verlauf.aendern({
+            bezeichnung: 'Leistung eingefügt',
+            berechne: stand => ({ blocks: applyInsert(stand.blocks, finalBlock, anchor) }),
+            buendelSchluessel: null,
+            ziel: anchor.kind === 'in-section'
+                ? { blockId: finalBlock.id, sectionId: anchor.sectionId }
+                : { blockId: finalBlock.id },
+        });
         setPendingLeistungInsert(null);
         try {
             const res = await fetch(`/api/projekte/${projektId}/produktkategorien`, {
@@ -1228,67 +2351,197 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const handleKategorieUeberspringen = () => {
         if (!pendingLeistungInsert) return;
         const name = pendingLeistungInsert.leistungName;
-        setBlocks(prev => insertBeforeNachtexte(prev, pendingLeistungInsert.block));
+        const anchor = pendingLeistungInsert.anchor;
+        const block = pendingLeistungInsert.block;
+        verlauf.aendern({
+            bezeichnung: 'Leistung eingefügt',
+            berechne: stand => ({ blocks: applyInsert(stand.blocks, block, anchor) }),
+            buendelSchluessel: null,
+            ziel: anchor.kind === 'in-section'
+                ? { blockId: block.id, sectionId: anchor.sectionId }
+                : { blockId: block.id },
+        });
         setPendingLeistungInsert(null);
         toast.info(`Leistung „${name}“ ohne Kategorie eingefügt`);
     };
 
-    const updateBlock = (id: string, updates: Partial<DocBlock>) => {
+    /**
+     * Uebernimmt eine Feldaenderung (Titel/Menge/Einheit/Preis/Beschreibung/
+     * Inhalt). `art` kommt nur bei Content-/Description-Aenderungen aus Tiptap
+     * (verlaufsModus) -- siehe istPhantomTiptapAenderung fuer den Mount-Guard.
+     */
+    const updateBlock = (id: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => {
         if (isLocked) return;
-        setBlocks(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+        if (istPhantomTiptapAenderung(id, updates)) {
+            setzeBlocks(blocksRef.current.map(b => b.id === id ? { ...b, ...updates } : b));
+            return;
+        }
+        verlauf.aendern({
+            bezeichnung: bezeichnungFuerAenderung(updates, art),
+            berechne: stand => ({ blocks: stand.blocks.map(b => b.id === id ? { ...b, ...updates } : b) }),
+            buendelSchluessel: buendelSchluesselFuer(id, updates, art),
+            ziel: { blockId: id, feld: verlaufsFeldVon(updates) },
+        });
     };
 
     const removeBlock = (id: string) => {
         if (isLocked) return;
-        // When removing a SECTION_HEADER, eject its children back to root
-        setBlocks(prev => {
-            const block = prev.find(b => b.id === id);
-            if (block?.type === 'SECTION_HEADER' && block.children && block.children.length > 0) {
-                const idx = prev.findIndex(b => b.id === id);
-                const newBlocks = [...prev];
-                newBlocks.splice(idx, 1, ...block.children);
-                return newBlocks;
-            }
-            return prev.filter(b => b.id !== id);
+        const block = blocksRef.current.find(b => b.id === id);
+        verlauf.aendern({
+            bezeichnung: `${blockName(block)} gelöscht`,
+            // When removing a SECTION_HEADER, eject its children back to root
+            berechne: stand => {
+                const aktuellerBlock = stand.blocks.find(b => b.id === id);
+                if (aktuellerBlock?.type === 'SECTION_HEADER' && aktuellerBlock.children && aktuellerBlock.children.length > 0) {
+                    const idx = stand.blocks.findIndex(b => b.id === id);
+                    const newBlocks = [...stand.blocks];
+                    newBlocks.splice(idx, 1, ...aktuellerBlock.children);
+                    // Aus einem aufgeloesten Bauabschnitt gekippte Varianten landen auf
+                    // Root-Ebene — dort gilt die Gruppen-Invariante erneut.
+                    return { blocks: normalisiereAlternativGruppen(newBlocks) };
+                }
+                // Bleibt nach dem Loeschen nur noch eine Variante uebrig, verliert sie
+                // die Gruppe und wird wieder eine normale Zusatzposition.
+                return { blocks: normalisiereAlternativGruppen(stand.blocks.filter(b => b.id !== id)) };
+            },
+            buendelSchluessel: null,
+            ziel: { blockId: id },
         });
     };
 
     /** Update a child block within a section */
-    const updateSectionChild = (sectionId: string, childId: string, updates: Partial<DocBlock>) => {
+    const updateSectionChild = (sectionId: string, childId: string, updates: Partial<DocBlock>, art?: TiptapAenderungsArt) => {
         if (isLocked) return;
-        setBlocks(prev => prev.map(b => {
-            if (b.id === sectionId && b.children) {
-                return {
-                    ...b,
-                    children: b.children.map(c => c.id === childId ? { ...c, ...updates } : c)
-                };
-            }
-            return b;
-        }));
+        if (istPhantomTiptapAenderung(childId, updates)) {
+            setzeBlocks(blocksRef.current.map(b => (b.id === sectionId && b.children)
+                ? { ...b, children: b.children.map(c => c.id === childId ? { ...c, ...updates } : c) }
+                : b));
+            return;
+        }
+        verlauf.aendern({
+            bezeichnung: bezeichnungFuerAenderung(updates, art),
+            berechne: stand => ({
+                blocks: stand.blocks.map(b => (b.id === sectionId && b.children)
+                    ? { ...b, children: b.children.map(c => c.id === childId ? { ...c, ...updates } : c) }
+                    : b),
+            }),
+            buendelSchluessel: buendelSchluesselFuer(childId, updates, art),
+            ziel: { blockId: childId, sectionId, feld: verlaufsFeldVon(updates) },
+        });
     };
 
     /** Remove a child from a section (delete it entirely) */
     const removeSectionChild = (sectionId: string, childId: string) => {
         if (isLocked) return;
-        setBlocks(prev => prev.map(b => {
-            if (b.id === sectionId && b.children) {
-                return { ...b, children: b.children.filter(c => c.id !== childId) };
-            }
-            return b;
-        }));
+        verlauf.aendern({
+            bezeichnung: 'Position gelöscht',
+            berechne: stand => ({
+                blocks: normalisiereAlternativGruppen(stand.blocks.map(b => (b.id === sectionId && b.children)
+                    ? { ...b, children: b.children.filter(c => c.id !== childId) }
+                    : b)),
+            }),
+            buendelSchluessel: null,
+            ziel: { blockId: childId, sectionId },
+        });
     };
 
-    /** Toggle optional on a section child */
-    const toggleSectionChildOptional = (sectionId: string, childId: string, current: boolean | undefined) => {
-        updateSectionChild(sectionId, childId, { optional: !current });
+    /**
+     * Setzt eine Leistung auf "fest beauftragt" oder "optional" — der dritte
+     * Zustand (Variante einer Auswahl) laeuft ueber den Dialog.
+     *
+     * Beide Ziele verlassen eine bestehende Gruppe, deshalb laeuft das bewusst
+     * nicht ueber `updateBlock`: bleibt die Gruppe mit nur einer Variante zurueck,
+     * muss `normalisiereAlternativGruppen` sie aufloesen.
+     */
+    const setzeWahlmodus = (block: DocBlock, modus: 'fest' | 'optional'): DocBlock =>
+        ({ ...ohneAlternativGruppe(block), optional: modus === 'optional' });
+
+    const childModusWechsel = (sectionId: string, childId: string, modus: 'fest' | 'optional') => {
+        if (isLocked) return;
+        verlauf.aendern({
+            bezeichnung: modus === 'optional' ? 'Position auf Optional gestellt' : 'Position auf Fest beauftragt gestellt',
+            berechne: stand => ({
+                blocks: syncClosureBlock(normalisiereAlternativGruppen(stand.blocks.map(b =>
+                    b.id === sectionId && b.children
+                        ? { ...b, children: b.children.map(c => c.id === childId ? setzeWahlmodus(c, modus) : c) }
+                        : b
+                ))),
+            }),
+            buendelSchluessel: null,
+            ziel: { blockId: childId, sectionId },
+        });
     };
 
-    const toggleOptional = (id: string, currentOptional: boolean | undefined) => {
-        updateBlock(id, { optional: !currentOptional });
+    const modusWechsel = (id: string, modus: 'fest' | 'optional') => {
+        if (isLocked) return;
+        verlauf.aendern({
+            bezeichnung: modus === 'optional' ? 'Position auf Optional gestellt' : 'Position auf Fest beauftragt gestellt',
+            berechne: stand => ({
+                blocks: syncClosureBlock(normalisiereAlternativGruppen(
+                    stand.blocks.map(b => b.id === id ? setzeWahlmodus(b, modus) : b)
+                )),
+            }),
+            buendelSchluessel: null,
+            ziel: { blockId: id },
+        });
+    };
+
+    /**
+     * Uebernimmt die im Dialog zusammengestellte Auswahl. `blockIds` ist die
+     * vollstaendige Mitgliederliste — abgewaehlte Varianten fallen dadurch
+     * automatisch aus der Gruppe zurueck auf "optional".
+     */
+    const alternativGruppeSpeichern = (blockIds: string[], name: string, bisherigeGruppe: string | null) => {
+        if (isLocked) return;
+        verlauf.aendern({
+            bezeichnung: 'Auswahl gespeichert',
+            berechne: stand => ({ blocks: syncClosureBlock(gruppiereAlsAlternativen(stand.blocks, blockIds, name, bisherigeGruppe)) }),
+            buendelSchluessel: null,
+            ziel: blockIds[0] ? { blockId: blockIds[0] } : null,
+        });
+    };
+
+    const gruppeAufloesen = (name: string) => {
+        if (isLocked) return;
+        verlauf.aendern({
+            bezeichnung: 'Auswahl aufgelöst',
+            berechne: stand => ({ blocks: syncClosureBlock(loeseAlternativGruppeAuf(stand.blocks, name)) }),
+            buendelSchluessel: null,
+            ziel: null,
+        });
+    };
+
+    const gruppeUmbenennen = (alt: string, neu: string) => {
+        if (isLocked) return;
+        // Ohne diesen Guard verschmelzen zwei gleichnamige Gruppen dokumentweit:
+        // der Editor zeigt weiter zwei Kaesten, das Backend sieht eine Gruppe —
+        // der Kunde waehlt zweimal und kann das Angebot danach nicht annehmen.
+        if (gruppenNameVergeben(blocksRef.current, neu, alt)) {
+            toast.error(`„${neu}“ ist in diesem Dokument schon vergeben. Bitte einen anderen Namen wählen.`);
+            return;
+        }
+        verlauf.aendern({
+            bezeichnung: 'Auswahl umbenannt',
+            berechne: stand => ({
+                blocks: normalisiereAlternativGruppen(stand.blocks.map(b => {
+                    const um = (x: DocBlock) => x.alternativGruppe === alt ? { ...x, alternativGruppe: neu } : x;
+                    return b.type === 'SECTION_HEADER' && b.children
+                        ? { ...b, children: b.children.map(um) }
+                        : um(b);
+                })),
+            }),
+            buendelSchluessel: null,
+            ziel: null,
+        });
     };
 
     // --- Preview & Export ---
     const handlePreview = useCallback(async () => {
+        // Laufende Nummer je Anfrage: bei zwei ueberlappenden Renderings darf
+        // nicht die zuerst gestartete, aber spaeter eintreffende Antwort
+        // gewinnen — sonst springt die Vorschau auf einen aelteren Stand
+        // zurueck (z.B. auf die Adresse von vor dem Speichern).
+        const requestId = ++previewRequestIdRef.current;
         setPreviewLoading(true);
         try {
             const request = await createPdfRequest(true);
@@ -1299,26 +2552,40 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             });
             if (response.ok) {
                 const blob = await response.blob();
-                if (previewUrl) URL.revokeObjectURL(previewUrl);
+                if (requestId !== previewRequestIdRef.current) return;
                 const url = URL.createObjectURL(blob);
+                // Vorgaenger ueber das Ref freigeben statt ueber den State: der
+                // Wert aus der Closure koennte veraltet sein, und ein State-
+                // Updater mit Seiteneffekt liefe im StrictMode doppelt.
+                const alteUrl = previewUrlRef.current;
+                previewUrlRef.current = url;
                 setPreviewUrl(url);
+                if (alteUrl) URL.revokeObjectURL(alteUrl);
+                previewStaleRef.current = false;
                 setPreviewStale(false);
             }
         } catch (error) {
             console.error('Fehler bei Vorschau:', error);
         } finally {
-            setPreviewLoading(false);
+            if (requestId === previewRequestIdRef.current) setPreviewLoading(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer, previewUrl]);
+    }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer]);
 
-    // Mark preview as stale when content changes
+    // Mark preview as stale when content changes.
+    // `kontextDaten` steht als ganzes Objekt drin, nicht nur die Adresse: auch
+    // Zahlungsziel & Co. landen ueber `createPdfRequest` im PDF und gehoeren
+    // damit zum Vorschau-Inhalt. Die Objekt-Identitaet aendert sich nur bei
+    // `setKontextDaten`, loest also keine Endlosschleife aus.
+    // `dokumentNummer` ebenfalls: sie wird erst beim ersten Speichern vom
+    // Server vergeben, vorher steht "VORSCHAU" im PDF.
     useEffect(() => {
         if (showPreview && previewUrl) {
+            previewStaleRef.current = true;
             setPreviewStale(true);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp]);
+    }, [blocks, datum, betreff, dokumentTyp, kontextDaten, dokumentNummer]);
 
     // Debounced auto-preview: refresh 2s after last change when preview panel is open
     const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1331,8 +2598,49 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         return () => {
             if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
         };
+    // Muss dieselben Abhaengigkeiten haben wie der Stale-Marker oben, sonst
+    // bliebe die Vorschau nach einer Adressaenderung dauerhaft als veraltet
+    // markiert (und damit hinter dem Lade-Skelett verborgen).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [blocks, datum, betreff, dokumentTyp, showPreview]);
+    }, [blocks, datum, betreff, dokumentTyp, showPreview, kontextDaten, dokumentNummer]);
+
+    // Nach jedem erfolgreichen Speichern die Vorschau sofort neu rendern.
+    // Damit landet z.B. eine geaenderte Rechnungsadresse direkt im Vorschau-PDF,
+    // ohne dass der User zusaetzlich einen Block anfassen muss.
+    useEffect(() => {
+        // Token 0 = Erstmontage, noch kein Speichern passiert. Der Guard haelt
+        // ausserdem den StrictMode-Doppelmount raus — bitte nicht "aufraeumen".
+        if (previewRefreshToken === 0) return;
+        // Nur rendern, wenn die Vorschau den gespeicherten Stand noch nicht
+        // zeigt. `handleSave` haengt an neun Aufrufern (Auto-Save, Export,
+        // Druck, Buchen, Mail); ohne diesen Guard liefe parallel zu jedem
+        // davon eine zweite, ueberfluessige PDF-Generierung.
+        // Ueber das Ref lesen, nicht ueber den State: der Stale-Marker oben
+        // laeuft im selben Commit wie dieser Effect, sein `setPreviewStale`
+        // waere hier also noch nicht sichtbar (z.B. wenn das erste Speichern
+        // gleichzeitig die Dokumentnummer setzt).
+        if (!previewStaleRef.current) return;
+        // Ein laufender Debounce-Timer wuerde sonst kurz darauf ein zweites,
+        // identisches Preview-Rendering ausloesen.
+        if (previewTimerRef.current) {
+            clearTimeout(previewTimerRef.current);
+            previewTimerRef.current = null;
+        }
+        handlePreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [previewRefreshToken]);
+
+    // Letzte Blob-URL beim Schliessen des Editors freigeben, sonst haelt der
+    // Browser das komplette Vorschau-PDF bis zum Reload im Speicher.
+    useEffect(() => {
+        previewUrlRef.current = previewUrl;
+    }, [previewUrl]);
+    useEffect(() => () => {
+        // Hochzaehlen entwertet eine noch laufende Anfrage: ihre Antwort legt
+        // sonst nach dem Unmount eine Blob-URL an, die niemand mehr freigibt.
+        previewRequestIdRef.current++;
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    }, []);
 
     // When preview panel is shown for the first time, trigger an immediate preview
     const prevShowPreview = useRef(false);
@@ -1349,9 +2657,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         if (!dokument?.id) return false;
         if (dokument.gebucht || dokument.storniert) return true; // bereits gesperrt
         try {
-            // Erst unsaved changes speichern, bevor das Dokument gebucht wird
+            // Erst unsaved changes speichern, bevor das Dokument gebucht wird.
+            // Schlaegt das fehl (Lock-Konflikt, Netz, Server), darf NICHT gebucht
+            // werden: das Dokument waere sonst GoBD-gesperrt mit einem Stand, den
+            // der User so nie gesehen hat — etwa der alten Rechnungsadresse.
             if (hasUnsavedChanges) {
-                await handleSave();
+                const gespeichert = await handleSave();
+                if (!gespeichert) return false;
             }
             const bookRes = await fetch(`/api/ausgangs-dokumente/${dokument.id}/buchen`, { method: 'POST' });
             if (!bookRes.ok) {
@@ -1360,10 +2672,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             }
             const updated = await bookRes.json();
             setDokument(updated); // State sofort aktualisieren → UI sperrt instant
-            // Saved-State synchronisieren, damit Auto-Save nicht mehr feuert
-            const currentState = JSON.stringify({ blocks, datum, betreff, dokumentTyp });
+            // Saved-State synchronisieren, damit Auto-Save nicht mehr feuert.
+            // Signatur exakt wie in handleSave bilden: CLOSURE-Marker raus und
+            // Datum aus dem Ref. Sonst meldet die Change-Detection direkt nach
+            // dem Buchen eine Abweichung, die niemand mehr speichern kann.
+            const persistedBlocks = blocks.filter(b => b.id !== CLOSURE_BLOCK_ID);
+            const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
             lastSavedStateRef.current = currentState;
             setHasUnsavedChanges(false);
+            // Muessen mit zurueck: nach dem Buchen ist das Dokument gesperrt und
+            // handleSave steigt sofort aus. Ein stehengebliebenes Flag waere
+            // dann nicht mehr loeschbar und meldete dauerhaft "ungespeichert".
+            setAdresseGeaendert(false);
+            setZahlungszielGeaendert(false);
             notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
             return true;
         } catch (err) {
@@ -1399,6 +2720,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         try {
             // Rechnungstypen: IMMER buchen & sperren beim Drucken (instant lock)
             const shouldBook = options.isFinal || showFinalizationPrompt;
+            // Beim finalen Druck (= Dokument verlässt das Haus) Versanddatum auf
+            // heute setzen. Vorschau-Druck mit Wasserzeichen (nicht final) lässt
+            // das Datum unangetastet, damit der User vor dem echten Versand noch
+            // weiterarbeiten kann.
+            if (shouldBook) {
+                bumpDatumAufHeute();
+                await handleSave();
+            }
             if (shouldBook) {
                 if (!dokument?.id) throw new Error('Dokument muss zuerst gespeichert werden');
                 const booked = await buchenUndSperren();
@@ -1461,6 +2790,9 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 iframe.contentWindow?.focus();
                 iframe.contentWindow?.print();
             });
+            // Verlauf-Reset nur beim endgueltigen Druck -- Vorschau-Druck (mit
+            // Wasserzeichen) laesst ihn stehen.
+            if (shouldBook) verlauf.leeren();
         } catch (err) {
             console.error('Fehler beim Drucken:', err);
             toast.error('Drucken fehlgeschlagen: ' + (err instanceof Error ? err.message : ''));
@@ -1472,6 +2804,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         if (!dokument?.id) return;
 
         try {
+            // Beim Export gilt: Versanddatum = heute. Dadurch passt das
+            // Zahlungsziel (Rechnungsdatum + N Tage), egal wie lange der User
+            // am Dokument gearbeitet hat. Gilt für ALLE Dokumenttypen
+            // (Angebot/AB/Rechnung) — sobald das Dokument das Haus verlässt,
+            // ist heute das offizielle Datum.
+            bumpDatumAufHeute();
+            await handleSave();
             // Sofort buchen & sperren (instant lock, kein nachträgliches Refresh nötig)
             if (shouldBook) {
                 const booked = await buchenUndSperren();
@@ -1517,6 +2856,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
+            // Erfolgreicher PDF-Export (Download) startet den Verlauf neu --
+            // unabhaengig von shouldBook (anders als beim Druck gilt das hier
+            // fuer jeden Dokumenttyp, siehe Spec).
+            verlauf.leeren();
         } catch (err) {
             console.error('Fehler beim Export:', err);
             toast.error('Export fehlgeschlagen: ' + (err instanceof Error ? err.message : ''));
@@ -1525,14 +2868,22 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
     // --- E-Mail Versand ---
     const handleSendEmail = () => {
+        setDraftSendMode(false);
+        setShowFormatDialog(true);
+    };
+
+    // Entwurf per E-Mail: gleiches Format-Auswahl-UI, aber das Dokument wird
+    // NICHT gebucht/gesperrt und das PDF erhält ein "ENTWURF"-Wasserzeichen.
+    const handleSendDraft = () => {
+        setDraftSendMode(true);
         setShowFormatDialog(true);
     };
 
     const handleFormatSelected = (format: PdfFormat) => {
-        // Bei Angeboten muss vor dem Versand die Gültigkeit des Annahme-Links
-        // gewählt werden. Bei allen anderen Dokumenttypen gibt es keinen
-        // Freigabe-Link, also direkt weiter zur PDF-Erzeugung.
-        if (dokumentTyp === 'ANGEBOT') {
+        // Bei Angeboten muss vor dem finalen Versand die Gültigkeit des
+        // Annahme-Links gewählt werden — aber nur, wenn überhaupt einer
+        // entsteht (siehe brauchtAnnahmeLinkAbfrage).
+        if (brauchtAnnahmeLinkAbfrage(dokumentTyp, draftSendMode, dokument?.digitalAngenommen)) {
             setPendingFormat(format);
             setShowFormatDialog(false);
             setShowValidityDialog(true);
@@ -1551,23 +2902,33 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     };
 
     const prepareAndOpenEmail = async (format: PdfFormat, tage: number | null) => {
+        const isDraft = draftSendMode;
         setEmailLoading(true);
         try {
+            // Beim echten Mail-Versand (kein Entwurf) Versanddatum auf heute
+            // setzen, damit Rechnungsdatum + Zahlungsziel ab tatsächlichem
+            // Versandtag laufen. Im Entwurfs-Modus bleibt das Datum stehen,
+            // weil das Dokument noch nicht final rausgeht.
+            if (!isDraft) {
+                bumpDatumAufHeute();
+            }
             // 1. Auto-Save wenn nötig – Rückgabewert liefert aktuelle ID (React-State ist async)
             let aktiveDokumentId = dokument?.id ?? null;
-            if (!dokument?.id || hasUnsavedChanges) {
+            if (!dokument?.id || hasUnsavedChanges || !isDraft) {
                 const saved = await handleSave();
                 if (saved?.id) aktiveDokumentId = saved.id;
             }
 
             // 2. Rechnungstypen: sofort buchen & sperren (instant lock vor E-Mail)
-            if (showFinalizationPrompt) {
+            //    Im Entwurfs-Modus wird NICHT gebucht/gesperrt – das Dokument
+            //    bleibt offen und änderbar.
+            if (showFinalizationPrompt && !isDraft) {
                 const booked = await buchenUndSperren();
                 if (!booked) throw new Error('Buchung fehlgeschlagen');
             }
 
-            // 2. PDF generieren (normal oder ZUGFeRD)
-            const request = await createPdfRequest(false);
+            // 2. PDF generieren (normal oder ZUGFeRD); im Entwurfs-Modus mit "ENTWURF"-Wasserzeichen
+            const request = await createPdfRequest(false, isDraft);
             if (!request) throw new Error('Konnte PDF-Anfrage nicht erstellen');
 
             const endpoint = format === 'zugferd'
@@ -1586,9 +2947,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             // PDF serverseitig speichern:
             // - Immer für Angebote/AB → Dateiname wird an Freigabe-Token gehängt
             // - Nur bei Buchung für Rechnungen → Offene-Posten-Ansicht
+            // Im Entwurfs-Modus NICHT speichern: das Entwurfs-PDF darf nicht
+            // mit dem späteren finalen Versand verwechselt werden, und ein
+            // Freigabe-Link soll nicht auf ein Wasserzeichen-PDF zeigen.
             let pdfDateiname: string | null = null;
-            const brauchtPdfSpeicherung = aktiveDokumentId && (
+            const brauchtPdfSpeicherung = !isDraft && aktiveDokumentId && (
                 dokumentTyp === 'ANGEBOT' ||
+                dokumentTyp === 'NACHTRAGSANGEBOT' ||
                 dokumentTyp === 'AUFTRAGSBESTAETIGUNG' ||
                 showFinalizationPrompt
             );
@@ -1611,7 +2976,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
 
             const dokumentTypLabel = AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === dokumentTyp)?.label || dokumentTyp;
             const prefix = format === 'zugferd' ? 'ZUGFeRD_' : '';
-            const fileName = `${prefix}${dokumentTypLabel}_${dokumentNummer || 'Entwurf'}.pdf`;
+            const draftPrefix = isDraft ? 'ENTWURF_' : '';
+            const fileName = `${draftPrefix}${prefix}${dokumentTypLabel}_${dokumentNummer || 'Entwurf'}.pdf`;
             const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
 
             // 3. E-Mail-Body vom Backend generieren lassen
@@ -1620,11 +2986,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             // Wir bauen das Datum aus lokalen Komponenten, weil `new Date('YYYY-MM-DD')`
             // als UTC-Mitternacht parst und der anschließende `toISOString()`-Roundtrip
             // in CET/CEST das Datum um einen Tag vor verschieben kann.
-            const rechnungsdatumIso = datum || (() => {
+            const rechnungsdatumIso = datumRef.current || (() => {
                 const t = new Date();
                 return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
             })();
-            const zahlungszielTage = kontextDaten.zahlungsziel ?? 8;
+            const zahlungszielTage = kontextDaten.zahlungsziel ?? DEFAULT_ZAHLUNGSZIEL_TAGE;
             const [yy, mm, dd] = rechnungsdatumIso.split('-').map(Number);
             const faelligDate = new Date(yy, mm - 1, dd);
             faelligDate.setDate(faelligDate.getDate() + zahlungszielTage);
@@ -1661,7 +3027,11 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 console.warn('E-Mail-Template konnte nicht geladen werden:', e);
             }
 
-            // 4. Email-Modal öffnen
+            // 4. Email-Modal öffnen.
+            //    Draft-Status für den onSuccess-Handler festhalten – darf NICHT
+            //    aus dem React-State gelesen werden, weil draftSendMode bis dahin
+            //    schon zurückgesetzt sein kann.
+            lastSendWasDraftRef.current = isDraft;
             setEmailAttachments([pdfFile]);
             setEmailBody(generatedBody);
             setShowFormatDialog(false);
@@ -1739,13 +3109,16 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 `;
             }
             const parsedBlocks = deserializeTemplate(html);
-            console.log('[DocumentEditor] Template HTML length:', html.length);
-            console.log('[DocumentEditor] Parsed blocks from template:', parsedBlocks.map(b => ({
-                id: b.id, type: b.type, page: b.page, x: b.x, y: b.y,
-                width: b.width, height: b.height,
-                content: b.content ? b.content.substring(0, 50) : '(empty)',
-                hasStyles: !!b.styles
-            })));
+            // Nur in der Entwicklung: laeuft bei offener Vorschau alle zwei Sekunden.
+            if (import.meta.env.DEV) {
+                console.debug('[DocumentEditor] Template HTML length:', html.length);
+                console.debug('[DocumentEditor] Parsed blocks from template:', parsedBlocks.map(b => ({
+                    id: b.id, type: b.type, page: b.page, x: b.x, y: b.y,
+                    width: b.width, height: b.height,
+                    content: b.content ? b.content.substring(0, 50) : '(empty)',
+                    hasStyles: !!b.styles
+                })));
+            }
             const layoutBlocks = parsedBlocks.map(b => ({
                 id: b.id,
                 type: b.type,
@@ -1765,7 +3138,24 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         }
     };
 
-    const createPdfRequest = async (isPreview: boolean) => {
+    /**
+     * Namen der Leistungen, die den Unterschied zwischen Auftragsbestaetigung und
+     * Schlussrechnung ausmachen — als Unterzeile der Differenzzeile.
+     *
+     * Das Vorzeichen entscheidet, welche Seite genannt wird: wurde weniger
+     * abgerechnet als beauftragt, sind Leistungen entfallen; wurde mehr
+     * abgerechnet, sind welche dazugekommen. Rein beschreibend, der Betrag
+     * ergibt sich unabhaengig davon als Ausgleichsgroesse.
+     */
+    const differenzHinweis = useMemo(() => {
+        if (dokumentTyp !== 'SCHLUSSRECHNUNG' || basisdokumentBlocks.length === 0) return '';
+        const differenzNetto = (basisdokumentBetragNetto ?? 0) - calculateNettoNachRabatt(blocks, globalRabatt);
+        if (Math.abs(differenzNetto) < 0.01) return '';
+        const { entfallen, zusaetzlich } = vergleicheLeistungen(basisdokumentBlocks, blocks);
+        return formatiereDifferenzHinweis(differenzNetto > 0 ? entfallen : zusaetzlich);
+    }, [dokumentTyp, basisdokumentBlocks, blocks, basisdokumentBetragNetto, globalRabatt]);
+
+    const createPdfRequest = async (isPreview: boolean, withDraftWatermark: boolean = false) => {
         const { layoutBlocks, backgroundImage, backgroundImagePage2 } = await fetchTemplateData(dokumentTyp);
 
         const filledLayoutBlocks: PreviewLayoutBlock[] = layoutBlocks.map(b => {
@@ -1778,7 +3168,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     copy.content = dokumentNummer || (isPreview ? 'VORSCHAU' : 'ENTWURF');
                     break;
                 case 'datum':
-                    copy.content = datum ? new Date(datum).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE');
+                    copy.content = datumRef.current ? new Date(datumRef.current).toLocaleDateString('de-DE') : new Date().toLocaleDateString('de-DE');
                     break;
                 case 'projektnr':
                     copy.content = kontextDaten.projektnummer || '';
@@ -1802,17 +3192,17 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             return copy;
         });
 
-        console.log('[DocumentEditor] Filled layout blocks for PDF:', filledLayoutBlocks.map(b => ({
-            id: b.id, type: b.type, page: b.page,
-            x: b.x, y: b.y, width: b.width, height: b.height,
-            content: b.content ? (b.content.length > 80 ? b.content.substring(0, 80) + '...' : b.content) : '(empty)'
-        })));
-        console.log('[DocumentEditor] kontextDaten:', {
-            kundennummer: kontextDaten.kundennummer,
-            projektnummer: kontextDaten.projektnummer,
-            kundenName: kontextDaten.kundenName,
-            rechnungsadresse: kontextDaten.rechnungsadresse ? kontextDaten.rechnungsadresse.substring(0, 50) : '(empty)'
-        });
+        // Diagnose-Log fuer die Layout-Positionierung. Nur in der Entwicklung,
+        // weil es bei offener Vorschau alle zwei Sekunden feuert. Bewusst OHNE
+        // Inhalte: die gefuellten Bloecke tragen Kundenname und Rechnungs-
+        // adresse, also personenbezogene Daten.
+        if (import.meta.env.DEV) {
+            console.debug('[DocumentEditor] Filled layout blocks for PDF:', filledLayoutBlocks.map(b => ({
+                id: b.id, type: b.type, page: b.page,
+                x: b.x, y: b.y, width: b.width, height: b.height,
+                hasContent: Boolean(b.content)
+            })));
+        }
 
         if (isPreview && showFinalizationPrompt) {
             filledLayoutBlocks.push({
@@ -1834,6 +3224,28 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             });
         }
 
+        // Entwurfs-Versand: Watermark "ENTWURF" einbauen (auf allen Seiten – der
+        // PDF-Service rendert Watermark-Blöcke seitenübergreifend).
+        if (withDraftWatermark) {
+            filledLayoutBlocks.push({
+                id: 'watermark',
+                type: 'watermark',
+                page: 1,
+                x: 100,
+                y: 300,
+                width: 400,
+                height: 200,
+                z: 1000,
+                content: 'ENTWURF',
+                styles: {
+                    fontSize: 72,
+                    fontWeight: 'bold',
+                    color: '#e2e8f0',
+                    textAlign: 'center'
+                }
+            });
+        }
+
         const contentBlocks = flattenBlocksForPdf(blocks).map(b => ({
             id: b.id,
             type: b.type,
@@ -1844,22 +3256,25 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             unit: b.unit || 'Stk',
             price: b.price || 0,
             description: replacePlaceholders(b.description || ''),
-            // TEXT blocks: Always use base defaults (10pt, not bold).
+            // TEXT and SERVICE blocks: Always use neutral defaults (10pt, not bold).
             // All formatting (bold, italic, font-size, colors) is embedded as inline
             // HTML from TiptapEditor and parsed by the backend HTML parser.
-            // Using extractBoldFromHtml/extractFontSizeFromHtml as defaults was wrong
-            // because it would make ALL text bold/large if ANY part was bold/large.
-            fontSize: b.type === 'TEXT' ? 10 : (b.fontSize || 10),
-            fett: b.type === 'TEXT' ? false : (b.fett || false),
+            // Using extractBoldFromHtml/extractFontSizeFromHtml as block-level defaults
+            // is wrong because it would make the ENTIRE block bold/large if ANY single
+            // word was bold/large (the backend uses defaultBold/defaultFontSize for every
+            // text chunk outside of explicit <strong>/<span> tags).
+            fontSize: b.type === 'TEXT' || b.type === 'SERVICE' ? 10 : (b.fontSize || 10),
+            fett: b.type === 'TEXT' || b.type === 'SERVICE' ? false : (b.fett || false),
             optional: b.optional || false,
+            alternativGruppe: b.alternativGruppe || null,
             sectionLabel: b.sectionLabel || '',
             discount: b.discount || 0
         }));
 
         const kopfdaten = {
             dokumentnummer: dokumentNummer || (isPreview ? 'VORSCHAU' : 'ENTWURF'),
-            rechnungsDatum: datum,
-            leistungsDatum: datum,
+            rechnungsDatum: datumRef.current,
+            leistungsDatum: datumRef.current,
             kundenName: kontextDaten.kundenName || 'Musterkunde',
             kundenAdresse: kontextDaten.rechnungsadresse || '',
             betreff: betreff,
@@ -1900,6 +3315,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                 betragNetto: pos.betragNetto,
                                 abschlagsNummer: pos.abschlagsNummer,
                             })),
+                            balkenAnzeigen,
+                            differenzHinweis: differenzHinweis || null,
                         };
                     }
                 }
@@ -1907,6 +3324,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 console.error('Abrechnungsverlauf konnte nicht geladen werden:', e);
             }
         }
+
+        const expliziterNettoBetrag = dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagBetragNetto !== null
+            ? abschlagBetragNetto
+            : undefined;
 
         return {
             dokumentTyp,
@@ -1917,9 +3338,13 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             schlusstext,
             backgroundImagePage1: backgroundImage,
             backgroundImagePage2: backgroundImagePage2,
-            globalRabattProzent: globalRabatt > 0 ? globalRabatt : null,
+            // Ein expliziter betragNetto (Abschlagsrechnung) ist bereits der Endbetrag.
+            // Dann darf der Prozentsatz NICHT mitgehen, sonst zieht
+            // RechnungPdfService#addSummenBlock den Rabatt ein zweites Mal ab.
+            // Gleiche Weiche wie in AutoAuftragsbestaetigungVersandService#buildPdfBytes.
+            globalRabattProzent: (globalRabatt > 0 && expliziterNettoBetrag === undefined) ? globalRabatt : null,
             abrechnungsverlauf,
-            betragNetto: dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagBetragNetto !== null ? abschlagBetragNetto : undefined,
+            betragNetto: expliziterNettoBetrag,
             abschlagInfo: dokumentTyp === 'ABSCHLAGSRECHNUNG' && abschlagInfo ? abschlagInfo : undefined,
         };
     };
@@ -1938,26 +3363,120 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
     const positionMap = buildPositionMap(blocks);
     const closureSummary = computeClosureSummary(blocks);
 
-    // Index des letzten SERVICE/SECTION_HEADER/SUBTOTAL/SEPARATOR Blocks
-    // Der Abschluss wird direkt danach eingefügt (vor nachfolgenden TEXT-Blöcken)
-    const closureInsertAfterIdx = useMemo(() => {
-        for (let i = blocks.length - 1; i >= 0; i--) {
-            const t = blocks[i].type;
-            if (t === 'SERVICE' || t === 'SECTION_HEADER' || t === 'SUBTOTAL' || t === 'SEPARATOR') {
-                return i;
-            }
-        }
-        return blocks.length - 1;
-    }, [blocks]);
+    // Hinweis: Bis 2026-05 wurde der ClosureBlock als externer Render-Block nach
+    // einem berechneten Index eingefuegt. Seit dem DnD-Refactor lebt CLOSURE als
+    // echter Block im blocks-Array (id=CLOSURE_BLOCK_ID) und wird direkt im Map
+    // gerendert -> kein separater closureInsertAfterIdx mehr noetig.
 
     const getPositionString = (block: DocBlock): string => {
         return positionMap.get(block.id) || '';
     };
 
+    /**
+     * Rendert einen Root-Block samt Drag-Handle. Ausgelagert, weil ein Block
+     * entweder direkt in der Liste steht oder — als Variante einer Auswahl —
+     * innerhalb der AlternativGruppeBox. Die SortableContext-Reihenfolge bleibt
+     * davon unberuehrt: gruppiert wird nur die Darstellung, nicht das Array.
+     */
+    const renderRootBlock = (block: DocBlock) => (
+        <SortableBlock key={block.id} block={block} isLocked={isLocked}>
+            {block.type === 'SEPARATOR' && (
+                <SeparatorBlock
+                    blockId={block.id}
+                    isLocked={isLocked}
+                    onRemove={removeBlock}
+                />
+            )}
+            {block.type === 'SECTION_HEADER' && (
+                <SectionHeaderBlock
+                    block={block}
+                    isLocked={isLocked}
+                    isActive={activeEditorId === block.id}
+                    activeEditorId={activeEditorId}
+                    editorRefs={editorRefs}
+                    onUpdate={updateBlock}
+                    onUpdateChild={updateSectionChild}
+                    onRemove={removeBlock}
+                    onRemoveChild={removeSectionChild}
+                    onEjectChild={ejectChildFromSection}
+                    onChildModusWechsel={childModusWechsel}
+                    onAlternativOeffnen={setAlternativDialogAnker}
+                    onFocus={(id) => setActiveEditorId(id)}
+                    onEditorFocus={markiereEditorFokussiert}
+                    getPositionString={getPositionString}
+                    sectionPosition={getPositionString(block)}
+                    onAddBelow={handleAddBelow}
+                    onAddIntoSection={handleAddIntoSection}
+                    onGruppeUmbenennen={gruppeUmbenennen}
+                    onGruppeAufloesen={gruppeAufloesen}
+                    verlaufsModus
+                />
+            )}
+            {block.type === 'TEXT' && (
+                <TextBlock
+                    block={block}
+                    isLocked={isLocked}
+                    isActive={activeEditorId === block.id}
+                    editorRefs={editorRefs}
+                    onEditorReady={setEditorRef}
+                    onUpdate={updateBlock}
+                    onRemove={removeBlock}
+                    onFocus={(id) => setActiveEditorId(id)}
+                    onEditorFocus={markiereEditorFokussiert}
+                    prepareContent={prepareEditorContent}
+                    serializeContent={serializeEditorContent}
+                    onZahlungszielChipClick={handleZahlungszielChipClick}
+                    onAddBelow={handleAddBelow}
+                    verlaufsModus
+                />
+            )}
+            {block.type === 'SERVICE' && (
+                <ServiceBlock
+                    block={block}
+                    positionNumber={getPositionString(block)}
+                    isLocked={isLocked}
+                    isActive={activeEditorId === block.id}
+                    editorRefs={editorRefs}
+                    onEditorReady={setEditorRef}
+                    onUpdate={updateBlock}
+                    onRemove={removeBlock}
+                    onModusWechsel={modusWechsel}
+                    onAlternativOeffnen={setAlternativDialogAnker}
+                    onFocus={(id) => setActiveEditorId(id)}
+                    onEditorFocus={markiereEditorFokussiert}
+                    onAddBelow={handleAddBelow}
+                    verlaufsModus
+                />
+            )}
+            {block.type === 'CLOSURE' && closureSummary.gesamtNetto > 0 && (
+                <ClosureBlock
+                    summary={closureSummary}
+                    dokumentTyp={dokumentTyp}
+                    abschlagBetragNetto={abschlagBetragNetto}
+                    bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
+                    abrechnungsPositionen={abrechnungsPositionen}
+                    basisdokumentBetragNetto={basisdokumentBetragNetto}
+                    globalRabatt={globalRabatt}
+                    firmenfarbe={firmenfarbe}
+                    differenzHinweis={differenzHinweis}
+                    balkenAnzeigen={balkenAnzeigen}
+                    onBalkenAnzeigenChange={isLocked ? undefined : (anzeigen) => {
+                        verlauf.aendern({
+                            bezeichnung: anzeigen ? 'Balken eingeblendet' : 'Balken ausgeblendet',
+                            berechne: () => ({ balkenAnzeigen: anzeigen }),
+                            buendelSchluessel: null,
+                            ziel: { blockId: CLOSURE_BLOCK_ID },
+                        });
+                    }}
+                />
+            )}
+        </SortableBlock>
+    );
+
     // --- Loading state ---
     if (loading) {
         return (
-            <div className="fixed inset-0 z-50 bg-white flex items-center justify-center">
+            <div className="fixed inset-x-0 bottom-0 top-[var(--lock-leiste-hoehe,0px)] z-50 bg-white flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                     <div className="animate-spin rounded-full h-8 w-8 border-2 border-rose-200 border-t-rose-600" />
                     <p className="text-sm text-slate-400">Wird geladen…</p>
@@ -1966,9 +3485,31 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
         );
     }
 
+    // Tab-Schliess-Ablauf abgeschlossen (gespeichert + Sperre freigegeben),
+    // aber window.close() hat nicht gegriffen: statt des Editors nur noch
+    // die Bestaetigung zeigen, siehe tabSchliessen() oben.
+    if (zeigeTabSchliessenHinweis) {
+        return <TabSchliessenHinweis />;
+    }
+
     // --- Render ---
+    // `top-[var(--lock-leiste-hoehe,0px)]` statt `inset-0` (Design-Review
+    // Abschnitt 7-2, Befund 2): die Seite (DocumentEditorPage.tsx) setzt
+    // diese Custom Property auf die gemessene Hoehe ihrer eigenen Bearbeiten-
+    // Leiste, damit dieser Bereich direkt darunter beginnt -- ohne die
+    // fruehere `transform`-Huelle der Seite, die (per CSS-Spezifikation) ein
+    // eigenes "containing block" fuer ALLE `position:fixed`-Nachfahren
+    // erzeugte und damit auch jeden Vollbild-Dialog dieses Editors auf den
+    // Bereich UNTER der Leiste einschraenkte -- ein offenes Modal deckte die
+    // Leiste dadurch nicht mehr ab, ein Klick auf "Fertig"/"Bearbeiten" ging
+    // durch den (optisch als Overlay wirkenden, tatsaechlich aber verkleinert
+    // liegenden) Backdrop hindurch. Ohne `transform`-Huelle binden sich
+    // `position:fixed`-Nachfahren wieder an den echten Viewport -- Dialoge
+    // (`z-[70]`+) liegen wieder ueber allem, inklusive der Leiste. Ohne
+    // gesetzte Custom Property (jeder andere Verwender/Test) faellt der
+    // Fallback `0px` auf exakt das bisherige `inset-0`-Verhalten zurueck.
     return (
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col">
+        <div className="fixed inset-x-0 bottom-0 top-[var(--lock-leiste-hoehe,0px)] z-50 bg-slate-50 flex flex-col">
             {/* GAEB Import Toast */}
             {importToast && (
                 <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-300">
@@ -2018,6 +3559,7 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 dokumentNummer={dokumentNummer}
                 kontextInfo={kontextDaten.projektBauvorhaben || kontextDaten.kundenName || ''}
                 isLocked={isLocked}
+                istGebucht={istGebuchteRechnung}
                 saving={saving}
                 saveSuccess={saveSuccess}
                 hasUnsavedChanges={hasUnsavedChanges}
@@ -2026,24 +3568,49 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 emailLoading={emailLoading}
                 onClose={handleClose}
                 onSave={handleSave}
-                onOpenTextbausteinPicker={() => setShowTextbausteinPicker(true)}
-                onOpenLeistungPicker={() => setShowLeistungPicker(true)}
-                onOpenStundensatzPicker={() => setShowStundensatzPicker(true)}
-                onAddSeparator={() => addBlock('SEPARATOR')}
-                onAddSectionHeader={() => addBlock('SECTION_HEADER')}
+                onOpenTextbausteinPicker={() => {
+                    pendingAnchorRef.current = DEFAULT_ANCHOR;
+                    setShowTextbausteinPicker(true);
+                }}
+                onOpenLeistungPicker={() => {
+                    pendingAnchorRef.current = DEFAULT_ANCHOR;
+                    setShowLeistungPicker(true);
+                }}
+                onOpenStundensatzPicker={() => {
+                    pendingAnchorRef.current = DEFAULT_ANCHOR;
+                    setShowStundensatzPicker(true);
+                }}
+                onOpenMaterialPicker={() => setMaterialDialogOffen(true)}
+                onAddSeparator={() => {
+                    pendingAnchorRef.current = DEFAULT_ANCHOR;
+                    addBlock('SEPARATOR');
+                }}
+                onAddSectionHeader={() => {
+                    pendingAnchorRef.current = DEFAULT_ANCHOR;
+                    addBlock('SECTION_HEADER');
+                }}
                 onOpenRabattDialog={() => setShowRabattDialog(true)}
                 onExport={handleExport}
                 onPrint={handlePrint}
                 onSendEmail={handleSendEmail}
+                onSendDraft={handleSendDraft}
                 onGaebImport={handleGaebImportClick}
                 fileInputRef={fileInputRef}
                 onFileChange={handleFileChange}
+                verlauf={verlaufKnoepfeProps}
             />
 
             {/* ===== Main Split Pane ===== */}
             <div className="flex-1 flex overflow-hidden relative">
                 {/* Editor Area */}
-                <div className="flex-1 flex flex-col overflow-hidden min-w-0 transition-all duration-500 ease-in-out">
+                <div ref={editorWurzelRef} className="flex-1 flex flex-col overflow-hidden min-w-0 transition-all duration-500 ease-in-out">
+                    {/* Ansage fuer Screenreader nach Rückgängig/Wiederholen. Bewusst OHNE
+                        role="status": e2e/hilfen/design.ts sammelt [role="status"] fuer die
+                        Ueberschneidungs-Pruefung ein, ein sr-only-Element wuerde dort als
+                        (scheinbar) ueberlappendes Bedienelement auftauchen. */}
+                    <p aria-live="polite" aria-atomic="true" className="sr-only" data-testid="verlauf-ansage">
+                        {sprung?.text ?? ''}
+                    </p>
                     {/* Global Sticky Toolbar */}
                     {!isLocked && (
                         <div className="sticky top-0 z-20 bg-slate-50/90 backdrop-blur-sm px-4 py-1.5 border-b border-slate-100">
@@ -2058,7 +3625,20 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             <RechnungsadresseBlock
                                 value={kontextDaten.rechnungsadresse || ''}
                                 isLocked={isLocked}
-                                onChange={(newAddr) => setKontextDaten(prev => ({ ...prev, rechnungsadresse: newAddr }))}
+                                onChange={(newAddr) => {
+                                    // "Uebernehmen" ohne echte Aenderung darf nichts ausloesen:
+                                    // `adresseUserEditedRef` schaltet das Dokument dauerhaft auf
+                                    // eine eigene Adresse um und kappt damit die Vererbung vom
+                                    // Vorgang — das soll keine Nebenwirkung eines No-ops sein.
+                                    if (newAddr === (kontextDaten.rechnungsadresse ?? '')) return;
+                                    // schreibeStand setzt adresseUserEditedRef/adresseGeaendert.
+                                    verlauf.aendern({
+                                        bezeichnung: 'Rechnungsadresse geändert',
+                                        berechne: () => ({ rechnungsadresse: newAddr }),
+                                        buendelSchluessel: null,
+                                        ziel: null,
+                                    });
+                                }}
                             />
 
                             {/* Blocks */}
@@ -2073,76 +3653,18 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                     items={blocks.map(b => b.id)}
                                     strategy={verticalListSortingStrategy}
                                 >
-                                    {blocks.map((block, blockIndex) => (
-                                        <Fragment key={block.id}>
-                                        <SortableBlock block={block} isLocked={isLocked}>
-                                            {block.type === 'SEPARATOR' && (
-                                                <SeparatorBlock
-                                                    blockId={block.id}
-                                                    isLocked={isLocked}
-                                                    onRemove={removeBlock}
-                                                />
-                                            )}
-                                            {block.type === 'SECTION_HEADER' && (
-                                                <SectionHeaderBlock
-                                                    block={block}
-                                                    isLocked={isLocked}
-                                                    isActive={activeEditorId === block.id}
-                                                    activeEditorId={activeEditorId}
-                                                    editorRefs={editorRefs}
-                                                    onUpdate={updateBlock}
-                                                    onUpdateChild={updateSectionChild}
-                                                    onRemove={removeBlock}
-                                                    onRemoveChild={removeSectionChild}
-                                                    onEjectChild={ejectChildFromSection}
-                                                    onToggleChildOptional={toggleSectionChildOptional}
-                                                    onFocus={(id) => setActiveEditorId(id)}
-                                                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
-                                                    getPositionString={getPositionString}
-                                                    sectionPosition={getPositionString(block)}
-                                                />
-                                            )}
-                                            {block.type === 'TEXT' && (
-                                                <TextBlock
-                                                    block={block}
-                                                    isLocked={isLocked}
-                                                    isActive={activeEditorId === block.id}
-                                                    editorRefs={editorRefs}
-                                                    onEditorReady={setEditorRef}
-                                                    onUpdate={updateBlock}
-                                                    onRemove={removeBlock}
-                                                    onFocus={(id) => setActiveEditorId(id)}
-                                                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
-                                                    replacePlaceholders={replacePlaceholders}
-                                                />
-                                            )}
-                                            {block.type === 'SERVICE' && (
-                                                <ServiceBlock
-                                                    block={block}
-                                                    positionNumber={getPositionString(block)}
-                                                    isLocked={isLocked}
-                                                    isActive={activeEditorId === block.id}
-                                                    editorRefs={editorRefs}
-                                                    onEditorReady={setEditorRef}
-                                                    onUpdate={updateBlock}
-                                                    onRemove={removeBlock}
-                                                    onToggleOptional={toggleOptional}
-                                                    onFocus={(id) => setActiveEditorId(id)}
-                                                    onEditorFocus={(editor) => setActiveEditor(isLocked ? null : editor)}
-                                                />
-                                            )}
-                                        </SortableBlock>
-                                        {blockIndex === closureInsertAfterIdx && closureSummary.gesamtNetto > 0 && (
-                                            <ClosureBlock
-                                                summary={closureSummary}
-                                                dokumentTyp={dokumentTyp}
-                                                abschlagBetragNetto={abschlagBetragNetto}
-                                                bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
-                                                abrechnungsPositionen={abrechnungsPositionen}
-                                                basisdokumentBetragNetto={basisdokumentBetragNetto}
-                                            />
-                                        )}
-                                        </Fragment>
+                                    {gruppiereFuerAnzeige(blocks).map(eintrag => (
+                                        eintrag.art === 'gruppe' ? (
+                                            <AlternativGruppeBox
+                                                key={eintrag.positionen[0].id}
+                                                name={eintrag.name}
+                                                isLocked={isLocked}
+                                                onUmbenennen={gruppeUmbenennen}
+                                                onAufloesen={gruppeAufloesen}
+                                            >
+                                                {eintrag.positionen.map(v => renderRootBlock(v))}
+                                            </AlternativGruppeBox>
+                                        ) : renderRootBlock(eintrag.block)
                                     ))}
                                 </SortableContext>
                                 <DragOverlay dropAnimation={{
@@ -2182,22 +3704,19 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                                                     <div className="text-sm font-medium text-slate-800 line-clamp-1">{activeDragBlock.title || 'Ohne Titel'}</div>
                                                 </div>
                                             )}
+                                            {activeDragBlock.type === 'CLOSURE' && (
+                                                <div className="bg-slate-50 rounded-lg border border-slate-200 p-3">
+                                                    <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Abschluss</div>
+                                                    <div className="text-sm font-medium text-slate-800 line-clamp-1">Zwischensumme &amp; Schluss</div>
+                                                </div>
+                                            )}
                                         </SortableBlock>
                                     ) : null}
                                 </DragOverlay>
                             </DndContext>
 
-                            {/* Fallback: Abschluss nach allen Blöcken (wenn kein SERVICE/SECTION_HEADER vorhanden) */}
-                            {closureInsertAfterIdx < 0 && closureSummary.gesamtNetto > 0 && (
-                                <ClosureBlock
-                                    summary={closureSummary}
-                                    dokumentTyp={dokumentTyp}
-                                    abschlagBetragNetto={abschlagBetragNetto}
-                                    bereitsAbgerechnetDurchAndere={bereitsAbgerechnetDurchAndere}
-                                    abrechnungsPositionen={abrechnungsPositionen}
-                                    basisdokumentBetragNetto={basisdokumentBetragNetto}
-                                />
-                            )}
+                            {/* CLOSURE wird inline im map oben gerendert (Block-Type 'CLOSURE'),
+                                eingefuegt durch den CLOSURE-Sync useEffect. */}
 
                             {/* Empty State */}
                             {blocks.length === 0 && (
@@ -2239,11 +3758,43 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                 isLocked={isLocked}
                 onDatumChange={(value) => {
                     if (isLocked) return;
-                    setDatum(value);
+                    // "Datum wählen" ist laut Spec eine Einzelaktion -- nie gebuendelt.
+                    verlauf.aendern({
+                        bezeichnung: 'Datum geändert',
+                        berechne: () => ({ datum: value }),
+                        buendelSchluessel: null,
+                        ziel: null,
+                    });
                 }}
                 globalRabatt={globalRabatt}
                 istRestbetrag={bereitsAbgerechnetDurchAndere !== null && bereitsAbgerechnetDurchAndere > 0}
+                zahlungsziel={zahlungszielTage}
+                zahlungszielDatum={zahlungszielDatumDisplay}
+                onZahlungszielChange={isLocked ? undefined : handleZahlungszielChange}
             />
+
+            {/* Zahlungsziel-Chip Popover */}
+            {zahlungszielPopover && (
+                <div
+                    ref={zahlungszielPopoverRef}
+                    style={{ position: 'fixed', top: zahlungszielPopover.top, left: zahlungszielPopover.left, zIndex: 200 }}
+                    className="w-64 rounded-lg border border-rose-200 bg-white p-3 shadow-xl"
+                    role="dialog"
+                    aria-labelledby="zahlungsziel-popover-titel"
+                >
+                    <p id="zahlungsziel-popover-titel" className="text-xs font-semibold text-slate-700 mb-2">Zahlungsziel</p>
+                    <div className="flex items-center gap-2">
+                        <ZahlungszielTageEingabe
+                            tage={zahlungszielTage}
+                            onUebernehmen={handleZahlungszielChange}
+                            className="w-16 rounded border border-slate-300 px-2 py-1 text-sm text-center focus:border-rose-400 focus:outline-none"
+                            autoFocus
+                        />
+                        <span className="text-xs text-slate-500">Tage</span>
+                        <span className="text-xs text-slate-400">=&nbsp;fällig {zahlungszielDatumDisplay}</span>
+                    </div>
+                </div>
+            )}
 
             {/* Modals */}
             {showExportWarning && (
@@ -2277,13 +3828,24 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     onCancel={() => setShowUnsavedWarning(false)}
                     onDiscard={() => {
                         setShowUnsavedWarning(false);
-                        onClose();
+                        void tabSchliessen();
                     }}
                     onSaveAndClose={async () => {
-                        await handleSave();
+                        // Nur schliessen, wenn das Speichern wirklich geklappt
+                        // hat. Sonst waere die Aenderung weg und der Fehler-Toast
+                        // verschwaende mit dem Editor -- kein onLockFreigeben,
+                        // kein Tab-Schliess-Versuch.
+                        const gespeichert = await handleSave();
+                        if (!gespeichert) return;
                         setShowUnsavedWarning(false);
-                        onClose();
+                        void tabSchliessen();
                     }}
+                />
+            )}
+            {showAddTypeDialog && (
+                <AddTypeDialog
+                    onPick={openPickerForType}
+                    onClose={closeAddTypeDialog}
                 />
             )}
             {showTextbausteinPicker && (
@@ -2292,7 +3854,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     dokumentTyp={dokumentTyp}
                     onSelect={(tb) => {
                         const htmlContent = tb.html || tb.beschreibung || '';
-                        const resolvedContent = replacePlaceholders(htmlContent);
+                        // Zahlungsziel-Platzhalter bleiben erhalten → geschuetzter Chip im Editor.
+                        const resolvedContent = replacePlaceholders(htmlContent, true, true);
                         addBlock('TEXT', {
                             content: resolvedContent,
                             fontSize: extractFontSizeFromHtml(resolvedContent) || extractFontSizeFromHtml(htmlContent),
@@ -2301,7 +3864,10 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                         setShowTextbausteinPicker(false);
                         toast.success(`Textbaustein „${tb.name}“ eingefügt`);
                     }}
-                    onClose={() => setShowTextbausteinPicker(false)}
+                    onClose={() => {
+                        pendingAnchorRef.current = DEFAULT_ANCHOR;
+                        setShowTextbausteinPicker(false);
+                    }}
                 />
             )}
             {showLeistungPicker && (
@@ -2320,13 +3886,16 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             fett: extractBoldFromHtml(descHtml),
                             leistungId: l.id,
                             kategorieId: l.folderId ?? undefined,
-                        });
+                        }, 'Leistung eingefügt');
                         setShowLeistungPicker(false);
                         if (!hasKategorie) {
                             toast.success(`Leistung „${l.name}“ eingefügt`);
                         }
                     }}
-                    onClose={() => setShowLeistungPicker(false)}
+                    onClose={() => {
+                        pendingAnchorRef.current = DEFAULT_ANCHOR;
+                        setShowLeistungPicker(false);
+                    }}
                 />
             )}
             {showStundensatzPicker && (
@@ -2342,11 +3911,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             price: az.stundensatz,
                             fontSize: extractFontSizeFromHtml(descHtml),
                             fett: extractBoldFromHtml(descHtml),
-                        });
+                        }, 'Stundensatz eingefügt');
                         setShowStundensatzPicker(false);
                         toast.success(`Stundensatz „${az.bezeichnung}“ eingefügt`);
                     }}
-                    onClose={() => setShowStundensatzPicker(false)}
+                    onClose={() => {
+                        pendingAnchorRef.current = DEFAULT_ANCHOR;
+                        setShowStundensatzPicker(false);
+                    }}
                 />
             )}
             {showRabattDialog && (
@@ -2354,17 +3926,32 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     blocks={blocks}
                     globalRabatt={globalRabatt}
                     onApply={(positionDiscounts, newGlobalRabatt) => {
-                        setBlocks(prev => prev.map(b => {
-                            if (b.type === 'SERVICE' && b.id in positionDiscounts) {
-                                return { ...b, discount: positionDiscounts[b.id] };
-                            }
-                            return b;
-                        }));
-                        setGlobalRabatt(newGlobalRabatt);
-                        setHasUnsavedChanges(true);
+                        // Positionsrabatte + Pauschalrabatt sind EIN Schritt (Wortliste).
+                        // Die Change-Detection erkennt globalRabatt jetzt selbst
+                        // (baueDokumentSignatur) -- kein setHasUnsavedChanges(true) mehr noetig.
+                        verlauf.aendern({
+                            bezeichnung: 'Rabatt geändert',
+                            berechne: stand => ({
+                                blocks: stand.blocks.map(b => (b.type === 'SERVICE' && b.id in positionDiscounts)
+                                    ? { ...b, discount: positionDiscounts[b.id] }
+                                    : b),
+                                globalRabatt: newGlobalRabatt,
+                            }),
+                            buendelSchluessel: null,
+                            ziel: null,
+                        });
                         setShowRabattDialog(false);
                     }}
                     onClose={() => setShowRabattDialog(false)}
+                />
+            )}
+            {alternativDialogAnker && (
+                <AlternativGruppeDialog
+                    blocks={blocks}
+                    ankerId={alternativDialogAnker}
+                    onSpeichern={alternativGruppeSpeichern}
+                    onAufloesen={gruppeAufloesen}
+                    onClose={() => setAlternativDialogAnker(null)}
                 />
             )}
 
@@ -2382,9 +3969,14 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
             {/* PDF-Format Auswahl Dialog */}
             <EmailFormatDialog
                 isOpen={showFormatDialog}
-                onClose={() => { setShowFormatDialog(false); setEmailLoading(false); }}
+                onClose={() => { setShowFormatDialog(false); setEmailLoading(false); setDraftSendMode(false); }}
                 onSelect={handleFormatSelected}
                 loading={emailLoading}
+                title={draftSendMode ? 'Entwurf per E-Mail senden' : undefined}
+                description={draftSendMode
+                    ? 'Das PDF wird mit Wasserzeichen „ENTWURF" verschickt. Das Dokument bleibt offen und änderbar.'
+                    : undefined}
+                loadingText={draftSendMode ? 'Entwurfs-PDF wird erstellt…' : undefined}
             />
 
             {/* Gültigkeitsdauer-Auswahl (nur Angebote) */}
@@ -2406,6 +3998,8 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     setShowEmailModal(false);
                     setEmailAttachments([]);
                     setEmailBody('');
+                    setDraftSendMode(false);
+                    lastSendWasDraftRef.current = false;
                 }}
                 projektId={projektId}
                 anfrageId={anfrageId}
@@ -2418,13 +4012,21 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                     kundenAnsprechpartner: kontextDaten.ansprechpartner,
                 }}
                 initialAttachments={emailAttachments}
+                // Alles aus dem Dokument-Editor ist ein Ausgangsgeschäftsdokument.
+                // Ist ein eigenes Postfach dafür eingerichtet, geht die Mail
+                // darüber raus und der Absender steht fest.
+                geschaeftsdokument
                 initialRecipient={kontextDaten.kundenEmails?.[0]}
                 initialSubject={emailSubject}
                 initialBody={emailBody}
                 gueltigkeitTage={gueltigkeitTage ?? undefined}
                 onSuccess={async () => {
-                    // Versanddatum setzen (Buchung erfolgte bereits vor E-Mail-Vorbereitung)
-                    if (dokument?.id) {
+                    // Versanddatum setzen (Buchung erfolgte bereits vor E-Mail-Vorbereitung).
+                    // Bei Entwurfs-Versand wird der Endpoint NICHT aufgerufen, damit
+                    // emailVersandDatum nicht fälschlich gesetzt wird – der eigentliche
+                    // finale Versand kommt später separat.
+                    const wasDraft = lastSendWasDraftRef.current;
+                    if (!wasDraft && dokument?.id) {
                         try {
                             const res = await fetch(`/api/ausgangs-dokumente/${dokument.id}/email-versendet`, {
                                 method: 'POST',
@@ -2438,13 +4040,28 @@ export default function DocumentEditor({ projektId, anfrageId, dokumentId, initi
                             console.error('Fehler beim Setzen des Versanddatums:', err);
                         }
                     }
+                    // Erfolgreicher endgueltiger Versand startet den Verlauf neu;
+                    // ein Entwurfsversand laesst ihn stehen (Spec).
+                    if (!wasDraft) verlauf.leeren();
                     setShowEmailModal(false);
                     setEmailAttachments([]);
                     setEmailBody('');
                     setGueltigkeitTage(null);
                     setPendingFormat(null);
+                    setDraftSendMode(false);
+                    lastSendWasDraftRef.current = false;
                 }}
+            />
+
+            {/* Material-Auswahl aus den Artikel-Stammdaten. Unconditional gemountet
+                (siehe materialDialogOffen weiter oben). */}
+            <ArtikelAuswahlDialog
+                offen={materialDialogOffen}
+                onSchliessen={() => setMaterialDialogOffen(false)}
+                onUebernehmen={uebernehmeMaterial}
             />
         </div>
     );
-}
+});
+
+export default DocumentEditor;

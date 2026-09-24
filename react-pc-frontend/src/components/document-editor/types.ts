@@ -25,10 +25,23 @@ export interface DocBlock {
     children?: DocBlock[];
     /** Rabatt in Prozent für diese Position (0-100) */
     discount?: number;
+    /**
+     * Name der Entweder-Oder-Gruppe. Gesetzt = der Kunde muss genau eine Variante
+     * der Gruppe waehlen. Leer/undefined bei `optional: true` = frei dazubuchbare
+     * Zusatzposition. Nur zusammen mit `optional: true` sinnvoll.
+     */
+    alternativGruppe?: string;
     /** ID der Leistung aus der Stammdaten-Tabelle (für Kategoriezuordnung) */
     leistungId?: number;
     /** ID der Produktkategorie (von Leistung.kategorie) */
     kategorieId?: number;
+    /**
+     * ID des Artikels aus den Stammdaten, aus dem diese Position entstanden ist.
+     * Reine Herkunftsangabe: Preis und Text stehen fest im Block, damit ein
+     * bereits verschicktes Angebot sich nicht rueckwirkend aendert, wenn jemand
+     * den Artikel oder seinen Aufschlag anpasst.
+     */
+    artikelId?: number;
     /**
      * Markiert TEXT-Bloecke, die automatisch aus den
      * "Standard-Texte"-Defaults der Vorlage eingefuegt wurden.
@@ -51,7 +64,46 @@ export interface DocumentEditorProps {
     anfrageId?: number;
     dokumentId?: number;
     initialDokumentTyp?: import('../../types').AusgangsGeschaeftsDokumentTyp;
+    /**
+     * Schliesst den Editor, wenn kein Tab zum Schliessen da ist (die Seite
+     * entscheidet dann zwischen `navigate(-1)` und `window.close()`). Wird
+     * NUR benutzt, wenn `onLockFreigeben` fehlt -- sonst uebernimmt der
+     * X-Button-Ablauf selbst das Schliessen (siehe dort).
+     */
     onClose: () => void;
+    /**
+     * true = die Seite haelt gerade kein Lock, der Nutzer darf nur lesen.
+     * Verhaelt sich wie das bisherige `isLocked` (schreibgeschuetzt, keine
+     * Aktionen). Default false.
+     */
+    readOnly?: boolean;
+    /**
+     * Gibt die von der Seite gehaltene Sperre aktiv frei und wartet, bis der
+     * Server das bestaetigt hat. Wird im X-Button-Ablauf zwischen Speichern
+     * und Tab-Schliessen aufgerufen (siehe dort). Ohne diesen Prop bleibt das
+     * bisherige Verhalten von `onClose` unveraendert.
+     */
+    onLockFreigeben?: () => Promise<void>;
+}
+
+/**
+ * Imperatives Handle des Editors (Task 7a) -- die Seite braucht einen Weg,
+ * den Editor VOR dem automatischen Freigeben des Datensatz-Locks (Untaetig-
+ * keits-Timer, siehe useIdleTimer/useDatensatzLock) zum Speichern zu bringen.
+ * `handleSave` selbst ist reiner Editor-internal-State (kein Prop) -- ein
+ * Ref ist hier die kleinste Ergaenzung, die das nach aussen gibt, ohne die
+ * bestehende Prop-Schnittstelle umzubauen. Siehe Kontext-Log Abschnitt 7a
+ * (Abweichung vom Plan: DocumentEditor war zuvor keine forwardRef-Komponente).
+ */
+export interface DocumentEditorHandle {
+    /**
+     * Speichert sofort, falls ungespeicherte Aenderungen vorliegen -- sonst
+     * ein No-op (kein unnoetiger Request). Wartet auf den kompletten
+     * Speicher-Roundtrip, bevor sie sich aufloest, damit der Aufrufer
+     * (die Seite) erst DANACH die Sperre freigibt: "niemals freigeben,
+     * solange ungespeicherte Aenderungen im Editor liegen".
+     */
+    speichernFuerFreigabe: () => Promise<void>;
 }
 
 export interface KontextDaten {

@@ -1,0 +1,576 @@
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { ToastProvider } from './ui/toast';
+const render = (ui: ReactElement) => rtlRender(<ToastProvider>{ui}</ToastProvider>);
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EmailComposeForm, MAX_ATTACHMENT_BYTES } from './EmailComposeForm';
+
+/**
+ * Regressionstests fuer die Rueckfrage "E-Mail-Adresse speichern?".
+ *
+ * Hintergrund: Beim Antworten stand im Empfaengerfeld `"name" <adresse>`.
+ * Verglichen wurde dieser komplette String gegen die gespeicherten (reinen)
+ * Projekt-Adressen – der Abgleich schlug immer fehl, die Rueckfrage kam bei
+ * jeder Antwort, und beim Speichern landete der komplette String in der DB.
+ *
+ * Alle Daten sind Dummy-Daten (DSGVO).
+ */
+
+const PROJEKT_ID = 42;
+const BEKANNTE_ADRESSE = 'max.mustermann@example.com';
+
+/** Sammelt alle POST-Aufrufe, damit der gespeicherte Wert geprueft werden kann. */
+let gesendeteRequests: Array<{ url: string; body: unknown }>;
+
+/** Antwort auf /api/email/dokument-absender; pro Test umstellbar. */
+let dokumentAbsenderAntwort: { aktiv: boolean; address: string | null } = { aktiv: false, address: null };
+
+function mockFetch() {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const method = init?.method || 'GET';
+
+        if (method === 'POST' || method === 'PUT') {
+            let body: unknown = null;
+            if (typeof init?.body === 'string') {
+                try { body = JSON.parse(init.body); } catch { body = init.body; }
+            }
+            gesendeteRequests.push({ url, body });
+        }
+
+        if (url.startsWith('/api/projekte/simple')) {
+            return jsonResponse([{ id: PROJEKT_ID, bauvorhaben: 'Musterbau', auftragsnummer: 'A-1', kunde: 'Max Mustermann' }]);
+        }
+        // Der paginierte Endpunkt (page-Param) liefert die Liste im Feld "anfragen"
+        if (url.startsWith('/api/anfragen?') || url === '/api/anfragen') {
+            return jsonResponse({
+                anfragen: [{ id: 7, bauvorhaben: 'Musteranfrage', anfragesnummer: 'AN-1', kundenName: 'Max Mustermann' }],
+                gesamt: 1,
+                seite: 0,
+                seitenGroesse: 50,
+            });
+        }
+        if (url === `/api/projekte/${PROJEKT_ID}`) {
+            return jsonResponse({ id: PROJEKT_ID, bauvorhaben: 'Musterbau', kundenEmails: [BEKANNTE_ADRESSE] });
+        }
+        if (url.startsWith('/api/email/from-addresses')) {
+            return jsonResponse(['firma@example.com']);
+        }
+        if (url.startsWith('/api/email/dokument-absender')) {
+            return jsonResponse(dokumentAbsenderAntwort);
+        }
+        if (url.startsWith('/api/email/signatures/default')) {
+            return new Response(null, { status: 204 });
+        }
+        if (url.startsWith(`/api/projekte/${PROJEKT_ID}/dokumente`)) {
+            return jsonResponse([]);
+        }
+        if (url.startsWith('/api/emails/contacts')) {
+            return jsonResponse([]);
+        }
+        if (url.startsWith('/api/emails/contacts')) {
+            return jsonResponse([]);
+        }
+        if (url.startsWith('/api/emails/drafts')) {
+            return jsonResponse({ id: 1 });
+        }
+        return jsonResponse({});
+    });
+}
+
+function jsonResponse(data: unknown) {
+    return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+    });
+}
+
+async function sendeAb() {
+    await userEvent.click(screen.getByRole('button', { name: /E-Mail senden/i }));
+}
+
+describe('EmailComposeForm – kontrollierter Einkaufsversand', () => {
+    it('übergibt Betreff und HTML an die Vorschau und umgeht generischen Mailversand', async () => {
+        const controlledSubmit = vi.fn().mockResolvedValue(undefined);
+        gesendeteRequests = [];
+        const fetchMock = mockFetch();
+        vi.stubGlobal('fetch', fetchMock);
+        render(<EmailComposeForm onClose={vi.fn()} onControlledSubmit={controlledSubmit}
+            initialRecipient="lieferant@example.com" initialSubject="Antwort" initialBody="Danke" />);
+        await userEvent.click(screen.getByRole('button', { name: /E-Mail senden/i }));
+        await waitFor(() => expect(controlledSubmit).toHaveBeenCalledTimes(1));
+        expect(controlledSubmit.mock.calls[0][0]).toMatchObject({ subject: 'Antwort', htmlBody: expect.any(String), attachments: [] });
+        expect(gesendeteRequests.some(request => request.url === '/api/emails/send' || /\/api\/emails\/\d+\/reply/.test(request.url))).toBe(false);
+    });
+});
+
+describe('EmailComposeForm – Rueckfrage "E-Mail-Adresse speichern?"', () => {
+    beforeEach(() => {
+        gesendeteRequests = [];
+        vi.stubGlobal('fetch', mockFetch());
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        dokumentAbsenderAntwort = { aktiv: false, address: null };
+    });
+
+    it('fragt nicht nach, wenn die Antwort an eine bereits gespeicherte Adresse geht', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialRecipient={`"${BEKANNTE_ADRESSE}" <${BEKANNTE_ADRESSE}>`}
+                initialSubject="AW: Zeichnungsentwurf"
+                replyEmailId={7}
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('AW: Zeichnungsentwurf')).toBeInTheDocument());
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/7/reply')).toBe(true)
+        );
+        expect(screen.queryByText('E-Mail-Adresse speichern?')).not.toBeInTheDocument();
+    });
+
+    it('speichert nur die reine Adresse, wenn der Empfaenger neu ist', async () => {
+        const neueAdresse = 'erika.musterfrau@example.com';
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialRecipient={`"Erika Musterfrau" <${neueAdresse}>`}
+                initialSubject="AW: Zeichnungsentwurf"
+                replyEmailId={7}
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('AW: Zeichnungsentwurf')).toBeInTheDocument());
+        await sendeAb();
+
+        expect(await screen.findByText('E-Mail-Adresse speichern?')).toBeInTheDocument();
+        // Angezeigt und gespeichert wird die reine Adresse, nicht `"Name" <Adresse>`
+        expect(screen.getByText(neueAdresse)).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: /Als Projekt-E-Mail speichern/i }));
+
+        await waitFor(() => {
+            const gespeichert = gesendeteRequests.find(r => r.url === `/api/projekte/${PROJEKT_ID}/emails`);
+            expect(gespeichert?.body).toEqual({ email: neueAdresse });
+        });
+    });
+
+    it('bietet das Speichern nicht an, wenn mehrere Adressen im Feld stehen', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialRecipient="erika.musterfrau@example.com, john.doe@example.com"
+                initialSubject="Sammelmail"
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Sammelmail')).toBeInTheDocument());
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+        expect(screen.queryByText('E-Mail-Adresse speichern?')).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * Zuordnung zu Projekt/Anfrage beim freien Schreiben (E-Mail-Center).
+ * Alle Daten sind Dummy-Daten (DSGVO).
+ */
+describe('EmailComposeForm – Projekt/Anfrage verknüpfen', () => {
+    beforeEach(() => {
+        gesendeteRequests = [];
+        vi.stubGlobal('fetch', mockFetch());
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('warnt vor dem Senden, wenn weder Projekt noch Anfrage verknüpft ist', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Materialbestellung"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Materialbestellung')).toBeInTheDocument());
+        await sendeAb();
+
+        expect(await screen.findByText('Kein Projekt und keine Anfrage verknüpft')).toBeInTheDocument();
+        expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(false);
+    });
+
+    it('sendet nach "Trotzdem senden" ohne Verknüpfung', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Materialbestellung"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Materialbestellung')).toBeInTheDocument());
+        await sendeAb();
+        await screen.findByText('Kein Projekt und keine Anfrage verknüpft');
+        await userEvent.click(screen.getByRole('button', { name: /Trotzdem senden/i }));
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+    });
+
+    it('sendet ohne Rueckfrage, sobald ein Projekt ausgewaehlt wurde', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Materialbestellung"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Materialbestellung')).toBeInTheDocument());
+        await userEvent.click(screen.getByRole('button', { name: /Projekt oder Anfrage suchen/i }));
+        await userEvent.click(await screen.findByText('Musterbau'));
+
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+        expect(screen.queryByText('Kein Projekt und keine Anfrage verknüpft')).not.toBeInTheDocument();
+    });
+
+    it('laesst die Zuordnung eines wieder geoeffneten Entwurfs weiter aendern', async () => {
+        // E-Mail-Center reicht die im Entwurf gespeicherte projektId durch –
+        // das Feld muss trotzdem sichtbar und aenderbar bleiben.
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialSubject="Entwurf"
+                draftId={1}
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Entwurf')).toBeInTheDocument());
+        expect(await screen.findByText('Musterbau')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Ändern/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Verknüpfung entfernen/i })).toBeInTheDocument();
+    });
+
+    it('uebernimmt den Kunden-Empfaenger des neu gewaehlten Projekts', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialSubject="Anfrage Material"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Anfrage Material')).toBeInTheDocument());
+        await userEvent.click(screen.getByRole('button', { name: /Projekt oder Anfrage suchen/i }));
+        await userEvent.click(await screen.findByText('Musterbau'));
+
+        await waitFor(() => expect(screen.getByDisplayValue(BEKANNTE_ADRESSE)).toBeInTheDocument());
+    });
+
+    it('laesst einen selbst getippten Empfaenger beim Wechsel der Zuordnung stehen', async () => {
+        // Sonst ginge die Mail still an den Kunden des neu gewaehlten Projekts.
+        const eigeneAdresse = 'erika.musterfrau@example.com';
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialSubject="Anfrage Material"
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Anfrage Material')).toBeInTheDocument());
+        await userEvent.type(
+            screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben'),
+            eigeneAdresse
+        );
+
+        await userEvent.click(screen.getByRole('button', { name: /Projekt oder Anfrage suchen/i }));
+        await userEvent.click(await screen.findByText('Musterbau'));
+
+        // Zuordnung ist da, der getippte Empfaenger bleibt aber unveraendert
+        expect(await screen.findByText('Musterbau')).toBeInTheDocument();
+        expect(screen.getByDisplayValue(eigeneAdresse)).toBeInTheDocument();
+        expect(screen.queryByDisplayValue(BEKANNTE_ADRESSE)).not.toBeInTheDocument();
+    });
+
+    it('zeigt beim Antworten kein Entfernen der Verknuepfung an', async () => {
+        // Der Reply-Endpunkt erbt den Vorgang der Ursprungsmail – ein Entfernen
+        // im Formular haette keine Wirkung.
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialRecipient={BEKANNTE_ADRESSE}
+                initialSubject="AW: Zwischenstand"
+                replyEmailId={7}
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('AW: Zwischenstand')).toBeInTheDocument());
+        expect(await screen.findByText('Musterbau')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Verknüpfung entfernen/i })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Ändern/i })).toBeInTheDocument();
+    });
+
+    it('fragt beim Antworten nicht nach, auch ohne eigene Verknuepfung', async () => {
+        // Eine Antwort erbt die Zuordnung der Ursprungsmail – die Rueckfrage
+        // waere dort fachlich falsch.
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                initialRecipient="lieferant@example.com"
+                initialSubject="AW: Materialbestellung"
+                replyEmailId={7}
+                zuordnungWaehlbar
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('AW: Materialbestellung')).toBeInTheDocument());
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/7/reply')).toBe(true)
+        );
+        expect(screen.queryByText('Kein Projekt und keine Anfrage verknüpft')).not.toBeInTheDocument();
+    });
+
+    it('blendet die Suche aus, wenn direkt aus einem Projekt geschrieben wird', async () => {
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                initialRecipient={BEKANNTE_ADRESSE}
+                initialSubject="Zwischenstand"
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Zwischenstand')).toBeInTheDocument());
+        expect(screen.queryByRole('button', { name: /Projekt oder Anfrage suchen/i })).not.toBeInTheDocument();
+
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+        expect(screen.queryByText('Kein Projekt und keine Anfrage verknüpft')).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * Beim Versand aus dem Dokument-Editor darf der Absender nicht frei waehlbar
+ * sein, sobald ein eigenes Postfach fuer Geschaeftsdokumente laeuft: Eine
+ * Adresse aus der allgemeinen Liste passt dann nicht zum versendenden Postfach
+ * und die Mail scheitert beim Empfaenger an SPF/DKIM.
+ */
+describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
+    beforeEach(() => {
+        gesendeteRequests = [];
+        vi.stubGlobal('fetch', mockFetch());
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        dokumentAbsenderAntwort = { aktiv: false, address: null };
+    });
+
+    it('zeigt den festen Absender an und laesst ihn nicht aendern', async () => {
+        dokumentAbsenderAntwort = { aktiv: true, address: 'rechnungen@musterfirma-beispiel.de' };
+
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                geschaeftsdokument
+                initialSubject="Rechnung RE-2026/07/0001"
+            />
+        );
+
+        const vonFeld = await screen.findByDisplayValue('rechnungen@musterfirma-beispiel.de');
+        expect(vonFeld).toHaveAttribute('readonly');
+        expect(screen.getByText(/lässt sich hier deshalb nicht ändern/i)).toBeInTheDocument();
+    });
+
+    it('lädt beim Wiederöffnen eines Geschäftsdokument-Entwurfs den festen Absender nach', async () => {
+        dokumentAbsenderAntwort = { aktiv: true, address: 'rechnungen@example.com' };
+        const fallback = mockFetch();
+        vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input) === '/api/emails/drafts/42' && !init?.method) return Promise.resolve(jsonResponse({
+                id: 42, subject: 'Rechnung Entwurf', recipient: BEKANNTE_ADRESSE, body: '<p>Rechnung</p>',
+                geschaeftsdokument: true, attachments: [],
+            }));
+            return fallback(input, init);
+        });
+        render(<EmailComposeForm onClose={() => {}} draftId={42} />);
+        expect(await screen.findByDisplayValue('rechnungen@example.com')).toHaveAttribute('readonly');
+        expect(screen.getByText(/lässt sich hier deshalb nicht ändern/i)).toHaveClass('col-span-2');
+    });
+
+    it('laesst die freie Auswahl, solange kein eigenes Postfach eingerichtet ist', async () => {
+        dokumentAbsenderAntwort = { aktiv: false, address: null };
+
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                geschaeftsdokument
+                initialSubject="Rechnung RE-2026/07/0001"
+            />
+        );
+
+        await waitFor(() => expect(screen.getByDisplayValue('Rechnung RE-2026/07/0001')).toBeInTheDocument());
+        expect(screen.queryByDisplayValue('rechnungen@musterfirma-beispiel.de')).not.toBeInTheDocument();
+        expect(screen.queryByText(/lässt sich hier deshalb nicht ändern/i)).not.toBeInTheDocument();
+    });
+
+    it('meldet dem Backend, dass es sich um ein Geschaeftsdokument handelt', async () => {
+        dokumentAbsenderAntwort = { aktiv: true, address: 'rechnungen@musterfirma-beispiel.de' };
+
+        render(
+            <EmailComposeForm
+                onClose={() => {}}
+                projektId={PROJEKT_ID}
+                geschaeftsdokument
+                initialRecipient={BEKANNTE_ADRESSE}
+                initialSubject="Rechnung RE-2026/07/0001"
+            />
+        );
+
+        await screen.findByDisplayValue('rechnungen@musterfirma-beispiel.de');
+        await sendeAb();
+
+        await waitFor(() =>
+            expect(gesendeteRequests.some(r => r.url === '/api/emails/send')).toBe(true)
+        );
+    });
+});
+
+/**
+ * Regressionstests für das Anhangslimit.
+ *
+ * Hintergrund: Das Formular rechnete mit den rohen Dateigrößen gegen die
+ * 20 MB des Mailservers. In der fertigen Nachricht sind Anhänge aber
+ * Base64-kodiert und damit gut ein Drittel größer – der Versand scheiterte
+ * beim Mailserver, obwohl das Formular grünes Licht gegeben hatte.
+ */
+describe('MAX_ATTACHMENT_BYTES', () => {
+    /** Base64 (4/3) plus ein Zeilenumbruch alle 76 Zeichen. */
+    const BASE64_FAKTOR = 4 / 3 * 1.014;
+
+    /** Vom Mailserver (T-Online) angenommene Nachrichtengröße. */
+    const SERVER_LIMIT = 20_000_000;
+
+    it('bleibt kodiert samt Text und Kopfzeilen unter dem Server-Limit', () => {
+        const kodiert = MAX_ATTACHMENT_BYTES * BASE64_FAKTOR;
+
+        expect(kodiert).toBeLessThan(SERVER_LIMIT);
+        // Kopfzeilen, HTML-Text, Signatur und ein zitiertes Original brauchen
+        // ebenfalls Platz – mindestens ein Megabyte muss frei bleiben.
+        expect(SERVER_LIMIT - kodiert).toBeGreaterThanOrEqual(1024 * 1024);
+    });
+
+    it('lässt trotzdem genug Platz für einen Satz Reklamationsfotos', () => {
+        // Ein verkleinertes Handyfoto liegt bei rund 1,2 MB, dazu ein Lieferschein.
+        expect(MAX_ATTACHMENT_BYTES).toBeGreaterThan(8 * 1024 * 1024);
+    });
+});
+
+/**
+ * Regressionstest für die Verdrahtung der Bildkomprimierung.
+ *
+ * Hintergrund: Die Komprimierung hing zunächst nur an den Wegen, die das
+ * Formular selbst anbietet. Anhänge, die ein Aufrufer mitgibt (etwa die Fotos
+ * einer Reklamation), wären ungeprüft im Original hinausgegangen.
+ *
+ * Getestet wird die echte Komprimierung, nicht ein Mock davon – jsdom kann
+ * weder Bilder dekodieren noch Canvas zeichnen, deshalb stehen dafür die
+ * gleichen Attrappen wie in bildKomprimierung.test.ts.
+ */
+describe('EmailComposeForm – Anhänge verkleinern', () => {
+    const VERKLEINERTE_BYTES = Math.round(1.2 * 1024 * 1024);
+
+    beforeEach(() => {
+        gesendeteRequests = [];
+        vi.stubGlobal('fetch', mockFetch());
+        vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
+            width: 4000, height: 3000, close: () => { },
+        })));
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+            fillStyle: '', fillRect: vi.fn(), drawImage: vi.fn(),
+        } as unknown as CanvasRenderingContext2D);
+        HTMLCanvasElement.prototype.toBlob = function (rueckruf: BlobCallback) {
+            rueckruf(new Blob([new Uint8Array(VERKLEINERTE_BYTES)], { type: 'image/jpeg' }));
+        };
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('verkleinert auch Fotos, die von außen mitgegeben wurden', async () => {
+        const original = new File(['x'], 'baustelle.jpg', { type: 'image/jpeg' });
+        Object.defineProperty(original, 'size', { value: 6 * 1024 * 1024 });
+
+        render(
+            <EmailComposeForm
+                onClose={() => { }}
+                projektId={PROJEKT_ID}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Reklamation"
+                initialAttachments={[original]}
+            />
+        );
+
+        expect(await screen.findAllByText('baustelle.jpg')).not.toHaveLength(0);
+        // 6 MB Original -> 1,2 MB verkleinert; die Angabe kommt aus formatFileSize.
+        expect(await screen.findByText('1.2 MB')).toBeInTheDocument();
+        expect(screen.queryByText('6.0 MB')).not.toBeInTheDocument();
+    });
+
+    it('lässt einen PDF-Anhang unangetastet', async () => {
+        const lieferschein = new File(['x'], 'lieferschein.pdf', { type: 'application/pdf' });
+        Object.defineProperty(lieferschein, 'size', { value: 3 * 1024 * 1024 });
+
+        render(
+            <EmailComposeForm
+                onClose={() => { }}
+                projektId={PROJEKT_ID}
+                initialRecipient="lieferant@example.com"
+                initialSubject="Reklamation"
+                initialAttachments={[lieferschein]}
+            />
+        );
+
+        expect(await screen.findAllByText('lieferschein.pdf')).not.toHaveLength(0);
+        expect(await screen.findByText('3.0 MB')).toBeInTheDocument();
+        expect(createImageBitmap).not.toHaveBeenCalled();
+    });
+});

@@ -75,24 +75,17 @@ export const KategorieAnalyseModal: React.FC<KategorieAnalyseModalProps> = ({
             chartInstanceRef.current.destroy();
         }
 
-        const arbeitsgangAnalysen = analyseData.arbeitsgangAnalysen || [];
-        const variableZeitProEinheit = arbeitsgangAnalysen.reduce(
-            (acc, a) => acc + a.durchschnittStundenProEinheit,
-            0
-        );
-        const variableZeitLine = variableZeitProEinheit > 0 ? variableZeitProEinheit : (analyseData.steigung || 0);
+        // Das Modell kommt direkt aus der Backend-Regression (OLS): zeit = fixzeit + steigung * menge.
+        // Frühere Version hat hier eine eigene, inkonsistente Steigung (Summe der Arbeitsgang-
+        // Durchschnitte) und eine erfundene Fixzeit (Ø Restzeit) gebaut. Dadurch war die Gerade zu
+        // flach, die Fixzeit überhöht (konnte über der kleinsten Auftragsdauer liegen) und passte
+        // weder zur angezeigten Genauigkeit (R²) noch zu den Konfidenzbändern.
+        const variableZeitLine = analyseData.steigung || 0;
+        const fixzeitLine = Math.max(0, analyseData.fixzeit);
 
         const filteredProjekte = analyseData.projekte.filter((p) => p.masseinheit > 0);
         const normalProjekte = filteredProjekte.filter((p) => !p.ausreisser);
         const outlierProjekte = filteredProjekte.filter((p) => p.ausreisser);
-
-        const fixzeitResidual = filteredProjekte.length
-            ? filteredProjekte.reduce((sum, p) => sum + Math.max(0, p.zeitGesamt - variableZeitLine * p.masseinheit), 0) / filteredProjekte.length
-            : analyseData.fixzeit;
-
-        const fixzeitLine = Number.isFinite(fixzeitResidual) && fixzeitResidual >= 0
-            ? fixzeitResidual
-            : Math.max(0, analyseData.fixzeit);
 
         const allPoints = filteredProjekte.map((p) => ({ x: p.masseinheit, y: p.zeitGesamt }));
         const maxEinheit = Math.max(0, ...allPoints.map((d) => d.x));
@@ -229,20 +222,18 @@ export const KategorieAnalyseModal: React.FC<KategorieAnalyseModalProps> = ({
     }, [analyseData]);
 
     const arbeitsgangAnalysen = analyseData?.arbeitsgangAnalysen || [];
-    const variableZeitProEinheit = arbeitsgangAnalysen.reduce(
+    // Summe der durchschnittlich PRO EINHEIT direkt auf Arbeitsgänge gebuchten Zeit. Reine
+    // Aufschlüsselung – NICHT die Modell-Steigung (die ist meist höher, weil sie auch nicht
+    // direkt pro Einheit gebuchte Zeit erfasst).
+    const arbeitsgangSumme = arbeitsgangAnalysen.reduce(
         (acc, a) => acc + a.durchschnittStundenProEinheit,
         0
     );
 
-    const fixzeitDisplay = analyseData
-        ? (analyseData.projekte.length
-            ? analyseData.projekte.reduce(
-                (sum, p) => sum + Math.max(0, p.zeitGesamt - variableZeitProEinheit * p.masseinheit),
-                0
-            ) / analyseData.projekte.length
-            : analyseData.fixzeit
-        ).toFixed(2)
-        : '0.00';
+    // Fixzeit und variable Zeit kommen aus der Backend-Regression, damit die KPIs zur gezeichneten
+    // Geraden, zur Genauigkeit (R²) und zu den Konfidenzbändern passen.
+    const variableZeitProEinheit = analyseData?.steigung ?? 0;
+    const fixzeitDisplay = (analyseData ? Math.max(0, analyseData.fixzeit) : 0).toFixed(2);
 
     const rQ = analyseData?.rQuadrat ?? 0;
     const qualitaetsLabel = rQ >= 0.7 ? 'Zuverlässig' : rQ >= 0.4 ? 'Grobe Schätzung' : 'Wenig Erfahrungswerte';
@@ -431,13 +422,19 @@ export const KategorieAnalyseModal: React.FC<KategorieAnalyseModalProps> = ({
                                                 </div>
                                             ))}
                                             <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                                                <span className="text-sm font-semibold text-slate-800">Gesamt variabel</span>
+                                                <span className="text-sm font-semibold text-slate-800">Summe gebucht / Einheit</span>
+                                                <span className="text-sm font-bold text-rose-700 tabular-nums">
+                                                    {arbeitsgangSumme.toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-sm font-semibold text-slate-800">Variable Zeit (Modell)</span>
                                                 <span className="text-sm font-bold text-rose-700 tabular-nums">
                                                     {variableZeitProEinheit.toFixed(2)}
                                                 </span>
                                             </div>
                                             <div className="flex items-center justify-between gap-2">
-                                                <span className="text-sm font-semibold text-slate-800">Fixzeit</span>
+                                                <span className="text-sm font-semibold text-slate-800">Fixzeit (Modell)</span>
                                                 <span className="text-sm font-bold text-slate-700 tabular-nums">
                                                     {fixzeitDisplay} h
                                                 </span>

@@ -361,16 +361,14 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
                     return {
                         projektId: a.projektId,
                         kostenstelleId: a.kostenstelleId,
-                        betrag: letzterAnteilBerechnet.restBetrag,
-                        prozentanteil: letzterAnteilBerechnet.restProzent,
+                        ...(modus === 'prozent' ? { prozentanteil: letzterAnteilBerechnet.restProzent } : { betrag: letzterAnteilBerechnet.restBetrag }),
                         beschreibung: a.beschreibung
                     };
                 }
                 return {
                     projektId: a.projektId,
                     kostenstelleId: a.kostenstelleId,
-                    betrag: a.betrag,
-                    prozentanteil: a.prozentanteil,
+                    ...(modus === 'prozent' ? { prozentanteil: a.prozentanteil } : { betrag: a.betrag }),
                     beschreibung: a.beschreibung
                 };
             });

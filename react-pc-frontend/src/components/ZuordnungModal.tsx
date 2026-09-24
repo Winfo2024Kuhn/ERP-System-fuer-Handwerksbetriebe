@@ -26,8 +26,10 @@ interface ProjektAnteil {
     kostenstelleId?: number;
     kostenstelleName?: string;
     betrag: number;
-    prozentanteil: number;
+    prozentanteil: number | null;
     beschreibung: string;
+    // Über wie viele Jahre die Kosten verteilt werden (nur Kostenstellen). 1 = keine Aufteilung.
+    streckungJahre?: number;
 }
 
 // ========== Helpers ==========
@@ -44,16 +46,19 @@ const formatEuro = (value: number | null): string => {
 
 // ========== Props ==========
 export interface ZuordnungModalProps {
-    geschaeftsdokumentId: number;
+    geschaeftsdokumentId?: number | null;
+    belegId?: number | null;
     dokumentNummer?: string | null;
     lieferantName?: string | null;
     pdfUrl?: string | null;
+    previewMimeType?: string | null;
     onClose: () => void;
     onSuccess: () => void;
 }
 
-export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferantName, pdfUrl, onClose, onSuccess }: ZuordnungModalProps) {
+export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, lieferantName, pdfUrl, previewMimeType, onClose, onSuccess }: ZuordnungModalProps) {
     const toast = useToast();
+    const isBelegZuordnung = belegId != null;
     const [geschaeftsdaten, setGeschaeftsdaten] = useState<GeschaeftsdatenDto | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -64,10 +69,21 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
 
     // Geschäftsdaten + bestehende Zuordnungen laden
     useEffect(() => {
+        const targetId = isBelegZuordnung ? belegId : geschaeftsdokumentId;
+        if (targetId == null) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
+        const datenUrl = isBelegZuordnung
+            ? `/api/bestellungen-uebersicht/belegdaten/${targetId}`
+            : `/api/bestellungen-uebersicht/geschaeftsdaten/${targetId}`;
+        const zuordnungUrl = isBelegZuordnung
+            ? `/api/bestellungen-uebersicht/beleg-zuordnungen/${targetId}`
+            : `/api/bestellungen-uebersicht/zuordnungen/${targetId}`;
         Promise.all([
-            fetch(`/api/bestellungen-uebersicht/geschaeftsdaten/${geschaeftsdokumentId}`),
-            fetch(`/api/bestellungen-uebersicht/zuordnungen/${geschaeftsdokumentId}`),
+            fetch(datenUrl),
+            fetch(zuordnungUrl),
         ])
             .then(async ([gdRes, zuordRes]) => {
                 let nettoFuerBerechnung = 0;
@@ -78,11 +94,18 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
                 }
                 if (zuordRes.ok) {
                     const zuordnungen = await zuordRes.json();
-                    setAnteile(zuordnungen.map((z: { projektId?: number; projektName?: string; kostenstelleId?: number; kostenstelleName?: string; betrag?: number; prozentanteil?: number; beschreibung?: string }) => {
-                        const pct = z.prozentanteil || 0;
-                        // Betrag immer aus prozentanteil × betragNetto berechnen – vermeidet brutto-basierte Altdaten
-                        const betrag = nettoFuerBerechnung > 0
-                            ? Number((nettoFuerBerechnung * pct / 100).toFixed(2))
+                    const enthaeltAbsoluteZuordnung = zuordnungen.some((z: { prozentanteil?: number | null }) => z.prozentanteil == null);
+                    if (enthaeltAbsoluteZuordnung) {
+                        setModus('absolut');
+                    }
+                    setAnteile(zuordnungen.map((z: { projektId?: number; projektName?: string; kostenstelleId?: number; kostenstelleName?: string; betrag?: number; prozentanteil?: number | null; beschreibung?: string; streckungJahre?: number }) => {
+                        const hatProzent = z.prozentanteil != null;
+                        const pct: number | null = hatProzent
+                            ? (z.prozentanteil ?? 0)
+                            : (nettoFuerBerechnung > 0 ? Number((((z.betrag || 0) / nettoFuerBerechnung) * 100).toFixed(2)) : null);
+                        // Prozentuale Altdaten aus netto normieren; absolute Anteile behalten ihren Betrag.
+                        const betrag = hatProzent && nettoFuerBerechnung > 0
+                            ? Number((nettoFuerBerechnung * (pct ?? 0) / 100).toFixed(2))
                             : (z.betrag || 0);
                         return {
                             projektId: z.projektId,
@@ -92,6 +115,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
                             betrag,
                             prozentanteil: pct,
                             beschreibung: z.beschreibung || '',
+                            streckungJahre: z.streckungJahre && z.streckungJahre > 1 ? z.streckungJahre : 1,
                         };
                     }));
                 }
@@ -99,9 +123,12 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
             .catch(() => toast.error('Fehler beim Laden der Zuordnungsdaten'))
             .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [geschaeftsdokumentId]);
+    }, [geschaeftsdokumentId, belegId, isBelegZuordnung]);
 
     const betragNetto = geschaeftsdaten?.betragNetto || 0;
+    const rechnungsJahr = geschaeftsdaten?.dokumentDatum
+        ? new Date(geschaeftsdaten.dokumentDatum).getFullYear()
+        : new Date().getFullYear();
 
     // Projekt hinzufügen (vom Modal aufgerufen)
     const addProjekt = (p: { id: number; bauvorhaben: string }) => {
@@ -132,7 +159,8 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
             kostenstelleName: k.bezeichnung,
             prozentanteil: defaultAnteil,
             betrag: modus === 'prozent' ? (betragNetto * defaultAnteil / 100) : 0,
-            beschreibung: ''
+            beschreibung: '',
+            streckungJahre: 1
         }]);
         setShowKostenstelleModal(false);
     };
@@ -157,7 +185,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
         const lastIdx = anteile.length - 1;
 
         // Summe aller Einträge AUSSER dem letzten
-        const sumProzentOhneLetzen = anteile.slice(0, lastIdx).reduce((s, a) => s + a.prozentanteil, 0);
+        const sumProzentOhneLetzen = anteile.slice(0, lastIdx).reduce((s, a) => s + (a.prozentanteil || 0), 0);
         const sumBetragOhneLetzen = anteile.slice(0, lastIdx).reduce((s, a) => s + a.betrag, 0);
 
         const restProzent = Number((100 - sumProzentOhneLetzen).toFixed(2));
@@ -180,41 +208,43 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
     }, 0);
     const sumProzent = anteile.reduce((s, a, idx) => {
         const isLast = idx === anteile.length - 1 && anteile.length >= 2;
-        return s + (isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : a.prozentanteil);
+        return s + (isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : (a.prozentanteil || 0));
     }, 0);
     const rest = Number((betragNetto - sumBetrag).toFixed(2));
 
     // Speichern - mit berechneten Werten für den letzten Eintrag
     const speichern = async () => {
         if (anteile.length === 0) return;
+        const targetId = isBelegZuordnung ? belegId : geschaeftsdokumentId;
+        if (targetId == null) {
+            toast.error('Zuordnungsziel fehlt');
+            return;
+        }
         setSaving(true);
         try {
             // Für den letzten Eintrag die berechneten Werte verwenden
             const anteileZumSpeichern = anteile.map((a, idx) => {
                 const isLast = idx === anteile.length - 1 && anteile.length >= 2;
-                if (isLast && letzterAnteilBerechnet) {
-                    return {
-                        projektId: a.projektId,
-                        kostenstelleId: a.kostenstelleId,
-                        betrag: letzterAnteilBerechnet.restBetrag,
-                        prozentanteil: letzterAnteilBerechnet.restProzent,
-                        beschreibung: a.beschreibung
-                    };
-                }
+                const betrag = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restBetrag : a.betrag;
+                const prozentanteil = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : a.prozentanteil;
                 return {
                     projektId: a.projektId,
                     kostenstelleId: a.kostenstelleId,
-                    betrag: a.betrag,
-                    prozentanteil: a.prozentanteil,
-                    beschreibung: a.beschreibung
+                    betrag: modus === 'absolut' ? betrag : null,
+                    prozentanteil: modus === 'absolut' ? null : prozentanteil,
+                    beschreibung: a.beschreibung,
+                    // Streckung nur bei Kostenstellen mitschicken (Projekte bleiben einmalig)
+                    streckungJahre: a.kostenstelleId != null ? (a.streckungJahre && a.streckungJahre > 1 ? a.streckungJahre : 1) : undefined
                 };
             });
 
-            const res = await fetch('/api/bestellungen-uebersicht/zuordnen', {
+            const res = await fetch(isBelegZuordnung
+                ? '/api/bestellungen-uebersicht/beleg-zuordnen'
+                : '/api/bestellungen-uebersicht/zuordnen', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    geschaeftsdokumentId,
+                    ...(isBelegZuordnung ? { belegId: targetId } : { geschaeftsdokumentId: targetId }),
                     frontendUserProfileId: (() => {
                         try {
                             const stored = localStorage.getItem('frontendUserSelection');
@@ -252,8 +282,9 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
 
     // Display values: prefer loaded geschaeftsdaten, fallback to props
     const displayDokNr = geschaeftsdaten?.dokumentNummer || dokumentNummer || '–';
-    const displayLieferant = geschaeftsdaten?.lieferantName || lieferantName;
+    const displayLieferant = geschaeftsdaten?.lieferantName || lieferantName || 'Kein Lieferant angegeben';
     const displayPdfUrl = pdfUrl;
+    const isImagePreview = previewMimeType?.startsWith('image/');
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -262,7 +293,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-rose-50">
                     <div>
                         <h3 className="text-lg font-semibold text-slate-900">
-                            Rechnung {displayDokNr}
+                            {isBelegZuordnung ? 'Beleg' : 'Rechnung'} {displayDokNr}
                         </h3>
                         <p className="text-sm text-slate-500">{displayLieferant}</p>
                     </div>
@@ -290,7 +321,11 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
                         </div>
                         <div className="flex-1 overflow-auto p-4">
                             {displayPdfUrl ? (
-                                <PdfCanvasViewer url={displayPdfUrl} className="w-full h-full min-h-[500px] rounded-lg overflow-y-auto overflow-x-hidden" />
+                                isImagePreview ? (
+                                    <img src={displayPdfUrl} alt={displayDokNr} className="max-w-full max-h-full rounded-lg shadow bg-white mx-auto" />
+                                ) : (
+                                    <PdfCanvasViewer url={displayPdfUrl} className="w-full h-full min-h-[500px] rounded-lg overflow-y-auto overflow-x-hidden" />
+                                )
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full text-slate-400">
                                     <FileText className="w-12 h-12 mb-3" />
@@ -354,14 +389,16 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
 
                                 {/* Projekt-Suche & Kostenstelle Buttons */}
                                 <div className="flex gap-2">
-                                    <Button
-                                        variant="outline"
-                                        onClick={() => setShowProjectModal(true)}
-                                        className="flex-1 justify-start gap-2 text-slate-600 hover:text-rose-700 hover:border-rose-300"
-                                    >
-                                        <Briefcase className="w-4 h-4" />
-                                        Projekt hinzufügen...
-                                    </Button>
+                                    {!isBelegZuordnung && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setShowProjectModal(true)}
+                                            className="flex-1 justify-start gap-2 text-slate-600 hover:text-rose-700 hover:border-rose-300"
+                                        >
+                                            <Briefcase className="w-4 h-4" />
+                                            Projekt hinzufügen...
+                                        </Button>
+                                    )}
 
                                     <Button
                                         variant="outline"
@@ -393,14 +430,14 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
                                 {anteile.length === 0 ? (
                                     <div className="text-center py-8 text-slate-400 border-2 border-dashed rounded-xl">
                                         <Plus className="w-8 h-8 mx-auto mb-2" />
-                                        <p>Klicken Sie oben, um Projekte zuzuordnen</p>
+                                        <p>Klicken Sie oben, um {isBelegZuordnung ? 'Kostenstellen' : 'Projekte oder Kostenstellen'} zuzuordnen</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
                                         {anteile.map((a, idx) => {
                                             const isLast = idx === anteile.length - 1 && anteile.length >= 2;
                                             // Für den letzten Eintrag: berechnete Werte verwenden
-                                            const displayProzent = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : a.prozentanteil;
+                                            const displayProzent = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : (a.prozentanteil || 0);
                                             const displayBetrag = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restBetrag : a.betrag;
 
                                             return (
@@ -437,7 +474,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
                                                             ) : (
                                                                 <input
                                                                     type="number"
-                                                                    value={modus === 'prozent' ? a.prozentanteil : a.betrag}
+                                                                    value={modus === 'prozent' ? (a.prozentanteil || 0) : a.betrag}
                                                                     onChange={e => updateAnteil(idx, modus === 'prozent' ? 'prozentanteil' : 'betrag', Number(e.target.value))}
                                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500"
                                                                 />
@@ -460,6 +497,31 @@ export function ZuordnungModal({ geschaeftsdokumentId, dokumentNummer, lieferant
                                                             />
                                                         </div>
                                                     </div>
+
+                                                    {/* Kosten über mehrere Jahre verteilen – nur für Kostenstellen */}
+                                                    {a.kostenstelleId != null && (() => {
+                                                        const jahre = a.streckungJahre && a.streckungJahre > 0 ? a.streckungJahre : 1;
+                                                        const proJahr = jahre > 1 ? displayBetrag / jahre : displayBetrag;
+                                                        return (
+                                                            <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-2">
+                                                                <span className="text-xs text-slate-600">Kosten verteilen über</span>
+                                                                <input
+                                                                    type="number"
+                                                                    min={1}
+                                                                    max={20}
+                                                                    value={jahre}
+                                                                    onChange={e => updateAnteil(idx, 'streckungJahre', Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                                                                    className="w-16 px-2 py-1 border border-slate-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-rose-500"
+                                                                />
+                                                                <span className="text-xs text-slate-600">{jahre === 1 ? 'Jahr' : 'Jahre'}</span>
+                                                                {jahre > 1 && (
+                                                                    <span className="text-xs text-rose-600 font-medium ml-1">
+                                                                        ≈ {formatEuro(proJahr)} € / Jahr ab {rechnungsJahr}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             );
                                         })}

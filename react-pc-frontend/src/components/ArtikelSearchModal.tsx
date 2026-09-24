@@ -16,6 +16,8 @@ import { Select } from './ui/select-custom';
 import { Button } from './ui/button';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { KategorieSearchModal } from './KategorieSearchModal';
+import { Dialog } from './ui/dialog';
+import { useToast } from './ui/toast';
 import { cn } from '../lib/utils';
 
 export interface ArtikelSuchErgebnis {
@@ -23,6 +25,8 @@ export interface ArtikelSuchErgebnis {
     produktname: string;
     produktlinie?: string | null;
     produkttext?: string | null;
+    abmessung?: string | null;
+    artikelnummer?: string | null;
     externeArtikelnummer?: string | null;
     werkstoffName?: string | null;
     kategoriePfad?: string | null;
@@ -71,6 +75,8 @@ export function ArtikelSearchModal({
     multiSelect = false,
     onSelectMany,
 }: ArtikelSearchModalProps) {
+    const toast = useToast();
+    const [ladefehler, setLadefehler] = useState('');
     // Filter
     const [searchTerm, setSearchTerm] = useState('');
     const [filterLieferant, setFilterLieferant] = useState(lieferantName || '');
@@ -108,7 +114,7 @@ export function ArtikelSearchModal({
     useEffect(() => {
         if (!isOpen) return;
         fetch('/api/artikel/werkstoffe')
-            .then(res => res.json())
+            .then(res => { if (!res.ok) throw new Error('Werkstoffe konnten nicht geladen werden.'); return res.json(); })
             .then(data => {
                 if (Array.isArray(data)) {
                     setWerkstoffOptions([
@@ -117,8 +123,8 @@ export function ArtikelSearchModal({
                     ]);
                 }
             })
-            .catch(console.error);
-    }, [isOpen]);
+            .catch(() => toast.error('Werkstoffe konnten nicht geladen werden.'));
+    }, [isOpen, toast]);
 
     // Reset beim Öffnen
     useEffect(() => {
@@ -144,7 +150,7 @@ export function ArtikelSearchModal({
         const controller = new AbortController();
         abortRef.current = controller;
 
-        setLoading(true);
+        setLoading(true); setLadefehler('');
         try {
             const params = new URLSearchParams({
                 page: String(page),
@@ -166,14 +172,14 @@ export function ArtikelSearchModal({
             setTotalCount(typeof data?.gesamt === 'number' ? data.gesamt : list.length);
         } catch (e) {
             if (!(e instanceof DOMException && e.name === 'AbortError')) {
-                console.error('Artikelsuche fehlgeschlagen:', e);
+                setLadefehler('Artikel konnten nicht geladen werden.'); toast.error('Artikel konnten nicht geladen werden.');
                 setArtikel([]);
                 setTotalCount(0);
             }
         } finally {
             if (!controller.signal.aborted) setLoading(false);
         }
-    }, [page, sortColumn, sortDirection, searchTerm, filterLieferant, filterProduktlinie, filterWerkstoff, filterKategorieId]);
+    }, [page, sortColumn, sortDirection, searchTerm, filterLieferant, filterProduktlinie, filterWerkstoff, filterKategorieId, toast]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -237,12 +243,7 @@ export function ArtikelSearchModal({
     if (!isOpen) return null;
 
     return (
-        <div
-            className="fixed inset-4 z-[60] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="artikelsuche-title"
-        >
+        <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }} className="w-[calc(100vw-2rem)] h-[calc(100vh-2rem)] p-0 overflow-hidden" aria-labelledby="artikelsuche-title">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-rose-50 to-white shrink-0">
                 <div className="flex items-center gap-3">
@@ -495,6 +496,7 @@ export function ArtikelSearchModal({
                 )}
             </div>
 
+            {ladefehler && <p role="alert" className="px-6 text-sm text-rose-700">{ladefehler}</p>}
             {/* Footer: Paginierung & Status */}
             <div className="px-6 py-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
                 <span className="text-xs text-slate-500">
@@ -546,7 +548,7 @@ export function ArtikelSearchModal({
                 }}
                 currentKategorieId={filterKategorieId}
             />
-        </div>
+        </Dialog>
     );
 }
 

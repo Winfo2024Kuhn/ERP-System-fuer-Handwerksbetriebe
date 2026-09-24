@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { LadefehlerPanel } from '../components/ui/ladefehler-panel';
+import { HiCadImportDialog } from '../features/einkauf/components/HiCadImportDialog';
+import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
+import { ladeBedarfszeilen, nutztEchtesBackend, speichereWerkstatt, druckeBedarfsliste } from '../features/einkauf/originalBedarfApi';
+import type { BedarfResponse } from '../features/einkauf/types';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowLeft,
     Check,
+    ChevronRight,
     FileSpreadsheet,
     FileText,
     Filter,
@@ -23,6 +31,7 @@ import { HicadImportModal } from '../components/HicadImportModal';
 import { MaterialbestellungModal, type EditPosition } from '../components/MaterialbestellungModal';
 import { IdsLieferantenAuswahlModal } from '../components/IdsLieferantenAuswahlModal';
 import { Plug } from 'lucide-react';
+import type { IdsDraft } from '../types/ids';
 
 interface ProjektStamm {
     id: number;
@@ -33,6 +42,10 @@ interface ProjektStamm {
 }
 
 interface BedarfsZeile {
+    bedarf?: BedarfResponse;
+    vorhanden?: number;
+    bestellen?: number;
+    werkstattMaximum?: number;
     id: number;
     artikelId?: number | null;
     externeArtikelnummer?: string | null;
@@ -65,8 +78,8 @@ interface BedarfsZeile {
     anschnittbildFlanschUrl?: string | null;
     anschnittStegText?: string | null;
     anschnittFlanschText?: string | null;
-    anschnittWinkelLinks?: number | null;
-    anschnittWinkelRechts?: number | null;
+    anschnittWinkelLinks?: string | number | null;
+    anschnittWinkelRechts?: string | number | null;
     zeugnisAnforderung?: string | null;
     excKlasse?: string | null;
     freiePosition?: boolean;
@@ -105,20 +118,25 @@ export default function ProjektBedarfPage() {
     const projektIdNum = projektId ? Number(projektId) : NaN;
     const toast = useToast();
     const confirm = useConfirm();
+    const navigate = useNavigate();
+    const [direktOffen, setDirektOffen] = useState(false);
 
     const [projekt, setProjekt] = useState<ProjektStamm | null>(null);
     const [zeilen, setZeilen] = useState<BedarfsZeile[]>([]);
     const [loading, setLoading] = useState(true);
+    const [ladefehler, setLadefehler] = useState<string | null>(null);
     const [hicadOffen, setHicadOffen] = useState(false);
     const [materialOffen, setMaterialOffen] = useState(false);
     const [editZeile, setEditZeile] = useState<EditPosition | null>(null);
     const [mengen, setMengen] = useState<MengenMap>({});
     const [filter, setFilter] = useState<Filter>('alle');
     const [idsAuswahlOffen, setIdsAuswahlOffen] = useState(false);
+    const [werkstattSpeichert, setWerkstattSpeichert] = useState(false);
+    const [ungueltigeMengen, setUngueltigeMengen] = useState<Record<string, boolean>>({});
 
     // localStorage-Backup laden, sobald die Projekt-ID feststeht.
     useEffect(() => {
-        if (!Number.isFinite(projektIdNum)) return;
+        if (nutztEchtesBackend || !Number.isFinite(projektIdNum)) return;
         try {
             const raw = window.localStorage.getItem(STORAGE_PREFIX + projektIdNum);
             if (raw) setMengen(JSON.parse(raw));
@@ -143,9 +161,9 @@ export default function ProjektBedarfPage() {
         });
     }, [zeilen]);
 
-    // Persistieren ins localStorage (lazy — nur wenn Projekt-ID + Daten da).
+    // Mock-Vorschau: Persistieren ins localStorage (lazy — nur wenn Projekt-ID + Daten da).
     useEffect(() => {
-        if (!Number.isFinite(projektIdNum)) return;
+        if (nutztEchtesBackend || !Number.isFinite(projektIdNum)) return;
         if (Object.keys(mengen).length === 0) return;
         try {
             window.localStorage.setItem(
@@ -158,7 +176,7 @@ export default function ProjektBedarfPage() {
     }, [mengen, projektIdNum]);
 
     const setVorhanden = useCallback((id: number, neu: number, gesamt: number) => {
-        const klar = Math.max(0, Math.min(gesamt, Math.floor(Number.isFinite(neu) ? neu : 0)));
+        const klar = Math.max(0, Math.min(gesamt, (Number.isFinite(neu) ? neu : 0)));
         setMengen(prev => ({
             ...prev,
             [id]: { vorhanden: klar, bestellen: gesamt - klar },
@@ -166,7 +184,7 @@ export default function ProjektBedarfPage() {
     }, []);
 
     const setBestellen = useCallback((id: number, neu: number, gesamt: number) => {
-        const klar = Math.max(0, Math.min(gesamt, Math.floor(Number.isFinite(neu) ? neu : 0)));
+        const klar = Math.max(0, Math.min(gesamt, (Number.isFinite(neu) ? neu : 0)));
         setMengen(prev => ({
             ...prev,
             [id]: { vorhanden: gesamt - klar, bestellen: klar },
@@ -177,33 +195,36 @@ export default function ProjektBedarfPage() {
     useEffect(() => {
         if (!Number.isFinite(projektIdNum)) return;
         let cancelled = false;
-        fetch(`/api/projekte/simple?size=500`)
-            .then(res => (res.ok ? res.json() : []))
-            .then((arr: ProjektStamm[]) => {
+        fetch(nutztEchtesBackend ? `/api/projekte/${projektIdNum}` : '/api/projekte/simple?size=500')
+            .then(res => { if (!res.ok) throw new Error('Projekt konnte nicht geladen werden.'); return res.json(); })
+            .then((data: ProjektStamm | ProjektStamm[]) => {
+                const arr = Array.isArray(data) ? data : [data];
                 if (cancelled) return;
                 const p = Array.isArray(arr) ? arr.find(x => x.id === projektIdNum) : null;
                 setProjekt(p ?? null);
             })
             .catch(() => {
-                if (!cancelled) setProjekt(null);
+                if (!cancelled) { setProjekt(null); toast.error('Projekt konnte nicht geladen werden.'); }
             });
         return () => { cancelled = true; };
-    }, [projektIdNum]);
+    }, [projektIdNum, toast]);
 
     // Bedarfs-Zeilen laden
     const ladeZeilen = useCallback(async () => {
         if (!Number.isFinite(projektIdNum)) return;
         setLoading(true);
+        setLadefehler(null);
         try {
-            const res = await fetch('/api/bestellungen/offen');
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const alle: BedarfsZeile[] = await res.json();
+            const alle: BedarfsZeile[] = await ladeBedarfszeilen(projektIdNum);
             const meine = Array.isArray(alle) ? alle.filter(z => z.projektId === projektIdNum) : [];
             setZeilen(meine);
+            if (nutztEchtesBackend) setMengen(Object.fromEntries(meine.map(z => [z.id, {
+                vorhanden: z.vorhanden ?? 0, bestellen: z.bestellen ?? 0,
+            }])));
         } catch (err) {
-            console.error('Bedarfe konnten nicht geladen werden', err);
-            toast.error('Bedarfe konnten nicht geladen werden.');
-            setZeilen([]);
+            const message = err instanceof Error ? err.message : 'Bedarfe konnten nicht geladen werden.';
+            setLadefehler(message);
+            toast.error(message);
         } finally {
             setLoading(false);
         }
@@ -212,6 +233,18 @@ export default function ProjektBedarfPage() {
     useEffect(() => {
         ladeZeilen();
     }, [ladeZeilen]);
+
+    const speicherePruefung = async () => {
+        setWerkstattSpeichert(true);
+        try {
+            await speichereWerkstatt(zeilen.filter((z): z is BedarfsZeile & { bedarf: BedarfResponse } => !!z.bedarf),
+                Object.fromEntries(Object.entries(mengen).map(([id, m]) => [id, m.vorhanden])));
+            await ladeZeilen();
+            toast.success('Werkstattprüfung gespeichert.');
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Werkstattprüfung konnte nicht gespeichert werden.');
+        } finally { setWerkstattSpeichert(false); }
+    };
 
     const summen = useMemo(() => ({
         zeilenAnzahl: zeilen.length,
@@ -224,7 +257,7 @@ export default function ProjektBedarfPage() {
 
     /** Status pro Zeile aus den Mengen abgeleitet — komplett vorhanden / teilweise / komplett bestellen. */
     const zeilenStatus = useCallback((z: BedarfsZeile): 'vorhanden' | 'teilweise' | 'zu_bestellen' => {
-        const gesamt = getGesamt(z);
+        const gesamt = z.werkstattMaximum ?? getGesamt(z);
         const m = mengen[z.id];
         const v = m?.vorhanden ?? 0;
         if (v >= gesamt && gesamt > 0) return 'vorhanden';
@@ -255,6 +288,7 @@ export default function ProjektBedarfPage() {
     if (projekt?.auftragsnummer) subtitleParts.push(`Auftrag ${projekt.auftragsnummer}`);
 
     const handleZeileLoeschen = async (zeile: BedarfsZeile) => {
+        if (nutztEchtesBackend) { toast.info('Ein gespeicherter Einkaufsbedarf kann hier noch nicht gelöscht werden.'); return; }
         if (zeile.exportiertAm) {
             toast.warning('Diese Zeile ist bereits exportiert und kann nicht gelöscht werden.');
             return;
@@ -283,6 +317,7 @@ export default function ProjektBedarfPage() {
             return;
         }
         setEditZeile({
+            bedarf: zeile.bedarf,
             id: zeile.id,
             artikelId: zeile.artikelId ?? null,
             externeArtikelnummer: zeile.externeArtikelnummer ?? null,
@@ -296,8 +331,8 @@ export default function ProjektBedarfPage() {
             schnittbildId: zeile.schnittbildId ?? null,
             schnittbildBildUrl: zeile.schnittbildBildUrl ?? null,
             schnittAchseBildUrl: zeile.schnittAchseBildUrl ?? null,
-            anschnittWinkelLinks: zeile.anschnittWinkelLinks ?? null,
-            anschnittWinkelRechts: zeile.anschnittWinkelRechts ?? null,
+            anschnittWinkelLinks: zeile.anschnittWinkelLinks == null ? null : Number(String(zeile.anschnittWinkelLinks).replace(',', '.')),
+            anschnittWinkelRechts: zeile.anschnittWinkelRechts == null ? null : Number(String(zeile.anschnittWinkelRechts).replace(',', '.')),
             zeugnisAnforderung: zeile.zeugnisAnforderung ?? null,
             kommentar: zeile.kommentar ?? null,
             projektId: zeile.projektId ?? projektIdNum,
@@ -353,6 +388,7 @@ export default function ProjektBedarfPage() {
                         variant="outline"
                         onClick={() => {
                             if (!Number.isFinite(projektIdNum)) return;
+                            if (nutztEchtesBackend) { void druckeBedarfsliste(zeilen.map(z => z.id)).catch(e => toast.error(e.message)); return; }
                             window.open(
                                 `/api/bestellungen/projekt/${projektIdNum}/bedarfsliste-pdf`,
                                 '_blank',
@@ -398,6 +434,8 @@ export default function ProjektBedarfPage() {
                     <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin text-rose-400" />
                     Bedarfe werden geladen…
                 </div>
+            ) : ladefehler ? (
+                <LadefehlerPanel message={ladefehler} onRetry={() => void ladeZeilen()} />
             ) : zeilen.length === 0 ? (
                 <EmptyState
                     onHicad={() => setHicadOffen(true)}
@@ -424,7 +462,7 @@ export default function ProjektBedarfPage() {
                             </FilterChip>
                         </div>
                         <p className="text-xs text-slate-400 hidden md:block">
-                            Eingaben werden lokal pro Projekt gespeichert
+                            {nutztEchtesBackend ? 'Werkstattprüfung anschließend speichern' : 'Eingaben werden lokal pro Projekt gespeichert'}
                         </p>
                     </div>
 
@@ -460,9 +498,9 @@ export default function ProjektBedarfPage() {
                                 ) : null}
                                 {gefilterteZeilen.map(z => {
                                     const gesperrt = !!z.exportiertAm;
-                                    const gesamt = getGesamt(z);
+                                    const gesamt = z.werkstattMaximum ?? getGesamt(z);
                                     const m = mengen[z.id] ?? { vorhanden: 0, bestellen: gesamt };
-                                    const inputDisabled = gesperrt || !!z.bestellt;
+                                    const inputDisabled = gesperrt || werkstattSpeichert;
                                     return (
                                         <tr
                                             key={z.id}
@@ -552,6 +590,7 @@ export default function ProjektBedarfPage() {
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <MengenInput
+                                                    onValidityChange={valid => setUngueltigeMengen(prev => ({ ...prev, [`${z.id}-vorhanden`]: !valid }))}
                                                     value={m.vorhanden}
                                                     max={gesamt}
                                                     accent="emerald"
@@ -562,6 +601,7 @@ export default function ProjektBedarfPage() {
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <MengenInput
+                                                    onValidityChange={valid => setUngueltigeMengen(prev => ({ ...prev, [`${z.id}-bestellen`]: !valid }))}
                                                     value={m.bestellen}
                                                     max={gesamt}
                                                     accent="rose"
@@ -584,8 +624,8 @@ export default function ProjektBedarfPage() {
                                                     <button
                                                         type="button"
                                                         onClick={() => handleZeileLoeschen(z)}
-                                                        disabled={gesperrt}
-                                                        title={gesperrt ? 'Versendet — gesperrt' : 'Löschen'}
+                                                        disabled={gesperrt || nutztEchtesBackend}
+                                                        title={nutztEchtesBackend ? 'Gespeicherten Bedarf hier noch nicht löschbar' : gesperrt ? 'Versendet — gesperrt' : 'Löschen'}
                                                         className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
@@ -599,6 +639,11 @@ export default function ProjektBedarfPage() {
                         </table>
                     </div>
 
+                    {nutztEchtesBackend && <div className="flex justify-end px-4 py-3 border-t border-slate-100">
+                        <Button variant="outline" disabled={werkstattSpeichert || Object.values(ungueltigeMengen).some(Boolean)} onClick={speicherePruefung}>
+                            {werkstattSpeichert && <Loader2 className="w-4 h-4 animate-spin" />} Werkstattprüfung speichern
+                        </Button>
+                    </div>}
                     {/* Footer-Bar: Sammelaktion zur Preisanfrage */}
                     <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 bg-slate-50/60">
                         <div className="text-sm text-slate-600">
@@ -610,23 +655,22 @@ export default function ProjektBedarfPage() {
                         </div>
                         <Button
                             className="bg-rose-600 text-white hover:bg-rose-700"
-                            disabled={zuBestellenAnzahl === 0}
-                            onClick={() => toast.info(
-                                'Preisanfrage-Übergabe folgt im nächsten Schritt (Lieferantenauswahl-Modal).',
-                            )}
+                            disabled={zuBestellenAnzahl === 0 || Object.values(ungueltigeMengen).some(Boolean) || (nutztEchtesBackend && zeilen.some(z => (mengen[z.id]?.vorhanden ?? 0) !== (z.vorhanden ?? 0)))}
+                            onClick={() => nutztEchtesBackend ? setDirektOffen(true) : toast.info('Preisanfrage-Übergabe folgt im nächsten Schritt (Lieferantenauswahl-Modal).')}
                             title={zuBestellenAnzahl === 0
                                 ? 'Keine Positionen mit offener Bestellmenge'
-                                : 'Markierte Positionen in eine Preisanfrage übernehmen'}
+                                : nutztEchtesBackend ? 'Werkstattprüfung zuerst speichern, dann Bestellung vorbereiten' : 'Markierte Positionen in eine Preisanfrage übernehmen'}
                         >
                             <ShoppingCart className="w-4 h-4" />
-                            → In Preisanfrage übernehmen
+                            {nutztEchtesBackend ? 'Bestellung vorbereiten' : '→ In Preisanfrage übernehmen'}
                         </Button>
                     </div>
                 </div>
             )}
 
             {/* Modals */}
-            {projekt && (
+            {nutztEchtesBackend && hicadOffen && <HiCadImportDialog schließen={() => setHicadOffen(false)} übernommen={() => { setHicadOffen(false); void ladeZeilen(); }} />}
+            {!nutztEchtesBackend && projekt && (
                 <HicadImportModal
                     isOpen={hicadOffen}
                     onClose={() => setHicadOffen(false)}
@@ -646,9 +690,15 @@ export default function ProjektBedarfPage() {
                 projektSperren={!editZeile}
                 editPosition={editZeile}
             />
+            {direktOffen && <DirektbestellungDialog onClose={() => setDirektOffen(false)}
+                initialeTeilmengen={zeilen.filter(z => (mengen[z.id]?.bestellen ?? 0) > 0).map(z => ({ bedarfId: z.id, menge: mengen[z.id].bestellen }))}
+                onCreated={id => { setDirektOffen(false); navigate(`/bestellungen/${id}`); }} />}
+            {Number.isFinite(projektIdNum) && <GeparkteShopWarenkoerbe projektId={projektIdNum} />}
             <IdsLieferantenAuswahlModal
                 isOpen={idsAuswahlOffen}
                 onClose={() => setIdsAuswahlOffen(false)}
+                projektId={Number.isFinite(projektIdNum) ? projektIdNum : undefined}
+                projektName={projekt?.bauvorhaben ?? undefined}
             />
         </PageLayout>
     );
@@ -731,6 +781,7 @@ function MengenInput({
     disabled,
     onChange,
     onMaxClick,
+    onValidityChange,
 }: {
     value: number;
     max: number;
@@ -738,7 +789,17 @@ function MengenInput({
     disabled: boolean;
     onChange: (n: number) => void;
     onMaxClick: () => void;
+    onValidityChange: (valid: boolean) => void;
 }) {
+    const [draft, setDraft] = useState(formatDecimalInput(value));
+    const [error, setError] = useState('');
+    const [previousValue, setPreviousValue] = useState(value);
+    if (previousValue !== value) { setPreviousValue(value); setDraft(formatDecimalInput(value)); setError(''); }
+    const commit = () => {
+        const result = validateDecimalInput(draft, { label: 'Menge', required: true, min: 0, max });
+        if (!result.valid || result.value == null) { setError(result.valid ? 'Bitte eine Menge eingeben.' : result.message); return; }
+        setError(''); onChange(result.value);
+    };
     const accentRing = accent === 'emerald'
         ? 'focus:ring-emerald-300 focus:border-emerald-400'
         : 'focus:ring-rose-300 focus:border-rose-400';
@@ -746,14 +807,21 @@ function MengenInput({
     const istMax = value > 0 && value === max;
     return (
         <div className="inline-flex items-center gap-1">
-            <input
-                type="number"
+            <DecimalInput
                 min={0}
                 max={max}
-                value={value}
+                value={draft}
+                aria-label={accent === 'emerald' ? 'Vorhandene Menge' : 'Bestellmenge'}
+                required
+                error={error}
                 disabled={disabled}
-                onChange={(e) => onChange(parseInt(e.target.value, 10))}
-                onFocus={(e) => e.target.select()}
+                onChange={value => {
+                    setDraft(value);
+                    const result = validateDecimalInput(value, { label: 'Menge', required: true, min: 0, max });
+                    onValidityChange(result.valid && result.value != null);
+                }}
+                onBlur={commit}
+                onKeyDown={e => { if (e.key === 'Enter') commit(); }}
                 className={`w-16 text-center tabular-nums text-sm font-medium ${accentText}
                     rounded-md border border-slate-200 bg-white px-2 py-1
                     focus:outline-none focus:ring-2 ${accentRing}
@@ -761,7 +829,7 @@ function MengenInput({
             />
             <button
                 type="button"
-                onClick={onMaxClick}
+                onClick={() => { onValidityChange(true); setError(''); setDraft(formatDecimalInput(max)); onMaxClick(); }}
                 disabled={disabled || istMax}
                 title={`Auf Maximum (${max}) setzen`}
                 className={`text-[10px] px-1.5 py-1 rounded font-medium transition-colors
@@ -814,5 +882,147 @@ function EmptyState({ onHicad, onManuell }: { onHicad: () => void; onManuell: ()
                 </button>
             </div>
         </div>
+    );
+}
+
+type ShopWarenkorbZustand =
+    | { art: 'laedt' }
+    | { art: 'fehler'; meldung: string }
+    | { art: 'fertig'; idsVerfuegbar: boolean; warenkoerbe: IdsDraft[] };
+
+/**
+ * Würth-/IDS-Warenkörbe, die aus diesem Projektbedarf heraus gefüllt wurden.
+ * Sie bleiben hier geparkt, bis sie über „Bei Würth bestellen" abgeschickt werden.
+ * Sichtbar nur, wenn die Shop-Anbindung eingerichtet ist oder schon Warenkörbe existieren.
+ */
+function GeparkteShopWarenkoerbe({ projektId }: { projektId: number }) {
+    const toast = useToast();
+    const [searchParams] = useSearchParams();
+    const hervorgehoben = searchParams.get('warenkorb');
+    const [zustand, setZustand] = useState<ShopWarenkorbZustand>({ art: 'laedt' });
+    const [sichtbar, setSichtbar] = useState(false);
+    const generation = useRef(0);
+    const gemeldet = useRef<string | null>(null);
+    // Einmal fertig geladen (Erfolg oder Fehler): Ab dann aktualisiert der Fokus still im Hintergrund.
+    const geladen = useRef(false);
+    // Läuft gerade ein sichtbares Laden, liefert es ohnehin den frischen Stand – Fokus dann auslassen.
+    const laedtSichtbar = useRef(false);
+    const ausblenden = useCallback(() => {
+        setSichtbar(false);
+        setZustand({ art: 'fertig', idsVerfuegbar: false, warenkoerbe: [] });
+    }, []);
+
+    /** „still“ = Fokus-Refresh: kein Skeleton, kein Toast, bisheriger Inhalt bleibt bei Fehlern stehen. */
+    const laden = useCallback(async (still = false) => {
+        if (still && (!geladen.current || laedtSichtbar.current)) return;
+        const anfrage = ++generation.current;
+        if (!still) {
+            laedtSichtbar.current = true;
+            setZustand(prev => (prev.art === 'fertig' ? prev : { art: 'laedt' }));
+        }
+        try {
+            const lieferanten = await fetch('/api/ids/lieferanten')
+                .then(res => (res.ok ? res.json() : []))
+                .then((arr: unknown) => Array.isArray(arr) && arr.length > 0)
+                .catch(() => false);
+            try {
+                const res = await fetch(`/api/ids/warenkoerbe?projektId=${encodeURIComponent(String(projektId))}`);
+                if (anfrage !== generation.current) return;
+                // Ohne Shop-Warenkorb-Schnittstelle (404) gibt es hier nichts zu zeigen – kein Fehler.
+                if (res.status === 404) { ausblenden(); return; }
+                const daten: unknown = res.ok ? await res.json().catch(() => null) : null;
+                if (!Array.isArray(daten)) throw new Error('Geparkte Shop-Warenkörbe konnten nicht geladen werden.');
+                if (anfrage !== generation.current) return;
+                const warenkoerbe = (daten as IdsDraft[]).filter(w => w.projektId === projektId);
+                setZustand({ art: 'fertig', idsVerfuegbar: lieferanten, warenkoerbe });
+                setSichtbar(lieferanten || warenkoerbe.length > 0);
+            } catch (err) {
+                if (anfrage !== generation.current) return;
+                // Ohne eingerichtete Shop-Anbindung gibt es hier nichts zu zeigen – kein Fehler für den Nutzer.
+                if (!lieferanten) { ausblenden(); return; }
+                // Fokus-Refresh: bisherigen Stand stehen lassen, beim nächsten Fokus erneut versuchen.
+                if (still) return;
+                const meldung = err instanceof Error ? err.message : 'Geparkte Shop-Warenkörbe konnten nicht geladen werden.';
+                setSichtbar(true);
+                setZustand({ art: 'fehler', meldung });
+                toast.error(meldung);
+            }
+        } finally {
+            if (anfrage === generation.current) {
+                geladen.current = true;
+                laedtSichtbar.current = false;
+            }
+        }
+    }, [projektId, toast, ausblenden]);
+
+    const verwerfen = useCallback(() => { generation.current++; laedtSichtbar.current = false; }, []);
+    useEffect(() => {
+        void laden();
+        // Nach der Rückgabe im Shop-Tab zeigt die Seite beim Zurückwechseln still den neuen Stand.
+        const beiFokus = () => { void laden(true); };
+        window.addEventListener('focus', beiFokus);
+        return () => { verwerfen(); window.removeEventListener('focus', beiFokus); };
+    }, [laden, verwerfen]);
+
+    useEffect(() => {
+        if (!hervorgehoben || zustand.art !== 'fertig' || gemeldet.current === hervorgehoben) return;
+        const warenkorb = zustand.warenkoerbe.find(w => w.id === hervorgehoben);
+        if (!warenkorb) return;
+        gemeldet.current = hervorgehoben;
+        if (warenkorb.ordered) toast.success(`Warenkorb ${warenkorb.number} wurde bei Würth bestellt.`);
+        else toast.success('Warenkorb am Projekt geparkt');
+    }, [hervorgehoben, zustand, toast]);
+
+    if (!sichtbar) return null;
+
+    return (
+        <section aria-labelledby="geparkte-warenkoerbe-titel" className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
+                <div className="w-9 h-9 rounded-lg bg-rose-100 flex items-center justify-center">
+                    <ShoppingCart className="w-4 h-4 text-rose-600" />
+                </div>
+                <div>
+                    <h2 id="geparkte-warenkoerbe-titel" className="text-base font-semibold text-slate-900">Geparkte Shop-Warenkörbe</h2>
+                    <p className="text-sm text-slate-500">Im Lieferanten-Shop zusammengestellt. Bestellt wird erst, wenn du den Warenkorb abschickst.</p>
+                </div>
+            </div>
+            {zustand.art === 'laedt' ? (
+                <div role="status" className="m-6 h-14 rounded-lg bg-slate-100 motion-safe:animate-pulse">
+                    <span className="sr-only">Shop-Warenkörbe werden geladen…</span>
+                </div>
+            ) : zustand.art === 'fehler' ? (
+                <div className="p-6"><LadefehlerPanel message={zustand.meldung} onRetry={() => void laden()} /></div>
+            ) : zustand.warenkoerbe.length === 0 ? (
+                <p className="px-6 py-5 text-sm text-slate-500">
+                    Noch kein Warenkorb geparkt. Über „Im Lieferanten-Shop“ Artikel zusammenstellen und den Warenkorb an die Anwendung zurückgeben – er landet dann hier.
+                </p>
+            ) : (
+                <ul className="divide-y divide-slate-100">
+                    {zustand.warenkoerbe.map(w => {
+                        const aktiv = w.id === hervorgehoben;
+                        return (
+                            <li key={w.id}>
+                                <Link
+                                    to={`/bestellungen/ids/${encodeURIComponent(w.id)}`}
+                                    aria-current={aktiv ? 'true' : undefined}
+                                    className={`flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-rose-50 focus-visible:outline-rose-600 ${aktiv ? 'bg-rose-50 ring-2 ring-inset ring-rose-300' : ''}`}
+                                >
+                                    <span>
+                                        <span className="block font-semibold text-slate-900">Würth · {w.number}</span>
+                                        <span className="text-sm text-slate-500">{w.items.length} {w.items.length === 1 ? 'Position' : 'Positionen'}</span>
+                                    </span>
+                                    <span className="flex items-center gap-3">
+                                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${w.ordered ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-700'}`}>
+                                            {w.ordered ? 'Bestellt' : 'Noch nicht bestellt'}
+                                        </span>
+                                        <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                                    </span>
+                                </Link>
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+        </section>
     );
 }

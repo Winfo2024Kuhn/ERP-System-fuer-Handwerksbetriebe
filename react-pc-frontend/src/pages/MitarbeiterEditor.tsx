@@ -1,20 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { ArbeitszeitFelder } from '../features/zeitkonto/ArbeitszeitFelder';
+import { WOCHENTAGE, leereArbeitszeit, zeitEntwurf, pruefeArbeitszeit, BUCHUNGSZEIT_LABELS, type ArbeitszeitEntwurf } from '../features/zeitkonto/arbeitszeitInput';
+import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
+import { heuteIso } from '../lib/datum';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { DatePicker } from '../components/ui/datepicker';
 import { DetailLayout } from '../components/DetailLayout';
 import {
     Plus, User, Trash2, ArrowLeft,
-    FileText, Upload, Calendar, Euro, File, Building2, QrCode, RefreshCw, Download, Loader2, Eye, X, Phone, GraduationCap, Home, StickyNote, Receipt, Shield, Award, FileBadge
+    FileText, Upload, Calendar, Euro, File, Building2, QrCode, RefreshCw, Download, Loader2, Eye, Phone, GraduationCap, Home, StickyNote, Receipt
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
+import { Select } from '../components/ui/select-custom';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useConfirm } from '../components/ui/confirm-dialog';
-import { useFeatures } from '../hooks/useFeatures';
+import { useToast } from '../components/ui/toast';
+import { StundenlohnHistorieList } from '../components/mitarbeiter/StundenlohnHistorieList';
+import { BeschaeftigungsWizard, type Beschaeftigungsart } from '../components/mitarbeiter/BeschaeftigungsWizard';
+import type { Arbeitszeit, Zeitkontenmodell, ZeitkontoStatus, ZeitkontoWechsel, ZeitkontoWechselErgebnis } from '../types/zeitkonto';
 
 // Interfaces
 interface Abteilung {
@@ -37,12 +46,19 @@ interface Mitarbeiter {
     geburtstag: string | null;
     eintrittsdatum: string | null;
     aktiv: boolean;
-    abteilungIds: number[] | null;
-    abteilungNames: string | null;
+    abteilungIds: number[] | null;  // N:M - Multiple abteilungen
+    abteilungNames: string | null;  // Komma-separiert
     loginToken: string | null;
     jahresUrlaub: number | null;
-    en1090RolleIds: number[] | null;
-    en1090RolleNames: string | null;
+    beschaeftigungsart?: Beschaeftigungsart | null;
+    beschaeftigungsartLabel?: string | null;
+    krankenkasseId?: number | null;
+    krankenkasseName?: string | null;
+    kinderlos?: boolean | null;
+    istGeschaeftsfuehrer?: boolean | null;
+    kalkulatorischerLohnMonat?: number | null;
+    geldwertVorteilMonat?: number | null;
+    fuehrtZeitkonto?: boolean | null;
 }
 
 const QUALIFIKATIONEN = [
@@ -85,29 +101,21 @@ interface Lohnabrechnung {
     status: string;
 }
 
-interface En1090RolleOption {
-    id: number;
-    kurztext: string;
-    aktiv: boolean;
-}
-
-interface MitarbeiterQualifikation {
-    id: number;
-    bezeichnung: string;
-    beschreibung: string | null;
-    datum: string | null;
-    dokumentId: number | null;
-    dokumentAnzeigename: string | null;
-    dokumentGespeicherterName: string | null;
-    dokumentDateityp: string | null;
-    dokumentUploadDatum: string | null;
-    erstelltAm: string;
-}
-
 const BASE_API = '/api/mitarbeiter';
+const ZEITKONTO_API = '/api/zeitverwaltung/zeitkonten';
+type ZahlenFeld = 'jahresUrlaub' | 'stundenlohn' | 'kalkulatorischerLohnMonat' | 'geldwertVorteilMonat';
+type MitarbeiterEntwurf = Partial<Omit<Mitarbeiter, ZahlenFeld> & Record<ZahlenFeld, string>>;
+const mitarbeiterEntwurf = (m: Partial<Mitarbeiter>): MitarbeiterEntwurf => ({ ...m,
+    jahresUrlaub: m.jahresUrlaub == null ? '' : formatDecimalInput(m.jahresUrlaub),
+    stundenlohn: m.stundenlohn == null ? '' : formatDecimalInput(m.stundenlohn),
+    kalkulatorischerLohnMonat: m.kalkulatorischerLohnMonat == null ? '' : formatDecimalInput(m.kalkulatorischerLohnMonat),
+    geldwertVorteilMonat: m.geldwertVorteilMonat == null ? '' : formatDecimalInput(m.geldwertVorteilMonat),
+});
 
 export default function MitarbeiterEditor() {
     const confirmDialog = useConfirm();
+    const toast = useToast();
+    const showError = toast.error;
     const [view, setView] = useState<'LIST' | 'DETAIL'>('LIST');
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
     const [selectedMitarbeiter, setSelectedMitarbeiter] = useState<Mitarbeiter | null>(null);
@@ -116,7 +124,19 @@ export default function MitarbeiterEditor() {
 
     // Form States
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [formData, setFormData] = useState<Partial<Mitarbeiter>>({});
+    const [formData, setFormData] = useState<MitarbeiterEntwurf>({});
+    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null);
+    const [zeitkontenmodelle, setZeitkontenmodelle] = useState<Zeitkontenmodell[]>([]);
+    const [loadingZeitkonto, setLoadingZeitkonto] = useState(false);
+    const [zeitkontoDialogOpen, setZeitkontoDialogOpen] = useState(false);
+    const [stichtag, setStichtag] = useState(heuteIso);
+    const [vorlageId, setVorlageId] = useState('');
+    const [individuelleAbweichung, setIndividuelleAbweichung] = useState(false);
+    const [individuelleArbeitszeit, setIndividuelleArbeitszeit] = useState<ArbeitszeitEntwurf>(zeitEntwurf(leereArbeitszeit()));
+    const [wechselVorschau, setWechselVorschau] = useState<ZeitkontoWechselErgebnis | null>(null);
+    const [wechselFehler, setWechselFehler] = useState<string | null>(null);
+    const [loadingWechsel, setLoadingWechsel] = useState(false);
+    const vorschauRequestId = useRef(0);
 
     // QR-Code States
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -126,7 +146,7 @@ export default function MitarbeiterEditor() {
     const [previewDoc, setPreviewDoc] = useState<MitarbeiterDokument | null>(null);
 
     // Notizen States
-    const [activeTab, setActiveTab] = useState<'dokumente' | 'notizen' | 'lohnabrechnungen' | 'en1090'>('dokumente');
+    const [activeTab, setActiveTab] = useState<'dokumente' | 'notizen' | 'lohnabrechnungen' | 'stundenlohn'>('dokumente');
     const [notizen, setNotizen] = useState<MitarbeiterNotiz[]>([]);
     const [showNotizModal, setShowNotizModal] = useState(false);
     const [neueNotiz, setNeueNotiz] = useState('');
@@ -134,156 +154,273 @@ export default function MitarbeiterEditor() {
     // Lohnabrechnungen States
     const [lohnabrechnungen, setLohnabrechnungen] = useState<Lohnabrechnung[]>([]);
     const [loadingLohnabrechnungen, setLoadingLohnabrechnungen] = useState(false);
+    const [previewLohnabrechnung, setPreviewLohnabrechnung] = useState<Lohnabrechnung | null>(null);
+    const [lohnFilterJahr, setLohnFilterJahr] = useState('alle');
+    const [lohnFilterMonat, setLohnFilterMonat] = useState('alle');
 
-    // EN 1090 States
-    const features = useFeatures();
-    const [en1090RolleOptionen, setEn1090RolleOptionen] = useState<En1090RolleOption[]>([]);
-    const [selectedRolleIds, setSelectedRolleIds] = useState<number[]>([]);
-    const [savingRollen, setSavingRollen] = useState(false);
-    const [qualifikationen, setQualifikationen] = useState<MitarbeiterQualifikation[]>([]);
-    const [showQualModal, setShowQualModal] = useState(false);
-    const [editingQual, setEditingQual] = useState<Partial<MitarbeiterQualifikation> & { dateiFile?: File | null }>({});
-    const [savingQual, setSavingQual] = useState(false);
-    const [isDraggingQual, setIsDraggingQual] = useState(false);
-    const qualFileInputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        loadMitarbeiter();
-        loadAbteilungen();
-    }, []);
-
-    const loadMitarbeiter = async () => {
+    const loadMitarbeiter = useCallback(async () => {
         try {
             const res = await fetch(BASE_API);
+            if (!res.ok) throw new Error('Mitarbeiter konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setMitarbeiter(data);
             }
         } catch (error) {
             console.error("Error loading employees", error);
+            showError('Mitarbeiter konnten nicht geladen werden.');
         }
-    };
+    }, [showError]);
 
-    const loadAbteilungen = async () => {
+    const loadAbteilungen = useCallback(async () => {
         try {
             const res = await fetch('/api/abteilungen');
+            if (!res.ok) throw new Error('Abteilungen konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setAbteilungen(data);
             }
         } catch (error) {
             console.error("Error loading departments", error);
+            showError('Abteilungen konnten nicht geladen werden.');
         }
+    }, [showError]);
+
+    useEffect(() => {
+        void loadMitarbeiter();
+        void loadAbteilungen();
+    }, [loadMitarbeiter, loadAbteilungen]);
+
+    const antwortFehler = async (res: Response, fallback: string) => {
+        try {
+            const body = await res.json();
+            return body.message || body.error || fallback;
+        } catch {
+            return fallback;
+        }
+    };
+
+    const loadZeitkonto = async (mitarbeiterId: number) => {
+        setLoadingZeitkonto(true);
+        try {
+            const [statusRes, modelleRes] = await Promise.all([
+                fetch(`${ZEITKONTO_API}/${mitarbeiterId}`),
+                fetch('/api/zeitverwaltung/zeitkontenmodelle'),
+            ]);
+            if (!statusRes.ok) throw new Error(await antwortFehler(statusRes, 'Arbeitszeit konnte nicht geladen werden.'));
+            if (!modelleRes.ok) throw new Error(await antwortFehler(modelleRes, 'Arbeitszeit-Vorlagen konnten nicht geladen werden.'));
+            const [status, modelle] = await Promise.all([statusRes.json(), modelleRes.json()]);
+            setZeitkontoStatus(status);
+            setZeitkontenmodelle(modelle);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Arbeitszeit konnte nicht geladen werden.';
+            setZeitkontoStatus(null);
+            toast.error(message);
+        } finally {
+            setLoadingZeitkonto(false);
+        }
+    };
+
+    const uebernehmeZeitkontoStatus = (status: ZeitkontoStatus) => {
+        setZeitkontoStatus(status);
+        setFormData(prev => ({ ...prev, fuehrtZeitkonto: status.fuehrtZeitkonto }));
+        setSelectedMitarbeiter(prev => prev?.id === status.mitarbeiterId
+            ? { ...prev, fuehrtZeitkonto: status.fuehrtZeitkonto } : prev);
+        setMitarbeiter(prev => prev.map(m => m.id === status.mitarbeiterId
+            ? { ...m, fuehrtZeitkonto: status.fuehrtZeitkonto } : m));
+    };
+
+    const arbeitszeitenGleich = (links: Arbeitszeit, rechts: Arbeitszeit) => WOCHENTAGE.every(tag => links[tag.key] === rechts[tag.key])
+        && links.buchungStartZeit === rechts.buchungStartZeit
+        && links.buchungEndeZeit === rechts.buchungEndeZeit;
+
+    const invalidiereVorschau = () => {
+        vorschauRequestId.current += 1;
+        setWechselVorschau(null);
+        setWechselFehler(null);
+        setLoadingWechsel(false);
+    };
+
+    useEffect(() => {
+        if (isDialogOpen && formData.id) {
+            void loadZeitkonto(formData.id);
+        } else if (!isDialogOpen && !zeitkontoDialogOpen) {
+            setZeitkontoStatus(null);
+            setWechselVorschau(null);
+            setWechselFehler(null);
+        }
+    // Der Dialog soll nur bei einem anderen Mitarbeiter oder beim Oeffnen erneut laden.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDialogOpen, zeitkontoDialogOpen, formData.id]);
+
+    const oeffneArbeitszeitDialog = () => {
+        const aktuelleVersion = zeitkontoStatus?.aktuell;
+        const aktuell = aktuelleVersion?.arbeitszeit;
+        const aktuelleVorlage = zeitkontenmodelle.find(modell => modell.id === aktuelleVersion?.vorlageId);
+        setStichtag(heuteIso());
+        setVorlageId(aktuelleVersion?.vorlageId ? String(aktuelleVersion.vorlageId) : aktuell ? 'individuell' : '');
+        setIndividuelleAbweichung(!!aktuell && !!aktuelleVorlage && !arbeitszeitenGleich(aktuell, aktuelleVorlage.arbeitszeit));
+        setIndividuelleArbeitszeit(zeitEntwurf(aktuell ?? leereArbeitszeit()));
+        invalidiereVorschau();
+        setZeitkontoDialogOpen(true);
+        setIsDialogOpen(false);
+    };
+
+    const wechselRequest = (): ZeitkontoWechsel | null => {
+        if (!zeitkontoStatus) return null;
+        const vorlage = zeitkontenmodelle.find(m => m.id === Number(vorlageId));
+        let arbeitszeit: Arbeitszeit | null = null;
+        try {
+            if (!stichtag) throw new Error('Bitte ein Gültig-ab-Datum wählen.');
+            if (!vorlageId) throw new Error('Bitte eine Arbeitszeit-Vorlage wählen oder eigene Zeiten festlegen.');
+            if (!vorlage || individuelleAbweichung) {
+                arbeitszeit = pruefeArbeitszeit(individuelleArbeitszeit, BUCHUNGSZEIT_LABELS);
+            }
+        } catch (error) {
+            const message = (error as Error).message; setWechselFehler(message); toast.error(message); return null;
+        }
+        return {
+            gueltigVon: stichtag,
+            expectedMitarbeiterVersion: zeitkontoStatus.mitarbeiterVersion,
+            expectedLetzteVersionId: zeitkontoStatus.letzteVersion?.id ?? null,
+            expectedLetzteVersion: zeitkontoStatus.letzteVersion?.version ?? null,
+            vorlageId: vorlage?.id ?? null,
+            expectedVorlageVersion: vorlage?.version ?? null,
+            arbeitszeit,
+        };
+    };
+
+    const ladeVorschau = async () => {
+        if (!zeitkontoStatus) return;
+        const request = wechselRequest();
+        if (!request) return;
+        const requestId = ++vorschauRequestId.current;
+        setLoadingWechsel(true);
+        setWechselFehler(null);
+        try {
+            const res = await fetch(`${ZEITKONTO_API}/${zeitkontoStatus.mitarbeiterId}/vorschau`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+            });
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Die Vorschau konnte nicht erstellt werden.'));
+            const ergebnis: ZeitkontoWechselErgebnis = await res.json();
+            if (requestId === vorschauRequestId.current) setWechselVorschau(ergebnis);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Die Vorschau konnte nicht erstellt werden.';
+            if (requestId === vorschauRequestId.current) {
+                setWechselFehler(message);
+                toast.error(message);
+            }
+        } finally {
+            if (requestId === vorschauRequestId.current) setLoadingWechsel(false);
+        }
+    };
+
+    const uebernehmeArbeitszeit = async () => {
+        if (!zeitkontoStatus) return;
+        const request = wechselRequest();
+        if (!request) return;
+        setLoadingWechsel(true);
+        setWechselFehler(null);
+        try {
+            const res = await fetch(`${ZEITKONTO_API}/${zeitkontoStatus.mitarbeiterId}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+            });
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Die Arbeitszeit konnte nicht übernommen werden.'));
+            const ergebnis: ZeitkontoWechselErgebnis = await res.json();
+            uebernehmeZeitkontoStatus(ergebnis.zeitkonto);
+            setWechselVorschau(ergebnis);
+            toast.success('Arbeitszeit wurde übernommen.');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Die Arbeitszeit konnte nicht übernommen werden.';
+            setWechselFehler(message);
+            toast.error(message);
+        } finally {
+            setLoadingWechsel(false);
+        }
+    };
+
+    const schalteArbeitszeitAus = async () => {
+        if (!zeitkontoStatus) return;
+        if (!await confirmDialog({ title: 'Arbeitszeit ausschalten', message: 'Diese Person führt dann kein Zeitkonto mehr. Bereits erfasste Stunden bleiben erhalten.', variant: 'danger', confirmLabel: 'Ausschalten' })) return;
+        setLoadingWechsel(true);
+        try {
+            const res = await fetch(`${ZEITKONTO_API}/${zeitkontoStatus.mitarbeiterId}/ausschalten`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    expectedMitarbeiterVersion: zeitkontoStatus.mitarbeiterVersion,
+                    expectedLetzteVersionId: zeitkontoStatus.letzteVersion?.id ?? null,
+                    expectedLetzteVersion: zeitkontoStatus.letzteVersion?.version ?? null,
+                }),
+            });
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Arbeitszeit konnte nicht ausgeschaltet werden.'));
+            uebernehmeZeitkontoStatus(await res.json());
+            toast.success('Arbeitszeit ist ausgeschaltet.');
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Arbeitszeit konnte nicht ausgeschaltet werden.');
+        } finally {
+            setLoadingWechsel(false);
+        }
+    };
+
+    const beschreibeArbeitszeit = (version: ZeitkontoStatus['aktuell']) => {
+        if (!version?.vorlageId) return 'eigene Arbeitszeit';
+        const vorlage = zeitkontenmodelle.find(modell => modell.id === version.vorlageId);
+        if (!vorlage) return 'Arbeitszeit-Vorlage';
+        const gleich = arbeitszeitenGleich(version.arbeitszeit, vorlage.arbeitszeit);
+        return gleich ? `Vorlage „${vorlage.bezeichnung}“` : `weicht von „${vorlage.bezeichnung}“ ab`;
     };
 
     const loadDokumente = async (id: number) => {
         try {
             const res = await fetch(`${BASE_API}/${id}/dokumente`);
+            if (!res.ok) throw new Error('Dokumente konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setDokumente(data);
             }
         } catch (error) {
             console.error("Error loading documents", error);
+            toast.error('Dokumente konnten nicht geladen werden.');
         }
     };
 
     const loadNotizen = async (id: number) => {
         try {
             const res = await fetch(`${BASE_API}/${id}/notizen`);
+            if (!res.ok) throw new Error('Notizen konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setNotizen(data);
             }
         } catch (error) {
             console.error("Error loading notes", error);
+            toast.error('Notizen konnten nicht geladen werden.');
         }
     };
 
-    const loadLohnabrechnungen = async (id: number) => {
+    const loadLohnabrechnungen = useCallback(async (id: number) => {
         setLoadingLohnabrechnungen(true);
         try {
             const res = await fetch(`/api/lohnabrechnungen/mitarbeiter/${id}`);
+            if (!res.ok) throw new Error('Lohnabrechnungen konnten nicht geladen werden.');
             if (res.ok) {
                 const data = await res.json();
                 setLohnabrechnungen(data);
             }
         } catch (error) {
             console.error("Error loading payrolls", error);
+            showError('Lohnabrechnungen konnten nicht geladen werden.');
         } finally {
             setLoadingLohnabrechnungen(false);
         }
-    };
+    }, [showError]);
 
     // Load lohnabrechnungen when tab is activated
     useEffect(() => {
         if (activeTab === 'lohnabrechnungen' && selectedMitarbeiter) {
             loadLohnabrechnungen(selectedMitarbeiter.id);
         }
-        if (activeTab === 'en1090' && selectedMitarbeiter && features.en1090) {
-            loadEn1090Rollen();
-            loadQualifikationen(selectedMitarbeiter.id);
-        }
-    }, [activeTab, selectedMitarbeiter, features.en1090]);
-
-    const loadEn1090Rollen = async () => {
-        try {
-            const res = await fetch('/api/en1090/rollen');
-            if (res.ok) setEn1090RolleOptionen(await res.json());
-        } catch (e) { console.error(e); }
-    };
-
-    const loadQualifikationen = async (id: number) => {
-        try {
-            const res = await fetch(`${BASE_API}/${id}/qualifikationen`);
-            if (res.ok) setQualifikationen(await res.json());
-        } catch (e) { console.error(e); }
-    };
-
-    const saveRollen = async () => {
-        if (!selectedMitarbeiter) return;
-        setSavingRollen(true);
-        try {
-            await fetch(`${BASE_API}/${selectedMitarbeiter.id}/en1090-rollen`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(selectedRolleIds)
-            });
-            const updRes = await fetch(`${BASE_API}/${selectedMitarbeiter.id}`);
-            if (updRes.ok) setSelectedMitarbeiter(await updRes.json());
-        } catch (e) { console.error(e); } finally { setSavingRollen(false); }
-    };
-
-    const saveQualifikation = async () => {
-        if (!selectedMitarbeiter || !editingQual.bezeichnung?.trim()) return;
-        setSavingQual(true);
-        try {
-            const fd = new FormData();
-            fd.append('bezeichnung', editingQual.bezeichnung.trim());
-            if (editingQual.beschreibung) fd.append('beschreibung', editingQual.beschreibung);
-            if (editingQual.datum) fd.append('datum', editingQual.datum);
-            if (editingQual.dateiFile) fd.append('datei', editingQual.dateiFile);
-            const isEdit = !!editingQual.id;
-            const url = isEdit
-                ? `${BASE_API}/${selectedMitarbeiter.id}/qualifikationen/${editingQual.id}`
-                : `${BASE_API}/${selectedMitarbeiter.id}/qualifikationen`;
-            const res = await fetch(url, { method: isEdit ? 'PUT' : 'POST', body: fd });
-            if (res.ok) {
-                await loadQualifikationen(selectedMitarbeiter.id);
-                setShowQualModal(false);
-                setEditingQual({});
-            }
-        } catch (e) { console.error(e); } finally { setSavingQual(false); }
-    };
-
-    const deleteQualifikation = async (qualId: number) => {
-        if (!selectedMitarbeiter) return;
-        if (!await confirmDialog({ title: 'Qualifikation l\u00f6schen', message: 'Nachweis wirklich l\u00f6schen?', variant: 'danger', confirmLabel: 'L\u00f6schen' })) return;
-        try {
-            await fetch(`${BASE_API}/${selectedMitarbeiter.id}/qualifikationen/${qualId}`, { method: 'DELETE' });
-            await loadQualifikationen(selectedMitarbeiter.id);
-        } catch (e) { console.error(e); }
-    };
+    }, [activeTab, selectedMitarbeiter, loadLohnabrechnungen]);
 
     const handleCreateNotiz = async () => {
         if (!selectedMitarbeiter || !neueNotiz.trim()) return;
@@ -293,6 +430,7 @@ export default function MitarbeiterEditor() {
                 headers: { 'Content-Type': 'application/json' },
                 body: neueNotiz.trim() // Backend expects plain string body based on controller
             });
+            if (!res.ok) throw new Error('Notiz konnte nicht gespeichert werden.');
             if (res.ok) {
                 loadNotizen(selectedMitarbeiter.id);
                 setNeueNotiz('');
@@ -300,6 +438,7 @@ export default function MitarbeiterEditor() {
             }
         } catch (error) {
             console.error("Error creating note", error);
+            toast.error('Notiz konnte nicht gespeichert werden.');
         }
     };
 
@@ -307,11 +446,13 @@ export default function MitarbeiterEditor() {
         if (!await confirmDialog({ title: 'Notiz löschen', message: 'Notiz wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
             const res = await fetch(`${BASE_API}/notizen/${notizId}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Notiz konnte nicht gelöscht werden.');
             if (res.ok && selectedMitarbeiter) {
                 loadNotizen(selectedMitarbeiter.id);
             }
         } catch (error) {
             console.error("Error deleting note", error);
+            toast.error('Notiz konnte nicht gelöscht werden.');
         }
     };
 
@@ -319,24 +460,46 @@ export default function MitarbeiterEditor() {
         try {
             const method = formData.id ? 'PUT' : 'POST';
             const url = formData.id ? `${BASE_API}/${formData.id}` : BASE_API;
+            // Bestehende Mitarbeiter duerfen das Flag nie ueber den Stamm-Endpoint aendern.
+            // Die sichtbare Aktualisierung stammt vorher aus dem atomaren Zeitkonto-Workflow.
+            const { jahresUrlaub, stundenlohn, kalkulatorischerLohnMonat, geldwertVorteilMonat, ...rest } = formData;
+            const payload: Partial<Mitarbeiter> = { ...rest };
+            const fields: [ZahlenFeld, string | undefined, string, boolean, boolean][] = [
+                ['jahresUrlaub', jahresUrlaub, 'Jahresurlaub', true, true],
+                ['stundenlohn', stundenlohn, 'Stundenlohn', false, false],
+                ['kalkulatorischerLohnMonat', kalkulatorischerLohnMonat, 'Wunschlohn pro Monat', !!formData.istGeschaeftsfuehrer, false],
+                ['geldwertVorteilMonat', geldwertVorteilMonat, 'Privatanteile pro Monat', false, false],
+            ];
+            for (const [key, draft, label, required, integer] of fields) {
+                const parsed = validateDecimalInput(draft ?? '', { label, required, integer, min: 0 });
+                if (!parsed.valid) throw new Error(parsed.message);
+                payload[key] = parsed.value;
+            }
+            if (formData.id) delete payload.fuehrtZeitkonto;
 
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(payload)
             });
 
-            if (res.ok) {
-                const saved = await res.json();
-                if (view === 'DETAIL' && selectedMitarbeiter?.id === saved.id) {
-                    setSelectedMitarbeiter(saved);
-                }
-                loadMitarbeiter();
-                setIsDialogOpen(false);
-                setFormData({});
+            if (!res.ok) throw new Error(await antwortFehler(res, 'Mitarbeiter konnte nicht gespeichert werden.'));
+            const saved = await res.json();
+            const mitAktuellemZeitkonto = zeitkontoStatus && zeitkontoStatus.mitarbeiterId === saved.id
+                ? { ...saved, fuehrtZeitkonto: zeitkontoStatus.fuehrtZeitkonto } : saved;
+            if (view === 'DETAIL' && selectedMitarbeiter?.id === saved.id) setSelectedMitarbeiter(mitAktuellemZeitkonto);
+            if (!formData.id) {
+                setSelectedMitarbeiter(mitAktuellemZeitkonto);
+                setView('DETAIL');
+                toast.info('Mitarbeiter angelegt. Arbeitszeit können Sie jetzt bewusst einrichten.');
+            } else {
+                toast.success('Mitarbeiter gespeichert.');
             }
+            void loadMitarbeiter();
+            setIsDialogOpen(false);
+            setFormData({});
         } catch (error) {
-            console.error("Error saving employee", error);
+            toast.error(error instanceof Error ? error.message : 'Mitarbeiter konnte nicht gespeichert werden.');
         }
     };
 
@@ -344,6 +507,7 @@ export default function MitarbeiterEditor() {
         if (!await confirmDialog({ title: 'Mitarbeiter löschen', message: 'Mitarbeiter wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
             const res = await fetch(`${BASE_API}/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Mitarbeiter konnte nicht gelöscht werden.');
             if (res.ok) {
                 loadMitarbeiter();
                 if (selectedMitarbeiter?.id === id) {
@@ -353,6 +517,7 @@ export default function MitarbeiterEditor() {
             }
         } catch (error) {
             console.error("Error deleting employee", error);
+            toast.error('Mitarbeiter konnte nicht gelöscht werden.');
         }
     };
 
@@ -369,11 +534,13 @@ export default function MitarbeiterEditor() {
                 method: 'POST',
                 body: formData
             });
+            if (!res.ok) throw new Error('Dokument konnte nicht hochgeladen werden.');
             if (res.ok) {
                 loadDokumente(selectedMitarbeiter.id);
             }
         } catch (error) {
             console.error("Error uploading file", error);
+            toast.error('Dokument konnte nicht hochgeladen werden.');
         }
     };
 
@@ -385,6 +552,7 @@ export default function MitarbeiterEditor() {
             const res = await fetch(`${BASE_API}/${selectedMitarbeiter.id}/regenerate-token`, {
                 method: 'POST'
             });
+            if (!res.ok) throw new Error('Zugangscode konnte nicht erneuert werden.');
             if (res.ok) {
                 const newToken = await res.text();
                 setSelectedMitarbeiter({ ...selectedMitarbeiter, loginToken: newToken });
@@ -395,6 +563,7 @@ export default function MitarbeiterEditor() {
             }
         } catch (error) {
             console.error("Error regenerating token", error);
+            toast.error('Zugangscode konnte nicht erneuert werden.');
         } finally {
             setRegenerating(false);
         }
@@ -408,18 +577,23 @@ export default function MitarbeiterEditor() {
     // Sub-components
     const DetailHeader = () => (
         <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">
-            <div>
+            {/* min-w-0 + break-words (Task 12, zweiter Mechanismus): dieses div
+                ist ab md: Flex-Item der Reihe daneben (Knopfblock) und behaelt
+                sonst min-width: auto -- ein langer Nachname/Abteilungsname
+                wuerde die <h1> ueber den Knopfblock hinausschieben, exakt wie
+                beim Projekt-/Anfrage-/Kunde-Kopf. */}
+            <div className="min-w-0">
                 <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide">
                     Stammdaten
                 </p>
-                <h1 className="text-3xl font-bold text-slate-900 uppercase">
+                <h1 className="text-3xl font-bold text-slate-900 uppercase break-words">
                     {selectedMitarbeiter?.nachname}, {selectedMitarbeiter?.vorname}
                 </h1>
-                <p className="text-slate-500 mt-1">
+                <p className="text-slate-500 mt-1 break-words">
                     {selectedMitarbeiter?.abteilungNames || 'Keine Abteilung zugewiesen'}
                 </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 shrink-0">
                 {selectedMitarbeiter?.loginToken && (
                     <Button
                         variant="outline"
@@ -446,7 +620,7 @@ export default function MitarbeiterEditor() {
                 <Button
                     className="bg-rose-600 text-white hover:bg-rose-700"
                     onClick={() => {
-                        setFormData(selectedMitarbeiter || {});
+                        setFormData(mitarbeiterEntwurf(selectedMitarbeiter || {}));
                         setIsDialogOpen(true);
                     }}
                 >
@@ -487,19 +661,31 @@ export default function MitarbeiterEditor() {
             ) : (
                 <div className="grid gap-2">
                     {dokumente.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors">
+                        // Task 11 (Abschnitt 7): {doc.originalDateiname} ist der
+                        // realistischste Fall der ganzen Fehlerklasse -- Unterstriche
+                        // sind nach UAX #14 KEINE Umbruchstelle, ein Dateiname ist ein
+                        // einziges unteilbares Wort. Gleiches Muster wie die ganze
+                        // SideInfo oben: min-w-0 (flex-1) auf jeder Ebene, die sonst
+                        // min-width: auto behaelt, break-words am Wert, shrink-0 auf
+                        // Icon und Knopfblock. min-w-0 auch auf DIESEM aeusseren <div>
+                        // noetig -- es ist selbst ein Grid-Item von "grid gap-2" zwei
+                        // Zeilen weiter oben, und Grid-Items behalten denselben
+                        // min-width:auto-Fallstrick wie Flex-Items (nachgemessen: ohne
+                        // dieses min-w-0 blieb der Ueberstand trotz min-w-0/break-words
+                        // an den inneren Ebenen unveraendert bei 313px/145px).
+                        <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group min-w-0">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors shrink-0">
                                     <File className="w-5 h-5" />
                                 </div>
-                                <div>
-                                    <p className="font-medium text-slate-900">{doc.originalDateiname}</p>
+                                <div className="min-w-0 flex-1">
+                                    <p className="font-medium text-slate-900 break-words">{doc.originalDateiname}</p>
                                     <p className="text-xs text-slate-500">
                                         {new Date(doc.uploadDatum).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} • {(doc.dateigroesse / 1024).toFixed(0)} KB
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 shrink-0">
                                 {doc.url && (
                                     <button
                                         onClick={() => setPreviewDoc(doc)}
@@ -517,32 +703,44 @@ export default function MitarbeiterEditor() {
         </div>
     );
 
+    // Nachtrag Abschnitt 6 (Task 7b): jede Zeile hier ist Flex-Item einer
+    // "flex items-center gap-3"-Reihe. Ohne min-w-0 behaelt das umschliessende
+    // <div> min-width: auto und wird nie schmaler als sein laengstes
+    // unteilbares Wort (E-Mail, Abteilungsname) -- die Reihe sprengt dann die
+    // Karte, OBWOHL der Wert selbst gar nicht ueberzulaufen scheint
+    // (scrollWidth == clientWidth des <p>, siehe kriterien.md "Layout: zwei
+    // Fallen, die kein Test von selbst findet"). Gleiches Muster wie
+    // LieferantenEditor.tsx Z. 315/324 und Kundeneditor.tsx Z. 497/509:
+    // min-w-0 flex-1 am umschliessenden <div>, break-words am Wert. Auf ALLE
+    // Zeilen der Spalte angewandt, nicht nur auf E-Mail (Befund von Design- und
+    // Code-Reviewer aus Abschnitt 5: Abteilung war schon vorher betroffen,
+    // Telefon/Festnetz/Adresse tragen dieselbe latente Luecke).
     const SideInfo = () => (
         <div className="space-y-6">
             <div>
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Persönliche Daten</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Voller Name</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.vorname} {selectedMitarbeiter?.nachname}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.vorname} {selectedMitarbeiter?.nachname}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Geburtsdatum</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.geburtstag ? new Date(selectedMitarbeiter.geburtstag).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Building2 className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Abteilung(en)</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.abteilungNames || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.abteilungNames || '-'}</p>
                         </div>
                     </div>
                 </div>
@@ -552,31 +750,31 @@ export default function MitarbeiterEditor() {
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Kontakt</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">E-Mail</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.email || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.email || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Mobiltelefon</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.telefon || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.telefon || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Festnetz</p>
-                            <p className="text-sm font-medium">{selectedMitarbeiter?.festnetz || '-'}</p>
+                            <p className="text-sm font-medium break-words">{selectedMitarbeiter?.festnetz || '-'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Adresse</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.strasse || ''}<br />
                                 {selectedMitarbeiter?.plz || ''} {selectedMitarbeiter?.ort || ''}
                             </p>
@@ -588,10 +786,10 @@ export default function MitarbeiterEditor() {
             <div className="pt-6 border-t border-slate-100">
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Qualifikation</h3>
                 <div className="flex items-center gap-3">
-                    <GraduationCap className="w-4 h-4 text-slate-400" />
-                    <div>
+                    <GraduationCap className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs text-slate-500">Stufe</p>
-                        <p className="text-sm font-medium">{selectedMitarbeiter?.qualifikation || '-'}</p>
+                        <p className="text-sm font-medium break-words">{selectedMitarbeiter?.qualifikation || '-'}</p>
                     </div>
                 </div>
             </div>
@@ -600,10 +798,10 @@ export default function MitarbeiterEditor() {
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Konditionen</h3>
                 <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                        <Euro className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Euro className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Stundenlohn</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.stundenlohn ?
                                     new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(selectedMitarbeiter.stundenlohn)
                                     : '-'}
@@ -611,10 +809,10 @@ export default function MitarbeiterEditor() {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <div>
+                        <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0 flex-1">
                             <p className="text-xs text-slate-500">Jahresurlaub</p>
-                            <p className="text-sm font-medium">
+                            <p className="text-sm font-medium break-words">
                                 {selectedMitarbeiter?.jahresUrlaub ? `${selectedMitarbeiter.jahresUrlaub} Tage` : '-'}
                             </p>
                         </div>
@@ -666,7 +864,7 @@ export default function MitarbeiterEditor() {
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             </div>
-                            <p className="text-slate-800 whitespace-pre-wrap text-sm">{notiz.inhalt}</p>
+                            <p className="text-slate-800 whitespace-pre-wrap text-sm break-words">{notiz.inhalt}</p>
                         </div>
                     ))}
                 </div>
@@ -676,9 +874,18 @@ export default function MitarbeiterEditor() {
 
     const MONATSNAMEN = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
+    const formatEuro = (betrag: number) =>
+        new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(betrag);
+
     const LohnabrechnungenList = () => {
+        // Filter nach Jahr/Monat
+        const gefiltert = lohnabrechnungen.filter(la =>
+            (lohnFilterJahr === 'alle' || la.jahr === Number(lohnFilterJahr)) &&
+            (lohnFilterMonat === 'alle' || la.monat === Number(lohnFilterMonat))
+        );
+
         // Gruppiere nach Jahr
-        const byYear = lohnabrechnungen.reduce((acc, la) => {
+        const byYear = gefiltert.reduce((acc, la) => {
             const jahr = la.jahr;
             if (!acc[jahr]) acc[jahr] = [];
             acc[jahr].push(la);
@@ -687,13 +894,38 @@ export default function MitarbeiterEditor() {
 
         const sortedYears = Object.keys(byYear).map(Number).sort((a, b) => b - a);
 
+        const jahrOptions = [
+            { value: 'alle', label: 'Alle Jahre' },
+            ...Array.from(new Set(lohnabrechnungen.map(la => la.jahr)))
+                .sort((a, b) => b - a)
+                .map(j => ({ value: String(j), label: String(j) }))
+        ];
+        const monatOptions = [
+            { value: 'alle', label: 'Alle Monate' },
+            ...MONATSNAMEN.map((name, i) => ({ value: String(i + 1), label: name }))
+        ];
+
         return (
             <div className="space-y-4">
-                <div className="flex justify-between items-center border-b pb-4">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b pb-4">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                         <Receipt className="w-5 h-5 text-rose-600" />
                         Lohnabrechnungen
                     </h3>
+                    <div className="flex gap-2">
+                        <Select
+                            options={monatOptions}
+                            value={lohnFilterMonat}
+                            onChange={setLohnFilterMonat}
+                            className="w-40"
+                        />
+                        <Select
+                            options={jahrOptions}
+                            value={lohnFilterJahr}
+                            onChange={setLohnFilterJahr}
+                            className="w-32"
+                        />
+                    </div>
                 </div>
 
                 {loadingLohnabrechnungen ? (
@@ -701,11 +933,13 @@ export default function MitarbeiterEditor() {
                         <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-rose-600" />
                         <p>Lade Lohnabrechnungen...</p>
                     </div>
-                ) : lohnabrechnungen.length === 0 ? (
+                ) : gefiltert.length === 0 ? (
                     <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">
                         <Receipt className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                        <p>Keine Lohnabrechnungen vorhanden</p>
-                        <p className="text-xs mt-1">Lohnabrechnungen werden automatisch aus Steuerberater-E-Mails importiert</p>
+                        <p>{lohnabrechnungen.length === 0 ? 'Keine Lohnabrechnungen vorhanden' : 'Keine Lohnabrechnungen für diesen Filter'}</p>
+                        {lohnabrechnungen.length === 0 && (
+                            <p className="text-xs mt-1">Lohnabrechnungen werden automatisch aus Steuerberater-E-Mails importiert</p>
+                        )}
                     </div>
                 ) : (
                     <div className="space-y-6">
@@ -716,27 +950,45 @@ export default function MitarbeiterEditor() {
                                 </h4>
                                 <div className="grid gap-2">
                                     {byYear[jahr].sort((a, b) => b.monat - a.monat).map(la => (
-                                        <div key={la.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors">
+                                        // Task 11 (Abschnitt 7): dieselbe Luecke wie bei
+                                        // den Dokumenten oben -- {la.originalDateiname}
+                                        // erscheint hier als Rueckfalltext, wenn weder
+                                        // Brutto- noch Nettolohn bekannt sind, und ist
+                                        // genauso ein unteilbares Wort. min-w-0 auch auf
+                                        // diesem aeusseren <div> noetig -- Grid-Item von
+                                        // "grid gap-2", siehe Kommentar bei den Dokumenten.
+                                        <div key={la.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-rose-100 hover:shadow-sm transition-all group min-w-0">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50 transition-colors shrink-0">
                                                     <File className="w-5 h-5" />
                                                 </div>
-                                                <div>
-                                                    <p className="font-medium text-slate-900">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="font-medium text-slate-900 break-words">
                                                         {MONATSNAMEN[la.monat - 1]} {la.jahr}
                                                     </p>
-                                                    <p className="text-xs text-slate-500">
-                                                        {la.originalDateiname}
-                                                        {la.bruttolohn && la.nettolohn && (
-                                                            <span className="ml-2">
-                                                                • Brutto: {new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(la.bruttolohn)}
-                                                                • Netto: {new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(la.nettolohn)}
+                                                    <p className="text-xs text-slate-500 break-words">
+                                                        {la.bruttolohn != null && (
+                                                            <span className="font-medium text-slate-700">
+                                                                Brutto: {formatEuro(la.bruttolohn)}
                                                             </span>
                                                         )}
+                                                        {la.nettolohn != null && (
+                                                            <span className="font-medium text-slate-700">
+                                                                {la.bruttolohn != null && ' • '}Netto: {formatEuro(la.nettolohn)}
+                                                            </span>
+                                                        )}
+                                                        {la.bruttolohn == null && la.nettolohn == null && la.originalDateiname}
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 shrink-0">
+                                                <button
+                                                    onClick={() => setPreviewLohnabrechnung(la)}
+                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                                    title="PDF ansehen"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </button>
                                                 <a
                                                     href={la.downloadUrl}
                                                     target="_blank"
@@ -761,10 +1013,18 @@ export default function MitarbeiterEditor() {
     const MainContent = () => (
         <>
             {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
+            {/*
+              Gemeinsame Rezeptur aus Abschnitt 3/4 (siehe Plan-Datei,
+              "Gemeinsame Rezeptur fuer Kopfzeile und Reiterleiste"):
+              overflow-x-auto raus, flex-wrap + min-w-0 rein -- eine versteckt
+              scrollende Reiterleiste ist keine Loesung, lieber umbrechen.
+              data-testid fuer eine praezise Test-Auswahl (ein Selektor ueber
+              Klassen traf in anderen Specs auch fremde "border-b"-Knoepfe).
+            */}
+            <div data-testid="mitarbeiter-reiterleiste" className="flex flex-wrap min-w-0 gap-2 mb-6 border-b border-slate-200 pb-2">
                 <button
                     onClick={() => setActiveTab('dokumente')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'dokumente'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'dokumente'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -774,7 +1034,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('notizen')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'notizen'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'notizen'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -784,7 +1044,7 @@ export default function MitarbeiterEditor() {
                 </button>
                 <button
                     onClick={() => setActiveTab('lohnabrechnungen')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'lohnabrechnungen'
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'lohnabrechnungen'
                         ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                         : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                         }`}
@@ -792,120 +1052,26 @@ export default function MitarbeiterEditor() {
                     <Receipt className="w-4 h-4 inline-block mr-2" />
                     Lohnabrechnungen
                 </button>
-                {features.en1090 && (
-                    <button
-                        onClick={() => setActiveTab('en1090')}
-                        className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'en1090'
-                            ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
-                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                            }`}
-                    >
-                        <Shield className="w-4 h-4 inline-block mr-2" />
-                        EN&nbsp;1090
-                    </button>
-                )}
+                <button
+                    onClick={() => setActiveTab('stundenlohn')}
+                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap ${activeTab === 'stundenlohn'
+                        ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
+                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                        }`}
+                >
+                    <Euro className="w-4 h-4 inline-block mr-2" />
+                    Stundenlohn-Verlauf
+                </button>
             </div>
 
             {activeTab === 'dokumente' && <DokumenteList />}
             {activeTab === 'notizen' && <NotizenList />}
             {activeTab === 'lohnabrechnungen' && <LohnabrechnungenList />}
-            {activeTab === 'en1090' && features.en1090 && (
-                <div className="space-y-6">
-                    {/* Rollen-Bereich */}
-                    <Card className="p-5 space-y-4">
-                        <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                            <Shield className="w-4 h-4 text-rose-600" /> Zugewiesene Rollen
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                            {en1090RolleOptionen.filter(r => r.aktiv).map(rolle => (
-                                <label key={rolle.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer text-sm transition-colors ${
-                                    selectedRolleIds.includes(rolle.id)
-                                        ? 'bg-rose-600 text-white border-rose-600'
-                                        : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300'
-                                }`}>
-                                    <input
-                                        type="checkbox"
-                                        className="hidden"
-                                        checked={selectedRolleIds.includes(rolle.id)}
-                                        onChange={e => setSelectedRolleIds(prev =>
-                                            e.target.checked ? [...prev, rolle.id] : prev.filter(id => id !== rolle.id)
-                                        )}
-                                    />
-                                    {rolle.kurztext}
-                                </label>
-                            ))}
-                            {en1090RolleOptionen.filter(r => r.aktiv).length === 0 && (
-                                <p className="text-sm text-slate-400">Keine Rollen verfügbar. Bitte zuerst in den Firmaeinstellungen anlegen.</p>
-                            )}
-                        </div>
-                        <Button
-                            size="sm"
-                            className="bg-rose-600 text-white hover:bg-rose-700"
-                            onClick={saveRollen}
-                            disabled={savingRollen}
-                        >
-                            {savingRollen ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                            Rollen speichern
-                        </Button>
-                    </Card>
-
-                    {/* Qualifikationen-Bereich */}
-                    <Card className="p-5 space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                                <FileBadge className="w-4 h-4 text-rose-600" /> Qualifikations-Nachweise
-                            </h3>
-                            <Button
-                                size="sm"
-                                className="bg-rose-600 text-white hover:bg-rose-700"
-                                onClick={() => { setEditingQual({}); setShowQualModal(true); }}
-                            >
-                                <Plus className="w-4 h-4 mr-2" /> Neuer Nachweis
-                            </Button>
-                        </div>
-
-                        {qualifikationen.length === 0 ? (
-                            <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                                <Award className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                                <p className="text-sm">Noch keine Nachweise eingetragen</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {qualifikationen.map(q => (
-                                    <div key={q.id} className="flex items-start justify-between gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-slate-900 text-sm">{q.bezeichnung}</p>
-                                            {q.beschreibung && <p className="text-xs text-slate-500 mt-0.5">{q.beschreibung}</p>}
-                                            <div className="flex flex-wrap gap-3 mt-1 text-xs text-slate-400">
-                                                {q.datum && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{q.datum}</span>}
-                                                {q.dokumentAnzeigename && (
-                                                    <a
-                                                        href={`/api/dokumente/${q.dokumentGespeicherterName}`}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="flex items-center gap-1 text-rose-600 hover:underline"
-                                                    >
-                                                        <FileText className="w-3 h-3" />{q.dokumentAnzeigename}
-                                                    </a>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-1 shrink-0">
-                                            <Button size="sm" variant="ghost" className="text-slate-500 hover:text-slate-700"
-                                                onClick={() => { setEditingQual({ ...q, dateiFile: null }); setShowQualModal(true); }}>
-                                                <Eye className="w-4 h-4" />
-                                            </Button>
-                                            <Button size="sm" variant="ghost" className="text-rose-600 hover:bg-rose-50"
-                                                onClick={() => deleteQualifikation(q.id)}>
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </Card>
-                </div>
+            {activeTab === 'stundenlohn' && selectedMitarbeiter && (
+                <StundenlohnHistorieList
+                    mitarbeiterId={selectedMitarbeiter.id}
+                    onChange={() => loadMitarbeiter()}
+                />
             )}
         </>
     );
@@ -1071,16 +1237,8 @@ export default function MitarbeiterEditor() {
                                 </div>
                                 <div className="space-y-1">
                                     <Label htmlFor="qualifikation" className="text-xs">Qualifikation</Label>
-                                    <select
-                                        id="qualifikation"
-                                        value={formData.qualifikation || ''}
-                                        onChange={e => setFormData({ ...formData, qualifikation: e.target.value })}
-                                        className="w-full h-10 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent bg-white"
-                                    >
-                                        {QUALIFIKATIONEN.map(q => (
-                                            <option key={q.value} value={q.value}>{q.label}</option>
-                                        ))}
-                                    </select>
+                                    <Select id="qualifikation" aria-label="Qualifikation" value={formData.qualifikation || ''}
+                                        onChange={value => setFormData({ ...formData, qualifikation: value })} options={QUALIFIKATIONEN} />
                                 </div>
                             </div>
 
@@ -1100,11 +1258,11 @@ export default function MitarbeiterEditor() {
                                     </div>
                                     <div className="space-y-1">
                                         <Label htmlFor="jahresUrlaub" className="text-xs">Jahresurlaub (Tage)</Label>
-                                        <Input
+                                        <DecimalInput
                                             id="jahresUrlaub"
-                                            type="number"
-                                            value={formData.jahresUrlaub || ''}
-                                            onChange={e => setFormData({ ...formData, jahresUrlaub: parseInt(e.target.value) })}
+                                            min={0}
+                                            value={formData.jahresUrlaub ?? ''}
+                                            onChange={value => setFormData({ ...formData, jahresUrlaub: value })} required integer
                                             placeholder="30"
                                         />
                                     </div>
@@ -1117,16 +1275,110 @@ export default function MitarbeiterEditor() {
                                     <Euro className="w-4 h-4" /> Vergütung
                                 </h3>
                                 <div className="space-y-1">
-                                    <Label htmlFor="stundenlohn" className="text-xs">Stundenlohn (€)</Label>
-                                    <Input
+                                    <Label htmlFor="stundenlohn" className="text-xs">
+                                        {formData.id ? 'Aktueller Stundenlohn (€)' : 'Stundenlohn (€) – startet ab Eintrittsdatum'}
+                                    </Label>
+                                    <DecimalInput
                                         id="stundenlohn"
-                                        type="number"
-                                        step="0.01"
-                                        value={formData.stundenlohn || ''}
-                                        onChange={e => setFormData({ ...formData, stundenlohn: parseFloat(e.target.value) })}
-                                        placeholder="25.00"
+                                        min={0}
+
+                                        value={formData.stundenlohn ?? ''}
+                                        onChange={value => setFormData({ ...formData, stundenlohn: value })}
+                                        placeholder="25,00"
+                                        disabled={!!formData.id}
                                     />
+                                    {formData.id && (
+                                        <p className="text-xs text-slate-500">
+                                            Wird im Tab „Stundenlohn-Verlauf" gepflegt – auch rückwirkend für alte Zeitbuchungen.
+                                        </p>
+                                    )}
                                 </div>
+                            </div>
+
+                            {/* Anstellungsart-Wizard (Beschäftigungsart, Krankenkasse, Kinder) */}
+                            <BeschaeftigungsWizard
+                                value={{
+                                    beschaeftigungsart: formData.beschaeftigungsart ?? null,
+                                    krankenkasseId: formData.krankenkasseId ?? null,
+                                    kinderlos: formData.kinderlos ?? null,
+                                }}
+                                onChange={v => setFormData({
+                                    ...formData,
+                                    beschaeftigungsart: v.beschaeftigungsart,
+                                    krankenkasseId: v.krankenkasseId,
+                                    kinderlos: v.kinderlos,
+                                })}
+                            />
+
+                            {/* Geschäftsführer-Lohn (für Verrechnungslohn-Rechner) */}
+                            <div className="space-y-3">
+                                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+                                    <User className="w-4 h-4" /> Geschäftsführer
+                                </h3>
+                                <label className="flex items-start gap-3 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={!!formData.istGeschaeftsfuehrer}
+                                        onChange={e => setFormData({
+                                            ...formData,
+                                            istGeschaeftsfuehrer: e.target.checked,
+                                            ...(e.target.checked ? {} : {
+                                                kalkulatorischerLohnMonat: '',
+                                                geldwertVorteilMonat: '',
+                                            }),
+                                        })}
+                                        className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                    />
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-700">Ist diese Person Geschäftsführer/in?</span>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Dann nehmen wir statt einem echten Lohn den Wunschlohn unten für die Kalkulation des Stundensatzes.
+                                        </p>
+                                    </div>
+                                </label>
+
+                                {formData.istGeschaeftsfuehrer && (
+                                    <div className="space-y-3 pl-3 border-l-2 border-rose-200">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="kalkulatorischerLohnMonat" className="text-xs">
+                                                Was möchtest du dir pro Monat als Lohn rechnen? (€)
+                                            </Label>
+                                            <DecimalInput
+                                                id="kalkulatorischerLohnMonat"
+                                                min={0}
+
+                                                value={formData.kalkulatorischerLohnMonat ?? ''}
+                                                onChange={value => setFormData({
+                                                    ...formData,
+                                                    kalkulatorischerLohnMonat: value,
+                                                })}
+                                                placeholder="5000,00"
+                                            />
+                                            <p className="text-xs text-slate-500">
+                                                Wunschlohn pro Monat – fließt 12× ins Jahr in den Stundensatz ein.
+                                            </p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="geldwertVorteilMonat" className="text-xs">
+                                                Auto/Telefon/Privatanteile pro Monat (€) – optional
+                                            </Label>
+                                            <DecimalInput
+                                                id="geldwertVorteilMonat"
+                                                min={0}
+
+                                                value={formData.geldwertVorteilMonat ?? ''}
+                                                onChange={value => setFormData({
+                                                    ...formData,
+                                                    geldwertVorteilMonat: value,
+                                                })}
+                                                placeholder="500,00"
+                                            />
+                                            <p className="text-xs text-slate-500">
+                                                Pauschal: was die Firma für dich privat trägt (z.B. Firmenwagen, Handy).
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Status */}
@@ -1144,6 +1396,86 @@ export default function MitarbeiterEditor() {
                                         <p className="text-xs text-slate-500">Mitarbeiter ist im System aktiv und kann sich anmelden</p>
                                     </div>
                                 </label>
+                                {formData.id ? (
+                                    loadingZeitkonto ? (
+                                        <div className="h-28 rounded-lg border border-slate-200 bg-slate-50 motion-safe:animate-pulse" aria-label="Arbeitszeit wird geladen" />
+                                    ) : zeitkontoStatus ? (
+                                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-800">Arbeitszeit erfassen</p>
+                                                    <p className="mt-1 text-xs text-slate-500">
+                                                        {zeitkontoStatus.hinweis || 'Die Arbeitszeit ist eingerichtet.'}
+                                                    </p>
+                                                </div>
+                                                <span className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium ${zeitkontoStatus.fuehrtZeitkonto ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                    {zeitkontoStatus.fuehrtZeitkonto ? 'An' : 'Aus'}
+                                                </span>
+                                            </div>
+                                            {formData.istGeschaeftsfuehrer && !zeitkontoStatus.aktuell && (
+                                                <div className="rounded-md bg-rose-50 border border-rose-100 p-3 text-xs text-rose-800">
+                                                    <p className="font-semibold">Hinweis für Geschäftsführer:</p>
+                                                    <p className="mt-0.5 text-slate-600">
+                                                        Als Geschäftsführer müssen Sie keine Arbeitszeit einrichten. Sie können Zeiten projektbezogen erfassen, ohne dass Soll-Stunden oder Monatsabschlüsse berechnet werden. Das Einrichten einer Arbeitszeit ist vollkommen optional.
+                                                    </p>
+                                                </div>
+                                            )}
+                                            {zeitkontoStatus.aktuell && (
+                                                    <p className="text-xs text-slate-600">
+                                                    Aktuell seit {new Date(`${zeitkontoStatus.aktuell.gueltigVon}T00:00:00`).toLocaleDateString('de-DE')}
+                                                    {' · '}{beschreibeArbeitszeit(zeitkontoStatus.aktuell)}.
+                                                </p>
+                                            )}
+                                            {zeitkontoStatus.historie.length > 0 && (
+                                                <div className="border-t border-slate-100 pt-2">
+                                                    <p className="text-xs font-medium text-slate-600">Bisherige Arbeitszeiten</p>
+                                                    <ul className="mt-1 space-y-1 text-xs text-slate-500">
+                                                        {zeitkontoStatus.historie.slice().reverse().map(version => (
+                                                            <li key={version.id}>
+                                                                Ab {new Date(`${version.gueltigVon}T00:00:00`).toLocaleDateString('de-DE')}
+                                                                {version.gueltigBis ? ` bis ${new Date(`${version.gueltigBis}T00:00:00`).toLocaleDateString('de-DE')}` : ''}
+                                                                {' · '}{beschreibeArbeitszeit(version)}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                                                {zeitkontoStatus.fuehrtZeitkonto ? (
+                                                    <>
+                                                        <Button type="button" size="sm" variant="outline" onClick={oeffneArbeitszeitDialog} disabled={loadingWechsel} className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                                                            {zeitkontoStatus.aktuell ? 'Arbeitszeit ändern' : (formData.istGeschaeftsfuehrer ? 'Arbeitszeit optional einrichten' : 'Arbeitszeit einrichten')}
+                                                        </Button>
+                                                        <Button type="button" size="sm" variant="ghost" onClick={schalteArbeitszeitAus} disabled={loadingWechsel} className="text-rose-700 hover:bg-rose-50">
+                                                            Arbeitszeit ausschalten
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <Button type="button" size="sm" onClick={oeffneArbeitszeitDialog} disabled={loadingWechsel} className="bg-rose-600 text-white hover:bg-rose-700">
+                                                        Arbeitszeit einschalten und einrichten
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : null
+                                ) : (
+                                    <label className="flex items-start gap-3 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.fuehrtZeitkonto ?? true}
+                                            onChange={e => setFormData({ ...formData, fuehrtZeitkonto: e.target.checked })}
+                                            className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                        />
+                                        <div>
+                                            <span className="text-sm font-medium text-slate-700">Arbeitszeit erfassen</span>
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                {formData.istGeschaeftsfuehrer
+                                                    ? 'Für Geschäftsführer ist die Arbeitszeit optional. Projektbezogenes Stempeln ist auch ohne Arbeitszeitkonto möglich.'
+                                                    : 'Ausschalten, wenn diese Person nicht stempelt, zum Beispiel als Chef. Die Arbeitszeit richten Sie nach dem Anlegen bewusst ein.'}
+                                            </p>
+                                        </div>
+                                    </label>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1151,6 +1483,111 @@ export default function MitarbeiterEditor() {
                     <DialogFooter className="border-t pt-4">
                         <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Abbrechen</Button>
                         <Button onClick={handleSave} className="bg-rose-600 text-white hover:bg-rose-700">Speichern</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={zeitkontoDialogOpen} onOpenChange={offen => {
+                setZeitkontoDialogOpen(offen);
+                if (!offen) {
+                    invalidiereVorschau();
+                    setIsDialogOpen(true);
+                }
+            }}>
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>Arbeitszeit {zeitkontoStatus?.eingerichtet ? 'ändern' : 'einrichten'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-5 py-2">
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                            Der Stichtag entscheidet, ab wann die neue Arbeitszeit gilt. Abgeschlossene Monate bleiben unverändert; offene Monate werden danach neu gerechnet.
+                        </div>
+                        {zeitkontoStatus?.fuehrtZeitkonto === false && (
+                            <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                Beim Einschalten beginnt die Arbeitszeit heute. Frühere Zeiträume bleiben unverändert.
+                            </p>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <Label className="text-xs">Gültig ab</Label>
+                                <DatePicker value={stichtag} onChange={value => { setStichtag(value); invalidiereVorschau(); }} disabled={zeitkontoStatus?.fuehrtZeitkonto === false} />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Arbeitszeit-Vorlage</Label>
+                                <Select
+                                    value={vorlageId}
+                                    onChange={value => {
+                                        setVorlageId(value);
+                                        if (value && value !== 'individuell') {
+                                            const vorlage = zeitkontenmodelle.find(m => m.id === Number(value));
+                                            if (vorlage) setIndividuelleArbeitszeit(zeitEntwurf(vorlage.arbeitszeit));
+                                        }
+                                        setIndividuelleAbweichung(false);
+                                        invalidiereVorschau();
+                                    }}
+                                    placeholder="Vorlage auswählen"
+                                    options={[
+                                        ...zeitkontenmodelle.map(modell => ({ value: String(modell.id), label: modell.bezeichnung })),
+                                        { value: 'individuell', label: 'Eigene Arbeitszeit festlegen' },
+                                    ]}
+                                />
+                            </div>
+                        </div>
+                        {vorlageId && vorlageId !== 'individuell' && (
+                            <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 cursor-pointer hover:bg-slate-50">
+                                <input type="checkbox" checked={individuelleAbweichung}
+                                    onChange={e => { setIndividuelleAbweichung(e.target.checked); invalidiereVorschau(); }}
+                                    className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+                                <span className="text-sm text-slate-700">Diese Vorlage für diese Person individuell anpassen</span>
+                            </label>
+                        )}
+                        {(vorlageId === 'individuell' || individuelleAbweichung) && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
+                                <div>
+                                    <p className="text-sm font-medium text-slate-800">{individuelleAbweichung ? 'Individuelle Abweichung' : 'Eigene Arbeitszeit'}</p>
+                                    <p className="text-xs text-slate-500 mt-1">{individuelleAbweichung ? 'Die ausgewählte Vorlage bleibt als Herkunft erhalten. Diese Person erhält dafür eigene Werte.' : 'Diese Werte werden als persönlicher Zeitabschnitt gespeichert.'}</p>
+                                </div>
+                                <ArbeitszeitFelder value={individuelleArbeitszeit}
+                                    zeitfenster={BUCHUNGSZEIT_LABELS} kompakt optionalHinweis
+                                    onChange={draft => { setIndividuelleArbeitszeit(draft); invalidiereVorschau(); }} />
+                            </div>
+                        )}
+                        {!vorlageId && (
+                            <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">Bitte eine Arbeitszeit-Vorlage wählen oder eigene Zeiten festlegen.</p>
+                        )}
+                        {wechselFehler && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{wechselFehler}</p>}
+                        {wechselVorschau && (
+                            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-900">{wechselVorschau.gespeichert ? 'Übernommen' : 'Vorschau'}</p>
+                                    <p className="mt-1 text-sm text-slate-600">{wechselVorschau.hinweis}</p>
+                                    {wechselVorschau.bestehendeAbwesenheiten > 0 && <p className="mt-1 text-xs text-amber-800">{wechselVorschau.bestehendeAbwesenheiten} gebuchte Abwesenheit(en) behalten ihre bisherigen Stunden.</p>}
+                                </div>
+                                <ul className="divide-y divide-slate-100 text-sm">
+                                    {wechselVorschau.monate.map(monat => (
+                                        <li key={`${monat.jahr}-${monat.monat}`} className="flex flex-wrap justify-between gap-2 py-2 text-slate-700">
+                                            <span>{new Date(monat.jahr, monat.monat - 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}{monat.abgeschlossen ? ' · abgeschlossen' : ''}</span>
+                                            <span className={monat.geaendert ? 'font-medium text-rose-700' : 'text-slate-500'}>
+                                                {monat.saldoNachher == null ? `${monat.saldoVorher.toLocaleString('de-DE', { minimumFractionDigits: 2 })} Std.` : `${monat.saldoVorher.toLocaleString('de-DE', { minimumFractionDigits: 2 })} → ${monat.saldoNachher.toLocaleString('de-DE', { minimumFractionDigits: 2 })} Std.`}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter className="shrink-0 border-t pt-4">
+                        <Button variant="outline" onClick={() => setZeitkontoDialogOpen(false)}>Abbrechen</Button>
+                        {!wechselVorschau?.gespeichert && (
+                            <Button type="button" variant={wechselVorschau ? "outline" : "default"} onClick={ladeVorschau} disabled={loadingWechsel || !vorlageId} className={wechselVorschau ? "border-rose-300 text-rose-700 hover:bg-rose-50" : "bg-rose-600 text-white hover:bg-rose-700"}>
+                                {loadingWechsel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Vorschau anzeigen
+                            </Button>
+                        )}
+                        {wechselVorschau && !wechselVorschau.gespeichert && (
+                            <Button type="button" onClick={uebernehmeArbeitszeit} disabled={loadingWechsel} className="bg-rose-600 text-white hover:bg-rose-700">
+                                {loadingWechsel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Jetzt übernehmen
+                            </Button>
+                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -1232,107 +1669,6 @@ export default function MitarbeiterEditor() {
                 </DialogContent>
             </Dialog>
 
-            {/* Qualifikation Modal */}
-            <Dialog open={showQualModal} onOpenChange={open => { if (!open) { setShowQualModal(false); setEditingQual({}); } }} className="w-[700px] max-w-[95vw]">
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>{editingQual.id ? 'Nachweis bearbeiten' : 'Neuer Qualifikations-Nachweis'}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <Label>Bezeichnung *</Label>
-                            <Input
-                                placeholder="z.B. Schweißer-Prüfungszeugnis nach EN ISO 9606-1"
-                                value={editingQual.bezeichnung || ''}
-                                onChange={e => setEditingQual(prev => ({ ...prev, bezeichnung: e.target.value }))}
-                            />
-                        </div>
-                        <div>
-                            <Label>Beschreibung</Label>
-                            <textarea
-                                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[80px] resize-y"
-                                placeholder="Weitere Details zum Nachweis..."
-                                value={editingQual.beschreibung || ''}
-                                onChange={e => setEditingQual(prev => ({ ...prev, beschreibung: e.target.value }))}
-                            />
-                        </div>
-                        <div>
-                            <Label>Datum (z.B. Ausstellungsdatum)</Label>
-                            <Input
-                                type="date"
-                                value={editingQual.datum || ''}
-                                onChange={e => setEditingQual(prev => ({ ...prev, datum: e.target.value }))}
-                            />
-                        </div>
-                        <div>
-                            <Label>Dokument hochladen (optional)</Label>
-                            {editingQual.dokumentAnzeigename && !editingQual.dateiFile && (
-                                <p className="text-xs text-slate-500 mb-1 flex items-center gap-1">
-                                    <FileText className="w-3 h-3" /> Aktuell: {editingQual.dokumentAnzeigename}
-                                </p>
-                            )}
-                            <div
-                                className={`mt-1 border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                                    isDraggingQual
-                                        ? 'border-rose-500 bg-rose-50'
-                                        : editingQual.dateiFile
-                                        ? 'border-rose-400 bg-rose-50'
-                                        : 'border-slate-300 hover:border-rose-400 hover:bg-slate-50'
-                                }`}
-                                onClick={() => qualFileInputRef.current?.click()}
-                                onDragOver={e => { e.preventDefault(); setIsDraggingQual(true); }}
-                                onDragLeave={() => setIsDraggingQual(false)}
-                                onDrop={e => {
-                                    e.preventDefault();
-                                    setIsDraggingQual(false);
-                                    const file = e.dataTransfer.files?.[0];
-                                    if (file) setEditingQual(prev => ({ ...prev, dateiFile: file }));
-                                }}
-                            >
-                                {editingQual.dateiFile ? (
-                                    <>
-                                        <FileText className="w-8 h-8 mx-auto mb-2 text-rose-500" />
-                                        <p className="text-sm font-medium text-rose-700">{editingQual.dateiFile.name}</p>
-                                        <button
-                                            type="button"
-                                            className="mt-2 text-xs text-slate-400 hover:text-rose-500 underline"
-                                            onClick={e => { e.stopPropagation(); setEditingQual(prev => ({ ...prev, dateiFile: null })); }}
-                                        >
-                                            Datei entfernen
-                                        </button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
-                                        <p className="text-sm font-medium text-slate-700">Datei hier ablegen oder klicken</p>
-                                        <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG oder andere Dokumente</p>
-                                    </>
-                                )}
-                                <input
-                                    ref={qualFileInputRef}
-                                    type="file"
-                                    className="hidden"
-                                    onChange={e => setEditingQual(prev => ({ ...prev, dateiFile: e.target.files?.[0] ?? null }))}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => { setShowQualModal(false); setEditingQual({}); }}>
-                            <X className="w-4 h-4 mr-2" /> Abbrechen
-                        </Button>
-                        <Button
-                            onClick={saveQualifikation}
-                            disabled={savingQual || !editingQual.bezeichnung?.trim()}
-                            className="bg-rose-600 text-white hover:bg-rose-700"
-                        >
-                            {savingQual ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                            Speichern
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
             {/* Standard ImageViewer for Images */}
             {previewDoc && previewDoc.dateityp?.startsWith('image/') && (
                 <ImageViewer
@@ -1348,44 +1684,25 @@ export default function MitarbeiterEditor() {
                 />
             )}
 
-            {/* Dokument Vorschau Modal (Non-Images) */}
-            {previewDoc && !previewDoc.dateityp?.startsWith('image/') && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPreviewDoc(null)}>
-                    <div className="relative bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] w-full m-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-4 border-b">
-                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                                <Eye className="w-5 h-5 text-rose-600" />
-                                {previewDoc.originalDateiname}
-                            </h3>
-                            <button
-                                onClick={() => setPreviewDoc(null)}
-                                className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-                            >
-                                <X className="w-5 h-5 text-slate-500" />
-                            </button>
-                        </div>
-                        <div className="p-4 overflow-auto max-h-[calc(90vh-80px)]">
-                            {(previewDoc.dateityp === 'application/pdf' || previewDoc.originalDateiname?.endsWith('.pdf')) && previewDoc.url ? (
-                                <PdfCanvasViewer
-                                    url={previewDoc.url}
-                                    className="w-full h-[70vh] rounded-lg overflow-y-auto overflow-x-hidden"
-                                />
-                            ) : (
-                                <div className="text-center py-12">
-                                    <File className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-                                    <p className="text-slate-600 mb-4">Vorschau für diesen Dateityp nicht verfügbar</p>
-                                    <Button
-                                        onClick={() => window.open(previewDoc.url, '_blank')}
-                                        className="bg-rose-600 text-white hover:bg-rose-700"
-                                    >
-                                        <Download className="w-4 h-4 mr-2" />
-                                        Datei herunterladen
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+            {/* Dokument Vorschau Modal (Non-Images) – globale Komponente */}
+            {previewDoc && !previewDoc.dateityp?.startsWith('image/') && previewDoc.url && (
+                <DocumentPreviewModal
+                    doc={{ url: previewDoc.url, title: previewDoc.originalDateiname }}
+                    isPdf={previewDoc.dateityp === 'application/pdf' || (previewDoc.originalDateiname?.toLowerCase().endsWith('.pdf') ?? false)}
+                    onClose={() => setPreviewDoc(null)}
+                />
+            )}
+
+            {/* Lohnabrechnung PDF-Vorschau */}
+            {previewLohnabrechnung && (
+                <DocumentPreviewModal
+                    doc={{
+                        url: previewLohnabrechnung.downloadUrl,
+                        title: `Lohnabrechnung ${MONATSNAMEN[previewLohnabrechnung.monat - 1]} ${previewLohnabrechnung.jahr}`
+                    }}
+                    isPdf={true}
+                    onClose={() => setPreviewLohnabrechnung(null)}
+                />
             )}
 
             {view === 'LIST' ? (
@@ -1415,14 +1732,18 @@ export default function MitarbeiterEditor() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* 2xl:grid-cols-4 nachgezogen (Design-Review-Nachbesserung 1,
+                        Abschnitt 10): die Mitarbeiter-Uebersicht war die einzige der
+                        fuenf Uebersichten, die bei 1536/1920 bei drei Karten blieb,
+                        waehrend Projekt/Anfrage/Kunde/Lieferant auf vier gehen --
+                        dieselbe Rezeptur wie dort. */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
                         {mitarbeiter.map((m) => (
                             <Card
                                 key={m.id}
                                 className="p-6 cursor-pointer hover:border-rose-200 transition-all group"
                                 onClick={() => {
                                     setSelectedMitarbeiter(m);
-                                    setSelectedRolleIds(m.en1090RolleIds ?? []);
                                     loadDokumente(m.id);
                                     loadNotizen(m.id);
                                     setView('DETAIL');
@@ -1434,13 +1755,39 @@ export default function MitarbeiterEditor() {
                                         <User className="w-5 h-5" />
                                     </div>
                                 </div>
-                                <h3 className="text-lg font-bold text-slate-900 mb-1">
-                                    {m.nachname}, {m.vorname}
+                                {/* Task 12 (Bekannte Stelle, Code-Review Abschnitt 7):
+                                    Zeichen fuer Zeichen das Muster, das Task 11 in der
+                                    Kundenkarte repariert hat -- <h3> ohne break-words,
+                                    darunter ein anonymes Flex-Item ohne min-w-0 und ein
+                                    Icon ohne shrink-0. Die Mitarbeiter-Uebersicht hatte
+                                    bislang ausserdem gar keine Zusicherung dafuer. */}
+                                {/* Zwei bewusste Zeilen statt "Nachname, Vorname" (Nacharbeit
+                                    Abschnitt 9, Design-Review Abschnitt 8, Hinweis 2): bei einem
+                                    39-Zeichen-Nachnamen passte "Nachname," gerade noch in eine
+                                    Zeile, das Komma aber nicht mehr -- break-words brach direkt
+                                    davor, die zweite Zeile begann mit ", Bernhardine". Mit zwei
+                                    festen Zeilen haengt das Komma immer am Nachnamen, unabhaengig
+                                    von der Laenge.
+                                    Komma ganz gestrichen (Abschnitt 10, Design-Review Abschnitt 9,
+                                    Hinweis 2): blieb es im selben Span wie der Nachname, konnte es bei
+                                    einem die Zeile exakt ausfuellenden Nachnamen immer noch allein in
+                                    eine eigene Zeile rutschen (gemessen: zweiter Zeilenkasten 5px
+                                    breit, 28px tiefer) -- der Fix hatte das Problem nur verschoben.
+                                    Zwei bewusste Zeilen ohne Trennzeichen brauchen kein Komma.
+                                    Leerzeichen-Trennzeichen (JSX-Ausdruck) zwischen den Spans
+                                    ergaenzt (Design-Review-Nachbesserung 1, Abschnitt 10): sichtbar
+                                    aendert sich nichts (der Leerraum zwischen zwei block-Elementen
+                                    erzeugt keine eigene Zeile), aber textContent liest sich jetzt
+                                    als "Nachname Vorname" statt "NachnameVorname" -- wichtig fuers
+                                    Vorlesen per Screenreader und fuers Kopieren des Namens. */}
+                                <h3 className="text-lg font-bold text-slate-900 mb-1 break-words">
+                                    <span className="block">{m.nachname}</span>{' '}
+                                    <span className="block">{m.vorname}</span>
                                 </h3>
                                 {m.abteilungNames && (
                                     <p className="text-sm text-rose-600 font-medium mb-2 flex items-center gap-1">
-                                        <Building2 className="w-3 h-3" />
-                                        {m.abteilungNames}
+                                        <Building2 className="w-3 h-3 shrink-0" />
+                                        <span className="min-w-0 break-words">{m.abteilungNames}</span>
                                     </p>
                                 )}
                                 <div className="flex items-center gap-4 text-sm text-slate-600">
@@ -1471,4 +1818,3 @@ export default function MitarbeiterEditor() {
         </PageLayout>
     );
 }
-

@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { X, Loader2, Calculator, Plus, Trash2, AlertCircle, Clock, CalendarDays, Plane } from 'lucide-react';
 import { Button } from './ui/button';
+import { DecimalInput } from './ui/decimal-input';
+import { validateDecimalInput } from '../lib/numberInput';
+import { Dialog } from './ui/dialog';
 import { DatePicker } from './ui/datepicker';
 import { useToast } from './ui/toast';
 
@@ -48,6 +51,11 @@ export function ZeitkontoKorrekturenModal({
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const [stornoKorrektur, setStornoKorrektur] = useState<Korrektur | null>(null);
+    const [stornoGrund, setStornoGrund] = useState('');
+    const [stornoError, setStornoError] = useState('');
+    const [stornieren, setStornieren] = useState(false);
+
     useEffect(() => {
         loadKorrekturen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,9 +68,12 @@ export function ZeitkontoKorrekturenModal({
             if (res.ok) {
                 const data = await res.json();
                 setKorrekturen(data);
+            } else {
+                toast.error('Korrekturen konnten nicht geladen werden.');
             }
         } catch (err) {
             console.error('Fehler beim Laden:', err);
+            toast.error('Korrekturen konnten nicht geladen werden.');
         }
         setLoading(false);
     };
@@ -81,15 +92,14 @@ export function ZeitkontoKorrekturenModal({
     };
 
     const handleAddKorrektur = async () => {
-        const stundenNum = parseFloat(newStunden);
-        if (isNaN(stundenNum) || stundenNum === 0) {
-            setError(newTyp === 'STUNDEN' ? 'Bitte gültige Stunden eingeben (nicht 0)' : 'Bitte gültige Tage eingeben (nicht 0)');
+        const parsed = validateDecimalInput(newStunden, { label: newTyp === 'STUNDEN' ? 'Stunden' : 'Tage', required: true, min: 0 });
+        const message = !parsed.valid ? parsed.message : parsed.value === 0 ? 'Bitte einen Wert größer als 0 eingeben.' : !newDatum ? 'Bitte ein Datum auswählen.' : !newGrund.trim() ? 'Bitte eine Begründung eingeben.' : '';
+        if (message || !parsed.valid || parsed.value === null) {
+            setError(message);
+            toast.error(message);
             return;
         }
-        if (!newGrund.trim()) {
-            setError('Begründung ist ein Pflichtfeld (GoBD-konform)');
-            return;
-        }
+        const stundenNum = parsed.value;
 
         setError(null);
         setSaving(true);
@@ -122,17 +132,25 @@ export function ZeitkontoKorrekturenModal({
             } else {
                 const errorData = await res.json();
                 setError(errorData.error || 'Fehler beim Speichern');
+                toast.error(errorData.error || 'Fehler beim Speichern');
             }
         } catch {
             setError('Netzwerkfehler - bitte erneut versuchen');
+            toast.error('Netzwerkfehler - bitte erneut versuchen');
         } finally {
             setSaving(false);
         }
     };
 
-    const handleStornieren = async (korrektur: Korrektur) => {
-        const grund = prompt('Stornierungsgrund eingeben (Pflichtfeld):');
-        if (!grund || !grund.trim()) return;
+    const handleStornieren = async () => {
+        if (!stornoKorrektur || stornieren) return;
+        if (!stornoGrund.trim()) {
+            setStornoError('Bitte einen Stornierungsgrund eingeben.');
+            toast.error('Bitte einen Stornierungsgrund eingeben.');
+            return;
+        }
+        const korrektur = stornoKorrektur;
+        setStornieren(true);
 
         try {
             const res = await fetch(`/api/zeitkonto/korrekturen/${korrektur.id}`, {
@@ -140,11 +158,12 @@ export function ZeitkontoKorrekturenModal({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     bearbeiterId: getBearbeiterId(),
-                    stornierungsgrund: grund.trim()
+                    stornierungsgrund: stornoGrund.trim()
                 })
             });
 
             if (res.ok) {
+                setStornoKorrektur(null);
                 loadKorrekturen();
                 onUpdate();
             } else {
@@ -153,6 +172,8 @@ export function ZeitkontoKorrekturenModal({
             }
         } catch {
             toast.error('Netzwerkfehler');
+        } finally {
+            setStornieren(false);
         }
     };
 
@@ -169,7 +190,7 @@ export function ZeitkontoKorrekturenModal({
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            <div role="dialog" aria-label="Korrekturen verwalten" aria-modal={!stornoKorrektur} aria-hidden={stornoKorrektur ? true : undefined} inert={stornoKorrektur ? true : undefined} className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
                     <div className="flex items-center gap-3">
@@ -195,7 +216,7 @@ export function ZeitkontoKorrekturenModal({
                         <Clock className="w-4 h-4 text-slate-400" />
                         <span className="text-sm text-slate-600">Saldo Stunden:</span>
                         <span className={`text-sm font-bold ${summeStunden >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {summeStunden >= 0 ? '+' : ''}{summeStunden.toFixed(1)}h
+                            {summeStunden >= 0 ? '+' : ''}{summeStunden.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
                         </span>
                     </div>
                     <div className="w-px h-4 bg-slate-300"></div>
@@ -203,7 +224,7 @@ export function ZeitkontoKorrekturenModal({
                         <Plane className="w-4 h-4 text-slate-400" />
                         <span className="text-sm text-slate-600">Saldo Urlaub:</span>
                         <span className={`text-sm font-bold ${summeUrlaub >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {summeUrlaub >= 0 ? '+' : ''}{summeUrlaub.toFixed(1)} Tage
+                            {summeUrlaub >= 0 ? '+' : ''}{summeUrlaub.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Tage
                         </span>
                     </div>
                 </div>
@@ -242,7 +263,7 @@ export function ZeitkontoKorrekturenModal({
                                         {/* Stunden */}
                                         <div className="w-24 flex-shrink-0 text-right">
                                             <span className={`text-lg font-bold ${k.stunden >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                {k.stunden >= 0 ? '+' : ''}{k.stunden.toFixed(1)}
+                                                {k.stunden >= 0 ? '+' : ''}{k.stunden.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                                                 <span className="text-xs font-normal text-slate-500 ml-0.5">{k.typ === 'URLAUB' ? 'T' : 'h'}</span>
                                             </span>
                                         </div>
@@ -260,7 +281,7 @@ export function ZeitkontoKorrekturenModal({
 
                                         {/* Aktionen */}
                                         <button
-                                            onClick={() => handleStornieren(k)}
+                                            onClick={() => { setStornoKorrektur(k); setStornoGrund(''); setStornoError(''); }}
                                             className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                                             title="Stornieren"
                                         >
@@ -336,14 +357,14 @@ export function ZeitkontoKorrekturenModal({
                                                 −
                                             </button>
                                         </div>
-                                        <input
-                                            type="number"
-                                            step="0.5"
-                                            min="0"
+                                        <DecimalInput
+                                            aria-label={newTyp === 'URLAUB' ? 'Anzahl Tage' : 'Anzahl Stunden'}
+                                            required
+                                            min={0}
                                             value={newStunden}
-                                            onChange={(e) => setNewStunden(e.target.value)}
+                                            onChange={setNewStunden}
                                             className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-rose-300 focus:border-rose-500 outline-none"
-                                            placeholder={newTyp === 'URLAUB' ? "z.B. 1.0" : "z.B. 8.0"}
+                                            placeholder={newTyp === 'URLAUB' ? "z. B. 1,0" : "z. B. 8,0"}
                                         />
                                     </div>
                                 </div>
@@ -354,6 +375,7 @@ export function ZeitkontoKorrekturenModal({
                                     Begründung * <span className="text-slate-400">(GoBD-Pflichtfeld)</span>
                                 </label>
                                 <textarea
+                                    aria-label="Begründung"
                                     value={newGrund}
                                     onChange={(e) => setNewGrund(e.target.value)}
                                     rows={2}
@@ -383,7 +405,7 @@ export function ZeitkontoKorrekturenModal({
                                 <Button
                                     size="sm"
                                     onClick={handleAddKorrektur}
-                                    disabled={saving || !newStunden || !newGrund.trim()}
+                                    disabled={saving}
                                     className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                                 >
                                     {saving ? (
@@ -415,6 +437,17 @@ export function ZeitkontoKorrekturenModal({
                     )}
                 </div>
             </div>
+            <Dialog open={stornoKorrektur !== null} onOpenChange={(open) => { if (!open && !stornieren) setStornoKorrektur(null); }} aria-label="Korrektur stornieren" className="w-full max-w-lg">
+                <h3 className="text-xl font-semibold text-slate-900 pr-8">Korrektur stornieren</h3>
+                <p className="mt-2 text-sm text-slate-600">Bitte begründe die Stornierung. Der ursprüngliche Eintrag bleibt nachvollziehbar.</p>
+                <label htmlFor="stornierungsgrund" className="mt-5 mb-2 text-sm font-medium text-slate-700">Stornierungsgrund</label>
+                <textarea id="stornierungsgrund" autoFocus required value={stornoGrund} onChange={(event) => { setStornoGrund(event.target.value); setStornoError(''); }} disabled={stornieren} rows={3} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
+                {stornoError && <p role="alert" className="mt-2 text-sm text-rose-700">{stornoError}</p>}
+                <div className="mt-5 flex justify-end gap-2">
+                    <Button variant="outline" disabled={stornieren} onClick={() => setStornoKorrektur(null)}>Abbrechen</Button>
+                    <Button disabled={stornieren} onClick={handleStornieren} className="bg-rose-600 text-white border-rose-600 hover:bg-rose-700">Stornierung bestätigen</Button>
+                </div>
+            </Dialog>
         </div>
     );
 }

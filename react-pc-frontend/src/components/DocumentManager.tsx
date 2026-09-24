@@ -14,6 +14,7 @@ import {
     X,
 } from 'lucide-react';
 import { Button } from './ui/button';
+import { ThumbnailImage } from './ui/ThumbnailImage';
 import { cn } from '../lib/utils';
 import type { ProjektDokument, DokumentGruppe } from '../types';
 import { DOKUMENT_GRUPPEN } from '../types';
@@ -620,11 +621,11 @@ function DocumentCard({ doc, isDeleting, onDelete, onOpen, onDownload }: Documen
                 {/* Thumbnail / Icon */}
                 <div className="absolute inset-0 flex items-center justify-center p-3">
                     {isImage ? (
-                        <img
-                            src={doc.url}
+                        <ThumbnailImage
+                            src={doc.thumbnailUrl || doc.url}
+                            fallbackSrc={doc.url}
                             alt={doc.originalDateiname}
-                            className="w-full h-full object-cover rounded"
-                            loading="lazy"
+                            className="object-cover rounded"
                         />
                     ) : iconUrl ? (
                         <img
@@ -761,7 +762,7 @@ function DocumentPreviewModal({ doc, onClose, onOpenExternal, onDownload, allIma
         >
             {/* Modal Content */}
             <div
-                className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col"
+                className="relative bg-white rounded-2xl shadow-2xl w-[calc(100vw-2cm)] h-[calc(100vh-2cm)] overflow-hidden flex flex-col"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
@@ -850,7 +851,7 @@ function DocumentPreviewModal({ doc, onClose, onOpenExternal, onDownload, allIma
                     ) : isPdf ? (
                         <PdfCanvasViewer
                             url={doc.url}
-                            className="w-full h-[70vh] rounded-lg overflow-y-auto overflow-x-hidden"
+                            className="w-full h-full rounded-lg overflow-y-auto"
                         />
                     ) : (
                         <div className="flex flex-col items-center justify-center py-12">

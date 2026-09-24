@@ -1,4 +1,4 @@
-import { AlertTriangle, Search, Wrench, Clock, X, Printer, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2, Eye } from 'lucide-react';
+import { AlertTriangle, Search, Wrench, Clock, X, Printer, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2, Eye, FileText } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { LeistungApiDto, ArbeitszeitartApiDto } from './types';
@@ -7,6 +7,108 @@ import { cn } from '../../lib/utils';
 
 // Re-export des ausgelagerten TextbausteinPickerModal fuer Rueckwaertskompatibilitaet
 export { TextbausteinPickerModal } from '../textbaustein/TextbausteinPickerModal';
+
+/**
+ * AddTypeDialog – Auswahl-Dialog "Was soll an dieser Stelle eingefuegt werden?".
+ *
+ * Wird vom "+"-Symbol unter einer Textbaustein-/Leistungskarte und vom
+ * Bauabschnitt-Plus aufgerufen. Der Aufrufer setzt den Insert-Anker VOR dem
+ * Oeffnen; dieses Dialog leitet die Auswahl dann an den passenden Picker
+ * weiter (Textbaustein / Leistung / Stundensatz).
+ */
+export function AddTypeDialog({
+    onPick,
+    onClose,
+    title = 'Was hinzufügen?',
+    description = 'Wählen Sie, welches Element an dieser Stelle eingefügt werden soll.',
+}: {
+    onPick: (type: 'LEISTUNG' | 'STUNDENSATZ' | 'TEXTBAUSTEIN') => void;
+    onClose: () => void;
+    title?: string;
+    description?: string;
+}) {
+    // Escape schliesst den Dialog – einheitlich mit Browser-Standard fuer Modale.
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onClose]);
+
+    return (
+        <div
+            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center"
+            onClick={onClose}
+        >
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="add-type-dialog-title"
+                className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4 border border-slate-100"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-start justify-between mb-1">
+                    <h3 id="add-type-dialog-title" className="text-base font-bold text-slate-900">{title}</h3>
+                    <button
+                        onClick={onClose}
+                        className="p-1 hover:bg-slate-100 rounded-md transition-colors"
+                        aria-label="Schließen"
+                    >
+                        <X className="w-4 h-4 text-slate-400" />
+                    </button>
+                </div>
+                <p className="text-sm text-slate-500 mt-1 leading-relaxed">{description}</p>
+
+                <div className="mt-5 grid grid-cols-1 gap-2">
+                    <button
+                        type="button"
+                        autoFocus
+                        onClick={() => onPick('LEISTUNG')}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50/40 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-300 transition-colors text-left"
+                    >
+                        <div className="p-2 bg-rose-50 rounded-lg flex-shrink-0">
+                            <Wrench className="w-4 h-4 text-rose-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">Leistung</p>
+                            <p className="text-xs text-slate-500">Aus den Stammdaten auswählen</p>
+                        </div>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onPick('STUNDENSATZ')}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50/40 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-300 transition-colors text-left"
+                    >
+                        <div className="p-2 bg-rose-50 rounded-lg flex-shrink-0">
+                            <Clock className="w-4 h-4 text-rose-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">Stundensatz</p>
+                            <p className="text-xs text-slate-500">Arbeitszeit zum aktuellen Stundensatz</p>
+                        </div>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onPick('TEXTBAUSTEIN')}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50/40 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-300 transition-colors text-left"
+                    >
+                        <div className="p-2 bg-rose-50 rounded-lg flex-shrink-0">
+                            <FileText className="w-4 h-4 text-rose-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">Textbaustein</p>
+                            <p className="text-xs text-slate-500">Hinweis oder Beschreibungstext</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 /** Strips HTML tags from a string */
 function stripHtml(html: string): string {

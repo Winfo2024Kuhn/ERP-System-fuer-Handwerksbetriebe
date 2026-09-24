@@ -176,6 +176,8 @@ class ZertifikatMatchingServiceTest {
 
     @Test
     void findeQualifizierteSchweisser_sortiertQualifizierteNachOben() {
+        // Aggregation evaluates against the system date, unlike the explicit-date unit tests.
+        LocalDate heute = LocalDate.now();
         Wps w = wps("135", "S355");
         w.setId(1L);
         when(wpsRepository.findById(1L)).thenReturn(Optional.of(w));
@@ -191,12 +193,12 @@ class ZertifikatMatchingServiceTest {
         m2.setNachname("Musterfrau");
 
         SchweisserZertifikat zPasst = zertifikat("135", "S355",
-                HEUTE.minusMonths(1), HEUTE.minusMonths(1), HEUTE.plusYears(1));
+                heute.minusMonths(1), heute.minusMonths(1), heute.plusYears(1));
         zPasst.setId(100L);
         zPasst.setMitarbeiter(m1);
 
         SchweisserZertifikat zFalscherProzess = zertifikat("111", "S355",
-                HEUTE.minusMonths(1), HEUTE.minusMonths(1), HEUTE.plusYears(1));
+                heute.minusMonths(1), heute.minusMonths(1), heute.plusYears(1));
         zFalscherProzess.setId(200L);
         zFalscherProzess.setMitarbeiter(m2);
 

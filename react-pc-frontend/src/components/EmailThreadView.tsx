@@ -1,7 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
+import { klartextGrund } from '../lib/zustellGrund';
+import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { cn } from '../lib/utils';
+import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailContentFrame } from './EmailContentFrame';
+import { EmailRecipientDropdown } from './EmailRecipientDropdown';
 
 // ─────────────────────────────────────────────────────────────────
 // TYPEN (1:1 mit Backend-DTO)
@@ -28,6 +32,10 @@ export interface EmailThreadEntry {
     draftId?: number;
     snippet?: string;
     htmlBody?: string;
+    /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+    zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
+    /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
+    zustellFehler?: string;
     attachments: ThreadAttachment[];
 }
 
@@ -41,20 +49,22 @@ export interface EmailThread {
 // HILFSFUNKTIONEN
 // ─────────────────────────────────────────────────────────────────
 
-function extractDisplayName(address?: string): string {
-    if (!address) return 'Unbekannt';
-    const match = address.match(/^"?(.*?)"?\s*<.*>$/);
-    if (match && match[1]) return match[1].trim();
-    return address;
-}
+/**
+ * Bis zu dieser Größe gilt ein Bild als Signatur-Logo und nicht als echter Anhang.
+ * Bekannte Grenze: Ein bewusst erneut gesendetes kleines Bild (< 100 KB) bleibt in
+ * Folgenachrichten unsichtbar. Trennschärfer wäre die contentId des Anhangs.
+ */
+const SIGNATUR_LOGO_MAX_BYTES = 100 * 1024;
 
-function extractEmail(address?: string): string {
-    if (!address) return '';
-    const match = address.match(/<(.+)>/);
-    if (match) return match[1];
-    return address;
+/**
+ * Signatur-Logos hängen an jeder Nachricht eines Verlaufs erneut dran.
+ * Nur solche Bilder werden thread-weit einmalig angezeigt.
+ */
+function isWiederholtesSignaturLogo(attachment: ThreadAttachment): boolean {
+    if (!attachment.mimeType?.toLowerCase().startsWith('image/')) return false;
+    const size = attachment.sizeBytes ?? 0;
+    return size > 0 && size <= SIGNATUR_LOGO_MAX_BYTES;
 }
-
 
 function formatSize(bytes?: number): string {
     if (!bytes) return '';
@@ -199,10 +209,10 @@ function SkeletonBubble({ alignRight }: { alignRight: boolean }) {
 
 function DaySeparator({ label }: { label: string }) {
     return (
-        <div className="flex items-center gap-3 my-5">
+        <div className="flex items-center gap-2 my-3">
             <div className="flex-1 h-px bg-slate-200" />
             <span className="px-3 py-1 rounded-full bg-white border border-slate-200
-                             text-xs font-medium text-slate-500 shadow-sm whitespace-nowrap">
+                             text-xs font-medium text-slate-500 shadow-sm text-center">
                 {label}
             </span>
             <div className="flex-1 h-px bg-slate-200" />
@@ -228,19 +238,20 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
     const [expanded, setExpanded] = useState(isFocused);
     const bubbleRef = useRef<HTMLDivElement>(null);
     const isOut = entry.direction === 'OUT';
+    const preview = useMemo(() => getThreadPreview(entry.htmlBody || entry.snippet || ''), [entry.htmlBody, entry.snippet]);
 
     useEffect(() => {
         if (isFocused && bubbleRef.current) {
             const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            bubbleRef.current.scrollIntoView({ block: 'center', behavior: prefersReduced ? 'auto' : 'smooth' });
+            if (typeof bubbleRef.current.scrollIntoView === 'function') {
+                bubbleRef.current.scrollIntoView({ block: 'center', behavior: prefersReduced ? 'auto' : 'smooth' });
+            }
         }
     }, [isFocused]);
 
     const visibleAttachments = entry.attachments.filter(a => !a.inline);
     const fromName = extractDisplayName(entry.fromAddress);
-    const fromEmail = extractEmail(entry.fromAddress);
-    const toName = extractDisplayName(entry.recipient);
-    const toEmail = extractEmail(entry.recipient);
+    const fromEmail = extractEmailAddress(entry.fromAddress);
     const avatarName = fromName; // immer der Absender
     const initial = (avatarName.charAt(0) || '?').toUpperCase();
     const avatarBg = isOut ? 'bg-emerald-500' : 'bg-rose-500';
@@ -260,8 +271,15 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                     role="button"
                     tabIndex={0}
                     onClick={() => setExpanded(false)}
-                    onKeyDown={e => e.key === 'Enter' && setExpanded(false)}
-                    className="flex items-start gap-3 px-5 py-4 cursor-pointer
+                    onKeyDown={e => {
+                        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault();
+                            setExpanded(false);
+                        }
+                    }}
+                    aria-expanded={true}
+                    aria-label={`Nachricht von ${fromName} einklappen`}
+                    className="flex items-start gap-2 px-3 py-3 cursor-pointer
                                hover:bg-slate-50 transition-colors duration-150
                                focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                 >
@@ -276,26 +294,41 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
 
                     {/* Absender + Meta */}
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-0.5">
-                            <p className="font-semibold text-slate-900 truncate text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-0.5">
+                            <p className="font-semibold text-slate-900 min-w-0 break-words text-sm">
                                 {fromName}
                             </p>
-                            <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
-                                {formatDateTime(entry.sentAt)}
-                            </span>
+                            <time dateTime={entry.sentAt} title={formatDateTime(entry.sentAt)} className="text-xs text-slate-400 whitespace-nowrap tabular-nums">
+                                {formatTime(entry.sentAt)}
+                            </time>
                         </div>
-                        <div className="text-xs text-slate-500 space-y-0.5">
+                        <div className="text-xs text-slate-500 space-y-0.5 [overflow-wrap:anywhere]">
                             {isOut ? (
                                 <p><span className="text-slate-400">Von:</span> {fromName} &lt;{fromEmail}&gt;</p>
                             ) : (
                                 <p><span className="text-slate-400">Von:</span> {fromName}{fromEmail && fromEmail !== fromName && ` <${fromEmail}>`}</p>
                             )}
-                            <p><span className="text-slate-400">An:</span> {toName}{toEmail && toEmail !== toName && ` <${toEmail}>`}</p>
+                            <EmailRecipientDropdown recipients={entry.recipient} />
                         </div>
                     </div>
 
                     <ChevronUp className="w-4 h-4 text-slate-400 shrink-0 mt-1" />
                 </div>
+
+                {/* Rueckläufer-Warnung: Eine unzustellbare Antwort haengt mitten im
+                    Thread und taucht in der Uebersichtsliste (nur Wurzeln) nicht auf —
+                    hier ist die einzige Stelle, an der der Nutzer sie sieht. */}
+                {entry.zustellStatus === 'UNZUSTELLBAR' && (
+                    <div className="mx-5 mb-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-rose-700">Nicht angekommen</p>
+                            <p className="text-xs text-rose-600 break-words" title={entry.zustellFehler}>
+                                {klartextGrund(entry.zustellFehler)}
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Trennlinie */}
                 <div className="h-px bg-slate-100 mx-5" />
@@ -363,7 +396,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
             )}
 
             {/* Bubble */}
-            <div className={cn('flex flex-col max-w-[72%]', isOut ? 'items-end' : 'items-start')}>
+            <div className={cn('flex min-w-0 flex-col max-w-[88%] xl:max-w-[80%]', isOut ? 'items-end' : 'items-start')}>
                 {showSenderName && (
                     <p className={cn('text-xs font-semibold mb-1 px-1', isOut ? 'text-emerald-700' : 'text-rose-700')}>
                         {fromName}
@@ -374,7 +407,14 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                     role="button"
                     tabIndex={0}
                     onClick={() => setExpanded(true)}
-                    onKeyDown={e => e.key === 'Enter' && setExpanded(true)}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setExpanded(true);
+                        }
+                    }}
+                    aria-expanded={false}
+                    aria-label={`Nachricht von ${fromName} öffnen`}
                     className={cn(
                         'text-left rounded-2xl px-4 py-2.5 shadow-sm cursor-pointer w-full',
                         'transition-colors duration-200',
@@ -390,8 +430,8 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                             Weitergeleitet
                         </p>
                     )}
-                    <p className="text-sm text-slate-700 line-clamp-2 leading-relaxed">
-                        {entry.snippet || <span className="italic text-slate-400">Kein Inhalt</span>}
+                    <p className="text-sm text-slate-700 line-clamp-3 leading-relaxed [overflow-wrap:anywhere]">
+                        {preview || <span className="italic text-slate-400">Kein neuer Text</span>}
                     </p>
 
                     <div className="flex items-center justify-between gap-2 mt-1.5">
@@ -425,7 +465,6 @@ interface DraftBubbleProps {
 }
 
 function DraftThreadBubble({ entry, onOpenDraft, onDeleteDraft }: DraftBubbleProps) {
-    const toName = extractDisplayName(entry.recipient);
     const hasContent = entry.snippet && entry.snippet !== '[Entwurf]';
 
     return (
@@ -472,9 +511,9 @@ function DraftThreadBubble({ entry, onOpenDraft, onDeleteDraft }: DraftBubblePro
 
                     {/* Recipient */}
                     {entry.recipient && (
-                        <p className="text-xs text-amber-700/80 mb-1">
-                            <span className="text-amber-600/60">An:</span> {toName}
-                        </p>
+                        <div className="mb-1">
+                            <EmailRecipientDropdown recipients={entry.recipient} label="An:" className="text-amber-700/80 text-xs" />
+                        </div>
                     )}
 
                     {/* Subject */}
@@ -511,11 +550,20 @@ interface EmailThreadViewProps {
 }
 
 export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDraft, onDeleteDraft }: EmailThreadViewProps) {
-    // Thread-übergreifende Anhang-Dedup über originalFilename:sizeBytes
+    // Thread-übergreifende Anhang-Dedup über originalFilename:sizeBytes.
+    // Greift NUR bei kleinen Bildern (Signatur-Logos, die in jeder Nachricht
+    // erneut mitkommen). Dokumente und große Bilder bleiben in jeder Nachricht
+    // sichtbar – sonst verschwindet eine bewusst erneut gesendete Datei aus dem
+    // Verlauf und der Nutzer hält den Versand für fehlgeschlagen.
     const seenAttachments = new Set<string>();
     const emails = thread.emails.map(entry => ({
         ...entry,
         attachments: entry.attachments.filter(a => {
+            // Inline-Bilder stecken im Text und werden ohnehin nicht als Chip
+            // gezeigt – sie dürfen einem späteren echten Anhang nicht den Platz
+            // wegnehmen.
+            if (a.inline) return true;
+            if (!isWiederholtesSignaturLogo(a)) return true;
             const key = `${a.originalFilename}:${a.sizeBytes ?? ''}`;
             if (seenAttachments.has(key)) return false;
             seenAttachments.add(key);
@@ -529,7 +577,7 @@ export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDra
 
     if (loading) {
         return (
-            <div className="flex-1 overflow-auto bg-slate-50 px-5 py-5 space-y-3">
+            <div className="flex-1 min-h-0 overflow-auto bg-slate-50 px-3 py-3 space-y-3">
                 <SkeletonBubble alignRight={false} />
                 <SkeletonBubble alignRight={true} />
                 <SkeletonBubble alignRight={false} />
@@ -538,7 +586,7 @@ export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDra
     }
 
     return (
-        <div className="flex-1 overflow-auto bg-slate-50 px-5 py-5">
+        <div className="flex-1 min-h-0 overflow-auto bg-slate-50 px-3 py-3">
             {regularEmails.map((entry, idx) => {
                 const prev = idx > 0 ? regularEmails[idx - 1] : null;
                 const showDaySeparator = !prev || getDayString(entry.sentAt) !== getDayString(prev.sentAt);

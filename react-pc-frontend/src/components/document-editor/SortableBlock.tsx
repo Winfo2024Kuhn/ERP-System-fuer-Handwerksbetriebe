@@ -55,6 +55,7 @@ export function SortableBlock({ block, children, isLocked, isDragOverlay }: Sort
             ref={setNodeRef}
             style={style}
             className={cn("group relative transition-all duration-150")}
+            data-block-id={block.id}
         >
             {/* Drag Handle */}
             {!isLocked && (
