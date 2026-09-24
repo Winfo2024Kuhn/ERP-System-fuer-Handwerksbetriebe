@@ -466,6 +466,147 @@ class HiCadImportServiceTest {
                 () -> service.fortschritt(5L, 99L));
     }
 
+    @Test
+    void liestHiCadSaegelisteAusMehrblaettrigerMappeOhneSummenzeile() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> {
+            HiCadImport saved = invocation.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", 12L);
+            return saved;
+        });
+        ArtikelRepository articles = mock(ArtikelRepository.class);
+        EinkaufDateiService files = mock(EinkaufDateiService.class);
+        when(files.speichereImportBild(anyString(), eq("image/png"), any()))
+                .thenReturn(new EinkaufDateiService.ImportBildDto(88L, "anschnitt.png", "image/png", 10));
+        HiCadImportService service = new HiCadImportService(imports, mock(EinkaufBedarfService.class), files, articles);
+
+        var preview = service.vorschau(17L, new MockMultipartFile("file", "stueckliste.xlsx",
+                "application/octet-stream", hiCadWorkbook(png())), null, 4L);
+
+        assertEquals(3, preview.zeilen().size());
+        assertEquals(List.of(9, 10, 11), preview.zeilen().stream().map(HiCadImportDto.Zeile::zeilennummer).toList());
+        var rohr = preview.zeilen().get(0).vorschlag();
+        assertEquals("1100", rohr.interneReferenz());
+        assertEquals("Z-4711", rohr.zeichnungsnummer());
+        assertEquals("Rohr 76.1x4", rohr.abmessung());
+        assertEquals("Rohr 76.1x4", rohr.bezeichnung());
+        assertEquals("S235JRH", rohr.werkstoff());
+        assertEquals(0, rohr.basis().menge().compareTo(java.math.BigDecimal.ONE));
+        assertEquals(org.example.kalkulationsprogramm.domain.einkauf.Einheit.STUECK, rohr.basis().einheit());
+        assertEquals(new java.math.BigDecimal("763.6"), rohr.basis().einzelLaengeMm());
+        assertEquals(new java.math.BigDecimal("7.111053"), rohr.basis().kgJeMeter());
+        assertEquals(null, rohr.schnittForm());
+
+        var stuetze = preview.zeilen().get(1).vorschlag();
+        assertEquals(0, stuetze.basis().menge().compareTo(new java.math.BigDecimal("2")));
+        assertEquals(0, stuetze.basis().stueckzahl().compareTo(new java.math.BigDecimal("2")));
+        assertEquals(new java.math.BigDecimal("2835.7"), stuetze.basis().einzelLaengeMm());
+        assertEquals("Stütze", stuetze.bezeichnung());
+        assertEquals("verzinkt", stuetze.oberflaeche());
+        assertEquals("Anschnitt Steg", stuetze.schnittForm());
+        assertEquals(null, stuetze.winkelLinks());
+        assertEquals("0°", stuetze.winkelRechts());
+        assertEquals(List.of(88L), preview.zeilen().get(1).bilder().stream().map(HiCadImportDto.BildVorschlag::dateiId).toList());
+
+        var traeger = preview.zeilen().get(2).vorschlag();
+        assertEquals("HEB 220", traeger.abmessung());
+        assertEquals("S235JR", traeger.werkstoff());
+        assertEquals("Anschnitt Flansch", traeger.schnittForm());
+        assertEquals("45°", traeger.winkelLinks());
+        assertEquals("45°", traeger.winkelRechts());
+
+        preview.zeilen().forEach(zeile -> {
+            assertEquals(List.of(), zeile.artikelKandidaten());
+            org.junit.jupiter.api.Assertions.assertTrue(zeile.hinweise().stream().noneMatch(h -> h.contains("Katalogartikel")));
+            org.junit.jupiter.api.Assertions.assertFalse(zeile.rohtext().contains("Mustermann"));
+        });
+        verify(files, times(1)).speichereImportBild(anyString(), eq("image/png"), any());
+        verify(articles, never()).findHiCadByArtikelnummer(anyString());
+    }
+
+    @Test
+    void manuelleZuordnungBeziehtSichAufGefundeneHiCadUeberschrift() throws Exception {
+        HiCadImportRepository imports = mock(HiCadImportRepository.class);
+        when(imports.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        HiCadImportService service = new HiCadImportService(imports, mock(EinkaufBedarfService.class),
+                mock(EinkaufDateiService.class));
+
+        var preview = service.vorschau(17L, new MockMultipartFile("file", "stueckliste.xlsx", "application/octet-stream",
+                hiCadWorkbook(null)), new HiCadImportService.SpaltenMapping(Map.of(
+                        "menge", 1, "abmessung", 2, "einzelLaengeMm", 3, "werkstoff", 6)), 4L);
+
+        assertEquals(3, preview.zeilen().size());
+        assertEquals("HEB 220", preview.zeilen().get(2).vorschlag().abmessung());
+        assertEquals(0, preview.zeilen().get(1).vorschlag().basis().menge().compareTo(new java.math.BigDecimal("2")));
+        org.junit.jupiter.api.Assertions.assertTrue(preview.zeilen().stream().allMatch(zeile -> zeile.hinweise().isEmpty()));
+    }
+
+    /** Dummy-HiCAD-Mappe: Blatt „Einstellungen“ zuerst, Positionsliste im Blatt „Sägeliste“ ab Zeile 8. */
+    private static byte[] hiCadWorkbook(byte[] anschnittBild) throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            var einstellungen = workbook.createSheet("Einstellungen");
+            einstellungen.createRow(0).createCell(0).setCellValue("Sprache");
+            einstellungen.getRow(0).createCell(1).setCellValue("Deutsch");
+            var sheet = workbook.createSheet("Sägeliste");
+            var titel = sheet.createRow(0);
+            titel.createCell(0).setCellValue("Sägeliste");
+            titel.createCell(24).setCellValue("Seite 1"); // breite Titelzeile: Spaltenlimit gilt nur für die Überschrift
+            String[][] kopf = {
+                    {"Zeichnungsnr.", "", "Z-4711", "Kunde", "Max Mustermann"},
+                    {"Auftragsnr.", "", "A-0001", "Ersteller", "Max Mustermann"},
+                    {"Auftragstext", "", "Dummy-Treppe", "Erstellt am", "01.01.2026"},
+                    {"Benennung", "", ""}};
+            for (int i = 0; i < kopf.length; i++) {
+                var row = sheet.createRow(2 + i);
+                for (int c = 0; c < kopf[i].length; c++) row.createCell(c).setCellValue(kopf[i][c]);
+            }
+            String[] header = {"Pos.", "Anzahl", "Bezeichnung", "Länge (mm)", "Anschnitt (Steg)", "Anschnitt (Flansch)",
+                    "Material", "Benennung", "Beschichtung", "Gew. (kg)", "Ges.gew."};
+            var headerRow = sheet.createRow(7);
+            for (int i = 0; i < header.length; i++) headerRow.createCell(i).setCellValue(header[i]);
+            var rohr = sheet.createRow(8);
+            rohr.createCell(0).setCellValue(1100);
+            rohr.createCell(1).setCellValue(1);
+            rohr.createCell(2).setCellValue("Rohr 76.1x4");
+            rohr.createCell(3).setCellValue(763.611477633852);
+            rohr.createCell(4).setCellValue("");
+            rohr.createCell(5).setCellValue("");
+            rohr.createCell(6).setCellValue("S235JRH");
+            rohr.createCell(9).setCellValue(5.43);
+            rohr.createCell(10).setCellValue(5.43);
+            rohr.createCell(11).setCellValue(0);
+            var stuetze = sheet.createRow(9);
+            String[] stuetzeWerte = {"1101", "2", "Rohr 76.1x4", "2835.65482582848", "                   0°", " ",
+                    "S235JRH", "Stütze", "verzinkt", "20.17", "40.34"};
+            for (int i = 0; i < stuetzeWerte.length; i++) stuetze.createCell(i).setCellValue(stuetzeWerte[i]);
+            var traeger = sheet.createRow(10);
+            traeger.createCell(0).setCellValue(1200);
+            traeger.createCell(1).setCellValue(1);
+            traeger.createCell(2).setCellValue("HEB 220");
+            traeger.createCell(3).setCellValue(5076.472342012004);
+            traeger.createCell(5).setCellValue("45°                    45°");
+            traeger.createCell(6).setCellValue("S235JR");
+            traeger.createCell(9).setCellValue(347.38);
+            var summe = sheet.createRow(11);
+            summe.createCell(1).setCellFormula("SUBTOTAL(9,B9:B11)");
+            summe.createCell(10).setCellFormula("SUBTOTAL(9,K9:K11)");
+            if (anschnittBild != null) {
+                int picture = workbook.addPicture(anschnittBild, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG);
+                var drawing = sheet.createDrawingPatriarch();
+                var logo = workbook.getCreationHelper().createClientAnchor();
+                logo.setRow1(2);
+                logo.setCol1(8);
+                drawing.createPicture(logo, picture);
+                var anschnitt = workbook.getCreationHelper().createClientAnchor();
+                anschnitt.setRow1(9);
+                anschnitt.setCol1(4);
+                drawing.createPicture(anschnitt, picture);
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        }
+    }
+
     private static byte[] workbook(String quantity) throws Exception {
         return workbook(quantity, "S355");
     }

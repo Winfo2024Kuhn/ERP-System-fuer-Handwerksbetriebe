@@ -17,9 +17,26 @@ const zahl = (wert: string) => {
 };
 const dateiTyp = (datei: File) => /\.(xls|xlsx)$/i.test(datei.name);
 
-export function HiCadImportDialog({ schließen, übernommen }: { schließen: () => void; übernommen: () => void }) {
+/** Liest die konkrete Server-Meldung (JSON `message`) und fällt sonst auf eine verständliche deutsche Meldung zurück. */
+const fehlermeldungAus = async (antwort: Response, rückfall: string) => {
+  try {
+    const inhalt = await antwort.json() as { message?: unknown };
+    if (typeof inhalt?.message === 'string' && inhalt.message.trim()) return inhalt.message.trim();
+  } catch { /* Antwort ist leer oder kein JSON */ }
+  return `${rückfall} (HTTP ${antwort.status}).`;
+};
+
+interface HiCadImportDialogProps {
+  schließen: () => void;
+  übernommen: () => void;
+  /** Vorgegebenes Projekt, z. B. aus dem Projektbedarf. Dann entfällt die Projektauswahl. */
+  projekt?: StammdatenWahl;
+}
+
+export function HiCadImportDialog({ schließen, übernommen, projekt: vorgegebenesProjekt }: HiCadImportDialogProps) {
   const meldungen = useToast();
-  const [projekt, setzeProjekt] = useState<StammdatenWahl | null>(null);
+  const [gewähltesProjekt, setzeProjekt] = useState<StammdatenWahl | null>(null);
+  const projekt = vorgegebenesProjekt ?? gewähltesProjekt;
   const [datei, setzeDatei] = useState<File | null>(null);
   const [spalten, setzeSpalten] = useState<Record<string, string>>({});
   const [spaltenZuordnungOffen, setzeSpaltenZuordnungOffen] = useState(false);
@@ -49,7 +66,7 @@ export function HiCadImportDialog({ schließen, übernommen }: { schließen: () 
     setzeLaden(true); setzeFehler('');
     try {
       const antwort = await fetch(`/api/einkauf/hicad/vorschau?projektId=${projekt.id}`, { method: 'POST', body: anfrageinhalt });
-      if (!antwort.ok) throw new Error(`HiCAD-Vorschau konnte nicht geladen werden (HTTP ${antwort.status}).`);
+      if (!antwort.ok) throw new Error(await fehlermeldungAus(antwort, 'HiCAD-Vorschau konnte nicht geladen werden'));
       const ergebnis = await antwort.json() as HiCadVorschau;
       const zustand = await einkaufApi.get<HiCadImportFortschritt>(`/api/einkauf/hicad/${ergebnis.id}`);
       setzeVorschau(ergebnis); setzeFortschritt(zustand);
@@ -65,7 +82,7 @@ export function HiCadImportDialog({ schließen, übernommen }: { schließen: () 
     try {
       const formulardaten = new FormData(); formulardaten.append('datei', datei);
       const antwort = await fetch(`/api/einkauf/hicad/${vorschau.id}/zeilen/${zeilennummer}/anlagen`, { method: 'POST', body: formulardaten });
-      if (!antwort.ok) throw new Error(`Die Anlage konnte nicht ergänzt werden (HTTP ${antwort.status}).`);
+      if (!antwort.ok) throw new Error(await fehlermeldungAus(antwort, 'Die Anlage konnte nicht ergänzt werden'));
       const anlage = await antwort.json() as HiCadVorschau['zeilen'][number]['bilder'][number];
       setzeVorschau(aktuell => aktuell ? { ...aktuell, zeilen: aktuell.zeilen.map(zeile => zeile.zeilennummer === zeilennummer ? { ...zeile, bilder: [...zeile.bilder.filter(bild => bild.dateiId !== anlage.dateiId), anlage] } : zeile) } : null);
       meldungen.success('Anlage ergänzt. Bitte prüfen und vor der Übernahme freigeben.');
@@ -105,7 +122,7 @@ export function HiCadImportDialog({ schließen, übernommen }: { schließen: () 
   return <Dialog className="w-[min(64rem,calc(100vw-2rem))]" open onOpenChange={offen => { if (!offen && !laden) schließen(); }}><DialogContent className="overflow-hidden">
     <DialogHeader><DialogTitle>HiCAD-Import prüfen</DialogTitle></DialogHeader>
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
-      <StammdatenAuswahl art="Projekt" value={projekt} onChange={auswahl => { if (projekt?.id !== auswahl?.id) { setzeProjekt(auswahl); setzeVorschau(null); setzeFortschritt(null); setzeAuswahl({}); setzeMengen({}); setzeArtikel({}); setzeBilder({}); setzeDuplikatBestätigt(false); } }} />
+      {vorgegebenesProjekt ? <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-medium text-slate-900">Projekt:</span> {vorgegebenesProjekt.name}</p> : <StammdatenAuswahl art="Projekt" value={projekt} onChange={auswahl => { if (projekt?.id !== auswahl?.id) { setzeProjekt(auswahl); setzeVorschau(null); setzeFortschritt(null); setzeAuswahl({}); setzeMengen({}); setzeArtikel({}); setzeBilder({}); setzeDuplikatBestätigt(false); } }} />}
       <div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-sm font-medium">HiCAD-Exceldatei (.xls oder .xlsx)<input className="hidden" aria-label="HiCAD-Exceldatei" type="file" accept=".xls,.xlsx" onChange={ereignis => dateiWählen(ereignis.target.files?.[0] ?? null)} /><span className="block"><Button type="button" variant="outline" onClick={ereignis => { const eingabe = ereignis.currentTarget.parentElement?.previousElementSibling; if (eingabe instanceof HTMLInputElement) eingabe.click(); }}>Datei auswählen</Button> <span className="text-slate-600">{datei?.name ?? 'Keine Datei ausgewählt'}{datei ? ` · ${(datei.size / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 2 })} MiB` : ''}</span></span></label>
         <Button disabled={laden || !datei || !projekt} onClick={() => void vorschauLaden()}>{laden ? 'Vorschau wird geladen …' : 'Vorschau laden'}</Button></div>
       <section className="rounded-lg border border-slate-200 p-3"><Button type="button" variant="ghost" aria-expanded={spaltenZuordnungOffen} onClick={() => setzeSpaltenZuordnungOffen(wert => !wert)}>Spalten manuell zuordnen</Button>{spaltenZuordnungOffen && <><p className="mt-2 text-sm text-slate-600">Tragen Sie die Spaltennummer aus der Tabellenkopfzeile ein. Ohne Angaben erkennt HiCAD die üblichen deutschen Spaltenüberschriften selbst. Bei manueller Zuordnung müssen Sie alle benötigten Spalten einschließlich Menge angeben.</p><div className="mt-3 grid gap-3 sm:grid-cols-3">{[['interneReferenz','Interne Nummer'],['zeichnungsnummer','Zeichnungsnummer'],['zeichnungsrevision','Zeichnungsrevision'],['bezeichnung','Bezeichnung'],['werkstoff','Werkstoff'],['abmessung','Abmessung'],['menge','Menge'],['einheit','Einheit'],['stueckzahl','Stückzahl'],['einzelLaengeMm','Einzellänge mm'],['winkelLinks','Linker Winkel'],['winkelRechts','Rechter Winkel']].map(([feld, titel]) => <label key={feld} className="space-y-1 text-sm">{titel}<Input aria-label={`Spalte ${titel}`} inputMode="numeric" value={spalten[feld] ?? ''} onChange={ereignis => setzeSpalten(aktuell => ({ ...aktuell, [feld]: ereignis.target.value.replace(/[^0-9]/g, '') }))} placeholder="z. B. 1" /></label>)}</div></>}</section>

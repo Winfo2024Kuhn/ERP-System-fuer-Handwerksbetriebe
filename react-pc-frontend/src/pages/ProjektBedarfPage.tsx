@@ -669,7 +669,7 @@ export default function ProjektBedarfPage() {
             )}
 
             {/* Modals */}
-            {nutztEchtesBackend && hicadOffen && <HiCadImportDialog schließen={() => setHicadOffen(false)} übernommen={() => { setHicadOffen(false); void ladeZeilen(); }} />}
+            {nutztEchtesBackend && hicadOffen && <HiCadImportDialog projekt={projekt ? { id: projekt.id, name: projekt.bauvorhaben ?? `Projekt #${projekt.id}` } : undefined} schließen={() => setHicadOffen(false)} übernommen={() => { setHicadOffen(false); void ladeZeilen(); }} />}
             {!nutztEchtesBackend && projekt && (
                 <HicadImportModal
                     isOpen={hicadOffen}

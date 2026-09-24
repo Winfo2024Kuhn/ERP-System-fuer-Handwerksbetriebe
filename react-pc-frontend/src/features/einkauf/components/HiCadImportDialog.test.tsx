@@ -95,3 +95,43 @@ it('ergänzt eine Zeichnungsanlage und übernimmt sie erst nach ausdrücklicher 
   const übernahme = aufrufe.find(aufruf => aufruf.pfad.endsWith('/uebernehmen'));
   expect(JSON.parse(String(übernahme?.inhalt)).zeilen[0].bestaetigteBildDateiIds).toEqual([81]);
 });
+
+it('übernimmt ein vorgegebenes Projekt ohne Projektauswahl und schickt dessen Kennung mit', async () => {
+  const pfade: string[] = [];
+  global.fetch = vi.fn(async (eingabe: RequestInfo | URL) => {
+    const pfad = String(eingabe); pfade.push(pfad);
+    if (pfad.includes('/vorschau?')) return { ok: true, json: async () => ({ id: 3, dateiSchonImportiert: false, zeilen: [{ zeilennummer: 1, rohtext: 'Profil;10', vorschlag: { art: 'ARTIKEL', bezeichnung: 'Profil', basis: { menge: 10, einheit: 'STUECK' }, dokumente: [], anlageVersionIds: [] }, artikelKandidaten: [], bereitsUebernommen: false, hinweise: [], bilder: [] }] }) } as Response;
+    if (pfad.endsWith('/hicad/3')) return { ok: true, json: async () => ({ id: 3, version: 1, zeilen: [{ zeilennummer: 1, verbleibendeMenge: 10 }] }) } as Response;
+    return { ok: true, json: async () => [] } as Response;
+  });
+  render(<ToastProvider><HiCadImportDialog projekt={{ id: 42, name: 'Neubau Max Mustermann' }} schließen={vi.fn()} übernommen={vi.fn()} /></ToastProvider>);
+  expect(screen.getByText('Neubau Max Mustermann')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Projekt auswählen' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('HiCAD-Exceldatei'), { target: { files: [new File(['Profil'], 'material.xlsx')] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau laden' }));
+  await screen.findByRole('heading', { name: /Zeile 1/ });
+  expect(pfade.some(pfad => pfad.includes('/vorschau?projektId=42'))).toBe(true);
+});
+
+it('verlangt ohne vorgegebenes Projekt weiterhin eine Projektauswahl', () => {
+  render(<ToastProvider><HiCadImportDialog schließen={vi.fn()} übernommen={vi.fn()} /></ToastProvider>);
+  expect(screen.getByRole('button', { name: 'Projekt auswählen' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('HiCAD-Exceldatei'), { target: { files: [new File(['Profil'], 'material.xlsx')] } });
+  expect(screen.getByRole('button', { name: 'Vorschau laden' })).toBeDisabled();
+});
+
+it('zeigt die konkrete Servermeldung, wenn die Vorschau fehlschlägt', async () => {
+  global.fetch = vi.fn(async () => ({ ok: false, status: 400, json: async () => ({ message: 'In der Datei fehlt die Spalte Menge.' }) }) as Response);
+  render(<ToastProvider><HiCadImportDialog projekt={{ id: 42, name: 'Neubau Max Mustermann' }} schließen={vi.fn()} übernommen={vi.fn()} /></ToastProvider>);
+  fireEvent.change(screen.getByLabelText('HiCAD-Exceldatei'), { target: { files: [new File(['Profil'], 'material.xlsx')] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau laden' }));
+  await waitFor(() => expect(screen.getAllByText('In der Datei fehlt die Spalte Menge.').length).toBeGreaterThanOrEqual(2));
+});
+
+it('zeigt eine verständliche Meldung, wenn die Fehlerantwort kein JSON ist', async () => {
+  global.fetch = vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new SyntaxError('kein JSON'); } }) as unknown as Response);
+  render(<ToastProvider><HiCadImportDialog projekt={{ id: 42, name: 'Neubau Max Mustermann' }} schließen={vi.fn()} übernommen={vi.fn()} /></ToastProvider>);
+  fireEvent.change(screen.getByLabelText('HiCAD-Exceldatei'), { target: { files: [new File(['Profil'], 'material.xlsx')] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau laden' }));
+  await waitFor(() => expect(screen.getAllByText('HiCAD-Vorschau konnte nicht geladen werden (HTTP 500).').length).toBeGreaterThanOrEqual(2));
+});

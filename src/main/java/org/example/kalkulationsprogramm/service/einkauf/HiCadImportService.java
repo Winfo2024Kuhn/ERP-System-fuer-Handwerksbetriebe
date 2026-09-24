@@ -5,12 +5,16 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,6 +30,7 @@ import org.apache.poi.hssf.record.SupBookRecord;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFDrawing;
@@ -71,6 +76,15 @@ public class HiCadImportService {
     private static final int MAX_ROWS = 10_000;
     private static final int MAX_COLUMNS = 20;
     private static final int MAX_CELL_TEXT = 4_000;
+    private static final int MAX_HEADER_SEARCH_ROWS = 30;
+    private static final Set<String> SAEGELISTE_BLATTNAMEN = Set.of("sägeliste", "saegeliste");
+    private static final Set<String> ZEICHNUNGSNUMMER_LABELS = Set.of("zeichnungsnr.", "zeichnungsnr", "zeichnungsnummer");
+    private static final Set<String> KOPFBLOCK_LABELS = Set.of("titel", "zeichnungsnr.", "zeichnungsnr", "zeichnungsnummer",
+            "kunde", "auftragsnr.", "auftragsnr", "auftragsnummer", "auftragstext", "ersteller", "erstelltam", "benennung");
+    /** Winkelangabe wie „45°“ oder „22,5°“; beschränkte, possessive Quantifizierer (ReDoS-sicher). */
+    private static final Pattern WINKEL = Pattern.compile("\\d{1,3}+(?:[.,]\\d{1,2}+)?+°?+");
+    /** Spaltenüberschrift (klein, ohne Leerzeichen) → logisches Feld. */
+    private static final Map<String, String> HEADER_ALIASES = headerAliases();
     private final HiCadImportRepository imports;
     private final EinkaufBedarfService bedarfe;
     private final EinkaufDateiService dateien;
@@ -118,8 +132,8 @@ public class HiCadImportService {
             List<String> hints = new ArrayList<>(row.hints());
             if (row.snapshot().werkstoff() != null && row.snapshot().werkstoff().matches("(?i).*S235.*S355.*|.*S355.*S235.*"))
                 hints.add("Werkstoffgüte ist uneindeutig und muss geprüft werden.");
-            List<Long> candidates = artikelKandidaten(row.snapshot());
-            if (row.snapshot().interneReferenz() != null && !row.snapshot().interneReferenz().isBlank()
+            List<Long> candidates = parsed.katalogAbgleich() ? artikelKandidaten(row.snapshot()) : List.of();
+            if (parsed.katalogAbgleich() && row.snapshot().interneReferenz() != null && !row.snapshot().interneReferenz().isBlank()
                     && candidates.isEmpty()) hints.add("Kein technisch eindeutiger Katalogartikel gefunden; bitte Position prüfen.");
             pendingRows.add(new PendingPreview(row, candidates, List.copyOf(hints)));
         }
@@ -256,82 +270,185 @@ public class HiCadImportService {
         ZipSecureFile.setMaxFileCount(2000);
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
             if (workbook.getNumberOfSheets() == 0) throw new IllegalArgumentException("Die Excel-Datei enthält kein Tabellenblatt.");
-            var sheet = workbook.getSheetAt(0);
+            int sheetIndex = tabellenblattIndex(workbook);
+            Sheet sheet = workbook.getSheetAt(sheetIndex);
             if (sheet.getLastRowNum() > MAX_ROWS) throw new IllegalArgumentException("Die Tabelle enthält mehr als 10.000 Zeilen.");
-            Row header = sheet.getRow(sheet.getFirstRowNum());
-            if (header == null || header.getLastCellNum() > MAX_COLUMNS) throw new IllegalArgumentException("Die Tabelle darf höchstens 20 Spalten enthalten.");
-            Map<String, Integer> columns = requested == null ? detectMapping(header) : validateMapping(requested);
-            if (!columns.containsKey("menge")) throw new IllegalArgumentException("Bitte ordnen Sie die Mengenspalte zu.");
-            List<ParsedRow> rows = new ArrayList<>();
             DataFormatter formatter = new DataFormatter(Locale.GERMANY);
-            int firstDataRow = sheet.getFirstRowNum() + 1;
-            for (int number = firstDataRow; number <= sheet.getLastRowNum(); number++) {
+            Row header = findeUeberschriftenzeile(sheet, formatter);
+            if (header == null || header.getLastCellNum() > MAX_COLUMNS) throw new IllegalArgumentException("Die Tabelle darf höchstens 20 Spalten enthalten.");
+            Map<String, Integer> detected = detectMapping(header, formatter);
+            Map<String, Integer> columns = requested == null ? detected : mitPositionsspalte(validateMapping(requested), detected);
+            if (!columns.containsKey("menge")) throw new IllegalArgumentException("Bitte ordnen Sie die Mengenspalte zu.");
+            boolean positionsliste = columns.containsKey("position");
+            String kopfZeichnungsnummer = columns.containsKey("zeichnungsnummer") ? null
+                    : kopfwert(sheet, header.getRowNum(), formatter, ZEICHNUNGSNUMMER_LABELS);
+            List<ParsedRow> rows = new ArrayList<>();
+            for (int number = header.getRowNum() + 1; number <= sheet.getLastRowNum(); number++) {
                 Row row = sheet.getRow(number);
                 if (row == null || empty(row)) continue;
+                // HiCAD-Positionslisten enden mit einer Summenzeile ohne Positionsnummer (teils mit Formeln).
+                if (positionsliste && ohnePositionOderBezeichnung(row, columns)) continue;
                 if (row.getLastCellNum() > MAX_COLUMNS) throw new IllegalArgumentException("Die Tabelle darf höchstens 20 Spalten enthalten.");
                 String raw = raw(row, formatter);
                 if (raw.length() > MAX_CELL_TEXT) throw new IllegalArgumentException("Eine Zeile enthält zu viele Zeichen.");
-                try { rows.add(new ParsedRow(number + 1, raw, toSnapshot(row, columns, formatter), List.of(), List.of())); }
+                try { rows.add(new ParsedRow(number + 1, raw, toSnapshot(row, columns, formatter, kopfZeichnungsnummer), List.of(), List.of())); }
                 catch (IllegalArgumentException error) { rows.add(new ParsedRow(number + 1, raw, emptySnapshot(), List.of(error.getMessage()), List.of())); }
             }
-            attachEmbeddedPictures(workbook, rows);
-            return new Parsed(rows);
+            attachEmbeddedPictures(workbook, sheetIndex, rows);
+            return new Parsed(rows, !positionsliste || columns.containsKey("interneReferenz"));
         } catch (IOException e) {
             throw new IllegalArgumentException("Die Excel-Datei ist beschädigt oder das Format wird nicht unterstützt.", e);
         }
     }
 
-    private static Map<String, Integer> detectMapping(Row header) {
+    /** HiCAD-Stahlbau-Exporte haben viele Blätter; die Positionsliste steht im Blatt „Sägeliste“. */
+    private static int tabellenblattIndex(Workbook workbook) {
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            String name = Normalizer.normalize(workbook.getSheetName(i), Normalizer.Form.NFC).trim().toLowerCase(Locale.ROOT);
+            if (SAEGELISTE_BLATTNAMEN.contains(name)) return i;
+        }
+        return 0;
+    }
+
+    /**
+     * Sucht in den ersten Zeilen die Überschriftenzeile: zuerst eine Zeile mit Mengenspalte und mindestens
+     * einer weiteren bekannten Spalte, sonst eine Zeile mit mindestens drei bekannten Spalten, sonst Zeile 1.
+     */
+    private static Row findeUeberschriftenzeile(Sheet sheet, DataFormatter formatter) {
+        int first = sheet.getFirstRowNum();
+        if (first < 0) return null;
+        int last = Math.min(sheet.getLastRowNum(), first + MAX_HEADER_SEARCH_ROWS - 1);
+        Row ohneMenge = null;
+        for (int number = first; number <= last; number++) {
+            Row row = sheet.getRow(number);
+            if (row == null || row.getLastCellNum() > MAX_COLUMNS) continue;
+            Map<String, Integer> mapping = detectMapping(row, formatter);
+            int bekannteSpalten = new java.util.HashSet<>(mapping.values()).size();
+            if (mapping.containsKey("menge") && bekannteSpalten >= 2) return row;
+            if (ohneMenge == null && bekannteSpalten >= 3) ohneMenge = row;
+        }
+        return ohneMenge != null ? ohneMenge : sheet.getRow(first);
+    }
+
+    private static Map<String, Integer> detectMapping(Row header, DataFormatter formatter) {
         Map<String, Integer> found = new java.util.HashMap<>();
         for (Cell cell : header) {
-            String normalized = cellText(cell, new DataFormatter(Locale.GERMANY)).toLowerCase(Locale.ROOT).trim();
-            String key = switch (normalized) {
-                case "interne nummer", "interne artikelnummer", "artikelnummer", "teilnummer", "nummer" -> "interneReferenz";
-                case "zeichnung", "zeichnungsnummer", "drawing number" -> "zeichnungsnummer";
-                case "revision", "zeichnungsrevision", "rev" -> "zeichnungsrevision";
-                case "bezeichnung", "beschreibung", "name", "description" -> "bezeichnung";
-                case "werkstoff", "material", "güte", "guete" -> "werkstoff";
-                case "abmessung", "profil", "dimension" -> "abmessung";
-                case "menge", "quantity", "qty" -> "menge";
-                case "einheit", "unit" -> "einheit";
-                case "stückzahl", "stueckzahl", "anzahl", "pieces" -> "stueckzahl";
-                case "einzellänge mm", "einzellaenge mm", "länge mm", "laenge mm" -> "einzelLaengeMm";
-                case "winkel links", "left angle" -> "winkelLinks";
-                case "winkel rechts", "right angle" -> "winkelRechts";
-                default -> null;
-            };
+            if (cell.getColumnIndex() >= MAX_COLUMNS) continue;
+            String key = HEADER_ALIASES.get(normalizeHeader(headerText(cell, formatter)));
             if (key != null) found.putIfAbsent(key, cell.getColumnIndex());
         }
-        return Map.copyOf(found);
+        return withQuantityFallback(found);
     }
 
     private static Map<String, Integer> validateMapping(SpaltenMapping mapping) {
         if (mapping == null || mapping.spalten() == null) throw new IllegalArgumentException("Das Spaltenmapping fehlt.");
         if (mapping.spalten().values().stream().anyMatch(index -> index == null || index < 0 || index >= MAX_COLUMNS))
             throw new IllegalArgumentException("Eine Spaltenzuordnung ist ungültig.");
-        return Map.copyOf(mapping.spalten());
+        return withQuantityFallback(new java.util.HashMap<>(mapping.spalten()));
     }
 
-    private static PositionSnapshot toSnapshot(Row row, Map<String, Integer> map, DataFormatter formatter) {
+    /** Bei Stücklisten ohne eigene Mengenspalte (HiCAD: „Anzahl“) ist die Stückzahl die Menge. */
+    private static Map<String, Integer> withQuantityFallback(Map<String, Integer> mapping) {
+        if (!mapping.containsKey("menge") && mapping.containsKey("stueckzahl")) mapping.put("menge", mapping.get("stueckzahl"));
+        return Map.copyOf(mapping);
+    }
+
+    /** Die manuelle Zuordnung kennt keine Pos.-Spalte; sie wird aus der erkannten Überschrift ergänzt. */
+    private static Map<String, Integer> mitPositionsspalte(Map<String, Integer> requested, Map<String, Integer> detected) {
+        if (requested.containsKey("position") || !detected.containsKey("position")) return requested;
+        Map<String, Integer> merged = new java.util.HashMap<>(requested);
+        merged.put("position", detected.get("position"));
+        return Map.copyOf(merged);
+    }
+
+    private static boolean ohnePositionOderBezeichnung(Row row, Map<String, Integer> columns) {
+        if (blankCell(row, columns.get("position"))) return true;
+        return blankCell(row, columns.get("bezeichnung")) && blankCell(row, columns.get("abmessung"))
+                && blankCell(row, columns.get("benennung"));
+    }
+
+    /** Liest einen Wert aus dem Kopfblock oberhalb der Überschriftenzeile (z. B. „Zeichnungsnr.“). */
+    private static String kopfwert(Sheet sheet, int headerRow, DataFormatter formatter, java.util.Set<String> labels) {
+        for (int number = Math.max(0, sheet.getFirstRowNum()); number < headerRow; number++) {
+            Row row = sheet.getRow(number);
+            if (row == null) continue;
+            int last = Math.min(MAX_COLUMNS, Math.max(0, row.getLastCellNum()));
+            for (int column = 0; column < last; column++) {
+                if (!labels.contains(normalizeHeader(headerText(row.getCell(column), formatter)))) continue;
+                for (int candidate = column + 1; candidate < last && candidate <= column + 2; candidate++) {
+                    String text = headerText(row.getCell(candidate), formatter);
+                    if (KOPFBLOCK_LABELS.contains(normalizeHeader(text))) break;
+                    if (!text.isBlank()) return text.length() > 128 ? null : text;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static PositionSnapshot toSnapshot(Row row, Map<String, Integer> map, DataFormatter formatter,
+            String kopfZeichnungsnummer) {
+        boolean positionsliste = map.containsKey("position");
         String quantityRaw = value(row, map, "menge", formatter);
         BigDecimal quantity = parseDecimal(quantityRaw, "Menge");
         String unitRaw = value(row, map, "einheit", formatter);
         Einheit unit = parseUnit(unitRaw);
         BigDecimal pieces = decimalOrNull(value(row, map, "stueckzahl", formatter));
-        BigDecimal length = decimalOrNull(value(row, map, "einzelLaengeMm", formatter));
+        BigDecimal length = rundeLaenge(decimalOrNull(value(row, map, "einzelLaengeMm", formatter)));
         if (unit == Einheit.METER && pieces != null && length != null) quantity = pieces.multiply(length).divide(new BigDecimal("1000"), 6, java.math.RoundingMode.HALF_UP);
-        Mengenbasis basis = new Mengenbasis(quantity, unit, pieces, length, null, null);
-        return new PositionSnapshot(Positionsart.ZEICHNUNGSTEIL, null, value(row, map, "interneReferenz", formatter),
-                value(row, map, "zeichnungsnummer", formatter), defaultValue(value(row, map, "zeichnungsrevision", formatter), "Ungeprüft"),
-                defaultValue(value(row, map, "bezeichnung", formatter), "Importierte HiCAD-Position"),
-                value(row, map, "werkstoff", formatter), value(row, map, "abmessung", formatter), basis,
-                null, value(row, map, "winkelLinks", formatter), value(row, map, "winkelRechts", formatter),
-                null, null, List.of(), List.of());
+        BigDecimal kgJeMeter = kgJeMeter(decimalOrNull(value(row, map, "gewichtKg", formatter)), length);
+        Mengenbasis basis = new Mengenbasis(quantity, unit, pieces, length, kgJeMeter, kgJeMeter == null ? null : "HiCAD-Stückgewicht");
+        // In HiCAD-Positionslisten steht in „Bezeichnung“ das Profil (z. B. „HEB 220“), der Teilname in „Benennung“.
+        String abmessung = value(row, map, "abmessung", formatter);
+        if (abmessung == null && positionsliste) abmessung = value(row, map, "bezeichnung", formatter);
+        String bezeichnung = firstNonBlank(value(row, map, "benennung", formatter), value(row, map, "bezeichnung", formatter));
+        Anschnitt steg = anschnitt(untrimmedValue(row, map, "anschnittSteg", formatter));
+        Anschnitt flansch = anschnitt(untrimmedValue(row, map, "anschnittFlansch", formatter));
+        String schnittForm = steg.vorhanden() && flansch.vorhanden() ? "Anschnitt Steg und Flansch"
+                : steg.vorhanden() ? "Anschnitt Steg" : flansch.vorhanden() ? "Anschnitt Flansch" : null;
+        return new PositionSnapshot(Positionsart.ZEICHNUNGSTEIL, null,
+                firstNonBlank(value(row, map, "interneReferenz", formatter), value(row, map, "position", formatter)),
+                firstNonBlank(value(row, map, "zeichnungsnummer", formatter), kopfZeichnungsnummer),
+                defaultValue(value(row, map, "zeichnungsrevision", formatter), "Ungeprüft"),
+                defaultValue(bezeichnung, "Importierte HiCAD-Position"),
+                value(row, map, "werkstoff", formatter), abmessung, basis, schnittForm,
+                firstNonBlank(value(row, map, "winkelLinks", formatter), steg.links(), flansch.links()),
+                firstNonBlank(value(row, map, "winkelRechts", formatter), steg.rechts(), flansch.rechts()),
+                null, value(row, map, "oberflaeche", formatter), List.of(), List.of());
     }
 
-    private void attachEmbeddedPictures(Workbook workbook, List<ParsedRow> rows) {
+    /** HiCAD liefert Längen mit bis zu 12 Nachkommastellen; für den Einkauf reicht eine Nachkommastelle. */
+    private static BigDecimal rundeLaenge(BigDecimal length) {
+        return length == null || length.scale() <= 1 ? length : length.setScale(1, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal kgJeMeter(BigDecimal stueckgewichtKg, BigDecimal laengeMm) {
+        if (stueckgewichtKg == null || laengeMm == null || stueckgewichtKg.signum() <= 0 || laengeMm.signum() <= 0) return null;
+        BigDecimal result = stueckgewichtKg.multiply(new BigDecimal("1000")).divide(laengeMm, 6, java.math.RoundingMode.HALF_UP);
+        return result.signum() > 0 ? result : null;
+    }
+
+    /**
+     * HiCAD schreibt Anschnittwinkel links- bzw. rechtsbündig in eine Zelle („45°      45°“, „      45°“).
+     * Zwei Winkel = links und rechts; ein einzelner Winkel wird nach seiner Lage in der Zelle zugeordnet.
+     */
+    private static Anschnitt anschnitt(String text) {
+        if (text == null || text.isBlank()) return new Anschnitt(null, null);
+        Matcher matcher = WINKEL.matcher(text);
+        List<String> winkel = new ArrayList<>();
+        int start = -1;
+        int end = -1;
+        while (winkel.size() < 2 && matcher.find()) {
+            if (winkel.isEmpty()) { start = matcher.start(); end = matcher.end(); }
+            winkel.add(matcher.group());
+        }
+        if (winkel.isEmpty()) return new Anschnitt(null, null);
+        if (winkel.size() == 2) return new Anschnitt(winkel.get(0), winkel.get(1));
+        return start <= text.length() - end ? new Anschnitt(winkel.get(0), null) : new Anschnitt(null, winkel.get(0));
+    }
+
+    private void attachEmbeddedPictures(Workbook workbook, int sheetIndex, List<ParsedRow> rows) {
         if (!(workbook instanceof XSSFWorkbook xssf) || rows.isEmpty()) return;
-        Drawing<?> drawing = xssf.getSheetAt(0).getDrawingPatriarch();
+        Drawing<?> drawing = xssf.getSheetAt(sheetIndex).getDrawingPatriarch();
         if (drawing == null) return;
         for (Shape shape : drawing) if (shape instanceof XSSFPicture picture && picture.getClientAnchor() != null) {
             int row = picture.getClientAnchor().getRow1() + 1;
@@ -531,6 +648,62 @@ public class HiCadImportService {
         try { return json.readerForListOf(StoredTransferResult.class).readValue(value); }
         catch (IOException e) { throw new IllegalStateException("Die Idempotenzhistorie des Imports ist beschädigt.", e); }
     }
+    private static Map<String, String> headerAliases() {
+        Map<String, String> aliases = new java.util.HashMap<>();
+        alias(aliases, "interneReferenz", "internenummer", "interneartikelnummer", "artikelnummer", "teilnummer", "nummer");
+        alias(aliases, "position", "pos", "pos.", "position", "posnr", "posnr.", "positionsnummer");
+        alias(aliases, "zeichnungsnummer", "zeichnung", "zeichnungsnummer", "zeichnungsnr", "zeichnungsnr.", "drawingnumber");
+        alias(aliases, "zeichnungsrevision", "revision", "zeichnungsrevision", "rev");
+        alias(aliases, "bezeichnung", "bezeichnung", "beschreibung", "name", "description");
+        alias(aliases, "benennung", "benennung");
+        alias(aliases, "werkstoff", "werkstoff", "material", "güte", "guete");
+        alias(aliases, "abmessung", "abmessung", "profil", "dimension");
+        alias(aliases, "menge", "menge", "quantity", "qty");
+        alias(aliases, "einheit", "einheit", "unit");
+        alias(aliases, "stueckzahl", "stückzahl", "stueckzahl", "anzahl", "pieces", "stk", "stk.");
+        alias(aliases, "einzelLaengeMm", "einzellängemm", "einzellaengemm", "längemm", "laengemm", "länge(mm)",
+                "laenge(mm)", "länge[mm]", "laenge[mm]", "einzellänge(mm)", "einzellaenge(mm)");
+        alias(aliases, "winkelLinks", "winkellinks", "leftangle");
+        alias(aliases, "winkelRechts", "winkelrechts", "rightangle");
+        alias(aliases, "anschnittSteg", "anschnitt(steg)", "anschnittsteg");
+        alias(aliases, "anschnittFlansch", "anschnitt(flansch)", "anschnittflansch");
+        alias(aliases, "gewichtKg", "gew.(kg)", "gew(kg)", "gewicht(kg)", "stückgewicht(kg)", "stueckgewicht(kg)");
+        alias(aliases, "oberflaeche", "beschichtung", "oberfläche", "oberflaeche");
+        return Map.copyOf(aliases);
+    }
+    private static void alias(Map<String, String> aliases, String field, String... headers) {
+        for (String header : headers) aliases.put(header, field);
+    }
+    private static String normalizeHeader(String text) {
+        if (text == null) return "";
+        return Normalizer.normalize(text, Normalizer.Form.NFC).toLowerCase(Locale.ROOT).replaceAll("\\s++", "");
+    }
+    /** Überschriften und Kopfblock: Formeln werden nicht ausgewertet, sondern als leer behandelt. */
+    private static String headerText(Cell cell, DataFormatter formatter) {
+        if (cell == null || cell.getCellType() == CellType.FORMULA) return "";
+        String text = cellText(cell, formatter);
+        return text.length() > 255 ? "" : text;
+    }
+    private static boolean blankCell(Row row, Integer index) {
+        if (index == null) return true;
+        Cell cell = row.getCell(index);
+        if (cell == null || cell.getCellType() == CellType.BLANK) return true;
+        return cell.getCellType() == CellType.STRING && cell.getStringCellValue().isBlank();
+    }
+    /** Anschnittzellen tragen die Lage des Winkels über führende/folgende Leerzeichen – daher ungetrimmt. */
+    private static String untrimmedValue(Row row, Map<String, Integer> map, String field, DataFormatter formatter) {
+        Integer index = map.get(field);
+        if (index == null) return null;
+        Cell cell = row.getCell(index);
+        if (cell == null || cell.getCellType() != CellType.STRING) return nullIfBlank(cellText(cell, formatter));
+        String text = cell.getStringCellValue();
+        if (text.length() > MAX_CELL_TEXT) throw new IllegalArgumentException("Ein Tabellenwert ist zu lang.");
+        return nullIfBlank(text);
+    }
+    private static String firstNonBlank(String... values) {
+        for (String value : values) if (value != null && !value.isBlank()) return value;
+        return null;
+    }
     private static String defaultValue(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
     private static String nullIfBlank(String value) { return value == null || value.isBlank() ? null : value; }
     private static String sha256(byte[] bytes) { return HexFormat.of().formatHex(digest(bytes)); }
@@ -539,7 +712,10 @@ public class HiCadImportService {
         try { return MessageDigest.getInstance("SHA-256").digest(bytes); }
         catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
-    private record Parsed(List<ParsedRow> rows) {}
+    private record Parsed(List<ParsedRow> rows, boolean katalogAbgleich) {}
+    private record Anschnitt(String links, String rechts) {
+        boolean vorhanden() { return links != null || rechts != null; }
+    }
     private record ParsedRow(int rowNumber, String raw, PositionSnapshot snapshot, List<String> hints,
             List<EinkaufDateiService.ImportBildDto> images) {}
     private record PendingPreview(ParsedRow row, List<Long> candidates, List<String> hints) {}
