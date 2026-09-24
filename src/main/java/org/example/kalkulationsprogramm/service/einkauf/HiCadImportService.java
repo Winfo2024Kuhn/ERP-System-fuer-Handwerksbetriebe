@@ -301,7 +301,7 @@ public class HiCadImportService {
                 try { rows.add(new ParsedRow(number + 1, raw, toSnapshot(row, columns, formatter, kopfZeichnungsnummer), List.of(), List.of())); }
                 catch (IllegalArgumentException error) { rows.add(new ParsedRow(number + 1, raw, emptySnapshot(), List.of(error.getMessage()), List.of())); }
             }
-            attachEmbeddedPictures(workbook, sheetIndex, rows);
+            attachEmbeddedPictures(workbook, sheetIndex, rows, anschnittSpalten(columns));
             return new Parsed(rows, !positionsliste || columns.containsKey("interneReferenz"), kopf);
         } catch (IOException e) {
             throw new IllegalArgumentException("Die Excel-Datei ist beschädigt oder das Format wird nicht unterstützt.", e);
@@ -449,11 +449,25 @@ public class HiCadImportService {
             winkel.add(matcher.group());
         }
         if (winkel.isEmpty()) return new Anschnitt(null, null);
-        if (winkel.size() == 2) return new Anschnitt(winkel.get(0), winkel.get(1));
-        return start <= text.length() - end ? new Anschnitt(winkel.get(0), null) : new Anschnitt(null, winkel.get(0));
+        if (winkel.size() == 2) return new Anschnitt(ohneGerade(winkel.get(0)), ohneGerade(winkel.get(1)));
+        String einzeln = ohneGerade(winkel.get(0));
+        return start <= text.length() - end ? new Anschnitt(einzeln, null) : new Anschnitt(null, einzeln);
     }
 
-    private void attachEmbeddedPictures(Workbook workbook, int sheetIndex, List<ParsedRow> rows) {
+    /** HiCAD schreibt „0°“ für einen geraden Schnitt – das ist kein Anschnitt. */
+    private static String ohneGerade(String winkel) {
+        String zahl = winkel.replace("°", "").replace(',', '.');
+        return new BigDecimal(zahl).signum() == 0 ? null : winkel;
+    }
+
+    private static Set<Integer> anschnittSpalten(Map<String, Integer> columns) {
+        Set<Integer> spalten = new java.util.HashSet<>();
+        if (columns.containsKey("anschnittSteg")) spalten.add(columns.get("anschnittSteg"));
+        if (columns.containsKey("anschnittFlansch")) spalten.add(columns.get("anschnittFlansch"));
+        return spalten;
+    }
+
+    private void attachEmbeddedPictures(Workbook workbook, int sheetIndex, List<ParsedRow> rows, Set<Integer> anschnittSpalten) {
         if (!(workbook instanceof XSSFWorkbook xssf) || rows.isEmpty()) return;
         Drawing<?> drawing = xssf.getSheetAt(sheetIndex).getDrawingPatriarch();
         if (drawing == null) return;
@@ -462,6 +476,12 @@ public class HiCadImportService {
             for (int i = 0; i < rows.size(); i++) if (rows.get(i).rowNumber() == row) {
                 var old = rows.get(i);
                 List<String> hints = new ArrayList<>(old.hints());
+                // Anschnittskizze einer geraden Position (HiCAD „0°“) zeigt keinen Anschnitt – nicht übernehmen.
+                if (anschnittSpalten.contains((int) picture.getClientAnchor().getCol1()) && old.snapshot().schnittForm() == null) {
+                    hints.add("0° in HiCAD: als gerader Schnitt übernommen, Anschnittbild entfällt.");
+                    rows.set(i, new ParsedRow(old.rowNumber(), old.raw(), old.snapshot(), List.copyOf(hints), old.images()));
+                    continue;
+                }
                 List<EinkaufDateiService.ImportBildDto> images = new ArrayList<>(old.images());
                 try {
                     var pictureData = picture.getPictureData();

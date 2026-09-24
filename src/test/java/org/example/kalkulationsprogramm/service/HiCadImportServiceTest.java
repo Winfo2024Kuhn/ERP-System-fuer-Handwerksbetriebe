@@ -504,10 +504,12 @@ class HiCadImportServiceTest {
         assertEquals(new java.math.BigDecimal("2835.7"), stuetze.basis().einzelLaengeMm());
         assertEquals("Stütze", stuetze.bezeichnung());
         assertEquals("verzinkt", stuetze.oberflaeche());
-        assertEquals("Anschnitt Steg", stuetze.schnittForm());
+        // HiCAD „0°“ ist ein gerader Schnitt: kein Anschnitt, keine Winkel, die Anschnittskizze entfällt mit Hinweis.
+        assertEquals(null, stuetze.schnittForm());
         assertEquals(null, stuetze.winkelLinks());
-        assertEquals("0°", stuetze.winkelRechts());
-        assertEquals(List.of(88L), preview.zeilen().get(1).bilder().stream().map(HiCadImportDto.BildVorschlag::dateiId).toList());
+        assertEquals(null, stuetze.winkelRechts());
+        assertEquals(List.of(), preview.zeilen().get(1).bilder());
+        org.junit.jupiter.api.Assertions.assertTrue(preview.zeilen().get(1).hinweise().stream().anyMatch(h -> h.contains("gerader Schnitt")));
 
         var traeger = preview.zeilen().get(2).vorschlag();
         assertEquals("HEB 220", traeger.abmessung());
@@ -515,6 +517,7 @@ class HiCadImportServiceTest {
         assertEquals("Anschnitt Flansch", traeger.schnittForm());
         assertEquals("45°", traeger.winkelLinks());
         assertEquals("45°", traeger.winkelRechts());
+        assertEquals(List.of(88L), preview.zeilen().get(2).bilder().stream().map(HiCadImportDto.BildVorschlag::dateiId).toList());
 
         preview.zeilen().forEach(zeile -> {
             assertEquals(List.of(), zeile.artikelKandidaten());
@@ -602,6 +605,10 @@ class HiCadImportServiceTest {
                 anschnitt.setRow1(9);
                 anschnitt.setCol1(4);
                 drawing.createPicture(anschnitt, picture);
+                var gehrung = workbook.getCreationHelper().createClientAnchor();
+                gehrung.setRow1(10);
+                gehrung.setCol1(5);
+                drawing.createPicture(gehrung, picture);
             }
             workbook.write(out);
             return out.toByteArray();
