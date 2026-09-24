@@ -18,8 +18,8 @@ public final class EinkaufZeugnisDto {
     public record ChargeStatusDto(Long chargeId, Status status, long version, boolean materialFreigegeben) {}
     public record ErwartungDto(Long id, long version, Long revisionId, Long bestellPositionId, Dokumentart art,
             String grundlage, String grundlageVersion, LocalDate frist, Status status, List<Long> dateiIds,
-            List<Long> lieferPositionIds, List<Long> chargeIds, boolean materialFreigegeben,List<ChargeStatusDto> chargeStaende) {
-        public ErwartungDto { dateiIds=copy(dateiIds);lieferPositionIds=copy(lieferPositionIds);chargeIds=copy(chargeIds);chargeStaende=copy(chargeStaende); }
+            List<Long> lieferPositionIds, List<Long> chargeIds, boolean materialFreigegeben,List<ChargeStatusDto> chargeStaende, List<ChargeZuordnungDto> zuordnungen) {
+        public ErwartungDto { dateiIds=copy(dateiIds);lieferPositionIds=copy(lieferPositionIds);chargeIds=copy(chargeIds);chargeStaende=copy(chargeStaende);zuordnungen=copy(zuordnungen); }
     }
     public record PruefungDto(Long id, Long erwartungId, String ergebnis, String begruendung,
             String grundlageVersion, Long akteurId, Instant geprueftAm, boolean materialFreigegeben) {}

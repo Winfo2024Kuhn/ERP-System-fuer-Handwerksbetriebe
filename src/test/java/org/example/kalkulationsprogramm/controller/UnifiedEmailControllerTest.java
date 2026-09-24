@@ -67,6 +67,65 @@ import java.nio.charset.StandardCharsets;
 })
 class UnifiedEmailControllerTest {
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"mark-spam", "mark-not-spam", "mark-not-newsletter", "confirm-newsletter", "unassign", "mark-read", "toggle-star", "block-sender", "assign/projekt/2", "assign/anfrage/2", "assign/lieferant/2", "DELETE", "PERMANENT"})
+    void einkaufsMutationenVerlangenBearbeitungsrecht(String action) throws Exception {
+        Email email = new Email(); email.setId(801L); email.setKontoId("EINKAUF"); email.setFromAddress("dummy@example.com");
+        given(emailRepository.findById(801L)).willReturn(Optional.of(email));
+        given(emailRepository.findByIdForUpdate(801L)).willReturn(Optional.of(email));
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("Kein Einkaufsrecht"))
+            .when(einkaufBerechtigungService).verlange(any(), any());
+        var request = action.equals("DELETE") ? delete("/api/emails/801") : action.equals("PERMANENT") ? delete("/api/emails/801/permanent") : post("/api/emails/801/" + action);
+        mockMvc.perform(request).andExpect(status().isForbidden());
+        verify(emailRepository, never()).save(any());
+        verify(emailRepository, never()).delete(any());
+        verifyNoInteractions(emailImportService, emailBlacklistRepository, spamBayesService);
+    }
+
+    @Test
+    void gemischteBulkMutationWirdVorAllenAenderungenVerweigert() throws Exception {
+        Email normal = new Email(); normal.setId(802L); normal.setKontoId("HAUPT");
+        Email purchase = new Email(); purchase.setId(803L); purchase.setKontoId("EINKAUF");
+        given(emailRepository.findAllById(List.of(802L,803L))).willReturn(List.of(normal,purchase));
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("Kein Einkaufsrecht"))
+            .when(einkaufBerechtigungService).verlange(any(), any());
+        mockMvc.perform(post("/api/emails/bulk/move-to-folder").contentType("application/json")
+            .content("{\"ids\":[802,803],\"targetFolder\":\"trash\"}"))
+            .andExpect(status().isForbidden());
+        org.junit.jupiter.api.Assertions.assertNull(normal.getDeletedAt());
+        verify(emailRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void permanentesLoeschenBewahrtEinkaufsbelegeVorJederServerAktion() throws Exception {
+        Email email = new Email(); email.setId(804L); email.setKontoId("EINKAUF");
+        given(emailRepository.findByIdForUpdate(804L)).willReturn(Optional.of(email));
+        mockMvc.perform(delete("/api/emails/804/permanent")).andExpect(status().isConflict());
+        verify(emailRepository, never()).delete(any());
+        verifyNoInteractions(emailImportService);
+    }
+
+    @Test
+    void absendersperrePrueftAuchEinkaufsmailsVorBlacklistOderServerAktion() throws Exception {
+        Email normal = new Email(); normal.setId(805L); normal.setKontoId("HAUPT"); normal.setFromAddress("dummy@example.com");
+        Email purchase = new Email(); purchase.setId(806L); purchase.setKontoId("EINKAUF");
+        given(emailRepository.findById(805L)).willReturn(Optional.of(normal));
+        given(emailRepository.findByFromAddressIgnoreCase("dummy@example.com")).willReturn(List.of(normal,purchase));
+        mockMvc.perform(post("/api/emails/805/block-sender")).andExpect(status().isConflict());
+        verifyNoInteractions(emailImportService, emailBlacklistRepository);
+        verify(emailRepository, never()).deleteAll(any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = { "spam-model/rescore", "scan-spam", "scan-inquiries", "scan-assignments", "backfill-parents", "scan-steuerberater", "admin/backfill-attachment-filenames", "admin/backfill-xml-to-pdf" })
+    void globaleMailwartungVerlangtEinkaufsrechtVorJederAenderung(String path) throws Exception {
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("Kein Einkaufsrecht"))
+            .when(einkaufBerechtigungService).verlange(any(), any());
+        mockMvc.perform(post("/api/emails/" + path)).andExpect(status().isForbidden());
+        verifyNoInteractions(emailRepository, emailImportService, emailAttachmentProcessingService, spamBayesService,
+                spamFilterService, inquiryDetectionService, emailAutoAssignmentService);
+    }
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -76,6 +135,10 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private org.example.kalkulationsprogramm.config.LocalTestMailPolicy localTestMailPolicy;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.repository.EinkaufMailZuordnungRepository einkaufMailZuordnungRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService einkaufBerechtigungService;
+    @MockBean private org.example.kalkulationsprogramm.repository.EinkaufsanfrageRepository einkaufsanfrageRepository;
+    @MockBean private org.example.kalkulationsprogramm.repository.EinkaufBestellungRepository einkaufBestellungRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
     @MockBean private ProjektRepository projektRepository;
@@ -114,6 +177,19 @@ class UnifiedEmailControllerTest {
     }
 
     @Test
+    void manualImportRequiresOneExplicitPostbox() throws Exception {
+        mockMvc.perform(post("/api/emails/import")).andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/emails/import").param("kontoId", "UNKNOWN")).andExpect(status().isBadRequest());
+        verify(emailImportService, org.mockito.Mockito.never()).triggerImport(any());
+    }
+
+    @Test
+    void manualImportRejectsEinkaufToUseItsRightsCheckedEndpoint() throws Exception {
+        mockMvc.perform(post("/api/emails/import").param("kontoId", "EINKAUF")).andExpect(status().isBadRequest());
+        verify(emailImportService, org.mockito.Mockito.never()).triggerImport(any());
+    }
+
+    @Test
     void successfulDraftSendDeletesDraftOnServerAfterSmtp() throws Exception {
         prepareDraftSend();
         org.example.kalkulationsprogramm.domain.EmailDraft draft = new org.example.kalkulationsprogramm.domain.EmailDraft();
@@ -149,6 +225,56 @@ class UnifiedEmailControllerTest {
         org.mockito.Mockito.doReturn("reply-message").when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
         mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart())).andExpect(status().isOk());
         mockMvc.perform(get("/api/emails/drafts/42")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void generischerReplyEndpointWeistEinkaufsmailsZurHashgebundenenAntwortZurueck() throws Exception {
+        prepareDraftSend();
+        storedDraft(7L);
+        Email purchaseMail = createTestEmail(7L, "Angebot", "supplier@example.invalid");
+        purchaseMail.setKontoId("EINKAUF");
+        given(emailRepository.findById(7L)).willReturn(Optional.of(purchaseMail));
+
+        mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Einkauf")));
+        verify(unifiedEmailController, org.mockito.Mockito.never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        verify(emailDraftRepository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @Test
+    void listenfilterTrenntEinkaufspostfachVonHauptpostfach() throws Exception {
+        Email haupt = createTestEmail(20L, "Haupt", "kunde@example.invalid");
+        haupt.setKontoId("HAUPT");
+        Email einkauf = createTestEmail(21L, "Einkauf", "supplier@example.invalid");
+        einkauf.setKontoId("EINKAUF");
+        given(emailRepository.findUnassigned()).willReturn(List.of());
+        given(emailRepository.findInboxFiltered()).willReturn(List.of(haupt, einkauf));
+        given(einkaufBerechtigungService.verlange(isNull(), org.mockito.ArgumentMatchers.eq(org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung.LESEN)))
+                .willReturn(7L);
+        given(einkaufMailZuordnungRepository.findByEmailId(20L)).willReturn(Optional.empty());
+        given(einkaufMailZuordnungRepository.findByEmailId(21L)).willReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/emails/inbox").param("kontoId", "EINKAUF"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(21))
+                .andExpect(jsonPath("$[0].kontoId").value("EINKAUF"))
+                .andExpect(jsonPath("$[1]").doesNotExist());
+    }
+
+    @Test
+    void generischeDetailThreadUndAnhangAbrufeVerbergenEinkaufsmailsOhneLeserecht() throws Exception {
+        Email einkauf = createTestEmail(22L, "Einkauf", "supplier@example.invalid");
+        einkauf.setKontoId("EINKAUF");
+        given(emailRepository.findById(22L)).willReturn(Optional.of(einkauf));
+        given(einkaufMailZuordnungRepository.findByEmailId(22L)).willReturn(Optional.empty());
+        given(einkaufBerechtigungService.verlange(isNull(), org.mockito.ArgumentMatchers.eq(org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung.LESEN)))
+                .willThrow(new org.springframework.security.access.AccessDeniedException("kein Leserecht"));
+
+        mockMvc.perform(get("/api/emails/22")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/emails/22/thread")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/emails/22/attachments/8")).andExpect(status().isNotFound());
+        verify(emailThreadService, org.mockito.Mockito.never()).loadThreadFor(22L);
     }
 
     @Test
@@ -629,6 +755,8 @@ class UnifiedEmailControllerTest {
                     makeEntry(2L, "Re: Anfrage Sanierung Bad", "OUT")
             ));
 
+            given(emailRepository.findById(1L)).willReturn(Optional.of(createTestEmail(1L, "Anfrage Sanierung Bad", "test@example.com")));
+            given(emailRepository.findById(2L)).willReturn(Optional.of(createTestEmail(2L, "Anfrage Sanierung Bad", "test@example.com")));
             given(emailThreadService.loadThreadFor(2L)).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/2/thread"))
@@ -651,6 +779,7 @@ class UnifiedEmailControllerTest {
             dto.setFocusedEmailId(5L);
             dto.setEmails(List.of(makeEntry(5L, "Einzelnachricht", "IN")));
 
+            given(emailRepository.findById(5L)).willReturn(Optional.of(createTestEmail(5L, "Einzelnachricht", "test@example.com")));
             given(emailThreadService.loadThreadFor(5L)).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/5/thread"))
@@ -689,6 +818,7 @@ class UnifiedEmailControllerTest {
             dto.setFocusedEmailId(1L);
             dto.setEmails(List.of(entry));
 
+            given(emailRepository.findById(1L)).willReturn(Optional.of(createTestEmail(1L, "Angebot Sanierung", "test@example.com")));
             given(emailThreadService.loadThreadFor(1L)).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/1/thread"))

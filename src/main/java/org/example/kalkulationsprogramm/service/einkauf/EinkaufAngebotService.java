@@ -95,6 +95,23 @@ public class EinkaufAngebotService {
         return bestaetigen(latest.getId(), erwarteteVersion, akteurId);
     }
 
+    public List<Uebersicht> auflisten(Long anfrageId) {
+        if (anfrageId == null || anfrageId <= 0) throw new IllegalArgumentException("Die Anfrage ist ungültig.");
+        if (revisionen.findFirstByAnfrageIdOrderByNummerDesc(anfrageId).isEmpty())
+            throw new java.util.NoSuchElementException("Anfrage nicht gefunden.");
+        var alle = versionen.leseAnfrageversionen(anfrageId);
+        if (alle.isEmpty()) return List.of();
+        versionen.ladeVergleichskosten(alle.stream().map(AngebotVersion::getId).toList());
+        Map<Long, List<AngebotVersion>> gruppen = alle.stream().collect(java.util.stream.Collectors.groupingBy(
+                v -> v.getAngebot().getId(), java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        return gruppen.values().stream().map(v -> {
+            var angebot = v.getFirst().getAngebot();
+            var kontakt = angebot.getBeteiligung().getKontakt();
+            return new Uebersicht(kontakt.lieferantId(), kontakt.lieferantenname(), new Angebot(angebot.getId(),
+                    angebot.getBeteiligung().getId(), angebot.getStatus(), v.stream().map(this::dto).toList()));
+        }).toList();
+    }
+
     public Angebot laden(Long angebotId) {
         EinkaufAngebot angebot = angebote.findById(angebotId).orElseThrow(() -> new java.util.NoSuchElementException("Angebot nicht gefunden."));
         return new Angebot(angebot.getId(), angebot.getBeteiligung().getId(), angebot.getStatus(),
@@ -220,7 +237,7 @@ public class EinkaufAngebotService {
         }
         List<Position> positions = v.getPositionen().stream().map(p -> new Position(p.getAnfragePositionId(), p.getOriginalNummer(),
                 p.getOriginalText(), p.getAngeboten(), p.getMindestmenge(), p.getVerpackungseinheit(), p.getLiefertermin(),
-                p.getAbweichungen(), p.getZeugnisse(), byPosition.getOrDefault(p.getId(), List.of()))).toList();
+                p.getAbweichungen(), p.getZeugnisse(), byPosition.getOrDefault(p.getId(), List.of()), p.getId())).toList();
         return new VersionDto(v.getId(), v.getAngebot().getId(), v.getNummer(), v.getVersion() == null ? 0 : v.getVersion(),
                 v.getAnfrageRevision().getId(), v.getStatus(), v.getAngebotsnummer(), v.getDatum(), v.getGueltigBis(), v.getWaehrung(),
                 positions, heads, v.getZahlungsbedingungen(), v.getSkontoProzent(), v.getSkontoTage(), v.getEmailId(), v.getOriginalDateiId(),

@@ -14,6 +14,12 @@ import lombok.Data;
 public class UnifiedEmailDto {
     private Long id;
     private String messageId;
+    private String kontoId;
+    private String einkaufTyp;
+    private Long einkaufVorgangId;
+    private String einkaufNummer;
+    private String einkaufNachrichtStatus;
+    private boolean zuordnungPruefen;
 
     // Absender/Empfänger
     private String fromAddress;

@@ -64,6 +64,15 @@ class EinkaufBestellWorkflowRegressionTest {
  private EinkaufMengenService amounts;
  private EinkaufDateiService files;
  private EinkaufPdfService pdf;
+ private EinkaufOutboxService outbox;
+ private EinkaufStornoanfrageService stornoRequests;
+ @Autowired LieferantenRepository suppliers;
+ @Autowired EinkaufAngebotRepository supplierOffers;
+ @Autowired AnfrageRevisionRepository requestRevisions;
+ @Autowired AnfrageLieferantRepository participations;
+ @Autowired EinkaufAnlageVersionRepository attachmentVersions;
+ @Autowired EmailAttachmentRepository emailAttachments;
+ @org.junit.jupiter.api.io.TempDir java.nio.file.Path uploadRoot;
  private Long supplierId, needId;
  private org.example.kalkulationsprogramm.dto.Einkauf.EinkaufKontaktDto.Snapshot recipient;
 
@@ -96,11 +105,12 @@ class EinkaufBestellWorkflowRegressionTest {
   when(templates.rendern(any(),any())).thenReturn(new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufVorlagenDto.Gerendert(4L,1,"Dummy Bestellung","<p>Dummy</p>","hash"));
   var transport=mock(org.example.kalkulationsprogramm.service.mail.KontoMailTransport.class);
   when(transport.vorbereiten(any(),any())).thenReturn(bytes);
-  var outbox=new EinkaufOutboxService(dispatches,acceptances,mock(org.example.kalkulationsprogramm.service.mail.MailkontoService.class),
+  outbox=new EinkaufOutboxService(dispatches,acceptances,mock(org.example.kalkulationsprogramm.service.mail.MailkontoService.class),
    mock(org.example.kalkulationsprogramm.config.LocalTestMailPolicy.class),transport,json,transactionManager);
   certificateService=new EinkaufZeugnisService(revisions,certificates,certificateTemplates,purchaseFiles,em);
   approval=new EinkaufBestellfreigabeService(orders,revisions,offers,previews,templates,pdf,files,outbox,
    mock(EinkaufVersandWorker.class),dispatches,amounts,needs,documents,audit,json,certificateService);
+  stornoRequests=new EinkaufStornoanfrageService(orders,revisions,needs,amounts,audits,dispatches,outbox,mock(EinkaufVersandWorker.class),json,new EinkaufStornoanfrageAnnahmeListener(dispatches));
   delivery=new EinkaufLieferungService(orders,revisions,deliveries,needs,amounts,documents,em,audit,json);
  }
 
@@ -253,6 +263,10 @@ class EinkaufBestellWorkflowRegressionTest {
     certificateDocument,List.of(expectation.getId()),List.of(deliveryPosition.getId()),List.of(charge.getId()),null),9L));
   assertFalse(assignment.klaerungNoetig());
   assertEquals(EinkaufZeugnisErwartung.Status.ZUGEORDNET,assignment.erwartungen().getFirst().status());
+  var reload = tx(()->certificateService.liste(id)).getFirst();
+  var reloadJson = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules().valueToTree(reload);
+  assertEquals(assignment.chargen().getFirst().zuordnungId().longValue(), reloadJson.path("zuordnungen").path(0).path("zuordnungId").asLong());
+  assertEquals(assignment.chargen().getFirst().version(), reloadJson.path("zuordnungen").path(0).path("version").asLong());
   var reviewed=tx(()->certificateService.pruefen(assignment.chargen().getFirst().zuordnungId(),new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufZeugnisDto.Pruefung(
     assignment.chargen().getFirst().version(),"BESTANDEN","Dummy-Prüfung bestätigt","DUMMY-SPEC-1"),9L));
   assertTrue(reviewed.materialFreigegeben());
@@ -366,6 +380,226 @@ class EinkaufBestellWorkflowRegressionTest {
   assertEquals(0,BigDecimal.TEN.compareTo(balance.bestellt()));
   assertTrue(balance.reserviert().compareTo(new BigDecimal("2"))<=0);
   assertTrue(balance.geliefert().compareTo(BigDecimal.ONE)<=0);
+ }
+
+ @Test void leseseitenZeigenPersistierteLieferungenChargenBestaetigungenUndEigeneMengen() {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());
+  assertNull(tx(()->ordering.lade(id).revisionen().getLast().angenommenAm()));
+  var preview=tx(()->approval.vorschau(id,4L));
+  assertEquals(1,preview.revisionsNummer());
+  assertEquals(LocalDate.now().plusDays(7),preview.liefertermin());
+  accept(id);
+  Long other=tx(()->ordering.direkt(content("2"),9L).id());accept(other);
+  deliver(id,proof(LieferantDokumentTyp.LIEFERSCHEIN),"2","CHARGE-A");
+  deliver(id,proof(LieferantDokumentTyp.LIEFERSCHEIN),"2","CHARGE-B");
+  var reader=new EinkaufBestellstatusService(orders,revisions,deliveries,amounts,dispatches,em,json);
+  var rows=tx(()->reader.lieferungen(id));
+  assertEquals(2,rows.size());
+  assertEquals(List.of("CHARGE-A","CHARGE-B"),rows.stream().map(r->r.positionen().getFirst().charge()).toList());
+  for(var row:rows){assertEquals(id,row.bestellungId());assertNotNull(row.positionen().getFirst().id());
+   var part=row.positionen().getFirst();assertEquals(1,part.chargen().size());assertNotNull(part.chargen().getFirst().id());assertEquals(part.charge(),part.chargen().getFirst().kennung());}
+  assertTrue(tx(()->reader.lieferungen(other)).isEmpty());
+  var balance=tx(()->reader.mengen(id)).getFirst();
+  assertEquals(needId,balance.bedarfId());assertEquals(0,new BigDecimal("4").compareTo(balance.bestellt()));
+  assertEquals(0,new BigDecimal("4").compareTo(balance.geliefert()));assertEquals(0,balance.offen().signum());
+  Long line=tx(()->ordering.lade(id).revisionen().getLast().positionen().getFirst().id());
+  var ab=new Bestaetigung(proof(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG),LocalDate.now(),LocalDate.now().plusDays(3),List.of(new BestaetigtePosition(line,new BigDecimal("4"),BigDecimal.ONE,null)));
+  var saved=tx(()->delivery.bestaetigungErfassen(id,ab,9L));
+  var loaded=tx(()->reader.bestaetigungen(id));assertEquals(1,loaded.size());assertEquals(saved.id(),loaded.getFirst().id());
+  assertEquals(ab.datum(),loaded.getFirst().datum());assertEquals(ab.liefertermin(),loaded.getFirst().liefertermin());assertEquals(ab.positionen(),loaded.getFirst().positionen());
+  assertTrue(tx(()->reader.bestaetigungen(other)).isEmpty());
+  var accepted=tx(()->ordering.lade(id).revisionen().getLast());assertNotNull(accepted.angenommenAm());
+  assertEquals("ANGENOMMEN",tx(()->reader.versandstatus(id,accepted.id())).getFirst().status());
+  assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,()->tx(()->reader.versandstatus(other,accepted.id())));
+ }
+
+ @Test void leseseitenUnterscheidenFehlendeBestellungVonLeeremVerlauf() {
+  var reader=new EinkaufBestellstatusService(orders,revisions,deliveries,amounts,dispatches,em,json);
+  assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,()->tx(()->reader.lieferungen(Long.MAX_VALUE)));
+  assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->reader.mengen(0L)));
+  Long id=tx(()->ordering.direkt(content("1"),9L).id());
+  assertTrue(tx(()->reader.bestaetigungen(id)).isEmpty());
+  assertTrue(tx(()->reader.versandstatus(id,ordering.lade(id).revisionen().getLast().id())).isEmpty());
+ }
+
+ @Test void unklarerBestellversandWirdBelegtUndOhneZweitenVersandAktiviert() {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());
+  var queued=prepareUnknown(id);
+  Long other=tx(()->ordering.direkt(content("2"),9L).id());
+  var request=new Klaerung(dispatches.findById(queued.id()).orElseThrow().getVersion(),Entscheidung.BEREITS_ANGENOMMEN,"Lieferant hat den Eingang bestätigt");
+  assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,()->tx(()->{approval.versandKlaeren(other,queued.id(),request,9L);return null;}));
+  assertAmount(id,"0","4","0");
+  tx(()->{approval.versandKlaeren(id,queued.id(),request,9L);return null;});
+  assertAmount(id,"4","0","0");
+  var event=acceptances.findAll().stream().filter(e->queued.id().equals(e.getVersandauftragId())).findFirst().orElseThrow();
+  assertNotNull(event.getVerarbeitetAm());
+  assertThrows(IllegalStateException.class,()->tx(()->{approval.versandKlaeren(id,queued.id(),request,9L);return null;}));
+  assertAmount(id,"4","0","0");
+ }
+
+ @Test void nurSicherFehlgeschlagenerEigenerBestellversandKannErneutVorbereitetWerden() {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());var queued=prepareUnknown(id);
+  long unknownVersion=dispatches.findById(queued.id()).orElseThrow().getVersion();
+  assertThrows(IllegalStateException.class,()->tx(()->approval.erneutSenden(id,queued.id(),unknownVersion,9L)));
+  tx(()->{approval.versandKlaeren(id,queued.id(),new Klaerung(unknownVersion,Entscheidung.NACHWEISLICH_NICHT_GESENDET,"Eingang beim Lieferanten nachweislich ausgeschlossen"),9L);return null;});
+  assertAmount(id,"0","4","0");
+  long failedVersion=dispatches.findById(queued.id()).orElseThrow().getVersion();
+  assertThrows(IllegalStateException.class,()->tx(()->approval.erneutSenden(id,queued.id(),unknownVersion,9L)));
+  var retried=tx(()->approval.erneutSenden(id,queued.id(),failedVersion,9L));
+  assertEquals(queued.id(),retried.id());assertEquals("VORBEREITET",retried.status());assertAmount(id,"0","4","0");
+ }
+
+ @Test void fehlgeschlageneFachlicheKlaerungRolltVersandannahmeUndEreignisZurueck() {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());var queued=prepareUnknown(id);
+  long unknownVersion=dispatches.findById(queued.id()).orElseThrow().getVersion();
+  var failing=spy(approval);doThrow(new IllegalStateException("DUMMY-DATENBANKFEHLER")).when(failing).versandAngenommen(any());
+  assertThrows(IllegalStateException.class,()->tx(()->{failing.versandKlaeren(id,queued.id(),new Klaerung(unknownVersion,Entscheidung.BEREITS_ANGENOMMEN,"Bestätigter Eingang"),9L);return null;}));
+  assertEquals(EinkaufVersandauftrag.Status.UNKLAR,dispatches.findById(queued.id()).orElseThrow().getStatus());
+  assertTrue(acceptances.findAll().stream().noneMatch(e->queued.id().equals(e.getVersandauftragId())));
+  assertAmount(id,"0","4","0");
+ }
+
+ @Test void stornoanfrageVersendetGeprueftenInhaltOhneMengenfreigabeUndOhneDoppelsendung() {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());accept(id);
+  var request=new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufStornoanfrageDto.Entwurf(version(id),List.of(new Herkunft(needId,0,new BigDecimal("2"))),"Dummy <script>alert(1)</script>");
+  var preview=tx(()->stornoRequests.vorschau(id,request,9L));
+  assertTrue(preview.htmlBody().contains("&lt;script&gt;"));assertFalse(preview.htmlBody().contains("<script>"));
+  assertAmount(id,"4","0","0");
+  var approved=new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufStornoanfrageDto.Freigabe(preview.version(),preview.vorschauId(),preview.vorschauHash(),UUID.randomUUID());
+  assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,()->tx(()->stornoRequests.freigeben(id,approved,8L)));
+  var sent=tx(()->stornoRequests.freigeben(id,approved,9L));assertEquals("STORNO_ANFRAGE",sent.typ());
+  assertEquals(sent.id(),tx(()->stornoRequests.freigeben(id,approved,9L)).id());
+  assertThrows(IllegalStateException.class,()->tx(()->stornoRequests.freigeben(id,new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufStornoanfrageDto.Freigabe(preview.version(),preview.vorschauId(),preview.vorschauHash(),UUID.randomUUID()),9L)));
+  assertNotNull(outbox.beanspruche(sent.id()));
+  outbox.abgeschlossen(sent.id(),new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis(org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.ANGENOMMEN,null,null,"%PDF-DUMMY".getBytes()));
+  outbox.verarbeiteOffeneAnnahmeereignisse(new EinkaufStornoanfrageAnnahmeListener(dispatches),100);
+  assertAmount(id,"4","0","0");
+  assertEquals(1,tx(()->stornoRequests.status(id)).size());
+  assertEquals("ANGENOMMEN",tx(()->stornoRequests.status(id)).getFirst().status());
+  assertTrue(acceptances.findAll().stream().filter(e->sent.id().equals(e.getVersandauftragId())).allMatch(e->e.getVerarbeitetAm()!=null));
+ }
+
+ @Test void lieferungNachStornovorschauVerhindertUeberhoehtenStornoversand() {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());accept(id);
+  var preview=tx(()->stornoRequests.vorschau(id,new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufStornoanfrageDto.Entwurf(version(id),List.of(new Herkunft(needId,0,new BigDecimal("4"))),"Nicht mehr benötigt"),9L));
+  deliver(id,proof(LieferantDokumentTyp.LIEFERSCHEIN),"2");
+  assertThrows(IllegalStateException.class,()->tx(()->stornoRequests.freigeben(id,new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufStornoanfrageDto.Freigabe(preview.version(),preview.vorschauId(),preview.vorschauHash(),UUID.randomUUID()),9L)));
+  assertAmount(id,"4","0","2");assertTrue(tx(()->stornoRequests.status(id)).isEmpty());
+ }
+
+ @Test void belegUploadIstOhneBedarfMoeglichUndFehlendeOderFremdeQuellenBleibenGesperrt() throws Exception {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());
+  var realFiles=new EinkaufDateiService(purchaseFiles,attachmentVersions,needs,emailAttachments,documents,uploadRoot.toString(),uploadRoot.resolve("email").toString());
+  var service=new EinkaufBelegService(orders,suppliers,documents,realFiles,new EinkaufAuditService(audits),json);
+  var upload=new org.springframework.mock.web.MockMultipartFile("datei","zeugnis.pdf","application/pdf","%PDF-1.7 Dummyzeugnis".getBytes());
+  long before=attachmentVersions.count();
+  var saved=tx(()->service.hochladen(id,LieferantDokumentTyp.SONSTIG,upload,9L));
+  assertNotNull(saved.dateiId());assertNotNull(saved.lieferantDokumentId());assertTrue(saved.verfuegbar());
+  assertEquals(before,attachmentVersions.count());
+  assertEquals(saved.dateiId(),tx(()->service.registrieren(id,saved.lieferantDokumentId(),9L)).dateiId());
+  assertEquals(saved.lieferantDokumentId(),purchaseFiles.findById(saved.dateiId()).orElseThrow().getLieferantDokumentId());
+  assertArrayEquals(upload.getBytes(),tx(()->realFiles.ladePdfSnapshotBytes(saved.dateiId())));
+  Long fremd=tx(()->{var d=new LieferantDokument();var supplier=new Lieferanten();supplier.setLieferantenname("Fremder Dummy");em.persist(supplier);d.setLieferant(supplier);d.setTyp(LieferantDokumentTyp.SONSTIG);em.persist(d);em.flush();return d.getId();});
+  assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,()->tx(()->service.registrieren(id,fremd,9L)));
+  Long other=tx(()->ordering.direkt(content("1"),9L).id());
+  tx(()->{documents.findById(saved.lieferantDokumentId()).orElseThrow().setEinkaufBestellungId(other);return null;});
+  assertTrue(tx(()->service.auflisten(id)).isEmpty());
+  assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,()->tx(()->service.registrieren(id,saved.lieferantDokumentId(),9L)));
+  tx(()->{documents.findById(saved.lieferantDokumentId()).orElseThrow().setEinkaufBestellungId(null);return null;});
+  String stored=documents.findById(saved.lieferantDokumentId()).orElseThrow().getGespeicherterDateiname();
+  java.nio.file.Files.delete(uploadRoot.resolve("lieferanten").resolve(supplierId.toString()).resolve(stored));
+  assertFalse(tx(()->service.auflisten(id)).getFirst().verfuegbar());
+  assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx(()->service.registrieren(id,saved.lieferantDokumentId(),9L)));
+ }
+
+ @Test void belegDateiWirdBeiTransaktionsrollbackEntfernt() throws Exception {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());
+  var realFiles=new EinkaufDateiService(purchaseFiles,attachmentVersions,needs,emailAttachments,documents,uploadRoot.toString(),uploadRoot.resolve("email").toString());
+  var service=new EinkaufBelegService(orders,suppliers,documents,realFiles,new EinkaufAuditService(audits),json);
+  long before=documents.count();
+  assertThrows(IllegalStateException.class,()->tx(()->{service.hochladen(id,LieferantDokumentTyp.SONSTIG,new org.springframework.mock.web.MockMultipartFile("datei","rollback.pdf","application/pdf","%PDF-1.7 rollback".getBytes()),9L);throw new IllegalStateException("Dummyrollback");}));
+  assertEquals(before,documents.count());
+  try(var paths=java.nio.file.Files.walk(uploadRoot)){assertEquals(0,paths.filter(java.nio.file.Files::isRegularFile).count());}
+ }
+
+ @Test void angebotslisteEnthaeltAlleVersionenMitOriginalkostenUndNurEigenerAnfrage() {
+  Long requestId=tx(()->{
+   var request=new Einkaufsanfrage("PA-"+UUID.randomUUID().toString().substring(0,8),9L,UUID.randomUUID(),"d".repeat(64));em.persist(request);
+   var revision=new AnfrageRevision(request,1,null,null,UUID.randomUUID(),"e".repeat(64));em.persist(revision);
+   var position=new AnfragePosition(revision,needs.findById(needId).orElseThrow().getPosition(),new BigDecimal("4"));em.persist(position);
+   var participation=new AnfrageLieferant(revision,recipient);em.persist(participation);
+   var offer=new EinkaufAngebot(participation);em.persist(offer);
+   for(int number=1;number<=2;number++){
+    var v=new AngebotVersion(offer,revision,number,"DUMMY-"+number,null,null,"EUR",null,null,null,null,null);
+    var line=new AngebotPosition(v,position,"1","Dummyprofil",position.getSnapshot().basis(),null,null,null,List.of(),List.of());
+    v.addPosition(line);v.addKosten(new AngebotKostenbestandteil(v,line,"profil","MATERIAL",BigDecimal.valueOf(8+number),"STUECK",BigDecimal.ONE,null,false,false,"manuell"));
+    v.addKosten(new AngebotKostenbestandteil(v,null,"fracht","FRACHT",BigDecimal.valueOf(number),"PAUSCHAL",null,null,false,false,"manuell"));
+    if(number==1)v.abloesen();offer.addVersion(v);em.persist(v);
+   }
+   em.flush();return request.getId();
+  });
+  var service=new EinkaufAngebotService(supplierOffers,offers,participations,requestRevisions,mock(EmailRepository.class),purchaseFiles,emailAttachments,documents,mock(EinkaufMailZuordnungRepository.class));
+  var results=tx(()->service.auflisten(requestId));
+  assertEquals(1,results.size());assertEquals(supplierId,results.getFirst().lieferantId());
+  var versions=results.getFirst().angebot().versionen();assertEquals(2,versions.size());
+  assertEquals("ABGELOEST",versions.getFirst().status());assertEquals(1,versions.getFirst().nummer());assertEquals(2,versions.getLast().nummer());
+  var actualPosition=versions.getLast().positionen().getFirst();
+  assertNotNull(actualPosition.id());assertNotEquals(versions.getFirst().positionen().getFirst().id(),actualPosition.id());
+  assertEquals(versions.getLast().id(),tx(()->em.createQuery("select p.version.id from AngebotPosition p where p.id = :id",Long.class).setParameter("id",actualPosition.id()).getSingleResult()));
+  assertEquals(0,new BigDecimal("10").compareTo(actualPosition.kosten().getFirst().betrag()));
+  assertEquals(0,new BigDecimal("2").compareTo(versions.getLast().kosten().getFirst().betrag()));
+  Long empty=tx(()->{var request=new Einkaufsanfrage("PA-"+UUID.randomUUID().toString().substring(0,8),9L,UUID.randomUUID(),"d".repeat(64));em.persist(request);em.persist(new AnfrageRevision(request,1,null,null,UUID.randomUUID(),"e".repeat(64)));em.flush();return request.getId();});
+  assertTrue(tx(()->service.auflisten(empty)).isEmpty());
+  assertThrows(NoSuchElementException.class,()->tx(()->service.auflisten(Long.MAX_VALUE)));
+  assertThrows(IllegalArgumentException.class,()->tx(()->service.auflisten(0L)));
+ }
+
+ @Test void unklareStornoanfrageBleibtBisZurBelegtenKlaerungGesperrtUndAendertNieMengen() {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());accept(id);
+  var preview=tx(()->stornoRequests.vorschau(id,new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufStornoanfrageDto.Entwurf(version(id),List.of(new Herkunft(needId,0,new BigDecimal("2"))),"Nicht mehr benötigt"),9L));
+  var sent=tx(()->stornoRequests.freigeben(id,new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufStornoanfrageDto.Freigabe(preview.version(),preview.vorschauId(),preview.vorschauHash(),UUID.randomUUID()),9L));
+  outbox.beanspruche(sent.id());outbox.abgeschlossen(sent.id(),new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis(org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.UNKLAR,null,"DUMMY_TIMEOUT",null));
+  long uncertain=dispatches.findById(sent.id()).orElseThrow().getVersion();
+  assertThrows(IllegalStateException.class,()->tx(()->stornoRequests.erneutSenden(id,sent.id(),uncertain,9L)));
+  Long other=tx(()->ordering.direkt(content("1"),9L).id());
+  assertThrows(org.example.kalkulationsprogramm.exception.NotFoundException.class,()->tx(()->{stornoRequests.klaeren(other,sent.id(),new Klaerung(uncertain,Entscheidung.BEREITS_ANGENOMMEN,"Dummy-Nachweis"),9L);return null;}));
+  tx(()->{stornoRequests.klaeren(id,sent.id(),new Klaerung(uncertain,Entscheidung.NACHWEISLICH_NICHT_GESENDET,"Lieferant bestätigt fehlenden Eingang"),9L);return null;});
+  long failed=dispatches.findById(sent.id()).orElseThrow().getVersion();
+  assertEquals(sent.id(),tx(()->stornoRequests.erneutSenden(id,sent.id(),failed,9L)).id());
+  outbox.beanspruche(sent.id());outbox.abgeschlossen(sent.id(),new org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Versandergebnis(org.example.kalkulationsprogramm.dto.Einkauf.MailTransportDto.Status.UNKLAR,null,"DUMMY_TIMEOUT",null));
+  long again=dispatches.findById(sent.id()).orElseThrow().getVersion();
+  tx(()->{stornoRequests.klaeren(id,sent.id(),new Klaerung(again,Entscheidung.BEREITS_ANGENOMMEN,"Lieferant bestätigt Eingang der Anfrage"),9L);return null;});
+  assertEquals("ANGENOMMEN",tx(()->stornoRequests.status(id)).getFirst().status());
+  assertAmount(id,"4","0","0");
+ }
+
+ @Test void gleichzeitigeBelegregistrierungDarfBestehendeDateiNichtUmbinden() throws Exception {
+  Long id=tx(()->ordering.direkt(content("4"),9L).id());
+  byte[] bytes="%PDF-1.7 gleichzeitiger Dummybeleg".getBytes();
+  var directory=uploadRoot.resolve("lieferanten").resolve(supplierId.toString());java.nio.file.Files.createDirectories(directory);
+  java.nio.file.Files.write(directory.resolve("a.pdf"),bytes);java.nio.file.Files.write(directory.resolve("b.pdf"),bytes);
+  String hash=HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+  var ids=tx(()->{
+   List<Long> result=new ArrayList<>();
+   for(String name:List.of("a.pdf","b.pdf")){var doc=new LieferantDokument();doc.setLieferant(em.find(Lieferanten.class,supplierId));doc.setTyp(LieferantDokumentTyp.SONSTIG);doc.setOriginalDateiname(name);doc.setGespeicherterDateiname(name);em.persist(doc);em.flush();result.add(doc.getId());}
+   em.persist(new EinkaufDatei(hash,null,"technical.pdf","application/pdf",bytes.length));em.flush();return result;
+  });
+  var realFiles=new EinkaufDateiService(purchaseFiles,attachmentVersions,needs,emailAttachments,documents,uploadRoot.toString(),uploadRoot.resolve("email").toString());
+  var service=new EinkaufBelegService(orders,suppliers,documents,realFiles,new EinkaufAuditService(audits),json);
+  var gate=new java.util.concurrent.CountDownLatch(1);
+  try(var pool=java.util.concurrent.Executors.newFixedThreadPool(2)){
+   var tasks=ids.stream().map(doc->pool.submit(()->{gate.await();try{tx(()->service.registrieren(id,doc,9L));return true;}catch(org.springframework.web.server.ResponseStatusException conflict){assertEquals(409,conflict.getStatusCode().value());return false;}})).toList();
+   gate.countDown();int success=0;for(var task:tasks)if(task.get(10,java.util.concurrent.TimeUnit.SECONDS))success++;
+   assertEquals(1,success);
+  }
+  assertTrue(ids.contains(purchaseFiles.findBySha256(hash).orElseThrow().getLieferantDokumentId()));
+ }
+
+ private VersandDto prepareUnknown(Long id) {
+  var preview=tx(()->approval.vorschau(id,4L));
+  var queued=tx(()->approval.freigeben(id,new Freigabe(version(id),preview.vorschauHash(),UUID.randomUUID()),9L));
+  tx(()->{dispatches.findById(queued.id()).orElseThrow().unklar("DUMMY-DATA-TIMEOUT");return null;});
+  return queued;
  }
 
  private Direkt content(String quantity) {

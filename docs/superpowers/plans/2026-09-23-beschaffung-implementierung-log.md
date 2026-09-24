@@ -1781,3 +1781,171 @@ Root-Indextree und Design-Indextree d61d118dc0a298bab0ffa6f7fea81b4623041465, nu
 ## Abschnitt10 vollständig abgenommen
 Root hat alle fachlichen R1/R2-Korrekturen und die ausdrücklich zusätzlich freigegebene Animations-Testkorrektur selbst umgesetzt. Gemeinsamer Code-/ERP-Review GRÜN ohne Befunde (/tmp/beschaffung-abschnitt10-extra-review-report.md unter Weiterverwendung des R2-Berichts), Design GELB ohne Blocker (/tmp/beschaffung-abschnitt10-extra-design-report.md). Gelbe unveränderte Hinweise: RohstatusPRUEFEN in manuellem Maildialog und kurz gleichzeitig sichtbare alte Konflikt-/Erfolgstoasts. Alle fachlichen Aufgaben29–31 abgeschlossen. Vollständige DesktopE2E720/720grün, /tmp/beschaffung-abschnitt10-extra-e2e.log, 5.4Minuten; sechs neue Dokumenteditorbilder in3Größen geprüft, bisherige Einkaufsbilder gültig. Port5220frei. Unit1673/1673, Lint/Typecheck/Buildgrün; Backend3502/0/17Bestandsskips, unverändert exakt gültig. GraphifyupdateExit0 /tmp/beschaffung-10-extra-graphify.log. Kein roter Check offen. Bestätigte zusätzliche Nachbesserung betraf nur zwei E2E-Dateien, keine abgeschwächte Layoutprüfung.
 Integration als gemeinsamer Merge aus Task29dd2a95e6, Task30fca4a213, Backend314d93b8fd plus Root-Testkorrektur und eigene Plan-/Logfortschreibung. Erzeugte Graphdaten und Secrets bleiben ausdrücklich uncommitted. Nächster Abschnitt11: Luna33→34→32 und Luna35 parallel, Root ergänzt die bereits konkretisierten Backendverträge gemäß /tmp/beschaffung-11-backend-vertrag.md; Review erst nach allen3Paketen.
+
+
+## Abschnitt11 gestartet auf fe716ed35639b0377d876dbc4b8d60c7e6c6c713
+Abschnitt10 integriert, gepusht und geprüft. Beide Luna-Pakete parallel gestartet: paket11a Task33→34→32 im Worktreebeschaffung-task-33/Port5214, paket11b Task35 im Worktreebeschaffung-task-35/Port5216. Root besitzt ergänzendes Backendpaket beschaffung-task-33-backend. Konkreter Vertrag /tmp/beschaffung-11-backend-vertrag.md, bestehende Paketaufträge wiederverwendet, keine Neuplanung. Graphify und Dependencies verlinkt. NeueRoot-Ownership imPlan dokumentiert, keine gemeinsamen Schreibdateien mit Luna. Erst alle drei Pakete fertig+Checks→gemeinsameIntegration→SolCode/Designreview. Nutzersteuerung „weiter“ bestätigt Fortsetzung. Keine echten Mails, automatische Tests nie gegen3309.
+
+
+## Abschnitt11 – notwendige Task35-Ergänzungen entschieden
+Paket11b besitzt additiv V397__einkauf_mailantwort_vorschau.sql, neue EinkaufMailantwortVorschau Entity/Repository plus Service-/Repository-/MySQLtests. Vorhandene Anfrage-/PDF-Vorschau ist wegen Semantik und Pflichtfeldern ungeeignet; keine falsche Anfrage-ID aus einer Mail-ID erzeugen. Antwortsnapshot enthält echte Mail-/Kontobindung, Originalheader, Empfänger, geprüftenBody, unveränderliche Anlagen/Hashes und ablaufenden zufälligenToken. Vor Versand Bindung neu validieren, Outbox weiterverwenden.
+Weitere exklusiveOwnership11b: erforderliche konto-/rechtebewusste EmailRepositoryQueries/EinkaufMailzugriffService, bestehende EmailComposeForm.tsx samt Componenttests mit additivem Preview/SubmitCallback; UnifiedEmailDto und tatsächlich nötige Mapper/Tests additiv. EmailCenterItemDto ist unbenutzt und wird nicht künstlich als zweite Route eingeführt. Bestehende Legacy-Mailpfade kompatibel halten. Root-OutboxService/VersandWorker bleiben disjunkt. FinaleTask37/39-Prüfung umfasst nun auchV397; /tmp/beschaffung-paket-13a-auftrag.md ergänzt. Keine neue Gesamtkonzeption.
+
+
+## Abschnitt11 – Root schließt nachgewiesene API-Lücken
+Root ergänzt exklusiv scoped Angebotslisten mit vollständiger Historie/Kosten; Bestellbelegauswahl und PDF-Upload ohne künstlichen Bedarf; eigenständige Stornoanfrage mit geprüfter unveränderlicher Kommunikationsfassung und Outbox STORNO_ANFRAGE. Keine Mengenfreigabe durch Anfrage oder SMTP-Annahme. Konkrete Verträge an11a übergeben und /tmp/beschaffung-11-backend-vertrag.md ergänzt. Rootownership zusätzlich EinkaufAngebotDto/Controller/Service, AngebotVersionRepository, EinkaufDateiService, LieferantDokumentRepository, neue EinkaufBelegDto/Controller/Service, EinkaufStornoanfrageDto/Controller/Service, EinkaufAuditRepository/EinkaufVersandauftragRepository sowie EinkaufExceptionHandler und zugehörige Tests. Keine neue Migration dafür. Belegupload bleibt PDF10MiB, lieferanten-/bestellscoped, fehlende Dateien sichtbar, Originalbindung unveränderlich, Rollback löscht neu geschriebene Datei. Automatische Testdaten nur Testcontainers/Dummy.
+Root ursprüngliche Status-/Versandtests grün. Zusatztests fanden allein fehlenden Worker-Claim im neuen SMTP-Testaufbau (vorbereitet statt laufend); Testfixture korrigiert, produktive State-Machine unverändert, erneuter gezielter Lauf. Kein Review vor vollständigen drei Paketen.
+
+
+## Abschnitt11 – Root-Zusatzpaket gezielt grün
+94 gezielteTests,0Fehler0Skips: BestellWorkflow23, Controller29, Datei17, Angebot13, OutboxService4, OutboxParallel8; /tmp/beschaffung-11-root-all-targeted.log Exit0. Mit echtem Dummy-MySQL geprüft: persistente Liefer-/Chargen-/Angebotshistorie, belegte Versandannahme samt atomarem Mengenwechsel/Rollback, Stornoanfrage samt Vorschau/Idempotenz/unsicheremRetry/Manuellklärung ohne Mengenfreigabe, echte PDF-Ablage ohne künstlichen Bedarf, Fremdbelegschutz/fehlendeDatei/Rollbackcleanup, parallele Dateibindung genaueinGewinner. Dazu Auth/CSRF/Rechte allerneuenRouten und Dateiformatgrenzen. EinkaufDateiRepository gehört zusätzlich exklusivRoot für pessimistische SHA-Bindungssperre. Vollständiger Backendtest gestartet /tmp/beschaffung-11-root-backend-full.log; vor dessen Erfolg kein Paketcommit. Alle drei Pakete weiterhin erst gemeinsamreviewen.
+
+
+## Abschnitt11 – vollständiger Backendtest deckt Spring-Zyklus auf
+Erster Volltest /tmp/beschaffung-11-root-backend-full.log Exit1: Neuer EinkaufStornoanfrageService war zugleich Outbox-Annahmeconsumer und enthielt den Worker; dessen Consumerliste erzeugte einen Konstruktorzyklus, sichtbar in vollständigen Spring-Kontexttests. Root trennt den rein lesenden EinkaufStornoanfrageAnnahmeListener ab (nur Versandrepository als Abhängigkeit), keine Lazy-Ausweichlösung oder geänderte Testassertion. Dieser neue Listener gehört zusätzlichRoot. Neue Vollprüfung /tmp/beschaffung-11-root-backend-full2.log läuft. Fachliche94Tests waren zuvor bereits grün. Kein Commit bis alle Prüfungen erfolgreich.
+
+
+## Abschnitt11 – Kontoimport und gemeinsame Compile-Abhängigkeit
+11b erhält zusätzlich EmailImportService plus Importtests: manuelles Abrufen ausschließlich gewähltes und berechtigtes Konto, Scheduler/Legacy kompatibel; keine echten Mailabrufe in Tests. Antwort-Retry/-Klärung verbleiben EinkaufKommunikationService. Die realen neuen Outbox-Kommunikationsmethoden gehörenRoot und werden nicht vorzeitig in Codingbranches integriert. 11b stellt alle eigenen Quellen/Frontendchecks fertig, nennt genau die Root-API-abhängigen Backendchecks. Erst nach Coding-Fertigstellung allerPakete wird der gemeinsame reale Quellstand gebaut/getestet; Paketcommit mit diesem exakt zugeordneten grünen Nachweis, keine Stubs oder vorgezogenen Reviews. Nötigenfalls gemeinsamer temporärer Prüfworktree mit exakten Paketpatches, danach Paketcommits und regulärer Merge derselben Produktbäume. Keine Testfehler als fertig erklären.
+
+
+## Abschnitt11 – Backend grün; Task34 parallel fertigstellen
+Root-Volltest nach Trennung des Annahmelisteners erfolgreich:3549Tests,0Fehler,17bekannteSkips, /tmp/beschaffung-11-root-backend-full2.log Exit0. Noch kein gemeinsamer Review.
+11a meldete nach Teilimplementierung unvollständige Übergabe; Root hat Fortsetzung bis vollständiger Umsetzung angeordnet. Für kürzere Laufzeit verbleiben Task33→32 bei11a, Task34 wird durch zusätzliches Luna-Paket11c im neuen Worktreebeschaffung-task-34/Branchcodex/beschaffung-task-34/Port5215 fertiggestellt, Basisfe716ed3. Vorhandene EinkaufLieferungen.tsx, derenUnit und einkauf-lieferung-zeugnis.spec.ts wurden erhalten und exakt kopiert. 11a besitzt weiter App.tsx/EinkaufBestellungDetail/bestellTypes,34Komponenten/Dialoge/Reklamationen+Tests besitzt11c; die kopierte bestellTypes-Vertragsdatei in34 ist nur Testabhängigkeit und darf dort nichtcommittet werden. Auftrag /tmp/beschaffung-paket-11c-auftrag.md. IntegrationProps und gemeinsame Belegauswahl explizit abgestimmt, keine redundante Neuimplementierung. Beide ursprünglichen11a-Lintfehler werden von11a behoben. Damit vierCodingpakete inklusiveRoot, weiterhin eine gemeinsame Reviewgrenze nach vollständigen Quellen und gemeinsamen Checks, keine zusätzliche Abschnittsplanung.
+
+
+## Abschnitt11 – Belegbindung bei Dateiwiederherstellung bewahren
+Zusätzliche funktionale Regression: technischer Reupload derselben fehlenden Originaldatei löschte bisher eine schon vorhandene LieferantDokument-Bindung. Test zuerst1von2rot (/tmp/beschaffung-11-belegbindung-red.log), Fix bewahrt Lieferantenherkunft und nutzt SHA-Schreibsperre auch im technischen Upload. Vollständige DateiService-Suite18/18grün (/tmp/beschaffung-11-belegbindung-green.log). Der vorherige Backendgesamtstand3549/0/17wargrün; wegen dieser gezielten Änderungen läuft der endgültige vollständige Nachweis jetzt /tmp/beschaffung-11-root-backend-final.log. Keine produktiven Daten oder echteMails verwendet.
+
+
+## Abschnitt11 – Preisübernahme braucht echte Angebotspositions-ID
+11a meldete korrekt: der Preisübernahme-Endpoint verlangt AngebotPosition.id, bisheriger DTO enthielt nur AnfragePosition.id. Root ergänzt PositionDTO additiv um id mit kompatiblem altem Java-Konstruktor/JSON-Eingabe; Ausgabemapper liefert reale persistierteID. MySQL-Historientest prüft unterschiedliche IDs zweier Angebotsversionen bei identischer Anfrageposition und tatsächliche Eigentümerversion per DB. Gezielte Prüfung /tmp/beschaffung-11-angebot-id-tests.log läuft.
+Vor dieser letzten DTO-Ergänzung war Root-Vollsuite3550/0/17grün (/tmp/beschaffung-11-root-backend-final.log Exit0). Neuer Gesamtbackendnachweis erfolgt auf gemeinsamem finalen Abschnitt11-Quellstand, sobald alle Codingpakete fertig sind; keine weiteren separaten Vollsuite-Wiederholungen pro gemeldeter API-Kleinigkeit, kein Paketcommit vor gültigem grünen Gesamtnachweis. Rootcode bleibt bisdahin uncommitted und ausschließlich im eigenenBackendworktree.
+
+
+## Abschnitt11 – Root aktuell coding-fertig
+Nach additiver Angebotspositions-ID37gezielteTestsgrün: Workflow23, Angebotsservice13, Angebotscontroller1, /tmp/beschaffung-11-angebot-id-tests.log Exit0. Vollsuite unmittelbar davor3550/0/17; nur dieser letzte additive DTO/Mapper/Testdiff fehlt im erneuten Gesamtstand. Root30expliziteDateien /tmp/beschaffung-11-root-owned.txt, SHA256-Snapshot /tmp/beschaffung-11-root-sourcehashes.json, gitdiffcheckgrün. Aktuell keine offenen Roottestfehler. Quellen bleiben uncommitted bis gemeinsame finale Backendprüfung mit11b. Vorgehen für diese echte Paketabhängigkeit ohne vorgezogeneIntegration konkret in /tmp/beschaffung-11-integration-vorgehen.md. Alle drei LunaPakete laufen; RootbleibtfürkonkreteAPI-/Testlücken zuständig. KeinErstreview gestartet.
+
+
+11c-Ownership additiv erweitert: CreateReklamationModal.tsx plus zugehörigeTests, damit Rechnungsabgleich echte optionale Bestell-/Positions-/Rechnungsreferenzen an vorhandenen Reklamationsworkflow übergibt. Legacyaufrufe kompatibel. API-DTO-Felder verwenden; kein bloßer Beschreibungstext als Ersatz. Keine anderen Pakete besitzen dieseDateien.
+
+
+## Abschnitt 11, Paket 11b (Task 35) – coding-fertig, gemeinsamer Backendcheck ausstehend
+
+Zeitpunkt: 2026-09-24 09:06:01 UTC
+Branch: codex/beschaffung-task-35
+Worktree: .claude/worktrees/beschaffung-task-35
+Commit: keiner; gemäß Root-Anweisung bis zur Integration der Root-Outbox-Signaturen und dem grünen gemeinsamen Backendcheck zurückgestellt.
+
+Implementiert: kontobewusste E-Mail-Listen-, Such-, Detail-, Thread- und Anhangszugriffe; generische Antwortpfade für Einkaufs-E-Mails gesperrt; ausgewähltes Postfach wird gezielt manuell abgerufen, das Einkaufspostfach ausschließlich über dessen berechtigungsgeprüften Abruf. Einkaufslink und Lieferantenbezug erscheinen gemeinsam; automatische Antwort, unzustellbar, Absage, Angebot und Zuordnung prüfen werden sichtbar. Bestehender Compose-Editor kann den hashgebundenen Vorschau-/Versandpfad für Einkaufsantworten kontrolliert nutzen. V397 und EinkaufMailantwortVorschau halten Konto, E-Mail-ID, Zuordnung/Revision, Originalheader, Empfänger, Inhalt, Anlagen-IDs/-Hashes, Hash/Token, Ablauf, Versand-ID und Annahmezeitpunkt fest. Annahmeconsumer verarbeitet ausschließlich ANTWORT idempotent. Retry/Klärung nutzen die verbindlichen Root-Outbox-Signaturen und halten dabei die Quellzuordnungssperre.
+
+Frontend-Nachweise (alle in /tmp, echte Exitcodes):
+- /tmp/p11b-unit-final.log — npm test -- --run: 163 Dateien, 1680 Tests bestanden.
+- /tmp/p11b-e2e-final-full.log — vollständige npm run test:e2e auf Port 5216: 726 Tests bestanden; enthält die Einkaufsantwort-Workflow-Spec.
+- /tmp/p11b-lint-final.log — npm run lint erfolgreich.
+- /tmp/p11b-build-final.log — npm run build erfolgreich.
+- /tmp/p11b-typecheck-final.log — npm run typecheck:e2e erfolgreich.
+- /tmp/p11b-e2e-reply2.log — gezielte Task-Spec auf allen drei Desktopgrößen: 6 Tests bestanden.
+- /tmp/p11b-uifinal.log — gezielte Compose-, Bezug-, EmailCenter- und Mailboxmodelltests: 50 Tests bestanden.
+Graphify wurde aus dem Worktree aktualisiert. Es meldete nur die bekannte Syntax-Extraktionswarnung in react-pc-frontend/src/components/TiptapEditor.tsx, Zeile 963. Playwright/Vite wurden über den beendeten Testlauf gestoppt; keine separat gestarteten Dienste bleiben offen.
+
+Backend-Blocker für den gemeinsamen Root-Stand: lokaler Mavenlauf stoppt beim Kompilieren ausschließlich an den zwei noch nicht in diesen Branch integrierten Root-Outboxmethoden EinkaufOutboxService.kommunikationErneutVersuchen(...) und kommunikationKlaeren(...). /tmp/p11b-target-mvn4.log dokumentiert genau diese erwartete Abhängigkeit. Der Importtestlauf /tmp/p11b-import-tests.log wird aus demselben Compile-Blocker vor den Tests gestoppt. Daher stehen noch aus: gezielte Backendtests (UnifiedEmailControllerTest, EinkaufKommunikationControllerTest, EinkaufKommunikationServiceTest, EinkaufMailantwortVorschauTest, EinkaufMailantwortVersandListenerTest, EmailImportServiceTest, EinkaufMailZuordnungRecoveryIntegrationTest) und die vollständige ./mvnw test nach Integration der Root-APIs. Keine offene bekannte Testregression außerhalb dieser fehlenden Integration.
+
+## Abschnitt 11 — Task 34 (Coding-Agent)
+
+Zeit: 2026-09-24T09:24:00Z
+Branch: codex/beschaffung-task-34
+Commit(s): 9703b6a2f72d615c9e28b77facc286bb548367c8
+Status: fertig
+
+Was gemacht wurde:
+- Lieferübersicht und Wareneingang mit angenommener Bestellfassung, Mengen-/Bedarfsgrenzen, chargenweiser Erfassung und gemeinsamem Belegauswahldialog umgesetzt.
+- Zeugniszuordnung verbindet echte Einkaufsdatei-ID mit mehreren passenden Lieferpositionen/Chargen; getrennte Prüfung respektiert ZEUGNIS_PRUEFEN. Manuelle Sollvorlagen dokumentieren fachliche Grundlage und Version ohne automatische EN1090-Aussage.
+- Rechnungsabgleich zeigt vereinbart/bestätigt/geliefert/abgerechnet und Quellen/Rechenweg, ordnet Teilrechnungen zu und öffnet den bestehenden Reklamationsdialog mit echten Bestell-, Positions- und Rechnungsreferenzen. Historische fehlende Dateien bleiben sichtbar; PDF-Upload nutzt den Rootvertrag.
+- Gezielte Unit-Tests: 8 Dateien, 20 Tests grün (`/tmp/beschaffung-task-34-unit.log`). Lint Exit 0 (`/tmp/beschaffung-task-34-lint.log`), Build Exit 0 (`/tmp/beschaffung-task-34-build.log`), E2E-Typecheck Exit 0 (`/tmp/beschaffung-task-34-e2e-typecheck.log`), `git diff --check` grün. Graphify-Update Exit 0; bekannte Syntaxwarnung in TiptapEditor.tsx Zeile 963.
+- Eigene Playwright-Specs für Lieferung/Zeugnisprüfung und Rechnungsabgleich/Reklamation geschrieben; keine echten Mails oder Echtdaten.
+
+Bedenken / Abweichungen vom Plan:
+- Playwright-Ausführung steht noch aus, weil `/einkauf/lieferungen` noch nicht in `App.tsx` registriert ist; diese Datei gehört Task 11a. Die Specs verwenden ausschließlich API-Stubs, keine Fake-Produktionsroute. Gemeinsame E2E-Ausführung auf Port 5215 nach der 11a-Integration.
+- `.graphify-venv` und die uncommittete Vertragskopie `react-pc-frontend/src/features/einkauf/bestellTypes.ts` blieben unstaged.
+
+Hinweis zur Zeitangabe des vorstehenden Task34-Blocks: Der tatsächliche UTC-Zeitpunkt des damaligen Append-Befehls war 2026-09-24T09:24:27Z; die dort notierte Sekunde :00 war gerundet. Korrektur eingetragen am 2026-09-24T09:24:54Z.
+
+
+## Abschnitt11 – Paket11c coding-fertig
+18 eigene Dateien eingefroren in /tmp/beschaffung-11c-owned.txt und /tmp/beschaffung-11c-sourcehashes.json. Agent hat bereits 9703b6a2f72d615c9e28b77facc286bb548367c8 committet, obwohl die gemeinsame abhängige E2E-/Vollsuiteprüfung noch aussteht; dieser Commit gilt ausdrücklich noch nicht als abgenommen. Gezielte20Unit/Lint/Build/E2ETypecheck laut Übergabe grün; zwei E2ESpecs warten auf reale App-/Bestelldetail-Verknüpfung von11a. Root führt vor Integration/Push vollständige gemeinsame Checks aus und behebt Fehler selbst. Kein vorgezogener Review. Die ungetrackte Bestelltypen-Vertragskopie und Graphifysymlink sind ausgeschlossen.
+
+
+## Abschnitt11 – Root korrigiert gemeldeten Datumsdialog vor gemeinsamer Prüfung
+11a meldete konkreten Integrationsbefund: Lieferdialog verwendet ein ISO-Textfeld statt Pflicht-DatePicker. Root hat nach fertiger11c-Übergabe ausschließlich LieferungDialog.tsx und dessenTest im34Worktree übernommen. GemeinsamenDatePicker/heuteIso/parseIsoDatum verwendet, verständlicheValidierung mitToast. Bedienungstest zunächst1rot1grün, danach2/2grün: /tmp/beschaffung-11-datum-{red,green}.log. BuildExit0 /tmp/beschaffung-11-datum-build.log, Ausgabe nur/tmp. Nochuncommitted; finales11c-Hashmanifest aktualisiert. Keine formaleReviewrunde begonnen.
+
+
+## Abschnitt11 – alle vier Codingpakete fertig, gemeinsame Prüfung gestartet
+11a hat26Dateien eingefroren übergeben (/tmp/beschaffung-11a-owned.txt,-sourcehashes.json), keine offenen Codingarbeiten. Gemeinsam101exakteEigentumsdateien aus Root30/11a26/11b27/11c18 nach Basisfe716ed3 im isolierten Worktreebeschaffung-abschnitt11-pruefung. Quellenmanifest /tmp/beschaffung-11-gemeinsame-quellen.json, Kopienhashes geprüft, keineGraphdaten/Buildassets/Secrets aufgenommen. Keine vorgezogene Paketintegration oder Reviews. Vollbackend und PC-Lint/Typecheck/Build/Unit gestartet; vollständigeE2E nachFrontendprüfungen. Logs /tmp/beschaffung-11-gemeinsam-*.log. Root behebt verbleibende Fehler selbst; noch0formaleReviewrunden.
+
+
+## Abschnitt11 – Root behebt gemeinsame Integrationsfehler vor Erstreview
+Alle vier Codingpakete sind fertig. Erster gemeinsamer Backendvolltest3560Tests/1Failure/0Errors/17Bestandsskips, /tmp/beschaffung-11-gemeinsam-backend.log: Einkaufskonto fehlte im zulässigen Postfachfilter. Root ergänzt EINKAUF in UnifiedEmailController; erneuteVollsuite läuft /tmp/beschaffung-11-gemeinsam-backend-r1.log.
+PC1711Tests/1Failure und1UnhandledError (/tmp/beschaffung-11-gemeinsam-unit.log): tatsächlicheBelegauswahl wird jetzt imRetrydialog gerendert; Testfixture lieferte stattBelegliste dieBestellung. Fixture konkret korrigiert; DetailUnit2/2grün /tmp/beschaffung-11-detail-unit-r1.log. Typecheck zeigteTypeScript-Narrowing aufasynchronbefülltemCallbackwert imE2E; Assertnun gemeinsamim expect.poll, gleicheInhaltsprüfung erhalten. Typecheck-r1grün.
+GemeinsameE2E deckte3Ursachen auf: A) externeVersandbestätigung bekam echteleereHTTP200 vomvoidController, UIparseJSON scheiterte nach bereits gespeichertemErfolg. Additiver gemeinsamer einkaufApi.postVoid verarbeitet explizitCommands ohneAntwortbody (Fehlerprüfungunverändert), fürexternGesendet,Versandklärung undZeugniseingang verwendet. Unit8/8grün /tmp/beschaffung-11-leere-antwort-unit.log. B) Externnachweis hat fachlichVorrang vorangenommenAm beiAnzeige; fälschliches SMTPWording korrigiert. C) konkreterePositionsüberschriftselektoren nachDialogintegration, fachlichkorrekteAggregation deszusätzlichenFremdprofils imTest (2von5/3offen→4von5/1offen), MengeneingabeproPositiongescoped. NachReklamationWorkflow scrolltBrowser zumFormular; Screenshotnun bewusstaufSeitenkopf zurück bevor unverändertePrüfungPrimaeraktionimViewport. KeineAssertionsdeaktiviert.
+API-Testisolation erweitert: contextbasierterRiegel blockiert nichtsimulierte/api/** vorViteProxy, gültigepageStubsbleibenwirksam; separateechteE2EnutztMockfixtureNICHT. GlobalWarmupblockiertebisherAPIebensonicht, nunauchdortgesperrt. DreiGrößenGET+POST-Regressionsnachweis, Stubweitererreichbar. RootzusätzlicheOwnership e2e/hilfen/test.ts,aufwaermen.ts,e2e/api-isolation.spec.ts,features/einkauf/api.ts/api.test.ts. Alle5DateieninBackendpaketRootundgemeinsamemPrüfWT, keinefremdenÄnderungen.
+GezielterE2ELauf-r2:15/18grün, verbleibende3Externfälle mitpostVoidbehoben; nachfolgenderBestelllauf6/6grün /tmp/beschaffung-11-gemeinsam-e2e-target-r3.log. VollständigePC-Lint/Typecheck/Build/Unit/E2Eerneutgestartet /tmp/beschaffung-11-gemeinsam-*-final.log; Builds nur/tmp. Jetzt106exakteDateienimQuellenmanifest, allevierEigentumsmanifesteaktualisiert. Noch0formaleReviewrunden, keineIntegrationinMain, keinPush.
+
+
+## Session-Stopp auf Nutzerwunsch – Abschnitt 11 gemeinsam grün, Review noch offen
+
+Der Nutzer bat ausdrücklich: „okay Stoppe dann mal. Ich möchte in einer neuen Session fortfahren.“ und „Schreibe mir einen Übergabe-Prompt. Mach das noch fertig, was du gerade dran löst.“ Root hat deshalb nur die begonnenen Integrationskorrekturen und deren abschließende Tests fertiggestellt. Keine Reviews oder Folgeabschnitte gestartet, kein neuer Commit/Push.
+
+Finaler vollständiger Backendtest: **3560 Tests, 0 Failures, 0 Errors, 17 bekannte Bestandsskips**, echter Exit0, `/tmp/beschaffung-11-gemeinsam-backend-final.log`. Der vorausgehende gezielte UnifiedEmailControllerTest ist ebenfalls grün (`/tmp/beschaffung-11-postfach-target.log`). Präzisierung: Beim ersten Fix hatte eine zu breite Textänderung vorübergehend auch den generischen manuellen Import für EINKAUF geöffnet; der nächste Volltest fand dies. Root begrenzte die Änderung auf den Listenfilter. Final bleiben generische Importe auf HAUPT/DOKUMENTE beschränkt, EINKAUF läuft über seinen eigenen Rechteprüfungsweg. Kein offener Backendfehler.
+
+Finale gemeinsame Desktopchecks alle Exit0: Lint, E2E-Typecheck, Build nach/tmp, **180 Unitdateien mit 1712 Tests**, **750 Playwright-E2E in allen drei Desktopgrößen**, Logs `/tmp/beschaffung-11-gemeinsam-{lint,typecheck,build,unit,e2e}-final.log`. Voll-E2E 4.5 Minuten. `git diff --check` grün. Graphify im gemeinsamen Prüfworktree aktualisiert, Exit0 `/tmp/beschaffung-11-gemeinsam-graphify.log`; allein bekannte Tiptap-AST-Warnung. Keine fremden Graphänderungen zurückgesetzt.
+
+Der finale Stand umfasst **106 exakt gehashte Dateien** aus vier disjunkten Paketen: Root35, 11a26, 11b27, 11c18. Alle Quellen im gemeinsamen Worktree `.claude/worktrees/beschaffung-abschnitt11-pruefung` sind nachweislich identisch zu den jeweiligen Eigentümerworktrees; keine zusätzlichen Produktdateien im Prüfstand. Alle jüngsten Rootkorrekturen wurden in beide Orte übernommen. Die bisherigen Abschnitt11-Paketdateien bleiben überwiegend UNCOMMITTED. Ausnahme:11c hat bereits9703b6a2f72d615c9e28b77facc286bb548367c8 plus weitere uncommitted Rootkorrekturen. Main und origin bleiben auf **fe716ed35639b0377d876dbc4b8d60c7e6c6c713** (Abschnitt10). Main ist nur an Plan/Log und den zwei bewusst unveränderten fremden Graphdateien dirty.
+
+Dauerhaftes privates Übergabeverzeichnis (nicht nur/tmp):
+`/Users/marvinkuhn/Library/Application Support/Codex/erp-db-clone/2026-09-23-beschaffung/handoff-2026-09-24-abschnitt11/`
+Darin: **UEBERGABE.md** mit vollständigem Wiederaufnahmeverfahren, **PROMPT.md** als Nutzerprompt, **testnachweise-final.json** mit Quell-/Konfigurationshashes und echten Ergebnissen, alle Ownership-/SHA256-Manifeste, realer Backendvertrag, fertige11-Review-/12-/13-Aufträge, **abschnitt11-quellen.tar.gz** ausschließlich mit den106 Produkt-/Testdateien, finale Logs, komprimierte Surefire-XMLs und39 Einkaufs-Designscreenshots. Die Bilder sind Sicherungen, noch KEIN formaler Sol-Designreview.
+
+Nächste Session: NICHT neu planen, Abschnitte1–10 nicht wiederholen. Hashgleichheit prüfen und gültige Nachweise wiederverwenden; ausschließlich Ownershipdateien committen, alle vier Pakete gemeinsam in Featurebranch und eigenen Designworktree integrieren; dann gemeinsamer Sol-Code-/ERP-Review plus Sol-Designreview, bislang **0 formale Reviewrunden**. Root behebt Befunde selbst. Anschließend Abschnitte12 und13 laut vorhandenen Aufträgen bis finaler Abnahme, PR/Merge/Issueabschluss und lokalem vollständigem Probebetrieb. Materialkosten-Nutzerpräzisierung, Token-/Kommunikationsregeln und Dummy-Testpflicht unverändert. Produktionskopie3309 weiterhin unberührt/unmigriert; bekannte Flyway-Vorbereitung beim späteren Start beachten. Keine echte Lieferantenmail versandt.
+
+
+## Abschnitt 11 – Wiederaufnahme, Ownership-Commits und gemeinsame Integration
+Zeit: 2026-09-24T09:51:11.003147+00:00
+Alle 106 Quellen und Konfigurationshashes exakt mit dauerhaftem finalem Nachweis abgeglichen. Grüne Backend3560/0/17, PC-Unit1712 und E2E750 sowie Lint/Typecheck/Build bleiben gültig; keine identischen Vollsuiten wiederholt. Vier explizite Paketcommits: Root26cd9af6,11a8a7aeded,11b112c3cfb,11cbac2421b (auf9703b6a2). Gemeinsam --no-ff --no-commit in Featurecheckout und eigenem beschaffung-design11 integriert; beide Produktstände identisch mit geprüftem Snapshot. Fremde Graphdaten und Rootdokumente erhalten. Gemeinsamer Sol-Code/ERP- und Sol-Design-Erstreview folgt jetzt, weiterhin0formaleNachbesserungen. Keine DB-Migration/echteMail.
+
+## Abschnitt 11 — gemeinsamer Erstreview und Nachbesserung 1 (Root)
+
+Zeit: 2026-09-24T10:19:29.489513+00:00
+Branch: codex/beschaffung-konzept
+Status: Nachprüfung ausstehend
+Ampel Erstreview: ROT (Code/ERP und Design)
+
+- Erstprüfung vollständig integrierter 106-Dateien-Stand: Codebericht `/tmp/beschaffung-abschnitt11-review-report.md`, Designbericht `/tmp/beschaffung-abschnitt11-design-report.md`; gültige ursprüngliche Gesamtnachweise übernommen, 39 archivierte Bilder tatsächlich geprüft.
+- Root korrigierte Mailmutationsrechte und beweiserhaltenden Löschpfad, PDF-ID-Vertrag, doppelte Materialkosten, persistente Zeugniszuordnung nach Reload, Direktbestellfehlerzustand, Stammdatenauswahl und Sende-Bestätigungsdesign. Zusätzliche Restmengen-/Bestelllinkkorrektur und Dialog-/Erstaufrufbilder. Details `/tmp/beschaffung-11-r1-review-delta.md`.
+- Root-Ownership der Nachbesserung: 30 Dateien (`/tmp/beschaffung-11-r1-owned.txt`), 26 ursprüngliche Dateien plus Zeugnis-DTO/-Service/-Frontendtypen und neuer `StammdatenAuswahl.tsx`. Keine Graph-, Fremd-, Konfigurations- oder Builddateien gestagt.
+- Alle vier Paketbranches weiterhin gemeinsam in Main/Design integriert; neuer identischer Indexbaum `a7bc58c94e65c47d99fbadb536170acbaf1fd588` mit 110 gehashten Eigentumsdateien (`/tmp/beschaffung-11-r1-sources.json`). Noch kein Abschnittsmergecommit und keine Abnahme.
+- Neue Gesamtnachweise Backend3586/0Fehler/17Bestandsskips, PC1717Unit grün, Lint/Typecheck/Build Exit0. E2E-Endlauf läuft; Sol-Nachreview erst nach grünem Abschluss. Alle Tests Dummy/Testcontainer; DB3309 und echte Mail unberührt.
+
+## Abschnitt 11 — Nachprüfung R1 und Nachbesserung R2 (Root)
+
+Zeit: 2026-09-24T10:28:18.628370+00:00
+Status: R2-Endprüfung läuft
+
+- R1-Code-/ERP-Review GRÜN, alle fünf Pflichtbefunde geschlossen; nichtblockierender Mailcenter-Paging/N+1-Hinweis dokumentiert. Bericht `/tmp/beschaffung-abschnitt11-review-r1-report.md`.
+- R1-Designreview ROT: englischer nativer Dateiupload, Sky-Icon in Mailbestätigung und nativer Zeugnis-Select; ansonsten Erstbefunde/Abdeckung geschlossen, 27 neue Bilder tatsächlich in drei Größen angesehen. Bericht `/tmp/beschaffung-abschnitt11-design-r1-report.md`.
+- Root-R2 behebt genau diese drei lokalen Punkte: deutscher eigener Uploadauslöser, additive Send-/Rose-Variante im gemeinsamen ConfirmDialog, vorhandener CustomSelect mit deutscher Dokumentartauswahl/Keyboardfokus. Zusatzownership `react-pc-frontend/src/components/ui/confirm-dialog.tsx`; insgesamt 111 Eigentumsdateien, identischer Main-/Designindex `13df4a0fb649156b3563c0f0c861ea1efc45f152`. Delta `/tmp/beschaffung-11-r2-review-delta.md`, Quellbindung `/tmp/beschaffung-11-r2-testbindung.json`.
+- Backend/Mobile vollständig hashgleich zu R1, keine Wiederholung; neue PCUnit/Lint/Types/Build grün, End-E2E läuft. Noch keine Abnahme/kein Mergecommit. R2 ist zweite und letzte formale Nachbesserung.
+
+## Abschnitt 11 — Abnahme nach Nachbesserung 2
+
+Zeit: 2026-09-24T10:40:17.359997+00:00
+Branch: codex/beschaffung-konzept
+Status: fertig
+Ampel: GRÜN (Code/ERP und Design)
+
+- Gemeinsamer Endstand `89d6e909b3ae242c4c93a723375a62ef6a14c5e8` mit 113 Eigentumsdateien nach vollständiger Integration aller vier Paketcommits; keine Teilabnahme. Sol-Code-R2 `/tmp/beschaffung-abschnitt11-review-r2-report.md` und Sol-Design-R2 `/tmp/beschaffung-abschnitt11-design-r2-report.md` jeweils GRÜN. Zwei formale Nachbesserungsrunden, Root korrigierte selbst.
+- Final 1718 PCUnit,750E2E in drei Größen,Lint/Types/Build Exit0. Backend identisch zum grünen R1-Teststand3586/0Fehler/17bekannteSkips, Mobile unverändert. Testmanifest `/tmp/beschaffung-11-r2-final.json`, vollständige Hashbindung `/tmp/beschaffung-11-r2-testbindung.json`.
+- Im ersten R2-Endlauf aufgetretener Vorlagenlade-Race deterministisch reproduziert und behoben; neue Regression und anschließende vollständige Tests grün. Kein roter Check bleibt offen.
+- Design sah zwölf gezielte neue Bilder tatsächlich in allen drei Größen; keine Restbefunde. Übrig bleibt ein ausdrücklich nichtblockierender Performancehinweis zu generischem Mailcenter-Paging/N+1.
+- Dauerhafte Sicherung unter Übergabeverzeichnis/fortsetzung-r1 und /fortsetzung-r2; Quellarchive, Ownership-/Hashmanifeste, Testlogs und Reviews. Graphdaten/fremde Änderungen erhalten, keine echten Mails und keine Prüfung gegen DB3309.
+- Abschnitt12 darf jetzt auf diesem abgenommenen Stand starten: Paket12A (28→36), GPT-6Luna. Folgevertrag `/tmp/beschaffung-12-start-zusatz.md` plus dauerhafter Paketauftrag.

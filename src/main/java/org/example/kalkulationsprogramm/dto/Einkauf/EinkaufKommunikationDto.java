@@ -25,4 +25,14 @@ public final class EinkaufKommunikationDto {
     public record BeteiligungsVersand(Long beteiligungId, EinkaufVersandDto.VersandDto versand) {}
     public record VersandWiederholung(long version) {}
     public record VersandErgebnis(Long beteiligungId, String status, String fehlerCode, String messageId) {}
+    public record Antwort(String subject, String htmlBody, List<Long> anlageIds, String vorschauHash, UUID idempotenzKey) {
+        public Antwort { anlageIds = anlageIds == null ? List.of() : List.copyOf(anlageIds); }
+    }
+    public record AntwortVorschau(String vorschauHash, String subject, String htmlBody, String empfaenger,
+            List<Long> anlageIds, String inReplyTo, List<String> references) {
+        public AntwortVorschau {
+            anlageIds = anlageIds == null ? List.of() : List.copyOf(anlageIds);
+            references = references == null ? List.of() : List.copyOf(references);
+        }
+    }
 }

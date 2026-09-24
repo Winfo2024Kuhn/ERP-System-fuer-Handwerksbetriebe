@@ -41,6 +41,25 @@ class EinkaufDateiServiceTest {
         service = new EinkaufDateiService(files, versions, needs, uploadRoot.toString());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"../../dummy.pdf", "dummy.exe.pdf", "dummy.html", "dummy.js", "dummy\\file.pdf"})
+    void lieferantenUploadWeistUnsichereDateinamenZurueck(String name) {
+        var supplier = mock(org.example.kalkulationsprogramm.domain.Lieferanten.class);
+        assertThrows(IllegalArgumentException.class, () -> service.ladeLieferantenbelegHoch(supplier,
+                org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.SONSTIG,
+                new MockMultipartFile("datei", name, "application/pdf", "%PDF-1.7 Dummy".getBytes())));
+    }
+
+    @Test void lieferantenUploadPrueftInhaltMimeUndLeereDatei() {
+        var supplier = mock(org.example.kalkulationsprogramm.domain.Lieferanten.class);
+        for (var upload : List.of(new MockMultipartFile("datei", "dummy.pdf", "application/pdf", "MZ-executable".getBytes()),
+                new MockMultipartFile("datei", "dummy.pdf", "text/html", "%PDF-1.7 Dummy".getBytes()),
+                new MockMultipartFile("datei", "dummy.pdf", "application/pdf", new byte[0]))) {
+            assertThrows(IllegalArgumentException.class, () -> service.ladeLieferantenbelegHoch(supplier,
+                    org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.SONSTIG, upload));
+        }
+    }
+
     @Test
     void rejectsPathTraversalEvenWhenTheExtensionLooksLikePdf() {
         MockMultipartFile pdf = new MockMultipartFile("datei", "../../angebot.pdf", "application/pdf",
@@ -79,7 +98,7 @@ class EinkaufDateiServiceTest {
         when(versions.findByBedarfIdAndRevision(1L, "A")).thenReturn(Optional.empty());
         when(versions.findByBedarfIdAndRevision(1L, "B")).thenReturn(Optional.empty());
         var byHash = new HashMap<String, EinkaufDatei>();
-        when(files.findBySha256(anyString())).thenAnswer(call -> Optional.ofNullable(byHash.get(call.getArgument(0))));
+        when(files.sperreBySha256(anyString())).thenAnswer(call -> Optional.ofNullable(byHash.get(call.getArgument(0))));
         when(files.save(any())).thenAnswer(call -> {
             EinkaufDatei value = call.getArgument(0);
             byHash.put(value.getSha256(), value);
@@ -96,14 +115,16 @@ class EinkaufDateiServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals(1, uploadRoot.resolve("einkauf").toFile().list().length);
     }
 
-    @Test
-    void explicitReuploadRepairsDedupedHistoricalReferenceWhoseSourceIsGone() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
+    @org.junit.jupiter.params.provider.ValueSource(longs = 7L)
+    void explicitReuploadRepairsDedupedHistoricalReferenceWhoseSourceIsGone(Long supplierDocumentId) throws Exception {
         byte[] bytes = "%PDF-1.7\nRecovered from explicit upload".getBytes();
         String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
         EinkaufDatei historicalReference = new EinkaufDatei(hash, null, "historisch.pdf", "application/pdf",
-                bytes.length, 55L, null);
+                bytes.length, 55L, supplierDocumentId);
         EinkaufDateiRepository files = mock(EinkaufDateiRepository.class);
-        when(files.findBySha256(hash)).thenReturn(Optional.of(historicalReference));
+        when(files.sperreBySha256(hash)).thenReturn(Optional.of(historicalReference));
         when(files.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         EinkaufAnlageVersionRepository versions = mock(EinkaufAnlageVersionRepository.class);
         when(versions.findByBedarfIdAndRevision(1L, "Reupload")).thenReturn(Optional.empty());
@@ -119,7 +140,7 @@ class EinkaufDateiServiceTest {
         service.hochladen(1L, pdf(bytes, "erneuert.pdf"), "Reupload", 4L);
 
         verify(files).save(argThat(file -> file == historicalReference && file.getGespeicherterName() != null
-                && file.getEmailAttachmentId() == null && file.getLieferantDokumentId() == null));
+                && file.getEmailAttachmentId() == null && java.util.Objects.equals(file.getLieferantDokumentId(), supplierDocumentId)));
         org.junit.jupiter.api.Assertions.assertArrayEquals(bytes, java.nio.file.Files.readAllBytes(
                 uploadRoot.resolve("einkauf").resolve(historicalReference.getGespeicherterName())));
     }

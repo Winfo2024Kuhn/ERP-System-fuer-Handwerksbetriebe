@@ -1071,8 +1071,16 @@ public class EmailImportService {
      * Manueller Import-Trigger (z.B. für REST-API).
      */
     public int triggerImport() {
-        int imported = doImport();
-        int reclassified = reprocessSpam();
+        return triggerImport("HAUPT");
+    }
+
+    /** Importiert und klassifiziert ausschließlich das ausdrücklich gewählte Konto. */
+    public int triggerImport(String kontoId) {
+        if (kontoId == null || !List.of("HAUPT", "DOKUMENTE", "EINKAUF").contains(kontoId)) {
+            throw new IllegalArgumentException("Ein gültiges Postfach muss ausgewählt sein.");
+        }
+        int imported = doImport(kontoId);
+        int reclassified = reprocessSpam(kontoId);
         return imported + reclassified;
     }
 
@@ -1081,6 +1089,11 @@ public class EmailImportService {
      */
     @Transactional
     public int reprocessSpam() {
+        return reprocessSpam(null);
+    }
+
+    @Transactional
+    public int reprocessSpam(String kontoId) {
         // Wir nehmen alle aktiven Emails, die noch nicht als Spam/Newsletter markiert
         // sind
         // oder wir überprüfen einfach alle "unsicheren" Kandidaten
@@ -1088,6 +1101,7 @@ public class EmailImportService {
 
         int updated = 0;
         for (Email e : candidates) {
+            if (kontoId != null && !kontoId.equals(e.getKontoId())) continue;
             if (e.getDeletedAt() != null)
                 continue;
             // Wir checken auch welche, die schon flaggen haben?

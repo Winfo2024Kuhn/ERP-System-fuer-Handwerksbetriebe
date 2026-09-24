@@ -1,9 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback, useRef, useId } from 'react';
-import { AlertTriangle, Trash2, HelpCircle } from 'lucide-react';
+import { AlertTriangle, Trash2, HelpCircle, Send } from 'lucide-react';
 
 // --- Types ---
-type ConfirmVariant = 'danger' | 'warning' | 'info' | 'fehlschlag';
+type ConfirmVariant = 'danger' | 'warning' | 'info' | 'fehlschlag' | 'send';
 
 export interface ConfirmOptions {
     title?: string;
@@ -48,6 +48,11 @@ const iconMap: Record<ConfirmVariant, React.ReactNode> = {
             <HelpCircle className="h-6 w-6 text-sky-600" />
         </div>
     ),
+    send: (
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+            <Send className="h-6 w-6 text-rose-600" />
+        </div>
+    ),
     // Task 8c: fuer Bestaetigungen, die einen bereits eingetretenen Fehlschlag
     // melden (z.B. "Ihre Aenderungen wurden nicht uebernommen") statt eine
     // harmlose Frage zu stellen -- 'info' liefert dafuer zwar den geforderten
@@ -67,6 +72,7 @@ const iconMap: Record<ConfirmVariant, React.ReactNode> = {
 const confirmBtnMap: Record<ConfirmVariant, string> = {
     danger: 'bg-red-600 hover:bg-red-700 focus:ring-red-500 text-white',
     warning: 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-400 text-white',
+    send: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500 text-white',
     info: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500 text-white',
     fehlschlag: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500 text-white',
 };

@@ -102,7 +102,11 @@ class EinkaufMailZuordnungRecoveryIntegrationTest {
                 mock(org.example.kalkulationsprogramm.config.LocalTestMailPolicy.class), transport, new ObjectMapper(), transactionManager);
         var worker = mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufVersandWorker.class);
         var communication = new org.example.kalkulationsprogramm.service.einkauf.EinkaufKommunikationService(requests,
-                revisions, participations, emails, links, previews, templates, pdf, files, outbox, worker, new ObjectMapper());
+                revisions, participations, emails, links, previews,
+                mock(org.example.kalkulationsprogramm.repository.EinkaufMailantwortVorschauRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EinkaufVersandauftragRepository.class),
+                templates, pdf, files, outbox, worker,
+                mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufMailantwortVersandListener.class), new ObjectMapper());
         var first = transaction.execute(tx -> communication.vorschau(ids[0], ids[1], 1L));
         var second = transaction.execute(tx -> communication.vorschau(ids[0], ids[1], 1L));
         var barrier = new java.util.concurrent.CyclicBarrier(2);
@@ -135,6 +139,41 @@ class EinkaufMailZuordnungRecoveryIntegrationTest {
         org.mockito.Mockito.verify(transport, org.mockito.Mockito.times(1)).vorbereiten(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
         // No SMTP/IMAP operation is invoked by either approval.
         org.mockito.Mockito.verifyNoMoreInteractions(transport);
+    }
+
+    @Test
+    void permanentesLoeschenErhaeltMailUndAntwortvorschauMitEchtemMysqlFremdschluessel() throws Exception {
+        // Use the actual migration, including both retention FKs, in this disposable MySQL database.
+        try (var connection = java.sql.DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())) {
+            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
+                    new org.springframework.core.io.ClassPathResource("db/migration/V387__einkauf_versand_outbox.sql"));
+            connection.createStatement().execute("DROP TABLE einkauf_mailantwort_vorschau");
+            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
+                    new org.springframework.core.io.ClassPathResource("db/migration/V397__einkauf_mailantwort_vorschau.sql"));
+        }
+        var transaction = new TransactionTemplate(transactionManager);
+        long id = transaction.execute(tx -> emails.saveAndFlush(email("<retention@example.test>")).getId());
+        String token = "f".repeat(64);
+        transaction.executeWithoutResult(tx -> entityManager.persist(new EinkaufMailantwortVorschau(
+                token, id, "EINKAUF", "ANFRAGE", 1L, null, null, "<retention@example.test>",
+                "<retention@example.test>", List.of(), "test@example.com", "Dummy", "<p>Dummy</p>",
+                List.of(), "a".repeat(64), Instant.now(), Instant.now().plusSeconds(3600))));
+        var controller = org.mockito.Mockito.mock(org.example.kalkulationsprogramm.controller.UnifiedEmailController.class,
+                org.mockito.Mockito.CALLS_REAL_METHODS);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "emailRepository", emails);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "einkaufMailZuordnungRepository", links);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "einkaufBerechtigungService",
+                mock(org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService.class));
+        var denied = org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> transaction.execute(tx -> controller.deleteEmailPermanently(id)));
+        assertEquals(409, denied.getStatusCode().value());
+        assertTrue(emails.existsById(id));
+        transaction.executeWithoutResult(tx -> assertEquals(id,
+                entityManager.find(EinkaufMailantwortVorschau.class, token).getEmailId()));
+        // A direct delete really is rejected by the migrated foreign key, not just by test mocks.
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> transaction.executeWithoutResult(tx -> { emails.deleteById(id); emails.flush(); }));
+        assertTrue(emails.existsById(id));
     }
 
     @Test

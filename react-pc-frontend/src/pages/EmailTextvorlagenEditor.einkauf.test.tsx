@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
@@ -22,4 +22,16 @@ describe('EmailTextvorlagenEditor Einkauf', () => {
    await user.click(screen.getAllByRole('button', { name: /bearbeiten/i })[0]);
    expect(await screen.findByTitle('Neutrale Anrede')).toBeInTheDocument();
  });
+ it('behält typgebundene Platzhalter bei verspäteter allgemeiner Metadatenantwort', async () => {
+   const originalFetch = global.fetch;
+   let complete!: (response: Response) => void;
+   const delayed = new Promise<Response>(resolve => { complete = resolve; });
+   global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/placeholders') ? delayed : originalFetch(input, init));
+   render(<MemoryRouter><ToastProvider><EmailTextvorlagenEditor /></ToastProvider></MemoryRouter>);
+   await userEvent.click((await screen.findAllByRole('button', { name: /bearbeiten/i }))[0]);
+   expect(await screen.findByTitle('Neutrale Anrede')).toBeInTheDocument();
+   await act(async () => complete({ ok: true, json: async () => [{ token: '{{ANREDE}}', label: 'Allgemeine Anrede' }] } as Response));
+   expect(screen.getByTitle('Neutrale Anrede')).toBeInTheDocument();
+ });
+
 });

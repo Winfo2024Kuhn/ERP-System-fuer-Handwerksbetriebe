@@ -91,7 +91,7 @@ Der vorhandene Featurebranch `codex/beschaffung-konzept` bleibt Integrationsbasi
 | 8 – Unterlagen, Rechnungsprüfung und Fristen | 25 → 23; 26 | Abgenommen; Sol grün nach 2 Nachbesserungen, 3491 Backendtests / 0 Fehler |
 | 9 – Gemeinsame Oberflächenbausteine | 27 | Abgenommen; Sol-Code grün, Design gelb ohne Blocker nach 1 Nachbesserung; 3492 Backend-, 1654 Unit-, 687 E2E-Tests grün |
 | 10 – Einstellungen und Anfrageseiten | 29; 30 → 31 | Abgenommen; Sol-Code grün, Design gelb ohne Blocker; 2 Nachbesserungen plus ausdrücklich freigegebene Testreparatur; 3502 Backend-,1673 Unit-,720 E2E-Tests grün |
-| 11 – Bestellseiten, Vergleich und Mailcenter | 33 → 34 → 32; 35 | Abschnitt 10 abgenommen |
+| 11 – Bestellseiten, Vergleich und Mailcenter | 33 → 32; 34; 35 | Abschnitt 10 abgenommen |
 | 12 – Bedarfsseite und Navigation | 28 → 36 | Abschnitt 11 abgenommen |
 | 13 – Gesamtabnahme und lokaler Probebetrieb | 37 → 39 | Abschnitt 12 abgenommen |
 
@@ -123,7 +123,7 @@ Die vollständigen Schreibmengen stehen unverändert in den jeweiligen `Files`- 
 - Tasks3/12/14/15/18/19/20 warten auch auf Task1 für gemeinsame Rechte/Fehler/Audit; Tasks4/7/10 auf Task2 für die gemeinsame Testgrundlage. Tasks9/10/11/15/16 konsumieren zusätzlich die zentrale LocalTestMailPolicy aus Task38; Task15 und Task22 konsumieren ausdrücklich das getrennte Scheduling-/Async-Profil aus Task38.
 - Task26 verwendet den Quellenrecord aus Task20; Task29 benötigt Task10 für tatsächlich funktionierende Verbindungs-/Testmailaktionen. Task35 baut auf der von Task22 erweiterten Kommunikation auf.
 - Task31 konsumiert den neutralen Entwurfvertrag aus Task13. Der Hinweis auf die später in Task28 erfolgende Navigation erzeugt keinen Import aus Task28. Task33 ist ohne Task32 über seine eigene Bestellliste/Detailroute und vorbereitete Testdaten prüfbar; die integrierte Auswahlkette wird nach Task32 in Task37 geprüft.
-- Task32 wartet zusätzlich auf Task21 und die geprüfte Bestellroute aus Task33, damit „Als Bestellung vorbereiten“ ein erreichbares Ziel hat. Task28 wartet ebenfalls auf31/33. Tasks33/34/32 werden im selben Coding-Paket nacheinander umgesetzt; Task28 folgt im nächsten Abschnitt. So bleiben die Seiten und ihre Ziele zusammen prüfbar.
+- Task32 wartet zusätzlich auf Task21 und die geprüfte Bestellroute aus Task33, damit „Als Bestellung vorbereiten“ ein erreichbares Ziel hat. Task28 wartet ebenfalls auf31/33. Tasks33→32 bleiben in Paket11A; Task34 wird unter Erhalt der begonnenen Dateien in Paket11C parallel fertiggestellt. App.tsx, Bestelldetail und Bestelltypen bleiben exklusiv11A; die Task34-Komponenten gehören11C. Task28 folgt im nächsten Abschnitt. So bleiben die Seiten und ihre Ziele zusammen prüfbar.
 - Task23 wartet auf die Zeugnisquery aus25. Task27 folgt vollständig geprüften Backendverträgen3–26. Task36 folgt allen Seiten27–35. Task37 prüft den gesamten Ablauf; Task39 folgt zusätzlich diesem Integrationsgate und verwendet den dann geprüften Vite-Proxy.
 - Migrationen bleiben eindeutig V377–V395 plus V396 für die Materialkostenpräzisierung. Wegen früher Mailkonten-/Vorlagen-Tasks entstehen im Integrationsstand zunächst Versionslücken: hierfür je Abschnitt frische isolierte Dummy-DB verwenden, alle verfügbaren Migrationen in Versionsreihenfolge anwenden. Keine persistente Nutzerkopie vorziehen, kein Flyway-out-of-order/repair als Abkürzung. Task37 prüft die vollständige Reihe, Task39 allein migriert die reale Kopie.
 - E2E-Ports sind `5181 + erste Tasknummer des Coding-Pakets` (reservierter Bereich 5182–5220). Bei ausschließlich serverseitigen Tasks bleiben sie reserviert. Playwright-Aufruf/Umgebung muss den zugeteilten Port und denselben baseURL verwenden; keine gemeinsame Änderung der Playwright-Konfiguration durch Coding-Tasks. Reale Backend-/DB-/Mailtestports separat dynamisch localhost-binden. Nutzerports5173/8080 bleiben während paralleler Tests frei.
@@ -774,15 +774,17 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 
 ## Abschnitt 11: Bestellseiten, Vergleich und Mailcenter
 
+Abgenommen am 24.09.2026 nach zwei gemeinsamen Nachbesserungsrunden; Sol-Code-/ERP- und Designreview GRÜN. Quellstand `89d6e909b3ae242c4c93a723375a62ef6a14c5e8` (Index vor Dokumentation), 113 Eigentumsdateien. Backend3586/0/17, PC1718Unit/750E2E sowie Lint/Types/Build grün. Erweiterte Reviewownership: Zeugnis-DTO/-Service/-Frontendtypen, StammdatenAuswahl, shared ConfirmDialog und Vorlageneditor/Regression.
+
 Abnahmegrenze: Bestell- und Vergleichsziele muessen fuer die Bedarfsaktionen und endgueltige Navigation erreichbar sein.
 
-### Coding-Paket 11A: 33 → 34 → 32
+### Coding-Paket 11A: 33 → 32
 
 Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 
 ### Task 33: Echte Bestellungen und Direktbestellung im bestehenden Einkaufsbereich
 
-- Zusätzliche Root-Ownership Abschnitt11, separater Worktree `beschaffung-task-33-backend`: additive Bestell-/Lieferungslese-DTOs, neuer `EinkaufBestellstatusController/Service`, `EinkaufBestellungDto/Service`, `EinkaufBestellfreigabeController/Service`, `BestellBestaetigung`, `EinkaufLieferungRepository`, `EinkaufOutboxService`, `EinkaufVersandWorker` und zugehörige Controller-/Service-/MySQL-Regressionen. Reale Revisionannahme/externe Nachweise, Vorgangsmengen, Lieferposition-/Chargen-IDs, Bestätigungen, scoped Versandstatus/Wiederholung/Klärung und vollständige Vorschau-Metadaten für die geplanten Seiten. Keine neue Migration. Gemeinsame Integration erst nach beiden Luna-Paketen und Rootpaket.
+- Zusätzliche Root-Ownership Abschnitt11, separater Worktree `beschaffung-task-33-backend`: additive Bestell-/Lieferungslese-DTOs, neuer `EinkaufBestellstatusController/Service`, `EinkaufBestellungDto/Service`, `EinkaufBestellfreigabeController/Service`, `BestellBestaetigung`, `EinkaufLieferungRepository`, `EinkaufOutboxService`, `EinkaufVersandWorker` und zugehörige Controller-/Service-/MySQL-Regressionen. Reale Revisionannahme/externe Nachweise, Vorgangsmengen, Lieferposition-/Chargen-IDs, Bestätigungen, scoped Versandstatus/Wiederholung/Klärung und vollständige Vorschau-Metadaten für die geplanten Seiten. Keine neue Migration. Gemeinsame Integration erst nach allen drei Luna-Paketen und Rootpaket; gemeinsame API-/UI-Abhängigkeiten danach vollständig prüfen, keine vorgezogenen Teilreviews.
 
 - Branch: `codex/beschaffung-task-33`
 - Worktree: `.claude/worktrees/beschaffung-task-33`
@@ -793,26 +795,10 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 - Vorbild: `BestellungenUebersicht.tsx:23,121` historische Ketten, DetailLayout und Task31-Vorschau.
 - Interfaces – Produces: `/bestellungen/:id`, neue Bestellliste auf `/bestellungen`, bestehende Belegketten als eigener Bereich „Bisherige Belege“; `DirektbestellungDialog({anteile:Herkunft[],onCreated})`. Consumes19,21,22,27,31.
 - Steps:
-  - [ ] E2E Auswahl→Entwurf→PDF→Freigabe→SMTP angenommen, Mengenwechsel erst nach Annahme; Versandsicherheit/unklar blockiert blindes Retry; Direktbestellung ohne PA/Angebotsnummer; Stornoanfrage ohne Freigabe, bestätigtes Storno mit Beleg.
-  - [ ] In App.tsx Detailroute `/bestellungen/:id` erst mit dieser fertigen Seite registrieren. Header zeigt B-/optionalePA, Lieferant, fachlichen Zustand, Versandstatus, Bestätigung und Termin getrennt. Angezeigte Positionen aus Revision, nicht Artikelstamm. Ansprechpartner/Zeugnisse/Anlagen/Preise/Adresse bewusste Freigabeschritte.
-  - [ ] Direktpreis mit Quelle/Datum vorschlagen und Gültigkeit bestätigen; ohne aktuellen Preis Richtung Anfrage führen. Änderung erzeugt neue Fassung, unklare Sendung Klärdialog, externer Versand verlangt Datum+Beleg.
-  - [ ] Historische Belegketten-UI/Kostenzuordnung behalten, keine Rückinterpretation „B versendet“. Component-/E2E-/Designprüfung grün.
-
-### Task 34: Lieferung, Unterlagen und Rechnungsprüfung im Desktop
-
-- Branch: `codex/beschaffung-task-33`
-- Worktree: `.claude/worktrees/beschaffung-task-33`
-- E2E-Port: `5214`
-- Consumes-Gate: 24, 25, 26, 27, 33. Externe Voraussetzungen sind vor Paketstart geprüft und integriert; interne Vorgängerschritte desselben Pakets müssen vor Nutzung fertig und gezielt grün getestet sein.
-- Files: ändern `react-pc-frontend/src/App.tsx`; neu `react-pc-frontend/src/pages/EinkaufLieferungen.tsx`, `react-pc-frontend/src/features/einkauf/components/LieferungDialog.tsx`, `react-pc-frontend/src/features/einkauf/components/ZeugnisZuordnung.tsx`, `react-pc-frontend/src/features/einkauf/components/Rechnungsabgleich.tsx`, `react-pc-frontend/src/features/einkauf/components/AnforderungsVorlagen.tsx`; ändern `react-pc-frontend/src/pages/EinkaufBestellungDetail.tsx`, `react-pc-frontend/src/components/LieferantReklamationenTab.tsx`; Tests siehe explizite Testdateien; E2E `react-pc-frontend/e2e/einkauf-lieferung-zeugnis.spec.ts`, `react-pc-frontend/e2e/einkauf-rechnungsabgleich.spec.ts`.
-- Explizite Testdateien: `react-pc-frontend/src/pages/EinkaufLieferungen.test.tsx`, `react-pc-frontend/src/features/einkauf/components/LieferungDialog.test.tsx`, `react-pc-frontend/src/features/einkauf/components/ZeugnisZuordnung.test.tsx`, `react-pc-frontend/src/features/einkauf/components/Rechnungsabgleich.test.tsx`, `react-pc-frontend/src/features/einkauf/components/AnforderungsVorlagen.test.tsx`.
-- Vorbild: `LieferantReklamationenTab.tsx`, vorhandener LieferantDokumentModal, Task27 Quellenlink und DetailLayout.
-- Interfaces – Produces: Route `/einkauf/lieferungen`; `Rechnungsabgleich({bestellungId:number})`; `ZeugnisZuordnung({bestellungId:number})`. Consumes24–27,33.
-- Steps:
-  - [ ] E2E bestellt4/geliefert2+2 in zwei Chargen, Zeugnis fehlt trotz voller Lieferung; späteres PDF mehreren passenden Lieferpositionen zuordnen, separat prüfen; fremde Charge ablehnen, Nutzer ohne Prüfberechtigung kann nicht freigeben.
-  - [ ] In App.tsx fertige Route `/einkauf/lieferungen` registrieren. Physische Menge, Dokumentvollständigkeit und Materialfreigabe getrennt darstellen. Sollvorlagen mit Grundlage/Version manuell pflegen; keine automatisch berechnete EN1090-Erfüllung behaupten.
-  - [ ] Rechnungsteil2von4 und weitere Rechnung/Gutschrift erfassen/verknüpfen, Rechenweg vereinbart/bestätigt/geliefert/abgerechnet zeigen; Abweichung öffnet bestehenden Reklamationsdialog mit Bestell-/Positions-/Rechnungsreferenz. Kostenübernahme verlinkt bestehenden Zuordnungspfad.
-  - [ ] Fehlende historische Datei meldet fehlend, neue Dummydatei uploadbar; nicht reparieren durch erfundene Datei. Tests/Design grün.
+  - [x] E2E Auswahl→Entwurf→PDF→Freigabe→SMTP angenommen, Mengenwechsel erst nach Annahme; Versandsicherheit/unklar blockiert blindes Retry; Direktbestellung ohne PA/Angebotsnummer; Stornoanfrage ohne Freigabe, bestätigtes Storno mit Beleg.
+  - [x] In App.tsx Detailroute `/bestellungen/:id` erst mit dieser fertigen Seite registrieren. Header zeigt B-/optionalePA, Lieferant, fachlichen Zustand, Versandstatus, Bestätigung und Termin getrennt. Angezeigte Positionen aus Revision, nicht Artikelstamm. Ansprechpartner/Zeugnisse/Anlagen/Preise/Adresse bewusste Freigabeschritte.
+  - [x] Direktpreis mit Quelle/Datum vorschlagen und Gültigkeit bestätigen; ohne aktuellen Preis Richtung Anfrage führen. Änderung erzeugt neue Fassung, unklare Sendung Klärdialog, externer Versand verlangt Datum+Beleg.
+  - [x] Historische Belegketten-UI/Kostenzuordnung behalten, keine Rückinterpretation „B versendet“. Component-/E2E-/Designprüfung grün.
 
 ### Task 32: Angebotsvergleich, manuelle Erfassung, KI-Prüfung und Preisübernahme
 
@@ -825,16 +811,41 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 - Vorbild: Preis-/Zahlenprüfung Task27, bestehende Artikelpreis-Historie, Quellenviewer Task27.
 - Interfaces – Produces: `Angebotsvergleich({anfrageId:number,onBestellung:(angebotVersionId:number)=>void})`, `AngebotEditor({beteiligungId,angebotVersionId?,onSaved})`, `KiVorschlaege({jobId,onUebernommen})`. Consumes17–20,27,31.
 - Steps:
-  - [ ] E2E A1060/B1080/Coffen, verschiedene Preisbasen, enthaltene Legierung, abgelaufene Gültigkeit, technische Abweichung, Zeugnis nicht lieferbar, Skonto nur Hinweis; keine grüne Empfehlung für C.
-  - [ ] Matrixpositionen mit internen Nummern/Revisionen, Liefergruppen und Gesamtkosten; horizontal nur Matrix scrollbar, Header/Primäraktion erreichbar. Rechenweg mit Originalpreis/Faktor/Quelle aufklappbar; fehlend als „offen“, niemals0€.
-  - [ ] Manuell erfassen/korrigieren auch bei KI-Fehler; Quellenfelder einzeln bestätigen, geänderte Werte erkennbar, Neu-Analyse überschreibt Korrekturen nicht. Preisübernahme ist eigene bewusste Aktion mit Scope/Gültigkeit, keine Bestellung oder Kostenbuchung.
-  - [ ] „Als Bestellung vorbereiten“ nennt konkrete Angebotsversion und erzeugt nur Entwurf; abgelaufener Preis zeigt erforderliche Bestätigung. Vitest/E2E/Design grün.
+  - [x] E2E A1060/B1080/Coffen, verschiedene Preisbasen, enthaltene Legierung, abgelaufene Gültigkeit, technische Abweichung, Zeugnis nicht lieferbar, Skonto nur Hinweis; keine grüne Empfehlung für C.
+  - [x] Matrixpositionen mit internen Nummern/Revisionen, Liefergruppen und Gesamtkosten; horizontal nur Matrix scrollbar, Header/Primäraktion erreichbar. Rechenweg mit Originalpreis/Faktor/Quelle aufklappbar; fehlend als „offen“, niemals0€.
+  - [x] Manuell erfassen/korrigieren auch bei KI-Fehler; Quellenfelder einzeln bestätigen, geänderte Werte erkennbar, Neu-Analyse überschreibt Korrekturen nicht. Preisübernahme ist eigene bewusste Aktion mit Scope/Gültigkeit, keine Bestellung oder Kostenbuchung.
+  - [x] „Als Bestellung vorbereiten“ nennt konkrete Angebotsversion und erzeugt nur Entwurf; abgelaufener Preis zeigt erforderliche Bestätigung. Vitest/E2E/Design grün.
+
+### Coding-Paket 11C: 34
+
+Luna im separaten Worktree; vorhandene Teilimplementierung übernommen. Auftrag `/tmp/beschaffung-paket-11c-auftrag.md`. Keine eigene Zwischenabnahme.
+
+### Task 34: Lieferung, Unterlagen und Rechnungsprüfung im Desktop
+
+- Branch: `codex/beschaffung-task-34`
+- Worktree: `.claude/worktrees/beschaffung-task-34`
+- E2E-Port: `5215`
+- Consumes-Gate: 24, 25, 26, 27, 33. Externe Voraussetzungen sind vor Paketstart geprüft und integriert; interne Vorgängerschritte desselben Pakets müssen vor Nutzung fertig und gezielt grün getestet sein.
+- Integration durch Paket11A: `App.tsx` und `EinkaufBestellungDetail.tsx`; diese Dateien nicht in11C ändern.
+- Files: neu `react-pc-frontend/src/pages/EinkaufLieferungen.tsx`, `react-pc-frontend/src/features/einkauf/components/LieferungDialog.tsx`, `react-pc-frontend/src/features/einkauf/components/ZeugnisZuordnung.tsx`, `react-pc-frontend/src/features/einkauf/components/Rechnungsabgleich.tsx`, `react-pc-frontend/src/features/einkauf/components/AnforderungsVorlagen.tsx`; ändern `react-pc-frontend/src/components/LieferantReklamationenTab.tsx`, `react-pc-frontend/src/components/CreateReklamationModal.tsx` samt Tests; gemeinsame BelegAuswahl/belegApi samt Tests; Tests siehe explizite Testdateien; E2E `react-pc-frontend/e2e/einkauf-lieferung-zeugnis.spec.ts`, `react-pc-frontend/e2e/einkauf-rechnungsabgleich.spec.ts`.
+- Explizite Testdateien: `react-pc-frontend/src/pages/EinkaufLieferungen.test.tsx`, `react-pc-frontend/src/features/einkauf/components/LieferungDialog.test.tsx`, `react-pc-frontend/src/features/einkauf/components/ZeugnisZuordnung.test.tsx`, `react-pc-frontend/src/features/einkauf/components/Rechnungsabgleich.test.tsx`, `react-pc-frontend/src/features/einkauf/components/AnforderungsVorlagen.test.tsx`.
+- Vorbild: `LieferantReklamationenTab.tsx`, vorhandener LieferantDokumentModal, Task27 Quellenlink und DetailLayout.
+- Interfaces – Produces: Route `/einkauf/lieferungen`; `Rechnungsabgleich({bestellungId:number})`; `ZeugnisZuordnung({bestellungId:number})`. Consumes24–27,33.
+- Steps:
+  - [x] E2E bestellt4/geliefert2+2 in zwei Chargen, Zeugnis fehlt trotz voller Lieferung; späteres PDF mehreren passenden Lieferpositionen zuordnen, separat prüfen; fremde Charge ablehnen, Nutzer ohne Prüfberechtigung kann nicht freigeben.
+  - [x] In App.tsx fertige Route `/einkauf/lieferungen` registrieren. Physische Menge, Dokumentvollständigkeit und Materialfreigabe getrennt darstellen. Sollvorlagen mit Grundlage/Version manuell pflegen; keine automatisch berechnete EN1090-Erfüllung behaupten.
+  - [x] Rechnungsteil2von4 und weitere Rechnung/Gutschrift erfassen/verknüpfen, Rechenweg vereinbart/bestätigt/geliefert/abgerechnet zeigen; Abweichung öffnet bestehenden Reklamationsdialog mit Bestell-/Positions-/Rechnungsreferenz. Kostenübernahme verlinkt bestehenden Zuordnungspfad.
+  - [x] Fehlende historische Datei meldet fehlend, neue Dummydatei uploadbar; nicht reparieren durch erfundene Datei. Tests/Design grün.
 
 ### Coding-Paket 11B: 35
 
 Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 
 ### Task 35: E-Mail-Center mit Postfachfilter und Einkaufsantworten
+
+- Zusätzliche UI-/Vertragsownership Task35: bestehende `EmailComposeForm.tsx` und Tests um kontrollierten Vorschau-/Submit-Callback erweitern; `UnifiedEmailDto` und notwendige Mapper/Tests additiv um tatsächlich verwendete Konto-/Einkaufsfelder ergänzen. Bestehende Mailpfade und Responseformen erhalten; unbenutztes `EmailCenterItemDto` nicht künstlich einführen.
+
+- Ownership-Ergänzung Abschnitt11: `V397__einkauf_mailantwort_vorschau.sql`, `EinkaufMailantwortVorschau` Entity/Repository und zugehörige MySQL-/Service-/Repositorytests; nötige konto-/rechtebewusste `EmailRepository`-Queries und `EinkaufMailzugriffService` samt Tests. Eigener unveränderlicher, ablaufender Mailantwort-Vorschausnapshot mit echter Mail-/Kontobindung und Originalheadern. Bestehende Anfrage-/PDF-Vorschautabelle nicht zweckentfremden. Finale Upgrade-/Dummy-Migrationsprüfung umfasst zusätzlich V397.
 
 - Branch: `codex/beschaffung-task-35`
 - Worktree: `.claude/worktrees/beschaffung-task-35`
@@ -844,10 +855,10 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 - Vorbild: bestehendes EmailCenter-Modell und Threadcleanup, `UnifiedEmailController` Sendepfad, Task16-Kommunikation.
 - Interfaces – Produces: optional `kontoId` im bestehenden Listfilter, DTO `kontoId,einkaufTyp,einkaufVorgangId,einkaufNummer,zuordnungPruefen`; `VersandDto antworten(Long emailId,Antwort r,Long akteurId)` mit `Antwort(String subject,String htmlBody,List<Long> anlageIds,String vorschauHash,UUID idempotenzKey)`; POST `/api/einkauf/mail/{id}/antwort-vorschau|antworten`. Consumes11,15,16,27,31.
 - Steps:
-  - [ ] Tests Haupt-/Dokument-/Einkaufspostfach getrennt, Einkaufsvorgang verlinkt, Antwort verwendet EINKAUF/Originalheader, fehlerhafte Konfiguration kein Hauptkonto-Fallback, falsche Rolle403; globaler Sendepfad darf Einkauf-ID nicht umgehen.
-  - [ ] Liste/Threadfilter kontobewusst; Lieferant-Zuordnung und Einkaufslink gleichzeitig anzeigen. Einkaufsspezifische Leserechte auch beim Abruf über generischen Mailendpoint prüfen, Anhänge/Thread nicht per fremder Mail-ID offenlegen.
-  - [ ] Bestehenden Editor weiterverwenden, Einkaufantworten ausschließlich hashgebunden über Task16/Outbox; generischer `/api/emails/send` prüft referenzierte Einkaufsmail und delegiert oder weist unberechtigten Direktversand ab. Kontowechsel ist keine versteckte Alternative bei Fehlern.
-  - [ ] Zuordnung prüfen/autoAntwort/Absage/Angebot/Bounce sichtbar; manuelles Abrufen nur gewähltes Konto. EmailCenter-Regression/Component/E2E/Design grün.
+  - [x] Tests Haupt-/Dokument-/Einkaufspostfach getrennt, Einkaufsvorgang verlinkt, Antwort verwendet EINKAUF/Originalheader, fehlerhafte Konfiguration kein Hauptkonto-Fallback, falsche Rolle403; globaler Sendepfad darf Einkauf-ID nicht umgehen.
+  - [x] Liste/Threadfilter kontobewusst; Lieferant-Zuordnung und Einkaufslink gleichzeitig anzeigen. Einkaufsspezifische Leserechte auch beim Abruf über generischen Mailendpoint prüfen, Anhänge/Thread nicht per fremder Mail-ID offenlegen.
+  - [x] Bestehenden Editor weiterverwenden, Einkaufantworten ausschließlich hashgebunden über Task16/Outbox; generischer `/api/emails/send` prüft referenzierte Einkaufsmail und delegiert oder weist unberechtigten Direktversand ab. Kontowechsel ist keine versteckte Alternative bei Fehlern.
+  - [x] Zuordnung prüfen/autoAntwort/Absage/Angebot/Bounce sichtbar; manuelles Abrufen nur gewähltes Konto. EmailCenter-Regression/Component/E2E/Design grün.
 
 ## Abschnitt 12: Bedarfsseite und Navigation
 
@@ -973,3 +984,7 @@ Ein Luna-Agent, ein Worktree, Ownership aller folgenden Schritte.
 ## Log
 
 Abschlusszusammenfassungen der späteren Abschnitte werden durch den Review-Agenten ergänzt; laufender Kontext ausschließlich in der separaten Kontext-Log-Datei.
+
+Abschnitt11 Root-Ownership-Erweiterung: Angebotsliste (EinkaufAngebotDto/Controller/Service, AngebotVersionRepository), Originalbelege (EinkaufDateiService, LieferantDokumentRepository, EinkaufBelegDto/Controller/Service), Storno-Kommunikationsfassung (EinkaufStornoanfrageDto/Controller/Service, EinkaufAuditRepository, EinkaufVersandauftragRepository), EinkaufExceptionHandler und zugehörige Controller-/MySQL-/Dateitests. Konkrete additive Verträge: /tmp/beschaffung-11-backend-vertrag.md, Kontextlog. Keine zusätzliche Rootmigration.
+
+Abschnitt11 tatsächlicher Paketschnitt nach erhaltener Teilimplementierung: 11a=33→32 (App.tsx/Bestelldetail/bestellTypes), 11b=35 einschließlich konto-scoped EmailImportService, 11c=34 (eigener Worktreebeschaffung-task-34, Branchcodex/beschaffung-task-34, Port5215; Liefer-/Zeugnis-/Rechnungskomponenten und deren Tests), Root=ergänzendeBackendverträge einschließlich EinkaufDateiRepository/EinkaufStornoanfrageAnnahmeListener. Allevier fertig→ein gemeinsamer Code-/Designreview. 39Schritte/13Abschnitte unverändert.

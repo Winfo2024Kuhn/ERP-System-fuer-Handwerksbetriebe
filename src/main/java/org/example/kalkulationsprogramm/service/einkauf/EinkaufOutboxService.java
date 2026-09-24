@@ -115,21 +115,43 @@ public class EinkaufOutboxService {
     }
 
     public VersandDto anfrageErneutVersuchen(Long id, long version, Long akteurId, Long vorgangId, Long revisionId, Long beteiligungId) {
-        return erneutVersuchen(id, version, akteurId, vorgangId, revisionId, beteiligungId);
+        return erneutVersuchen(id, version, akteurId, "ANFRAGE", vorgangId, revisionId, beteiligungId);
     }
 
     public VersandDto erneutVersuchen(Long id, long version, Long akteurId) {
-        return erneutVersuchen(id, version, akteurId, null, null, null);
+        return erneutVersuchen(id, version, akteurId, null, null, null, null);
     }
 
-    private VersandDto erneutVersuchen(Long id, long version, Long akteurId, Long vorgangId, Long revisionId, Long beteiligungId) {
+    public VersandDto bestellungErneutVersuchen(Long id, long version, Long akteurId, Long vorgangId, Long revisionId, Long beteiligungId) {
+        return erneutVersuchen(id, version, akteurId, "BESTELLUNG", vorgangId, revisionId, beteiligungId);
+    }
+
+    /** The communication service holds its source lock and revalidates the scoped approval. */
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public VersandDto kommunikationErneutVersuchen(Long id, long version, Long akteurId, String typ,
+            Long vorgangId, Long revisionId, Long beteiligungId) {
+        pruefeKommunikationstyp(typ);
+        return erneutVersuchen(id, version, akteurId, typ, vorgangId, revisionId, beteiligungId);
+    }
+
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void kommunikationKlaeren(Long id, Klaerung klaerung, Long akteurId, String typ,
+            Long vorgangId, Long revisionId, Long beteiligungId, java.util.function.Consumer<EinkaufVersandAngenommen> annahme) {
+        pruefeKommunikationstyp(typ);
+        java.util.Objects.requireNonNull(annahme, "Kommunikationsannahme fehlt.");
+        klaeren(id, klaerung, akteurId, typ, vorgangId, revisionId, beteiligungId, annahme);
+    }
+
+    private void pruefeKommunikationstyp(String typ) {
+        if (!java.util.Set.of("ANTWORT", "STORNO_ANFRAGE").contains(typ))
+            throw new IllegalArgumentException("Der Kommunikationsvorgang ist ungültig.");
+    }
+
+    private VersandDto erneutVersuchen(Long id, long version, Long akteurId, String typ, Long vorgangId, Long revisionId, Long beteiligungId) {
         if (akteurId == null || akteurId <= 0) throw new IllegalArgumentException("Ein Benutzer ist erforderlich.");
         return transaktion(() -> {
             EinkaufVersandauftrag a = sperre(id);
-            if (vorgangId != null && (!"ANFRAGE".equals(a.getTyp()) || !vorgangId.equals(a.getVorgangId())
-                    || !java.util.Objects.equals(revisionId, a.getRevisionId())
-                    || !java.util.Objects.equals(beteiligungId, a.getBeteiligungId())))
-                throw new org.example.kalkulationsprogramm.exception.NotFoundException("Der Versandauftrag gehört nicht zu dieser Lieferantenanfrage.");
+            pruefeVorgang(a, typ, vorgangId, revisionId, beteiligungId);
             if (a.getVersion() != version) throw new IllegalStateException("Der Versandauftrag wurde zwischenzeitlich geändert.");
             if (a.getStatus() != EinkaufVersandauftrag.Status.FEHLGESCHLAGEN) {
                 throw new IllegalStateException("Nur sicher fehlgeschlagene Versandaufträge können erneut versucht werden.");
@@ -141,23 +163,49 @@ public class EinkaufOutboxService {
     }
 
     public void klaeren(Long id, Klaerung klaerung, Long akteurId) {
+        klaeren(id, klaerung, akteurId, null, null, null, null, null);
+    }
+
+    /** Caller holds the need/order locks; confirmation and its business effect commit atomically. */
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void bestellungKlaeren(Long id, Klaerung klaerung, Long akteurId, Long vorgangId, Long revisionId,
+            Long beteiligungId, java.util.function.Consumer<EinkaufVersandAngenommen> annahme) {
+        java.util.Objects.requireNonNull(annahme, "Bestellannahme fehlt.");
+        klaeren(id, klaerung, akteurId, "BESTELLUNG", vorgangId, revisionId, beteiligungId, annahme);
+    }
+
+    private void klaeren(Long id, Klaerung klaerung, Long akteurId, String typ, Long vorgangId, Long revisionId,
+            Long beteiligungId, java.util.function.Consumer<EinkaufVersandAngenommen> annahme) {
         if (klaerung == null || klaerung.beleg() == null || klaerung.beleg().isBlank()
                 || klaerung.beleg().length() > 5000 || akteurId == null || akteurId <= 0)
             throw new IllegalArgumentException("Ein Beleg und Benutzer sind erforderlich.");
         transaktion(() -> {
             EinkaufVersandauftrag a = sperre(id);
+            pruefeVorgang(a, typ, vorgangId, revisionId, beteiligungId);
             if (a.getVersion() != klaerung.version() || a.getStatus() != EinkaufVersandauftrag.Status.UNKLAR)
                 throw new IllegalStateException("Der unklare Versandauftrag wurde zwischenzeitlich geändert.");
             if (klaerung.entscheidung() == Entscheidung.BEREITS_ANGENOMMEN) {
                 Instant now = Instant.now(); a.angenommen(now);
                 a.klaere(klaerung.entscheidung().name(), klaerung.beleg(), akteurId, now);
-                speichereAnnahmeereignis(a, now);
+                var event = speichereAnnahmeereignis(a, now);
+                if (annahme != null) {
+                    annahme.accept(new EinkaufVersandAngenommen(event.getEreignisSchluessel(), a.getId(), a.getTyp(),
+                            a.getVorgangId(), a.getRevisionId(), a.getBeteiligungId(), now));
+                    event.verarbeitet(now);
+                }
             } else if (klaerung.entscheidung() == Entscheidung.NACHWEISLICH_NICHT_GESENDET) {
                 a.sicherFehlgeschlagen("MANUELL_GEKLAERT");
                 a.klaere(klaerung.entscheidung().name(), klaerung.beleg(), akteurId, Instant.now());
             } else throw new IllegalArgumentException("Die Versandklärung ist ungültig.");
             repository.flush();
         });
+    }
+
+    private void pruefeVorgang(EinkaufVersandauftrag a, String typ, Long vorgangId, Long revisionId, Long beteiligungId) {
+        if (typ != null && (!typ.equals(a.getTyp()) || !java.util.Objects.equals(vorgangId, a.getVorgangId())
+                || !java.util.Objects.equals(revisionId, a.getRevisionId())
+                || !java.util.Objects.equals(beteiligungId, a.getBeteiligungId())))
+            throw new org.example.kalkulationsprogramm.exception.NotFoundException("Der Versandauftrag gehört nicht zu diesem Vorgang.");
     }
 
     public Claim beanspruche(Long id) {
@@ -268,10 +316,11 @@ public class EinkaufOutboxService {
         if (id == null || id <= 0) throw new IllegalArgumentException("Der Versandauftrag ist ungültig.");
         return repository.sperreById(id).orElseThrow(() -> new java.util.NoSuchElementException("Versandauftrag nicht gefunden."));
     }
-    private void speichereAnnahmeereignis(EinkaufVersandauftrag auftrag, Instant angenommenAm) {
+    private EinkaufVersandAnnahmeereignis speichereAnnahmeereignis(EinkaufVersandauftrag auftrag, Instant angenommenAm) {
         var ereignis = new EinkaufVersandAnnahmeereignis(auftrag.getId(), auftrag.getTyp(),
                 auftrag.getVorgangId(), auftrag.getRevisionId(), auftrag.getBeteiligungId(), angenommenAm);
         annahmeereignisse.save(ereignis);
+        return ereignis;
     }
     private VersandDto dto(EinkaufVersandauftrag a) {
         return new VersandDto(a.getId(), a.getVersion(), a.getTyp(), a.getVorgangId(), a.getRevisionId(),

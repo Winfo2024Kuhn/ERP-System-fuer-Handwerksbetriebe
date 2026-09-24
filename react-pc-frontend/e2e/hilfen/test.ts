@@ -24,16 +24,9 @@ import { blockiereFremdeNetzwerkzugriffe } from './api';
  * -- Typ-Importe (Page, Route, Locator, ...) bleiben unveraendert bei
  * '@playwright/test', die exportiert dieselben Typen.
  *
- * Bekannte Grenze: `vite.config.ts` proxied `/api` -> `https://localhost:8080`
- * SERVERSEITIG im Vite-Dev-Server-Prozess -- der Browser sieht nach aussen nur
- * eine Anfrage an `localhost:<E2E_PORT>/api/...`, nie den eigentlichen Sprung
- * nach `:8080`. Diese Route (und jede andere `page.route('**\/api/**')`, die
- * eine Spec zusaetzlich registriert) bleibt davon unberuehrt -- sie sieht die
- * lokale Anfrage wie gewohnt und beantwortet sie aus dem Stub, ohne dass
- * `:8080` je erreicht werden muesste (es laeuft ohnehin kein Backend). Fuer
- * `page.route`/`context.route` ist der Proxy-Sprung schlicht unsichtbar --
- * beide sehen nur, was der Browser anfragt, nicht was der Dev-Server-Prozess
- * intern weiterleitet.
+ * Zusätzlich werden nicht simulierte /api-Anfragen blockiert, bevor Vite sie
+ * an einen lokal laufenden Backendprozess weiterleiten kann. Die getrennte
+ * Real-E2E-Suite nutzt diese Mock-Fixture nicht.
  */
 export const test = base.extend({
     // Playwrights Fixture-API nennt den zweiten Parameter ueblicherweise "use"
@@ -44,6 +37,10 @@ export const test = base.extend({
     // die Regel abzuschalten.
     context: async ({ context }, benutzeFixture) => {
         await blockiereFremdeNetzwerkzugriffe(context);
+        // Fach-APIs dieser Suite müssen explizit simuliert sein. Sonst würde
+        // Vite sie serverseitig an eine eventuell laufende echte App senden.
+        // Spezifische page.route-Stubs der Tests haben Vorrang vor diesem Riegel.
+        await context.route('**/api/**', route => route.abort('blockedbyclient'));
         await benutzeFixture(context);
     },
 });

@@ -53,10 +53,26 @@ export interface EmailItem {
     /** Backend-berechnete jüngste Aktivität im gesamten Thread (für Sortierung). */
     threadLastActivityAt?: string;
     isStarred?: boolean;
+    kontoId?: EmailMailbox;
+    einkaufTyp?: string;
+    einkaufVorgangId?: number;
+    einkaufNummer?: string;
+    einkaufNachrichtStatus?: string;
+    zustellStatus?: string;
+    zustellFehler?: string;
+    zuordnungPruefen?: boolean;
 }
 
 // Folder Types
 export type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'tax-advisors' | 'unassigned';
+
+export type EmailMailbox = 'HAUPT' | 'DOKUMENTE' | 'EINKAUF';
+
+/** Adds the optional mailbox scope without changing the selected folder or search. */
+export function emailEndpointWithMailbox(endpoint: string, kontoId?: EmailMailbox): string {
+    if (!kontoId) return endpoint;
+    return `${endpoint}${endpoint.includes('?') ? '&' : '?'}kontoId=${encodeURIComponent(kontoId)}`;
+}
 
 
 

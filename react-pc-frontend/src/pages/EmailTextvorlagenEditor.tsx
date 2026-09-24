@@ -686,18 +686,13 @@ export default function EmailTextvorlagenEditor() {
 
   const fetchMeta = useCallback(async () => {
     try {
-      const [doktypRes, plRes] = await Promise.all([
-        fetch('/api/email-textvorlagen/dokumenttypen'),
-        fetch('/api/email-textvorlagen/placeholders')
-      ]);
+      const doktypRes = await fetch('/api/email-textvorlagen/dokumenttypen');
       if (doktypRes.ok) {
         const data = await doktypRes.json();
         if (Array.isArray(data)) setDokumenttypOptions(data);
       }
-      if (plRes.ok) {
-        const data = await plRes.json();
-        if (Array.isArray(data)) setPlaceholders(data);
-      }
+      // Placeholder requests belong exclusively to the selected document type.
+      // A late generic metadata response must never overwrite that scoped list.
     } catch (error) {
       console.warn('Metadaten konnten nicht geladen werden', error);
     }

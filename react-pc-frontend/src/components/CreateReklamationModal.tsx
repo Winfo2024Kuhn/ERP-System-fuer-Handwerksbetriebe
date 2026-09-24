@@ -18,6 +18,15 @@ interface CreateReklamationModalProps {
     onClose: () => void;
     lieferantId: number;
     onSuccess: (reklamation: LieferantReklamation) => void;
+    initialBezug?: CreateReklamationBezug;
+}
+
+export interface CreateReklamationBezug {
+    bestellungId: number;
+    bestellPositionId: number;
+    rechnungId: number;
+    lieferscheinId: number | null;
+    beschreibung?: string;
 }
 
 interface Lieferschein {
@@ -27,7 +36,7 @@ interface Lieferschein {
     datum: string;
 }
 
-export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess }: CreateReklamationModalProps) {
+export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess, initialBezug }: CreateReklamationModalProps) {
     const toast = useToast();
     const [beschreibung, setBeschreibung] = useState("");
     const [files, setFiles] = useState<File[]>([]);
@@ -41,13 +50,14 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
 
     useEffect(() => {
         if (isOpen) {
-            setBeschreibung("");
+            setBeschreibung(initialBezug?.beschreibung ?? "");
             setFiles([]);
             setSearchTerm("");
             setSearchResults([]);
             setSelectedLieferschein(null);
+            if (initialBezug?.lieferscheinId) setSelectedLieferschein({ id: initialBezug.lieferscheinId, originalDateiname: `Lieferschein ${initialBezug.lieferscheinId}`, datum: '' });
         }
-    }, [isOpen]);
+    }, [isOpen, initialBezug]);
 
     // Search Lieferscheine Debounced
     useEffect(() => {
@@ -92,7 +102,10 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     beschreibung,
-                    lieferscheinId: selectedLieferschein?.id
+                    bestellungId: initialBezug?.bestellungId,
+                    bestellPositionId: initialBezug?.bestellPositionId,
+                    rechnungId: initialBezug?.rechnungId,
+                    lieferscheinId: initialBezug?.lieferscheinId ?? selectedLieferschein?.id,
                 })
             });
 
@@ -134,17 +147,21 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+        <Dialog open={isOpen} onOpenChange={onClose} aria-labelledby="create-reklamation-title">
             <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
-                    <DialogTitle>Neue Reklamation erstellen</DialogTitle>
+                    <DialogTitle id="create-reklamation-title">Neue Reklamation erstellen</DialogTitle>
                 </DialogHeader>
 
                 <div className="space-y-6 py-4">
+                    {initialBezug && <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">
+                        Bezug: Bestellung {initialBezug.bestellungId} · Position {initialBezug.bestellPositionId} · Rechnung {initialBezug.rechnungId}
+                    </p>}
                     {/* Description */}
                     <div className="space-y-2">
                         <Label>Beschreibung / Grund der Reklamation</Label>
                         <textarea
+                            aria-label="Beschreibung / Grund der Reklamation"
                             className="flex min-h-[100px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                             placeholder="Beschreiben Sie das Problem..."
                             value={beschreibung}

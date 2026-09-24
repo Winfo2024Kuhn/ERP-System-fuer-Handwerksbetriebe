@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
-@RestControllerAdvice(assignableTypes = {EinkaufBerechtigungController.class, EinkaufMailkontoController.class})
+@RestControllerAdvice(assignableTypes = {EinkaufBerechtigungController.class, EinkaufMailkontoController.class, org.example.kalkulationsprogramm.controller.EinkaufBestellstatusController.class, org.example.kalkulationsprogramm.controller.EinkaufBelegController.class, org.example.kalkulationsprogramm.controller.EinkaufStornoanfrageController.class, org.example.kalkulationsprogramm.controller.EinkaufAngebotController.class, org.example.kalkulationsprogramm.controller.EinkaufBestellfreigabeController.class})
 public class EinkaufExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

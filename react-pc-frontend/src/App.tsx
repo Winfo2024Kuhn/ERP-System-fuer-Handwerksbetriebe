@@ -51,6 +51,8 @@ import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
 import WebsiteEditor from './pages/WebsiteEditor';
 import Einkaufsanfragen from './pages/Einkaufsanfragen';
 import EinkaufsanfrageDetail from './pages/EinkaufsanfrageDetail';
+import EinkaufBestellungDetail from './pages/EinkaufBestellungDetail';
+import EinkaufLieferungen from './pages/EinkaufLieferungen';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -83,6 +85,8 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
                 <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
                 <Route path="/bestellungen" element={<ErrorBoundary><BestellungenUebersicht /></ErrorBoundary>} />
+                <Route path="/bestellungen/:id" element={<ErrorBoundary><EinkaufBestellungDetail /></ErrorBoundary>} />
+                <Route path="/einkauf/lieferungen" element={<ErrorBoundary><EinkaufLieferungen /></ErrorBoundary>} />
                 <Route path="/einkaufsanfragen" element={<ErrorBoundary><Einkaufsanfragen /></ErrorBoundary>} />
                 <Route path="/einkauf/anfragen" element={<Navigate to="/einkaufsanfragen" replace />} />
                 <Route path="/einkaufsanfragen/:id" element={<ErrorBoundary><EinkaufsanfrageDetail /></ErrorBoundary>} />

@@ -66,7 +66,7 @@ export interface Lieferbestaetigung { id: Id; dokumentId: Id | null; datum: stri
 
 export type ChargeStatus = 'ANGEFORDERT' | 'ERWARTET' | 'EINGEGANGEN' | 'ZUGEORDNET' | 'GEPRUEFT' | 'KLAERUNG_NOETIG';
 export interface ChargeStatusDto { chargeId: Id; status: ChargeStatus; version: number; materialFreigegeben: boolean }
-export interface ZeugnisErwartung { id: Id; version: number; revisionId: Id | null; bestellPositionId: Id | null; art: Dokumentart; grundlage: string | null; grundlageVersion: string | null; frist: string | null; status: ChargeStatus; dateiIds: Id[]; lieferPositionIds: Id[]; chargeIds: Id[]; materialFreigegeben: boolean; chargeStaende: ChargeStatusDto[] }
+export interface ZeugnisErwartung { id: Id; version: number; revisionId: Id | null; bestellPositionId: Id | null; art: Dokumentart; grundlage: string | null; grundlageVersion: string | null; frist: string | null; status: ChargeStatus; dateiIds: Id[]; lieferPositionIds: Id[]; chargeIds: Id[]; materialFreigegeben: boolean; chargeStaende: ChargeStatusDto[]; zuordnungen?: ChargeZuordnungDto[] }
 export interface ChargeZuordnungDto { zuordnungId: Id; erwartungId: Id; chargeId: Id; status: ChargeStatus; version: number; materialFreigegeben: boolean }
 export interface ZeugnisZuordnung { dokumentId: Id | null; erwartungIds: Id[]; lieferPositionIds: Id[]; chargeIds: Id[]; schmelznummer: string | null }
 export interface ZeugnisZuordnungResponse { erwartungen: ZeugnisErwartung[]; klaerungNoetig: boolean; chargen: ChargeZuordnungDto[] }

@@ -109,6 +109,17 @@ describe('EmailCenter', () => {
         vi.useRealTimers();
     });
 
+    it('lädt den Ordner auf Wunsch aus dem Einkaufspostfach', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        renderEmailCenter();
+
+        await user.click(await screen.findByRole('button', { name: 'Einkaufspostfach' }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+            '/api/emails/inbox?offset=0&limit=50&kontoId=EINKAUF'
+        ));
+    });
+
     describe('Rendering', () => {
         it('zeigt Posteingang-Ordner und E-Mails an', async () => {
             renderEmailCenter();

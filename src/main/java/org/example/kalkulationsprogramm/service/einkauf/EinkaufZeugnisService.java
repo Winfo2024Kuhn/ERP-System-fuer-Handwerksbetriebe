@@ -227,7 +227,9 @@ public class EinkaufZeugnisService {
         boolean allReleased=!actualCharges.isEmpty()&&released.containsAll(actualCharges);
         var status=x.getStatus()==EinkaufZeugnisErwartung.Status.GEPRUEFT&&!allReleased?EinkaufZeugnisErwartung.Status.EINGEGANGEN:x.getStatus();
         List<ChargeStatusDto> chargeStates=chargeStatuses(x.getId()).stream().map(s->new ChargeStatusDto(s.getCharge().getId(),s.getStatus(),s.getVersion()==null?0:s.getVersion(),s.isMaterialFreigegeben())).toList();
-        return new ErwartungDto(x.getId(),x.getVersion()==null?0:x.getVersion(),x.getRevision().getId(),x.getBestellPosition().getId(),x.getArt(),x.getGrundlage(),x.getGrundlageVersion(),x.getFrist(),status,x.getDateien().stream().map(EinkaufDatei::getId).toList(),x.getLieferPositionen().stream().map(LieferungPosition::getId).toList(),x.getChargen().stream().map(EinkaufCharge::getId).toList(),allReleased,chargeStates);
+        var associations = em.createQuery("select z from EinkaufZeugnisZuordnung z join fetch z.chargeStatus s join fetch s.charge join fetch z.zeugnis where z.zeugnis.id=:id order by z.id", EinkaufZeugnisZuordnung.class)
+                .setParameter("id", x.getId()).getResultList().stream().map(this::chargeDto).toList();
+        return new ErwartungDto(x.getId(),x.getVersion()==null?0:x.getVersion(),x.getRevision().getId(),x.getBestellPosition().getId(),x.getArt(),x.getGrundlage(),x.getGrundlageVersion(),x.getFrist(),status,x.getDateien().stream().map(EinkaufDatei::getId).toList(),x.getLieferPositionen().stream().map(LieferungPosition::getId).toList(),x.getChargen().stream().map(EinkaufCharge::getId).toList(),allReleased,chargeStates,associations);
     }
     private static boolean blank(String x){return x==null||x.isBlank();}
     private static ResponseStatusException bad(String m){return new ResponseStatusException(HttpStatus.BAD_REQUEST,m);}

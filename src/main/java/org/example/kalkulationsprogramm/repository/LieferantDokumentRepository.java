@@ -16,6 +16,11 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
         java.util.Optional<LieferantDokument> sperreEinkaufsbeleg(@Param("id") Long id);
 
 
+        @Query("select d from LieferantDokument d join fetch d.lieferant left join fetch d.attachment "
+                        + "where d.lieferant.id = :lieferantId and (d.einkaufBestellungId is null or d.einkaufBestellungId = :bestellungId) "
+                        + "and d.ausgeblendet = false order by d.uploadDatum desc, d.id desc")
+        List<LieferantDokument> leseBestellbelege(@Param("lieferantId") Long lieferantId, @Param("bestellungId") Long bestellungId);
+
         // JOIN FETCH lädt Geschäftsdaten + Uploader + Lieferant in EINEM Query mit,
         // sonst gibt es N+1 wenn das DTO später darauf zugreift.
         @Query("SELECT d FROM LieferantDokument d "

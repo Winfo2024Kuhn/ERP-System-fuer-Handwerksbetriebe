@@ -8,6 +8,10 @@ import { ProjectSelectModal } from '../components/ProjectSelectModal';
 import { KostenstelleSelectModal } from '../components/KostenstelleSelectModal';
 import { useToast } from '../components/ui/toast';
 import { ZuordnungModal as BelegZuordnungModal } from '../components/ZuordnungModal';
+import { Link, useNavigate } from 'react-router-dom';
+import { einkaufApi } from '../features/einkauf/api';
+import type { BestellungUebersicht } from '../features/einkauf/types';
+import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
 
 // ========== Types ==========
 interface DokumentRef {
@@ -756,9 +760,13 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
 // ========== Hauptkomponente ==========
 export default function BestellungenUebersicht() {
     const toast = useToast();
+    const navigate = useNavigate();
+    const [direktbestellungOffen, setDirektbestellungOffen] = useState(false);
     const [tab, setTab] = useState<'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet' | 'ausgeblendet'>('laufend');
     const [data, setData] = useState<BestellungsUebersicht | null>(null);
     const [loading, setLoading] = useState(true);
+    const [echteBestellungen, setEchteBestellungen] = useState<BestellungUebersicht[]>([]);
+    const [bestellungenFehler, setBestellungenFehler] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [busyKetteId, setBusyKetteId] = useState<string | null>(null);
     const [offeneBelege, setOffeneBelege] = useState<BelegZuordnungRef[]>([]);
@@ -805,6 +813,14 @@ export default function BestellungenUebersicht() {
         } finally {
             setOffeneBelegeLoading(false);
         }
+    }, [toast]);
+
+    useEffect(() => {
+        let aktiv = true;
+        einkaufApi.get<{ content: BestellungUebersicht[] }>('/api/einkauf/bestellungen?page=0&size=20')
+            .then(page => { if (aktiv) { setEchteBestellungen(page.content); setBestellungenFehler(''); } })
+            .catch(error => { if (aktiv) { const message = error instanceof Error ? error.message : 'Bestellungen konnten nicht geladen werden.'; setBestellungenFehler(message); toast.error(message); } });
+        return () => { aktiv = false; };
     }, [toast]);
 
     useEffect(() => {
@@ -924,6 +940,7 @@ export default function BestellungenUebersicht() {
                     </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
+                    <Button onClick={() => setDirektbestellungOffen(true)} size="sm">Direktbestellung vorbereiten</Button>
                     <Button
                         onClick={() => {
                             setShowBelegAuswahl(true);
@@ -949,6 +966,12 @@ export default function BestellungenUebersicht() {
                 </div>
             </div>
 
+            <section aria-labelledby="bestellungen-echt" className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3"><div><h2 id="bestellungen-echt" className="font-semibold text-slate-900">Bestellungen</h2><p className="text-sm text-slate-600">Freigegebene und noch offene Bestellungen im Einkauf.</p></div><Link to="/einkauf/lieferungen" className="text-sm font-medium text-rose-700 hover:underline">Lieferungen und Unterlagen</Link></div>
+                {bestellungenFehler ? <p role="alert" className="text-sm text-rose-700">{bestellungenFehler}</p> : echteBestellungen.length === 0 ? <p className="text-sm text-slate-600">Noch keine Bestellungen vorhanden.</p> : <ul className="divide-y divide-slate-100">{echteBestellungen.map(bestellung => <li key={bestellung.id} className="flex flex-wrap items-center justify-between gap-2 py-2"><Link className="font-medium text-rose-700 hover:underline" to={`/bestellungen/${bestellung.id}`}>{bestellung.nummer}</Link><span className="text-sm text-slate-600">{bestellung.status === 'ENTWURF' ? 'Entwurf' : bestellung.status === 'TEILGELIEFERT' ? 'Teilweise geliefert' : bestellung.status === 'GELIEFERT' ? 'Geliefert' : bestellung.status === 'STORNIERT' ? 'Storniert' : 'Bestellt'}</span></li>)}</ul>}
+            </section>
+
+            <h2 className="text-lg font-semibold text-slate-900">Bisherige Belege</h2>
             {/* Tabs - Projekt-Stil */}
             <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
                 <TabButton
@@ -1058,6 +1081,7 @@ export default function BestellungenUebersicht() {
                 />
             )}
 
+            {direktbestellungOffen && <DirektbestellungDialog onClose={() => setDirektbestellungOffen(false)} onCreated={bestellungId => { setDirektbestellungOffen(false); navigate(`/bestellungen/${bestellungId}`); }} />}
             {showBelegAuswahl && (
                 <BelegZuordnungAuswahlModal
                     belege={offeneBelege}

@@ -59,6 +59,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.core.Authentication;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -76,6 +77,10 @@ import lombok.extern.slf4j.Slf4j;
 public class UnifiedEmailController {
 
     private final EmailRepository emailRepository;
+    private final org.example.kalkulationsprogramm.repository.EinkaufMailZuordnungRepository einkaufMailZuordnungRepository;
+    private final org.example.kalkulationsprogramm.service.einkauf.EinkaufBerechtigungService einkaufBerechtigungService;
+    private final org.example.kalkulationsprogramm.repository.EinkaufsanfrageRepository einkaufsanfrageRepository;
+    private final org.example.kalkulationsprogramm.repository.EinkaufBestellungRepository einkaufBestellungRepository;
     private final org.example.kalkulationsprogramm.service.EmailDraftService emailDraftService;
     private final SentMailArchiver sentMailArchiver;
     private final ProjektRepository projektRepository;
@@ -134,7 +139,7 @@ public class UnifiedEmailController {
     @GetMapping("/{emailId}/attachments/{attachmentId}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadAttachment(
             @PathVariable Long emailId,
-            @PathVariable Long attachmentId) {
+            @PathVariable Long attachmentId, Authentication authentication) {
 
         log.info("Requesting attachment: emailId={}, attachmentId={}", emailId, attachmentId);
 
@@ -143,6 +148,7 @@ public class UnifiedEmailController {
             log.warn("Email not found: {}", emailId);
             return ResponseEntity.notFound().build();
         }
+        if (!darfEmailLesen(email, authentication)) return ResponseEntity.notFound().build();
 
         EmailAttachment attachment = email.getAttachments().stream()
                 .filter(a -> a.getId().equals(attachmentId))
@@ -260,8 +266,11 @@ public class UnifiedEmailController {
     }
 
     @PostMapping("/import")
-    public ResponseEntity<String> triggerImport() {
-        int count = emailImportService.triggerImport();
+    public ResponseEntity<String> triggerImport(@RequestParam("kontoId") String kontoId, Authentication authentication) {
+        if (!Set.of("HAUPT", "DOKUMENTE").contains(kontoId)) {
+            return ResponseEntity.badRequest().body("Ein gültiges Postfach muss ausgewählt sein.");
+        }
+        int count = emailImportService.triggerImport(kontoId);
         return ResponseEntity.ok(count + " Emails processed (imported + reclassified)");
     }
 
@@ -271,6 +280,7 @@ public class UnifiedEmailController {
         Email email = emailRepository.findById(emailId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
+        verlangeEmailBearbeitung(email);
 
         String sender = email.getFromAddress();
         if (sender == null || sender.isBlank()) {
@@ -278,6 +288,10 @@ public class UnifiedEmailController {
         }
 
         sender = sender.toLowerCase(java.util.Locale.ROOT);
+
+        List<Email> existingEmails = emailRepository.findByFromAddressIgnoreCase(sender);
+        existingEmails.forEach(this::verlangeEmailBearbeitung);
+        existingEmails.forEach(this::verlangeEndgueltigesLoeschen);
 
         // 1. Auf Blacklist setzen (zukünftige Mails werden bereits beim IMAP-Import
         //    verworfen – siehe EmailImportService#importMessage).
@@ -293,7 +307,6 @@ public class UnifiedEmailController {
         //    Spam-Markierung würde das Bayes-Modell verfälschen (User trainiert
         //    sonst implizit auf Inhalte, die er gar nicht mehr sehen will). Auch
         //    Frontend soll diese Mails nicht mehr zeigen, also Hard-Delete.
-        List<Email> existingEmails = emailRepository.findByFromAddressIgnoreCase(sender);
         int deleted = 0;
         for (Email e : existingEmails) {
             try {
@@ -311,7 +324,7 @@ public class UnifiedEmailController {
             deleted = existingEmails.size();
         }
 
-        log.info("[BlockSender] Absender {} gesperrt, {} bestehende Mails gelöscht", sender, deleted);
+        log.info("[BlockSender] Absender zu Mail {} gesperrt, {} bestehende Mails gelöscht", emailId, deleted);
         return ResponseEntity.ok("Sender blocked and " + deleted + " emails permanently deleted.");
     }
 
@@ -339,6 +352,7 @@ public class UnifiedEmailController {
         Email email = emailRepository.findById(emailId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
+        verlangeEmailBearbeitung(email);
 
         String previousVerdict = email.getUserSpamVerdict();
         email.setUserSpamVerdict("SPAM");
@@ -369,6 +383,7 @@ public class UnifiedEmailController {
         Email email = emailRepository.findById(emailId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
+        verlangeEmailBearbeitung(email);
 
         String previousVerdict = email.getUserSpamVerdict();
         email.setUserSpamVerdict("HAM");
@@ -404,6 +419,7 @@ public class UnifiedEmailController {
         Email email = emailRepository.findById(emailId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
+        verlangeEmailBearbeitung(email);
 
         String previousVerdict = email.getUserSpamVerdict();
         email.setNewsletter(false);
@@ -435,6 +451,7 @@ public class UnifiedEmailController {
         Email email = emailRepository.findById(emailId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
+        verlangeEmailBearbeitung(email);
 
         String previousVerdict = email.getUserSpamVerdict();
         email.setNewsletter(true);
@@ -487,6 +504,7 @@ public class UnifiedEmailController {
     @PostMapping("/spam-model/rescore")
     @Transactional
     public ResponseEntity<Map<String, Object>> rescoreAllEmails() {
+        verlangeEinkaufBearbeitung();
         if (!spamBayesService.isModelReady()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Spam-Modell noch nicht trainiert."));
         }
@@ -511,13 +529,14 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<UnifiedEmailDto>> getEmailsByProjekt(
             @PathVariable Long projektId,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
         if (projekt == null) {
             return ResponseEntity.notFound().build();
         }
         List<Email> emails = emailRepository.findByProjektOrderBySentAtDesc(projekt);
-        return ResponseEntity.ok(emails.stream()
+        return ResponseEntity.ok(scopeMailboxes(emails, kontoId, authentication).stream()
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList()));
@@ -531,13 +550,14 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<UnifiedEmailDto>> getEmailsByAnfrage(
             @PathVariable Long anfrageId,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
         Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
         if (anfrage == null) {
             return ResponseEntity.notFound().build();
         }
         List<Email> emails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
-        return ResponseEntity.ok(emails.stream()
+        return ResponseEntity.ok(scopeMailboxes(emails, kontoId, authentication).stream()
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList()));
@@ -551,13 +571,14 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<UnifiedEmailDto>> getEmailsByLieferant(
             @PathVariable Long lieferantId,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
         Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
         if (lieferant == null) {
             return ResponseEntity.notFound().build();
         }
         List<Email> emails = emailRepository.findByLieferantOrderBySentAtDesc(lieferant);
-        return ResponseEntity.ok(emails.stream()
+        return ResponseEntity.ok(scopeMailboxes(emails, kontoId, authentication).stream()
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList()));
@@ -571,8 +592,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getUnassignedEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findUnassigned().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findUnassigned(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -633,11 +655,12 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> searchEmails(
             @RequestParam("q") String query,
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
         if (query == null || query.trim().length() < 2) {
             return List.of();
         }
-        return emailRepository.searchGlobal(query.trim()).stream()
+        return scopeMailboxes(emailRepository.searchGlobal(query.trim()), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -652,13 +675,15 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getInboxEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId,
+            Authentication authentication) {
         // Get IDs of "Nicht zugeordnet" emails to exclude from inbox
         Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
                 .map(Email::getId)
                 .collect(Collectors.toSet());
 
-        return emailRepository.findInboxFiltered().stream()
+        return scopeMailboxes(emailRepository.findInboxFiltered(), kontoId, authentication).stream()
                 .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
                 .skip(Math.max(0, offset))
                 .limit(limit)
@@ -670,8 +695,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getProjectFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findProjectEmails().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findProjectEmails(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -682,8 +708,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getOfferFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findAnfrageEmails().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findAnfrageEmails(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -694,8 +721,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSupplierFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findLieferantEmails().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findLieferantEmails(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -706,8 +734,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getTaxAdvisorFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return findTaxAdvisorEmails().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(findTaxAdvisorEmails(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -718,8 +747,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSentEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT), kontoId, authentication).stream()
                 .filter(e -> e.getDeletedAt() == null)
                 .skip(Math.max(0, offset))
                 .limit(limit)
@@ -731,8 +761,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getTrashEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -743,8 +774,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSpamEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findSpam().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findSpam(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -755,8 +787,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getNewsletterEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findNewsletter().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findNewsletter(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -767,8 +800,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getStarredEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return emailRepository.findStarred().stream()
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "kontoId", required = false) String kontoId, Authentication authentication) {
+        return scopeMailboxes(emailRepository.findStarred(), kontoId, authentication).stream()
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -781,8 +815,9 @@ public class UnifiedEmailController {
 
     @GetMapping("/{id:[0-9]+}")
     @Transactional(readOnly = true)
-    public ResponseEntity<UnifiedEmailDto> getEmailById(@PathVariable Long id) {
+    public ResponseEntity<UnifiedEmailDto> getEmailById(@PathVariable Long id, Authentication authentication) {
         return emailRepository.findById(id)
+                .filter(email -> darfEmailLesen(email, authentication))
                 .map(this::toDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -798,9 +833,15 @@ public class UnifiedEmailController {
      */
     @GetMapping("/{emailId}/thread")
     @Transactional(readOnly = true)
-    public ResponseEntity<EmailThreadDto> getEmailThread(@PathVariable Long emailId) {
+    public ResponseEntity<EmailThreadDto> getEmailThread(@PathVariable Long emailId, Authentication authentication) {
         log.debug("Thread requested for emailId={}", emailId);
+        Email selected = emailRepository.findById(emailId).orElse(null);
+        if (selected == null || !darfEmailLesen(selected, authentication)) return ResponseEntity.notFound().build();
         EmailThreadDto thread = emailThreadService.loadThreadFor(emailId);
+        if (thread.getEmails() != null) {
+            thread.setEmails(thread.getEmails().stream().filter(entry -> entry.isDraft() || entry.getId() == null
+                    || emailRepository.findById(entry.getId()).map(email -> darfEmailLesen(email, authentication)).orElse(false)).toList());
+        }
         return ResponseEntity.ok(thread);
     }
 
@@ -811,6 +852,7 @@ public class UnifiedEmailController {
      */
     @PostMapping("/admin/backfill-attachment-filenames")
     public ResponseEntity<Map<String, Object>> backfillAttachmentFilenames() {
+        verlangeEinkaufBearbeitung();
         log.info("Backfill attachment filenames gestartet");
         int updated = emailImportService.backfillAttachmentFilenames();
         return ResponseEntity.ok(Map.of(
@@ -826,6 +868,7 @@ public class UnifiedEmailController {
      */
     @PostMapping("/admin/backfill-xml-to-pdf")
     public ResponseEntity<Map<String, Object>> backfillXmlDokumenteAufPdf() {
+        verlangeEinkaufBearbeitung();
         log.info("Backfill XML->PDF (Lieferanten-Dokumente) gestartet");
         int updated = emailAttachmentProcessingService.backfillXmlDokumenteAufPdf();
         return ResponseEntity.ok(Map.of(
@@ -858,6 +901,7 @@ public class UnifiedEmailController {
             @PathVariable Long id,
             @PathVariable Long projektId) {
         Email email = emailRepository.findById(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
         if (email == null || projekt == null) {
             return ResponseEntity.notFound().build();
@@ -874,6 +918,7 @@ public class UnifiedEmailController {
             @PathVariable Long id,
             @PathVariable Long anfrageId) {
         Email email = emailRepository.findById(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
         if (email == null || anfrage == null) {
             return ResponseEntity.notFound().build();
@@ -890,6 +935,7 @@ public class UnifiedEmailController {
             @PathVariable Long id,
             @PathVariable Long lieferantId) {
         Email email = emailRepository.findById(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
         if (email == null || lieferant == null) {
             return ResponseEntity.notFound().build();
@@ -904,6 +950,7 @@ public class UnifiedEmailController {
     @Transactional
     public ResponseEntity<UnifiedEmailDto> removeAssignment(@PathVariable Long id) {
         Email email = emailRepository.findById(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -916,6 +963,7 @@ public class UnifiedEmailController {
     @Transactional
     public ResponseEntity<Void> deleteEmail(@PathVariable Long id) {
         Email email = emailRepository.findById(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -935,9 +983,12 @@ public class UnifiedEmailController {
         // Frontend). Die zweite Anfrage wartet, findet die Zeile dann nicht mehr
         // und liefert idempotent 204 statt StaleStateException -> HTTP 500.
         Email email = emailRepository.findByIdForUpdate(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         if (email == null) {
             return ResponseEntity.noContent().build();
         }
+
+        verlangeEndgueltigesLoeschen(email);
 
         // Emails mit hoher Spam-Wahrscheinlichkeit (>= 85%) als Spam klassifizieren
         // bevor sie endgültig gelöscht werden (Trainingsdaten für Filter)
@@ -994,6 +1045,7 @@ public class UnifiedEmailController {
         }
 
         List<Email> emails = emailRepository.findAllById(req.ids());
+        emails.forEach(this::verlangeEmailBearbeitung);
         int moved = 0;
         for (Email email : emails) {
             switch (target) {
@@ -1050,6 +1102,7 @@ public class UnifiedEmailController {
             default           -> java.util.Collections.emptyList();
         };
 
+        emails.forEach(this::verlangeEmailBearbeitung);
         int count = 0;
         for (Email email : emails) {
             if (!email.isRead()) {
@@ -1066,6 +1119,7 @@ public class UnifiedEmailController {
     @Transactional
     public ResponseEntity<Void> markAsRead(@PathVariable Long id) {
         Email email = emailRepository.findById(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -1083,6 +1137,7 @@ public class UnifiedEmailController {
     @Transactional
     public ResponseEntity<Map<String, Boolean>> toggleStar(@PathVariable Long id) {
         Email email = emailRepository.findById(id).orElse(null);
+        verlangeEmailBearbeitung(email);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -1096,9 +1151,9 @@ public class UnifiedEmailController {
     // ═══════════════════════════════════════════════════════════════
 
     @GetMapping("/{emailId}/attachments/download-all")
-    public ResponseEntity<byte[]> downloadAllAttachments(@PathVariable Long emailId) {
+    public ResponseEntity<byte[]> downloadAllAttachments(@PathVariable Long emailId, Authentication authentication) {
         Email email = emailRepository.findById(emailId).orElse(null);
-        if (email == null) {
+        if (email == null || !darfEmailLesen(email, authentication)) {
             return ResponseEntity.notFound().build();
         }
         if (email.getAttachments() == null || email.getAttachments().isEmpty()) {
@@ -1291,6 +1346,7 @@ public class UnifiedEmailController {
     @PostMapping("/scan-spam")
     @Transactional
     public SpamFilterService.ScanResult scanSpamRetroactive() {
+        verlangeEinkaufBearbeitung();
         List<Email> unanalyzed = emailRepository.findUnanalyzedForSpam();
         int spamFound = 0;
         int notSpam = 0;
@@ -1317,6 +1373,7 @@ public class UnifiedEmailController {
     @PostMapping("/scan-inquiries")
     @Transactional
     public InquiryDetectionService.ScanResult scanInquiriesRetroactive() {
+        verlangeEinkaufBearbeitung();
         List<Email> unanalyzed = emailRepository.findUnanalyzedForInquiry();
         int inquiriesFound = 0;
         int notInquiries = 0;
@@ -1343,6 +1400,7 @@ public class UnifiedEmailController {
     @PostMapping("/scan-assignments")
     @Transactional
     public ResponseEntity<Map<String, Object>> scanAssignments() {
+        verlangeEinkaufBearbeitung();
         log.info("Starte manuelle Zuordnung und Spam-Prüfung...");
 
         // 1. Spam & Newsletter neu prüfen
@@ -1392,6 +1450,7 @@ public class UnifiedEmailController {
      */
     @PostMapping("/backfill-parents")
     public ResponseEntity<Map<String, Object>> backfillParentEmails() {
+        verlangeEinkaufBearbeitung();
         int updated = emailImportService.backfillParentEmails();
         return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -1404,6 +1463,7 @@ public class UnifiedEmailController {
      */
     @PostMapping("/scan-steuerberater")
     public ResponseEntity<Map<String, Object>> scanSteuerberaterRetroactive() {
+        verlangeEinkaufBearbeitung();
         int processed = emailImportService.backfillSteuerberaterEmails();
         return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -1423,6 +1483,10 @@ public class UnifiedEmailController {
             @RequestPart(value = "attachments", required = false) MultipartFile[] attachments,
             @RequestPart(value = "dokumentId", required = false) String dokumentIdStr) {
 
+        if (dto.getParentEmailId() != null && isEinkaufMail(dto.getParentEmailId())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message",
+                    "Antworten auf Einkaufsnachrichten bitte über die Einkaufsvorschau senden."));
+        }
         emailDraftService.validateForSending(dto.getDraftId(), null);
         try {
             // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)
@@ -1753,6 +1817,10 @@ public class UnifiedEmailController {
         if (parentEmail == null) {
             return ResponseEntity.notFound().build();
         }
+        if (isEinkaufMail(parentEmail)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message",
+                    "Antworten auf Einkaufsnachrichten bitte über die Einkaufsvorschau senden."));
+        }
         emailDraftService.validateForSending(dto.getDraftId(), emailId);
 
         try {
@@ -1929,6 +1997,7 @@ public class UnifiedEmailController {
     private UnifiedEmailDto toListDto(Email email) {
         UnifiedEmailDto dto = new UnifiedEmailDto();
         dto.setId(email.getId());
+        dto.setKontoId(email.getKontoId());
         dto.setFromAddress(email.getFromAddress());
         dto.setRecipient(email.getRecipient());
         dto.setSubject(email.getSubject());
@@ -2000,6 +2069,7 @@ public class UnifiedEmailController {
     private UnifiedEmailDto toDto(Email email) {
         UnifiedEmailDto dto = new UnifiedEmailDto();
         dto.setId(email.getId());
+        applyEinkaufInfo(email, dto);
         dto.setMessageId(email.getMessageId());
         dto.setFromAddress(email.getFromAddress());
         dto.setSenderDomain(email.getSenderDomain());
@@ -2078,6 +2148,90 @@ public class UnifiedEmailController {
         }
 
         return dto;
+    }
+
+    private boolean isEinkaufMail(Long emailId) {
+        if (emailId == null || emailId <= 0) return false;
+        Email email = emailRepository.findById(emailId).orElse(null);
+        return email != null && isEinkaufMail(email);
+    }
+
+    private boolean isEinkaufMail(Email email) {
+        return email != null && ("EINKAUF".equals(email.getKontoId())
+                || einkaufMailZuordnungRepository.findByEmailId(email.getId()).isPresent());
+    }
+
+    private void verlangeEinkaufBearbeitung() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        try {
+            einkaufBerechtigungService.verlange(auth, org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung.LESEN);
+            einkaufBerechtigungService.verlange(auth, org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung.BEARBEITEN);
+        } catch (org.springframework.security.access.AccessDeniedException ex) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Für diese Aktion fehlt das Einkaufsrecht.");
+        }
+    }
+
+    private void verlangeEmailBearbeitung(Email email) {
+        if (isEinkaufMail(email)) verlangeEinkaufBearbeitung();
+    }
+
+    private void verlangeEndgueltigesLoeschen(Email email) {
+        if (isEinkaufMail(email)) throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Einkaufsnachrichten bleiben als Vorgangsbeleg erhalten. Bitte in den Papierkorb verschieben.");
+    }
+
+    private boolean darfEmailLesen(Email email, Authentication authentication) {
+        if (!isEinkaufMail(email)) return true;
+        try {
+            einkaufBerechtigungService.verlange(authentication, org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung.LESEN);
+            return true;
+        } catch (org.springframework.security.access.AccessDeniedException ex) {
+            return false;
+        }
+    }
+
+    private List<Email> scopeMailboxes(List<Email> emails, String kontoId, Authentication authentication) {
+        if (kontoId != null && !Set.of("HAUPT", "DOKUMENTE", "EINKAUF").contains(kontoId))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Das ausgewählte Postfach ist ungültig.");
+        boolean darfEinkauf;
+        if ("EINKAUF".equals(kontoId)) {
+            einkaufBerechtigungService.verlange(authentication, org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung.LESEN);
+            darfEinkauf = true;
+        } else {
+            try {
+                einkaufBerechtigungService.verlange(authentication, org.example.kalkulationsprogramm.domain.einkauf.EinkaufBerechtigung.LESEN);
+                darfEinkauf = true;
+            } catch (org.springframework.security.access.AccessDeniedException ex) {
+                darfEinkauf = false;
+            }
+        }
+        final boolean einkaufsrecht = darfEinkauf;
+        List<Long> ids = emails.stream().map(Email::getId).filter(java.util.Objects::nonNull).toList();
+        Set<Long> linkedIds = ids.isEmpty() ? Set.of() : einkaufMailZuordnungRepository.findAllByEmailIdIn(ids).stream()
+                .map(org.example.kalkulationsprogramm.domain.einkauf.EinkaufMailZuordnung::getEmailId)
+                .collect(Collectors.toSet());
+        return emails.stream().filter(email -> kontoId == null || kontoId.equals(email.getKontoId()))
+                .filter(email -> einkaufsrecht || (!"EINKAUF".equals(email.getKontoId()) && !linkedIds.contains(email.getId())))
+                .toList();
+    }
+
+    private void applyEinkaufInfo(Email email, UnifiedEmailDto dto) {
+        dto.setKontoId(email.getKontoId());
+        if (!isEinkaufMail(email)) return;
+        var mapping = einkaufMailZuordnungRepository.findByEmailId(email.getId()).orElse(null);
+        dto.setZuordnungPruefen(mapping == null || mapping.getTyp() == null || mapping.getVorgangId() == null
+                || "PRUEFEN".equals(mapping.getStatus()));
+        if (mapping == null) return;
+        dto.setEinkaufNachrichtStatus(mapping.getStatus());
+        dto.setEinkaufTyp(mapping.getTyp());
+        dto.setEinkaufVorgangId(mapping.getVorgangId());
+        if ("ANFRAGE".equals(mapping.getTyp())) {
+            dto.setEinkaufNummer(einkaufsanfrageRepository.findById(mapping.getVorgangId())
+                    .map(org.example.kalkulationsprogramm.domain.einkauf.Einkaufsanfrage::getPaNummer).orElse(null));
+        } else if ("BESTELLUNG".equals(mapping.getTyp())) {
+            dto.setEinkaufNummer(einkaufBestellungRepository.findById(mapping.getVorgangId())
+                    .map(org.example.kalkulationsprogramm.domain.einkauf.EinkaufBestellung::getNummer).orElse(null));
+        }
     }
 
     private String computeFolder(Email email) {

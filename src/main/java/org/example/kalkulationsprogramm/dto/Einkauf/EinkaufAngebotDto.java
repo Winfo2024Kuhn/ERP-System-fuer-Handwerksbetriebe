@@ -15,13 +15,20 @@ public final class EinkaufAngebotDto {
     }
     public record Position(Long anfragePositionId, String originalNummer, String originalText, Mengenbasis angeboten,
             BigDecimal mindestmenge, BigDecimal verpackungseinheit, LocalDate liefertermin, List<String> abweichungen,
-            List<ZeugnisZusage> zeugnisse, List<Kosten> kosten) {
+            List<ZeugnisZusage> zeugnisse, List<Kosten> kosten, Long id) {
+        public Position(Long anfragePositionId, String originalNummer, String originalText, Mengenbasis angeboten,
+                BigDecimal mindestmenge, BigDecimal verpackungseinheit, LocalDate liefertermin, List<String> abweichungen,
+                List<ZeugnisZusage> zeugnisse, List<Kosten> kosten) {
+            this(anfragePositionId, originalNummer, originalText, angeboten, mindestmenge, verpackungseinheit, liefertermin, abweichungen, zeugnisse, kosten, null);
+        }
         public Position { abweichungen = abweichungen == null ? List.of() : List.copyOf(abweichungen); zeugnisse = zeugnisse == null ? List.of() : List.copyOf(zeugnisse); kosten = kosten == null ? List.of() : List.copyOf(kosten); }
     }
     public record Kosten(String schluessel, String art, BigDecimal betrag, String basis, BigDecimal basisMenge,
             String prozentBasisSchluessel, boolean enthalten, boolean variabel, String quelle) {}
     public record ZeugnisZusage(Dokumentart art, String status, BigDecimal aufpreis) {}
     public record Abweichungsfreigabe(String begruendung) {}
+    public record Uebersicht(Long lieferantId, String lieferantenname, Angebot angebot) {}
+
     public record Angebot(Long id, Long beteiligungId, String status, List<VersionDto> versionen) {
         public Angebot { versionen = versionen == null ? List.of() : List.copyOf(versionen); }
     }
