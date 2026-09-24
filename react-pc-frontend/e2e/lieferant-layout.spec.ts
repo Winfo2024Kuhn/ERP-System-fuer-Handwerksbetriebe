@@ -281,7 +281,8 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
         const reiterY = await leiste.locator('button').evaluateAll((buttons) =>
             buttons.map((b) => b.getBoundingClientRect().y),
         );
-        expect(reiterY.length, 'Reiterleiste: vier Reiter-Knoepfe erwartet').toBe(4);
+        expect(reiterY.length, 'Reiterleiste: fünf Reiter-Knöpfe inklusive Einkauf erwartet').toBe(5);
+        await expect(leiste.getByRole('tab', { name: 'Einkauf' })).toBeVisible();
         const reiterSpanne = Math.max(...reiterY) - Math.min(...reiterY);
         expect(reiterSpanne, `Reiter liegen auf unterschiedlichen Zeilen: ${JSON.stringify(reiterY)}`).toBeLessThanOrEqual(2);
 

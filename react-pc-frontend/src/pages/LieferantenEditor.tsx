@@ -22,6 +22,7 @@ import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { PhoneInput } from "../components/PhoneInput";
 import { LIEFERANT_ROLLEN, type LieferantRolle } from "../types";
+import { LieferantKontakte } from "../features/einkauf/components/LieferantKontakte";
 
 const LIEFERANT_TYPES = [
     { value: "STAHL", label: "Stahl" },
@@ -43,7 +44,7 @@ const PAGE_SIZE = 12;
  * und der Zurück-Knopf des Browsers führt wieder aus der Detailansicht
  * heraus zur Liste.</p>
  */
-const LIEFERANT_TABS = ['emails', 'dokumente', 'notizen', 'reklamationen'] as const;
+const LIEFERANT_TABS = ['emails', 'dokumente', 'notizen', 'reklamationen', 'einkauf'] as const;
 type LieferantTab = typeof LIEFERANT_TABS[number];
 
 function istGueltigerTab(value: string | null): value is LieferantTab {
@@ -243,6 +244,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     <AlertTriangle className="w-4 h-4" />
                     Reklamationen
                 </button>
+            <button role="tab" aria-selected={activeTab === 'einkauf'} onClick={() => onTabChange('einkauf')} className={cn("flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px", activeTab === 'einkauf' ? "text-rose-600 border-b-2 border-rose-500" : "text-slate-500 hover:text-slate-700")}><Package className="w-4 h-4" /> Einkauf</button>
             </div>
 
             {/* Tab Content */}
@@ -277,6 +279,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     </div>
                 )}
 
+                {activeTab === 'einkauf' && <div className="absolute inset-0 overflow-y-auto pr-2"><LieferantKontakte lieferantId={lieferant.id as number} readOnly={false} /></div>}
                 {activeTab === 'reklamationen' && (
                     <div className="absolute inset-0 overflow-y-auto pr-2">
                         <LieferantReklamationenTab

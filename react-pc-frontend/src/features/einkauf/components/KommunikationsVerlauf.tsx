@@ -1,0 +1,8 @@
+import { useEffect, useState } from 'react';
+export type KommunikationsTyp = 'ANFRAGE' | 'BESTELLUNG';
+type Nachricht = { emailId: number; subject: string; fromAddress: string; sentAt?: string | null; status: string; quelle: string; revisionId?: number | null };
+export function KommunikationsVerlauf({ typ, vorgangId }: { typ: KommunikationsTyp; vorgangId: number }) {
+ const [nachrichten, setNachrichten] = useState<Nachricht[]>([]); const [fehler, setFehler] = useState('');
+ useEffect(() => { let aktiv = true; fetch(`/api/einkauf/${typ}/${encodeURIComponent(vorgangId)}/verlauf?page=0&size=50`).then(async r => { if (!r.ok) throw new Error('Nachrichtenverlauf konnte nicht geladen werden.'); return await r.json() as { content: Nachricht[] }; }).then(d => { if (aktiv) setNachrichten(d.content ?? []); }).catch(e => { if (aktiv) setFehler(e instanceof Error ? e.message : 'Nachrichtenverlauf konnte nicht geladen werden.'); }); return () => { aktiv = false; }; }, [typ, vorgangId]);
+ return <section aria-labelledby="kommunikationsverlauf" className="rounded-lg border border-slate-200 bg-white p-4"><h2 id="kommunikationsverlauf" className="font-semibold">Kommunikationsverlauf</h2>{fehler ? <p role="alert" className="mt-2 text-sm text-rose-700">{fehler}</p> : !nachrichten.length ? <p className="mt-2 text-sm text-slate-600">Noch keine Nachrichten zu dieser Anfrage.</p> : <ol className="mt-3 divide-y divide-slate-100">{nachrichten.map(n => <li key={n.emailId} className="py-3"><p className="font-medium">{n.subject}</p><p className="text-sm text-slate-600">{n.fromAddress} · {n.status} · {n.quelle}{n.revisionId ? ` · Revision ${n.revisionId}` : ''}</p></li>)}</ol>}</section>;
+}

@@ -23,7 +23,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { useToast } from '../components/ui/toast';
 
-type Kategorie = 'DOKUMENT' | 'MAHNWESEN' | 'WEBSITE' | 'SYSTEM';
+type Kategorie = 'DOKUMENT' | 'MAHNWESEN' | 'WEBSITE' | 'EINKAUF' | 'SYSTEM';
 
 interface EmailTemplate {
   id?: number | string;
@@ -33,6 +33,8 @@ interface EmailTemplate {
   subjectTemplate: string;
   htmlBody: string;
   aktiv?: boolean;
+  standard?: boolean;
+  version?: number;
 }
 
 interface DokumentTypOption {
@@ -50,12 +52,13 @@ interface PlaceholderDef {
 /* Reihenfolge der Kategorien in der UI — bewusst hartkodiert, damit
    "Dokumente" oben stehen (die mit Abstand häufigsten Vorlagen) und
    "System" als generischer Sammeltopf unten. */
-const KATEGORIE_REIHENFOLGE: Kategorie[] = ['DOKUMENT', 'MAHNWESEN', 'WEBSITE', 'SYSTEM'];
+const KATEGORIE_REIHENFOLGE: Kategorie[] = ['DOKUMENT', 'MAHNWESEN', 'WEBSITE', 'EINKAUF', 'SYSTEM'];
 
 const KATEGORIE_LABEL: Record<Kategorie, string> = {
   DOKUMENT: 'Dokumente',
   MAHNWESEN: 'Mahnwesen',
   WEBSITE: 'Webseite & Anfragen',
+  EINKAUF: 'Einkauf',
   SYSTEM: 'System'
 };
 
@@ -66,6 +69,7 @@ const KATEGORIE_BADGE: Record<Kategorie, string> = {
   DOKUMENT: 'bg-rose-50 text-rose-700 border border-rose-100',
   MAHNWESEN: 'bg-slate-100 text-slate-700 border border-slate-200',
   WEBSITE: 'bg-rose-100 text-rose-800 border border-rose-200',
+  EINKAUF: 'bg-rose-50 text-rose-700 border border-rose-100',
   SYSTEM: 'bg-slate-50 text-slate-500 border border-slate-100'
 };
 
@@ -337,7 +341,7 @@ function TemplateEditorPanel({
               placeholder="Dokumenttyp wählen"
             />
             <p className="text-xs text-slate-400">
-              Pro Dokumenttyp kann genau eine aktive Vorlage existieren.
+              Pro Dokumenttyp gibt es eine aktive Vorlage. Varianten können als Standard festgelegt werden.
             </p>
           </div>
         </div>
@@ -429,6 +433,7 @@ function TemplateEditorPanel({
           />
           Vorlage aktiv (wird beim Versand verwendet)
         </label>
+        {template.dokumentTyp.startsWith('EINKAUF_') && <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer"><input type="checkbox" className="h-4 w-4 accent-rose-600" checked={template.standard === true} onChange={event => onChange({ ...template, standard: event.target.checked })} />Standard für diesen Einkaufstyp</label>}
       </div>
     </Card>
   );
@@ -692,7 +697,8 @@ export default function EmailTextvorlagenEditor() {
       name: template.name.trim(),
       subjectTemplate: template.subjectTemplate,
       htmlBody: template.htmlBody,
-      aktiv: template.aktiv !== false
+      aktiv: template.aktiv !== false,
+      standard: template.standard === true
     };
 
     const isUpdate = Boolean(template.id);
@@ -762,6 +768,18 @@ export default function EmailTextvorlagenEditor() {
     () => templates.find((tpl) => String(tpl.id) === String(selectedId)) || null,
     [templates, selectedId]
   );
+
+
+  useEffect(() => {
+    const typ = activeTemplate?.dokumentTyp;
+    if (!typ?.startsWith('EINKAUF_')) return;
+    let aktiv = true;
+    fetch(`/api/email-textvorlagen/placeholders/${encodeURIComponent(typ)}`).then(async response => {
+      if (!response.ok) throw new Error('Einkaufs-Platzhalter konnten nicht geladen werden.');
+      return await response.json() as PlaceholderDef[];
+    }).then(data => { if (aktiv) setPlaceholders(data); }).catch(() => { if (aktiv) setPlaceholders([]); });
+    return () => { aktiv = false; };
+  }, [activeTemplate?.dokumentTyp]);
 
   const previewHtml = useMemo(
     () => (activeTemplate ? renderPreview(activeTemplate.htmlBody, useSampleData) : ''),
