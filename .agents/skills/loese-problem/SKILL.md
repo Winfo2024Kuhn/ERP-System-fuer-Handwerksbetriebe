@@ -1,6 +1,6 @@
 ---
 name: loese-problem
-description: Startet die komplette Multi-Agent-Pipeline (Brainstorming → Spec → Issue → paralleles Coden → PR → Merge) für GRÖSSERE, mehrteilige Probleme/Features im ERP. NICHT für kleine Bugfixes, Ein-Zeilen-Änderungen oder Aufgaben, bei denen der Weg schon klar ist — dafür reicht die normale Umsetzung oder /bugfix, sonst kostet die Pipeline nur unnötig Zeit. Trigger: der Nutzer beschreibt ein neues, größeres Feature oder ein komplexes, mehrteiliges Problem und will den kompletten Ablauf bis zum fertigen, gemergten Pull Request automatisiert haben. Auch explizit aufrufbar über "/loese-problem".
+description: "Startet die komplette Multi-Agent-Pipeline (Brainstorming → Spec → Issue → paralleles Coden → PR → Merge) für GRÖSSERE, mehrteilige Probleme/Features im ERP. NICHT für kleine Bugfixes, Ein-Zeilen-Änderungen oder Aufgaben, bei denen der Weg schon klar ist — dafür reicht die normale Umsetzung oder /bugfix, sonst kostet die Pipeline nur unnötig Zeit. Trigger: der Nutzer beschreibt ein neues, größeres Feature oder ein komplexes, mehrteiliges Problem und will den kompletten Ablauf bis zum fertigen, gemergten Pull Request automatisiert haben. Auch explizit aufrufbar über \"/loese-problem\"."
 ---
 
 # loese-problem — Multi-Agent-Pipeline
@@ -41,9 +41,28 @@ neuen Agenten und Abschnitt.
   binden. Gültige Nachweise unveränderter Bereiche gemeinsam nutzen; geänderte
   Bereiche und integrierte Wechselwirkungen erneut prüfen. Vorgeschriebene
   vollständige Tests, E2E, Lint und Builds bleiben Pflicht; Fehler nie ignorieren.
-- Bei Korrekturen denselben Coding-Agenten und Reviewer weiterverwenden und nur
-  Befunde plus Änderungen übergeben. Keine zusätzliche Reviewrolle ohne eigene
-  Prüfverantwortung. Modellvorgaben des Nutzers gelten vor den Tabellen unten.
+- Pro neuer Implementierungsrunde (Abschnitt mit gemeinsamem Reviewblock) neue
+  Review-Agenten starten: einen Code-/ERP-Reviewer und bei Frontend zusätzlich
+  einen Design-Reviewer. Reviewer nicht in den nächsten Abschnitt übernehmen;
+  die Zuordnung gilt pro Runde, nicht pro einzelner Task.
+- Bei Nachbesserungen innerhalb derselben Implementierungsrunde verbessert der
+  ursprüngliche Coding-Agent sein Paket. Anschließend prüfen dieselben Reviewer
+  dieser Runde die integrierten Korrekturen; dafür keine neuen Agenten starten.
+  Nur Befunde plus Änderungen übergeben. Keine zusätzliche Reviewrolle ohne
+  eigene Prüfverantwortung. Modellvorgaben des Nutzers gelten vor den Tabellen unten.
+
+## Deutsch und Umlaute — auch im Code
+
+Neue frei wählbare Bezeichner im Code (Variablen, Funktionen, Klassen und
+Testnamen), Kommentare, Dokumentation, Reviewberichte, Kommunikation und
+sichtbare UI-Texte ausschließlich deutsch schreiben. Echte Umlaute (ä, ö, ü,
+Ä, Ö, Ü) und ß verwenden, soweit die jeweilige Programmiersprache sie an der
+Stelle erlaubt; nicht durch ae, oe, ue oder ss ersetzen.
+
+Vorgegebene Sprachsyntax, Bibliotheks- und externe API-Namen sowie bestehende
+Schnittstellenverträge unverändert verwenden. Keine inkompatiblen Umbenennungen
+bestehender Bezeichner oder Pfade allein zur sprachlichen Vereinheitlichung.
+Diese Vorgabe an Coding- und Review-Agenten weitergeben und im Review prüfen.
 
 ## Sparsame Agentenkommunikation (Nutzervorgabe 23.09.2026)
 
@@ -125,13 +144,16 @@ Für jeden Abschnitt der Reihe nach:
    seinen eigenen Task-Branch), dem Pfad zur Kontext-Log-Datei.
 2. **Warten**, bis alle Coding-Pakete des Abschnitts vollständig fertig sind,
    auch die einer später gestarteten Coding-Welle.
-3. **Fertige Paketbranches zusammenführen**, dann ein Review-Agent für den
-   gesamten integrierten Abschnitt: `loese-problem-review`. Bei Frontend zusätzlich
-   ein `loese-problem-design-review`; beide prüfen denselben fertigen Stand mit
-   getrennter Prüfverantwortung. Erst danach gilt der Abschnitt als abgenommen.
-4. **🔴 und noch keine 2 Nachbesserungen versucht:** Befund an denselben
-   Coding-Agenten zurück (neuer Auftrag, nur der Befund + sein Task), dann
-   nach Abschluss aller Korrektur-Agenten zurück zur Integration in Schritt 3.
+3. **Fertige Paketbranches zusammenführen**, dann für diesen Abschnitt einen
+   **neuen** `loese-problem-review` starten. Bei Frontend zusätzlich einen
+   **neuen** `loese-problem-design-review`; keine Reviewer eines vorherigen
+   Abschnitts weiterverwenden. Beide prüfen den gesamten integrierten Abschnitt
+   mit getrennter Prüfverantwortung. Erst danach gilt er als abgenommen.
+4. **🔴 und noch keine 2 Nachbesserungen versucht:** Befunde an die ursprünglichen
+   Coding-Agenten der betroffenen Pakete zurückgeben (neuer Auftrag, nur Befund
+   und Änderungen). Nach Abschluss aller Korrekturen erneut zusammenführen und
+   **denselben Review-Agenten dieses Abschnitts** zur Nachprüfung vorlegen.
+   Schritt 3 startet nur beim ersten Review eines neuen Abschnitts neue Agenten.
    **🔴 nach der 2. erfolglosen Nachbesserung:** Pipeline stoppen, verbleibende
    🔴-Befunde dem Nutzer vorlegen. **ENDE.**
 5. **🟢/🟡:** Abschnitt abgenommen, weiter zum nächsten Abschnitt. Keine

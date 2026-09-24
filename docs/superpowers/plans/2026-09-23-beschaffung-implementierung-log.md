@@ -1949,3 +1949,70 @@ Ampel: GRÜN (Code/ERP und Design)
 - Design sah zwölf gezielte neue Bilder tatsächlich in allen drei Größen; keine Restbefunde. Übrig bleibt ein ausdrücklich nichtblockierender Performancehinweis zu generischem Mailcenter-Paging/N+1.
 - Dauerhafte Sicherung unter Übergabeverzeichnis/fortsetzung-r1 und /fortsetzung-r2; Quellarchive, Ownership-/Hashmanifeste, Testlogs und Reviews. Graphdaten/fremde Änderungen erhalten, keine echten Mails und keine Prüfung gegen DB3309.
 - Abschnitt12 darf jetzt auf diesem abgenommenen Stand starten: Paket12A (28→36), GPT-6Luna. Folgevertrag `/tmp/beschaffung-12-start-zusatz.md` plus dauerhafter Paketauftrag.
+
+## Integrationsbasis für Abschnitt 12/13 — aktueller Main
+
+Zeit: 2026-09-24T10:54:00.389842+00:00
+Branch: codex/beschaffung-konzept
+Commit: 02f98d82ce1bfae16342fb0227709bfe9376d5cc
+Status: Integration erfolgt, neue Backendprüfung läuft
+
+- Nach Abnahme11 aktuellen origin/main ea80be22 übernommen (sechs neuere Commits: Kalenderfix, Monatsabschluss-Aufteilung, Postfach-Spec/Plan). Keine Paket12-Ownership betroffen. Einziger Mergekonflikt in generiertem static/index.html auf Main-Version aufgelöst; finale Assets werden nach Abschluss aus finalen Quellen erzeugt. Geerbte Whitespace-Hinweise in generierten Main-JS-Dateien sind eingebettete Render-Strings, keine manuelle Quellkorrektur.
+- Luna12 erhält notwendige Basisentscheidung: 02f98d82 vor abschließenden PC-Suiten regulär in Taskbranch mergen, eigene Edits erhalten. Backend-Altbeleg für geänderte Mainklassen nicht übernehmen.
+- Root prüft Backend isoliert in .claude/worktrees/beschaffung-main-pruefung, nur Dummy-Testcontainers, Log /tmp/beschaffung-main-backend-full.log. Unverändertes Mobile weiterhin gültig. Keine zusätzlichen Reviewrollen.
+
+### Main-Integration — Backendnachweis abgeschlossen
+Zeit: 2026-09-24T10:59:11.196027+00:00
+- 02f98d82, Backend3589/0Failures/0Errors/17Bestandsskips, Exit0. Vollständige Quellenbindung `/tmp/beschaffung-main-backend-bindung.json`, Ergebnis `/tmp/beschaffung-main-backend-result.json`; dauerhafte Sicherung `handoff-2026-09-24-abschnitt11/fortsetzung-main`. Luna12 erhält fertigen Nachweis zur Wiederverwendung. Keine Produktkorrektur nach Main-Merge nötig.
+
+## Abschnitt 12A — Task 28→36 (Coding-Agent)
+
+Zeit: 2026-09-24T11:21:37Z
+Branch: codex/beschaffung-task-28
+Commit(s): 83cc0713210f4e8abf90708c51b8e3d9c9dc668a
+Status: fertig
+
+Was gemacht wurde:
+- Bedarfserfassung und persistente, lieferantenneutrale Bedarfsliste mit Stammdatenwahl, Teilmengen, Projekt-/Lagerzweck, Bestandsmengen, HiCAD-Vorschau/Teilmengenimport, freigegebenen Zeichnungsanlagen und bestätigter Lagerentnahme umgesetzt. Angebote einholen erstellt einen Anfrageentwurf; Direktbestellung bleibt ein getrennter Workflow.
+- Navigation um Anfragen, Lieferungen & Zeugnisse sowie Das ist fällig ergänzt. Fälligkeiten kommen paginiert und zuständigkeitsgefiltert vom Server; Nachfrage zeigt nur eine Vorschau und springt zum bestehenden Vorgang.
+- PC Unit 185 Dateien/1729 Tests, E2E 762 Tests in 3 Größen, Paket-E2E 12/12, Lint, E2E-Typecheck und Build nach /tmp alle Exit 0. Logs/Ergebnisse unter /tmp/beschaffung-paket-12a-{unit,lint,types,build,e2e}.log und -result.json. Screenshots der DesignPrüfung aus allen 3 Größen unter react-pc-frontend/test-results/**/attachments.
+- Backendnachweis der Basis 02f98d82 hashgebunden übernommen und alle 1498 Dateien validiert: 3589 Tests, 0 Fehler, 17 bekannte Skips. Mobile-Nachweis r2 hashgebunden übernommen und alle 132 Dateien validiert; keine Änderung.
+- Keine Datenbank 3309 und keine echten E-Mails verwendet. Mock-Netzriegel blieb aktiv.
+
+Bedenken / Abweichungen vom Plan:
+- Keine. Graphify-Artefakte blieben unstaged; Commit enthält genau die 16 Dateien der Ownership.
+
+### Abschnitt 12A — Präzisierung Abschlussnachweis
+Zeit: 2026-09-24T11:27:20Z
+- Der ursprüngliche vollständige Playwright-stdout-Runnerlog wurde nicht als Datei umgeleitet. /tmp/beschaffung-paket-12a-e2e.log ist nur eine nachträgliche Zusammenfassung, keine Originalausgabe; test-results/.last-run.json enthält ausschließlich status=passed und failedTests=[]. Keine Testwiederholung für diese Lücke.
+- Nachträgliche Source-Bindung für den getesteten finalen Commit 83cc0713210f4e8abf90708c51b8e3d9c9dc668a: /tmp/beschaffung-paket-12a-source-manifest.json, 619 getrackte PC-Frontend-Dateien, Frontend-Tree d6a4e9b9f1433c0f351654d0fcb5a9bda22e7866; Frontend-Arbeitsbaum bei Prüfung sauber. Manifest SHA-256: 6e201944a5583ca645ee4fddc29daedffff877e40958a9232561dce8a3b254f0.
+
+### Abschnitt 12A — Manifestdigest-Präzisierung
+Zeit: 2026-09-24T11:27:49Z
+- Der zuvor notierte Wert 6e201944a5583ca645ee4fddc29daedffff877e40958a9232561dce8a3b254f0 ist der im Manifest enthaltene kanonische Inhaltsdigest. SHA-256 der Manifestdatei selbst: 036f5288f478c2e6d35ecd5085f502920f198466c559301c3ac8b93567154452.
+
+
+## Nutzerpräzisierung — Agenten je Implementierungsrunde und deutsche Schreibweise
+
+Zeit: 2026-09-24T11:31:43.385188+00:00
+
+- Pro neuem Abschnitt (gemeinsame Implementierungsrunde, nicht pro Task) neue Code-/ERP- und gegebenenfalls Designreview-Agenten. Nachbesserungen derselben Runde durch die ursprünglichen Coding-Agenten, erneute Prüfung durch dieselben Reviewer dieser Runde. Diese spätere Nutzeranweisung ersetzt die frühere Vorgabe, Root solle Reviewbefunde selbst beheben.
+- Versehensweise für Abschnitt 12 wiederverwendete Abschnitt-11-Reviewer gestoppt. Neue Sol-Agenten review12_code und review12_design führen den offiziellen R0 aus; Coding12 bleibt der Luna-Coder. Vorhandene gültige Belege werden weiterhin genutzt.
+- Beide loese-problem-Skill-Fassungen unter .agents und .claude gezielt angepasst. Deutsche Texte verwenden echte Umlaute und ß; technische Bezeichner bleiben unverändert. Vorhandenes ungültiges YAML-Description-Quoting bei der Validierung korrigiert.
+
+
+## Nutzerpräzisierung — Deutsch auch im Code
+
+Zeit: 2026-09-24T11:33:08.958765+00:00
+
+Neue frei wählbare Codebezeichner, Kommentare und Texte ausschließlich deutsch mit echten Umlauten und ß, soweit die Syntax das erlaubt. Bestehende Schnittstellen sowie Sprach-/Bibliotheksvorgaben bleiben kompatibel. In beiden loese-problem-Skills verankert und validiert; auf ausdrücklichen Wunsch an review12_design übermittelt. Für die nächsten Coding-/Reviewaufträge verbindlich.
+
+
+## Abschnitt 12 — Gemeinsamer R0 und Nachbesserung 1
+
+Zeit: 2026-09-24T11:37:10.359367+00:00
+
+- Paket 83cc0713 mit exakt 16 Eigentumsdateien konfliktfrei in Haupt- und Designprüfstand integriert; 619 PC-Dateihashes in beiden Ständen identisch. Offizielle neue Sol-Reviewer review12_code/review12_design: beide ROT. Berichte /tmp/beschaffung-abschnitt12-review-report.md und -design-report.md.
+- Befunde umfassen reale Excel-Formate, Zeichnungserstellung/Anlagenfreigabe, HiCAD-Bildvertrag und Fehleranzeige, vollständige Mengenauswahlprüfung, bewussten 409-Abgleich, deutsches Dateifeld und verständliche Zuständigkeit. Root ergänzt verlustfreie technische Bearbeitung, Übernahme der ausgewählten Direktbestellanteile und vollständige Mapping-/Rechte-/Sprachprüfung.
+- Derselbe Luna-Coder coding12 übernimmt die gebündelte R1 mit explizit freigegebener zusätzlicher Ownership für erforderliche Backend-Erstellung und gemeinsame UI-Anbindung. Kein weiterer Abschnitt startet vor der Abnahme.
+- Vorbereiteter lokaler Snapshot: /tmp/beschaffung-13-snapshot-vor-migration.json; V367,139Tabellen,122erfolgreicheHistorienzeilen, gzip/Hash geprüft. Ausschließlich isolierte Kopie gelesen; keine Migration vorgenommen.
