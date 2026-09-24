@@ -116,7 +116,7 @@ public class ArtikelService implements ArtikelServiceContract {
             throw artikelnummerKonflikt(gespeicherteNummer, conflict);
         }
 
-        if (dto.getPreis() != null || (dto.getExterneArtikelnummer() != null && !dto.getExterneArtikelnummer().isBlank())) {
+        if (dto.getLieferantId() != null || dto.getPreis() != null || (dto.getExterneArtikelnummer() != null && !dto.getExterneArtikelnummer().isBlank())) {
             LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
             preis.setArtikel(saved);
             preis.setPreis(dto.getPreis());

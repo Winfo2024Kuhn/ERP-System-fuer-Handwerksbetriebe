@@ -1449,3 +1449,87 @@ Zeit: 2026-09-23T23:01:24.144454+00:00
 - Sol final GRÜN; /tmp/beschaffung-abschnitt8-r2-review-report.md. Integrierter Volltest3491/0Fehler/17bekannteSkips, direkter Maven-Exit0, /tmp/beschaffung-abschnitt8-r2-review-backend.log. Beide R1-Blocker behoben und persistiert geprüft, Warnung fehlender Rechnungsrechtetest ebenfalls behoben.
 - Geprüfte Paketstände: a08c90f2 (Tasks25→23) und205523ad (Task26). Frontendtrees unverändert, gültige gemeinsame Nachweise /tmp/beschaffung-frontend-testnachweise.json. Graphifyupdate Exit0 /tmp/beschaffung-abschnitt8-r2-graphify.log; beide erzeugten Graphdaten weiter absichtlich uncommitted.
 - Zweite Nachbesserung erfolgreich. Abschnitt8 abgenommen, als Nächstes Abschnitt9/Task27 gemeinsame Desktop-Einkaufsbausteine. Keine Wiederholung abgeschlossener Planung/Abschnitte.
+
+
+## Abschnitt 9 — Task27 gestartet
+
+Zeit: 2026-09-23T23:02:23.917274+00:00
+
+- Abschnitt8-Merge fa2cb077 erfolgreich nach origin/codex/beschaffung-konzept gepusht. Task27-Branch codex/beschaffung-task-27 und Worktree .claude/worktrees/beschaffung-task-27 auf exakt dieser Basis erstellt. Luna paket9a arbeitet gemäß /tmp/beschaffung-paket-9a-auftrag.md an gemeinsamen API-Typen/Positionseditor/Bausteinen.
+- Ownership erweitert um neue E2E-Spec einkauf-bausteine.spec.ts und isolierte Testharnessdateien, da echte Seiten erst in späteren Abschnitten entstehen. Keine Produkt-App-Routen vorziehen. Node_modules/Graphifyvenv verlinkt; keine Fremdänderungen/Graphdaten committen.
+- Backendbasis3491/0/17 aus Abschnitt8 wiederverwendbar, solange Backend unverändert. Geändertes Frontend braucht komplette eigene Unit/E2E/Lint/Buildnachweise. Erst nach Paketabschluss gemeinsame Integration, Sol-Code+Designreview.
+
+
+## Abschnitt 9 — bestehende Artikelanlage wiederverwenden
+
+Zeit: 2026-09-23T23:27:49.231837+00:00
+
+
+
+Ownershipentscheidung Root: vorhandenes react-pc-frontend/src/components/CreateArticleModal.tsx einschließlich gezielter Unit/E2E-Tests gehört zusätzlich zu Task27. Kein zweiter Artikeldialog. Optional typisierter onCreated-Callback mit gespeichertem Artikel, onSave kompatibel; deutsche Stringdrafts/Validierung, kein stiller Preis0-Fallback. Fehlender Preis nur gemäß bestehendem Backendvertrag unbekannt lassen, andernfalls explizite Eingabe statt erfundener0. PositionsEditor übernimmt neue Artikel direkt. Bestehende Dialognutzer gegenprüfen.
+
+Luna meldete vorhandenen Preis0-Fallback und fehlendes Ergebnis-DTO als konkrete Vertragsabweichung. Root entschied Wiederverwendung mit oben genannter Ownershiperweiterung statt zweitem Dialog; durch dauerhafte Nutzerfreigabe zum gemeinsamen Refactoring gedeckt. Backendänderung ist nicht Teil dieser Erweiterung.
+
+
+### Paket 9a / Task 27 — fertig
+
+- Zeit: 2026-09-23 23:33:52 UTC
+- Branch: codex/beschaffung-task-27
+- Commit: 0fa54151914b659ac45dded263329fc33734e1b7
+- Umsetzung: typisierte Einkauf-DTOs/API und wiederverwendbare Desktop-Bausteine samt PositionDraft-Validierung, Mengenanzeige, Quellenlink, Versandstatus und Navigation. Die neue E2E-Spec prüft Artikelwahl und das Erstellen/Übernehmen eines neuen Artikels ohne erfundenen Preis.
+- Zusätzliche Ownership nach Root-Entscheidung: bestehendes CreateArticleModal erweitert und wiederverwendet, mit optionalem onCreated(Artikel)-Callback, kompatiblem onSave, deutscher Zahlen-Stringeingabe und leerem/unbekanntem Preis (Preisfeld wird bei Abwesenheit aus dem Request weggelassen). Bestehende Kompatibilität über Unit-Test abgesichert.
+- Prüfungen: `npx vitest run src/components/CreateArticleModal.test.tsx src/features/einkauf` — 8 Dateien, 21 Tests grün (`/tmp/task27-unit-final2.log`); `npm run lint` grün (`/tmp/task27-lint-final3.log`); `npm run build` grün (`/tmp/task27-build-final3.log`, Vite meldet vorhandene Chunkgrößen-Warnung); `E2E_PORT=5208 npx playwright test e2e/einkauf-bausteine.spec.ts` — 6/6 Projekte grün (`/tmp/task27-e2e-final3.log`).
+- Zusatzversuch `npm run typecheck:e2e` nicht grün (`/tmp/task27-typecheck-e2e-final.log`): e2e-tsconfig setzt kein JSX, wodurch der neue TSX-Harness nicht prüfbar ist; außerdem vorhandener unabhängiger Typfehler `e2e/projekt-lagerentnahmen-kosten.spec.ts:39` (`never`). Kein außerhalb der Ownership liegendes Config-/Produktionsrouting geändert.
+- Dienstbereinigung: Playwright/Vite beendet; Port 5208 hat keinen Listener. Build-Artefakte unter `src/main/resources/static` zurückgesetzt/entfernt. `.graphify-venv` ist ein unveränderter, nicht gestagter Worktree-Symlink.
+- Bedenken/Abweichungen: nur der beschriebene bestehende E2E-Typecheck-Fehler; Pakettests und Build sind grün. Status: fertig.
+
+
+## Abschnitt 9 — Root vervollständigt Paketnachweise vor erstem Review
+
+Zeit: 2026-09-23T23:35:42.682237+00:00
+
+- Luna-Paketcommit0fa54151914b659ac45dded263329fc33734e1b7 enthält21gezielteUnit-/6E2ETests, Lint/Build grün, aber rote E2E-Typprüfung und keine vollständigen Frontendtests. Deshalb noch KEINE Integration/kein Review/keine Abschnittsabnahme.
+- Root übernimmt die bekannte Typkorrektur selbst im Task27-Worktree: tsconfig.e2e.json unterstützt ReactJSX und Vite-Typen für neuen isolierten Harness; ältere Projektkosten-E2E-Fixture bekommt expliziten Materialkosten-Typ statt inferrednever[]. Keine Abschaltung/kein Überspringen von Prüfungen. typecheck:e2e jetzt Exit0 /tmp/beschaffung-9-root-typecheck.log.
+- Ownership erweitert um genau diese zwei Test-/Konfigdateien. Root führt volle PC-Unit-/E2E-Suite sowie Lint aus, erst danach Paketfixcommit und gemeinsame Sol-Code/Designabnahme. Noch keine formale R0-Korrekturrunde verbraucht.
+
+
+## Abschnitt 9 — vollständiges Paket integriert, gemeinsame R0-Abnahme
+
+Zeit: 2026-09-23T23:42:23.369138+00:00
+
+- Root-Fixcommit839ade9a auf Paket0fa54151: E2E-Typprüfung grün, keine unterdrückten Fehler. Vollständige PC-Unit1651/150Dateien Exit0 /tmp/beschaffung-9-root-unit-full.log; Lint Exit0 /tmp/beschaffung-9-root-lint.log; Typecheck Exit0 /tmp/beschaffung-9-root-typecheck.log; volle E2E681/681 Exit0 /tmp/beschaffung-9-root-e2e-full.log (5Minuten,2Worker). Unveränderte Produktquellen seit Build /tmp/task27-build-final3.log grün.
+- Erst nach vollständigem Paketabschluss mit diesen Nachweisen konfliktfrei --no-ff --no-commit inRoot/fa2cb077 integriert. Sol review9 (kombinierter ERP-/Abschnittsreview) und Sol design9 gestartet. Designworktree .claude/worktrees/beschaffung-design9 auf839ade9a,Port5219.
+- Root-Index und Designcheckout sind für PC/Mobile/Backendquellen/-tests/POM exakt gleich dem getesteten Paketstand. Gemäß Nutzervorgabe gültige Vollnachweise wiederverwenden; Reviewer prüfen fachlich/visuell gezielt, keine identischen Vollsuiten ohne neue Änderung/Risiko. Backend3491-Nachweis unverändert,Mobile unverändert. Root synchronisiert Graphify/Doku, keine parallelen Produktedits.
+- Noch kein Abschnitt9-Commit/Push/Abnahme. R0 ist erste formale Prüfung, keine Korrekturrunde verbraucht.
+
+
+## Abschnitt 9 — R0 rot, erste Korrektur durch Root
+
+Zeit: 2026-09-23T23:52:42.233814+00:00
+
+- Beide R0-Reviews vollständig fertig, Code /tmp/beschaffung-abschnitt9-r0-review-report.md, Design /tmp/beschaffung-abschnitt9-r0-design-report.md. Root sicherte Plan+Log unter /tmp/abschnitt9-r0-2026-09-23-beschaffung-implementierung[-log].md, brach pendingMerge ab und stellte nur eigene Docs wieder her. HEAD bleibtfa2cb077.
+- Root repariert selbst im Paket27-Worktree: konsistente Meter/Zuschnittmengen vor Übernahme validieren; Artikel/Zeichnungsteil über vorhandenen Select erreichbar; Quellenlink ohne HTML-Zweig; VersandstatusRose/Slate. Warnungen ebenfalls behoben: gemeinsame validateNumberDrafts liefert tatsächliches Fehlerfeld; PositionsEditor bekommt optionale Anlagenmetadaten zur Auswahl nach Dateiname/Revision/Freigabe statt Roh-ID.
+- Lieferantenverlust wird fachlich im bestehenden ArtikelService behoben (zusätzliche Ownership ArtikelService.java + ArtikelServiceTest.java): Lieferantenzuordnung auch ohne Preis/externeNr anlegen, Preis bleibtnull. Neuer Regressionstest reproduziert vorher1erwartete/0vorhandeneZuordnungen, /tmp/beschaffung-9-r1-root-backend-red.log. Kein neuer API-/Schema-Vertrag, bestehender Vollbackendnachweis dadurch ungültig; komplette Dummy-Backendtests laufen neu.
+- Rote Frontendtests reproduzieren Mengenabweichung/fehlenden Artwechsel/falsches Fehlerfeld (3Failures) /tmp/beschaffung-9-r1-root-unit-red.log. Korrigierte gezielte27Tests grün /tmp/beschaffung-9-r1-root-unit-targeted.log; neue4Browserabläufe in3Größen12/12 grün /tmp/beschaffung-9-r1-root-e2e-targeted.log. E2ETypprüfung und Build grün. Vollfrontendtests folgen.
+- Ein paralleler Lintlauf traf das durch Playwright gerade gelöschte test-results-Verzeichnis (ENOENT), kein Codebefund. Lint wird nach beendetem Playwright separat abgeschlossen. Künftig keine Lint/E2E-Läufe gleichzeitig im selben Worktree.
+
+
+## Abschnitt 9 — R1 vollständig geprüft und integriert
+
+Zeit: 2026-09-24T00:01:13.287210+00:00
+
+- Root-Korrekturcommit d9811d6a auf Task27: alle vier Codeblocker und Designfarbe behoben; zwei Warnungen (Fehlerfeld, identifizierbare Anlagenversion) ebenfalls umgesetzt. 12 eigene Dateien, staged Diff geprüft, keine Secrets/Fremddaten/Graphdateien.
+- Vollbackend 3492 Tests, 0 Fehler/Failures, 17 bekannte Skips, Exit0: /tmp/beschaffung-9-r1-root-backend-full.log. Vollfrontend 1654 Tests/150 Dateien, Exit0: /tmp/beschaffung-9-r1-root-unit-full.log. Volle Playwright-Suite 687/687, Exit0: /tmp/beschaffung-9-r1-root-e2e-full.log.
+- Lint final /tmp/beschaffung-9-r1-root-lint-final.log, E2E-Typecheck /tmp/beschaffung-9-r1-root-typecheck.log, Build /tmp/beschaffung-9-r1-root-build.log jeweils Exit0. Build liegt ausschließlich in /tmp/beschaffung-9-r1-root-build, keine getrackten Assets geändert. Gezielte 27Unit/12E2E grün, rote Vorhernachweise im vorigen Logblock.
+- Erst nach allen fertigen Korrekturen/Prüfungen konfliktfrei --no-ff --no-commit auf fa2cb077 integriert. Root-Index und Paket/Designcheckout für PC/Mobile/Backend/Tests/POM exakt identisch. Gleiche Sol-Reviewer review9/design9 zur R1-Nachprüfung aufgerufen. Designworktree .claude/worktrees/beschaffung-design9-r1, Port5219. Vollnachweise werden bei exakter Standgleichheit wiederverwendet.
+- Keine Produktedits oder parallelen Tests durch Root während Review; nur Graphify/Docs. Noch keine Abschnittsabnahme/kein Featurepush.
+
+
+## Abschnitt 9 — R1 abgenommen
+
+Zeit: 2026-09-24T00:06:21.236388+00:00
+
+- Code GRÜN /tmp/beschaffung-abschnitt9-r1-review-report.md; Design GELB ohne Blocker /tmp/beschaffung-abschnitt9-r1-design-report.md. Vier Codeblocker und Farbblocker behoben. Root übernahm die Reparatur gemäß Nutzerauftrag.
+- Vollbackend 3492/0/17, Desktop 1654 Unit und 687 E2E, Lint/Typcheck/Build Exit0; Nachweise im vorherigen Block. Design eigene 12/12 E2E und 18 Bilder in drei Größen geprüft, Server beendet.
+- Optionale Hinweise: stabile Dokumentzeilen-Keys bei späterer Bearbeitung; deaktivierte Artikelanlage erklären; echte Seitenkopfzeile kompakt halten. Kein weiterer Korrekturlauf nötig. Graphify Exit0 /tmp/beschaffung-abschnitt9-r1-graphify.log, erzeugte Dateien bleiben uncommitted.
+- Nächster Abschnitt 10: Pakete 29 und 30→31 parallel mit Luna, gemeinsamer Sol-Code-/Designreview erst nach beiden fertigen Paketen.

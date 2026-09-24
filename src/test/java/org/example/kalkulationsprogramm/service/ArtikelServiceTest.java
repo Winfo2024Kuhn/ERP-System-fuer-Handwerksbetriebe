@@ -35,6 +35,26 @@ class ArtikelServiceTest {
     }
 
     @Test
+    void lieferantBleibtOhnePreisUndExterneNummerZugeordnet() {
+        var suppliers=mock(LieferantenRepository.class);
+        var supplier=new org.example.kalkulationsprogramm.domain.Lieferanten();
+        supplier.setId(7L); supplier.setLieferantenname("Dummy Lieferant");
+        when(suppliers.findById(7L)).thenReturn(java.util.Optional.of(supplier));
+        var articleService=new ArtikelService(artikelRepository,mock(KategorieRepository.class),mock(WerkstoffRepository.class),suppliers,entityManager);
+        when(query.getSingleResult()).thenReturn(0L);
+        when(artikelRepository.save(any(Artikel.class))).thenAnswer(call->{Artikel a=call.getArgument(0);a.setId(57L);return a;});
+        when(artikelRepository.saveAndFlush(any(Artikel.class))).thenAnswer(call->call.getArgument(0));
+        var request=new ArtikelCreateDto();request.setProduktname("Dummy Profil");request.setLieferantId(7L);
+        var saved=articleService.erstelleArtikel(request);
+        assertEquals(1,saved.getArtikelpreis().size());
+        var relation=saved.getArtikelpreis().iterator().next();
+        assertSame(supplier,relation.getLieferant());
+        assertNull(relation.getPreis());
+        assertNull(relation.getExterneArtikelnummer());
+        verify(artikelRepository,times(2)).save(saved);
+    }
+
+    @Test
     void createCallerOhneInterneNummerErhaeltKollisionssichereNummerAusId() {
         when(query.getSingleResult()).thenReturn(0L);
         when(artikelRepository.save(any(Artikel.class))).thenAnswer(invocation -> {

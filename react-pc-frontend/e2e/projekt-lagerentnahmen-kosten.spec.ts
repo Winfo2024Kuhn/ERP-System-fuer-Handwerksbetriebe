@@ -1,6 +1,17 @@
 import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
 
+interface DummyMaterialkosten {
+    id: number;
+    beschreibung: string;
+    betrag: number;
+    artikelIdSnapshot?: number;
+    mengeSnapshot?: number;
+    einheitSnapshot?: string;
+    preisJeEinheitSnapshot?: number;
+    lieferantennameSnapshot?: string;
+}
+
 const projektId = 9;
 const basisProjekt = () => ({
     id: projektId,
@@ -9,7 +20,7 @@ const basisProjekt = () => ({
     bruttoPreis: 1190,
     bezahlt: false,
     artikel: [{ id: 4, artikelId: 3, produktname: 'Historisches Profil', ausLager: true, stueckzahl: 2, gesamtpreis: 40 }],
-    materialkosten: [],
+    materialkosten: [] as DummyMaterialkosten[],
     zeiten: [],
 });
 
