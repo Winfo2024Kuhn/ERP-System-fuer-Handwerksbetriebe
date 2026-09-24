@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 const mock = vi.hoisted(() => ({ load: vi.fn(), toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() } }));
-vi.mock('../features/einkauf/originalBedarfApi', () => ({ ladeBedarfszeilen: mock.load, nutztEchtesBackend: true, speichereWerkstatt: vi.fn(), druckeBedarfsliste: vi.fn() }));
+vi.mock('../features/einkauf/originalBedarfApi', () => ({ ladeBedarfszeilen: mock.load, nutztEchtesBackend: true, speichereWerkstatt: vi.fn(), druckeBedarfsliste: vi.fn(), loescheBedarf: vi.fn(), loeschSperrgrund: () => null }));
 vi.mock('../components/ui/toast', () => ({ useToast: () => mock.toast }));
 vi.mock('../components/ui/confirm-dialog', () => ({ useConfirm: () => vi.fn() }));
 vi.mock('../components/layout/PageLayout', () => ({ PageLayout: ({ children, actions }: { children: ReactNode; actions?: ReactNode }) => <main>{actions}{children}</main> }));

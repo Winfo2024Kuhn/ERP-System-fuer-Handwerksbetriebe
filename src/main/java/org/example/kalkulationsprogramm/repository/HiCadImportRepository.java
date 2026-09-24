@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.util.List;
 import java.util.Optional;
 import org.example.kalkulationsprogramm.domain.einkauf.HiCadImport;
 import jakarta.persistence.LockModeType;
@@ -14,4 +15,8 @@ public interface HiCadImportRepository extends JpaRepository<HiCadImport, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from HiCadImport i where i.id = :id")
     Optional<HiCadImport> findByIdForUpdate(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from HiCadImport i where i.projektId = :projektId order by i.id")
+    List<HiCadImport> findAllByProjektIdForUpdate(@Param("projektId") Long projektId);
 }

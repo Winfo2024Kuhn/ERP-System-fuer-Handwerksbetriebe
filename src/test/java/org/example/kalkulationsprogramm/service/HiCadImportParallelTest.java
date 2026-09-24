@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -58,6 +59,7 @@ class HiCadImportParallelTest {
 
     @jakarta.annotation.Resource HiCadImportRepository imports;
     @jakarta.annotation.Resource HiCadImportService service;
+    @jakarta.annotation.Resource org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @AfterEach
     void cleanup() {
@@ -141,6 +143,72 @@ class HiCadImportParallelTest {
         HiCadImport completed = imports.findById(importId).orElseThrow();
         assertEquals(new BigDecimal("1000000000.000000"), completed.getZeilen().get(0).getUebernommeneMenge());
         assertTrue(completed.getZeilen().get(0).isUebernommen());
+    }
+
+    @Test
+    void geloeschterBedarfOeffnetSeineImportzeileWiederFuerDieNaechsteUebernahme() {
+        HiCadImport imported = new HiCadImport(19L, "d".repeat(64), 4L, false);
+        HiCadImportZeile row = new HiCadImportZeile(5, "HiCAD row",
+                "{\"art\":\"ZEICHNUNGSTEIL\",\"interneReferenz\":\"P-19\",\"zeichnungsnummer\":\"Z-19\",\"zeichnungsrevision\":\"A\",\"bezeichnung\":\"Dummy Lasche\",\"basis\":{\"menge\":10,\"einheit\":\"STUECK\",\"stueckzahl\":10},\"dokumente\":[],\"anlageVersionIds\":[]}");
+        row.setBildDateiIdsJson("[7]");
+        imported.addZeile(row);
+        long importId = imports.saveAndFlush(imported).getId();
+
+        var created = service.uebernehmen(importId, new HiCadImportDto.Uebernahme(0L,
+                List.of(new HiCadImportDto.ZeilenAuswahl(5, new BigDecimal("10"), null, List.of(7L))), false,
+                UUID.randomUUID()), 4L);
+        assertTrue(imports.findById(importId).orElseThrow().getZeilen().get(0).isUebernommen());
+        Long bedarfId = created.get(0).id();
+
+        var freigaben = new TransactionTemplate(transactionManager)
+                .execute(status -> service.gibUebernahmeFrei(19L, bedarfId, null));
+        assertEquals(1, freigaben.size());
+        assertEquals(5, freigaben.get(0).zeilennummer());
+        assertEquals(0, new BigDecimal("10").compareTo(freigaben.get(0).menge()));
+        HiCadImport reopened = imports.findById(importId).orElseThrow();
+        assertEquals(0, reopened.getZeilen().get(0).getUebernommeneMenge().signum());
+        assertEquals(false, reopened.getZeilen().get(0).isUebernommen());
+        // Ein zweites Freigeben desselben Bedarfs ändert nichts mehr.
+        assertTrue(new TransactionTemplate(transactionManager)
+                .execute(status -> service.gibUebernahmeFrei(19L, bedarfId, null)).isEmpty());
+
+        var progress = service.fortschritt(importId, 4L);
+        assertEquals(0, new BigDecimal("10").compareTo(progress.zeilen().get(0).verbleibendeMenge()));
+        service.uebernehmen(importId, new HiCadImportDto.Uebernahme(progress.version(),
+                List.of(new HiCadImportDto.ZeilenAuswahl(5, new BigDecimal("10"), null, List.of(7L))), false,
+                UUID.randomUUID()), 4L);
+        assertTrue(imports.findById(importId).orElseThrow().getZeilen().get(0).isUebernommen());
+    }
+
+    @Test
+    void aeltereUebernahmeOhneZuordnungWirdUeberEindeutigePositionsnummerFreigegeben() throws Exception {
+        HiCadImport imported = new HiCadImport(21L, "e".repeat(64), 4L, false);
+        HiCadImportZeile row = new HiCadImportZeile(6, "HiCAD row",
+                "{\"art\":\"FREITEXT\",\"bezeichnung\":\"Dummy Flachstahl\",\"positionsnummer\":\"1200\",\"basis\":{\"menge\":10,\"einheit\":\"STUECK\",\"stueckzahl\":10},\"dokumente\":[],\"anlageVersionIds\":[]}");
+        row.setUebernommeneMenge(new BigDecimal("10"));
+        row.setUebernommen(true);
+        imported.addZeile(row);
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        String result = json.writeValueAsString(List.of(new EinkaufBedarfDto.Response(88L, 1L, null, null, null, false, null)));
+        imported.setIdempotenzErgebnisseJson(json.writeValueAsString(List.of(
+                java.util.Map.of("idempotenzKey", "alt", "payloadHash", "h", "resultJson", result))));
+        long importId = imports.saveAndFlush(imported).getId();
+        // In kg übernommener Freitext: die Stückzahl der Stückzeile zählt.
+        var position = new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.PositionSnapshot(
+                org.example.kalkulationsprogramm.domain.einkauf.Positionsart.FREITEXT, null, null, null, null,
+                "Dummy Flachstahl", null, null, new org.example.kalkulationsprogramm.dto.Einkauf.EinkaufPositionDto.Mengenbasis(
+                        new BigDecimal("42"), org.example.kalkulationsprogramm.domain.einkauf.Einheit.KILOGRAMM,
+                        new BigDecimal("10"), null, null, null), null, null, null, null, null, List.of(), List.of(), null, "1200");
+
+        assertTrue(new TransactionTemplate(transactionManager)
+                .execute(status -> service.gibUebernahmeFrei(21L, 99L, position)).isEmpty());
+        var freigaben = new TransactionTemplate(transactionManager)
+                .execute(status -> service.gibUebernahmeFrei(21L, 88L, position));
+
+        assertEquals(1, freigaben.size());
+        HiCadImport reopened = imports.findById(importId).orElseThrow();
+        assertEquals(0, reopened.getZeilen().get(0).getUebernommeneMenge().signum());
+        assertEquals(false, reopened.getZeilen().get(0).isUebernommen());
     }
 
     private List<EinkaufBedarfDto.Response> callTogether(long id, HiCadImportDto.Uebernahme request,

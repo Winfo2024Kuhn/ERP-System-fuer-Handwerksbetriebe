@@ -108,3 +108,33 @@ describe('Original-Bedarf mit Datenbank-API', () => {
         await expect(ladeBedarfszeilen()).rejects.toThrow('503');
     });
 });
+
+describe('Bedarf löschen', () => {
+    it('schickt DELETE mit Version und ohne Body', async () => {
+        const fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => new Response(null, { status: 204 }));
+        vi.stubGlobal('fetch', fetcher);
+        const { loescheBedarf } = await adapter();
+        await loescheBedarf({ id: 5, version: 3 });
+        expect(fetcher).toHaveBeenCalledWith('/api/einkauf/bedarf/5?version=3', { method: 'DELETE' });
+    });
+
+    it('reicht die Servermeldung bei 409 weiter', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+            message: 'Der Bedarf ist bereits in Preisanfrage PA-2026-0001 enthalten und kann nicht gelöscht werden.', fieldErrors: [],
+        }), { status: 409 })));
+        const { loescheBedarf } = await adapter();
+        await expect(loescheBedarf({ id: 5, version: 3 })).rejects.toThrow('Preisanfrage PA-2026-0001');
+    });
+
+    it('nennt den Grund, wenn der Bedarf schon weiterverarbeitet ist', async () => {
+        const { loeschSperrgrund } = await adapter();
+        const frei = { ...bedarf(1), mengen: { ...bedarf(1).mengen, lagergedeckt: 0 } };
+        expect(loeschSperrgrund(frei)).toBeNull();
+        expect(loeschSperrgrund(undefined)).toBeNull();
+        expect(loeschSperrgrund(bedarf(1))).toContain('„Vorhanden“ auf 0');
+        expect(loeschSperrgrund({ ...frei, mengen: { ...frei.mengen, angefragt: 2 } })).toContain('Preisanfrage');
+        expect(loeschSperrgrund({ ...frei, mengen: { ...frei.mengen, reserviert: 1 } })).toContain('reserviert');
+        expect(loeschSperrgrund({ ...frei, mengen: { ...frei.mengen, bestellt: 1 } })).toContain('bestellt');
+        expect(loeschSperrgrund({ ...frei, mengen: { ...frei.mengen, geliefert: 1 } })).toContain('bestellt');
+    });
+});

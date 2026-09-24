@@ -1,6 +1,6 @@
 import { LadefehlerPanel } from '../components/ui/ladefehler-panel';
 import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
-import { ladeBedarfszeilen, nutztEchtesBackend, speichereWerkstatt, druckeBedarfsliste } from '../features/einkauf/originalBedarfApi';
+import { ladeBedarfszeilen, nutztEchtesBackend, speichereWerkstatt, druckeBedarfsliste, loescheBedarf, loeschSperrgrund } from '../features/einkauf/originalBedarfApi';
 import type { BedarfResponse } from '../features/einkauf/types';
 import { DecimalInput } from '../components/ui/decimal-input';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
@@ -140,6 +140,7 @@ export default function ProjektBedarfPage() {
     const [idsAuswahlOffen, setIdsAuswahlOffen] = useState(false);
     const [werkstattSpeichert, setWerkstattSpeichert] = useState(false);
     const [ungueltigeMengen, setUngueltigeMengen] = useState<Record<string, boolean>>({});
+    const [loeschtId, setLoeschtId] = useState<number | null>(null);
 
     // localStorage-Backup laden, sobald die Projekt-ID feststeht.
     useEffect(() => {
@@ -217,7 +218,8 @@ export default function ProjektBedarfPage() {
     }, [projektIdNum, toast]);
 
     // Bedarfs-Zeilen laden
-    const ladeZeilen = useCallback(async () => {
+    // behalteEingaben: noch nicht gespeicherte Werkstatt-Eingaben der übrigen Zeilen nicht überschreiben (z. B. nach dem Löschen).
+    const ladeZeilen = useCallback(async (behalteEingaben = false) => {
         if (!Number.isFinite(projektIdNum)) return;
         setLoading(true);
         setLadefehler(null);
@@ -225,9 +227,9 @@ export default function ProjektBedarfPage() {
             const alle: BedarfsZeile[] = await ladeBedarfszeilen(projektIdNum);
             const meine = Array.isArray(alle) ? alle.filter(z => z.projektId === projektIdNum) : [];
             setZeilen(meine);
-            if (nutztEchtesBackend) setMengen(Object.fromEntries(meine.map(z => [z.id, {
-                vorhanden: z.vorhanden ?? 0, bestellen: z.bestellen ?? 0,
-            }])));
+            if (nutztEchtesBackend) setMengen(bisher => Object.fromEntries(meine.map(z => [z.id,
+                behalteEingaben && bisher[z.id] ? bisher[z.id] : { vorhanden: z.vorhanden ?? 0, bestellen: z.bestellen ?? 0 },
+            ])));
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Bedarfe konnten nicht geladen werden.';
             setLadefehler(message);
@@ -294,8 +296,35 @@ export default function ProjektBedarfPage() {
     if (projekt?.kunde) subtitleParts.push(`Kunde: ${projekt.kunde}`);
     if (projekt?.auftragsnummer) subtitleParts.push(`Auftrag ${projekt.auftragsnummer}`);
 
+    const handleBedarfLoeschen = async (zeile: BedarfsZeile & { bedarf: BedarfResponse }) => {
+        const sperrgrund = loeschSperrgrund(zeile.bedarf);
+        if (sperrgrund) { toast.warning(`${sperrgrund}.`); return; }
+        const ok = await confirm({
+            title: 'Bedarf wirklich löschen?',
+            message: `„${zeile.produktname ?? 'Material'}" wird aus dem Materialbedarf dieses Projekts entfernt. Das lässt sich nicht rückgängig machen.`,
+            confirmLabel: 'Löschen',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        setLoeschtId(zeile.id);
+        try {
+            await loescheBedarf(zeile.bedarf);
+            toast.success('Bedarf gelöscht.');
+            await ladeZeilen(true);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Bedarf konnte nicht gelöscht werden.');
+            // Bei Konflikt (z. B. inzwischen angefragt) den aktuellen Stand zeigen.
+            await ladeZeilen(true);
+        } finally {
+            setLoeschtId(null);
+        }
+    };
+
     const handleZeileLoeschen = async (zeile: BedarfsZeile) => {
-        if (nutztEchtesBackend) { toast.info('Ein gespeicherter Einkaufsbedarf kann hier noch nicht gelöscht werden.'); return; }
+        if (nutztEchtesBackend) {
+            if (zeile.bedarf) await handleBedarfLoeschen({ ...zeile, bedarf: zeile.bedarf });
+            return;
+        }
         if (zeile.exportiertAm) {
             toast.warning('Diese Zeile ist bereits exportiert und kann nicht gelöscht werden.');
             return;
@@ -505,6 +534,8 @@ export default function ProjektBedarfPage() {
                                 ) : null}
                                 {gefilterteZeilen.map(z => {
                                     const gesperrt = !!z.exportiertAm;
+                                    const loeschGesperrt = nutztEchtesBackend ? loeschSperrgrund(z.bedarf) : gesperrt ? 'Versendet — gesperrt' : null;
+                                    const loeschtGerade = loeschtId === z.id;
                                     const gesamt = z.werkstattMaximum ?? getGesamt(z);
                                     const m = mengen[z.id] ?? { vorhanden: 0, bestellen: gesamt };
                                     const inputDisabled = gesperrt || werkstattSpeichert;
@@ -638,15 +669,20 @@ export default function ProjektBedarfPage() {
                                                     >
                                                         <Pencil className="w-4 h-4" />
                                                     </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleZeileLoeschen(z)}
-                                                        disabled={gesperrt || nutztEchtesBackend}
-                                                        title={nutztEchtesBackend ? 'Gespeicherten Bedarf hier noch nicht löschbar' : gesperrt ? 'Versendet — gesperrt' : 'Löschen'}
-                                                        className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
+                                                    {/* Gesperrte Buttons zeigen keinen eigenen Tooltip – der Grund hängt am umgebenden Element. */}
+                                                    <span title={loeschGesperrt ?? 'Löschen'} className="inline-flex">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleZeileLoeschen(z)}
+                                                            disabled={!!loeschGesperrt || loeschtId !== null}
+                                                            aria-label={loeschGesperrt ? `Löschen nicht möglich: ${loeschGesperrt}` : `${z.produktname ?? 'Bedarf'} löschen`}
+                                                            className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                                        >
+                                                            {loeschtGerade
+                                                                ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
+                                                                : <Trash2 className="w-4 h-4" aria-hidden="true" />}
+                                                        </button>
+                                                    </span>
                                                 </div>
                                             </td>
                                         </tr>

@@ -11,4 +11,5 @@ public interface EinkaufMengenbuchungRepository extends JpaRepository<EinkaufMen
     List<EinkaufMengenbuchung> findAllByIdempotenzKey(UUID idempotenzKey);
     List<EinkaufMengenbuchung> findAllByBedarf_IdAndVorgangsschluesselOrderByIdAsc(Long bedarfId,
             String vorgangsschluessel);
+    boolean existsByBedarf_Id(Long bedarfId);
 }

@@ -15,10 +15,10 @@ export class EinkaufApiError extends Error {
   }
 }
 
-async function request<T>(path: string, method: 'GET' | 'POST' | 'PUT', body?: unknown, ohneAntwort = false): Promise<T> {
+async function request<T>(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, ohneAntwort = false): Promise<T> {
   const response = await fetch(path, {
     method,
-    ...(method !== 'GET' ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    ...(method !== 'GET' && method !== 'DELETE' ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
     let error: Partial<ApiErrorBody> = {};
@@ -38,4 +38,5 @@ export const einkaufApi = {
   put<T>(path: string, body: unknown): Promise<T> { return request<T>(path, 'PUT', body); },
   post<T>(path: string, body: unknown): Promise<T> { return request<T>(path, 'POST', body); },
   postVoid(path: string, body: unknown): Promise<void> { return request<void>(path, 'POST', body, true); },
+  deleteVoid(path: string): Promise<void> { return request<void>(path, 'DELETE', undefined, true); },
 };

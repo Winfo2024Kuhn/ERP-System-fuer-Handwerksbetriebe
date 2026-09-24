@@ -670,6 +670,51 @@ class EinkaufBestellWorkflowRegressionTest {
    List.of(new Direktpreis(needId,BigDecimal.ONE,Einheit.STUECK,BigDecimal.ONE,null,LocalDate.now(),LocalDate.now().plusDays(30),"Dummy-Preisbestätigung")),
    LocalDate.now().plusDays(7),LocalDate.now().plusDays(2),"frei Haus",UUID.randomUUID());
  }
+ @Test void bedarfLoeschenSperrtBestellteUndAngefragteBedarfeUndLoeschtFreieMitProtokoll() {
+  var hicad=mock(HiCadImportService.class);
+  when(hicad.gibUebernahmeFrei(any(),any(),any())).thenReturn(List.of());
+  var loeschen=new EinkaufBedarfLoeschService(needs,requestRevisions,revisions,bookings,
+   mock(EinkaufLagerentnahmeRepository.class),attachmentVersions,hicad,new EinkaufAuditService(audits),json);
+
+  Long orderId=tx(()->ordering.direkt(content("10"),9L).id());
+  String orderNumber=orders.findById(orderId).orElseThrow().getNummer();
+  long orderedVersion=needs.findById(needId).orElseThrow().getVersion();
+  var ordered=assertThrows(org.springframework.web.server.ResponseStatusException.class,
+   ()->tx(()->{loeschen.loeschen(needId,orderedVersion,9L);return null;}));
+  assertEquals(409,ordered.getStatusCode().value());
+  assertTrue(ordered.getReason().contains("Bestellung "+orderNumber),ordered.getReason());
+  assertTrue(needs.existsById(needId));
+
+  var position=new PositionSnapshot(Positionsart.FREITEXT,null,null,null,null,"Dummy Winkel",null,null,
+   new Mengenbasis(new BigDecimal("2"),Einheit.STUECK,new BigDecimal("2"),null,null,null),null,null,null,null,null,List.of(),List.of());
+  String paNummer="PA-"+UUID.randomUUID().toString().substring(0,8);
+  Long requested=tx(()->{
+   var need=new EinkaufBedarf(position,new Liefergruppe(null,null,null,"Werkstatt"),null,null,false);em.persist(need);em.flush();
+   var request=new Einkaufsanfrage(paNummer,9L,UUID.randomUUID(),"f".repeat(64));em.persist(request);
+   var revision=new AnfrageRevision(request,1,null,LocalDate.now().plusDays(7),UUID.randomUUID(),"a".repeat(64));em.persist(revision);
+   request.setAktuelleRevision(revision);
+   var line=new AnfragePosition(revision,position,new BigDecimal("2"));
+   line.addHerkunft(new AnfrageHerkunft(line,need,need.getVersion(),new BigDecimal("2")));revision.addPosition(line);em.persist(line);
+   em.flush();return need.getId();
+  });
+  long requestedVersion=needs.findById(requested).orElseThrow().getVersion();
+  var inRequest=assertThrows(org.springframework.web.server.ResponseStatusException.class,
+   ()->tx(()->{loeschen.loeschen(requested,requestedVersion,9L);return null;}));
+  assertTrue(inRequest.getReason().contains("Preisanfrage "+paNummer),inRequest.getReason());
+
+  Long free=tx(()->{var need=new EinkaufBedarf(position,new Liefergruppe(null,null,null,"Werkstatt"),null,null,false);
+   em.persist(need);em.flush();return need.getId();});
+  long freeVersion=needs.findById(free).orElseThrow().getVersion();
+  var stale=assertThrows(org.springframework.web.server.ResponseStatusException.class,
+   ()->tx(()->{loeschen.loeschen(free,freeVersion+1,9L);return null;}));
+  assertEquals(409,stale.getStatusCode().value());
+  tx(()->{loeschen.loeschen(free,freeVersion,9L);return null;});
+  assertFalse(needs.existsById(free));
+  var protocol=audits.findByVorgangTypAndVorgangIdAndAktion("BEDARF",free,"BEDARF_GELOESCHT");
+  assertEquals(1,protocol.size());
+  assertEquals("Dummy Winkel",protocol.getFirst().getVorherSnapshot().path("bezeichnung").asText());
+ }
+
  private void accept(Long id) {
   var preview=tx(()->approval.vorschau(id,4L));
   var queued=tx(()->approval.freigeben(id,new Freigabe(version(id),preview.vorschauHash(),UUID.randomUUID()),9L));

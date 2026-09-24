@@ -77,6 +77,26 @@ export async function speichereWerkstatt(zeilen: Array<{ bedarf: BedarfResponse 
     if (positionen.length) await einkaufApi.put('/api/einkauf/bedarf/werkstattpruefung', { positionen });
 }
 
+/**
+ * Grund, warum ein Bedarf nicht mehr gelöscht werden kann – oder null, wenn er noch frei ist.
+ * Spiegelt die Mengen, die die Liste kennt; das Backend prüft zusätzlich alle Belege und antwortet sonst mit 409.
+ */
+export function loeschSperrgrund(bedarf: BedarfResponse | undefined): string | null {
+    if (!bedarf) return null;
+    const m = bedarf.mengen;
+    const mehrAlsNull = (wert: number | null) => (wert ?? 0) > 0;
+    if (mehrAlsNull(m.bestellt) || mehrAlsNull(m.geliefert) || mehrAlsNull(m.storniert)) return 'Bereits bestellt – nicht mehr löschbar';
+    if (mehrAlsNull(m.angefragt)) return 'Steht in einer Preisanfrage – nicht mehr löschbar';
+    if (mehrAlsNull(m.reserviert)) return 'Menge ist reserviert – nicht mehr löschbar';
+    if (mehrAlsNull(m.lagergedeckt)) return 'Vorhandene Menge eingetragen – zuerst „Vorhanden“ auf 0 setzen';
+    return null;
+}
+
+/** Löscht einen noch nicht weiterverarbeiteten Bedarf; die Version schützt vor zwischenzeitlichen Änderungen. */
+export async function loescheBedarf(bedarf: Pick<BedarfResponse, 'id' | 'version'>): Promise<void> {
+    await einkaufApi.deleteVoid(`/api/einkauf/bedarf/${encodeURIComponent(bedarf.id)}?version=${encodeURIComponent(bedarf.version)}`);
+}
+
 /** Download via POST avoids URL limits for larger printed lists. */
 export async function druckeBedarfsliste(ids: number[]): Promise<void> {
     const response = await fetch('/api/einkauf/bedarf/pdf', { method: 'POST',

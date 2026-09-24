@@ -27,6 +27,7 @@ public class EinkaufBedarfController {
     private final EinkaufZeichnungsbedarfService zeichnungsbedarfe;
     private final org.example.kalkulationsprogramm.service.einkauf.EinkaufWerkstattService werkstatt;
     private final org.example.kalkulationsprogramm.service.einkauf.EinkaufPdfService pdf;
+    private final org.example.kalkulationsprogramm.service.einkauf.EinkaufBedarfLoeschService loeschService;
 
     @GetMapping
     public Page<EinkaufBedarfDto.Response> suche(@RequestParam(required = false) String q,
@@ -89,6 +90,14 @@ public class EinkaufBedarfController {
             @RequestBody EinkaufBedarfDto.Update request, Authentication authentication) {
         Long akteurId = berechtigungService.verlange(authentication, EinkaufBerechtigung.BEARBEITEN);
         return bedarfService.aktualisieren(id, request, akteurId);
+    }
+
+    /** Löscht einen noch nicht weiterverarbeiteten Bedarf; sonst 409 mit konkretem Grund. */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void loeschen(@PathVariable Long id, @RequestParam long version, Authentication authentication) {
+        Long akteurId = berechtigungService.verlange(authentication, EinkaufBerechtigung.BEARBEITEN);
+        loeschService.loeschen(id, version, akteurId);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

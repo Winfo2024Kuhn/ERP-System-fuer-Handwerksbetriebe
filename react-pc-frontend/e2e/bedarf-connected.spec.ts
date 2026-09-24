@@ -137,3 +137,63 @@ test('Materialbedarf wird über die echte Schnittstelle gespeichert und erneut g
     await page.getByTitle('Bearbeiten', { exact: true }).click();
     await expect(page.getByPlaceholder('z. B. Lieferung KW 22')).toHaveValue('Kommentar nach Bearbeitung');
 });
+
+test('Freien Bedarf löschen, weiterverarbeiteten Bedarf gesperrt lassen und Konflikt melden', async ({ page, context, baseURL }, testInfo) => {
+    await context.route('**/*', route => {
+        const url = new URL(route.request().url());
+        return url.origin === baseURL || ['data:', 'blob:'].includes(url.protocol) ? route.continue() : route.abort();
+    });
+    const project = { id: 7, bauvorhaben: 'Testprojekt Backend', kunde: 'Max Mustermann' };
+    const bedarf = (id: number, bezeichnung: string, angefragt = 0) => ({ id, version: 2,
+        position: { art: 'FREITEXT', artikelId: null, interneReferenz: null, zeichnungsnummer: null, zeichnungsrevision: null,
+            bezeichnung, werkstoff: 'S235JR', abmessung: null,
+            basis: { menge: 4, einheit: 'STUECK', stueckzahl: 4, einzelLaengeMm: null, kgJeMeter: null, faktorQuelle: null },
+            schnittForm: null, winkelLinks: null, winkelRechts: null, bearbeitung: null, oberflaeche: null, dokumente: [], anlageVersionIds: [] },
+        liefergruppe: { projektId: 7, lagerzweck: null, lieferadresse: null, bedarfstermin: null },
+        mengen: { bedarf: 4, lagergedeckt: 0, angefragt, reserviert: 0, bestellt: 0, geliefert: 0, storniert: 0, ungedeckt: 4, disponierbar: 4 },
+        nachpflegeErforderlich: false, historischerHinweis: null,
+    });
+    let bedarfe = [bedarf(801, 'Flachstahl zum Löschen'), bedarf(802, 'Winkel mit Konflikt'), bedarf(803, 'Rohr in Preisanfrage', 4)];
+    const deletes: string[] = [];
+    await page.route('**/api/**', async route => {
+        const request = route.request(); const url = new URL(request.url());
+        const reply = (json: unknown) => route.fulfill({ json });
+        if (url.pathname === '/api/auth/me') return reply({ id: 1, username: 'test', displayName: 'Max Mustermann', active: true, admin: true, roles: ['ADMIN'], requiresInitialSetup: false });
+        if (url.pathname === '/api/projekte/7') return reply(project);
+        if (url.pathname === '/api/projekte/simple') return reply([project]);
+        if (request.method() === 'DELETE' && url.pathname.startsWith('/api/einkauf/bedarf/')) {
+            deletes.push(`${url.pathname}?${url.searchParams}`);
+            if (url.pathname.endsWith('/802')) return route.fulfill({ status: 409, json: {
+                message: 'Der Bedarf ist bereits in Preisanfrage PA-2026-0001 enthalten und kann nicht gelöscht werden.', fieldErrors: [] } });
+            bedarfe = bedarfe.filter(b => `/api/einkauf/bedarf/${b.id}` !== url.pathname);
+            return route.fulfill({ status: 204 });
+        }
+        if (url.pathname === '/api/einkauf/bedarf') return reply({ content: bedarfe, totalPages: 1 });
+        if (url.pathname === '/api/einkauf/berechtigungen') return reply(['LESEN', 'BEARBEITEN', 'FREIGEBEN']);
+        if (url.pathname === '/api/features') return reply({ en1090: true, email: false });
+        if (url.pathname === '/api/notifications/summary') return reply({ totalCount: 0, categories: [], recentItems: [] });
+        expect(url.pathname).not.toMatch(/^\/api\/bestellungen\//);
+        return reply({});
+    });
+    await page.goto('/bestellungen/bedarf/projekt/7');
+    await expect(page.getByText('Flachstahl zum Löschen', { exact: true })).toBeVisible();
+
+    const gesperrt = page.getByRole('button', { name: /Löschen nicht möglich: Steht in einer Preisanfrage/ });
+    await expect(gesperrt).toBeDisabled();
+    await expect(page.getByTitle('Steht in einer Preisanfrage – nicht mehr löschbar')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Flachstahl zum Löschen löschen' }).click();
+    await expect(page.getByText('Bedarf wirklich löschen?')).toBeVisible();
+    await mkdir('/tmp/bedarf-connected-screenshots', { recursive: true });
+    await page.screenshot({ path: `/tmp/bedarf-connected-screenshots/loeschen-bestaetigen-${testInfo.project.name}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Löschen', exact: true }).click();
+    await expect(page.getByText('Bedarf gelöscht.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Flachstahl zum Löschen', { exact: true })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Winkel mit Konflikt löschen' }).click();
+    await page.getByRole('button', { name: 'Löschen', exact: true }).click();
+    await expect(page.getByText('Der Bedarf ist bereits in Preisanfrage PA-2026-0001 enthalten und kann nicht gelöscht werden.')).toBeVisible();
+    await expect(page.getByText('Winkel mit Konflikt', { exact: true })).toBeVisible();
+    await page.screenshot({ path: `/tmp/bedarf-connected-screenshots/loeschen-konflikt-${testInfo.project.name}.png`, fullPage: true });
+    expect(deletes).toEqual(['/api/einkauf/bedarf/801?version=2', '/api/einkauf/bedarf/802?version=2']);
+});

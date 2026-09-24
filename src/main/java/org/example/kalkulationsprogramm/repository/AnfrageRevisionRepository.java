@@ -20,4 +20,8 @@ public interface AnfrageRevisionRepository extends JpaRepository<AnfrageRevision
             "where h.bedarf.id in :ids and h.position.revision.anfrage.geloeschtAm is null and h.position.revision.anfrage.aktuelleRevision.id = h.position.revision.id " +
             "group by h.bedarf.id")
     List<Object[]> summenAktuelleAnfragen(@Param("ids") List<Long> bedarfIds);
+    /** Anfragen (auch gelöschte), in denen der Bedarf als Herkunft steht – sie sperren das Löschen des Bedarfs. */
+    @Query("select distinct a.paNummer from AnfrageHerkunft h join h.position p join p.revision r join r.anfrage a "
+            + "where h.bedarf.id = :bedarfId order by a.paNummer")
+    List<String> anfrageNummernMitBedarf(@Param("bedarfId") Long bedarfId);
 }

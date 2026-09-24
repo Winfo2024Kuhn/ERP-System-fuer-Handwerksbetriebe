@@ -46,4 +46,6 @@ public interface EinkaufLagerentnahmeRepository extends JpaRepository<EinkaufLag
             + "case when sum(case when e.preisJeEinheit is null then 1 else 0 end) > 0 then true else false end as bewertungOffen "
             + "from EinkaufLagerentnahme e where e.projektId in :projektIds group by e.projektId")
     List<ProjektKostenStatus> zusammenfassungenFuerProjekte(@Param("projektIds") Collection<Long> projektIds);
+
+    boolean existsByBedarfId(Long bedarfId);
 }

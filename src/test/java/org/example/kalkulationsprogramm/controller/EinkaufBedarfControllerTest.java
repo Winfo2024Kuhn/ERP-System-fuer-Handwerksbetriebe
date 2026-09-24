@@ -34,6 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -53,6 +54,7 @@ class EinkaufBedarfControllerTest {
     @MockBean EinkaufZeichnungsbedarfService zeichnungsbedarfe;
     @MockBean org.example.kalkulationsprogramm.service.einkauf.EinkaufWerkstattService werkstatt;
     @MockBean org.example.kalkulationsprogramm.service.einkauf.EinkaufPdfService pdf;
+    @MockBean org.example.kalkulationsprogramm.service.einkauf.EinkaufBedarfLoeschService loeschService;
     @MockBean FrontendUserDetailsService userDetailsService;
 
     @Test
@@ -188,6 +190,65 @@ class EinkaufBedarfControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType(MediaType.APPLICATION_PDF));
         verify(berechtigungService).verlange(any(),eq(EinkaufBerechtigung.LESEN));
+    }
+
+    @Test
+    void loeschenMitVersionErfordertCsrfUndBearbeitungsrecht() throws Exception {
+        mockMvc.perform(delete("/api/einkauf/bedarf/5?version=3").with(authentication(7L)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(loeschService);
+        when(berechtigungService.verlange(any(), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(7L);
+        mockMvc.perform(delete("/api/einkauf/bedarf/5?version=3").with(authentication(7L))
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isNoContent());
+        verify(loeschService).loeschen(5L, 3L, 7L);
+    }
+
+    @Test
+    void loeschenOhneBearbeitungsrechtIstVerboten() throws Exception {
+        when(berechtigungService.verlange(any(), eq(EinkaufBerechtigung.BEARBEITEN)))
+                .thenThrow(new AccessDeniedException("keine Berechtigung"));
+        mockMvc.perform(delete("/api/einkauf/bedarf/5?version=3").with(authentication(7L))
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(loeschService);
+    }
+
+    @Test
+    void loeschenWeiterverarbeitetOderVeraltetLiefert409MitGrund() throws Exception {
+        when(berechtigungService.verlange(any(), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(7L);
+        doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                "Der Bedarf ist bereits in Preisanfrage PA-2026-0001 enthalten und kann nicht gelöscht werden."))
+                .when(loeschService).loeschen(5L, 3L, 7L);
+        mockMvc.perform(delete("/api/einkauf/bedarf/5?version=3").with(authentication(7L))
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Der Bedarf ist bereits in Preisanfrage PA-2026-0001 enthalten und kann nicht gelöscht werden."));
+    }
+
+    @Test
+    void loeschenMitUngueltigenIdsOderOhneVersion() throws Exception {
+        when(berechtigungService.verlange(any(), eq(EinkaufBerechtigung.BEARBEITEN))).thenReturn(7L);
+        mockMvc.perform(delete("/api/einkauf/bedarf/5").with(authentication(7L))
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isBadRequest());
+        for (long id : new long[] {0L, -1L}) {
+            doThrow(new IllegalArgumentException("Der Bedarf oder die Versionsangabe ist ungültig."))
+                    .when(loeschService).loeschen(id, 0L, 7L);
+            mockMvc.perform(delete("/api/einkauf/bedarf/" + id + "?version=0").with(authentication(7L))
+                            .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Der Bedarf oder die Versionsangabe ist ungültig."));
+        }
+        doThrow(new org.example.kalkulationsprogramm.exception.NotFoundException("Der Einkaufsbedarf wurde nicht gefunden."))
+                .when(loeschService).loeschen(Long.MAX_VALUE, 0L, 7L);
+        mockMvc.perform(delete("/api/einkauf/bedarf/" + Long.MAX_VALUE + "?version=0").with(authentication(7L))
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/einkauf/bedarf/{id}?version=0", "1 OR 1=1").with(authentication(7L))
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isBadRequest());
     }
 
     private static RequestPostProcessor authentication(long id) {

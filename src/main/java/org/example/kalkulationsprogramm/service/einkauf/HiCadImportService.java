@@ -195,6 +195,7 @@ public class HiCadImportService {
             throw new IllegalArgumentException("Bitte mindestens eine Zeile auswählen.");
         Map<Integer, HiCadImportZeile> byRow = imp.getZeilen().stream().collect(java.util.stream.Collectors.toMap(HiCadImportZeile::getZeilennummer, row -> row));
         List<EinkaufBedarfDto.Response> created = new ArrayList<>();
+        List<Zuordnung> zuordnungen = new ArrayList<>();
         java.util.Set<Integer> selectedRows = new java.util.HashSet<>();
         for (ZeilenAuswahl selection : request.zeilen()) {
             if (!selectedRows.add(selection.zeilennummer())) throw new IllegalArgumentException("Eine Excel-Zeile wurde doppelt ausgewählt.");
@@ -241,17 +242,100 @@ public class HiCadImportService {
             }
             PositionSnapshot finalSnapshot = withAttachments(snapshot, versionIds);
             created.add(bedarfe.aktualisieren(newNeed.id(), new EinkaufBedarfDto.Update(newNeed.version(), finalSnapshot, group), akteurId));
+            zuordnungen.add(new Zuordnung(selection.zeilennummer(), newNeed.id(), selectedQuantity));
             BigDecimal transferredTotal = alreadyTransferred.add(selectedQuantity);
             row.setUebernommeneMenge(transferredTotal);
             row.setUebernommen(transferredTotal.compareTo(totalQuantity) >= 0);
         }
-        priorResults.add(new StoredTransferResult(request.idempotenzKey().toString(), payloadHash, serialize(created)));
+        priorResults.add(new StoredTransferResult(request.idempotenzKey().toString(), payloadHash, serialize(created), zuordnungen));
         imp.setIdempotenzErgebnisseJson(serialize(priorResults));
         imp.setIdempotenzKey(request.idempotenzKey().toString());
         imp.setPayloadHash(payloadHash);
         imp.setResultJson(serialize(created));
         imports.save(imp);
         return List.copyOf(created);
+    }
+
+    /**
+     * Gibt die Übernahme eines gelöschten Bedarfs in seiner HiCAD-Importzeile wieder frei: Die übernommene Menge
+     * der Zeile sinkt um den Anteil des Bedarfs, die Zeile gilt wieder als offen und kann erneut übernommen werden.
+     * Muss in der Löschtransaktion des Bedarfs laufen, damit Bedarf und Importfortschritt nie auseinanderlaufen.
+     *
+     * <p>Jede neue Übernahme merkt sich, welche Zeile welchen Bedarf mit welcher Menge erzeugt hat.
+     * Für ältere Übernahmen ohne diese Zuordnung wird die Zeile nur über eine eindeutige HiCAD-Positionsnummer
+     * wiedergefunden; ohne eindeutigen Treffer bleibt der Importfortschritt unverändert.</p>
+     *
+     * @return die freigegebenen Zeilenanteile (für das Protokoll); leer, wenn der Bedarf nicht aus HiCAD stammt
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public List<ImportFreigabe> gibUebernahmeFrei(Long projektId, Long bedarfId, PositionSnapshot bedarfPosition) {
+        if (projektId == null || bedarfId == null) return List.of();
+        List<ImportFreigabe> freigaben = new ArrayList<>();
+        for (HiCadImport imp : imports.findAllByProjektIdForUpdate(projektId)) {
+            List<StoredTransferResult> ergebnisse = parseTransferResults(imp.getIdempotenzErgebnisseJson());
+            List<StoredTransferResult> bereinigt = new ArrayList<>();
+            boolean zugeordnet = false;
+            boolean altUebernahme = ergebnisse.isEmpty() && enthaeltBedarf(imp.getResultJson(), bedarfId);
+            for (StoredTransferResult ergebnis : ergebnisse) {
+                if (ergebnis.zuordnungen() == null) {
+                    altUebernahme |= enthaeltBedarf(ergebnis.resultJson(), bedarfId);
+                    bereinigt.add(ergebnis);
+                    continue;
+                }
+                List<Zuordnung> rest = new ArrayList<>();
+                for (Zuordnung zuordnung : ergebnis.zuordnungen()) {
+                    if (!bedarfId.equals(zuordnung.bedarfId())) { rest.add(zuordnung); continue; }
+                    zugeordnet = true;
+                    imp.getZeilen().stream().filter(zeile -> zeile.getZeilennummer() == zuordnung.zeilennummer())
+                            .findFirst().ifPresent(zeile -> freigaben.add(reduziereUebernahme(imp, zeile, zuordnung.menge())));
+                }
+                bereinigt.add(new StoredTransferResult(ergebnis.idempotenzKey(), ergebnis.payloadHash(), ergebnis.resultJson(), rest));
+            }
+            if (zugeordnet) {
+                imp.setIdempotenzErgebnisseJson(serialize(bereinigt));
+                imports.save(imp);
+            } else if (altUebernahme) {
+                ImportFreigabe freigabe = gibAltUebernahmeFrei(imp, bedarfPosition);
+                if (freigabe != null) {
+                    freigaben.add(freigabe);
+                    imports.save(imp);
+                }
+            }
+        }
+        return List.copyOf(freigaben);
+    }
+
+    /** Ältere Übernahme ohne gespeicherte Zuordnung: nur bei eindeutiger Positionsnummer und bestimmbarer Menge. */
+    private ImportFreigabe gibAltUebernahmeFrei(HiCadImport imp, PositionSnapshot position) {
+        String positionsnummer = position == null || position.positionsnummer() == null ? "" : position.positionsnummer().trim();
+        if (positionsnummer.isEmpty() || position.basis() == null || position.basis().einheit() == null) return null;
+        List<HiCadImportZeile> treffer = imp.getZeilen().stream().filter(zeile -> zeile.getUebernommeneMenge().signum() > 0)
+                .filter(zeile -> positionsnummer.equals(
+                        java.util.Objects.requireNonNullElse(parseSnapshot(zeile.getSnapshotJson()).positionsnummer(), "").trim()))
+                .toList();
+        if (treffer.size() != 1) return null;
+        HiCadImportZeile zeile = treffer.get(0);
+        Mengenbasis quelle = parseSnapshot(zeile.getSnapshotJson()).basis();
+        if (quelle == null) return null;
+        // Freitext/Zeichnungsteil wurde ggf. in kg übernommen: dann zählt die mitgeführte Stückzahl der Stückzeile.
+        BigDecimal menge = quelle.einheit() == position.basis().einheit() ? position.basis().menge()
+                : quelle.einheit() == Einheit.STUECK ? position.basis().stueckzahl() : null;
+        if (menge == null || menge.signum() <= 0) return null;
+        return reduziereUebernahme(imp, zeile, menge);
+    }
+
+    private ImportFreigabe reduziereUebernahme(HiCadImport imp, HiCadImportZeile zeile, BigDecimal menge) {
+        BigDecimal freigegeben = menge == null ? BigDecimal.ZERO : menge.min(zeile.getUebernommeneMenge());
+        BigDecimal rest = zeile.getUebernommeneMenge().subtract(freigegeben).max(BigDecimal.ZERO);
+        PositionSnapshot quelle = parseSnapshot(zeile.getSnapshotJson());
+        BigDecimal gesamt = quelle.basis() == null || quelle.basis().menge() == null ? null : quelle.basis().menge();
+        zeile.setUebernommeneMenge(rest);
+        zeile.setUebernommen(gesamt != null && rest.compareTo(gesamt) >= 0);
+        return new ImportFreigabe(imp.getId(), zeile.getZeilennummer(), freigegeben);
+    }
+
+    private boolean enthaeltBedarf(String resultJson, Long bedarfId) {
+        return parseResult(resultJson).stream().anyMatch(ergebnis -> bedarfId.equals(ergebnis.id()));
     }
 
     @Transactional(readOnly = true)
@@ -882,7 +966,15 @@ public class HiCadImportService {
     private record ParsedRow(int rowNumber, String raw, PositionSnapshot snapshot, List<String> hints,
             List<EinkaufDateiService.ImportBildDto> images) {}
     private record PendingPreview(ParsedRow row, List<Long> candidates, List<String> hints) {}
-    private record StoredTransferResult(String idempotenzKey, String payloadHash, String resultJson) {}
+    /**
+     * Idempotenzhistorie einer Übernahme. {@code zuordnungen} merkt sich, welche Excel-Zeile welchen Bedarf mit welcher
+     * Menge (in der Einheit der Importzeile) erzeugt hat, damit das Löschen eines Bedarfs die Zeile wieder öffnen kann.
+     * Ältere Einträge haben keine Zuordnung ({@code null}).
+     */
+    private record StoredTransferResult(String idempotenzKey, String payloadHash, String resultJson, List<Zuordnung> zuordnungen) {}
+    private record Zuordnung(int zeilennummer, Long bedarfId, BigDecimal menge) {}
+    /** Beim Löschen eines Bedarfs wieder geöffneter Anteil einer HiCAD-Importzeile. */
+    public record ImportFreigabe(Long importId, int zeilennummer, BigDecimal menge) {}
     public record ImportBildRessource(Resource resource, String mimeTyp) {}
     public record SpaltenMapping(Map<String, Integer> spalten) {}
 }
