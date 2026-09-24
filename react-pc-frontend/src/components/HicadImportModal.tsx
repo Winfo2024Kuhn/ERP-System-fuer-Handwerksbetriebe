@@ -51,6 +51,9 @@ const formatNumber = (val: number | null | undefined, digits = 2) =>
 const formatLaenge = (val: number | null | undefined) =>
     val != null ? val.toLocaleString('de-DE', { maximumFractionDigits: 1 }) : '–';
 const STANGE_REGELN = { label: 'die Stangenlänge', required: true, integer: true, min: 1, max: 50 } as const;
+/** Gleiche Grenze wie im Backend (HiCadImportService.MAX_FILE_BYTES) – vor dem Upload prüfen. */
+const MAX_DATEI_BYTES = 10 * 1024 * 1024;
+const DATEI_ZU_GROSS = 'Die HiCAD-Datei darf höchstens 10 MiB groß sein.';
 const neuerSchluessel = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -60,6 +63,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
     const confirm = useConfirm();
 
     const [file, setFile] = useState<File | null>(null);
+    const [dateiFehler, setDateiFehler] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -83,6 +87,7 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
 
     const reset = useCallback(() => {
         setFile(null);
+        setDateiFehler(null);
         setPreview(null);
         setEntscheidungen({});
         setStangenEntwurf({});
@@ -99,6 +104,21 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
         reset();
         if (schonAngelegt) onSuccess(); else onClose();
     }, [onClose, onSuccess, reset]);
+
+    // ==================== DATEIAUSWAHL ====================
+    const dateiGewaehlt = (input: HTMLInputElement) => {
+        const neu = input.files?.[0] ?? null;
+        if (neu && neu.size > MAX_DATEI_BYTES) {
+            // Zurücksetzen, damit dieselbe Datei nach dem Verkleinern erneut gewählt werden kann.
+            input.value = '';
+            setFile(null);
+            setDateiFehler(DATEI_ZU_GROSS);
+            toast.error(DATEI_ZU_GROSS);
+            return;
+        }
+        setDateiFehler(null);
+        setFile(neu);
+    };
 
     // ==================== UPLOAD → PREVIEW ====================
     const handleUpload = async () => {
@@ -376,10 +396,16 @@ export function HicadImportModal({ isOpen, onClose, onSuccess, projekt }: HicadI
                                     id="hicad-file-input"
                                     type="file"
                                     accept=".xlsx"
-                                    onChange={e => setFile(e.target.files?.[0] ?? null)}
+                                    onChange={e => dateiGewaehlt(e.target)}
                                     className="hidden"
                                 />
                             </label>
+
+                            {dateiFehler && (
+                                <p role="alert" className="mt-3 text-sm font-medium text-rose-700">
+                                    {dateiFehler}
+                                </p>
+                            )}
 
                             <Button
                                 onClick={handleUpload}

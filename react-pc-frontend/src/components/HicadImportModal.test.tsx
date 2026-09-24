@@ -61,6 +61,28 @@ describe('HiCAD-Import prüfen (EN1090-Fenster)', () => {
         expect(screen.getByRole('button', { name: /Analysieren/ })).toBeEnabled();
     });
 
+    it('lehnt eine Datei über 10 MiB vor dem Upload ab und nimmt danach eine passende an', async () => {
+        render(<MemoryRouter><ToastProvider><ConfirmProvider>
+            <HicadImportModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} projekt={{ id: 7, bauvorhaben: 'Neubau Max Mustermann' }} />
+        </ConfirmProvider></ToastProvider></MemoryRouter>);
+        const eingabe = document.getElementById('hicad-file-input') as HTMLInputElement;
+        const zuGross = new File(['x'], 'zu-gross.xlsx');
+        Object.defineProperty(zuGross, 'size', { value: 10 * 1024 * 1024 + 1 });
+        fireEvent.change(eingabe, { target: { files: [zuGross] } });
+
+        const meldungen = await screen.findAllByText('Die HiCAD-Datei darf höchstens 10 MiB groß sein.');
+        expect(meldungen).toHaveLength(2); // im Fenster und als Toast
+        expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent('höchstens 10 MiB');
+        expect(screen.getByRole('button', { name: /Analysieren/ })).toBeDisabled();
+        expect(api.ladeHicadVorschau).not.toHaveBeenCalled();
+
+        const genau = new File(['x'], 'saegeliste.xlsx');
+        Object.defineProperty(genau, 'size', { value: 10 * 1024 * 1024 });
+        fireEvent.change(eingabe, { target: { files: [genau] } });
+        expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Analysieren/ })).toBeEnabled();
+    });
+
     it('lehnt eine ungültige Stangenlänge vor dem Anlegen ab', async () => {
         api.ladeHicadVorschau.mockResolvedValue(vorschau());
         await oeffne();
