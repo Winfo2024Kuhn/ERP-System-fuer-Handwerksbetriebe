@@ -83,4 +83,34 @@ class MonatsabschlussUebersichtServiceTest {
         assertThat(jv.aktuellesJahr().get(6).urlaubTage()).isEqualByComparingTo("0.5");
         assertThat(jv.aktuellesJahr().getFirst().istStunden()).isEqualByComparingTo("7.7");
     }
+    AbwesenheitRepository.StundenNachMonatUndTyp gruppe(long id,int jahr,int monat,AbwesenheitsTyp typ,String stunden) {
+        return new AbwesenheitRepository.StundenNachMonatUndTyp() { public Long getMitarbeiterId(){return id;} public Integer getJahr(){return jahr;} public Integer getMonat(){return monat;} public AbwesenheitsTyp getTyp(){return typ;} public BigDecimal getStunden(){return new BigDecimal(stunden);} };
+    }
+    @Test void offenerMonatTeiltAbwesenheitLiveInUrlaubKrankheitZeitausgleichUndSonstigeAuf() {
+        var offen=stand(1,2025,1,false);offen.setGueltig(true);offen.setAbwesenheitsStunden(new BigDecimal("36"));
+        when(repo.personen(any(),any(),any(),any(),any(),any(),anyInt(),anyInt(),any())).thenReturn(List.of(person(1)));
+        when(repo.salden(anyList(),anyInt(),anyInt())).thenReturn(List.of(offen));
+        when(abwesenheiten.sumStundenNachMonatUndTyp(anyCollection(),any(),any())).thenReturn(List.of(
+                gruppe(1,2025,1,AbwesenheitsTyp.URLAUB,"16"),gruppe(1,2025,1,AbwesenheitsTyp.KRANKHEIT,"8"),
+                gruppe(1,2025,1,AbwesenheitsTyp.ZEITAUSGLEICH,"4"),gruppe(1,2025,1,AbwesenheitsTyp.FORTBILDUNG,"8")));
+        var k=service.lade(new Filter(2025,1,null,null,"ALLE",0,50),null).items().getFirst().kennzahlen();
+        assertThat(k.urlaubStunden()).isEqualByComparingTo("16");assertThat(k.krankheitStunden()).isEqualByComparingTo("8");
+        assertThat(k.zeitausgleichStunden()).isEqualByComparingTo("4");assertThat(k.sonstigeAbwesenheitStunden()).isEqualByComparingTo("8");
+    }
+    @Test void abgeschlossenerMonatNutztEingefroreneAufteilungStattAktuellerAbwesenheiten() {
+        var zu=stand(1,2025,1,true);zu.setAbwesenheitsStunden(new BigDecimal("30"));zu.setUrlaubStunden(new BigDecimal("8"));zu.setKrankheitStunden(new BigDecimal("6"));
+        zu.setKrankengeldStunden(new BigDecimal("4"));zu.setWiedereingliederungStunden(new BigDecimal("2"));zu.setZeitausgleichStunden(new BigDecimal("3"));zu.setFortbildungStunden(new BigDecimal("7"));
+        var alt=stand(2,2025,1,true);alt.setAbwesenheitsStunden(new BigDecimal("16"));
+        when(repo.personen(any(),any(),any(),any(),any(),any(),anyInt(),anyInt(),any())).thenReturn(List.of(person(1),person(2)));
+        when(repo.salden(anyList(),anyInt(),anyInt())).thenReturn(List.of(zu,alt));
+        when(abwesenheiten.sumStundenNachMonatUndTyp(anyCollection(),any(),any())).thenReturn(List.of(gruppe(1,2025,1,AbwesenheitsTyp.URLAUB,"99"),gruppe(2,2025,1,AbwesenheitsTyp.URLAUB,"99")));
+        var result=service.lade(new Filter(2025,1,null,null,"ALLE",0,50),null);
+        var k=result.items().stream().filter(z->z.referenz().mitarbeiterId()==1L).findFirst().orElseThrow().kennzahlen();
+        assertThat(k.urlaubStunden()).isEqualByComparingTo("8");assertThat(k.krankheitStunden()).isEqualByComparingTo("12");
+        assertThat(k.zeitausgleichStunden()).isEqualByComparingTo("3");assertThat(k.sonstigeAbwesenheitStunden()).isEqualByComparingTo("7");
+        // Alter Abschluss ohne Aufteilung: alles unter Sonstige, nichts aus heutigen Daten nachrechnen
+        var a=result.items().stream().filter(z->z.referenz().mitarbeiterId()==2L).findFirst().orElseThrow().kennzahlen();
+        assertThat(a.urlaubStunden()).isZero();assertThat(a.sonstigeAbwesenheitStunden()).isEqualByComparingTo("16");
+        assertThat(result.summen().urlaubStunden()).isEqualByComparingTo("8");assertThat(result.summen().sonstigeAbwesenheitStunden()).isEqualByComparingTo("23");
+    }
 }

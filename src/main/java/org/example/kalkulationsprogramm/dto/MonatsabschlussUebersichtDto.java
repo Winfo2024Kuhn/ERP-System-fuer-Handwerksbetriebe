@@ -7,7 +7,9 @@ public final class MonatsabschlussUebersichtDto {
     private MonatsabschlussUebersichtDto() {}
     public record Referenz(Long mitarbeiterId, int jahr, int monat) {}
     public record Stand(Long mitarbeiterId, int jahr, int monat, Long version, boolean festgeschrieben) {}
-    public record Kennzahlen(BigDecimal istStunden, BigDecimal sollStunden, BigDecimal abwesenheitsStunden, BigDecimal feiertagsStunden, BigDecimal korrekturStunden, BigDecimal gesamtIst, BigDecimal differenz) {}
+    /** Abwesenheit aufgeteilt; Sonstige = Fortbildung und ältere, beim Abschluss nicht aufgeteilte Stunden. */
+    public record Kennzahlen(BigDecimal istStunden, BigDecimal sollStunden, BigDecimal abwesenheitsStunden, BigDecimal feiertagsStunden, BigDecimal korrekturStunden, BigDecimal gesamtIst, BigDecimal differenz,
+                             BigDecimal urlaubStunden, BigDecimal krankheitStunden, BigDecimal zeitausgleichStunden, BigDecimal sonstigeAbwesenheitStunden) {}
     public record Zeile(Referenz referenz, String mitarbeiterName, List<Long> abteilungIds, boolean festgeschrieben, Long version, LocalDateTime festgeschriebenAm, Kennzahlen kennzahlen) {}
     public record Filter(int jahr, int monat, Long mitarbeiterId, Long abteilungId, String status, int page, int size) {}
     public record Uebersicht(List<Zeile> items, long totalElements, int page, int size, Kennzahlen summen, List<Stand> auswahl) {}

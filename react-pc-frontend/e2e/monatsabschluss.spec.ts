@@ -3,8 +3,8 @@ import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 test('Monatsabschluss: Filter, vollständige Auswahl, Teilerfolg und Verlauf', async ({ page }, info) => {
  await blockiereFremdeNetzwerkzugriffe(page);
- const zahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 16, feiertagsStunden: 8, korrekturStunden: 1, gesamtIst: 145.5, differenz: -14.5 };
- const summen = { istStunden: 241, sollStunden: 320, abwesenheitsStunden: 32, feiertagsStunden: 16, korrekturStunden: 2, gesamtIst: 291, differenz: -29 };
+ const zahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 16, feiertagsStunden: 8, korrekturStunden: 1, gesamtIst: 145.5, differenz: -14.5, urlaubStunden: 10, krankheitStunden: 4, zeitausgleichStunden: 0, sonstigeAbwesenheitStunden: 2 };
+ const summen = { istStunden: 241, sollStunden: 320, abwesenheitsStunden: 32, feiertagsStunden: 16, korrekturStunden: 2, gesamtIst: 291, differenz: -29, urlaubStunden: 20, krankheitStunden: 8, zeitausgleichStunden: 0, sonstigeAbwesenheitStunden: 4 };
  let abgeschlossen = false; let posts = 0; let historie = 0;
  await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()); const path = url.pathname; const jahr = Number(url.searchParams.get('jahr')); const monat = Number(url.searchParams.get('monat')); let body: unknown = [];
@@ -20,7 +20,17 @@ test('Monatsabschluss: Filter, vollständige Auswahl, Teilerfolg und Verlauf', a
  });
  await page.goto('/monatsabschluss'); await expect(page.getByRole('heading', { name: 'MONATSABSCHLUSS', exact: true })).toBeVisible();
  await expect(page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true })).toBeVisible();
- await expect(page.getByRole('row').filter({ hasText: 'Alle gefilterten Mitarbeiter' }).getByRole('cell')).toHaveText(['241,00', '32,00', '16,00', '2,00', '291,00', '320,00', '-29,00', '']);
+ await expect(page.getByRole('row').filter({ hasText: 'Alle gefilterten Mitarbeiter' }).getByRole('cell')).toHaveText(['241,00', '20,00', '8,00', '0,00', '4,00', '16,00', '2,00', '291,00', '320,00', '-29,00', '']);
+ // Spaltenköpfe dürfen nur an Worttrennstellen umbrechen, nie mitten im Wort (z. B. "Zeitausgl|eich" auf 14 Zoll)
+ const zerbrocheneKoepfe = await page.locator('thead th').evaluateAll(koepfe => koepfe.flatMap(th => {
+  const text = th.firstChild?.nodeType === Node.TEXT_NODE ? th.firstChild : null; if (!text?.textContent) return [];
+  const teile: string[] = []; let start = 0;
+  // Zeile eines einzelnen Buchstabens; das letzte Rechteck, weil Chromium den Trennstrich der Vorzeile mitzählt
+  const zeile = (i: number) => { const r = document.createRange(); r.setStart(text, i); r.setEnd(text, i + 1); return Array.from(r.getClientRects()).at(-1)?.top; };
+  for (const stueck of text.textContent.split(/[\s\u00AD]/)) { if (stueck && zeile(start) !== zeile(start + stueck.length - 1)) teile.push(stueck); start += stueck.length + 1; }
+  return teile;
+ }));
+ expect(zerbrocheneKoepfe).toEqual([]);
  await page.getByRole('combobox', { name: 'Abteilung', exact: true }).click(); await expect(page.getByRole('listbox')).toBeVisible();
  await page.screenshot({ path: info.outputPath('abteilung-offen.png') }); await page.getByRole('option', { name: 'Werkstatt' }).click();
  await page.getByRole('checkbox', { name: 'Alle gefilterten Mitarbeiter auswählen' }).check();

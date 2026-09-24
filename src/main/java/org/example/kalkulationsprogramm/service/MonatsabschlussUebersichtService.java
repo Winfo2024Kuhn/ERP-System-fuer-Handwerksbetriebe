@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
 import org.example.kalkulationsprogramm.domain.MonatsSaldo;
 import org.example.kalkulationsprogramm.dto.MonatsabschlussUebersichtDto.*;
 import org.example.kalkulationsprogramm.repository.MonatsabschlussUebersichtRepository;
@@ -86,9 +87,10 @@ public class MonatsabschlussUebersichtService {
         var personen=repository.personen(id,abteilung,vonDatum,bisDatum,vonDT,bisDT,vonYM,bisYM,PageRequest.of(0,501));
         if(personen.size()>500) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Mehr als 500 Mitarbeiter. Bitte den Filter eingrenzen.");
         var ids=personen.stream().map(MonatsabschlussUebersichtRepository.Person::getId).toList();
-        var abteilungen=new HashMap<Long,List<Long>>(); var snapshots=new HashMap<Referenz,MonatsSaldo>();
+        var abteilungen=new HashMap<Long,List<Long>>(); var snapshots=new HashMap<Referenz,MonatsSaldo>(); var liveAbwesenheit=new HashMap<Referenz,Map<AbwesenheitsTyp,BigDecimal>>();
         if(!ids.isEmpty()) {
             for(var a:repository.abteilungen(ids)) abteilungen.computeIfAbsent(a.getMitarbeiterId(),k->new ArrayList<>()).add(a.getAbteilungId());
+            for(var a:abwesenheitRepository.sumStundenNachMonatUndTyp(ids,vonDatum,bisDatum)) if(a.getTyp()!=null && a.getStunden()!=null) liveAbwesenheit.computeIfAbsent(new Referenz(a.getMitarbeiterId(),a.getJahr(),a.getMonat()),k->new EnumMap<>(AbwesenheitsTyp.class)).merge(a.getTyp(),a.getStunden(),BigDecimal::add);
             for(var s:repository.salden(ids,start.getYear()*12+start.getMonthValue(),jahr*12+monat)) snapshots.put(new Referenz(s.getMitarbeiter().getId(),s.getJahr(),s.getMonat()),s);
         }
         var result=new ArrayList<List<Zeile>>();
@@ -98,18 +100,32 @@ public class MonatsabschlussUebersichtService {
                 var ref=new Referenz(p.getId(),ym.getYear(),ym.getMonthValue()); var s=snapshots.get(ref);
                 // Begrenzte Bestandsberechnung nur bei kaltem/ungültigem Cache oder laufenden Monaten.
                 if(s==null || (!Boolean.TRUE.equals(s.getFestgeschrieben()) && (!Boolean.TRUE.equals(s.getGueltig()) || !ym.isBefore(YearMonth.now())))) s=salden.getOrBerechne(p.getId(),ym.getYear(),ym.getMonthValue());
-                rows.add(new Zeile(ref,((p.getVorname()==null?"":p.getVorname())+" "+(p.getNachname()==null?"":p.getNachname())).trim(),List.copyOf(abteilungen.getOrDefault(p.getId(),List.of())),Boolean.TRUE.equals(s.getFestgeschrieben()),s.getVersion(),s.getFestgeschriebenAm(),kennzahlen(s)));
+                rows.add(new Zeile(ref,((p.getVorname()==null?"":p.getVorname())+" "+(p.getNachname()==null?"":p.getNachname())).trim(),List.copyOf(abteilungen.getOrDefault(p.getId(),List.of())),Boolean.TRUE.equals(s.getFestgeschrieben()),s.getVersion(),s.getFestgeschriebenAm(),kennzahlen(s,liveAbwesenheit.getOrDefault(ref,Map.of()))));
             }
             rows.sort(Comparator.comparing(Zeile::mitarbeiterName,String.CASE_INSENSITIVE_ORDER).thenComparing(z->z.referenz().mitarbeiterId()));
             result.add(List.copyOf(rows));
         }
         return result;
     }
-    private Kennzahlen kennzahlen(MonatsSaldo s) { return new Kennzahlen(s.getIstStunden(),s.getSollStunden(),s.getAbwesenheitsStunden(),s.getFeiertagsStunden(),s.getKorrekturStunden(),s.getGesamtIst(),s.getDifferenz()); }
+    /**
+     * Abgeschlossene Monate zeigen die beim Abschluss eingefrorene Aufteilung, offene Monate die aktuellen Abwesenheiten.
+     * Der Rest bis zur Abwesenheitssumme landet unter Sonstige, damit Gesamt immer aufgeht.
+     */
+    private Kennzahlen kennzahlen(MonatsSaldo s, Map<AbwesenheitsTyp,BigDecimal> live) {
+        BigDecimal urlaub, krankheit, zeitausgleich;
+        if(Boolean.TRUE.equals(s.getFestgeschrieben())) {
+            urlaub=wert(s.getUrlaubStunden()); krankheit=wert(s.getKrankheitStunden()).add(wert(s.getKrankengeldStunden())).add(wert(s.getWiedereingliederungStunden())); zeitausgleich=wert(s.getZeitausgleichStunden());
+        } else {
+            urlaub=live.getOrDefault(AbwesenheitsTyp.URLAUB,BigDecimal.ZERO); krankheit=live.getOrDefault(AbwesenheitsTyp.KRANKHEIT,BigDecimal.ZERO); zeitausgleich=live.getOrDefault(AbwesenheitsTyp.ZEITAUSGLEICH,BigDecimal.ZERO);
+        }
+        BigDecimal sonstige=wert(s.getAbwesenheitsStunden()).subtract(urlaub).subtract(krankheit).subtract(zeitausgleich);
+        return new Kennzahlen(s.getIstStunden(),s.getSollStunden(),s.getAbwesenheitsStunden(),s.getFeiertagsStunden(),s.getKorrekturStunden(),s.getGesamtIst(),s.getDifferenz(),urlaub,krankheit,zeitausgleich,sonstige);
+    }
+    private static BigDecimal wert(BigDecimal b) { return b==null?BigDecimal.ZERO:b; }
     private Kennzahlen summe(List<Zeile> rows) {
-        BigDecimal[] v=new BigDecimal[7]; Arrays.fill(v,BigDecimal.ZERO);
-        for(var z:rows) { var k=z.kennzahlen(); var a=List.of(k.istStunden(),k.sollStunden(),k.abwesenheitsStunden(),k.feiertagsStunden(),k.korrekturStunden(),k.gesamtIst(),k.differenz()); for(int i=0;i<7;i++)v[i]=v[i].add(a.get(i)); }
-        return new Kennzahlen(v[0],v[1],v[2],v[3],v[4],v[5],v[6]);
+        BigDecimal[] v=new BigDecimal[11]; Arrays.fill(v,BigDecimal.ZERO);
+        for(var z:rows) { var k=z.kennzahlen(); var a=List.of(k.istStunden(),k.sollStunden(),k.abwesenheitsStunden(),k.feiertagsStunden(),k.korrekturStunden(),k.gesamtIst(),k.differenz(),k.urlaubStunden(),k.krankheitStunden(),k.zeitausgleichStunden(),k.sonstigeAbwesenheitStunden()); for(int i=0;i<11;i++)v[i]=v[i].add(a.get(i)); }
+        return new Kennzahlen(v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7],v[8],v[9],v[10]);
     }
     static void validiere(int jahr,int monat,Long id,Long abteilung) { if(jahr<1000||jahr>9999||monat<1||monat>12||(id!=null&&id<=0)||(abteilung!=null&&abteilung<=0)) throw ungueltig(); }
     static ResponseStatusException ungueltig() { return new ResponseStatusException(HttpStatus.BAD_REQUEST,"Bitte gültige Mitarbeiter, Monate und Filter wählen."); }

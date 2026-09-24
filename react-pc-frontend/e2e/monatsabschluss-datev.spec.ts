@@ -7,7 +7,7 @@ test('DATEV: eigene Eingaben, bewusste Auswahl, Ausschlüsse, Konflikt und echte
  await blockiereFremdeNetzwerkzugriffe(page);
  let config: Konfiguration = { version: 0, ziel: 'LODAS', beraterNr: '', mandantenNr: '', personalnummern: [], zuordnungen: [] };
  let vorpruefungen = 0; let exports = 0; let geprueft: ExportRequest | undefined;
- const zahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 1.5, gesamtIst: 122, differenz: -38 };
+ const zahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 1.5, gesamtIst: 122, differenz: -38, urlaubStunden: 0, krankheitStunden: 0, zeitausgleichStunden: 0, sonstigeAbwesenheitStunden: 0 };
  await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()); const path = url.pathname; let body: unknown = []; let status = 200;
   const jahr = Number(url.searchParams.get('jahr')); const monat = Number(url.searchParams.get('monat'));
@@ -57,7 +57,7 @@ test('DATEV sperrt offenen Stand 3 auch außerhalb der sichtbaren Ergebnisseite'
   const jahr = Number(url.searchParams.get('jahr')); const monat = Number(url.searchParams.get('monat'));
   const pageNumber = Number(url.searchParams.get('page'));
   const all = Array.from({ length: 51 }, (_, i) => ({ mitarbeiterId: i + 1, jahr, monat, version: 3, festgeschrieben: i < 50 }));
-  const kennzahlen = { istStunden: 8, sollStunden: 8, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 8, differenz: 0 };
+  const kennzahlen = { istStunden: 8, sollStunden: 8, abwesenheitsStunden: 0, feiertagsStunden: 0, korrekturStunden: 0, gesamtIst: 8, differenz: 0, urlaubStunden: 0, krankheitStunden: 0, zeitausgleichStunden: 0, sonstigeAbwesenheitStunden: 0 };
   let body: unknown = [];
   if (path === '/api/auth/me') body = { id: 1, username: 'test', email: 'test@example.com', admin: true, roles: ['ADMIN'], requiresInitialSetup: false };
   if (path.endsWith('/berechtigung')) body = { darfMonatAbschliessen: true };
