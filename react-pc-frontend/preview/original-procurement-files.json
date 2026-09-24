@@ -1,0 +1,15 @@
+[
+  "pages/BestellungEditor.tsx",
+  "pages/BestellungenUebersicht.tsx",
+  "pages/BedarfUebersichtPage.tsx",
+  "pages/ProjektBedarfPage.tsx",
+  "pages/PreisanfragenPage.tsx",
+  "components/MaterialbestellungModal.tsx",
+  "components/IdsLieferantenAuswahlModal.tsx",
+  "components/LieferantIdsKonfigTab.tsx",
+  "components/AngeboteEinholenModal.tsx",
+  "components/PreisanfrageVergleichModal.tsx",
+  "components/PreiseEintragenModal.tsx",
+  "components/HicadImportModal.tsx",
+  "components/SonderzuschnittPicker.tsx"
+]

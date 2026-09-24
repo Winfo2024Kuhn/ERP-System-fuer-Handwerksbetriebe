@@ -130,3 +130,6 @@ previewConfig.json
 
 # Unter macOS/Linux von Windows-UNC-Pfadtests erzeugtes lokales Verzeichnis.
 /\\\\server\\share/
+
+# Lokale IDS-Warenkörbe der Vorschau (enthalten Projektnamen)
+**/ids-carts.local.json*

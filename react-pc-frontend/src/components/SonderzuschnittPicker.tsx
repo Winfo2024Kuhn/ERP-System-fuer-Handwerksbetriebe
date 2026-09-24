@@ -1,53 +1,167 @@
-// EN1090 picker adapted to the current Schnittbilder catalog (form, image, angles).
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, Ruler, Scissors, X } from 'lucide-react';
 import { Button } from './ui/button';
-import { Dialog } from './ui/dialog';
 import { DecimalInput } from './ui/decimal-input';
 import { useToast } from './ui/toast';
-import { cn } from '../lib/utils';
-import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 import { validateNumberDrafts } from '../lib/numberDrafts';
 import { formatDecimalInput } from '../lib/numberInput';
-import { einkaufApi } from '../features/einkauf/api';
-interface Schnittbild { id: number; bildUrlSchnittbild: string; form: string }
-export interface SonderzuschnittAuswahl { schnittForm: string; schnittbildBildUrl: string; anschnittWinkelLinks: number; anschnittWinkelRechts: number }
-interface Props { isOpen: boolean; onClose: () => void; onSubmit: (value: SonderzuschnittAuswahl) => void; kategorieId?: number | null; artikelId?: number | null; initial?: Partial<SonderzuschnittAuswahl> | null }
-export function SonderzuschnittPicker(props: Props) {
-    return props.isOpen ? <SonderzuschnittDialog {...props} /> : null;
+import { toSafeResourceUrl } from '../lib/htmlSanitizer';
+import { nutztEchtesBackend } from '../features/einkauf/originalBedarfApi';
+import { cn } from '../lib/utils';
+
+interface SchnittAchse {
+    id: number;
+    bildUrl: string;
+    kategorieId: number;
 }
-function SonderzuschnittDialog({ isOpen, onClose, onSubmit, kategorieId, artikelId, initial }: Props) {
+
+interface Schnittbild {
+    id: number;
+    bildUrlSchnittbild: string;
+    schnittAchseId: number;
+    schnittAchseBildUrl?: string;
+    form?: string;
+}
+
+export interface SonderzuschnittAuswahl {
+    schnittbildId: number;
+    schnittbildBildUrl: string;
+    schnittAchseId: number | null;
+    schnittAchseBildUrl: string | null;
+    schnittForm?: string;
+    anschnittWinkelLinks: number;
+    anschnittWinkelRechts: number;
+}
+
+interface Props {
+    isOpen: boolean;
+    onClose: () => void;
+    onSubmit: (auswahl: SonderzuschnittAuswahl) => void;
+    /** Kategorie der Position (Fallback, wenn kein Artikel verknüpft ist). */
+    kategorieId?: number | null;
+    /** Artikel der Position (hat Vorrang, Achsen werden über die Artikel-Kategorie gefiltert). */
+    artikelId?: number | null;
+    /** Vorbelegung beim Bearbeiten einer bestehenden Position. */
+    initial?: Partial<SonderzuschnittAuswahl> | null;
+}
+
+/**
+ * Zweistufiger Picker: erst Achse wählen, dann Schnittbild, dann Winkel links/rechts.
+ * Leere Winkel werden beim Anwenden als 90° interpretiert (gerader Zuschnitt an dieser Seite).
+ */
+export const SonderzuschnittPicker: React.FC<Props> = ({
+    isOpen,
+    onClose,
+    onSubmit,
+    kategorieId,
+    artikelId,
+    initial,
+}) => {
     const toast = useToast();
+    const [achsen, setAchsen] = useState<SchnittAchse[]>([]);
     const [schnittbilder, setSchnittbilder] = useState<Schnittbild[]>([]);
-    const [selectedForm, setSelectedForm] = useState(initial?.schnittForm ?? '');
-    const [winkelLinks, setWinkelLinks] = useState(initial?.anschnittWinkelLinks == null ? '' : formatDecimalInput(initial.anschnittWinkelLinks));
-    const [winkelRechts, setWinkelRechts] = useState(initial?.anschnittWinkelRechts == null ? '' : formatDecimalInput(initial.anschnittWinkelRechts));
-    const [loadingSchnitte, setLoadingSchnitte] = useState(true);
-    const [fehler, setFehler] = useState('');
+    const [selectedAchseId, setSelectedAchseId] = useState<number | null>(null);
+    const [selectedSchnittbildId, setSelectedSchnittbildId] = useState<number | null>(null);
+    const [winkelLinks, setWinkelLinks] = useState('');
+    const [winkelRechts, setWinkelRechts] = useState('');
+    const [loadingAchsen, setLoadingAchsen] = useState(false);
+    const [loadingSchnitte, setLoadingSchnitte] = useState(false);
+
+    // Achsen laden beim Öffnen
+    const ladeAchsen = useCallback(async () => {
+        setLoadingAchsen(true);
+        try {
+            const params = new URLSearchParams();
+            if (artikelId) params.set('artikelId', String(artikelId));
+            else if (kategorieId) params.set(nutztEchtesBackend ? 'subKategorieId' : 'kategorieId', String(kategorieId));
+            if (nutztEchtesBackend) {
+                const res = await fetch(`/api/schnittbilder?${params.toString()}`);
+                if (!res.ok) throw new Error('Schnittbilder konnten nicht geladen werden.');
+                setSchnittbilder(await res.json()); return;
+            }
+            const res = await fetch(`/api/schnitt-achsen?${params.toString()}`);
+            const data: SchnittAchse[] = res.ok ? await res.json() : [];
+            setAchsen(data);
+        } catch { toast.error('Schnittbilder konnten nicht geladen werden.'); } finally {
+            setLoadingAchsen(false);
+        }
+    }, [artikelId, kategorieId, toast]);
+
     useEffect(() => {
-        let aktuell = true;
-        const params = new URLSearchParams();
-        if (artikelId) params.set('artikelId', String(artikelId));
-        else if (kategorieId) params.set('subKategorieId', String(kategorieId));
-        void einkaufApi.get<Schnittbild[]>(`/api/schnittbilder?${params}`).then(data => { if (aktuell) setSchnittbilder(data); })
-            .catch(() => { if (aktuell) { setFehler('Schnittbilder konnten nicht geladen werden.'); toast.error('Schnittbilder konnten nicht geladen werden.'); } })
-            .finally(() => { if (aktuell) setLoadingSchnitte(false); });
-        return () => { aktuell = false; };
-    }, [isOpen, artikelId, kategorieId, toast]);
-    const selectedSchnittbild = schnittbilder.find(s => s.form === selectedForm);
-    const canSubmit = !!selectedSchnittbild;
+        if (!isOpen) return;
+        ladeAchsen();
+        // State initialisieren aus initial
+        setSelectedAchseId(initial?.schnittAchseId ?? null);
+        setSelectedSchnittbildId(initial?.schnittbildId ?? null);
+        setWinkelLinks(
+            initial?.anschnittWinkelLinks != null ? formatDecimalInput(initial.anschnittWinkelLinks) : '',
+        );
+        setWinkelRechts(
+            initial?.anschnittWinkelRechts != null ? formatDecimalInput(initial.anschnittWinkelRechts) : '',
+        );
+    }, [isOpen, ladeAchsen, initial]);
+
+    // Schnittbilder der gewählten Achse laden
+    useEffect(() => {
+        if (nutztEchtesBackend) return;
+        if (!isOpen || selectedAchseId == null) {
+            setSchnittbilder([]);
+            return;
+        }
+        setLoadingSchnitte(true);
+        fetch(`/api/schnittbilder?schnittAchseId=${selectedAchseId}`)
+            .then((r) => { if (!r.ok) throw new Error('Schnittbilder konnten nicht geladen werden.'); return r.json(); })
+            .then((data: Schnittbild[]) => setSchnittbilder(data))
+            .catch(() => { setSchnittbilder([]); toast.error('Schnittbilder konnten nicht geladen werden.'); })
+            .finally(() => setLoadingSchnitte(false));
+    }, [isOpen, selectedAchseId, toast]);
+
+    const selectedAchse = useMemo(
+        () => achsen.find((a) => a.id === selectedAchseId) ?? null,
+        [achsen, selectedAchseId],
+    );
+    const selectedSchnittbild = useMemo(
+        () => schnittbilder.find((s) => s.id === selectedSchnittbildId) ?? null,
+        [schnittbilder, selectedSchnittbildId],
+    );
+
+    const canSubmit = (nutztEchtesBackend || selectedAchse != null) && selectedSchnittbild != null;
+
     const handleSubmit = () => {
-        if (!selectedSchnittbild) return;
+        if ((!nutztEchtesBackend && !selectedAchse) || !selectedSchnittbild) return;
         const result = validateNumberDrafts({ links: winkelLinks, rechts: winkelRechts }, {
-            links: { label: 'Winkel links', min: -360, max: 360, maxDecimalPlaces: 2 }, rechts: { label: 'Winkel rechts', min: -360, max: 360, maxDecimalPlaces: 2 },
+            links: { label: 'Winkel links', min: -360, max: 360, maxDecimalPlaces: 2 },
+            rechts: { label: 'Winkel rechts', min: -360, max: 360, maxDecimalPlaces: 2 },
         });
-        if (!result.valid) { setFehler(result.message); toast.error(result.message); return; }
-        onSubmit({ schnittForm: selectedSchnittbild.form, schnittbildBildUrl: selectedSchnittbild.bildUrlSchnittbild, anschnittWinkelLinks: result.values.links ?? 90, anschnittWinkelRechts: result.values.rechts ?? 90 });
+        if (!result.valid) { toast.error(result.message); return; }
+        const links = result.values.links ?? 90; const rechts = result.values.rechts ?? 90;
+
+        onSubmit({
+            schnittbildId: selectedSchnittbild.id,
+            schnittbildBildUrl: selectedSchnittbild.bildUrlSchnittbild,
+            schnittAchseId: selectedAchse?.id ?? null,
+            schnittAchseBildUrl: selectedAchse?.bildUrl ?? null,
+            ...(selectedSchnittbild.form ? { schnittForm: selectedSchnittbild.form } : {}),
+            anschnittWinkelLinks: links,
+            anschnittWinkelRechts: rechts,
+        });
         onClose();
     };
+
     if (!isOpen) return null;
+
     return (
-        <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }} className="w-[min(48rem,calc(100vw-2rem))] p-0 overflow-hidden" aria-labelledby="sonderzuschnitt-title">
+        <div
+            className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"
+            onClick={onClose}
+        >
+            <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[92vh]"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="sonderzuschnitt-title"
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-rose-50 to-white rounded-t-2xl">
                     <div className="flex items-center gap-3">
@@ -59,7 +173,7 @@ function SonderzuschnittDialog({ isOpen, onClose, onSubmit, kategorieId, artikel
                                 Sonderzuschnitt
                             </p>
                             <h2 id="sonderzuschnitt-title" className="text-lg font-bold text-slate-900 leading-tight">
-                                Schnittbild und Winkel wählen
+                                {nutztEchtesBackend ? 'Schnittbild + Winkel wählen' : 'Achse + Schnittbild + Winkel wählen'}
                             </h2>
                         </div>
                     </div>
@@ -76,20 +190,88 @@ function SonderzuschnittDialog({ isOpen, onClose, onSubmit, kategorieId, artikel
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Schritt 1: Achse (nur der explizite Original-Testvertrag) */}
+                    {!nutztEchtesBackend && <section>
+                        <div className="flex items-center gap-2 mb-3">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-600 text-white text-xs font-bold">
+                                1
+                            </span>
+                            <h3 className="font-semibold text-slate-900">Achse wählen</h3>
+                        </div>
+                        {loadingAchsen ? (
+                            <div className="text-center text-slate-500 py-6">
+                                <Loader2 className="w-5 h-5 mx-auto mb-2 animate-spin text-rose-400" />
+                                Achsen werden geladen…
+                            </div>
+                        ) : achsen.length === 0 ? (
+                            <div className="text-center text-slate-500 py-6 border-2 border-dashed border-slate-200 rounded-xl">
+                                <p className="font-medium text-slate-700">
+                                    Für diese Kategorie sind keine Achsen hinterlegt.
+                                </p>
+                                <p className="text-sm mt-1">
+                                    Lege sie über Produktkategorien → „Schnittbilder" an.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                {achsen.map((a) => {
+                                    const active = a.id === selectedAchseId;
+                                    return (
+                                        <button
+                                            key={a.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedAchseId(a.id);
+                                                // Neue Achse → Schnittbild-Auswahl zurücksetzen, außer sie passt noch
+                                                if (selectedSchnittbildId != null) {
+                                                    const passend = schnittbilder.find(
+                                                        (s) => s.id === selectedSchnittbildId && s.schnittAchseId === a.id,
+                                                    );
+                                                    if (!passend) setSelectedSchnittbildId(null);
+                                                }
+                                            }}
+                                            className={cn(
+                                                'relative flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 transition-colors cursor-pointer',
+                                                active
+                                                    ? 'border-rose-500 bg-rose-50'
+                                                    : 'border-slate-200 bg-white hover:border-rose-300 hover:bg-rose-50/40',
+                                            )}
+                                        >
+                                            <img
+                                                src={toSafeResourceUrl(a.bildUrl) ?? undefined}
+                                                alt={`Achse ${a.id}`}
+                                                className="w-full h-10 object-contain"
+                                                onError={(e) => {
+                                                    (e.currentTarget as HTMLImageElement).style.opacity = '0.3';
+                                                }}
+                                            />
+                                            <span className="text-xs text-slate-600">Achse #{a.id}</span>
+                                            {active && (
+                                                <span className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center">
+                                                    <Check className="w-3 h-3" />
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </section>}
+
                     {/* Schritt 2: Schnittbild */}
-                    <section>
+                    <section className={cn(!nutztEchtesBackend && selectedAchseId == null && 'opacity-40 pointer-events-none')}>
                         <div className="flex items-center gap-2 mb-3">
                             <span
                                 className={cn(
                                     'inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold',
-                                    'bg-rose-600 text-white',
+                                    (nutztEchtesBackend || selectedAchseId != null) ? 'bg-rose-600 text-white' : 'bg-slate-200 text-slate-500',
                                 )}
                             >
                                 2
                             </span>
                             <h3 className="font-semibold text-slate-900">Schnittbild wählen</h3>
                         </div>
-                        {loadingSchnitte ? (
+                        {(loadingSchnitte || (nutztEchtesBackend && loadingAchsen)) ? (
                             <div className="text-center text-slate-500 py-6">
                                 <Loader2 className="w-5 h-5 mx-auto mb-2 animate-spin text-rose-400" />
                                 Schnittbilder werden geladen…
@@ -97,18 +279,18 @@ function SonderzuschnittDialog({ isOpen, onClose, onSubmit, kategorieId, artikel
                         ) : schnittbilder.length === 0 ? (
                             <div className="text-center text-slate-500 py-6 border-2 border-dashed border-slate-200 rounded-xl">
                                 <p className="text-sm">
-                                    Für diese Warengruppe sind keine Schnittbilder hinterlegt. Bitte zuerst einen Artikel oder eine Warengruppe wählen.
+                                    Für diese Auswahl sind noch keine Schnittbilder hinterlegt.
                                 </p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                 {schnittbilder.map((sb) => {
-                                    const active = sb.form === selectedForm;
+                                    const active = sb.id === selectedSchnittbildId;
                                     return (
                                         <button
                                             key={sb.id}
                                             type="button"
-                                            onClick={() => setSelectedForm(sb.form)}
+                                            onClick={() => setSelectedSchnittbildId(sb.id)}
                                             className={cn(
                                                 'relative flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 transition-colors cursor-pointer',
                                                 active
@@ -138,12 +320,12 @@ function SonderzuschnittDialog({ isOpen, onClose, onSubmit, kategorieId, artikel
                     </section>
 
                     {/* Schritt 3: Winkel */}
-                    <section className={cn(!selectedForm && 'opacity-40 pointer-events-none')}>
+                    <section className={cn(selectedSchnittbildId == null && 'opacity-40 pointer-events-none')}>
                         <div className="flex items-center gap-2 mb-3">
                             <span
                                 className={cn(
                                     'inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold',
-                                    selectedForm ? 'bg-rose-600 text-white' : 'bg-slate-200 text-slate-500',
+                                    selectedSchnittbildId != null ? 'bg-rose-600 text-white' : 'bg-slate-200 text-slate-500',
                                 )}
                             >
                                 3
@@ -180,7 +362,6 @@ function SonderzuschnittDialog({ isOpen, onClose, onSubmit, kategorieId, artikel
                     </section>
                 </div>
 
-                {fehler && <p role="alert" className="px-6 text-sm text-rose-700">{fehler}</p>}
                 {/* Footer */}
                 <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
                     <Button variant="ghost" onClick={onClose}>
@@ -195,6 +376,7 @@ function SonderzuschnittDialog({ isOpen, onClose, onSubmit, kategorieId, artikel
                         Übernehmen
                     </Button>
                 </div>
-        </Dialog>
+            </div>
+        </div>
     );
-}
+};

@@ -42,6 +42,9 @@ import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
 import BelegeKasseEditor from './pages/BelegeKasseEditor';
 import DokumentUebersichtEditor from './pages/DokumentUebersichtEditor';
 import FirmaEditor from './pages/FirmaEditor';
+import IdsWarenkorbPage from './pages/IdsWarenkorbPage';
+import BestellungEditor from './pages/BestellungEditor';
+import PreisanfragenPage from './pages/PreisanfragenPage';
 import BedarfUebersichtPage from './pages/BedarfUebersichtPage';
 import ProjektBedarfPage from './pages/ProjektBedarfPage';
 import DocumentEditorPage from './pages/DocumentEditorPage';
@@ -93,9 +96,12 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/einkaufsanfragen" element={<ErrorBoundary><Einkaufsanfragen /></ErrorBoundary>} />
                 <Route path="/einkauf/anfragen" element={<Navigate to="/einkaufsanfragen" replace />} />
                 <Route path="/einkaufsanfragen/:id" element={<ErrorBoundary><EinkaufsanfrageDetail /></ErrorBoundary>} />
+                <Route path="/bestellungen/ids/:id?" element={<ErrorBoundary><IdsWarenkorbPage /></ErrorBoundary>} />
                 <Route path="/bestellungen/bedarf" element={<ErrorBoundary><BedarfUebersichtPage /></ErrorBoundary>} />
                 <Route path="/bestellungen/bedarf/projekt/:projektId" element={<ErrorBoundary><ProjektBedarfPage /></ErrorBoundary>} />
-                <Route path="/bestellungen/bedarf/vorrat" element={<ErrorBoundary><ProjektBedarfPage key="vorrat" ohneProjekt /></ErrorBoundary>} />
+                <Route path="/bestellungen/bedarf/legacy" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
+                <Route path="/einkauf/preisanfragen" element={<ErrorBoundary><PreisanfragenPage /></ErrorBoundary>} />
+                <Route path="/bestellungen/bedarf/vorrat" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
                 <Route path="/kalender" element={<ErrorBoundary><TerminKalender /></ErrorBoundary>} />
                 <Route path="/analyse" element={<ErrorBoundary><ErfolgsanalyseEditor /></ErrorBoundary>} />
                 <Route path="/kostenstellen" element={<ErrorBoundary><KostenstellenControllingEditor /></ErrorBoundary>} />

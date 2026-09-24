@@ -1,45 +1,228 @@
-// Restored from feature/en1090-echeck; persistence uses the current purchasing needs API.
 import { useEffect, useState } from 'react';
-import { Briefcase, Loader2, Package, Plus, Ruler, Search, ShieldCheck, Trash2, X, Scissors } from 'lucide-react';
+import {
+    Briefcase,
+    Loader2,
+    Package,
+    Plus,
+    Ruler,
+    Search,
+    ShieldCheck,
+    Trash2,
+    Truck,
+    X,
+} from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { DecimalInput } from './ui/decimal-input';
-import { Dialog } from './ui/dialog';
+import { formatDecimalInput } from '../lib/numberInput';
+import type { BedarfResponse, Einheit } from '../features/einkauf/types';
+import { nutztEchtesBackend } from '../features/einkauf/originalBedarfApi';
+import { neueOriginalPosition as neuePosition, originalEinheit, originalZeugnis, originalBeschaffungsdetails, originalPositionAusBedarf, originalMaterialPayload, speichereOriginalMaterial, type OriginalMaterialPosition as Position } from '../features/einkauf/originalMaterialApi';
+import { materialPositionAusArtikel, MATERIAL_EINHEITEN as EINHEITEN, MATERIAL_ZEUGNISSE as ZEUGNIS_OPTIONEN } from '../features/einkauf/materialbedarfAdapter';
 import { Select } from './ui/select-custom';
 import { useToast } from './ui/toast';
 import { cn } from '../lib/utils';
 import { toSafeResourceUrl } from '../lib/htmlSanitizer';
-import { formatDecimalInput } from '../lib/numberInput';
 import { ProjektSearchModal } from './ProjektSearchModal';
+import { LieferantSearchModal, type LieferantSuchErgebnis } from './LieferantSearchModal';
 import { ArtikelSearchModal, type ArtikelSuchErgebnis } from './ArtikelSearchModal';
 import { SonderzuschnittPicker, type SonderzuschnittAuswahl } from './SonderzuschnittPicker';
-import { einkaufApi } from '../features/einkauf/api';
-import type { BedarfResponse, Einheit } from '../features/einkauf/types';
-import { neueMaterialPosition as neuePosition, materialPositionAusBedarf, materialPositionAusArtikel, materialbedarfPayload, MATERIAL_EINHEITEN as EINHEITEN, MATERIAL_ZEUGNISSE as ZEUGNIS_OPTIONEN, type MaterialPosition as Position } from '../features/einkauf/materialbedarfAdapter';
+import { Scissors } from 'lucide-react';
 
-interface ProjektRef { id: number; bauvorhaben?: string; auftragsnummer?: string; kunde?: string; excKlasse?: string | null }
-const EXC_LABEL: Record<string, string> = { EXC_1: 'EXC 1', EXC_2: 'EXC 2', EXC_3: 'EXC 3', EXC_4: 'EXC 4' };
-export interface MaterialbestellungModalProps {
-    isOpen: boolean; onClose: () => void; onSuccess?: () => void;
-    initialProjekt?: ProjektRef | null; projektSperren?: boolean;
-    ausgangsbedarf?: BedarfResponse; ohneProjekt?: boolean;
+// ========= Shared Types =========
+interface ProjektRef {
+    id: number;
+    bauvorhaben?: string;
+    auftragsnummer?: string;
+    kunde?: string;
+    excKlasse?: string | null;
 }
-export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = ({ isOpen, onClose, onSuccess, initialProjekt, projektSperren = false, ausgangsbedarf, ohneProjekt = false }) => {
+
+const EXC_LABEL: Record<string, string> = {
+    EXC_1: 'EXC 1', EXC_2: 'EXC 2', EXC_3: 'EXC 3', EXC_4: 'EXC 4',
+};
+
+// ========= Props =========
+/**
+ * Minimales Interface für eine zu bearbeitende Bestellposition.
+ * Deckt die Felder ab, die in der Oberfläche editiert werden können.
+ */
+export interface EditPosition {
+    id: number;
+    bedarf?: BedarfResponse;
+    version?: number;
+    schnittForm?: string | null;
+    schnittAchseId?: number | null;
+    artikelId?: number | null;
+    externeArtikelnummer?: string | null;
+    produktname?: string | null;
+    produkttext?: string | null;
+    werkstoffName?: string | null;
+    kategorieId?: number | null;
+    menge?: number | string | null;
+    einheit?: string | null;
+    fixmassMm?: number | null;
+    schnittbildId?: number | null;
+    schnittbildBildUrl?: string | null;
+    schnittAchseBildUrl?: string | null;
+    anschnittWinkelLinks?: number | string | null;
+    anschnittWinkelRechts?: number | string | null;
+    zeugnisAnforderung?: string | null;
+    kommentar?: string | null;
+    projektId?: number | null;
+    projektName?: string | null;
+    projektNummer?: string | null;
+    kundenName?: string | null;
+    excKlasse?: string | null;
+    lieferantId?: number | null;
+    lieferantName?: string | null;
+    exportiertAm?: string | null;
+}
+
+export interface MaterialbestellungModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSuccess?: () => void;
+    /** Projekt kann vorab fix gewählt werden (z. B. aus Projekt-Editor heraus) */
+    initialProjekt?: ProjektRef | null;
+    /** Projekt-Auswahl deaktivieren (wenn aus Projekt-Kontext aufgerufen) */
+    projektSperren?: boolean;
+    /** Wenn gesetzt: Edit-Modus für genau diese eine Position (PUT statt POST) */
+    editPosition?: EditPosition | null;
+    /** Wenn gesetzt: Batch-Edit-Modus — mehrere Positionen gleichzeitig bearbeiten (PUT pro Position) */
+    editPositions?: EditPosition[] | null;
+    /** Optionaler Titel für den Batch-Edit-Modus (z. B. Lieferantenname) */
+    batchTitle?: string;
+}
+
+// ========= Hauptkomponente =========
+export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = ({
+    isOpen,
+    onClose,
+    onSuccess,
+    initialProjekt,
+    projektSperren = false,
+    editPosition = null,
+    editPositions = null,
+    batchTitle,
+}) => {
     const toast = useToast();
-    const istEditModus = !!ausgangsbedarf;
+    const istBatchEditModus = editPositions != null && editPositions.length > 0;
+    const istEditModus = editPosition != null || istBatchEditModus;
+    // Im Bedarfs-Workflow (Projekt-Detail-Page, Single-Edit) sind Projekt + Lieferant
+    // entweder durch den Aufruf-Kontext fix oder gehören erst zur späteren Bestellung.
+    // Dann blenden wir die beiden Header-Felder aus und Lieferant ist optional.
+    const headerKontextVerstecken = projektSperren || (editPosition != null && !istBatchEditModus);
+
+    // Stammdaten
+
+    // Gemeinsame Auswahl
     const [projekt, setProjekt] = useState<ProjektRef | null>(initialProjekt ?? null);
+    const [lieferant, setLieferant] = useState<LieferantSuchErgebnis | null>(null);
+
+    // Positionen
     const [positionen, setPositionen] = useState<Position[]>([neuePosition()]);
+
+    // Modal-Zustände
     const [projektModalOffen, setProjektModalOffen] = useState(false);
+    const [lieferantModalOffen, setLieferantModalOffen] = useState(false);
     const [artikelModalFuerZeile, setArtikelModalFuerZeile] = useState<string | null>(null);
     const [artikelMultiModalOffen, setArtikelMultiModalOffen] = useState(false);
+
     const [saving, setSaving] = useState(false);
     const [fehler, setFehler] = useState('');
+
+    // Reset beim Öffnen
     useEffect(() => {
         if (!isOpen) return;
-        setProjekt(ohneProjekt ? null : initialProjekt ?? (ausgangsbedarf?.liefergruppe.projektId ? { id: ausgangsbedarf.liefergruppe.projektId, bauvorhaben: `Projekt ${ausgangsbedarf.liefergruppe.projektId}` } : null));
-        setPositionen(ausgangsbedarf ? [materialPositionAusBedarf(ausgangsbedarf)] : [neuePosition()]);
         setFehler('');
-    }, [isOpen, initialProjekt, ausgangsbedarf, ohneProjekt]);
+
+
+        if (istBatchEditModus && editPositions) {
+            // Projekt/Lieferant-Header im Batch-Modus ungenutzt — Kontext ist per-Position
+            setProjekt(null);
+            setLieferant(null);
+            setPositionen(editPositions.map(ep => ({
+                ...neuePosition(),
+                originalId: ep.id,
+                artikelId: ep.artikelId ?? null,
+                externeArtikelnummer: ep.externeArtikelnummer ?? undefined,
+                produktname: ep.produktname ?? '',
+                produkttext: ep.produkttext ?? '',
+                werkstoffName: ep.werkstoffName ?? undefined,
+                kategorieId: ep.kategorieId ?? null,
+                menge: ep.menge != null ? String(ep.menge).replace('.', ',') : '',
+                einheit: originalEinheit(ep.einheit),
+                fixzuschnitt: ep.fixmassMm != null,
+                sonderzuschnitt: ep.schnittbildId != null,
+                fixmassMm: ep.fixmassMm != null ? formatDecimalInput(ep.fixmassMm) : '',
+                schnittbildId: ep.schnittbildId ?? null,
+                schnittAchseId: ep.schnittAchseId ?? null,
+                schnittForm: ep.schnittForm ?? '',
+                schnittbildBildUrl: ep.schnittbildBildUrl ?? null,
+                schnittAchseBildUrl: ep.schnittAchseBildUrl ?? null,
+                winkelLinks: ep.anschnittWinkelLinks != null ? String(ep.anschnittWinkelLinks).replace('°', '').replace('.', ',') : '',
+                winkelRechts: ep.anschnittWinkelRechts != null ? String(ep.anschnittWinkelRechts).replace('°', '').replace('.', ',') : '',
+                zeugnis: originalZeugnis(ep.zeugnisAnforderung),
+                kommentar: ep.kommentar ?? '',
+                ...(ep.bedarf ? originalPositionAusBedarf(ep.bedarf) : {}),
+                bedarf: ep.bedarf,
+                perProjektId: ep.projektId ?? ep.bedarf?.liefergruppe.projektId ?? null,
+                perProjektName: ep.projektName ?? null,
+                perProjektNummer: ep.projektNummer ?? null,
+                perKundenName: ep.kundenName ?? null,
+                perExcKlasse: ep.excKlasse ?? null,
+                perLieferantId: ep.lieferantId ?? originalBeschaffungsdetails(ep.bedarf)?.lieferantId ?? null,
+                perLieferantName: ep.lieferantName ?? null,
+                exportiertAm: ep.exportiertAm ?? null,
+            })));
+        } else if (editPosition) {
+            const projektId = editPosition.projektId ?? editPosition.bedarf?.liefergruppe.projektId;
+            const lieferantId = editPosition.lieferantId ?? originalBeschaffungsdetails(editPosition.bedarf)?.lieferantId;
+            setProjekt(projektId ? {
+                id: projektId,
+                bauvorhaben: editPosition.projektName ?? undefined,
+                auftragsnummer: editPosition.projektNummer ?? undefined,
+                kunde: editPosition.kundenName ?? undefined,
+                excKlasse: editPosition.excKlasse ?? null,
+            } : null);
+            setLieferant(lieferantId ? {
+                id: lieferantId,
+                lieferantenname: editPosition.lieferantName ?? '',
+            } as LieferantSuchErgebnis : null);
+            setPositionen([{
+                ...neuePosition(),
+                originalId: editPosition.id,
+                artikelId: editPosition.artikelId ?? null,
+                externeArtikelnummer: editPosition.externeArtikelnummer ?? undefined,
+                produktname: editPosition.produktname ?? '',
+                produkttext: editPosition.produkttext ?? '',
+                werkstoffName: editPosition.werkstoffName ?? undefined,
+                kategorieId: editPosition.kategorieId ?? null,
+                menge: editPosition.menge != null ? String(editPosition.menge).replace('.', ',') : '',
+                einheit: originalEinheit(editPosition.einheit),
+                fixzuschnitt: editPosition.fixmassMm != null,
+                sonderzuschnitt: editPosition.schnittbildId != null,
+                fixmassMm: editPosition.fixmassMm != null ? formatDecimalInput(editPosition.fixmassMm) : '',
+                schnittbildId: editPosition.schnittbildId ?? null,
+                schnittAchseId: editPosition.schnittAchseId ?? null,
+                schnittForm: editPosition.schnittForm ?? '',
+                schnittbildBildUrl: editPosition.schnittbildBildUrl ?? null,
+                schnittAchseBildUrl: editPosition.schnittAchseBildUrl ?? null,
+                winkelLinks: editPosition.anschnittWinkelLinks != null ? String(editPosition.anschnittWinkelLinks).replace('°', '').replace('.', ',') : '',
+                winkelRechts: editPosition.anschnittWinkelRechts != null ? String(editPosition.anschnittWinkelRechts).replace('°', '').replace('.', ',') : '',
+                zeugnis: originalZeugnis(editPosition.zeugnisAnforderung),
+                kommentar: editPosition.kommentar ?? '',
+                ...(editPosition.bedarf ? originalPositionAusBedarf(editPosition.bedarf) : {}),
+                bedarf: editPosition.bedarf,
+            }]);
+        } else {
+            setProjekt(initialProjekt ?? null);
+            setLieferant(null);
+            setPositionen([neuePosition()]);
+        }
+    }, [isOpen, initialProjekt, editPosition, editPositions, istBatchEditModus]);
+
     // Handlers
     const addLeerePosition = () => setPositionen(prev => [...prev, neuePosition()]);
 
@@ -68,26 +251,29 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
     };
 
     const speichern = async () => {
-        let payloads: ReturnType<typeof materialbedarfPayload>[];
-        try { payloads = positionen.map(pos => materialbedarfPayload(pos, ohneProjekt ? null : projekt?.id ?? null, ausgangsbedarf)); }
-        catch (error) { const message = error instanceof Error ? error.message : 'Bitte die Materialangaben prüfen.'; setFehler(message); toast.error(message); return; }
+        const offen = positionen.filter(pos => !pos.exportiertAm);
+        let payloads: ReturnType<typeof originalMaterialPayload>[];
+        try {
+            if (!offen.length) throw new Error('Keine bearbeitbaren Positionen vorhanden.');
+            payloads = offen.map(pos => originalMaterialPayload(pos,
+                istBatchEditModus ? pos.perProjektId ?? null : projekt?.id ?? null,
+                istBatchEditModus ? pos.perLieferantId ?? null : lieferant?.id ?? null));
+        } catch (error) { const message = error instanceof Error ? error.message : 'Bitte alle Positionen prüfen.'; setFehler(message); toast.error(message); return; }
         setSaving(true); setFehler('');
         const gespeichert = new Set<string>();
         try {
-            // On partial success, remove saved rows before retrying to prevent duplicate needs.
-            for (let index = 0; index < payloads.length; index++) {
-                if (ausgangsbedarf) await einkaufApi.put(`/api/einkauf/bedarf/${ausgangsbedarf.id}`, payloads[index]);
-                else await einkaufApi.post('/api/einkauf/bedarf', payloads[index]);
-                gespeichert.add(positionen[index].clientId);
+            for (let index = 0; index < offen.length; index++) {
+                await speichereOriginalMaterial(offen[index], payloads[index]);
+                gespeichert.add(offen[index].clientId);
             }
-            toast.success(istEditModus ? 'Bedarf wurde aktualisiert.' : 'Materialbedarf wurde gespeichert.');
-            onSuccess?.(); onClose();
+            toast.success('Materialbedarf gespeichert.'); onSuccess?.(); onClose();
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Materialbedarf konnte nicht gespeichert werden.';
             setFehler(message); toast.error(message);
             if (gespeichert.size) setPositionen(vorher => vorher.filter(pos => !gespeichert.has(pos.clientId)));
         } finally { setSaving(false); }
     };
+
     if (!isOpen) return null;
 
     const excBadge = projekt?.excKlasse
@@ -97,7 +283,9 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
         : null;
 
     return (
-        <Dialog open={isOpen} onOpenChange={open => { if (!open && !saving) onClose(); }} className="w-[calc(100vw-2rem)] h-[calc(100vh-2rem)] p-0 overflow-hidden" aria-labelledby="materialbest-title">
+        <>
+            <div className="fixed inset-4 z-50 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200"
+                role="dialog" aria-modal="true" aria-labelledby="materialbest-title">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-rose-50 to-white shrink-0">
                     <div className="flex items-center gap-3">
@@ -106,30 +294,42 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                         </div>
                         <div>
                             <h2 id="materialbest-title" className="text-xl font-bold text-slate-900">
-                                {istEditModus ? 'Bedarf bearbeiten' : 'Materialbedarf erfassen'}
+                                {istBatchEditModus
+                                    ? (batchTitle ? `${batchTitle} – Positionen bearbeiten` : 'Positionen bearbeiten')
+                                    : istEditModus ? 'Bestellposition bearbeiten' : 'Materialbestellung'}
                             </h2>
                             <p className="text-sm text-slate-500">
-                                Material aus dem Katalog oder frei eintragen. Technische Angaben sind optional.
+                                {istBatchEditModus
+                                    ? `${positionen.length} Position${positionen.length === 1 ? '' : 'en'} — Änderungen pro Position speichern`
+                                    : istEditModus
+                                        ? 'Änderungen werden gespeichert, solange die Position nicht exportiert wurde.'
+                                        : 'Mehrere Positionen für einen Lieferanten erfassen'}
                             </p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 mr-10">
+                    <div className="flex items-center gap-2">
                         <Button variant="ghost" onClick={onClose} disabled={saving}>Abbrechen</Button>
                         <Button
                             onClick={speichern}
-                            disabled={saving}
+                            disabled={saving || (!nutztEchtesBackend && !istBatchEditModus && !headerKontextVerstecken && !lieferant)}
                             className="bg-rose-600 text-white hover:bg-rose-700"
                         >
                             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-                            {saving ? 'Speichern...' : istEditModus ? 'Änderungen speichern' : 'Bedarf speichern'}
+                            {saving
+                                ? 'Speichern...'
+                                : istBatchEditModus
+                                    ? 'Änderungen speichern'
+                                    : istEditModus ? 'Änderungen speichern' : 'Alle speichern'}
                         </Button>
-
+                        <Button variant="ghost" size="sm" onClick={onClose}>
+                            <X className="w-5 h-5" />
+                        </Button>
                     </div>
                 </div>
 
                 {/* Shared Header-Controls: Projekt + Lieferant (nicht im Batch-Edit-Modus,
                     nicht im Projekt-Detail-Kontext und nicht im Single-Edit-Modus) */}
-                {(
+                {!istBatchEditModus && !headerKontextVerstecken && (
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 shrink-0">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Projekt */}
@@ -139,14 +339,14 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                             </label>
                             <button
                                 type="button"
-                                onClick={() => !projektSperren && !ohneProjekt && setProjektModalOffen(true)}
-                                disabled={projektSperren || ohneProjekt} title={projektSperren || ohneProjekt ? "Bereich ist durch die Bedarfsliste vorgegeben" : undefined}
+                                onClick={() => !projektSperren && setProjektModalOffen(true)}
+                                disabled={projektSperren}
                                 className={cn(
                                     'w-full flex items-center gap-3 px-3 py-2.5 border rounded-lg text-left transition-colors group',
                                     projekt
                                         ? 'border-rose-300 bg-white hover:border-rose-400'
                                         : 'border-dashed border-slate-300 bg-white hover:border-rose-300 hover:bg-rose-50',
-                                    (projektSperren || ohneProjekt) && 'opacity-70 cursor-not-allowed'
+                                    projektSperren && 'opacity-70 cursor-not-allowed'
                                 )}
                             >
                                 <Briefcase className={cn('w-5 h-5 flex-shrink-0', projekt ? 'text-rose-600' : 'text-slate-400')} />
@@ -167,11 +367,11 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                                             </div>
                                         </>
                                     ) : (
-                                        <span className="text-slate-400">Für Werkstatt / auf Vorrat</span>
+                                        <span className="text-slate-400">— Kein Projekt (optional) —</span>
                                     )}
                                 </div>
-                                {!projektSperren && !ohneProjekt && <Search className="w-4 h-4 text-slate-400 group-hover:text-rose-500 flex-shrink-0" />}
-                                {projekt && !projektSperren && !ohneProjekt && (
+                                {!projektSperren && <Search className="w-4 h-4 text-slate-400 group-hover:text-rose-500 flex-shrink-0" />}
+                                {projekt && !projektSperren && (
                                     <span
                                         role="button"
                                         tabIndex={0}
@@ -186,16 +386,54 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                             </button>
                         </div>
 
-
+                        {/* Lieferant */}
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                                Lieferant *
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => setLieferantModalOffen(true)}
+                                className={cn(
+                                    'w-full flex items-center gap-3 px-3 py-2.5 border rounded-lg text-left transition-colors group',
+                                    lieferant
+                                        ? 'border-rose-300 bg-white hover:border-rose-400'
+                                        : 'border-dashed border-amber-300 bg-amber-50/50 hover:border-rose-300 hover:bg-rose-50'
+                                )}
+                            >
+                                <Truck className={cn('w-5 h-5 flex-shrink-0', lieferant ? 'text-rose-600' : 'text-amber-500')} />
+                                <div className="flex-1 min-w-0">
+                                    {lieferant ? (
+                                        <>
+                                            <p className="font-medium text-slate-900 truncate">{lieferant.lieferantenname}</p>
+                                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                                {lieferant.lieferantenTyp && <span>{lieferant.lieferantenTyp}</span>}
+                                                {(lieferant.plz || lieferant.ort) && (
+                                                    <span className="truncate">
+                                                        {[lieferant.plz, lieferant.ort].filter(Boolean).join(' ')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <span className="text-amber-700 font-medium">Lieferant auswählen →</span>
+                                    )}
+                                </div>
+                                <Search className="w-4 h-4 text-slate-400 group-hover:text-rose-500 flex-shrink-0" />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 )}
 
+                {fehler && <p role="alert" className="px-6 pt-3 text-sm text-rose-700">{fehler}</p>}
                 {/* Positionen-Bereich */}
                 <div className="flex-1 overflow-auto px-6 py-4">
                     <div className="flex items-center justify-between mb-3">
                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
-                            {istEditModus ? 'Position' : <>Positionen <span className="text-slate-400">({positionen.length})</span></>}
+                            {istBatchEditModus
+                                ? <>Positionen <span className="text-slate-400">({positionen.length})</span></>
+                                : istEditModus ? 'Position' : <>Positionen <span className="text-slate-400">({positionen.length})</span></>}
                         </h3>
                         {!istEditModus && (
                             <div className="flex items-center gap-2">
@@ -226,7 +464,8 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                                 onRemove={() => entfernePosition(pos.clientId)}
                                 onArtikelSuchen={() => setArtikelModalFuerZeile(pos.clientId)}
                                 showRemove={!istEditModus}
-                                disabled={saving}
+                                showKontext={istBatchEditModus}
+                                disabled={saving || (istBatchEditModus && pos.exportiertAm != null)}
                             />
                         ))}
                     </div>
@@ -240,7 +479,7 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                         </div>
                     )}
                 </div>
-                {fehler && <p role="alert" className="px-6 pb-4 text-sm text-rose-700">{fehler}</p>}
+            </div>
 
             {/* Sub-Modals */}
             <ProjektSearchModal
@@ -256,12 +495,20 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 nurOffene
             />
 
+            <LieferantSearchModal
+                isOpen={lieferantModalOffen}
+                onClose={() => setLieferantModalOffen(false)}
+                onSelect={setLieferant}
+                currentLieferantId={lieferant?.id}
+            />
+
             <ArtikelSearchModal
                 isOpen={artikelModalFuerZeile !== null}
                 onClose={() => setArtikelModalFuerZeile(null)}
                 onSelect={(a) => {
                     if (artikelModalFuerZeile) artikelUebernehmen(artikelModalFuerZeile, a);
                 }}
+                lieferantName={lieferant?.lieferantenname}
             />
 
             <ArtikelSearchModal
@@ -270,8 +517,9 @@ export const MaterialbestellungModal: React.FC<MaterialbestellungModalProps> = (
                 onSelect={() => { /* nicht genutzt im Multi-Modus */ }}
                 onSelectMany={artikelMultiUebernehmen}
                 multiSelect
+                lieferantName={lieferant?.lieferantenname}
             />
-        </Dialog>
+        </>
     );
 };
 
@@ -283,13 +531,15 @@ interface PositionRowProps {
     onRemove: () => void;
     onArtikelSuchen: () => void;
     showRemove?: boolean;
+    /** Zeigt Projekt/Lieferant-Kontext-Badges oben in der Zeile (Batch-Edit) */
+    showKontext?: boolean;
     /** Zeile ist lesend (z. B. weil bereits exportiert) */
     disabled?: boolean;
 }
 
 const PositionRow: React.FC<PositionRowProps> = ({
     index, position, onUpdate, onRemove, onArtikelSuchen, showRemove = true,
-    disabled = false,
+    showKontext = false, disabled = false,
 }) => {
     return (
         <div className={cn(
@@ -309,39 +559,81 @@ const PositionRow: React.FC<PositionRowProps> = ({
 
                 {/* Eingabefelder */}
                 <fieldset className="flex-1 space-y-3 min-w-0" disabled={disabled}>
+                    {showKontext && (
+                        <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
+                            {position.perProjektName || position.perProjektNummer ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">
+                                    <Briefcase className="w-3 h-3" />
+                                    {position.perProjektNummer && (
+                                        <span className="font-mono">{position.perProjektNummer}</span>
+                                    )}
+                                    {position.perProjektName && <span>· {position.perProjektName}</span>}
+                                </span>
+                            ) : (
+                                <span className="text-xs text-slate-400 italic">Ohne Projekt</span>
+                            )}
+                            {position.perLieferantName && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">
+                                    <Truck className="w-3 h-3" />
+                                    {position.perLieferantName}
+                                </span>
+                            )}
+                            {position.perExcKlasse && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-xs font-medium">
+                                    <ShieldCheck className="w-3 h-3" />
+                                    {EXC_LABEL[position.perExcKlasse] ?? position.perExcKlasse}
+                                </span>
+                            )}
+                            {disabled && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+                                    Bereits exportiert — Bearbeitung gesperrt
+                                </span>
+                            )}
+                        </div>
+                    )}
                     {/* Zeile 1: Artikel-Auswahl + Produktname */}
                     <div className="grid grid-cols-12 gap-3">
                         <div className="col-span-12 md:col-span-5">
                             <label className="block text-xs font-medium text-slate-500 mb-1">
                                 Artikel aus Stammdaten {position.artikelId && <span className="text-rose-600">·  verknüpft</span>}
                             </label>
-                            <div
+                            <button
+                                type="button"
+                                onClick={onArtikelSuchen}
                                 className={cn(
-                                    'w-full flex items-center border rounded-md text-sm transition-colors',
+                                    'w-full flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm text-left transition-colors',
                                     position.artikelId
                                         ? 'border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100'
                                         : 'border-slate-300 bg-white text-slate-500 hover:border-rose-300 hover:bg-rose-50'
                                 )}
                             >
-                              <button type="button" onClick={onArtikelSuchen} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left rounded-md focus-visible:outline-rose-600">
                                 <Search className="w-4 h-4 flex-shrink-0" />
                                 <span className="flex-1 truncate">
                                     {position.artikelId
                                         ? `#${position.externeArtikelnummer || position.artikelId}`
                                         : 'Artikel suchen...'}
                                 </span>
-                              </button>
                                 {position.artikelId && (
-                                    <button
-                                        type="button"
-                                        onClick={() => onUpdate({ artikelId: null, externeArtikelnummer: undefined })}
-                                        className="mr-1 p-1.5 hover:bg-rose-200 rounded focus-visible:outline-rose-600"
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={e => {
+                                            e.stopPropagation();
+                                            onUpdate({ artikelId: null, externeArtikelnummer: undefined });
+                                        }}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.stopPropagation();
+                                                onUpdate({ artikelId: null, externeArtikelnummer: undefined });
+                                            }
+                                        }}
+                                        className="p-0.5 hover:bg-rose-200 rounded cursor-pointer"
                                         aria-label="Artikel-Verknüpfung entfernen"
                                     >
                                         <X className="w-3 h-3" />
-                                    </button>
+                                    </span>
                                 )}
-                            </div>
+                            </button>
                         </div>
                         <div className="col-span-12 md:col-span-7">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Produktname *</label>
@@ -359,7 +651,7 @@ const PositionRow: React.FC<PositionRowProps> = ({
                         </div>
                     </div>
 
-                    {/* Zeile 2: Menge | Einheit */}
+                    {/* Zeile 2: Menge | Einheit | Kategorie */}
                     <div className="grid grid-cols-12 gap-3">
                         <div className="col-span-6 md:col-span-3">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Menge *</label>
@@ -390,7 +682,11 @@ const PositionRow: React.FC<PositionRowProps> = ({
                         <div className="col-span-12 md:col-span-4">
                             <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
                                 Zeugnis (EN 1090)
-
+                                {position.zeugnisVomSystem && position.zeugnis === position.zeugnisVomSystem && (
+                                    <span className="text-rose-600 font-normal ml-1">
+                                        <ShieldCheck className="w-3 h-3 inline" /> Norm
+                                    </span>
+                                )}
                             </label>
                             <Select
                                 aria-label={`Zeugnis Position ${index + 1}`}
@@ -398,12 +694,7 @@ const PositionRow: React.FC<PositionRowProps> = ({
                                 onChange={v => onUpdate({ zeugnis: v, zeugnisBestaetigt: false })}
                                 options={ZEUGNIS_OPTIONEN}
                             />
-                            {position.zeugnis && <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
-                                <input type="checkbox" checked={position.zeugnisBestaetigt}
-                                    onChange={event => onUpdate({ zeugnisBestaetigt: event.target.checked })}
-                                    className="mt-0.5 rounded border-slate-300 accent-rose-600" />
-                                Zeugnisanforderung fachlich geprüft
-                            </label>}
+                            {position.zeugnis && <label className="mt-2 flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={position.zeugnisBestaetigt} onChange={event => onUpdate({ zeugnisBestaetigt: event.target.checked })} className="mt-0.5 rounded accent-rose-600" />Zeugnisanforderung fachlich geprüft</label>}
 
                         </div>
                         <div className="col-span-12 md:col-span-4">
@@ -463,8 +754,11 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                 fixzuschnitt: false,
                 fixmassMm: '',
                 sonderzuschnitt: false,
+                schnittbildId: null,
                 schnittForm: '',
                 schnittbildBildUrl: null,
+                schnittAchseId: null,
+                schnittAchseBildUrl: null,
                 winkelLinks: '',
                 winkelRechts: '',
             });
@@ -479,8 +773,11 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
         } else {
             onUpdate({
                 sonderzuschnitt: false,
+                schnittbildId: null,
                 schnittForm: '',
                 schnittbildBildUrl: null,
+                schnittAchseId: null,
+                schnittAchseBildUrl: null,
                 winkelLinks: '',
                 winkelRechts: '',
             });
@@ -491,8 +788,11 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
         onUpdate({
             sonderzuschnitt: true,
             fixzuschnitt: true,
-            schnittForm: auswahl.schnittForm,
+            schnittbildId: auswahl.schnittbildId,
+            schnittForm: auswahl.schnittForm ?? '',
             schnittbildBildUrl: auswahl.schnittbildBildUrl,
+            schnittAchseId: auswahl.schnittAchseId,
+            schnittAchseBildUrl: auswahl.schnittAchseBildUrl,
             winkelLinks: formatDecimalInput(auswahl.anschnittWinkelLinks),
             winkelRechts: formatDecimalInput(auswahl.anschnittWinkelRechts),
         });
@@ -561,9 +861,16 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
             {/* Sonderzuschnitt-Vorschau */}
             {position.sonderzuschnitt && (
                 <div className="border border-rose-200 rounded-xl p-3 bg-rose-50/40 flex items-center gap-4">
-                    {position.schnittForm ? (
+                    {position.schnittbildId != null ? (
                         <>
                             <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {position.schnittAchseBildUrl && (
+                                    <img
+                                        src={toSafeResourceUrl(position.schnittAchseBildUrl) ?? undefined}
+                                        alt="Achse"
+                                        className="w-6 h-6 object-contain bg-white border border-rose-200 rounded-lg"
+                                    />
+                                )}
                                 {position.schnittbildBildUrl && (
                                     <img
                                         src={toSafeResourceUrl(position.schnittbildBildUrl) ?? undefined}
@@ -593,7 +900,6 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    aria-label="Sonderzuschnitt entfernen"
                                     onClick={() => toggleSonderzuschnitt(false)}
                                     disabled={disabled}
                                     className="text-slate-400 hover:text-rose-600 hover:bg-rose-50"
@@ -627,10 +933,12 @@ const ZuschnittBlock: React.FC<ZuschnittBlockProps> = ({ position, onUpdate, dis
                 kategorieId={position.kategorieId}
                 artikelId={position.artikelId}
                 initial={
-                    position.schnittForm
+                    position.schnittbildId != null
                         ? {
-                              schnittForm: position.schnittForm,
+                              schnittbildId: position.schnittbildId,
                               schnittbildBildUrl: position.schnittbildBildUrl ?? undefined,
+                              schnittAchseId: position.schnittAchseId ?? undefined,
+                              schnittAchseBildUrl: position.schnittAchseBildUrl ?? undefined,
                               anschnittWinkelLinks: position.winkelLinks ? Number(position.winkelLinks.replace(',', '.')) : undefined,
                               anschnittWinkelRechts: position.winkelRechts ? Number(position.winkelRechts.replace(',', '.')) : undefined,
                           }

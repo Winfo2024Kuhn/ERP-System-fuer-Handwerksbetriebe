@@ -7,8 +7,10 @@ export type Id = number;
 
 export interface Mengenbasis { menge: Zahl | null; einheit: Einheit | null; stueckzahl: Zahl | null; einzelLaengeMm: Zahl | null; kgJeMeter: Zahl | null; faktorQuelle: string | null }
 export interface DokumentSoll { art: Dokumentart; grundlage: string | null; grundlageVersion: string | null; fachlichBestaetigt: boolean }
-/** Lieferant und Werkstattangaben einer Position; das Backend übernimmt sie beim Speichern unverändert. */
-export interface Beschaffungsdetails { lieferantId: Id | null; kategorieId: Id | null; schnittbildId: Id | null; schnittAchseId: Id | null; externeArtikelnummer: string | null }
+export interface Beschaffungsdetails {
+  lieferantId: Id | null; kategorieId: Id | null; schnittbildId: Id | null;
+  schnittAchseId: Id | null; externeArtikelnummer: string | null;
+}
 export interface PositionSnapshot {
   art: Positionsart; artikelId: Id | null; interneReferenz: string | null; zeichnungsnummer: string | null;
   zeichnungsrevision: string | null; bezeichnung: string | null; werkstoff: string | null; abmessung: string | null;

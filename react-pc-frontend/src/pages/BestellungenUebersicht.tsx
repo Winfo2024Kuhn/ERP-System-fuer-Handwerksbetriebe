@@ -1,17 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
-import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { RefreshCw, FileText, ChevronRight, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase, EyeOff, Eye, Archive } from 'lucide-react';
+import { RefreshCw, FileText, ChevronRight, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase } from 'lucide-react';
 import { ProjectSelectModal } from '../components/ProjectSelectModal';
 import { KostenstelleSelectModal } from '../components/KostenstelleSelectModal';
 import { useToast } from '../components/ui/toast';
-import { ZuordnungModal as BelegZuordnungModal } from '../components/ZuordnungModal';
-import { Link, useNavigate } from 'react-router-dom';
-import { einkaufApi } from '../features/einkauf/api';
-import type { BestellungUebersicht } from '../features/einkauf/types';
-import { DirektbestellungDialog } from '../features/einkauf/components/DirektbestellungDialog';
 
 // ========== Types ==========
 interface DokumentRef {
@@ -38,7 +32,6 @@ interface BestellungsUebersicht {
     laufendeBestellungen: DokumentenKette[];
     abgeschlossen: DokumentenKette[];
     zugeordnet: DokumentenKette[];
-    ausgeblendet: DokumentenKette[];
 }
 
 interface GeschaeftsdatenDto {
@@ -54,19 +47,6 @@ interface GeschaeftsdatenDto {
     lieferantName: string | null;
 }
 
-interface BelegZuordnungRef {
-    id: number;
-    belegNummer: string | null;
-    belegDatum: string | null;
-    beschreibung: string | null;
-    betragNetto: number | null;
-    betragBrutto: number | null;
-    lieferantName: string | null;
-    originalDateiname: string | null;
-    mimeType: string | null;
-    pdfUrl: string | null;
-}
-
 
 
 interface ProjektAnteil {
@@ -75,10 +55,8 @@ interface ProjektAnteil {
     kostenstelleId?: number;
     kostenstelleName?: string;
     betrag: number;
-    prozentanteil: number | null;
+    prozentanteil: number;
     beschreibung: string;
-    // Über wie viele Jahre die Kosten verteilt werden (nur Kostenstellen). 1 = keine Aufteilung.
-    streckungJahre?: number;
 }
 
 // ========== Helpers ==========
@@ -108,12 +86,9 @@ interface KetteCardProps {
     onOpenPdf: (url: string, title: string) => void;
     showZuordnenButton?: boolean;
     onZuordnen?: (kette: DokumentenKette) => void;
-    onAusblenden?: (kette: DokumentenKette) => void;
-    onEinblenden?: (kette: DokumentenKette) => void;
-    busy?: boolean;
 }
 
-function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, busy }: KetteCardProps) {
+function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen }: KetteCardProps) {
     const rechnung = kette.dokumente.find(d => d.typ === 'RECHNUNG');
 
     return (
@@ -174,32 +149,6 @@ function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen, onAusblen
                     Projekten zuordnen
                 </Button>
             )}
-
-            {/* Ausblenden / Einblenden */}
-            {onAusblenden && (
-                <Button
-                    onClick={() => onAusblenden(kette)}
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy}
-                    className="w-full text-slate-500 hover:text-rose-700 hover:bg-rose-50 mt-2"
-                >
-                    <EyeOff className="w-4 h-4 mr-2" />
-                    Ausblenden
-                </Button>
-            )}
-            {onEinblenden && (
-                <Button
-                    onClick={() => onEinblenden(kette)}
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    className="w-full text-rose-700 border-rose-300 hover:bg-rose-50 mt-2"
-                >
-                    <Eye className="w-4 h-4 mr-2" />
-                    Wieder einblenden
-                </Button>
-            )}
         </Card>
     );
 }
@@ -228,16 +177,14 @@ function TabButton({ active, onClick, icon, label, count }: TabButtonProps) {
     );
 }
 
-// PDF-Vorschau läuft über die globale Komponente ../components/DocumentPreviewModal
-
-interface BelegZuordnungAuswahlModalProps {
-    belege: BelegZuordnungRef[];
-    loading: boolean;
-    onSelect: (beleg: BelegZuordnungRef) => void;
+// ========== PDF Preview Modal ==========
+interface DocumentPreviewModalProps {
+    url: string | null;
+    title: string;
     onClose: () => void;
 }
 
-function BelegZuordnungAuswahlModal({ belege, loading, onSelect, onClose }: BelegZuordnungAuswahlModalProps) {
+function DocumentPreviewModal({ url, title, onClose }: DocumentPreviewModalProps) {
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
             if (e.key === 'Escape') onClose();
@@ -246,50 +193,48 @@ function BelegZuordnungAuswahlModal({ belege, loading, onSelect, onClose }: Bele
         return () => window.removeEventListener('keydown', handleEsc);
     }, [onClose]);
 
+    if (!url) return null;
+
+    const isPdf = url.toLowerCase().includes('.pdf') ||
+        url.includes('/dokumente/') ||
+        url.includes('/attachments/');
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <Card className="w-full max-w-3xl max-h-[82vh] overflow-hidden bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
-                <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-                    <div>
-                        <h3 className="font-semibold text-slate-900">Belegkosten zuordnen</h3>
-                        <p className="text-sm text-slate-500">Nicht per E-Mail importierte Belege ohne Kostenstelle</p>
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <div
+                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                    <h3 className="text-lg font-semibold text-slate-900 truncate">{title}</h3>
+                    <div className="flex items-center gap-2">
+                        <a
+                            href={url}
+                            download={title}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download
+                        </a>
+                        <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 transition">
+                            <X className="w-5 h-5 text-slate-500" />
+                        </button>
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100">
-                        <X className="w-5 h-5 text-slate-500" />
-                    </button>
                 </div>
-                <div className="max-h-[65vh] overflow-auto divide-y divide-slate-100">
-                    {loading ? (
-                        <div className="p-10 text-center text-slate-500">
-                            <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin" />
-                            Belege werden geladen...
-                        </div>
-                    ) : belege.length === 0 ? (
-                        <div className="p-10 text-center text-slate-500">Keine offenen Belegkosten vorhanden.</div>
+                <div className="flex-1 overflow-auto p-4 bg-slate-100">
+                    {isPdf ? (
+                        <PdfCanvasViewer url={url} className="w-full h-[70vh] rounded-lg overflow-y-auto overflow-x-hidden" />
                     ) : (
-                        belege.map(beleg => (
-                            <button
-                                key={beleg.id}
-                                onClick={() => onSelect(beleg)}
-                                className="w-full text-left p-4 hover:bg-rose-50 transition flex items-center justify-between gap-4"
-                            >
-                                <div className="min-w-0">
-                                    <div className="font-medium text-slate-900 truncate">
-                                        {beleg.belegNummer || beleg.originalDateiname || `Beleg #${beleg.id}`}
-                                    </div>
-                                    <div className="text-sm text-slate-500 truncate">
-                                        {beleg.lieferantName || 'Kein Lieferant'} · {formatDate(beleg.belegDatum)} · {beleg.beschreibung || 'Keine Beschreibung'}
-                                    </div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                    <div className="font-semibold text-slate-900">{formatEuro(beleg.betragNetto)} €</div>
-                                    <div className="text-xs text-slate-400">Netto</div>
-                                </div>
-                            </button>
-                        ))
+                        <div className="flex flex-col items-center justify-center h-64 text-slate-500">
+                            <FileText className="w-12 h-12 mb-4" />
+                            <p>Vorschau nicht verfügbar</p>
+                        </div>
                     )}
                 </div>
-            </Card>
+            </div>
         </div>
     );
 }
@@ -355,8 +300,7 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
             kostenstelleName: k.bezeichnung,
             prozentanteil: defaultAnteil,
             betrag: modus === 'prozent' ? (defaultBetrag * defaultAnteil / 100) : 0,
-            beschreibung: '',
-            streckungJahre: 1
+            beschreibung: ''
         }]);
         setShowKostenstelleModal(false);
     };
@@ -384,7 +328,7 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
         const lastIdx = anteile.length - 1;
         
         // Summe aller Einträge AUSSER dem letzten
-        const sumProzentOhneLetzen = anteile.slice(0, lastIdx).reduce((s, a) => s + (a.prozentanteil || 0), 0);
+        const sumProzentOhneLetzen = anteile.slice(0, lastIdx).reduce((s, a) => s + a.prozentanteil, 0);
         const sumBetragOhneLetzen = anteile.slice(0, lastIdx).reduce((s, a) => s + a.betrag, 0);
         
         const restProzent = Number((100 - sumProzentOhneLetzen).toFixed(2));
@@ -401,18 +345,9 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
     };
 
     // Berechne Summen
-    const sumBetrag = anteile.reduce((s, a, idx) => {
-        const isLast = idx === anteile.length - 1 && anteile.length >= 2;
-        return s + (isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restBetrag : a.betrag);
-    }, 0);
-    const sumProzent = anteile.reduce((s, a, idx) => {
-        const isLast = idx === anteile.length - 1 && anteile.length >= 2;
-        return s + (isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : (a.prozentanteil || 0));
-    }, 0);
+    const sumBetrag = anteile.reduce((s, a) => s + a.betrag, 0);
+    const sumProzent = anteile.reduce((s, a) => s + a.prozentanteil, 0);
     const rest = (geschaeftsdaten?.betragNetto || 0) - sumBetrag;
-    const rechnungsJahr = geschaeftsdaten?.dokumentDatum
-        ? new Date(geschaeftsdaten.dokumentDatum).getFullYear()
-        : new Date().getFullYear();
 
     // Speichern - mit berechneten Werten für den letzten Eintrag
     const speichern = async () => {
@@ -422,19 +357,22 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
             // Für den letzten Eintrag die berechneten Werte verwenden
             const anteileZumSpeichern = anteile.map((a, idx) => {
                 const isLast = idx === anteile.length - 1 && anteile.length >= 2;
-                const betrag = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restBetrag : a.betrag;
-                const prozentanteil = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : a.prozentanteil;
+                if (isLast && letzterAnteilBerechnet) {
+                    return {
+                        projektId: a.projektId,
+                        kostenstelleId: a.kostenstelleId,
+                        ...(modus === 'prozent' ? { prozentanteil: letzterAnteilBerechnet.restProzent } : { betrag: letzterAnteilBerechnet.restBetrag }),
+                        beschreibung: a.beschreibung
+                    };
+                }
                 return {
                     projektId: a.projektId,
                     kostenstelleId: a.kostenstelleId,
-                    betrag: modus === 'absolut' ? betrag : null,
-                    prozentanteil: modus === 'absolut' ? null : prozentanteil,
-                    beschreibung: a.beschreibung,
-                    // Streckung nur bei Kostenstellen mitschicken (Projekte bleiben einmalig)
-                    streckungJahre: a.kostenstelleId != null ? (a.streckungJahre && a.streckungJahre > 1 ? a.streckungJahre : 1) : undefined
+                    ...(modus === 'prozent' ? { prozentanteil: a.prozentanteil } : { betrag: a.betrag }),
+                    beschreibung: a.beschreibung
                 };
             });
-
+            
             const res = await fetch('/api/bestellungen-uebersicht/zuordnen', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -625,7 +563,7 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
                                         {anteile.map((a, idx) => {
                                             const isLast = idx === anteile.length - 1 && anteile.length >= 2;
                                             // Für den letzten Eintrag: berechnete Werte verwenden
-                                            const displayProzent = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : (a.prozentanteil || 0);
+                                            const displayProzent = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restProzent : a.prozentanteil;
                                             const displayBetrag = isLast && letzterAnteilBerechnet ? letzterAnteilBerechnet.restBetrag : a.betrag;
                                             
                                             return (
@@ -662,7 +600,7 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
                                                             ) : (
                                                                 <input
                                                                     type="number"
-                                                                    value={modus === 'prozent' ? (a.prozentanteil || 0) : a.betrag}
+                                                                    value={modus === 'prozent' ? a.prozentanteil : a.betrag}
                                                                     onChange={e => updateAnteil(idx, modus === 'prozent' ? 'prozentanteil' : 'betrag', Number(e.target.value))}
                                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500"
                                                                 />
@@ -685,31 +623,6 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
                                                             />
                                                         </div>
                                                     </div>
-
-                                                    {/* Kosten über mehrere Jahre verteilen – nur für Kostenstellen */}
-                                                    {a.kostenstelleId != null && (() => {
-                                                        const jahre = a.streckungJahre && a.streckungJahre > 0 ? a.streckungJahre : 1;
-                                                        const proJahr = jahre > 1 ? displayBetrag / jahre : displayBetrag;
-                                                        return (
-                                                            <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-2">
-                                                                <span className="text-xs text-slate-600">Kosten verteilen über</span>
-                                                                <input
-                                                                    type="number"
-                                                                    min={1}
-                                                                    max={20}
-                                                                    value={jahre}
-                                                                    onChange={e => updateAnteil(idx, 'streckungJahre', Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
-                                                                    className="w-16 px-2 py-1 border border-slate-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-rose-500"
-                                                                />
-                                                                <span className="text-xs text-slate-600">{jahre === 1 ? 'Jahr' : 'Jahre'}</span>
-                                                                {jahre > 1 && (
-                                                                    <span className="text-xs text-rose-600 font-medium ml-1">
-                                                                        ≈ {formatEuro(proJahr)} € / Jahr ab {rechnungsJahr}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })()}
                                                 </div>
                                             );
                                         })}
@@ -759,20 +672,10 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
 
 // ========== Hauptkomponente ==========
 export default function BestellungenUebersicht() {
-    const toast = useToast();
-    const navigate = useNavigate();
-    const [direktbestellungOffen, setDirektbestellungOffen] = useState(false);
-    const [tab, setTab] = useState<'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet' | 'ausgeblendet'>('laufend');
+    const [tab, setTab] = useState<'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet'>('laufend');
     const [data, setData] = useState<BestellungsUebersicht | null>(null);
     const [loading, setLoading] = useState(true);
-    const [echteBestellungen, setEchteBestellungen] = useState<BestellungUebersicht[]>([]);
-    const [bestellungenFehler, setBestellungenFehler] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [busyKetteId, setBusyKetteId] = useState<string | null>(null);
-    const [offeneBelege, setOffeneBelege] = useState<BelegZuordnungRef[]>([]);
-    const [offeneBelegeLoading, setOffeneBelegeLoading] = useState(false);
-    const [showBelegAuswahl, setShowBelegAuswahl] = useState(false);
-    const [selectedBeleg, setSelectedBeleg] = useState<BelegZuordnungRef | null>(null);
 
     // PDF Preview State
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -781,8 +684,8 @@ export default function BestellungenUebersicht() {
     // Zuordnung Modal State
     const [zuordnungKette, setZuordnungKette] = useState<DokumentenKette | null>(null);
 
-    const loadData = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true);
+    const loadData = useCallback(async () => {
+        setLoading(true);
         setError(null);
         try {
             const res = await fetch('/api/bestellungen-uebersicht');
@@ -792,127 +695,18 @@ export default function BestellungenUebersicht() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unbekannter Fehler');
         } finally {
-            if (!silent) setLoading(false);
+            setLoading(false);
         }
     }, []);
 
-    const loadOffeneBelege = useCallback(async () => {
-        setOffeneBelegeLoading(true);
-        try {
-            const res = await fetch('/api/bestellungen-uebersicht/belege-offen');
-            if (res.status === 401 || res.status === 403) {
-                setOffeneBelege([]);
-                return;
-            }
-            if (!res.ok) throw new Error('Fehler beim Laden');
-            const json = await res.json();
-            setOffeneBelege(Array.isArray(json) ? json : []);
-        } catch {
-            toast.error('Belege konnten nicht geladen werden');
-            setOffeneBelege([]);
-        } finally {
-            setOffeneBelegeLoading(false);
-        }
-    }, [toast]);
-
-    useEffect(() => {
-        let aktiv = true;
-        einkaufApi.get<{ content: BestellungUebersicht[] }>('/api/einkauf/bestellungen?page=0&size=20')
-            .then(page => { if (aktiv) { setEchteBestellungen(page.content); setBestellungenFehler(''); } })
-            .catch(error => { if (aktiv) { const message = error instanceof Error ? error.message : 'Bestellungen konnten nicht geladen werden.'; setBestellungenFehler(message); toast.error(message); } });
-        return () => { aktiv = false; };
-    }, [toast]);
-
     useEffect(() => {
         loadData();
-        void loadOffeneBelege();
-    }, [loadData, loadOffeneBelege]);
+    }, [loadData]);
 
     const handleOpenPdf = (url: string, title: string) => {
         setPreviewUrl(url);
         setPreviewTitle(title);
     };
-
-    const [bulkBusy, setBulkBusy] = useState(false);
-
-    const alleZugeordnetAusblenden = useCallback(async () => {
-        if (!data || data.zugeordnet.length === 0) return;
-        const ketten = data.zugeordnet;
-        if (!window.confirm(`Möchten Sie wirklich alle ${ketten.length} zugeordneten Bestellungen ausblenden?`)) {
-            return;
-        }
-
-        setBulkBusy(true);
-
-        // Optimistic Update: Zugeordnete sofort in Ausgeblendet verschieben
-        setData(prev => prev ? {
-            ...prev,
-            zugeordnet: [],
-            ausgeblendet: [...ketten, ...prev.ausgeblendet],
-        } : prev);
-
-        const allDokumentIds = ketten.flatMap(k => k.dokumente.map(d => d.id));
-        const CHUNK_SIZE = 500; // Backend-Limit aus AusblendenRequest
-
-        try {
-            for (let i = 0; i < allDokumentIds.length; i += CHUNK_SIZE) {
-                const chunk = allDokumentIds.slice(i, i + CHUNK_SIZE);
-                const res = await fetch('/api/bestellungen-uebersicht/ausblenden', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ dokumentIds: chunk }),
-                });
-                if (!res.ok) throw new Error('Fehler');
-            }
-            await loadData(true);
-            toast.success(`${ketten.length} Bestellungen ausgeblendet`);
-        } catch {
-            toast.error('Aktion fehlgeschlagen');
-            await loadData(true);
-        } finally {
-            setBulkBusy(false);
-        }
-    }, [data, loadData, toast]);
-
-    const setKetteAusgeblendet = useCallback(async (kette: DokumentenKette, ausblenden: boolean) => {
-        setBusyKetteId(kette.id);
-
-        // Optimistic Update: Kette sofort verschieben, damit kein Ganzseiten-Spinner nötig ist
-        setData(prev => {
-            if (!prev) return prev;
-            if (ausblenden) {
-                return {
-                    offeneAnfragen: prev.offeneAnfragen.filter(k => k.id !== kette.id),
-                    laufendeBestellungen: prev.laufendeBestellungen.filter(k => k.id !== kette.id),
-                    abgeschlossen: prev.abgeschlossen.filter(k => k.id !== kette.id),
-                    zugeordnet: prev.zugeordnet.filter(k => k.id !== kette.id),
-                    ausgeblendet: [kette, ...prev.ausgeblendet.filter(k => k.id !== kette.id)],
-                };
-            }
-            return {
-                ...prev,
-                ausgeblendet: prev.ausgeblendet.filter(k => k.id !== kette.id),
-            };
-        });
-
-        try {
-            const res = await fetch(`/api/bestellungen-uebersicht/${ausblenden ? 'ausblenden' : 'einblenden'}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dokumentIds: kette.dokumente.map(d => d.id) }),
-            });
-            if (!res.ok) throw new Error('Fehler');
-            // Silent reload, damit beim Einblenden die Kette in die richtige Liste rutscht
-            await loadData(true);
-            toast.success(ausblenden ? 'Ausgeblendet' : 'Wieder eingeblendet');
-        } catch {
-            toast.error('Aktion fehlgeschlagen');
-            // Server-Stand wiederherstellen, falls Optimistic Update falsch lag
-            await loadData(true);
-        } finally {
-            setBusyKetteId(null);
-        }
-    }, [loadData, toast]);
 
     const currentList = tab === 'offen'
         ? data?.offeneAnfragen
@@ -920,9 +714,7 @@ export default function BestellungenUebersicht() {
             ? data?.laufendeBestellungen
             : tab === 'abgeschlossen'
                 ? data?.abgeschlossen
-                : tab === 'zugeordnet'
-                    ? data?.zugeordnet
-                    : data?.ausgeblendet;
+                : data?.zugeordnet;
 
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
@@ -939,39 +731,18 @@ export default function BestellungenUebersicht() {
                         Übersicht aller Lieferanten-Dokumente nach Bestellstatus
                     </p>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                    <Button onClick={() => setDirektbestellungOffen(true)} size="sm">Direktbestellung vorbereiten</Button>
-                    <Button
-                        onClick={() => {
-                            setShowBelegAuswahl(true);
-                            void loadOffeneBelege();
-                        }}
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                    >
-                        <FileText className="w-4 h-4" />
-                        Belegkosten zuordnen ({offeneBelege.length})
-                    </Button>
-                    <Button
-                        onClick={() => loadData()}
-                        disabled={loading}
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                        Aktualisieren
-                    </Button>
-                </div>
+                <Button
+                    onClick={loadData}
+                    disabled={loading}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                >
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    Aktualisieren
+                </Button>
             </div>
 
-            <section aria-labelledby="bestellungen-echt" className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3"><div><h2 id="bestellungen-echt" className="font-semibold text-slate-900">Bestellungen</h2><p className="text-sm text-slate-600">Freigegebene und noch offene Bestellungen im Einkauf.</p></div><Link to="/einkauf/lieferungen" className="text-sm font-medium text-rose-700 hover:underline">Lieferungen und Unterlagen</Link></div>
-                {bestellungenFehler ? <p role="alert" className="text-sm text-rose-700">{bestellungenFehler}</p> : echteBestellungen.length === 0 ? <p className="text-sm text-slate-600">Noch keine Bestellungen vorhanden.</p> : <ul className="divide-y divide-slate-100">{echteBestellungen.map(bestellung => <li key={bestellung.id} className="flex flex-wrap items-center justify-between gap-2 py-2"><Link className="font-medium text-rose-700 hover:underline" to={`/bestellungen/${bestellung.id}`}>{bestellung.nummer}</Link><span className="text-sm text-slate-600">{bestellung.status === 'ENTWURF' ? 'Entwurf' : bestellung.status === 'TEILGELIEFERT' ? 'Teilweise geliefert' : bestellung.status === 'GELIEFERT' ? 'Geliefert' : bestellung.status === 'STORNIERT' ? 'Storniert' : 'Bestellt'}</span></li>)}</ul>}
-            </section>
-
-            <h2 className="text-lg font-semibold text-slate-900">Bisherige Belege</h2>
             {/* Tabs - Projekt-Stil */}
             <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
                 <TabButton
@@ -1002,13 +773,6 @@ export default function BestellungenUebersicht() {
                     label="Zugeordnet"
                     count={data?.zugeordnet.length || 0}
                 />
-                <TabButton
-                    active={tab === 'ausgeblendet'}
-                    onClick={() => setTab('ausgeblendet')}
-                    icon={<Archive className="w-4 h-4" />}
-                    label="Ausgeblendet"
-                    count={data?.ausgeblendet.length || 0}
-                />
             </div>
 
             {/* Content */}
@@ -1030,92 +794,35 @@ export default function BestellungenUebersicht() {
                         {tab === 'laufend' && 'Keine laufenden Bestellungen vorhanden.'}
                         {tab === 'abgeschlossen' && 'Keine abgeschlossenen Bestellungen zum Zuordnen.'}
                         {tab === 'zugeordnet' && 'Noch keine Bestellungen Projekten zugeordnet.'}
-                        {tab === 'ausgeblendet' && 'Keine ausgeblendeten Einträge.'}
                     </p>
                 </Card>
             ) : (
-                <div className="space-y-4">
-                    {tab === 'zugeordnet' && currentList.length > 0 && (
-                        <div className="flex justify-end">
-                            <Button
-                                onClick={alleZugeordnetAusblenden}
-                                disabled={bulkBusy}
-                                variant="outline"
-                                size="sm"
-                                className="text-slate-600 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                            >
-                                {bulkBusy ? (
-                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                                ) : (
-                                    <EyeOff className="w-4 h-4 mr-2" />
-                                )}
-                                Alle ausblenden ({currentList.length})
-                            </Button>
-                        </div>
-                    )}
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {(() => {
-                            const istAusgeblendetTab = tab === 'ausgeblendet';
-                            return currentList.map(kette => (
-                                <KetteCard
-                                    key={kette.id}
-                                    kette={kette}
-                                    onOpenPdf={handleOpenPdf}
-                                    showZuordnenButton={tab === 'abgeschlossen'}
-                                    onZuordnen={setZuordnungKette}
-                                    onAusblenden={istAusgeblendetTab ? undefined : (k) => setKetteAusgeblendet(k, true)}
-                                    onEinblenden={istAusgeblendetTab ? (k) => setKetteAusgeblendet(k, false) : undefined}
-                                    busy={busyKetteId === kette.id}
-                                />
-                            ));
-                        })()}
-                    </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {currentList.map(kette => (
+                        <KetteCard
+                            key={kette.id}
+                            kette={kette}
+                            onOpenPdf={handleOpenPdf}
+                            showZuordnenButton={tab === 'abgeschlossen'}
+                            onZuordnen={setZuordnungKette}
+                        />
+                    ))}
                 </div>
             )}
 
             {/* PDF Preview Modal */}
-            {previewUrl && (
-                <DocumentPreviewModal
-                    doc={{ url: previewUrl, title: previewTitle }}
-                    onClose={() => setPreviewUrl(null)}
-                />
-            )}
-
-            {direktbestellungOffen && <DirektbestellungDialog onClose={() => setDirektbestellungOffen(false)} onCreated={bestellungId => { setDirektbestellungOffen(false); navigate(`/bestellungen/${bestellungId}`); }} />}
-            {showBelegAuswahl && (
-                <BelegZuordnungAuswahlModal
-                    belege={offeneBelege}
-                    loading={offeneBelegeLoading}
-                    onClose={() => setShowBelegAuswahl(false)}
-                    onSelect={(beleg) => {
-                        setSelectedBeleg(beleg);
-                        setShowBelegAuswahl(false);
-                    }}
-                />
-            )}
-
-            {selectedBeleg && (
-                <BelegZuordnungModal
-                    belegId={selectedBeleg.id}
-                    dokumentNummer={selectedBeleg.belegNummer || selectedBeleg.originalDateiname}
-                    lieferantName={selectedBeleg.lieferantName}
-                    pdfUrl={selectedBeleg.pdfUrl}
-                    previewMimeType={selectedBeleg.mimeType}
-                    onClose={() => setSelectedBeleg(null)}
-                    onSuccess={() => {
-                        setSelectedBeleg(null);
-                        void loadOffeneBelege();
-                        void loadData(true);
-                    }}
-                />
-            )}
+            <DocumentPreviewModal
+                url={previewUrl}
+                title={previewTitle}
+                onClose={() => setPreviewUrl(null)}
+            />
 
             {/* Zuordnung Modal */}
             {zuordnungKette && (
                 <ZuordnungModal
                     kette={zuordnungKette}
                     onClose={() => setZuordnungKette(null)}
-                    onSuccess={() => loadData()}
+                    onSuccess={loadData}
                 />
             )}
         </div>

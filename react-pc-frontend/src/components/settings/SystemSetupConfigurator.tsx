@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, Check, FolderOpen, Mail, Smartphone } from 'lucide-react';
+import { Brain, Check, FolderOpen, Mail, Smartphone, Plug } from 'lucide-react';
 import { EmailSettingsSection } from './sections/EmailSettingsSection';
 import { DateiOrdnerSection } from './sections/DateiOrdnerSection';
 import { KiSettingsSection } from './sections/KiSettingsSection';
+import { IdsSettingsSection } from './sections/IdsSettingsSection';
 import { ZeiterfassungSection } from './sections/ZeiterfassungSection';
 
 /**
@@ -19,7 +20,7 @@ import { ZeiterfassungSection } from './sections/ZeiterfassungSection';
  * mehr an.</p>
  */
 
-type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung';
+type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung' | 'ids';
 
 interface TabDefinition {
     id: TabId;
@@ -28,6 +29,7 @@ interface TabDefinition {
 }
 
 const TABS: TabDefinition[] = [
+    { id: 'ids', label: 'IDS-Schnittstellen', icon: <Plug className="w-4 h-4" /> },
     { id: 'email', label: 'E-Mail', icon: <Mail className="w-4 h-4" /> },
     { id: 'dateien', label: 'Dateien', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'ki', label: 'KI-Funktionen', icon: <Brain className="w-4 h-4" /> },
@@ -190,6 +192,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 id={`settings-panel-${activeTab}`}
                 aria-labelledby={`settings-tab-${activeTab}`}
             >
+                {activeTab === 'ids' && <IdsSettingsSection />}
                 {activeTab === 'email' && <EmailSettingsSection onSaved={handleSaved} />}
                 {activeTab === 'dateien' && <DateiOrdnerSection onSaved={handleSaved} />}
                 {activeTab === 'ki' && <KiSettingsSection onSaved={handleSaved} />}

@@ -1,3 +1,4 @@
+import { LadefehlerPanel } from '../components/ui/ladefehler-panel';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Briefcase, ChevronRight, Loader2, Package, Plus, Search, X } from 'lucide-react';
@@ -6,12 +7,10 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { PageLayout } from '../components/layout/PageLayout';
 import { ProjektSearchModal } from '../components/ProjektSearchModal';
+import { ladeBedarfszeilen } from '../features/einkauf/originalBedarfApi';
 import { useToast } from '../components/ui/toast';
-import { einkaufApi } from '../features/einkauf/api';
-import { ladeAlleBedarfe, materialGewicht } from '../features/einkauf/bedarfApi';
-import { EinkaufNavigation } from '../features/einkauf/components/EinkaufNavigation';
 
-interface OffeneBedarfsZeile {
+interface BedarfsZeile {
     id: number;
     projektId?: number | null;
     projektName?: string | null;
@@ -38,30 +37,21 @@ const ZEILEN_OHNE_PROJEKT_KEY = -1;
 export default function BedarfUebersichtPage() {
     const navigate = useNavigate();
     const toast = useToast();
-    const [zeilen, setZeilen] = useState<OffeneBedarfsZeile[]>([]);
+    const [zeilen, setZeilen] = useState<BedarfsZeile[]>([]);
     const [loading, setLoading] = useState(true);
-    const [fehler, setFehler] = useState('');
+    const [ladefehler, setLadefehler] = useState<string | null>(null);
     const [filter, setFilter] = useState('');
     const [projektPickerOffen, setProjektPickerOffen] = useState(false);
 
     const ladeBedarfe = useCallback(async () => {
         setLoading(true);
-        setFehler('');
+        setLadefehler(null);
         try {
-            const [bedarfe, projekte] = await Promise.all([
-                ladeAlleBedarfe(),
-                einkaufApi.get<Array<{ id: number; bauvorhaben?: string; auftragsnummer?: string; kunde?: string }>>('/api/projekte/simple?size=500'),
-            ]);
-            setZeilen(bedarfe.map(bedarf => {
-                const projekt = projekte.find(p => p.id === bedarf.liefergruppe.projektId);
-                return { id: bedarf.id, projektId: bedarf.liefergruppe.projektId,
-                    projektName: projekt?.bauvorhaben ?? (bedarf.liefergruppe.projektId ? `Projekt #${bedarf.liefergruppe.projektId}` : 'Für Werkstatt / auf Vorrat'),
-                    projektNummer: projekt?.auftragsnummer, kundenName: projekt?.kunde,
-                    kilogramm: materialGewicht(bedarf), menge: bedarf.mengen.disponierbar };
-            }));
+            const data = await ladeBedarfszeilen();
+            setZeilen(Array.isArray(data) ? data : []);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Bedarfe konnten nicht geladen werden.';
-            setFehler(message);
+            setLadefehler(message);
             toast.error(message);
         } finally {
             setLoading(false);
@@ -82,15 +72,15 @@ export default function BedarfUebersichtPage() {
             const kg = Number(z.kilogramm) || 0;
             const exist = map.get(projektId);
             if (exist) {
-                if ((z.menge ?? 0) > 0) exist.anzahlZeilen += 1;
+                exist.anzahlZeilen += 1;
                 exist.summeKilogramm += kg;
             } else {
                 map.set(projektId, {
                     projektId,
-                    bauvorhaben: z.projektName ?? 'Für Werkstatt / auf Vorrat',
+                    bauvorhaben: z.projektName ?? 'Ohne Projektzuordnung',
                     auftragsnummer: z.projektNummer ?? null,
                     kunde: z.kundenName ?? null,
-                    anzahlZeilen: (z.menge ?? 0) > 0 ? 1 : 0,
+                    anzahlZeilen: 1,
                     summeKilogramm: kg,
                 });
             }
@@ -112,7 +102,7 @@ export default function BedarfUebersichtPage() {
     }, [gruppen, filter]);
 
     const summen = useMemo(() => ({
-        projekte: sichtbar.filter(g => g.projektId !== ZEILEN_OHNE_PROJEKT_KEY).length,
+        projekte: sichtbar.length,
         zeilenSumme: sichtbar.reduce((s, g) => s + g.anzahlZeilen, 0),
         kgSumme: sichtbar.reduce((s, g) => s + g.summeKilogramm, 0),
     }), [sichtbar]);
@@ -129,25 +119,20 @@ export default function BedarfUebersichtPage() {
         <PageLayout
             ribbonCategory="Einkauf"
             title="Bedarf je Projekt"
-            subtitle="Bedarf aufschreiben, Liste für die Werkstatt drucken und fehlendes Material bestellen."
-            actions={
-                <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => navigate('/bestellungen/bedarf/vorrat')}>
-                    <Package className="h-4 w-4" />Für Werkstatt / auf Vorrat
-                </Button>
-                <Button size="sm"
+            subtitle="Gespeicherte Materialbedarfe nach Projekt"
+            actions={<>
+                <Button variant="outline" onClick={() => navigate("/bestellungen/ids")}>Shop-Warenkörbe</Button>
+                <Button
                     className="bg-rose-600 text-white hover:bg-rose-700"
                     onClick={() => setProjektPickerOffen(true)}
                 >
                     <Plus className="w-4 h-4" />
                     Bedarf für Projekt anlegen
                 </Button>
-                </div>
-            }
+            </>}
         >
-            <EinkaufNavigation active="bedarf" />
             {/* Filterleiste */}
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-100">
+            <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     <div className="lg:col-span-2">
                         <Label htmlFor="bedarf-filter" className="text-sm font-medium text-gray-700">
@@ -176,7 +161,7 @@ export default function BedarfUebersichtPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-4 lg:gap-6 items-end">
                         <KennzahlBlock label="Projekte" wert={summen.projekte.toString()} />
-                        <KennzahlBlock label="Offene Zeilen" wert={summen.zeilenSumme.toString()} />
+                        <KennzahlBlock label="Bedarfspositionen" wert={summen.zeilenSumme.toString()} />
                         <KennzahlBlock
                             label="Stahlgewicht"
                             wert={`${summen.kgSumme.toLocaleString('de-DE', { maximumFractionDigits: 0 })} kg`}
@@ -187,12 +172,12 @@ export default function BedarfUebersichtPage() {
 
             {/* Liste */}
             {loading ? (
-                <div className="bg-white p-12 rounded-lg text-center text-slate-500 border border-slate-100">
+                <div className="bg-white p-12 rounded-2xl text-center text-slate-500 border border-slate-100">
                     <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin text-rose-400" />
                     Bedarfe werden geladen…
                 </div>
-            ) : fehler ? (
-                <section role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4"><p>{fehler}</p><Button variant="outline" onClick={() => void ladeBedarfe()}>Erneut laden</Button></section>
+            ) : ladefehler ? (
+                <LadefehlerPanel message={ladefehler} onRetry={() => void ladeBedarfe()} />
             ) : sichtbar.length === 0 ? (
                 <EmptyState
                     isFiltered={filter.trim().length > 0}
@@ -201,14 +186,14 @@ export default function BedarfUebersichtPage() {
                     onAnlegen={() => setProjektPickerOffen(true)}
                 />
             ) : (
-                <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-slate-100">
+                <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                 <tr>
                                     <th className="px-4 py-3">Projekt</th>
                                     <th className="px-4 py-3">Kunde</th>
-                                    <th className="px-4 py-3 text-right">Offene Zeilen</th>
+                                    <th className="px-4 py-3 text-right">Bedarfspositionen</th>
                                     <th className="px-4 py-3 text-right">Stahlgewicht</th>
                                     <th className="px-4 py-3 w-10" aria-label="Pfeil"></th>
                                 </tr>
@@ -228,7 +213,6 @@ export default function BedarfUebersichtPage() {
                                         }}
                                         className="hover:bg-rose-50/50 cursor-pointer transition-colors group"
                                         title={`Bedarf von ${g.bauvorhaben} öffnen`}
-                                        aria-label={`Bedarf von ${g.bauvorhaben} öffnen`}
                                     >
                                         <td className="px-4 py-3">
                                             <div className="flex items-start gap-3 min-w-0">
@@ -236,7 +220,7 @@ export default function BedarfUebersichtPage() {
                                                     <Briefcase className="w-4 h-4 text-slate-500 group-hover:text-rose-600" />
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <p className="font-medium text-slate-900 break-words">
+                                                    <p className="font-medium text-slate-900 truncate">
                                                         {g.bauvorhaben}
                                                     </p>
                                                     {g.auftragsnummer && (
@@ -247,7 +231,7 @@ export default function BedarfUebersichtPage() {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-slate-600 break-words max-w-[280px]">
+                                        <td className="px-4 py-3 text-slate-600 truncate max-w-[280px]">
                                             {g.kunde ?? <span className="text-slate-400 italic">—</span>}
                                         </td>
                                         <td className="px-4 py-3 text-right">
@@ -284,7 +268,7 @@ export default function BedarfUebersichtPage() {
 function KennzahlBlock({ label, wert }: { label: string; wert: string }) {
     return (
         <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
             <p className="text-lg font-semibold text-slate-900 tabular-nums whitespace-nowrap">{wert}</p>
         </div>
     );
@@ -303,7 +287,7 @@ function EmptyState({
 }) {
     if (isFiltered && hatGruppen) {
         return (
-            <div className="py-16 px-6 text-center border border-dashed border-slate-200 rounded-lg bg-slate-50">
+            <div className="py-16 px-6 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50">
                 <Search className="w-10 h-10 mx-auto text-slate-300 mb-3" />
                 <h3 className="text-lg font-semibold text-slate-800">
                     Kein Projekt passt zu deiner Suche
@@ -318,10 +302,10 @@ function EmptyState({
         );
     }
     return (
-        <div className="py-16 px-6 text-center border border-dashed border-slate-200 rounded-lg bg-slate-50">
+        <div className="py-16 px-6 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50">
             <Package className="w-12 h-12 mx-auto text-rose-200 mb-3" />
             <h3 className="text-lg font-semibold text-slate-800">
-                Aktuell ist nirgends Material offen.
+                Aktuell sind keine Materialbedarfe gespeichert.
             </h3>
             <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
                 Sobald du für ein Projekt einen Bedarf anlegst, taucht es hier auf.

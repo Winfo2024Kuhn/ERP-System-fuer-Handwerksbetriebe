@@ -1,0 +1,32 @@
+import { afterEach, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createIdsDraftStore } from './idsDraftStore';
+const directories: string[] = [];
+afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+it('retains drafts and their internal number across restart and locks confirmed orders', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ids-draft-test-')); directories.push(dir);
+  const file = join(dir, 'carts.json');
+  const store = createIdsDraftStore(file);
+  const cart = { ordered: false, reference: '', items: [{ article: 'DUMMY', name: 'Testartikel', unit: 'Stück', quantity: 1, netPrice: null, priceBasis: 1 }] };
+  const saved = store.save(cart);
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+  const restarted = createIdsDraftStore(file);
+  expect(restarted.get(saved.id)).toEqual(saved);
+  const updated = restarted.save({ ...cart, ordered: true, reference: 'DEMO-ORDER' }, saved.id);
+  expect(updated.number).toBe(saved.number);
+  expect(restarted.all()).toHaveLength(1);
+  expect(() => restarted.save(cart, saved.id)).toThrow('bereits bestellt');
+});
+it('behält die Projektzuordnung beim Überschreiben, wenn keine neue übergeben wird', () => {
+  const store = createIdsDraftStore();
+  const cart = { ordered: false, reference: '', items: [{ article: 'DUMMY', name: 'Testartikel', unit: 'Stück', quantity: 1, netPrice: null, priceBasis: 1 }] };
+  const saved = store.save(cart, undefined, { projektId: 7, projektName: 'Musterhaus Max Mustermann' });
+  expect(saved).toMatchObject({ projektId: 7, projektName: 'Musterhaus Max Mustermann' });
+  const updated = store.save({ ...cart, ordered: true }, saved.id);
+  expect(updated).toMatchObject({ projektId: 7, projektName: 'Musterhaus Max Mustermann', number: saved.number });
+  expect(store.byProjekt(7).map(d => d.id)).toEqual([saved.id]);
+  expect(store.byProjekt(8)).toEqual([]);
+  expect(store.save(cart).projektId).toBeUndefined();
+});
