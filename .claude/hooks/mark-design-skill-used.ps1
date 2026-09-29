@@ -29,7 +29,9 @@ $designSkills = @(
 )
 
 if ($designSkills -contains $skillName) {
-    $flagDir = Join-Path $env:TEMP 'claude-doc-flags'
+    # $env:TEMP gibt es nur unter Windows; GetTempPath() liefert dort denselben
+    # Ordner und unter Linux (Cloud-Sitzung) /tmp.
+    $flagDir = Join-Path ([System.IO.Path]::GetTempPath()) 'claude-doc-flags'
     if (-not (Test-Path $flagDir)) {
         New-Item -ItemType Directory -Force -Path $flagDir | Out-Null
     }
