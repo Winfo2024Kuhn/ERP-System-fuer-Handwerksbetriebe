@@ -307,7 +307,7 @@ Lauf holt über `days` nach.
 Einstellungen änderbar (1–120 Monate). `kontakt_rufnummer` bleibt, sie hängt
 am Kontakt.
 
-## Berechtigungen **(Vorschlag)**
+## Berechtigungen
 
 - Anrufliste, Anrufbeantworter, Reiter „Anrufe“, Zuordnen, Abhören,
   Live-Anzeige: alle angemeldeten Nutzer des PC-Frontends (wie E-Mail-Center).
@@ -407,16 +407,35 @@ damit der Anruf ohne Wartezeit in der Liste steht.
 
 `TelefonLiveService` verwaltet `SseEmitter` (Timeout 30 Min., Heartbeat-
 Kommentar alle 25 s, abgestorbene Emitter werden entfernt). Ereignisse:
-`anruf-klingelt` (`{verbindungsId, nummer, kontakt | kandidaten | null,
+`anruf-klingelt` (`{verbindungsId, nummer, kontakt (typ, id, name, nummer, ort) | kandidaten | null,
 nameFritzbox}`) und `anruf-beendet` (`{verbindungsId, angenommen}`).
 Endpoint erfordert Anmeldung wie alle `/api`-Pfade.
 
-**Frontend:** Hook `useTelefonLive` im Layout öffnet einen `EventSource`
-auf `/api/telefon/live` (mit Wiederverbindung). Bei `anruf-klingelt`
-erscheint unten rechts eine Karte: „**Mustermann GmbH** ruft an“ (Kunde/
-Lieferant als Kennzeichen), Nummer, Knopf „Akte öffnen“; bei unbekannt
-„Unbekannte Nummer 0931 …“ ohne weiteren Knopf. Die Karte verschwindet bei
-`anruf-beendet` oder nach 60 s und lässt sich wegklicken. Kein Ton.
+**Frontend:** Hook `useTelefonLive` im Layout öffnet für **jeden
+angemeldeten Benutzer** einen `EventSource` auf `/api/telefon/live` (mit
+Wiederverbindung). Bei `anruf-klingelt` erscheint bei allen gleichzeitig ein
+**großes Anruf-Fenster** (Entscheidung des Nutzers):
+
+- Zentriertes Fenster über etwa den **halben Bildschirm** (ca. 50 % Breite
+  und Höhe, auf kleinen Bildschirmen entsprechend breiter), Hintergrund
+  abgedunkelt.
+- Inhalt groß und auf einen Blick lesbar: pulsierendes Telefon-Symbol,
+  „ruft an“, **Name** in großer Schrift, Kennzeichen Kunde/Lieferant,
+  Kunden-/Lieferantennummer, Ort, Rufnummer. Knöpfe **„Akte öffnen“** und
+  **„Schließen“**.
+- Unbekannte Nummer: „Unbekannte Nummer“ + Rufnummer + ggf. Name aus dem
+  FRITZ!Box-Telefonbuch, nur „Schließen“. Mehrdeutig: „Einer dieser
+  Kontakte“ mit den Kandidaten als anklickbare Liste.
+- Wird der Anruf angenommen (`CONNECT`), bleibt das Fenster stehen und zeigt
+  „Im Gespräch“ mit laufender Dauer; es schließt sich bei `anruf-beendet`
+  automatisch (nicht angenommen: nach 3 s mit Hinweis „Verpasst“).
+- **Kein Tastatur-Fokus-Diebstahl:** Das Fenster übernimmt beim Erscheinen
+  nicht den Fokus, damit Tippen in einem anderen Feld (z. B. im
+  Dokumenteditor) nicht versehentlich „Akte öffnen“ auslöst; `Esc` und Klick
+  auf den Hintergrund schließen es. Eingaben im Hintergrund bleiben erhalten.
+- Mehrere gleichzeitige Anrufe: das Fenster zeigt den neuesten, darunter
+  „+1 weiterer Anruf“.
+- Kein Ton. Schließt ein Benutzer das Fenster, betrifft das nur ihn.
 
 ## Sicherheit und Datenschutz
 
@@ -470,6 +489,7 @@ Lieferant als Kennzeichen), Nummer, Knopf „Akte öffnen“; bei unbekannt
 5. Nach Ablauf der Frist werden Anrufe und Aufnahmen (inkl. Datei) gelöscht.
 6. Ist die Box nicht erreichbar, zeigt das ERP den Grund an und holt nach
    Wiederherstellung alles nach.
-7. (Etappe 2) Klingelt 2323, erscheint innerhalb von ca. 1 Sekunde die
-   Live-Karte mit dem zugeordneten Kontakt; Anrufe auf privaten Nummern
-   lösen keine Karte aus.
+7. (Etappe 2) Klingelt 2323, erscheint innerhalb von ca. 1 Sekunde bei
+   jedem angemeldeten Benutzer das große Anruf-Fenster mit dem zugeordneten
+   Kontakt; es stiehlt keinen Tastatur-Fokus und schließt sich nach
+   Gesprächsende. Anrufe auf privaten Nummern lösen kein Fenster aus.
