@@ -148,10 +148,11 @@ link_playwright_browsers() {
     fi
 }
 
-# Einige Einträge in den package-lock.json verweisen auf registry.npmmirror.com,
+# Ältere Stände der package-lock.json verweisen teils auf registry.npmmirror.com,
 # das die Cloud-Umgebung sperrt. --replace-registry-host lädt diese Pakete
 # stattdessen von registry.npmjs.org (gleiche Tarballs, die Integrity-Hashes
 # aus der Lockfile werden weiter geprüft). Die Lockfile bleibt unangetastet.
+# Aktuelle Lockfiles sind bereinigt, die .npmrc der Frontends hält sie so.
 npm_ci_via_npmjs() {
     (cd "$1" && timeout 600 npm ci --no-audit --no-fund --loglevel=error \
         --registry=https://registry.npmjs.org/ \

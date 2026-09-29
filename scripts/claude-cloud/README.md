@@ -12,11 +12,12 @@ Java 23, die MCP-Server aus `.mcp.json` und die Frontend-Abhängigkeiten.
   Lokal (ohne `CLAUDE_CODE_REMOTE=true`) beendet es sich sofort.
 - Alle Hooks nutzen `${CLAUDE_PROJECT_DIR}` statt fester Windows-Pfade und
   laufen dadurch in jedem Checkout – lokal wie in der Cloud.
-- **npm**: Ein Teil der Einträge in den `package-lock.json` zeigt auf
-  `registry.npmmirror.com`, das in der Cloud gesperrt ist. Das Skript lädt diese
-  Pakete per `npm ci --replace-registry-host=registry.npmmirror.com` von
-  `registry.npmjs.org`; die Lockfile bleibt unverändert. Dauerhafte Lösung:
-  die Lockfiles einmal gegen `registry.npmjs.org` neu erzeugen.
+- **npm**: `registry.npmmirror.com` ist in der Cloud gesperrt. Die Lockfiles
+  zeigen deshalb nur noch auf `registry.npmjs.org`, und die `.npmrc` in beiden
+  Frontends legt diese Registry fest. Für ältere Branches, die noch
+  npmmirror-Einträge haben, installiert das Skript mit
+  `npm ci --replace-registry-host=registry.npmmirror.com` – ohne die Lockfile
+  anzufassen.
 - **Playwright**: Die Playwright-Downloadserver sind gesperrt, und
   `@playwright/test` verlangt eine neuere Chromium-Revision als vorinstalliert.
   Das Skript verlinkt den vorhandenen Chromium unter den erwarteten Pfaden in

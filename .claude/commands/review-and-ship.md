@@ -85,18 +85,22 @@ Während der Subagent reviewt, arbeitest du diese Liste ab. Bei jedem Fehler: Ro
 
 ### 1c. Desktop-Frontend
 
+Vom Projektroot aus (die Klammern halten das Arbeitsverzeichnis stabil):
+
 ```bash
-cd c:\dev\ERP-System-fuer-Handwerksbetriebe\react-pc-frontend && npm run lint 2>&1 | tail -30
-cd c:\dev\ERP-System-fuer-Handwerksbetriebe\react-pc-frontend && npm run build 2>&1 | tail -20
-cd c:\dev\ERP-System-fuer-Handwerksbetriebe\react-pc-frontend && npm run test 2>&1 | tail -30
+(cd react-pc-frontend && npm run lint 2>&1 | tail -30)
+(cd react-pc-frontend && npm run build 2>&1 | tail -20)
+(cd react-pc-frontend && npm run test 2>&1 | tail -30)
 ```
 
 ### 1d. Mobile-Frontend (nur wenn Mobile-Diff)
 
+Vom Projektroot aus (die Klammern halten das Arbeitsverzeichnis stabil):
+
 ```bash
-cd c:\dev\ERP-System-fuer-Handwerksbetriebe\react-zeiterfassung && npm run lint 2>&1 | tail -30
-cd c:\dev\ERP-System-fuer-Handwerksbetriebe\react-zeiterfassung && npm run build 2>&1 | tail -20
-cd c:\dev\ERP-System-fuer-Handwerksbetriebe\react-zeiterfassung && npm run test 2>&1 | tail -30
+(cd react-zeiterfassung && npm run lint 2>&1 | tail -30)
+(cd react-zeiterfassung && npm run build 2>&1 | tail -20)
+(cd react-zeiterfassung && npm run test 2>&1 | tail -30)
 ```
 
 ### 1e. Fehlende Tests schreiben
