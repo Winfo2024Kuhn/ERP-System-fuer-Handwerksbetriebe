@@ -45,6 +45,7 @@ public interface TelefonAnrufRepository extends JpaRepository<TelefonAnruf, Long
             SELECT a FROM TelefonAnruf a
             LEFT JOIN FETCH a.kunde
             LEFT JOIN FETCH a.lieferant
+            LEFT JOIN FETCH a.steuerberater
             WHERE a.zeitpunkt >= :seit
               AND (a.art = org.example.kalkulationsprogramm.domain.TelefonAnrufArt.VERPASST
                    OR (a.art = org.example.kalkulationsprogramm.domain.TelefonAnrufArt.ANRUFBEANTWORTER
@@ -72,7 +73,7 @@ public interface TelefonAnrufRepository extends JpaRepository<TelefonAnruf, Long
     Page<TelefonAnruf> findeOffeneVerpasste(@Param("seit") LocalDateTime seit, Pageable pageable);
 
     /**
-     * Wurde der zugeordnete Kunde oder Lieferant gelöscht, setzt die Datenbank nur
+     * Wurde der zugeordnete Kunde, Lieferant oder Steuerberater gelöscht, setzt die Datenbank nur
      * die Verknüpfung auf NULL. Solche Einträge gelten wieder als unbekannt, damit
      * der nächste Abgleich sie neu zuordnen kann.
      */
@@ -80,7 +81,7 @@ public interface TelefonAnrufRepository extends JpaRepository<TelefonAnruf, Long
     @Query("""
             UPDATE TelefonAnruf a SET a.zuordnung = org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
             WHERE a.zuordnung <> org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
-              AND a.kunde IS NULL AND a.lieferant IS NULL
+              AND a.kunde IS NULL AND a.lieferant IS NULL AND a.steuerberater IS NULL
             """)
     int setzeVerwaisteZuordnungenZurueck();
 }

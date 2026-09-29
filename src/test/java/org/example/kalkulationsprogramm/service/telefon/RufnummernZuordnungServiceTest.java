@@ -4,12 +4,14 @@ import jakarta.persistence.EntityManager;
 import org.example.kalkulationsprogramm.domain.KontaktRufnummer;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +44,7 @@ class RufnummernZuordnungServiceTest {
 
     @Mock KundeRepository kunden;
     @Mock LieferantenRepository lieferanten;
+    @Mock SteuerberaterKontaktRepository steuerberater;
     @Mock KontaktRufnummerRepository gemerkte;
     @Mock TelefonEinstellungenService einstellungen;
     @Mock EntityManager em;
@@ -51,7 +54,7 @@ class RufnummernZuordnungServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RufnummernZuordnungService(kunden, lieferanten, gemerkte, einstellungen, em, clock);
+        service = new RufnummernZuordnungService(kunden, lieferanten, steuerberater, gemerkte, einstellungen, em, clock);
         when(einstellungen.landesvorwahl()).thenReturn("49");
         when(einstellungen.ortsvorwahl()).thenReturn("931");
         when(kunden.findeTelefonverzeichnis()).thenReturn(List.of(
@@ -63,6 +66,8 @@ class RufnummernZuordnungServiceTest {
         when(gemerkte.findAllMitKontakt()).thenReturn(List.of());
         when(em.getReference(eq(Kunde.class), anyLong())).thenAnswer(i -> kunde(i.getArgument(1)));
         when(em.getReference(eq(Lieferanten.class), anyLong())).thenAnswer(i -> lieferant(i.getArgument(1)));
+        when(em.getReference(eq(SteuerberaterKontakt.class), anyLong())).thenAnswer(i -> steuerberater(i.getArgument(1)));
+        when(steuerberater.findeTelefonverzeichnis()).thenReturn(List.of());
     }
 
     private static Kunde kunde(long id) {
@@ -77,6 +82,13 @@ class RufnummernZuordnungServiceTest {
         l.setId(id);
         l.setLieferantenname("Lieferant " + id);
         return l;
+    }
+
+    private static SteuerberaterKontakt steuerberater(long id) {
+        SteuerberaterKontakt s = new SteuerberaterKontakt();
+        s.setId(id);
+        s.setName("Kanzlei " + id);
+        return s;
     }
 
     private TelefonAnruf anruf(String nummer) {
@@ -176,20 +188,20 @@ class RufnummernZuordnungServiceTest {
         when(lieferanten.findById(10L)).thenReturn(Optional.of(lieferant(10L)));
         TelefonAnruf a = anruf("0800");
 
-        KontaktKurzDto k = service.ordneManuellZu(a, 1L, null);
+        KontaktKurzDto k = service.ordneManuellZu(a, 1L, null, null);
         assertThat(k.typ()).isEqualTo("KUNDE");
         assertThat(a.getZuordnung()).isEqualTo(TelefonZuordnung.MANUELL);
 
-        service.ordneManuellZu(a, null, 10L);
+        service.ordneManuellZu(a, null, 10L, null);
         assertThat(a.getKunde()).isNull();
         assertThat(a.getLieferant().getId()).isEqualTo(10L);
 
-        assertThatThrownBy(() -> service.ordneManuellZu(a, 1L, 10L)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.ordneManuellZu(a, null, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.ordneManuellZu(a, 1L, 10L, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.ordneManuellZu(a, null, null, null)).isInstanceOf(IllegalArgumentException.class);
         when(kunden.findById(99L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.ordneManuellZu(a, 99L, null)).hasMessageContaining("nicht gefunden");
+        assertThatThrownBy(() -> service.ordneManuellZu(a, 99L, null, null)).hasMessageContaining("nicht gefunden");
         when(lieferanten.findById(98L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.ordneManuellZu(a, null, 98L)).hasMessageContaining("nicht gefunden");
+        assertThatThrownBy(() -> service.ordneManuellZu(a, null, 98L, null)).hasMessageContaining("nicht gefunden");
 
         service.hebeZuordnungAuf(a);
         assertThat(a.getZuordnung()).isEqualTo(TelefonZuordnung.KEINE);
@@ -200,16 +212,16 @@ class RufnummernZuordnungServiceTest {
     @DisplayName("Nummer merken legt einen Eintrag an – aber nur einmal")
     void merken() {
         when(gemerkte.existsByKundeIdAndNummerNormalisiert(1L, "+4993155555")).thenReturn(false, true);
-        assertThat(service.merkeNummer("0931 55555", "+4993155555", 1L, null)).isTrue();
-        assertThat(service.merkeNummer("0931 55555", "+4993155555", 1L, null)).isFalse();
+        assertThat(service.merkeNummer("0931 55555", "+4993155555", 1L, null, null)).isTrue();
+        assertThat(service.merkeNummer("0931 55555", "+4993155555", 1L, null, null)).isFalse();
         ArgumentCaptor<KontaktRufnummer> c = ArgumentCaptor.forClass(KontaktRufnummer.class);
         verify(gemerkte, times(1)).save(c.capture());
         assertThat(c.getValue().getNummerRoh()).isEqualTo("0931 55555");
         assertThat(c.getValue().getKunde().getId()).isEqualTo(1L);
 
         when(gemerkte.existsByLieferantIdAndNummerNormalisiert(10L, "+4993155555")).thenReturn(false);
-        assertThat(service.merkeNummer(" ", "+4993155555", null, 10L)).isTrue();
-        assertThat(service.merkeNummer("x", null, 1L, null)).isFalse();
+        assertThat(service.merkeNummer(" ", "+4993155555", null, 10L, null)).isTrue();
+        assertThat(service.merkeNummer("x", null, 1L, null, null)).isFalse();
     }
 
     @Test
@@ -237,5 +249,124 @@ class RufnummernZuordnungServiceTest {
         a.setKunde(null);
         a.setLieferant(lieferant(10L));
         assertThat(RufnummernZuordnungService.kontaktVon(a).typ()).isEqualTo("LIEFERANT");
+    }
+
+    @Test
+    @DisplayName("Durchwahl: Anruf aus einer anderen Abteilung wird trotzdem als die Firma erkannt")
+    void durchwahlLieferant() {
+        when(lieferanten.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{20L, "Muster Baustoffe GmbH", "Kitzingen", "09321 7777-0", null}));
+        RufnummernZuordnungService.Verzeichnis v = service.frischesVerzeichnis();
+
+        for (String nummer : new String[]{"09321 77770", "093217777123", "+49 9321 7777 45678", "09321 7777"}) {
+            TelefonAnruf a = anruf(nummer);
+            service.ordneAutomatischZu(a, v);
+            assertThat(a.getLieferant()).as(nummer).isNotNull();
+            assertThat(a.getLieferant().getId()).as(nummer).isEqualTo(20L);
+        }
+        // Mehr als 5 Ziffern hinter dem Stamm, andere Nummer im selben Ortsnetz: nicht die Firma.
+        for (String nummer : new String[]{"09321 7777123456", "09321 777", "09321 12345"}) {
+            TelefonAnruf a = anruf(nummer);
+            service.ordneAutomatischZu(a, v);
+            assertThat(a.getZuordnung()).as(nummer).isEqualTo(TelefonZuordnung.KEINE);
+        }
+    }
+
+    @Test
+    @DisplayName("Durchwahl: nicht aus dem Handyfeld – fremde Anrufer werden nicht dem Kunden zugeordnet")
+    void keineDurchwahlAusHandyfeld() {
+        when(kunden.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{6L, "Erika Mustermann", "K-6", "Würzburg", null, "0931 5555-12"}));
+        RufnummernZuordnungService.Verzeichnis v = service.frischesVerzeichnis();
+        TelefonAnruf fremd = anruf("0931 555599");
+        service.ordneAutomatischZu(fremd, v);
+        assertThat(fremd.getZuordnung()).isEqualTo(TelefonZuordnung.KEINE);
+        TelefonAnruf exakt = anruf("0931 555512");
+        service.ordneAutomatischZu(exakt, v);
+        assertThat(exakt.getKunde().getId()).isEqualTo(6L);
+    }
+
+    @Test
+    @DisplayName("Durchwahl: exakte Nummer hat Vorrang, sonst gewinnt die längste Stammnummer")
+    void durchwahlVorrang() {
+        when(lieferanten.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{20L, "Muster Baustoffe GmbH", "Kitzingen", "09321 7777-0", null},
+                new Object[]{21L, "Muster Baustoffe Filiale", "Kitzingen", "09321 77771-0", null}));
+        when(kunden.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{5L, "Erika Mustermann", "K-5", "Kitzingen", "09321 777712", null}));
+        RufnummernZuordnungService.Verzeichnis v = service.frischesVerzeichnis();
+
+        TelefonAnruf exakt = anruf("09321 777712");
+        service.ordneAutomatischZu(exakt, v);
+        assertThat(exakt.getKunde().getId()).isEqualTo(5L);
+
+        TelefonAnruf filiale = anruf("09321 7777155");
+        service.ordneAutomatischZu(filiale, v);
+        assertThat(filiale.getLieferant().getId()).isEqualTo(21L);
+
+        TelefonAnruf zentrale = anruf("09321 777799");
+        service.ordneAutomatischZu(zentrale, v);
+        assertThat(zentrale.getLieferant().getId()).isEqualTo(20L);
+    }
+
+    @Test
+    @DisplayName("Steuerberater: Kanzleinummer, Ansprechpartner-Durchwahl und andere Durchwahlen → Kanzlei")
+    void steuerberaterErkannt() {
+        when(steuerberater.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-0"},
+                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-12"}));
+        RufnummernZuordnungService.Verzeichnis v = service.frischesVerzeichnis();
+
+        for (String nummer : new String[]{"0931 44440", "0931 444412", "0931 4444345"}) {
+            TelefonAnruf a = anruf(nummer);
+            assertThat(service.ordneAutomatischZu(a, v)).as(nummer).isTrue();
+            assertThat(a.getSteuerberater().getId()).as(nummer).isEqualTo(30L);
+            assertThat(a.getKunde()).isNull();
+            assertThat(a.getLieferant()).isNull();
+            KontaktKurzDto k = RufnummernZuordnungService.kontaktVon(a);
+            assertThat(k.typ()).isEqualTo("STEUERBERATER");
+            assertThat(k.name()).isEqualTo("Kanzlei 30");
+        }
+        assertThat(v.finde(service.normalisiere("0931 444412")).kontakte()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Steuerberater von Hand zuordnen, merken und wieder aufheben")
+    void steuerberaterManuell() {
+        when(steuerberater.findById(30L)).thenReturn(Optional.of(steuerberater(30L)));
+        when(steuerberater.findById(31L)).thenReturn(Optional.empty());
+        TelefonAnruf a = anruf("0800");
+        a.setKunde(kunde(1L));
+
+        KontaktKurzDto k = service.ordneManuellZu(a, null, null, 30L);
+        assertThat(k.typ()).isEqualTo("STEUERBERATER");
+        assertThat(a.getSteuerberater().getId()).isEqualTo(30L);
+        assertThat(a.getKunde()).isNull();
+        assertThat(a.getZuordnung()).isEqualTo(TelefonZuordnung.MANUELL);
+        assertThatThrownBy(() -> service.ordneManuellZu(a, 1L, null, 30L)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.ordneManuellZu(a, null, null, 31L)).hasMessageContaining("nicht gefunden");
+
+        when(gemerkte.existsBySteuerberaterIdAndNummerNormalisiert(30L, "+4993155555")).thenReturn(false);
+        assertThat(service.merkeNummer("0931 55555", "+4993155555", null, null, 30L)).isTrue();
+        ArgumentCaptor<KontaktRufnummer> c = ArgumentCaptor.forClass(KontaktRufnummer.class);
+        verify(gemerkte).save(c.capture());
+        assertThat(c.getValue().getSteuerberater().getId()).isEqualTo(30L);
+
+        service.hebeZuordnungAuf(a);
+        assertThat(a.getSteuerberater()).isNull();
+        assertThat(a.getZuordnung()).isEqualTo(TelefonZuordnung.KEINE);
+    }
+
+    @Test
+    @DisplayName("Gemerkte Steuerberater-Nummer mit Durchwahl-Schreibweise erkennt die ganze Anlage")
+    void gemerkteSteuerberaterNummer() {
+        KontaktRufnummer r = new KontaktRufnummer();
+        r.setSteuerberater(steuerberater(30L));
+        r.setNummerRoh("0931 6666-0");
+        r.setNummerNormalisiert("+4993166660");
+        when(gemerkte.findAllMitKontakt()).thenReturn(List.of(r));
+        TelefonAnruf a = anruf("0931 666677");
+        service.ordneAutomatischZu(a, service.frischesVerzeichnis());
+        assertThat(a.getSteuerberater().getId()).isEqualTo(30L);
     }
 }

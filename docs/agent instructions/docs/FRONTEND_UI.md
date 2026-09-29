@@ -114,6 +114,12 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - Mobile: eigene feste Overlays verwenden `mobileOverlayStyle` aus `components/ui/toast.tsx`. Die Höhe der Meldungsfläche wird zentral gemessen. Mehrere Meldungen, kleine verbleibende Dialoghöhe, erreichbare letzte Eingaben und Speichern gemeinsam prüfen.
 - Toasts dürfen auch bei offenem Dialog per Tastatur erreichbar sein. Dabei bleibt der übrige Seitenhintergrund gesperrt; Escape aus der Meldungsfläche darf keinen ungespeicherten Dialog verwerfen.
 
+### Fokus-Ringe nie abschneiden (Nutzervorgabe 29.09.2026)
+
+- `ring-*`, `outline` und `shadow-*` liegen außerhalb der Box – ein Vorfahre mit `overflow-*` (Scroll-Listen mit `max-h-*`, Dialog-Inhalte, Tabellen-Wrapper) schneidet sie ab.
+- Deshalb: Overflow-Container, deren Kinder einen Ring/Schatten bekommen, innen Luft geben und außen ausgleichen (`-m-1 p-1` bei `ring-2`), oder `ring-inset` am Element. Nicht `overflow` entfernen, nicht den Fokus-Ring weglassen.
+- Im Playwright-Screenshot erstes und letztes Element gewählt/fokussiert prüfen. Details: `.agents/rules/frontend.md`.
+
 ### Page Header Pattern (Zwingend für alle Seiten)
 ```tsx
 <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">

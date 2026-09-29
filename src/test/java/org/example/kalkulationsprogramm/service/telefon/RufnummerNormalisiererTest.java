@@ -77,4 +77,34 @@ class RufnummerNormalisiererTest {
         assertThat(RufnummerNormalisierer.normalisiere("0".repeat(10_001) + "1", "49", "0931")).isNull();
         assertThat(RufnummerNormalisierer.normalisiere("1".repeat(50), "49", "0931")).isNull();
     }
+
+    @Test
+    @DisplayName("Stammnummer aus Durchwahl-Schreibweise: Zentrale -0 und Durchwahlen bis 5 Ziffern")
+    void stammnummer() {
+        assertThat(RufnummerNormalisierer.stammnummer("09721 5555-0", "49", "0931")).isEqualTo("+4997215555");
+        assertThat(RufnummerNormalisierer.stammnummer("0931 4444 - 12", "49", "0931")).isEqualTo("+499314444");
+        assertThat(RufnummerNormalisierer.stammnummer("+49 (0) 9721 5555-12345", "49", "0931")).isEqualTo("+4997215555");
+        assertThat(RufnummerNormalisierer.stammnummer("4444-12", "49", "0931")).isEqualTo("+499314444");
+    }
+
+    @Test
+    @DisplayName("Keine Stammnummer: ohne Bindestrich, zu lange Durchwahl, Buchstaben oder zu kurzer Stamm")
+    void keineStammnummer() {
+        assertThat(RufnummerNormalisierer.stammnummer(null, "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("0931 12345", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("-12", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("0931 12345-", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("0931-1234567", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("0931 12345-1a", "49", "0931")).isNull();
+        // Bindestrich trennt nur die Vorwahl ab: Stamm "+499721" ist zu kurz.
+        assertThat(RufnummerNormalisierer.stammnummer("09721-5555", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("0931 12-34", "49", "0931")).isNull();
+        // Nur gegliedert, nicht Stamm + Durchwahl: mehrere Bindestriche.
+        assertThat(RufnummerNormalisierer.stammnummer("09721 12-34-56", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("0931-4444-12", "49", "0931")).isNull();
+        // Handys haben keine Durchwahlen.
+        assertThat(RufnummerNormalisierer.stammnummer("0171 1234-567", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("+49 160 12345-6", "49", "0931")).isNull();
+        assertThat(RufnummerNormalisierer.stammnummer("01521 12345-67", "49", "0931")).isNull();
+    }
 }

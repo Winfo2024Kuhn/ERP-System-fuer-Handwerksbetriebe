@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface KontaktRufnummerRepository extends JpaRepository<KontaktRufnummer, Long> {
 
-    @Query("SELECT r FROM KontaktRufnummer r LEFT JOIN FETCH r.kunde LEFT JOIN FETCH r.lieferant")
+    @Query("SELECT r FROM KontaktRufnummer r LEFT JOIN FETCH r.kunde LEFT JOIN FETCH r.lieferant LEFT JOIN FETCH r.steuerberater")
     List<KontaktRufnummer> findAllMitKontakt();
 
     List<KontaktRufnummer> findByKundeIdOrderByAngelegtAmAsc(Long kundeId);
@@ -18,4 +18,6 @@ public interface KontaktRufnummerRepository extends JpaRepository<KontaktRufnumm
     boolean existsByKundeIdAndNummerNormalisiert(Long kundeId, String nummerNormalisiert);
 
     boolean existsByLieferantIdAndNummerNormalisiert(Long lieferantId, String nummerNormalisiert);
+
+    boolean existsBySteuerberaterIdAndNummerNormalisiert(Long steuerberaterId, String nummerNormalisiert);
 }

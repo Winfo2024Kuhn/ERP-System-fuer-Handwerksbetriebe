@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonZuordnenDto;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.SprachnachrichtRepository;
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -44,18 +45,22 @@ public class TelefonService {
     private final TelefonAnrufRepository anrufRepository;
     private final SprachnachrichtRepository nachrichtRepository;
     private final KontaktRufnummerRepository kontaktRufnummerRepository;
+    private final SteuerberaterKontaktRepository steuerberaterRepository;
     private final RufnummernZuordnungService zuordnung;
     private final SprachnachrichtDateiablage ablage;
     private final Clock clock;
 
-    /** @param tag nur Anrufe dieses Tages; null = alle Tage */
+    /**
+     * @param tag        nur Anrufe dieses Tages; null = alle Tage
+     * @param kontaktart KUNDE, LIEFERANT oder STEUERBERATER; null = alle
+     */
     @Transactional(readOnly = true)
     public Page<TelefonAnrufDto> anrufe(TelefonAnrufArt art, boolean nurUnbekannt, String suche, LocalDate tag,
-                                        Long kundeId, Long lieferantId, int seite, int groesse) {
+                                        String kontaktart, Long kundeId, Long lieferantId, int seite, int groesse) {
         PageRequest seitenAnfrage = PageRequest.of(Math.max(0, seite), Math.clamp(groesse, 1, MAX_SEITENGROESSE),
                 Sort.by(Sort.Order.desc("zeitpunkt"), Sort.Order.desc("id")));
         return zuDtos(anrufRepository.findAll(
-                AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche, tag), seitenAnfrage));
+                AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche, tag, kontaktart), seitenAnfrage));
     }
 
     /**
@@ -159,6 +164,14 @@ public class TelefonService {
         return liste.stream().map(r -> new KontaktRufnummerDto(r.getId(), r.getNummerRoh())).toList();
     }
 
+    /** Kanzleien zur Auswahl beim Zuordnen – es sind nur wenige, deshalb ohne Suche. */
+    @Transactional(readOnly = true)
+    public List<KontaktKurzDto> steuerberaterAuswahl() {
+        return steuerberaterRepository.findAllFuerAuswahl().stream()
+                .map(s -> new KontaktKurzDto(KontaktKurzDto.STEUERBERATER, s.getId(), s.getName(), null, null))
+                .toList();
+    }
+
     @Transactional
     public void loescheKontaktRufnummer(Long id) {
         KontaktRufnummer r = kontaktRufnummerRepository.findById(id)
@@ -172,10 +185,10 @@ public class TelefonService {
      * und alle bisher unbekannten Anrufe/Nachrichten dieser Nummer werden nachgezogen.
      */
     private void ordneZu(TelefonKontaktZuordenbar eintrag, String nummerRoh, TelefonZuordnenDto dto) {
-        zuordnung.ordneManuellZu(eintrag, dto.kundeId(), dto.lieferantId());
+        zuordnung.ordneManuellZu(eintrag, dto.kundeId(), dto.lieferantId(), dto.steuerberaterId());
         String normalisiert = eintrag.getNummerNormalisiert();
         if (dto.nummerMerken() && normalisiert != null) {
-            zuordnung.merkeNummer(nummerRoh, normalisiert, dto.kundeId(), dto.lieferantId());
+            zuordnung.merkeNummer(nummerRoh, normalisiert, dto.kundeId(), dto.lieferantId(), dto.steuerberaterId());
             RufnummernZuordnungService.Verzeichnis verzeichnis = zuordnung.frischesVerzeichnis();
             for (TelefonAnruf a : anrufRepository.findByZuordnungAndNummerNormalisiert(TelefonZuordnung.KEINE, normalisiert)) {
                 zuordnung.ordneAutomatischZu(a, verzeichnis);

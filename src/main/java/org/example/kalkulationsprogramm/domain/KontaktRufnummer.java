@@ -7,8 +7,9 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * Zusätzliche Rufnummer eines Kunden oder Lieferanten ("Weitere Rufnummern"),
- * z.B. beim Zuordnen eines Anrufs gemerkt. Genau einer von kunde/lieferant ist gesetzt.
+ * Zusätzliche Rufnummer eines Kunden, Lieferanten oder Steuerberaters ("Weitere
+ * Rufnummern"), z.B. beim Zuordnen eines Anrufs gemerkt. Genau einer von
+ * kunde/lieferant/steuerberater ist gesetzt.
  */
 @Getter
 @Setter
@@ -27,6 +28,10 @@ public class KontaktRufnummer {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lieferant_id")
     private Lieferanten lieferant;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "steuerberater_id")
+    private SteuerberaterKontakt steuerberater;
 
     @Column(name = "nummer_roh", nullable = false, length = 40)
     private String nummerRoh;

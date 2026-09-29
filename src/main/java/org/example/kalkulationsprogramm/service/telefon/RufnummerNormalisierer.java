@@ -11,6 +11,14 @@ public final class RufnummerNormalisierer {
 
     private static final int MIN_ZIFFERN = 3;
     private static final int MAX_LAENGE = 40;
+    /** Längste Durchwahl, die hinter einer Stammnummer erkannt wird. */
+    public static final int MAX_DURCHWAHL = 5;
+    /**
+     * Mindestlänge einer Stammnummer (Ziffern inkl. Ländervorwahl). Schützt davor,
+     * dass ein Bindestrich nur die Vorwahl abtrennt ("09721-5555") und dann jeder
+     * Anrufer aus diesem Ortsnetz als die Firma erkannt würde.
+     */
+    static final int MIN_STAMM_ZIFFERN = 9;
 
     private RufnummerNormalisierer() {
     }
@@ -53,6 +61,49 @@ public final class RufnummerNormalisierer {
             return null;
         }
         return ergebnis;
+    }
+
+    /**
+     * Stammnummer einer Firmennummer in Durchwahl-Schreibweise (DIN 5008), z.B.
+     * "09721 5555-0" (Zentrale) oder "0931 4444-12" → "+4997215555" bzw.
+     * "+499314444". Anrufe von jeder Durchwahl dieser Stammnummer gehören zur Firma.
+     * <p>
+     * Deutsche Rufnummern sind innerhalb einer Vorwahl präfixfrei: Eine
+     * vollständige Stammnummer kann nicht der Anfang einer fremden Nummer sein.
+     * Das gilt aber nur, wenn vor dem Strich wirklich die Stammnummer steht.
+     * Deshalb keine Stammnummer bei weiteren Bindestrichen davor
+     * ("09721 12-34-56" ist nur gegliedert) und keine bei Mobilfunk
+     * (015x/016x/017x) – Handys haben keine Durchwahlen.
+     *
+     * @return Stammnummer in E.164 oder {@code null}, wenn keine Durchwahl-Schreibweise
+     *         vorliegt oder die Stammnummer zu kurz ist
+     */
+    public static String stammnummer(String roh, String landesvorwahl, String ortsvorwahl) {
+        if (roh == null) {
+            return null;
+        }
+        String s = roh.trim();
+        int strich = s.lastIndexOf('-');
+        if (strich <= 0) {
+            return null;
+        }
+        String durchwahl = s.substring(strich + 1).trim();
+        if (durchwahl.isEmpty() || durchwahl.length() > MAX_DURCHWAHL || !nurZiffern(durchwahl).equals(durchwahl)) {
+            return null;
+        }
+        String vorDemStrich = s.substring(0, strich);
+        if (vorDemStrich.indexOf('-') >= 0) {
+            return null;
+        }
+        String stamm = normalisiere(vorDemStrich, landesvorwahl, ortsvorwahl);
+        if (stamm == null || stamm.length() - 1 < MIN_STAMM_ZIFFERN || istDeutscherMobilfunk(stamm)) {
+            return null;
+        }
+        return stamm;
+    }
+
+    private static boolean istDeutscherMobilfunk(String e164) {
+        return e164.startsWith("+4915") || e164.startsWith("+4916") || e164.startsWith("+4917");
     }
 
     /** "+49 (0) 931" → "+49  931": die deutsche Konvention "(0)" wird verworfen. */

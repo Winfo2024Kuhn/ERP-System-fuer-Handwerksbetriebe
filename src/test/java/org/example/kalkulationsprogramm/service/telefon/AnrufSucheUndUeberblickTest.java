@@ -6,6 +6,8 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
@@ -15,6 +17,7 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRep
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +52,7 @@ class AnrufSucheUndUeberblickTest {
     @Autowired KundeRepository kunden;
     @Autowired LieferantenRepository lieferanten;
     @Autowired ProjektRepository projekte;
+    @Autowired SteuerberaterKontaktRepository steuerberater;
     @Autowired AnfrageRepository anfragen;
     @Autowired AusgangsGeschaeftsDokumentRepository dokumente;
     @Autowired AnrufKontaktUeberblickService ueberblickService;
@@ -56,6 +60,7 @@ class AnrufSucheUndUeberblickTest {
     private Kunde mustermann;
     private Kunde musterfrau;
     private Lieferanten stahl;
+    private SteuerberaterKontakt kanzlei;
 
     @BeforeEach
     void setUp() {
@@ -86,6 +91,30 @@ class AnrufSucheUndUeberblickTest {
         anruf(musterfrau, null, "097211111", null);
         anruf(null, stahl, "093215555", null);
         anruf(null, null, "08001234", "Fremde Firma");
+
+        kanzlei = new SteuerberaterKontakt();
+        kanzlei.setName("Kanzlei Beispiel");
+        kanzlei.setEmail("kanzlei@example.com");
+        kanzlei.setTelefon("0931 4444-0");
+        SteuerberaterAnsprechpartner frau = new SteuerberaterAnsprechpartner();
+        frau.setSteuerberater(kanzlei);
+        frau.setVorname("Christine");
+        frau.setNachname("Beispiel-Lohn");
+        frau.setTelefon("0931 4444-12");
+        SteuerberaterAnsprechpartner leer = new SteuerberaterAnsprechpartner();
+        leer.setSteuerberater(kanzlei);
+        leer.setNachname(" ");
+        kanzlei.getAnsprechpartnerListe().addAll(List.of(frau, leer));
+        kanzlei = steuerberater.save(kanzlei);
+        TelefonAnruf vomSteuerberater = new TelefonAnruf();
+        vomSteuerberater.setZeitpunkt(ZEIT);
+        vomSteuerberater.setArt(TelefonAnrufArt.ANGENOMMEN);
+        vomSteuerberater.setNummerRoh("0931444412");
+        vomSteuerberater.setEigeneNummer("2323");
+        vomSteuerberater.setSteuerberater(kanzlei);
+        vomSteuerberater.setZuordnung(TelefonZuordnung.AUTOMATISCH);
+        vomSteuerberater.setAngelegtAm(ZEIT);
+        anrufe.save(vomSteuerberater);
     }
 
     @Nested
@@ -110,7 +139,7 @@ class AnrufSucheUndUeberblickTest {
             assertThat(nummern("hans")).containsExactly("093215555");
             assertThat(nummern("kitzingen")).containsExactly("093215555");
             assertThat(nummern("KD-4711")).containsExactly("093215555");
-            assertThat(nummern("beispiel")).containsExactlyInAnyOrder("09311234567", "093215555");
+            assertThat(nummern("beispiel")).containsExactlyInAnyOrder("09311234567", "093215555", "0931444412");
         }
 
         @Test
@@ -138,7 +167,7 @@ class AnrufSucheUndUeberblickTest {
             assertThat(nummern("_")).isEmpty();
             assertThat(nummern("'; DROP TABLE telefon_anruf; --")).isEmpty();
             assertThat(nummern("<script>alert(1)</script>")).isEmpty();
-            assertThat(anrufe.count()).isEqualTo(4);
+            assertThat(anrufe.count()).isEqualTo(5);
         }
 
         @Test
@@ -153,13 +182,13 @@ class AnrufSucheUndUeberblickTest {
         @Test
         @DisplayName("Zählabfrage bei mehreren Seiten: mit und ohne Suche, mit Filter nach Kontakt")
         void zaehlabfrage() {
-            var ohneSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, null, null), PageRequest.of(0, 1));
+            var ohneSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, null, null, null), PageRequest.of(0, 1));
             assertThat(ohneSuche.getContent()).hasSize(1);
-            assertThat(ohneSuche.getTotalElements()).isEqualTo(4);
-            var mitSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, "muster", null), PageRequest.of(1, 1));
+            assertThat(ohneSuche.getTotalElements()).isEqualTo(5);
+            var mitSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, "muster", null, null), PageRequest.of(1, 1));
             assertThat(mitSuche.getContent()).hasSize(1);
             assertThat(mitSuche.getTotalElements()).isEqualTo(3);
-            var mitKontakt = anrufe.findAll(AnrufSuche.filter(null, false, mustermann.getId(), null, "max würzburg", null),
+            var mitKontakt = anrufe.findAll(AnrufSuche.filter(null, false, mustermann.getId(), null, "max würzburg", null, null),
                     PageRequest.of(0, 1));
             assertThat(mitKontakt.getTotalElements()).isEqualTo(1);
         }
@@ -171,7 +200,7 @@ class AnrufSucheUndUeberblickTest {
             anruf(mustermann, null, "0931-spaet", null, LocalDateTime.of(2026, 9, 29, 23, 59, 59));
             anruf(mustermann, null, "0931-frueh", null, LocalDateTime.of(2026, 9, 29, 0, 0));
 
-            assertThat(tag(LocalDate.of(2026, 9, 29), null)).hasSize(6).doesNotContain("0931-mitternacht");
+            assertThat(tag(LocalDate.of(2026, 9, 29), null)).hasSize(7).doesNotContain("0931-mitternacht");
             assertThat(tag(LocalDate.of(2026, 9, 30), null)).containsExactly("0931-mitternacht");
             assertThat(tag(LocalDate.of(2026, 9, 28), null)).isEmpty();
             assertThat(tag(LocalDate.of(2026, 9, 29), "hans")).containsExactly("093215555");
@@ -179,9 +208,27 @@ class AnrufSucheUndUeberblickTest {
         }
 
         private List<String> tag(LocalDate tag, String suche) {
-            return anrufe.findAll(AnrufSuche.filter(null, false, null, null, suche, tag),
+            return anrufe.findAll(AnrufSuche.filter(null, false, null, null, suche, tag, null),
                             PageRequest.of(0, 50, Sort.by(Sort.Order.desc("zeitpunkt"))))
                     .map(TelefonAnruf::getNummerRoh).getContent();
+        }
+
+        @Test
+        @DisplayName("Steuerberater: Suche über Kanzlei und Ansprechpartner, Filter nach Kontaktart")
+        void steuerberater() {
+            assertThat(nummern("kanzlei")).containsExactly("0931444412");
+            assertThat(nummern("christine")).containsExactly("0931444412");
+            assertThat(nummern("beispiel-lohn")).containsExactly("0931444412");
+            assertThat(art("STEUERBERATER")).containsExactly("0931444412");
+            assertThat(art("KUNDE")).containsExactlyInAnyOrder("09311234567", "097211111");
+            assertThat(art("LIEFERANT")).containsExactly("093215555");
+            assertThatThrownBy(() -> art("PRIVAT")).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> art("'; DROP TABLE telefon_anruf; --")).isInstanceOf(IllegalArgumentException.class);
+        }
+
+        private List<String> art(String kontaktart) {
+            return anrufe.findAll(AnrufSuche.filter(null, false, null, null, null, null, kontaktart),
+                    PageRequest.of(0, 50)).map(TelefonAnruf::getNummerRoh).getContent();
         }
 
         @Test
@@ -202,7 +249,7 @@ class AnrufSucheUndUeberblickTest {
 
         private List<TelefonAnruf> treffer(TelefonAnrufArt art, boolean nurUnbekannt, Long kundeId, Long lieferantId,
                                            String suche) {
-            return anrufe.findAll(AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche, null),
+            return anrufe.findAll(AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche, null, null),
                     PageRequest.of(0, 50, Sort.by(Sort.Order.desc("zeitpunkt")))).getContent();
         }
     }
@@ -214,7 +261,7 @@ class AnrufSucheUndUeberblickTest {
         @Test
         @DisplayName("Kunde: Stammdaten, Projekte und Anfragen – offene zuerst, dann die neuesten")
         void kunde() {
-            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(mustermann.getId(), null);
+            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(mustermann.getId(), null, null);
 
             assertThat(dto.typ()).isEqualTo("KUNDE");
             assertThat(dto.name()).isEqualTo("Max Mustermann");
@@ -242,7 +289,7 @@ class AnrufSucheUndUeberblickTest {
                 projekt(musterfrau, "Wartung " + i, "2026-5" + String.format("%02d", i), false,
                         LocalDate.of(2026, 1, 1).plusDays(i));
             }
-            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(musterfrau.getId(), null);
+            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(musterfrau.getId(), null, null);
             assertThat(dto.projekte()).hasSize(AnrufKontaktUeberblickDto.MAX_EINTRAEGE);
             assertThat(dto.projekteGesamt()).isEqualTo(AnrufKontaktUeberblickDto.MAX_EINTRAEGE + 5);
             assertThat(dto.projekte().getFirst().bauvorhaben()).isEqualTo("Wartung 54");
@@ -251,7 +298,7 @@ class AnrufSucheUndUeberblickTest {
         @Test
         @DisplayName("Kunde ohne Projekte und Anfragen liefert leere Listen")
         void kundeOhneVorgaenge() {
-            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(musterfrau.getId(), null);
+            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(musterfrau.getId(), null, null);
             assertThat(dto.ansprechpartner()).isNull();
             assertThat(dto.projekte()).isEmpty();
             assertThat(dto.anfragen()).isEmpty();
@@ -260,7 +307,7 @@ class AnrufSucheUndUeberblickTest {
         @Test
         @DisplayName("Lieferant: Vertreter als Ansprechpartner, keine Kundennummer")
         void lieferant() {
-            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(null, stahl.getId());
+            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(null, stahl.getId(), null);
             assertThat(dto.typ()).isEqualTo("LIEFERANT");
             assertThat(dto.name()).isEqualTo("Stahl Muster KG");
             assertThat(dto.ansprechpartner()).isEqualTo("Hans Beispiel");
@@ -270,13 +317,33 @@ class AnrufSucheUndUeberblickTest {
         }
 
         @Test
+        @DisplayName("Steuerberater: Kanzlei mit ihren Ansprechpartnern, ohne Adresse und Projekte")
+        void steuerberaterUeberblick() {
+            AnrufKontaktUeberblickDto dto = ueberblickService.ueberblick(null, null, kanzlei.getId());
+            assertThat(dto.typ()).isEqualTo("STEUERBERATER");
+            assertThat(dto.name()).isEqualTo("Kanzlei Beispiel");
+            assertThat(dto.ansprechpartner()).isEqualTo("Christine Beispiel-Lohn");
+            assertThat(dto.ort()).isNull();
+            assertThat(dto.projekte()).isEmpty();
+            assertThatThrownBy(() -> ueberblickService.ueberblick(null, 1L, kanzlei.getId())).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> ueberblickService.ueberblick(null, null, Long.MAX_VALUE)).isInstanceOf(NoSuchElementException.class);
+
+            SteuerberaterKontakt alt = new SteuerberaterKontakt();
+            alt.setName("Alte Kanzlei");
+            alt.setEmail("alt@example.com");
+            alt.setAnsprechpartner("Herr Muster");
+            alt = steuerberater.save(alt);
+            assertThat(ueberblickService.ueberblick(null, null, alt.getId()).ansprechpartner()).isEqualTo("Herr Muster");
+        }
+
+        @Test
         @DisplayName("Ungültige Angaben: keine oder beide IDs, unbekannte IDs")
         void ungueltig() {
-            assertThatThrownBy(() -> ueberblickService.ueberblick(null, null)).isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> ueberblickService.ueberblick(1L, 1L)).isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> ueberblickService.ueberblick(Long.MAX_VALUE, null)).isInstanceOf(NoSuchElementException.class);
-            assertThatThrownBy(() -> ueberblickService.ueberblick(-1L, null)).isInstanceOf(NoSuchElementException.class);
-            assertThatThrownBy(() -> ueberblickService.ueberblick(null, 0L)).isInstanceOf(NoSuchElementException.class);
+            assertThatThrownBy(() -> ueberblickService.ueberblick(null, null, null)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> ueberblickService.ueberblick(1L, 1L, null)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> ueberblickService.ueberblick(Long.MAX_VALUE, null, null)).isInstanceOf(NoSuchElementException.class);
+            assertThatThrownBy(() -> ueberblickService.ueberblick(-1L, null, null)).isInstanceOf(NoSuchElementException.class);
+            assertThatThrownBy(() -> ueberblickService.ueberblick(null, 0L, null)).isInstanceOf(NoSuchElementException.class);
         }
     }
 

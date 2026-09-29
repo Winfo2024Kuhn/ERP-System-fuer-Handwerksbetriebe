@@ -6,7 +6,7 @@ import { ladeAnrufe, ladeSprachnachrichten, ladeStatus } from './api';
 import { ArtSymbol } from './ArtSymbol';
 import { anrufbeantworterName, formatDauerMinuten, formatWann } from './format';
 import { SprachnachrichtEintrag } from './SprachnachrichtEintrag';
-import type { Anrufbeantworter, KontaktTyp, Sprachnachricht, TelefonAnruf, ZuordnenZiel } from './types';
+import type { Anrufbeantworter, AktenTyp, Sprachnachricht, TelefonAnruf, ZuordnenZiel } from './types';
 import { useZuordnen } from './useZuordnen';
 import { ZuordnungsMenue } from './WerAnzeige';
 
@@ -27,7 +27,7 @@ type Zeile =
     | { art: 'nachricht'; zeitpunkt: string; nachricht: Sprachnachricht };
 
 interface KontaktAnrufeTabProps {
-    typ: KontaktTyp;
+    typ: AktenTyp;
     kontaktId: number;
 }
 

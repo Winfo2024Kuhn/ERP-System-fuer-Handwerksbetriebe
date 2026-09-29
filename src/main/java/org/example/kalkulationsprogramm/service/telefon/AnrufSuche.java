@@ -13,9 +13,12 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
+import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDate;
@@ -33,7 +36,8 @@ import java.util.Locale;
  * beim Kunden Name, Ansprechpartner, Kundennummer, Adresse, Telefon und
  * E-Mail, dazu Bauvorhaben, Auftragsnummer und Baustellen-Adresse seiner
  * Projekte und Anfragen; beim Lieferanten Name, Kurzname, Vertreter,
- * Adresse, unsere Kundennummer, Telefon und E-Mail.</p>
+ * Adresse, unsere Kundennummer, Telefon und E-Mail; beim Steuerberater
+ * Kanzlei, Ansprechpartner (Name, Telefon, E-Mail), Telefon und E-Mail.</p>
  */
 final class AnrufSuche {
 
@@ -44,13 +48,19 @@ final class AnrufSuche {
     private AnrufSuche() {
     }
 
-    /** @param tag nur Anrufe dieses Tages (Ortszeit, 0:00 bis unter 24:00); null = alle Tage */
+    /**
+     * @param tag        nur Anrufe dieses Tages (Ortszeit, 0:00 bis unter 24:00); null = alle Tage
+     * @param kontaktart nur Anrufe von Kunden, Lieferanten oder Steuerberatern
+     *                   ({@link KontaktKurzDto#KUNDE} usw.); null = alle
+     */
     static Specification<TelefonAnruf> filter(TelefonAnrufArt art, boolean nurUnbekannt, Long kundeId,
-                                              Long lieferantId, String suche, LocalDate tag) {
+                                              Long lieferantId, String suche, LocalDate tag, String kontaktart) {
+        pruefeKontaktart(kontaktart);
         List<String> muster = suchmuster(suche);
         return (root, query, cb) -> {
             Join<TelefonAnruf, Kunde> kunde = kontaktJoin(root, query, "kunde");
             Join<TelefonAnruf, Lieferanten> lieferant = kontaktJoin(root, query, "lieferant");
+            Join<TelefonAnruf, SteuerberaterKontakt> steuerberater = kontaktJoin(root, query, "steuerberater");
 
             List<Predicate> bedingungen = new ArrayList<>();
             if (art != null) {
@@ -65,12 +75,19 @@ final class AnrufSuche {
             if (lieferantId != null) {
                 bedingungen.add(cb.equal(lieferant.get("id"), lieferantId));
             }
+            if (KontaktKurzDto.KUNDE.equals(kontaktart)) {
+                bedingungen.add(cb.isNotNull(root.get("kunde")));
+            } else if (KontaktKurzDto.LIEFERANT.equals(kontaktart)) {
+                bedingungen.add(cb.isNotNull(root.get("lieferant")));
+            } else if (KontaktKurzDto.STEUERBERATER.equals(kontaktart)) {
+                bedingungen.add(cb.isNotNull(root.get("steuerberater")));
+            }
             if (tag != null) {
                 bedingungen.add(cb.greaterThanOrEqualTo(root.get("zeitpunkt"), tag.atStartOfDay()));
                 bedingungen.add(cb.lessThan(root.get("zeitpunkt"), tag.plusDays(1).atStartOfDay()));
             }
             for (String wort : muster) {
-                bedingungen.add(trifft(wort, root, kunde, lieferant, query, cb));
+                bedingungen.add(trifft(wort, root, kunde, lieferant, steuerberater, query, cb));
             }
             return cb.and(bedingungen.toArray(Predicate[]::new));
         };
@@ -111,8 +128,16 @@ final class AnrufSuche {
         return (Join<TelefonAnruf, T>) fetch;
     }
 
+    private static void pruefeKontaktart(String kontaktart) {
+        if (kontaktart != null && !KontaktKurzDto.KUNDE.equals(kontaktart) && !KontaktKurzDto.LIEFERANT.equals(kontaktart)
+                && !KontaktKurzDto.STEUERBERATER.equals(kontaktart)) {
+            throw new IllegalArgumentException("Unbekannte Kontaktart.");
+        }
+    }
+
     private static Predicate trifft(String muster, Root<TelefonAnruf> anruf, Join<TelefonAnruf, Kunde> kunde,
-                                    Join<TelefonAnruf, Lieferanten> lieferant, CriteriaQuery<?> query,
+                                    Join<TelefonAnruf, Lieferanten> lieferant,
+                                    Join<TelefonAnruf, SteuerberaterKontakt> steuerberater, CriteriaQuery<?> query,
                                     CriteriaBuilder cb) {
         List<Predicate> treffer = new ArrayList<>();
         felder(treffer, cb, muster, anruf, "nummerRoh", "nummerNormalisiert", "nameFritzbox");
@@ -120,6 +145,8 @@ final class AnrufSuche {
                 "telefon", "mobiltelefon");
         felder(treffer, cb, muster, lieferant, "lieferantenname", "aliasName", "vertreter", "strasse", "plz", "ort",
                 "eigeneKundennummer", "telefon", "mobiltelefon");
+        felder(treffer, cb, muster, steuerberater, "name", "ansprechpartner", "telefon", "email");
+        treffer.add(cb.exists(ansprechpartnerTrifft(steuerberater, muster, query, cb)));
         treffer.add(cb.exists(emailTrifft(Kunde.class, kunde, muster, query, cb)));
         treffer.add(cb.exists(emailTrifft(Lieferanten.class, lieferant, muster, query, cb)));
         treffer.add(cb.exists(projektTrifft(kunde, muster, query, cb)));
@@ -145,6 +172,18 @@ final class AnrufSuche {
         Join<K, String> email = k.join("kundenEmails");
         return sq.select(cb.literal(1))
                 .where(cb.equal(k, kontakt), wie(cb, email, muster));
+    }
+
+    private static Subquery<Integer> ansprechpartnerTrifft(Join<TelefonAnruf, SteuerberaterKontakt> steuerberater,
+                                                           String muster, CriteriaQuery<?> query, CriteriaBuilder cb) {
+        Subquery<Integer> sq = query.subquery(Integer.class);
+        Root<SteuerberaterAnsprechpartner> a = sq.from(SteuerberaterAnsprechpartner.class);
+        return sq.select(cb.literal(1)).where(
+                cb.equal(a.get("steuerberater"), steuerberater),
+                cb.or(wie(cb, a.get("vorname"), muster),
+                        wie(cb, a.get("nachname"), muster),
+                        wie(cb, a.get("telefon"), muster),
+                        wie(cb, a.get("email"), muster)));
     }
 
     private static Subquery<Integer> projektTrifft(Join<TelefonAnruf, Kunde> kunde, String muster,

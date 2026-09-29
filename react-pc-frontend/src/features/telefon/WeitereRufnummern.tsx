@@ -3,7 +3,7 @@ import { PhoneForwarded, Trash2 } from 'lucide-react';
 import { useConfirm } from '../../components/ui/confirm-dialog';
 import { useToast } from '../../components/ui/toast';
 import { ladeKontaktRufnummern, loescheKontaktRufnummer } from './api';
-import type { KontaktRufnummer, KontaktTyp } from './types';
+import type { KontaktRufnummer, AktenTyp } from './types';
 
 /**
  * „Weitere Rufnummern" unter den Telefonfeldern der Akte: Nummern, die beim
@@ -11,7 +11,7 @@ import type { KontaktRufnummer, KontaktTyp } from './types';
  * nur, wer das Telefon-Recht hat. Ist die Liste leer, erscheint nichts.
  */
 interface WeitereRufnummernProps {
-    typ: KontaktTyp;
+    typ: AktenTyp;
     kontaktId: number;
     darfLoeschen: boolean;
 }

@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.domain;
 
 /**
  * Gemeinsame Sicht auf Anrufe und Sprachnachrichten, damit die Zuordnung zu
- * Kunde/Lieferant für beide mit derselben Logik läuft.
+ * Kunde/Lieferant/Steuerberater für beide mit derselben Logik läuft.
  */
 public interface TelefonKontaktZuordenbar {
     String getNummerNormalisiert();
@@ -14,6 +14,10 @@ public interface TelefonKontaktZuordenbar {
     Lieferanten getLieferant();
 
     void setLieferant(Lieferanten lieferant);
+
+    SteuerberaterKontakt getSteuerberater();
+
+    void setSteuerberater(SteuerberaterKontakt steuerberater);
 
     TelefonZuordnung getZuordnung();
 

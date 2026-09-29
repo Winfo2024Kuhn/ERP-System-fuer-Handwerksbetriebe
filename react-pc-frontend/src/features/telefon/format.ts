@@ -1,5 +1,5 @@
 import { parseIsoDatum } from '../../lib/datum';
-import type { Anrufbeantworter } from './types';
+import type { Anrufbeantworter, KontaktTyp } from './types';
 
 /**
  * Anzeige-Helfer der Telefon-Oberfläche. Reine Funktionen ohne JSX, damit
@@ -100,3 +100,10 @@ export function tagAnzeige(tag: string): string {
     const datum = parseIsoDatum(tag);
     return datum ? datum.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : tag;
 }
+
+/** Anzeigename der Kontaktart – für Schild, Filter und Zuordnen. */
+export const KONTAKTART_TEXT: Record<KontaktTyp, string> = {
+    KUNDE: 'Kunde',
+    LIEFERANT: 'Lieferant',
+    STEUERBERATER: 'Steuerberater',
+};

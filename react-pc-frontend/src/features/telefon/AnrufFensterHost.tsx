@@ -37,7 +37,8 @@ export function AnrufFensterHost({ akteInNeuemTab = false }: { akteInNeuemTab?: 
     }, [akteInNeuemTab, aktuelleId, navigate, schliessen]);
 
     const oeffneKontakt = useCallback((kontakt: KontaktKurz) => {
-        oeffne(aktenPfad(kontakt.typ, kontakt.id));
+        const pfad = aktenPfad(kontakt.typ, kontakt.id);
+        if (pfad) oeffne(pfad);
     }, [oeffne]);
 
     if (!aktuell) return null;

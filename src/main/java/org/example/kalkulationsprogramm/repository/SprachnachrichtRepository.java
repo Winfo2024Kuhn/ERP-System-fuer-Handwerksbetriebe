@@ -19,6 +19,7 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
             SELECT s FROM Sprachnachricht s
             LEFT JOIN FETCH s.kunde k
             LEFT JOIN FETCH s.lieferant l
+            LEFT JOIN FETCH s.steuerberater
             LEFT JOIN FETCH s.anruf
             LEFT JOIN FETCH s.abgehoertVon
             WHERE (:nurNeue = false OR s.abgehoertAm IS NULL)
@@ -58,7 +59,7 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
     @Query("""
             UPDATE Sprachnachricht s SET s.zuordnung = org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
             WHERE s.zuordnung <> org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
-              AND s.kunde IS NULL AND s.lieferant IS NULL
+              AND s.kunde IS NULL AND s.lieferant IS NULL AND s.steuerberater IS NULL
             """)
     int setzeVerwaisteZuordnungenZurueck();
 
@@ -70,6 +71,7 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
             SELECT s FROM Sprachnachricht s
             LEFT JOIN FETCH s.kunde
             LEFT JOIN FETCH s.lieferant
+            LEFT JOIN FETCH s.steuerberater
             WHERE s.abgehoertAm IS NULL
             ORDER BY s.zeitpunkt DESC
             """)

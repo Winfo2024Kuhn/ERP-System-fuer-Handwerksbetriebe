@@ -171,6 +171,7 @@ class TelefonControllerSecurityTest {
         mvc.perform(post("/api/telefon/abholen").with(ohneRecht()).with(csrf())).andExpect(status().isForbidden());
         mvc.perform(delete("/api/telefon/kontakt-rufnummern/1").with(ohneRecht()).with(csrf())).andExpect(status().isForbidden());
         mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "5").with(ohneRecht())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/telefon/steuerberater").with(ohneRecht())).andExpect(status().isForbidden());
         verifyNoInteractions(telefonService, liveService, abholService, kontaktUeberblick);
     }
 
@@ -188,7 +189,7 @@ class TelefonControllerSecurityTest {
     @Test
     @DisplayName("Mit Recht: Anrufliste mit Filtern")
     void anrufliste() throws Exception {
-        when(telefonService.anrufe(eq(TelefonAnrufArt.VERPASST), eq(true), eq("muster"), isNull(), isNull(), isNull(), eq(0), eq(50)))
+        when(telefonService.anrufe(eq(TelefonAnrufArt.VERPASST), eq(true), eq("muster"), isNull(), isNull(), isNull(), isNull(), eq(0), eq(50)))
                 .thenReturn(new PageImpl<>(List.of(anruf())));
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht())
                         .param("art", "VERPASST").param("nurUnbekannt", "true").param("suche", "muster"))
@@ -201,7 +202,7 @@ class TelefonControllerSecurityTest {
     @DisplayName("Mit Recht: Tagesfilter für Anrufe und Anrufbeantworter; ungültiges Datum 400")
     void tagesfilter() throws Exception {
         LocalDate tag = LocalDate.of(2026, 9, 29);
-        when(telefonService.anrufe(isNull(), eq(false), isNull(), eq(tag), isNull(), isNull(), eq(0), eq(50)))
+        when(telefonService.anrufe(isNull(), eq(false), isNull(), eq(tag), isNull(), isNull(), isNull(), eq(0), eq(50)))
                 .thenReturn(new PageImpl<>(List.of(anruf())));
         when(telefonService.sprachnachrichten(false, null, tag, null, null)).thenReturn(List.of(nachricht()));
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("tag", "2026-09-29"))
@@ -215,9 +216,36 @@ class TelefonControllerSecurityTest {
     }
 
     @Test
+    @DisplayName("Mit Recht: Kontaktart-Filter, Kanzlei-Auswahl und Überblick zum Steuerberater")
+    void steuerberater() throws Exception {
+        when(telefonService.anrufe(isNull(), eq(false), isNull(), isNull(), eq("STEUERBERATER"), isNull(), isNull(), eq(0), eq(50)))
+                .thenReturn(new PageImpl<>(List.of(anruf())));
+        mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("kontaktart", "STEUERBERATER"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(1));
+        when(telefonService.anrufe(isNull(), eq(false), isNull(), isNull(), eq("PRIVAT"), isNull(), isNull(), eq(0), eq(50)))
+                .thenThrow(new IllegalArgumentException("Unbekannte Kontaktart."));
+        mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("kontaktart", "PRIVAT"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Unbekannte Kontaktart."));
+
+        when(telefonService.steuerberaterAuswahl()).thenReturn(List.of(new KontaktKurzDto("STEUERBERATER", 30L, "Kanzlei Beispiel", null, null)));
+        mvc.perform(get("/api/telefon/steuerberater").with(mitRecht()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].name").value("Kanzlei Beispiel"));
+
+        when(kontaktUeberblick.ueberblick(null, null, 30L)).thenReturn(new AnrufKontaktUeberblickDto("STEUERBERATER", 30L,
+                "Kanzlei Beispiel", null, "Christine Beispiel", null, null, null, List.of(), 0, List.of(), 0));
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("steuerberaterId", "30").with(mitRecht()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.ansprechpartner").value("Christine Beispiel"));
+
+        mvc.perform(post("/api/telefon/anrufe/1/zuordnung").with(mitRecht()).with(csrf())
+                .contentType("application/json").content("{\"steuerberaterId\":30,\"nummerMerken\":true}"))
+                .andExpect(status().isOk());
+        verify(telefonService).ordneAnrufZu(1L, new TelefonZuordnenDto(null, null, 30L, true));
+    }
+
+    @Test
     @DisplayName("Mit Recht: Überblick für das Anruf-Fenster mit Projekten und Anfragen")
     void kontaktUeberblick() throws Exception {
-        when(kontaktUeberblick.ueberblick(5L, null)).thenReturn(new AnrufKontaktUeberblickDto("KUNDE", 5L,
+        when(kontaktUeberblick.ueberblick(5L, null, null)).thenReturn(new AnrufKontaktUeberblickDto("KUNDE", 5L,
                 "Max Mustermann", "K-1", "Erika Mustermann", "Hauptstraße 1", "97070", "Würzburg",
                 List.of(new AnrufKontaktUeberblickDto.Projekt(9L, "Wintergarten", "2026-001", "Würzburg", false)), 1,
                 List.of(new AnrufKontaktUeberblickDto.Anfrage(4L, "Balkongeländer", "AN-2026-044", null, false)), 1));
@@ -231,11 +259,11 @@ class TelefonControllerSecurityTest {
     @Test
     @DisplayName("Überblick: fehlende/doppelte IDs 400, unbekannter Kontakt 404, Text statt ID 400")
     void kontaktUeberblickFehler() throws Exception {
-        when(kontaktUeberblick.ueberblick(null, null)).thenThrow(new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben."));
-        when(kontaktUeberblick.ueberblick(1L, 1L)).thenThrow(new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben."));
-        when(kontaktUeberblick.ueberblick(Long.MAX_VALUE, null)).thenThrow(new NoSuchElementException("Kunde nicht gefunden"));
-        when(kontaktUeberblick.ueberblick(-1L, null)).thenThrow(new NoSuchElementException("Kunde nicht gefunden"));
-        when(kontaktUeberblick.ueberblick(null, 0L)).thenThrow(new NoSuchElementException("Lieferant nicht gefunden"));
+        when(kontaktUeberblick.ueberblick(null, null, null)).thenThrow(new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben."));
+        when(kontaktUeberblick.ueberblick(1L, 1L, null)).thenThrow(new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben."));
+        when(kontaktUeberblick.ueberblick(Long.MAX_VALUE, null, null)).thenThrow(new NoSuchElementException("Kunde nicht gefunden"));
+        when(kontaktUeberblick.ueberblick(-1L, null, null)).thenThrow(new NoSuchElementException("Kunde nicht gefunden"));
+        when(kontaktUeberblick.ueberblick(null, 0L, null)).thenThrow(new NoSuchElementException("Lieferant nicht gefunden"));
         mvc.perform(get("/api/telefon/kontakt-ueberblick").with(mitRecht())).andExpect(status().isBadRequest());
         mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "1").param("lieferantId", "1").with(mitRecht()))
                 .andExpect(status().isBadRequest())
@@ -255,7 +283,7 @@ class TelefonControllerSecurityTest {
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("nurOffen", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].art").value("VERPASST"));
-        verify(telefonService, never()).anrufe(any(), anyBoolean(), any(), any(), any(), any(), anyInt(), anyInt());
+        verify(telefonService, never()).anrufe(any(), anyBoolean(), any(), any(), any(), any(), any(), anyInt(), anyInt());
     }
 
     @Test
@@ -272,7 +300,7 @@ class TelefonControllerSecurityTest {
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("art", "'; DROP TABLE x; --"))
                 .andExpect(status().isBadRequest());
         String boese = "'; DROP TABLE telefon_anruf; --";
-        when(telefonService.anrufe(isNull(), anyBoolean(), eq(boese), isNull(), isNull(), isNull(), anyInt(), anyInt()))
+        when(telefonService.anrufe(isNull(), anyBoolean(), eq(boese), isNull(), isNull(), isNull(), isNull(), anyInt(), anyInt()))
                 .thenReturn(new PageImpl<>(List.of()));
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("suche", boese)).andExpect(status().isOk());
     }
@@ -298,7 +326,7 @@ class TelefonControllerSecurityTest {
         mvc.perform(post("/api/telefon/anrufe/1/zuordnung").with(mitRecht()).with(csrf())
                         .contentType("application/json").content("{\"kundeId\":5,\"nummerMerken\":true}"))
                 .andExpect(status().isOk());
-        verify(telefonService).ordneAnrufZu(1L, new TelefonZuordnenDto(5L, null, true));
+        verify(telefonService).ordneAnrufZu(1L, new TelefonZuordnenDto(5L, null, null, true));
 
         when(telefonService.hebeAnrufZuordnungAuf(1L)).thenReturn(anruf());
         mvc.perform(delete("/api/telefon/anrufe/1/zuordnung").with(mitRecht()).with(csrf())).andExpect(status().isOk());

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChevronRight, FolderOpen, Phone, PhoneCall, PhoneMissed, Voicemail, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
+import { aktenPfad } from './api';
 import { AnrufKontaktDetails } from './AnrufKontaktDetails';
 import { formatLaufzeit } from './format';
 import { KontaktKennzeichen } from './KontaktKennzeichen';
@@ -16,7 +17,8 @@ import type { LiveAnrufAnzeige } from './useTelefonLive';
  * <p>Auf einen Blick lesbar: wer ruft an, Kunde oder Lieferant, Nummer,
  * Ansprechpartner und Adresse. Bei Kunden stehen darunter alle Projekte und
  * Anfragen – ein Klick springt direkt hinein. Ein Knopf öffnet die Akte,
- * einer schließt.</p>
+ * einer schließt. Steuerberater haben keine eigene Akte, dort gibt es nur
+ * „Schließen".</p>
  *
  * <p><strong>Stiehlt bewusst keinen Tastatur-Fokus.</strong> Wer gerade im
  * Hintergrund tippt (z. B. im Dokumenteditor), tippt einfach weiter – ohne
@@ -70,6 +72,7 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
     }, [onSchliessen]);
 
     const kontakt = anruf.kontakt;
+    const hatAkte = (k: KontaktKurz) => aktenPfad(k.typ, k.id) !== null;
     const mehrdeutig = !kontakt && anruf.kandidaten.length > 1;
     const unterdrueckt = !anruf.nummer.trim();
     const klingelt = !anruf.verpasst && anruf.status === 'KLINGELT';
@@ -158,24 +161,35 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
                         )}
                         {mehrdeutig && (
                             <ul className="mt-2 grid gap-2 sm:grid-cols-2" aria-label="Mögliche Kontakte">
-                                {anruf.kandidaten.map((k) => (
-                                    <li key={`${k.typ}-${k.id}`}>
-                                        <button
-                                            type="button"
-                                            onClick={() => onKontaktOeffnen(k)}
-                                            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        >
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block break-words text-lg font-semibold text-slate-900">{k.name}</span>
-                                                <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                                                    <KontaktKennzeichen typ={k.typ} />
-                                                    {k.ort && <span>{k.ort}</span>}
-                                                </span>
+                                {anruf.kandidaten.map((k) => {
+                                    const inhalt = (
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block break-words text-lg font-semibold text-slate-900">{k.name}</span>
+                                            <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                                                <KontaktKennzeichen typ={k.typ} />
+                                                {k.ort && <span>{k.ort}</span>}
                                             </span>
-                                            <ChevronRight aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" />
-                                        </button>
-                                    </li>
-                                ))}
+                                        </span>
+                                    );
+                                    return (
+                                        <li key={`${k.typ}-${k.id}`}>
+                                            {hatAkte(k) ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onKontaktOeffnen(k)}
+                                                    className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                                >
+                                                    {inhalt}
+                                                    <ChevronRight aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" />
+                                                </button>
+                                            ) : (
+                                                <div className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                                    {inhalt}
+                                                </div>
+                                            )}
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
                     </div>
@@ -192,7 +206,7 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
                         <X aria-hidden="true" className="h-5 w-5" />
                         Schließen
                     </Button>
-                    {kontakt && (
+                    {kontakt && hatAkte(kontakt) && (
                         <Button type="button" onClick={() => onKontaktOeffnen(kontakt)} className="px-5 py-3 text-base">
                             <FolderOpen aria-hidden="true" className="h-5 w-5" />
                             Akte öffnen

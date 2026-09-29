@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useToast } from '../../components/ui/toast';
 import { refreshNotifications } from '../../lib/notificationRefresh';
-import { hebeZuordnungAuf, ordneZu } from './api';
+import { hebeZuordnungAuf, ordneZu, zuordnenDaten } from './api';
 import { TelefonZuordnenDialog } from './TelefonZuordnenDialog';
 import type { KontaktKurz, Sprachnachricht, TelefonAnruf, ZuordnenZiel } from './types';
 
@@ -27,11 +27,7 @@ export function useZuordnen<T extends TelefonAnruf | Sprachnachricht>(onAktualis
         setBeschaeftigt(schluessel(ziel));
         try {
             // Die Nummer steht bei allen Kandidaten schon – nichts zu merken.
-            const ergebnis = await ordneZu<T>(ziel, {
-                kundeId: kontakt.typ === 'KUNDE' ? kontakt.id : null,
-                lieferantId: kontakt.typ === 'LIEFERANT' ? kontakt.id : null,
-                nummerMerken: false,
-            });
+            const ergebnis = await ordneZu<T>(ziel, zuordnenDaten(kontakt.typ, kontakt.id, false));
             onAktualisiert(ziel, ergebnis);
             refreshNotifications();
             toast.success(`${kontakt.name} zugeordnet.`);

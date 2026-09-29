@@ -229,6 +229,7 @@ public class TelefonAbholService {
                 if (anruf != null && anruf.getZuordnung() == TelefonZuordnung.MANUELL) {
                     s.setKunde(anruf.getKunde());
                     s.setLieferant(anruf.getLieferant());
+                    s.setSteuerberater(anruf.getSteuerberater());
                     s.setZuordnung(TelefonZuordnung.MANUELL);
                 } else {
                     zuordnung.ordneAutomatischZu(s, verzeichnis);

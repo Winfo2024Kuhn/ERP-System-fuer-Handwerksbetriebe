@@ -9,6 +9,7 @@ import type { KontaktKurz, KontaktUeberblick, Sprachnachricht, TelefonAnruf, Tel
 export const KUNDE_MAX: KontaktKurz = { typ: 'KUNDE', id: 7, name: 'Max Mustermann', nummer: 'K-1007', ort: 'Musterstadt' };
 export const KUNDE_ERIKA: KontaktKurz = { typ: 'KUNDE', id: 8, name: 'Erika Mustermann', nummer: 'K-1008', ort: 'Beispielhausen' };
 export const LIEFERANT_GMBH: KontaktKurz = { typ: 'LIEFERANT', id: 3, name: 'Mustermann GmbH', nummer: null, ort: 'Würzburg' };
+export const KANZLEI_BEISPIEL: KontaktKurz = { typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null, ort: null };
 
 export const UEBERBLICK_MAX: KontaktUeberblick = {
     typ: 'KUNDE',
