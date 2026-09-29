@@ -1,3 +1,4 @@
+import { parseIsoDatum } from '../../lib/datum';
 import type { Anrufbeantworter } from './types';
 
 /**
@@ -86,4 +87,16 @@ export function anrufbeantworterName(liste: Anrufbeantworter[] | undefined, inde
 /** Nummer zur Anzeige – leer heißt: der Anrufer hat sie unterdrückt. */
 export function anzeigeNummer(nummer: string | null | undefined): string {
     return nummer && nummer.trim() ? nummer : 'Nummer unterdrückt';
+}
+
+/** `?tag=` aus der Adresse: nur echte ISO-Tage, alles andere zählt als „alle Tage". */
+export function tagAusAdresse(params: URLSearchParams): string {
+    const wert = params.get('tag') ?? '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(wert) && parseIsoDatum(wert) ? wert : '';
+}
+
+/** `2026-09-29` → „29.09.2026" für Leer-Texte. */
+export function tagAnzeige(tag: string): string {
+    const datum = parseIsoDatum(tag);
+    return datum ? datum.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : tag;
 }

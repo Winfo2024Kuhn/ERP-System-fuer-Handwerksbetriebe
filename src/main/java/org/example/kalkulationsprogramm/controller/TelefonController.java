@@ -21,6 +21,7 @@ import org.example.kalkulationsprogramm.service.telefon.TelefonService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -79,6 +81,7 @@ public class TelefonController {
                                         @RequestParam(defaultValue = "false") boolean nurUnbekannt,
                                         @RequestParam(defaultValue = "false") boolean nurOffen,
                                         @RequestParam(required = false) String suche,
+                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tag,
                                         @RequestParam(required = false) Long kundeId,
                                         @RequestParam(required = false) Long lieferantId,
                                         @RequestParam(defaultValue = "0") int seite,
@@ -88,7 +91,7 @@ public class TelefonController {
         if (nurOffen) {
             return telefonService.offeneVerpassteAnrufe(seite, groesse);
         }
-        return telefonService.anrufe(art, nurUnbekannt, suche, kundeId, lieferantId, seite, groesse);
+        return telefonService.anrufe(art, nurUnbekannt, suche, tag, kundeId, lieferantId, seite, groesse);
     }
 
     @PostMapping("/anrufe/{id}/zuordnung")
@@ -107,11 +110,12 @@ public class TelefonController {
     @GetMapping("/sprachnachrichten")
     public List<SprachnachrichtDto> sprachnachrichten(@RequestParam(defaultValue = "false") boolean nurNeue,
                                                       @RequestParam(required = false) Integer anrufbeantworter,
+                                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tag,
                                                       @RequestParam(required = false) Long kundeId,
                                                       @RequestParam(required = false) Long lieferantId,
                                                       Authentication authentication) {
         berechtigung.verlange(authentication);
-        return telefonService.sprachnachrichten(nurNeue, anrufbeantworter, kundeId, lieferantId);
+        return telefonService.sprachnachrichten(nurNeue, anrufbeantworter, tag, kundeId, lieferantId);
     }
 
     @GetMapping("/sprachnachrichten/anzahl-neu")

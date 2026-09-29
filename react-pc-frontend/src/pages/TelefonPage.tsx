@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type React from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clock, Loader2, Phone, PhoneCall, RefreshCw, Settings, ShieldOff, Voicemail, XCircle } from 'lucide-react';
+import { Link, Navigate, useParams } from 'react-router-dom';
+import { AlertTriangle, CheckCircle2, Clock, Loader2, Phone, RefreshCw, Settings, ShieldOff, XCircle } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -14,11 +13,13 @@ import { AnrufbeantworterListe } from '../features/telefon/AnrufbeantworterListe
 import { AnrufListe } from '../features/telefon/AnrufListe';
 import { formatVorZeit } from '../features/telefon/format';
 import type { AbholErgebnis, TelefonStatus } from '../features/telefon/types';
-import { useNeueSprachnachrichten } from '../features/telefon/useNeueSprachnachrichten';
 import { useTelefonBerechtigung } from '../features/telefon/useTelefonBerechtigung';
 
 /**
- * Seite „Telefon" mit den Reitern „Anrufe" und „Anrufbeantworter".
+ * Seiten „Anrufe" (`/telefon/anrufe`) und „Anrufbeantworter"
+ * (`/telefon/anrufbeantworter`). Gewechselt wird über die Menüleiste oben
+ * (Kommunikation › Telefon) – eigene Reiter auf der Seite gibt es bewusst
+ * nicht mehr, der Titel nennt die aktuelle Ansicht.
  *
  * <p>Die Daten holt der Server regelmäßig selbst von der FRITZ!Box.
  * „Jetzt abholen" stößt das sofort an. Ohne das Recht „Anrufe &
@@ -26,10 +27,10 @@ import { useTelefonBerechtigung } from '../features/telefon/useTelefonBerechtigu
  */
 
 type Reiter = 'anrufe' | 'anrufbeantworter';
-const REITER: { id: Reiter; text: string; symbol: typeof Phone }[] = [
-    { id: 'anrufe', text: 'Anrufe', symbol: PhoneCall },
-    { id: 'anrufbeantworter', text: 'Anrufbeantworter', symbol: Voicemail },
-];
+const ANSICHT: Record<Reiter, { titel: string; untertitel: string }> = {
+    anrufe: { titel: 'Anrufe', untertitel: 'Alle Anrufe der Geschäftsnummer aus der FRITZ!Box.' },
+    anrufbeantworter: { titel: 'Anrufbeantworter', untertitel: 'Nachrichten auf dem Anrufbeantworter der FRITZ!Box.' },
+};
 
 function istReiter(wert: string | undefined): wert is Reiter {
     return wert === 'anrufe' || wert === 'anrufbeantworter';
@@ -60,14 +61,14 @@ export default function TelefonPage() {
     if (!istReiter(reiter)) return <Navigate to="/telefon/anrufe" replace />;
     if (darf === null) {
         return (
-            <PageLayout ribbonCategory="Kommunikation" title="Telefon">
+            <PageLayout ribbonCategory="Kommunikation" title={ANSICHT[reiter].titel}>
                 <p role="status" className="rounded-lg bg-slate-100 p-6 text-slate-600 motion-safe:animate-pulse">Recht wird geprüft …</p>
             </PageLayout>
         );
     }
     if (!darf) {
         return (
-            <PageLayout ribbonCategory="Kommunikation" title="Telefon">
+            <PageLayout ribbonCategory="Kommunikation" title={ANSICHT[reiter].titel}>
                 <Card className="mx-auto flex max-w-xl flex-col items-center gap-3 p-10 text-center">
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500">
                         <ShieldOff aria-hidden="true" className="h-6 w-6" />
@@ -85,18 +86,15 @@ export default function TelefonPage() {
 }
 
 function TelefonInhalt({ reiter }: { reiter: Reiter }) {
-    const navigate = useNavigate();
     const toast = useToast();
     const { isAdmin } = useAuth();
     const jetzt = useMinutenTakt();
-    const neueNachrichten = useNeueSprachnachrichten(true);
     const [status, setStatus] = useState<TelefonStatus | null>(null);
     const [statusFehler, setStatusFehler] = useState<string | null>(null);
     const [holtAb, setHoltAb] = useState(false);
     const [ergebnis, setErgebnis] = useState<AbholErgebnis | null>(null);
     const [aktualisierung, setAktualisierung] = useState(0);
     const ergebnisTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const reiterRefs = useRef<Partial<Record<Reiter, HTMLButtonElement | null>>>({});
 
     const ladeStand = useCallback(async () => {
         try {
@@ -133,16 +131,6 @@ function TelefonInhalt({ reiter }: { reiter: Reiter }) {
         }
     };
 
-    const wechsleReiter = (neu: Reiter) => navigate(`/telefon/${neu}`);
-
-    const beiReiterTaste = (ereignis: React.KeyboardEvent, index: number) => {
-        if (ereignis.key !== 'ArrowRight' && ereignis.key !== 'ArrowLeft') return;
-        ereignis.preventDefault();
-        const naechster = REITER[(index + (ereignis.key === 'ArrowRight' ? 1 : -1) + REITER.length) % REITER.length];
-        wechsleReiter(naechster.id);
-        reiterRefs.current[naechster.id]?.focus();
-    };
-
     const nichtEingerichtet = status !== null && !status.eingerichtet;
 
     const abholKnopf = (
@@ -156,8 +144,8 @@ function TelefonInhalt({ reiter }: { reiter: Reiter }) {
     return (
         <PageLayout
             ribbonCategory="Kommunikation"
-            title="Telefon"
-            subtitle="Anrufe und Nachrichten auf dem Anrufbeantworter aus der FRITZ!Box."
+            title={ANSICHT[reiter].titel}
+            subtitle={ANSICHT[reiter].untertitel}
             actions={abholKnopf}
         >
             {statusFehler && !status ? (
@@ -224,45 +212,9 @@ function TelefonInhalt({ reiter }: { reiter: Reiter }) {
                         )}
                     </div>
 
-                    {/* Reiter */}
-                    <div role="tablist" aria-label="Bereiche des Telefons" className="flex flex-wrap items-center gap-1 border-b border-slate-200">
-                        {REITER.map((eintrag, index) => {
-                            const aktiv = eintrag.id === reiter;
-                            const Symbol = eintrag.symbol;
-                            return (
-                                <button
-                                    key={eintrag.id}
-                                    ref={(el) => { reiterRefs.current[eintrag.id] = el; }}
-                                    type="button"
-                                    role="tab"
-                                    id={`telefon-reiter-${eintrag.id}`}
-                                    aria-selected={aktiv}
-                                    aria-controls="telefon-reiter-inhalt"
-                                    tabIndex={aktiv ? 0 : -1}
-                                    onClick={() => wechsleReiter(eintrag.id)}
-                                    onKeyDown={(e) => beiReiterTaste(e, index)}
-                                    className={cn(
-                                        '-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500',
-                                        aktiv ? 'border-rose-600 text-rose-700' : 'border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-700',
-                                    )}
-                                >
-                                    <Symbol aria-hidden="true" className="h-4 w-4" />
-                                    {eintrag.text}
-                                    {eintrag.id === 'anrufbeantworter' && neueNachrichten > 0 && (
-                                        <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-xs font-semibold text-white" aria-label={`${neueNachrichten} neu`}>
-                                            {neueNachrichten}
-                                        </span>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <div role="tabpanel" id="telefon-reiter-inhalt" aria-labelledby={`telefon-reiter-${reiter}`}>
-                        {reiter === 'anrufe'
-                            ? <AnrufListe anrufbeantworter={status.anrufbeantworter} aktualisierung={aktualisierung} />
-                            : <AnrufbeantworterListe anrufbeantworter={status.anrufbeantworter} aktualisierung={aktualisierung} />}
-                    </div>
+                    {reiter === 'anrufe'
+                        ? <AnrufListe anrufbeantworter={status.anrufbeantworter} aktualisierung={aktualisierung} />
+                        : <AnrufbeantworterListe anrufbeantworter={status.anrufbeantworter} aktualisierung={aktualisierung} />}
                 </>
             )}
         </PageLayout>

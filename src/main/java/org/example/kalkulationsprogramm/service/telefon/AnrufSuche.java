@@ -18,6 +18,7 @@ import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
 import org.springframework.data.jpa.domain.Specification;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -43,8 +44,9 @@ final class AnrufSuche {
     private AnrufSuche() {
     }
 
+    /** @param tag nur Anrufe dieses Tages (Ortszeit, 0:00 bis unter 24:00); null = alle Tage */
     static Specification<TelefonAnruf> filter(TelefonAnrufArt art, boolean nurUnbekannt, Long kundeId,
-                                              Long lieferantId, String suche) {
+                                              Long lieferantId, String suche, LocalDate tag) {
         List<String> muster = suchmuster(suche);
         return (root, query, cb) -> {
             Join<TelefonAnruf, Kunde> kunde = kontaktJoin(root, query, "kunde");
@@ -62,6 +64,10 @@ final class AnrufSuche {
             }
             if (lieferantId != null) {
                 bedingungen.add(cb.equal(lieferant.get("id"), lieferantId));
+            }
+            if (tag != null) {
+                bedingungen.add(cb.greaterThanOrEqualTo(root.get("zeitpunkt"), tag.atStartOfDay()));
+                bedingungen.add(cb.lessThan(root.get("zeitpunkt"), tag.plusDays(1).atStartOfDay()));
             }
             for (String wort : muster) {
                 bedingungen.add(trifft(wort, root, kunde, lieferant, query, cb));

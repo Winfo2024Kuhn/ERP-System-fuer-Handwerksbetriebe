@@ -4,7 +4,8 @@ import { RefreshCw, Voicemail } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { ladeSprachnachrichten } from './api';
 import { FilterChips } from './FilterChips';
-import { anrufbeantworterName } from './format';
+import { TagFilter } from './TagFilter';
+import { anrufbeantworterName, tagAnzeige, tagAusAdresse } from './format';
 import { SprachnachrichtEintrag } from './SprachnachrichtEintrag';
 import type { Anrufbeantworter, Sprachnachricht, ZuordnenZiel } from './types';
 import { useZuordnen } from './useZuordnen';
@@ -13,7 +14,8 @@ import { useZuordnen } from './useZuordnen';
  * Reiter „Anrufbeantworter": alle Nachrichten, neueste zuerst.
  *
  * <p>Ein Chip pro Anrufbeantworter mit dessen Namen aus der FRITZ!Box
- * (z. B. „AB Tag", „AB Nacht"). `?nachricht=12` hebt eine Nachricht hervor
+ * (z. B. „AB Tag", „AB Nacht"), dazu ein Tagesfilter (`?tag=2026-09-29`).
+ * `?nachricht=12` hebt eine Nachricht hervor
  * und scrollt zu ihr – so landet ein Klick in der Glocke oder in der
  * Anrufliste direkt beim Abspieler.</p>
  */
@@ -28,6 +30,7 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
     const abParam = params.get('ab');
     const abFilter = abParam !== null && abParam !== '' && Number.isInteger(Number(abParam)) ? Number(abParam) : null;
     const hervorgehobenId = Number(params.get('nachricht')) || null;
+    const tag = tagAusAdresse(params);
 
     const [nachrichten, setNachrichten] = useState<Sprachnachricht[]>([]);
     const [laedt, setLaedt] = useState(true);
@@ -42,7 +45,7 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
         setLaedt(true);
         setFehler(null);
         try {
-            const liste = await ladeSprachnachrichten({ anrufbeantworter: abFilter });
+            const liste = await ladeSprachnachrichten({ anrufbeantworter: abFilter, tag: tag || undefined });
             if (nummer === anfrageRef.current) setNachrichten(liste);
         } catch (e) {
             if (nummer === anfrageRef.current) {
@@ -51,7 +54,7 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
         } finally {
             if (nummer === anfrageRef.current) setLaedt(false);
         }
-    }, [abFilter]);
+    }, [abFilter, tag]);
 
     useEffect(() => {
         void lade();
@@ -72,6 +75,13 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
         setParams(naechste, { replace: true });
     };
 
+    const wechsleTag = (neu: string) => {
+        const naechste = new URLSearchParams(params);
+        naechste.delete('nachricht');
+        if (neu) naechste.set('tag', neu); else naechste.delete('tag');
+        setParams(naechste, { replace: true });
+    };
+
     const ersetze = useCallback((neu: Sprachnachricht) => {
         setNachrichten((alt) => alt.map((n) => (n.id === neu.id ? neu : n)));
     }, []);
@@ -84,9 +94,12 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
 
     return (
         <div className="space-y-4">
-            {anrufbeantworter.length > 0 && (
-                <FilterChips beschriftung="Anrufbeantworter wählen" chips={chips} aktiv={abFilter === null ? 'alle' : String(abFilter)} onWechsel={wechsleAb} />
-            )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                {anrufbeantworter.length > 0 && (
+                    <FilterChips beschriftung="Anrufbeantworter wählen" chips={chips} aktiv={abFilter === null ? 'alle' : String(abFilter)} onWechsel={wechsleAb} />
+                )}
+                <TagFilter tag={tag} onWechsel={wechsleTag} className="sm:ml-auto" />
+            </div>
 
             {fehler ? (
                 <div role="alert" className="flex flex-col items-center gap-3 rounded-lg border border-slate-200 bg-white p-10 text-center shadow-sm">
@@ -108,7 +121,9 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
             ) : nachrichten.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 bg-white p-12 text-center text-slate-500 shadow-sm">
                     <Voicemail aria-hidden="true" className="h-10 w-10 text-slate-300" />
-                    <p className="font-medium text-slate-600">Keine Nachrichten auf dem Anrufbeantworter.</p>
+                    <p className="font-medium text-slate-600">
+                        {tag ? `Keine Nachrichten am ${tagAnzeige(tag)}.` : 'Keine Nachrichten auf dem Anrufbeantworter.'}
+                    </p>
                 </div>
             ) : (
                 <ul className="space-y-3" aria-label="Nachrichten auf dem Anrufbeantworter" aria-busy={laedt}>

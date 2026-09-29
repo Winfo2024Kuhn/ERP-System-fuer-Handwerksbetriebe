@@ -34,6 +34,14 @@ export const UEBERBLICK_MAX = {
     anfragenGesamt: 2,
 };
 
+/** Heutiger bzw. gestriger Tag als ISO-Datum, wie ihn der Tagesfilter schickt. */
+export function isoTag(tageZurueck = 0): string {
+    const d = new Date();
+    d.setDate(d.getDate() - tageZurueck);
+    const zwei = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${zwei(d.getMonth() + 1)}-${zwei(d.getDate())}`;
+}
+
 function heute(uhrzeit: string): string {
     const d = new Date();
     const zwei = (n: number) => String(n).padStart(2, '0');
@@ -184,6 +192,8 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             const suche = url.searchParams.get('suche')?.toLowerCase();
             if (suche) liste = liste.filter((a) => a.nummer.includes(suche) || JSON.stringify(a.kontakt ?? '').toLowerCase().includes(suche));
             if (url.searchParams.get('kundeId')) liste = liste.filter((a) => (a.kontakt as { id?: number } | null)?.id === Number(url.searchParams.get('kundeId')));
+            const tag = url.searchParams.get('tag');
+            if (tag) liste = liste.filter((a) => String(a.zeitpunkt).startsWith(tag));
             return json(route, { content: liste, totalElements: liste.length, totalPages: 1, number: 0, size: 50 });
         }
         const zuordnungAnruf = /^\/api\/telefon\/anrufe\/(\d+)\/zuordnung$/.exec(pfad);
@@ -199,7 +209,10 @@ export async function stubbeTelefonApi(page: Page, optionen: {
         }
         if (pfad === '/api/telefon/sprachnachrichten') {
             const ab = url.searchParams.get('anrufbeantworter');
-            return json(route, ab === null ? nachrichten : nachrichten.filter((n) => n.anrufbeantworter === Number(ab)));
+            const tag = url.searchParams.get('tag');
+            return json(route, nachrichten
+                .filter((n) => ab === null || n.anrufbeantworter === Number(ab))
+                .filter((n) => !tag || String(n.zeitpunkt).startsWith(tag)));
         }
         const audio = /^\/api\/telefon\/sprachnachrichten\/(\d+)\/audio$/.exec(pfad);
         if (audio) return route.fulfill({ status: 200, contentType: 'audio/wav', body: stilleWav() });

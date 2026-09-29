@@ -10,6 +10,7 @@ import {
     anruf, antwort, aufrufe, KUNDE_ERIKA, KUNDE_MAX, nachricht, STATUS, stubbeFetch,
 } from '../features/telefon/telefonTestdaten';
 import { setzeTelefonBerechtigungZurueck } from '../features/telefon/useTelefonBerechtigung';
+import { heuteIso } from '../lib/datum';
 import type { Sprachnachricht, TelefonAnruf, TelefonStatus } from '../features/telefon/types';
 
 interface Stand {
@@ -245,5 +246,56 @@ describe('TelefonPage', () => {
         await act(async () => {});
         expect(document.getElementById('nachricht-12')).toHaveAttribute('data-hervorgehoben', 'true');
         expect(document.getElementById('nachricht-11')).not.toHaveAttribute('data-hervorgehoben');
+    });
+
+    describe('ohne eigene Reiter, mit Tagesfilter', () => {
+        it('nennt die Ansicht im Titel statt Reiter auf der Seite', async () => {
+            stubbeTelefon();
+            const { unmount } = zeige('/telefon/anrufe');
+            await screen.findByRole('table');
+            expect(screen.getByRole('heading', { name: 'Anrufe' })).toBeInTheDocument();
+            expect(screen.queryByRole('tablist')).toBeNull();
+            expect(screen.queryByRole('tab')).toBeNull();
+            unmount();
+            zeige('/telefon/anrufbeantworter');
+            await screen.findByRole('list', { name: 'Nachrichten auf dem Anrufbeantworter' });
+            expect(screen.getByRole('heading', { name: 'Anrufbeantworter' })).toBeInTheDocument();
+            expect(screen.queryByRole('tablist')).toBeNull();
+        });
+
+        it('filtert Anrufe nach Tag aus der Adresse, per Kalender und setzt ihn wieder zurück', async () => {
+            const user = userEvent.setup();
+            const fetchMock = stubbeTelefon({ anrufe: [] });
+            zeige('/telefon/anrufe?tag=2026-09-28');
+            expect(await screen.findByText('Keine Anrufe am 28.09.2026.')).toBeInTheDocument();
+            expect(anrufParams(fetchMock).get('tag')).toBe('2026-09-28');
+            expect(screen.getByRole('button', { name: /^Tag filtern/ })).toHaveTextContent('28.09.2026');
+
+            await user.click(screen.getByRole('button', { name: 'Tagesfilter entfernen' }));
+            await waitFor(() => expect(anrufParams(fetchMock).has('tag')).toBe(false));
+            expect(screen.getByRole('button', { name: /^Tag filtern/ })).toHaveTextContent('Alle Tage');
+            expect(screen.queryByRole('button', { name: 'Tagesfilter entfernen' })).toBeNull();
+
+            await user.click(screen.getByRole('button', { name: /^Tag filtern/ }));
+            await user.click(screen.getByRole('button', { name: 'Heute' }));
+            await waitFor(() => expect(anrufParams(fetchMock).get('tag')).toBe(heuteIso()));
+        });
+
+        it('sperrt den Tagesfilter bei „Rückruf offen“ und schickt keinen Tag mit', async () => {
+            const fetchMock = stubbeTelefon();
+            zeige('/telefon/anrufe?offen=1&tag=2026-09-28');
+            await screen.findByRole('table');
+            expect(screen.getByRole('button', { name: /^Tag filtern/ })).toBeDisabled();
+            expect(anrufParams(fetchMock).has('tag')).toBe(false);
+            expect(anrufParams(fetchMock).get('nurOffen')).toBe('true');
+        });
+
+        it('filtert den Anrufbeantworter nach Tag', async () => {
+            const fetchMock = stubbeTelefon({ nachrichten: [] });
+            zeige('/telefon/anrufbeantworter?tag=2026-09-28');
+            expect(await screen.findByText('Keine Nachrichten am 28.09.2026.')).toBeInTheDocument();
+            const letzte = aufrufe(fetchMock, '/api/telefon/sprachnachrichten').at(-1)!;
+            expect(new URL(String(letzte[0]), 'http://localhost').searchParams.get('tag')).toBe('2026-09-28');
+        });
     });
 });

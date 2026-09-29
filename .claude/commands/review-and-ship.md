@@ -1,6 +1,6 @@
 ---
 name: review-and-ship
-description: Startet den erp-code-reviewer-Subagenten im Hintergrund und kümmert sich parallel um Compile, Tests und fehlende Tests. Loopt Findings → Fix → Re-Check, bis alles grün ist. Erst dann Commit & Push.
+description: Startet den erp-code-reviewer-Subagenten im Hintergrund und kümmert sich parallel um Compile, Tests und fehlende Tests. Loopt Findings → Fix → Re-Check (max. 2 Review-Runden), bis alles grün ist. Erst dann Commit & Push.
 ---
 
 # Review & Ship (parallelisiert)
@@ -10,7 +10,7 @@ Du bist der **Implementations-Agent** im Window des Users. Deine Aufgabe ab jetz
 1. **Review-Subagent SOFORT im Hintergrund starten** – er übernimmt **komplett** Code-Review **inklusive Security** (Secrets, OWASP, DSGVO, Path-Traversal, CORS, …).
 2. **Während er reviewt**, kümmerst DU dich **ausschließlich** um Build, Tests, Lint und fehlende Test-Coverage. **Du machst KEIN eigenes Security-Audit, KEINEN Secrets-Scan, KEINEN Eigen-Gegencheck der Reviewer-Themen** – das ist Doppelarbeit. Vertraue auf den Reviewer.
 3. **Wenn der Subagent zurückmeldet**: Findings 1:1 umsetzen, dann nochmal Build/Tests prüfen.
-4. **Loop** bis alles grün → Commit & Push.
+4. **Loop** bis alles grün → Commit & Push – **höchstens 2 Review-Runden** (siehe Runden-Limit in Phase 2).
 
 **Rollenteilung – wichtig:**
 
@@ -155,7 +155,13 @@ Sobald der Hintergrund-Reviewer fertig ist (du bekommst eine Completion-Notifica
    - **🟡 GELB** → Findings dem User zeigen + fragen ob er trotzdem freigeben will. Ohne Freigabe wie 🔴 behandeln.
    - **🟢 GRÜN** → weiter zu Phase 3.
 
-**Loop-Regel:** Nach jeder Fix-Runde MUSS der Reviewer erneut prüfen – per `SendMessage` an **denselben** Reviewer (Phase 0c), nicht per neuem `Agent`-Aufruf –, während du parallel Phase 1b–1d wiederholst.
+**Runden-Limit (Nutzervorgabe): maximal 2 Review-Runden pro Aufgabe.** Runde 1 = erster Lauf (0a), Runde 2 = Folgerunde per `SendMessage` (0c). Eine dritte Runde gibt es nicht:
+
+- Meldet Runde 2 noch Findings, setzt du sie direkt um, lässt Build/Tests (Phase 1b–1d) erneut laufen und gehst bei grünen Tests zu Phase 3 – **ohne** weiteren Review-Lauf. Eine 🟡-Ampel aus Runde 2 gilt damit als erledigt – keine zusätzliche Rückfrage beim User nötig.
+- Bleibt nach Runde 2 ein **kritischer** Befund (🔴), den du nicht sicher beheben kannst oder für falsch hältst: nicht committen, sondern dem User vorlegen.
+- Ist schon Runde 1 🟢, entfällt Runde 2.
+
+**Loop-Regel:** Nach der Fix-Runde von Runde 1 MUSS der Reviewer erneut prüfen – per `SendMessage` an **denselben** Reviewer (Phase 0c), nicht per neuem `Agent`-Aufruf –, während du parallel Phase 1b–1d wiederholst.
 
 **Einspruchs-Regel:** Wenn du ein Finding für sachlich falsch hältst (der Reviewer sieht den Kontext nicht immer vollständig), fixe es **nicht** stillschweigend weg und ignoriere es auch nicht – **leg es dem User kurz vor** mit deiner Begründung. Das deutet oft auf eine echte Architektur-Entscheidung hin.
 
@@ -351,7 +357,7 @@ Issue #<nr>: <geschlossen / kein Issue>
 - **Kein Codex.** Einzige Review-Instanz ist der `erp-code-reviewer`-Subagent. Kein `codex exec`, keine Zweitmeinung über ein Fremdmodell.
 - **Phase 0 IMMER mit `run_in_background: true`.** Sonst blockiert der Review die Tests.
 - **Du wartest nicht** – während der Reviewer arbeitet, kompilierst und testest du.
-- **Jede Fix-Runde bekommt einen neuen Review-Lauf** – nicht nur einmal reviewen.
+- **Höchstens 2 Review-Runden.** Runde 1 neu starten, Runde 2 per `SendMessage` – danach Findings direkt fixen, Tests grün, ship. Keine dritte Runde.
 - **Immer derselbe Reviewer.** Folgerunden per `SendMessage` an die Agent-ID aus dem ersten Lauf, mit dem Delta. Ein frischer Agent liest alles neu ein und verbrennt Tokens – nur als Notlösung, wenn `SendMessage` scheitert.
 - **Tests grün-fummeln ist verboten.** Root Cause finden, dann fixen.
 - **Nach dem Push kommt der PR** (Phase 4), und bei grünen Checks wird **automatisch gemergt** – ohne Rückfrage. Rot oder pending: nicht mergen, berichten.

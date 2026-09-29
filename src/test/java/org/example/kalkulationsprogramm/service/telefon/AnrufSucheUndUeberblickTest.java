@@ -153,15 +153,35 @@ class AnrufSucheUndUeberblickTest {
         @Test
         @DisplayName("Zählabfrage bei mehreren Seiten: mit und ohne Suche, mit Filter nach Kontakt")
         void zaehlabfrage() {
-            var ohneSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, null), PageRequest.of(0, 1));
+            var ohneSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, null, null), PageRequest.of(0, 1));
             assertThat(ohneSuche.getContent()).hasSize(1);
             assertThat(ohneSuche.getTotalElements()).isEqualTo(4);
-            var mitSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, "muster"), PageRequest.of(1, 1));
+            var mitSuche = anrufe.findAll(AnrufSuche.filter(null, false, null, null, "muster", null), PageRequest.of(1, 1));
             assertThat(mitSuche.getContent()).hasSize(1);
             assertThat(mitSuche.getTotalElements()).isEqualTo(3);
-            var mitKontakt = anrufe.findAll(AnrufSuche.filter(null, false, mustermann.getId(), null, "max würzburg"),
+            var mitKontakt = anrufe.findAll(AnrufSuche.filter(null, false, mustermann.getId(), null, "max würzburg", null),
                     PageRequest.of(0, 1));
             assertThat(mitKontakt.getTotalElements()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("Tagesfilter: 0:00 zählt zum Tag, 24:00 schon zum nächsten; kombinierbar mit der Suche")
+        void tagesfilter() {
+            anruf(mustermann, null, "0931-mitternacht", null, LocalDateTime.of(2026, 9, 30, 0, 0));
+            anruf(mustermann, null, "0931-spaet", null, LocalDateTime.of(2026, 9, 29, 23, 59, 59));
+            anruf(mustermann, null, "0931-frueh", null, LocalDateTime.of(2026, 9, 29, 0, 0));
+
+            assertThat(tag(LocalDate.of(2026, 9, 29), null)).hasSize(6).doesNotContain("0931-mitternacht");
+            assertThat(tag(LocalDate.of(2026, 9, 30), null)).containsExactly("0931-mitternacht");
+            assertThat(tag(LocalDate.of(2026, 9, 28), null)).isEmpty();
+            assertThat(tag(LocalDate.of(2026, 9, 29), "hans")).containsExactly("093215555");
+            assertThat(tag(LocalDate.of(2026, 9, 30), "hans")).isEmpty();
+        }
+
+        private List<String> tag(LocalDate tag, String suche) {
+            return anrufe.findAll(AnrufSuche.filter(null, false, null, null, suche, tag),
+                            PageRequest.of(0, 50, Sort.by(Sort.Order.desc("zeitpunkt"))))
+                    .map(TelefonAnruf::getNummerRoh).getContent();
         }
 
         @Test
@@ -182,7 +202,7 @@ class AnrufSucheUndUeberblickTest {
 
         private List<TelefonAnruf> treffer(TelefonAnrufArt art, boolean nurUnbekannt, Long kundeId, Long lieferantId,
                                            String suche) {
-            return anrufe.findAll(AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche),
+            return anrufe.findAll(AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche, null),
                     PageRequest.of(0, 50, Sort.by(Sort.Order.desc("zeitpunkt")))).getContent();
         }
     }
@@ -307,8 +327,12 @@ class AnrufSucheUndUeberblickTest {
     }
 
     private void anruf(Kunde kunde, Lieferanten lieferant, String nummer, String nameFritzbox) {
+        anruf(kunde, lieferant, nummer, nameFritzbox, ZEIT);
+    }
+
+    private void anruf(Kunde kunde, Lieferanten lieferant, String nummer, String nameFritzbox, LocalDateTime zeit) {
         TelefonAnruf a = new TelefonAnruf();
-        a.setZeitpunkt(ZEIT);
+        a.setZeitpunkt(zeit);
         a.setArt(TelefonAnrufArt.ANGENOMMEN);
         a.setNummerRoh(nummer);
         a.setEigeneNummer("2323");

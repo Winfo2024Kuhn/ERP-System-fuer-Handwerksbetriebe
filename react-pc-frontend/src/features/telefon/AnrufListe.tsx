@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, PhoneOff, RefreshCw, Search, Voicemail, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
@@ -6,7 +6,8 @@ import { cn } from '../../lib/utils';
 import { ladeAnrufe } from './api';
 import { ArtSymbol } from './ArtSymbol';
 import { FilterChips } from './FilterChips';
-import { anrufbeantworterName, formatDauerMinuten, formatWann } from './format';
+import { TagFilter } from './TagFilter';
+import { anrufbeantworterName, formatDauerMinuten, formatWann, tagAnzeige, tagAusAdresse } from './format';
 import type { Anrufbeantworter, TelefonAnruf, ZuordnenZiel } from './types';
 import { useZuordnen } from './useZuordnen';
 import { WerAnzeige, ZuordnungsMenue } from './WerAnzeige';
@@ -14,7 +15,8 @@ import { WerAnzeige, ZuordnungsMenue } from './WerAnzeige';
 /**
  * Reiter „Anrufe": die Anrufliste der FRITZ!Box.
  *
- * <p>Filter stehen in der Adresse (`?art=VERPASST`, `?offen=1`, `?unbekannt=1`),
+ * <p>Filter stehen in der Adresse (`?art=VERPASST`, `?offen=1`, `?unbekannt=1`,
+ * `?tag=2026-09-29`),
  * damit der Link aus der Glocke direkt die offenen Rückrufe zeigt – genau die
  * Anrufe, die sie zählt. `?anruf=12` hebt einen
  * Anruf hervor und scrollt zu ihm. Es werden 50 Anrufe auf einmal geladen,
@@ -24,6 +26,8 @@ import { WerAnzeige, ZuordnungsMenue } from './WerAnzeige';
 type Filter = 'alle' | 'verpasst' | 'offen' | 'unbekannt';
 
 const SEITENGROESSE = 50;
+
+const SUCHE_GESPERRT = 'Bei „Rückruf offen“ stehen immer alle offenen Rückrufe – Suche dort nicht nötig.';
 
 const FILTER_CHIPS: { wert: Filter; text: string }[] = [
     { wert: 'alle', text: 'Alle' },
@@ -49,7 +53,9 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
     const navigate = useNavigate();
     const [params, setParams] = useSearchParams();
     const filter = filterAusAdresse(params);
+    const tag = filter === 'offen' ? '' : tagAusAdresse(params);
     const hervorgehobenId = Number(params.get('anruf')) || null;
+    const sucheGrundId = useId();
 
     const [sucheEingabe, setSucheEingabe] = useState('');
     const [suche, setSuche] = useState('');
@@ -81,6 +87,7 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
                 nurUnbekannt: filter === 'unbekannt',
                 nurOffen: filter === 'offen',
                 suche: filter === 'offen' ? undefined : suche,
+                tag: tag || undefined,
                 seite: zielSeite,
                 groesse: SEITENGROESSE,
             });
@@ -98,7 +105,7 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
                 setLaedtMehr(false);
             }
         }
-    }, [filter, suche]);
+    }, [filter, suche, tag]);
 
     useEffect(() => {
         void lade(0, false);
@@ -125,46 +132,64 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
         setParams(naechste, { replace: true });
     };
 
+    const wechsleTag = (neu: string) => {
+        const naechste = new URLSearchParams(params);
+        naechste.delete('anruf');
+        if (neu) naechste.set('tag', neu); else naechste.delete('tag');
+        setParams(naechste, { replace: true });
+    };
+
     const ersetze = useCallback((ziel: ZuordnenZiel, neu: TelefonAnruf) => {
         setAnrufe((alt) => alt.map((a) => (a.id === ziel.id ? neu : a)));
     }, []);
     const zuordnen = useZuordnen<TelefonAnruf>(ersetze);
 
+    const amTag = tag ? ` am ${tagAnzeige(tag)}` : '';
     const leerText = suche && filter !== 'offen'
-        ? `Keine Anrufe zu „${suche}“ gefunden.`
-        : filter === 'verpasst' ? 'Keine verpassten Anrufe.'
+        ? `Keine Anrufe zu „${suche}“${amTag} gefunden.`
+        : filter === 'verpasst' ? `Keine verpassten Anrufe${amTag}.`
             : filter === 'offen' ? 'Keine offenen Rückrufe – alles erledigt.'
-                : filter === 'unbekannt' ? 'Keine Anrufe von unbekannten Nummern.'
-                    : 'Noch keine Anrufe abgeholt.';
+                : filter === 'unbekannt' ? `Keine Anrufe von unbekannten Nummern${amTag}.`
+                    : tag ? `Keine Anrufe${amTag}.` : 'Noch keine Anrufe abgeholt.';
 
     return (
         <div className="space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <FilterChips beschriftung="Anrufe filtern" chips={FILTER_CHIPS} aktiv={filter} onWechsel={wechsleFilter} />
-                <div className="relative w-full lg:w-96">
-                    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                        type="text"
-                        value={sucheEingabe}
-                        onChange={(e) => setSucheEingabe(e.target.value)}
-                        placeholder="Name, Ort, Bauvorhaben, Nummer …"
-                        aria-label="Anrufe durchsuchen"
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+                    <TagFilter
+                        tag={tag}
+                        onWechsel={wechsleTag}
                         disabled={filter === 'offen'}
-                        title={filter === 'offen'
-                            ? 'Bei „Rückruf offen“ stehen immer alle offenen Rückrufe – Suche dort nicht nötig.'
-                            : 'Sucht in allen Angaben von Kunden und Lieferanten: Vor- und Nachname, Ansprechpartner, Ort, Straße, Bauvorhaben, Auftragsnummer, Telefon. Mehrere Wörter grenzen weiter ein, z. B. „Max Würzburg“.'}
-                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                        gesperrtGrund="Bei „Rückruf offen“ stehen immer alle offenen Rückrufe – ein Tag ist dort nicht nötig."
                     />
-                    {sucheEingabe && (
-                        <button
-                            type="button"
-                            onClick={() => setSucheEingabe('')}
-                            aria-label="Suche leeren"
-                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        >
-                            <X aria-hidden="true" className="h-4 w-4" />
-                        </button>
-                    )}
+                    <div className="relative w-full lg:w-96">
+                        <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input
+                            type="text"
+                            value={sucheEingabe}
+                            onChange={(e) => setSucheEingabe(e.target.value)}
+                            placeholder="Name, Ort, Bauvorhaben, Nummer …"
+                            aria-label="Anrufe durchsuchen"
+                            disabled={filter === 'offen'}
+                            aria-describedby={filter === 'offen' ? sucheGrundId : undefined}
+                            title={filter === 'offen'
+                                ? SUCHE_GESPERRT
+                                : 'Sucht in allen Angaben von Kunden und Lieferanten: Vor- und Nachname, Ansprechpartner, Ort, Straße, Bauvorhaben, Auftragsnummer, Telefon. Mehrere Wörter grenzen weiter ein, z. B. „Max Würzburg“.'}
+                            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                        />
+                        {filter === 'offen' && <span id={sucheGrundId} className="sr-only">{SUCHE_GESPERRT}</span>}
+                        {sucheEingabe && (
+                            <button
+                                type="button"
+                                onClick={() => setSucheEingabe('')}
+                                aria-label="Suche leeren"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                            >
+                                <X aria-hidden="true" className="h-4 w-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 

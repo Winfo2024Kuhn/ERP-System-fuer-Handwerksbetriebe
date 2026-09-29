@@ -87,6 +87,8 @@ export interface AnrufFilter {
     /** Nur verpasste Anrufe, um die sich noch keiner gekümmert hat (wie in der Glocke). */
     nurOffen?: boolean;
     suche?: string;
+    /** ISO-Tag (`2026-09-29`): nur Anrufe dieses Tages. */
+    tag?: string;
     kundeId?: number;
     lieferantId?: number;
     seite?: number;
@@ -106,6 +108,7 @@ export async function ladeAnrufe(filter: AnrufFilter, signal?: AbortSignal): Pro
     if (filter.nurUnbekannt) params.set('nurUnbekannt', 'true');
     if (filter.nurOffen) params.set('nurOffen', 'true');
     if (filter.suche?.trim()) params.set('suche', filter.suche.trim());
+    if (filter.tag) params.set('tag', filter.tag);
     if (filter.kundeId) params.set('kundeId', String(filter.kundeId));
     if (filter.lieferantId) params.set('lieferantId', String(filter.lieferantId));
     params.set('seite', String(filter.seite ?? 0));
@@ -124,6 +127,8 @@ export async function ladeAnrufe(filter: AnrufFilter, signal?: AbortSignal): Pro
 export interface NachrichtenFilter {
     nurNeue?: boolean;
     anrufbeantworter?: number | null;
+    /** ISO-Tag (`2026-09-29`): nur Nachrichten dieses Tages. */
+    tag?: string;
     kundeId?: number;
     lieferantId?: number;
 }
@@ -134,6 +139,7 @@ export function ladeSprachnachrichten(filter: NachrichtenFilter, signal?: AbortS
     if (filter.anrufbeantworter !== undefined && filter.anrufbeantworter !== null) {
         params.set('anrufbeantworter', String(filter.anrufbeantworter));
     }
+    if (filter.tag) params.set('tag', filter.tag);
     if (filter.kundeId) params.set('kundeId', String(filter.kundeId));
     if (filter.lieferantId) params.set('lieferantId', String(filter.lieferantId));
     const query = params.toString();

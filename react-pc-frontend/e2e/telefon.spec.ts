@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { designPruefung, keinHorizontalerUeberlauf, uebergaengeAusklingenLassen } from './hilfen/design';
 import { inhalt } from './hilfen/seite';
-import { KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, stubbeTelefonApi } from './hilfen/telefon';
+import { isoTag, KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, stubbeTelefonApi } from './hilfen/telefon';
 
 /**
  * End-to-End-Tests der Telefon-Anbindung (FRITZ!Box): Anrufliste,
@@ -15,7 +15,8 @@ test.describe('Telefon – Anrufe', () => {
     test('Anrufliste filtern und einen unbekannten Anruf zuordnen', async ({ page }, info) => {
         const stub = await stubbeTelefonApi(page);
         await page.goto('/telefon/anrufe');
-        await expect(page.getByRole('heading', { name: 'Telefon' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Anrufe' })).toBeVisible();
+        await expect(page.getByRole('tablist')).toHaveCount(0);
         const tabelle = inhalt(page).getByRole('table');
         await expect(tabelle.getByRole('link', { name: 'Max Mustermann' })).toBeVisible();
         await expect(tabelle.getByText('AB Nacht')).toBeVisible();
@@ -94,6 +95,47 @@ test.describe('Telefon – Anrufbeantworter', () => {
         await page.getByRole('button', { name: 'AB Tag' }).click();
         await expect(page.locator('#nachricht-11')).toHaveCount(0);
         await expect(page.locator('#nachricht-12')).toBeVisible();
+    });
+});
+
+test.describe('Telefon – Tagesfilter', () => {
+    test('Anrufe per Kalender auf einen Tag eingrenzen und wieder alle zeigen', async ({ page }, info) => {
+        await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        const tabelle = inhalt(page).getByRole('table');
+        await expect(tabelle.getByRole('row')).toHaveCount(6);
+
+        await inhalt(page).getByRole('button', { name: /^Tag filtern/ }).click();
+        const kalender = page.getByRole('dialog', { name: /^Tag filtern.*auswählen$/ });
+        await expect(kalender).toBeVisible();
+        await designPruefung(page, info, 'telefon-tagesfilter-kalender');
+        await kalender.getByRole('button', { name: 'Heute' }).click();
+
+        await expect(page).toHaveURL(new RegExp(`tag=${isoTag()}`));
+        await expect(tabelle.getByRole('row')).toHaveCount(4);
+        await expect(tabelle.getByText('Gestern 09:52')).toHaveCount(0);
+
+        await page.goto(`/telefon/anrufe?tag=${isoTag(1)}`);
+        await expect(inhalt(page).getByRole('table').getByRole('row')).toHaveCount(3);
+        await inhalt(page).getByRole('button', { name: 'Tagesfilter entfernen' }).click();
+        await expect(page).not.toHaveURL(/tag=/);
+        await expect(inhalt(page).getByRole('table').getByRole('row')).toHaveCount(6);
+        await designPruefung(page, info, 'telefon-tagesfilter-anrufe');
+    });
+
+    test('Anrufbeantworter nach Tag filtern; leerer Tag zeigt einen klaren Hinweis', async ({ page }) => {
+        await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufbeantworter');
+        await expect(page.getByRole('heading', { name: 'Anrufbeantworter' })).toBeVisible();
+        const liste = inhalt(page).getByRole('list', { name: 'Nachrichten auf dem Anrufbeantworter' });
+        await expect(liste.getByRole('listitem')).toHaveCount(2);
+
+        await inhalt(page).getByRole('button', { name: /^Tag filtern/ }).click();
+        await page.getByRole('dialog', { name: /^Tag filtern.*auswählen$/ }).getByRole('button', { name: 'Heute' }).click();
+        await expect(liste.getByRole('listitem')).toHaveCount(1);
+
+        await page.goto('/telefon/anrufbeantworter?tag=2020-01-01');
+        await expect(inhalt(page).getByText('Keine Nachrichten am 01.01.2020.')).toBeVisible();
     });
 });
 

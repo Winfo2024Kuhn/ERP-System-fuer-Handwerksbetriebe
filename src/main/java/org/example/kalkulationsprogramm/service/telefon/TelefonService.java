@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -47,13 +48,14 @@ public class TelefonService {
     private final SprachnachrichtDateiablage ablage;
     private final Clock clock;
 
+    /** @param tag nur Anrufe dieses Tages; null = alle Tage */
     @Transactional(readOnly = true)
-    public Page<TelefonAnrufDto> anrufe(TelefonAnrufArt art, boolean nurUnbekannt, String suche,
+    public Page<TelefonAnrufDto> anrufe(TelefonAnrufArt art, boolean nurUnbekannt, String suche, LocalDate tag,
                                         Long kundeId, Long lieferantId, int seite, int groesse) {
         PageRequest seitenAnfrage = PageRequest.of(Math.max(0, seite), Math.clamp(groesse, 1, MAX_SEITENGROESSE),
                 Sort.by(Sort.Order.desc("zeitpunkt"), Sort.Order.desc("id")));
         return zuDtos(anrufRepository.findAll(
-                AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche), seitenAnfrage));
+                AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche, tag), seitenAnfrage));
     }
 
     /**
@@ -83,11 +85,14 @@ public class TelefonService {
                 kandidaten(a, verzeichnis), nachrichtZuAnruf.get(a.getId())));
     }
 
+    /** @param tag nur Nachrichten dieses Tages; null = alle Tage */
     @Transactional(readOnly = true)
-    public List<SprachnachrichtDto> sprachnachrichten(boolean nurNeue, Integer anrufbeantworter,
+    public List<SprachnachrichtDto> sprachnachrichten(boolean nurNeue, Integer anrufbeantworter, LocalDate tag,
                                                       Long kundeId, Long lieferantId) {
         RufnummernZuordnungService.Verzeichnis verzeichnis = zuordnung.verzeichnis();
-        return nachrichtRepository.suche(nurNeue, anrufbeantworter, kundeId, lieferantId).stream()
+        return nachrichtRepository.suche(nurNeue, anrufbeantworter, kundeId, lieferantId,
+                        tag == null ? null : tag.atStartOfDay(),
+                        tag == null ? null : tag.plusDays(1).atStartOfDay()).stream()
                 .map(s -> toDto(s, verzeichnis))
                 .toList();
     }

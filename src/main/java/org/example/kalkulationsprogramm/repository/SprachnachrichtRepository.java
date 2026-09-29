@@ -25,12 +25,16 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
               AND (:anrufbeantworter IS NULL OR s.anrufbeantworter = :anrufbeantworter)
               AND (:kundeId IS NULL OR k.id = :kundeId)
               AND (:lieferantId IS NULL OR l.id = :lieferantId)
+              AND (:von IS NULL OR s.zeitpunkt >= :von)
+              AND (:bis IS NULL OR s.zeitpunkt < :bis)
             ORDER BY s.zeitpunkt DESC, s.id DESC
             """)
     List<Sprachnachricht> suche(@Param("nurNeue") boolean nurNeue,
                                 @Param("anrufbeantworter") Integer anrufbeantworter,
                                 @Param("kundeId") Long kundeId,
-                                @Param("lieferantId") Long lieferantId);
+                                @Param("lieferantId") Long lieferantId,
+                                @Param("von") LocalDateTime von,
+                                @Param("bis") LocalDateTime bis);
 
     long countByAbgehoertAmIsNull();
 

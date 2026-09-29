@@ -48,6 +48,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -187,13 +188,30 @@ class TelefonControllerSecurityTest {
     @Test
     @DisplayName("Mit Recht: Anrufliste mit Filtern")
     void anrufliste() throws Exception {
-        when(telefonService.anrufe(eq(TelefonAnrufArt.VERPASST), eq(true), eq("muster"), isNull(), isNull(), eq(0), eq(50)))
+        when(telefonService.anrufe(eq(TelefonAnrufArt.VERPASST), eq(true), eq("muster"), isNull(), isNull(), isNull(), eq(0), eq(50)))
                 .thenReturn(new PageImpl<>(List.of(anruf())));
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht())
                         .param("art", "VERPASST").param("nurUnbekannt", "true").param("suche", "muster"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].kontakt.name").value("Mustermann GmbH"))
                 .andExpect(jsonPath("$.content[0].art").value("VERPASST"));
+    }
+
+    @Test
+    @DisplayName("Mit Recht: Tagesfilter für Anrufe und Anrufbeantworter; ungültiges Datum 400")
+    void tagesfilter() throws Exception {
+        LocalDate tag = LocalDate.of(2026, 9, 29);
+        when(telefonService.anrufe(isNull(), eq(false), isNull(), eq(tag), isNull(), isNull(), eq(0), eq(50)))
+                .thenReturn(new PageImpl<>(List.of(anruf())));
+        when(telefonService.sprachnachrichten(false, null, tag, null, null)).thenReturn(List.of(nachricht()));
+        mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("tag", "2026-09-29"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(1));
+        mvc.perform(get("/api/telefon/sprachnachrichten").with(mitRecht()).param("tag", "2026-09-29"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(3));
+        mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("tag", "29.09.2026")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/telefon/sprachnachrichten").with(mitRecht()).param("tag", "'; DROP TABLE x; --"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("tag", "2026-02-30")).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -237,7 +255,7 @@ class TelefonControllerSecurityTest {
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("nurOffen", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].art").value("VERPASST"));
-        verify(telefonService, never()).anrufe(any(), anyBoolean(), any(), any(), any(), anyInt(), anyInt());
+        verify(telefonService, never()).anrufe(any(), anyBoolean(), any(), any(), any(), any(), anyInt(), anyInt());
     }
 
     @Test
@@ -254,7 +272,7 @@ class TelefonControllerSecurityTest {
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("art", "'; DROP TABLE x; --"))
                 .andExpect(status().isBadRequest());
         String boese = "'; DROP TABLE telefon_anruf; --";
-        when(telefonService.anrufe(isNull(), anyBoolean(), eq(boese), isNull(), isNull(), anyInt(), anyInt()))
+        when(telefonService.anrufe(isNull(), anyBoolean(), eq(boese), isNull(), isNull(), isNull(), anyInt(), anyInt()))
                 .thenReturn(new PageImpl<>(List.of()));
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("suche", boese)).andExpect(status().isOk());
     }
