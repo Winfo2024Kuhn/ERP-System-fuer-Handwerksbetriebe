@@ -226,3 +226,18 @@ describe('SystemSetupConfigurator – Postfach für Rechnungen und Mahnungen', (
             ));
     });
 });
+
+describe('SystemSetupConfigurator – Telefon', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        resetHash();
+    });
+
+    it('hat einen eigenen Reiter "Telefon" für die FRITZ!Box', async () => {
+        stubFetch();
+        renderConfigurator();
+        await oeffneReiter(/Telefon/);
+        expect(await screen.findByText('Telefon (FRITZ!Box)')).toBeInTheDocument();
+        expect(window.location.hash).toBe('#telefon');
+    });
+});

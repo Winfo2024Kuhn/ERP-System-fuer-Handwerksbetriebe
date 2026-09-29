@@ -3,7 +3,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { useToast } from '../components/ui/toast';
-import { CalendarCheck, Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet, Bell } from 'lucide-react';
+import { CalendarCheck, Shield, Users, Save, Loader2, Check, Eye, FileText, Wallet, Bell, Phone } from 'lucide-react';
 
 interface TypBerechtigung {
     typ: string;
@@ -16,6 +16,7 @@ interface AbteilungBerechtigung {
     abteilungName: string;
     berechtigungen: TypBerechtigung[];
     darfMonatAbschliessen: boolean;
+    darfTelefonSehen: boolean;
     darfRechnungenGenehmigen: boolean;
     darfRechnungenSehen: boolean;
     darfFreigabeAnnahmePushen: boolean;
@@ -47,7 +48,11 @@ export default function AbteilungBerechtigungenEditor() {
             const res = await fetch('/api/abteilungen/berechtigungen');
             if (!res.ok) throw new Error('Berechtigungen konnten nicht geladen werden.');
             const data = await res.json();
-            setBerechtigungen(data.map((abt: AbteilungBerechtigung) => ({ ...abt, darfMonatAbschliessen: abt.darfMonatAbschliessen === true })));
+            setBerechtigungen(data.map((abt: AbteilungBerechtigung) => ({
+                ...abt,
+                darfMonatAbschliessen: abt.darfMonatAbschliessen === true,
+                darfTelefonSehen: abt.darfTelefonSehen === true,
+            })));
         } catch (err) {
             setLoadError(true);
             toastRef.current.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht geladen werden.');
@@ -81,7 +86,7 @@ export default function AbteilungBerechtigungenEditor() {
         }));
     };
 
-    const handleToggleRechnungsFlag = (abteilungId: number, field: 'darfRechnungenGenehmigen' | 'darfRechnungenSehen' | 'darfMonatAbschliessen') => {
+    const handleToggleRechnungsFlag = (abteilungId: number, field: 'darfRechnungenGenehmigen' | 'darfRechnungenSehen' | 'darfMonatAbschliessen' | 'darfTelefonSehen') => {
         setBerechtigungen(prev => prev.map(abt => {
             if (abt.abteilungId !== abteilungId) return abt;
             return { ...abt, [field]: !abt[field] };
@@ -104,6 +109,7 @@ export default function AbteilungBerechtigungenEditor() {
                 body: JSON.stringify({
                     berechtigungen: abteilung.berechtigungen,
                     darfMonatAbschliessen: abteilung.darfMonatAbschliessen,
+                    darfTelefonSehen: abteilung.darfTelefonSehen,
                     darfRechnungenGenehmigen: abteilung.darfRechnungenGenehmigen,
                     darfRechnungenSehen: abteilung.darfRechnungenSehen,
                     darfFreigabeAnnahmePushen: abteilung.darfFreigabeAnnahmePushen,
@@ -202,6 +208,16 @@ export default function AbteilungBerechtigungenEditor() {
                                 <span>
                                     <span className="flex items-center gap-2 text-sm font-semibold text-slate-900"><CalendarCheck aria-hidden="true" className="h-4 w-4 text-rose-600" />Monate abschließen und wieder öffnen</span>
                                     <span className="mt-1 block text-sm text-slate-600">Mitarbeiter dieser Abteilung dürfen Monatsstände prüfen und festhalten. Gilt auch für Administratoren nur mit diesem Recht.</span>
+                                </span>
+                            </label>
+                            <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-slate-200 pt-4">
+                                <input type="checkbox" checked={abt.darfTelefonSehen}
+                                    disabled={saving === abt.abteilungId}
+                                    onChange={() => handleToggleRechnungsFlag(abt.abteilungId, 'darfTelefonSehen')}
+                                    className="mt-1 h-4 w-4 shrink-0 accent-rose-600 focus:ring-2 focus:ring-rose-500" />
+                                <span>
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Phone aria-hidden="true" className="h-4 w-4 text-rose-600" />Anrufe &amp; Anrufbeantworter</span>
+                                    <span className="mt-1 block text-sm text-slate-600">Sieht die Anrufliste, hört Nachrichten auf dem Anrufbeantworter ab und bekommt bei Anrufen das Anruf-Fenster.</span>
                                 </span>
                             </label>
                         </div>

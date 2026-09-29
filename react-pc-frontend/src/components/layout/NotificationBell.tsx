@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     Bell, Mail, Plane, FileText, AlertTriangle, Truck, CalendarClock, X, Package, CheckCircle2,
-    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck, Clock, CalendarCheck
+    Inbox, Wallet, Users, Building2, Briefcase, Globe, CheckCheck, Clock, CalendarCheck,
+    Phone, PhoneMissed, Voicemail
 } from 'lucide-react';
 
 // ── Types & Pure-Logic Helpers ───────────────────────────────────────────
@@ -30,6 +31,8 @@ const RECENT_TYPE_COLORS: Record<string, string> = {
     ANFRAGE_WEBSEITE: 'text-rose-600',
     ZEIT_AUTO_BEENDET: 'text-amber-600',
     MONATSABSCHLUSS: 'text-rose-600',
+    SPRACHNACHRICHT: 'text-amber-600',
+    VERPASSTER_ANRUF: 'text-red-600',
 };
 
 const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -46,6 +49,8 @@ const RECENT_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string
     ANFRAGE_WEBSEITE: Globe,
     ZEIT_AUTO_BEENDET: Clock,
     MONATSABSCHLUSS: CalendarCheck,
+    SPRACHNACHRICHT: Voicemail,
+    VERPASSTER_ANRUF: PhoneMissed,
 };
 
 // ── Gruppen-Definition ─────────────────────────────────────────────────
@@ -73,6 +78,17 @@ const GROUPS: NotificationGroup[] = [
         accentBg: 'bg-rose-100',
         types: ['ANFRAGEN_WEBSEITE'],
         recentTypes: ['ANFRAGE_WEBSEITE'],
+    },
+    {
+        // Direkt hinter der Webseite: wer angerufen hat, wartet meist auf
+        // einen Rückruf. Nur für Benutzer mit dem Telefon-Recht befüllt.
+        id: 'telefon',
+        label: 'Telefon',
+        icon: Phone,
+        accentText: 'text-sky-700',
+        accentBg: 'bg-sky-50',
+        types: ['SPRACHNACHRICHTEN', 'VERPASSTE_ANRUFE'],
+        recentTypes: ['SPRACHNACHRICHT', 'VERPASSTER_ANRUF'],
     },
     {
         // Direkt hinter den Webseiten-Anfragen: Hier steht geschätzte statt

@@ -70,6 +70,8 @@ class NotificationControllerTest {
 
     @Mock org.example.kalkulationsprogramm.repository.MonatsSaldoRepository monatsSaldoRepository;
     @Mock org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
+    @Mock org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService telefonBerechtigungService;
+    @Mock org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService telefonBenachrichtigungService;
 
     @InjectMocks
     private NotificationController controller;
@@ -86,6 +88,45 @@ class NotificationControllerTest {
                 .satisfies(c -> { assertThat(c.count()).isEqualTo(3); assertThat(c.link()).isEqualTo("/monatsabschluss?jahr=2026&monat=8"); });
         assertThat(summary.recentItems()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).hasSize(1);
         org.mockito.Mockito.verify(monatsSaldoRepository).findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1));
+    }
+
+    @Test
+    @DisplayName("Telefon: neue AB-Nachrichten und verpasste Anrufe nur mit Telefon-Recht")
+    void telefonSpalteNurMitRecht() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        var zeit = LocalDateTime.of(2026, 9, 29, 8, 14);
+        given(telefonBenachrichtigungService.neueSprachnachrichten()).willReturn(List.of(
+                new org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService.Eintrag(
+                        "SPRACHNACHRICHT", "Mustermann GmbH", "AB Nacht · heute 08:14 · 0:42", zeit, "/telefon/anrufbeantworter?nachricht=3")));
+        given(telefonBenachrichtigungService.offeneVerpassteAnrufe()).willReturn(List.of(
+                new org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService.Eintrag(
+                        "VERPASSTER_ANRUF", "0931 1234567", "Verpasst · heute 08:20", zeit.plusMinutes(6), "/telefon/anrufe?anruf=7"),
+                new org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService.Eintrag(
+                        "VERPASSTER_ANRUF", "0931 7654321", "Verpasst · heute 08:10", zeit.minusMinutes(4), "/telefon/anrufe?anruf=6")));
+
+        given(telefonBerechtigungService.darfTelefonSehen(auth)).willReturn(false);
+        assertThat(controller.getSummary(null, auth).categories())
+                .noneMatch(c -> c.type().equals("SPRACHNACHRICHTEN") || c.type().equals("VERPASSTE_ANRUFE"));
+
+        given(telefonBerechtigungService.darfTelefonSehen(auth)).willReturn(true);
+        var summary = controller.getSummary(null, auth);
+        assertThat(summary.categories()).filteredOn(c -> c.type().equals("SPRACHNACHRICHTEN")).singleElement()
+                .satisfies(c -> { assertThat(c.count()).isEqualTo(1); assertThat(c.link()).isEqualTo("/telefon/anrufbeantworter"); });
+        assertThat(summary.categories()).filteredOn(c -> c.type().equals("VERPASSTE_ANRUFE")).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(2));
+        assertThat(summary.recentItems()).filteredOn(i -> i.type().equals("VERPASSTER_ANRUF")).hasSize(2);
+        assertThat(summary.recentItems()).filteredOn(i -> i.type().equals("SPRACHNACHRICHT")).singleElement()
+                .satisfies(i -> assertThat(i.link()).isEqualTo("/telefon/anrufbeantworter?nachricht=3"));
+        assertThat(summary.totalCount()).isGreaterThanOrEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Telefon-Fehler bricht die Glocke nicht")
+    void telefonFehlerIstHarmlos() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        given(telefonBerechtigungService.darfTelefonSehen(auth)).willReturn(true);
+        given(telefonBenachrichtigungService.neueSprachnachrichten()).willThrow(new IllegalStateException("DB weg"));
+        assertThat(controller.getSummary(null, auth).categories()).noneMatch(c -> c.type().equals("SPRACHNACHRICHTEN"));
     }
 
     @Test

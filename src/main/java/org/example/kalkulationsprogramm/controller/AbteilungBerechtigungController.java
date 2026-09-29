@@ -58,6 +58,7 @@ public class AbteilungBerechtigungController {
                 .abteilungId(abt.getId())
                 .abteilungName(abt.getName())
                 .darfMonatAbschliessen(Boolean.TRUE.equals(abt.getDarfMonatAbschliessen()))
+                .darfTelefonSehen(Boolean.TRUE.equals(abt.getDarfTelefonSehen()))
                 .berechtigungen(typBerechtigungen)
                 .darfRechnungenGenehmigen(Boolean.TRUE.equals(abt.getDarfRechnungenGenehmigen()))
                 .darfRechnungenSehen(Boolean.TRUE.equals(abt.getDarfRechnungenSehen()))
@@ -101,6 +102,7 @@ public class AbteilungBerechtigungController {
             .abteilungId(abteilung.getId())
             .abteilungName(abteilung.getName())
             .darfMonatAbschliessen(Boolean.TRUE.equals(abteilung.getDarfMonatAbschliessen()))
+            .darfTelefonSehen(Boolean.TRUE.equals(abteilung.getDarfTelefonSehen()))
             .berechtigungen(typBerechtigungen)
             .darfRechnungenGenehmigen(Boolean.TRUE.equals(abteilung.getDarfRechnungenGenehmigen()))
             .darfRechnungenSehen(Boolean.TRUE.equals(abteilung.getDarfRechnungenSehen()))
@@ -165,6 +167,9 @@ public class AbteilungBerechtigungController {
         }
         if (request.getDarfMonatAbschliessen() != null) {
             abteilung.setDarfMonatAbschliessen(request.getDarfMonatAbschliessen());
+        }
+        if (request.getDarfTelefonSehen() != null) {
+            abteilung.setDarfTelefonSehen(request.getDarfTelefonSehen());
         }
         abteilungRepository.save(abteilung);
 

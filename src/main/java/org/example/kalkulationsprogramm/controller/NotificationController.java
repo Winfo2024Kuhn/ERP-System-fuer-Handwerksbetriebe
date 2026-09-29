@@ -76,6 +76,8 @@ public class NotificationController {
         private final ZeitbuchungRepository zeitbuchungRepository;
         private final org.example.kalkulationsprogramm.repository.MonatsSaldoRepository monatsSaldoRepository;
         private final org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
+        private final org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService telefonBerechtigungService;
+        private final org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService telefonBenachrichtigungService;
 
         @GetMapping("/summary")
         public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId,
@@ -656,6 +658,27 @@ public class NotificationController {
                                                 m.getAnzahl() + " Mitarbeiter noch zu prüfen",
                                                 LocalDate.of(m.getJahr(), m.getMonat(), 1).atStartOfDay().toString(),
                                                 monatsabschlussLink(m.getJahr(), m.getMonat()))));
+                        }
+                }
+
+                // Telefon: nur für Benutzer mit dem Abteilungs-Recht "Anrufe & Anrufbeantworter".
+                if (telefonBerechtigungService.darfTelefonSehen(authentication)) {
+                        try {
+                                var nachrichten = telefonBenachrichtigungService.neueSprachnachrichten();
+                                if (!nachrichten.isEmpty()) {
+                                        categories.add(new CategoryDto("SPRACHNACHRICHTEN", "Neue Nachrichten auf dem Anrufbeantworter",
+                                                        nachrichten.size(), "Voicemail", "/telefon/anrufbeantworter"));
+                                        nachrichten.stream().limit(10).forEach(n -> recentItems.add(new RecentItemDto(
+                                                        n.typ(), n.titel(), n.untertitel(), n.zeitpunkt().toString(), n.link())));
+                                }
+                                var verpasst = telefonBenachrichtigungService.offeneVerpassteAnrufe();
+                                if (!verpasst.isEmpty()) {
+                                        categories.add(new CategoryDto("VERPASSTE_ANRUFE", "Verpasste Anrufe",
+                                                        verpasst.size(), "PhoneMissed", "/telefon/anrufe?art=VERPASST"));
+                                        verpasst.stream().limit(10).forEach(v -> recentItems.add(new RecentItemDto(
+                                                        v.typ(), v.titel(), v.untertitel(), v.zeitpunkt().toString(), v.link())));
+                                }
+                        } catch (Exception ignored) {
                         }
                 }
 

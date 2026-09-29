@@ -23,6 +23,42 @@ Datenquelle ist die FRITZ!Box des Betriebs (beim Nutzer: FRITZ!Box 7590,
 FRITZ!OS 8.21). Der ERP-Server steht im selben Büro-Netzwerk und erreicht die
 Box direkt.
 
+
+## Nachträge während der Umsetzung (mit dem Nutzer abgestimmt)
+
+- **Zwei Anrufbeantworter:** Der Betrieb hat „AB Nacht“ (außerhalb der
+  Geschäftszeiten) und „AB Tag“ (innerhalb, nach 20 s ohne Abheben), beide
+  auf 2323. Beide werden abgeholt; im Reiter „Anrufbeantworter“ gibt es
+  Filter **Alle · AB Nacht · AB Tag** mit den Namen aus der FRITZ!Box. Die
+  gewählten ABs werden als JSON `[{index,name}]` in
+  `telefon.anrufbeantworter` gespeichert.
+- **Anrufart „Anrufbeantworter“:** Die FRITZ!Box führt vom AB
+  entgegengenommene Anrufe als „angenommen“ (Typ 1, Port 40–49). Das ERP
+  speichert sie als `ANRUFBEANTWORTER` mit AB-Index (`telefon_anruf.anrufbeantworter`),
+  damit im Büro nicht der Eindruck entsteht, jemand hätte abgehoben.
+- **Nachholen (Backfill, nur ADMIN):** `POST /api/telefon/admin/nachholen?tage=N`
+  (1–999, Standard 365) holt die Anrufliste der letzten N Tage, alle auf den
+  gewählten ABs liegenden Nachrichten und gleicht alle unbekannten Einträge
+  neu ab. Die Box selbst hält nur ca. die letzten 400 Anrufe vor.
+- **Benachrichtigungs-Glocke (PC):** Neue Spalte „Telefon“ direkt nach „Neu
+  von der Webseite“, nur mit Telefon-Recht: Kategorien `SPRACHNACHRICHTEN`
+  (nicht abgehörte Nachrichten) und `VERPASSTE_ANRUFE`, Einträge
+  `SPRACHNACHRICHT` / `VERPASSTER_ANRUF`. Ein verpasster Anruf (auch: AB hat
+  abgenommen, aber keine Nachricht) gilt als offen, bis dieselbe Nummer
+  zurückgerufen wurde oder ein späterer Anruf von ihr angenommen wurde;
+  berücksichtigt werden die letzten 7 Tage. Wegklicken wie bei allen
+  Glocken-Einträgen. Endet ein Live-Anruf, aktualisiert sich die Glocke sofort.
+- **Unterdrückte Nummern** werden als `''` gespeichert (nicht `NULL`), weil
+  MySQL `NULL` in Unique-Indizes als verschieden behandelt und sonst bei jeder
+  Abholung Doppelte entstünden.
+- **Eine kaputte Aufnahme** (z.B. 404 von der Box) wird übersprungen und
+  geloggt; nur „Box nicht erreichbar“ und „Anmeldung fehlgeschlagen“ brechen
+  den ganzen Lauf ab.
+- **Kein httpclient5:** `mustangproject/validator` bringt eine ältere,
+  geshadete httpclient5-Kopie mit, die im Klassenpfad vorgeht. Die
+  Digest-Anmeldung ist deshalb schlank auf `java.net.http.HttpClient`
+  umgesetzt (`DigestAnmeldung`, RFC 7616, MD5/MD5-sess, qop=auth).
+
 ## Nicht-Ziele
 
 - Andere Telefonanlagen (Speedport, sipgate, Placetel …). Die Architektur
@@ -51,7 +87,7 @@ Zuordnungslogik), Etappe 1 ist ohne Etappe 2 vollständig nutzbar.
 ## Grundregel: nur Geschäftsnummern
 
 Die Box meldet mehrere eigene Rufnummern (beim Nutzer: 2323 = Geschäft,
-980850 und 980860 = privat). In den Einstellungen werden die
+zwei weitere = privat). In den Einstellungen werden die
 **Geschäftsnummern** angehakt. **Nur** Anrufe, bei denen eine Geschäftsnummer
 beteiligt ist (eingehend: angerufene Nummer; ausgehend: verwendete eigene
 Nummer), und nur Nachrichten des Anrufbeantworters, der als geschäftlich
@@ -101,9 +137,9 @@ einen klaren Hinweis. Das Passwort wird nie ans Frontend ausgeliefert (nur
 
 ### HTTP-Client
 
-TR-064 verlangt HTTP-Digest-Authentifizierung. Dafür wird
-`org.apache.httpcomponents.client5:httpclient5` ergänzt (Version über Spring
-Boot verwaltet). Verbindung per **HTTP auf Port 49000** im LAN – Digest
+TR-064 verlangt HTTP-Digest-Authentifizierung. Umgesetzt mit
+`java.net.http.HttpClient` und eigener `DigestAnmeldung` (siehe Nachträge).
+Verbindung per **HTTP auf Port 49000** im LAN – Digest
 überträgt das Passwort nicht im Klartext; HTTPS (49443) würde wegen des
 selbstsignierten Zertifikats ein „allen Zertifikaten vertrauen“ erfordern, was
 nicht eingebaut wird. Timeouts: Verbindung 5 s, Antwort 15 s.
@@ -154,8 +190,9 @@ V400 auf keinem offenen Branch vergeben ist.
 |---|---|---|
 | `id` | BIGINT PK | |
 | `zeitpunkt` | DATETIME | Minutengenau |
-| `art` | VARCHAR(20) | `ANGENOMMEN`, `VERPASST`, `AUSGEHEND`, `ABGEWIESEN` |
-| `nummer_roh` | VARCHAR(40) NULL | wie von der Box geliefert; NULL = unterdrückt |
+| `art` | ENUM | `ANGENOMMEN`, `ANRUFBEANTWORTER`, `VERPASST`, `AUSGEHEND`, `ABGEWIESEN` |
+| `anrufbeantworter` | INT NULL | AB-Index bei `ANRUFBEANTWORTER` |
+| `nummer_roh` | VARCHAR(40) NOT NULL | wie von der Box geliefert; `''` = unterdrückt |
 | `nummer_normalisiert` | VARCHAR(40) NULL | E.164 (`+49931…`), Index |
 | `eigene_nummer` | VARCHAR(40) | beteiligte Geschäftsnummer |
 | `dauer_minuten` | INT | |
@@ -177,7 +214,7 @@ als einer gespeichert – akzeptiert. CHECK: höchstens einer von
 | `id` | BIGINT PK | |
 | `anrufbeantworter` | INT | Index des AB auf der Box |
 | `zeitpunkt` | DATETIME | |
-| `nummer_roh` / `nummer_normalisiert` | VARCHAR(40) NULL | |
+| `nummer_roh` / `nummer_normalisiert` | VARCHAR(40) | `nummer_roh` NOT NULL, `''` = unterdrückt |
 | `dauer_sekunden` | INT | aus der Audiodatei |
 | `datei_name` | VARCHAR(100) | vom ERP erzeugt (UUID + `.wav`) |
 | `abgehoert_am` | DATETIME NULL | NULL = neu |
@@ -356,6 +393,8 @@ nach demselben Muster wie `darfMonatAbschliessen`:
 | GET / PUT | `/api/telefon/einstellungen` | ADMIN; Passwort nur schreibend |
 | POST | `/api/telefon/einstellungen/test` | ADMIN; liefert eigene Nummern + AB-Liste |
 | DELETE | `/api/telefon/kontakt-rufnummern/{id}` | gemerkte Nummer entfernen |
+| POST | `/api/telefon/admin/nachholen?tage=N` | ADMIN; Backfill (siehe Nachträge) |
+| GET | `/api/telefon/status` | Telefon-Recht; eingerichtet, AB-Namen, letzte Abholung, Fehler, neue Nachrichten |
 | GET | `/api/telefon/berechtigung` | `{ darfTelefonSehen }` für das Frontend |
 | GET | `/api/telefon/live` | Etappe 2: SSE-Strom |
 
@@ -505,7 +544,7 @@ Wiederverbindung). Bei `anruf-klingelt` erscheint bei allen gleichzeitig ein
 
 1. Nach Eintragen der Zugangsdaten und „Verbindung testen“ zeigt das ERP die
    eigenen Nummern; nach Auswahl von 2323 erscheinen binnen 2 Minuten die
-   Anrufe auf 2323 – und keine Anrufe auf 980850/980860.
+   Anrufe auf 2323 – und keine Anrufe auf den privaten Nummern.
 2. Ein Anruf von einer bei einem Kunden hinterlegten Nummer (egal in welcher
    Schreibweise) ist automatisch diesem Kunden zugeordnet und erscheint in
    dessen Reiter „Anrufe“.

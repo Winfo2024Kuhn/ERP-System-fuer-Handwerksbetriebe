@@ -38,6 +38,10 @@ import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
 import { KundeDuplikatHinweis, type KundeDuplikatTreffer } from '../components/KundeDuplikatHinweis';
 import { KundeDuplikatBestaetigungModal } from '../components/KundeDuplikatBestaetigungModal';
+import { KontaktAnrufeTab } from '../features/telefon/KontaktAnrufeTab';
+import { WeitereRufnummern } from '../features/telefon/WeitereRufnummern';
+import { useKontaktAnrufAnzahl } from '../features/telefon/useKontaktAnrufAnzahl';
+import { useTelefonBerechtigung } from '../features/telefon/useTelefonBerechtigung';
 
 const ANREDE_OPTIONS = [
     { value: '', label: 'Bitte wählen' },
@@ -76,7 +80,7 @@ const formatCurrencyEUR = (val?: number) =>
 const formatDateDE = (dateStr?: string) =>
     dateStr ? new Date(dateStr).toLocaleDateString('de-DE') : '-';
 
-type KundeDetailTab = 'emails' | 'projekte' | 'anfragen' | 'dokumente' | 'notizen';
+type KundeDetailTab = 'emails' | 'anrufe' | 'projekte' | 'anfragen' | 'dokumente' | 'notizen';
 
 // Farben & Klartext-Labels für Geschäftsdokument-Typen (gleiche Logik wie im ProjektEditor).
 const DOK_TYP_COLORS: Record<string, string> = {
@@ -254,7 +258,11 @@ interface KundenDetailViewProps {
 const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEdit }) => {
     const navigate = useNavigate();
     const initials = kunde.name.slice(0, 2).toUpperCase();
-    const [activeTab, setActiveTab] = useState<KundeDetailTab>('emails');
+    const [gewaehlterTab, setActiveTab] = useState<KundeDetailTab>('emails');
+    // Reiter "Anrufe" nur mit dem Abteilungs-Recht "Anrufe & Anrufbeantworter".
+    const darfTelefon = useTelefonBerechtigung() === true;
+    const anrufAnzahl = useKontaktAnrufAnzahl('KUNDE', kunde.id, darfTelefon);
+    const activeTab: KundeDetailTab = gewaehlterTab === 'anrufe' && !darfTelefon ? 'emails' : gewaehlterTab;
 
     const projekte = kunde.projekte || [];
     const anfragen = kunde.anfragen || [];
@@ -266,6 +274,7 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const tabs: { key: KundeDetailTab; label: string; icon: React.ReactNode; count: number }[] = [
         { key: 'emails', label: 'E-Mails', icon: <Mail className="w-4 h-4" />, count: emailCount },
+        ...(darfTelefon ? [{ key: 'anrufe' as const, label: 'Anrufe', icon: <Phone className="w-4 h-4" />, count: anrufAnzahl }] : []),
         { key: 'projekte', label: 'Projekte', icon: <Briefcase className="w-4 h-4" />, count: projekte.length },
         { key: 'anfragen', label: 'Anfragen', icon: <FileText className="w-4 h-4" />, count: anfragen.length },
         { key: 'dokumente', label: 'Dokumente', icon: <Receipt className="w-4 h-4" />, count: dokumente.length },
@@ -405,6 +414,10 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                         />
                     )}
 
+                    {activeTab === 'anrufe' && (
+                        <KontaktAnrufeTab typ="KUNDE" kontaktId={kunde.id} />
+                    )}
+
                     {activeTab === 'projekte' && (
                         projekte.length === 0 ? (
                             <KartenLeerzustand icon={<Briefcase className="w-12 h-12" />} text="Keine Projekte vorhanden." />
@@ -498,6 +511,8 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                         <p className="font-medium text-slate-900 break-words">{kunde.mobiltelefon || '-'}</p>
                     </div>
                 </div>
+                {/* Beim Zuordnen von Anrufen gemerkte Nummern (erscheint nur, wenn es welche gibt). */}
+                <WeitereRufnummern typ="KUNDE" kontaktId={kunde.id} darfLoeschen={darfTelefon} />
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
                     <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />
@@ -1001,14 +1016,16 @@ export const Kundeneditor: React.FC = () => {
     const [isCreating, setIsCreating] = useState(false);
 
     // Deep-link: restore detail view from URL param ?kundeId=123
-    const deepLinkProcessed = useRef(false);
+    // Merkt sich die zuletzt geoeffnete Kennung statt nur "schon einmal
+    // verarbeitet": "Akte oeffnen" im Anruf-Fenster fuehrt auch dann zum
+    // richtigen Kunden, wenn gerade schon eine andere Kundenakte offen ist.
+    const lastDeepLinkId = useRef<string | null>(null);
     useEffect(() => {
-        if (deepLinkProcessed.current) return;
         const kundeIdParam = searchParams.get('kundeId');
-        if (!kundeIdParam) return;
+        if (!kundeIdParam || kundeIdParam === lastDeepLinkId.current) return;
         const kundeId = Number(kundeIdParam);
         if (isNaN(kundeId) || !kundeId) return;
-        deepLinkProcessed.current = true;
+        lastDeepLinkId.current = kundeIdParam;
         (async () => {
             try {
                 setLoading(true);
@@ -1109,18 +1126,21 @@ export const Kundeneditor: React.FC = () => {
                 const fullDetails = await res.json();
                 setSelectedKunde(fullDetails);
                 setViewMode('detail');
+                lastDeepLinkId.current = String(fullDetails.id);
                 setSearchParams({ kundeId: String(fullDetails.id) }, { replace: true });
             } else {
                 console.error('Failed to load full customer details');
                 // Fallback to list data if fetch fails
                 setSelectedKunde(kunde);
                 setViewMode('detail');
+                lastDeepLinkId.current = String(kunde.id);
                 setSearchParams({ kundeId: String(kunde.id) }, { replace: true });
             }
         } catch (err) {
             console.error('Error loading customer details', err);
             setSelectedKunde(kunde);
             setViewMode('detail');
+            lastDeepLinkId.current = String(kunde.id);
             setSearchParams({ kundeId: String(kunde.id) }, { replace: true });
         } finally {
             setLoading(false);
@@ -1128,6 +1148,7 @@ export const Kundeneditor: React.FC = () => {
     };
 
     const handleBackToList = () => {
+        lastDeepLinkId.current = null;
         setViewMode('list');
         setSelectedKunde(null);
         setSearchParams({}, { replace: true });

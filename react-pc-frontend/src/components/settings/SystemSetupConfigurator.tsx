@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, Check, FolderOpen, Mail, Smartphone } from 'lucide-react';
+import { Brain, Check, FolderOpen, Mail, Phone, Smartphone } from 'lucide-react';
 import { EmailSettingsSection } from './sections/EmailSettingsSection';
 import { DateiOrdnerSection } from './sections/DateiOrdnerSection';
 import { KiSettingsSection } from './sections/KiSettingsSection';
 import { ZeiterfassungSection } from './sections/ZeiterfassungSection';
+import { TelefonSettingsSection } from './sections/TelefonSettingsSection';
 
 /**
  * Die System-Einstellungen als Reiter statt als eine endlose Rolle.
@@ -19,7 +20,7 @@ import { ZeiterfassungSection } from './sections/ZeiterfassungSection';
  * mehr an.</p>
  */
 
-type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung';
+type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung' | 'telefon';
 
 interface TabDefinition {
     id: TabId;
@@ -32,6 +33,7 @@ const TABS: TabDefinition[] = [
     { id: 'dateien', label: 'Dateien', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'ki', label: 'KI-Funktionen', icon: <Brain className="w-4 h-4" /> },
     { id: 'zeiterfassung', label: 'Zeiterfassung', icon: <Smartphone className="w-4 h-4" /> },
+    { id: 'telefon', label: 'Telefon', icon: <Phone className="w-4 h-4" /> },
 ];
 
 /** Welche Bereiche sind fertig eingerichtet — für die Häkchen an den Reitern. */
@@ -74,10 +76,11 @@ function useTabInHash(): [TabId, (tab: TabId) => void] {
  */
 async function holeSetupStatus(): Promise<SetupStatus> {
     try {
-        const [smtpRes, geminiRes, dateiOrdnerRes] = await Promise.all([
+        const [smtpRes, geminiRes, dateiOrdnerRes, telefonRes] = await Promise.all([
             fetch('/api/settings/smtp'),
             fetch('/api/settings/gemini'),
             fetch('/api/settings/datei-ordner'),
+            fetch('/api/telefon/einstellungen'),
         ]);
         const status: SetupStatus = {};
         if (smtpRes.ok) {
@@ -91,6 +94,10 @@ async function holeSetupStatus(): Promise<SetupStatus> {
         if (dateiOrdnerRes.ok) {
             const data = await dateiOrdnerRes.json();
             status.dateien = !!data?.pfad?.trim();
+        }
+        if (telefonRes?.ok) {
+            const data = await telefonRes.json();
+            status.telefon = !!data?.aktiv && !!data?.host?.trim() && !!data?.passwortGesetzt;
         }
         return status;
     } catch {
@@ -194,6 +201,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 {activeTab === 'dateien' && <DateiOrdnerSection onSaved={handleSaved} />}
                 {activeTab === 'ki' && <KiSettingsSection onSaved={handleSaved} />}
                 {activeTab === 'zeiterfassung' && <ZeiterfassungSection />}
+                {activeTab === 'telefon' && <TelefonSettingsSection onSaved={handleSaved} />}
             </div>
         </div>
     );

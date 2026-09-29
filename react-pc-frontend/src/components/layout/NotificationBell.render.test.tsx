@@ -127,3 +127,29 @@ it('öffnet MONATSABSCHLUSS als Kalender-Deep-Link auch ohne recentItems', async
     fireEvent.click(await screen.findByText('Monate abschließen'));
     expect(navigateMock).toHaveBeenCalledWith('/zeitbuchungen?jahr=2025&monat=8');
 });
+
+it('zeigt eine Spalte "Telefon" direkt nach der Webseite mit Nachrichten und verpassten Anrufen', async () => {
+    sessionStorage.clear(); localStorage.clear(); navigateMock.mockClear();
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ totalCount: 4,
+        categories: [
+            { type: 'ANFRAGEN_WEBSEITE', label: 'Neue Anfragen', count: 1, icon: 'Globe', link: '/anfragen' },
+            { type: 'SPRACHNACHRICHTEN', label: 'Neue Nachrichten', count: 1, icon: 'Voicemail', link: '/telefon/anrufbeantworter' },
+            { type: 'VERPASSTE_ANRUFE', label: 'Verpasste Anrufe', count: 1, icon: 'PhoneMissed', link: '/telefon/anrufe?art=VERPASST' },
+            { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 1, icon: 'Plane', link: '/urlaubsantraege' },
+        ],
+        recentItems: [
+            { type: 'ANFRAGE_WEBSEITE', title: 'Anfrage: Max Mustermann', subtitle: 'Balkon', timestamp: '2026-09-29T10:00:00', link: '/anfragen?anfrageId=1' },
+            { type: 'SPRACHNACHRICHT', title: 'Nachricht von Max Mustermann', subtitle: 'AB Tag · 0:42', timestamp: '2026-09-29T11:57:00', link: '/telefon/anrufbeantworter?nachricht=11' },
+            { type: 'VERPASSTER_ANRUF', title: 'Verpasst: 0931 1234567', subtitle: 'Heute 11:55', timestamp: '2026-09-29T11:55:00', link: '/telefon/anrufe?anruf=4' },
+            { type: 'URLAUBSANTRAG', title: 'URLAUB: Erika Mustermann', subtitle: '01.10.', timestamp: '2026-09-29T09:00:00', link: '/urlaubsantraege?antragId=2' },
+        ] }) });
+    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTitle('Benachrichtigungen'));
+
+    const ueberschriften = (await screen.findAllByText(/^(Neu von der Webseite|Telefon|Personal)$/)).map(e => e.textContent);
+    expect(ueberschriften).toEqual(['Neu von der Webseite', 'Telefon', 'Personal']);
+
+    fireEvent.click(screen.getByText('Nachricht von Max Mustermann'));
+    expect(navigateMock).toHaveBeenCalledWith('/telefon/anrufbeantworter?nachricht=11');
+});

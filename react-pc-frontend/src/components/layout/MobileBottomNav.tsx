@@ -5,9 +5,11 @@ import {
     Briefcase, Clock, Mail, Package, MoreHorizontal,
     X, FileText, User, Truck, ShoppingCart, FileCheck,
     BarChart3, Euro, Home, Layers, List, Calendar,
-    CalendarDays, Plane, Shield, FileJson, ChevronRight, Stethoscope
+    CalendarDays, Plane, Shield, FileJson, ChevronRight, Stethoscope,
+    Phone, Voicemail
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
+import { useTelefonBerechtigung } from '../../features/telefon/useTelefonBerechtigung';
 
 interface NavItem {
     name: string;
@@ -44,7 +46,8 @@ const SUBMENU_ITEMS: Record<string, NavItem[]> = {
     ],
     '/emails': [
         { name: 'E-Mail Center', href: '/emails', icon: Mail },
-
+        { name: 'Anrufe', href: '/telefon/anrufe', icon: Phone },
+        { name: 'Anrufbeantworter', href: '/telefon/anrufbeantworter', icon: Voicemail },
     ],
     '/kunden': [
         { name: 'Kunden', href: '/kunden', icon: User },
@@ -90,10 +93,17 @@ const MORE_SECTIONS: NavSection[] = [
 ];
 
 const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer']);
+/** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
+const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
+
+function istSichtbar(href: string, isAdmin: boolean, darfTelefon: boolean): boolean {
+    return (isAdmin || !ADMIN_ONLY_PATHS.has(href)) && (darfTelefon || !TELEFON_PATHS.has(href));
+}
 
 export function MobileBottomNav() {
     const location = useLocation();
     const { isAdmin } = useAuth();
+    const darfTelefon = useTelefonBerechtigung() === true;
     const [showMoreSheet, setShowMoreSheet] = useState(false);
     const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
     const [lastTap, setLastTap] = useState<{ tab: string; time: number } | null>(null);
@@ -101,19 +111,19 @@ export function MobileBottomNav() {
     const filteredSubmenuItems = useMemo<Record<string, NavItem[]>>(() => {
         return Object.fromEntries(
             Object.entries(SUBMENU_ITEMS)
-                .map(([key, items]) => [key, items.filter(item => isAdmin || !ADMIN_ONLY_PATHS.has(item.href))] as const)
+                .map(([key, items]) => [key, items.filter(item => istSichtbar(item.href, isAdmin, darfTelefon))] as const)
                 .filter(([, items]) => items.length > 0)
         );
-    }, [isAdmin]);
+    }, [isAdmin, darfTelefon]);
 
     const filteredMoreSections = useMemo<NavSection[]>(() => {
         return MORE_SECTIONS
             .map(section => ({
                 ...section,
-                items: section.items.filter(item => isAdmin || !ADMIN_ONLY_PATHS.has(item.href)),
+                items: section.items.filter(item => istSichtbar(item.href, isAdmin, darfTelefon)),
             }))
             .filter(section => section.items.length > 0);
-    }, [isAdmin]);
+    }, [isAdmin, darfTelefon]);
 
     // Find which primary tab is active based on current route
     const getActiveTab = () => {
