@@ -146,6 +146,29 @@ class FritzBoxTelefonAnlageIntegrationTest {
     }
 
     @Test
+    @DisplayName("Relative Box-URLs ohne führenden Schrägstrich können Host und Zugangsdaten nicht umlenken")
+    void pfadUndQueryOhneSchraegstrichWirdAbgelehnt() {
+        for (String boese : List.of("x@evil.test/a", "@evil.test/a", "evil.test/a", "\\\\evil/a", "calllist.lua?sid=1")) {
+            assertThatThrownBy(() -> Tr064Client.pfadUndQuery(boese))
+                    .as(boese)
+                    .isInstanceOf(TelefonAnlageException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("Zieladresse zeigt immer auf eingestellten Host und Port")
+    void zielAdresseBleibtAufDerBox() {
+        Tr064Client client = new Tr064Client(49000, Duration.ofSeconds(1), Duration.ofSeconds(1));
+        assertThat(client.zielAdresse("fritz.box", "/calllist.lua?sid=1").toString())
+                .isEqualTo("http://fritz.box:49000/calllist.lua?sid=1");
+        for (String boese : List.of("x@evil.test/a", "//evil.test/a", "@evil.test/a", "")) {
+            assertThatThrownBy(() -> client.zielAdresse("fritz.box", boese))
+                    .as(boese)
+                    .isInstanceOf(TelefonAnlageException.class);
+        }
+    }
+
+    @Test
     @DisplayName("Session-ID: nur Buchstaben und Ziffern")
     void sitzungAus() {
         assertThat(FritzBoxTelefonAnlage.sitzungAus("https://x/tam.lua?sid=ab12&tamindex=0")).isEqualTo("ab12");

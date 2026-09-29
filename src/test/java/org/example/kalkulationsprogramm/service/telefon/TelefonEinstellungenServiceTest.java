@@ -128,6 +128,18 @@ class TelefonEinstellungenServiceTest {
     }
 
     @Test
+    @DisplayName("Test-Zugang: gespeichertes Passwort geht nie an eine andere Adresse")
+    void testZugangAndereAdresseBrauchtPasswort() {
+        service.speichere(dto("fritz.box", "erp", "geheim"));
+        assertThat(service.zugangFuerTest("192.168.178.99", null, null)).isEmpty();
+        assertThat(service.zugangFuerTest("192.168.178.99", "erp", "")).isEmpty();
+        assertThat(service.zugangFuerTest("192.168.178.99", null, "neu"))
+                .contains(new TelefonZugang("192.168.178.99", "erp", "neu"));
+        assertThat(service.zugangFuerTest("FRITZ.BOX", null, null))
+                .contains(new TelefonZugang("FRITZ.BOX", "erp", "geheim"));
+    }
+
+    @Test
     @DisplayName("Standardwerte, Vorwahlen, Status")
     void standardUndStatus() {
         assertThat(service.host()).isEqualTo("fritz.box");

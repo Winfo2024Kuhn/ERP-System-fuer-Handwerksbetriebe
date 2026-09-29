@@ -14,14 +14,21 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
 
     boolean existsByAnrufbeantworterAndZeitpunktAndNummerRoh(int anrufbeantworter, LocalDateTime zeitpunkt, String nummerRoh);
 
+    /** Kontakt, Anruf und "abgehört von" werden gleich mitgeladen (keine Abfrage pro Zeile). */
     @Query("""
             SELECT s FROM Sprachnachricht s
+            LEFT JOIN FETCH s.kunde k
+            LEFT JOIN FETCH s.lieferant l
+            LEFT JOIN FETCH s.anruf
+            LEFT JOIN FETCH s.abgehoertVon
             WHERE (:nurNeue = false OR s.abgehoertAm IS NULL)
-              AND (:kundeId IS NULL OR s.kunde.id = :kundeId)
-              AND (:lieferantId IS NULL OR s.lieferant.id = :lieferantId)
+              AND (:anrufbeantworter IS NULL OR s.anrufbeantworter = :anrufbeantworter)
+              AND (:kundeId IS NULL OR k.id = :kundeId)
+              AND (:lieferantId IS NULL OR l.id = :lieferantId)
             ORDER BY s.zeitpunkt DESC, s.id DESC
             """)
     List<Sprachnachricht> suche(@Param("nurNeue") boolean nurNeue,
+                                @Param("anrufbeantworter") Integer anrufbeantworter,
                                 @Param("kundeId") Long kundeId,
                                 @Param("lieferantId") Long lieferantId);
 

@@ -146,15 +146,18 @@ public class TelefonEinstellungenService {
 
     /**
      * Zugang für "Verbindung testen": ungespeicherte Eingaben haben Vorrang,
-     * fehlende Werte kommen aus den gespeicherten Einstellungen.
+     * fehlende Werte kommen aus den gespeicherten Einstellungen. Das gespeicherte
+     * Passwort geht nur an die gespeicherte Adresse – bei einer anderen Adresse
+     * muss es neu eingegeben werden, sonst könnte man es an einen fremden Host schicken.
      */
     public Optional<TelefonZugang> zugangFuerTest(String host, String benutzer, String passwort) {
         Optional<TelefonZugang> gespeichert = zugang();
         String h = host != null && !host.isBlank() ? host.trim() : host();
         String b = benutzer != null && !benutzer.isBlank() ? benutzer.trim()
                 : gespeichert.map(TelefonZugang::benutzer).orElse(settings.get(BENUTZER, ""));
+        boolean gespeicherteAdresse = h.equalsIgnoreCase(host());
         String p = passwort != null && !passwort.isEmpty() ? passwort
-                : gespeichert.map(TelefonZugang::passwort).orElse(null);
+                : gespeichert.filter(z -> gespeicherteAdresse).map(TelefonZugang::passwort).orElse(null);
         if (!FritzBoxHost.istGueltig(h) || b.isBlank() || p == null) {
             return Optional.empty();
         }

@@ -123,6 +123,7 @@ class TelefonDatenIntegrationTest {
         stahl.setTelefon("+49 9721 55555");
         stahl = lieferanten.save(stahl);
 
+        when(einstellungen.istAktiv()).thenReturn(true);
         when(einstellungen.zugang()).thenReturn(Optional.of(new TelefonZugang("fritz.box", "erp", "pw")));
         when(einstellungen.geschaeftsnummern()).thenReturn(List.of("2323"));
         when(einstellungen.anrufbeantworter()).thenReturn(List.of(new AnrufbeantworterDto(0, "AB Nacht"), new AnrufbeantworterDto(1, "AB Tag")));
@@ -302,8 +303,11 @@ class TelefonDatenIntegrationTest {
     }
 
     @Test
-    @DisplayName("Aufbewahrung löscht alte Anrufe und Nachrichten samt Datei")
+    @DisplayName("Aufbewahrung löscht alte Anrufe und Nachrichten samt Datei; spätere Abholung holt sie nicht zurück")
     void aufbewahrung() {
+        // Zuerst mit langer Frist abholen, damit die alten Einträge im ERP liegen
+        when(einstellungen.aufbewahrungAnrufeMonate()).thenReturn(120);
+        when(einstellungen.aufbewahrungSprachnachrichtenMonate()).thenReturn(120);
         boxAnruf(LocalDateTime.of(2025, 1, 10, 9, 0), TelefonAnrufArt.ANRUFBEANTWORTER, "09311234567", "2323", 0);
         boxAnruf(HEUTE_0755, TelefonAnrufArt.ANGENOMMEN, "09311234567", "2323", null);
         boxNachrichten.add(new AnlagenSprachnachricht(0, LocalDateTime.of(2025, 1, 10, 9, 0), "09311234567", "2323",
@@ -316,11 +320,19 @@ class TelefonDatenIntegrationTest {
         Path altDatei = ablageOrdner.resolve("sprachnachrichten").resolve(alt.getDateiName());
         assertThat(altDatei).exists();
 
+        when(einstellungen.aufbewahrungAnrufeMonate()).thenReturn(12);
+        when(einstellungen.aufbewahrungSprachnachrichtenMonate()).thenReturn(3);
         aufbewahrung.aufraeumen();
 
         assertThat(anrufe.findAll()).extracting(TelefonAnruf::getZeitpunkt).containsExactly(HEUTE_0755);
         assertThat(nachrichten.findAll()).extracting(Sprachnachricht::getZeitpunkt).containsExactly(HEUTE_0755);
         assertThat(altDatei).doesNotExist();
+
+        // Die Box hat die alten Einträge noch – sie dürfen nicht wieder auftauchen
+        abholService.abholen();
+        abholService.nachholen(999);
+        assertThat(anrufe.findAll()).extracting(TelefonAnruf::getZeitpunkt).containsExactly(HEUTE_0755);
+        assertThat(nachrichten.findAll()).extracting(Sprachnachricht::getZeitpunkt).containsExactly(HEUTE_0755);
     }
 
     @Test

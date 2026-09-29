@@ -92,6 +92,9 @@ public class TelefonAbholService {
     }
 
     private AbholErgebnisDto lauf(int tage, boolean alleOffenenAbgleichen) {
+        if (!einstellungen.istAktiv()) {
+            return new AbholErgebnisDto(false, "Die Telefon-Anbindung ist ausgeschaltet.", 0, 0, 0);
+        }
         Optional<TelefonZugang> zugang = einstellungen.zugang();
         if (zugang.isEmpty()) {
             return new AbholErgebnisDto(false, TelefonAnlageException.Grund.NICHT_EINGERICHTET.text(), 0, 0, 0);
@@ -129,11 +132,14 @@ public class TelefonAbholService {
             return 0;
         }
         int neu = 0;
+        LocalDateTime frist = LocalDateTime.now(clock).minusMonths(einstellungen.aufbewahrungAnrufeMonate());
         List<AnlagenAnruf> anrufe = anlage.ladeAnrufe(zugang, tage).stream()
                 .sorted(Comparator.comparing(AnlagenAnruf::zeitpunkt))
                 .toList();
         for (AnlagenAnruf a : anrufe) {
-            if (!istGeschaeftsnummer(a.eigeneNummer(), geschaeftlich)) {
+            // Älter als die Aufbewahrungsfrist: nicht (wieder) anlegen, sonst holt
+            // jede Abholung zurück, was die nächtliche Löschung entfernt hat.
+            if (a.zeitpunkt().isBefore(frist) || !istGeschaeftsnummer(a.eigeneNummer(), geschaeftlich)) {
                 continue;
             }
             String nummerRoh = kuerze(a.gegenNummer());
@@ -166,8 +172,12 @@ public class TelefonAbholService {
 
     private int holeSprachnachrichten(TelefonZugang zugang, RufnummernZuordnungService.Verzeichnis verzeichnis) {
         int neu = 0;
+        LocalDateTime frist = LocalDateTime.now(clock).minusMonths(einstellungen.aufbewahrungSprachnachrichtenMonate());
         for (AnrufbeantworterDto ab : einstellungen.anrufbeantworter()) {
             for (AnlagenSprachnachricht n : anlage.ladeSprachnachrichten(zugang, ab.index())) {
+                if (n.zeitpunkt().isBefore(frist)) {
+                    continue; // abgelaufen – gar nicht erst herunterladen
+                }
                 String nummerRoh = kuerze(n.gegenNummer());
                 if (nachrichtRepository.existsByAnrufbeantworterAndZeitpunktAndNummerRoh(
                         ab.index(), n.zeitpunkt(), nummerRoh)) {

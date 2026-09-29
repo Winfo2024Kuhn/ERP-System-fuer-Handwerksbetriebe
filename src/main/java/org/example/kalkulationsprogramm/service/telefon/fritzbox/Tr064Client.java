@@ -88,20 +88,44 @@ class Tr064Client {
         }
         try {
             URI uri = URI.create(s);
+            if (!uri.isAbsolute()) {
+                // Relativ ohne führenden "/" (z.B. "x@evil.test/a") würde, an die
+                // Basisadresse gehängt, Host und Zugangsdaten der URL verändern.
+                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+            }
             String pfad = uri.getRawPath() == null || uri.getRawPath().isEmpty() ? "/" : uri.getRawPath();
+            if (!pfad.startsWith("/") || pfad.startsWith("//")) {
+                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+            }
             return uri.getRawQuery() == null ? pfad : pfad + "?" + uri.getRawQuery();
         } catch (IllegalArgumentException e) {
             throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, e);
         }
     }
 
-    private byte[] ausfuehren(TelefonZugang zugang, String methode, String pfad, String body, String soapAction) {
+    /**
+     * Baut die Zieladresse und stellt sicher, dass sie wirklich auf die
+     * eingestellte FRITZ!Box zeigt – nie auf einen anderen Host oder Port.
+     */
+    URI zielAdresse(String host, String pfad) {
+        String h = FritzBoxHost.pruefe(host);
+        if (pfad == null || !pfad.startsWith("/") || pfad.startsWith("//")) {
+            throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+        }
         URI uri;
         try {
-            uri = URI.create("http://" + FritzBoxHost.pruefe(zugang.host()) + ":" + port + pfad);
+            uri = URI.create("http://" + h + ":" + port + pfad);
         } catch (IllegalArgumentException e) {
             throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, e);
         }
+        if (uri.getRawUserInfo() != null || uri.getPort() != port || !h.equalsIgnoreCase(uri.getHost())) {
+            throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+        }
+        return uri;
+    }
+
+    private byte[] ausfuehren(TelefonZugang zugang, String methode, String pfad, String body, String soapAction) {
+        URI uri = zielAdresse(zugang.host(), pfad);
         try {
             HttpResponse<InputStream> erste = http.send(request(uri, methode, body, soapAction, null),
                     HttpResponse.BodyHandlers.ofInputStream());

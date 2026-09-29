@@ -81,8 +81,7 @@ public class TelefonService {
     public List<SprachnachrichtDto> sprachnachrichten(boolean nurNeue, Integer anrufbeantworter,
                                                       Long kundeId, Long lieferantId) {
         RufnummernZuordnungService.Verzeichnis verzeichnis = zuordnung.verzeichnis();
-        return nachrichtRepository.suche(nurNeue, kundeId, lieferantId).stream()
-                .filter(s -> anrufbeantworter == null || s.getAnrufbeantworter() == anrufbeantworter)
+        return nachrichtRepository.suche(nurNeue, anrufbeantworter, kundeId, lieferantId).stream()
                 .map(s -> toDto(s, verzeichnis))
                 .toList();
     }

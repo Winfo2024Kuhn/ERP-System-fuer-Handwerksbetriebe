@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.service.telefon;
 
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.dto.Telefon.AbholErgebnisDto;
+import org.example.kalkulationsprogramm.dto.Telefon.AnrufbeantworterDto;
 import org.example.kalkulationsprogramm.repository.SprachnachrichtRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +58,8 @@ class TelefonAbholServiceTest {
         when(einstellungen.istAktiv()).thenReturn(true);
         when(einstellungen.geschaeftsnummern()).thenReturn(List.of("2323"));
         when(einstellungen.anrufbeantworter()).thenReturn(List.of());
+        when(einstellungen.aufbewahrungAnrufeMonate()).thenReturn(24);
+        when(einstellungen.aufbewahrungSprachnachrichtenMonate()).thenReturn(3);
         when(zuordnung.frischesVerzeichnis()).thenReturn(new RufnummernZuordnungService.Verzeichnis());
         when(zuordnung.normalisiere(anyString())).thenAnswer(i -> RufnummerNormalisierer.normalisiere(i.getArgument(0), "49", "931"));
     }
@@ -69,6 +72,37 @@ class TelefonAbholServiceTest {
         assertThat(e.erfolgreich()).isFalse();
         assertThat(e.meldung()).contains("nicht eingerichtet");
         verifyNoInteractions(anlage);
+    }
+
+    @Test
+    @DisplayName("Ausgeschaltet → auch \"Jetzt abholen\" und Nachholen fragen die Box nicht ab")
+    void ausgeschaltet() {
+        when(einstellungen.istAktiv()).thenReturn(false);
+        AbholErgebnisDto e = service.abholen();
+        assertThat(e.erfolgreich()).isFalse();
+        assertThat(e.meldung()).contains("ausgeschaltet");
+        assertThat(service.nachholen(30).erfolgreich()).isFalse();
+        verifyNoInteractions(anlage);
+    }
+
+    @Test
+    @DisplayName("Einträge älter als die Aufbewahrungsfrist werden nicht angelegt und nicht heruntergeladen")
+    void abgelaufeneEintraegeUebersprungen() {
+        when(einstellungen.anrufbeantworter()).thenReturn(List.of(new AnrufbeantworterDto(0, "AB")));
+        when(anlage.ladeAnrufe(any(), anyInt())).thenReturn(List.of(
+                new AnlagenAnruf(LocalDateTime.of(2024, 1, 10, 8, 0), TelefonAnrufArt.ANGENOMMEN, "09311234567", "2323", 1, null, null)));
+        when(anlage.ladeSprachnachrichten(any(), eq(0))).thenReturn(List.of(
+                new AnlagenSprachnachricht(0, LocalDateTime.of(2026, 5, 1, 8, 0), "09311234567", "2323",
+                        "/download.lua?path=/data/tam/rec/rec.0.000", "sid")));
+
+        AbholErgebnisDto e = service.nachholen(999);
+
+        assertThat(e.erfolgreich()).isTrue();
+        assertThat(e.neueAnrufe()).isZero();
+        assertThat(e.neueSprachnachrichten()).isZero();
+        verify(anrufe, never()).save(any());
+        verify(nachrichten, never()).save(any());
+        verify(anlage, never()).ladeAudio(any(), any());
     }
 
     @Test
