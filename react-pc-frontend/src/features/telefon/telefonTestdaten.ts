@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { KontaktKurz, Sprachnachricht, TelefonAnruf, TelefonStatus } from './types';
+import type { KontaktKurz, KontaktUeberblick, Sprachnachricht, TelefonAnruf, TelefonStatus } from './types';
 
 /**
  * Dummy-Daten und ein Fetch-Stub für die Telefon-Tests. Nur erfundene
@@ -9,6 +9,27 @@ import type { KontaktKurz, Sprachnachricht, TelefonAnruf, TelefonStatus } from '
 export const KUNDE_MAX: KontaktKurz = { typ: 'KUNDE', id: 7, name: 'Max Mustermann', nummer: 'K-1007', ort: 'Musterstadt' };
 export const KUNDE_ERIKA: KontaktKurz = { typ: 'KUNDE', id: 8, name: 'Erika Mustermann', nummer: 'K-1008', ort: 'Beispielhausen' };
 export const LIEFERANT_GMBH: KontaktKurz = { typ: 'LIEFERANT', id: 3, name: 'Mustermann GmbH', nummer: null, ort: 'Würzburg' };
+
+export const UEBERBLICK_MAX: KontaktUeberblick = {
+    typ: 'KUNDE',
+    id: 7,
+    name: 'Max Mustermann',
+    nummer: 'K-1007',
+    ansprechpartner: 'Erika Mustermann',
+    strasse: 'Musterweg 1',
+    plz: '12345',
+    ort: 'Musterstadt',
+    projekte: [
+        { id: 21, bauvorhaben: 'Wintergarten Musterweg', auftragsnummer: '2026-001', ort: 'Musterstadt', abgeschlossen: false },
+        { id: 22, bauvorhaben: 'Carport', auftragsnummer: '2025-017', ort: null, abgeschlossen: true },
+    ],
+    projekteGesamt: 2,
+    anfragen: [
+        { id: 31, bauvorhaben: 'Balkongeländer', angebotsnummer: 'AN-2026-044', ort: 'Beispielhausen', abgeschlossen: false },
+        { id: 32, bauvorhaben: null, angebotsnummer: null, ort: null, abgeschlossen: false },
+    ],
+    anfragenGesamt: 2,
+};
 
 export function anruf(teil: Partial<TelefonAnruf> = {}): TelefonAnruf {
     return {

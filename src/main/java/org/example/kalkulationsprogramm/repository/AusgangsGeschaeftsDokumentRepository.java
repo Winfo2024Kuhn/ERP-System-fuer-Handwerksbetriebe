@@ -4,8 +4,10 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -50,6 +52,21 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
      * z.B. das ANFRAGE-Dokument, aus dem die Anfragesnummer abgeleitet wird.
      */
     Optional<AusgangsGeschaeftsDokument> findFirstByAnfrageIdAndTyp(Long anfrageId, AusgangsGeschaeftsDokumentTyp typ);
+
+    /** Anfrage und Dokumentnummer, siehe {@link #findDokumentnummernJeAnfrage}. */
+    interface AnfrageDokumentnummer {
+        Long getAnfrageId();
+        String getDokumentNummer();
+    }
+
+    /**
+     * Nicht stornierte Dokumentnummern eines Typs für mehrere Anfragen auf
+     * einmal – neuestes Dokument zuerst.
+     */
+    @Query("SELECT d.anfrage.id AS anfrageId, d.dokumentNummer AS dokumentNummer FROM AusgangsGeschaeftsDokument d "
+            + "WHERE d.anfrage.id IN :anfrageIds AND d.typ = :typ AND d.storniert = false ORDER BY d.id DESC")
+    List<AnfrageDokumentnummer> findDokumentnummernJeAnfrage(@Param("anfrageIds") Collection<Long> anfrageIds,
+                                                             @Param("typ") AusgangsGeschaeftsDokumentTyp typ);
 
     /**
      * Prüft ob bereits ein Basisdokument (ohne Vorgänger) für ein Projekt existiert.

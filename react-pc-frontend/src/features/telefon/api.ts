@@ -2,6 +2,7 @@ import type {
     AbholErgebnis,
     KontaktRufnummer,
     KontaktTyp,
+    KontaktUeberblick,
     Seite,
     Sprachnachricht,
     TelefonAnruf,
@@ -52,6 +53,16 @@ export function aktenPfad(typ: KontaktTyp, id: number): string {
     return typ === 'KUNDE'
         ? `/kunden?kundeId=${encodeURIComponent(String(id))}`
         : `/lieferanten?lieferantId=${encodeURIComponent(String(id))}`;
+}
+
+/** Pfad in ein Projekt. */
+export function projektPfad(id: number): string {
+    return `/projekte?projektId=${encodeURIComponent(String(id))}`;
+}
+
+/** Pfad in eine Anfrage. */
+export function anfragePfad(id: number): string {
+    return `/anfragen?anfrageId=${encodeURIComponent(String(id))}`;
 }
 
 /** Adresse der Aufnahme – als `<audio src>` und Download-Link nutzbar. */
@@ -176,6 +187,14 @@ export async function ladeKontaktRufnummern(typ: KontaktTyp, id: number, signal?
     if (!res.ok) return [];
     const daten = await res.json();
     return Array.isArray(daten) ? daten : [];
+}
+
+/** Adresse, Ansprechpartner, Projekte und Anfragen des Anrufers für das Anruf-Fenster. */
+export function ladeKontaktUeberblick(typ: KontaktTyp, id: number, signal?: AbortSignal): Promise<KontaktUeberblick> {
+    const param = typ === 'KUNDE' ? 'kundeId' : 'lieferantId';
+    return holeJson<KontaktUeberblick>(
+        `${BASIS}/kontakt-ueberblick?${param}=${encodeURIComponent(String(id))}`,
+        'Projekte und Anfragen konnten nicht geladen werden.', { signal });
 }
 
 export async function loescheKontaktRufnummer(id: number): Promise<void> {

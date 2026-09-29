@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.dto.Telefon.AbholErgebnisDto;
+import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufbeantworterDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
@@ -19,6 +20,7 @@ import org.example.kalkulationsprogramm.repository.AbteilungDokumentBerechtigung
 import org.example.kalkulationsprogramm.repository.AbteilungRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.service.telefon.AnlagenInfo;
+import org.example.kalkulationsprogramm.service.telefon.AnrufKontaktUeberblickService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonAbholService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonAnlage;
 import org.example.kalkulationsprogramm.service.telefon.TelefonAnlageException;
@@ -94,6 +96,7 @@ class TelefonControllerSecurityTest {
     @MockBean TelefonEinstellungenService einstellungen;
     @MockBean TelefonAbholService abholService;
     @MockBean TelefonLiveService liveService;
+    @MockBean AnrufKontaktUeberblickService kontaktUeberblick;
     @MockBean TelefonAnlage anlage;
     @MockBean TelefonAnrufmonitorService anrufmonitor;
     @MockBean AbteilungRepository abteilungen;
@@ -166,7 +169,8 @@ class TelefonControllerSecurityTest {
                 .contentType("application/json").content("{\"kundeId\":5}")).andExpect(status().isForbidden());
         mvc.perform(post("/api/telefon/abholen").with(ohneRecht()).with(csrf())).andExpect(status().isForbidden());
         mvc.perform(delete("/api/telefon/kontakt-rufnummern/1").with(ohneRecht()).with(csrf())).andExpect(status().isForbidden());
-        verifyNoInteractions(telefonService, liveService, abholService);
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "5").with(ohneRecht())).andExpect(status().isForbidden());
+        verifyNoInteractions(telefonService, liveService, abholService, kontaktUeberblick);
     }
 
     @Test
@@ -190,6 +194,40 @@ class TelefonControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].kontakt.name").value("Mustermann GmbH"))
                 .andExpect(jsonPath("$.content[0].art").value("VERPASST"));
+    }
+
+    @Test
+    @DisplayName("Mit Recht: Überblick für das Anruf-Fenster mit Projekten und Anfragen")
+    void kontaktUeberblick() throws Exception {
+        when(kontaktUeberblick.ueberblick(5L, null)).thenReturn(new AnrufKontaktUeberblickDto("KUNDE", 5L,
+                "Max Mustermann", "K-1", "Erika Mustermann", "Hauptstraße 1", "97070", "Würzburg",
+                List.of(new AnrufKontaktUeberblickDto.Projekt(9L, "Wintergarten", "2026-001", "Würzburg", false)), 1,
+                List.of(new AnrufKontaktUeberblickDto.Anfrage(4L, "Balkongeländer", "AN-2026-044", null, false)), 1));
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "5").with(mitRecht()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ansprechpartner").value("Erika Mustermann"))
+                .andExpect(jsonPath("$.projekte[0].auftragsnummer").value("2026-001"))
+                .andExpect(jsonPath("$.anfragen[0].angebotsnummer").value("AN-2026-044"));
+    }
+
+    @Test
+    @DisplayName("Überblick: fehlende/doppelte IDs 400, unbekannter Kontakt 404, Text statt ID 400")
+    void kontaktUeberblickFehler() throws Exception {
+        when(kontaktUeberblick.ueberblick(null, null)).thenThrow(new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben."));
+        when(kontaktUeberblick.ueberblick(1L, 1L)).thenThrow(new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben."));
+        when(kontaktUeberblick.ueberblick(Long.MAX_VALUE, null)).thenThrow(new NoSuchElementException("Kunde nicht gefunden"));
+        when(kontaktUeberblick.ueberblick(-1L, null)).thenThrow(new NoSuchElementException("Kunde nicht gefunden"));
+        when(kontaktUeberblick.ueberblick(null, 0L)).thenThrow(new NoSuchElementException("Lieferant nicht gefunden"));
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").with(mitRecht())).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "1").param("lieferantId", "1").with(mitRecht()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Bitte genau kundeId oder lieferantId angeben."));
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "-1").with(mitRecht())).andExpect(status().isNotFound());
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("lieferantId", "0").with(mitRecht())).andExpect(status().isNotFound());
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", String.valueOf(Long.MAX_VALUE)).with(mitRecht()))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "'; DROP TABLE kunde; --").with(mitRecht()))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

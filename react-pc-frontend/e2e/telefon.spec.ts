@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { designPruefung, keinHorizontalerUeberlauf, uebergaengeAusklingenLassen } from './hilfen/design';
 import { inhalt } from './hilfen/seite';
-import { KUNDE_ERIKA, KUNDE_MAX, stubbeTelefonApi } from './hilfen/telefon';
+import { KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, stubbeTelefonApi } from './hilfen/telefon';
 
 /**
  * End-to-End-Tests der Telefon-Anbindung (FRITZ!Box): Anrufliste,
@@ -144,6 +144,66 @@ test.describe('Telefon – Anruf-Fenster', () => {
         await stub.sendeLive({ verbindungsId: 'v4', status: 'KLINGELT', kontakt: KUNDE_MAX });
         await page.getByRole('dialog', { name: 'Max Mustermann' }).getByRole('button', { name: 'Akte öffnen' }).click();
         await expect(page).toHaveURL(/\/kunden\?kundeId=7/);
+    });
+});
+
+test.describe('Telefon – Anruf-Fenster mit Projekten und Anfragen', () => {
+    test('zeigt Ansprechpartner, Adresse, Projekte und Anfragen und springt ins Projekt', async ({ page }, info) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        await stub.sendeLive({ verbindungsId: 'p1', status: 'KLINGELT', kontakt: KUNDE_MAX });
+        const fenster = page.getByRole('dialog', { name: 'Max Mustermann' });
+        await expect(fenster.getByText('Erika Mustermann')).toBeVisible();
+        await expect(fenster.getByText('Musterweg 1')).toBeVisible();
+        await expect(fenster.getByText('12345 Musterstadt')).toBeVisible();
+        const projekte = fenster.getByRole('region', { name: 'Projekte' });
+        await expect(projekte).toContainText('(5)');
+        await expect(projekte.getByRole('button', { name: /Wintergarten Musterweg/ })).toContainText('Auftrags-Nr. 2026-001');
+        await expect(fenster.getByRole('region', { name: 'Anfragen' }).getByRole('button', { name: /Gartentor/ })).toContainText('Noch kein Angebot');
+        await designPruefung(page, info, 'telefon-anruf-fenster-projekte');
+
+        await projekte.getByRole('button', { name: /Wintergarten Musterweg/ }).click();
+        await expect(page).toHaveURL(/\/projekte\?projektId=21/);
+        await expect(fenster).toBeHidden();
+    });
+
+    test('springt in die Anfrage; Lieferanten zeigen den Vertreter ohne Projekte', async ({ page }) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        await stub.sendeLive({ verbindungsId: 'l1', status: 'KLINGELT', kontakt: LIEFERANT_GMBH });
+        const lieferant = page.getByRole('dialog', { name: 'Mustermann GmbH' });
+        await expect(lieferant.getByText('Vertreter')).toBeVisible();
+        await expect(lieferant.getByText('Hans Beispiel')).toBeVisible();
+        await expect(lieferant.getByRole('region', { name: 'Projekte' })).toHaveCount(0);
+        await page.keyboard.press('Escape');
+
+        await stub.sendeLive({ verbindungsId: 'a1', status: 'KLINGELT', kontakt: KUNDE_MAX });
+        await page.getByRole('dialog', { name: 'Max Mustermann' }).getByRole('button', { name: /Balkongeländer/ }).click();
+        await expect(page).toHaveURL(/\/anfragen\?anfrageId=31/);
+    });
+
+    test('Ladefehler: Hinweis im Fenster und Toast, Name und "Akte öffnen" bleiben erreichbar', async ({ page }) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        await stub.sendeLive({ verbindungsId: 'f1', status: 'KLINGELT', kontakt: KUNDE_ERIKA });
+        const fenster = page.getByRole('dialog', { name: 'Erika Mustermann' });
+        await expect(fenster.getByRole('alert')).toHaveText('Kunde nicht gefunden');
+        await expect(page.getByText('Kunde nicht gefunden')).toHaveCount(2);
+        await expect(fenster.getByRole('heading', { name: 'Erika Mustermann' })).toBeInViewport();
+        await expect(fenster.getByRole('button', { name: 'Akte öffnen' })).toBeVisible();
+    });
+
+    test('kleiner Bildschirm: der Name bleibt oben sichtbar, der Rest ist scrollbar', async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 720 });
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        await stub.sendeLive({ verbindungsId: 'k1', status: 'KLINGELT', kontakt: KUNDE_MAX });
+        const fenster = page.getByRole('dialog', { name: 'Max Mustermann' });
+        await expect(fenster.getByRole('region', { name: 'Projekte' })).toContainText('(5)');
+        await expect(fenster.getByRole('heading', { name: 'Max Mustermann' })).toBeInViewport();
+        await fenster.getByRole('button', { name: /Gartentor/ }).scrollIntoViewIfNeeded();
+        await expect(fenster.getByRole('button', { name: /Gartentor/ })).toBeInViewport();
+        await expect(fenster.getByRole('button', { name: 'Akte öffnen' })).toBeInViewport();
     });
 });
 

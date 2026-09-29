@@ -3,16 +3,20 @@ import { createPortal } from 'react-dom';
 import { ChevronRight, FolderOpen, Phone, PhoneCall, PhoneMissed, Voicemail, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
+import { AnrufKontaktDetails } from './AnrufKontaktDetails';
 import { formatLaufzeit } from './format';
 import { KontaktKennzeichen } from './KontaktKennzeichen';
 import type { KontaktKurz } from './types';
+import type { UeberblickZustand } from './useKontaktUeberblick';
 import type { LiveAnrufAnzeige } from './useTelefonLive';
 
 /**
  * Großes Anruf-Fenster über dem halben Bildschirm.
  *
  * <p>Auf einen Blick lesbar: wer ruft an, Kunde oder Lieferant, Nummer,
- * Ort. Ein Knopf öffnet die Akte, einer schließt.</p>
+ * Ansprechpartner und Adresse. Bei Kunden stehen darunter alle Projekte und
+ * Anfragen – ein Klick springt direkt hinein. Ein Knopf öffnet die Akte,
+ * einer schließt.</p>
  *
  * <p><strong>Stiehlt bewusst keinen Tastatur-Fokus.</strong> Wer gerade im
  * Hintergrund tippt (z. B. im Dokumenteditor), tippt einfach weiter – ohne
@@ -27,6 +31,10 @@ interface AnrufFensterProps {
     weitere: number;
     onSchliessen: () => void;
     onKontaktOeffnen: (kontakt: KontaktKurz) => void;
+    /** Überblick zum Anrufer; null, solange keiner zugeordnet ist. */
+    ueberblick: UeberblickZustand | null;
+    /** Springt in ein Projekt oder eine Anfrage. */
+    onOeffnen: (pfad: string) => void;
 }
 
 function statusText(anruf: LiveAnrufAnzeige, laufzeit: string): string {
@@ -49,7 +57,7 @@ function useLaufendeSekunden(seit: number | null): number {
     return seit === null ? 0 : Math.max(0, (jetzt - seit) / 1000);
 }
 
-export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen }: AnrufFensterProps) {
+export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, ueberblick, onOeffnen }: AnrufFensterProps) {
     const titelId = useId();
     const laufzeit = formatLaufzeit(useLaufendeSekunden(anruf.status === 'IM_GESPRAECH' ? anruf.gespraechSeit : null));
 
@@ -88,7 +96,7 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen }:
                 role="dialog"
                 aria-modal="false"
                 aria-labelledby={titelId}
-                className="relative flex w-full max-w-[1100px] min-h-[50vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl md:w-[80vw] xl:w-[55vw] motion-safe:[animation:scaleIn_0.25s_cubic-bezier(0.32,0.72,0,1)]"
+                className="relative flex max-h-[92vh] w-full max-w-[1100px] min-h-[50vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl md:w-[80vw] xl:w-[55vw] motion-safe:[animation:scaleIn_0.25s_cubic-bezier(0.32,0.72,0,1)]"
             >
                 {/* Statusleiste */}
                 <div
@@ -123,42 +131,54 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen }:
                 </div>
 
                 {/* Wer ruft an */}
-                <div className="flex flex-1 flex-col justify-center gap-4 px-8 py-8">
-                    <h2 id={titelId} className="break-words text-4xl font-bold leading-tight text-slate-900 lg:text-5xl">
-                        {ueberschrift}
-                    </h2>
-                    {kontakt && (
-                        <div className="flex flex-wrap items-center gap-3 text-lg text-slate-600">
-                            <KontaktKennzeichen typ={kontakt.typ} gross />
-                            {kontakt.nummer && <span>Kunden-Nr. {kontakt.nummer}</span>}
-                            {kontakt.ort && <span>{kontakt.ort}</span>}
-                        </div>
-                    )}
-                    {!unterdrueckt && (
-                        <p className="text-3xl font-semibold tabular-nums tracking-wide text-slate-700">{anruf.nummer}</p>
-                    )}
-                    {mehrdeutig && (
-                        <ul className="mt-2 grid gap-2 sm:grid-cols-2" aria-label="Mögliche Kontakte">
-                            {anruf.kandidaten.map((k) => (
-                                <li key={`${k.typ}-${k.id}`}>
-                                    <button
-                                        type="button"
-                                        onClick={() => onKontaktOeffnen(k)}
-                                        className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                    >
-                                        <span className="min-w-0 flex-1">
-                                            <span className="block break-words text-lg font-semibold text-slate-900">{k.name}</span>
-                                            <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                                                <KontaktKennzeichen typ={k.typ} />
-                                                {k.ort && <span>{k.ort}</span>}
+                {/* Zentriert per my-auto statt justify-center: wird der Inhalt höher als
+                    das Fenster, bleibt der Name oben erreichbar und nichts wird abgeschnitten. */}
+                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-8">
+                    <div className="my-auto flex flex-col gap-4">
+                        <h2 id={titelId} className="break-words text-4xl font-bold leading-tight text-slate-900 lg:text-5xl">
+                            {ueberschrift}
+                        </h2>
+                        {kontakt && (
+                            <div className="flex flex-wrap items-center gap-3 text-lg text-slate-600">
+                                <KontaktKennzeichen typ={kontakt.typ} gross />
+                                {kontakt.nummer && <span>Kunden-Nr. {kontakt.nummer}</span>}
+                            </div>
+                        )}
+                        {!unterdrueckt && (
+                            <p className="text-3xl font-semibold tabular-nums tracking-wide text-slate-700">{anruf.nummer}</p>
+                        )}
+                        {kontakt && (
+                            <div className="mt-4 border-t border-slate-100 pt-6">
+                                <AnrufKontaktDetails
+                                    kontakt={kontakt}
+                                    zustand={ueberblick ?? { status: 'laedt' }}
+                                    onOeffnen={onOeffnen}
+                                />
+                            </div>
+                        )}
+                        {mehrdeutig && (
+                            <ul className="mt-2 grid gap-2 sm:grid-cols-2" aria-label="Mögliche Kontakte">
+                                {anruf.kandidaten.map((k) => (
+                                    <li key={`${k.typ}-${k.id}`}>
+                                        <button
+                                            type="button"
+                                            onClick={() => onKontaktOeffnen(k)}
+                                            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                        >
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block break-words text-lg font-semibold text-slate-900">{k.name}</span>
+                                                <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                                                    <KontaktKennzeichen typ={k.typ} />
+                                                    {k.ort && <span>{k.ort}</span>}
+                                                </span>
                                             </span>
-                                        </span>
-                                        <ChevronRight aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" />
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                                            <ChevronRight aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
                 </div>
 
                 {/* Knöpfe – normal per Tab erreichbar, aber nie automatisch fokussiert. */}

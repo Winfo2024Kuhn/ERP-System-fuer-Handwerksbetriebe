@@ -21,8 +21,8 @@ import type { KontaktKurz, Zuordenbar } from './types';
  *   <li>Mehrere mögliche Kontakte: „Mögliche Kontakte: A, B" – ein Klick
  *       ordnet direkt zu.</li>
  *   <li>Unbekannt: Nummer (und ggf. der Name aus dem FRITZ!Box-Telefonbuch)
- *       plus ein unaufdringlicher Knopf „Zuordnen". Zuordnen ist freiwillig –
- *       deshalb kein Zähler und keine Erinnerung.</li>
+ *       plus ein klar erkennbarer Knopf „Zuordnen" (rose umrandet). Zuordnen
+ *       bleibt freiwillig – deshalb kein Zähler und keine Erinnerung.</li>
  * </ul>
  */
 
@@ -89,9 +89,10 @@ export function WerAnzeige({ eintrag, onZuordnen, onKandidatWaehlen, fett = fals
                 type="button"
                 onClick={onZuordnen}
                 disabled={beschaeftigt}
-                className="mt-1 inline-flex items-center gap-1 rounded px-1 -ml-1 text-xs font-medium text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-50"
+                title="Anruf einem Kunden oder Lieferanten zuordnen"
+                className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 shadow-sm transition-colors hover:border-rose-400 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-                <UserPlus aria-hidden="true" className="h-3.5 w-3.5" />
+                <UserPlus aria-hidden="true" className="h-4 w-4" />
                 Zuordnen
             </button>
         </div>

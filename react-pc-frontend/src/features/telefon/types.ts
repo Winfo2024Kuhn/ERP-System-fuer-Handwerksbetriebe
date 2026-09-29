@@ -15,6 +15,48 @@ export interface KontaktKurz {
     ort: string | null;
 }
 
+/** Projekt eines Anrufers im Anruf-Fenster. */
+export interface UeberblickProjekt {
+    id: number;
+    bauvorhaben: string | null;
+    auftragsnummer: string | null;
+    ort: string | null;
+    abgeschlossen: boolean;
+}
+
+/** Anfrage eines Anrufers im Anruf-Fenster. */
+export interface UeberblickAnfrage {
+    id: number;
+    bauvorhaben: string | null;
+    /** Nummer des Angebots, falls zur Anfrage schon eins geschrieben ist. */
+    angebotsnummer: string | null;
+    ort: string | null;
+    abgeschlossen: boolean;
+}
+
+/**
+ * Alles, was das Anruf-Fenster über den Anrufer zeigt. Projekte und
+ * Anfragen: offene zuerst, dann die neuesten; bei Lieferanten leer.
+ */
+export interface KontaktUeberblick {
+    typ: KontaktTyp;
+    id: number;
+    name: string;
+    /** Kundennummer (nur bei Kunden). */
+    nummer: string | null;
+    /** Beim Kunden der Ansprechpartner, beim Lieferanten der Vertreter. */
+    ansprechpartner: string | null;
+    strasse: string | null;
+    plz: string | null;
+    ort: string | null;
+    /** Höchstens 50 – die Gesamtzahl steht in {@link projekteGesamt}. */
+    projekte: UeberblickProjekt[];
+    projekteGesamt: number;
+    /** Höchstens 50 – die Gesamtzahl steht in {@link anfragenGesamt}. */
+    anfragen: UeberblickAnfrage[];
+    anfragenGesamt: number;
+}
+
 export type Zuordnung = 'AUTOMATISCH' | 'MANUELL' | 'KEINE';
 
 export type AnrufArt = 'ANGENOMMEN' | 'ANRUFBEANTWORTER' | 'VERPASST' | 'AUSGEHEND' | 'ABGEWIESEN';

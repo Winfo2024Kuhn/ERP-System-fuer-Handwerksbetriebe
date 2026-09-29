@@ -153,7 +153,7 @@ describe('TelefonPage', () => {
         expect(screen.getByRole('button', { name: 'Rückruf offen', pressed: true })).toBeInTheDocument();
         expect(anrufParams(fetchMock).get('nurOffen')).toBe('true');
         expect(anrufParams(fetchMock).get('art')).toBeNull();
-        expect(screen.getByRole('textbox', { name: 'Anrufe nach Name oder Nummer durchsuchen' })).toBeDisabled();
+        expect(screen.getByRole('textbox', { name: 'Anrufe durchsuchen' })).toBeDisabled();
 
         fireEvent.click(screen.getByRole('button', { name: 'Verpasst' }));
         await waitFor(() => expect(anrufParams(fetchMock).get('art')).toBe('VERPASST'));

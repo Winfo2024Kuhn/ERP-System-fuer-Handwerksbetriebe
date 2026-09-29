@@ -18,6 +18,7 @@ import org.example.kalkulationsprogramm.repository.SprachnachrichtRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +27,6 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -39,7 +39,6 @@ import java.util.NoSuchElementException;
 public class TelefonService {
 
     static final int MAX_SEITENGROESSE = 100;
-    private static final int MAX_SUCHE = 100;
 
     private final TelefonAnrufRepository anrufRepository;
     private final SprachnachrichtRepository nachrichtRepository;
@@ -51,16 +50,10 @@ public class TelefonService {
     @Transactional(readOnly = true)
     public Page<TelefonAnrufDto> anrufe(TelefonAnrufArt art, boolean nurUnbekannt, String suche,
                                         Long kundeId, Long lieferantId, int seite, int groesse) {
-        String muster = null;
-        if (suche != null && !suche.isBlank()) {
-            String s = suche.trim();
-            if (s.length() > MAX_SUCHE) {
-                s = s.substring(0, MAX_SUCHE);
-            }
-            muster = "%" + escapeLike(s.toLowerCase(Locale.ROOT)) + "%";
-        }
-        PageRequest seitenAnfrage = PageRequest.of(Math.max(0, seite), Math.clamp(groesse, 1, MAX_SEITENGROESSE));
-        return zuDtos(anrufRepository.suche(art, nurUnbekannt, kundeId, lieferantId, muster, seitenAnfrage));
+        PageRequest seitenAnfrage = PageRequest.of(Math.max(0, seite), Math.clamp(groesse, 1, MAX_SEITENGROESSE),
+                Sort.by(Sort.Order.desc("zeitpunkt"), Sort.Order.desc("id")));
+        return zuDtos(anrufRepository.findAll(
+                AnrufSuche.filter(art, nurUnbekannt, kundeId, lieferantId, suche), seitenAnfrage));
     }
 
     /**
@@ -220,17 +213,5 @@ public class TelefonService {
 
     private Sprachnachricht nachricht(Long id) {
         return nachrichtRepository.findById(id).orElseThrow(() -> new NoSuchElementException("Sprachnachricht nicht gefunden"));
-    }
-
-    private static String escapeLike(String s) {
-        StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '%' || c == '_' || c == '\\') {
-                sb.append('\\');
-            }
-            sb.append(c);
-        }
-        return sb.toString();
     }
 }

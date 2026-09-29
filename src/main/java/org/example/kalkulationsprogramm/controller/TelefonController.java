@@ -5,12 +5,14 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.dto.Telefon.AbgehoertDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AbholErgebnisDto;
+import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktRufnummerDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonBerechtigungDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonStatusDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonZuordnenDto;
+import org.example.kalkulationsprogramm.service.telefon.AnrufKontaktUeberblickService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonAbholService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonEinstellungenService;
@@ -47,6 +49,7 @@ public class TelefonController {
     private final TelefonEinstellungenService einstellungen;
     private final TelefonAbholService abholService;
     private final TelefonLiveService liveService;
+    private final AnrufKontaktUeberblickService kontaktUeberblick;
 
     @GetMapping("/berechtigung")
     public TelefonBerechtigungDto berechtigung(Authentication authentication) {
@@ -166,6 +169,15 @@ public class TelefonController {
             throw new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben.");
         }
         return telefonService.kontaktRufnummern(kundeId, lieferantId);
+    }
+
+    /** Überblick über den Anrufer für das Anruf-Fenster: Adresse, Projekte, Anfragen. */
+    @GetMapping("/kontakt-ueberblick")
+    public AnrufKontaktUeberblickDto kontaktUeberblick(@RequestParam(required = false) Long kundeId,
+                                                       @RequestParam(required = false) Long lieferantId,
+                                                       Authentication authentication) {
+        berechtigung.verlange(authentication);
+        return kontaktUeberblick.ueberblick(kundeId, lieferantId);
     }
 
     @DeleteMapping("/kontakt-rufnummern/{id}")

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -70,6 +71,23 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
         List<Projekt> findAllWithKundenEmails();
 
         List<Projekt> findByKundenId_Id(Long kundenId);
+
+        /** Schlanke Zeile fürs Anruf-Fenster – ohne die EAGER-Felder des ganzen Projekts. */
+        interface AnrufUeberblickZeile {
+                Long getId();
+                String getBauvorhaben();
+                String getAuftragsnummer();
+                String getOrt();
+                boolean isAbgeschlossen();
+        }
+
+        /** Projekte eines Kunden fürs Anruf-Fenster: offene zuerst, dann die neuesten. */
+        @Query("SELECT p.id AS id, p.bauvorhaben AS bauvorhaben, p.auftragsnummer AS auftragsnummer, p.ort AS ort, "
+                        + "p.abgeschlossen AS abgeschlossen FROM Projekt p WHERE p.kundenId.id = :kundeId "
+                        + "ORDER BY p.abgeschlossen ASC, p.anlegedatum DESC NULLS LAST, p.id DESC")
+        List<AnrufUeberblickZeile> findAnrufUeberblick(@Param("kundeId") Long kundeId, Pageable seite);
+
+        long countByKundenId_Id(Long kundenId);
 
         @Query("""
                 SELECT CASE WHEN COUNT(vorherigesProjekt) > 0 THEN true ELSE false END

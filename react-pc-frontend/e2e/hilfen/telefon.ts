@@ -15,6 +15,25 @@ export const KUNDE_MAX = { typ: 'KUNDE', id: 7, name: 'Max Mustermann', nummer: 
 export const KUNDE_ERIKA = { typ: 'KUNDE', id: 8, name: 'Erika Mustermann', nummer: 'K-1008', ort: 'Beispielhausen' };
 export const LIEFERANT_GMBH = { typ: 'LIEFERANT', id: 3, name: 'Mustermann GmbH', nummer: null, ort: 'Würzburg' };
 
+/** Überblick für das Anruf-Fenster: Ansprechpartner, Adresse, Projekte, Anfragen. */
+export const UEBERBLICK_MAX = {
+    typ: 'KUNDE', id: 7, name: 'Max Mustermann', nummer: 'K-1007', ansprechpartner: 'Erika Mustermann',
+    strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt',
+    projekte: [
+        { id: 21, bauvorhaben: 'Wintergarten Musterweg', auftragsnummer: '2026-001', ort: 'Musterstadt', abgeschlossen: false },
+        { id: 23, bauvorhaben: 'Treppengeländer Außentreppe mit langem Namen für den Zeilenumbruch', auftragsnummer: '2026-009', ort: 'Beispielhausen', abgeschlossen: false },
+        { id: 24, bauvorhaben: 'Vordach Eingang', auftragsnummer: '2025-031', ort: 'Musterstadt', abgeschlossen: true },
+        { id: 22, bauvorhaben: 'Carport', auftragsnummer: '2025-017', ort: 'Musterstadt', abgeschlossen: true },
+        { id: 25, bauvorhaben: 'Zaunanlage', auftragsnummer: '2024-102', ort: 'Musterstadt', abgeschlossen: true },
+    ],
+    projekteGesamt: 5,
+    anfragen: [
+        { id: 31, bauvorhaben: 'Balkongeländer', angebotsnummer: 'AN-2026-044', ort: 'Beispielhausen', abgeschlossen: false },
+        { id: 32, bauvorhaben: 'Gartentor', angebotsnummer: null, ort: null, abgeschlossen: false },
+    ],
+    anfragenGesamt: 2,
+};
+
 function heute(uhrzeit: string): string {
     const d = new Date();
     const zwei = (n: number) => String(n).padStart(2, '0');
@@ -192,6 +211,13 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             return json(route, eintrag);
         }
         if (pfad === '/api/telefon/abholen') return json(route, { erfolgreich: true, meldung: 'ok', neueAnrufe: 2, neueSprachnachrichten: 1, nachtraeglichZugeordnet: 0 });
+        if (pfad === '/api/telefon/kontakt-ueberblick') {
+            if (url.searchParams.get('kundeId') === '7') return json(route, UEBERBLICK_MAX);
+            if (url.searchParams.get('lieferantId') === '3') {
+                return json(route, { ...UEBERBLICK_MAX, typ: 'LIEFERANT', id: 3, name: 'Mustermann GmbH', nummer: null, ansprechpartner: 'Hans Beispiel', ort: 'Würzburg', projekte: [], projekteGesamt: 0, anfragen: [], anfragenGesamt: 0 });
+            }
+            return json(route, { message: 'Kunde nicht gefunden' }, 404);
+        }
         if (pfad === '/api/telefon/kontakt-rufnummern') return json(route, [{ id: 5, nummer: '0931 5555555' }]);
         if (pfad === '/api/telefon/einstellungen/test') {
             return json(route, {

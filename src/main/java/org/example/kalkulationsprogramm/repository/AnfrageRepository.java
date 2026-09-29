@@ -4,10 +4,30 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Anfrage;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
+
+     /** Schlanke Zeile fürs Anruf-Fenster – ohne die EAGER-Felder der ganzen Anfrage. */
+     interface AnrufUeberblickZeile {
+          Long getId();
+          String getBauvorhaben();
+          String getProjektOrt();
+          boolean isAbgeschlossen();
+     }
+
+     /** Anfragen eines Kunden fürs Anruf-Fenster: offene zuerst, dann die neuesten. */
+     @Query("SELECT a.id AS id, a.bauvorhaben AS bauvorhaben, a.projektOrt AS projektOrt, a.abgeschlossen AS abgeschlossen "
+               + "FROM Anfrage a WHERE a.kunde.id = :kundeId "
+               + "ORDER BY a.abgeschlossen ASC, a.anlegedatum DESC NULLS LAST, a.id DESC")
+     List<AnrufUeberblickZeile> findAnrufUeberblick(@Param("kundeId") Long kundeId, Pageable seite);
+
+     @Query("SELECT COUNT(a) FROM Anfrage a WHERE a.kunde.id = :kundeId")
+     long countByKundeId(@Param("kundeId") Long kundeId);
+
      @Query("SELECT DISTINCT a FROM Anfrage a LEFT JOIN FETCH a.kunde k LEFT JOIN FETCH k.kundenEmails WHERE a.projekt.id IN :ids")
      List<Anfrage> findByProjektIdIn(List<Long> ids);
 

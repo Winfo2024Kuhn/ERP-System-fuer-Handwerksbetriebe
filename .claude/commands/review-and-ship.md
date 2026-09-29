@@ -51,7 +51,14 @@ Diese gelten als „deine eigenen Änderungen", solange sie aus deinem Build ent
 
 ### 0a. Claude-Reviewer (erp-code-reviewer Subagent)
 
-Rufe das `Agent`-Tool auf mit `run_in_background: true`:
+> **Ein Reviewer pro Aufgabe – nicht pro Runde.** Nur der **erste** Lauf startet
+> einen neuen Agenten. Jede weitere Runde geht per `SendMessage` an **denselben**
+> Reviewer (siehe 0c). Ein neuer Agent beginnt mit leerem Kontext und liest Diff,
+> Richtlinien und Code komplett neu ein – das kostet jedes Mal den vollen
+> Token-Betrag. Der bestehende Reviewer kennt all das schon und prüft nur noch
+> die Änderungen seit seinem letzten Report.
+
+**Erster Lauf:** Rufe das `Agent`-Tool auf mit `run_in_background: true`:
 
 - `subagent_type: "erp-code-reviewer"`
 - `description: "ERP Backend+Frontend+Security Review"`
@@ -60,6 +67,26 @@ Rufe das `Agent`-Tool auf mit `run_in_background: true`:
   - Kurze Beschreibung des aktuell implementierten Features/Fixes (aus dem Conversation-Context).
   - Anweisung: „Prüfe den aktuellen Diff (`git diff main...HEAD` + ungestaged) gemäß `docs/agent instructions/docs/BACKEND_ARCH.md`, `docs/agent instructions/docs/FRONTEND_UI.md` und `docs/agent instructions/docs/TESTING_SECURITY.md`. Gib einen strukturierten Report zurück mit: Ampel (🟢/🟡/🔴), kritische Findings (Datei:Zeile + Begründung), nicht-kritische Hinweise. Sei streng aber konkret."
   - Bitte um Ampel-Bewertung am Ende: 🟢 GRÜN / 🟡 GELB / 🔴 ROT.
+
+**Merk dir die Agent-ID** aus dem Tool-Result (`agentId: …`). Sie ist die
+Adresse für alle weiteren Runden dieser Aufgabe.
+
+### 0c. Folgerunden: derselbe Reviewer per `SendMessage`
+
+Ab der zweiten Runde **kein neues `Agent`-Tool**, sondern:
+
+- `SendMessage` mit `to: "<Agent-ID aus dem ersten Lauf>"`
+- Nachricht enthält nur das **Delta**:
+  - welche Findings du wie behoben hast (Datei:Zeile),
+  - welche du bewusst nicht umgesetzt hast und warum,
+  - welche Dateien sonst noch dazugekommen oder geändert sind,
+  - Anweisung: „Prüfe nur die Änderungen seit deinem letzten Report (`git diff` erneut ansehen) und bestätige/verwirf deine Findings. Gleiches Report-Format, Ampel am Ende."
+- Der Reviewer läuft wieder im Hintergrund weiter; du machst parallel Phase 1.
+
+**Nur wenn `SendMessage` fehlschlägt** (Agent nicht mehr erreichbar, z. B. nach
+einem Neustart der Session), startest du ausnahmsweise einen neuen Reviewer wie in
+0a – und gibst ihm im Prompt die Findings der bisherigen Runden mit, damit er nicht
+bei null anfängt.
 
 ### 0b. Sofort weiter zu Phase 1
 
@@ -124,11 +151,11 @@ Sobald der Hintergrund-Reviewer fertig ist (du bekommst eine Completion-Notifica
 
 1. **Report einlesen:** Output aus dem `Agent`-Tool-Result.
 2. **Ampel auswerten:**
-   - **🔴 ROT** → ALLE kritischen Findings fixen. Danach Phase 1b–1d für die betroffenen Bereiche erneut. Danach **erneut Phase 0** (Reviewer neu starten).
+   - **🔴 ROT** → ALLE kritischen Findings fixen. Danach Phase 1b–1d für die betroffenen Bereiche erneut. Danach **Folgerunde nach 0c** (derselbe Reviewer per `SendMessage`).
    - **🟡 GELB** → Findings dem User zeigen + fragen ob er trotzdem freigeben will. Ohne Freigabe wie 🔴 behandeln.
    - **🟢 GRÜN** → weiter zu Phase 3.
 
-**Loop-Regel:** Nach jeder Fix-Runde MUSS der Reviewer neu laufen (Phase 0a erneut, im Hintergrund), während du parallel Phase 1b–1d wiederholst.
+**Loop-Regel:** Nach jeder Fix-Runde MUSS der Reviewer erneut prüfen – per `SendMessage` an **denselben** Reviewer (Phase 0c), nicht per neuem `Agent`-Aufruf –, während du parallel Phase 1b–1d wiederholst.
 
 **Einspruchs-Regel:** Wenn du ein Finding für sachlich falsch hältst (der Reviewer sieht den Kontext nicht immer vollständig), fixe es **nicht** stillschweigend weg und ignoriere es auch nicht – **leg es dem User kurz vor** mit deiner Begründung. Das deutet oft auf eine echte Architektur-Entscheidung hin.
 
@@ -324,7 +351,8 @@ Issue #<nr>: <geschlossen / kein Issue>
 - **Kein Codex.** Einzige Review-Instanz ist der `erp-code-reviewer`-Subagent. Kein `codex exec`, keine Zweitmeinung über ein Fremdmodell.
 - **Phase 0 IMMER mit `run_in_background: true`.** Sonst blockiert der Review die Tests.
 - **Du wartest nicht** – während der Reviewer arbeitet, kompilierst und testest du.
-- **Jede Fix-Runde startet einen neuen Review-Lauf** – nicht nur einmal reviewen.
+- **Jede Fix-Runde bekommt einen neuen Review-Lauf** – nicht nur einmal reviewen.
+- **Immer derselbe Reviewer.** Folgerunden per `SendMessage` an die Agent-ID aus dem ersten Lauf, mit dem Delta. Ein frischer Agent liest alles neu ein und verbrennt Tokens – nur als Notlösung, wenn `SendMessage` scheitert.
 - **Tests grün-fummeln ist verboten.** Root Cause finden, dann fixen.
 - **Nach dem Push kommt der PR** (Phase 4), und bei grünen Checks wird **automatisch gemergt** – ohne Rückfrage. Rot oder pending: nicht mergen, berichten.
 - **Erst zu, wenn das Issue zu ist.** Nach dem Merge `gh issue view` prüfen und notfalls von Hand `gh issue close`. Und: nur `Closes`/`Fixes`/`Resolves` schließen ein Issue — „Behebt #84" tut gar nichts.

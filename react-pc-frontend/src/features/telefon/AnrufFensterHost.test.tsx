@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../../components/ui/toast';
 import { AnrufFensterHost } from './AnrufFensterHost';
-import { antwort, KUNDE_MAX, stubbeFetch } from './telefonTestdaten';
+import { antwort, aufrufe, KUNDE_MAX, stubbeFetch, UEBERBLICK_MAX } from './telefonTestdaten';
 import { setzeTelefonBerechtigungZurueck } from './useTelefonBerechtigung';
 
 type Hoerer = (e: MessageEvent) => void;
@@ -42,7 +43,7 @@ describe('AnrufFensterHost', () => {
 
     it('ohne Telefon-Recht keine Verbindung und kein Fenster', async () => {
         const fetchMock = stubbeFetch(() => antwort({ darfTelefonSehen: false }));
-        render(<MemoryRouter><AnrufFensterHost /></MemoryRouter>);
+        render(<ToastProvider><MemoryRouter><AnrufFensterHost /></MemoryRouter></ToastProvider>);
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
         await new Promise((r) => setTimeout(r, 0));
         expect(quellen).toHaveLength(0);
@@ -51,14 +52,67 @@ describe('AnrufFensterHost', () => {
     it('zeigt den Anruf und öffnet die Kundenakte', async () => {
         stubbeFetch(() => antwort({ darfTelefonSehen: true }));
         render(
+            <ToastProvider>
             <MemoryRouter initialEntries={['/projekte']}>
                 <Routes><Route path="*" element={<><AnrufFensterHost /><Ort /></>} /></Routes>
-            </MemoryRouter>,
+            </MemoryRouter>
+            </ToastProvider>,
         );
         await waitFor(() => expect(quellen).toHaveLength(1));
         sende({ verbindungsId: 'x', status: 'KLINGELT', nummer: '0931 1234567', kontakt: KUNDE_MAX, kandidaten: [], angenommen: false });
         fireEvent.click(await screen.findByRole('button', { name: 'Akte öffnen' }));
         expect(screen.getByTestId('ort')).toHaveTextContent('/kunden?kundeId=7');
         expect(screen.queryByTestId('anruf-fenster')).toBeNull();
+    });
+
+    it('lädt den Überblick einmal je Anrufer und springt ins Projekt', async () => {
+        const fetchMock = stubbeFetch(
+            (url) => (url.pathname === '/api/telefon/kontakt-ueberblick' && url.searchParams.get('kundeId') === '7'
+                ? antwort(UEBERBLICK_MAX) : undefined),
+            () => antwort({ darfTelefonSehen: true }),
+        );
+        render(
+            <ToastProvider>
+            <MemoryRouter initialEntries={['/kunden']}>
+                <Routes><Route path="*" element={<><AnrufFensterHost /><Ort /></>} /></Routes>
+            </MemoryRouter>
+            </ToastProvider>,
+        );
+        await waitFor(() => expect(quellen).toHaveLength(1));
+        sende({ verbindungsId: 'x', status: 'KLINGELT', nummer: '0931 1234567', kontakt: KUNDE_MAX, kandidaten: [], angenommen: false });
+        const projekt = await screen.findByRole('button', { name: /Wintergarten Musterweg/ });
+        sende({ verbindungsId: 'x', status: 'IM_GESPRAECH', nummer: '0931 1234567', kontakt: { ...KUNDE_MAX }, kandidaten: [], angenommen: true });
+        expect(aufrufe(fetchMock, '/api/telefon/kontakt-ueberblick')).toHaveLength(1);
+        fireEvent.click(projekt);
+        expect(screen.getByTestId('ort')).toHaveTextContent('/projekte?projektId=21');
+        expect(screen.queryByTestId('anruf-fenster')).toBeNull();
+    });
+
+    it('öffnet im Dokumenteditor die Anfrage in einem neuen Tab', async () => {
+        stubbeFetch(
+            (url) => (url.pathname === '/api/telefon/kontakt-ueberblick' ? antwort(UEBERBLICK_MAX) : undefined),
+            () => antwort({ darfTelefonSehen: true }),
+        );
+        const oeffnen = vi.fn();
+        vi.stubGlobal('open', oeffnen);
+        render(<ToastProvider><MemoryRouter><AnrufFensterHost akteInNeuemTab /></MemoryRouter></ToastProvider>);
+        await waitFor(() => expect(quellen).toHaveLength(1));
+        sende({ verbindungsId: 'y', status: 'KLINGELT', nummer: '0931 1234567', kontakt: KUNDE_MAX, kandidaten: [], angenommen: false });
+        fireEvent.click(await screen.findByRole('button', { name: /Balkongeländer/ }));
+        expect(oeffnen).toHaveBeenCalledWith('/anfragen?anfrageId=31', '_blank', 'noopener');
+    });
+
+    it('meldet einen Ladefehler als Toast und im Fenster', async () => {
+        stubbeFetch(
+            (url) => (url.pathname === '/api/telefon/kontakt-ueberblick' ? antwort({ message: 'Kunde nicht gefunden' }, 404) : undefined),
+            () => antwort({ darfTelefonSehen: true }),
+        );
+        render(<ToastProvider><MemoryRouter><AnrufFensterHost /></MemoryRouter></ToastProvider>);
+        await waitFor(() => expect(quellen).toHaveLength(1));
+        sende({ verbindungsId: 'z', status: 'KLINGELT', nummer: '0931 1234567', kontakt: KUNDE_MAX, kandidaten: [], angenommen: false });
+        const fenster = await screen.findByRole('dialog', { name: 'Max Mustermann' });
+        expect(await within(fenster).findByRole('alert')).toHaveTextContent('Kunde nicht gefunden');
+        // Einmal im Fenster, einmal als Toast.
+        expect(screen.getAllByText('Kunde nicht gefunden')).toHaveLength(2);
     });
 });

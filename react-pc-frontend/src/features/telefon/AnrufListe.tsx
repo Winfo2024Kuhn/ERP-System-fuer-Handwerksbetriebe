@@ -141,16 +141,18 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
         <div className="space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <FilterChips beschriftung="Anrufe filtern" chips={FILTER_CHIPS} aktiv={filter} onWechsel={wechsleFilter} />
-                <div className="relative w-full lg:w-80">
+                <div className="relative w-full lg:w-96">
                     <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                         type="text"
                         value={sucheEingabe}
                         onChange={(e) => setSucheEingabe(e.target.value)}
-                        placeholder="Name oder Nummer suchen …"
-                        aria-label="Anrufe nach Name oder Nummer durchsuchen"
+                        placeholder="Name, Ort, Bauvorhaben, Nummer …"
+                        aria-label="Anrufe durchsuchen"
                         disabled={filter === 'offen'}
-                        title={filter === 'offen' ? 'Bei „Rückruf offen“ stehen immer alle offenen Rückrufe – Suche dort nicht nötig.' : undefined}
+                        title={filter === 'offen'
+                            ? 'Bei „Rückruf offen“ stehen immer alle offenen Rückrufe – Suche dort nicht nötig.'
+                            : 'Sucht in allen Angaben von Kunden und Lieferanten: Vor- und Nachname, Ansprechpartner, Ort, Straße, Bauvorhaben, Auftragsnummer, Telefon. Mehrere Wörter grenzen weiter ein, z. B. „Max Würzburg“.'}
                         className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                     />
                     {sucheEingabe && (
