@@ -1,6 +1,8 @@
 import type {
     AbholErgebnis,
+    KontaktKurz,
     KontaktRufnummer,
+    AktenTyp,
     KontaktTyp,
     KontaktUeberblick,
     Seite,
@@ -48,12 +50,22 @@ function jsonInit(method: string, body?: unknown): RequestInit {
     };
 }
 
-/** Pfad zur Kunden- bzw. Lieferantenakte. */
-export function aktenPfad(typ: KontaktTyp, id: number): string {
-    return typ === 'KUNDE'
-        ? `/kunden?kundeId=${encodeURIComponent(String(id))}`
-        : `/lieferanten?lieferantId=${encodeURIComponent(String(id))}`;
+/**
+ * Pfad zur Kunden- bzw. Lieferantenakte. Steuerberater haben keine eigene
+ * Akte (nur Firma › Steuerberater für Administratoren) – dann `null` und
+ * es gibt keinen Link.
+ */
+export function aktenPfad(typ: KontaktTyp, id: number): string | null {
+    if (typ === 'KUNDE') return `/kunden?kundeId=${encodeURIComponent(String(id))}`;
+    if (typ === 'LIEFERANT') return `/lieferanten?lieferantId=${encodeURIComponent(String(id))}`;
+    return null;
 }
+
+const ID_PARAMETER: Record<KontaktTyp, string> = {
+    KUNDE: 'kundeId',
+    LIEFERANT: 'lieferantId',
+    STEUERBERATER: 'steuerberaterId',
+};
 
 /** Pfad in ein Projekt. */
 export function projektPfad(id: number): string {
@@ -87,6 +99,10 @@ export interface AnrufFilter {
     /** Nur verpasste Anrufe, um die sich noch keiner gekümmert hat (wie in der Glocke). */
     nurOffen?: boolean;
     suche?: string;
+    /** ISO-Tag (`2026-09-29`): nur Anrufe dieses Tages. */
+    tag?: string;
+    /** Nur Anrufe von Kunden, Lieferanten oder Steuerberatern. */
+    kontaktart?: KontaktTyp;
     kundeId?: number;
     lieferantId?: number;
     seite?: number;
@@ -106,6 +122,8 @@ export async function ladeAnrufe(filter: AnrufFilter, signal?: AbortSignal): Pro
     if (filter.nurUnbekannt) params.set('nurUnbekannt', 'true');
     if (filter.nurOffen) params.set('nurOffen', 'true');
     if (filter.suche?.trim()) params.set('suche', filter.suche.trim());
+    if (filter.tag) params.set('tag', filter.tag);
+    if (filter.kontaktart) params.set('kontaktart', filter.kontaktart);
     if (filter.kundeId) params.set('kundeId', String(filter.kundeId));
     if (filter.lieferantId) params.set('lieferantId', String(filter.lieferantId));
     params.set('seite', String(filter.seite ?? 0));
@@ -124,6 +142,8 @@ export async function ladeAnrufe(filter: AnrufFilter, signal?: AbortSignal): Pro
 export interface NachrichtenFilter {
     nurNeue?: boolean;
     anrufbeantworter?: number | null;
+    /** ISO-Tag (`2026-09-29`): nur Nachrichten dieses Tages. */
+    tag?: string;
     kundeId?: number;
     lieferantId?: number;
 }
@@ -134,6 +154,7 @@ export function ladeSprachnachrichten(filter: NachrichtenFilter, signal?: AbortS
     if (filter.anrufbeantworter !== undefined && filter.anrufbeantworter !== null) {
         params.set('anrufbeantworter', String(filter.anrufbeantworter));
     }
+    if (filter.tag) params.set('tag', filter.tag);
     if (filter.kundeId) params.set('kundeId', String(filter.kundeId));
     if (filter.lieferantId) params.set('lieferantId', String(filter.lieferantId));
     const query = params.toString();
@@ -157,10 +178,27 @@ export function setzeAbgehoert(id: number, abgehoert: boolean): Promise<Sprachna
         jsonInit('PATCH', { abgehoert }));
 }
 
+/** Genau eins von kundeId/lieferantId/steuerberaterId ist gesetzt. */
 export interface ZuordnenDaten {
     kundeId: number | null;
     lieferantId: number | null;
+    steuerberaterId: number | null;
     nummerMerken: boolean;
+}
+
+/** Zuordnen-Daten für einen gewählten Kontakt. */
+export function zuordnenDaten(typ: KontaktTyp, id: number, nummerMerken: boolean): ZuordnenDaten {
+    return {
+        kundeId: typ === 'KUNDE' ? id : null,
+        lieferantId: typ === 'LIEFERANT' ? id : null,
+        steuerberaterId: typ === 'STEUERBERATER' ? id : null,
+        nummerMerken,
+    };
+}
+
+/** Kanzleien zur Auswahl beim Zuordnen (es sind nur wenige). */
+export function ladeSteuerberaterAuswahl(signal?: AbortSignal): Promise<KontaktKurz[]> {
+    return holeJson<KontaktKurz[]>(`${BASIS}/steuerberater`, 'Die Steuerberater konnten nicht geladen werden.', { signal });
 }
 
 function zuordnungsPfad(ziel: ZuordnenZiel): string {
@@ -181,7 +219,7 @@ export function holeJetztAb(): Promise<AbholErgebnis> {
     return holeJson<AbholErgebnis>(`${BASIS}/abholen`, 'Die Anrufe konnten nicht von der FRITZ!Box abgeholt werden.', jsonInit('POST'));
 }
 
-export async function ladeKontaktRufnummern(typ: KontaktTyp, id: number, signal?: AbortSignal): Promise<KontaktRufnummer[]> {
+export async function ladeKontaktRufnummern(typ: AktenTyp, id: number, signal?: AbortSignal): Promise<KontaktRufnummer[]> {
     const param = typ === 'KUNDE' ? 'kundeId' : 'lieferantId';
     const res = await fetch(`${BASIS}/kontakt-rufnummern?${param}=${encodeURIComponent(String(id))}`, { signal });
     if (!res.ok) return [];
@@ -191,7 +229,7 @@ export async function ladeKontaktRufnummern(typ: KontaktTyp, id: number, signal?
 
 /** Adresse, Ansprechpartner, Projekte und Anfragen des Anrufers für das Anruf-Fenster. */
 export function ladeKontaktUeberblick(typ: KontaktTyp, id: number, signal?: AbortSignal): Promise<KontaktUeberblick> {
-    const param = typ === 'KUNDE' ? 'kundeId' : 'lieferantId';
+    const param = ID_PARAMETER[typ];
     return holeJson<KontaktUeberblick>(
         `${BASIS}/kontakt-ueberblick?${param}=${encodeURIComponent(String(id))}`,
         'Projekte und Anfragen konnten nicht geladen werden.', { signal });

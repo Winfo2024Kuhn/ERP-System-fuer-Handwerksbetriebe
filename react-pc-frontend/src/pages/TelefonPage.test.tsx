@@ -7,9 +7,10 @@ import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import { ToastProvider } from '../components/ui/toast';
 import TelefonPage from './TelefonPage';
 import {
-    anruf, antwort, aufrufe, KUNDE_ERIKA, KUNDE_MAX, nachricht, STATUS, stubbeFetch,
+    anruf, antwort, aufrufe, KANZLEI_BEISPIEL, KUNDE_ERIKA, KUNDE_MAX, nachricht, STATUS, stubbeFetch,
 } from '../features/telefon/telefonTestdaten';
 import { setzeTelefonBerechtigungZurueck } from '../features/telefon/useTelefonBerechtigung';
+import { heuteIso } from '../lib/datum';
 import type { Sprachnachricht, TelefonAnruf, TelefonStatus } from '../features/telefon/types';
 
 interface Stand {
@@ -181,7 +182,7 @@ describe('TelefonPage', () => {
         fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
         await waitFor(() => expect(within(tabelle).getByRole('link', { name: 'Max Mustermann' })).toBeInTheDocument());
         const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
-        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, nummerMerken: true });
+        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: true });
     });
 
     it('übernimmt einen der möglichen Kontakte mit einem Klick', async () => {
@@ -191,7 +192,7 @@ describe('TelefonPage', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Max Mustermann' }));
         await waitFor(() => expect(aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')).toHaveLength(1));
         const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
-        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, nummerMerken: false });
+        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: false });
     });
 
     it('holt jetzt ab und zeigt das Ergebnis', async () => {
@@ -245,5 +246,92 @@ describe('TelefonPage', () => {
         await act(async () => {});
         expect(document.getElementById('nachricht-12')).toHaveAttribute('data-hervorgehoben', 'true');
         expect(document.getElementById('nachricht-11')).not.toHaveAttribute('data-hervorgehoben');
+    });
+
+    describe('ohne eigene Reiter, mit Tagesfilter', () => {
+        it('nennt die Ansicht im Titel statt Reiter auf der Seite', async () => {
+            stubbeTelefon();
+            const { unmount } = zeige('/telefon/anrufe');
+            await screen.findByRole('table');
+            expect(screen.getByRole('heading', { name: 'Anrufe' })).toBeInTheDocument();
+            expect(screen.queryByRole('tablist')).toBeNull();
+            expect(screen.queryByRole('tab')).toBeNull();
+            unmount();
+            zeige('/telefon/anrufbeantworter');
+            await screen.findByRole('list', { name: 'Nachrichten auf dem Anrufbeantworter' });
+            expect(screen.getByRole('heading', { name: 'Anrufbeantworter' })).toBeInTheDocument();
+            expect(screen.queryByRole('tablist')).toBeNull();
+        });
+
+        it('filtert Anrufe nach Tag aus der Adresse, per Kalender und setzt ihn wieder zurück', async () => {
+            const user = userEvent.setup();
+            const fetchMock = stubbeTelefon({ anrufe: [] });
+            zeige('/telefon/anrufe?tag=2026-09-28');
+            expect(await screen.findByText('Keine Anrufe am 28.09.2026.')).toBeInTheDocument();
+            expect(anrufParams(fetchMock).get('tag')).toBe('2026-09-28');
+            expect(screen.getByRole('button', { name: /^Tag filtern/ })).toHaveTextContent('28.09.2026');
+
+            await user.click(screen.getByRole('button', { name: 'Tagesfilter entfernen' }));
+            await waitFor(() => expect(anrufParams(fetchMock).has('tag')).toBe(false));
+            expect(screen.getByRole('button', { name: /^Tag filtern/ })).toHaveTextContent('Alle Tage');
+            expect(screen.queryByRole('button', { name: 'Tagesfilter entfernen' })).toBeNull();
+
+            await user.click(screen.getByRole('button', { name: /^Tag filtern/ }));
+            await user.click(screen.getByRole('button', { name: 'Heute' }));
+            await waitFor(() => expect(anrufParams(fetchMock).get('tag')).toBe(heuteIso()));
+        });
+
+        it('sperrt den Tagesfilter bei „Rückruf offen“ und schickt keinen Tag mit', async () => {
+            const fetchMock = stubbeTelefon();
+            zeige('/telefon/anrufe?offen=1&tag=2026-09-28');
+            await screen.findByRole('table');
+            expect(screen.getByRole('button', { name: /^Tag filtern/ })).toBeDisabled();
+            expect(anrufParams(fetchMock).has('tag')).toBe(false);
+            expect(anrufParams(fetchMock).get('nurOffen')).toBe('true');
+        });
+
+        it('filtert den Anrufbeantworter nach Tag', async () => {
+            const fetchMock = stubbeTelefon({ nachrichten: [] });
+            zeige('/telefon/anrufbeantworter?tag=2026-09-28');
+            expect(await screen.findByText('Keine Nachrichten am 28.09.2026.')).toBeInTheDocument();
+            const letzte = aufrufe(fetchMock, '/api/telefon/sprachnachrichten').at(-1)!;
+            expect(new URL(String(letzte[0]), 'http://localhost').searchParams.get('tag')).toBe('2026-09-28');
+        });
+    });
+
+    describe('Kunden, Lieferanten und Steuerberater', () => {
+        it('zeigt Anrufe vom Steuerberater mit Schild, aber ohne Link zur Akte', async () => {
+            stubbeTelefon({ anrufe: [anruf({ id: 9, kontakt: KANZLEI_BEISPIEL, zuordnung: 'AUTOMATISCH' })] });
+            zeige();
+            const tabelle = await screen.findByRole('table');
+            expect(within(tabelle).getByText('Kanzlei Beispiel')).toBeInTheDocument();
+            expect(within(tabelle).queryByRole('link', { name: 'Kanzlei Beispiel' })).toBeNull();
+            expect(within(tabelle).getByText('Steuerberater')).toBeInTheDocument();
+        });
+
+        it('filtert nach Kontaktart aus der Adresse und per Auswahl', async () => {
+            const user = userEvent.setup();
+            const fetchMock = stubbeTelefon({ anrufe: [] });
+            zeige('/telefon/anrufe?kontakt=STEUERBERATER');
+            expect(await screen.findByText('Keine Anrufe von Steuerberatern.')).toBeInTheDocument();
+            expect(anrufParams(fetchMock).get('kontaktart')).toBe('STEUERBERATER');
+
+            await user.click(screen.getByRole('combobox', { name: 'Kontaktart' }));
+            await user.click(screen.getByRole('option', { name: 'Lieferanten' }));
+            await waitFor(() => expect(anrufParams(fetchMock).get('kontaktart')).toBe('LIEFERANT'));
+
+            await user.click(screen.getByRole('combobox', { name: 'Kontaktart' }));
+            await user.click(screen.getByRole('option', { name: 'Alle Kontakte' }));
+            await waitFor(() => expect(anrufParams(fetchMock).has('kontaktart')).toBe(false));
+        });
+
+        it('sperrt die Kontaktart bei „Unbekannt“ und schickt sie nicht mit', async () => {
+            const fetchMock = stubbeTelefon();
+            zeige('/telefon/anrufe?unbekannt=1&kontakt=KUNDE');
+            await screen.findByRole('table');
+            expect(screen.getByRole('combobox', { name: 'Kontaktart' })).toBeDisabled();
+            expect(anrufParams(fetchMock).has('kontaktart')).toBe(false);
+            expect(anrufParams(fetchMock).get('nurUnbekannt')).toBe('true');
+        });
     });
 });

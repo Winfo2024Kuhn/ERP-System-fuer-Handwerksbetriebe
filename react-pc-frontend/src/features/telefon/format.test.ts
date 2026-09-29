@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     anrufbeantworterName,
+    tagAnzeige,
+    tagAusAdresse,
     anzeigeNummer,
     formatDauerMinuten,
     formatLaufzeit,
@@ -65,5 +67,19 @@ describe('Telefon-Formatierung', () => {
     it('zeigt unterdrückte Nummern verständlich', () => {
         expect(anzeigeNummer('')).toBe('Nummer unterdrückt');
         expect(anzeigeNummer('0931 1234567')).toBe('0931 1234567');
+    });
+
+    it('liest den Tag aus der Adresse nur, wenn er echt ist', () => {
+        expect(tagAusAdresse(new URLSearchParams('tag=2026-09-29'))).toBe('2026-09-29');
+        expect(tagAusAdresse(new URLSearchParams(''))).toBe('');
+        expect(tagAusAdresse(new URLSearchParams('tag=2026-02-30'))).toBe('');
+        expect(tagAusAdresse(new URLSearchParams('tag=29.09.2026'))).toBe('');
+        expect(tagAusAdresse(new URLSearchParams('tag=2026-09-29x'))).toBe('');
+        expect(tagAusAdresse(new URLSearchParams("tag='; DROP TABLE x; --"))).toBe('');
+    });
+
+    it('zeigt den Tag deutsch an', () => {
+        expect(tagAnzeige('2026-09-29')).toBe('29.09.2026');
+        expect(tagAnzeige('kaputt')).toBe('kaputt');
     });
 });

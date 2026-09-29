@@ -17,7 +17,8 @@ import type { KontaktKurz, Zuordenbar } from './types';
  * Die Spalte „Wer" für Anrufe und Anrufbeantworter-Nachrichten.
  *
  * <ul>
- *   <li>Zugeordnet: Name als Link zur Akte + Schild Kunde/Lieferant.</li>
+ *   <li>Zugeordnet: Name als Link zur Akte + Schild Kunde/Lieferant/Steuerberater.
+ *       Steuerberater haben keine eigene Akte – ihr Name steht ohne Link.</li>
  *   <li>Mehrere mögliche Kontakte: „Mögliche Kontakte: A, B" – ein Klick
  *       ordnet direkt zu.</li>
  *   <li>Unbekannt: Nummer (und ggf. der Name aus dem FRITZ!Box-Telefonbuch)
@@ -40,15 +41,21 @@ export function WerAnzeige({ eintrag, onZuordnen, onKandidatWaehlen, fett = fals
     const { kontakt, kandidaten, nummer, nameFritzbox } = eintrag;
 
     if (kontakt) {
+        const pfad = aktenPfad(kontakt.typ, kontakt.id);
+        const gewicht = fett ? 'font-bold' : 'font-semibold';
         return (
             <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                        to={aktenPfad(kontakt.typ, kontakt.id)}
-                        className={cn('break-words text-slate-900 hover:text-rose-700 hover:underline focus:outline-none focus:ring-2 focus:ring-rose-500 rounded', fett ? 'font-bold' : 'font-semibold')}
-                    >
-                        {kontakt.name}
-                    </Link>
+                    {pfad ? (
+                        <Link
+                            to={pfad}
+                            className={cn('break-words text-slate-900 hover:text-rose-700 hover:underline focus:outline-none focus:ring-2 focus:ring-rose-500 rounded', gewicht)}
+                        >
+                            {kontakt.name}
+                        </Link>
+                    ) : (
+                        <span className={cn('break-words text-slate-900', gewicht)}>{kontakt.name}</span>
+                    )}
                     <KontaktKennzeichen typ={kontakt.typ} />
                 </div>
                 {(kontakt.ort || kontakt.nummer) && (

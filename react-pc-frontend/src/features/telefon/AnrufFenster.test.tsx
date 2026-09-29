@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AnrufFenster } from './AnrufFenster';
-import { KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, UEBERBLICK_MAX } from './telefonTestdaten';
+import { KANZLEI_BEISPIEL, KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, UEBERBLICK_MAX } from './telefonTestdaten';
 import type { UeberblickZustand } from './useKontaktUeberblick';
 import type { LiveAnrufAnzeige } from './useTelefonLive';
 
@@ -183,6 +183,33 @@ describe('AnrufFenster', () => {
         it('zeigt ohne zugeordneten Kontakt keinen Überblick', () => {
             zeige(live({ kontakt: null }));
             expect(screen.queryByTestId('anruf-kontakt-details')).toBeNull();
+        });
+    });
+
+    describe('Steuerberater', () => {
+        it('zeigt die Kanzlei mit Ansprechpartnern, aber ohne „Akte öffnen“ und ohne Projekte', () => {
+            zeige(live({ kontakt: KANZLEI_BEISPIEL }), 0, {
+                status: 'fertig',
+                daten: { ...UEBERBLICK_MAX, typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null,
+                    ansprechpartner: 'Christine Beispiel', strasse: null, plz: null, ort: null,
+                    projekte: [], projekteGesamt: 0, anfragen: [], anfragenGesamt: 0 },
+            });
+            expect(screen.getByRole('heading', { name: 'Kanzlei Beispiel' })).toBeInTheDocument();
+            expect(screen.getByText('Steuerberater')).toBeInTheDocument();
+            expect(screen.getByText('Ansprechpartner')).toBeInTheDocument();
+            expect(screen.getByText('Christine Beispiel')).toBeInTheDocument();
+            expect(screen.queryByText('Adresse')).toBeNull();
+            expect(screen.queryByRole('region', { name: 'Projekte' })).toBeNull();
+            expect(screen.queryByRole('button', { name: 'Akte öffnen' })).toBeNull();
+            expect(screen.getByRole('button', { name: 'Schließen' })).toBeInTheDocument();
+        });
+
+        it('bietet eine Kanzlei unter mehreren Kandidaten nur als Hinweis, nicht als Link an', () => {
+            const { onKontaktOeffnen } = zeige(live({ kontakt: null, kandidaten: [KUNDE_MAX, KANZLEI_BEISPIEL] }));
+            expect(screen.getByText('Kanzlei Beispiel')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /Kanzlei Beispiel/ })).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: /Max Mustermann/ }));
+            expect(onKontaktOeffnen).toHaveBeenCalledWith(KUNDE_MAX);
         });
     });
 });

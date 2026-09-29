@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.dto.Telefon.AbgehoertDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AbholErgebnisDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
+import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktRufnummerDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
@@ -21,6 +22,7 @@ import org.example.kalkulationsprogramm.service.telefon.TelefonService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -79,6 +82,8 @@ public class TelefonController {
                                         @RequestParam(defaultValue = "false") boolean nurUnbekannt,
                                         @RequestParam(defaultValue = "false") boolean nurOffen,
                                         @RequestParam(required = false) String suche,
+                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tag,
+                                        @RequestParam(required = false) String kontaktart,
                                         @RequestParam(required = false) Long kundeId,
                                         @RequestParam(required = false) Long lieferantId,
                                         @RequestParam(defaultValue = "0") int seite,
@@ -88,7 +93,7 @@ public class TelefonController {
         if (nurOffen) {
             return telefonService.offeneVerpassteAnrufe(seite, groesse);
         }
-        return telefonService.anrufe(art, nurUnbekannt, suche, kundeId, lieferantId, seite, groesse);
+        return telefonService.anrufe(art, nurUnbekannt, suche, tag, kontaktart, kundeId, lieferantId, seite, groesse);
     }
 
     @PostMapping("/anrufe/{id}/zuordnung")
@@ -107,11 +112,12 @@ public class TelefonController {
     @GetMapping("/sprachnachrichten")
     public List<SprachnachrichtDto> sprachnachrichten(@RequestParam(defaultValue = "false") boolean nurNeue,
                                                       @RequestParam(required = false) Integer anrufbeantworter,
+                                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tag,
                                                       @RequestParam(required = false) Long kundeId,
                                                       @RequestParam(required = false) Long lieferantId,
                                                       Authentication authentication) {
         berechtigung.verlange(authentication);
-        return telefonService.sprachnachrichten(nurNeue, anrufbeantworter, kundeId, lieferantId);
+        return telefonService.sprachnachrichten(nurNeue, anrufbeantworter, tag, kundeId, lieferantId);
     }
 
     @GetMapping("/sprachnachrichten/anzahl-neu")
@@ -175,9 +181,17 @@ public class TelefonController {
     @GetMapping("/kontakt-ueberblick")
     public AnrufKontaktUeberblickDto kontaktUeberblick(@RequestParam(required = false) Long kundeId,
                                                        @RequestParam(required = false) Long lieferantId,
+                                                       @RequestParam(required = false) Long steuerberaterId,
                                                        Authentication authentication) {
         berechtigung.verlange(authentication);
-        return kontaktUeberblick.ueberblick(kundeId, lieferantId);
+        return kontaktUeberblick.ueberblick(kundeId, lieferantId, steuerberaterId);
+    }
+
+    /** Kanzleien zur Auswahl beim Zuordnen eines Anrufs. */
+    @GetMapping("/steuerberater")
+    public List<KontaktKurzDto> steuerberater(Authentication authentication) {
+        berechtigung.verlange(authentication);
+        return telefonService.steuerberaterAuswahl();
     }
 
     @DeleteMapping("/kontakt-rufnummern/{id}")

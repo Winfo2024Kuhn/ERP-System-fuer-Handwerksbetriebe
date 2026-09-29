@@ -7,7 +7,8 @@ import type { UeberblickZustand } from './useKontaktUeberblick';
 
 /**
  * Der untere Teil des Anruf-Fensters für bekannte Anrufer: Ansprechpartner,
- * Adresse und – bei Kunden – alle Projekte und Anfragen. Jeder Eintrag ist
+ * Adresse und – bei Kunden – alle Projekte und Anfragen. Bei Steuerberatern
+ * stehen die Ansprechpartner der Kanzlei. Jeder Eintrag ist
  * ein Knopf, der direkt ins Projekt bzw. in die Anfrage springt.
  *
  * <p>Den Ort kennt das Fenster schon aus dem Anruf selbst; er steht deshalb
@@ -24,6 +25,8 @@ export function AnrufKontaktDetails({ kontakt, zustand, onOeffnen }: AnrufKontak
     const daten = zustand.status === 'fertig' ? zustand.daten : null;
     const laedt = zustand.status === 'laedt';
     const istKunde = kontakt.typ === 'KUNDE';
+    // Beim Lieferanten heißt der Ansprechpartner „Vertreter"; Kunden und Kanzleien haben Ansprechpartner.
+    const ansprechpartnerTitel = kontakt.typ === 'LIEFERANT' ? 'Vertreter' : 'Ansprechpartner';
 
     const ortZeile = [daten?.plz, daten?.ort ?? kontakt.ort].filter(Boolean).join(' ');
     const hatAdresse = Boolean(daten?.strasse || ortZeile);
@@ -34,12 +37,12 @@ export function AnrufKontaktDetails({ kontakt, zustand, onOeffnen }: AnrufKontak
             {(hatAnsprechpartner || hatAdresse) && (
                 <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
                     {laedt ? (
-                        <Angabe symbol={UserRound} titel={istKunde ? 'Ansprechpartner' : 'Vertreter'}>
+                        <Angabe symbol={UserRound} titel={ansprechpartnerTitel}>
                             <span aria-hidden="true" className="mt-1 block h-6 w-48 rounded bg-slate-200 motion-safe:animate-pulse" />
                             <span className="sr-only">Wird geladen …</span>
                         </Angabe>
                     ) : daten?.ansprechpartner ? (
-                        <Angabe symbol={UserRound} titel={istKunde ? 'Ansprechpartner' : 'Vertreter'}>
+                        <Angabe symbol={UserRound} titel={ansprechpartnerTitel}>
                             {daten.ansprechpartner}
                         </Angabe>
                     ) : null}

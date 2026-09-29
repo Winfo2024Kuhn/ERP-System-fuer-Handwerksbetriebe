@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { designPruefung, keinHorizontalerUeberlauf, uebergaengeAusklingenLassen } from './hilfen/design';
 import { inhalt } from './hilfen/seite';
-import { KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, stubbeTelefonApi } from './hilfen/telefon';
+import { isoTag, KANZLEI_BEISPIEL, KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, stubbeTelefonApi } from './hilfen/telefon';
 
 /**
  * End-to-End-Tests der Telefon-Anbindung (FRITZ!Box): Anrufliste,
@@ -15,7 +15,8 @@ test.describe('Telefon – Anrufe', () => {
     test('Anrufliste filtern und einen unbekannten Anruf zuordnen', async ({ page }, info) => {
         const stub = await stubbeTelefonApi(page);
         await page.goto('/telefon/anrufe');
-        await expect(page.getByRole('heading', { name: 'Telefon' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Anrufe' })).toBeVisible();
+        await expect(page.getByRole('tablist')).toHaveCount(0);
         const tabelle = inhalt(page).getByRole('table');
         await expect(tabelle.getByRole('link', { name: 'Max Mustermann' })).toBeVisible();
         await expect(tabelle.getByText('AB Nacht')).toBeVisible();
@@ -48,7 +49,7 @@ test.describe('Telefon – Anrufe', () => {
         await expect(dialog).toBeHidden();
         await expect(zeile.getByRole('link', { name: 'Erika Mustermann' })).toBeVisible();
         const zuordnung = stub.mitschrift.find((m) => m.pfad === '/api/telefon/anrufe/2/zuordnung');
-        expect(zuordnung?.body).toEqual({ kundeId: 8, lieferantId: null, nummerMerken: true });
+        expect(zuordnung?.body).toEqual({ kundeId: 8, lieferantId: null, steuerberaterId: null, nummerMerken: true });
     });
 
     test('einen der möglichen Kontakte mit einem Klick übernehmen und Zuordnung aufheben', async ({ page }) => {
@@ -58,7 +59,7 @@ test.describe('Telefon – Anrufe', () => {
         const zeile = tabelle.getByRole('row').filter({ hasText: '0931 3333333' });
         await zeile.getByRole('button', { name: KUNDE_ERIKA.name }).click();
         await expect(zeile.getByRole('link', { name: KUNDE_ERIKA.name })).toBeVisible();
-        expect(stub.mitschrift.at(-1)?.body).toEqual({ kundeId: 8, lieferantId: null, nummerMerken: false });
+        expect(stub.mitschrift.at(-1)?.body).toEqual({ kundeId: 8, lieferantId: null, steuerberaterId: null, nummerMerken: false });
 
         await zeile.getByRole('button', { name: /Weitere Aktionen/ }).click();
         await page.getByRole('menuitem', { name: 'Zuordnung aufheben' }).click();
@@ -94,6 +95,107 @@ test.describe('Telefon – Anrufbeantworter', () => {
         await page.getByRole('button', { name: 'AB Tag' }).click();
         await expect(page.locator('#nachricht-11')).toHaveCount(0);
         await expect(page.locator('#nachricht-12')).toBeVisible();
+    });
+});
+
+test.describe('Telefon – Tagesfilter', () => {
+    test('Anrufe per Kalender auf einen Tag eingrenzen und wieder alle zeigen', async ({ page }, info) => {
+        await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        const tabelle = inhalt(page).getByRole('table');
+        await expect(tabelle.getByRole('row')).toHaveCount(6);
+
+        await inhalt(page).getByRole('button', { name: /^Tag filtern/ }).click();
+        const kalender = page.getByRole('dialog', { name: /^Tag filtern.*auswählen$/ });
+        await expect(kalender).toBeVisible();
+        await designPruefung(page, info, 'telefon-tagesfilter-kalender');
+        await kalender.getByRole('button', { name: 'Heute' }).click();
+
+        await expect(page).toHaveURL(new RegExp(`tag=${isoTag()}`));
+        await expect(tabelle.getByRole('row')).toHaveCount(4);
+        await expect(tabelle.getByText('Gestern 09:52')).toHaveCount(0);
+
+        await page.goto(`/telefon/anrufe?tag=${isoTag(1)}`);
+        await expect(inhalt(page).getByRole('table').getByRole('row')).toHaveCount(3);
+        await inhalt(page).getByRole('button', { name: 'Tagesfilter entfernen' }).click();
+        await expect(page).not.toHaveURL(/tag=/);
+        await expect(inhalt(page).getByRole('table').getByRole('row')).toHaveCount(6);
+        await designPruefung(page, info, 'telefon-tagesfilter-anrufe');
+    });
+
+    test('Anrufbeantworter nach Tag filtern; leerer Tag zeigt einen klaren Hinweis', async ({ page }) => {
+        await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufbeantworter');
+        await expect(page.getByRole('heading', { name: 'Anrufbeantworter' })).toBeVisible();
+        const liste = inhalt(page).getByRole('list', { name: 'Nachrichten auf dem Anrufbeantworter' });
+        await expect(liste.getByRole('listitem')).toHaveCount(2);
+
+        await inhalt(page).getByRole('button', { name: /^Tag filtern/ }).click();
+        await page.getByRole('dialog', { name: /^Tag filtern.*auswählen$/ }).getByRole('button', { name: 'Heute' }).click();
+        await expect(liste.getByRole('listitem')).toHaveCount(1);
+
+        await page.goto('/telefon/anrufbeantworter?tag=2020-01-01');
+        await expect(inhalt(page).getByText('Keine Nachrichten am 01.01.2020.')).toBeVisible();
+    });
+});
+
+test.describe('Telefon – Steuerberater', () => {
+    const vomSteuerberater = {
+        id: 9, zeitpunkt: `${isoTag()}T09:30:00`, art: 'ANGENOMMEN', anrufbeantworter: null, nummer: '0931 444412',
+        eigeneNummer: '0931 7654321', dauerMinuten: 5, nameFritzbox: null, zuordnung: 'AUTOMATISCH',
+        kontakt: KANZLEI_BEISPIEL, kandidaten: [], sprachnachrichtId: null,
+    };
+
+    test('Anrufliste nach Kontaktart filtern; Kanzlei steht mit Schild, aber ohne Link', async ({ page }, info) => {
+        await stubbeTelefonApi(page, { zusatzAnrufe: [vomSteuerberater] });
+        await page.goto('/telefon/anrufe');
+        const tabelle = inhalt(page).getByRole('table');
+        await expect(tabelle.getByRole('row')).toHaveCount(7);
+        await expect(tabelle.getByText('Kanzlei Beispiel')).toBeVisible();
+        await expect(tabelle.getByRole('link', { name: 'Kanzlei Beispiel' })).toHaveCount(0);
+
+        await inhalt(page).getByRole('combobox', { name: 'Kontaktart' }).click();
+        await designPruefung(page, info, 'telefon-kontaktart-auswahl');
+        await page.getByRole('option', { name: 'Steuerberater' }).click();
+        await expect(page).toHaveURL(/kontakt=STEUERBERATER/);
+        await expect(tabelle.getByRole('row')).toHaveCount(2);
+        await expect(tabelle.getByText('Steuerberater')).toBeVisible();
+
+        await inhalt(page).getByRole('combobox', { name: 'Kontaktart' }).click();
+        await page.getByRole('option', { name: 'Lieferanten' }).click();
+        await expect(tabelle.getByRole('row')).toHaveCount(2);
+        await expect(tabelle.getByText('Mustermann GmbH')).toBeVisible();
+
+        await inhalt(page).getByRole('button', { name: 'Unbekannt', exact: true }).click();
+        await expect(inhalt(page).getByRole('combobox', { name: 'Kontaktart' })).toBeDisabled();
+    });
+
+    test('unbekannten Anruf einer Kanzlei zuordnen', async ({ page }, info) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        const zeile = inhalt(page).getByRole('table').getByRole('row').filter({ hasText: '0931 2222222' });
+        await zeile.getByRole('button', { name: 'Zuordnen' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Anruf zuordnen' });
+        await dialog.getByRole('radio', { name: 'Steuerberater' }).click();
+        await dialog.getByRole('radio', { name: 'Kanzlei Beispiel' }).click();
+        await designPruefung(page, info, 'telefon-zuordnen-steuerberater');
+        await dialog.getByRole('button', { name: 'Zuordnen', exact: true }).click();
+        await expect(dialog).toBeHidden();
+        await expect(zeile.getByText('Kanzlei Beispiel')).toBeVisible();
+        const zuordnung = stub.mitschrift.find((m) => m.pfad === '/api/telefon/anrufe/2/zuordnung');
+        expect(zuordnung?.body).toEqual({ kundeId: null, lieferantId: null, steuerberaterId: 30, nummerMerken: false });
+    });
+
+    test('Anruf-Fenster zeigt die Kanzlei ohne „Akte öffnen“', async ({ page }) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        await stub.sendeLive({ verbindungsId: 's1', status: 'KLINGELT', kontakt: KANZLEI_BEISPIEL, nummer: '0931 444412' });
+        const fenster = page.getByRole('dialog', { name: 'Kanzlei Beispiel' });
+        await expect(fenster.getByText('Christine Beispiel')).toBeVisible();
+        await expect(fenster.getByText('Steuerberater')).toBeVisible();
+        await expect(fenster.getByRole('button', { name: 'Akte öffnen' })).toHaveCount(0);
+        await fenster.getByRole('button', { name: 'Schließen' }).click();
+        await expect(fenster).toBeHidden();
     });
 });
 

@@ -4,7 +4,11 @@
  * {@code dto/Telefon/*} im Backend.
  */
 
-export type KontaktTyp = 'KUNDE' | 'LIEFERANT';
+/** Kontakte mit eigener Akte (Kundenakte, Lieferantenakte). */
+export type AktenTyp = 'KUNDE' | 'LIEFERANT';
+
+/** Wer anrufen kann: Kunde, Lieferant oder Steuerberater (Steuerberater ohne eigene Akte). */
+export type KontaktTyp = AktenTyp | 'STEUERBERATER';
 
 export interface KontaktKurz {
     typ: KontaktTyp;

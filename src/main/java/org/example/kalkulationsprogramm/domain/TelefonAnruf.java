@@ -54,6 +54,10 @@ public class TelefonAnruf implements TelefonKontaktZuordenbar {
     @JoinColumn(name = "lieferant_id")
     private Lieferanten lieferant;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "steuerberater_id")
+    private SteuerberaterKontakt steuerberater;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TelefonZuordnung zuordnung = TelefonZuordnung.KEINE;

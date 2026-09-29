@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
@@ -11,6 +13,7 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRep
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +22,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.function.LongSupplier;
 
 import static org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto.MAX_EINTRAEGE;
@@ -42,13 +48,18 @@ public class AnrufKontaktUeberblickService {
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
     private final AusgangsGeschaeftsDokumentRepository dokumentRepository;
+    private final SteuerberaterKontaktRepository steuerberaterRepository;
 
     @Transactional(readOnly = true)
-    public AnrufKontaktUeberblickDto ueberblick(Long kundeId, Long lieferantId) {
-        if ((kundeId == null) == (lieferantId == null)) {
-            throw new IllegalArgumentException("Bitte genau kundeId oder lieferantId angeben.");
+    public AnrufKontaktUeberblickDto ueberblick(Long kundeId, Long lieferantId, Long steuerberaterId) {
+        int gesetzt = (kundeId != null ? 1 : 0) + (lieferantId != null ? 1 : 0) + (steuerberaterId != null ? 1 : 0);
+        if (gesetzt != 1) {
+            throw new IllegalArgumentException("Bitte genau kundeId, lieferantId oder steuerberaterId angeben.");
         }
-        return kundeId != null ? kunde(kundeId) : lieferant(lieferantId);
+        if (kundeId != null) {
+            return kunde(kundeId);
+        }
+        return lieferantId != null ? lieferant(lieferantId) : steuerberater(steuerberaterId);
     }
 
     private AnrufKontaktUeberblickDto kunde(Long id) {
@@ -76,6 +87,29 @@ public class AnrufKontaktUeberblickService {
                 .orElseThrow(() -> new NoSuchElementException("Lieferant nicht gefunden"));
         return new AnrufKontaktUeberblickDto(KontaktKurzDto.LIEFERANT, l.getId(), l.getLieferantenname(), null,
                 l.getVertreter(), l.getStrasse(), l.getPlz(), l.getOrt(), List.of(), 0, List.of(), 0);
+    }
+
+    /** Kanzlei: Ansprechpartner aus der Liste (sonst das alte Einzelfeld), keine Adresse, keine Projekte. */
+    private AnrufKontaktUeberblickDto steuerberater(Long id) {
+        SteuerberaterKontakt s = steuerberaterRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Steuerberater nicht gefunden"));
+        String ansprechpartner = s.getAnsprechpartnerListe().stream()
+                .map(AnrufKontaktUeberblickService::vollerName)
+                .filter(name -> !name.isBlank())
+                .collect(Collectors.joining(", "));
+        if (ansprechpartner.isBlank()) {
+            ansprechpartner = s.getAnsprechpartner();
+        }
+        return new AnrufKontaktUeberblickDto(KontaktKurzDto.STEUERBERATER, s.getId(), s.getName(), null,
+                ansprechpartner, null, null, null, List.of(), 0, List.of(), 0);
+    }
+
+    private static String vollerName(SteuerberaterAnsprechpartner a) {
+        return Stream.of(a.getVorname(), a.getNachname())
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(teil -> !teil.isEmpty())
+                .collect(Collectors.joining(" "));
     }
 
     /** Nur wenn die Liste voll ist, kann es mehr geben – dann erst zählen. */

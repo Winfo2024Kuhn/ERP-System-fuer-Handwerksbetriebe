@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Sprachnachricht;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
@@ -16,6 +17,7 @@ import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.SprachnachrichtRepository;
+import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -91,6 +93,7 @@ class TelefonDatenIntegrationTest {
     @Autowired KontaktRufnummerRepository gemerkte;
     @Autowired KundeRepository kunden;
     @Autowired LieferantenRepository lieferanten;
+    @Autowired SteuerberaterKontaktRepository steuerberater;
     @Autowired jakarta.persistence.EntityManagerFactory emf;
 
     @TempDir Path tmp;
@@ -109,6 +112,7 @@ class TelefonDatenIntegrationTest {
         gemerkte.deleteAll();
         kunden.deleteAll();
         lieferanten.deleteAll();
+        steuerberater.deleteAll();
         zuordnung.verwerfeCache();
 
         mustermann = new Kunde();
@@ -165,7 +169,7 @@ class TelefonDatenIntegrationTest {
         assertThat(anrufe.count()).isEqualTo(3);
         assertThat(anrufe.findAll()).noneMatch(a -> a.getEigeneNummer().equals("555000"));
 
-        Page<TelefonAnrufDto> liste = telefonService.anrufe(null, false, null, null, null, 0, 50);
+        Page<TelefonAnrufDto> liste = telefonService.anrufe(null, false, null, null, null, null, null, 0, 50);
         assertThat(liste.getContent()).extracting(TelefonAnrufDto::art)
                 .containsExactly("VERPASST", "ANRUFBEANTWORTER", "ANGENOMMEN");
         TelefonAnrufDto ab = liste.getContent().get(1);
@@ -174,12 +178,18 @@ class TelefonDatenIntegrationTest {
         assertThat(ab.sprachnachrichtId()).isNotNull();
         assertThat(liste.getContent().get(2).kontakt().name()).isEqualTo("Mustermann GmbH");
 
-        List<SprachnachrichtDto> ns = telefonService.sprachnachrichten(false, 1, null, null);
+        List<SprachnachrichtDto> ns = telefonService.sprachnachrichten(false, 1, null, null, null);
         assertThat(ns).hasSize(1);
         assertThat(ns.getFirst().dauerSekunden()).isEqualTo(1);
         assertThat(ns.getFirst().kontakt().typ()).isEqualTo("LIEFERANT");
-        assertThat(telefonService.sprachnachrichten(false, 0, null, null)).isEmpty();
+        assertThat(telefonService.sprachnachrichten(false, 0, null, null, null)).isEmpty();
         assertThat(telefonService.audio(ns.getFirst().id())).exists();
+
+        // Tagesfilter: Anrufe und Nachrichten vom 29.09., nichts vom Vortag.
+        assertThat(telefonService.anrufe(null, false, null, HEUTE_0755.toLocalDate(), null, null, null, 0, 50).getTotalElements()).isEqualTo(3);
+        assertThat(telefonService.anrufe(null, false, null, HEUTE_0755.toLocalDate().minusDays(1), null, null, null, 0, 50).getTotalElements()).isZero();
+        assertThat(telefonService.sprachnachrichten(false, null, HEUTE_0755.toLocalDate(), null, null)).hasSize(1);
+        assertThat(telefonService.sprachnachrichten(false, null, HEUTE_0755.toLocalDate().minusDays(1), null, null)).isEmpty();
     }
 
     @Test
@@ -189,16 +199,16 @@ class TelefonDatenIntegrationTest {
         boxAnruf(HEUTE_0755.plusMinutes(1), TelefonAnrufArt.VERPASST, "0800 0000000", "2323", null);
         abholService.abholen();
 
-        assertThat(telefonService.anrufe(TelefonAnrufArt.VERPASST, false, null, null, null, 0, 50).getTotalElements()).isEqualTo(1);
-        assertThat(telefonService.anrufe(null, true, null, null, null, 0, 50).getContent())
+        assertThat(telefonService.anrufe(TelefonAnrufArt.VERPASST, false, null, null, null, null, null, 0, 50).getTotalElements()).isEqualTo(1);
+        assertThat(telefonService.anrufe(null, true, null, null, null, null, null, 0, 50).getContent())
                 .extracting(TelefonAnrufDto::nummer).containsExactly("0800 0000000");
-        assertThat(telefonService.anrufe(null, false, "muster", null, null, 0, 50).getTotalElements()).isEqualTo(1);
-        assertThat(telefonService.anrufe(null, false, "0800", null, null, 0, 50).getTotalElements()).isEqualTo(1);
-        assertThat(telefonService.anrufe(null, false, "%", null, null, 0, 50).getTotalElements()).isZero();
-        assertThat(telefonService.anrufe(null, false, "'; DROP TABLE telefon_anruf; --", null, null, 0, 50).getTotalElements()).isZero();
-        assertThat(telefonService.anrufe(null, false, null, mustermann.getId(), null, 0, 50).getTotalElements()).isEqualTo(1);
-        assertThat(telefonService.anrufe(null, false, null, null, stahl.getId(), 0, 50).getTotalElements()).isZero();
-        assertThat(telefonService.anrufe(null, false, null, null, null, -5, 10_000).getSize()).isEqualTo(100);
+        assertThat(telefonService.anrufe(null, false, "muster", null, null, null, null, 0, 50).getTotalElements()).isEqualTo(1);
+        assertThat(telefonService.anrufe(null, false, "0800", null, null, null, null, 0, 50).getTotalElements()).isEqualTo(1);
+        assertThat(telefonService.anrufe(null, false, "%", null, null, null, null, 0, 50).getTotalElements()).isZero();
+        assertThat(telefonService.anrufe(null, false, "'; DROP TABLE telefon_anruf; --", null, null, null, null, 0, 50).getTotalElements()).isZero();
+        assertThat(telefonService.anrufe(null, false, null, null, null, mustermann.getId(), null, 0, 50).getTotalElements()).isEqualTo(1);
+        assertThat(telefonService.anrufe(null, false, null, null, null, null, stahl.getId(), 0, 50).getTotalElements()).isZero();
+        assertThat(telefonService.anrufe(null, false, null, null, null, null, null, -5, 10_000).getSize()).isEqualTo(100);
     }
 
     @Test
@@ -211,7 +221,7 @@ class TelefonDatenIntegrationTest {
         abholService.abholen();
         Long ersterAnruf = anrufe.findAll().stream().filter(a -> a.getArt() == TelefonAnrufArt.VERPASST).findFirst().orElseThrow().getId();
 
-        TelefonAnrufDto dto = telefonService.ordneAnrufZu(ersterAnruf, new TelefonZuordnenDto(mustermann.getId(), null, true));
+        TelefonAnrufDto dto = telefonService.ordneAnrufZu(ersterAnruf, new TelefonZuordnenDto(mustermann.getId(), null, null, true));
 
         assertThat(dto.zuordnung()).isEqualTo("MANUELL");
         assertThat(gemerkte.findByKundeIdOrderByAngelegtAmAsc(mustermann.getId())).hasSize(1);
@@ -223,7 +233,7 @@ class TelefonDatenIntegrationTest {
         // Künftige Anrufe dieser Nummer werden automatisch zugeordnet
         boxAnruf(HEUTE_0755.plusMinutes(30), TelefonAnrufArt.ANGENOMMEN, "+49 800 0000000", "2323", null);
         abholService.abholen();
-        assertThat(telefonService.anrufe(null, false, null, mustermann.getId(), null, 0, 50).getTotalElements()).isEqualTo(3);
+        assertThat(telefonService.anrufe(null, false, null, null, null, mustermann.getId(), null, 0, 50).getTotalElements()).isEqualTo(3);
 
         // Gemerkte Nummer löschen und Zuordnung aufheben
         telefonService.loescheKontaktRufnummer(gemerkte.findAll().getFirst().getId());
@@ -239,12 +249,12 @@ class TelefonDatenIntegrationTest {
         boxAnruf(HEUTE_0755.plusMinutes(1), TelefonAnrufArt.VERPASST, "09311234567", "2323", null);
         abholService.abholen();
 
-        List<TelefonAnrufDto> liste = telefonService.anrufe(null, false, null, null, null, 0, 50).getContent();
+        List<TelefonAnrufDto> liste = telefonService.anrufe(null, false, null, null, null, null, null, 0, 50).getContent();
         assertThat(liste).allMatch(a -> a.kandidaten().size() == 2 && a.kontakt() == null);
 
-        telefonService.ordneAnrufZu(liste.getFirst().id(), new TelefonZuordnenDto(null, stahl.getId(), false));
+        telefonService.ordneAnrufZu(liste.getFirst().id(), new TelefonZuordnenDto(null, stahl.getId(), null, false));
         assertThat(gemerkte.count()).isZero();
-        assertThat(telefonService.anrufe(null, true, null, null, null, 0, 50).getTotalElements()).isEqualTo(1);
+        assertThat(telefonService.anrufe(null, true, null, null, null, null, null, 0, 50).getTotalElements()).isEqualTo(1);
     }
 
     @Test
@@ -261,7 +271,7 @@ class TelefonDatenIntegrationTest {
         assertThat(dto.neu()).isFalse();
         assertThat(dto.abgehoertVon()).isEqualTo("Max Mustermann");
         assertThat(telefonService.anzahlNeueSprachnachrichten()).isZero();
-        assertThat(telefonService.sprachnachrichten(true, null, null, null)).isEmpty();
+        assertThat(telefonService.sprachnachrichten(true, null, null, null, null)).isEmpty();
         assertThat(telefonService.setzeAbgehoert(id, false, null).neu()).isTrue();
     }
 
@@ -359,7 +369,7 @@ class TelefonDatenIntegrationTest {
         abholService.abholen();
         TelefonAnruf danach = anrufe.findById(anruf.getId()).orElseThrow();
         assertThat(danach.getZuordnung()).isEqualTo(TelefonZuordnung.KEINE);
-        assertThat(telefonService.anrufe(null, true, null, null, null, 0, 50).getContent())
+        assertThat(telefonService.anrufe(null, true, null, null, null, null, null, 0, 50).getContent())
                 .extracting(TelefonAnrufDto::id).containsExactly(anruf.getId());
     }
 
@@ -386,5 +396,28 @@ class TelefonDatenIntegrationTest {
         doReturn(new byte[8000]).when(anlage).ladeAudio(any(), any());
         abholService.abholen();
         assertThat(nachrichten.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Steuerberater: Anruf von einer Durchwahl der Kanzlei wird zugeordnet und bleibt es beim nächsten Abholen")
+    void steuerberaterBleibtZugeordnet() {
+        SteuerberaterKontakt kanzlei = new SteuerberaterKontakt();
+        kanzlei.setName("Kanzlei Beispiel");
+        kanzlei.setEmail("kanzlei@example.com");
+        kanzlei.setTelefon("0931 4444-0");
+        kanzlei = steuerberater.save(kanzlei);
+        boxAnruf(HEUTE_0755, TelefonAnrufArt.ANGENOMMEN, "0931444412", "2323", null);
+
+        abholService.abholen();
+        abholService.abholen();
+
+        TelefonAnruf anruf = anrufe.findAll().getFirst();
+        assertThat(anruf.getZuordnung()).isEqualTo(TelefonZuordnung.AUTOMATISCH);
+        List<TelefonAnrufDto> liste = telefonService.anrufe(null, false, null, null, "STEUERBERATER", null, null, 0, 50).getContent();
+        assertThat(liste).hasSize(1);
+        assertThat(liste.getFirst().kontakt().typ()).isEqualTo("STEUERBERATER");
+        assertThat(liste.getFirst().kontakt().id()).isEqualTo(kanzlei.getId());
+        assertThat(telefonService.anrufe(null, false, null, null, "KUNDE", null, null, 0, 50).getContent()).isEmpty();
+        assertThat(telefonService.steuerberaterAuswahl()).extracting(k -> k.name()).containsExactly("Kanzlei Beispiel");
     }
 }

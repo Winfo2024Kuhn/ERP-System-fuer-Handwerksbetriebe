@@ -14,6 +14,7 @@ import type { Page, Route } from '@playwright/test';
 export const KUNDE_MAX = { typ: 'KUNDE', id: 7, name: 'Max Mustermann', nummer: 'K-1007', ort: 'Musterstadt' };
 export const KUNDE_ERIKA = { typ: 'KUNDE', id: 8, name: 'Erika Mustermann', nummer: 'K-1008', ort: 'Beispielhausen' };
 export const LIEFERANT_GMBH = { typ: 'LIEFERANT', id: 3, name: 'Mustermann GmbH', nummer: null, ort: 'Würzburg' };
+export const KANZLEI_BEISPIEL = { typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null, ort: null };
 
 /** Überblick für das Anruf-Fenster: Ansprechpartner, Adresse, Projekte, Anfragen. */
 export const UEBERBLICK_MAX = {
@@ -33,6 +34,14 @@ export const UEBERBLICK_MAX = {
     ],
     anfragenGesamt: 2,
 };
+
+/** Heutiger bzw. gestriger Tag als ISO-Datum, wie ihn der Tagesfilter schickt. */
+export function isoTag(tageZurueck = 0): string {
+    const d = new Date();
+    d.setDate(d.getDate() - tageZurueck);
+    const zwei = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${zwei(d.getMonth() + 1)}-${zwei(d.getDate())}`;
+}
 
 function heute(uhrzeit: string): string {
     const d = new Date();
@@ -98,10 +107,12 @@ export async function stubbeTelefonApi(page: Page, optionen: {
     darf?: boolean;
     admin?: boolean;
     eingerichtet?: boolean;
+    /** Weitere Anrufe zusätzlich zu den Beispielanrufen (z. B. vom Steuerberater). */
+    zusatzAnrufe?: Anruf[];
 } = {}): Promise<TelefonStub> {
     const darf = optionen.darf ?? true;
     const admin = optionen.admin ?? true;
-    const anrufe = beispielAnrufe();
+    const anrufe = [...beispielAnrufe(), ...(optionen.zusatzAnrufe ?? [])];
     const nachrichten = beispielNachrichten();
     const mitschrift: TelefonStub['mitschrift'] = [];
     const wartendeLive: ((body: string) => void)[] = [];
@@ -184,6 +195,10 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             const suche = url.searchParams.get('suche')?.toLowerCase();
             if (suche) liste = liste.filter((a) => a.nummer.includes(suche) || JSON.stringify(a.kontakt ?? '').toLowerCase().includes(suche));
             if (url.searchParams.get('kundeId')) liste = liste.filter((a) => (a.kontakt as { id?: number } | null)?.id === Number(url.searchParams.get('kundeId')));
+            const tag = url.searchParams.get('tag');
+            if (tag) liste = liste.filter((a) => String(a.zeitpunkt).startsWith(tag));
+            const kontaktart = url.searchParams.get('kontaktart');
+            if (kontaktart) liste = liste.filter((a) => (a.kontakt as { typ?: string } | null)?.typ === kontaktart);
             return json(route, { content: liste, totalElements: liste.length, totalPages: 1, number: 0, size: 50 });
         }
         const zuordnungAnruf = /^\/api\/telefon\/anrufe\/(\d+)\/zuordnung$/.exec(pfad);
@@ -191,15 +206,18 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             const eintrag = anrufe.find((a) => a.id === Number(zuordnungAnruf[1]))!;
             if (methode === 'DELETE') Object.assign(eintrag, { kontakt: null, zuordnung: 'KEINE' });
             else {
-                const { kundeId, lieferantId } = anfrage.postDataJSON() as { kundeId: number | null; lieferantId: number | null };
-                const kontakt = kundeId === 8 ? KUNDE_ERIKA : kundeId ? KUNDE_MAX : lieferantId ? LIEFERANT_GMBH : null;
+                const { kundeId, lieferantId, steuerberaterId } = anfrage.postDataJSON() as { kundeId: number | null; lieferantId: number | null; steuerberaterId: number | null };
+                const kontakt = kundeId === 8 ? KUNDE_ERIKA : kundeId ? KUNDE_MAX : lieferantId ? LIEFERANT_GMBH : steuerberaterId ? KANZLEI_BEISPIEL : null;
                 Object.assign(eintrag, { kontakt, kandidaten: [], zuordnung: 'MANUELL' });
             }
             return json(route, eintrag);
         }
         if (pfad === '/api/telefon/sprachnachrichten') {
             const ab = url.searchParams.get('anrufbeantworter');
-            return json(route, ab === null ? nachrichten : nachrichten.filter((n) => n.anrufbeantworter === Number(ab)));
+            const tag = url.searchParams.get('tag');
+            return json(route, nachrichten
+                .filter((n) => ab === null || n.anrufbeantworter === Number(ab))
+                .filter((n) => !tag || String(n.zeitpunkt).startsWith(tag)));
         }
         const audio = /^\/api\/telefon\/sprachnachrichten\/(\d+)\/audio$/.exec(pfad);
         if (audio) return route.fulfill({ status: 200, contentType: 'audio/wav', body: stilleWav() });
@@ -211,7 +229,11 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             return json(route, eintrag);
         }
         if (pfad === '/api/telefon/abholen') return json(route, { erfolgreich: true, meldung: 'ok', neueAnrufe: 2, neueSprachnachrichten: 1, nachtraeglichZugeordnet: 0 });
+        if (pfad === '/api/telefon/steuerberater') return json(route, [KANZLEI_BEISPIEL, { ...KANZLEI_BEISPIEL, id: 31, name: 'Steuerbüro Muster' }]);
         if (pfad === '/api/telefon/kontakt-ueberblick') {
+            if (url.searchParams.get('steuerberaterId') === '30') {
+                return json(route, { ...UEBERBLICK_MAX, typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null, ansprechpartner: 'Christine Beispiel', strasse: null, plz: null, ort: null, projekte: [], projekteGesamt: 0, anfragen: [], anfragenGesamt: 0 });
+            }
             if (url.searchParams.get('kundeId') === '7') return json(route, UEBERBLICK_MAX);
             if (url.searchParams.get('lieferantId') === '3') {
                 return json(route, { ...UEBERBLICK_MAX, typ: 'LIEFERANT', id: 3, name: 'Mustermann GmbH', nummer: null, ansprechpartner: 'Hans Beispiel', ort: 'Würzburg', projekte: [], projekteGesamt: 0, anfragen: [], anfragenGesamt: 0 });

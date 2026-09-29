@@ -19,18 +19,23 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
             SELECT s FROM Sprachnachricht s
             LEFT JOIN FETCH s.kunde k
             LEFT JOIN FETCH s.lieferant l
+            LEFT JOIN FETCH s.steuerberater
             LEFT JOIN FETCH s.anruf
             LEFT JOIN FETCH s.abgehoertVon
             WHERE (:nurNeue = false OR s.abgehoertAm IS NULL)
               AND (:anrufbeantworter IS NULL OR s.anrufbeantworter = :anrufbeantworter)
               AND (:kundeId IS NULL OR k.id = :kundeId)
               AND (:lieferantId IS NULL OR l.id = :lieferantId)
+              AND (:von IS NULL OR s.zeitpunkt >= :von)
+              AND (:bis IS NULL OR s.zeitpunkt < :bis)
             ORDER BY s.zeitpunkt DESC, s.id DESC
             """)
     List<Sprachnachricht> suche(@Param("nurNeue") boolean nurNeue,
                                 @Param("anrufbeantworter") Integer anrufbeantworter,
                                 @Param("kundeId") Long kundeId,
-                                @Param("lieferantId") Long lieferantId);
+                                @Param("lieferantId") Long lieferantId,
+                                @Param("von") LocalDateTime von,
+                                @Param("bis") LocalDateTime bis);
 
     long countByAbgehoertAmIsNull();
 
@@ -54,7 +59,7 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
     @Query("""
             UPDATE Sprachnachricht s SET s.zuordnung = org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
             WHERE s.zuordnung <> org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
-              AND s.kunde IS NULL AND s.lieferant IS NULL
+              AND s.kunde IS NULL AND s.lieferant IS NULL AND s.steuerberater IS NULL
             """)
     int setzeVerwaisteZuordnungenZurueck();
 
@@ -66,6 +71,7 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
             SELECT s FROM Sprachnachricht s
             LEFT JOIN FETCH s.kunde
             LEFT JOIN FETCH s.lieferant
+            LEFT JOIN FETCH s.steuerberater
             WHERE s.abgehoertAm IS NULL
             ORDER BY s.zeitpunkt DESC
             """)
