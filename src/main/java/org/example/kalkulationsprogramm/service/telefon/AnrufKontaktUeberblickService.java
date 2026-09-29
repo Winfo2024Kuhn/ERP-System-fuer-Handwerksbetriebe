@@ -104,8 +104,13 @@ public class AnrufKontaktUeberblickService {
                 ansprechpartner, null, null, null, List.of(), 0, List.of(), 0);
     }
 
-    private static String vollerName(SteuerberaterAnsprechpartner a) {
-        return Stream.of(a.getVorname(), a.getNachname())
+    static String vollerName(SteuerberaterAnsprechpartner a) {
+        return vollerName(a.getVorname(), a.getNachname());
+    }
+
+    /** „Vorname Nachname" ohne überzählige Leerzeichen; leer, wenn beides fehlt. */
+    static String vollerName(String vorname, String nachname) {
+        return Stream.of(vorname, nachname)
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(teil -> !teil.isEmpty())

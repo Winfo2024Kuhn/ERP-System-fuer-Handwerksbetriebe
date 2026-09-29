@@ -25,16 +25,20 @@ public interface SteuerberaterKontaktRepository extends JpaRepository<Steuerbera
      */
     boolean existsByEmailIgnoreCaseAndAktivTrue(String email);
 
-    /**
-     * Telefonverzeichnis für die Anrufzuordnung: je Zeile {@code [id, name, telefon]} –
-     * die Kanzleinummer und die Nummern aller Ansprechpartner, beide zählen zur Kanzlei.
-     */
-    @Query("SELECT s.id, s.name, s.telefon FROM SteuerberaterKontakt s WHERE s.telefon IS NOT NULL AND s.telefon <> '' "
-            + "UNION ALL SELECT s.id, s.name, a.telefon FROM SteuerberaterAnsprechpartner a JOIN a.steuerberater s "
-            + "WHERE a.telefon IS NOT NULL AND a.telefon <> ''")
+    /** Telefonverzeichnis für die Anrufzuordnung: je Zeile {@code [id, name, telefon]} der Kanzlei. */
+    @Query("SELECT s.id, s.name, s.telefon FROM SteuerberaterKontakt s WHERE s.telefon IS NOT NULL AND s.telefon <> ''")
     List<Object[]> findeTelefonverzeichnis();
 
-    /** Auswahl beim Zuordnen: alle Kanzleien, aktive zuerst. */
-    @Query("SELECT s FROM SteuerberaterKontakt s ORDER BY s.aktiv DESC, s.name ASC")
-    List<SteuerberaterKontakt> findAllFuerAuswahl();
+    /**
+     * Nummern der Ansprechpartner für die Anrufzuordnung – sie zählen zur Kanzlei:
+     * je Zeile {@code [kanzleiId, kanzleiName, telefon, vorname, nachname]}.
+     */
+    @Query("SELECT s.id, s.name, a.telefon, a.vorname, a.nachname FROM SteuerberaterAnsprechpartner a "
+            + "JOIN a.steuerberater s WHERE a.telefon IS NOT NULL AND a.telefon <> ''")
+    List<Object[]> findeAnsprechpartnerTelefone();
+
+    /** Auswahl beim Zuordnen: alle Kanzleien samt Ansprechpartnern in einer Abfrage, aktive zuerst. */
+    @Query("SELECT DISTINCT s FROM SteuerberaterKontakt s LEFT JOIN FETCH s.ansprechpartnerListe "
+            + "ORDER BY s.aktiv DESC, s.name ASC")
+    List<SteuerberaterKontakt> findAllMitAnsprechpartnernFuerAuswahl();
 }

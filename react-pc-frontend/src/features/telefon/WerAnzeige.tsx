@@ -58,9 +58,9 @@ export function WerAnzeige({ eintrag, onZuordnen, onKandidatWaehlen, fett = fals
                     )}
                     <KontaktKennzeichen typ={kontakt.typ} />
                 </div>
-                {(kontakt.ort || kontakt.nummer) && (
+                {(kontakt.ansprechpartner || kontakt.ort || kontakt.nummer) && (
                     <p className="mt-0.5 text-xs text-slate-500">
-                        {[kontakt.nummer && `Nr. ${kontakt.nummer}`, kontakt.ort].filter(Boolean).join(' · ')}
+                        {[kontakt.ansprechpartner, kontakt.nummer && `Nr. ${kontakt.nummer}`, kontakt.ort].filter(Boolean).join(' · ')}
                     </p>
                 )}
             </div>

@@ -2,9 +2,11 @@ package org.example.kalkulationsprogramm.service.telefon;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.KontaktRufnummer;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonKontaktZuordenbar;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
@@ -23,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Ordnet Rufnummern Kunden, Lieferanten oder Steuerberatern zu.
@@ -39,6 +42,7 @@ import java.util.Map;
  * jemand aus einer anderen Abteilung anruft. Die exakte Nummer hat Vorrang;
  * sonst gewinnt die längste passende Stammnummer.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RufnummernZuordnungService {
@@ -83,16 +87,42 @@ public class RufnummernZuordnungService {
             fuegeHinzu(stammnummern, stammnummer, kontakt);
         }
 
+        /**
+         * Jeder Kontakt nur einmal je Nummer. Teilen sich Kanzlei und Ansprechpartner
+         * oder mehrere Ansprechpartner eine Nummer (Zentrale), ist keine Person gemeint.
+         */
         private static void fuegeHinzu(Map<String, List<KontaktKurzDto>> ziel, String nummer, KontaktKurzDto kontakt) {
             if (nummer == null) {
                 return;
             }
             List<KontaktKurzDto> liste = ziel.computeIfAbsent(nummer, k -> new ArrayList<>());
-            boolean vorhanden = liste.stream().anyMatch(
-                    k -> k.typ().equals(kontakt.typ()) && k.id().equals(kontakt.id()));
-            if (!vorhanden) {
-                liste.add(kontakt);
+            for (int i = 0; i < liste.size(); i++) {
+                KontaktKurzDto vorhanden = liste.get(i);
+                if (vorhanden.gleicherKontakt(kontakt)) {
+                    if (!Objects.equals(vorhanden.ansprechpartner(), kontakt.ansprechpartner())) {
+                        liste.set(i, vorhanden.mitAnsprechpartner(null));
+                    }
+                    return;
+                }
             }
+            liste.add(kontakt);
+        }
+
+        /**
+         * Ergänzt einen Steuerberater um den Ansprechpartner, bei dem genau diese
+         * Nummer hinterlegt ist. Andere Kontakte bleiben unverändert.
+         */
+        public KontaktKurzDto mitAnsprechpartner(KontaktKurzDto kontakt, String normalisiert) {
+            if (kontakt == null || !KontaktKurzDto.STEUERBERATER.equals(kontakt.typ()) || normalisiert == null) {
+                return kontakt;
+            }
+            return eintraege.getOrDefault(normalisiert, List.of()).stream()
+                    .filter(kontakt::gleicherKontakt)
+                    .map(KontaktKurzDto::ansprechpartner)
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .map(kontakt::mitAnsprechpartner)
+                    .orElse(kontakt);
         }
 
         /** Erst die exakte Nummer, sonst die längste Stammnummer, von der aus angerufen wurde. */
@@ -218,6 +248,47 @@ public class RufnummernZuordnungService {
         return true;
     }
 
+    /**
+     * Trägt die Nummer beim Ansprechpartner einer Kanzlei als Telefon ein – sichtbar
+     * und änderbar unter Firma › Steuerberater. Eine dort schon hinterlegte andere
+     * Nummer wird nie überschrieben.
+     * <p>
+     * Bewusste Ausnahme von „Stammdaten der Kanzlei pflegen nur Administratoren":
+     * Wer das Telefon-Recht hat, darf ein <em>leeres</em> Telefonfeld mit der Nummer
+     * eines echten Anrufs füllen – wie „Nummer merken" bei Kunden und Lieferanten.
+     * Protokolliert wird nur mit IDs (keine Nummer, kein Name – DSGVO).
+     *
+     * @return true, wenn die Nummer neu eingetragen wurde
+     */
+    @Transactional
+    public boolean speichereBeimAnsprechpartner(Long steuerberaterId, Long ansprechpartnerId, String nummerRoh,
+                                                String normalisiert) {
+        if (steuerberaterId == null) {
+            throw new IllegalArgumentException("Ein Ansprechpartner geht nur zusammen mit seinem Steuerberater.");
+        }
+        SteuerberaterAnsprechpartner person = entityManager.find(SteuerberaterAnsprechpartner.class, ansprechpartnerId);
+        if (person == null || !steuerberaterId.equals(person.getSteuerberater().getId())) {
+            throw new IllegalArgumentException("Ansprechpartner beim Steuerberater nicht gefunden.");
+        }
+        if (normalisiert == null) {
+            return false;
+        }
+        String vorhanden = person.getTelefon();
+        if (vorhanden == null || vorhanden.isBlank()) {
+            person.setTelefon(nummerRoh == null || nummerRoh.isBlank() ? normalisiert : nummerRoh.trim());
+            log.info("Telefon: Anrufernummer bei Steuerberater-Ansprechpartner {} (Kanzlei {}) eingetragen",
+                    ansprechpartnerId, steuerberaterId);
+            verwerfeCache();
+            return true;
+        }
+        if (normalisiert.equals(normalisiere(vorhanden))) {
+            return false;
+        }
+        throw new IllegalArgumentException(AnrufKontaktUeberblickService.vollerName(person)
+                + " hat schon die Nummer " + vorhanden.trim()
+                + ". Ändern können Administratoren sie unter Firma › Steuerberater.");
+    }
+
     /** Kurzform eines bereits zugeordneten Eintrags (oder null). */
     public static KontaktKurzDto kontaktVon(TelefonKontaktZuordenbar eintrag) {
         if (eintrag.getKunde() != null) {
@@ -285,6 +356,14 @@ public class RufnummernZuordnungService {
         }
         for (Object[] z : steuerberaterRepository.findeTelefonverzeichnis()) {
             trageEin(v, (String) z[2], steuerberaterKurz((Long) z[0], (String) z[1]), land, ort);
+        }
+        // Die genaue Nummer nennt die Person; über die Stammnummer (andere Durchwahl) nur die Kanzlei.
+        for (Object[] z : steuerberaterRepository.findeAnsprechpartnerTelefone()) {
+            KontaktKurzDto kanzlei = steuerberaterKurz((Long) z[0], (String) z[1]);
+            String person = AnrufKontaktUeberblickService.vollerName((String) z[3], (String) z[4]);
+            v.fuegeHinzu(RufnummerNormalisierer.normalisiere((String) z[2], land, ort),
+                    kanzlei.mitAnsprechpartner(person.isBlank() ? null : person));
+            v.fuegeStammnummerHinzu(RufnummerNormalisierer.stammnummer((String) z[2], land, ort), kanzlei);
         }
         for (KontaktRufnummer r : kontaktRufnummerRepository.findAllMitKontakt()) {
             KontaktKurzDto k = kontaktVon(r);

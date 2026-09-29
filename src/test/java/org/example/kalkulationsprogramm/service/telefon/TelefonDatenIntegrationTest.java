@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Sprachnachricht;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
@@ -11,6 +12,7 @@ import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
 import org.example.kalkulationsprogramm.dto.Telefon.AbholErgebnisDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufbeantworterDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
+import org.example.kalkulationsprogramm.dto.Telefon.SteuerberaterAuswahlDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonZuordnenDto;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
@@ -45,6 +47,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
@@ -259,6 +262,61 @@ class TelefonDatenIntegrationTest {
         // Gemerkte Nummer löschen und Zuordnung aufheben
         telefonService.loescheKontaktRufnummer(gemerkte.findAll().getFirst().getId());
         assertThat(telefonService.hebeAnrufZuordnungAuf(ersterAnruf).zuordnung()).isEqualTo("KEINE");
+    }
+
+    @Test
+    @DisplayName("Steuerberater: Nummer beim Ansprechpartner speichern ordnet frühere und künftige Anrufe zu")
+    void nummerBeimAnsprechpartnerSpeichern() {
+        SteuerberaterKontakt kanzlei = new SteuerberaterKontakt();
+        kanzlei.setName("Kanzlei Beispiel");
+        kanzlei.setEmail("kanzlei@example.com");
+        for (String[] name : new String[][]{{"Erika", "Beispiel", null}, {"Max", "Muster", "0931 66666"}}) {
+            SteuerberaterAnsprechpartner person = new SteuerberaterAnsprechpartner();
+            person.setSteuerberater(kanzlei);
+            person.setVorname(name[0]);
+            person.setNachname(name[1]);
+            person.setTelefon(name[2]);
+            kanzlei.getAnsprechpartnerListe().add(person);
+        }
+        kanzlei = steuerberater.save(kanzlei);
+        boxAnruf(HEUTE_0755, TelefonAnrufArt.VERPASST, "0931 55555", "2323", null);
+        boxAnruf(HEUTE_0755.plusMinutes(10), TelefonAnrufArt.ANGENOMMEN, "093155555", "2323", null);
+        abholService.abholen();
+
+        SteuerberaterAuswahlDto auswahl = telefonService.steuerberaterAuswahl().getFirst();
+        assertThat(auswahl.ansprechpartner()).extracting(SteuerberaterAuswahlDto.Ansprechpartner::name)
+                .containsExactlyInAnyOrder("Erika Beispiel", "Max Muster");
+        Long erika = auswahl.ansprechpartner().stream().filter(a -> a.telefon() == null).findFirst().orElseThrow().id();
+        Long max = auswahl.ansprechpartner().stream().filter(a -> a.telefon() != null).findFirst().orElseThrow().id();
+        Long ersterAnruf = anrufe.findAll().stream().filter(a -> a.getArt() == TelefonAnrufArt.VERPASST).findFirst().orElseThrow().getId();
+
+        // Max hat schon eine andere Nummer – nichts wird überschrieben, auch nicht die Zuordnung.
+        Long kanzleiId = kanzlei.getId();
+        assertThatThrownBy(() -> telefonService.ordneAnrufZu(ersterAnruf, new TelefonZuordnenDto(null, null, kanzleiId, false, erika)))
+                .hasMessageContaining("nur zum Speichern der Nummer");
+        assertThatThrownBy(() -> telefonService.ordneAnrufZu(ersterAnruf, new TelefonZuordnenDto(mustermann.getId(), null, null, true, erika)))
+                .hasMessageContaining("nur beim Steuerberater");
+        assertThatThrownBy(() -> telefonService.ordneAnrufZu(ersterAnruf,
+                        new TelefonZuordnenDto(null, null, kanzleiId, true, max)))
+                .hasMessageContaining("Max Muster hat schon die Nummer 0931 66666");
+        assertThat(anrufe.findById(ersterAnruf).orElseThrow().getZuordnung()).isEqualTo(TelefonZuordnung.KEINE);
+
+        TelefonAnrufDto dto = telefonService.ordneAnrufZu(ersterAnruf, new TelefonZuordnenDto(null, null, kanzleiId, true, erika));
+
+        assertThat(dto.kontakt().ansprechpartner()).isEqualTo("Erika Beispiel");
+        assertThat(steuerberater.findeAnsprechpartnerTelefone()).extracting(z -> z[2])
+                .containsExactlyInAnyOrder("0931 55555", "0931 66666");
+        assertThat(gemerkte.count()).isZero();
+        assertThat(anrufe.findAll()).allMatch(a -> a.getSteuerberater() != null && a.getSteuerberater().getId().equals(kanzleiId));
+
+        // Künftige Anrufe von Erika werden automatisch der Kanzlei zugeordnet, mit ihrem Namen.
+        boxAnruf(HEUTE_0755.plusMinutes(30), TelefonAnrufArt.ANGENOMMEN, "+49 931 55555", "2323", null);
+        abholService.abholen();
+        List<TelefonAnrufDto> liste = telefonService.anrufe(null, false, null, null, "STEUERBERATER", null, null, 0, 50).getContent();
+        assertThat(liste).hasSize(3).allSatisfy(a -> {
+            assertThat(a.kontakt().id()).isEqualTo(kanzleiId);
+            assertThat(a.kontakt().ansprechpartner()).isEqualTo("Erika Beispiel");
+        });
     }
 
     @Test

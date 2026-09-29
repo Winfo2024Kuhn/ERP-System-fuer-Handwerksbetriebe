@@ -4,6 +4,7 @@ import jakarta.persistence.EntityManager;
 import org.example.kalkulationsprogramm.domain.KontaktRufnummer;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
@@ -313,8 +314,9 @@ class RufnummernZuordnungServiceTest {
     @DisplayName("Steuerberater: Kanzleinummer, Ansprechpartner-Durchwahl und andere Durchwahlen → Kanzlei")
     void steuerberaterErkannt() {
         when(steuerberater.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
-                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-0"},
-                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-12"}));
+                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-0"}));
+        when(steuerberater.findeAnsprechpartnerTelefone()).thenReturn(List.<Object[]>of(
+                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-12", "Erika", "Beispiel"}));
         RufnummernZuordnungService.Verzeichnis v = service.frischesVerzeichnis();
 
         for (String nummer : new String[]{"0931 44440", "0931 444412", "0931 4444345"}) {
@@ -328,6 +330,85 @@ class RufnummernZuordnungServiceTest {
             assertThat(k.name()).isEqualTo("Kanzlei 30");
         }
         assertThat(v.finde(service.normalisiere("0931 444412")).kontakte()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Ansprechpartner: genaue Nummer nennt die Person, andere Durchwahl und Zentrale nur die Kanzlei")
+    void ansprechpartnerImVerzeichnis() {
+        when(steuerberater.findeTelefonverzeichnis()).thenReturn(List.<Object[]>of(
+                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-0"}));
+        when(steuerberater.findeAnsprechpartnerTelefone()).thenReturn(List.<Object[]>of(
+                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-12", "Erika", "Beispiel"},
+                new Object[]{30L, "Kanzlei Beispiel", "0931 4444-0", null, "Muster"},
+                new Object[]{31L, "Steuerbüro Muster", "0931 777777", " ", "Mustermann "}));
+        RufnummernZuordnungService.Verzeichnis v = service.frischesVerzeichnis();
+
+        TelefonAnruf erika = anruf("0931 444412");
+        service.ordneAutomatischZu(erika, v);
+        KontaktKurzDto k = v.mitAnsprechpartner(RufnummernZuordnungService.kontaktVon(erika), erika.getNummerNormalisiert());
+        assertThat(k).isEqualTo(new KontaktKurzDto("STEUERBERATER", 30L, "Kanzlei 30", null, null, "Erika Beispiel"));
+
+        TelefonAnruf andereDurchwahl = anruf("0931 4444345");
+        service.ordneAutomatischZu(andereDurchwahl, v);
+        assertThat(v.mitAnsprechpartner(RufnummernZuordnungService.kontaktVon(andereDurchwahl),
+                andereDurchwahl.getNummerNormalisiert()).ansprechpartner()).isNull();
+
+        // Kanzlei und Herr Muster teilen sich die Zentrale – dann ist keine Person gemeint.
+        assertThat(v.finde(service.normalisiere("0931 44440")).kontakte()).singleElement()
+                .extracting(KontaktKurzDto::ansprechpartner).isNull();
+        assertThat(v.finde(service.normalisiere("0931 777777")).kontakte().getFirst().ansprechpartner()).isEqualTo("Mustermann");
+
+        // Kunden, fehlende Kontakte und unterdrückte Nummern bleiben, wie sie sind.
+        KontaktKurzDto kunde = new KontaktKurzDto("KUNDE", 1L, "Kunde 1", null, null);
+        assertThat(v.mitAnsprechpartner(kunde, erika.getNummerNormalisiert())).isSameAs(kunde);
+        assertThat(v.mitAnsprechpartner(null, erika.getNummerNormalisiert())).isNull();
+        assertThat(v.mitAnsprechpartner(k.mitAnsprechpartner(null), null).ansprechpartner()).isNull();
+    }
+
+    private static SteuerberaterAnsprechpartner person(long id, long kanzleiId, String telefon) {
+        SteuerberaterAnsprechpartner p = new SteuerberaterAnsprechpartner();
+        p.setId(id);
+        p.setSteuerberater(steuerberater(kanzleiId));
+        p.setVorname("Erika");
+        p.setNachname("Beispiel");
+        p.setTelefon(telefon);
+        return p;
+    }
+
+    @Test
+    @DisplayName("Nummer beim Ansprechpartner speichern: nur in ein leeres Feld, nie überschreiben")
+    void speichereBeimAnsprechpartner() {
+        SteuerberaterAnsprechpartner leer = person(40L, 30L, null);
+        SteuerberaterAnsprechpartner gleich = person(41L, 30L, "0931 / 55 55 5");
+        SteuerberaterAnsprechpartner anders = person(42L, 30L, "0931 66666");
+        SteuerberaterAnsprechpartner fremd = person(43L, 31L, null);
+        when(em.find(SteuerberaterAnsprechpartner.class, 40L)).thenReturn(leer);
+        when(em.find(SteuerberaterAnsprechpartner.class, 41L)).thenReturn(gleich);
+        when(em.find(SteuerberaterAnsprechpartner.class, 42L)).thenReturn(anders);
+        when(em.find(SteuerberaterAnsprechpartner.class, 43L)).thenReturn(fremd);
+
+        assertThat(service.speichereBeimAnsprechpartner(30L, 40L, " 0931 55555 ", "+4993155555")).isTrue();
+        assertThat(leer.getTelefon()).isEqualTo("0931 55555");
+        assertThat(service.speichereBeimAnsprechpartner(30L, 41L, "0931 55555", "+4993155555")).isFalse();
+        assertThat(gleich.getTelefon()).isEqualTo("0931 / 55 55 5");
+        assertThatThrownBy(() -> service.speichereBeimAnsprechpartner(30L, 42L, "0931 55555", "+4993155555"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Erika Beispiel hat schon die Nummer 0931 66666");
+        assertThat(anders.getTelefon()).isEqualTo("0931 66666");
+
+        assertThatThrownBy(() -> service.speichereBeimAnsprechpartner(30L, 43L, "0931 55555", "+4993155555"))
+                .hasMessageContaining("nicht gefunden");
+        assertThatThrownBy(() -> service.speichereBeimAnsprechpartner(30L, 99L, "0931 55555", "+4993155555"))
+                .hasMessageContaining("nicht gefunden");
+        assertThatThrownBy(() -> service.speichereBeimAnsprechpartner(null, 40L, "0931 55555", "+4993155555"))
+                .hasMessageContaining("Steuerberater");
+        assertThat(fremd.getTelefon()).isNull();
+
+        SteuerberaterAnsprechpartner ohneRoh = person(44L, 30L, " ");
+        when(em.find(SteuerberaterAnsprechpartner.class, 44L)).thenReturn(ohneRoh);
+        assertThat(service.speichereBeimAnsprechpartner(30L, 44L, null, "+4993155555")).isTrue();
+        assertThat(ohneRoh.getTelefon()).isEqualTo("+4993155555");
+        assertThat(service.speichereBeimAnsprechpartner(30L, 40L, "", null)).isFalse();
     }
 
     @Test

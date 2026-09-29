@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.KontaktRufnummer;
 import org.example.kalkulationsprogramm.domain.Sprachnachricht;
+import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.domain.TelefonKontaktZuordenbar;
@@ -11,6 +12,7 @@ import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktRufnummerDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
+import org.example.kalkulationsprogramm.dto.Telefon.SteuerberaterAuswahlDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonZuordnenDto;
 import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
@@ -27,6 +29,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -92,7 +95,7 @@ public class TelefonService {
         int dauer = art == TelefonAnrufArt.VERPASST ? 0 : a.getDauerMinuten();
         return new TelefonAnrufDto(a.getId(), a.getZeitpunkt(), art.name(), a.getAnrufbeantworter(),
                 a.getNummerRoh(), a.getEigeneNummer(), dauer, a.getNameFritzbox(),
-                a.getZuordnung().name(), RufnummernZuordnungService.kontaktVon(a),
+                a.getZuordnung().name(), verzeichnis.mitAnsprechpartner(RufnummernZuordnungService.kontaktVon(a), a.getNummerNormalisiert()),
                 kandidaten(a, verzeichnis), nachrichtId);
     }
 
@@ -179,11 +182,20 @@ public class TelefonService {
         return liste.stream().map(r -> new KontaktRufnummerDto(r.getId(), r.getNummerRoh())).toList();
     }
 
-    /** Kanzleien zur Auswahl beim Zuordnen – es sind nur wenige, deshalb ohne Suche. */
+    /**
+     * Kanzleien mit ihren Ansprechpartnern zur Auswahl beim Zuordnen – es sind nur
+     * wenige, deshalb ohne Suche. Ansprechpartner in der Reihenfolge, in der sie
+     * unter Firma › Steuerberater angelegt wurden.
+     */
     @Transactional(readOnly = true)
-    public List<KontaktKurzDto> steuerberaterAuswahl() {
-        return steuerberaterRepository.findAllFuerAuswahl().stream()
-                .map(s -> new KontaktKurzDto(KontaktKurzDto.STEUERBERATER, s.getId(), s.getName(), null, null))
+    public List<SteuerberaterAuswahlDto> steuerberaterAuswahl() {
+        return steuerberaterRepository.findAllMitAnsprechpartnernFuerAuswahl().stream()
+                .map(s -> new SteuerberaterAuswahlDto(s.getId(), s.getName(), s.getAnsprechpartnerListe().stream()
+                        .sorted(Comparator.comparing(SteuerberaterAnsprechpartner::getId))
+                        .map(a -> new SteuerberaterAuswahlDto.Ansprechpartner(a.getId(),
+                                AnrufKontaktUeberblickService.vollerName(a),
+                                a.getTelefon() == null || a.getTelefon().isBlank() ? null : a.getTelefon().trim()))
+                        .toList()))
                 .toList();
     }
 
@@ -196,14 +208,23 @@ public class TelefonService {
     }
 
     /**
-     * Von Hand zuordnen. Mit "Nummer merken" wird die Nummer am Kontakt gespeichert
-     * und alle bisher unbekannten Anrufe/Nachrichten dieser Nummer werden nachgezogen.
+     * Von Hand zuordnen. Mit "Nummer merken" wird die Nummer am Kontakt gespeichert –
+     * beim Steuerberater mit gewähltem Ansprechpartner direkt bei dieser Person – und
+     * alle bisher unbekannten Anrufe/Nachrichten dieser Nummer werden nachgezogen.
      */
     private void ordneZu(TelefonKontaktZuordenbar eintrag, String nummerRoh, TelefonZuordnenDto dto) {
+        if (dto.ansprechpartnerId() != null && (dto.steuerberaterId() == null || !dto.nummerMerken())) {
+            throw new IllegalArgumentException(
+                    "Einen Ansprechpartner gibt es nur beim Steuerberater und nur zum Speichern der Nummer.");
+        }
         zuordnung.ordneManuellZu(eintrag, dto.kundeId(), dto.lieferantId(), dto.steuerberaterId());
         String normalisiert = eintrag.getNummerNormalisiert();
         if (dto.nummerMerken() && normalisiert != null) {
-            zuordnung.merkeNummer(nummerRoh, normalisiert, dto.kundeId(), dto.lieferantId(), dto.steuerberaterId());
+            if (dto.ansprechpartnerId() != null) {
+                zuordnung.speichereBeimAnsprechpartner(dto.steuerberaterId(), dto.ansprechpartnerId(), nummerRoh, normalisiert);
+            } else {
+                zuordnung.merkeNummer(nummerRoh, normalisiert, dto.kundeId(), dto.lieferantId(), dto.steuerberaterId());
+            }
             RufnummernZuordnungService.Verzeichnis verzeichnis = zuordnung.frischesVerzeichnis();
             for (TelefonAnruf a : anrufRepository.findByZuordnungAndNummerNormalisiert(TelefonZuordnung.KEINE, normalisiert)) {
                 zuordnung.ordneAutomatischZu(a, verzeichnis);
@@ -224,7 +245,8 @@ public class TelefonService {
         return new SprachnachrichtDto(s.getId(), s.getAnrufbeantworter(), s.getZeitpunkt(), s.getNummerRoh(),
                 s.getDauerSekunden(), s.getAbgehoertAm() == null, s.getAbgehoertAm(),
                 s.getAbgehoertVon() != null ? s.getAbgehoertVon().getDisplayName() : null,
-                s.getZuordnung().name(), RufnummernZuordnungService.kontaktVon(s), kandidaten(s, verzeichnis),
+                s.getZuordnung().name(), verzeichnis.mitAnsprechpartner(RufnummernZuordnungService.kontaktVon(s), s.getNummerNormalisiert()),
+                kandidaten(s, verzeichnis),
                 s.getAnruf() != null ? s.getAnruf().getNameFritzbox() : null);
     }
 

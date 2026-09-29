@@ -30,20 +30,24 @@ export function AnrufKontaktDetails({ kontakt, zustand, onOeffnen }: AnrufKontak
 
     const ortZeile = [daten?.plz, daten?.ort ?? kontakt.ort].filter(Boolean).join(' ');
     const hatAdresse = Boolean(daten?.strasse || ortZeile);
-    const hatAnsprechpartner = laedt || Boolean(daten?.ansprechpartner);
+    // Ruft ein Ansprechpartner der Kanzlei von seiner eigenen Nummer an, steht genau er da – nicht alle.
+    const ansprechpartner = kontakt.ansprechpartner || daten?.ansprechpartner;
+    // Den Namen aus dem Anruf gibt es sofort – dafür muss der Überblick nicht erst laden.
+    const ansprechpartnerLaedt = laedt && !kontakt.ansprechpartner;
+    const hatAnsprechpartner = ansprechpartnerLaedt || Boolean(ansprechpartner);
 
     return (
         <div className="flex flex-col gap-6" data-testid="anruf-kontakt-details">
             {(hatAnsprechpartner || hatAdresse) && (
                 <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                    {laedt ? (
+                    {ansprechpartnerLaedt ? (
                         <Angabe symbol={UserRound} titel={ansprechpartnerTitel}>
                             <span aria-hidden="true" className="mt-1 block h-6 w-48 rounded bg-slate-200 motion-safe:animate-pulse" />
                             <span className="sr-only">Wird geladen …</span>
                         </Angabe>
-                    ) : daten?.ansprechpartner ? (
+                    ) : ansprechpartner ? (
                         <Angabe symbol={UserRound} titel={ansprechpartnerTitel}>
-                            {daten.ansprechpartner}
+                            {ansprechpartner}
                         </Angabe>
                     ) : null}
                     {hatAdresse && (

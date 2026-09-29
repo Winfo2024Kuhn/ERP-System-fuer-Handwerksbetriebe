@@ -1,12 +1,12 @@
 import type {
     AbholErgebnis,
-    KontaktKurz,
     KontaktRufnummer,
     AktenTyp,
     KontaktTyp,
     KontaktUeberblick,
     Seite,
     Sprachnachricht,
+    SteuerberaterAuswahl,
     TelefonAnruf,
     TelefonEinstellungen,
     TelefonStatus,
@@ -184,21 +184,27 @@ export interface ZuordnenDaten {
     lieferantId: number | null;
     steuerberaterId: number | null;
     nummerMerken: boolean;
+    /** Nur bei Steuerberatern: Nummer bei diesem Ansprechpartner als Telefon eintragen. */
+    ansprechpartnerId: number | null;
 }
 
-/** Zuordnen-Daten für einen gewählten Kontakt. */
-export function zuordnenDaten(typ: KontaktTyp, id: number, nummerMerken: boolean): ZuordnenDaten {
+/**
+ * Zuordnen-Daten für einen gewählten Kontakt. Mit `ansprechpartnerId` landet die
+ * Nummer beim Ansprechpartner der Kanzlei – dafür muss `nummerMerken` gesetzt sein.
+ */
+export function zuordnenDaten(typ: KontaktTyp, id: number, nummerMerken: boolean, ansprechpartnerId: number | null = null): ZuordnenDaten {
     return {
         kundeId: typ === 'KUNDE' ? id : null,
         lieferantId: typ === 'LIEFERANT' ? id : null,
         steuerberaterId: typ === 'STEUERBERATER' ? id : null,
         nummerMerken,
+        ansprechpartnerId: typ === 'STEUERBERATER' ? ansprechpartnerId : null,
     };
 }
 
-/** Kanzleien zur Auswahl beim Zuordnen (es sind nur wenige). */
-export function ladeSteuerberaterAuswahl(signal?: AbortSignal): Promise<KontaktKurz[]> {
-    return holeJson<KontaktKurz[]>(`${BASIS}/steuerberater`, 'Die Steuerberater konnten nicht geladen werden.', { signal });
+/** Kanzleien mit ihren Ansprechpartnern zur Auswahl beim Zuordnen (es sind nur wenige). */
+export function ladeSteuerberaterAuswahl(signal?: AbortSignal): Promise<SteuerberaterAuswahl[]> {
+    return holeJson<SteuerberaterAuswahl[]>(`${BASIS}/steuerberater`, 'Die Steuerberater konnten nicht geladen werden.', { signal });
 }
 
 function zuordnungsPfad(ziel: ZuordnenZiel): string {

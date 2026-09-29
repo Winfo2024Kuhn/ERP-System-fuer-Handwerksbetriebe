@@ -6,9 +6,9 @@ import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.dto.Telefon.AbgehoertDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AbholErgebnisDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
-import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktRufnummerDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
+import org.example.kalkulationsprogramm.dto.Telefon.SteuerberaterAuswahlDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonBerechtigungDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonStatusDto;
@@ -100,6 +100,11 @@ public class TelefonController {
         return telefonService.anrufe(art, nurUnbekannt, suche, tag, kontaktart, kundeId, lieferantId, seite, groesse);
     }
 
+    /**
+     * Anruf von Hand zuordnen. Mit Steuerberater + Ansprechpartner + „Nummer merken"
+     * füllt das ein leeres Telefonfeld des Ansprechpartners (bewusste, eng begrenzte
+     * Ausnahme für Nutzer mit Telefon-Recht, siehe RufnummernZuordnungService).
+     */
     @PostMapping("/anrufe/{id}/zuordnung")
     public TelefonAnrufDto anrufZuordnen(@PathVariable Long id, @RequestBody TelefonZuordnenDto dto,
                                          Authentication authentication) {
@@ -193,7 +198,7 @@ public class TelefonController {
 
     /** Kanzleien zur Auswahl beim Zuordnen eines Anrufs. */
     @GetMapping("/steuerberater")
-    public List<KontaktKurzDto> steuerberater(Authentication authentication) {
+    public List<SteuerberaterAuswahlDto> steuerberater(Authentication authentication) {
         berechtigung.verlange(authentication);
         return telefonService.steuerberaterAuswahl();
     }

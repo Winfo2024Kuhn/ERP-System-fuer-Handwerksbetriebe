@@ -17,6 +17,23 @@ export interface KontaktKurz {
     /** Kundennummer (nur bei Kunden). */
     nummer: string | null;
     ort: string | null;
+    /** Nur bei Steuerberatern: die Person, bei der genau diese Nummer hinterlegt ist. */
+    ansprechpartner?: string | null;
+}
+
+/** Ansprechpartner einer Kanzlei zur Auswahl beim Zuordnen. */
+export interface AuswahlAnsprechpartner {
+    id: number;
+    name: string;
+    /** Schon hinterlegte Nummer – die wird nie überschrieben. */
+    telefon: string | null;
+}
+
+/** Kanzlei zur Auswahl beim Zuordnen, mit ihren Ansprechpartnern. */
+export interface SteuerberaterAuswahl {
+    id: number;
+    name: string;
+    ansprechpartner: AuswahlAnsprechpartner[];
 }
 
 /** Projekt eines Anrufers im Anruf-Fenster. */

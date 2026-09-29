@@ -182,7 +182,7 @@ describe('TelefonPage', () => {
         fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
         await waitFor(() => expect(within(tabelle).getByRole('link', { name: 'Max Mustermann' })).toBeInTheDocument());
         const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
-        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: true });
+        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: true, ansprechpartnerId: null });
     });
 
     it('übernimmt einen der möglichen Kontakte mit einem Klick', async () => {
@@ -192,7 +192,7 @@ describe('TelefonPage', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Max Mustermann' }));
         await waitFor(() => expect(aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')).toHaveLength(1));
         const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
-        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: false });
+        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: false, ansprechpartnerId: null });
     });
 
     it('holt jetzt ab und zeigt das Ergebnis', async () => {
@@ -307,6 +307,13 @@ describe('TelefonPage', () => {
             expect(within(tabelle).getByText('Kanzlei Beispiel')).toBeInTheDocument();
             expect(within(tabelle).queryByRole('link', { name: 'Kanzlei Beispiel' })).toBeNull();
             expect(within(tabelle).getByText('Steuerberater')).toBeInTheDocument();
+        });
+
+        it('nennt den Ansprechpartner der Kanzlei, von dessen Nummer angerufen wurde', async () => {
+            stubbeTelefon({ anrufe: [anruf({ id: 9, kontakt: { ...KANZLEI_BEISPIEL, ansprechpartner: 'Erika Beispiel' }, zuordnung: 'AUTOMATISCH' })] });
+            zeige();
+            const tabelle = await screen.findByRole('table');
+            expect(within(tabelle).getByText('Erika Beispiel')).toBeInTheDocument();
         });
 
         it('filtert nach Kontaktart aus der Adresse und per Auswahl', async () => {

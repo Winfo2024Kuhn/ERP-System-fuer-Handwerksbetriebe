@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufbeantworterDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
+import org.example.kalkulationsprogramm.dto.Telefon.SteuerberaterAuswahlDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonEinstellungenDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonZuordnenDto;
@@ -227,9 +228,11 @@ class TelefonControllerSecurityTest {
         mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("kontaktart", "PRIVAT"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Unbekannte Kontaktart."));
 
-        when(telefonService.steuerberaterAuswahl()).thenReturn(List.of(new KontaktKurzDto("STEUERBERATER", 30L, "Kanzlei Beispiel", null, null)));
+        when(telefonService.steuerberaterAuswahl()).thenReturn(List.of(new SteuerberaterAuswahlDto(30L, "Kanzlei Beispiel",
+                List.of(new SteuerberaterAuswahlDto.Ansprechpartner(40L, "Erika Beispiel", null)))));
         mvc.perform(get("/api/telefon/steuerberater").with(mitRecht()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$[0].name").value("Kanzlei Beispiel"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].name").value("Kanzlei Beispiel"))
+                .andExpect(jsonPath("$[0].ansprechpartner[0].name").value("Erika Beispiel"));
 
         when(kontaktUeberblick.ueberblick(null, null, 30L)).thenReturn(new AnrufKontaktUeberblickDto("STEUERBERATER", 30L,
                 "Kanzlei Beispiel", null, "Christine Beispiel", null, null, null, List.of(), 0, List.of(), 0));
@@ -240,6 +243,18 @@ class TelefonControllerSecurityTest {
                 .contentType("application/json").content("{\"steuerberaterId\":30,\"nummerMerken\":true}"))
                 .andExpect(status().isOk());
         verify(telefonService).ordneAnrufZu(1L, new TelefonZuordnenDto(null, null, 30L, true));
+
+        mvc.perform(post("/api/telefon/anrufe/1/zuordnung").with(mitRecht()).with(csrf())
+                .contentType("application/json").content("{\"steuerberaterId\":30,\"nummerMerken\":true,\"ansprechpartnerId\":40}"))
+                .andExpect(status().isOk());
+        verify(telefonService).ordneAnrufZu(1L, new TelefonZuordnenDto(null, null, 30L, true, 40L));
+
+        when(telefonService.ordneAnrufZu(2L, new TelefonZuordnenDto(null, null, 30L, true, 42L)))
+                .thenThrow(new IllegalArgumentException("Erika Beispiel hat schon die Nummer 0931 66666."));
+        mvc.perform(post("/api/telefon/anrufe/2/zuordnung").with(mitRecht()).with(csrf())
+                .contentType("application/json").content("{\"steuerberaterId\":30,\"nummerMerken\":true,\"ansprechpartnerId\":42}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Erika Beispiel hat schon die Nummer 0931 66666."));
     }
 
     @Test

@@ -16,6 +16,17 @@ export const KUNDE_ERIKA = { typ: 'KUNDE', id: 8, name: 'Erika Mustermann', numm
 export const LIEFERANT_GMBH = { typ: 'LIEFERANT', id: 3, name: 'Mustermann GmbH', nummer: null, ort: 'Würzburg' };
 export const KANZLEI_BEISPIEL = { typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null, ort: null };
 
+/** Kanzleien zur Auswahl beim Zuordnen, mit Ansprechpartnern (einer hat schon eine Nummer). */
+export const KANZLEI_AUSWAHL = [
+    {
+        id: 30, name: 'Kanzlei Beispiel', ansprechpartner: [
+            { id: 40, name: 'Erika Beispiel', telefon: null },
+            { id: 41, name: 'Max Muster', telefon: '0931 66666' },
+        ],
+    },
+    { id: 31, name: 'Steuerbüro Muster', ansprechpartner: [] },
+];
+
 /** Überblick für das Anruf-Fenster: Ansprechpartner, Adresse, Projekte, Anfragen. */
 export const UEBERBLICK_MAX = {
     typ: 'KUNDE', id: 7, name: 'Max Mustermann', nummer: 'K-1007', ansprechpartner: 'Erika Mustermann',
@@ -206,8 +217,12 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             const eintrag = anrufe.find((a) => a.id === Number(zuordnungAnruf[1]))!;
             if (methode === 'DELETE') Object.assign(eintrag, { kontakt: null, zuordnung: 'KEINE' });
             else {
-                const { kundeId, lieferantId, steuerberaterId } = anfrage.postDataJSON() as { kundeId: number | null; lieferantId: number | null; steuerberaterId: number | null };
-                const kontakt = kundeId === 8 ? KUNDE_ERIKA : kundeId ? KUNDE_MAX : lieferantId ? LIEFERANT_GMBH : steuerberaterId ? KANZLEI_BEISPIEL : null;
+                const { kundeId, lieferantId, steuerberaterId, ansprechpartnerId } = anfrage.postDataJSON() as {
+                    kundeId: number | null; lieferantId: number | null; steuerberaterId: number | null; ansprechpartnerId: number | null;
+                };
+                const person = KANZLEI_AUSWAHL[0].ansprechpartner.find((a) => a.id === ansprechpartnerId)?.name ?? null;
+                const kontakt = kundeId === 8 ? KUNDE_ERIKA : kundeId ? KUNDE_MAX : lieferantId ? LIEFERANT_GMBH
+                    : steuerberaterId ? { ...KANZLEI_BEISPIEL, ansprechpartner: person } : null;
                 Object.assign(eintrag, { kontakt, kandidaten: [], zuordnung: 'MANUELL' });
             }
             return json(route, eintrag);
@@ -229,7 +244,7 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             return json(route, eintrag);
         }
         if (pfad === '/api/telefon/abholen') return json(route, { erfolgreich: true, meldung: 'ok', neueAnrufe: 2, neueSprachnachrichten: 1, nachtraeglichZugeordnet: 0 });
-        if (pfad === '/api/telefon/steuerberater') return json(route, [KANZLEI_BEISPIEL, { ...KANZLEI_BEISPIEL, id: 31, name: 'Steuerbüro Muster' }]);
+        if (pfad === '/api/telefon/steuerberater') return json(route, KANZLEI_AUSWAHL);
         if (pfad === '/api/telefon/kontakt-ueberblick') {
             if (url.searchParams.get('steuerberaterId') === '30') {
                 return json(route, { ...UEBERBLICK_MAX, typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null, ansprechpartner: 'Christine Beispiel', strasse: null, plz: null, ort: null, projekte: [], projekteGesamt: 0, anfragen: [], anfragenGesamt: 0 });

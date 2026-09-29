@@ -204,6 +204,17 @@ describe('AnrufFenster', () => {
             expect(screen.getByRole('button', { name: 'Schließen' })).toBeInTheDocument();
         });
 
+        it('zeigt nur den Ansprechpartner, von dessen Nummer angerufen wird', () => {
+            zeige(live({ kontakt: { ...KANZLEI_BEISPIEL, ansprechpartner: 'Erika Beispiel' } }), 0, {
+                status: 'fertig',
+                daten: { ...UEBERBLICK_MAX, typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null,
+                    ansprechpartner: 'Christine Beispiel, Erika Beispiel', strasse: null, plz: null, ort: null,
+                    projekte: [], projekteGesamt: 0, anfragen: [], anfragenGesamt: 0 },
+            });
+            expect(screen.getByText('Erika Beispiel')).toBeInTheDocument();
+            expect(screen.queryByText(/Christine Beispiel/)).toBeNull();
+        });
+
         it('bietet eine Kanzlei unter mehreren Kandidaten nur als Hinweis, nicht als Link an', () => {
             const { onKontaktOeffnen } = zeige(live({ kontakt: null, kandidaten: [KUNDE_MAX, KANZLEI_BEISPIEL] }));
             expect(screen.getByText('Kanzlei Beispiel')).toBeInTheDocument();

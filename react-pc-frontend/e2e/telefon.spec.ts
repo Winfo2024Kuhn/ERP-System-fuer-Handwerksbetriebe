@@ -49,7 +49,7 @@ test.describe('Telefon – Anrufe', () => {
         await expect(dialog).toBeHidden();
         await expect(zeile.getByRole('link', { name: 'Erika Mustermann' })).toBeVisible();
         const zuordnung = stub.mitschrift.find((m) => m.pfad === '/api/telefon/anrufe/2/zuordnung');
-        expect(zuordnung?.body).toEqual({ kundeId: 8, lieferantId: null, steuerberaterId: null, nummerMerken: true });
+        expect(zuordnung?.body).toEqual({ kundeId: 8, lieferantId: null, steuerberaterId: null, nummerMerken: true, ansprechpartnerId: null });
     });
 
     test('einen der möglichen Kontakte mit einem Klick übernehmen und Zuordnung aufheben', async ({ page }) => {
@@ -59,7 +59,7 @@ test.describe('Telefon – Anrufe', () => {
         const zeile = tabelle.getByRole('row').filter({ hasText: '0931 3333333' });
         await zeile.getByRole('button', { name: KUNDE_ERIKA.name }).click();
         await expect(zeile.getByRole('link', { name: KUNDE_ERIKA.name })).toBeVisible();
-        expect(stub.mitschrift.at(-1)?.body).toEqual({ kundeId: 8, lieferantId: null, steuerberaterId: null, nummerMerken: false });
+        expect(stub.mitschrift.at(-1)?.body).toEqual({ kundeId: 8, lieferantId: null, steuerberaterId: null, nummerMerken: false, ansprechpartnerId: null });
 
         await zeile.getByRole('button', { name: /Weitere Aktionen/ }).click();
         await page.getByRole('menuitem', { name: 'Zuordnung aufheben' }).click();
@@ -183,7 +183,29 @@ test.describe('Telefon – Steuerberater', () => {
         await expect(dialog).toBeHidden();
         await expect(zeile.getByText('Kanzlei Beispiel')).toBeVisible();
         const zuordnung = stub.mitschrift.find((m) => m.pfad === '/api/telefon/anrufe/2/zuordnung');
-        expect(zuordnung?.body).toEqual({ kundeId: null, lieferantId: null, steuerberaterId: 30, nummerMerken: false });
+        expect(zuordnung?.body).toEqual({ kundeId: null, lieferantId: null, steuerberaterId: 30, nummerMerken: false, ansprechpartnerId: null });
+    });
+
+    test('Nummer beim Ansprechpartner der Kanzlei speichern', async ({ page }, info) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        const zeile = inhalt(page).getByRole('table').getByRole('row').filter({ hasText: '0931 2222222' });
+        await zeile.getByRole('button', { name: 'Zuordnen' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Anruf zuordnen' });
+        await dialog.getByRole('radio', { name: 'Steuerberater' }).click();
+        await dialog.getByRole('radio', { name: 'Kanzlei Beispiel' }).click();
+        const personen = dialog.getByRole('radiogroup', { name: 'Ansprechpartner wählen' });
+        await expect(personen.getByRole('radio', { name: /Max Muster/ })).toBeDisabled();
+        await personen.getByRole('radio', { name: /Erika Beispiel/ }).click();
+        await expect(personen.getByRole('radio', { name: /Erika Beispiel/ })).toHaveAttribute('aria-checked', 'true');
+        await designPruefung(page, info, 'telefon-zuordnen-ansprechpartner');
+        await dialog.getByRole('button', { name: 'Zuordnen', exact: true }).click();
+        await expect(dialog).toBeHidden();
+        await expect(page.getByText('Nummer bei Erika Beispiel gespeichert.', { exact: false })).toBeVisible();
+        await expect(zeile.getByText('Kanzlei Beispiel')).toBeVisible();
+        await expect(zeile.getByText('Erika Beispiel')).toBeVisible();
+        const zuordnung = stub.mitschrift.find((m) => m.pfad === '/api/telefon/anrufe/2/zuordnung');
+        expect(zuordnung?.body).toEqual({ kundeId: null, lieferantId: null, steuerberaterId: 30, nummerMerken: true, ansprechpartnerId: 40 });
     });
 
     test('Anruf-Fenster zeigt die Kanzlei ohne „Akte öffnen“', async ({ page }) => {

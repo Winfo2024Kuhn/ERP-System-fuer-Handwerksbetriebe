@@ -3,6 +3,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui/toast';
 import { TelefonZuordnenDialog } from './TelefonZuordnenDialog';
 import { anruf, antwort, aufrufe, KANZLEI_BEISPIEL, KUNDE_MAX, stubbeFetch } from './telefonTestdaten';
+import type { SteuerberaterAuswahl } from './types';
+
+const AUSWAHL_BEISPIEL: SteuerberaterAuswahl = {
+    id: 30,
+    name: 'Kanzlei Beispiel',
+    ansprechpartner: [
+        { id: 40, name: 'Erika Beispiel', telefon: null },
+        { id: 41, name: 'Max Muster', telefon: '0931 66666' },
+    ],
+};
+const AUSWAHL_OHNE_PERSONEN: SteuerberaterAuswahl = { id: 31, name: 'Steuerbüro Muster', ansprechpartner: [] };
+
+function stubbeKanzleien(zuordnen = anruf({ kontakt: KANZLEI_BEISPIEL, zuordnung: 'MANUELL' })) {
+    return stubbeFetch(
+        (url) => (url.pathname === '/api/telefon/steuerberater' ? antwort([AUSWAHL_BEISPIEL, AUSWAHL_OHNE_PERSONEN]) : undefined),
+        (url, init) => (url.pathname.endsWith('/zuordnung') && init?.method === 'POST' ? antwort(zuordnen) : undefined),
+    );
+}
 
 function stubbeSuche() {
     return stubbeFetch(
@@ -46,7 +64,7 @@ describe('TelefonZuordnenDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Zuordnen' }));
         await waitFor(() => expect(onZugeordnet).toHaveBeenCalled());
         const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
-        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: true });
+        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: 7, lieferantId: null, steuerberaterId: null, nummerMerken: true, ansprechpartnerId: null });
         expect(onSchliessen).toHaveBeenCalled();
     });
 
@@ -60,7 +78,7 @@ describe('TelefonZuordnenDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Zuordnen' }));
         await waitFor(() => expect(aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')).toHaveLength(1));
         const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
-        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: null, lieferantId: 3, steuerberaterId: null, nummerMerken: false });
+        expect(JSON.parse(String(init?.body))).toEqual({ kundeId: null, lieferantId: 3, steuerberaterId: null, nummerMerken: false, ansprechpartnerId: null });
     });
 
     it('blendet "Nummer merken" bei unterdrückter Nummer aus', () => {
@@ -85,14 +103,7 @@ describe('TelefonZuordnenDialog', () => {
 
     describe('Steuerberater', () => {
         it('lädt die Kanzleien erst bei Bedarf und ordnet eine zu', async () => {
-            const fetchMock = stubbeFetch(
-                (url) => (url.pathname === '/api/telefon/steuerberater'
-                    ? antwort([KANZLEI_BEISPIEL, { ...KANZLEI_BEISPIEL, id: 31, name: 'Steuerbüro Muster' }])
-                    : undefined),
-                (url, init) => (url.pathname.endsWith('/zuordnung') && init?.method === 'POST'
-                    ? antwort(anruf({ kontakt: KANZLEI_BEISPIEL, zuordnung: 'MANUELL' }))
-                    : undefined),
-            );
+            const fetchMock = stubbeKanzleien();
             const { onZugeordnet } = zeige();
             expect(aufrufe(fetchMock, '/api/telefon/steuerberater')).toHaveLength(0);
 
@@ -106,8 +117,63 @@ describe('TelefonZuordnenDialog', () => {
 
             await waitFor(() => expect(onZugeordnet).toHaveBeenCalled());
             const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
-            expect(JSON.parse(String(init?.body))).toEqual({ kundeId: null, lieferantId: null, steuerberaterId: 31, nummerMerken: false });
+            expect(JSON.parse(String(init?.body))).toEqual({ kundeId: null, lieferantId: null, steuerberaterId: 31, nummerMerken: false, ansprechpartnerId: null });
             expect(aufrufe(fetchMock, '/api/telefon/steuerberater')).toHaveLength(1);
+        });
+
+        it('speichert die Nummer beim gewählten Ansprechpartner', async () => {
+            const fetchMock = stubbeKanzleien(anruf({ kontakt: { ...KANZLEI_BEISPIEL, ansprechpartner: 'Erika Beispiel' }, zuordnung: 'MANUELL' }));
+            const { onZugeordnet } = zeige();
+            fireEvent.click(screen.getByRole('radio', { name: 'Steuerberater' }));
+            fireEvent.click(within(await screen.findByRole('radiogroup', { name: 'Steuerberater wählen' })).getByRole('radio', { name: 'Kanzlei Beispiel' }));
+
+            const personen = screen.getByRole('radiogroup', { name: 'Ansprechpartner wählen' });
+            expect(within(personen).getByRole('radio', { name: /Nicht speichern/ })).toHaveAttribute('aria-checked', 'true');
+            // Wer schon eine Nummer hat, wird nicht überschrieben.
+            const max = within(personen).getByRole('radio', { name: /Max Muster/ });
+            expect(max).toBeDisabled();
+            expect(max).toHaveTextContent('Hat schon 0931 66666');
+            expect(max).toHaveAttribute('title', expect.stringContaining('Firma › Steuerberater'));
+
+            fireEvent.click(within(personen).getByRole('radio', { name: /Erika Beispiel/ }));
+            expect(within(personen).getByRole('radio', { name: /Erika Beispiel/ })).toHaveAttribute('aria-checked', 'true');
+            fireEvent.click(screen.getByRole('button', { name: 'Zuordnen' }));
+
+            await waitFor(() => expect(onZugeordnet).toHaveBeenCalled());
+            const [, init] = aufrufe(fetchMock, '/api/telefon/anrufe/1/zuordnung', 'POST')[0];
+            expect(JSON.parse(String(init?.body))).toEqual({ kundeId: null, lieferantId: null, steuerberaterId: 30, nummerMerken: true, ansprechpartnerId: 40 });
+            expect(await screen.findByText('Anruf Kanzlei Beispiel zugeordnet. Nummer bei Erika Beispiel gespeichert.')).toBeInTheDocument();
+        });
+
+        it('vergisst den Ansprechpartner beim Wechsel der Kanzlei und zeigt ohne Ansprechpartner den Hinweis', async () => {
+            const fetchMock = stubbeKanzleien();
+            zeige();
+            fireEvent.click(screen.getByRole('radio', { name: 'Steuerberater' }));
+            const kanzleien = await screen.findByRole('radiogroup', { name: 'Steuerberater wählen' });
+            expect(screen.getByText(/unter Firma › Steuerberater bei der Kanzlei/)).toBeInTheDocument();
+            fireEvent.click(within(kanzleien).getByRole('radio', { name: 'Kanzlei Beispiel' }));
+            fireEvent.click(screen.getByRole('radio', { name: /Erika Beispiel/ }));
+            fireEvent.click(within(kanzleien).getByRole('radio', { name: 'Kanzlei Beispiel' }));
+            expect(screen.getByRole('radio', { name: /Erika Beispiel/ })).toHaveAttribute('aria-checked', 'true');
+
+            fireEvent.click(within(kanzleien).getByRole('radio', { name: 'Steuerbüro Muster' }));
+            expect(screen.queryByRole('radiogroup', { name: 'Ansprechpartner wählen' })).toBeNull();
+            expect(screen.getByText(/unter Firma › Steuerberater bei der Kanzlei/)).toBeInTheDocument();
+            fireEvent.click(within(kanzleien).getByRole('radio', { name: 'Kanzlei Beispiel' }));
+            expect(screen.getByRole('radio', { name: /Nicht speichern/ })).toHaveAttribute('aria-checked', 'true');
+
+            fireEvent.click(screen.getByRole('radio', { name: 'Kunde' }));
+            fireEvent.click(screen.getByRole('radio', { name: 'Steuerberater' }));
+            expect(screen.queryByRole('radiogroup', { name: 'Ansprechpartner wählen' })).toBeNull();
+            expect(aufrufe(fetchMock, '/api/telefon/steuerberater')).toHaveLength(1);
+        });
+
+        it('bietet bei unterdrückter Nummer keine Ansprechpartner an', async () => {
+            stubbeKanzleien();
+            zeige('');
+            fireEvent.click(screen.getByRole('radio', { name: 'Steuerberater' }));
+            fireEvent.click(within(await screen.findByRole('radiogroup', { name: 'Steuerberater wählen' })).getByRole('radio', { name: 'Kanzlei Beispiel' }));
+            expect(screen.queryByRole('radiogroup', { name: 'Ansprechpartner wählen' })).toBeNull();
         });
 
         it('erklärt, wenn noch keine Kanzlei angelegt ist', async () => {
