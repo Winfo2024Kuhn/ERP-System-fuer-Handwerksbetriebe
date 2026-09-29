@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PhoneOff, RefreshCw } from 'lucide-react';
+import { Loader2, PhoneOff, RefreshCw } from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import { useToast } from '../../components/ui/toast';
 import { ladeAnrufe, ladeSprachnachrichten, ladeStatus } from './api';
 import { ArtSymbol } from './ArtSymbol';
 import { anrufbeantworterName, formatDauerMinuten, formatWann } from './format';
@@ -15,10 +16,11 @@ import { ZuordnungsMenue } from './WerAnzeige';
  * lassen sich direkt hier abspielen.
  *
  * <p>Gehört ein Anruf zu einer Nachricht, steht die Nachricht direkt unter
- * dem Anruf statt doppelt in der Liste.</p>
+ * dem Anruf statt doppelt in der Liste. Anrufe kommen seitenweise (höchstens
+ * 100 auf einmal, mehr liefert der Server nicht), weitere per Knopf.</p>
  */
 
-const MAX_ANRUFE = 200;
+const SEITENGROESSE = 100;
 
 type Zeile =
     | { art: 'anruf'; zeitpunkt: string; anruf: TelefonAnruf; nachricht: Sprachnachricht | null }
@@ -33,24 +35,36 @@ export function KontaktAnrufeTab({ typ, kontaktId }: KontaktAnrufeTabProps) {
     const [anrufe, setAnrufe] = useState<TelefonAnruf[]>([]);
     const [nachrichten, setNachrichten] = useState<Sprachnachricht[]>([]);
     const [anrufbeantworter, setAnrufbeantworter] = useState<Anrufbeantworter[]>([]);
+    const [gesamt, setGesamt] = useState(0);
+    const [seiten, setSeiten] = useState(0);
+    const [seite, setSeite] = useState(0);
     const [laedt, setLaedt] = useState(true);
+    const [laedtMehr, setLaedtMehr] = useState(false);
     const [fehler, setFehler] = useState<string | null>(null);
     const anfrageRef = useRef(0);
+    const toast = useToast();
+
+    const kontaktFilter = useMemo(
+        () => (typ === 'KUNDE' ? { kundeId: kontaktId } : { lieferantId: kontaktId }),
+        [typ, kontaktId],
+    );
 
     const lade = useCallback(async () => {
         const nummer = ++anfrageRef.current;
         setLaedt(true);
         setFehler(null);
-        const filter = typ === 'KUNDE' ? { kundeId: kontaktId } : { lieferantId: kontaktId };
         try {
-            const [seite, liste, status] = await Promise.all([
-                ladeAnrufe({ ...filter, groesse: MAX_ANRUFE }),
-                ladeSprachnachrichten(filter),
+            const [ersteSeite, liste, status] = await Promise.all([
+                ladeAnrufe({ ...kontaktFilter, seite: 0, groesse: SEITENGROESSE }),
+                ladeSprachnachrichten(kontaktFilter),
                 // Nur für die Namen der Anrufbeantworter – ohne geht es auch.
                 ladeStatus().catch(() => null),
             ]);
             if (nummer !== anfrageRef.current) return;
-            setAnrufe(seite.inhalt);
+            setAnrufe(ersteSeite.inhalt);
+            setGesamt(ersteSeite.gesamt);
+            setSeiten(ersteSeite.seiten);
+            setSeite(0);
             setNachrichten(liste);
             setAnrufbeantworter(status?.anrufbeantworter ?? []);
         } catch (e) {
@@ -58,7 +72,26 @@ export function KontaktAnrufeTab({ typ, kontaktId }: KontaktAnrufeTabProps) {
         } finally {
             if (nummer === anfrageRef.current) setLaedt(false);
         }
-    }, [typ, kontaktId]);
+    }, [kontaktFilter]);
+
+    const ladeMehr = useCallback(async () => {
+        const nummer = anfrageRef.current;
+        setLaedtMehr(true);
+        try {
+            const naechste = await ladeAnrufe({ ...kontaktFilter, seite: seite + 1, groesse: SEITENGROESSE });
+            if (nummer !== anfrageRef.current) return;
+            setAnrufe((alt) => [...alt, ...naechste.inhalt]);
+            setGesamt(naechste.gesamt);
+            setSeiten(naechste.seiten);
+            setSeite(seite + 1);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'Weitere Anrufe konnten nicht geladen werden.');
+        } finally {
+            if (nummer === anfrageRef.current) setLaedtMehr(false);
+        }
+    }, [kontaktFilter, seite, toast]);
+
+    const weitereSeiten = seite + 1 < seiten;
 
     useEffect(() => {
         void lade();
@@ -72,11 +105,15 @@ export function KontaktAnrufeTab({ typ, kontaktId }: KontaktAnrufeTabProps) {
             if (nachricht) verbraucht.add(nachricht.id);
             return { art: 'anruf', zeitpunkt: anruf.zeitpunkt, anruf, nachricht };
         });
+        // Solange ältere Anrufe noch nicht geladen sind, auch keine älteren
+        // Einzelnachrichten zeigen – sonst stünden sie scheinbar lückenlos da.
+        const aeltesterAnruf = weitereSeiten && anrufe.length > 0 ? anrufe[anrufe.length - 1].zeitpunkt : null;
         nachrichten.filter((n) => !verbraucht.has(n.id))
+            .filter((n) => aeltesterAnruf === null || n.zeitpunkt.localeCompare(aeltesterAnruf) >= 0)
             .forEach((nachricht) => liste.push({ art: 'nachricht', zeitpunkt: nachricht.zeitpunkt, nachricht }));
         // ISO-Zeitpunkte lassen sich als Text sortieren.
         return liste.sort((a, b) => b.zeitpunkt.localeCompare(a.zeitpunkt));
-    }, [anrufe, nachrichten]);
+    }, [anrufe, nachrichten, weitereSeiten]);
 
     const ersetzeNachricht = useCallback((neu: Sprachnachricht) => {
         setNachrichten((alt) => alt.map((n) => (n.id === neu.id ? neu : n)));
@@ -169,6 +206,15 @@ export function KontaktAnrufeTab({ typ, kontaktId }: KontaktAnrufeTabProps) {
                     );
                 })}
             </ul>
+            {weitereSeiten && (
+                <div className="flex items-center justify-between gap-3 pt-3 text-sm text-slate-500">
+                    <span>{anrufe.length} von {gesamt} Anrufen</span>
+                    <Button variant="outline" size="sm" onClick={() => void ladeMehr()} disabled={laedtMehr}>
+                        {laedtMehr && <Loader2 aria-hidden="true" className="h-4 w-4 motion-safe:animate-spin" />}
+                        Weitere Anrufe laden
+                    </Button>
+                </div>
+            )}
             {zuordnenAnruf.dialogElement}
             {zuordnenNachricht.dialogElement}
         </>

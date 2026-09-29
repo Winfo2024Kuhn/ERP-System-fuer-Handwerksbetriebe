@@ -146,6 +146,20 @@ describe('TelefonPage', () => {
         await waitFor(() => expect(anrufParams(fetchMock).get('nurUnbekannt')).toBeNull());
     });
 
+    it('übernimmt ?offen=1 aus der Glocke und fragt nur offene Rückrufe ab', async () => {
+        const fetchMock = stubbeTelefon();
+        zeige('/telefon/anrufe?offen=1');
+        await screen.findByRole('table');
+        expect(screen.getByRole('button', { name: 'Rückruf offen', pressed: true })).toBeInTheDocument();
+        expect(anrufParams(fetchMock).get('nurOffen')).toBe('true');
+        expect(anrufParams(fetchMock).get('art')).toBeNull();
+        expect(screen.getByRole('textbox', { name: 'Anrufe nach Name oder Nummer durchsuchen' })).toBeDisabled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Verpasst' }));
+        await waitFor(() => expect(anrufParams(fetchMock).get('art')).toBe('VERPASST'));
+        expect(anrufParams(fetchMock).get('nurOffen')).toBeNull();
+    });
+
     it('sucht erst nach einer Tipp-Pause', async () => {
         const fetchMock = stubbeTelefon();
         zeige();

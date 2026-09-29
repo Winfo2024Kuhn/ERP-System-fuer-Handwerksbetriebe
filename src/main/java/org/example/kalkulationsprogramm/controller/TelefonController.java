@@ -74,6 +74,7 @@ public class TelefonController {
     @GetMapping("/anrufe")
     public Page<TelefonAnrufDto> anrufe(@RequestParam(required = false) TelefonAnrufArt art,
                                         @RequestParam(defaultValue = "false") boolean nurUnbekannt,
+                                        @RequestParam(defaultValue = "false") boolean nurOffen,
                                         @RequestParam(required = false) String suche,
                                         @RequestParam(required = false) Long kundeId,
                                         @RequestParam(required = false) Long lieferantId,
@@ -81,6 +82,9 @@ public class TelefonController {
                                         @RequestParam(defaultValue = "50") int groesse,
                                         Authentication authentication) {
         berechtigung.verlange(authentication);
+        if (nurOffen) {
+            return telefonService.offeneVerpassteAnrufe(seite, groesse);
+        }
         return telefonService.anrufe(art, nurUnbekannt, suche, kundeId, lieferantId, seite, groesse);
     }
 

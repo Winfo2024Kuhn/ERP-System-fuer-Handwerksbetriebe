@@ -134,7 +134,7 @@ it('zeigt eine Spalte "Telefon" direkt nach der Webseite mit Nachrichten und ver
         categories: [
             { type: 'ANFRAGEN_WEBSEITE', label: 'Neue Anfragen', count: 1, icon: 'Globe', link: '/anfragen' },
             { type: 'SPRACHNACHRICHTEN', label: 'Neue Nachrichten', count: 1, icon: 'Voicemail', link: '/telefon/anrufbeantworter' },
-            { type: 'VERPASSTE_ANRUFE', label: 'Verpasste Anrufe', count: 1, icon: 'PhoneMissed', link: '/telefon/anrufe?art=VERPASST' },
+            { type: 'VERPASSTE_ANRUFE', label: 'Verpasste Anrufe', count: 1, icon: 'PhoneMissed', link: '/telefon/anrufe?offen=1' },
             { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 1, icon: 'Plane', link: '/urlaubsantraege' },
         ],
         recentItems: [

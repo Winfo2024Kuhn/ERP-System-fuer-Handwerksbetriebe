@@ -109,7 +109,7 @@ export async function stubbeTelefonApi(page: Page, optionen: {
                 totalCount: 2,
                 categories: [
                     { type: 'SPRACHNACHRICHTEN', label: 'Neue Nachrichten', count: 1, icon: 'Voicemail', link: '/telefon/anrufbeantworter' },
-                    { type: 'VERPASSTE_ANRUFE', label: 'Verpasste Anrufe', count: 1, icon: 'PhoneMissed', link: '/telefon/anrufe?art=VERPASST' },
+                    { type: 'VERPASSTE_ANRUFE', label: 'Verpasste Anrufe', count: 1, icon: 'PhoneMissed', link: '/telefon/anrufe?offen=1' },
                 ],
                 recentItems: [
                     { type: 'SPRACHNACHRICHT', title: 'Nachricht von 0931 2222222', subtitle: 'AB Nacht · 0:03', timestamp: heute('11:40'), link: '/telefon/anrufbeantworter?nachricht=11' },

@@ -296,6 +296,12 @@ class TelefonDatenIntegrationTest {
         assertThat(verpasst.getFirst().untertitel()).isEqualTo("AB Nacht, ohne Nachricht · heute 07:57");
         assertThat(verpasst.get(1).untertitel()).isEqualTo("Verpasst · heute 07:56");
 
+        // Die Liste hinter dem Glocken-Link zeigt genau diese Anrufe
+        Page<TelefonAnrufDto> offen = telefonService.offeneVerpassteAnrufe(0, 50);
+        assertThat(offen.getTotalElements()).isEqualTo(2);
+        assertThat(offen.getContent()).extracting(TelefonAnrufDto::nummer)
+                .containsExactly("0171 7777777", "0800 0000000");
+
         List<TelefonBenachrichtigungService.Eintrag> neu = glocke.neueSprachnachrichten();
         assertThat(neu).hasSize(1);
         assertThat(neu.getFirst().untertitel()).startsWith("AB Tag · heute 07:58 · 0:01");
@@ -333,6 +339,28 @@ class TelefonDatenIntegrationTest {
         abholService.nachholen(999);
         assertThat(anrufe.findAll()).extracting(TelefonAnruf::getZeitpunkt).containsExactly(HEUTE_0755);
         assertThat(nachrichten.findAll()).extracting(Sprachnachricht::getZeitpunkt).containsExactly(HEUTE_0755);
+    }
+
+    @Test
+    @DisplayName("Kontakt gelöscht: Zuordnung wird zurückgesetzt und beim nächsten Abgleich neu gesucht")
+    void verwaisteZuordnung() {
+        boxAnruf(HEUTE_0755, TelefonAnrufArt.ANGENOMMEN, "09311234567", "2323", null);
+        abholService.abholen();
+        TelefonAnruf anruf = anrufe.findAll().getFirst();
+        assertThat(anruf.getZuordnung()).isEqualTo(TelefonZuordnung.AUTOMATISCH);
+
+        // So hinterlässt ON DELETE SET NULL den Anruf, wenn der Kunde gelöscht wird
+        anruf.setKunde(null);
+        anrufe.save(anruf);
+        mustermann.setTelefon(null);
+        kunden.save(mustermann);
+        zuordnung.verwerfeCache();
+
+        abholService.abholen();
+        TelefonAnruf danach = anrufe.findById(anruf.getId()).orElseThrow();
+        assertThat(danach.getZuordnung()).isEqualTo(TelefonZuordnung.KEINE);
+        assertThat(telefonService.anrufe(null, true, null, null, null, 0, 50).getContent())
+                .extracting(TelefonAnrufDto::id).containsExactly(anruf.getId());
     }
 
     @Test

@@ -674,7 +674,7 @@ public class NotificationController {
                                 var verpasst = telefonBenachrichtigungService.offeneVerpassteAnrufe();
                                 if (!verpasst.isEmpty()) {
                                         categories.add(new CategoryDto("VERPASSTE_ANRUFE", "Verpasste Anrufe",
-                                                        verpasst.size(), "PhoneMissed", "/telefon/anrufe?art=VERPASST"));
+                                                        verpasst.size(), "PhoneMissed", "/telefon/anrufe?offen=1"));
                                         verpasst.stream().limit(10).forEach(v -> recentItems.add(new RecentItemDto(
                                                         v.typ(), v.titel(), v.untertitel(), v.zeitpunkt().toString(), v.link())));
                                 }

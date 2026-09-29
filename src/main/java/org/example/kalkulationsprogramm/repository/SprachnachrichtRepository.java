@@ -49,6 +49,15 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
 
     long countByLieferantId(Long lieferantId);
 
+    /** Gegenstück zu {@link TelefonAnrufRepository#setzeVerwaisteZuordnungenZurueck()}. */
+    @Modifying
+    @Query("""
+            UPDATE Sprachnachricht s SET s.zuordnung = org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
+            WHERE s.zuordnung <> org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
+              AND s.kunde IS NULL AND s.lieferant IS NULL
+            """)
+    int setzeVerwaisteZuordnungenZurueck();
+
     @Modifying
     @Query("UPDATE Sprachnachricht s SET s.anruf = null WHERE s.anruf.id IN (SELECT a.id FROM TelefonAnruf a WHERE a.zeitpunkt < :grenze)")
     int loeseAnrufeAelterAls(@Param("grenze") LocalDateTime grenze);

@@ -14,24 +14,27 @@ import { WerAnzeige, ZuordnungsMenue } from './WerAnzeige';
 /**
  * Reiter „Anrufe": die Anrufliste der FRITZ!Box.
  *
- * <p>Filter stehen in der Adresse (`?art=VERPASST`, `?unbekannt=1`), damit
- * der Link aus der Glocke direkt „Verpasst" zeigt. `?anruf=12` hebt einen
+ * <p>Filter stehen in der Adresse (`?art=VERPASST`, `?offen=1`, `?unbekannt=1`),
+ * damit der Link aus der Glocke direkt die offenen Rückrufe zeigt – genau die
+ * Anrufe, die sie zählt. `?anruf=12` hebt einen
  * Anruf hervor und scrollt zu ihm. Es werden 50 Anrufe auf einmal geladen,
  * weitere per Knopf.</p>
  */
 
-type Filter = 'alle' | 'verpasst' | 'unbekannt';
+type Filter = 'alle' | 'verpasst' | 'offen' | 'unbekannt';
 
 const SEITENGROESSE = 50;
 
 const FILTER_CHIPS: { wert: Filter; text: string }[] = [
     { wert: 'alle', text: 'Alle' },
     { wert: 'verpasst', text: 'Verpasst' },
+    { wert: 'offen', text: 'Rückruf offen' },
     { wert: 'unbekannt', text: 'Unbekannt' },
 ];
 
 function filterAusAdresse(params: URLSearchParams): Filter {
     if (params.get('art') === 'VERPASST') return 'verpasst';
+    if (params.get('offen') === '1') return 'offen';
     if (params.get('unbekannt') === '1') return 'unbekannt';
     return 'alle';
 }
@@ -76,7 +79,8 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
             const ergebnis = await ladeAnrufe({
                 art: filter === 'verpasst' ? 'VERPASST' : undefined,
                 nurUnbekannt: filter === 'unbekannt',
-                suche,
+                nurOffen: filter === 'offen',
+                suche: filter === 'offen' ? undefined : suche,
                 seite: zielSeite,
                 groesse: SEITENGROESSE,
             });
@@ -113,8 +117,10 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
         const naechste = new URLSearchParams(params);
         naechste.delete('art');
         naechste.delete('unbekannt');
+        naechste.delete('offen');
         naechste.delete('anruf');
         if (neu === 'verpasst') naechste.set('art', 'VERPASST');
+        if (neu === 'offen') naechste.set('offen', '1');
         if (neu === 'unbekannt') naechste.set('unbekannt', '1');
         setParams(naechste, { replace: true });
     };
@@ -124,11 +130,12 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
     }, []);
     const zuordnen = useZuordnen<TelefonAnruf>(ersetze);
 
-    const leerText = suche
+    const leerText = suche && filter !== 'offen'
         ? `Keine Anrufe zu „${suche}“ gefunden.`
         : filter === 'verpasst' ? 'Keine verpassten Anrufe.'
-            : filter === 'unbekannt' ? 'Keine Anrufe von unbekannten Nummern.'
-                : 'Noch keine Anrufe abgeholt.';
+            : filter === 'offen' ? 'Keine offenen Rückrufe – alles erledigt.'
+                : filter === 'unbekannt' ? 'Keine Anrufe von unbekannten Nummern.'
+                    : 'Noch keine Anrufe abgeholt.';
 
     return (
         <div className="space-y-4">
@@ -142,7 +149,9 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
                         onChange={(e) => setSucheEingabe(e.target.value)}
                         placeholder="Name oder Nummer suchen …"
                         aria-label="Anrufe nach Name oder Nummer durchsuchen"
-                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                        disabled={filter === 'offen'}
+                        title={filter === 'offen' ? 'Bei „Rückruf offen“ stehen immer alle offenen Rückrufe – Suche dort nicht nötig.' : undefined}
+                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                     />
                     {sucheEingabe && (
                         <button

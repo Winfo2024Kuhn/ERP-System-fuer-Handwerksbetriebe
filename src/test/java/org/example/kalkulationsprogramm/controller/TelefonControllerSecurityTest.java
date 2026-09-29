@@ -59,6 +59,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -189,6 +190,24 @@ class TelefonControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].kontakt.name").value("Mustermann GmbH"))
                 .andExpect(jsonPath("$.content[0].art").value("VERPASST"));
+    }
+
+    @Test
+    @DisplayName("Mit Recht: nurOffen liefert die offenen verpassten Anrufe aus der Glocke")
+    void offeneVerpasste() throws Exception {
+        when(telefonService.offeneVerpassteAnrufe(0, 50)).thenReturn(new PageImpl<>(List.of(anruf())));
+        mvc.perform(get("/api/telefon/anrufe").with(mitRecht()).param("nurOffen", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].art").value("VERPASST"));
+        verify(telefonService, never()).anrufe(any(), anyBoolean(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("Ohne Recht: nurOffen → 403")
+    void offeneVerpassteOhneRecht() throws Exception {
+        mvc.perform(get("/api/telefon/anrufe").param("nurOffen", "true").with(ohneRecht()))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(telefonService);
     }
 
     @Test

@@ -45,6 +45,10 @@ function stubbe(darf: boolean) {
     );
 }
 
+// Die Akte lädt Anmeldung, Recht, Kontakt und Anrufzahl nacheinander. In der
+// vollen Testsuite (CI) dauert das länger als die Standard-Sekunde von findBy*.
+const AKTE_GELADEN = { timeout: 5000 };
+
 function zeige(element: React.ReactElement, adresse: string) {
     return render(
         <MemoryRouter initialEntries={[adresse]}>
@@ -60,9 +64,9 @@ describe('Kundenakte – Telefon', () => {
     it('zeigt mit Recht den Reiter "Anrufe" mit Zähler und die Liste', async () => {
         stubbe(true);
         zeige(<Kundeneditor />, '/kunden?kundeId=7');
-        const reiter = await screen.findByRole('button', { name: /^Anrufe\s*2$/ });
+        const reiter = await screen.findByRole('button', { name: /^Anrufe\s*2$/ }, AKTE_GELADEN);
         fireEvent.click(reiter);
-        expect(await screen.findByRole('list', { name: 'Anrufe und Nachrichten' })).toBeInTheDocument();
+        expect(await screen.findByRole('list', { name: 'Anrufe und Nachrichten' }, AKTE_GELADEN)).toBeInTheDocument();
         expect(screen.getByText('0931 5555555')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Rufnummer 0931 5555555 entfernen' })).toBeInTheDocument();
     });
@@ -70,8 +74,8 @@ describe('Kundenakte – Telefon', () => {
     it('zeigt ohne Recht keinen Reiter, aber die weiteren Rufnummern ohne Entfernen', async () => {
         stubbe(false);
         zeige(<Kundeneditor />, '/kunden?kundeId=7');
-        expect(await screen.findByText('0931 5555555')).toBeInTheDocument();
-        await waitFor(() => expect(screen.getByRole('button', { name: /E-Mails/ })).toBeInTheDocument());
+        expect(await screen.findByText('0931 5555555', {}, AKTE_GELADEN)).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('button', { name: /E-Mails/ })).toBeInTheDocument(), AKTE_GELADEN);
         expect(screen.queryByRole('button', { name: /^Anrufe/ })).toBeNull();
         expect(screen.queryByRole('button', { name: /entfernen/ })).toBeNull();
     });
@@ -84,16 +88,16 @@ describe('Lieferantenakte – Telefon', () => {
     it('öffnet mit Recht über ?tab=anrufe direkt die Anrufe', async () => {
         stubbe(true);
         zeige(<LieferantenEditor />, '/lieferanten?lieferantId=3&tab=anrufe');
-        await waitFor(() => expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/Anrufe/));
-        expect(await screen.findByRole('list', { name: 'Anrufe und Nachrichten' })).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/Anrufe/), AKTE_GELADEN);
+        expect(await screen.findByRole('list', { name: 'Anrufe und Nachrichten' }, AKTE_GELADEN)).toBeInTheDocument();
         expect(screen.getByText('0931 5555555')).toBeInTheDocument();
     });
 
     it('fällt ohne Recht von ?tab=anrufe auf den E-Mail-Verlauf zurück', async () => {
         stubbe(false);
         zeige(<LieferantenEditor />, '/lieferanten?lieferantId=3&tab=anrufe');
-        const offen = await screen.findByRole('tab', { selected: true });
-        await waitFor(() => expect(offen).toHaveTextContent(/E-Mail-Verlauf/));
+        const offen = await screen.findByRole('tab', { selected: true }, AKTE_GELADEN);
+        await waitFor(() => expect(offen).toHaveTextContent(/E-Mail-Verlauf/), AKTE_GELADEN);
         expect(screen.queryByRole('tab', { name: /Anrufe/ })).toBeNull();
     });
 });

@@ -64,6 +64,34 @@ describe('KontaktAnrufeTab', () => {
         expect(await screen.findByText('Noch keine Anrufe von diesem Kontakt.')).toBeInTheDocument();
         expect(new URL(String(aufrufe(fetchMock, '/api/telefon/sprachnachrichten')[0][0]), 'http://localhost').searchParams.get('lieferantId')).toBe('3');
     });
+
+    it('lädt mehr als eine Seite Anrufe per Knopf nach und hält ältere Nachrichten bis dahin zurück', async () => {
+        const fetchMock = stubbeFetch(
+            (url) => {
+                if (url.pathname !== '/api/telefon/anrufe') return undefined;
+                return url.searchParams.get('seite') === '1'
+                    ? antwort({ content: [anruf({ id: 2, zeitpunkt: '2026-09-01T08:00:00', kontakt: KUNDE_MAX })], totalElements: 2, totalPages: 2 })
+                    : antwort({ content: [anruf({ id: 1, zeitpunkt: '2026-09-28T09:00:00', kontakt: KUNDE_MAX })], totalElements: 2, totalPages: 2 });
+            },
+            (url) => (url.pathname === '/api/telefon/sprachnachrichten'
+                ? antwort([nachricht({ id: 12, zeitpunkt: '2026-08-15T10:00:00', neu: false })])
+                : undefined),
+            (url) => (url.pathname === '/api/telefon/status' ? antwort(STATUS) : undefined),
+        );
+        zeige(<KontaktAnrufeTab typ="KUNDE" kontaktId={7} />);
+        const liste = await screen.findByRole('list', { name: 'Anrufe und Nachrichten' });
+        const erste = new URL(String(aufrufe(fetchMock, '/api/telefon/anrufe')[0][0]), 'http://localhost').searchParams;
+        expect(erste.get('groesse')).toBe('100');
+        expect(erste.get('seite')).toBe('0');
+        expect(liste.querySelectorAll(':scope > li')).toHaveLength(1);
+        expect(screen.getByText('1 von 2 Anrufen')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Weitere Anrufe laden' }));
+
+        await waitFor(() => expect(liste.querySelectorAll(':scope > li')).toHaveLength(3));
+        expect(liste.querySelectorAll(':scope > li')[2].id).toBe('nachricht-12');
+        expect(screen.queryByRole('button', { name: 'Weitere Anrufe laden' })).toBeNull();
+    });
 });
 
 describe('WeitereRufnummern', () => {

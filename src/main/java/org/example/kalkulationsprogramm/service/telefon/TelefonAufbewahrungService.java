@@ -8,6 +8,8 @@ import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -35,10 +37,9 @@ public class TelefonAufbewahrungService {
 
         LocalDateTime grenzeNachrichten = jetzt.minusMonths(einstellungen.aufbewahrungSprachnachrichtenMonate());
         List<Sprachnachricht> alt = nachrichtRepository.findByZeitpunktBefore(grenzeNachrichten);
-        for (Sprachnachricht s : alt) {
-            ablage.loesche(s.getDateiName());
-        }
+        List<String> dateien = alt.stream().map(Sprachnachricht::getDateiName).toList();
         nachrichtRepository.deleteAll(alt);
+        loescheDateienNachCommit(dateien);
 
         LocalDateTime grenzeAnrufe = jetzt.minusMonths(einstellungen.aufbewahrungAnrufeMonate());
         nachrichtRepository.loeseAnrufeAelterAls(grenzeAnrufe);
@@ -47,5 +48,25 @@ public class TelefonAufbewahrungService {
         if (anrufe > 0 || !alt.isEmpty()) {
             log.info("Telefon-Aufbewahrung: {} Anrufe und {} Sprachnachrichten gelöscht", anrufe, alt.size());
         }
+    }
+
+    /**
+     * Audiodateien erst löschen, wenn die Datensätze wirklich weg sind. Rollt die
+     * Transaktion zurück, bleiben Nachricht und Aufnahme zusammen erhalten.
+     */
+    private void loescheDateienNachCommit(List<String> dateien) {
+        if (dateien.isEmpty()) {
+            return;
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            dateien.forEach(ablage::loesche);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                dateien.forEach(ablage::loesche);
+            }
+        });
     }
 }

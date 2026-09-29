@@ -9,6 +9,7 @@ import org.example.kalkulationsprogramm.dto.Telefon.AnrufbeantworterDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
 import org.example.kalkulationsprogramm.repository.SprachnachrichtRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,7 +55,7 @@ public class TelefonBenachrichtigungService {
     public List<Eintrag> offeneVerpassteAnrufe() {
         LocalDateTime seit = LocalDateTime.now(clock).minusDays(VERPASSTE_TAGE);
         List<AnrufbeantworterDto> abs = einstellungen.anrufbeantworter();
-        return anrufRepository.findeOffeneVerpasste(seit).stream().map(a -> new Eintrag(
+        return anrufRepository.findeOffeneVerpasste(seit, Pageable.unpaged()).stream().map(a -> new Eintrag(
                 "VERPASSTER_ANRUF",
                 wer(a, a.getNummerRoh()),
                 (a.getArt() == TelefonAnrufArt.ANRUFBEANTWORTER && a.getAnrufbeantworter() != null

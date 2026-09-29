@@ -60,8 +60,21 @@ public class TelefonService {
             muster = "%" + escapeLike(s.toLowerCase(Locale.ROOT)) + "%";
         }
         PageRequest seitenAnfrage = PageRequest.of(Math.max(0, seite), Math.clamp(groesse, 1, MAX_SEITENGROESSE));
-        Page<TelefonAnruf> treffer = anrufRepository.suche(art, nurUnbekannt, kundeId, lieferantId, muster, seitenAnfrage);
+        return zuDtos(anrufRepository.suche(art, nurUnbekannt, kundeId, lieferantId, muster, seitenAnfrage));
+    }
 
+    /**
+     * Genau die verpassten Anrufe, die die Glocke zählt: noch nicht zurückgerufen
+     * bzw. seitdem nicht wieder angenommen, aus den letzten Tagen.
+     */
+    @Transactional(readOnly = true)
+    public Page<TelefonAnrufDto> offeneVerpassteAnrufe(int seite, int groesse) {
+        LocalDateTime seit = LocalDateTime.now(clock).minusDays(TelefonBenachrichtigungService.VERPASSTE_TAGE);
+        PageRequest seitenAnfrage = PageRequest.of(Math.max(0, seite), Math.clamp(groesse, 1, MAX_SEITENGROESSE));
+        return zuDtos(anrufRepository.findeOffeneVerpasste(seit, seitenAnfrage));
+    }
+
+    private Page<TelefonAnrufDto> zuDtos(Page<TelefonAnruf> treffer) {
         List<Long> ids = treffer.getContent().stream().map(TelefonAnruf::getId).toList();
         Map<Long, Long> nachrichtZuAnruf = new HashMap<>();
         if (!ids.isEmpty()) {

@@ -80,7 +80,7 @@ public interface TelefonAnrufRepository extends JpaRepository<TelefonAnruf, Long
      * Anrufbeantworter angenommen ohne Nachricht – und seitdem weder zurückgerufen
      * noch ein angenommener Anruf derselben Nummer.
      */
-    @Query("""
+    @Query(value = """
             SELECT a FROM TelefonAnruf a
             LEFT JOIN FETCH a.kunde
             LEFT JOIN FETCH a.lieferant
@@ -95,6 +95,31 @@ public interface TelefonAnrufRepository extends JpaRepository<TelefonAnruf, Long
                      AND b.art IN (org.example.kalkulationsprogramm.domain.TelefonAnrufArt.ANGENOMMEN,
                                    org.example.kalkulationsprogramm.domain.TelefonAnrufArt.AUSGEHEND))
             ORDER BY a.zeitpunkt DESC
+            """, countQuery = """
+            SELECT COUNT(a) FROM TelefonAnruf a
+            WHERE a.zeitpunkt >= :seit
+              AND (a.art = org.example.kalkulationsprogramm.domain.TelefonAnrufArt.VERPASST
+                   OR (a.art = org.example.kalkulationsprogramm.domain.TelefonAnrufArt.ANRUFBEANTWORTER
+                       AND NOT EXISTS (SELECT s.id FROM Sprachnachricht s WHERE s.anruf = a)))
+              AND NOT EXISTS (
+                   SELECT b.id FROM TelefonAnruf b
+                   WHERE b.nummerNormalisiert = a.nummerNormalisiert
+                     AND b.zeitpunkt > a.zeitpunkt
+                     AND b.art IN (org.example.kalkulationsprogramm.domain.TelefonAnrufArt.ANGENOMMEN,
+                                   org.example.kalkulationsprogramm.domain.TelefonAnrufArt.AUSGEHEND))
             """)
-    List<TelefonAnruf> findeOffeneVerpasste(@Param("seit") LocalDateTime seit);
+    Page<TelefonAnruf> findeOffeneVerpasste(@Param("seit") LocalDateTime seit, Pageable pageable);
+
+    /**
+     * Wurde der zugeordnete Kunde oder Lieferant gelöscht, setzt die Datenbank nur
+     * die Verknüpfung auf NULL. Solche Einträge gelten wieder als unbekannt, damit
+     * der nächste Abgleich sie neu zuordnen kann.
+     */
+    @Modifying
+    @Query("""
+            UPDATE TelefonAnruf a SET a.zuordnung = org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
+            WHERE a.zuordnung <> org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
+              AND a.kunde IS NULL AND a.lieferant IS NULL
+            """)
+    int setzeVerwaisteZuordnungenZurueck();
 }

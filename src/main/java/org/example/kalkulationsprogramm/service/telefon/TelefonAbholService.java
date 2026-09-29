@@ -256,11 +256,14 @@ public class TelefonAbholService {
     /**
      * Gleicht "Unbekannt"-Einträge erneut ab, z.B. nachdem ein Kontakt angelegt oder
      * seine Nummer geändert wurde. Standard: innerhalb der Aufbewahrungsfrist.
+     * Einträge, deren Kontakt inzwischen gelöscht wurde, gelten vorher wieder als unbekannt.
      */
     private int gleicheOffeneAb(RufnummernZuordnungService.Verzeichnis verzeichnis, boolean alle) {
         LocalDateTime nach = alle ? LocalDateTime.of(1970, 1, 1, 0, 0)
                 : LocalDateTime.now(clock).minusMonths(einstellungen.aufbewahrungAnrufeMonate());
         Integer anzahl = tx.execute(status -> {
+            anrufRepository.setzeVerwaisteZuordnungenZurueck();
+            nachrichtRepository.setzeVerwaisteZuordnungenZurueck();
             int n = 0;
             for (TelefonAnruf a : anrufRepository.findByZuordnungAndNummerNormalisiertIsNotNullAndZeitpunktAfter(
                     TelefonZuordnung.KEINE, nach)) {

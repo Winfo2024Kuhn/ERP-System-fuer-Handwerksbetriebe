@@ -73,6 +73,8 @@ export function ladeStatus(): Promise<TelefonStatus> {
 export interface AnrufFilter {
     art?: string;
     nurUnbekannt?: boolean;
+    /** Nur verpasste Anrufe, um die sich noch keiner gekümmert hat (wie in der Glocke). */
+    nurOffen?: boolean;
     suche?: string;
     kundeId?: number;
     lieferantId?: number;
@@ -91,6 +93,7 @@ export async function ladeAnrufe(filter: AnrufFilter, signal?: AbortSignal): Pro
     const params = new URLSearchParams();
     if (filter.art) params.set('art', filter.art);
     if (filter.nurUnbekannt) params.set('nurUnbekannt', 'true');
+    if (filter.nurOffen) params.set('nurOffen', 'true');
     if (filter.suche?.trim()) params.set('suche', filter.suche.trim());
     if (filter.kundeId) params.set('kundeId', String(filter.kundeId));
     if (filter.lieferantId) params.set('lieferantId', String(filter.lieferantId));
