@@ -22,6 +22,10 @@ import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { PhoneInput } from "../components/PhoneInput";
 import { LIEFERANT_ROLLEN, type LieferantRolle } from "../types";
+import { KontaktAnrufeTab } from "../features/telefon/KontaktAnrufeTab";
+import { WeitereRufnummern } from "../features/telefon/WeitereRufnummern";
+import { useKontaktAnrufAnzahl } from "../features/telefon/useKontaktAnrufAnzahl";
+import { useTelefonBerechtigung } from "../features/telefon/useTelefonBerechtigung";
 
 const LIEFERANT_TYPES = [
     { value: "STAHL", label: "Stahl" },
@@ -43,7 +47,7 @@ const PAGE_SIZE = 12;
  * und der Zurück-Knopf des Browsers führt wieder aus der Detailansicht
  * heraus zur Liste.</p>
  */
-const LIEFERANT_TABS = ['emails', 'dokumente', 'notizen', 'reklamationen'] as const;
+const LIEFERANT_TABS = ['emails', 'anrufe', 'dokumente', 'notizen', 'reklamationen'] as const;
 type LieferantTab = typeof LIEFERANT_TABS[number];
 
 function istGueltigerTab(value: string | null): value is LieferantTab {
@@ -58,8 +62,13 @@ interface LieferantDetailViewProps {
     onEdit: () => void;
 }
 
-const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, activeTab, onTabChange, onBack, onEdit }) => {
+const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, activeTab: angefragterTab, onTabChange, onBack, onEdit }) => {
     const initials = lieferant.lieferantenname?.slice(0, 2).toUpperCase() || "??";
+    // Reiter "Anrufe" nur mit dem Abteilungs-Recht "Anrufe & Anrufbeantworter";
+    // ohne Recht fällt ein ?tab=anrufe auf den E-Mail-Verlauf zurück.
+    const darfTelefon = useTelefonBerechtigung() === true;
+    const anrufAnzahl = useKontaktAnrufAnzahl('LIEFERANT', Number(lieferant.id) || null, darfTelefon);
+    const activeTab: LieferantTab = angefragterTab === 'anrufe' && !darfTelefon ? 'emails' : angefragterTab;
 
     // Formatter helpers
     const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
@@ -194,6 +203,25 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                         {lieferant.kommunikation?.length || 0}
                     </span>
                 </button>
+                {darfTelefon && (
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'anrufe'}
+                        onClick={() => onTabChange('anrufe')}
+                        className={cn(
+                            "flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors -mb-px",
+                            activeTab === 'anrufe'
+                                ? "text-rose-600 border-b-2 border-rose-500"
+                                : "text-slate-500 hover:text-slate-700"
+                        )}
+                    >
+                        <Phone className="w-4 h-4" />
+                        Anrufe
+                        <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
+                            {anrufAnzahl}
+                        </span>
+                    </button>
+                )}
                 <button
                     role="tab"
                     aria-selected={activeTab === 'dokumente'}
@@ -259,6 +287,11 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                         />
                     </div>
                 )}
+                {activeTab === 'anrufe' && lieferant.id && (
+                    <div className="absolute inset-0 overflow-y-auto pr-2">
+                        <KontaktAnrufeTab typ="LIEFERANT" kontaktId={Number(lieferant.id)} />
+                    </div>
+                )}
                 {activeTab === 'dokumente' && (
                     <div className="absolute inset-0 overflow-y-auto pr-2">
                         <LieferantDokumenteTab
@@ -320,6 +353,8 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                         <p className="font-medium text-slate-900 break-words">{lieferant.mobiltelefon || '-'}</p>
                     </div>
                 </div>
+                {/* Beim Zuordnen von Anrufen gemerkte Nummern (erscheint nur, wenn es welche gibt). */}
+                {lieferant.id && <WeitereRufnummern typ="LIEFERANT" kontaktId={Number(lieferant.id)} darfLoeschen={darfTelefon} />}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
                     <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />

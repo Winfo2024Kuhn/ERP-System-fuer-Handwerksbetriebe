@@ -2,9 +2,12 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { RibbonNavigation } from './RibbonNav';
 import { MobileBottomNav } from './MobileBottomNav';
 import { KiHilfeChat } from '../KiHilfeChat';
+import { AnrufFensterHost } from '../../features/telefon/AnrufFensterHost';
+import { useTelefonBerechtigungJeBenutzer } from '../../features/telefon/useTelefonBerechtigungJeBenutzer';
 
 export function MainLayout() {
   const { pathname } = useLocation();
+  useTelefonBerechtigungJeBenutzer();
   const isEmailCenter = pathname === '/emails' || pathname.startsWith('/emails/');
   return (
     <div className="h-dvh bg-slate-50 flex flex-col overflow-hidden">
@@ -33,6 +36,9 @@ export function MainLayout() {
 
       {/* Global KI-Hilfe Chat */}
       <KiHilfeChat />
+
+      {/* Großes Anruf-Fenster bei eingehenden Anrufen (nur mit Telefon-Recht) */}
+      <AnrufFensterHost />
     </div>
   );
 }

@@ -49,6 +49,8 @@ import EinstellungenEditor from './pages/EinstellungenEditor';
 import LoginPage from './pages/LoginPage';
 import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
 import WebsiteEditor from './pages/WebsiteEditor';
+import TelefonPage from './pages/TelefonPage';
+import { AnrufFensterHost } from './features/telefon/AnrufFensterHost';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -62,7 +64,7 @@ const router = createBrowserRouter(createRoutesFromElements(
               <Route path="/login" element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
 
               {/* Fullscreen pages outside MainLayout — still require authentication */}
-              <Route path="/dokument-editor" element={<RequireAuth><ErrorBoundary><DocumentEditorPage /></ErrorBoundary></RequireAuth>} />
+              <Route path="/dokument-editor" element={<RequireAuth><><ErrorBoundary><DocumentEditorPage /></ErrorBoundary><AnrufFensterHost akteInNeuemTab /></></RequireAuth>} />
               <Route path="/onboarding" element={<RequireAdmin><ErrorBoundary><FirstLoginSetupPage /></ErrorBoundary></RequireAdmin>} />
 
               <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
@@ -95,6 +97,8 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/emails/:folder" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
                 <Route path="/emails/:folder/:emailId" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
                 <Route path="/email-textvorlagen" element={<ErrorBoundary><EmailTextvorlagenEditor /></ErrorBoundary>} />
+                <Route path="/telefon" element={<Navigate to="/telefon/anrufe" replace />} />
+                <Route path="/telefon/:reiter" element={<ErrorBoundary><TelefonPage /></ErrorBoundary>} />
 
                 <Route path="/miete" element={<ErrorBoundary><MietabrechnungEditor /></ErrorBoundary>} />
                 <Route path="/benutzer" element={<RequireAdmin><ErrorBoundary><BenutzerEditor /></ErrorBoundary></RequireAdmin>} />

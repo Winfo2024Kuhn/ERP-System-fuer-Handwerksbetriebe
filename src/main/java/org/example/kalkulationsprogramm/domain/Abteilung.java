@@ -53,4 +53,11 @@ public class Abteilung {
      */
     @Column(nullable = false)
     private Boolean darfWebseitenAnfragenPushen = true;
+
+    /**
+     * Darf Anrufliste und Anrufbeantworter sehen und bekommt das Anruf-Fenster,
+     * wenn die Geschäftsnummer klingelt. Standard: aus (Datenschutz).
+     */
+    @Column(nullable = false)
+    private Boolean darfTelefonSehen = false;
 }

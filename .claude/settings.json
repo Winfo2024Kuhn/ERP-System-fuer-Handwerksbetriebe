@@ -7,7 +7,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Users/MarvinKuhn/dev/ERP-f\u00fcr-Handwerker/ERP-System-fuer-Handwerksbetriebe/.graphify-venv/Scripts/graphify.exe hook-guard search"
+            "command": "${CLAUDE_PROJECT_DIR}/.graphify-venv/Scripts/graphify.exe",
+            "args": [
+              "hook-guard",
+              "search"
+            ]
           }
         ]
       },
@@ -16,7 +20,24 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Users/MarvinKuhn/dev/ERP-f\u00fcr-Handwerker/ERP-System-fuer-Handwerksbetriebe/.graphify-venv/Scripts/graphify.exe hook-guard read --strict"
+            "command": "${CLAUDE_PROJECT_DIR}/.graphify-venv/Scripts/graphify.exe",
+            "args": [
+              "hook-guard",
+              "read",
+              "--strict"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/claude-cloud/setup.sh\" --session",
+            "timeout": 300
           }
         ]
       }

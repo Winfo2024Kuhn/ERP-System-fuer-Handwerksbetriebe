@@ -19,6 +19,7 @@ public class AbteilungBerechtigungDto {
         private String abteilungName;
         private List<TypBerechtigung> berechtigungen;
         private Boolean darfMonatAbschliessen;
+        private Boolean darfTelefonSehen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
         private Boolean darfFreigabeAnnahmePushen;
@@ -41,6 +42,7 @@ public class AbteilungBerechtigungDto {
     public static class UpdateRequest {
         private List<TypBerechtigung> berechtigungen;
         private Boolean darfMonatAbschliessen;
+        private Boolean darfTelefonSehen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
         private Boolean darfFreigabeAnnahmePushen;

@@ -63,4 +63,12 @@ public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecific
                                           @Param("name") String nameLower,
                                           @Param("plz") String plz,
                                           @Param("strasse") String strasseLower);
+
+    /**
+     * Schlanke Zeilen für das Rufnummern-Verzeichnis der Telefon-Zuordnung:
+     * [id, name, kundennummer, ort, telefon, mobiltelefon].
+     */
+    @Query("SELECT k.id, k.name, k.kundennummer, k.ort, k.telefon, k.mobiltelefon FROM Kunde k "
+            + "WHERE (k.telefon IS NOT NULL AND k.telefon <> '') OR (k.mobiltelefon IS NOT NULL AND k.mobiltelefon <> '')")
+    List<Object[]> findeTelefonverzeichnis();
 }

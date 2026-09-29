@@ -48,4 +48,12 @@ public interface LieferantenRepository extends JpaRepository<Lieferanten, Long>,
      */
     @Query("select distinct l from Lieferanten l left join l.kundenEmails e where lower(l.lieferantenname) like lower(concat('%', :query, '%')) or lower(coalesce(l.aliasName, '')) like lower(concat('%', :query, '%')) or lower(e) like lower(concat('%', :query, '%'))")
     List<Lieferanten> searchByNameOrEmail(@Param("query") String query);
+
+    /**
+     * Schlanke Zeilen für das Rufnummern-Verzeichnis der Telefon-Zuordnung:
+     * [id, lieferantenname, ort, telefon, mobiltelefon].
+     */
+    @Query("SELECT l.id, l.lieferantenname, l.ort, l.telefon, l.mobiltelefon FROM Lieferanten l "
+            + "WHERE (l.telefon IS NOT NULL AND l.telefon <> '') OR (l.mobiltelefon IS NOT NULL AND l.mobiltelefon <> '')")
+    List<Object[]> findeTelefonverzeichnis();
 }

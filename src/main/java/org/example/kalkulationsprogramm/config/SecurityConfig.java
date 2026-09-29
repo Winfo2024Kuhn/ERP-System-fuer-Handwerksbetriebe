@@ -225,6 +225,9 @@ public class SecurityConfig {
                 // nur Admin. TODO: später über Abteilung.darfBeitraegeVeroeffentlichen granularer
                 // steuern, analog zu darfFreigabeAnnahmePushen (siehe AbteilungBerechtigungController).
                 .requestMatchers("/api/beitraege/**").hasRole("ADMIN")
+                // FRITZ!Box-Zugangsdaten und Nachholen der Telefondaten - nur Admin.
+                // Das Sehen von Anrufen regelt das Abteilungs-Recht darfTelefonSehen im Controller.
+                .requestMatchers("/api/telefon/einstellungen", "/api/telefon/einstellungen/**", "/api/telefon/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form

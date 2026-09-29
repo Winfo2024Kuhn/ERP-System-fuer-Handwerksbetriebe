@@ -27,3 +27,14 @@ it('unterscheidet Ladefehler von einer leeren Abteilungsliste', async () => {
     expect(await screen.findByRole('alert')).toBeVisible();
     expect(screen.queryByText('Keine Abteilungen vorhanden.')).not.toBeInTheDocument();
 });
+it('speichert das Recht "Anrufe & Anrufbeantworter" wie das Abschlussrecht', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfTelefonSehen: undefined }] });
+    render(<AbteilungBerechtigungenEditor />);
+    const checkbox = await screen.findByRole('checkbox', { name: /Anrufe & Anrufbeantworter/ });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getByText(/hört Nachrichten auf dem Anrufbeantworter ab und bekommt bei Anrufen das Anruf-Fenster/)).toBeInTheDocument();
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')![1].body)).toMatchObject({ darfTelefonSehen: true, darfMonatAbschliessen: false });
+});

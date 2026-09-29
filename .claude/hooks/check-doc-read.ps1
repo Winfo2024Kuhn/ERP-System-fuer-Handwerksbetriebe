@@ -10,7 +10,9 @@ $filePath = $payload.tool_input.file_path
 if (-not $sessionId -or -not $filePath) { exit 0 }
 
 $normalized = $filePath -replace '\\', '/'
-$flagDir = Join-Path $env:TEMP 'claude-doc-flags'
+# $env:TEMP gibt es nur unter Windows; GetTempPath() liefert dort denselben
+# Ordner und unter Linux (Cloud-Sitzung) /tmp.
+$flagDir = Join-Path ([System.IO.Path]::GetTempPath()) 'claude-doc-flags'
 
 # Backend-Pfade: alle .java-Dateien im src/main oder src/test
 if ($normalized -match '\.java$') {
@@ -18,7 +20,7 @@ if ($normalized -match '\.java$') {
     if (-not (Test-Path $flag)) {
         [Console]::Error.WriteLine(
             "DOC-READ-GUARD: Bevor du eine .java-Datei editierst/schreibst, lies bitte zuerst mit dem Read-Tool:`n" +
-            "  c:\dev\ERP-System-fuer-Handwerksbetriebe\docs\agent instructions\docs\BACKEND_ARCH.md`n" +
+            "  docs/agent instructions/docs/BACKEND_ARCH.md (im Projektroot)`n" +
             "Diese Doc enthaelt verbindliche Architektur-, JPA-, Flyway- und SQL-Regeln (Schichtentrennung, Constructor Injection, Named-Params, Migration-Versionierung). Erst nach dem Read darf editiert werden. Wiederhole danach den Edit/Write-Aufruf."
         )
         exit 2
@@ -31,7 +33,7 @@ if ($normalized -match '/(react-pc-frontend|react-zeiterfassung)/' -and $normali
     if (-not (Test-Path $flag)) {
         [Console]::Error.WriteLine(
             "DOC-READ-GUARD: Bevor du eine Frontend-Datei editierst/schreibst, lies bitte zuerst mit dem Read-Tool:`n" +
-            "  c:\dev\ERP-System-fuer-Handwerksbetriebe\docs\agent instructions\docs\FRONTEND_UI.md`n" +
+            "  docs/agent instructions/docs/FRONTEND_UI.md (im Projektroot)`n" +
             "Diese Doc enthaelt verbindliche UI-Regeln (rose-/slate-Farbschema, Pflicht-Komponenten Select/DatePicker/DocumentPreviewModal, Page-Header-Pattern, Handwerker-Wording). Erst nach dem Read darf editiert werden. Wiederhole danach den Edit/Write-Aufruf."
         )
         exit 2
@@ -59,7 +61,7 @@ if ($normalized -match '(Test|Tests)\.java$' -or $normalized -match '\.(test|spe
     if (-not (Test-Path $flag)) {
         [Console]::Error.WriteLine(
             "DOC-READ-GUARD: Bevor du eine Test-Datei editierst/schreibst, lies bitte zuerst mit dem Read-Tool:`n" +
-            "  c:\dev\ERP-System-fuer-Handwerksbetriebe\docs\agent instructions\docs\TESTING_SECURITY.md`n" +
+            "  docs/agent instructions/docs/TESTING_SECURITY.md (im Projektroot)`n" +
             "Diese Doc enthaelt verbindliche Test- und Security-Regeln (DSGVO-Dummy-Daten, JUnit/Vitest-Patterns). Erst nach dem Read darf editiert werden. Wiederhole danach den Edit/Write-Aufruf."
         )
         exit 2

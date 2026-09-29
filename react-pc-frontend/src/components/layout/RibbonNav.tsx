@@ -5,11 +5,14 @@ import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
-    Calendar, CalendarDays, Plane, Shield, Receipt, Wallet, Stethoscope
+    Calendar, CalendarDays, Plane, Shield, Receipt, Wallet, Stethoscope,
+    Phone, Voicemail
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../../auth/AuthContext';
+import { useTelefonBerechtigung } from '../../features/telefon/useTelefonBerechtigung';
+import { useNeueSprachnachrichten } from '../../features/telefon/useNeueSprachnachrichten';
 
 // Navigation structure with subgroups for better organization
 interface NavItem {
@@ -141,7 +144,13 @@ const NAVIGATION: NavCategory[] = [
                     { name: 'E-Mail Vorlagen', href: '/email-textvorlagen', icon: MailPlus },
                 ]
             },
-
+            {
+                label: 'Telefon',
+                items: [
+                    { name: 'Anrufe', href: '/telefon/anrufe', icon: Phone },
+                    { name: 'Anrufbeantworter', href: '/telefon/anrufbeantworter', icon: Voicemail },
+                ]
+            },
         ]
     },
     {
@@ -174,12 +183,18 @@ const NAVIGATION: NavCategory[] = [
 ];
 
 const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer', '/website']);
+/** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
+const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 
 
 export function RibbonNavigation() {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, isAdmin, logout } = useAuth();
+    const darfTelefon = useTelefonBerechtigung() === true;
+    // Zähler neuer Nachrichten am Menüpunkt "Anrufbeantworter".
+    const neueSprachnachrichten = useNeueSprachnachrichten(darfTelefon);
+    const zaehler: Record<string, number> = { '/telefon/anrufbeantworter': neueSprachnachrichten };
 
     const visibleNavigation = useMemo<NavCategory[]>(() => {
         return NAVIGATION
@@ -188,12 +203,14 @@ export function RibbonNavigation() {
                 subgroups: category.subgroups
                     .map((subgroup) => ({
                         ...subgroup,
-                        items: subgroup.items.filter((item) => isAdmin || !ADMIN_ONLY_PATHS.has(item.href)),
+                        items: subgroup.items.filter((item) =>
+                            (isAdmin || !ADMIN_ONLY_PATHS.has(item.href))
+                            && (darfTelefon || !TELEFON_PATHS.has(item.href))),
                     }))
                     .filter((subgroup) => subgroup.items.length > 0),
             }))
             .filter((category) => category.subgroups.length > 0);
-    }, [isAdmin]);
+    }, [isAdmin, darfTelefon]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
     // Track the pathname when the user explicitly clicked a tab.
@@ -449,10 +466,18 @@ export function RibbonNavigation() {
                                                 )}
                                             >
                                                 <div className={cn(
-                                                    "p-2 rounded-full transition-colors",
+                                                    "relative p-2 rounded-full transition-colors",
                                                     isActive ? "bg-rose-100 text-rose-600" : "bg-slate-100 text-slate-500 group-hover:text-rose-600 group-hover:bg-rose-50"
                                                 )}>
                                                     <item.icon className="w-5 h-5" />
+                                                    {(zaehler[item.href] ?? 0) > 0 && (
+                                                        <span
+                                                            className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-rose-600 rounded-full ring-2 ring-white"
+                                                            aria-label={`${zaehler[item.href]} neu`}
+                                                        >
+                                                            {zaehler[item.href] > 99 ? '99+' : zaehler[item.href]}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 {/* max-w-[5.5rem] + break-words statt truncate:
                                                     zweizeilig statt gekuerzt -- "Dokumentenrechte"
