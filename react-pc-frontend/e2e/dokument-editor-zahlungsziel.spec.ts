@@ -48,13 +48,25 @@ const TEXTBAUSTEIN_MIT_CHIPS = JSON.stringify({
 });
 
 /**
- * Fester "Heute"-Zeitpunkt fuer den Faelligkeits-Chip. Ohne ihn las die Seite ihr
- * Datum beim Laden und der Test rechnete es spaeter erneut aus - laeuft der Test
- * genau ueber Mitternacht, liegen beide Werte einen Tag auseinander und er wird
- * grundlos rot (hier real passiert: erwartet 20.10., angezeigt 19.10.).
- * Mittags gewaehlt, damit keine Zeitzonenverschiebung den Tag kippt.
+ * Festes Rechnungsdatum fuer den Faelligkeits-Chip. Der Chip rechnet
+ * Rechnungsdatum + Zahlungsziel, nicht "heute" + Zahlungsziel. Das
+ * Beispieldokument bekommt sein Datum sonst von der echten Uhr des
+ * Testprozesses, und der Editor zieht das Datum einer unversendeten Rechnung
+ * nur NACH VORN auf heute. Mit fixierter Browser-Uhr allein lag das
+ * Rechnungsdatum nach dem 20.09. also spaeter als "heute", blieb stehen, und
+ * der Chip zeigte echtes Tagesdatum + 30 (real passiert: am 29.09. erwartet
+ * 20.10., angezeigt 29.10.).
  */
-const HEUTE = new Date('2026-09-20T12:00:00');
+const RECHNUNGSDATUM_ISO = '2026-09-20';
+
+/**
+ * Fester "Heute"-Zeitpunkt, bewusst derselbe Tag wie RECHNUNGSDATUM_ISO: ohne
+ * feste Uhr zoege der Editor das Rechnungsdatum auf das echte Tagesdatum vor,
+ * und ueber Mitternacht laegen Seite und Erwartung einen Tag auseinander (hier
+ * real passiert: erwartet 20.10., angezeigt 19.10.). Mittags gewaehlt, damit
+ * keine Zeitzonenverschiebung den Tag kippt.
+ */
+const HEUTE = new Date(`${RECHNUNGSDATUM_ISO}T12:00:00`);
 
 /** Das Faelligkeitsdatum, das der Chip nach der Umstellung auf 30 Tage zeigen muss. */
 function faelligkeitInDreissigTagen(): string {
@@ -64,6 +76,12 @@ function faelligkeitInDreissigTagen(): string {
 }
 
 test.describe('Dokument-Editor – Zahlungsziel', () => {
+    // Der Editor liest das Rechnungsdatum "2026-09-20" als UTC-Mitternacht. In
+    // Zeitzonen westlich von UTC waere das lokal noch der 19.09. und der Chip
+    // zeigte einen Tag frueher. Feste Browser-Zeitzone = derselbe Chip-Tag,
+    // egal auf welchem Rechner der Test laeuft.
+    test.use({ timezoneId: 'Europe/Berlin' });
+
     test('fragt ab neun Tagen nach, meldet sich als ungespeichert und speichert den Wert mit', async ({ page }, testInfo) => {
         const mitschrift = await stubbeDokumentEditorApi(page);
         await oeffneDokumentEditor(page);
@@ -145,11 +163,14 @@ test.describe('Dokument-Editor – Zahlungsziel', () => {
     test('Chip im Textbaustein: Popover fragt nach und ändert dieselbe Zahl', async ({ page }, testInfo) => {
         // Zweiter Einsatzort derselben Eingabe. Der Textbaustein bringt beide
         // Zahlungsziel-Platzhalter mit, aus denen der Editor Chips macht.
-        // Uhr vor dem Laden festnageln, damit der Faelligkeits-Chip und die
-        // Erwartung vom selben Tag ausgehen (siehe HEUTE oben). setFixedTime
-        // friert nur Date.now() ein - Timer wie der Auto-Save laufen weiter.
+        // Uhr vor dem Laden festnageln und das Rechnungsdatum auf denselben Tag
+        // legen, damit Faelligkeits-Chip und Erwartung vom selben Datum ausgehen
+        // (siehe HEUTE und RECHNUNGSDATUM_ISO oben). setFixedTime friert nur
+        // Date.now() ein - Timer wie der Auto-Save laufen weiter.
         await page.clock.setFixedTime(HEUTE);
-        const mitschrift = await stubbeDokumentEditorApi(page, { dokument: { positionenJson: TEXTBAUSTEIN_MIT_CHIPS } });
+        const mitschrift = await stubbeDokumentEditorApi(page, {
+            dokument: { positionenJson: TEXTBAUSTEIN_MIT_CHIPS, datum: RECHNUNGSDATUM_ISO },
+        });
         await oeffneDokumentEditor(page);
 
         const tageChip = page.locator('[data-zahlungsziel-chip="tage"]');
