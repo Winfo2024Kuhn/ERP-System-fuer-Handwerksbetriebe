@@ -3,10 +3,7 @@
 Datum: 29.09.2026
 
 Status: Grundlage ist ein mit dem Nutzer abgeschlossenes Brainstorming.
-Diese Spec überführt die dort getroffenen Entscheidungen in eine
-Umsetzungsgrundlage für den Plan. Entscheidungen, die im Brainstorming nicht
-ausdrücklich getroffen wurden, sind als **(Vorschlag)** markiert und gelten,
-solange der Nutzer beim Review der Spec nicht widerspricht.
+Alle Design-Entscheidungen in dieser Spec sind mit dem Nutzer abgestimmt.
 
 ## Ziel
 
@@ -309,12 +306,38 @@ am Kontakt.
 
 ## Berechtigungen
 
-- Anrufliste, Anrufbeantworter, Reiter „Anrufe“, Zuordnen, Abhören,
-  Live-Anzeige: alle angemeldeten Nutzer des PC-Frontends (wie E-Mail-Center).
-  „Abgehört“ ist ein gemeinsamer Status für alle (wie ein gemeinsames
-  Postfach), mit Name und Zeitpunkt, wer abgehört hat.
+Gesteuert über die vorhandene Seite **Abteilungs-Berechtigungen**
+(`/abteilung-berechtigungen`, `AbteilungBerechtigungenEditor`, nur ADMIN) –
+nach demselben Muster wie `darfMonatAbschliessen`:
+
+- Neues Flag an `Abteilung`: **`darfTelefonSehen`** (`BOOLEAN NOT NULL
+  DEFAULT FALSE`, Teil von `V400`). Anzeige im Editor als Häkchen
+  „**Anrufe & Anrufbeantworter** – sieht Anrufliste, hört Sprachnachrichten
+  ab und bekommt das Anruf-Fenster“. `AbteilungBerechtigungDto`
+  (Response/UpdateRequest) und `AbteilungBerechtigungController` werden um
+  das Feld ergänzt.
+- `TelefonBerechtigungService` (analog `MonatsabschlussBerechtigungService`):
+  Ein Benutzer ist berechtigt, wenn sein aktives `FrontendUserProfile` mit
+  einem aktiven Mitarbeiter verknüpft ist, der in mindestens einer Abteilung
+  mit `darfTelefonSehen = true` ist. **ADMIN bekommt das Recht nicht
+  automatisch**, sondern wie jeder andere über seine Abteilung.
+- Standard nach der Migration: **niemand** ist berechtigt, bis der Admin es
+  für eine Abteilung einschaltet (Datenschutz: kein ungewolltes Freischalten).
+- Ohne Recht liefern alle `/api/telefon/**`-Endpunkte (außer
+  `einstellungen`) **403**; die Menüeinträge „Anrufe“ und
+  „Anrufbeantworter“, der Reiter „Anrufe“ in Kunden-/Lieferantenakte und das
+  Anruf-Fenster erscheinen nicht. Das Frontend fragt das Recht über
+  `GET /api/telefon/berechtigung` → `{ darfTelefonSehen }` ab.
+- Live-Anzeige: Nur berechtigte Benutzer können `/api/telefon/live` öffnen.
+  Zusätzlich prüft `TelefonLiveService` das Recht **bei jedem Ereignis**
+  erneut und schließt Verbindungen von Benutzern, denen es inzwischen
+  entzogen wurde – ein Entzug wirkt also sofort, ohne Neuanmeldung.
+- „Abgehört“ ist ein gemeinsamer Status aller Berechtigten (wie ein
+  gemeinsames Postfach), mit Name und Zeitpunkt, wer abgehört hat.
+- „Weitere Rufnummern“ am Kunden/Lieferanten sind Kontaktdaten und für alle
+  sichtbar, die den Kontakt sehen dürfen.
 - Telefon-Einstellungen (Zugangsdaten, Geschäftsnummern, Fristen): nur
-  `ADMIN`.
+  `ADMIN`, unabhängig vom Telefon-Recht.
 
 ## API
 
@@ -333,6 +356,7 @@ am Kontakt.
 | GET / PUT | `/api/telefon/einstellungen` | ADMIN; Passwort nur schreibend |
 | POST | `/api/telefon/einstellungen/test` | ADMIN; liefert eigene Nummern + AB-Liste |
 | DELETE | `/api/telefon/kontakt-rufnummern/{id}` | gemerkte Nummer entfernen |
+| GET | `/api/telefon/berechtigung` | `{ darfTelefonSehen }` für das Frontend |
 | GET | `/api/telefon/live` | Etappe 2: SSE-Strom |
 
 Die Antwort eines Anrufs/einer Nachricht enthält `kontakt` (`{typ: KUNDE |
@@ -367,7 +391,7 @@ abholen“; Hinweiszeile „Zuletzt abgeholt: vor 1 Minute“ bzw. Fehlergrund.
 Punkt. Je Eintrag: Wer, Wann, Dauer, **Abspielen**-Knopf mit
 Fortschrittsbalken und Spulen (HTML5-Audio, eigene Bedienelemente im
 Design-System), Download. Beim Start der Wiedergabe wird die Nachricht als
-abgehört markiert (**Vorschlag**); „Wieder als neu markieren“ im
+abgehört markiert; „Wieder als neu markieren“ im
 Drei-Punkte-Menü. Anzeige „Abgehört von Max Mustermann, heute 12:04“.
 
 **Zuordnen-Dialog** (`TelefonZuordnenDialog`): Umschalter „Kunde |
@@ -411,8 +435,8 @@ Kommentar alle 25 s, abgestorbene Emitter werden entfernt). Ereignisse:
 nameFritzbox}`) und `anruf-beendet` (`{verbindungsId, angenommen}`).
 Endpoint erfordert Anmeldung wie alle `/api`-Pfade.
 
-**Frontend:** Hook `useTelefonLive` im Layout öffnet für **jeden
-angemeldeten Benutzer** einen `EventSource` auf `/api/telefon/live` (mit
+**Frontend:** Hook `useTelefonLive` im Layout öffnet für jeden
+**berechtigten Benutzer** (siehe Berechtigungen) einen `EventSource` auf `/api/telefon/live` (mit
 Wiederverbindung). Bei `anruf-klingelt` erscheint bei allen gleichzeitig ein
 **großes Anruf-Fenster** (Entscheidung des Nutzers):
 
@@ -461,10 +485,15 @@ Wiederverbindung). Bei `anruf-klingelt` erscheint bei allen gleichzeitig ein
   XML-Fixtures (inkl. Typ 9/11, private Nummern werden gefiltert, XXE-Payload
   wird abgelehnt), Anrufmonitor-Zeilenparser, Digest-/SOAP-Client gegen
   lokalen Testserver (MockWebServer o. Ä.).
+- **Service:** `TelefonBerechtigungService` (Abteilung mit/ohne Flag,
+  inaktiver Mitarbeiter/Profil), Live-Service schließt Verbindung nach
+  Rechte-Entzug.
 - **Service/Repository:** Abholung idempotent (zweiter Lauf legt nichts
   doppelt an), fehlgeschlagener Download legt nichts an, Aufbewahrung löscht
   Datensatz und Datei, Fehlerstatus/Log nur bei Wechsel.
-- **Controller-Slice:** Berechtigungen (Einstellungen nur ADMIN), Passwort
+- **Controller-Slice:** Berechtigungen (ohne Abteilungs-Recht 403 auf
+  allen Telefon-Endpunkten inkl. Audio und Live-Strom; Einstellungen nur
+  ADMIN; ADMIN ohne Abteilungs-Recht sieht keine Anrufe), Passwort
   nie in der Antwort, Audio mit `Range`, Zuordnung mit/ohne Merken.
 - **Frontend:** Vitest für TelefonPage (Filter, Zuordnen-Dialog, Abhören
   markiert als abgehört), Reiter in Kunden-/LieferantenEditor, Live-Karte;
@@ -490,6 +519,11 @@ Wiederverbindung). Bei `anruf-klingelt` erscheint bei allen gleichzeitig ein
 6. Ist die Box nicht erreichbar, zeigt das ERP den Grund an und holt nach
    Wiederherstellung alles nach.
 7. (Etappe 2) Klingelt 2323, erscheint innerhalb von ca. 1 Sekunde bei
-   jedem angemeldeten Benutzer das große Anruf-Fenster mit dem zugeordneten
+   jedem Benutzer mit Telefon-Recht das große Anruf-Fenster mit dem zugeordneten
    Kontakt; es stiehlt keinen Tastatur-Fokus und schließt sich nach
    Gesprächsende. Anrufe auf privaten Nummern lösen kein Fenster aus.
+8. Auf der Seite Abteilungs-Berechtigungen lässt sich „Anrufe &
+   Anrufbeantworter“ pro Abteilung einschalten. Nur Benutzer aus einer
+   solchen Abteilung sehen Menü, Anrufliste, Anrufbeantworter, den Reiter
+   „Anrufe“ und das Anruf-Fenster; alle anderen sehen nichts davon und
+   bekommen 403 von der API.
