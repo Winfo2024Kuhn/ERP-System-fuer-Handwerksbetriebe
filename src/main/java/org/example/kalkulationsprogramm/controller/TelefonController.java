@@ -59,7 +59,11 @@ public class TelefonController {
         return new TelefonBerechtigungDto(berechtigung.darfTelefonSehen(authentication));
     }
 
-    /** Live-Strom für das Anruf-Fenster (Server-Sent Events). */
+    /**
+     * Live-Strom für das Anruf-Fenster (Server-Sent Events). Läuft ohne
+     * Open-in-View (siehe OpenEntityManagerInViewConfig), sonst hielte jede
+     * offene Verbindung eine DB-Verbindung fest.
+     */
     @GetMapping(value = "/live", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter live(Authentication authentication) {
         FrontendUserProfile profil = berechtigung.verlange(authentication);
