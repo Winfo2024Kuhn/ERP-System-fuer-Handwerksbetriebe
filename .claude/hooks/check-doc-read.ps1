@@ -10,7 +10,9 @@ $filePath = $payload.tool_input.file_path
 if (-not $sessionId -or -not $filePath) { exit 0 }
 
 $normalized = $filePath -replace '\\', '/'
-$flagDir = Join-Path $env:TEMP 'claude-doc-flags'
+# $env:TEMP gibt es nur unter Windows; GetTempPath() liefert dort denselben
+# Ordner und unter Linux (Cloud-Sitzung) /tmp.
+$flagDir = Join-Path ([System.IO.Path]::GetTempPath()) 'claude-doc-flags'
 
 # Backend-Pfade: alle .java-Dateien im src/main oder src/test
 if ($normalized -match '\.java$') {

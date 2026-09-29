@@ -96,7 +96,9 @@ react-zeiterfassung/graphify-out/
 #   ./graphify install --project --strict
 # Das [sql]-Extra ist Pflicht, sonst bleiben die Flyway-Migrationen unter
 # src/main/resources/db/migration/ komplett aus dem Graphen.
-.graphify-venv/
+# Ohne Schrägstrich am Ende, damit auch der Symlink aus der Cloud-Sitzung
+# (scripts/claude-cloud/setup.sh) ignoriert wird.
+.graphify-venv
 # Fuehrender Slash = nur im Repo-Root. Ohne ihn wuerde "graphify" auf jeder
 # Ebene matchen und u.a. .claude/skills/graphify/ mitverschlucken.
 /graphify.cmd

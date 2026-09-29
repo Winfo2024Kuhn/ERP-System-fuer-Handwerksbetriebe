@@ -12,7 +12,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\check-doc-read.ps1\""
+            "command": "pwsh",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-doc-read.ps1"]
           }
         ]
       }
@@ -23,7 +24,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\mark-doc-read.ps1\""
+            "command": "pwsh",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/mark-doc-read.ps1"]
           }
         ]
       },
@@ -32,7 +34,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"c:\\dev\\ERP-System-fuer-Handwerksbetriebe\\.claude\\hooks\\mark-design-skill-used.ps1\""
+            "command": "pwsh",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/mark-design-skill-used.ps1"]
           }
         ]
       }
