@@ -61,9 +61,14 @@ if (-not (Test-Path $PRODUCTION_PATH)) {
 Write-Info "Wechsle zum Repository: $REPO_PATH"
 Set-Location $REPO_PATH
 
-# Pruefe Git Status
+# Build-Ausgabe der Frontends. Liegt versioniert im Repo, wird aber bei jedem
+# Update neu erzeugt - lokale Aenderungen daran sind also nie "echte" Arbeit.
+$STATIC_PATH = "src/main/resources/static"
+$STATIC_BUILD_DIRS = @("$STATIC_PATH/assets", "$STATIC_PATH/zeiterfassung")
+
+# Pruefe Git Status (ohne Build-Ausgabe, die wird vor dem Pull ohnehin zurueckgesetzt)
 Write-Info "Pruefe Git Status..."
-$gitStatus = git status --porcelain
+$gitStatus = @(git status --porcelain) | Where-Object { $_ -notmatch [regex]::Escape($STATIC_PATH) }
 if ($gitStatus -and -not $Force) {
     Write-Warning-Custom "Es gibt uncommitted changes im Repository!"
     Write-Host $gitStatus
@@ -94,6 +99,19 @@ if ($currentBranch -ne "main") {
         }
     }
 }
+
+# Frontend-Build-Ausgabe zuruecksetzen, damit der Pull nicht mit den beim letzten
+# Update lokal gebauten Dateien kollidiert ("local changes would be overwritten").
+# Gefahrlos: Der Frontend-Build weiter unten erzeugt alles wieder neu.
+Write-Info "Setze lokale Frontend-Build-Dateien zurueck..."
+git checkout -- $STATIC_PATH
+if ($LASTEXITCODE -ne 0) {
+    Write-Error-Custom "Frontend-Build-Dateien konnten nicht zurueckgesetzt werden"
+    exit 1
+}
+# Nicht versionierte Build-Reste (neue Hash-Dateinamen) nur in den reinen Build-Ordnern entfernen
+git clean -fdq -- $STATIC_BUILD_DIRS
+Write-Success "Frontend-Build-Dateien auf Repo-Stand zurueckgesetzt"
 
 # Hole neueste Aenderungen
 Write-Info "Hole neueste Aenderungen vom main branch..."
