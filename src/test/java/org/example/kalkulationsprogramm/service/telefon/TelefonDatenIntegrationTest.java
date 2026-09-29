@@ -212,6 +212,27 @@ class TelefonDatenIntegrationTest {
     }
 
     @Test
+    @DisplayName("AB ohne Nachricht steht als verpasster Anruf ohne Dauer da, mit Nachricht als Anrufbeantworter")
+    void anrufbeantworterOhneNachrichtIstVerpasst() {
+        boxAnruf(HEUTE_0755, TelefonAnrufArt.ANRUFBEANTWORTER, "0171 7777777", "2323", 0);
+        boxAnruf(HEUTE_0755.plusMinutes(5), TelefonAnrufArt.ANRUFBEANTWORTER, "0171 8888888", "2323", 1);
+        boxNachrichten.add(new AnlagenSprachnachricht(1, HEUTE_0755.plusMinutes(5), "0171 8888888", "2323",
+                "/download.lua?path=/data/tam/rec/rec.1.000", "sid"));
+        abholService.abholen();
+
+        List<TelefonAnrufDto> liste = telefonService.anrufe(null, false, null, null, null, null, null, 0, 50).getContent();
+        assertThat(liste).extracting(TelefonAnrufDto::art).containsExactly("ANRUFBEANTWORTER", "VERPASST");
+        assertThat(liste).extracting(TelefonAnrufDto::dauerMinuten).containsExactly(1, 0);
+        assertThat(telefonService.anrufe(TelefonAnrufArt.VERPASST, false, null, null, null, null, null, 0, 50).getContent())
+                .extracting(TelefonAnrufDto::nummer).containsExactly("0171 7777777");
+        assertThat(telefonService.anrufe(TelefonAnrufArt.ANRUFBEANTWORTER, false, null, null, null, null, null, 0, 50).getContent())
+                .extracting(TelefonAnrufDto::nummer).containsExactly("0171 8888888");
+
+        Long ohneNachricht = liste.get(1).id();
+        assertThat(telefonService.hebeAnrufZuordnungAuf(ohneNachricht).art()).isEqualTo("VERPASST");
+    }
+
+    @Test
     @DisplayName("Zuordnen mit 'Nummer merken' zieht frühere unbekannte Anrufe und Nachrichten nach")
     void zuordnenMitMerken() {
         boxAnruf(HEUTE_0755, TelefonAnrufArt.VERPASST, "0800 0000000", "2323", null);

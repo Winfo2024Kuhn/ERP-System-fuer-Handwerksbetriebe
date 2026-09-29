@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.Sprachnachricht;
 import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
@@ -64,7 +65,7 @@ final class AnrufSuche {
 
             List<Predicate> bedingungen = new ArrayList<>();
             if (art != null) {
-                bedingungen.add(cb.equal(root.get("art"), art));
+                bedingungen.add(artTrifft(art, root, query, cb));
             }
             if (nurUnbekannt) {
                 bedingungen.add(cb.equal(root.get("zuordnung"), TelefonZuordnung.KEINE));
@@ -126,6 +127,28 @@ final class AnrufSuche {
         // Hibernate liefert für FETCH ein Objekt, das zugleich Join ist.
         Object fetch = root.fetch(feld, JoinType.LEFT);
         return (Join<TelefonAnruf, T>) fetch;
+    }
+
+    /**
+     * Die Art so, wie der Nutzer sie sieht: Ein Anruf, bei dem der Anrufbeantworter
+     * rangegangen ist, der Anrufer aber nichts draufgesprochen hat, ist ein
+     * verpasster Anruf. Nur mit Nachricht gilt er als „Anrufbeantworter".
+     * Gegenstück zur Anzeige in {@link TelefonService#angezeigteArt}.
+     */
+    private static Predicate artTrifft(TelefonAnrufArt art, Root<TelefonAnruf> root, CriteriaQuery<?> query,
+                                       CriteriaBuilder cb) {
+        Predicate gleicheArt = cb.equal(root.get("art"), art);
+        if (art != TelefonAnrufArt.VERPASST && art != TelefonAnrufArt.ANRUFBEANTWORTER) {
+            return gleicheArt;
+        }
+        Subquery<Integer> nachricht = query.subquery(Integer.class);
+        Root<Sprachnachricht> s = nachricht.from(Sprachnachricht.class);
+        nachricht.select(cb.literal(1)).where(cb.equal(s.get("anruf"), root));
+        Predicate abAnruf = cb.equal(root.get("art"), TelefonAnrufArt.ANRUFBEANTWORTER);
+        if (art == TelefonAnrufArt.ANRUFBEANTWORTER) {
+            return cb.and(abAnruf, cb.exists(nachricht));
+        }
+        return cb.or(gleicheArt, cb.and(abAnruf, cb.not(cb.exists(nachricht))));
     }
 
     private static void pruefeKontaktart(String kontaktart) {

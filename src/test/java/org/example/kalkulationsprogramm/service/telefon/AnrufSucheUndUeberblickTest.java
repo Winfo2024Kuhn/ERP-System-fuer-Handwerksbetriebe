@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.Sprachnachricht;
 import org.example.kalkulationsprogramm.domain.SteuerberaterAnsprechpartner;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.domain.TelefonAnruf;
@@ -17,6 +18,7 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRep
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.repository.SprachnachrichtRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
 import org.example.kalkulationsprogramm.repository.TelefonAnrufRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +58,7 @@ class AnrufSucheUndUeberblickTest {
     @Autowired AnfrageRepository anfragen;
     @Autowired AusgangsGeschaeftsDokumentRepository dokumente;
     @Autowired AnrufKontaktUeberblickService ueberblickService;
+    @Autowired SprachnachrichtRepository nachrichten;
 
     private Kunde mustermann;
     private Kunde musterfrau;
@@ -177,6 +180,48 @@ class AnrufSucheUndUeberblickTest {
             assertThat(treffer(null, true, null, null, null)).hasSize(1);
             assertThat(treffer(TelefonAnrufArt.VERPASST, false, null, null, null)).isEmpty();
             assertThat(treffer(null, false, null, stahl.getId(), "")).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("AB ohne Nachricht zählt als verpasst, „Anrufbeantworter\" nur mit Nachricht")
+        void anrufbeantworterOhneNachrichtIstVerpasst() {
+            TelefonAnruf ohneNachricht = abAnruf("0931-ohne");
+            TelefonAnruf mitNachricht = abAnruf("0931-mit");
+            TelefonAnruf verpasst = abAnruf("0931-verpasst");
+            verpasst.setArt(TelefonAnrufArt.VERPASST);
+            anrufe.save(verpasst);
+            Sprachnachricht s = new Sprachnachricht();
+            s.setZeitpunkt(ZEIT);
+            s.setNummerRoh("0931-mit");
+            s.setDateiName("nachricht.wav");
+            s.setAnruf(mitNachricht);
+            s.setAngelegtAm(ZEIT);
+            nachrichten.save(s);
+
+            assertThat(nummernMitArt(TelefonAnrufArt.VERPASST))
+                    .containsExactlyInAnyOrder(ohneNachricht.getNummerRoh(), "0931-verpasst");
+            assertThat(nummernMitArt(TelefonAnrufArt.ANRUFBEANTWORTER)).containsExactly("0931-mit");
+            assertThat(anrufe.count(AnrufSuche.filter(TelefonAnrufArt.VERPASST, false, null, null, null, null, null)))
+                    .isEqualTo(2);
+            assertThat(nummernMitArt(TelefonAnrufArt.ANGENOMMEN)).hasSize(5);
+        }
+
+        private TelefonAnruf abAnruf(String nummer) {
+            TelefonAnruf a = new TelefonAnruf();
+            a.setZeitpunkt(ZEIT);
+            a.setArt(TelefonAnrufArt.ANRUFBEANTWORTER);
+            a.setAnrufbeantworter(0);
+            a.setNummerRoh(nummer);
+            a.setEigeneNummer("2323");
+            a.setDauerMinuten(1);
+            a.setZuordnung(TelefonZuordnung.KEINE);
+            a.setAngelegtAm(ZEIT);
+            return anrufe.save(a);
+        }
+
+        private List<String> nummernMitArt(TelefonAnrufArt art) {
+            return anrufe.findAll(AnrufSuche.filter(art, false, null, null, null, null, null), PageRequest.of(0, 50))
+                    .map(TelefonAnruf::getNummerRoh).getContent();
         }
 
         @Test

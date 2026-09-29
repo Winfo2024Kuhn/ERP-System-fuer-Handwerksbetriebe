@@ -83,11 +83,26 @@ public class TelefonService {
             }
         }
         RufnummernZuordnungService.Verzeichnis verzeichnis = zuordnung.verzeichnis();
-        return treffer.map(a -> new TelefonAnrufDto(
-                a.getId(), a.getZeitpunkt(), a.getArt().name(), a.getAnrufbeantworter(),
-                a.getNummerRoh(), a.getEigeneNummer(), a.getDauerMinuten(), a.getNameFritzbox(),
+        return treffer.map(a -> toDto(a, nachrichtZuAnruf.get(a.getId()), verzeichnis));
+    }
+
+    private TelefonAnrufDto toDto(TelefonAnruf a, Long nachrichtId, RufnummernZuordnungService.Verzeichnis verzeichnis) {
+        TelefonAnrufArt art = angezeigteArt(a.getArt(), nachrichtId != null);
+        // Beim verpassten Anruf hat niemand gesprochen – die Ansagezeit des AB ist keine Gesprächsdauer.
+        int dauer = art == TelefonAnrufArt.VERPASST ? 0 : a.getDauerMinuten();
+        return new TelefonAnrufDto(a.getId(), a.getZeitpunkt(), art.name(), a.getAnrufbeantworter(),
+                a.getNummerRoh(), a.getEigeneNummer(), dauer, a.getNameFritzbox(),
                 a.getZuordnung().name(), RufnummernZuordnungService.kontaktVon(a),
-                kandidaten(a, verzeichnis), nachrichtZuAnruf.get(a.getId())));
+                kandidaten(a, verzeichnis), nachrichtId);
+    }
+
+    /**
+     * Hat der Anrufbeantworter abgenommen, der Anrufer aber nichts draufgesprochen,
+     * ist das für den Betrieb ein verpasster Anruf. „Anrufbeantworter" steht nur da,
+     * wenn auch eine Nachricht da ist. Der Filter in {@link AnrufSuche} folgt derselben Regel.
+     */
+    static TelefonAnrufArt angezeigteArt(TelefonAnrufArt art, boolean mitNachricht) {
+        return art == TelefonAnrufArt.ANRUFBEANTWORTER && !mitNachricht ? TelefonAnrufArt.VERPASST : art;
     }
 
     /** @param tag nur Nachrichten dieses Tages; null = alle Tage */
@@ -202,10 +217,7 @@ public class TelefonService {
     private TelefonAnrufDto einzelnerAnruf(TelefonAnruf a) {
         Long nachrichtId = nachrichtRepository.findByAnrufId(a.getId()).stream()
                 .map(Sprachnachricht::getId).findFirst().orElse(null);
-        return new TelefonAnrufDto(a.getId(), a.getZeitpunkt(), a.getArt().name(), a.getAnrufbeantworter(),
-                a.getNummerRoh(), a.getEigeneNummer(), a.getDauerMinuten(), a.getNameFritzbox(),
-                a.getZuordnung().name(), RufnummernZuordnungService.kontaktVon(a),
-                kandidaten(a, zuordnung.verzeichnis()), nachrichtId);
+        return toDto(a, nachrichtId, zuordnung.verzeichnis());
     }
 
     private SprachnachrichtDto toDto(Sprachnachricht s, RufnummernZuordnungService.Verzeichnis verzeichnis) {
