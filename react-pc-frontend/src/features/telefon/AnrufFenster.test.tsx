@@ -1,7 +1,11 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ComponentProps } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../../components/ui/toast';
 import { AnrufFenster } from './AnrufFenster';
-import { KANZLEI_BEISPIEL, KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, UEBERBLICK_MAX } from './telefonTestdaten';
+import { antwort, aufrufe, KANZLEI_BEISPIEL, KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, stubbeFetch, UEBERBLICK_MAX } from './telefonTestdaten';
+import { setzeTelefonBerechtigungZurueck } from './useTelefonBerechtigung';
+import { WAEHL_TELEFON_SCHLUESSEL } from './useWaehlTelefon';
 import type { UeberblickZustand } from './useKontaktUeberblick';
 import type { LiveAnrufAnzeige } from './useTelefonLive';
 
@@ -21,25 +25,37 @@ function live(teil: Partial<LiveAnrufAnzeige> = {}): LiveAnrufAnzeige {
 
 const LAEDT: UeberblickZustand = { status: 'laedt' };
 
+/** Das Fenster braucht die Meldungsfläche (Zurückrufen meldet Erfolg und Fehler per Toast). */
+function Fenster(props: ComponentProps<typeof AnrufFenster>) {
+    return <ToastProvider><AnrufFenster {...props} /></ToastProvider>;
+}
+
 function zeige(anruf: LiveAnrufAnzeige, weitere = 0, ueberblick: UeberblickZustand | null = LAEDT) {
     const onSchliessen = vi.fn();
     const onKontaktOeffnen = vi.fn();
     const onOeffnen = vi.fn();
+    const onFesthalten = vi.fn();
     const ergebnis = render(
-        <AnrufFenster
+        <Fenster
             anruf={anruf}
             weitere={weitere}
             onSchliessen={onSchliessen}
             onKontaktOeffnen={onKontaktOeffnen}
             ueberblick={anruf.kontakt ? ueberblick : null}
             onOeffnen={onOeffnen}
+            onFesthalten={onFesthalten}
         />,
     );
-    return { ...ergebnis, onSchliessen, onKontaktOeffnen, onOeffnen };
+    return { ...ergebnis, onSchliessen, onKontaktOeffnen, onOeffnen, onFesthalten };
 }
 
 describe('AnrufFenster', () => {
-    afterEach(() => vi.useRealTimers());
+    beforeEach(() => setzeTelefonBerechtigungZurueck());
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+        window.localStorage.clear();
+    });
 
     it('zeigt einen bekannten Kunden groß mit allen Angaben und öffnet die Akte', () => {
         const { onKontaktOeffnen } = zeige(live());
@@ -99,7 +115,7 @@ describe('AnrufFenster', () => {
     it('meldet den Anrufbeantworter und verpasste Anrufe', () => {
         const { rerender } = zeige(live({ status: 'ANRUFBEANTWORTER' }));
         expect(screen.getByRole('status')).toHaveTextContent('Anrufbeantworter nimmt auf');
-        rerender(<AnrufFenster anruf={live({ status: 'BEENDET', verpasst: true })} weitere={0} onSchliessen={vi.fn()} onKontaktOeffnen={vi.fn()} ueberblick={LAEDT} onOeffnen={vi.fn()} />);
+        rerender(<Fenster anruf={live({ status: 'BEENDET', verpasst: true })} weitere={0} onSchliessen={vi.fn()} onKontaktOeffnen={vi.fn()} ueberblick={LAEDT} onOeffnen={vi.fn()} />);
         expect(screen.getByRole('status')).toHaveTextContent('Verpasst');
     });
 
@@ -111,10 +127,75 @@ describe('AnrufFenster', () => {
         expect(onSchliessen).toHaveBeenCalledTimes(2);
     });
 
+    describe('Zurückrufen', () => {
+        function stubbeTelefon() {
+            return stubbeFetch(
+                (url) => (url.pathname === '/api/telefon/berechtigung' ? antwort({ darfTelefonSehen: true }) : undefined),
+                (url) => (url.pathname === '/api/telefon/telefone' ? antwort([{ name: 'LAN: PC Büro' }]) : undefined),
+                (url, init) => (url.pathname === '/api/telefon/anrufen' && init?.method === 'POST' ? antwort(undefined, 204) : undefined),
+            );
+        }
+
+        it('sagt beim Klingeln, wo man annimmt, und bietet noch kein Zurückrufen an', () => {
+            stubbeTelefon();
+            zeige(live());
+            expect(screen.getByText('Am Headset oder im Telefon-Programm annehmen')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /zurückrufen/ })).toBeNull();
+        });
+
+        it('zeigt den Hinweis im Gespräch nicht mehr', () => {
+            zeige(live({ status: 'IM_GESPRAECH', angenommen: true, gespraechSeit: Date.now() }));
+            expect(screen.queryByText('Am Headset oder im Telefon-Programm annehmen')).toBeNull();
+        });
+
+        it('bietet nach einem verpassten Anruf „Zurückrufen“ als Hauptaktion an und schließt nach dem Start', async () => {
+            window.localStorage.setItem(WAEHL_TELEFON_SCHLUESSEL, 'LAN: PC Büro');
+            const fetchMock = stubbeTelefon();
+            const { onSchliessen, onFesthalten } = zeige(live({ status: 'BEENDET', verpasst: true }));
+            const knopf = await screen.findByRole('button', { name: 'Max Mustermann zurückrufen' });
+            expect(knopf).toHaveTextContent('Zurückrufen');
+            expect(screen.getByRole('button', { name: 'Akte öffnen' })).toBeInTheDocument();
+
+            fireEvent.click(knopf);
+            expect(onFesthalten).toHaveBeenCalled();
+            await waitFor(() => expect(aufrufe(fetchMock, '/api/telefon/anrufen', 'POST')).toHaveLength(1));
+            expect(JSON.parse(String(aufrufe(fetchMock, '/api/telefon/anrufen', 'POST')[0][1]?.body)))
+                .toEqual({ telefon: 'LAN: PC Büro', nummer: '0931 1234567' });
+            await waitFor(() => expect(onSchliessen).toHaveBeenCalledTimes(1));
+        });
+
+        it('hält das verpasste Fenster offen, sobald man mit der Maus darauf zeigt', () => {
+            const { onFesthalten } = zeige(live({ status: 'BEENDET', verpasst: true }));
+            fireEvent.pointerEnter(screen.getByRole('dialog', { name: 'Max Mustermann' }));
+            expect(onFesthalten).toHaveBeenCalled();
+        });
+
+        it('bietet bei unterdrückter Nummer kein Zurückrufen an', () => {
+            stubbeTelefon();
+            zeige(live({ kontakt: null, nummer: '', status: 'BEENDET', verpasst: true }));
+            expect(screen.getByRole('heading', { name: 'Nummer unterdrückt' })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /zurückrufen/ })).toBeNull();
+        });
+
+        it('Escape im Auswahl-Dialog schließt nur den Dialog, nicht das Anruf-Fenster', async () => {
+            stubbeTelefon();
+            const { onSchliessen } = zeige(live({ status: 'BEENDET', verpasst: true }));
+            fireEvent.click(await screen.findByRole('button', { name: 'Max Mustermann zurückrufen' }));
+            const dialog = await screen.findByRole('dialog', { name: 'Welches Telefon steht an diesem Rechner?' });
+            // Der Dialog liegt über dem Anruf-Fenster (z-index 70, nur eine Quelle: style).
+            const fensterEbene = Number(screen.getByTestId('anruf-fenster').style.zIndex);
+            expect(fensterEbene).toBe(70);
+            expect(Number(dialog.parentElement?.style.zIndex)).toBeGreaterThan(fensterEbene);
+            fireEvent.keyDown(dialog, { key: 'Escape' });
+            await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Welches Telefon steht an diesem Rechner?' })).toBeNull());
+            expect(onSchliessen).not.toHaveBeenCalled();
+        });
+    });
+
     it('nennt weitere gleichzeitige Anrufe', () => {
         const { rerender } = zeige(live(), 1);
         expect(screen.getByText('+1 weiterer Anruf')).toBeInTheDocument();
-        rerender(<AnrufFenster anruf={live()} weitere={2} onSchliessen={vi.fn()} onKontaktOeffnen={vi.fn()} ueberblick={LAEDT} onOeffnen={vi.fn()} />);
+        rerender(<Fenster anruf={live()} weitere={2} onSchliessen={vi.fn()} onKontaktOeffnen={vi.fn()} ueberblick={LAEDT} onOeffnen={vi.fn()} />);
         expect(screen.getByText('+2 weitere Anrufe')).toBeInTheDocument();
     });
 

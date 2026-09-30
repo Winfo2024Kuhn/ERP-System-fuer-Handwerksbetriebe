@@ -34,6 +34,7 @@ function stubbeTelefon(stand: Stand = {}) {
             ? antwort({ content: stand.anrufe ?? [anruf()], totalElements: (stand.anrufe ?? [anruf()]).length, totalPages: 1, number: 0, size: 50 })
             : undefined),
         (url) => (url.pathname === '/api/telefon/sprachnachrichten' ? antwort(nachrichten) : undefined),
+        (url) => (url.pathname === '/api/telefon/telefone' ? antwort([{ name: 'LAN: PC Büro' }, { name: 'DECT: Mobilteil Büro' }]) : undefined),
         (url, init) => {
             const treffer = /^\/api\/telefon\/sprachnachrichten\/(\d+)$/.exec(url.pathname);
             if (!treffer || init?.method !== 'PATCH') return undefined;
@@ -111,6 +112,41 @@ describe('TelefonPage', () => {
         zeige();
         expect(await screen.findByText('Noch nicht eingerichtet – bitte an den Administrator wenden.')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Jetzt abholen/ })).toBeDisabled();
+    });
+
+    it('zeigt dezent das Telefon an diesem Rechner und lässt es auch ohne Administrator-Rechte ändern', async () => {
+        stubbeTelefon({ admin: false });
+        zeige();
+        const zeile = await screen.findByText(/Telefon an diesem Rechner:/);
+        expect(zeile).toHaveTextContent('Telefon an diesem Rechner: noch nicht gewählt');
+        fireEvent.click(screen.getByRole('button', { name: 'Telefon an diesem Rechner auswählen' }));
+
+        const dialog = await screen.findByRole('dialog', { name: 'Welches Telefon steht an diesem Rechner?' });
+        fireEvent.click(await within(dialog).findByRole('radio', { name: 'DECT: Mobilteil Büro' }));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Übernehmen' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(screen.getByText(/Telefon an diesem Rechner:/)).toHaveTextContent('Telefon an diesem Rechner: DECT: Mobilteil Büro');
+        expect(window.localStorage.getItem('telefon.waehlTelefon')).toBe('DECT: Mobilteil Büro');
+        expect(screen.getByRole('button', { name: 'Telefon an diesem Rechner ändern' })).toHaveTextContent('Ändern');
+        // Keine zweite Hauptaktion: „Jetzt abholen“ bleibt der einzige gefüllte Knopf.
+        expect(screen.getByRole('button', { name: 'Telefon an diesem Rechner ändern' })).not.toHaveClass('bg-rose-600');
+        window.localStorage.clear();
+    });
+
+    it('bietet „Zurückrufen“ nur bei Anrufen mit Nummer an', async () => {
+        stubbeTelefon({
+            anrufe: [
+                anruf({ id: 1, art: 'VERPASST', kontakt: KUNDE_MAX }),
+                anruf({ id: 2, art: 'ABGEWIESEN', nummer: '' }),
+            ],
+        });
+        zeige();
+        const tabelle = await screen.findByRole('table');
+        const mitNummer = within(tabelle).getAllByRole('row')[1];
+        const unterdrueckt = within(tabelle).getAllByRole('row')[2];
+        expect(await within(mitNummer).findByRole('button', { name: 'Max Mustermann zurückrufen' })).toBeInTheDocument();
+        expect(within(unterdrueckt).queryByRole('button', { name: /zurückrufen/ })).toBeNull();
     });
 
     it('zeigt Anrufe mit Art, Wer, Nummer und Stand der Abholung', async () => {

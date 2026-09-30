@@ -22,6 +22,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,6 +48,14 @@ class FritzBoxTelefonAnlageIntegrationTest {
     private TelefonZugang zugang;
     private final List<String> aufgerufenePfade = new CopyOnWriteArrayList<>();
     private volatile boolean tamVerboten;
+    private volatile boolean waehlhilfeAus;
+    private volatile boolean waehlenVerboten;
+    private volatile List<String> telefone = List.of("FON1: Werkstatt", "DECT: Mobilteil Büro", "LAN: PC Büro");
+    private volatile long umstellenVerzoegerungMs;
+    /** 0 = normale Box; sonst meldet GetPhonePort schon bei Index 1 diesen SOAP-Fehler. */
+    private volatile int telefonlisteFehler;
+    /** Wählhilfe-Aufrufe in Ankunftsreihenfolge, z.B. "SET:LAN: PC Büro", "DIAL:09311234567". */
+    private final List<String> waehlhilfe = new CopyOnWriteArrayList<>();
 
     @BeforeEach
     void starteBox() throws IOException {
@@ -176,6 +190,137 @@ class FritzBoxTelefonAnlageIntegrationTest {
         assertThat(FritzBoxTelefonAnlage.sitzungAus("https://x/tam.lua")).isEmpty();
     }
 
+    // ---------------------------------------------------------------- Wählhilfe (Zurückrufen)
+
+    @Test
+    @DisplayName("Telefone: Namen aus GetPhonePort ab Index 1, bis die Box einen Fehler meldet")
+    void telefone() {
+        assertThat(anlage.ladeTelefone(zugang)).containsExactly("FON1: Werkstatt", "DECT: Mobilteil Büro", "LAN: PC Büro");
+    }
+
+    @Test
+    @DisplayName("Telefone: leere Namen werden übersprungen, keine Telefone ergibt leere Liste")
+    void telefoneLeer() {
+        telefone = List.of("FON1: Werkstatt", " ", "LAN: PC Büro");
+        assertThat(anlage.ladeTelefone(zugang)).containsExactly("FON1: Werkstatt", "LAN: PC Büro");
+        telefone = List.of();
+        assertThat(anlage.ladeTelefone(zugang)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Telefone: fehlende Rechte werden nicht als leere Liste verschluckt")
+    void telefoneOhneRechte() {
+        waehlenVerboten = true;
+        assertThatThrownBy(() -> anlage.ladeTelefone(zugang))
+                .extracting(e -> ((TelefonAnlageException) e).getGrund())
+                .isEqualTo(Grund.KEINE_RECHTE);
+    }
+
+    @Test
+    @DisplayName("Anrufen: erst Wählhilfe auf das Telefon stellen, dann die Nummer wählen")
+    void anrufen() {
+        anlage.anrufen(zugang, "LAN: PC Büro", "09311234567");
+
+        assertThat(waehlhilfe).containsExactly("SET:LAN: PC Büro", "DIAL:09311234567");
+    }
+
+    @Test
+    @DisplayName("Anrufen: Sonderzeichen im Telefonnamen werden als XML maskiert übertragen")
+    void anrufenMaskiert() {
+        anlage.anrufen(zugang, "LAN: <Büro & Co>", "0931");
+
+        assertThat(waehlhilfe).containsExactly("SET:LAN: <Büro & Co>", "DIAL:0931");
+    }
+
+    @Test
+    @DisplayName("Anrufen bei ausgeschalteter Wählhilfe → verständlicher Hinweis WAEHLHILFE_AUS")
+    void waehlhilfeAusgeschaltet() {
+        waehlhilfeAus = true;
+        assertThatThrownBy(() -> anlage.anrufen(zugang, "LAN: PC Büro", "09311234567"))
+                .isInstanceOf(TelefonAnlageException.class)
+                .hasMessageContaining("Wählhilfe")
+                .extracting(e -> ((TelefonAnlageException) e).getGrund())
+                .isEqualTo(Grund.WAEHLHILFE_AUS);
+    }
+
+    @Test
+    @DisplayName("Anrufen ohne Recht (SOAP 606) → KEINE_RECHTE statt Wählhilfe-Hinweis")
+    void anrufenOhneRechte() {
+        waehlenVerboten = true;
+        assertThatThrownBy(() -> anlage.anrufen(zugang, "LAN: PC Büro", "09311234567"))
+                .extracting(e -> ((TelefonAnlageException) e).getGrund())
+                .isEqualTo(Grund.KEINE_RECHTE);
+    }
+
+    @Test
+    @DisplayName("Zwei gleichzeitige Rückrufe: Umstellen und Wählen laufen nie verschränkt")
+    void gleichzeitigeAnrufe() throws Exception {
+        umstellenVerzoegerungMs = 150;
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<?> a = pool.submit(() -> {
+                start.await();
+                anlage.anrufen(zugang, "LAN: PC Büro", "0931111");
+                return null;
+            });
+            Future<?> b = pool.submit(() -> {
+                start.await();
+                anlage.anrufen(zugang, "LAN: PC Chef", "0931222");
+                return null;
+            });
+            start.countDown();
+            a.get();
+            b.get();
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(waehlhilfe).hasSize(4);
+        for (int i = 0; i < 4; i += 2) {
+            String telefon = waehlhilfe.get(i);
+            String nummer = waehlhilfe.get(i + 1);
+            assertThat(telefon.equals("SET:LAN: PC Büro") ? nummer.equals("DIAL:0931111") : nummer.equals("DIAL:0931222"))
+                    .as("Paar %s / %s", telefon, nummer)
+                    .isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("Telefone: anderer SOAP-Fehler als \"Index gibt es nicht\" ergibt Fehler statt leerer Liste")
+    void telefoneAndererFehler() {
+        telefonlisteFehler = 501;
+        assertThatThrownBy(() -> anlage.ladeTelefone(zugang))
+                .isInstanceOf(TelefonAnlageException.class)
+                .extracting(e -> ((TelefonAnlageException) e).getGrund())
+                .isEqualTo(Grund.UNERWARTETE_ANTWORT);
+    }
+
+    @Test
+    @DisplayName("Wählhilfe belegt: zweiter Anruf wartet nur kurz und meldet dann BESCHAEFTIGT")
+    void waehlhilfeBelegt() throws Exception {
+        int port = server.getAddress().getPort();
+        FritzBoxTelefonAnlage kurzeSperre = new FritzBoxTelefonAnlage(
+                new Tr064Client(port, Duration.ofSeconds(2), Duration.ofSeconds(5)), Duration.ofMillis(100));
+        umstellenVerzoegerungMs = 1000;
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> erster = pool.submit(() -> kurzeSperre.anrufen(zugang, "LAN: PC Büro", "0931111"));
+            long frist = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+            while (waehlhilfe.isEmpty()) {
+                assertThat(System.nanoTime()).as("erster Anruf stellt die Wählhilfe um").isLessThan(frist);
+                Thread.sleep(10);
+            }
+            assertThatThrownBy(() -> kurzeSperre.anrufen(zugang, "LAN: PC Chef", "0931222"))
+                    .extracting(e -> ((TelefonAnlageException) e).getGrund())
+                    .isEqualTo(Grund.BESCHAEFTIGT);
+            erster.get();
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(waehlhilfe).containsExactly("SET:LAN: PC Büro", "DIAL:0931111");
+    }
+
     // ---------------------------------------------------------------- simulierte Box
 
     private void behandle(HttpExchange ex) throws IOException {
@@ -236,6 +381,39 @@ class FritzBoxTelefonAnlageIntegrationTest {
                     "<List><Item><Number>2323</Number></Item><Item><Number>555000</Number></Item></List>");
             case "X_AVM-DE_GetVoIPCommonCountryCode" -> werte = Map.of("NewX_AVM-DE_LKZ", "49", "NewX_AVM-DE_LKZPrefix", "00");
             case "X_AVM-DE_GetVoIPCommonAreaCode" -> werte = Map.of("NewX_AVM-DE_OKZ", "931", "NewX_AVM-DE_OKZPrefix", "0");
+            case "X_AVM-DE_GetPhonePort" -> {
+                if (waehlenVerboten) {
+                    soapFehler(ex, 606);
+                    return;
+                }
+                if (telefonlisteFehler != 0) {
+                    soapFehler(ex, telefonlisteFehler);
+                    return;
+                }
+                int index = Integer.parseInt(argument(body, "NewIndex"));
+                if (index < 1 || index > telefone.size()) {
+                    soapFehler(ex, 713);
+                    return;
+                }
+                werte = Map.of("NewX_AVM-DE_PhoneName", telefone.get(index - 1));
+            }
+            case "X_AVM-DE_DialSetConfig" -> {
+                if (waehlenVerboten) {
+                    soapFehler(ex, 606);
+                    return;
+                }
+                waehlhilfe.add("SET:" + unescape(argument(body, "NewX_AVM-DE_PhoneName")));
+                pause(umstellenVerzoegerungMs);
+                werte = Map.of();
+            }
+            case "X_AVM-DE_DialNumber" -> {
+                if (waehlhilfeAus) {
+                    soapFehler(ex, 501);
+                    return;
+                }
+                waehlhilfe.add("DIAL:" + argument(body, "NewX_AVM-DE_PhoneNumber"));
+                werte = Map.of();
+            }
             default -> {
                 antworte(ex, 500, "");
                 return;
@@ -245,6 +423,32 @@ class FritzBoxTelefonAnlageIntegrationTest {
         werte.forEach((k, v) -> inhalt.append('<').append(k).append('>').append(escape(v)).append("</").append(k).append('>'));
         antworte(ex, 200, "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body>"
                 + "<u:" + aktion + "Response xmlns:u=\"urn:x\">" + inhalt + "</u:" + aktion + "Response></s:Body></s:Envelope>");
+    }
+
+    private static void soapFehler(HttpExchange ex, int code) throws IOException {
+        antworte(ex, 500, "<s:Envelope><s:Body><s:Fault><detail><UPnPError><errorCode>" + code
+                + "</errorCode></UPnPError></detail></s:Fault></s:Body></s:Envelope>");
+    }
+
+    private static String argument(String soap, String name) {
+        Matcher m = Pattern.compile("<" + name + ">([^<]*+)</" + name + ">").matcher(soap);
+        assertThat(m.find()).as("Argument %s fehlt in %s", name, soap).isTrue();
+        return m.group(1);
+    }
+
+    private static String unescape(String s) {
+        return s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
+    }
+
+    private static void pause(long ms) {
+        if (ms <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static boolean digestKorrekt(String header, String methode, String uri) {

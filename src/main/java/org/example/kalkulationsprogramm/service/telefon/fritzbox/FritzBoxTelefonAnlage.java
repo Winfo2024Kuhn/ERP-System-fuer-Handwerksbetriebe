@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service.telefon.fritzbox;
 
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.telefon.AnlagenAnruf;
 import org.example.kalkulationsprogramm.service.telefon.AnlagenInfo;
 import org.example.kalkulationsprogramm.service.telefon.AnlagenSprachnachricht;
@@ -11,13 +12,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * FRITZ!Box-Umsetzung der {@link TelefonAnlage} über TR-064.
- * Liest nur – auf der Box wird nichts gelöscht oder als gehört markiert.
+ * Liest Anrufe und Nachrichten nur – auf der Box wird nichts gelöscht oder als
+ * gehört markiert. Einzige Änderung: Zum Anrufen stellt die Wählhilfe auf das
+ * gewünschte Telefon um.
  */
+@Slf4j
 @Component
 public class FritzBoxTelefonAnlage implements TelefonAnlage {
 
@@ -30,8 +38,20 @@ public class FritzBoxTelefonAnlage implements TelefonAnlage {
 
     private static final String DOWNLOAD_PRAEFIX = "/download.lua?path=";
     private static final int MAX_TAGE = 999;
+    /** Obergrenze für die Telefonliste – mehr Anschlüsse hat keine FRITZ!Box. */
+    private static final int MAX_TELEFONE = 50;
+    /** UPnP-Fehler "Index gibt es nicht" – Ende der Telefonliste. */
+    private static final int INDEX_UNGUELTIG = 713;
+    private static final Duration STANDARD_SPERR_WARTEZEIT = Duration.ofSeconds(5);
 
     private final Tr064Client client;
+    /**
+     * Die Wählhilfe ist eine Einstellung für die ganze Box: Umstellen und Wählen
+     * dürfen sich nicht überholen. Wer nicht rasch drankommt, bekommt
+     * BESCHAEFTIGT – statt dass sich Anfragen hinter einer hängenden Box stauen.
+     */
+    private final ReentrantLock waehlhilfe = new ReentrantLock();
+    private final Duration sperrWartezeit;
 
     @Autowired
     public FritzBoxTelefonAnlage() {
@@ -39,7 +59,12 @@ public class FritzBoxTelefonAnlage implements TelefonAnlage {
     }
 
     FritzBoxTelefonAnlage(Tr064Client client) {
+        this(client, STANDARD_SPERR_WARTEZEIT);
+    }
+
+    FritzBoxTelefonAnlage(Tr064Client client, Duration sperrWartezeit) {
         this.client = client;
+        this.sperrWartezeit = sperrWartezeit;
     }
 
     @Override
@@ -82,6 +107,65 @@ public class FritzBoxTelefonAnlage implements TelefonAnlage {
         String sid = nachricht.sitzung();
         String url = sid == null || sid.isEmpty() ? pfad : pfad + "&sid=" + sid;
         return client.laden(zugang, url);
+    }
+
+    /** Wählhilfe-Telefone über GetPhonePort, ab Index 1, bis die Box "gibt es nicht" meldet. */
+    @Override
+    public List<String> ladeTelefone(TelefonZugang zugang) {
+        List<String> telefone = new ArrayList<>();
+        for (int index = 1; index <= MAX_TELEFONE; index++) {
+            Map<String, String> antwort;
+            try {
+                antwort = client.aktion(zugang, VOIP_URL, VOIP, "X_AVM-DE_GetPhonePort",
+                        Map.of("NewIndex", String.valueOf(index)));
+            } catch (SoapFehler e) {
+                if (e.code() == INDEX_UNGUELTIG) {
+                    break;
+                }
+                throw e;
+            }
+            String name = antwort.get("NewX_AVM-DE_PhoneName");
+            if (name != null && !name.isBlank()) {
+                telefone.add(name);
+            }
+        }
+        return telefone;
+    }
+
+    @Override
+    public void anrufen(TelefonZugang zugang, String telefon, String nummer) {
+        sperren();
+        try {
+            waehlhilfeAktion(zugang, "X_AVM-DE_DialSetConfig", Map.of("NewX_AVM-DE_PhoneName", telefon));
+            waehlhilfeAktion(zugang, "X_AVM-DE_DialNumber", Map.of("NewX_AVM-DE_PhoneNumber", nummer));
+        } finally {
+            waehlhilfe.unlock();
+        }
+    }
+
+    private void sperren() {
+        try {
+            if (!waehlhilfe.tryLock(sperrWartezeit.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw new TelefonAnlageException(Grund.BESCHAEFTIGT);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new TelefonAnlageException(Grund.BESCHAEFTIGT, e);
+        }
+    }
+
+    /**
+     * Schlägt Umstellen oder Wählen fehl, ist fast immer die Wählhilfe aus – das
+     * Telefon selbst stammt aus der Liste der Box. Protokolliert wird nur Aktion
+     * und Fehlercode, nie Nummer oder Telefonname.
+     */
+    private void waehlhilfeAktion(TelefonZugang zugang, String aktion, Map<String, String> argumente) {
+        try {
+            client.aktion(zugang, VOIP_URL, VOIP, aktion, argumente);
+        } catch (SoapFehler e) {
+            log.warn("Telefon: FRITZ!Box-Wählhilfe lehnt {} ab (UPnP-Fehler {})", aktion, e.code());
+            throw new TelefonAnlageException(Grund.WAEHLHILFE_AUS, e);
+        }
     }
 
     /** Session-ID aus "…?sid=abc123&tamindex=0"; nur Buchstaben und Ziffern werden übernommen. */

@@ -19,7 +19,7 @@ import { useTelefonLive } from './useTelefonLive';
  */
 export function AnrufFensterHost({ akteInNeuemTab = false }: { akteInNeuemTab?: boolean }) {
     const darf = useTelefonBerechtigung();
-    const { anrufe, schliessen } = useTelefonLive(darf === true);
+    const { anrufe, schliessen, festhalten } = useTelefonLive(darf === true);
     const navigate = useNavigate();
     const aktuell = anrufe[0];
     const aktuelleId = aktuell?.verbindungsId;
@@ -29,6 +29,10 @@ export function AnrufFensterHost({ akteInNeuemTab = false }: { akteInNeuemTab?: 
     const schliesseAktuellen = useCallback(() => {
         if (aktuelleId) schliessen(aktuelleId);
     }, [aktuelleId, schliessen]);
+
+    const halteAktuellenFest = useCallback(() => {
+        if (aktuelleId) festhalten(aktuelleId);
+    }, [aktuelleId, festhalten]);
 
     const oeffne = useCallback((pfad: string) => {
         if (aktuelleId) schliessen(aktuelleId);
@@ -50,6 +54,7 @@ export function AnrufFensterHost({ akteInNeuemTab = false }: { akteInNeuemTab?: 
             onKontaktOeffnen={oeffneKontakt}
             ueberblick={ueberblick}
             onOeffnen={oeffne}
+            onFesthalten={halteAktuellenFest}
         />
     );
 }

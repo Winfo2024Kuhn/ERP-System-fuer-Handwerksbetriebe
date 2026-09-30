@@ -15,6 +15,8 @@ import type { LiveAnruf } from './types';
  *   <li>Beim Aushängen (Abmelden, Seite verlassen) wird die Verbindung
  *       sauber geschlossen.</li>
  *   <li>„Schließen" blendet einen Anruf nur für diesen Benutzer aus.</li>
+ *   <li>„Festhalten" lässt einen verpassten Anruf stehen, bis er geschlossen
+ *       wird (z. B. solange man zurückruft).</li>
  *   <li>`BEENDET`: angenommene Anrufe verschwinden sofort, nicht
  *       angenommene zeigen drei Sekunden „Verpasst". Danach wird die Glocke
  *       aufgefrischt.</li>
@@ -175,6 +177,17 @@ export function useTelefonLive(aktiv: boolean, fabrik: EventSourceFabrik = stand
         });
     }, []);
 
+    /**
+     * Hält einen verpassten Anruf offen, bis er geschlossen wird – statt ihn
+     * nach drei Sekunden auszublenden. Für „Zurückrufen" aus dem Anruf-Fenster.
+     */
+    const festhalten = useCallback((verbindungsId: string) => {
+        const timer = timerRef.current.get(verbindungsId);
+        if (!timer) return;
+        clearTimeout(timer);
+        timerRef.current.delete(verbindungsId);
+    }, []);
+
     // Ohne Recht (oder nach dem Entzug) wird nichts gezeigt, auch keine Reste.
     const anrufe: LiveAnrufAnzeige[] = !aktiv ? [] : Object.values(eintraege)
         .filter((e) => !e.geschlossen)
@@ -190,5 +203,5 @@ export function useTelefonLive(aktiv: boolean, fabrik: EventSourceFabrik = stand
             verpasst: e.verpasst,
         }));
 
-    return { anrufe, schliessen };
+    return { anrufe, schliessen, festhalten };
 }

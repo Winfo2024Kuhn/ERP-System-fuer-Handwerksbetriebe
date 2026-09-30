@@ -1,11 +1,13 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.dto.Telefon.AbgehoertDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AbholErgebnisDto;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufKontaktUeberblickDto;
+import org.example.kalkulationsprogramm.dto.Telefon.AnrufenDto;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktRufnummerDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SprachnachrichtDto;
 import org.example.kalkulationsprogramm.dto.Telefon.SteuerberaterAuswahlDto;
@@ -13,17 +15,21 @@ import org.example.kalkulationsprogramm.dto.Telefon.TelefonAnrufDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonBerechtigungDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonStatusDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonZuordnenDto;
+import org.example.kalkulationsprogramm.dto.Telefon.WaehlTelefonDto;
 import org.example.kalkulationsprogramm.service.telefon.AnrufKontaktUeberblickService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonAbholService;
+import org.example.kalkulationsprogramm.service.telefon.TelefonAnlageException;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonEinstellungenService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonLiveService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonService;
+import org.example.kalkulationsprogramm.service.telefon.TelefonWaehlService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -42,6 +48,7 @@ import java.util.NoSuchElementException;
  * und dem Lesen gemerkter Rufnummern verlangen das Abteilungs-Recht
  * "Anrufe & Anrufbeantworter".
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/telefon")
 @RequiredArgsConstructor
@@ -53,6 +60,7 @@ public class TelefonController {
     private final TelefonAbholService abholService;
     private final TelefonLiveService liveService;
     private final AnrufKontaktUeberblickService kontaktUeberblick;
+    private final TelefonWaehlService waehlService;
 
     @GetMapping("/berechtigung")
     public TelefonBerechtigungDto berechtigung(Authentication authentication) {
@@ -208,6 +216,32 @@ public class TelefonController {
         berechtigung.verlange(authentication);
         telefonService.loescheKontaktRufnummer(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Telefone, die beim Anrufen aus dem ERP klingeln können – Auswahl "Telefon an diesem Rechner". */
+    @GetMapping("/telefone")
+    public List<WaehlTelefonDto> telefone(Authentication authentication) {
+        berechtigung.verlange(authentication);
+        return waehlService.telefone().stream().map(WaehlTelefonDto::new).toList();
+    }
+
+    /** Zurückrufen: erst klingelt {@code telefon}, nach dem Abnehmen wählt die Anlage {@code nummer}. */
+    @PostMapping("/anrufen")
+    public ResponseEntity<Void> anrufen(@RequestBody AnrufenDto dto, Authentication authentication) {
+        FrontendUserProfile profil = berechtigung.verlange(authentication);
+        waehlService.anrufen(dto.telefon(), dto.nummer());
+        // Nachvollziehbar, wer Gespräche auf dem Firmenanschluss startet – ohne Nummer und Telefonnamen (DSGVO).
+        log.info("Telefon: Anruf über Wählhilfe gestartet von Profil {}", profil.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @ExceptionHandler(TelefonAnlageException.class)
+    public ResponseEntity<Map<String, String>> anlagenFehler(TelefonAnlageException e) {
+        HttpStatus status = switch (e.getGrund()) {
+            case NICHT_EINGERICHTET, BESCHAEFTIGT -> HttpStatus.CONFLICT;
+            default -> HttpStatus.BAD_GATEWAY;
+        };
+        return ResponseEntity.status(status).body(Map.of("message", e.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

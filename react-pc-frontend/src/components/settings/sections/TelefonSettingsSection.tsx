@@ -15,6 +15,7 @@ import {
 } from '../../../features/telefon/api';
 import { formatWann } from '../../../features/telefon/format';
 import type { AbholErgebnis, Anrufbeantworter, TelefonEinstellungen } from '../../../features/telefon/types';
+import { WaehlTelefonEinstellung } from '../../../features/telefon/WaehlTelefonEinstellung';
 
 /**
  * Einstellungen der Telefon-Anbindung (FRITZ!Box) – nur für Administratoren.
@@ -350,6 +351,8 @@ export function TelefonSettingsSection({ onSaved }: { onSaved?: () => void }) {
 
                     <SaveButton onClick={speichern} saving={speichert}>Telefon-Einstellungen speichern</SaveButton>
                 </SettingsCard>
+
+                <WaehlTelefonEinstellung />
 
                 <SettingsCard icon={<Activity className="h-5 w-5 text-rose-600" />} title="Stand">
                     <dl className="grid gap-3 text-sm sm:grid-cols-3">

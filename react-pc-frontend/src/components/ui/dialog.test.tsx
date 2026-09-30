@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import {
     Dialog,
+    DialogEbene,
     DialogContent,
     DialogHeader,
     DialogTitle,
@@ -172,4 +173,30 @@ it('erlaubt Meldungen per Tastatur, hält den Hintergrund gesperrt und kehrt mit
     act(() => screen.getByRole('button', { name: 'Hintergrund' }).focus());
     expect(screen.getAllByRole('button', { name: 'Meldung schließen' }).at(-1)).toHaveFocus();
     await user.tab(); expect(field).toHaveFocus();
+});
+
+describe('DialogEbene', () => {
+    it('legt Dialoge über eine höhere Ebene wie das Anruf-Fenster (z-index 70)', () => {
+        render(
+            <DialogEbene ueberZIndex={70}>
+                <Dialog open aria-label="Oben">
+                    <DialogContent>Inhalt</DialogContent>
+                </Dialog>
+            </DialogEbene>,
+        );
+        expect(Number(screen.getByRole('dialog', { name: 'Oben' }).parentElement?.style.zIndex)).toBe(71);
+    });
+
+    it('senkt verschachtelte Dialoge nie ab', () => {
+        render(
+            <DialogEbene ueberZIndex={70}>
+                <DialogEbene ueberZIndex={10}>
+                    <Dialog open aria-label="Innen">
+                        <DialogContent>Inhalt</DialogContent>
+                    </Dialog>
+                </DialogEbene>
+            </DialogEbene>,
+        );
+        expect(Number(screen.getByRole('dialog', { name: 'Innen' }).parentElement?.style.zIndex)).toBe(71);
+    });
 });

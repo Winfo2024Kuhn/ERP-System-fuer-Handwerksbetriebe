@@ -11,7 +11,10 @@ public class TelefonAnlageException extends RuntimeException {
         ANMELDUNG_FEHLGESCHLAGEN("Benutzername oder Passwort falsch"),
         KEINE_RECHTE("Der FRITZ!Box-Benutzer hat nicht die nötigen Rechte"),
         UNERWARTETE_ANTWORT("Unerwartete Antwort der FRITZ!Box"),
-        NICHT_EINGERICHTET("Telefon-Anbindung ist nicht eingerichtet");
+        NICHT_EINGERICHTET("Telefon-Anbindung ist nicht eingerichtet"),
+        WAEHLHILFE_AUS("Die FRITZ!Box konnte nicht wählen. Bitte prüfen, ob die Wählhilfe eingeschaltet ist "
+                + "(FRITZ!Box: Telefonie → Anrufe → Wählhilfe)."),
+        BESCHAEFTIGT("Es wird gerade schon ein Anruf aufgebaut. Bitte gleich noch einmal versuchen.");
 
         private final String text;
 

@@ -11,6 +11,7 @@ import type {
     TelefonEinstellungen,
     TelefonStatus,
     TelefonVerbindungstest,
+    WaehlTelefon,
     ZuordnenZiel,
 } from './types';
 
@@ -223,6 +224,34 @@ export function hebeZuordnungAuf<T extends TelefonAnruf | Sprachnachricht>(ziel:
 
 export function holeJetztAb(): Promise<AbholErgebnis> {
     return holeJson<AbholErgebnis>(`${BASIS}/abholen`, 'Die Anrufe konnten nicht von der FRITZ!Box abgeholt werden.', jsonInit('POST'));
+}
+
+// ── Zurückrufen ────────────────────────────────────────────────────────
+
+/** Fehler beim Anrufen – mit HTTP-Status, damit die Oberfläche z. B. bei 400 die Telefon-Auswahl neu anbieten kann. */
+export class AnrufenFehler extends Error {
+    readonly status: number;
+
+    constructor(message: string, status: number) {
+        super(message);
+        this.name = 'AnrufenFehler';
+        this.status = status;
+    }
+}
+
+/** Telefone der FRITZ!Box, die beim Zurückrufen zuerst klingeln können. */
+export function ladeWaehlTelefone(signal?: AbortSignal): Promise<WaehlTelefon[]> {
+    return holeJson<WaehlTelefon[]>(`${BASIS}/telefone`, 'Die Telefone der FRITZ!Box konnten nicht geladen werden.', { signal });
+}
+
+/**
+ * Zurückrufen: Erst klingelt `telefon`, nach dem Abnehmen wählt die FRITZ!Box
+ * `nummer`. Die Nummer geht so weg, wie sie angezeigt wird – der Server
+ * bereinigt sie selbst.
+ */
+export async function rufeAn(telefon: string, nummer: string): Promise<void> {
+    const res = await fetch(`${BASIS}/anrufen`, jsonInit('POST', { telefon, nummer }));
+    if (!res.ok) throw new AnrufenFehler(await meldungAus(res, 'Der Anruf konnte nicht gestartet werden.'), res.status);
 }
 
 export async function ladeKontaktRufnummern(typ: AktenTyp, id: number, signal?: AbortSignal): Promise<KontaktRufnummer[]> {

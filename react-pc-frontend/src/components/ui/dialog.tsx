@@ -239,8 +239,20 @@ const DialogDescription = React.forwardRef<
 ))
 DialogDescription.displayName = "DialogDescription"
 
+/**
+ * Für Dialoge, die aus einer eigenen, höheren Ebene heraus geöffnet werden
+ * (z. B. dem Anruf-Fenster mit z-index 70): Jeder Dialog darin liegt über
+ * `ueberZIndex`, statt dahinter zu verschwinden.
+ */
+const DialogEbene = ({ ueberZIndex, children }: { ueberZIndex: number; children: React.ReactNode }) => {
+    const depth = React.useContext(DialogDepth);
+    return <DialogDepth.Provider value={Math.max(depth, ueberZIndex - 50 + 1)}>{children}</DialogDepth.Provider>;
+}
+DialogEbene.displayName = "DialogEbene"
+
 export {
     Dialog,
+    DialogEbene,
     DialogContent,
     DialogHeader,
     DialogFooter,

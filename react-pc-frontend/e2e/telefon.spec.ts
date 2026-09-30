@@ -4,6 +4,7 @@ import path from 'node:path';
 import { designPruefung, keinHorizontalerUeberlauf, uebergaengeAusklingenLassen } from './hilfen/design';
 import { inhalt } from './hilfen/seite';
 import { isoTag, KANZLEI_BEISPIEL, KUNDE_ERIKA, KUNDE_MAX, LIEFERANT_GMBH, stubbeTelefonApi } from './hilfen/telefon';
+import type { Page } from '@playwright/test';
 
 /**
  * End-to-End-Tests der Telefon-Anbindung (FRITZ!Box): Anrufliste,
@@ -391,5 +392,214 @@ test.describe('Telefon – Einstellungen und Rechte', () => {
         await expect(page.getByText('Anrufe sind für Sie nicht freigeschaltet')).toBeVisible();
         await designPruefung(page, info, 'telefon-ohne-recht');
         expect(liveAnfragen).toEqual([]);
+    });
+});
+
+test.describe('Telefon – Zurückrufen', () => {
+    const SCHLUESSEL = 'telefon.waehlTelefon';
+    const KLINGELT = 'Ihr Telefon klingelt – abnehmen, dann wird verbunden.';
+    const AUSWAHL = 'Welches Telefon steht an diesem Rechner?';
+
+    /** Setzt „Telefon an diesem Rechner" vor dem Laden der Seite (wie nach einer früheren Auswahl). */
+    async function telefonGespeichert(page: Page, name: string) {
+        await page.addInitScript(([schluessel, wert]) => window.localStorage.setItem(schluessel, wert), [SCHLUESSEL, name]);
+    }
+
+    const gespeichertesTelefon = (page: Page) => page.evaluate((schluessel) => window.localStorage.getItem(schluessel), SCHLUESSEL);
+
+    test('erster Klick fragt nach dem Telefon und ruft an, der zweite ruft ohne Frage an', async ({ page }, info) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        const tabelle = inhalt(page).getByRole('table');
+        const zeile = tabelle.getByRole('row').filter({ hasText: '0931 1234567' });
+        const knopf = zeile.getByRole('button', { name: 'Max Mustermann zurückrufen' });
+        await expect(knopf).toBeVisible();
+        // Unterdrückte Nummer: kein Knopf.
+        const unterdrueckt = tabelle.getByRole('row').filter({ hasText: 'Nummer unterdrückt' });
+        await expect(unterdrueckt).toBeVisible();
+        await expect(unterdrueckt.getByRole('button', { name: /zurückrufen/ })).toHaveCount(0);
+        await designPruefung(page, info, 'telefon-zurueckrufen-liste');
+
+        await knopf.click();
+        const dialog = page.getByRole('dialog', { name: AUSWAHL });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByText('Die Auswahl gilt nur für diesen Rechner.', { exact: false })).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Anrufen' })).toBeDisabled();
+        await dialog.getByRole('radio', { name: 'LAN: PC Büro' }).click();
+        await designPruefung(page, info, 'telefon-zurueckrufen-auswahl');
+        await dialog.getByRole('button', { name: 'Anrufen' }).click();
+
+        await expect(dialog).toBeHidden();
+        await expect(page.getByText(KLINGELT)).toBeVisible();
+        expect(stub.mitschrift.filter((m) => m.pfad === '/api/telefon/anrufen')).toEqual([
+            { methode: 'POST', pfad: '/api/telefon/anrufen', query: '', body: { telefon: 'LAN: PC Büro', nummer: '0931 1234567' } },
+        ]);
+        expect(await gespeichertesTelefon(page)).toBe('LAN: PC Büro');
+
+        // Zweiter Klick – auch in einer anderen Zeile – ohne Frage.
+        await tabelle.getByRole('row').filter({ hasText: '0931 3333333' }).getByRole('button', { name: /zurückrufen/ }).click();
+        await expect.poll(() => stub.mitschrift.filter((m) => m.pfad === '/api/telefon/anrufen').length).toBe(2);
+        await expect(page.getByRole('dialog', { name: AUSWAHL })).toHaveCount(0);
+        expect(stub.mitschrift.filter((m) => m.pfad === '/api/telefon/anrufen')[1].body)
+            .toEqual({ telefon: 'LAN: PC Büro', nummer: '0931 3333333' });
+    });
+
+    test('Fehler der FRITZ!Box (502) zeigt die Meldung vom Server', async ({ page }, info) => {
+        const meldung = 'Die FRITZ!Box konnte nicht wählen. Bitte prüfen, ob die Wählhilfe eingeschaltet ist (FRITZ!Box: Telefonie → Anrufe → Wählhilfe).';
+        await telefonGespeichert(page, 'LAN: PC Büro');
+        const stub = await stubbeTelefonApi(page, { anrufenAntwort: () => ({ status: 502, body: { message: meldung } }) });
+        await page.goto('/telefon/anrufe');
+        const knopf = inhalt(page).getByRole('button', { name: 'Max Mustermann zurückrufen' });
+        await knopf.click();
+        await expect(page.getByRole('alert').filter({ hasText: meldung })).toBeVisible();
+        await expect(page.getByRole('dialog', { name: AUSWAHL })).toHaveCount(0);
+        await expect(knopf).toBeEnabled();
+        expect(stub.mitschrift.filter((m) => m.pfad === '/api/telefon/anrufen')).toHaveLength(1);
+        expect(await gespeichertesTelefon(page)).toBe('LAN: PC Büro');
+        await designPruefung(page, info, 'telefon-zurueckrufen-fehler');
+    });
+
+    test('kennt die FRITZ!Box das gespeicherte Telefon nicht mehr, wird neu gefragt', async ({ page }) => {
+        const unbekannt = 'Dieses Telefon kennt die FRITZ!Box nicht. Bitte ein anderes Telefon auswählen.';
+        await telefonGespeichert(page, 'LAN: Altes Telefon');
+        let versuche = 0;
+        const stub = await stubbeTelefonApi(page, {
+            anrufenAntwort: () => (++versuche === 1 ? { status: 400, body: { message: unbekannt } } : { status: 204 }),
+        });
+        await page.goto('/telefon/anrufe');
+        await inhalt(page).getByRole('button', { name: 'Max Mustermann zurückrufen' }).click();
+        await expect(page.getByText(unbekannt)).toBeVisible();
+        const dialog = page.getByRole('dialog', { name: AUSWAHL });
+        await expect(dialog).toBeVisible();
+        await dialog.getByRole('radio', { name: 'DECT: Mobilteil Büro' }).click();
+        await dialog.getByRole('button', { name: 'Anrufen' }).click();
+        await expect(page.getByText(KLINGELT)).toBeVisible();
+        expect(stub.mitschrift.filter((m) => m.pfad === '/api/telefon/anrufen').map((m) => (m.body as { telefon: string }).telefon))
+            .toEqual(['LAN: Altes Telefon', 'DECT: Mobilteil Büro']);
+        expect(await gespeichertesTelefon(page)).toBe('DECT: Mobilteil Büro');
+    });
+
+    test('ohne Telefon in der FRITZ!Box: verständlicher Hinweis statt leerer Liste', async ({ page }, info) => {
+        await stubbeTelefonApi(page, { telefone: [] });
+        await page.goto('/telefon/anrufe');
+        await inhalt(page).getByRole('button', { name: 'Max Mustermann zurückrufen' }).click();
+        const dialog = page.getByRole('dialog', { name: AUSWAHL });
+        await expect(dialog.getByText(/In der FRITZ!Box ist noch kein Telefon eingerichtet/)).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Anrufen' })).toBeDisabled();
+        await designPruefung(page, info, 'telefon-zurueckrufen-keine-telefone');
+    });
+
+    test('Anruf-Fenster: Hinweis zum Annehmen, nach verpasstem Anruf zurückrufen', async ({ page }, info) => {
+        // Steuerbare Uhr: die drei Sekunden „Verpasst“-Anzeige wird vorgespult statt abgewartet.
+        await page.clock.install();
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        await expect(inhalt(page).getByRole('table')).toBeVisible();
+
+        await stub.sendeLive({ verbindungsId: 'z1', status: 'KLINGELT', kontakt: KUNDE_MAX });
+        const fenster = page.getByRole('dialog', { name: 'Max Mustermann' });
+        await expect(fenster.getByText('Am Headset oder im Telefon-Programm annehmen')).toBeVisible();
+        await expect(fenster.getByRole('button', { name: /zurückrufen/ })).toHaveCount(0);
+
+        await stub.sendeLive({ verbindungsId: 'z1', status: 'BEENDET', kontakt: KUNDE_MAX, angenommen: false });
+        await expect(fenster.getByText('Verpasst')).toBeVisible();
+        await expect(fenster.getByText('Am Headset oder im Telefon-Programm annehmen')).toHaveCount(0);
+        // Mit der Maus auf das Fenster zeigen hält es offen (sonst verschwindet es nach drei Sekunden).
+        await fenster.hover();
+        await page.clock.runFor(10_000);
+        await expect(fenster).toBeVisible();
+        const knopf = fenster.getByRole('button', { name: 'Max Mustermann zurückrufen' });
+        await expect(knopf).toContainText('Zurückrufen');
+        await designPruefung(page, info, 'telefon-zurueckrufen-anruf-fenster');
+
+        await knopf.click();
+        const dialog = page.getByRole('dialog', { name: AUSWAHL });
+        await expect(dialog).toBeVisible();
+        await dialog.getByRole('radio', { name: 'LAN: PC Büro' }).click();
+        // Die Auswahl liegt gewollt als Dialog über dem Anruf-Fenster (das selbst
+        // fest positioniert ist). Die Überschneidungs-Prüfung würde genau das melden
+        // -- deshalb wie bei der Glocke nur Screenshot und Überlauf-Prüfung.
+        await uebergaengeAusklingenLassen(page);
+        const bild = path.join(info.project.outputDir, 'design', `telefon-zurueckrufen-auswahl-ueber-fenster--${info.project.name}.png`);
+        fs.mkdirSync(path.dirname(bild), { recursive: true });
+        await page.screenshot({ path: bild });
+        await info.attach('design: telefon-zurueckrufen-auswahl-ueber-fenster', { path: bild, contentType: 'image/png' });
+        await keinHorizontalerUeberlauf(page);
+        // Der Dialog liegt wirklich oben: der Klick auf „Anrufen“ trifft ihn (siehe unten).
+        await expect(dialog.getByRole('button', { name: 'Anrufen' })).toBeInViewport();
+        // Escape schließt nur die Auswahl, das Anruf-Fenster bleibt.
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        await expect(fenster).toBeVisible();
+
+        await knopf.click();
+        await dialog.getByRole('radio', { name: 'LAN: PC Büro' }).click();
+        await dialog.getByRole('button', { name: 'Anrufen' }).click();
+        await expect(page.getByText(KLINGELT)).toBeVisible();
+        await expect(fenster).toBeHidden();
+        expect(stub.mitschrift.find((m) => m.pfad === '/api/telefon/anrufen')?.body).toEqual({ telefon: 'LAN: PC Büro', nummer: '0931 1234567' });
+    });
+
+    test('Telefon-Seite: auch ohne Administrator-Rechte das Telefon an diesem Rechner ändern', async ({ page }, info) => {
+        await telefonGespeichert(page, 'LAN: PC Büro');
+        const stub = await stubbeTelefonApi(page, { admin: false });
+        await page.goto('/telefon/anrufe');
+        const zeile = inhalt(page).getByText('Telefon an diesem Rechner:');
+        await expect(zeile).toBeVisible();
+        await expect(zeile).toContainText('LAN: PC Büro');
+        const aendern = inhalt(page).getByRole('button', { name: 'Telefon an diesem Rechner ändern' });
+        await designPruefung(page, info, 'telefon-zurueckrufen-seite-telefon', { primaerAktion: aendern });
+
+        await aendern.click();
+        const dialog = page.getByRole('dialog', { name: AUSWAHL });
+        await expect(dialog.getByRole('radio', { name: 'LAN: PC Büro' })).toHaveAttribute('aria-checked', 'true');
+        await dialog.getByRole('radio', { name: 'DECT: Mobilteil Büro' }).click();
+        await dialog.getByRole('button', { name: 'Übernehmen' }).click();
+        await expect(dialog).toBeHidden();
+        await expect(zeile).toContainText('DECT: Mobilteil Büro');
+        expect(await gespeichertesTelefon(page)).toBe('DECT: Mobilteil Büro');
+
+        // Das nächste Zurückrufen nimmt das neue Telefon, ohne zu fragen.
+        await inhalt(page).getByRole('button', { name: 'Max Mustermann zurückrufen' }).click();
+        await expect(page.getByText(KLINGELT)).toBeVisible();
+        expect(stub.mitschrift.find((m) => m.pfad === '/api/telefon/anrufen')?.body).toEqual({ telefon: 'DECT: Mobilteil Büro', nummer: '0931 1234567' });
+    });
+
+    test('Telefon-Seite ohne gespeichertes Telefon: „noch nicht gewählt · Auswählen“', async ({ page }) => {
+        await stubbeTelefonApi(page);
+        await page.goto('/telefon/anrufe');
+        await expect(inhalt(page).getByText('Telefon an diesem Rechner:')).toContainText('noch nicht gewählt');
+        await expect(inhalt(page).getByRole('button', { name: 'Telefon an diesem Rechner auswählen' })).toHaveText('Auswählen');
+    });
+
+    test('Einstellungen: Telefon an diesem Rechner wählen, ändern und zurücksetzen', async ({ page }, info) => {
+        await stubbeTelefonApi(page);
+        await page.goto('/einstellungen#telefon');
+        const karte = page.locator('div').filter({ has: page.getByRole('heading', { name: 'Telefon an diesem Rechner' }) }).last();
+        await expect(karte.getByText(/Noch kein Telefon ausgewählt/)).toBeVisible();
+
+        await karte.getByRole('button', { name: 'Telefon auswählen' }).click();
+        const dialog = page.getByRole('dialog', { name: AUSWAHL });
+        await dialog.getByRole('radio', { name: 'LAN: PC Büro' }).click();
+        await dialog.getByRole('button', { name: 'Übernehmen' }).click();
+        await expect(dialog).toBeHidden();
+        await expect(karte.getByText('LAN: PC Büro')).toBeVisible();
+
+        await karte.getByRole('button', { name: 'So telefonieren Sie am PC mit Headset' }).click();
+        const anleitung = page.getByRole('list', { name: 'Anleitung: am PC mit Headset telefonieren' });
+        await expect(anleitung.getByRole('listitem')).toHaveCount(6);
+        await anleitung.scrollIntoViewIfNeeded();
+        await designPruefung(page, info, 'telefon-einstellungen-dieser-rechner', { ganzeSeite: true });
+
+        await karte.getByRole('button', { name: 'Ändern' }).click();
+        await expect(dialog.getByRole('radio', { name: 'LAN: PC Büro' })).toHaveAttribute('aria-checked', 'true');
+        await dialog.getByRole('radio', { name: 'DECT: Mobilteil Büro' }).click();
+        await dialog.getByRole('button', { name: 'Übernehmen' }).click();
+        await expect(karte.getByText('DECT: Mobilteil Büro')).toBeVisible();
+        expect(await gespeichertesTelefon(page)).toBe('DECT: Mobilteil Büro');
+
+        await karte.getByRole('button', { name: 'Zurücksetzen' }).click();
+        await expect(karte.getByText(/Noch kein Telefon ausgewählt/)).toBeVisible();
+        expect(await gespeichertesTelefon(page)).toBeNull();
     });
 });

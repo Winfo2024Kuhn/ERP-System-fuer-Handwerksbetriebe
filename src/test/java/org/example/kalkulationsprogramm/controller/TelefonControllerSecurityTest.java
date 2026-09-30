@@ -30,6 +30,7 @@ import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungServi
 import org.example.kalkulationsprogramm.service.telefon.TelefonEinstellungenService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonLiveService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonService;
+import org.example.kalkulationsprogramm.service.telefon.TelefonWaehlService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonZugang;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -99,6 +101,7 @@ class TelefonControllerSecurityTest {
     @MockBean TelefonAbholService abholService;
     @MockBean TelefonLiveService liveService;
     @MockBean AnrufKontaktUeberblickService kontaktUeberblick;
+    @MockBean TelefonWaehlService waehlService;
     @MockBean TelefonAnlage anlage;
     @MockBean TelefonAnrufmonitorService anrufmonitor;
     @MockBean AbteilungRepository abteilungen;
@@ -151,7 +154,11 @@ class TelefonControllerSecurityTest {
         mvc.perform(get("/api/telefon/anrufe")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/telefon/sprachnachrichten/3/audio")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/telefon/live")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(telefonService, liveService, abholService);
+        mvc.perform(get("/api/telefon/telefone")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/telefon/anrufen").with(csrf())
+                .contentType("application/json").content("{\"telefon\":\"LAN: PC Büro\",\"nummer\":\"0931\"}"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(telefonService, liveService, abholService, waehlService);
     }
 
     @Test
@@ -173,7 +180,11 @@ class TelefonControllerSecurityTest {
         mvc.perform(delete("/api/telefon/kontakt-rufnummern/1").with(ohneRecht()).with(csrf())).andExpect(status().isForbidden());
         mvc.perform(get("/api/telefon/kontakt-ueberblick").param("kundeId", "5").with(ohneRecht())).andExpect(status().isForbidden());
         mvc.perform(get("/api/telefon/steuerberater").with(ohneRecht())).andExpect(status().isForbidden());
-        verifyNoInteractions(telefonService, liveService, abholService, kontaktUeberblick);
+        mvc.perform(get("/api/telefon/telefone").with(ohneRecht())).andExpect(status().isForbidden());
+        mvc.perform(post("/api/telefon/anrufen").with(ohneRecht()).with(csrf())
+                .contentType("application/json").content("{\"telefon\":\"LAN: PC Büro\",\"nummer\":\"0931\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(telefonService, liveService, abholService, kontaktUeberblick, waehlService);
     }
 
     @Test
@@ -385,7 +396,76 @@ class TelefonControllerSecurityTest {
         mvc.perform(post("/api/telefon/abholen").with(mitRecht())).andExpect(status().isForbidden());
         mvc.perform(patch("/api/telefon/sprachnachrichten/3").with(mitRecht())
                 .contentType("application/json").content("{\"abgehoert\":true}")).andExpect(status().isForbidden());
-        verifyNoInteractions(abholService, telefonService);
+        mvc.perform(post("/api/telefon/anrufen").with(mitRecht())
+                .contentType("application/json").content("{\"telefon\":\"LAN: PC Büro\",\"nummer\":\"0931\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(abholService, telefonService, waehlService);
+    }
+
+    // ------------------------------------------------------------ Zurückrufen (Wählhilfe)
+
+    @Test
+    @DisplayName("Mit Recht: Telefone der Anlage als Liste mit Namen")
+    void telefone() throws Exception {
+        when(waehlService.telefone()).thenReturn(List.of("FON1: Werkstatt", "LAN: PC Büro"));
+        mvc.perform(get("/api/telefon/telefone").with(mitRecht()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("FON1: Werkstatt"))
+                .andExpect(jsonPath("$[1].name").value("LAN: PC Büro"));
+    }
+
+    @Test
+    @DisplayName("Mit Recht: Anrufen startet die Wählhilfe und antwortet 204")
+    void anrufen() throws Exception {
+        mvc.perform(post("/api/telefon/anrufen").with(mitRecht()).with(csrf())
+                        .contentType("application/json").content("{\"telefon\":\"LAN: PC Büro\",\"nummer\":\"0931 1234567\"}"))
+                .andExpect(status().isNoContent());
+        verify(waehlService).anrufen("LAN: PC Büro", "0931 1234567");
+    }
+
+    @Test
+    @DisplayName("Anrufen: ungültige Eingaben 400 mit Meldung, Injection/XSS gehen nur als Text an den Dienst")
+    void anrufenUngueltig() throws Exception {
+        String boese = "'; DROP TABLE telefon_anruf; --";
+        String xss = "<script>alert(1)</script>";
+        doThrow(new IllegalArgumentException("Diese Nummer kann nicht gewählt werden."))
+                .when(waehlService).anrufen("LAN: PC Büro", boese);
+        doThrow(new IllegalArgumentException("Dieses Telefon kennt die FRITZ!Box nicht."))
+                .when(waehlService).anrufen(xss, "0931");
+        mvc.perform(post("/api/telefon/anrufen").with(mitRecht()).with(csrf())
+                        .contentType("application/json").content("{\"telefon\":\"LAN: PC Büro\",\"nummer\":\"" + boese + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Diese Nummer kann nicht gewählt werden."));
+        mvc.perform(post("/api/telefon/anrufen").with(mitRecht()).with(csrf())
+                        .contentType("application/json").content("{\"telefon\":\"" + xss + "\",\"nummer\":\"0931\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Dieses Telefon kennt die FRITZ!Box nicht."));
+        mvc.perform(post("/api/telefon/anrufen").with(mitRecht()).with(csrf())
+                        .contentType("application/json").content("kein json"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Anrufen: Fehler der FRITZ!Box 502 mit verständlicher Meldung, belegt und nicht eingerichtet 409")
+    void anrufenFehlerDerBox() throws Exception {
+        doThrow(new TelefonAnlageException(TelefonAnlageException.Grund.WAEHLHILFE_AUS))
+                .when(waehlService).anrufen("LAN: PC Büro", "0931");
+        mvc.perform(post("/api/telefon/anrufen").with(mitRecht()).with(csrf())
+                        .contentType("application/json").content("{\"telefon\":\"LAN: PC Büro\",\"nummer\":\"0931\"}"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.message").value(containsString("Wählhilfe")));
+
+        doThrow(new TelefonAnlageException(TelefonAnlageException.Grund.BESCHAEFTIGT))
+                .when(waehlService).anrufen("LAN: PC Büro", "0931 2");
+        mvc.perform(post("/api/telefon/anrufen").with(mitRecht()).with(csrf())
+                        .contentType("application/json").content("{\"telefon\":\"LAN: PC Büro\",\"nummer\":\"0931 2\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(containsString("gerade schon")));
+
+        when(waehlService.telefone()).thenThrow(new TelefonAnlageException(TelefonAnlageException.Grund.NICHT_EINGERICHTET));
+        mvc.perform(get("/api/telefon/telefone").with(mitRecht()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Telefon-Anbindung ist nicht eingerichtet"));
     }
 
     @Test
@@ -462,7 +542,7 @@ class TelefonControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin: ungültige Einstellungen → 400 mit Meldung (auch XSS-Text wird nur als Text geliefert)")
     void einstellungenUngueltig() throws Exception {
-        org.mockito.Mockito.doThrow(new IllegalArgumentException("Die FRITZ!Box-Adresse ist ungültig"))
+        doThrow(new IllegalArgumentException("Die FRITZ!Box-Adresse ist ungültig"))
                 .when(einstellungen).speichere(any());
         mvc.perform(put("/api/telefon/einstellungen").with(csrf()).contentType("application/json")
                         .content("{\"host\":\"<script>alert(1)</script>\"}"))

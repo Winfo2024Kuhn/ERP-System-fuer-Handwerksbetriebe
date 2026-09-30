@@ -97,6 +97,31 @@ describe('useTelefonLive', () => {
         expect(result.current.anrufe).toHaveLength(0);
     });
 
+    it('hält einen verpassten Anruf fest, bis er geschlossen wird (z. B. zum Zurückrufen)', () => {
+        const { result } = renderHook(() => useTelefonLive(true, fabrik));
+        const quelle = FakeEventSource.alle[0];
+        act(() => quelle.sende({ verbindungsId: 'a' }));
+        act(() => quelle.sende({ verbindungsId: 'a', status: 'BEENDET', angenommen: false }));
+        act(() => result.current.festhalten('a'));
+
+        act(() => { vi.advanceTimersByTime(VERPASST_ANZEIGEDAUER_MS * 10); });
+        expect(result.current.anrufe).toHaveLength(1);
+        expect(result.current.anrufe[0].verpasst).toBe(true);
+
+        act(() => result.current.schliessen('a'));
+        expect(result.current.anrufe).toHaveLength(0);
+    });
+
+    it('festhalten wirkt nur auf verpasste Anrufe, ein späteres Auflegen startet die Anzeigedauer normal', () => {
+        const { result } = renderHook(() => useTelefonLive(true, fabrik));
+        const quelle = FakeEventSource.alle[0];
+        act(() => quelle.sende({ verbindungsId: 'a' }));
+        act(() => result.current.festhalten('a'));
+        act(() => quelle.sende({ verbindungsId: 'a', status: 'BEENDET', angenommen: false }));
+        act(() => { vi.advanceTimersByTime(VERPASST_ANZEIGEDAUER_MS); });
+        expect(result.current.anrufe).toHaveLength(0);
+    });
+
     it('holt einen geschlossenen Anruf bei weiteren Ereignissen nicht zurück', () => {
         const { result } = renderHook(() => useTelefonLive(true, fabrik));
         const quelle = FakeEventSource.alle[0];

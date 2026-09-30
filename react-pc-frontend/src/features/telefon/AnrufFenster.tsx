@@ -1,7 +1,8 @@
 import { useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, FolderOpen, Phone, PhoneCall, PhoneMissed, Voicemail, X } from 'lucide-react';
+import { ChevronRight, FolderOpen, Headset, Phone, PhoneCall, PhoneMissed, Voicemail, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import { DialogEbene } from '../../components/ui/dialog';
 import { cn } from '../../lib/utils';
 import { aktenPfad } from './api';
 import { AnrufKontaktDetails } from './AnrufKontaktDetails';
@@ -10,6 +11,7 @@ import { KontaktKennzeichen } from './KontaktKennzeichen';
 import type { KontaktKurz } from './types';
 import type { UeberblickZustand } from './useKontaktUeberblick';
 import type { LiveAnrufAnzeige } from './useTelefonLive';
+import { ZurueckrufenKnopf } from './ZurueckrufenKnopf';
 
 /**
  * Großes Anruf-Fenster über dem halben Bildschirm.
@@ -25,7 +27,16 @@ import type { LiveAnrufAnzeige } from './useTelefonLive';
  * dass ein Leerzeichen oder Enter versehentlich „Akte öffnen" auslöst.
  * Deshalb keine Fokusfalle, kein Autofokus und `aria-modal="false"`.
  * Escape oder ein Klick auf den abgedunkelten Hintergrund schließen.</p>
+ *
+ * <p>Beim Klingeln steht ein Hinweis, wo man annimmt (Headset oder
+ * Telefon-Programm – im ERP selbst geht das nicht). Nach einem verpassten
+ * Anruf ist „Zurückrufen" die Hauptaktion. Zeigt man mit der Maus auf das
+ * verpasste Fenster oder ruft zurück, bleibt es offen (`onFesthalten`), statt
+ * nach drei Sekunden zu verschwinden.</p>
  */
+
+/** Ebene des Anruf-Fensters – einzige Quelle; dort geöffnete Dialoge liegen darüber (siehe DialogEbene). */
+const FENSTER_Z_INDEX = 70;
 
 interface AnrufFensterProps {
     anruf: LiveAnrufAnzeige;
@@ -37,6 +48,8 @@ interface AnrufFensterProps {
     ueberblick: UeberblickZustand | null;
     /** Springt in ein Projekt oder eine Anfrage. */
     onOeffnen: (pfad: string) => void;
+    /** Verpassten Anruf offen halten, statt ihn gleich auszublenden. */
+    onFesthalten?: () => void;
 }
 
 function statusText(anruf: LiveAnrufAnzeige, laufzeit: string): string {
@@ -59,13 +72,17 @@ function useLaufendeSekunden(seit: number | null): number {
     return seit === null ? 0 : Math.max(0, (jetzt - seit) / 1000);
 }
 
-export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, ueberblick, onOeffnen }: AnrufFensterProps) {
+export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, ueberblick, onOeffnen, onFesthalten }: AnrufFensterProps) {
     const titelId = useId();
     const laufzeit = formatLaufzeit(useLaufendeSekunden(anruf.status === 'IM_GESPRAECH' ? anruf.gespraechSeit : null));
 
     useEffect(() => {
         const beiTaste = (ereignis: KeyboardEvent) => {
-            if (ereignis.key === 'Escape' && !ereignis.defaultPrevented) onSchliessen();
+            if (ereignis.key !== 'Escape' || ereignis.defaultPrevented) return;
+            // Escape in einem Dialog (z. B. Telefon-Auswahl beim Zurückrufen) schließt nur diesen.
+            const ziel = ereignis.target instanceof Element ? ereignis.target : null;
+            if (ziel?.closest('[role="dialog"][aria-modal="true"]')) return;
+            onSchliessen();
         };
         document.addEventListener('keydown', beiTaste);
         return () => document.removeEventListener('keydown', beiTaste);
@@ -78,6 +95,8 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
     const klingelt = !anruf.verpasst && anruf.status === 'KLINGELT';
     const imGespraech = !anruf.verpasst && anruf.status === 'IM_GESPRAECH';
     const ab = !anruf.verpasst && anruf.status === 'ANRUFBEANTWORTER';
+    const zurueckrufen = anruf.verpasst && !unterdrueckt;
+    const festhalten = anruf.verpasst ? onFesthalten : undefined;
     const StatusSymbol = anruf.verpasst ? PhoneMissed : ab ? Voicemail : imGespraech ? PhoneCall : Phone;
 
     const ueberschrift = kontakt
@@ -87,7 +106,7 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
             : unterdrueckt ? 'Nummer unterdrückt' : 'Unbekannte Nummer';
 
     return createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" data-testid="anruf-fenster">
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: FENSTER_Z_INDEX }} data-testid="anruf-fenster">
             {/* Hintergrund: Klick schließt. Kein Knopf, damit er nie Fokus bekommt. */}
             <div
                 aria-hidden="true"
@@ -99,6 +118,8 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
                 role="dialog"
                 aria-modal="false"
                 aria-labelledby={titelId}
+                onPointerEnter={festhalten}
+                onFocus={festhalten}
                 className="relative flex max-h-[92vh] w-full max-w-[1100px] min-h-[50vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl md:w-[80vw] xl:w-[55vw] motion-safe:[animation:scaleIn_0.25s_cubic-bezier(0.32,0.72,0,1)]"
             >
                 {/* Statusleiste */}
@@ -121,16 +142,24 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
                             <StatusSymbol aria-hidden="true" className="h-7 w-7" />
                         </span>
                     </span>
-                    <p
-                        role="status"
-                        aria-live="polite"
-                        className={cn(
-                            'text-2xl font-semibold tabular-nums',
-                            anruf.verpasst ? 'text-red-700' : imGespraech ? 'text-emerald-800' : ab ? 'text-amber-800' : 'text-rose-700',
+                    <div className="min-w-0">
+                        <p
+                            role="status"
+                            aria-live="polite"
+                            className={cn(
+                                'text-2xl font-semibold tabular-nums',
+                                anruf.verpasst ? 'text-red-700' : imGespraech ? 'text-emerald-800' : ab ? 'text-amber-800' : 'text-rose-700',
+                            )}
+                        >
+                            {statusText(anruf, laufzeit)}
+                        </p>
+                        {klingelt && (
+                            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-600">
+                                <Headset aria-hidden="true" className="h-4 w-4 shrink-0" />
+                                Am Headset oder im Telefon-Programm annehmen
+                            </p>
                         )}
-                    >
-                        {statusText(anruf, laufzeit)}
-                    </p>
+                    </div>
                 </div>
 
                 {/* Wer ruft an */}
@@ -207,10 +236,26 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
                         Schließen
                     </Button>
                     {kontakt && hatAkte(kontakt) && (
-                        <Button type="button" onClick={() => onKontaktOeffnen(kontakt)} className="px-5 py-3 text-base">
+                        <Button
+                            type="button"
+                            variant={zurueckrufen ? 'outline' : 'default'}
+                            onClick={() => onKontaktOeffnen(kontakt)}
+                            className="px-5 py-3 text-base"
+                        >
                             <FolderOpen aria-hidden="true" className="h-5 w-5" />
                             Akte öffnen
                         </Button>
+                    )}
+                    {zurueckrufen && (
+                        <DialogEbene ueberZIndex={FENSTER_Z_INDEX}>
+                            <ZurueckrufenKnopf
+                                nummer={anruf.nummer}
+                                wer={kontakt?.name || anruf.nummer}
+                                gross
+                                onStart={onFesthalten}
+                                onGestartet={onSchliessen}
+                            />
+                        </DialogEbene>
                     )}
                 </div>
             </section>

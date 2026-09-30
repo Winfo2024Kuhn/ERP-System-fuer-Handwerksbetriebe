@@ -181,6 +181,14 @@ export interface TelefonVerbindungstest {
     ortsvorwahl: string | null;
 }
 
+/**
+ * Ein Telefon der FRITZ!Box, das beim „Zurückrufen" zuerst klingeln kann,
+ * z. B. `LAN: PC Büro`. Der Name kommt unverändert aus der FRITZ!Box.
+ */
+export interface WaehlTelefon {
+    name: string;
+}
+
 /** Seite einer Spring-Page, auf das Nötige reduziert. */
 export interface Seite<T> {
     inhalt: T[];

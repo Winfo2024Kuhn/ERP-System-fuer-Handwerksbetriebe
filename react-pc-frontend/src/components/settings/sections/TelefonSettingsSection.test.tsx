@@ -137,6 +137,14 @@ describe('TelefonSettingsSection', () => {
         expect(aufrufe(fetchMock, '/api/telefon/admin/nachholen', 'POST')).toHaveLength(0);
     });
 
+    it('enthält den Bereich „Telefon an diesem Rechner“ mit Anleitung für das Headset', async () => {
+        stubbe();
+        zeige();
+        expect(await screen.findByRole('heading', { name: 'Telefon an diesem Rechner' })).toBeInTheDocument();
+        expect(screen.getByText(/Noch kein Telefon ausgewählt/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'So telefonieren Sie am PC mit Headset' })).toHaveAttribute('aria-expanded', 'false');
+    });
+
     it('zeigt die Kurzanleitung für die FRITZ!Box', async () => {
         stubbe();
         zeige();

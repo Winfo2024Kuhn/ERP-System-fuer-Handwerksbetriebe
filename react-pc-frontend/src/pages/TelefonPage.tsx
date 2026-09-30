@@ -14,6 +14,7 @@ import { AnrufListe } from '../features/telefon/AnrufListe';
 import { formatVorZeit } from '../features/telefon/format';
 import type { AbholErgebnis, TelefonStatus } from '../features/telefon/types';
 import { useTelefonBerechtigung } from '../features/telefon/useTelefonBerechtigung';
+import { WaehlTelefonZeile } from '../features/telefon/WaehlTelefonZeile';
 
 /**
  * Seiten „Anrufe" (`/telefon/anrufe`) und „Anrufbeantworter"
@@ -186,10 +187,14 @@ function TelefonInhalt({ reiter }: { reiter: Reiter }) {
                 <>
                     {/* Stand der letzten Abholung */}
                     <div className="flex flex-col gap-2 text-sm">
-                        <p className="flex items-center gap-2 text-slate-500">
-                            <Clock aria-hidden="true" className="h-4 w-4 shrink-0" />
-                            Zuletzt abgeholt: {status.letzteAbholung ? formatVorZeit(status.letzteAbholung, jetzt) : 'noch nie'}
-                        </p>
+                        {/* Links der Stand, rechts dezent das Telefon für „Zurückrufen“ – auch für Nicht-Administratoren änderbar. */}
+                        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                            <p className="flex items-center gap-2 text-slate-500">
+                                <Clock aria-hidden="true" className="h-4 w-4 shrink-0" />
+                                Zuletzt abgeholt: {status.letzteAbholung ? formatVorZeit(status.letzteAbholung, jetzt) : 'noch nie'}
+                            </p>
+                            <WaehlTelefonZeile />
+                        </div>
                         {status.letzterFehler && (
                             <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
                                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />

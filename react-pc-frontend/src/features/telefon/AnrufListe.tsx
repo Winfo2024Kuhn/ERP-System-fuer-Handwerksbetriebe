@@ -12,6 +12,7 @@ import { anrufbeantworterName, formatDauerMinuten, formatWann, tagAnzeige, tagAu
 import type { Anrufbeantworter, KontaktTyp, TelefonAnruf, ZuordnenZiel } from './types';
 import { useZuordnen } from './useZuordnen';
 import { WerAnzeige, ZuordnungsMenue } from './WerAnzeige';
+import { ZurueckrufenKnopf } from './ZurueckrufenKnopf';
 
 /**
  * Reiter „Anrufe": die Anrufliste der FRITZ!Box.
@@ -307,7 +308,13 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
                                                 />
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap tabular-nums text-slate-700">
-                                                {anruf.nummer || <span className="text-slate-400">–</span>}
+                                                {anruf.nummer ? (
+                                                    // -my-1.5: der Knopf ist höher als die Textzeile, die Zeile soll dadurch nicht wachsen.
+                                                    <span className="-my-1.5 flex items-center gap-1">
+                                                        <span>{anruf.nummer}</span>
+                                                        <ZurueckrufenKnopf nummer={anruf.nummer} wer={wer} />
+                                                    </span>
+                                                ) : <span className="text-slate-400">–</span>}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-slate-700">{formatWann(anruf.zeitpunkt)}</td>
                                             <td className="px-4 py-3 whitespace-nowrap tabular-nums text-slate-700">{formatDauerMinuten(anruf.dauerMinuten)}</td>

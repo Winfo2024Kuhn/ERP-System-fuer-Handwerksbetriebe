@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Minimaler TR-064-Client (SOAP über HTTP mit Digest-Anmeldung).
@@ -28,6 +30,7 @@ class Tr064Client {
 
     static final int STANDARD_PORT = 49000;
     private static final int MAX_ANTWORT_BYTES = 50 * 1024 * 1024;
+    private static final Pattern SOAP_FEHLERCODE = Pattern.compile("<errorCode>(\\d{1,5})</errorCode>");
 
     private final int port;
     private final Duration antwortTimeout;
@@ -185,11 +188,12 @@ class Tr064Client {
             }
             if (status == 500) {
                 // SOAP-Fehler: 606/607 = Aktion für diesen Benutzer nicht erlaubt
-                String fehler = new String(inhalt, StandardCharsets.UTF_8);
-                if (fehler.contains("<errorCode>606</errorCode>") || fehler.contains("<errorCode>607</errorCode>")) {
+                Matcher m = SOAP_FEHLERCODE.matcher(new String(inhalt, StandardCharsets.UTF_8));
+                int code = m.find() ? Integer.parseInt(m.group(1)) : 0;
+                if (code == 606 || code == 607) {
                     throw new TelefonAnlageException(Grund.KEINE_RECHTE);
                 }
-                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+                throw new SoapFehler(code);
             }
             if (status < 200 || status >= 300) {
                 throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);

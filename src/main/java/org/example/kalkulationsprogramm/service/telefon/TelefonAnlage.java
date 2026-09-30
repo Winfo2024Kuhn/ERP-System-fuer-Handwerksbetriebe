@@ -20,4 +20,13 @@ public interface TelefonAnlage {
 
     /** Rohdaten der Aufnahme einer Nachricht. */
     byte[] ladeAudio(TelefonZugang zugang, AnlagenSprachnachricht nachricht);
+
+    /** Namen der Telefone, die beim Anrufen aus dem ERP klingeln können (Softphone, DECT, Tischtelefon). */
+    List<String> ladeTelefone(TelefonZugang zugang);
+
+    /**
+     * Lässt {@code telefon} klingeln; wird dort abgenommen, wählt die Anlage {@code nummer}.
+     * Die Nummer ist bereits geprüft (nur Ziffern, siehe {@link TelefonWaehlService}).
+     */
+    void anrufen(TelefonZugang zugang, String telefon, String nummer);
 }

@@ -46,6 +46,9 @@ export const UEBERBLICK_MAX = {
     anfragenGesamt: 2,
 };
 
+/** Telefone der FRITZ!Box für „Telefon an diesem Rechner" (Namen wie von der FRITZ!Box geliefert). */
+export const WAEHL_TELEFONE = [{ name: 'LAN: PC Büro' }, { name: 'DECT: Mobilteil Büro' }];
+
 /** Heutiger bzw. gestriger Tag als ISO-Datum, wie ihn der Tagesfilter schickt. */
 export function isoTag(tageZurueck = 0): string {
     const d = new Date();
@@ -120,6 +123,10 @@ export async function stubbeTelefonApi(page: Page, optionen: {
     eingerichtet?: boolean;
     /** Weitere Anrufe zusätzlich zu den Beispielanrufen (z. B. vom Steuerberater). */
     zusatzAnrufe?: Anruf[];
+    /** Telefone der FRITZ!Box für „Telefon an diesem Rechner" (Standard: zwei Beispiel-Telefone). */
+    telefone?: { name: string }[];
+    /** Antwort auf POST /anrufen – Standard 204. Wird bei jedem Aufruf neu gefragt. */
+    anrufenAntwort?: () => { status: number; body?: unknown };
 } = {}): Promise<TelefonStub> {
     const darf = optionen.darf ?? true;
     const admin = optionen.admin ?? true;
@@ -245,6 +252,12 @@ export async function stubbeTelefonApi(page: Page, optionen: {
         }
         if (pfad === '/api/telefon/abholen') return json(route, { erfolgreich: true, meldung: 'ok', neueAnrufe: 2, neueSprachnachrichten: 1, nachtraeglichZugeordnet: 0 });
         if (pfad === '/api/telefon/steuerberater') return json(route, KANZLEI_AUSWAHL);
+        if (pfad === '/api/telefon/telefone') return json(route, optionen.telefone ?? WAEHL_TELEFONE);
+        if (pfad === '/api/telefon/anrufen' && methode === 'POST') {
+            const antwort = optionen.anrufenAntwort?.() ?? { status: 204 };
+            if (antwort.status === 204) return route.fulfill({ status: 204 });
+            return json(route, antwort.body ?? {}, antwort.status);
+        }
         if (pfad === '/api/telefon/kontakt-ueberblick') {
             if (url.searchParams.get('steuerberaterId') === '30') {
                 return json(route, { ...UEBERBLICK_MAX, typ: 'STEUERBERATER', id: 30, name: 'Kanzlei Beispiel', nummer: null, ansprechpartner: 'Christine Beispiel', strasse: null, plz: null, ort: null, projekte: [], projekteGesamt: 0, anfragen: [], anfragenGesamt: 0 });
