@@ -12,6 +12,8 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -20,6 +22,7 @@ import javax.imageio.stream.ImageInputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +41,49 @@ public class BildVorschauService {
 
     /** Maximale Kantenlänge des Vorschaubildes in Pixeln. */
     public static final int THUMBNAIL_MAX_SIZE = 300;
+
+    /**
+     * Maximale Kantenlänge der Anzeigegröße für die Vollbildansicht am Handy.
+     * Ein Handyfoto schrumpft damit von 3–5 MB auf rund 300 KB, bleibt auf dem
+     * Display aber scharf. Wer zoomt, lädt bei Bedarf das Original nach.
+     */
+    public static final int ANZEIGE_MAX_SIZE = 1600;
+
+    /**
+     * Anzeigegrößen sind rund 20-mal so groß wie Vorschaubilder. 40 Einträge halten
+     * den Speicherbedarf bei ~12 MB und reichen für die zuletzt geöffneten Galerien.
+     */
+    private static final int ANZEIGE_CACHE_MAX_ENTRIES = 40;
+
+    /**
+     * Für die Anzeigegröße wird ein typisches 12-MP-Handyfoto kaum ausgedünnt und landet
+     * fast vollständig im Speicher (~50 MB, bei extremen Seitenverhältnissen bis zur
+     * Grenze {@link #MAX_DEKODIERTE_PIXEL}, also ~160 MB). Öffnet jemand eine Galerie,
+     * lädt die App das Bild und seine Nachbarn gleichzeitig. Mehr als zwei Umrechnungen
+     * auf einmal lässt die Sperre deshalb nicht zu, damit der Heap nicht überläuft.
+     */
+    private static final int ANZEIGE_PARALLEL = 2;
+
+    /**
+     * So lange wartet ein Aufruf höchstens auf eine freie Umrechnung. Danach gibt er mit
+     * {@link UmrechnungAusgelastetException} auf – bei Andrang sollen keine Server-Threads
+     * unbegrenzt an der Sperre hängen.
+     */
+    private static final long ANZEIGE_WARTEZEIT_MS = 5_000;
+
+    private final Semaphore anzeigeUmrechnungen;
+    private final long anzeigeWartezeitMs;
+
+    @Autowired
+    public BildVorschauService() {
+        this(ANZEIGE_PARALLEL, ANZEIGE_WARTEZEIT_MS);
+    }
+
+    /** Anzahl paralleler Umrechnungen und Wartezeit frei wählbar, z. B. für Überlast-Tests. */
+    public BildVorschauService(int parallel, long wartezeitMs) {
+        this.anzeigeUmrechnungen = new Semaphore(parallel, true);
+        this.anzeigeWartezeitMs = wartezeitMs;
+    }
 
     /**
      * Obergrenze für die Bildgröße (100 Megapixel). Größere Bilder stammen in aller Regel
@@ -71,13 +117,19 @@ public class BildVorschauService {
      * angeforderte Eintrag raus. {@code synchronizedMap} weil {@link LinkedHashMap}
      * selbst nicht threadsicher ist und schon Lesezugriffe die Zugriffsreihenfolge ändern.
      */
-    private final Map<String, byte[]> cache = Collections.synchronizedMap(
-            new LinkedHashMap<>(16, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
-                    return size() > CACHE_MAX_ENTRIES;
-                }
-            });
+    private final Map<String, byte[]> cache = lruCache(CACHE_MAX_ENTRIES);
+
+    private final Map<String, byte[]> anzeigeCache = lruCache(ANZEIGE_CACHE_MAX_ENTRIES);
+
+    private static Map<String, byte[]> lruCache(int maxEintraege) {
+        return Collections.synchronizedMap(
+                new LinkedHashMap<>(16, 0.75f, true) {
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
+                        return size() > maxEintraege;
+                    }
+                });
+    }
 
     /** Liefert das gecachte Thumbnail oder {@code null}, wenn noch keins erzeugt wurde. */
     public byte[] ausCache(String cacheKey) {
@@ -97,6 +149,69 @@ public class BildVorschauService {
         return jpegBytes;
     }
 
+    /** Liefert die gecachte Anzeigegröße oder {@code null}, wenn noch keine erzeugt wurde. */
+    public byte[] anzeigeAusCache(String cacheKey) {
+        return anzeigeCache.get(cacheKey);
+    }
+
+    /**
+     * Verwirft alle verkleinerten Fassungen eines Bildes – etwa weil die Datei
+     * gelöscht wurde und das Foto nicht mehr ausgeliefert werden darf.
+     */
+    public void vergiss(String cacheKey) {
+        cache.remove(cacheKey);
+        anzeigeCache.remove(cacheKey);
+    }
+
+    /**
+     * Erzeugt die Anzeigegröße (max. {@link #ANZEIGE_MAX_SIZE} px) und legt sie
+     * unter {@code cacheKey} ab.
+     *
+     * @return das JPEG oder {@code null}, wenn kein Reader das Format lesen kann
+     * @throws UmrechnungAusgelastetException wenn innerhalb der Wartezeit keine Umrechnung
+     *         frei wurde – ein vorübergehender Zustand, anders als ein unlesbares Format
+     */
+    public byte[] erzeugeAnzeigeUndCache(String cacheKey, Resource resource) throws IOException {
+        try {
+            if (!anzeigeUmrechnungen.tryAcquire(anzeigeWartezeitMs, TimeUnit.MILLISECONDS)) {
+                log.info("Anzeigegröße für {} übersprungen: Server ausgelastet", cacheKey);
+                throw new UmrechnungAusgelastetException();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new UmrechnungAusgelastetException();
+        }
+        try {
+            // Ein paralleler Aufruf kann das Bild erzeugt haben, während dieser gewartet hat
+            byte[] vorhanden = anzeigeCache.get(cacheKey);
+            if (vorhanden != null) {
+                return vorhanden;
+            }
+            byte[] jpegBytes = erzeugeVerkleinert(resource, ANZEIGE_MAX_SIZE);
+            if (jpegBytes != null) {
+                anzeigeCache.put(cacheKey, jpegBytes);
+            }
+            return jpegBytes;
+        } finally {
+            anzeigeUmrechnungen.release();
+        }
+    }
+
+    /**
+     * Alle Umrechnungsplätze sind belegt. Die Antwort darf dann nirgends gespeichert
+     * werden, sonst bliebe ein Gerät dauerhaft auf der Ausweich-Antwort sitzen.
+     */
+    public static class UmrechnungAusgelastetException extends RuntimeException {
+        public UmrechnungAusgelastetException() {
+            super("Bildumrechnung ausgelastet");
+        }
+    }
+
+    /** Erzeugt das Vorschaubild (max. {@link #THUMBNAIL_MAX_SIZE} px). */
+    public byte[] erzeugeThumbnail(Resource resource) throws IOException {
+        return erzeugeVerkleinert(resource, THUMBNAIL_MAX_SIZE);
+    }
+
     /**
      * Erzeugt das verkleinerte JPEG.
      *
@@ -112,9 +227,10 @@ public class BildVorschauService {
      * berechnete Vorschau-JPEG hat ihn aber nicht mehr. Ohne diesen Schritt läge die
      * Vorschau also quer, während dasselbe Bild in der Großansicht richtig steht.</p>
      *
+     * @param maxKante maximale Kantenlänge des Ergebnisses in Pixeln
      * @return das JPEG oder {@code null}, wenn kein Reader das Format lesen kann
      */
-    public byte[] erzeugeThumbnail(Resource resource) throws IOException {
+    byte[] erzeugeVerkleinert(Resource resource, int maxKante) throws IOException {
         int orientierung = leseExifOrientierung(resource);
 
         try (InputStream is = resource.getInputStream();
@@ -140,7 +256,7 @@ public class BildVorschauService {
                     return null;
                 }
 
-                int subsampling = ermittleSubsampling(origWidth, origHeight);
+                int subsampling = ermittleSubsampling(origWidth, origHeight, maxKante);
                 ImageReadParam param = reader.getDefaultReadParam();
                 if (subsampling > 1) {
                     param.setSourceSubsampling(subsampling, subsampling, 0, 0);
@@ -152,8 +268,8 @@ public class BildVorschauService {
                 }
 
                 // Subsampling trifft die Zielgröße nur grob – Rest sauber herunterrechnen
-                if (bild.getWidth() > THUMBNAIL_MAX_SIZE || bild.getHeight() > THUMBNAIL_MAX_SIZE) {
-                    bild = skaliereAufZielgroesse(bild);
+                if (bild.getWidth() > maxKante || bild.getHeight() > maxKante) {
+                    bild = skaliereAufZielgroesse(bild, maxKante);
                 }
 
                 // Erst am Ende drehen: auf dem kleinen Bild kostet das praktisch nichts,
@@ -184,9 +300,13 @@ public class BildVorschauService {
      * liegt.</p>
      */
     int ermittleSubsampling(int breite, int hoehe) {
+        return ermittleSubsampling(breite, hoehe, THUMBNAIL_MAX_SIZE);
+    }
+
+    int ermittleSubsampling(int breite, int hoehe, int maxKante) {
         int subsampling = Math.max(1, Math.min(
-                breite / THUMBNAIL_MAX_SIZE,
-                hoehe / THUMBNAIL_MAX_SIZE));
+                breite / maxKante,
+                hoehe / maxKante));
 
         // Aufrunden, weil der Decoder das auch tut: Bei einer Kante von 1 Pixel und
         // Subsampling 2 bleibt 1 Pixel übrig, nicht 0. Mit Abrunden käme hier 0 heraus,
@@ -382,11 +502,11 @@ public class BildVorschauService {
                 : (d << 24) | (c << 16) | (b << 8) | a;
     }
 
-    /** Skaliert auf max. {@link #THUMBNAIL_MAX_SIZE} px Kantenlänge, Seitenverhältnis bleibt erhalten. */
-    private BufferedImage skaliereAufZielgroesse(BufferedImage original) {
+    /** Skaliert auf max. {@code maxKante} px Kantenlänge, Seitenverhältnis bleibt erhalten. */
+    private BufferedImage skaliereAufZielgroesse(BufferedImage original, int maxKante) {
         double scale = Math.min(
-                (double) THUMBNAIL_MAX_SIZE / original.getWidth(),
-                (double) THUMBNAIL_MAX_SIZE / original.getHeight());
+                (double) maxKante / original.getWidth(),
+                (double) maxKante / original.getHeight());
         int newWidth = Math.max(1, (int) Math.round(original.getWidth() * scale));
         int newHeight = Math.max(1, (int) Math.round(original.getHeight() * scale));
 

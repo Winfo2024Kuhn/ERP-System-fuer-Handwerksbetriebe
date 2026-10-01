@@ -33,6 +33,19 @@ function clearAuth() {
   localStorage.removeItem('zeiterfassung_mitarbeiter')
   deleteCookie(COOKIE_NAME)
   deleteCookie(COOKIE_MITARBEITER)
+  leereGeraeteCaches()
+}
+
+/**
+ * Baustellenfotos und API-Antworten sind personenbezogen. Nach dem Abmelden sollen sie
+ * nicht im Service-Worker-Cache des (womöglich weitergegebenen) Diensthandys liegen
+ * bleiben. Die Cache-Namen stammen aus sw.ts.
+ */
+function leereGeraeteCaches() {
+  if (typeof caches === 'undefined') return
+  for (const name of ['bilder-cache', 'api-cache']) {
+    caches.delete(name).catch(() => undefined)
+  }
 }
 
 function loadAuth(): { token: string; mitarbeiter: object } | null {

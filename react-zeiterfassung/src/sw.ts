@@ -2,7 +2,7 @@
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching'
 import { clientsClaim } from 'workbox-core'
 import { registerRoute } from 'workbox-routing'
-import { NetworkFirst } from 'workbox-strategies'
+import { CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 
 declare let self: ServiceWorkerGlobalScope
@@ -14,6 +14,39 @@ precacheAndRoute(self.__WB_MANIFEST)
 // Sofortiges Update des Service Workers bei neuer Version
 self.skipWaiting()
 clientsClaim()
+
+// ─── Baustellenfotos: erst aus dem Gerät, dann vom Server ───
+// Gespeicherte Bilder haben eindeutige Namen und ändern sich nie. Einmal geladen,
+// kommen Vorschau und Anzeigegröße deshalb sofort aus dem Cache – auch nach einem
+// Neustart der App und ohne Netz auf der Baustelle. Beide Routen müssen VOR der
+// allgemeinen /api-Route stehen, sonst landen die Bilder dort im NetworkFirst-
+// Cache, laden jedes Mal neu und verdrängen die eigentlichen Daten.
+const istGespeichertesBild = (url: URL) =>
+  url.pathname.startsWith('/api/dokumente/') || url.pathname.startsWith('/api/images/')
+const istVerkleinert = (url: URL) =>
+  url.pathname.endsWith('/thumbnail') || url.pathname.endsWith('/anzeige')
+
+registerRoute(
+  ({ request, url }) => request.destination === 'image' && istGespeichertesBild(url) && istVerkleinert(url),
+  new CacheFirst({
+    cacheName: 'bilder-cache',
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 300,
+        maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Tage
+        purgeOnQuotaError: true
+      })
+    ]
+  })
+)
+
+// Originale (3–5 MB, nur nach dem Hineinzoomen) nicht dauerhaft im knappen
+// iOS-Speicher ablegen – sie würden die kleinen Fassungen verdrängen. Der normale
+// Browser-Cache greift dank Cache-Control vom Server trotzdem.
+registerRoute(
+  ({ request, url }) => request.destination === 'image' && istGespeichertesBild(url),
+  new NetworkOnly()
+)
 
 // ─── Runtime Caching for API ───
 registerRoute(

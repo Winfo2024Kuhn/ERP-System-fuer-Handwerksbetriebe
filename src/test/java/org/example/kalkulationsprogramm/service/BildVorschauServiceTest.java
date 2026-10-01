@@ -197,6 +197,67 @@ class BildVorschauServiceTest {
         assertThat(service.ausCache("dummy.jpg")).isSameAs(erzeugt);
     }
 
+    @Test
+    void erzeugtDieAnzeigegroesseMitHoechstens1600PixelnKantenlaenge() throws IOException {
+        var resource = new ByteArrayResource(jpeg(3000, 4000, null));
+
+        byte[] anzeige = service.erzeugeAnzeigeUndCache("hochkant.jpg", resource);
+
+        BufferedImage bild = ImageIO.read(new ByteArrayInputStream(anzeige));
+        assertThat(bild.getWidth()).isEqualTo(1200);
+        assertThat(bild.getHeight()).isEqualTo(BildVorschauService.ANZEIGE_MAX_SIZE);
+        assertThat(service.anzeigeAusCache("hochkant.jpg")).isSameAs(anzeige);
+    }
+
+    @Test
+    void gibtBeiAndrangNachDerWartezeitAufStattEwigZuBlockieren() throws IOException {
+        // Keine freie Umrechnung, keine Wartezeit
+        BildVorschauService ausgelastet = new BildVorschauService(0, 0);
+        var resource = new ByteArrayResource(jpeg(2000, 1000, null));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> ausgelastet.erzeugeAnzeigeUndCache("andrang.jpg", resource))
+                .isInstanceOf(BildVorschauService.UmrechnungAusgelastetException.class);
+        assertThat(ausgelastet.anzeigeAusCache("andrang.jpg")).isNull();
+    }
+
+    @Test
+    void vergisstBeideFassungenEinesBildes() throws IOException {
+        var resource = new ByteArrayResource(jpeg(2000, 1000, null));
+        service.erzeugeUndCache("weg.jpg", resource);
+        service.erzeugeAnzeigeUndCache("weg.jpg", resource);
+
+        service.vergiss("weg.jpg");
+
+        assertThat(service.ausCache("weg.jpg")).isNull();
+        assertThat(service.anzeigeAusCache("weg.jpg")).isNull();
+    }
+
+    @Test
+    void anzeigeUndVorschauTeilenSichKeinenCache() throws IOException {
+        var resource = new ByteArrayResource(jpeg(2000, 1000, null));
+
+        service.erzeugeAnzeigeUndCache("getrennt.jpg", resource);
+
+        assertThat(service.ausCache("getrennt.jpg")).isNull();
+    }
+
+    @Test
+    void drehtDieAnzeigegroesseGemaessExifVermerk() throws IOException {
+        var resource = new ByteArrayResource(jpeg(2000, 1000, 6));
+
+        BufferedImage bild = ImageIO.read(new ByteArrayInputStream(
+                service.erzeugeAnzeigeUndCache("gedreht.jpg", resource)));
+
+        assertThat(bild.getWidth()).isEqualTo(800);
+        assertThat(bild.getHeight()).isEqualTo(BildVorschauService.ANZEIGE_MAX_SIZE);
+    }
+
+    @Test
+    void duenntFuerDieAnzeigegroesseNurSoWeitAusDassSieScharfBleibt() {
+        assertThat(service.ermittleSubsampling(4000, 3000, BildVorschauService.ANZEIGE_MAX_SIZE)).isEqualTo(1);
+        assertThat(service.ermittleSubsampling(8000, 6000, BildVorschauService.ANZEIGE_MAX_SIZE)).isEqualTo(3);
+    }
+
     private BufferedImage leseVorschau(byte[] original) throws IOException {
         byte[] vorschau = service.erzeugeThumbnail(new ByteArrayResource(original));
         assertThat(vorschau).isNotNull();

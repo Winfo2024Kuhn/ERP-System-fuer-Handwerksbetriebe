@@ -49,6 +49,8 @@ class ZeiterfassungFilterChainMatcherTest {
         assertThat(ohneLoginErreichbar("/api/images/beispiel.jpg")).isTrue();
         assertThat(ohneLoginErreichbar("/api/dokumente/beispiel.pdf")).isTrue();
         assertThat(ohneLoginErreichbar("/api/dokumente/beispiel.pdf/thumbnail")).isTrue();
+        // Anzeigegröße für die Vollbildansicht der Tagebuch-Fotos in der Handy-App
+        assertThat(ohneLoginErreichbar("/api/dokumente/beispiel.jpg/anzeige")).isTrue();
     }
 
     @Test

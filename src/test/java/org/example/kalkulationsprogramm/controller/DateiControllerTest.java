@@ -41,6 +41,9 @@ class DateiControllerTest {
     @MockBean
     private DateiSpeicherService dateiSpeicherService;
 
+    @Autowired
+    private BildVorschauService bildVorschauService;
+
     @ParameterizedTest
     @ValueSource(strings = {"test.sza", "test.tcd", "TEST.SZA", "TEST.TCD"})
     void returnsProtocolUrlForHiCADFiles(String filename) throws Exception {
@@ -296,7 +299,7 @@ class DateiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.IMAGE_JPEG))
                 // "private": Bilder sind personenbezogen, kein geteilter Proxy-Cache
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "max-age=86400, private"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "max-age=2592000, private"))
                 .andReturn().getResponse().getContentAsByteArray();
 
         java.awt.image.BufferedImage verkleinert =
@@ -309,14 +312,38 @@ class DateiControllerTest {
     @org.junit.jupiter.api.Test
     void thumbnailWirdBeimZweitenAufrufAusDemCacheGeliefert() throws Exception {
         String filename = "gecacht-foto.jpg";
+        // Beim zweiten Aufruf läge auf der Platte ein anderes Bild – kommt dasselbe
+        // Ergebnis zurück, wurde nicht neu verkleinert, sondern aus dem Cache geliefert.
         when(dateiSpeicherService.ladeDokumentAlsResource(filename))
-                .thenReturn(resourceMitNamen(erzeugeJpeg(1200, 1200), filename));
+                .thenReturn(resourceMitNamen(erzeugeJpeg(1200, 1200), filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(600, 300), filename));
+
+        byte[] erster = mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        byte[] zweiter = mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+
+        org.assertj.core.api.Assertions.assertThat(zweiter).isEqualTo(erster);
+    }
+
+    @org.junit.jupiter.api.Test
+    void geloeschtesBildWirdTrotzCacheNichtMehrAusgeliefert() throws Exception {
+        // DSGVO: Ein gelöschtes Baustellenfoto darf nicht weiter aus dem Server-Cache kommen
+        String filename = "geloescht-foto.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(1200, 900), filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(1200, 900), filename))
+                .thenThrow(new RuntimeException("gelöscht"));
+        when(dateiSpeicherService.ladeBildAlsResource(filename)).thenThrow(new RuntimeException("gelöscht"));
 
         mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail")).andExpect(status().isOk());
-        mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/dokumente/" + filename + "/anzeige")).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(bildVorschauService.ausCache(filename)).isNotNull();
 
-        // Nur der erste Aufruf liest die Datei von der Platte
-        verify(dateiSpeicherService, org.mockito.Mockito.times(1)).ladeDokumentAlsResource(filename);
+        mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail")).andExpect(status().isNotFound());
+
+        org.assertj.core.api.Assertions.assertThat(bildVorschauService.ausCache(filename)).isNull();
+        org.assertj.core.api.Assertions.assertThat(bildVorschauService.anzeigeAusCache(filename)).isNull();
     }
 
     @org.junit.jupiter.api.Test
@@ -375,6 +402,112 @@ class DateiControllerTest {
 
         mockMvc.perform(get("/api/dokumente/" + filename + "/thumbnail"))
                 .andExpect(status().isNotFound());
+    }
+
+    // ============== ANZEIGEGRÖSSE (Vollbild am Handy) ==============
+
+    @org.junit.jupiter.api.Test
+    void anzeigeVerkleinertHandyfotoAufBildschirmgroesse() throws Exception {
+        String filename = "anzeige-handyfoto.jpg";
+        byte[] original = erzeugeJpeg(4000, 3000);
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(original, filename));
+
+        byte[] anzeige = mockMvc.perform(get("/api/dokumente/" + filename + "/anzeige"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "max-age=2592000, private"))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        java.awt.image.BufferedImage bild =
+                javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(anzeige));
+        org.assertj.core.api.Assertions.assertThat(bild.getWidth()).isEqualTo(BildVorschauService.ANZEIGE_MAX_SIZE);
+        org.assertj.core.api.Assertions.assertThat(bild.getHeight()).isEqualTo(1200);
+        org.assertj.core.api.Assertions.assertThat(anzeige.length).isLessThan(original.length);
+    }
+
+    @org.junit.jupiter.api.Test
+    void anzeigeWirdBeimZweitenAufrufAusDemCacheGeliefert() throws Exception {
+        String filename = "anzeige-gecacht.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(2400, 1800), filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(3000, 1000), filename));
+
+        byte[] erster = mockMvc.perform(get("/api/dokumente/" + filename + "/anzeige"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        byte[] zweiter = mockMvc.perform(get("/api/dokumente/" + filename + "/anzeige"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+
+        org.assertj.core.api.Assertions.assertThat(zweiter).isEqualTo(erster);
+    }
+
+    @org.junit.jupiter.api.Test
+    void anzeigeTraegtJpegEndungImDateinamen() throws Exception {
+        String filename = "anzeige-grafik.png";
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2000, 1000,
+                java.awt.image.BufferedImage.TYPE_INT_RGB), "png", png);
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(png.toByteArray(), filename));
+
+        mockMvc.perform(get("/api/dokumente/" + filename + "/anzeige"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename=\"anzeige-grafik.jpg\""));
+    }
+
+    @org.junit.jupiter.api.Test
+    void anzeigeFaelltAufBilderSpeicherZurueck() throws Exception {
+        // Fotos aus dem Anfrage-Tagebuch liegen im Bilder-Speicher (/api/images/…)
+        String filename = "anzeige-anfrage-notiz.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenThrow(new RuntimeException("nicht im Dokumentenspeicher"));
+        when(dateiSpeicherService.ladeBildAlsResource(filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(2000, 1000), filename));
+
+        mockMvc.perform(get("/api/dokumente/" + filename + "/anzeige"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG));
+    }
+
+    @org.junit.jupiter.api.Test
+    void anzeigeMeldet404WennDateiNirgendsExistiert() throws Exception {
+        String filename = "anzeige-gibt-es-nicht.jpg";
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenThrow(new RuntimeException("weg"));
+        when(dateiSpeicherService.ladeBildAlsResource(filename))
+                .thenThrow(new RuntimeException("auch weg"));
+
+        mockMvc.perform(get("/api/dokumente/" + filename + "/anzeige"))
+                .andExpect(status().isNotFound());
+    }
+
+    @org.junit.jupiter.api.Test
+    void originalbildDarfImGeraetGecachtWerden() throws Exception {
+        String filename = "cache-original.jpg";
+        when(dateiSpeicherService.ladeDokumentMetadaten(anyString()))
+                .thenThrow(new NotFoundException("nicht gefunden"));
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen(erzeugeJpeg(10, 10), filename));
+
+        mockMvc.perform(get("/api/dokumente/" + filename))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "max-age=2592000, private"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void pdfBekommtKeinenLangenCache() throws Exception {
+        // Rechnungs-PDFs werden unter demselben Namen neu erzeugt und müssen frisch kommen
+        String filename = "rechnung-cache.pdf";
+        when(dateiSpeicherService.ladeDokumentMetadaten(anyString()))
+                .thenThrow(new NotFoundException("nicht gefunden"));
+        when(dateiSpeicherService.ladeDokumentAlsResource(filename))
+                .thenReturn(resourceMitNamen("%PDF-1.4 Dummy".getBytes(StandardCharsets.UTF_8), filename));
+
+        mockMvc.perform(get("/api/dokumente/" + filename))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist(HttpHeaders.CACHE_CONTROL));
     }
 }
 

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
@@ -80,5 +80,36 @@ describe.each([
         await waitFor(() => expect(feld).toHaveValue('Von Hand getippt\n\nGeländer montiert.'))
 
         localStorage.clear()
+    })
+})
+
+// Die Liste soll nur die kleinen Vorschaubilder laden. Vorher hängte sie '/thumbnail'
+// an bild.url – bei Anfrage-Fotos (/api/images/…) gibt es diese Adresse nicht, die
+// Liste fiel dann auf das mehrere MB große Original zurück.
+describe.each([
+    ['projekte', ':projektId', ProjektNotizenPage, '/api/dokumente/foto-1.jpg'],
+    ['anfragen', ':anfrageId', AnfrageNotizenPage, '/api/images/foto-1.jpg'],
+] as const)('%s Tagebuch-Fotos', (base, param, Page, bildUrl) => {
+    const mitBild = (bild: Record<string, string | number>) => ({ ...notiz, bilder: [{ id: 2, originalDateiname: 'foto-1.jpg', url: bildUrl, erstelltAm: '2026-09-01T10:00:00', ...bild }] })
+    const zeige = () => render(<MemoryRouter initialEntries={[`/${base}/1`]}><ToastProvider><ConfirmProvider><Routes><Route path={`/${base}/${param}`} element={<Page />} /></Routes></ConfirmProvider></ToastProvider></MemoryRouter>)
+
+    it('lädt die Vorschau-Adresse vom Server statt des Originals', async () => {
+        vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([mitBild({ thumbnailUrl: '/api/dokumente/foto-1.jpg/thumbnail' })]), { status: 200 }))
+        zeige()
+        expect(await screen.findByAltText('foto-1.jpg')).toHaveAttribute('src', '/api/dokumente/foto-1.jpg/thumbnail')
+    })
+
+    it('fällt auf das Original zurück, wenn die Vorschau fehlt oder nicht lädt', async () => {
+        vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([mitBild({ thumbnailUrl: '/api/dokumente/foto-1.jpg/thumbnail' })]), { status: 200 }))
+        zeige()
+        const bild = await screen.findByAltText('foto-1.jpg')
+        fireEvent.error(bild)
+        expect(bild).toHaveAttribute('src', bildUrl)
+    })
+
+    it('nutzt das Original, wenn der Server keine Vorschau-Adresse mitschickt', async () => {
+        vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([mitBild({})]), { status: 200 }))
+        zeige()
+        expect(await screen.findByAltText('foto-1.jpg')).toHaveAttribute('src', bildUrl)
     })
 })

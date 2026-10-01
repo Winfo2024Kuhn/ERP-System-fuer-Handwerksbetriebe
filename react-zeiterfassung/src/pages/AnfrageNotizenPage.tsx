@@ -23,6 +23,8 @@ interface NotizBild {
     id: number
     originalDateiname: string
     url: string
+    /** Verkleinerte Vorschau (300 px) vom Server; das Original wäre mehrere MB groß. */
+    thumbnailUrl?: string
     erstelltAm: string
 }
 
@@ -375,14 +377,15 @@ export default function AnfrageNotizenPage() {
                                                             className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:ring-2 hover:ring-rose-500 transition-all w-full"
                                                         >
                                                             <img
-                                                                src={bild.url + '/thumbnail'}
+                                                                src={bild.thumbnailUrl || bild.url}
                                                                 alt={bild.originalDateiname}
                                                                 className="w-full h-full object-cover pointer-events-none"
                                                                 loading="lazy"
+                                                                decoding="async"
                                                                 onError={(e) => {
                                                                     // Fallback auf Original wenn Thumbnail fehlschlägt
-                                                                    const img = e.target as HTMLImageElement
-                                                                    if (img.src.includes('/thumbnail')) {
+                                                                    const img = e.currentTarget
+                                                                    if (img.getAttribute('src') !== bild.url) {
                                                                         img.src = bild.url
                                                                     }
                                                                 }}
