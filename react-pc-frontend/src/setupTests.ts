@@ -71,3 +71,27 @@ Object.defineProperty(window, 'ResizeObserver', {
   writable: true,
   value: MockResizeObserver,
 });
+
+// Layout-Geometrie für ProseMirror/tiptap.
+// jsdom (aktuell v28) kennt weder document.elementFromPoint noch
+// Range.getClientRects/getBoundingClientRect (Element hat beide). ProseMirror
+// braucht sie, um Cursor-Positionen zu berechnen. tiptaps focus() ruft im
+// nächsten Animation-Frame scrollIntoView auf -> coordsAtPos -> Range.getClientRects.
+// Ohne Stub wirft dieser Frame, sobald er feuert, solange der Editor noch lebt
+// (oft erst nach den Assertions), einen unbehandelten TypeError und macht den
+// Lauf je nach Timing rot, obwohl alle Tests grün sind.
+// Ohne Layout gibt es keine Rechtecke: leere Liste bzw. Null-Rechteck, wie bei
+// Element.getClientRects/getBoundingClientRect in jsdom.
+if (!document.elementFromPoint) {
+  document.elementFromPoint = () => null;
+}
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
+}
+if (!Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => ({
+    length: 0,
+    item: () => null,
+    [Symbol.iterator]: function* () {},
+  }) as unknown as DOMRectList;
+}
