@@ -7,8 +7,8 @@ Java 23, die MCP-Server aus `.mcp.json` und die Frontend-Abhängigkeiten.
 ## Was automatisch passiert (im Repo)
 
 - `scripts/claude-cloud/setup.sh --session` läuft als SessionStart-Hook
-  (`.claude/settings.json`). Es verlinkt graphify ins Projekt (`.graphify-venv`,
-  `./graphify`), setzt `JAVA_HOME` auf JDK 23 und holt fehlende Teile nach.
+  (`.claude/settings.json`). Es verlinkt graphify ins Projekt (`.graphify-venv`;
+  Aufruf über `scripts/graphify`), setzt `JAVA_HOME` auf JDK 23 und holt fehlende Teile nach.
   Lokal (ohne `CLAUDE_CODE_REMOTE=true`) beendet es sich sofort.
 - Alle Hooks nutzen `${CLAUDE_PROJECT_DIR}` statt fester Windows-Pfade und
   laufen dadurch in jedem Checkout – lokal wie in der Cloud.

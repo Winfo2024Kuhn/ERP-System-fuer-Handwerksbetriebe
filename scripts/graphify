@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Projektlokaler graphify-Aufruf (siehe .claude/CLAUDE.md), auch aus Git-Worktrees.
+#
+# graphify liegt bewusst nicht systemweit, sondern im gitignorten .graphify-venv/
+# des Haupt-Checkouts. Ein Worktree hat kein eigenes venv – deshalb sucht dieser
+# Wrapper zuerst im eigenen Checkout und dann im Haupt-Checkout.
+#
+# Aufruf aus dem Projektroot (Haupt-Checkout oder Worktree):
+#   scripts/graphify query "wo wird X verwendet"
+# Braucht git >= 2.31 (--path-format).
+set -uo pipefail
+
+HIER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(git -C "$HIER" rev-parse --show-toplevel 2>/dev/null || dirname "$HIER")"
+
+# In einem Worktree zeigt --git-common-dir auf das .git des Haupt-Checkouts.
+haupt_checkout() {
+    local common
+    common="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+    dirname "$common"
+}
+
+ist_worktree() {
+    local git_dir common
+    git_dir="$(git -C "$REPO" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 1
+    common="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+    [ "$git_dir" != "$common" ]
+}
+
+HAUPT="$(haupt_checkout)" || HAUPT=""
+KANDIDATEN=("$REPO/.graphify-venv")
+[ -n "$HAUPT" ] && KANDIDATEN+=("$HAUPT/.graphify-venv")
+
+GRAPHIFY=()
+for venv in "${KANDIDATEN[@]}"; do
+    if [ -f "$venv/bin/graphify" ] && [ -x "$venv/bin/python3" ]; then
+        # Über python3 statt direkt: Die Shebang-Zeile im venv zeigt auf den
+        # Ort, an dem das venv angelegt wurde, und bricht nach einem Umzug.
+        GRAPHIFY=("$venv/bin/python3" "$venv/bin/graphify")
+        break
+    fi
+    if [ -f "$venv/Scripts/graphify.exe" ]; then
+        GRAPHIFY=("$venv/Scripts/graphify.exe")
+        break
+    fi
+done
+
+if [ ${#GRAPHIFY[@]} -eq 0 ]; then
+    # Als Hook ist graphify optional: ohne Installation still durchlassen.
+    [ "${1:-}" = "hook-guard" ] && exit 0
+    echo "graphify ist nicht installiert (kein .graphify-venv im Checkout oder Haupt-Checkout)." >&2
+    echo "Einrichten im Haupt-Checkout mit:" >&2
+    echo "  uv venv --python 3.12 .graphify-venv" >&2
+    echo "  uv pip install --python .graphify-venv/bin/python 'graphifyy[sql]'" >&2
+    exit 127
+fi
+
+if [ "${1:-}" = "hook-guard" ]; then
+    # Der Hook ist ein Tipp, keine Pflicht. graphify selbst meldet sich bei JEDEM
+    # Grep/Glob – deshalb hier gedrosselt: höchstens alle 30 Minuten, und gar
+    # nicht, wenn in den letzten 30 Minuten eine graphify-Abfrage lief.
+    CACHE="$REPO/graphify-out/cache"
+    frisch() { [ -f "$1" ] && [ -n "$(find "$1" -mmin -30 2>/dev/null)" ]; }
+    if frisch "$CACHE/last_query_stamp" || frisch "$CACHE/last_hint_stamp"; then
+        cat >/dev/null
+        exit 0
+    fi
+    # Die sed-Muster hängen am Wortlaut von graphify; ändert ein Update den Text,
+    # bleibt die Entschärfung wirkungslos, aber unschädlich.
+    AUSGABE="$("${GRAPHIFY[@]}" "$@" | sed -e 's/MANDATORY: /Tipp: /' \
+        -e 's/You MUST run/For broad codebase questions, consider running/' \
+        -e 's/`graphify query/`scripts\/graphify query/' \
+        -e 's|Only grep after graphify has oriented you, or to modify/debug specific lines.|Exact string lookups can use grep directly.|'; exit "${PIPESTATUS[0]}")"
+    STATUS=$?
+    if [ -n "$AUSGABE" ]; then
+        mkdir -p "$CACHE" 2>/dev/null && touch "$CACHE/last_hint_stamp" 2>/dev/null
+        printf '%s\n' "$AUSGABE"
+    fi
+    exit $STATUS
+fi
+
+"${GRAPHIFY[@]}" "$@"
+STATUS=$?
+
+if [ "${1:-}" = "update" ] && ist_worktree; then
+    echo "" >&2
+    echo "Hinweis: Das ist ein Worktree. graphify-out/ hier nicht committen (32-MB-Datei," >&2
+    echo "Konflikte mit parallelen Sitzungen). Vor einem Rebase: git checkout -- graphify-out" >&2
+fi
+exit $STATUS

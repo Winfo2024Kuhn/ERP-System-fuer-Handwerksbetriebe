@@ -32,13 +32,14 @@ Graphen — das ist der Unterschied zwischen einer gezielten Frage und einer
 Lesewüste, und es ist der größte Token-Posten deiner Runde:
 
 ```bash
-./graphify query "wer ruft <Symbol> auf"     # Aufrufer finden
-./graphify affected "<geänderte Klasse>"      # was bricht, wenn das sich ändert
-./graphify explain "<Konzept>"                # fokussierter Teilgraph
+scripts/graphify query "wer ruft <Symbol> auf"     # Aufrufer finden
+scripts/graphify affected "<geänderte Klasse>"      # was bricht, wenn das sich ändert
+scripts/graphify explain "<Konzept>"                # fokussierter Teilgraph
 ```
 
-(Wrapper im Repo-Root, projektlokal — ein blankes `graphify` findet die Shell
-nicht.) Direkt lesen ist richtig, wenn du den Pfad schon kennst oder eine
+(Versionierter Wrapper unter `scripts/`, funktioniert auch im Review-Worktree
+und nutzt dort das venv des Haupt-Checkouts — ein blankes `graphify` findet die
+Shell nicht.) Direkt lesen ist richtig, wenn du den Pfad schon kennst oder eine
 konkrete Zeile prüfst. Rohes Suchen quer durchs Projekt ist es nicht.
 
 ## 2. Selbst testen — keinem Bericht glauben

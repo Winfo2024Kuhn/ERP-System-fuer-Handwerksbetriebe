@@ -317,5 +317,5 @@ lohnt sich trotzdem — sie kostet einen Satz und spart eine Runde.
 ## Abschluss
 
 Nach der letzten Runde einmal alles zusammen: Frontend-Tests, Frontend-Build,
-Backend-Tests, `./graphify update .`. Danach `.claude/commands/review-and-ship.md`,
+Backend-Tests, `scripts/graphify update .`. Danach `.claude/commands/review-and-ship.md`,
 wie es `.claude/CLAUDE.md` für jede abgeschlossene Aufgabe vorschreibt.

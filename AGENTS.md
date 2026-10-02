@@ -1,20 +1,20 @@
 # Projekt-Kontext: Open-Source ERP für Handwerksbetriebe
 
-## 🔍 OBERSTE REGEL: GRAPHIFY VOR JEDER SUCHE
+## 🔍 graphify: Code-Landkarte für breite Fragen (Empfehlung)
 
-**Bevor du Grep/Glob/find/ls für Codebase-Fragen nutzt, rufe ZUERST graphify auf.**
+**Für breite Code-Fragen (Architektur, Abhängigkeiten, „was bricht, wenn …“) ist graphify hilfreich. Gezielte Namenssuchen gehen per Grep meist schneller.**
 
 Das ist die zentrale Wissensbasis der Codebase (AST-Graph mit 32+ MB Daten, Symbolen, Abhängigkeiten und Komponenten):
 
-**Aufruf:** graphify ist projektlokal in `.graphify-venv/` installiert. Nutze den Wrapper im Projektroot:
-`./graphify …` (Bash/Zsh auf macOS/Linux) bzw. `.\graphify.cmd …` (PowerShell auf Windows).
+**Aufruf:** graphify ist projektlokal in `.graphify-venv/` installiert. Nutze den versionierten Wrapper (funktioniert auch in Git-Worktrees):
+`scripts/graphify …` (Bash/Zsh auf macOS/Linux) bzw. `scripts\graphify.cmd …` (PowerShell auf Windows).
 
-| Frage-Typ | Befehl ZUERST |
+| Frage-Typ | Befehl |
 | --- | --- |
-| "Wo ist X?" / "Was ruft X auf?" | `./graphify query "wo wird X verwendet"` |
-| "Wie hängen A und B zusammen?" | `./graphify path "A" "B"` |
-| "Was ist Konzept Y?" | `./graphify explain "Y"` |
-| "Was bricht, wenn ich X ändere?" | `./graphify affected "X"` |
+| "Wo ist X?" / "Was ruft X auf?" | `scripts/graphify query "wo wird X verwendet"` |
+| "Wie hängen A und B zusammen?" | `scripts/graphify path "A" "B"` |
+| "Was ist Konzept Y?" | `scripts/graphify explain "Y"` |
+| "Was bricht, wenn ich X ändere?" | `scripts/graphify affected "X"` |
 | Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
 | Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
 
@@ -24,7 +24,7 @@ Das ist die zentrale Wissensbasis der Codebase (AST-Graph mit 32+ MB Daten, Symb
 - graphify hat die Frage bereits beantwortet und du benötigst nur die Zeilennummer.
 
 **Nach Code-Änderungen:**
-- `./graphify update .` einmalig am Ende der Aufgabe ausführen (AST-only, schnell, hält den Graphen synchron).
+- `scripts/graphify update .` einmalig am Ende der Aufgabe ausführen (AST-only, schnell, hält den Graphen synchron).
 
 ---
 
@@ -140,5 +140,5 @@ Am Ende jeder Aufgabe:
    - Nur Dateien stagen, die für diese Aufgabe geändert wurden (keine Fremdänderungen).
    - `git diff --staged` auf versehentlich committete Secrets oder Logs prüfen.
 5. Graphify synchronisieren:
-   - `./graphify update .`
+   - `scripts/graphify update .`
 

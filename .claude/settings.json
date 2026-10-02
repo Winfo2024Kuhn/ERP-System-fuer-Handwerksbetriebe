@@ -3,29 +3,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Grep",
+        "matcher": "Grep|Glob",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.graphify-venv/Scripts/graphify.exe",
-            "args": [
-              "hook-guard",
-              "search"
-            ]
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.graphify-venv/Scripts/graphify.exe",
-            "args": [
-              "hook-guard",
-              "read",
-              "--strict"
-            ]
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/graphify\" hook-guard search"
           }
         ]
       }

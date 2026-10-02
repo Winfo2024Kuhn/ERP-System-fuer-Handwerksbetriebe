@@ -1,31 +1,25 @@
 # Projekt-Kontext: Open-Source ERP für Handwerksbetriebe
 
-## 🔍 OBERSTE REGEL: GRAPHIFY VOR JEDER SUCHE
+## 🔍 graphify: Code-Landkarte für breite Fragen (Empfehlung)
 
-**Bevor du Grep/Glob/Read-für-Suche/find/ls für Codebase-Fragen nutzt, MUSST du graphify aufrufen.**
+graphify ist ein AST-Graph der ganzen Codebase. Er lohnt sich bei **breiten** Fragen: Architektur, „was bricht, wenn ich X ändere?“, „wie hängen A und B zusammen?“. Für gezielte Suchen nach Klassen-, Methoden- oder Begriffsnamen ist Grep meist schneller und genauer – die deutschen Namen im Code sind sehr treffsicher.
 
-Das ist keine Empfehlung — der offizielle graphify-Hook-Guard in `.claude/settings.json` hängt an `Bash|Grep` (Hinweis) und `Read|Glob` (Strict-Modus: blockt den **ersten** Roh-Read pro Session, bis einmal `query`/`path`/`explain` gelaufen ist). Der Gate hängt an einem Zeitstempel, den graphify selbst schreibt (`graphify-out/cache/last_query_stamp`, TTL 30 min) — er feuert höchstens einmal pro Session und kann dich nie festsetzen. Abschalten mit `GRAPHIFY_HOOK_STRICT=0`.
+Ein Hook in `.claude/settings.json` gibt bei Grep/Glob einen **Tipp** (blockt nichts). `scripts/graphify` drosselt ihn auf höchstens einmal alle 30 Minuten, gar nicht nach einer graphify-Abfrage in den letzten 30 Minuten, und schweigt, wenn graphify nicht installiert ist.
 
-**Aufruf:** graphify ist bewusst **nicht** systemweit installiert, sondern projektlokal in `.graphify-venv/`. Nutze den Wrapper im Projektroot — `./graphify …` (Bash) bzw. `.\graphify.cmd …` (PowerShell). Ein blankes `graphify` findet die Shell nicht.
+**Aufruf:** graphify liegt projektlokal im gitignorten `.graphify-venv/` des Haupt-Checkouts. Nutze den versionierten Wrapper `scripts/graphify …` (Bash) bzw. `scripts\graphify.cmd …` (PowerShell) – er funktioniert auch in Git-Worktrees und nutzt dort das venv des Haupt-Checkouts. Ein blankes `graphify` findet die Shell nicht.
 
-| Frage-Typ | Pflicht-Befehl ZUERST |
+| Frage-Typ | Befehl |
 | --- | --- |
-| "Wo ist X?" / "Was ruft X auf?" | `./graphify query "wo wird X verwendet"` |
-| "Wie hängen A und B zusammen?" | `./graphify path "A" "B"` |
-| "Was ist Konzept Y?" | `./graphify explain "Y"` |
-| "Was bricht, wenn ich X ändere?" | `./graphify affected "X"` |
+| "Wo ist X?" / "Was ruft X auf?" | `scripts/graphify query "wo wird X verwendet"` |
+| "Wie hängen A und B zusammen?" | `scripts/graphify path "A" "B"` |
+| "Was ist Konzept Y?" | `scripts/graphify explain "Y"` |
+| "Was bricht, wenn ich X ändere?" | `scripts/graphify affected "X"` |
 | Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
 | Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
 
-**Ausnahmen** (Grep/Glob direkt erlaubt):
+**Graph aktualisieren:** `scripts/graphify update .` – höchstens **einmal am Ende der Aufgabe**, nie nach jedem Edit (der 32-MB-Graph wird bei jedem Lauf komplett neu geschrieben; als PostToolUse-Hook hat das früher jeden Edit um ~126 s verzögert). Kostet keine API-Credits (AST-only).
 
-- Du kennst den exakten Dateipfad → `Read` direkt.
-- Du suchst nach einem konkreten String-Literal, das der Graph nicht als Symbol führt (z.B. Property-Keys, Werte innerhalb von Migrationen). Die Flyway-Migrationen selbst sind im Graphen — Tabellen und Funktionen findest du per `query`.
-- graphify hat die Frage schon beantwortet und du brauchst nur das letzte Detail.
-
-**Nach Code-Änderungen:** `./graphify update .` — **einmal am Ende der Aufgabe**, nicht nach jedem einzelnen Edit.
-
-Der Lauf kostet keine API-Credits (AST-only). Die Extraktion ist gecacht und läuft nur über geänderte Dateien, aber der 32-MB-Graph wird danach **komplett** neu geschrieben — das ist der teure Teil und passiert bei jedem Lauf. Früher hing das als PostToolUse-Hook an jedem Edit/Write und hat jeden Edit um ~126 s verzögert; deshalb ist der Hook entfernt und bleibt es. Der Graph ist nach einem Lauf am Aufgabenende genauso aktuell wie nach zwanzig Zwischenläufen.
+**In Worktrees:** `update` darf laufen (frischer Graph für die eigene Sitzung), aber `graphify-out/` dort **nicht committen** – die Datei ist groß und kollidiert mit parallelen Sitzungen. Vor einem Rebase `git checkout -- graphify-out`. Den eingecheckten Graphen frischt der Haupt-Checkout auf.
 
 ---
 

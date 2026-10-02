@@ -1,19 +1,19 @@
 # Projekt-Kontext: Open-Source ERP für Handwerksbetriebe
 
-## 🔍 OBERSTE REGEL: GRAPHIFY VOR JEDER SUCHE
+## 🔍 graphify: Code-Landkarte für breite Fragen (Empfehlung)
 
-**Bevor du Grep/Glob/Read-für-Suche/find/ls für Codebase-Fragen nutzt, MUSST du graphify aufrufen.**
+**Für breite Code-Fragen (Architektur, Abhängigkeiten, „was bricht, wenn …“) ist graphify hilfreich. Gezielte Namenssuchen gehen per Grep meist schneller.**
 
-Das ist keine Empfehlung — der offizielle graphify-Hook-Guard in `.claude/settings.json` hängt an `Bash|Grep` und `Read|Glob` und weist dich darauf zurück, falls du es vergisst.
+Ein Hook in `.claude/settings.json` gibt bei Grep/Glob einen Tipp (blockt nichts), höchstens alle 30 Minuten, und ist still, wenn graphify nicht installiert ist.
 
-**Aufruf:** graphify ist bewusst **nicht** systemweit installiert, sondern projektlokal in `.graphify-venv/`. Nutze den Wrapper im Projektroot — `./graphify …` (Bash) bzw. `.\graphify.cmd …` (PowerShell). Ein blankes `graphify` findet die Shell nicht.
+**Aufruf:** graphify ist bewusst **nicht** systemweit installiert, sondern projektlokal in `.graphify-venv/`. Nutze den versionierten Wrapper (funktioniert auch in Git-Worktrees) — `scripts/graphify …` (Bash) bzw. `scripts\graphify.cmd …` (PowerShell). Ein blankes `graphify` findet die Shell nicht.
 
-| Frage-Typ | Pflicht-Befehl ZUERST |
+| Frage-Typ | Befehl |
 | --- | --- |
-| "Wo ist X?" / "Was ruft X auf?" | `./graphify query "wo wird X verwendet"` |
-| "Wie hängen A und B zusammen?" | `./graphify path "A" "B"` |
-| "Was ist Konzept Y?" | `./graphify explain "Y"` |
-| "Was bricht, wenn ich X ändere?" | `./graphify affected "X"` |
+| "Wo ist X?" / "Was ruft X auf?" | `scripts/graphify query "wo wird X verwendet"` |
+| "Wie hängen A und B zusammen?" | `scripts/graphify path "A" "B"` |
+| "Was ist Konzept Y?" | `scripts/graphify explain "Y"` |
+| "Was bricht, wenn ich X ändere?" | `scripts/graphify affected "X"` |
 | Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
 | Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
 
@@ -23,7 +23,7 @@ Das ist keine Empfehlung — der offizielle graphify-Hook-Guard in `.claude/sett
 - Du suchst nach einem konkreten String-Literal, das der Graph nicht als Symbol führt (z.B. Property-Keys, Werte innerhalb von Migrationen). Die Flyway-Migrationen selbst sind im Graphen — Tabellen und Funktionen findest du per `query`.
 - graphify hat die Frage schon beantwortet und du brauchst nur das letzte Detail.
 
-**Nach Code-Änderungen:** `./graphify update .` (AST-only, gratis, hält den Graph aktuell).
+**Nach Code-Änderungen:** `scripts/graphify update .` (AST-only, gratis, hält den Graph aktuell).
 
 ---
 

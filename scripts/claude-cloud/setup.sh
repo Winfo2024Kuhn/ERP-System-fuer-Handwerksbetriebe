@@ -73,9 +73,9 @@ install_graphify() {
         fi
     }
     [ -x "$GRAPHIFY_VENV/bin/graphify" ] || { log "graphify-Installation fehlgeschlagen"; return 1; }
-    # Die Hooks in .claude/settings.json rufen den Windows-Pfad
-    # .graphify-venv/Scripts/graphify.exe auf. Unter Linux zeigt dieser Pfad
-    # auf das echte Linux-Binary, damit dieselbe Konfiguration überall läuft.
+    # Altlast fuer aeltere Branches, deren Hooks noch den Windows-Pfad
+    # .graphify-venv/Scripts/graphify.exe aufrufen. Aktuelle Hooks gehen ueber
+    # scripts/graphify, der bin/graphify direkt findet.
     mkdir -p "$GRAPHIFY_VENV/Scripts"
     ln -sfn ../bin/graphify "$GRAPHIFY_VENV/Scripts/graphify.exe"
 }
@@ -185,8 +185,10 @@ prefetch_maven() {
 
 link_into_project() {
     local repo="$1"
-    # .graphify-venv und ./graphify sind gitignored – lokal legt man sie von
-    # Hand an, in der Cloud zeigen sie auf die vorinstallierte Version.
+    # .graphify-venv ist gitignored – lokal legt man es von Hand an, in der
+    # Cloud zeigt es auf die vorinstallierte Version. Aufgerufen wird graphify
+    # ueber den versionierten Wrapper scripts/graphify; das Root-./graphify
+    # bleibt nur fuer aeltere Anleitungen.
     if [ ! -e "$repo/.graphify-venv" ]; then
         ln -sfn "$GRAPHIFY_VENV" "$repo/.graphify-venv"
     fi

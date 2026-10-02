@@ -196,15 +196,18 @@ Zwei von vier Agenten fanden am 09.09.2026 gar keine Verlinkung vor und mussten
 sie selbst anlegen. Das gehört in die Worktree-Einrichtung des Orchestrators,
 nicht in jeden einzelnen Auftrag.
 
-### `./graphify update .` läuft in einem Worktree nicht
+### graphify in Worktrees: Aufruf ja, Graph nicht committen
 
-Weder der Wrapper noch `.graphify-venv/` sind git-getrackt — in einem frisch
-angelegten Worktree existieren sie schlicht nicht. Ein Agent, den man dort zum
-Graph-Update auffordert, scheitert an etwas, das er nicht beheben kann.
+Früher waren weder Wrapper noch `.graphify-venv/` in einem frischen Worktree
+vorhanden. Seit 02.10.2026 gibt es den versionierten Wrapper `scripts/graphify`
+(bzw. `scripts\graphify.cmd`), der im Worktree das venv des Haupt-Checkouts
+nutzt – `query`, `affected` und auch `update` laufen also überall.
 
-Der Graph-Lauf gehört ans Ende der Gesamtaufgabe, **im Haupt-Checkout**, vom
-Orchestrator ausgeführt — einmal, nicht je Agent. Genau so steht es auch in
-`CLAUDE.md`.
+Was bleibt: Ein `update` im Worktree schreibt die eingecheckte 32-MB-Datei
+`graphify-out/graph.json` neu. Die gehört **nicht** in den Commit eines Agenten
+(Konflikte mit parallelen Sitzungen, und ein Rebase bricht mit „unstaged
+changes“ ab). Vor dem Rebase `git checkout -- graphify-out`. Den eingecheckten
+Graphen frischt der Orchestrator einmal am Ende im Haupt-Checkout auf.
 
 ---
 

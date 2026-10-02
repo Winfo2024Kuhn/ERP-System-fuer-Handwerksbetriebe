@@ -91,16 +91,19 @@ react-pc-frontend/graphify-out/
 react-zeiterfassung/graphify-out/
 # Lokale Graphify-Installation (projekt-eigenes venv, nicht systemweit).
 # Maschinenspezifisch -> nie committen. Neu anlegen:
-#   py -3 -m venv .graphify-venv
-#   .graphify-venv/Scripts/python -m pip install "graphifyy[sql]"
-#   ./graphify install --project --strict
+#   uv venv --python 3.12 .graphify-venv
+#   uv pip install --python .graphify-venv/bin/python "graphifyy[sql]"
+#   (Windows: .graphify-venv\Scripts\python.exe)
+# Aufruf ueber den versionierten Wrapper scripts/graphify (bzw. scripts\graphify.cmd),
+# der auch in Git-Worktrees das venv des Haupt-Checkouts findet.
 # Das [sql]-Extra ist Pflicht, sonst bleiben die Flyway-Migrationen unter
 # src/main/resources/db/migration/ komplett aus dem Graphen.
 # Ohne Schrägstrich am Ende, damit auch der Symlink aus der Cloud-Sitzung
 # (scripts/claude-cloud/setup.sh) ignoriert wird.
 .graphify-venv
-# Fuehrender Slash = nur im Repo-Root. Ohne ihn wuerde "graphify" auf jeder
-# Ebene matchen und u.a. .claude/skills/graphify/ mitverschlucken.
+# Alte, lokal angelegte Wrapper im Repo-Root (vor scripts/graphify). Fuehrender
+# Slash = nur im Repo-Root, sonst wuerden scripts/graphify und
+# .claude/skills/graphify/ mitverschluckt.
 /graphify.cmd
 /graphify
 .claude/settings.json.graphify-bak
