@@ -76,7 +76,7 @@ export interface VerlaufPunkt {
 export interface ProjektBild {
     /** Stabile Kennung innerhalb der Auswahl, z.B. "notiz-12" oder "dokument-7". */
     schluessel: string;
-    quelle: 'bautagebuch' | 'dokument';
+    quelle: 'bautagebuch' | 'dokument' | 'upload';
     /** Vollbild, kommt fertig aus dem Backend-DTO. */
     url: string;
     /** Vorschaubild bis 300 px, kommt fertig aus dem Backend-DTO. */

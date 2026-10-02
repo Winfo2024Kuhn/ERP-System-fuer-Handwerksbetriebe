@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { ToastProvider } from '../../ui/toast';
 import { SchrittBilder } from './SchrittBilder';
 
 vi.mock('../BildEditorModal', () => ({
@@ -47,7 +48,7 @@ afterEach(() => {
 });
 
 function zeige(auswahl: never[] = [], onAuswahlAendern = vi.fn()) {
-    render(<SchrittBilder projektId={1} auswahl={auswahl} onAuswahlAendern={onAuswahlAendern} />);
+    render(<ToastProvider><SchrittBilder projektId={1} auswahl={auswahl} onAuswahlAendern={onAuswahlAendern} /></ToastProvider>);
     return onAuswahlAendern;
 }
 
@@ -115,5 +116,51 @@ describe('SchrittBilder', () => {
         zeige();
 
         expect(await screen.findByText(/keine Bilder/i)).toBeInTheDocument();
+    });
+
+    it('nimmt hochgeladene Bilder von der Festplatte in die Auswahl auf', async () => {
+        const user = userEvent.setup();
+        const urlMock = vi.fn(() => 'blob:http://localhost/abc123456789');
+        vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: urlMock, revokeObjectURL: vi.fn() }));
+        const onAuswahlAendern = zeige();
+        await screen.findByText('Aus dem Bautagebuch');
+
+        const datei = new File(['x'], 'baustelle.jpg', { type: 'image/jpeg' });
+        await user.upload(screen.getByLabelText('Bilddateien auswählen'), datei);
+
+        expect(onAuswahlAendern).toHaveBeenCalledWith([
+            expect.objectContaining({
+                bild: expect.objectContaining({ quelle: 'upload', originalDateiname: 'baustelle.jpg' }),
+            }),
+        ]);
+    });
+
+    it('zeigt die Ablagefläche auch, wenn das Projekt keine Bilder hat', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+            ok: true, status: 200, json: () => Promise.resolve([]),
+        })));
+        zeige();
+
+        expect(await screen.findByText(/keine Bilder/i)).toBeInTheDocument();
+        expect(screen.getByTestId('bild-upload-feld')).toBeInTheDocument();
+    });
+
+    it('entfernt ein hochgeladenes Bild wieder aus der Auswahl', async () => {
+        const user = userEvent.setup();
+        const revoke = vi.fn();
+        vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(), revokeObjectURL: revoke }));
+        const onAuswahlAendern = zeige([{
+            bild: {
+                schluessel: 'upload-1', quelle: 'upload', url: 'blob:http://localhost/x',
+                thumbnailUrl: 'blob:http://localhost/x', originalDateiname: 'eigen.jpg', datum: null, hinweis: null,
+            },
+            bearbeitung: {},
+        }] as never);
+        await screen.findByText('Vom Computer');
+
+        await user.click(screen.getByRole('button', { name: 'eigen.jpg entfernen' }));
+
+        expect(revoke).toHaveBeenCalledWith('blob:http://localhost/x');
+        expect(onAuswahlAendern).toHaveBeenCalledWith([]);
     });
 });

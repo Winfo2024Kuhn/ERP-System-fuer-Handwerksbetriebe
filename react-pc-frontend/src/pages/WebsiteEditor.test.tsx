@@ -44,7 +44,7 @@ describe('WebsiteEditor', () => {
     it('zeigt die Kopfzeile mit Kategorie und Titel', () => {
         render(<WebsiteEditor />);
 
-        expect(screen.getByText('Website')).toBeInTheDocument();
+        expect(screen.getByText('Kommunikation')).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'NEUIGKEITEN' })).toBeInTheDocument();
     });
 

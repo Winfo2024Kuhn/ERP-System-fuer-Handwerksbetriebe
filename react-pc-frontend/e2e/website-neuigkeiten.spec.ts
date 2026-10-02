@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './hilfen/test';
-import { stubbeWebsiteApi, oeffneNeuigkeiten } from './hilfen/api';
+import { stubbeWebsiteApi, oeffneNeuigkeiten, PIXEL_PNG } from './hilfen/api';
 import { inhalt, projektsuche, warteAufProjektsuche } from './hilfen/seite';
 
 /**
@@ -43,7 +43,7 @@ test.describe('Website - Neuigkeiten', () => {
         await stubbeWebsiteApi(page);
         await oeffneNeuigkeiten(page);
 
-        await expect(inhalt(page).getByText('Website', { exact: true })).toBeVisible();
+        await expect(inhalt(page).getByText('Kommunikation', { exact: true })).toBeVisible();
         await expect(page.getByRole('heading', { name: 'NEUIGKEITEN' })).toBeVisible();
         await expect(inhalt(page)
             .getByText('Beiträge für den Bereich Aktuelles auf der Firmen-Website pflegen.')).toBeVisible();
@@ -272,5 +272,67 @@ test.describe('Fehler- und Leerzustaende', () => {
 
         await expect(page.getByText('Noch kein Beitrag angelegt.')).toBeVisible();
         await expect(page.getByText('Links einen Beitrag wählen oder einen neuen anlegen.')).toBeVisible();
+    });
+});
+
+/** Ein echtes 1x1-PNG als Datei, wie es vom Computer kommt. */
+const EIGENES_BILD = {
+    name: 'vom-computer.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(PIXEL_PNG.split(',')[1], 'base64'),
+};
+
+test.describe('Bilder vom Computer hochladen', () => {
+    test('laedt ein Bild direkt in einen bestehenden Beitrag, ohne Projekt', async ({ page }) => {
+        const mitschrift = await stubbeWebsiteApi(page);
+        await oeffneNeuigkeiten(page);
+        await inhalt(page).getByText('Alte Dachrinne erneuert').click();
+        await expect(page.getByLabel('Titel')).toHaveValue('Alte Dachrinne erneuert');
+
+        // Ungespeicherter Text darf vom Upload nicht ueberschrieben werden.
+        await page.getByLabel('Kurzbeschreibung').fill('Noch nicht gespeicherte Kurzfassung');
+        await page.getByLabel('Bilddateien auswählen').setInputFiles(EIGENES_BILD);
+
+        await expect.poll(() => mitschrift.bildUploads.length).toBe(1);
+        await expect(page.getByLabel('Kurzbeschreibung')).toHaveValue('Noch nicht gespeicherte Kurzfassung');
+    });
+
+    test('lehnt eine Datei ab, die kein Bild ist', async ({ page }) => {
+        const mitschrift = await stubbeWebsiteApi(page);
+        await oeffneNeuigkeiten(page);
+        await inhalt(page).getByText('Alte Dachrinne erneuert').click();
+        await expect(page.getByLabel('Titel')).toHaveValue('Alte Dachrinne erneuert');
+
+        // Die Dateiauswahl filtert nach accept, Ablegen per Drag & Drop nicht --
+        // darum prueft der Code zusaetzlich selbst.
+        await page.getByTestId('bild-upload-feld').evaluate(feld => {
+            const daten = new DataTransfer();
+            daten.items.add(new File(['x'], 'plan.pdf', { type: 'application/pdf' }));
+            feld.dispatchEvent(new DragEvent('drop', { dataTransfer: daten, bubbles: true, cancelable: true }));
+        });
+
+        await expect(page.getByText(/plan\.pdf.*kein Bild/)).toBeVisible();
+        expect(mitschrift.bildUploads).toEqual([]);
+    });
+
+    test('nimmt im Assistenten ein Bild vom Computer in die Auswahl auf', async ({ page }) => {
+        await stubbeWebsiteApi(page);
+        await oeffneNeuigkeiten(page);
+        await page.getByRole('button', { name: 'Neuer Beitrag' }).click();
+        await page.getByRole('button', { name: /Balkonanlage Musterstraße/ }).click();
+
+        await page.getByLabel('Bilddateien auswählen').setInputFiles(EIGENES_BILD);
+
+        await expect(page.getByRole('heading', { name: /Vom Computer/ })).toBeVisible();
+        await expect(page.getByText(/1 Bild ausgewählt/)).toBeVisible();
+        await page.getByRole('button', { name: 'vom-computer.png entfernen' }).click();
+        await expect(page.getByText('Noch kein Bild ausgewählt.')).toBeVisible();
+    });
+
+    test('Neuigkeiten liegt im Menue unter Kommunikation', async ({ page }) => {
+        await stubbeWebsiteApi(page);
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Kommunikation' }).click();
+        await expect(page.getByRole('link', { name: /Neuigkeiten/ })).toBeVisible();
     });
 });

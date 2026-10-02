@@ -136,7 +136,8 @@ export function SchrittText({
                         <Button
                             size="sm"
                             onClick={() => { onStandAendern(vorherigerStand); setVorherigerStand(null); }}
-                            className="w-full bg-white border border-slate-300 text-slate-600 hover:bg-slate-100"
+                            variant="secondary"
+                            className="w-full"
                         >
                             <Undo2 className="w-4 h-4" />
                             Rückgängig
@@ -157,7 +158,6 @@ export function SchrittText({
                             size="sm"
                             disabled={laeuft}
                             onClick={() => void senden()}
-                            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                         >
                             <Send className="w-4 h-4" />
                             Senden

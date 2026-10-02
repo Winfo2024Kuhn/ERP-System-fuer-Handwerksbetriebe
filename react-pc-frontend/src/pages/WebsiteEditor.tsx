@@ -35,7 +35,7 @@ export function WebsiteEditor() {
     return (
         <div className="p-6 max-w-[1600px] mx-auto">
             <PageHeader
-                category="Website"
+                category="Kommunikation"
                 title="NEUIGKEITEN"
                 description="Beiträge für den Bereich Aktuelles auf der Firmen-Website pflegen."
             />

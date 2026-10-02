@@ -289,13 +289,13 @@ describe('BeitraegeTab', () => {
         });
     });
 
-    it('öffnet über "Bild hinzufügen" zuerst die Projektsuche', async () => {
+    it('öffnet über "Aus einem Projekt übernehmen" zuerst die Projektsuche', async () => {
         const user = userEvent.setup();
         zeige();
         await user.click(await screen.findByText('Neues Tor'));
         await screen.findByDisplayValue('Neues Tor');
 
-        await user.click(screen.getByRole('button', { name: 'Bild hinzufügen' }));
+        await user.click(screen.getByRole('button', { name: 'Aus einem Projekt übernehmen' }));
 
         expect(screen.getByRole('button', { name: 'Projekt wählen' })).toBeInTheDocument();
     });
@@ -312,7 +312,7 @@ describe('BeitraegeTab', () => {
         await user.click(await screen.findByText('Neues Tor'));
         await screen.findByDisplayValue('Neues Tor');
 
-        await user.click(screen.getByRole('button', { name: 'Bild hinzufügen' }));
+        await user.click(screen.getByRole('button', { name: 'Aus einem Projekt übernehmen' }));
         await user.click(screen.getByRole('button', { name: 'Projekt wählen' }));
         await user.click(await screen.findByRole('button', { name: 'Bild wählen' }));
         await user.click(await screen.findByRole('button', { name: /^Hinzufügen/ }));
@@ -328,13 +328,40 @@ describe('BeitraegeTab', () => {
         expect(screen.queryByRole('button', { name: 'Projekt wählen' })).not.toBeInTheDocument();
     });
 
+    it('lädt Bilder von der Festplatte direkt in den Beitrag, ohne Projekt', async () => {
+        const user = userEvent.setup();
+        vi.stubGlobal('URL', Object.assign(URL, {
+            createObjectURL: vi.fn(() => 'blob:http://localhost/x'), revokeObjectURL: vi.fn(),
+        }));
+        fetchMock = serverMit({
+            'POST /api/beitraege/1/bilder': {
+                ok: true, status: 201, json: () => Promise.resolve(detailMitDrittemBild),
+            },
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        zeige();
+        await user.click(await screen.findByText('Neues Tor'));
+        await screen.findByDisplayValue('Neues Tor');
+
+        await user.upload(
+            screen.getByLabelText('Bilddateien auswählen'),
+            new File(['x'], 'vomrechner.jpg', { type: 'image/jpeg' }));
+
+        expect(await screen.findByText('Bilder (3)')).toBeInTheDocument();
+        const ruf = fetchMock.mock.calls.find(
+            (c: unknown[]) => (c[0] as string) === '/api/beitraege/1/bilder'
+                && (c[1] as RequestInit)?.method === 'POST');
+        expect(ruf).toBeDefined();
+        expect(screen.queryByRole('button', { name: 'Projekt wählen' })).not.toBeInTheDocument();
+    });
+
     it('bricht die Bildauswahl ab, ohne etwas hochzuladen', async () => {
         const user = userEvent.setup();
         zeige();
         await user.click(await screen.findByText('Neues Tor'));
         await screen.findByDisplayValue('Neues Tor');
 
-        await user.click(screen.getByRole('button', { name: 'Bild hinzufügen' }));
+        await user.click(screen.getByRole('button', { name: 'Aus einem Projekt übernehmen' }));
         await user.click(screen.getByRole('button', { name: 'Projekt wählen' }));
         await user.click(await screen.findByRole('button', { name: 'Bild wählen' }));
         await user.click(screen.getByRole('button', { name: 'Abbrechen' }));

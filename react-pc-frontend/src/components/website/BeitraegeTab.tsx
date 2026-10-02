@@ -9,10 +9,12 @@ import { useToast } from '../ui/toast';
 import { ProjektSearchModal } from '../ProjektSearchModal';
 import { BeitragVorschau } from './BeitragVorschau';
 import { BeitragRichtextEditor } from './BeitragRichtextEditor';
+import { BildUploadFeld } from './BildUploadFeld';
 import { leiteKurzbeschreibungAb } from './textumwandlung';
 import { SchrittBilder, type GewaehltesBild } from './schritte/SchrittBilder';
+import { gibUploadsFrei } from './bildUpload';
 import { rendereBlob } from './bildRendern';
-import { MAX_BREITE_UPLOAD } from './bildbearbeitung';
+import { MAX_BREITE_UPLOAD, STANDARD_BEARBEITUNG } from './bildbearbeitung';
 import {
     WebsiteApiFehler,
     aktualisiereBeitrag,
@@ -80,6 +82,8 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
     // Merkung wuerde bildDialogSchliessen das gerade gewaehlte Projekt sofort
     // wieder verwerfen und der Dialog ginge beim Auswaehlen einfach zu.
     const bildProjektGewaehlt = useRef(false);
+    // Direkt-Upload von der Festplatte: Text des laufenden Fortschritts, sonst null.
+    const [direktHochladen, setDirektHochladen] = useState<string | null>(null);
 
     const ladeListe = useCallback(async () => {
         setLaedtListe(true);
@@ -101,6 +105,18 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
         setTitel(beitrag.title);
         setKurzbeschreibung(beitrag.excerpt);
         setText(beitrag.content);
+    }, []);
+
+    /**
+     * Uebernimmt nach einem Bild-Upload nur die Bilderliste, nicht Titel und
+     * Text: Was der Nutzer daneben schon getippt, aber noch nicht gespeichert
+     * hat, darf der Upload nicht ueberschreiben. Wurde inzwischen ein anderer
+     * Beitrag geoeffnet, bleibt dessen Ansicht unberuehrt.
+     */
+    const bilderUebernehmen = useCallback((beitrag: BeitragDetail) => {
+        setGewaehlt(vorher => vorher && vorher.id === beitrag.id
+            ? { ...vorher, images: beitrag.images }
+            : vorher);
     }, []);
 
     const oeffne = async (id: number) => {
@@ -193,7 +209,40 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
         }
     };
 
+    /**
+     * Bilder von der Festplatte gehen ohne Umweg ueber ein Projekt direkt in
+     * den gewaehlten Beitrag. Nacheinander, aus demselben Grund wie unten.
+     */
+    const dateienHochladen = async (dateien: File[]) => {
+        if (!gewaehlt) return;
+        let letzterStand = gewaehlt;
+        let uebertragen = 0;
+        try {
+            for (let i = 0; i < dateien.length; i++) {
+                setDirektHochladen(`Bild ${i + 1} von ${dateien.length} wird hochgeladen...`);
+                const url = URL.createObjectURL(dateien[i]);
+                try {
+                    const blob = await rendereBlob(url, STANDARD_BEARBEITUNG, MAX_BREITE_UPLOAD);
+                    letzterStand = await ladeBildHoch(gewaehlt.id, blob, dateien[i].name);
+                    uebertragen += 1;
+                } finally {
+                    URL.revokeObjectURL(url);
+                }
+            }
+            bilderUebernehmen(letzterStand);
+            toast.success(uebertragen === 1 ? 'Bild hinzugefügt.' : `${uebertragen} Bilder hinzugefügt.`);
+        } catch (e) {
+            if (uebertragen > 0) bilderUebernehmen(letzterStand);
+            toast.error(uebertragen > 0
+                ? `${uebertragen} von ${dateien.length} Bildern hinzugefügt, danach brach es ab. ${fehlertext(e)}`
+                : fehlertext(e));
+        } finally {
+            setDirektHochladen(null);
+        }
+    };
+
     const bildDialogSchliessen = () => {
+        gibUploadsFrei(bildAuswahl);
         bildProjektGewaehlt.current = false;
         setBildSchritt(null);
         setBildProjekt(null);
@@ -224,12 +273,13 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                 letzterStand = await ladeBildHoch(gewaehlt.id, blob, eintrag.bild.originalDateiname);
                 uebertragen += 1;
             }
-            uebernehmen(letzterStand);
+            bilderUebernehmen(letzterStand);
             toast.success(uebertragen === 1 ? 'Bild hinzugefügt.' : `${uebertragen} Bilder hinzugefügt.`);
             bildDialogSchliessen();
         } catch (e) {
             if (uebertragen > 0) {
-                uebernehmen(letzterStand);
+                bilderUebernehmen(letzterStand);
+                gibUploadsFrei(bildAuswahl.slice(0, uebertragen));
                 setBildAuswahl(vorher => vorher.slice(uebertragen));
                 toast.error(
                     `${uebertragen} von ${bildAuswahl.length} Bildern `
@@ -255,8 +305,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                     <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <p>{fehler}</p>
                 </div>
-                <Button size="sm" onClick={() => void ladeListe()}
-                    className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700">
+                <Button size="sm" onClick={() => void ladeListe()}>
                     Erneut versuchen
                 </Button>
             </div>
@@ -272,9 +321,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                         onClick={onNeuerBeitrag}
                         disabled={neuerBeitragGesperrt}
                         title={neuerBeitragGesperrt ? 'Diese Funktion ist noch nicht fertig.' : undefined}
-                        className={`w-full ${neuerBeitragGesperrt
-                            ? 'bg-slate-100 text-slate-400 border border-slate-200'
-                            : 'bg-rose-600 text-white border border-rose-600 hover:bg-rose-700'}`}
+                        className="w-full"
                     >
                         <Plus className="w-4 h-4" />
                         Neuer Beitrag
@@ -335,9 +382,8 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                             <Button
                                 size="sm"
                                 onClick={() => setAnsicht('bearbeiten')}
-                                className={ansicht === 'bearbeiten'
-                                    ? 'bg-rose-600 text-white border border-rose-600 hover:bg-rose-700'
-                                    : 'border border-rose-300 text-rose-700 hover:bg-rose-50'}
+                                variant={ansicht === 'bearbeiten' ? 'default' : 'outline'}
+                                aria-pressed={ansicht === 'bearbeiten'}
                             >
                                 <Pencil className="w-4 h-4" />
                                 Bearbeiten
@@ -345,9 +391,8 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                             <Button
                                 size="sm"
                                 onClick={() => setAnsicht('vorschau')}
-                                className={ansicht === 'vorschau'
-                                    ? 'bg-rose-600 text-white border border-rose-600 hover:bg-rose-700'
-                                    : 'border border-rose-300 text-rose-700 hover:bg-rose-50'}
+                                variant={ansicht === 'vorschau' ? 'default' : 'outline'}
+                                aria-pressed={ansicht === 'vorschau'}
                             >
                                 <Eye className="w-4 h-4" />
                                 Vorschau
@@ -357,7 +402,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                             <Button
                                 size="sm"
                                 onClick={() => void statusUmschalten()}
-                                className="border border-rose-300 text-rose-700 hover:bg-rose-50"
+                                variant="outline"
                             >
                                 {gewaehlt.status === 'draft' ? 'Veröffentlichen' : 'Zurückziehen'}
                             </Button>
@@ -365,7 +410,6 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                                 size="sm"
                                 disabled={speichert}
                                 onClick={() => void speichern()}
-                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                             >
                                 {speichert && <Loader2 className="w-4 h-4 animate-spin" />}
                                 Speichern
@@ -441,14 +485,22 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                                     <Button
                                         size="sm"
                                         onClick={() => setBildSchritt('projekt')}
-                                        className="border border-rose-300 text-rose-700 hover:bg-rose-50"
+                                        variant="secondary"
                                     >
                                         <Plus className="w-4 h-4" />
-                                        Bild hinzufügen
+                                        Aus einem Projekt übernehmen
                                     </Button>
                                 </div>
+                                <div className="mb-3">
+                                    <BildUploadFeld
+                                        onDateien={dateien => void dateienHochladen(dateien)}
+                                        laedt={direktHochladen !== null}
+                                        hinweis={direktHochladen ?? undefined}
+                                        kompakt={gewaehlt.images.length > 0}
+                                    />
+                                </div>
                                 {gewaehlt.images.length === 0 ? (
-                                    <p className="text-sm text-slate-400">Dieser Beitrag hat noch keine Bilder.</p>
+                                    <p className="text-sm text-slate-500">Dieser Beitrag hat noch keine Bilder.</p>
                                 ) : (
                                     <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
                                         {gewaehlt.images.map((bild, index) => (
@@ -546,7 +598,7 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                                 size="sm"
                                 disabled={bilderWerdenHochgeladen}
                                 onClick={bildDialogSchliessen}
-                                className="border border-slate-300 text-slate-600 hover:bg-slate-100"
+                                variant="secondary"
                             >
                                 Abbrechen
                             </Button>
@@ -562,7 +614,6 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
                                 size="sm"
                                 disabled={bildAuswahl.length === 0 || bilderWerdenHochgeladen}
                                 onClick={() => void bilderHochladen()}
-                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                             >
                                 {bilderWerdenHochgeladen && <Loader2 className="w-4 h-4 animate-spin" />}
                                 Hinzufügen{bildAuswahl.length > 0 ? ` (${bildAuswahl.length})` : ''}
@@ -577,9 +628,9 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
 
 function StatusChip({ status }: { status: 'draft' | 'published' }) {
     return status === 'published' ? (
-        <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">Veröffentlicht</span>
+        <span className="text-xs bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">Veröffentlicht</span>
     ) : (
-        <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">Entwurf</span>
+        <span className="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">Entwurf</span>
     );
 }
 

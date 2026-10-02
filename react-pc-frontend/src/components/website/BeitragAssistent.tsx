@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, PenLine, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, PenLine, Sparkles, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { ProjektSearchModal } from '../ProjektSearchModal';
 import { SchrittBilder, type GewaehltesBild } from './schritte/SchrittBilder';
+import { gibUploadsFrei } from './bildUpload';
 import { SchrittText, type TextStand } from './schritte/SchrittText';
 import { MAX_BREITE_KI, MAX_BREITE_UPLOAD } from './bildbearbeitung';
 import { rendereBlob } from './bildRendern';
@@ -62,12 +63,19 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
     // Ein Ref statt State, weil onSelect und onClose im selben Klick nacheinander
     // laufen: ein setState waere hier noch nicht sichtbar.
     const projektGewaehlt = useRef(false);
+    // Spiegel der Auswahl, damit der Reset beim Neuoeffnen die Speicherplaetze
+    // der hochgeladenen Bilder des letzten Durchlaufs freigeben kann.
+    const auswahlRef = useRef<GewaehltesBild[]>([]);
+    useEffect(() => { auswahlRef.current = auswahl; }, [auswahl]);
+    // Beim Verlassen der Seite die hochgeladenen Bilder aus dem Speicher geben.
+    useEffect(() => () => gibUploadsFrei(auswahlRef.current), []);
 
     // Zuruecksetzen, sobald der Assistent neu geoeffnet wird.
     useEffect(() => {
         if (offen) {
             setSchritt('projekt');
             setProjekt(null);
+            gibUploadsFrei(auswahlRef.current);
             setAuswahl([]);
             setStand(LEERER_STAND);
             setMitKi(false);
@@ -283,7 +291,6 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                         <Button
                             size="sm"
                             onClick={schliessen}
-                            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                         >
                             Im Editor weitermachen
                             <ArrowRight className="w-4 h-4" />
@@ -295,7 +302,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                             size="sm"
                             disabled={schritt === 'projekt' || speichert}
                             onClick={() => setSchritt(schritt === 'text' ? 'weg' : 'bilder')}
-                            className="border border-slate-300 text-slate-600 hover:bg-slate-100"
+                            variant="secondary"
                         >
                             <ArrowLeft className="w-4 h-4" />
                             Zurück
@@ -312,7 +319,6 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                             <Button
                                 size="sm"
                                 onClick={() => { void bereiteKiBilderVor(auswahl); setSchritt('weg'); }}
-                                className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                             >
                                 Weiter
                                 <ArrowRight className="w-4 h-4" />
@@ -325,7 +331,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                                     size="sm"
                                     disabled={!kannSpeichern || speichert}
                                     onClick={() => void speichern(false)}
-                                    className="border border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    variant="outline"
                                 >
                                     Als Entwurf speichern
                                 </Button>
@@ -333,7 +339,6 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                                     size="sm"
                                     disabled={!kannSpeichern || speichert}
                                     onClick={() => void speichern(true)}
-                                    className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
                                 >
                                     Veröffentlichen
                                 </Button>
@@ -353,16 +358,30 @@ function Schrittleiste({ aktiv }: { aktiv: Schritt }) {
         { name: 'weg', label: 'Weg' },
         { name: 'text', label: 'Text' },
     ];
+    const aktuell = schritte.findIndex(s => s.name === aktiv);
     return (
-        <ol className="hidden md:flex items-center gap-2 text-sm">
-            {schritte.map((s, i) => (
-                <li key={s.name} className="flex items-center gap-2">
-                    <span className={aktiv === s.name ? 'text-rose-700 font-medium' : 'text-slate-400'}>
-                        {s.label}
-                    </span>
-                    {i < schritte.length - 1 && <span className="text-slate-300">/</span>}
-                </li>
-            ))}
+        <ol className="hidden md:flex items-center gap-3 text-sm" aria-label="Fortschritt">
+            {schritte.map((s, i) => {
+                const erledigt = i < aktuell;
+                const istAktiv = i === aktuell;
+                return (
+                    <li key={s.name} className="flex items-center gap-3" aria-current={istAktiv ? 'step' : undefined}>
+                        <span className="flex items-center gap-2">
+                            <span className={
+                                `w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold
+                                ${istAktiv ? 'bg-rose-600 text-white'
+                                    : erledigt ? 'bg-rose-100 text-rose-700'
+                                        : 'bg-slate-100 text-slate-500'}`}>
+                                {erledigt ? <Check className="w-3.5 h-3.5" /> : i + 1}
+                            </span>
+                            <span className={istAktiv ? 'text-slate-900 font-semibold' : 'text-slate-500'}>
+                                {s.label}
+                            </span>
+                        </span>
+                        {i < schritte.length - 1 && <span className="w-6 h-px bg-slate-300" aria-hidden="true" />}
+                    </li>
+                );
+            })}
         </ol>
     );
 }

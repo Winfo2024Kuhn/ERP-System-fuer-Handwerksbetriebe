@@ -151,6 +151,12 @@ const NAVIGATION: NavCategory[] = [
                     { name: 'Anrufbeantworter', href: '/telefon/anrufbeantworter', icon: Voicemail },
                 ]
             },
+            {
+                label: 'Website',
+                items: [
+                    { name: 'Neuigkeiten', href: '/website', icon: Globe },
+                ]
+            }
         ]
     },
     {
@@ -170,12 +176,6 @@ const NAVIGATION: NavCategory[] = [
                 items: [
                     { name: 'Erfolgsanalyse', href: '/analyse', icon: BarChart3 },
                     { name: 'Kostenstellen', href: '/kostenstellen', icon: Wallet },
-                ]
-            },
-            {
-                label: 'Website',
-                items: [
-                    { name: 'Neuigkeiten', href: '/website', icon: Globe },
                 ]
             }
         ]

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ImageOff, Loader2, Pencil } from 'lucide-react';
+import { Check, ImageOff, Loader2, Pencil, X } from 'lucide-react';
+import { toSafeResourceUrl } from '../../../lib/htmlSanitizer';
 import { ladeProjektBilder } from '../api';
 import { BildEditorModal } from '../BildEditorModal';
+import { BildUploadFeld } from '../BildUploadFeld';
+import { eintragAusDatei } from '../bildUpload';
 import { STANDARD_BEARBEITUNG, type Bildbearbeitung } from '../bildbearbeitung';
 import type { ProjektBild } from '../typen';
 
@@ -18,7 +21,9 @@ export interface SchrittBilderProps {
 
 /**
  * Zweiter Schritt des Assistenten. Zeigt alle Bilder des Projekts aus
- * Bautagebuch und Projektdokumenten und laesst mehrere auswaehlen.
+ * Bautagebuch und Projektdokumenten und laesst mehrere auswaehlen. Zusaetzlich
+ * koennen Bilder von der Festplatte hochgeladen werden; sie landen in
+ * derselben Auswahl und lassen sich genauso bearbeiten.
  *
  * Die Reihenfolge der Auswahl ist zugleich die Reihenfolge auf der Website:
  * die Website vergibt beim Hochladen sortOrder = images.length, und der
@@ -56,6 +61,15 @@ export function SchrittBilder({ projektId, auswahl, onAuswahlAendern }: SchrittB
         }
     }, [auswahl, gewaehlteSchluessel, onAuswahlAendern]);
 
+    const dateienHinzufuegen = (dateien: File[]) => {
+        onAuswahlAendern([...auswahl, ...dateien.map(eintragAusDatei)]);
+    };
+
+    const uploadEntfernen = (eintrag: GewaehltesBild) => {
+        URL.revokeObjectURL(eintrag.bild.url);
+        onAuswahlAendern(auswahl.filter(a => a.bild.schluessel !== eintrag.bild.schluessel));
+    };
+
     const bearbeitungUebernehmen = (bearbeitung: Bildbearbeitung) => {
         if (!inBearbeitung) return;
         onAuswahlAendern(auswahl.map(a =>
@@ -65,40 +79,77 @@ export function SchrittBilder({ projektId, auswahl, onAuswahlAendern }: SchrittB
 
     const ausBautagebuch = bilder.filter(b => b.quelle === 'bautagebuch');
     const ausDokumenten = bilder.filter(b => b.quelle === 'dokument');
+    const eigene = auswahl.filter(a => a.bild.quelle === 'upload');
 
-    if (laedt) {
-        return (
-            <div className="flex items-center justify-center py-16 text-slate-400">
-                <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                Bilder werden geladen...
-            </div>
-        );
-    }
-
-    if (fehler) {
-        return <p className="text-rose-700 py-8">{fehler}</p>;
-    }
-
-    if (bilder.length === 0) {
-        return (
-            <div className="text-center py-16 text-slate-400">
-                <ImageOff className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                <p className="text-slate-600 font-medium">Zu diesem Projekt gibt es noch keine Bilder.</p>
-                <p className="mt-1">
-                    Bilder entstehen im Bautagebuch des Projekts oder werden dort unter Dateien hochgeladen.
-                </p>
-            </div>
-        );
-    }
-
+    // Die Ablagefläche bleibt in jedem Zustand sichtbar: auch ohne Projektbilder
+    // oder bei einem Ladefehler kann man Bilder vom Computer nehmen.
     return (
         <div className="space-y-6">
-            <p className="text-sm text-slate-500">
+            <BildUploadFeld onDateien={dateienHinzufuegen} kompakt={eigene.length > 0} />
+
+            <p className="text-sm text-slate-600">
                 {auswahl.length === 0
                     ? 'Noch kein Bild ausgewählt.'
                     : `${auswahl.length} ${auswahl.length === 1 ? 'Bild' : 'Bilder'} ausgewählt. Die Reihenfolge der Auswahl ist die Reihenfolge auf der Website.`}
             </p>
 
+            {eigene.length > 0 && (
+                <div>
+                    <h3 className="font-semibold text-slate-900 mb-3">
+                        Vom Computer <span className="font-normal text-slate-500">({eigene.length})</span>
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        {eigene.map(eintrag => (
+                            <div key={eintrag.bild.schluessel} className="relative">
+                                <img
+                                    src={toSafeResourceUrl(eintrag.bild.url)}
+                                    alt={eintrag.bild.originalDateiname}
+                                    className="w-full h-28 object-cover rounded-lg border-2 border-rose-600 bg-slate-100"
+                                />
+                                <button
+                                    type="button"
+                                    aria-label={`${eintrag.bild.originalDateiname} bearbeiten`}
+                                    title="Bild bearbeiten"
+                                    onClick={() => setInBearbeitung(eintrag)}
+                                    className="absolute top-1.5 right-9 w-6 h-6 rounded-full bg-white text-slate-700 shadow flex items-center justify-center hover:bg-slate-100 cursor-pointer"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-label={`${eintrag.bild.originalDateiname} entfernen`}
+                                    title="Entfernen"
+                                    onClick={() => uploadEntfernen(eintrag)}
+                                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white text-slate-700 shadow flex items-center justify-center hover:bg-rose-50 hover:text-rose-700 cursor-pointer"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                                <p className="mt-1 text-xs text-slate-500 truncate" title={eintrag.bild.originalDateiname}>
+                                    {eintrag.bild.originalDateiname}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {laedt ? (
+                <div className="flex items-center justify-center py-10 text-slate-500">
+                    <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                    Bilder werden geladen...
+                </div>
+            ) : fehler ? (
+                <p className="text-rose-700 py-4">{fehler}</p>
+            ) : bilder.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                    <ImageOff className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                    <p className="text-slate-700 font-medium">Zu diesem Projekt gibt es noch keine Bilder.</p>
+                    <p className="mt-1 text-sm">
+                        Bilder entstehen im Bautagebuch des Projekts oder werden dort unter Dateien hochgeladen.
+                    </p>
+                </div>
+            ) : (
+                <>
             <Gruppe
                 titel="Aus dem Bautagebuch"
                 bilder={ausBautagebuch}
@@ -115,6 +166,8 @@ export function SchrittBilder({ projektId, auswahl, onAuswahlAendern }: SchrittB
                 onUmschalten={umschalten}
                 onBearbeiten={setInBearbeitung}
             />
+                </>
+            )}
 
             <BildEditorModal
                 offen={inBearbeitung !== null}
