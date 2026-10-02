@@ -2,13 +2,13 @@ package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageListenFilter;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
-import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.AnfrageService;
@@ -42,14 +42,13 @@ class AnfrageControllerTest {
         KundeRepository kundeRepository = mock(KundeRepository.class);
         AnfrageNotizRepository anfrageNotizRepository = mock(AnfrageNotizRepository.class);
         AnfrageNotizBildRepository anfrageNotizBildRepository = mock(AnfrageNotizBildRepository.class);
-        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
         MitarbeiterRepository mitarbeiterRepository = mock(MitarbeiterRepository.class);
         FrontendUserProfileService frontendUserProfileService = mock(FrontendUserProfileService.class);
         DokumentFreigabeService dokumentFreigabeService = mock(DokumentFreigabeService.class);
 
         AnfrageController controller = new AnfrageController(anfrageService, ausgangsGeschaeftsDokumentService,
                 dateiSpeicherService, zugferdErstellService, zugferdExtractorService, pdfAiExtractorService,
-                kundeRepository, anfrageNotizRepository, anfrageNotizBildRepository, anfrageRepository,
+                kundeRepository, anfrageNotizRepository, anfrageNotizBildRepository,
                 mitarbeiterRepository, frontendUserProfileService, dokumentFreigabeService);
 
         Anfrage anfrage = new Anfrage();
@@ -80,14 +79,13 @@ class AnfrageControllerTest {
         KundeRepository kundeRepository = mock(KundeRepository.class);
         AnfrageNotizRepository anfrageNotizRepository = mock(AnfrageNotizRepository.class);
         AnfrageNotizBildRepository anfrageNotizBildRepository = mock(AnfrageNotizBildRepository.class);
-        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
         MitarbeiterRepository mitarbeiterRepository = mock(MitarbeiterRepository.class);
         FrontendUserProfileService frontendUserProfileService = mock(FrontendUserProfileService.class);
         DokumentFreigabeService dokumentFreigabeService = mock(DokumentFreigabeService.class);
 
         AnfrageController controller = new AnfrageController(anfrageService, ausgangsGeschaeftsDokumentService,
                 dateiSpeicherService, zugferdErstellService, zugferdExtractorService, pdfAiExtractorService,
-                kundeRepository, anfrageNotizRepository, anfrageNotizBildRepository, anfrageRepository,
+                kundeRepository, anfrageNotizRepository, anfrageNotizBildRepository,
                 mitarbeiterRepository, frontendUserProfileService, dokumentFreigabeService);
 
         KategorieVorschlagDto dto = new KategorieVorschlagDto();
@@ -115,7 +113,6 @@ class AnfrageControllerTest {
                 mock(KundeRepository.class),
                 mock(AnfrageNotizRepository.class),
                 mock(AnfrageNotizBildRepository.class),
-                mock(AnfrageRepository.class),
                 mock(MitarbeiterRepository.class),
                 mock(FrontendUserProfileService.class),
                 mock(DokumentFreigabeService.class));
@@ -136,8 +133,8 @@ class AnfrageControllerTest {
         assertEquals(1, result.size());
         assertEquals(1L, result.get(0).getId());
         verify(anfrageService).suche(null, null, null, null, null, false);
-        verify(anfrageService, never()).sucheSeite(any(), any(), any(), any(), any(), anyBoolean(), any(), anyInt(),
-                anyInt());
+        verify(anfrageService, never()).sucheSeiteGefiltert(any(), any(), any(), any(), any(), anyBoolean(), any(),
+                anyInt(), anyInt());
     }
 
     @Test
@@ -148,32 +145,35 @@ class AnfrageControllerTest {
         AnfrageResponseDto dto = new AnfrageResponseDto();
         dto.setId(7L);
         AnfrageSeiteResponseDto seite = new AnfrageSeiteResponseDto(List.of(dto), 25L, 0, 12);
-        when(anfrageService.sucheSeite(null, null, null, null, null, false, null, 0, 12))
+        AnfrageListenFilter ohneFilter = new AnfrageListenFilter(null, null, null, null);
+        when(anfrageService.sucheSeiteGefiltert(null, null, null, null, null, false, ohneFilter, 0, 12))
                 .thenReturn(seite);
 
-        AnfrageSeiteResponseDto result = controller.listeSeite(null, null, null, null, null, null, false, null, 0, 12);
+        AnfrageSeiteResponseDto result = controller.listeSeite(
+                null, null, null, null, null, null, false, null, null, null, null, 0, 12);
 
         assertEquals(25L, result.gesamt());
         assertEquals(0, result.seite());
         assertEquals(12, result.seitenGroesse());
         assertEquals(1, result.anfragen().size());
         assertEquals(7L, result.anfragen().get(0).getId());
-        verify(anfrageService).sucheSeite(null, null, null, null, null, false, null, 0, 12);
+        verify(anfrageService).sucheSeiteGefiltert(null, null, null, null, null, false, ohneFilter, 0, 12);
         verify(anfrageService, never()).suche(any(), any(), any(), any(), any(), anyBoolean());
     }
 
-    /** Der Angebots-Status-Filter muss unverändert an den Service durchgereicht werden. */
+    /** Alle Listen-Filter müssen unverändert an den Service durchgereicht werden. */
     @Test
-    void listeSeiteReichtFreigabeFilterDurch() {
+    void listeSeiteReichtAlleFilterDurch() {
         AnfrageService anfrageService = mock(AnfrageService.class);
         AnfrageController controller = neuerController(anfrageService);
 
+        AnfrageListenFilter filter = new AnfrageListenFilter("pending", "offen", "webseite", "alt");
         AnfrageSeiteResponseDto seite = new AnfrageSeiteResponseDto(List.of(), 0L, 0, 12);
-        when(anfrageService.sucheSeite(null, null, null, null, null, false, "pending", 0, 12))
+        when(anfrageService.sucheSeiteGefiltert(null, null, null, null, null, false, filter, 0, 12))
                 .thenReturn(seite);
 
-        controller.listeSeite(null, null, null, null, null, null, false, "pending", 0, 12);
+        controller.listeSeite(null, null, null, null, null, null, false, "pending", "offen", "webseite", "alt", 0, 12);
 
-        verify(anfrageService).sucheSeite(null, null, null, null, null, false, "pending", 0, 12);
+        verify(anfrageService).sucheSeiteGefiltert(null, null, null, null, null, false, filter, 0, 12);
     }
 }

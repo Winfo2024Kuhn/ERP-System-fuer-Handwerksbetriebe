@@ -14,9 +14,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -64,6 +66,7 @@ public class GeminiDokumentAnalyseService {
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final SystemSettingsService systemSettingsService;
     private final ApplicationEventPublisher eventPublisher;
+    private final LieferantDokumentAbgleich dokumentAbgleich;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -164,8 +167,10 @@ public class GeminiDokumentAnalyseService {
                 "mwstSatz": 0.19 oder null,
                 "liefertermin": "YYYY-MM-DD oder null",
                 "zahlungsziel": "YYYY-MM-DD (berechnetes Fälligkeitsdatum) oder null",
-                "bestellnummer": "Unsere Bestellnummer falls erwähnt oder null",
-                "referenzNummer": "Nummer die auf ein VORHERIGES Dokument verweist. PRIORITÄT je nach Dokumenttyp: Bei AB→Anfrages-Nr./Anfrage-Nr. suchen. Bei RECHNUNG/LIEFERSCHEIN→Auftrags-Nr./AB-Nr. suchen. Bei GUTSCHRIFT→Rechnungs-Nr. suchen. Suche nach: 'Ihr Angebot', 'Angebots-Nr.', 'Auftrags-Nr.', 'AB-Nr.', 'Ihre Bestellung', 'Rechnungs-Nr.'",
+                "bestellnummer": "Unsere Bestellnummer ('Ihre Bestellung', 'Ihre Bestell-Nr.', 'Ihr Auftrag Nr.') oder null. Bei ANGEBOT fast immer null. NICHT die Kundennummer!",
+                "referenzNummer": "Nummer die auf ein VORHERIGES Dokument verweist. PRIORITÄT je nach Dokumenttyp: Bei AB→Angebots-Nr. suchen. Bei RECHNUNG/LIEFERSCHEIN→Auftrags-Nr./AB-Nr. suchen. Bei GUTSCHRIFT→Rechnungs-Nr. suchen. Suche nach: 'Ihr Angebot', 'unser Angebot', 'gemäß Angebot', 'Angebots-Nr.', 'Auftrags-Nr.', 'AB-Nr.', 'Ihre Bestellung', 'Rechnungs-Nr.'",
+                "weitereReferenzen": ["ALLE weiteren im Dokument genannten Nummern anderer Geschäftsdokumente: Angebots-Nr., Auftrags-/AB-Nr., Lieferschein-Nr., Rechnungs-Nr., Vorgangs-Nr. NICHT die eigene dokumentNummer, NICHT Kundennummer, Artikelnummer, Telefon, IBAN oder Steuernummer. Leeres Array wenn keine."],
+                "kommission": "Kommission / Bauvorhaben / Projekt / Objekt / 'Ihr Zeichen' falls angegeben (z.B. 'BV Mustermann, Hauptstr. 5'), sonst null",
                 "bereitsGezahlt": true/false,
                 "zahlungsart": "VORAUSKASSE|SEPA_LASTSCHRIFT|KREDITKARTE|PAYPAL|AMAZON_PAY|UEBERWEISUNG|BAR|SONSTIGE|null",
                 "skontoTage": 8 oder null,
@@ -273,12 +278,19 @@ public class GeminiDokumentAnalyseService {
                 - NICHT "VORAUSKASSE"
             12. IMMER nach Skonto-Bedingungen suchen! Diese stehen oft klein gedruckt am Dokumentende.
             13. Wenn zahlungsziel nicht als Datum lesbar, aber nettoTage erkannt: berechne zahlungsziel selbst!
-            14. Wenn das Dokument kein Anfrage/AB/Lieferschein/Rechnung ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
+            14. Wenn das Dokument kein Angebot/AB/Lieferschein/Rechnung/Gutschrift ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
             15. REFERENZNUMMER EXTRAKTION (SEHR WICHTIG für Dokumenten-Verknüpfung!):
-                - Bei AUFTRAGSBESTAETIGUNG: Suche nach "Ihr Anfrage", "Anfrages-Nr.", "Bezug: Anfrage" → das ist die Anfragesnummer
+                - Bei AUFTRAGSBESTAETIGUNG: Suche nach "Ihr Angebot", "unser Angebot", "gemäß Angebot", "Angebots-Nr.", "Bezug: Angebot" → das ist die Angebotsnummer
                 - Bei LIEFERSCHEIN: Suche nach "Auftrags-Nr.", "AB-Nr.", "Ihre Bestellung" → das ist die AB-Nummer
                 - Bei RECHNUNG: Suche nach "Auftrags-Nr.", "AB-Nr." (PRIORITÄT!) oder "Lieferschein-Nr." → verweist auf AB oder Lieferschein
                 - Bei GUTSCHRIFT: Suche nach "Rechnungs-Nr.", "zu Rechnung" → verweist auf die Original-Rechnung
+                - Bei ANGEBOT: Ist es ein geändertes Angebot ("ersetzt Angebot", "Änderung zu Angebot",
+                  "Revision", "Nachtragsangebot zu"), dann die Nummer des ursprünglichen Angebots als
+                  referenzNummer eintragen.
+                - Alle übrigen genannten Belegnummern zusätzlich in "weitereReferenzen" eintragen.
+                - "kommission" IMMER mit ausfüllen, wenn Kommission/Bauvorhaben/Projekt genannt ist –
+                  besonders bei ANGEBOT, denn dort fehlt die Bestellnummer noch und die Kommission ist
+                  oft der einzige Bezug zur späteren Auftragsbestätigung.
             16. DOKUMENT-GÜLTIGKEIT: Wenn "Abschrift", "Kopie", "Entwurf" oder "Duplikat" irgendwo im Dokument steht, MUSS " (Kopie)" an dokumentTyp angehängt werden.
             17. ABRECHNUNGS-ZUSAMMENSTELLUNG: Wenn der Titel oder die Überschrift des
                 Dokuments "Zusammenstellung" enthält (z.B. "E-ZUSAMMENSTELLUNG",
@@ -513,6 +525,8 @@ public class GeminiDokumentAnalyseService {
                     "betragNetto": 103.74,
                     "bestellnummer": "...",
                     "referenzNummer": "...",
+                    "weitereReferenzen": ["weitere genannte Belegnummern (Angebot, AB, Lieferschein, Rechnung), nicht Kundennummer"],
+                    "kommission": "Kommission/Bauvorhaben falls angegeben, sonst null",
                     "bereitsGezahlt": true,
                                         "zahlungsart": "SEPA_LASTSCHRIFT",
                     "confidence": 0.95
@@ -935,6 +949,7 @@ public class GeminiDokumentAnalyseService {
 
             builder.analyseQuelle("KI");
 
+            builder.aiRawJson(jsonResponse);
             return builder.build();
 
         } catch (Exception e) {
@@ -1139,9 +1154,8 @@ public class GeminiDokumentAnalyseService {
                     geschaeftsdaten.getAiRawJson() != null ? "KI" : "ZUGFeRD/XML",
                     geschaeftsdaten.getAiConfidence());
 
-            // Nachträgliche Verknüpfung: Suche ob DIESES Dokument als Referenz in anderen
-            // genutzt wird
-            nachtraeglicheVerknuepfung(freshDokument, savedGeschaeftsdaten);
+            // Nachträgliche Verknüpfung in beide Richtungen (z. B. Angebot nach der AB)
+            performRelink(freshDokument);
 
             return savedGeschaeftsdaten;
 
@@ -1845,205 +1859,122 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
-     * Führt automatische Verknüpfung basierend auf Referenznummer und Dokumenttyp
-     * durch.
+     * Hängt die Vorgänger eines Dokuments an (Angebot ← AB ← Lieferschein ←
+     * Rechnung ← Gutschrift). Entschieden wird im {@link LieferantDokumentAbgleich}.
      */
     private void automatischeVerknuepfung(LieferantDokument dokument, LieferantGeschaeftsdokument geschaeftsdaten) {
-        automatischeVerknuepfung(dokument, geschaeftsdaten, null);
+        automatischeVerknuepfung(dokument, geschaeftsdaten, null, dokumentAbgleich.neuerSpeicher());
     }
 
     private void automatischeVerknuepfung(LieferantDokument dokument, LieferantGeschaeftsdokument geschaeftsdaten,
-            List<LieferantDokument> vorhandeneKandidaten) {
-        String referenzNummer = geschaeftsdaten.getReferenzNummer() != null ? geschaeftsdaten.getReferenzNummer().trim()
-                : null;
-
-        if (referenzNummer == null || referenzNummer.isBlank()) {
-            log.debug("[Verknüpfung] Dokument {} hat keine Referenznummer", dokument.getId());
-
-            // FIXME: Wenn wir Fallback auch OHNE Referenznummer wollen, müssen wir hier
-            // weiterlaufen.
-            // Vorerst lasse ich es wie es war, um nicht zu viel auf einmal zu ändern.
-            if (geschaeftsdaten.getBetragBrutto() == null) // Nur returnen wenn auch kein Brutto da ist für Fallback
-                return;
-        }
-
+            List<LieferantDokument> vorhandeneKandidaten, LieferantDokumentAbgleich.Merkmalspeicher speicher) {
         if (dokument.getLieferant() == null) {
             log.warn("[Verknüpfung] Dokument {} hat keinen Lieferanten!", dokument.getId());
             return;
         }
-
-        // Bestimme welche Dokumenttypen als Vorgänger gesucht werden sollen
-        List<LieferantDokumentTyp> vorgaengerTypen = switch (dokument.getTyp()) {
-            case RECHNUNG -> List.of(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, LieferantDokumentTyp.LIEFERSCHEIN);
-            case GUTSCHRIFT -> List.of(LieferantDokumentTyp.RECHNUNG); // Gutschrift verweist auf Rechnung
-            case LIEFERSCHEIN -> List.of(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
-            case AUFTRAGSBESTAETIGUNG -> List.of(LieferantDokumentTyp.ANGEBOT);
-            default -> List.of();
-        };
-
+        List<LieferantDokumentTyp> vorgaengerTypen = LieferantDokumentAbgleich.vorgaengerTypen(dokument.getTyp());
         if (vorgaengerTypen.isEmpty()) {
             log.debug("[Verknüpfung] Dokumenttyp {} hat keine Vorgängertypen definiert", dokument.getTyp());
             return;
         }
 
-        log.info("[Verknüpfung] Suche für Dokument {} (Typ: {}, Referenz: '{}') bei Lieferant {}",
-                dokument.getId(), dokument.getTyp(), geschaeftsdaten.getReferenzNummer(),
-                dokument.getLieferant().getId());
+        List<LieferantDokument> kandidaten = vorhandeneKandidaten != null
+                ? vorhandeneKandidaten
+                : dokumentRepository.findByLieferantIdAndTypIn(dokument.getLieferant().getId(), vorgaengerTypen);
 
-        // Suche passende Dokumente beim gleichen Lieferanten
-        List<LieferantDokument> kandidaten;
-        if (vorhandeneKandidaten != null) {
-            kandidaten = vorhandeneKandidaten.stream()
-                    .filter(d -> vorgaengerTypen.contains(d.getTyp()))
-                    .collect(java.util.stream.Collectors.toList());
-        } else {
-            kandidaten = dokumentRepository.findByLieferantIdAndTypIn(
-                    dokument.getLieferant().getId(), vorgaengerTypen);
-        }
-
-        log.info("[Verknüpfung] Gefunden: {} Kandidaten vom Typ {}", kandidaten.size(), vorgaengerTypen);
-
-        for (LieferantDokument kandidat : kandidaten) {
-            if (kandidat.getGeschaeftsdaten() == null) {
-                log.debug("[Verknüpfung] Kandidat {} hat keine Geschäftsdaten", kandidat.getId());
-                continue;
-            }
-
-            String kandidatNummer = kandidat.getGeschaeftsdaten().getDokumentNummer();
-            log.debug("[Verknüpfung] Vergleiche Kandidat {} DokumentNr '{}' mit Referenz '{}'",
-                    kandidat.getId(), kandidatNummer, referenzNummer);
-
-            if (kandidatNummer != null && referenzNummer != null) {
-                // Erst exakter Vergleich (Trim + IgnoreCase)
-                if (kandidatNummer.trim().equalsIgnoreCase(referenzNummer.trim())) {
-                    dokument.getVerknuepfteDokumente().add(kandidat);
-                    log.info("[Verknüpfung] EXAKTER MATCH! Dokument {} -> {} (Referenz: {})",
-                            dokument.getId(), kandidat.getId(), referenzNummer);
-                    break;
-                }
-                // Dann normalisierter Vergleich (ohne Sonderzeichen/Leerzeichen)
-                String kandidatNummerNorm = normalizeNummer(kandidatNummer);
-                String referenzNummerNorm = normalizeNummer(referenzNummer);
-                if (kandidatNummerNorm != null && referenzNummerNorm != null &&
-                        kandidatNummerNorm.equals(referenzNummerNorm)) {
-                    dokument.getVerknuepfteDokumente().add(kandidat);
-                    log.info("[Verknüpfung] NORMALISIERTER MATCH! Dokument {} -> {} (Referenz: {} -> {}, DokNr: {} -> {})",
-                            dokument.getId(), kandidat.getId(), referenzNummer, referenzNummerNorm,
-                            kandidatNummer, kandidatNummerNorm);
-                    break;
-                }
-            }
-        }
-
-        // FALLBACK: Wenn keine Referenznummer-Verknüpfung, versuche Brutto +
-        // Datum-Match
-        if (dokument.getVerknuepfteDokumente().isEmpty() && geschaeftsdaten.getBetragBrutto() != null) {
-            java.math.BigDecimal meinBrutto = geschaeftsdaten.getBetragBrutto();
-            java.time.LocalDate meinDatum = geschaeftsdaten.getDokumentDatum();
-
-            for (LieferantDokument kandidat : kandidaten) {
-                if (kandidat.getGeschaeftsdaten() == null)
-                    continue;
-
-                java.math.BigDecimal kandBrutto = kandidat.getGeschaeftsdaten().getBetragBrutto();
-                java.time.LocalDate kandDatum = kandidat.getGeschaeftsdaten().getDokumentDatum();
-
-                // Gutschriften mindern die positive Rechnung; die Betragsgröße muss übereinstimmen.
-                if (kandBrutto == null)
-                    continue;
-                boolean gleicherBetrag = dokument.getTyp() == LieferantDokumentTyp.GUTSCHRIFT
-                        ? meinBrutto.abs().compareTo(kandBrutto.abs()) == 0
-                        : meinBrutto.compareTo(kandBrutto) == 0;
-                if (!gleicherBetrag)
-                    continue;
-
-                // Datum muss innerhalb ±1 Monat liegen
-                if (meinDatum != null && kandDatum != null) {
-                    java.time.LocalDate minDate = meinDatum.minusMonths(1);
-                    java.time.LocalDate maxDate = meinDatum.plusMonths(1);
-                    if (kandDatum.isBefore(minDate) || kandDatum.isAfter(maxDate))
-                        continue;
-                }
-
-                dokument.getVerknuepfteDokumente().add(kandidat);
-                log.info("[Verknüpfung] FALLBACK-MATCH! Dokument {} -> {} (Brutto: {}, Datum: {} vs {})",
-                        dokument.getId(), kandidat.getId(), meinBrutto, meinDatum, kandDatum);
-                break;
-            }
-        }
-
-        if (dokument.getVerknuepfteDokumente().isEmpty()) {
-            log.info("[Verknüpfung] Kein Match gefunden für Referenz '{}'", geschaeftsdaten.getReferenzNummer());
+        var ergebnis = dokumentAbgleich.findeVorgaenger(dokument, geschaeftsdaten, kandidaten, speicher);
+        dokument.getVerknuepfteDokumente().addAll(ergebnis.sicher());
+        // Ein Hinweis-Treffer ergänzt nur eine Lücke: Steht schon ein Vorgänger dieses
+        // Typs fest (z. B. von Hand gesetzt), bleibt die Zuordnung unverfälscht.
+        LieferantDokument hinweis = ergebnis.hinweis();
+        if (hinweis != null && !hatVorgaengerVomTyp(dokument, hinweis.getTyp())) {
+            dokument.getVerknuepfteDokumente().add(hinweis);
         }
     }
 
+    private static boolean hatVorgaengerVomTyp(LieferantDokument dokument, LieferantDokumentTyp typ) {
+        return dokument.getVerknuepfteDokumente().stream().anyMatch(v -> v.getTyp() == typ);
+    }
+
     /**
-     * Nachträgliche Verknüpfung: Sucht ANDERE Dokumente die DIESES Dokument als
-     * Referenz nutzen,
-     * ODER Dokumente auf die DIESES Dokument verweist (bidirektionale Prüfung).
-     * 
-     * @param dokument Das Dokument für das Verknüpfungen gesucht werden sollen
-     */
-    /**
-     * Nachträgliche Verknüpfung: Sucht ANDERE Dokumente die DIESES Dokument als
-     * Referenz nutzen,
-     * ODER Dokumente auf die DIESES Dokument verweist (bidirektionale Prüfung).
-     * 
-     * @param dokument Das Dokument für das Verknüpfungen gesucht werden sollen
+     * Verknüpft ein (neues oder neu analysiertes) Dokument in beide Richtungen:
+     * mit seinen Vorgängern und mit vorhandenen Nachfolgern, die auf es warten.
      */
     public void performRelink(LieferantDokument dokument) {
         if (dokument.getLieferant() == null)
             return;
-        // Lade alle Dokumente des Lieferanten
         List<LieferantDokument> alleDokumente = dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(
                 dokument.getLieferant().getId());
         performRelink(dokument, alleDokumente);
     }
 
     /**
-     * Nachträgliche Verknüpfung mit bereits geladener Dokumentenliste (Optimierung
-     * für Batch).
+     * Wie {@link #performRelink(LieferantDokument)}, mit bereits geladenen
+     * Dokumenten desselben Lieferanten.
      */
     public void performRelink(LieferantDokument dokument, List<LieferantDokument> alleDokumente) {
         if (dokument.getLieferant() == null || dokument.getGeschaeftsdaten() == null) {
             return;
         }
+        LieferantDokumentAbgleich.Merkmalspeicher speicher = dokumentAbgleich.neuerSpeicher();
 
-        LieferantGeschaeftsdokument geschaeftsdaten = dokument.getGeschaeftsdaten();
-        String meineDokumentNummer = geschaeftsdaten.getDokumentNummer() != null
-                ? geschaeftsdaten.getDokumentNummer().trim()
-                : null;
+        // 1. Vorgänger dieses Dokuments (z. B. Rechnung -> AB)
+        automatischeVerknuepfung(dokument, dokument.getGeschaeftsdaten(), alleDokumente, speicher);
 
-        // 1. Suche: Verweist dieses Dokument auf ein anderes? (z.B. Rechnung -> AB)
-        automatischeVerknuepfung(dokument, geschaeftsdaten, alleDokumente);
-
-        // 2. Suche: Verweisen andere Dokumente auf dieses? (z.B. Lieferschein ->
-        // Rechnung - eher selten, meist andersrum)
-        // Aber wichtig für Konsistenz
-        if (meineDokumentNummer != null) {
-            for (LieferantDokument anderes : alleDokumente) {
-                if (anderes.getId().equals(dokument.getId()))
-                    continue;
-                if (anderes.getGeschaeftsdaten() == null)
-                    continue;
-
-                String fremdReferenz = anderes.getGeschaeftsdaten().getReferenzNummer();
-                if (fremdReferenz != null && fremdReferenz.trim().equalsIgnoreCase(meineDokumentNummer)) {
-                    if (!anderes.getVerknuepfteDokumente().contains(dokument)) {
-                        anderes.getVerknuepfteDokumente().add(dokument);
-                        dokumentRepository.save(anderes);
-                        log.info("[Relink] Dokument {} verweist auf {} (Ref: {})",
-                                anderes.getId(), dokument.getId(), fremdReferenz);
-                    }
-                }
+        // 2. Nachfolger, zu denen dieses Dokument als Vorgänger gehört. Typischer Fall:
+        // Das Angebot kommt erst nach der Auftragsbestätigung ins Postfach.
+        LieferantDokumentTyp meinTyp = dokument.getTyp();
+        List<LieferantDokument> gleicherTyp = alleDokumente.stream()
+                .filter(d -> d.getTyp() == meinTyp)
+                .toList();
+        for (LieferantDokument anderes : alleDokumente) {
+            if (anderes == dokument || anderes.getGeschaeftsdaten() == null
+                    || (anderes.getId() != null && anderes.getId().equals(dokument.getId()))
+                    || !LieferantDokumentAbgleich.vorgaengerTypen(anderes.getTyp()).contains(meinTyp)
+                    || anderes.getVerknuepfteDokumente().contains(dokument)) {
+                continue;
+            }
+            var ergebnis = dokumentAbgleich.findeVorgaenger(
+                    anderes, anderes.getGeschaeftsdaten(), gleicherTyp, speicher);
+            boolean passt = ergebnis.sicher().contains(dokument)
+                    || (ergebnis.hinweis() == dokument && !hatVorgaengerVomTyp(anderes, meinTyp));
+            if (passt) {
+                anderes.getVerknuepfteDokumente().add(dokument);
+                dokumentRepository.save(anderes);
+                log.info("[Relink] Dokument {} -> {} nachträglich verknüpft", anderes.getId(), dokument.getId());
             }
         }
     }
 
-    // Alte Methode umbenannt/ersetzt durch allgemeinere public Methode
-    private void nachtraeglicheVerknuepfung(LieferantDokument neuesDokument,
-            LieferantGeschaeftsdokument neueGeschaeftsdaten) {
-        performRelink(neuesDokument);
+    /**
+     * Verknüpft alle Dokumente eines Lieferanten neu (bestehende Verknüpfungen
+     * bleiben). Prüft nur die Vorgänger-Richtung: Weil jedes Dokument einmal an
+     * der Reihe ist und der Nummernbezug beidseitig zählt, ist die Rückrichtung
+     * aus {@link #performRelink(LieferantDokument, List)} hier überflüssig.
+     *
+     * @return Anzahl neu entstandener Verknüpfungen
+     */
+    public int verknuepfeDokumenteNeu(List<LieferantDokument> dokumente) {
+        LieferantDokumentAbgleich.Merkmalspeicher speicher = dokumentAbgleich.neuerSpeicher();
+        // In Kettenreihenfolge und je Typ vom ältesten zum neuesten: So hängen
+        // Angebots-Fassungen schon aneinander, wenn die AB ihr Angebot sucht.
+        List<LieferantDokument> reihenfolge = dokumente.stream()
+                .sorted(Comparator
+                        .comparing((LieferantDokument d) -> LieferantDokumentAbgleich.kettenRang(d.getTyp()))
+                        .thenComparing(d -> d.getGeschaeftsdaten() != null ? d.getGeschaeftsdaten().getDokumentDatum() : null,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(LieferantDokument::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        int neu = 0;
+        for (LieferantDokument dokument : reihenfolge) {
+            if (dokument.getLieferant() == null || dokument.getGeschaeftsdaten() == null) {
+                continue;
+            }
+            int vorher = dokument.getVerknuepfteDokumente().size();
+            automatischeVerknuepfung(dokument, dokument.getGeschaeftsdaten(), dokumente, speicher);
+            neu += dokument.getVerknuepfteDokumente().size() - vorher;
+        }
+        return neu;
     }
 
     private String getMimeType(LieferantDokument dokument) {
@@ -2620,27 +2551,6 @@ public class GeminiDokumentAnalyseService {
         return UntdidCodeliste.typFuer(typeCode);
     }
 
-    /**
-     * Normalisiert eine Dokumentnummer oder Referenznummer für zuverlässige Vergleiche.
-     * Entfernt alle Nicht-Alphanumerischen Zeichen (Bindestriche, Leerzeichen, Punkte etc.)
-     * und konvertiert zu Großbuchstaben.
-     * 
-     * Beispiele:
-     * - "1-434-5" -> "14345"
-     * - "AB-2024-001" -> "AB2024001"
-     * - "RE 2024 / 001" -> "RE2024001"
-     * 
-     * @param nummer Die Original-Nummer
-     * @return Die normalisierte Nummer (nur Buchstaben + Ziffern, uppercase) oder null
-     */
-    private String normalizeNummer(String nummer) {
-        if (nummer == null || nummer.isBlank()) {
-            return null;
-        }
-        String normalized = nummer.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
-        return normalized.isEmpty() ? null : normalized;
-    }
-
     private String normalizeZahlungsart(String zahlungsart) {
         if (zahlungsart == null || zahlungsart.isBlank()) {
             return null;
@@ -2668,78 +2578,32 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
-     * Führt eine einmalige Neuverknüpfung aller bestehenden Dokumente durch.
-     * Sollte nach Einführung der normalisierten Nummern-Logik einmal ausgeführt werden,
-     * um bestehende Dokumente mit der neuen Logik zu verknüpfen.
-     * 
-     * @return Anzahl der neu verknüpften Dokumente
+     * Backfill für alle Lieferanten: ergänzt fehlende Verknüpfungen in den
+     * Dokumentenketten. Bestehende (auch von Hand gesetzte) Verknüpfungen bleiben
+     * erhalten – es wird nur hinzugefügt, nie gelöscht.
+     *
+     * @return Anzahl neu entstandener Verknüpfungen
      */
     @Transactional
     public int relinkAlleDokumente() {
-        log.info("[Relink] Starte einmalige Neuverknüpfung aller Dokumente...");
-        
-        List<LieferantDokument> alleDokumente = dokumentRepository.findAll();
-        int verknuepft = 0;
-        int gesamt = alleDokumente.size();
-        
-        for (LieferantDokument dokument : alleDokumente) {
-            if (dokument.getGeschaeftsdaten() == null) {
-                continue;
-            }
-            
-            int vorher = dokument.getVerknuepfteDokumente().size();
-            
-            // Bestehende Verknüpfungen löschen und neu aufbauen
-            dokument.getVerknuepfteDokumente().clear();
-            automatischeVerknuepfung(dokument, dokument.getGeschaeftsdaten());
-            
-            int nachher = dokument.getVerknuepfteDokumente().size();
-            if (nachher > vorher) {
-                verknuepft++;
-                log.info("[Relink] Dokument {}: {} -> {} Verknüpfungen", 
-                        dokument.getId(), vorher, nachher);
-            }
-        }
-        
-        log.info("[Relink] Fertig! {} von {} Dokumenten neu verknüpft.", verknuepft, gesamt);
-        return verknuepft;
+        log.info("[Backfill] Ergänze Verknüpfungen für alle Lieferanten...");
+        Map<Long, List<LieferantDokument>> jeLieferant = dokumentRepository.findAll().stream()
+                .filter(d -> d.getLieferant() != null && d.getLieferant().getId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(d -> d.getLieferant().getId()));
+        int neu = jeLieferant.values().stream().mapToInt(this::verknuepfeDokumenteNeu).sum();
+        log.info("[Backfill] Fertig: {} neue Verknüpfungen bei {} Lieferanten.", neu, jeLieferant.size());
+        return neu;
     }
 
     /**
-     * Führt eine Neuverknüpfung aller Dokumente eines bestimmten Lieferanten durch.
-     * 
-     * @param lieferantId ID des Lieferanten
-     * @return Anzahl der neu verknüpften Dokumente
+     * Backfill für einen Lieferanten, siehe {@link #relinkAlleDokumente()}.
+     *
+     * @return Anzahl neu entstandener Verknüpfungen
      */
     @Transactional
     public int relinkDokumenteByLieferant(Long lieferantId) {
-        log.info("[Relink] Starte Neuverknüpfung für Lieferant {}...", lieferantId);
-        
-        List<LieferantDokument> dokumente = dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(lieferantId);
-        int verknuepft = 0;
-        int gesamt = dokumente.size();
-        
-        for (LieferantDokument dokument : dokumente) {
-            if (dokument.getGeschaeftsdaten() == null) {
-                continue;
-            }
-            
-            int vorher = dokument.getVerknuepfteDokumente().size();
-            
-            // Bestehende Verknüpfungen löschen und neu aufbauen
-            dokument.getVerknuepfteDokumente().clear();
-            automatischeVerknuepfung(dokument, dokument.getGeschaeftsdaten());
-            
-            int nachher = dokument.getVerknuepfteDokumente().size();
-            if (nachher > vorher) {
-                verknuepft++;
-                log.info("[Relink] Dokument {}: {} -> {} Verknüpfungen", 
-                        dokument.getId(), vorher, nachher);
-            }
-        }
-        
-        log.info("[Relink] Fertig für Lieferant {}! {} von {} Dokumenten neu verknüpft.", 
-                lieferantId, verknuepft, gesamt);
-        return verknuepft;
+        int neu = verknuepfeDokumenteNeu(dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(lieferantId));
+        log.info("[Backfill] Lieferant {}: {} neue Verknüpfungen.", lieferantId, neu);
+        return neu;
     }
 }

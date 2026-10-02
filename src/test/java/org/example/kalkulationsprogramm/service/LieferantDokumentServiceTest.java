@@ -52,6 +52,8 @@ class LieferantDokumentServiceTest {
     private GeminiDokumentAnalyseService geminiService;
     @Mock
     private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
+    @Mock
+    private LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
 
     @InjectMocks
     private LieferantDokumentService service;
@@ -503,5 +505,56 @@ class LieferantDokumentServiceTest {
             assertThat(Files.exists(datei)).isTrue();
             verify(dokumentRepository).delete(dokument);
         }
+    }
+
+    @Test
+    @DisplayName("uploadDokument speichert die KI-Antwort und verknüpft in der Dokumentenkette")
+    void uploadDokument_speichertKiAntwortUndVerknuepft(@org.junit.jupiter.api.io.TempDir java.nio.file.Path uploadRoot)
+            throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+
+        org.example.kalkulationsprogramm.domain.Abteilung abteilung = new org.example.kalkulationsprogramm.domain.Abteilung();
+        abteilung.setId(3L);
+        org.example.kalkulationsprogramm.domain.Mitarbeiter mitarbeiter = new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+        mitarbeiter.setId(5L);
+        mitarbeiter.getAbteilungen().add(abteilung);
+        given(mitarbeiterRepository.findById(5L)).willReturn(Optional.of(mitarbeiter));
+        given(berechtigungRepository.findSichtbareTypenByAbteilungIds(List.of(3L))).willReturn(List.of("ANGEBOT"));
+        given(berechtigungRepository.findScanbarTypenByAbteilungIds(List.of(3L))).willReturn(List.of("ANGEBOT"));
+
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(7L);
+        given(lieferantenRepository.findById(7L)).willReturn(Optional.of(lieferant));
+        given(dokumentRepository.saveAndFlush(org.mockito.ArgumentMatchers.any(LieferantDokument.class)))
+                .willAnswer(inv -> {
+                    LieferantDokument d = inv.getArgument(0);
+                    if (d.getId() == null) {
+                        d.setId(42L);
+                    }
+                    return d;
+                });
+        given(geschaeftsdokumentRepository.saveAndFlush(org.mockito.ArgumentMatchers.any(LieferantGeschaeftsdokument.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+
+        String kiAntwort = "{\"dokumentTyp\":\"ANGEBOT\",\"kommission\":\"BV Mustermann\"}";
+        given(geminiService.analyzeFile(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("angebot.pdf"),
+                org.mockito.ArgumentMatchers.anyBoolean()))
+                .willReturn(LieferantDokumentDto.AnalyzeResponse.builder()
+                        .dokumentTyp(LieferantDokumentTyp.ANGEBOT)
+                        .dokumentNummer("AN-4711")
+                        .aiRawJson(kiAntwort)
+                        .build());
+
+        LieferantDokumentDto.UploadRequest request = new LieferantDokumentDto.UploadRequest();
+        request.setTyp(LieferantDokumentTyp.ANGEBOT);
+        var datei = new org.springframework.mock.web.MockMultipartFile(
+                "datei", "angebot.pdf", "application/pdf", new byte[] { 1, 2, 3 });
+
+        service.uploadDokument(7L, datei, request, 5L, false);
+
+        org.mockito.ArgumentCaptor<LieferantDokument> gespeichert = org.mockito.ArgumentCaptor.forClass(LieferantDokument.class);
+        verify(geminiService).performRelink(gespeichert.capture());
+        assertThat(gespeichert.getValue().getGeschaeftsdaten().getAiRawJson()).isEqualTo(kiAntwort);
+        assertThat(gespeichert.getValue().getGeschaeftsdaten().getDokumentNummer()).isEqualTo("AN-4711");
     }
 }

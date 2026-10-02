@@ -150,13 +150,14 @@ function FreigabeBadge({ freigabe }: { freigabe: FreigabeStatusKurz }) {
     return null;
 }
 
-function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWebseite }: {
+function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe }: {
     anfrage: Anfrage;
     onClick: () => void;
     onToggleAbgeschlossen?: (anfrageId: number, abgeschlossen: boolean) => void;
     freigabe?: FreigabeStatusKurz;
-    viaWebseite?: boolean;
 }) {
+    // "neu" nur, solange die Webseiten-Anfrage noch auf Bearbeitung wartet.
+    const webseiteNeu = anfrage.ausWebseite && !anfrage.abgeschlossen && !anfrage.projektId;
     const handleCheckboxClick = (e: React.MouseEvent) => {
         e.stopPropagation();
     };
@@ -195,12 +196,17 @@ function AnfrageCard({ anfrage, onClick, onToggleAbgeschlossen, freigabe, viaWeb
                                 {anfrage.abgeschlossen ? 'Beendet' : (anfrage.projektId ? 'Projekt erstellt' : 'Offen')}
                             </span>
                             {freigabe && <FreigabeBadge freigabe={freigabe} />}
-                            {viaWebseite && (
+                            {anfrage.ausWebseite && (
                                 <span
-                                    className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200"
-                                    title="Anfrage kam frisch über die Webseite herein"
+                                    className={cn(
+                                        "text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full border",
+                                        webseiteNeu
+                                            ? "bg-rose-100 text-rose-700 border-rose-200"
+                                            : "bg-slate-100 text-slate-600 border-slate-200"
+                                    )}
+                                    title={webseiteNeu ? "Anfrage kam frisch über die Webseite herein" : "Anfrage kam über die Webseite herein"}
                                 >
-                                    Webseite · neu
+                                    {webseiteNeu ? 'Webseite · neu' : 'Webseite'}
                                 </span>
                             )}
                         </div>
@@ -1564,29 +1570,30 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
 
 // ==================== MAIN COMPONENT ====================
 
-// Geräteübergreifender "Zuletzt aufgerufen"-Stempel via Backend.
-async function fetchAnfrageLastAccessed(): Promise<Record<string, number>> {
-    try {
-        const res = await fetch('/api/last-accessed/ANFRAGE');
-        if (!res.ok) return {};
-        const data = await res.json();
-        return data && typeof data === 'object' ? data : {};
-    } catch {
-        return {};
-    }
-}
+type AnfrageFilter = {
+    q: string;
+    jahr: string;
+    freigabe: 'all' | 'accepted' | 'pending' | 'expired';
+    status: 'offen' | 'beendet' | 'alle';
+    herkunft: 'alle' | 'webseite' | 'manuell';
+    sortierung: 'neu' | 'alt';
+};
 
-function trackAnfrageAccess(id: number) {
-    fetch(`/api/last-accessed/ANFRAGE/${id}`, { method: 'POST' }).catch(() => {
-        // fire-and-forget: Sortierung beim nächsten Reload bleibt einfach unverändert
-    });
-}
+// Beendete Anfragen sind standardmäßig ausgeblendet, sortiert wird nach Anlegedatum.
+const STANDARD_FILTER: AnfrageFilter = {
+    q: "",
+    jahr: "",
+    freigabe: 'all',
+    status: 'offen',
+    herkunft: 'alle',
+    sortierung: 'neu',
+};
 
 export default function AnfrageEditor() {
     const [searchParams, setSearchParams] = useSearchParams();
+    const toast = useToast();
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
     const [anfragen, setAnfragen] = useState<Anfrage[]>([]);
-    const [funnelAnfrageIds, setFunnelAnfrageIds] = useState<Set<number>>(new Set());
     const [freigabeStatusByAnfrageId, setFreigabeStatusByAnfrageId] = useState<Record<number, FreigabeStatusKurz>>({});
     const [selectedAnfrage, setSelectedAnfrage] = useState<AnfrageDetail | null>(null);
     const [loading, setLoading] = useState(false);
@@ -1620,7 +1627,6 @@ export default function AnfrageEditor() {
                     const anfrageData = await anfrageRes.json();
                     const emails = emailsRes.ok ? await emailsRes.json() : [];
                     const dokumente = dokumenteRes.ok ? await dokumenteRes.json() : [];
-                    trackAnfrageAccess(anfrageData.id ?? anfrageId);
                     setSelectedAnfrage({
                         ...anfrageData,
                         emails: Array.isArray(emails) ? emails : [],
@@ -1642,13 +1648,8 @@ export default function AnfrageEditor() {
         initialFreigabeParam === 'accepted' || initialFreigabeParam === 'pending' || initialFreigabeParam === 'expired'
             ? initialFreigabeParam
             : 'all';
-    const [filters, setFilters] = useState<{
-        q: string;
-        jahr: string;
-        freigabe: 'all' | 'accepted' | 'pending' | 'expired';
-    }>({
-        q: "",
-        jahr: "",
+    const [filters, setFilters] = useState<AnfrageFilter>({
+        ...STANDARD_FILTER,
         freigabe: initialFreigabe,
     });
     const [verfuegbareJahre, setVerfuegbareJahre] = useState<number[]>([]);
@@ -1685,46 +1686,27 @@ export default function AnfrageEditor() {
             // Angebots-Status filtert das Backend – nur so landen alle Treffer auf den
             // vorderen Seiten, statt nur die aktuell geladene Seite auszudünnen.
             if (filters.freigabe !== 'all') params.set("freigabe", filters.freigabe);
+            // Status, Herkunft und Sortierung (nach Anlegedatum) erledigt ebenfalls das
+            // Backend vor dem Blättern – die Reihenfolge der Antwort bleibt unverändert.
+            if (filters.status !== 'alle') params.set("status", filters.status);
+            if (filters.herkunft !== 'alle') params.set("herkunft", filters.herkunft);
+            params.set("sortierung", filters.sortierung);
 
-            const [res, lastAccessed, funnelRes] = await Promise.all([
-                fetch(`/api/anfragen?${params.toString()}`),
-                fetchAnfrageLastAccessed(),
-                fetch('/api/anfragen/funnel-ids').catch(() => null),
-            ]);
+            const res = await fetch(`/api/anfragen?${params.toString()}`);
             if (!res.ok) throw new Error("Fehler beim Laden");
             const data = await res.json();
             if (!istAktuell()) return;
 
-            // Webseiten-Anfragen (Funnel) ganz oben halten — frische Leads sollen
-            // sofort sichtbar sein. Innerhalb der Funnel-Gruppe wieder nach
-            // letztem Aufruf sortieren, dito für den Rest.
-            let funnelIds = new Set<number>();
-            if (funnelRes && funnelRes.ok) {
-                try {
-                    const ids: number[] = await funnelRes.json();
-                    if (Array.isArray(ids)) funnelIds = new Set(ids);
-                } catch { /* ignore */ }
-            }
-            const sortFn = (a: Anfrage, b: Anfrage) => {
-                const aFunnel = funnelIds.has(a.id) ? 1 : 0;
-                const bFunnel = funnelIds.has(b.id) ? 1 : 0;
-                if (aFunnel !== bFunnel) return bFunnel - aFunnel; // Funnel zuerst
-                const ta = lastAccessed[String(a.id)] || 0;
-                const tb = lastAccessed[String(b.id)] || 0;
-                return tb - ta;
-            };
             let resultList: Anfrage[];
             if (Array.isArray(data)) {
-                resultList = [...data].sort(sortFn);
+                resultList = data;
                 setAnfragen(resultList);
                 setTotal(resultList.length);
             } else {
-                resultList = Array.isArray(data.anfragen) ? [...data.anfragen] : [];
-                resultList.sort(sortFn);
+                resultList = Array.isArray(data.anfragen) ? data.anfragen : [];
                 setAnfragen(resultList);
                 setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
             }
-            setFunnelAnfrageIds(funnelIds);
             // Freigabe-Status (Angebot/AB digital angenommen?) für die geladenen Anfragen ziehen.
             const ids = resultList.map(a => a.id).filter((id): id is number => typeof id === 'number');
             if (ids.length > 0) {
@@ -1753,7 +1735,6 @@ export default function AnfrageEditor() {
             setAnfragen([]);
             setTotal(0);
             setFreigabeStatusByAnfrageId({});
-            setFunnelAnfrageIds(new Set());
         } finally {
             if (istAktuell()) setLoading(false);
         }
@@ -1785,14 +1766,20 @@ export default function AnfrageEditor() {
                 })
             });
 
-            if (res.ok) {
-                // Optimistic update
+            if (!res.ok) throw new Error('Status der Anfrage konnte nicht gespeichert werden.');
+
+            if (filters.status === 'alle') {
                 setAnfragen(prev => prev.map(a =>
                     a.id === anfrageId ? { ...a, abgeschlossen } : a
                 ));
+            } else {
+                // Passt die Anfrage nicht mehr zum Status-Filter, fällt sie aus der Liste –
+                // neu laden, damit Seiten und Trefferzahl stimmen.
+                toast.success(abgeschlossen ? 'Anfrage als beendet markiert.' : 'Anfrage wieder geöffnet.');
+                loadAnfragen();
             }
         } catch (err) {
-            console.error('Fehler beim Aktualisieren:', err);
+            toast.error(err instanceof Error ? err.message : 'Status der Anfrage konnte nicht gespeichert werden.');
         }
     };
 
@@ -1800,8 +1787,8 @@ export default function AnfrageEditor() {
     // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
     // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
     // Treffer wären da, aber unsichtbar.
-    const handleFilterChange = (key: string, value: string) => {
-        setFilters((prev) => ({ ...prev, [key]: value } as typeof prev));
+    const handleFilterChange = <K extends keyof AnfrageFilter>(key: K, value: string) => {
+        setFilters((prev) => ({ ...prev, [key]: value as AnfrageFilter[K] }));
         setPage(0);
     };
 
@@ -1813,7 +1800,7 @@ export default function AnfrageEditor() {
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: "", jahr: "", freigabe: 'all' });
+        setFilters(STANDARD_FILTER);
         setPage(0);
     };
 
@@ -1867,7 +1854,6 @@ export default function AnfrageEditor() {
     };
 
     const handleDetail = (anfrage: Anfrage) => {
-        trackAnfrageAccess(anfrage.id);
         loadDetails(anfrage.id);
     };
 
@@ -1976,6 +1962,47 @@ export default function AnfrageEditor() {
                             className="mt-1"
                         />
                     </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Status</label>
+                        <Select
+                            value={filters.status}
+                            onChange={(value) => handleFilterChange('status', value)}
+                            options={[
+                                { value: 'offen', label: 'Nur offene' },
+                                { value: 'beendet', label: 'Nur beendete' },
+                                { value: 'alle', label: 'Offene und beendete' },
+                            ]}
+                            placeholder="Status wählen"
+                            className="mt-1"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Herkunft</label>
+                        <Select
+                            value={filters.herkunft}
+                            onChange={(value) => handleFilterChange('herkunft', value)}
+                            options={[
+                                { value: 'alle', label: 'Alle' },
+                                { value: 'webseite', label: 'Über die Webseite' },
+                                { value: 'manuell', label: 'Selbst angelegt' },
+                            ]}
+                            placeholder="Herkunft wählen"
+                            className="mt-1"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Sortierung</label>
+                        <Select
+                            value={filters.sortierung}
+                            onChange={(value) => handleFilterChange('sortierung', value)}
+                            options={[
+                                { value: 'neu', label: 'Neueste zuerst' },
+                                { value: 'alt', label: 'Älteste zuerst' },
+                            ]}
+                            placeholder="Sortierung wählen"
+                            className="mt-1"
+                        />
+                    </div>
                     <div className="flex items-end gap-3">
                         {/* Kein Filtern-Button: Gefiltert wird live bei jeder Eingabe. */}
                         <Button type="button" variant="outline" className="flex-1" onClick={handleResetFilters}>Filter zurücksetzen</Button>
@@ -2004,7 +2031,6 @@ export default function AnfrageEditor() {
                             onClick={() => handleDetail(anfrage)}
                             onToggleAbgeschlossen={handleToggleAbgeschlossen}
                             freigabe={freigabeStatusByAnfrageId[anfrage.id]}
-                            viaWebseite={funnelAnfrageIds.has(anfrage.id)}
                         />
                     ))}
                 </div>

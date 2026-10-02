@@ -811,6 +811,8 @@ export interface Anfrage {
   projektOrt?: string;
   kurzbeschreibung?: string;
   abgeschlossen?: boolean;
+  /** Kam über das Anfrage-Formular der Webseite (nur in der Seitenliste gesetzt). */
+  ausWebseite?: boolean;
   // Erweiterte Kundendaten
   kundenStrasse?: string;
   kundenPlz?: string;

@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageListenFilter;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
@@ -20,10 +21,8 @@ import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
-import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
-import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
 import org.example.kalkulationsprogramm.service.AnfrageService;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
@@ -57,7 +56,6 @@ public class AnfrageController {
     private final KundeRepository kundeRepository;
     private final AnfrageNotizRepository anfrageNotizRepository;
     private final AnfrageNotizBildRepository anfrageNotizBildRepository;
-    private final AnfrageRepository anfrageRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final FrontendUserProfileService frontendUserProfileService;
     private final DokumentFreigabeService dokumentFreigabeService;
@@ -67,22 +65,6 @@ public class AnfrageController {
      * (Angebot oder Auftragsbestätigung). Wird vom AnfrageEditor genutzt, um Status-
      * Badges direkt an die Suche-Cards zu hängen.
      */
-    /**
-     * Liefert die IDs aller noch offenen Anfragen, die über den Webseiten-Funnel
-     * hereingekommen sind. Wird vom AnfrageEditor genutzt, um diese Anfragen in
-     * der Kartenübersicht ganz nach oben zu sortieren – „neue Leads zuerst".
-     */
-    @GetMapping("/funnel-ids")
-    public ResponseEntity<List<Long>> funnelAnfrageIds() {
-        List<Long> ids = anfrageRepository
-                .findOffeneFunnelAnfragen(AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN)
-                .stream()
-                .map(Anfrage::getId)
-                .filter(Objects::nonNull)
-                .toList();
-        return ResponseEntity.ok(ids);
-    }
-
     @GetMapping("/freigabe-status")
     public ResponseEntity<java.util.Map<Long, FreigabeStatusKurzDto>> freigabeStatus(@RequestParam("ids") List<Long> ids) {
         var byAnfrageId = dokumentFreigabeService.findJuengsteProAnfrage(ids);
@@ -296,9 +278,11 @@ public class AnfrageController {
      * setzt (AnfrageEditor-Liste). Reduziert das DTO-Mapping von N auf {@code size}
      * Anfragen pro Aufruf und entlastet damit den N+1-Pfad in {@code mapToDto}.
      * <p>
-     * {@code freigabe} filtert über den Angebots-Status (all/accepted/pending/expired)
-     * und greift bereits vor der Paginierung – dadurch stehen alle Treffer auf den
-     * vorderen Seiten.
+     * {@code freigabe} filtert über den Angebots-Status (all/accepted/pending/expired),
+     * {@code status} über offen/beendet, {@code herkunft} über webseite/manuell.
+     * {@code sortierung} = neu (Standard) oder alt sortiert nach Anlegezeitpunkt.
+     * Alle Filter greifen bereits vor der Paginierung – dadurch stehen alle Treffer
+     * auf den vorderen Seiten.
      */
     @GetMapping(params = "page")
     public AnfrageSeiteResponseDto listeSeite(@RequestParam(required = false) Integer jahr,
@@ -309,11 +293,15 @@ public class AnfrageController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false, defaultValue = "false") boolean nurOhneProjekt,
             @RequestParam(required = false) String freigabe,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String herkunft,
+            @RequestParam(required = false) String sortierung,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "12") int size) {
         String effektiverKundenname = kundenname != null ? kundenname : kunde;
-        return anfrageService.sucheSeite(
-                jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt, freigabe, page, size);
+        return anfrageService.sucheSeiteGefiltert(
+                jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt,
+                new AnfrageListenFilter(freigabe, status, herkunft, sortierung), page, size);
     }
 
     @GetMapping("/jahre")

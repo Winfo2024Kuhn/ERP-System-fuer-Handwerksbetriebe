@@ -336,33 +336,34 @@ public class LieferantDokumentController {
     }
 
     /**
-     * Führt eine einmalige Neuverknüpfung aller Dokumente mit normalisierter Nummern-Logik durch.
-     * Sollte nach Einführung der normalisierten Verknüpfungslogik einmal ausgeführt werden.
-     * 
-     * @return Statistik über verknüpfte Dokumente
+     * Admin-Backfill (ohne Button): ergänzt fehlende Verknüpfungen in den
+     * Dokumentenketten aller Lieferanten. Bestehende Verknüpfungen bleiben erhalten.
+     * Nur für Admins (siehe SecurityConfig).
+     *
+     * @return Anzahl neu entstandener Verknüpfungen
      */
     @PostMapping("/relink-all")
     public ResponseEntity<Map<String, Object>> relinkAlleDokumente() {
-        log.info("Starte einmalige Neuverknüpfung aller Dokumente...");
+        log.info("Starte Backfill der Dokumentenketten für alle Lieferanten...");
         
         try {
             int verknuepft = analyseService.relinkAlleDokumente();
             
             return ResponseEntity.ok(Map.of(
-                    "message", "Neuverknüpfung abgeschlossen",
+                    "message", "Fehlende Verknüpfungen ergänzt",
                     "neuVerknuepft", verknuepft));
         } catch (Exception e) {
             log.error("Neuverknüpfung fehlgeschlagen: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of(
-                    "error", e.getMessage()));
+                    "error", "Neuverknüpfung fehlgeschlagen"));
         }
     }
 
     /**
-     * Führt eine Neuverknüpfung aller Dokumente eines bestimmten Lieferanten durch.
-     * 
+     * Admin-Backfill für einen Lieferanten, siehe {@link #relinkAlleDokumente()}.
+     *
      * @param lieferantId ID des Lieferanten
-     * @return Statistik über verknüpfte Dokumente
+     * @return Anzahl neu entstandener Verknüpfungen
      */
     @PostMapping("/lieferant/{lieferantId}/relink")
     public ResponseEntity<Map<String, Object>> relinkByLieferant(@PathVariable Long lieferantId) {
@@ -373,12 +374,12 @@ public class LieferantDokumentController {
             
             return ResponseEntity.ok(Map.of(
                     "lieferantId", lieferantId,
-                    "message", "Neuverknüpfung abgeschlossen",
+                    "message", "Fehlende Verknüpfungen ergänzt",
                     "neuVerknuepft", verknuepft));
         } catch (Exception e) {
             log.error("Neuverknüpfung fehlgeschlagen für Lieferant {}: {}", lieferantId, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of(
-                    "error", e.getMessage()));
+                    "error", "Neuverknüpfung fehlgeschlagen"));
         }
     }
 

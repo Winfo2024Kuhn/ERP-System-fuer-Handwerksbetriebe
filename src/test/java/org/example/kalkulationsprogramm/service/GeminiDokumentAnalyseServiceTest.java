@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import org.mockito.Mock;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -60,7 +61,8 @@ class GeminiDokumentAnalyseServiceTest {
                 zugferdExtractorService,
                 lieferantGeschaeftsdokumentRepository,
                 systemSettingsService,
-                eventPublisher
+                eventPublisher,
+                new LieferantDokumentAbgleich(new ObjectMapper())
         );
     }
 
@@ -988,7 +990,8 @@ class GeminiDokumentAnalyseServiceTest {
                     zugferdExtractorService,
                     lieferantGeschaeftsdokumentRepository,
                     systemSettingsService,
-                    eventPublisher);
+                    eventPublisher,
+                    new LieferantDokumentAbgleich(new ObjectMapper()));
 
             httpClientMock = mock(HttpClient.class);
             setField(serviceMitEchtemMapper, "httpClient", httpClientMock);
@@ -1211,6 +1214,150 @@ class GeminiDokumentAnalyseServiceTest {
         } else {
             assertThat(dokument.getVerknuepfteDokumente()).isEmpty();
         }
+    }
+
+    @Test
+    void spaeterEintreffendesAngebotWirdAnVorhandeneAbGehaengt() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+
+        LieferantDokument ab = new LieferantDokument();
+        ab.setId(10L);
+        ab.setLieferant(lieferant);
+        ab.setTyp(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        LieferantGeschaeftsdokument abDaten = new LieferantGeschaeftsdokument();
+        abDaten.setDokumentNummer("AB-77001");
+        abDaten.setReferenzNummer("AN-2026-0815");
+        abDaten.setDokumentDatum(LocalDate.of(2026, 4, 1));
+        ab.setGeschaeftsdaten(abDaten);
+
+        LieferantDokument angebot = new LieferantDokument();
+        angebot.setId(11L);
+        angebot.setLieferant(lieferant);
+        angebot.setTyp(LieferantDokumentTyp.ANGEBOT);
+        LieferantGeschaeftsdokument angebotDaten = new LieferantGeschaeftsdokument();
+        angebotDaten.setDokumentNummer("AN 2026/0815");
+        angebotDaten.setDokumentDatum(LocalDate.of(2026, 3, 1));
+        angebot.setGeschaeftsdaten(angebotDaten);
+
+        service.performRelink(angebot, java.util.List.of(ab, angebot));
+
+        assertThat(ab.getVerknuepfteDokumente()).containsExactly(angebot);
+        verify(dokumentRepository).save(ab);
+    }
+
+    private LieferantDokument relinkDokument(long id, Lieferanten lieferant, LieferantDokumentTyp typ,
+            String nummer, LocalDate datum) {
+        LieferantDokument dok = new LieferantDokument();
+        dok.setId(id);
+        dok.setLieferant(lieferant);
+        dok.setTyp(typ);
+        LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
+        daten.setDokumentNummer(nummer);
+        daten.setDokumentDatum(datum);
+        dok.setGeschaeftsdaten(daten);
+        return dok;
+    }
+
+    @Test
+    void sammelrechnungBekommtSpaeterenLieferscheinTrotzVorhandenerVerknuepfung() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+        LieferantDokument ls1 = relinkDokument(9L, lieferant, LieferantDokumentTyp.LIEFERSCHEIN, "LS-1001", LocalDate.of(2026, 5, 2));
+        LieferantDokument rechnung = relinkDokument(10L, lieferant, LieferantDokumentTyp.RECHNUNG, "RE-2001", LocalDate.of(2026, 5, 31));
+        rechnung.getGeschaeftsdaten().setAiRawJson("{\"weitereReferenzen\":[\"LS-1001\",\"LS-1002\"]}");
+        rechnung.getVerknuepfteDokumente().add(ls1);
+        LieferantDokument ls2 = relinkDokument(11L, lieferant, LieferantDokumentTyp.LIEFERSCHEIN, "LS-1002", LocalDate.of(2026, 5, 9));
+
+        service.performRelink(ls2, java.util.List.of(ls1, rechnung, ls2));
+
+        assertThat(rechnung.getVerknuepfteDokumente()).containsExactlyInAnyOrder(ls1, ls2);
+        verify(dokumentRepository).save(rechnung);
+    }
+
+    @Test
+    void hinweisTrefferVerfaelschtVorhandeneZuordnungNicht() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+        LieferantDokument vonHand = relinkDokument(9L, lieferant, LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 2, 1));
+        LieferantDokument ab = relinkDokument(10L, lieferant, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 3, 1));
+        ab.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("595.00"));
+        ab.getVerknuepfteDokumente().add(vonHand);
+        LieferantDokument angebot = relinkDokument(11L, lieferant, LieferantDokumentTyp.ANGEBOT, "AN-2", LocalDate.of(2026, 2, 15));
+        angebot.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("595.00"));
+
+        // Vorwärts (AB sucht Vorgänger) und rückwärts (neues Angebot sucht Nachfolger)
+        service.performRelink(ab, java.util.List.of(vonHand, ab, angebot));
+        service.performRelink(angebot, java.util.List.of(vonHand, ab, angebot));
+
+        assertThat(ab.getVerknuepfteDokumente()).containsExactly(vonHand);
+        verify(dokumentRepository, never()).save(ab);
+    }
+
+    @Test
+    void verknuepfeDokumenteNeuZaehltNeueVerknuepfungen() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+        LieferantDokument angebot = relinkDokument(1L, lieferant, LieferantDokumentTyp.ANGEBOT, "AN-4711", LocalDate.of(2026, 2, 1));
+        LieferantDokument ab = relinkDokument(2L, lieferant, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 3, 1));
+        ab.getGeschaeftsdaten().setReferenzNummer("AN-4711");
+        LieferantDokument rechnung = relinkDokument(3L, lieferant, LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 3, 20));
+        rechnung.getGeschaeftsdaten().setReferenzNummer("AB-1");
+        LieferantDokument ohneDaten = new LieferantDokument();
+        ohneDaten.setId(4L);
+        ohneDaten.setLieferant(lieferant);
+        ohneDaten.setTyp(LieferantDokumentTyp.RECHNUNG);
+
+        int neu = service.verknuepfeDokumenteNeu(java.util.List.of(rechnung, ab, angebot, ohneDaten));
+
+        assertThat(neu).isEqualTo(2);
+        assertThat(ab.getVerknuepfteDokumente()).containsExactly(angebot);
+        assertThat(rechnung.getVerknuepfteDokumente()).containsExactly(ab);
+        assertThat(service.verknuepfeDokumenteNeu(java.util.List.of(rechnung, ab, angebot))).isZero();
+    }
+
+    @Test
+    void backfillErgaenztNurUndBautAngebotsfassungenVorDerAbZusammen() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+        LieferantDokument fassung1 = relinkDokument(1L, lieferant, LieferantDokumentTyp.ANGEBOT, "AN-4711", LocalDate.of(2026, 2, 1));
+        fassung1.getGeschaeftsdaten().setAiRawJson("{\"kommission\":\"BV Mustermann\"}");
+        LieferantDokument fassung2 = relinkDokument(2L, lieferant, LieferantDokumentTyp.ANGEBOT, "AN-4711-2", LocalDate.of(2026, 2, 20));
+        fassung2.getGeschaeftsdaten().setAiRawJson("{\"kommission\":\"BV Mustermann\"}");
+        LieferantDokument ab = relinkDokument(3L, lieferant, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 3, 1));
+        ab.getGeschaeftsdaten().setAiRawJson("{\"kommission\":\"BV Mustermann\"}");
+        // Von Hand gesetzte Verknüpfung, die der Abgleich selbst nie finden würde
+        LieferantDokument lieferschein = relinkDokument(4L, lieferant, LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 3, 10));
+        LieferantDokument rechnung = relinkDokument(5L, lieferant, LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 3, 31));
+        rechnung.getVerknuepfteDokumente().add(lieferschein);
+
+        // Absichtlich neueste zuerst, wie das Repository liefert
+        when(dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(1L))
+                .thenReturn(java.util.List.of(rechnung, lieferschein, ab, fassung2, fassung1));
+
+        int neu = service.relinkDokumenteByLieferant(1L);
+
+        assertThat(neu).isEqualTo(2);
+        assertThat(fassung2.getVerknuepfteDokumente()).containsExactly(fassung1);
+        assertThat(ab.getVerknuepfteDokumente()).containsExactly(fassung2);
+        assertThat(rechnung.getVerknuepfteDokumente()).containsExactly(lieferschein);
+    }
+
+    @Test
+    void backfillAllerLieferantenGruppiertJeLieferant() {
+        Lieferanten a = new Lieferanten();
+        a.setId(1L);
+        Lieferanten b = new Lieferanten();
+        b.setId(2L);
+        LieferantDokument angebotA = relinkDokument(1L, a, LieferantDokumentTyp.ANGEBOT, "AN-4711", LocalDate.of(2026, 2, 1));
+        LieferantDokument abB = relinkDokument(2L, b, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 3, 1));
+        abB.getGeschaeftsdaten().setReferenzNummer("AN-4711");
+        LieferantDokument angebotB = relinkDokument(3L, b, LieferantDokumentTyp.ANGEBOT, "AN-4711", LocalDate.of(2026, 2, 1));
+        when(dokumentRepository.findAll()).thenReturn(java.util.List.of(angebotA, abB, angebotB));
+
+        assertThat(service.relinkAlleDokumente()).isEqualTo(1);
+        // Nur das Angebot desselben Lieferanten, nie über Lieferanten hinweg
+        assertThat(abB.getVerknuepfteDokumente()).containsExactly(angebotB);
     }
 
     // --- Helper methods to invoke private methods via reflection ---

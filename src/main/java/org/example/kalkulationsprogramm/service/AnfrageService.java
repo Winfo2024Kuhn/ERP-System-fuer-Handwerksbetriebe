@@ -6,8 +6,11 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -20,6 +23,7 @@ import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageListenFilter;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
@@ -242,29 +246,95 @@ public class AnfrageService {
             String freigabe,
             int page,
             int size) {
+        return sucheSeiteGefiltert(jahr, kundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt,
+                AnfrageListenFilter.nurFreigabe(freigabe), page, size);
+    }
+
+    /**
+     * Seitenliste der Anfragen-Übersicht mit allen Filtern (Angebots-Status,
+     * offen/beendet, Webseite/manuell) und Sortierung nach Anlegezeitpunkt.
+     * Gefiltert und sortiert wird <b>vor</b> der Paginierung, damit jede Seite
+     * zur gesamten Trefferliste passt.
+     */
+    public AnfrageSeiteResponseDto sucheSeiteGefiltert(Integer jahr,
+            String kundenname,
+            String bauvorhaben,
+            String anfragesnummer,
+            String q,
+            boolean nurOhneProjekt,
+            AnfrageListenFilter filter,
+            int page,
+            int size) {
         int seite = Math.max(0, page);
         int seitenGroesse = Math.min(Math.max(1, size), 100);
+        AnfrageListenFilter f = filter != null ? filter : AnfrageListenFilter.nurFreigabe(null);
 
         // Mutable Kopie, weil sowohl Repository-Returns (z.B. {@code List.of(...)} in Tests)
         // als auch nachgelagerte Filter-Streams unveränderliche Listen liefern können.
         List<Anfrage> alle = new ArrayList<>(
                 findeGefiltert(jahr, kundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt));
-        alle = filtereNachFreigabeStatus(alle, freigabe);
+        alle = filtereNachFreigabeStatus(alle, f.freigabe());
+        alle = filtereNachStatus(alle, f.status());
+
+        Set<Long> webseitenIds = ladeWebseitenAnfrageIds(alle);
+        alle = filtereNachHerkunft(alle, f.herkunft(), webseitenIds);
 
         // createdAt wird per @PrePersist immer gesetzt; LocalDateTime.MIN ist nur ein
         // Fallback für Altbestände ohne Wert, damit solche Datensätze ans Ende rutschen.
-        alle.sort(Comparator.comparing(
-                (Anfrage a) -> a.getCreatedAt() != null ? a.getCreatedAt() : LocalDateTime.MIN,
-                Comparator.reverseOrder()));
+        Comparator<Anfrage> nachAnlage = Comparator.comparing(
+                (Anfrage a) -> a.getCreatedAt() != null ? a.getCreatedAt() : LocalDateTime.MIN);
+        boolean aeltesteZuerst = "alt".equalsIgnoreCase(trimToNull(f.sortierung()));
+        alle.sort(aeltesteZuerst ? nachAnlage : nachAnlage.reversed());
 
         int gesamt = alle.size();
         int von = Math.min(seite * seitenGroesse, gesamt);
         int bis = Math.min(von + seitenGroesse, gesamt);
         List<AnfrageResponseDto> mapped = alle.subList(von, bis).stream()
-                .map(this::mapToDto)
+                .map(a -> {
+                    AnfrageResponseDto dto = mapToDto(a);
+                    dto.setAusWebseite(a.getId() != null && webseitenIds.contains(a.getId()));
+                    return dto;
+                })
                 .collect(Collectors.toList());
 
         return new AnfrageSeiteResponseDto(mapped, gesamt, seite, seitenGroesse);
+    }
+
+    /** {@code offen} = noch nicht beendet, {@code beendet} = als beendet markiert. */
+    private List<Anfrage> filtereNachStatus(List<Anfrage> anfragen, String status) {
+        String wunsch = trimToNull(status);
+        if (wunsch == null) {
+            return anfragen;
+        }
+        return switch (wunsch.toLowerCase(Locale.ROOT)) {
+            case "offen" -> anfragen.stream().filter(a -> !a.isAbgeschlossen()).collect(Collectors.toList());
+            case "beendet" -> anfragen.stream().filter(Anfrage::isAbgeschlossen).collect(Collectors.toList());
+            default -> anfragen;
+        };
+    }
+
+    private Set<Long> ladeWebseitenAnfrageIds(Collection<Anfrage> anfragen) {
+        if (anfragen.isEmpty()) {
+            return Set.of();
+        }
+        List<Long> ids = anfrageRepository.findFunnelAnfrageIds(AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN);
+        return ids != null ? new HashSet<>(ids) : Set.of();
+    }
+
+    private List<Anfrage> filtereNachHerkunft(List<Anfrage> anfragen, String herkunft, Set<Long> webseitenIds) {
+        String wunsch = trimToNull(herkunft);
+        if (wunsch == null) {
+            return anfragen;
+        }
+        return switch (wunsch.toLowerCase(Locale.ROOT)) {
+            case "webseite" -> anfragen.stream()
+                    .filter(a -> a.getId() != null && webseitenIds.contains(a.getId()))
+                    .collect(Collectors.toList());
+            case "manuell" -> anfragen.stream()
+                    .filter(a -> a.getId() == null || !webseitenIds.contains(a.getId()))
+                    .collect(Collectors.toList());
+            default -> anfragen;
+        };
     }
 
     /**

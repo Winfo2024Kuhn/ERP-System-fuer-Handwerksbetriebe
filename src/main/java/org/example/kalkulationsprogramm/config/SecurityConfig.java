@@ -219,6 +219,12 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/emails/admin/**").hasRole("ADMIN")
                 // Lieferantendokumente löschen ist eine irreversible Admin-Aktion
                 .requestMatchers(HttpMethod.DELETE, "/api/lieferant-dokumente/**").hasRole("ADMIN")
+                // Backfill der Dokumentenketten schreibt über den gesamten Lieferanten-Bestand.
+                // Bewusst ohne Button: nur Admins rufen ihn direkt auf. Absichtlich NICHT
+                // unter /api/lieferanten/** – das liegt in der offenen Zeiterfassungs-Chain.
+                .requestMatchers(HttpMethod.POST,
+                        "/api/lieferant-dokumente/relink-all",
+                        "/api/lieferant-dokumente/lieferant/*/relink").hasRole("ADMIN")
                 // Projekt-Wartungsaktionen schreiben ueber den gesamten Bestand - nur Admin.
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 // Beiträge-Modul pusht direkt in den öffentlichen Website-Auftritt. MVP-mäßig

@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -158,6 +160,14 @@ public class LieferantDokumentDto {
         private String lieferantStrasse;
         private String lieferantPlz;
         private String lieferantOrt;
+
+        /**
+         * Rohe KI-Antwort – nur intern zum Speichern an den Geschäftsdaten
+         * (Kommission, weitere Referenzen und Artikelnummern für die
+         * Dokumentenkette). Geht nicht ans Frontend.
+         */
+        @JsonIgnore
+        private String aiRawJson;
     }
 
     /**

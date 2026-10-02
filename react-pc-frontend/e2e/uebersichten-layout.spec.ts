@@ -162,7 +162,6 @@ async function stubAnfragenUebersicht(page: Page): Promise<void> {
         }
         if (pfad === '/api/anfragen' && methode === 'GET') return json(route, { anfragen: ANFRAGEN_MIX, gesamt: ANFRAGEN_MIX.length });
         if (pfad === '/api/anfragen/jahre') return json(route, []);
-        if (pfad === '/api/anfragen/funnel-ids') return json(route, []);
         if (pfad === '/api/anfragen/freigabe-status') return json(route, {});
         return json(route, []);
     });

@@ -22,9 +22,6 @@ function mockFetch() {
         if (url.startsWith('/api/anfragen/jahre')) {
             return Promise.resolve({ ok: true, json: () => Promise.resolve([2026]) });
         }
-        if (url.startsWith('/api/anfragen/funnel-ids')) {
-            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-        }
         if (url.startsWith('/api/anfragen/freigabe-status')) {
             return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
         }
@@ -61,14 +58,30 @@ function anfragenlistenAufrufe(fetchMock: ReturnType<typeof mockFetch>): string[
 }
 
 /**
- * Öffnet das Angebots-Status-Dropdown und wählt einen Eintrag. Der Trigger trägt
- * den Text "Alle" – "Alle Jahre" daneben ist ein eigener Textknoten und kollidiert
- * bei exakter Suche nicht.
+ * Öffnet das Dropdown unter der gegebenen Feldbeschriftung und wählt einen Eintrag.
+ * Gesucht wird innerhalb des Feldes, weil mehrere Filter den Text "Alle" zeigen.
  */
-async function waehleAngebotsStatus(user: ReturnType<typeof userEvent.setup>, label: string) {
-    await user.click(screen.getByText('Alle'));
+async function waehleFilter(
+    user: ReturnType<typeof userEvent.setup>,
+    feld: string,
+    aktuell: string,
+    label: string,
+) {
+    const feldContainer = screen.getByText(feld).parentElement as HTMLElement;
+    await user.click(within(feldContainer).getByText(aktuell));
     const dropdown = await screen.findByRole('listbox');
     await user.click(within(dropdown).getByRole('option', { name: label }));
+}
+
+async function waehleAngebotsStatus(user: ReturnType<typeof userEvent.setup>, label: string) {
+    await waehleFilter(user, 'Angebots-Status', 'Alle', label);
+}
+
+/** Query-Parameter des zuletzt abgesetzten Listen-Requests. */
+function letzteListenParameter(fetchMock: ReturnType<typeof mockFetch>): URLSearchParams {
+    const alle = anfragenlistenAufrufe(fetchMock);
+    const letzte = alle[alle.length - 1];
+    return new URLSearchParams(letzte.substring(letzte.indexOf('?') + 1));
 }
 
 describe('AnfrageEditor – Anfragenliste', () => {
@@ -124,6 +137,69 @@ describe('AnfrageEditor – Anfragenliste', () => {
 
         expect(anfragenlistenAufrufe(fetchMock).every(url => !url.includes('freigabe='))).toBe(true);
     });
+
+    it('zeigt standardmäßig nur offene Anfragen, neueste zuerst, ohne Herkunfts-Filter', async () => {
+        renderAnfrageEditor();
+
+        await waitFor(() => expect(screen.getByText('Dachsanierung Musterweg 1')).toBeInTheDocument());
+
+        const params = letzteListenParameter(fetchMock);
+        expect(params.get('status')).toBe('offen');
+        expect(params.get('sortierung')).toBe('neu');
+        expect(params.has('herkunft')).toBe(false);
+    });
+
+    it('schickt Herkunft, Status und Sortierung ans Backend und springt auf Seite 1', async () => {
+        const user = userEvent.setup();
+        renderAnfrageEditor();
+
+        await waitFor(() => expect(screen.getByText('Dachsanierung Musterweg 1')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /Weiter/i }));
+        await waitFor(() => expect(letzteListenParameter(fetchMock).get('page')).toBe('1'));
+
+        await waehleFilter(user, 'Herkunft', 'Alle', 'Über die Webseite');
+        await waitFor(() => {
+            const params = letzteListenParameter(fetchMock);
+            expect(params.get('herkunft')).toBe('webseite');
+            expect(params.get('page')).toBe('0');
+        });
+
+        await waehleFilter(user, 'Status', 'Nur offene', 'Offene und beendete');
+        await waitFor(() => expect(letzteListenParameter(fetchMock).has('status')).toBe(false));
+
+        await waehleFilter(user, 'Sortierung', 'Neueste zuerst', 'Älteste zuerst');
+        await waitFor(() => expect(letzteListenParameter(fetchMock).get('sortierung')).toBe('alt'));
+    });
+});
+
+describe('AnfrageEditor – Reihenfolge und Webseiten-Kennzeichnung', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('übernimmt die Reihenfolge des Backends und kennzeichnet Webseiten-Anfragen', async () => {
+        const liste = [
+            { ...mockAnfragen[2], id: 3, bauvorhaben: 'Treppe Musterstraße' },
+            { ...mockAnfragen[0], id: 1, bauvorhaben: 'Geländer Musterweg', ausWebseite: true },
+            { ...mockAnfragen[1], id: 2, bauvorhaben: 'Balkon Musterplatz', ausWebseite: true, abgeschlossen: true },
+        ];
+        global.fetch = vi.fn((url: string) => {
+            const antwort = (daten: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(daten) });
+            if (url.startsWith('/api/anfragen/jahre')) return antwort([2026]);
+            if (url.startsWith('/api/anfragen/freigabe-status')) return antwort({});
+            if (url.startsWith('/api/anfragen?')) return antwort({ anfragen: liste, gesamt: liste.length });
+            return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+        }) as unknown as typeof fetch;
+
+        renderAnfrageEditor();
+
+        await waitFor(() => expect(screen.getByText('Treppe Musterstraße')).toBeInTheDocument());
+
+        const titel = screen.getAllByText(/Musterstraße|Musterweg|Musterplatz/).map(el => el.textContent);
+        expect(titel).toEqual(['Treppe Musterstraße', 'Geländer Musterweg', 'Balkon Musterplatz']);
+        expect(screen.getByText('Webseite · neu')).toBeInTheDocument();
+        expect(screen.getByText('Webseite')).toBeInTheDocument();
+    });
 });
 
 describe('AnfrageEditor – Pagination', () => {
@@ -148,7 +224,6 @@ describe('AnfrageEditor – Pagination', () => {
             const antwort = (daten: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(daten) });
             if (typeof url !== 'string') return antwort({});
             if (url.startsWith('/api/anfragen/jahre')) return antwort([2026]);
-            if (url.startsWith('/api/anfragen/funnel-ids')) return antwort([]);
             if (url.startsWith('/api/anfragen/freigabe-status')) return antwort({});
             if (url.startsWith('/api/last-accessed/')) return antwort({});
             if (url.startsWith('/api/anfragen?')) {

@@ -118,6 +118,19 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
                """)
      List<Anfrage> findOffeneFunnelAnfragen(@org.springframework.data.repository.query.Param("token") String token);
 
+     /**
+      * IDs aller Anfragen, die über den Webseiten-Funnel hereingekommen sind –
+      * unabhängig davon, ob sie noch offen sind. Erkennungsmerkmal ist wie bei
+      * {@link #findOffeneFunnelAnfragen} die Notiz des System-Mitarbeiters.
+      */
+     @Query("""
+               SELECT DISTINCT a.id FROM Anfrage a
+               JOIN a.notizen n
+               JOIN n.mitarbeiter m
+               WHERE m.loginToken = :token
+               """)
+     List<Long> findFunnelAnfrageIds(@org.springframework.data.repository.query.Param("token") String token);
+
      @Query("""
                SELECT DISTINCT a FROM Anfrage a
                LEFT JOIN FETCH a.kunde k

@@ -28,6 +28,11 @@ public class AnfrageResponseDto {
     private String kurzbeschreibung;
     private boolean abgeschlossen;
     private java.time.LocalDateTime createdAt;
+    /**
+     * Kam über das Anfrage-Formular der Webseite herein. Nur in der Seitenliste
+     * befüllt, sonst {@code null} (= nicht ermittelt).
+     */
+    private Boolean ausWebseite;
     // Erweiterte Kundendaten
     private String kundenStrasse;
     private String kundenPlz;

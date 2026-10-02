@@ -264,6 +264,7 @@ public class LieferantDokumentService {
                                 gd.setBereitsGezahlt(analyzeResult.getBereitsGezahlt());
                                 gd.setZahlungsart(analyzeResult.getZahlungsart());
                                 gd.setAiConfidence(analyzeResult.getAiConfidence());
+                                gd.setAiRawJson(analyzeResult.getAiRawJson());
                                 gd.setAnalysiertAm(LocalDateTime.now());
 
                                 // Dokumenttyp aus Analyse übernehmen, falls erkannt
@@ -280,6 +281,9 @@ public class LieferantDokumentService {
                                 // Vorauskasse-Lieferant? Dann ist die Rechnung schon bezahlt und
                                 // darf nicht in den Offenen Posten stehen.
                                 vorauskasseAutoAssigner.applyIfApplicable(dokument);
+                                // Wie beim E-Mail-Import: Vorgänger und Nachfolger in der
+                                // Dokumentenkette (Angebot ↔ AB ↔ Lieferschein ↔ Rechnung) suchen.
+                                geminiService.performRelink(dokument);
                         } else {
                                 log.warn("Analyse ergab keine Ergebnisse für Dokument {}", dokument.getId());
                         }

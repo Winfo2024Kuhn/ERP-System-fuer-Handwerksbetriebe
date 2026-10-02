@@ -8,6 +8,7 @@ import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
+import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageListenFilter;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
@@ -401,6 +402,74 @@ class AnfrageServiceTest {
         assertThat(service.sucheSeite(null, null, null, null, null, false, "   ", 0, 12).gesamt())
                 .isEqualTo(2);
         verify(dokumentFreigabeService, never()).findJuengsteProAnfrage(anyList());
+    }
+
+    private AnfrageService serviceMitDreiAnfragen(AnfrageRepository anfrageRepository) {
+        Anfrage offenWebseite = anfrageMit(1L, LocalDateTime.of(2024, 1, 1, 0, 0));
+        Anfrage beendetManuell = anfrageMit(2L, LocalDateTime.of(2024, 1, 2, 0, 0));
+        beendetManuell.setAbgeschlossen(true);
+        Anfrage offenManuell = anfrageMit(3L, LocalDateTime.of(2024, 1, 3, 0, 0));
+        when(anfrageRepository.findAllWithKundenEmails())
+                .thenReturn(List.of(offenWebseite, beendetManuell, offenManuell));
+        when(anfrageRepository.findFunnelAnfrageIds(AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN))
+                .thenReturn(List.of(1L));
+        return neueServiceMitAnfragen(anfrageRepository);
+    }
+
+    private List<Long> ids(AnfrageSeiteResponseDto seite) {
+        return seite.anfragen().stream().map(AnfrageResponseDto::getId).toList();
+    }
+
+    @Test
+    void sucheSeiteGefiltertNachStatus() {
+        AnfrageService service = serviceMitDreiAnfragen(mock(AnfrageRepository.class));
+
+        assertThat(ids(service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, "offen", null, null), 0, 12))).containsExactly(3L, 1L);
+        assertThat(ids(service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, "BEENDET", null, null), 0, 12))).containsExactly(2L);
+        assertThat(ids(service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, "alle", null, null), 0, 12))).containsExactly(3L, 2L, 1L);
+    }
+
+    @Test
+    void sucheSeiteGefiltertNachHerkunftUndMarkiertWebseite() {
+        AnfrageService service = serviceMitDreiAnfragen(mock(AnfrageRepository.class));
+
+        AnfrageSeiteResponseDto webseite = service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, null, "webseite", null), 0, 12);
+        assertThat(ids(webseite)).containsExactly(1L);
+        assertThat(webseite.anfragen().get(0).getAusWebseite()).isTrue();
+
+        AnfrageSeiteResponseDto manuell = service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, null, "manuell", null), 0, 12);
+        assertThat(ids(manuell)).containsExactly(3L, 2L);
+        assertThat(manuell.anfragen()).extracting(AnfrageResponseDto::getAusWebseite).containsOnly(false);
+    }
+
+    @Test
+    void sucheSeiteGefiltertSortiertNachAnlegezeitpunkt() {
+        AnfrageService service = serviceMitDreiAnfragen(mock(AnfrageRepository.class));
+
+        assertThat(ids(service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, null, null, "alt"), 0, 12))).containsExactly(1L, 2L, 3L);
+        // Unbekannte Werte fallen auf „neueste zuerst" und „nicht einschränken" zurück.
+        assertThat(ids(service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, "<script>alert(1)</script>", "'; DROP TABLE anfrage; --", "x"), 0, 12)))
+                .containsExactly(3L, 2L, 1L);
+        assertThat(ids(service.sucheSeiteGefiltert(null, null, null, null, null, false, null, 0, 12)))
+                .containsExactly(3L, 2L, 1L);
+    }
+
+    @Test
+    void sucheSeiteGefiltertFragtWebseitenIdsNurBeiTreffernAb() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        when(anfrageRepository.findAllWithKundenEmails()).thenReturn(List.of());
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+
+        assertThat(service.sucheSeiteGefiltert(null, null, null, null, null, false,
+                new AnfrageListenFilter(null, null, "webseite", null), 0, 12).gesamt()).isZero();
+        verify(anfrageRepository, never()).findFunnelAnfrageIds(org.mockito.ArgumentMatchers.anyString());
     }
 
     private DokumentFreigabe freigabeMit(FreigabeStatus status) {

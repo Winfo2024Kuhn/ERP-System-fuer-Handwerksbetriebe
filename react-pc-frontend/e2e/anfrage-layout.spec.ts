@@ -121,7 +121,6 @@ async function stubAnfrageApi(page: Page, optionen: { uebersicht?: Record<string
             return json(route, { anfragen: uebersicht, gesamt: uebersicht.length });
         }
         if (pfad === '/api/anfragen/jahre') return json(route, []);
-        if (pfad === '/api/anfragen/funnel-ids') return json(route, []);
         if (pfad === '/api/anfragen/freigabe-status') return json(route, {});
         if (pfad === `/api/anfragen/${ANFRAGE_ID}`) return json(route, DUMMY_ANFRAGE_DETAIL);
         if (pfad === `/api/anfragen/${ANFRAGE_ID}/notizen`) return json(route, notizen);
