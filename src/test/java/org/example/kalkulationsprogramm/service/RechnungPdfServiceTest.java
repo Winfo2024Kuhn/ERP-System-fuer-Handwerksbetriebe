@@ -213,6 +213,35 @@ class RechnungPdfServiceTest {
     // ======================= Tests =======================
 
     @Nested
+    @DisplayName("Lesbare Textfarbe zur Firmenfarbe")
+    class LesbareTextfarbeTests {
+
+        private double luminanz(java.awt.Color c) {
+            return (0.2126 * c.getRed() + 0.7152 * c.getGreen() + 0.0722 * c.getBlue()) / 255.0;
+        }
+
+        @Test
+        @DisplayName("Dunkle Firmenfarbe (Standard-Bordeaux) bleibt unverändert")
+        void dunkleFarbeBleibt() {
+            java.awt.Color bordeaux = new java.awt.Color(0x50, 0x00, 0x10);
+
+            assertEquals(bordeaux, RechnungPdfService.lesbareTextfarbe(bordeaux));
+        }
+
+        @Test
+        @DisplayName("Helle Firmenfarben (Gelb, Pastell) werden als Schrift abgedunkelt, der Farbton bleibt")
+        void hellFarbeWirdAbgedunkelt() {
+            for (java.awt.Color hell : new java.awt.Color[] {
+                    new java.awt.Color(0xfa, 0xcc, 0x15), new java.awt.Color(0xbb, 0xf7, 0xd0), java.awt.Color.WHITE}) {
+                java.awt.Color text = RechnungPdfService.lesbareTextfarbe(hell);
+
+                assertTrue(luminanz(text) < luminanz(hell), "Muss dunkler werden: " + hell);
+                assertTrue(luminanz(text) <= 0.35, "Muss unter der Lesbarkeitsgrenze liegen: " + hell);
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("FormBlock-Rendering: Typed Blocks (doknr, datum, adresse, ...)")
     class FormBlockTypedTests {
 
