@@ -165,7 +165,7 @@ class ArtikelDokumenttexteServiceTest {
     }
 
     @Test
-    void behaeltErlaubteCssEigenschaften() {
+    void behaeltFarbeVerwirftSchriftgroesse() {
         Artikel artikel = new Artikel();
         when(artikelRepository.findById(7L)).thenReturn(Optional.of(artikel));
         when(artikelRepository.save(any(Artikel.class))).thenAnswer(i -> i.getArgument(0));
@@ -173,7 +173,7 @@ class ArtikelDokumenttexteServiceTest {
         Artikel ergebnis = artikelService.aktualisiereDokumenttexte(
                 7L, request(null, "<span style=\"font-size: 12pt; color: #333\">x</span>", null));
 
-        assertThat(ergebnis.getBeschreibung()).contains("font-size");
+        assertThat(ergebnis.getBeschreibung()).doesNotContain("font-size");
         assertThat(ergebnis.getBeschreibung()).contains("color");
     }
 

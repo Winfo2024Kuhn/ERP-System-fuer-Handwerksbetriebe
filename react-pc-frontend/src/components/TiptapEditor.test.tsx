@@ -48,6 +48,29 @@ describe('TiptapEditor Standardmodus (Regressionsschutz)', () => {
     });
 });
 
+describe('TiptapEditor einheitliche Schrift', () => {
+    it('bietet keine Schriftgroesse an', () => {
+        const { queryByText } = render(<TiptapEditor value="<p>Hallo</p>" onChange={vi.fn()} />);
+
+        expect(queryByText('Größe')).not.toBeInTheDocument();
+    });
+
+    it('verwirft Schriftgroesse und Schriftart aus gespeichertem HTML, behält Fett und Farbe', () => {
+        const { container } = render(
+            <TiptapEditor
+                value={'<p><span style="font-size: 20pt; font-family: Arial; color: #ff0000"><strong>Text</strong></span></p>'}
+                onChange={vi.fn()}
+            />,
+        );
+
+        const html = editorAus(container).getHTML();
+        expect(html).not.toContain('font-size');
+        expect(html).not.toContain('font-family');
+        expect(html).toContain('<strong>Text</strong>');
+        expect(html).toContain('color');
+    });
+});
+
 describe('TiptapEditor Verlaufsmodus', () => {
     it('meldet eine von aussen geaenderte value NICHT ueber onChange', () => {
         const onChange = vi.fn();

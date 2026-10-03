@@ -88,7 +88,7 @@ export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSel
             {expanded && hasLangtext && (
                 <div className="px-3 pb-3 pt-0 ml-11">
                     <div
-                        className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 prose prose-xs max-w-none"
+                        className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 prose prose-xs max-w-none rich-text-einheitlich"
                         dangerouslySetInnerHTML={{ __html: block.content! }}
                     />
                 </div>

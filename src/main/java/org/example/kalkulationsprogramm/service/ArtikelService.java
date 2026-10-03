@@ -58,7 +58,7 @@ public class ArtikelService implements ArtikelServiceContract {
             .addAttributes("p", "style");
 
     /** Einzige CSS-Eigenschaften, die im style-Attribut ueberleben duerfen. */
-    private static final Set<String> ERLAUBTE_CSS_EIGENSCHAFTEN = Set.of("font-size", "color", "text-align");
+    private static final Set<String> ERLAUBTE_CSS_EIGENSCHAFTEN = Set.of("color", "text-align");
 
     /**
      * Jsoup prueft das style-Attribut nur dem Namen nach, nicht dem

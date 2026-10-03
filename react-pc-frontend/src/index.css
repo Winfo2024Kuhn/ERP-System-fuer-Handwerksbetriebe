@@ -129,6 +129,18 @@ body {
   border-radius: 4px;
 }
 
+/* Rich-Text hat einheitliche Schrift: Schriftart und -größe sind im Editor nicht
+   wählbar. Bereits gespeicherte Texte können noch font-size/font-family im
+   style-Attribut tragen - hier (Vorschau/Editor) und im PDF-Service (span-Parser)
+   werden sie ignoriert, damit alte Leistungen rückwirkend einheitlich aussehen. */
+.tiptap-editor-content [style*="font-size"],
+.tiptap-editor-content [style*="font-family"],
+.rich-text-einheitlich [style*="font-size"],
+.rich-text-einheitlich [style*="font-family"] {
+  font-size: inherit !important;
+  font-family: inherit !important;
+}
+
 .tiptap-editor-content mark {
   border-radius: 2px;
   padding: 0 2px;

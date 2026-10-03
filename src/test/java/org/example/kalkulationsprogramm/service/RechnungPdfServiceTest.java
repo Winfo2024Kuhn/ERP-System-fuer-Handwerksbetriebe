@@ -583,36 +583,16 @@ class RechnungPdfServiceTest {
         }
 
         @Test
-        @DisplayName("Aus Word gepastete 12px-Schrift bleibt bei 9pt statt auf 10pt hochgezogen zu werden")
-        void gepasteteSchriftgroesseUnterZehnPunktBleibtErhalten() {
-            List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
-                    "<p><span style=\"font-size: 12px\">Kleingedrucktes</span></p>",
-                    java.awt.Color.BLACK, 10f, false);
+        @DisplayName("Schriftgröße im HTML wird ignoriert: Rich-Text hat eine einheitliche Größe")
+        void schriftgroesseImHtmlWirdIgnoriert() {
+            for (String groesse : new String[] {"12px", "24pt", "1pt"}) {
+                List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
+                        "<p><span style=\"font-size: " + groesse + "\">Text</span></p>",
+                        java.awt.Color.BLACK, 10f, false);
 
-            assertEquals(9f, ersteChunkSchriftgroesse(elements), 0.01f,
-                    "12px entsprechen 9pt und dürfen nicht auf 10pt angehoben werden");
-        }
-
-        @Test
-        @DisplayName("Explizit gesetzte 24pt bleiben erhalten statt auf 20pt gedeckelt zu werden")
-        void grosseSchriftgroesseBleibtErhalten() {
-            List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
-                    "<p><span style=\"font-size: 24pt\">Überschrift</span></p>",
-                    java.awt.Color.BLACK, 10f, false);
-
-            assertEquals(24f, ersteChunkSchriftgroesse(elements), 0.01f,
-                    "24pt dürfen nicht auf 20pt gedeckelt werden");
-        }
-
-        @Test
-        @DisplayName("Unlesbar kleine Schriftgröße wird auf das Mindestmaß angehoben")
-        void unlesbarKleineSchriftgroesseWirdAngehoben() {
-            List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
-                    "<p><span style=\"font-size: 1pt\">Winzig</span></p>",
-                    java.awt.Color.BLACK, 10f, false);
-
-            assertEquals(4f, ersteChunkSchriftgroesse(elements), 0.01f,
-                    "Unter 4pt ist Text auf Papier nicht mehr lesbar");
+                assertEquals(10f, ersteChunkSchriftgroesse(elements), 0.01f,
+                        "font-size " + groesse + " darf die Blockgröße nicht verändern");
+            }
         }
     }
 

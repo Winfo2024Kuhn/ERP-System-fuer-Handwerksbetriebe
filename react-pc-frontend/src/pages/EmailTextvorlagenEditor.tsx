@@ -604,7 +604,7 @@ function TemplateView({
           </div>
         </div>
         <div
-          className="min-h-[400px] p-6 bg-white prose prose-slate max-w-none"
+          className="min-h-[400px] p-6 bg-white prose prose-slate max-w-none rich-text-einheitlich"
           dangerouslySetInnerHTML={{ __html: preview || '' }}
         />
       </Card>

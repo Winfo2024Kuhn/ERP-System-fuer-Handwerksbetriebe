@@ -105,7 +105,7 @@ export function SectionHeaderBlock({
                         <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Hinweis</span>
                     </div>
                     <div
-                        className="text-xs text-slate-600 leading-relaxed prose prose-xs max-w-none"
+                        className="text-xs text-slate-600 leading-relaxed prose prose-xs max-w-none rich-text-einheitlich"
                         dangerouslySetInnerHTML={{ __html: child.content || '' }}
                     />
                 </div>

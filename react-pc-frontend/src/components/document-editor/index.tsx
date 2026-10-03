@@ -3257,7 +3257,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             price: b.price || 0,
             description: replacePlaceholders(b.description || ''),
             // TEXT and SERVICE blocks: Always use neutral defaults (10pt, not bold).
-            // All formatting (bold, italic, font-size, colors) is embedded as inline
+            // All formatting (bold, italic, colors) is embedded as inline
             // HTML from TiptapEditor and parsed by the backend HTML parser.
             // Using extractBoldFromHtml/extractFontSizeFromHtml as block-level defaults
             // is wrong because it would make the ENTIRE block bold/large if ANY single
@@ -3695,7 +3695,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                             {activeDragBlock.type === 'TEXT' && (
                                                 <div className="bg-white rounded-lg border border-slate-200 p-3">
                                                     <div className="text-[10px] font-semibold text-rose-400 uppercase tracking-wider mb-1">Textbaustein</div>
-                                                    <div className="text-xs text-slate-600 line-clamp-2" dangerouslySetInnerHTML={{ __html: activeDragBlock.content || '' }} />
+                                                    <div className="text-xs text-slate-600 line-clamp-2 rich-text-einheitlich" dangerouslySetInnerHTML={{ __html: activeDragBlock.content || '' }} />
                                                 </div>
                                             )}
                                             {activeDragBlock.type === 'SERVICE' && (

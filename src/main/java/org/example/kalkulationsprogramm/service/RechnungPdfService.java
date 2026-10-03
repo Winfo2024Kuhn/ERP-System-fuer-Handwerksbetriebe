@@ -54,15 +54,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class RechnungPdfService {
 
-    /**
-     * Grenzen für Schriftgrößen, die direkt im HTML stehen (z.B. aus dem Größen-Dropdown des
-     * Editors oder per Copy-Paste aus Word/Outlook mitgebracht). Sie sind bewusst weit gefasst:
-     * Was der Editor anzeigt, soll auch im PDF stehen. Beschnitten wird nur, was auf Papier
-     * unlesbar klein oder unbrauchbar groß wäre.
-     */
-    private static final float MIN_HTML_FONT_SIZE = 4f;
-    private static final float MAX_HTML_FONT_SIZE = 36f;
-
     // ======================= DTOs =======================
 
     /**
@@ -643,7 +634,7 @@ public class RechnungPdfService {
                      textCell.setPaddingTop(6f);
                      textCell.setPaddingBottom(6f);
 
-                     // Rich HTML parser preserves bold, italic, underline, colors, font-sizes, lists & images
+                     // Rich HTML parser preserves bold, italic, underline, colors, lists & images (font-size is ignored)
                      java.util.List<com.lowagie.text.Element> elements = parseHtmlToElements(content, textColor, defaultFontSize, defaultBold);
                      for (com.lowagie.text.Element e : elements) {
                          textCell.addElement(e);
@@ -1018,8 +1009,8 @@ public class RechnungPdfService {
      * @param defaultFontSize  Standard-Schriftgröße (aus Block-Einstellungen, 10-20pt)
      * @param defaultBold      Standard-Fett (aus Block-Einstellungen)
      */
-    // Package-private statt private, damit RechnungPdfServiceTest die Schriftgrößen-Umrechnung
-    // direkt prüfen kann — über den extrahierten PDF-Text sind Schriftgrößen nicht sichtbar.
+    // Package-private statt private, damit RechnungPdfServiceTest direkt prüfen kann, dass
+    // font-size im HTML ignoriert wird — über den extrahierten PDF-Text sind Größen nicht sichtbar.
     java.util.List<com.lowagie.text.Element> parseHtmlToElements(
             String html, Color defaultColor, float defaultFontSize, boolean defaultBold) {
         java.util.List<com.lowagie.text.Element> elements = new java.util.ArrayList<>();
@@ -1118,8 +1109,6 @@ public class RechnungPdfService {
         int listItemCounter = 0;
         Color currentColor = defaultColor;
         Color currentBgColor = null; // Hintergrundfarbe (highlight)
-        float currentFontSize = defaultFontSize;
-        java.util.Deque<Float> fontSizeStack = new java.util.ArrayDeque<>();
         java.util.Deque<Color> colorStack = new java.util.ArrayDeque<>();
         java.util.Deque<Color> bgColorStack = new java.util.LinkedList<>();
         // Track ob Bold durch ein Tag geändert wurde (um Block-Default zu respektieren)
@@ -1130,7 +1119,7 @@ public class RechnungPdfService {
             if (part.isEmpty()) {
                 // Leerzeichen zwischen Tags beibehalten (z.B. zwischen </strong> und Text)
                 if (originalPart.contains(" ") || originalPart.contains("\u00a0")) {
-                    addRichChunk(currentParagraph, " ", currentFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
+                    addRichChunk(currentParagraph, " ", defaultFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
                 }
                 continue;
             }
@@ -1151,24 +1140,10 @@ public class RechnungPdfService {
                 } else if (tag.equals("</u>")) {
                     isUnderline = false;
                 } else if (tag.startsWith("<span")) {
-                    float newFontSize = currentFontSize;
                     Color newColor = currentColor;
 
-                    java.util.regex.Pattern fontSizePattern = java.util.regex.Pattern.compile(
-                            "font-size:\\s*([\\d.]+)(px|pt|em|rem)?");
-                    java.util.regex.Matcher fontSizeMatcher = fontSizePattern.matcher(part);
-                    if (fontSizeMatcher.find()) {
-                        try {
-                            float size = Float.parseFloat(fontSizeMatcher.group(1));
-                            String unit = fontSizeMatcher.group(2);
-                            if ("px".equals(unit)) {
-                                size = size * 0.75f;
-                            } else if ("em".equals(unit) || "rem".equals(unit)) {
-                                size = size * defaultFontSize;
-                            }
-                            newFontSize = Math.max(MIN_HTML_FONT_SIZE, Math.min(MAX_HTML_FONT_SIZE, size));
-                        } catch (NumberFormatException ignored) {}
-                    }
+                    // font-size im span wird bewusst ignoriert: Rich-Text hat eine
+                    // einheitliche Schrift, aeltere Texte tragen noch Groessen im HTML.
 
                     java.util.regex.Pattern colorPattern = java.util.regex.Pattern.compile(
                             "(?<!background-)color:\\s*([^;\"']+)");
@@ -1198,17 +1173,14 @@ public class RechnungPdfService {
                         }
                     }
 
-                    fontSizeStack.push(currentFontSize);
                     colorStack.push(currentColor);
                     bgColorStack.push(currentBgColor);
                     boldStack.push(isBold);
-                    currentFontSize = newFontSize;
                     currentColor = newColor;
                     currentBgColor = newBgColor;
                     isBold = newBold;
 
                 } else if (tag.equals("</span>")) {
-                    if (!fontSizeStack.isEmpty()) currentFontSize = fontSizeStack.pop();
                     if (!colorStack.isEmpty()) currentColor = colorStack.pop();
                     if (!bgColorStack.isEmpty()) currentBgColor = bgColorStack.pop();
                     if (!boldStack.isEmpty()) isBold = boldStack.pop();
@@ -1302,7 +1274,7 @@ public class RechnungPdfService {
                     }
                     currentParagraph = new Paragraph();
                     maxFontSizeInParagraph = defaultFontSize;
-                    Font bulletFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, currentFontSize, currentColor);
+                    Font bulletFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, defaultFontSize, currentColor);
                     if (isOrderedList) {
                         listItemCounter++;
                         currentParagraph.add(new Chunk("  " + listItemCounter + ".  ", bulletFont));
@@ -1338,8 +1310,7 @@ public class RechnungPdfService {
                         // Text vor dem Platzhalter
                         String before = text.substring(lastEnd, phMatcher.start());
                         if (!before.isEmpty()) {
-                            addRichChunk(currentParagraph, before, currentFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
-                            if (currentFontSize > maxFontSizeInParagraph) maxFontSizeInParagraph = currentFontSize;
+                            addRichChunk(currentParagraph, before, defaultFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
                         }
                         // Paragraph abschließen, Bild einfügen, neuen Paragraph starten
                         if (!currentParagraph.isEmpty()) {
@@ -1361,12 +1332,10 @@ public class RechnungPdfService {
                     // Rest-Text nach letztem Platzhalter
                     String remaining = text.substring(lastEnd);
                     if (!remaining.isEmpty()) {
-                        addRichChunk(currentParagraph, remaining, currentFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
-                        if (currentFontSize > maxFontSizeInParagraph) maxFontSizeInParagraph = currentFontSize;
+                        addRichChunk(currentParagraph, remaining, defaultFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
                     }
                 } else if (!text.isEmpty()) {
-                    addRichChunk(currentParagraph, text, currentFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
-                    if (currentFontSize > maxFontSizeInParagraph) maxFontSizeInParagraph = currentFontSize;
+                    addRichChunk(currentParagraph, text, defaultFontSize, isBold, isItalic, isUnderline, currentColor, currentBgColor);
                 }
             }
         }

@@ -5,7 +5,6 @@ import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
-import { Extension } from '@tiptap/core';
 import Color from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
 import { ZahlungszielChip } from './document-editor/zahlungszielChipExtension';
@@ -16,7 +15,6 @@ import {
     AlignLeft,
     AlignRight,
     Bold,
-    CaseSensitive,
     Highlighter,
     Image as ImageIcon,
     Italic,
@@ -29,60 +27,6 @@ import {
     Redo
 } from 'lucide-react';
 import { Button } from './ui/button';
-
-// Font Size options (in pt) - begrenzt auf 10-20pt für konsistente PDF-Ausgabe
-const FONT_SIZES = ['10', '11', '12', '14', '16', '18', '20'];
-
-interface FontSizeCommandChain {
-    setMark: (mark: string, attributes: { fontSize: string | null }) => FontSizeCommandChain;
-    removeEmptyTextStyle: () => FontSizeCommandChain;
-    run: () => boolean;
-}
-
-interface FontSizeEditorCommands {
-    setFontSize: (fontSize: string) => boolean;
-}
-
-// Custom FontSize extension
-const FontSize = Extension.create({
-    name: 'fontSize',
-    addOptions() {
-        return {
-            types: ['textStyle'],
-        };
-    },
-    addGlobalAttributes() {
-        return [
-            {
-                types: this.options.types,
-                attributes: {
-                    fontSize: {
-                        default: null,
-                        parseHTML: element => element.style.fontSize?.replace(/['"]+/g, ''),
-                        renderHTML: attributes => {
-                            if (!attributes.fontSize) {
-                                return {};
-                            }
-                            return {
-                                style: `font-size: ${attributes.fontSize}`,
-                            };
-                        },
-                    },
-                },
-            },
-        ];
-    },
-    addCommands() {
-        return {
-            setFontSize: (fontSize: string) => ({ chain }: { chain: () => FontSizeCommandChain }) => {
-                return chain().setMark('textStyle', { fontSize }).run();
-            },
-            unsetFontSize: () => ({ chain }: { chain: () => FontSizeCommandChain }) => {
-                return chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run();
-            },
-        };
-    },
-});
 
 interface TiptapEditorProps {
     value: string;
@@ -443,28 +387,6 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
 
             <span className="w-px h-6 bg-rose-200 mx-1" />
 
-            {/* Font Size */}
-            <label className="inline-flex items-center gap-2 text-sm text-rose-700 cursor-pointer px-2 py-1 rounded hover:bg-rose-100">
-                <CaseSensitive className="w-4 h-4" />
-                Größe
-                <select
-                    className="border border-rose-200 rounded px-2 py-0.5 text-sm bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-rose-300"
-                    value=""
-                    onChange={(e) => {
-                        if (e.target.value) {
-                            (editor.commands as unknown as FontSizeEditorCommands).setFontSize(`${e.target.value}pt`);
-                        }
-                    }}
-                >
-                    <option value="">—</option>
-                    {FONT_SIZES.map((size) => (
-                        <option key={size} value={size}>{size}pt</option>
-                    ))}
-                </select>
-            </label>
-
-            <span className="w-px h-6 bg-rose-200 mx-1" />
-
             {/* Lists */}
             <ToolbarButton
                 onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -584,7 +506,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
     const editorContainerRef = useRef<HTMLDivElement>(null);
     /** Tracks the value the editor was initialized with so the first sync can be skipped
      *  (avoids an unnecessary setContent → getHTML round-trip that can normalize away
-     *  inline styles such as font-size, color, text-align, etc.)  */
+     *  inline styles such as color, text-align, etc.; font-size/-family are dropped on purpose)  */
     const editorInitValueRef = useRef(value);
     const editorReadyRef = useRef(false);
 
@@ -612,7 +534,6 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
             Underline,
             TextStyle,
             Color,
-            FontSize,
             Highlight.configure({ multicolor: true }),
             TextAlign.configure({
                 types: ['paragraph', 'heading'],
@@ -801,28 +722,6 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                     >
                         <UnderlineIcon className="w-4 h-4" /> Unterstrichen
                     </ToolbarButton>
-
-                    <span className="w-px h-6 bg-rose-200 mx-1" />
-
-                    {/* Font Size */}
-                    <label className="inline-flex items-center gap-2 text-sm text-rose-700 cursor-pointer px-2 py-1 rounded hover:bg-rose-100">
-                        <CaseSensitive className="w-4 h-4" />
-                        Größe
-                        <select
-                            className="border border-rose-200 rounded px-2 py-0.5 text-sm bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-rose-300"
-                            value=""
-                            onChange={(e) => {
-                                if (e.target.value) {
-                                    (editor.commands as unknown as FontSizeEditorCommands).setFontSize(`${e.target.value}pt`);
-                                }
-                            }}
-                        >
-                            <option value="">—</option>
-                            {FONT_SIZES.map((size) => (
-                                <option key={size} value={size}>{size}pt</option>
-                            ))}
-                        </select>
-                    </label>
 
                     <span className="w-px h-6 bg-rose-200 mx-1" />
 

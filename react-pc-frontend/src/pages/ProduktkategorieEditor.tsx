@@ -465,7 +465,7 @@ export default function ProduktkategorieEditor() {
                                 <div className="border border-slate-100 rounded-lg p-3 bg-slate-50">
                                     <p className="text-xs text-slate-500 mb-2">Beschreibung:</p>
                                     <div
-                                        className="prose prose-sm max-w-none text-slate-700"
+                                        className="prose prose-sm max-w-none text-slate-700 rich-text-einheitlich"
                                         dangerouslySetInnerHTML={{ __html: selectedKategorie.beschreibung }}
                                     />
                                 </div>
