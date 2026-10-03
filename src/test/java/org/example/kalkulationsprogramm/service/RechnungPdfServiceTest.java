@@ -213,30 +213,45 @@ class RechnungPdfServiceTest {
     // ======================= Tests =======================
 
     @Nested
-    @DisplayName("Lesbare Textfarbe zur Firmenfarbe")
-    class LesbareTextfarbeTests {
+    @DisplayName("Minimalistisches Dokument-Design")
+    class MinimalistischesDesignTests {
 
-        private double luminanz(java.awt.Color c) {
-            return (0.2126 * c.getRed() + 0.7152 * c.getGreen() + 0.0722 * c.getBlue()) / 255.0;
+        private RechnungDto rechnung() {
+            KopfdatenDto kopf = createTestKopfdaten();
+            List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
+            LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+            return new RechnungDto(layout, kopf, createTestContentBlocks(), formBlocks, "Danke!", null, null);
         }
 
         @Test
-        @DisplayName("Dunkle Firmenfarbe (Standard-Bordeaux) bleibt unverändert")
-        void dunkleFarbeBleibt() {
-            java.awt.Color bordeaux = new java.awt.Color(0x50, 0x00, 0x10);
+        @DisplayName("Gesamtsumme und Betrag stehen im PDF")
+        void gesamtsummeWirdGerendert() {
+            String text = generateAndExtractText(rechnung());
 
-            assertEquals(bordeaux, RechnungPdfService.lesbareTextfarbe(bordeaux));
+            assertTrue(text.contains("Gesamtsumme"), "Zeile 'Gesamtsumme' fehlt. Text:\n" + text);
+            assertTrue(text.contains("186,83"), "Brutto 157 € + 19 % USt = 186,83 € fehlt. Text:\n" + text);
         }
 
         @Test
-        @DisplayName("Helle Firmenfarben (Gelb, Pastell) werden als Schrift abgedunkelt, der Farbton bleibt")
-        void hellFarbeWirdAbgedunkelt() {
-            for (java.awt.Color hell : new java.awt.Color[] {
-                    new java.awt.Color(0xfa, 0xcc, 0x15), new java.awt.Color(0xbb, 0xf7, 0xd0), java.awt.Color.WHITE}) {
-                java.awt.Color text = RechnungPdfService.lesbareTextfarbe(hell);
+        @DisplayName("Kein Rot und keine Farbfläche im Seiteninhalt")
+        void keinRotImSeiteninhalt() throws Exception {
+            PdfReader reader = new PdfReader(service.generatePdfBytes(rechnung()));
+            StringBuilder alleSeiten = new StringBuilder();
+            for (int seite = 1; seite <= reader.getNumberOfPages(); seite++) {
+                alleSeiten.append(new String(reader.getPageContent(seite), java.nio.charset.StandardCharsets.ISO_8859_1));
+            }
+            String inhalt = alleSeiten.toString();
+            reader.close();
 
-                assertTrue(luminanz(text) < luminanz(hell), "Muss dunkler werden: " + hell);
-                assertTrue(luminanz(text) <= 0.35, "Muss unter der Lesbarkeitsgrenze liegen: " + hell);
+            // iText schreibt Farben als "r g b RG|rg" mit Werten 0-1; Rot dominiert, wenn r deutlich über g und b liegt.
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(\\d*\\.?\\d+) (\\d*\\.?\\d+) (\\d*\\.?\\d+) (?:RG|rg)\\b").matcher(inhalt);
+            while (m.find()) {
+                double r = Double.parseDouble(m.group(1));
+                double g = Double.parseDouble(m.group(2));
+                double b = Double.parseDouble(m.group(3));
+                assertFalse(r - Math.max(g, b) > 0.3,
+                        "Rote Farbe im Dokument gefunden: " + m.group());
             }
         }
     }

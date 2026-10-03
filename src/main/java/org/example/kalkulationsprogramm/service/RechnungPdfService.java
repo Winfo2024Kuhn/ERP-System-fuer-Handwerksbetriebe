@@ -33,8 +33,6 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfTemplate;
 import com.lowagie.text.pdf.PdfWriter;
 
-import org.example.kalkulationsprogramm.domain.Firmeninformation;
-import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.example.kalkulationsprogramm.util.PdfSchriften;
 import org.example.kalkulationsprogramm.util.RabattRechner;
 
@@ -264,18 +262,9 @@ public class RechnungPdfService {
     private static final Font FONT_SMALL = PdfSchriften.brieftext(8, Font.NORMAL, PdfSchriften.TEXTFARBE);
     private static final Font FONT_HEADER = PdfSchriften.brieftext(12, Font.BOLD, PdfSchriften.TEXTFARBE);
     private static final Font FONT_TITLE = PdfSchriften.brieftext(14, Font.BOLD, PdfSchriften.TEXTFARBE);
-    /** Firmenfarbe, wenn in den Firmeninformationen keine hinterlegt ist. */
-    private static final Color FIRMENFARBE_STANDARD = new Color(0x50, 0x00, 0x10);
+    /** Einzige Akzentfarbe des Dokuments: Linien, Tabellenkopf, Summen, Fortschrittsbalken - identisch zur Textfarbe (#44403c). */
+    private static final Color AKZENTFARBE = PdfSchriften.TEXTFARBE;
 
-    /**
-     * Die Firmenfarbe steht in den Firmeninformationen. Optional injiziert, damit der
-     * Service auch ohne Spring-Kontext gerendert werden kann (Tests, Vorschauen) — dann
-     * greift die Standardfarbe.
-     */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private FirmeninformationRepository firmeninformationRepository;
-    private volatile Color firmenfarbeCache;
-    private volatile long firmenfarbeCacheBis;
     private static final Color ALT_ROW_BG = new Color(250, 250, 250);
     /** Feine Trennlinie zwischen Positionen (stone-200, warmes Grau passend zur Textfarbe). */
     private static final Color LINIE_FEIN = new Color(0xe7, 0xe5, 0xe4);
@@ -283,14 +272,8 @@ public class RechnungPdfService {
     private static final Color LINIE_MITTEL = new Color(0xd6, 0xd3, 0xd1);
     /** Gedaempfter Nebentext: Kopfzeilen-Reste, Hinweise, Unterzeilen (stone-500). */
     private static final Color TEXT_GEDAEMPFT = new Color(0x78, 0x71, 0x6c);
-    /** Rabatte: kraeftiges Rot, das zur dunklen Firmenfarbe passt (rose-700). */
-    private static final Color RABATT_FARBE = new Color(190, 18, 60);
     /** Staerke der Tabellen- und Summenlinien. */
     private static final float LINIE_STAERKE = 1f;
-    /** Wie lange die Firmenfarbe zwischengespeichert wird. */
-    private static final long FIRMENFARBE_CACHE_MS = 10_000L;
-    /** Ab dieser Helligkeit (0-1) wird die Firmenfarbe als Schrift abgedunkelt. */
-    private static final double MAX_LUMINANZ_FUER_TEXT = 0.35;
 
     // ======================= PDF Generation =======================
 
@@ -510,7 +493,6 @@ public class RechnungPdfService {
 
         Color textColor = PdfSchriften.TEXTFARBE;
         Color headerColor = TEXT_GEDAEMPFT;
-        Color accentColor = new Color(190, 18, 60); // Rose-700
         Font textFont = PdfSchriften.brieftext(10, Font.NORMAL, textColor);
         Font posFont = PdfSchriften.brieftext(10, Font.NORMAL, textColor);
         Font labelFont = PdfSchriften.brieftext(10, Font.BOLD, textColor);
@@ -586,7 +568,7 @@ public class RechnungPdfService {
                     currentTable = null;
                 }
                 // Add section header with position number
-                addSectionHeader(ct, block.sectionLabel(), block.pos(), accentColor, textColor);
+                addSectionHeader(ct, block.sectionLabel(), block.pos(), textColor);
                 continue;
             }
 
@@ -614,7 +596,7 @@ public class RechnungPdfService {
                 }
 
                 // Add subtotal row
-                addSubtotalRow(ct, sectionLabel, subtotal, nf, accentColor, textColor);
+                addSubtotalRow(ct, sectionLabel, subtotal, nf, textColor);
                 continue;
             }
 
@@ -709,10 +691,9 @@ public class RechnungPdfService {
      * Rendert eine Bauabschnitt-Überschrift im PDF.
      * Professionelles Design mit Akzentfarbe.
      */
-    private void addSectionHeader(ColumnText ct, String label, String positionNr, Color accentColor, Color textColor) throws DocumentException {
+    private void addSectionHeader(ColumnText ct, String label, String positionNr, Color textColor) throws DocumentException {
         if (label == null || label.isBlank()) label = "Bauabschnitt";
 
-        Color lineColor = ermittleFirmenfarbe();
 
         PdfPTable headerTable = new PdfPTable(1);
         headerTable.setWidthPercentage(100);
@@ -722,7 +703,7 @@ public class RechnungPdfService {
         // Main cell with dark bottom border
         PdfPCell cell = new PdfPCell();
         cell.setBorder(Rectangle.BOTTOM);
-        cell.setBorderColor(lineColor);
+        cell.setBorderColor(AKZENTFARBE);
         cell.setBorderWidth(LINIE_STAERKE);
         cell.setPaddingTop(6f);
         cell.setPaddingBottom(6f);
@@ -747,8 +728,7 @@ public class RechnungPdfService {
     /**
      * Rendert eine Zwischensumme (Teilsumme) für einen Bauabschnitt.
      */
-    private void addSubtotalRow(ColumnText ct, String label, BigDecimal subtotal, NumberFormat nf, Color accentColor, Color textColor) throws DocumentException {
-        Color lineColor = ermittleFirmenfarbe();
+    private void addSubtotalRow(ColumnText ct, String label, BigDecimal subtotal, NumberFormat nf, Color textColor) throws DocumentException {
 
         PdfPTable subtotalTable = new PdfPTable(new float[] { 7f, 3f });
         subtotalTable.setWidthPercentage(100);
@@ -759,7 +739,7 @@ public class RechnungPdfService {
         Font subtotalFont = PdfSchriften.brieftext(10, Font.BOLD, textColor);
         PdfPCell labelCell = new PdfPCell(new Phrase("Zwischensumme " + label, subtotalFont));
         labelCell.setBorder(Rectangle.TOP | Rectangle.BOTTOM);
-        labelCell.setBorderColor(lineColor);
+        labelCell.setBorderColor(AKZENTFARBE);
         labelCell.setBorderWidth(0.75f);
         labelCell.setPaddingTop(5f);
         labelCell.setPaddingBottom(5f);
@@ -769,7 +749,7 @@ public class RechnungPdfService {
         // Amount
         PdfPCell amountCell = new PdfPCell(new Phrase(nf.format(subtotal) + " €", subtotalFont));
         amountCell.setBorder(Rectangle.TOP | Rectangle.BOTTOM);
-        amountCell.setBorderColor(lineColor);
+        amountCell.setBorderColor(AKZENTFARBE);
         amountCell.setBorderWidth(0.75f);
         amountCell.setPaddingTop(5f);
         amountCell.setPaddingBottom(5f);
@@ -796,14 +776,13 @@ public class RechnungPdfService {
         String[] headers = { "Pos.", "Menge", "Bezeichnung", "Einzelpreis", "Gesamtpreis" };
         int[] aligns = { Element.ALIGN_CENTER, Element.ALIGN_CENTER, Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT };
         
-        // Linie unter dem Tabellenkopf in der Firmenfarbe
-        Color headerLineColor = ermittleFirmenfarbe();
+        // Linie unter dem Tabellenkopf in der Akzentfarbe
         
         for (int i = 0; i < headers.length; i++) {
-            Font hFont = PdfSchriften.brieftext(9, Font.BOLD, lesbareTextfarbe(headerLineColor));
+            Font hFont = PdfSchriften.brieftext(9, Font.BOLD, AKZENTFARBE);
             PdfPCell hCell = new PdfPCell(new Phrase(headers[i], hFont));
             hCell.setBorder(Rectangle.BOTTOM);
-            hCell.setBorderColor(headerLineColor);
+            hCell.setBorderColor(AKZENTFARBE);
             hCell.setBorderWidth(LINIE_STAERKE);
             hCell.setPadding(4f);
             hCell.setPaddingBottom(4f);
@@ -983,7 +962,7 @@ public class RechnungPdfService {
             gpCell.addElement(origLine);
             
             // Rabatt-Hinweis
-            Font rabattFont = PdfSchriften.brieftext(8, Font.ITALIC, RABATT_FARBE);
+            Font rabattFont = PdfSchriften.brieftext(8, Font.ITALIC, AKZENTFARBE);
             Paragraph rabattLine = new Paragraph("-" + nf.format(block.rabattProzent()) + "% Rabatt", rabattFont);
             rabattLine.setAlignment(Element.ALIGN_RIGHT);
             rabattLine.setLeading(10f);
@@ -1499,7 +1478,6 @@ public class RechnungPdfService {
         Color textColor = PdfSchriften.TEXTFARBE;
         Font normalFont = PdfSchriften.brieftext(10, Font.NORMAL, textColor);
         Font boldFont = PdfSchriften.brieftext(11, Font.BOLD, textColor);
-        Color lineColor = ermittleFirmenfarbe();
 
         // === WRAPPER-TABELLE für Summenblock ===
         PdfPTable wrapperTable = new PdfPTable(1);
@@ -1525,7 +1503,6 @@ public class RechnungPdfService {
             // In der Uebersicht steht brutto gross und netto klein darunter — der Kunde
             // rechnet in Bruttobetraegen. Der Steuerausweis folgt im Zahlblock.
             DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-            Color firmenfarbe = lineColor;
 
             // --- Summen vorab, damit Fortschrittsbalken und Restbetrag stimmen ---
             BigDecimal bereitsAbgerechnetNetto = BigDecimal.ZERO;
@@ -1554,7 +1531,7 @@ public class RechnungPdfService {
             BigDecimal auftragBrutto = bruttoMitSteuer(gesamtAuftragssumme, mwstSatz);
 
             // === Abschnitt 1: Abrechnungsstand ===
-            addAbschnittsUeberschrift(sumTable, "Abrechnungsstand", 0f, lineColor);
+            addAbschnittsUeberschrift(sumTable, "Abrechnungsstand", 0f);
 
             if (abrechnungsverlauf.balkenAnzeigen() && gesamtAuftragssumme.compareTo(BigDecimal.ZERO) > 0) {
                 // Eine Schlussrechnung schliesst den Auftrag ab — danach ist er per
@@ -1570,7 +1547,7 @@ public class RechnungPdfService {
                             .divide(gesamtAuftragssumme, 1, java.math.RoundingMode.HALF_UP)
                             .doubleValue();
                 }
-                addFortschrittsBalken(sumTable, prozent, firmenfarbe);
+                addFortschrittsBalken(sumTable, prozent);
             }
 
             // --- Auftragssumme ---
@@ -1586,7 +1563,7 @@ public class RechnungPdfService {
             }
             addUebersichtsZeile(sumTable, "Auftragssumme", basisZeile,
                     nf.format(auftragBrutto) + " €",
-                    "netto " + nf.format(gesamtAuftragssumme) + " €", false, firmenfarbe);
+                    "netto " + nf.format(gesamtAuftragssumme) + " €", false);
 
             // --- bereits gestellte Rechnungen, einzeln ---
             // Die Bruttobetraege werden zeilenweise gerundet und die Restsumme daraus
@@ -1610,7 +1587,7 @@ public class RechnungPdfService {
 
                     addUebersichtsZeile(sumTable, bezeichnung, datumsZeile,
                             "- " + nf.format(posBrutto) + " €",
-                            "netto " + nf.format(posNetto) + " €", false, firmenfarbe);
+                            "netto " + nf.format(posNetto) + " €", false);
                 }
             }
 
@@ -1646,7 +1623,7 @@ public class RechnungPdfService {
 
             addUebersichtsZeile(sumTable, dieseBezeichnung, dieseUnterzeile,
                     "- " + nf.format(brutto) + " €",
-                    "netto " + nf.format(nettoNachRabatt) + " €", false, firmenfarbe);
+                    "netto " + nf.format(nettoNachRabatt) + " €", false);
 
             // --- Differenz zur Auftragsbestaetigung (nur Schlussrechnung) ---
             // Als Ausgleichsgroesse gerechnet, nicht aus einem Positionsvergleich:
@@ -1675,7 +1652,7 @@ public class RechnungPdfService {
 
                 addUebersichtsZeile(sumTable, differenzLabel, differenzUnterzeile,
                         differenzVorzeichen + nf.format(differenzBrutto) + " €",
-                        "netto " + nf.format(differenzNetto.abs()) + " €", false, firmenfarbe);
+                        "netto " + nf.format(differenzNetto.abs()) + " €", false);
             }
 
             // --- Noch offen ---
@@ -1706,11 +1683,11 @@ public class RechnungPdfService {
 
                 addUebersichtsZeile(sumTable, "Noch offen", null,
                         nf.format(restBrutto) + " €",
-                        "netto " + nf.format(restNetto) + " €", true, firmenfarbe);
+                        "netto " + nf.format(restNetto) + " €", true);
             }
 
             // === Abschnitt 2: Zu zahlen ===
-            addAbschnittsUeberschrift(sumTable, "Zu zahlen", 14f, lineColor);
+            addAbschnittsUeberschrift(sumTable, "Zu zahlen", 14f);
 
             // Rabatt getrennt ausweisen, damit der Nettobetrag nachvollziehbar bleibt.
             // Bei der Schlussrechnung ergibt sich der Betrag aus dem offenen Rest, dort
@@ -1718,7 +1695,7 @@ public class RechnungPdfService {
             if (hasGlobalRabatt && !isSchlussrechnung) {
                 addZahlZeile(sumTable, "Nettobetrag vor Rabatt", null, nf.format(netto) + " €", false, normalFont, boldFont);
 
-                Font rabattFont = PdfSchriften.brieftext(10, Font.ITALIC, RABATT_FARBE);
+                Font rabattFont = PdfSchriften.brieftext(10, Font.ITALIC, AKZENTFARBE);
                 addZahlZeile(sumTable, "Rabatt", nf.format(globalRabattProzent) + " %",
                         "- " + nf.format(rabattBetrag) + " €", false, rabattFont, rabattFont);
             }
@@ -1749,11 +1726,11 @@ public class RechnungPdfService {
             zahlLinie.setFixedHeight(5f);
             sumTable.addCell(zahlLinie);
 
-            addGesamtBand(sumTable, "Zahlbetrag", nf.format(brutto) + " €", lineColor);
+            addGesamtZeile(sumTable, "Zahlbetrag", nf.format(brutto) + " €");
 
             PdfPCell bottomLine = new PdfPCell();
             bottomLine.setBorder(Rectangle.TOP);
-            bottomLine.setBorderColor(lineColor);
+            bottomLine.setBorderColor(AKZENTFARBE);
             bottomLine.setBorderWidth(LINIE_STAERKE);
             bottomLine.setColspan(3);
             bottomLine.setFixedHeight(2f);
@@ -1766,7 +1743,7 @@ public class RechnungPdfService {
             // unter der Abschnittsueberschrift mit und braucht diese hier nicht.
             PdfPCell lineCell = new PdfPCell();
             lineCell.setBorder(Rectangle.TOP);
-            lineCell.setBorderColor(lineColor);
+            lineCell.setBorderColor(AKZENTFARBE);
             lineCell.setBorderWidth(LINIE_STAERKE);
             lineCell.setColspan(3);
             lineCell.setFixedHeight(8f);
@@ -1831,7 +1808,7 @@ public class RechnungPdfService {
 
             // Globaler Rabatt (falls vorhanden)
             if (hasGlobalRabatt) {
-                Font rabattFont = PdfSchriften.brieftext(10, Font.ITALIC, RABATT_FARBE);
+                Font rabattFont = PdfSchriften.brieftext(10, Font.ITALIC, AKZENTFARBE);
 
                 PdfPCell rabattLabel = new PdfPCell(new Phrase("Rabatt", rabattFont));
                 rabattLabel.setBorder(Rectangle.NO_BORDER);
@@ -1882,14 +1859,14 @@ public class RechnungPdfService {
             spacer.setColspan(3);
             sumTable.addCell(spacer);
 
-            // Gesamtsumme bzw. Zahlbetrag: fett in der Firmenfarbe auf zartem Farbband
-            addGesamtBand(sumTable, isAbschlag ? "Zahlbetrag" : "Gesamtsumme",
-                    nf.format(brutto) + " €", lineColor);
+            // Gesamtsumme bzw. Zahlbetrag: fett ohne Hintergrund
+            addGesamtZeile(sumTable, isAbschlag ? "Zahlbetrag" : "Gesamtsumme",
+                    nf.format(brutto) + " €");
 
             // Abschlusslinie nach Gesamtsumme
             PdfPCell bottomLine = new PdfPCell();
             bottomLine.setBorder(Rectangle.TOP);
-            bottomLine.setBorderColor(lineColor);
+            bottomLine.setBorderColor(AKZENTFARBE);
             bottomLine.setBorderWidth(LINIE_STAERKE);
             bottomLine.setColspan(3);
             bottomLine.setFixedHeight(2f);
@@ -1915,51 +1892,6 @@ public class RechnungPdfService {
         return netto.add(steuer);
     }
 
-    /**
-     * Firmenfarbe aus den Firmeninformationen. Faellt auf die Standardfarbe zurueck,
-     * wenn nichts hinterlegt oder der Wert unbrauchbar ist.
-     */
-    private Color ermittleFirmenfarbe() {
-        if (firmeninformationRepository == null) {
-            return FIRMENFARBE_STANDARD;
-        }
-        // Pro PDF wird die Farbe an vielen Stellen gebraucht (je Abschnitt, Tabelle, Summe):
-        // kurz zwischenspeichern statt jedes Mal die Datenbank zu fragen.
-        long jetzt = System.currentTimeMillis();
-        Color gemerkt = firmenfarbeCache;
-        if (gemerkt != null && jetzt < firmenfarbeCacheBis) {
-            return gemerkt;
-        }
-        Color farbe;
-        try {
-            farbe = firmeninformationRepository.findById(1L)
-                    .map(Firmeninformation::getFirmenfarbe)
-                    .filter(hex -> hex != null && !hex.isBlank())
-                    .map(hex -> parseColor(hex, FIRMENFARBE_STANDARD))
-                    .orElse(FIRMENFARBE_STANDARD);
-        } catch (Exception e) {
-            log.warn("Firmenfarbe konnte nicht geladen werden, nutze Standardfarbe", e);
-            return FIRMENFARBE_STANDARD;
-        }
-        firmenfarbeCache = farbe;
-        firmenfarbeCacheBis = jetzt + FIRMENFARBE_CACHE_MS;
-        return farbe;
-    }
-
-    /**
-     * Textfarbe zur Firmenfarbe. Helle Firmenfarben (Gelb, Pastell) sind als Schrift auf Weiss
-     * oder auf dem Farbband nicht lesbar - sie werden abgedunkelt. Linien und Band duerfen hell bleiben.
-     */
-    static Color lesbareTextfarbe(Color farbe) {
-        double luminanz = (0.2126 * farbe.getRed() + 0.7152 * farbe.getGreen() + 0.0722 * farbe.getBlue()) / 255.0;
-        if (luminanz <= MAX_LUMINANZ_FUER_TEXT) {
-            return farbe;
-        }
-        float faktor = (float) (MAX_LUMINANZ_FUER_TEXT / luminanz) * 0.9f;
-        return new Color(Math.round(farbe.getRed() * faktor), Math.round(farbe.getGreen() * faktor),
-                Math.round(farbe.getBlue() * faktor));
-    }
-
     /** Mischt eine Farbe mit Weiss — 0f bleibt die Farbe, 1f ist reines Weiss. */
     private static Color aufhellen(Color farbe, float anteil) {
         return new Color(
@@ -1973,7 +1905,7 @@ public class RechnungPdfService {
      * Linie — dieselbe Optik wie der Kopf der Positionstabelle. Das Dokument kennt keine
      * Kästen, deshalb trennt hier die Linie statt eines Rahmens.
      */
-    private void addAbschnittsUeberschrift(PdfPTable sumTable, String text, float abstandDavor, Color lineColor) {
+    private void addAbschnittsUeberschrift(PdfPTable sumTable, String text, float abstandDavor) {
         if (abstandDavor > 0f) {
             PdfPCell abstand = new PdfPCell(new Phrase(" "));
             abstand.setBorder(Rectangle.NO_BORDER);
@@ -1988,7 +1920,7 @@ public class RechnungPdfService {
 
         PdfPCell zelle = new PdfPCell(new Phrase(beschriftung));
         zelle.setBorder(Rectangle.BOTTOM);
-        zelle.setBorderColor(lineColor);
+        zelle.setBorderColor(AKZENTFARBE);
         zelle.setBorderWidth(LINIE_STAERKE);
         zelle.setColspan(3);
         zelle.setPaddingBottom(5f);
@@ -1997,12 +1929,12 @@ public class RechnungPdfService {
 
     /**
      * Fortschrittsbalken über die volle Breite plus Beschriftung darunter, in der
-     * Firmenfarbe: gefuellter Teil satt, offener Teil als heller Ton derselben Farbe.
+     * Akzentfarbe: gefuellter Teil satt, offener Teil als heller Ton derselben Farbe.
      */
-    private void addFortschrittsBalken(PdfPTable sumTable, double prozent, Color firmenfarbe) {
+    private void addFortschrittsBalken(PdfPTable sumTable, double prozent) {
         float anteil = (float) Math.max(0d, Math.min(100d, prozent));
-        Color gefuellt = firmenfarbe;
-        Color offen = aufhellen(firmenfarbe, 0.88f);
+        Color gefuellt = AKZENTFARBE;
+        Color offen = aufhellen(AKZENTFARBE, 0.88f);
 
         // Ein PdfPTable braucht positive Spaltenbreiten, daher die Randfaelle einzeln.
         boolean nurGefuellt = anteil >= 100f;
@@ -2053,12 +1985,11 @@ public class RechnungPdfService {
      * rechts der Bruttobetrag mit dem Nettobetrag klein und grau darunter.
      */
     private void addUebersichtsZeile(PdfPTable sumTable, String bezeichnung, String unterzeile,
-                                     String bruttoText, String nettoText, boolean hervorgehoben,
-                                     Color firmenfarbe) {
+                                     String bruttoText, String nettoText, boolean hervorgehoben) {
         Font textFont = PdfSchriften.brieftext(hervorgehoben ? 11 : 10,
                 hervorgehoben ? Font.BOLD : Font.NORMAL, PdfSchriften.TEXTFARBE);
         Font unterFont = PdfSchriften.brieftext(8, Font.NORMAL, TEXT_GEDAEMPFT);
-        Font nettoFont = PdfSchriften.brieftext(8, Font.ITALIC, lesbareTextfarbe(firmenfarbe));
+        Font nettoFont = PdfSchriften.brieftext(8, Font.ITALIC, TEXT_GEDAEMPFT);
 
         Phrase links = new Phrase(new Chunk(bezeichnung, textFont));
         if (unterzeile != null && !unterzeile.isBlank()) {
@@ -2087,29 +2018,23 @@ public class RechnungPdfService {
         sumTable.addCell(rechteZelle);
     }
 
-    /** Schlusszeile des Summenblocks: Label links, Betrag rechts, fett in der Firmenfarbe auf zartem Farbband. */
-    private void addGesamtBand(PdfPTable sumTable, String label, String betrag, Color firmenfarbe) {
-        Color band = aufhellen(firmenfarbe, 0.93f);
-        Font font = PdfSchriften.brieftext(11, Font.BOLD, lesbareTextfarbe(firmenfarbe));
+    /** Schlusszeile des Summenblocks: Label links, Betrag rechts, fett ohne Hintergrund. */
+    private void addGesamtZeile(PdfPTable sumTable, String label, String betrag) {
+        Font font = PdfSchriften.brieftext(12, Font.BOLD, AKZENTFARBE);
 
         PdfPCell labelZelle = new PdfPCell(new Phrase(label, font));
         labelZelle.setBorder(Rectangle.NO_BORDER);
-        labelZelle.setBackgroundColor(band);
-        labelZelle.setPaddingLeft(6f);
-        labelZelle.setPaddingTop(5f);
+        labelZelle.setPaddingTop(7f);
         labelZelle.setPaddingBottom(6f);
         sumTable.addCell(labelZelle);
 
         PdfPCell leer = new PdfPCell(new Phrase("", font));
         leer.setBorder(Rectangle.NO_BORDER);
-        leer.setBackgroundColor(band);
         sumTable.addCell(leer);
 
         PdfPCell betragZelle = new PdfPCell(new Phrase(betrag, font));
         betragZelle.setBorder(Rectangle.NO_BORDER);
-        betragZelle.setBackgroundColor(band);
-        betragZelle.setPaddingRight(6f);
-        betragZelle.setPaddingTop(5f);
+        betragZelle.setPaddingTop(7f);
         betragZelle.setPaddingBottom(6f);
         betragZelle.setHorizontalAlignment(Element.ALIGN_RIGHT);
         sumTable.addCell(betragZelle);
@@ -2206,12 +2131,11 @@ public class RechnungPdfService {
         breakdownTable.setSpacingAfter(4f);
 
         // Header row
-        Color lineColor = ermittleFirmenfarbe();
         Font headerFont = PdfSchriften.brieftext(9, Font.BOLD, textColor);
 
         PdfPCell hPos = new PdfPCell(new Phrase("Pos.", headerFont));
         hPos.setBorder(Rectangle.BOTTOM);
-        hPos.setBorderColor(lineColor);
+        hPos.setBorderColor(AKZENTFARBE);
         hPos.setBorderWidth(LINIE_STAERKE);
         hPos.setPadding(4f);
         hPos.setPaddingBottom(6f);
@@ -2220,7 +2144,7 @@ public class RechnungPdfService {
 
         PdfPCell hLabel = new PdfPCell(new Phrase("Bauabschnitt", headerFont));
         hLabel.setBorder(Rectangle.BOTTOM);
-        hLabel.setBorderColor(lineColor);
+        hLabel.setBorderColor(AKZENTFARBE);
         hLabel.setBorderWidth(LINIE_STAERKE);
         hLabel.setPadding(4f);
         hLabel.setPaddingBottom(6f);
@@ -2228,7 +2152,7 @@ public class RechnungPdfService {
 
         PdfPCell hTotal = new PdfPCell(new Phrase("Summe", headerFont));
         hTotal.setBorder(Rectangle.BOTTOM);
-        hTotal.setBorderColor(lineColor);
+        hTotal.setBorderColor(AKZENTFARBE);
         hTotal.setBorderWidth(LINIE_STAERKE);
         hTotal.setPadding(4f);
         hTotal.setPaddingBottom(6f);
@@ -2508,7 +2432,7 @@ public class RechnungPdfService {
 
         // Separator line
         cb.setLineWidth(0.5f);
-        cb.setColorStroke(new Color(220, 38, 38));
+        cb.setColorStroke(LINIE_MITTEL);
         cb.moveTo(50, 798);
         cb.lineTo(550, 798);
         cb.stroke();
