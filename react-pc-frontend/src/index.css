@@ -153,6 +153,7 @@ body {
    diese Regeln greift Tailwinds prose-sm (14px, Zeilenabstand 1,71) und der Text
    bricht an ganz anderer Stelle um als im Dokument. Die Werte sind 1:1 aus
    RechnungPdfService übernommen:
+     - Schrift       Open Sans (PdfSchriften), Breiten hängen von ihr ab
      - Schriftgröße  10pt  (Block-Default in addServiceRow)
      - Zeilenabstand 1,3   (Paragraph.setLeading(fontSize * 1.3f))
      - Absatzabstand 2pt   (Paragraph.setSpacingAfter(2f))
@@ -164,8 +165,21 @@ body {
    Tabellenbreite verschiebt den Umbruch entsprechend.
    ======================================== */
 .doc-pdf-metrics .tiptap-editor-content {
+  font-family: 'Open Sans', sans-serif;
   font-size: 10pt;
   line-height: 1.3;
+  color: #44403c;
+  /* OpenPDF kernt nicht und kennt keine Ligaturen: gleiche Zeilenbreiten wie im PDF */
+  font-kerning: none;
+  font-variant-ligatures: none;
+}
+
+/* Betreff wie im PDF: Montserrat SemiBold 11pt */
+.doc-betreff-eingabe {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 11pt;
+  color: #44403c;
 }
 
 .doc-pdf-metrics .tiptap-editor-content p {

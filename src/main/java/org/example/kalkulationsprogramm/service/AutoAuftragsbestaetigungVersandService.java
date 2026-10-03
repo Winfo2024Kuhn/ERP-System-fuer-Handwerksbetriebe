@@ -945,9 +945,9 @@ public class AutoAuftragsbestaetigungVersandService
     // steckt. Die Formatierung des Richtexts steht aber vollständig im HTML
     // selbst — der Block-Wert darf sie deshalb nicht zusätzlich überschreiben.
     //
-    // Im positionenJson stehen trotzdem oft fett: true und eine abweichende
-    // fontSize: Der DocumentEditor setzt sie beim Einfügen aus
-    // extractBoldFromHtml/extractFontSizeFromHtml, und die liefern schon bei
+    // Im positionenJson stehen trotzdem oft fett: true und (bei älteren
+    // Dokumenten) eine abweichende fontSize: Der DocumentEditor hat sie beim
+    // Einfügen aus dem HTML abgeleitet, und das lieferte schon bei
     // EINEM formatierten Wort einen Treffer. Beim manuellen Export überschreibt
     // das Frontend die Werte deshalb bewusst mit neutral (siehe
     // document-editor/index.tsx → contentBlocks-Mapping). Ohne dieselbe

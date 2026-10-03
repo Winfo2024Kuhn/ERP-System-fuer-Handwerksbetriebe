@@ -23,50 +23,6 @@ export const unitMap: Record<string, string> = {
 };
 
 /**
- * Extracts the dominant font size from HTML content.
- * Scans ALL font-size declarations (not just the first one) and returns
- * the most frequently used size (in pt, clamped to 10-20).
- *
- * WICHTIG: TiptapEditor speichert immer in pt (z.B. "12pt").
- * Falls px gefunden wird, wird es zu pt konvertiert (px * 0.75 = pt).
- */
-export const extractFontSizeFromHtml = (html: string): number | undefined => {
-    if (!html) return undefined;
-
-    const fontSizeRegex = /font-size:\s*(\d+(?:\.\d+)?)(pt|px|em|rem)?/gi;
-    const sizes: number[] = [];
-    let match: RegExpExecArray | null;
-
-    while ((match = fontSizeRegex.exec(html)) !== null) {
-        let size = parseFloat(match[1]);
-        const unit = match[2]?.toLowerCase();
-        if (unit === 'px') {
-            size = size * 0.75;
-        } else if (unit === 'em' || unit === 'rem') {
-            size = size * 10; // rough estimate: 1em ≈ 10pt base
-        }
-        sizes.push(Math.max(10, Math.min(20, Math.round(size))));
-    }
-
-    if (sizes.length === 0) return undefined;
-
-    // Return the most frequently used font-size (dominant size for the block)
-    const freq = new Map<number, number>();
-    for (const s of sizes) {
-        freq.set(s, (freq.get(s) || 0) + 1);
-    }
-    let dominant = sizes[0];
-    let maxCount = 0;
-    for (const [size, count] of freq) {
-        if (count > maxCount) {
-            maxCount = count;
-            dominant = size;
-        }
-    }
-    return dominant;
-};
-
-/**
  * Checks if HTML content contains bold formatting.
  */
 export const extractBoldFromHtml = (html: string): boolean => {

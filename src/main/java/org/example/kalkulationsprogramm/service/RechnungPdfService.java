@@ -35,6 +35,7 @@ import com.lowagie.text.pdf.PdfWriter;
 
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
+import org.example.kalkulationsprogramm.util.PdfSchriften;
 import org.example.kalkulationsprogramm.util.RabattRechner;
 
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,9 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 @Slf4j
 public class RechnungPdfService {
+
+    /** Kleinste Schrift, auf die ein Textblock schrumpft, damit sein Inhalt noch ins Rechteck passt. */
+    private static final float MIN_BLOCK_SCHRIFT = 6f;
 
     // ======================= DTOs =======================
 
@@ -255,11 +259,11 @@ public class RechnungPdfService {
 
     // ======================= FONTS =======================
 
-    private static final Font FONT_NORMAL = FontFactory.getFont(FontFactory.TIMES_ROMAN, 10);
-    private static final Font FONT_BOLD = FontFactory.getFont(FontFactory.TIMES_BOLD, 10);
-    private static final Font FONT_SMALL = FontFactory.getFont(FontFactory.TIMES_ROMAN, 8);
-    private static final Font FONT_HEADER = FontFactory.getFont(FontFactory.TIMES_BOLD, 12);
-    private static final Font FONT_TITLE = FontFactory.getFont(FontFactory.TIMES_BOLD, 14);
+    private static final Font FONT_NORMAL = PdfSchriften.brieftext(10, Font.NORMAL, PdfSchriften.TEXTFARBE);
+    private static final Font FONT_BOLD = PdfSchriften.brieftext(10, Font.BOLD, PdfSchriften.TEXTFARBE);
+    private static final Font FONT_SMALL = PdfSchriften.brieftext(8, Font.NORMAL, PdfSchriften.TEXTFARBE);
+    private static final Font FONT_HEADER = PdfSchriften.brieftext(12, Font.BOLD, PdfSchriften.TEXTFARBE);
+    private static final Font FONT_TITLE = PdfSchriften.brieftext(14, Font.BOLD, PdfSchriften.TEXTFARBE);
     private static final Color HEADER_BG = new Color(220, 38, 38); // Rose-600
     /** Firmenfarbe, wenn in den Firmeninformationen keine hinterlegt ist. */
     private static final Color FIRMENFARBE_STANDARD = new Color(0x50, 0x00, 0x10);
@@ -489,13 +493,13 @@ public class RechnungPdfService {
         nf.setMinimumFractionDigits(2);
         nf.setMaximumFractionDigits(2);
 
-        Color textColor = new Color(0, 0, 0); // Schwarz
+        Color textColor = PdfSchriften.TEXTFARBE;
         Color headerColor = new Color(71, 85, 105); // Slate-600
         Color accentColor = new Color(190, 18, 60); // Rose-700
-        Font textFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 10, textColor);
-        Font posFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 10, textColor);
-        Font labelFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 10, textColor);
-        Font headerFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 9, headerColor);
+        Font textFont = PdfSchriften.brieftext(10, Font.NORMAL, textColor);
+        Font posFont = PdfSchriften.brieftext(10, Font.NORMAL, textColor);
+        Font labelFont = PdfSchriften.brieftext(10, Font.BOLD, textColor);
+        Font headerFont = PdfSchriften.brieftext(9, Font.BOLD, headerColor);
 
         PdfPTable currentTable = null;
 
@@ -711,7 +715,7 @@ public class RechnungPdfService {
         
         // Position (e.g. "1.0") + label – alles in gleicher dunkler Farbe
         String posPrefix = (positionNr != null && !positionNr.isBlank()) ? positionNr + "  " : "";
-        Font sectionFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 11, textColor);
+        Font sectionFont = PdfSchriften.brieftext(11, Font.BOLD, textColor);
         
         Paragraph p = new Paragraph();
         p.setLeading(14f);
@@ -737,7 +741,7 @@ public class RechnungPdfService {
         subtotalTable.setSpacingAfter(8f);
 
         // Label
-        Font subtotalFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 10, textColor);
+        Font subtotalFont = PdfSchriften.brieftext(10, Font.BOLD, textColor);
         PdfPCell labelCell = new PdfPCell(new Phrase("Zwischensumme " + label, subtotalFont));
         labelCell.setBorder(Rectangle.TOP | Rectangle.BOTTOM);
         labelCell.setBorderColor(lineColor);
@@ -781,7 +785,7 @@ public class RechnungPdfService {
         Color headerLineColor = new Color(30, 41, 59);
         
         for (int i = 0; i < headers.length; i++) {
-            Font hFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 9, new Color(71, 85, 105)); // Slate-600
+            Font hFont = PdfSchriften.brieftext(9, Font.BOLD, new Color(71, 85, 105)); // Slate-600
             PdfPCell hCell = new PdfPCell(new Phrase(headers[i], hFont));
             hCell.setBorder(Rectangle.BOTTOM);
             hCell.setBorderColor(headerLineColor);
@@ -813,8 +817,8 @@ public class RechnungPdfService {
 
     private void addServiceRow(PdfPTable table, ContentBlockDto block, Font textFont, Font posFont, Font labelFont, NumberFormat nf, Color textColor) {
         boolean isAlternative = block.optional();
-        Font currentTextFont = isAlternative ? FontFactory.getFont(FontFactory.TIMES_ITALIC, 10, textColor) : textFont;
-        Font currentLabelFont = isAlternative ? FontFactory.getFont(FontFactory.TIMES_BOLDITALIC, 10, textColor) : labelFont;
+        Font currentTextFont = isAlternative ? PdfSchriften.brieftext(10, Font.ITALIC, textColor) : textFont;
+        Font currentLabelFont = isAlternative ? PdfSchriften.brieftext(10, Font.BOLDITALIC, textColor) : labelFont;
         
         // Dezente Zeilentrennung
         Color borderColor = new Color(226, 232, 240); // Slate-200
@@ -826,7 +830,7 @@ public class RechnungPdfService {
         float cellPaddingBottom = 4f;
 
         // Pos - zentriert in einem dezenten Badge-Style
-        Font posBadgeFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 9, new Color(71, 85, 105)); // Slate-600
+        Font posBadgeFont = PdfSchriften.brieftext(9, Font.BOLD, new Color(71, 85, 105)); // Slate-600
         String posText = block.pos() != null ? block.pos() : "";
         PdfPCell posCell = new PdfPCell(new Phrase(posText, posBadgeFont));
         posCell.setBorder(Rectangle.BOTTOM);
@@ -934,7 +938,7 @@ public class RechnungPdfService {
 
         // Gesamtpreis - hervorgehoben
         boolean hasDiscount = block.rabattProzent() != null && block.rabattProzent().compareTo(BigDecimal.ZERO) > 0;
-        Font gpFont = isAlternative ? currentLabelFont : FontFactory.getFont(FontFactory.TIMES_BOLD, 10, textColor);
+        Font gpFont = isAlternative ? currentLabelFont : PdfSchriften.brieftext(10, Font.BOLD, textColor);
 
         PdfPCell gpCell = new PdfPCell();
         gpCell.setBorder(Rectangle.BOTTOM);
@@ -953,7 +957,7 @@ public class RechnungPdfService {
         } else if (hasDiscount) {
             // Originalpreis (durchgestrichen)
             BigDecimal originalGesamt = block.menge().multiply(block.einzelpreis()).setScale(2, java.math.RoundingMode.HALF_UP);
-            Font strikeFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 9, textColor);
+            Font strikeFont = PdfSchriften.brieftext(9, Font.NORMAL, textColor);
             Chunk strikeChunk = new Chunk(nf.format(originalGesamt) + " €", strikeFont);
             strikeChunk.setTextRise(0);
             // Simulate strikethrough manually via underline at middle of text
@@ -964,7 +968,7 @@ public class RechnungPdfService {
             gpCell.addElement(origLine);
             
             // Rabatt-Hinweis
-            Font rabattFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, new Color(220, 38, 38)); // Rose-600
+            Font rabattFont = PdfSchriften.brieftext(8, Font.ITALIC, new Color(220, 38, 38)); // Rose-600
             Paragraph rabattLine = new Paragraph("-" + nf.format(block.rabattProzent()) + "% Rabatt", rabattFont);
             rabattLine.setAlignment(Element.ALIGN_RIGHT);
             rabattLine.setLeading(10f);
@@ -1274,7 +1278,7 @@ public class RechnungPdfService {
                     }
                     currentParagraph = new Paragraph();
                     maxFontSizeInParagraph = defaultFontSize;
-                    Font bulletFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, defaultFontSize, currentColor);
+                    Font bulletFont = PdfSchriften.brieftext(defaultFontSize, Font.NORMAL, currentColor);
                     if (isOrderedList) {
                         listItemCounter++;
                         currentParagraph.add(new Chunk("  " + listItemCounter + ".  ", bulletFont));
@@ -1358,7 +1362,7 @@ public class RechnungPdfService {
         else if (bold) fontStyle = Font.BOLD;
         else if (italic) fontStyle = Font.ITALIC;
 
-        Font font = FontFactory.getFont(FontFactory.TIMES_ROMAN, fontSize, fontStyle, color);
+        Font font = PdfSchriften.brieftext(fontSize, fontStyle, color);
         if (underline) {
             font.setStyle(font.getStyle() | Font.UNDERLINE);
         }
@@ -1477,9 +1481,9 @@ public class RechnungPdfService {
         nf.setMinimumFractionDigits(2);
         nf.setMaximumFractionDigits(2);
 
-        Color textColor = new Color(0, 0, 0); // Schwarz
-        Font normalFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 10, textColor);
-        Font boldFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 11, textColor);
+        Color textColor = PdfSchriften.TEXTFARBE;
+        Font normalFont = PdfSchriften.brieftext(10, Font.NORMAL, textColor);
+        Font boldFont = PdfSchriften.brieftext(11, Font.BOLD, textColor);
         Color lineColor = new Color(30, 41, 59); // Slate-800
 
         // === WRAPPER-TABELLE für Summenblock ===
@@ -1699,7 +1703,7 @@ public class RechnungPdfService {
             if (hasGlobalRabatt && !isSchlussrechnung) {
                 addZahlZeile(sumTable, "Nettobetrag vor Rabatt", null, nf.format(netto) + " €", false, normalFont, boldFont);
 
-                Font rabattFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 10, new Color(220, 38, 38));
+                Font rabattFont = PdfSchriften.brieftext(10, Font.ITALIC, new Color(220, 38, 38));
                 addZahlZeile(sumTable, "Rabatt", nf.format(globalRabattProzent) + " %",
                         "- " + nf.format(rabattBetrag) + " €", false, rabattFont, rabattFont);
             }
@@ -1711,7 +1715,7 @@ public class RechnungPdfService {
             // abgerechneten Betraege erkennbar ist.
             if (isSchlussrechnung && vorRechnungenBrutto.compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal ustAufVorrechnungen = vorRechnungenBrutto.subtract(bereitsAbgerechnetNetto);
-                Font hinweisFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, new Color(100, 116, 139));
+                Font hinweisFont = PdfSchriften.brieftext(8, Font.ITALIC, new Color(100, 116, 139));
                 PdfPCell hinweis = new PdfPCell(new Phrase(
                         "in den bereits gestellten Rechnungen enthaltene Umsatzsteuer: "
                                 + nf.format(ustAufVorrechnungen) + " €", hinweisFont));
@@ -1730,7 +1734,7 @@ public class RechnungPdfService {
             zahlLinie.setFixedHeight(5f);
             sumTable.addCell(zahlLinie);
 
-            Font zahlbetragFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 12, textColor);
+            Font zahlbetragFont = PdfSchriften.brieftext(12, Font.BOLD, textColor);
             addZahlZeile(sumTable, "Zahlbetrag", null, nf.format(brutto) + " €", true, zahlbetragFont, zahlbetragFont);
 
             PdfPCell bottomLine = new PdfPCell();
@@ -1792,7 +1796,7 @@ public class RechnungPdfService {
 
             // Abschlag-Typ Hinweis (prozentual / brutto)
             if (isAbschlag && abschlagInfo != null && abschlagInfo.eingabeWert() != null) {
-                Font hintFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, new Color(100, 116, 139));
+                Font hintFont = PdfSchriften.brieftext(8, Font.ITALIC, new Color(100, 116, 139));
                 String hint = null;
                 if ("prozent".equals(abschlagInfo.modus())) {
                     String prozentStr = abschlagInfo.eingabeWert().stripTrailingZeros().toPlainString().replace('.', ',');
@@ -1813,7 +1817,7 @@ public class RechnungPdfService {
 
             // Globaler Rabatt (falls vorhanden)
             if (hasGlobalRabatt) {
-                Font rabattFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 10, new Color(220, 38, 38));
+                Font rabattFont = PdfSchriften.brieftext(10, Font.ITALIC, new Color(220, 38, 38));
 
                 PdfPCell rabattLabel = new PdfPCell(new Phrase("Rabatt", rabattFont));
                 rabattLabel.setBorder(Rectangle.NO_BORDER);
@@ -1955,7 +1959,7 @@ public class RechnungPdfService {
         }
 
         Chunk beschriftung = new Chunk(text.toUpperCase(Locale.GERMANY),
-                FontFactory.getFont(FontFactory.TIMES_BOLD, 9, new Color(71, 85, 105))); // Slate-600
+                PdfSchriften.brieftext(9, Font.BOLD, new Color(71, 85, 105))); // Slate-600
         beschriftung.setCharacterSpacing(0.8f);
 
         PdfPCell zelle = new PdfPCell(new Phrase(beschriftung));
@@ -2003,7 +2007,7 @@ public class RechnungPdfService {
         pf.setMaximumFractionDigits(0);
         PdfPCell beschriftung = new PdfPCell(new Phrase(
                 "Mit dieser Rechnung sind " + pf.format(anteil) + " % des Auftrags abgerechnet.",
-                FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, new Color(100, 116, 139)))); // Slate-500
+                PdfSchriften.brieftext(8, Font.ITALIC, new Color(100, 116, 139)))); // Slate-500
         beschriftung.setBorder(Rectangle.NO_BORDER);
         beschriftung.setColspan(3);
         beschriftung.setPaddingBottom(6f);
@@ -2027,10 +2031,10 @@ public class RechnungPdfService {
     private void addUebersichtsZeile(PdfPTable sumTable, String bezeichnung, String unterzeile,
                                      String bruttoText, String nettoText, boolean hervorgehoben,
                                      Color firmenfarbe) {
-        String schrift = hervorgehoben ? FontFactory.TIMES_BOLD : FontFactory.TIMES_ROMAN;
-        Font textFont = FontFactory.getFont(schrift, hervorgehoben ? 11 : 10, new Color(0, 0, 0));
-        Font unterFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 8, new Color(100, 116, 139)); // Slate-500
-        Font nettoFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 8, firmenfarbe);
+        Font textFont = PdfSchriften.brieftext(hervorgehoben ? 11 : 10,
+                hervorgehoben ? Font.BOLD : Font.NORMAL, PdfSchriften.TEXTFARBE);
+        Font unterFont = PdfSchriften.brieftext(8, Font.NORMAL, new Color(100, 116, 139)); // Slate-500
+        Font nettoFont = PdfSchriften.brieftext(8, Font.ITALIC, firmenfarbe);
 
         Phrase links = new Phrase(new Chunk(bezeichnung, textFont));
         if (unterzeile != null && !unterzeile.isBlank()) {
@@ -2151,7 +2155,7 @@ public class RechnungPdfService {
 
         // Header row
         Color lineColor = new Color(30, 41, 59); // Slate-800 – minimalistisch schwarz
-        Font headerFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 9, textColor);
+        Font headerFont = PdfSchriften.brieftext(9, Font.BOLD, textColor);
 
         PdfPCell hPos = new PdfPCell(new Phrase("Pos.", headerFont));
         hPos.setBorder(Rectangle.BOTTOM);
@@ -2180,9 +2184,9 @@ public class RechnungPdfService {
         breakdownTable.addCell(hTotal);
 
         Color borderColor = new Color(226, 232, 240); // Slate-200
-        Font posFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 9, textColor);
-        Font labelFont = FontFactory.getFont(FontFactory.TIMES_ROMAN, 10, textColor);
-        Font valueFont = FontFactory.getFont(FontFactory.TIMES_BOLD, 10, textColor);
+        Font posFont = PdfSchriften.brieftext(9, Font.BOLD, textColor);
+        Font labelFont = PdfSchriften.brieftext(10, Font.NORMAL, textColor);
+        Font valueFont = PdfSchriften.brieftext(10, Font.BOLD, textColor);
 
         // Section rows
         for (SectionSummary sec : sections) {
@@ -2218,7 +2222,7 @@ public class RechnungPdfService {
 
         // Sonstige Leistungen row – nur wenn es auch Bauabschnitte gibt
         if (hasSonstige && hasSections) {
-            Font sonstigeFont = FontFactory.getFont(FontFactory.TIMES_ITALIC, 10, textColor);
+            Font sonstigeFont = PdfSchriften.brieftext(10, Font.ITALIC, textColor);
 
             PdfPCell posCell = new PdfPCell(new Phrase("", posFont));
             posCell.setBorder(Rectangle.BOTTOM);
@@ -2287,8 +2291,8 @@ public class RechnungPdfService {
         float leading = fontSizePt * 1.3f;
         
         Font font = block.fett()
-                ? FontFactory.getFont(FontFactory.TIMES_BOLD, fontSizePt, textColor)
-                : FontFactory.getFont(FontFactory.TIMES_ROMAN, fontSizePt, textColor);
+                ? PdfSchriften.brieftext(fontSizePt, Font.BOLD, textColor)
+                : PdfSchriften.brieftext(fontSizePt, Font.NORMAL, textColor);
         
         Matcher matcher = imgPattern.matcher(html);
         int lastEnd = 0;
@@ -2406,7 +2410,7 @@ public class RechnungPdfService {
         // Betreff
         ColumnText betreff = new ColumnText(cb);
         betreff.setSimpleColumn(50, 620, 550, 660);
-        Paragraph betreffText = new Paragraph(kopf.betreff(), FONT_TITLE);
+        Paragraph betreffText = new Paragraph(kopf.betreff(), PdfSchriften.betreff(PdfSchriften.BETREFF_GROESSE, PdfSchriften.TEXTFARBE));
         betreff.addElement(betreffText);
         betreff.go();
     }
@@ -2864,14 +2868,17 @@ public class RechnungPdfService {
      * Unterstützt fontSize, color (hex) und fontWeight (bold/700).
      */
     private Font parseBlockFont(FormBlockDto block) {
+        boolean istBetreff = block.content() != null && block.content().contains("{{BETREFF}}");
         if (block.styles() == null || block.styles().isEmpty()) {
-            return FONT_NORMAL;
+            return istBetreff
+                    ? PdfSchriften.betreff(PdfSchriften.BETREFF_GROESSE, PdfSchriften.TEXTFARBE)
+                    : FONT_NORMAL;
         }
         try {
             java.util.Map<String, Object> s = block.styles();
             float fontSize = s.containsKey("fontSize") ? ((Number) s.get("fontSize")).floatValue() : 10f;
 
-            Color color = Color.BLACK;
+            Color color = PdfSchriften.TEXTFARBE;
             if (s.containsKey("color")) {
                 String hex = String.valueOf(s.get("color"));
                 if (hex.startsWith("#")) {
@@ -2887,7 +2894,12 @@ public class RechnungPdfService {
                 }
             }
 
-            return FontFactory.getFont(FontFactory.TIMES_ROMAN, fontSize, style, color);
+            if (istBetreff) {
+                // Betreff: feste Vorgabe (Montserrat SemiBold 11pt, Textfarbe); Groesse und Farbe
+                // aus dem Formular gelten hier bewusst nicht
+                return PdfSchriften.betreff(PdfSchriften.BETREFF_GROESSE, PdfSchriften.TEXTFARBE);
+            }
+            return PdfSchriften.brieftext(fontSize, style, color);
         } catch (Exception ex) {
             log.warn("Fehler beim Parsen der Styles für Block {}: {}", block.id(), ex.getMessage());
             return FONT_NORMAL;
@@ -3024,8 +3036,26 @@ public class RechnungPdfService {
     private void renderTextBlock(PdfContentByte cb, String text, RectDto rect, Font font)
             throws DocumentException {
         float blockHeight = rect.ury() - rect.lly();
-        float idealLeading = font.getSize() * 1.4f;
+        String[] lines = text.split("\n");
 
+        // Open Sans/Montserrat sind breiter als Times: bricht eine Zeile zusaetzlich um, verwirft
+        // ColumnText die ueberzaehlige Zeile kommentarlos (im Adressfeld fehlte dann PLZ/Ort).
+        // Deshalb erst simulieren und die Schrift in Halbpunkt-Schritten verkleinern, bis alles passt.
+        Font passend = font;
+        for (float groesse = font.getSize(); groesse >= MIN_BLOCK_SCHRIFT; groesse -= 0.5f) {
+            passend = new Font(font);
+            passend.setSize(groesse);
+            ColumnText probe = baueTextSpalte(cb, lines, rect, blockHeight, passend);
+            if (!ColumnText.hasMoreText(probe.go(true))) {
+                break;
+            }
+        }
+        baueTextSpalte(cb, lines, rect, blockHeight, passend).go();
+    }
+
+    private ColumnText baueTextSpalte(PdfContentByte cb, String[] lines, RectDto rect,
+                                      float blockHeight, Font font) {
+        float idealLeading = font.getSize() * 1.4f;
         // Wenn der Block zu klein für die Standard-Leading ist, passe an
         float leading = blockHeight < idealLeading ? blockHeight : idealLeading;
 
@@ -3034,12 +3064,11 @@ public class RechnungPdfService {
 
         Paragraph p = new Paragraph();
         p.setLeading(leading);
-        String[] lines = text.split("\n");
         for (int l = 0; l < lines.length; l++) {
             p.add(new Chunk(lines[l], font));
             if (l < lines.length - 1) p.add(Chunk.NEWLINE);
         }
         ct.addElement(p);
-        ct.go();
+        return ct;
     }
 }

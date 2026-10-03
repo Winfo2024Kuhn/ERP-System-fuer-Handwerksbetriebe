@@ -192,6 +192,8 @@ class RechnungPdfServiceTest {
         byte[] pdfBytes = service.generatePdfBytes(dto);
         assertNotNull(pdfBytes, "PDF-Bytes dürfen nicht null sein");
         assertTrue(pdfBytes.length > 100, "PDF muss Inhalt haben (>100 bytes), actual: " + pdfBytes.length);
+        assertTrue(new String(pdfBytes, java.nio.charset.StandardCharsets.ISO_8859_1).contains("OpenSans"),
+                "Brieftext muss in Open Sans gesetzt und eingebettet sein");
 
         try {
             PdfReader reader = new PdfReader(pdfBytes);
@@ -213,6 +215,47 @@ class RechnungPdfServiceTest {
     @Nested
     @DisplayName("FormBlock-Rendering: Typed Blocks (doknr, datum, adresse, ...)")
     class FormBlockTypedTests {
+
+        private byte[] pdfMitFormBlocks(List<FormBlockDto> formBlocks) {
+            KopfdatenDto kopf = createTestKopfdaten();
+            LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+            RechnungDto dto = new RechnungDto(
+                    layout, kopf, createTestContentBlocks(), formBlocks, "Danke!", null, null);
+            return service.generatePdfBytes(dto);
+        }
+
+        private boolean enthaelt(byte[] pdf, String teil) {
+            return new String(pdf, java.nio.charset.StandardCharsets.ISO_8859_1).contains(teil);
+        }
+
+        @Test
+        @DisplayName("Betreff-Block ({{BETREFF}}) wird in Montserrat gesetzt, ein normaler Textblock nicht")
+        void betreffBlockNutztMontserrat() {
+            byte[] mitBetreff = pdfMitFormBlocks(List.of(new FormBlockDto("b1", "text", 1, 24, 130, 340, 40,
+                    "{{BETREFF}}", Map.of("fontSize", 14, "color", "#111827"))));
+            byte[] ohneBetreff = pdfMitFormBlocks(List.of(new FormBlockDto("b2", "text", 1, 24, 130, 340, 40,
+                    "Freitext", Map.of("fontSize", 14, "color", "#111827"))));
+
+            assertTrue(enthaelt(mitBetreff, "Montserrat"), "Betreff muss in Montserrat gesetzt sein");
+            assertFalse(enthaelt(ohneBetreff, "Montserrat"), "Normaler Text darf nicht in Montserrat stehen");
+        }
+
+        @Test
+        @DisplayName("Lange Anschrift in schmalem Adressfeld: Keine Zeile geht durch die breitere Schrift verloren")
+        void langeAnschriftPasstInsAdressfeld() {
+            String adresse = "Mustermann Bedachungen und Gerüstbau GmbH & Co. KG\nz. Hd. Max Mustermann\n"
+                    + "Musterstraße 123 b\n12345 Musterstadt";
+            byte[] pdf = pdfMitFormBlocks(List.of(new FormBlockDto("a1", "text", 1, 24, 130, 200, 64,
+                    adresse, Map.of("fontSize", 11, "color", "#111827"))));
+
+            try {
+                PdfReader reader = new PdfReader(pdf);
+                String text = new PdfTextExtractor(reader).getTextFromPage(1);
+                assertTrue(text.contains("12345 Musterstadt"), "PLZ/Ort fehlt - Zeile wurde abgeschnitten: " + text);
+            } catch (java.io.IOException e) {
+                fail(e);
+            }
+        }
 
         @Test
         @DisplayName("Alle typed FormBlocks (doknr, datum, kundennummer, projektnr, adresse) erscheinen im PDF")

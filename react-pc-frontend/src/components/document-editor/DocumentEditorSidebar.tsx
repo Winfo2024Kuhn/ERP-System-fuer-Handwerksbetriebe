@@ -3,7 +3,7 @@ import { Check, FileText, Plus, Search, X } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 import type { TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, DocBlock } from './types';
-import { extractFontSizeFromHtml, extractBoldFromHtml, unitMap } from './helpers';
+import { extractBoldFromHtml, unitMap } from './helpers';
 
 interface DocumentEditorSidebarProps {
     textbausteine: TextbausteinApiDto[];
@@ -90,7 +90,6 @@ export function DocumentEditorSidebar({
         const htmlContent = tb.html || tb.beschreibung || '';
         onAddBlock('TEXT', {
             content: replacePlaceholders(htmlContent),
-            fontSize: extractFontSizeFromHtml(htmlContent),
             fett: extractBoldFromHtml(htmlContent),
         });
         flashFeedback(`TEXT-${tb.id}`);
@@ -104,7 +103,6 @@ export function DocumentEditorSidebar({
             quantity: 1,
             unit: unitMap[l.unit?.name || 'STUECK'] || 'Stk',
             price: l.price,
-            fontSize: extractFontSizeFromHtml(descHtml),
             fett: extractBoldFromHtml(descHtml),
             leistungId: l.id,
             kategorieId: l.folderId ?? undefined,
@@ -120,7 +118,6 @@ export function DocumentEditorSidebar({
             quantity: 1,
             unit: 'h',
             price: az.stundensatz,
-            fontSize: extractFontSizeFromHtml(descHtml),
             fett: extractBoldFromHtml(descHtml),
         });
         flashFeedback(`ARBEITSZEIT-${az.id}`);

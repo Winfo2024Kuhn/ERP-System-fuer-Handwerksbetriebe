@@ -129,7 +129,14 @@ function buendelSchluesselFuer(id: string, updates: Partial<DocBlock>, art?: Tip
     if ((feld === 'content' || feld === 'description') && art !== 'tippen') return null;
     return `block:${id}:${feld}`;
 }
-import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractFontSizeFromHtml, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
+// Dokumentschriften wie im PDF (Open Sans fuer den Brieftext, Montserrat fuer den Betreff);
+// selbst gehostet ueber @fontsource, nur im Dokument-Editor geladen.
+import '@fontsource/open-sans/latin-400.css';
+import '@fontsource/open-sans/latin-400-italic.css';
+import '@fontsource/open-sans/latin-700.css';
+import '@fontsource/open-sans/latin-700-italic.css';
+import '@fontsource/montserrat/latin-600.css';
+import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
@@ -3259,7 +3266,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // TEXT and SERVICE blocks: Always use neutral defaults (10pt, not bold).
             // All formatting (bold, italic, colors) is embedded as inline
             // HTML from TiptapEditor and parsed by the backend HTML parser.
-            // Using extractBoldFromHtml/extractFontSizeFromHtml as block-level defaults
+            // Using extractBoldFromHtml as block-level default
             // is wrong because it would make the ENTIRE block bold/large if ANY single
             // word was bold/large (the backend uses defaultBold/defaultFontSize for every
             // text chunk outside of explicit <strong>/<span> tags).
@@ -3858,7 +3865,6 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                         const resolvedContent = replacePlaceholders(htmlContent, true, true);
                         addBlock('TEXT', {
                             content: resolvedContent,
-                            fontSize: extractFontSizeFromHtml(resolvedContent) || extractFontSizeFromHtml(htmlContent),
                             fett: extractBoldFromHtml(resolvedContent) || extractBoldFromHtml(htmlContent),
                         });
                         setShowTextbausteinPicker(false);
@@ -3882,7 +3888,6 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             quantity: 1,
                             unit: unitMap[l.unit?.name || 'STUECK'] || 'Stk',
                             price: l.price,
-                            fontSize: extractFontSizeFromHtml(descHtml),
                             fett: extractBoldFromHtml(descHtml),
                             leistungId: l.id,
                             kategorieId: l.folderId ?? undefined,
@@ -3909,7 +3914,6 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             quantity: 1,
                             unit: 'h',
                             price: az.stundensatz,
-                            fontSize: extractFontSizeFromHtml(descHtml),
                             fett: extractBoldFromHtml(descHtml),
                         }, 'Stundensatz eingefügt');
                         setShowStundensatzPicker(false);
