@@ -206,8 +206,13 @@ class AnfrageBestaetigungVersandServiceTest {
         verify(outboundPersistenceService, never()).speichereOutEmail(any());
     }
 
+    /**
+     * Der Kontext enthält Klartext; die XSS-Maskierung übernimmt EmailTextTemplateService
+     * beim Einsetzen in den HTML-Body (siehe EmailTextTemplateServiceTest). Doppelt
+     * maskiert würde der Kunde "&amp;lt;" lesen.
+     */
     @Test
-    void escapedNachrichtUmXssZuVerhindern() {
+    void kontextEnthaeltKlartextMaskierungMachtDerTemplateService() {
         Anfrage anfrage = baseAnfrage();
         given(emailTextTemplateService.render(anyString(), any()))
                 .willReturn(new EmailService.EmailContent("Subject", "Body"));
@@ -217,9 +222,7 @@ class AnfrageBestaetigungVersandServiceTest {
 
         ArgumentCaptor<Map<String, String>> ctxCaptor = mapCaptor();
         verify(emailTextTemplateService).render(anyString(), ctxCaptor.capture());
-        assertThat(ctxCaptor.getValue().get("NACHRICHT"))
-                .doesNotContain("<script>")
-                .contains("&lt;script&gt;");
+        assertThat(ctxCaptor.getValue().get("NACHRICHT")).isEqualTo("<script>alert(1)</script>");
     }
 
     @Test

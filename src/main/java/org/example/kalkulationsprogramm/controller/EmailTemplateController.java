@@ -106,7 +106,8 @@ public class EmailTemplateController {
                 String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
                 return EmailService.buildInvoiceEmailWithTypeHints(
                         dokumentTyp.toLowerCase(), anrede, kundenName, bauvorhaben, projektnummer,
-                        dokumentnummer, rechnungsdatum, faelligkeitsdatum, betrag, benutzer, dokumentTyp);
+                        dokumentnummer, rechnungsdatum, faelligkeitsdatum, betrag, benutzer,
+                        firmeninformationService.firmenangabenFuerEmail(), dokumentTyp);
             }
             case "MAHNUNG", "ZAHLUNGSERINNERUNG", "ERSTE_MAHNUNG", "ZWEITE_MAHNUNG" -> {
                 String dokumentnummer = request.getDokumentnummer() != null ? request.getDokumentnummer() : "";
@@ -116,7 +117,8 @@ public class EmailTemplateController {
                 String kundenName = request.getKundenName() != null ? request.getKundenName() : "";
                 return EmailService.buildInvoiceEmailWithTypeHints(
                         "mahnung", anrede, kundenName, bauvorhaben, projektnummer, dokumentnummer,
-                        rechnungsdatum, faelligkeitsdatum, betrag, benutzer, dokumentTyp);
+                        rechnungsdatum, faelligkeitsdatum, betrag, benutzer,
+                        firmeninformationService.firmenangabenFuerEmail(), dokumentTyp);
             }
             case "ANGEBOT", "NACHTRAGSANGEBOT" -> {
                 // Nachtragsangebot nutzt denselben Angebots-Fallback (Betreff + Text),
@@ -148,9 +150,13 @@ public class EmailTemplateController {
         if (url == null || url.isBlank()) {
             return "";
         }
-        // href-Wert escapen, damit doppelte Anfuehrungszeichen nicht das Attribut sprengen.
-        String safeUrl = url.trim().replace("\"", "%22");
-        return "<a href=\"" + safeUrl + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + REVIEW_LINK_LABEL + "</a>";
+        // Nur http(s); Zeichen, die das Attribut sprengen könnten, sind danach kodiert.
+        String safeUrl = org.example.kalkulationsprogramm.util.EmailButtonHtml.alsSichereAdresse(url);
+        if (safeUrl.isEmpty()) {
+            return "";
+        }
+        return "<a href=\"" + safeUrl.replace("&", "&amp;") + "\" target=\"_blank\" rel=\"noopener noreferrer\">"
+                + REVIEW_LINK_LABEL + "</a>";
     }
 
     private static String formatDate(String dateStr) {

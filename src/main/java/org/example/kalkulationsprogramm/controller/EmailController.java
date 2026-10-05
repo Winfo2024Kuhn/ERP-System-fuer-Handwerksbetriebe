@@ -63,6 +63,7 @@ public class EmailController {
     private final SentMailArchiver sentMailArchiver;
     private final DokumentFreigabeService dokumentFreigabeService;
     private final EmailAbsenderService emailAbsenderService;
+    private final org.example.kalkulationsprogramm.service.FirmeninformationService firmeninformationService;
 
     @Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -280,6 +281,7 @@ public class EmailController {
                     faelligkeitsdatum,
                     betrag,
                     userName,
+                    firmeninformationService.firmenangabenFuerEmail(),
                     dokumentartHint,
                     mahnstufeHint);
         }

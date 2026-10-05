@@ -57,6 +57,18 @@ public class FirmeninformationService {
         return toDto(fi);
     }
 
+    /**
+     * Bankverbindung und Bewertungslink für die Rechnungs-Mails – aus den gepflegten
+     * Firmendaten statt fest im Code. Fehlende Werte bleiben leer, die Mail lässt den
+     * jeweiligen Abschnitt dann weg.
+     */
+    @Transactional(readOnly = true)
+    public org.example.email.EmailService.Firmenangaben firmenangabenFuerEmail() {
+        Firmeninformation fi = repository.getOrCreate();
+        return new org.example.email.EmailService.Firmenangaben(
+                fi.getBankName(), fi.getIban(), fi.getBic(), fi.getGoogleBewertungsLink());
+    }
+
     @Transactional
     public FirmeninformationDto speichern(FirmeninformationDto dto) {
         Firmeninformation fi = repository.getOrCreate();

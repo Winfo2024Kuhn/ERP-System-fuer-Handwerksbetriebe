@@ -175,4 +175,21 @@ class FirmeninformationServiceTest {
         firma.setLogoDateiname("logo.webp");
         assertEquals("image/webp", service.ermittleLogoContentType());
     }
+
+    @Test
+    void firmenangabenFuerEmail_kommenAusDenGepflegtenFirmendaten() {
+        firma.setBankName("Musterbank");
+        firma.setIban("DE00 1234 5678 9012 3456 78");
+        firma.setBic("MUSTDEXXXXX");
+        firma.setGoogleBewertungsLink("https://example.com/bewertung");
+
+        assertEquals(new org.example.email.EmailService.Firmenangaben(
+                "Musterbank", "DE00 1234 5678 9012 3456 78", "MUSTDEXXXXX", "https://example.com/bewertung"),
+                service.firmenangabenFuerEmail());
+    }
+
+    @Test
+    void firmenangabenFuerEmail_ohneGepflegteDatenSindLeer() {
+        assertEquals(org.example.email.EmailService.Firmenangaben.keine(), service.firmenangabenFuerEmail());
+    }
 }

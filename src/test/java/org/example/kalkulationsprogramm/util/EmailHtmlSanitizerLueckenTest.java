@@ -160,10 +160,14 @@ class EmailHtmlSanitizerLueckenTest {
     }
 
     @Test
-    @DisplayName("BEFUND: htmlToPlainText dekodiert doppelt (&amp;lt; wird zu '<' statt '&lt;')")
-    void plainDoppeltesUnescape() {
-        // BEFUND: sequentielles replace() -> "&amp;lt;" ergibt "<" statt "&lt;" (CLAUDE.md: Single-Pass erforderlich).
-        assertEquals("<", EmailHtmlSanitizer.htmlToPlainText("&amp;lt;"));
+    @DisplayName("htmlToPlainText entpackt Entitaeten in einem Durchgang (&amp;lt; bleibt &lt;)")
+    void plainKeinDoppeltesUnescape() {
+        assertEquals("&lt;", EmailHtmlSanitizer.htmlToPlainText("&amp;lt;"));
+        // Alt-Entitaeten ohne Semikolon in URLs bleiben stehen ("&para" ist kein Absatzzeichen).
+        assertEquals("https://example.com/?a=1&para=2&not=3", EmailHtmlSanitizer.htmlToPlainText(
+                "https://example.com/?a=1&para=2&not=3"));
+        assertEquals("Maße < 12 cm & 3 Stück \"x\" 'y' z", EmailHtmlSanitizer.htmlToPlainText(
+                "Ma&szlig;e &lt; 12&nbsp;cm &amp; 3 St&uuml;ck &quot;x&quot; &#39;y&apos; &#122;"));
     }
 
     // ---------- plainTextToHtml ----------

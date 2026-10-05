@@ -13,7 +13,6 @@ import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.springframework.stereotype.Service;
-import org.springframework.web.util.HtmlUtils;
 
 /**
  * Versendet die automatische Bestätigungsmail an Leads, die über den
@@ -61,7 +60,7 @@ public class AnfrageBestaetigungVersandService {
      * @param anfrage  persistierte Funnel-Anfrage
      * @param vorname  Vorname aus dem Funnel-Payload (für ANREDE/KUNDENNAME)
      * @param nachname Nachname aus dem Funnel-Payload
-     * @param nachricht freier Beschreibungstext des Leads (wird HTML-escaped)
+     * @param nachricht freier Beschreibungstext des Leads (maskiert EmailTextTemplateService beim Einsetzen)
      */
     public boolean versendeBestaetigung(Anfrage anfrage, String vorname, String nachname, String nachricht) {
         if (anfrage == null) {
@@ -237,27 +236,18 @@ public class AnfrageBestaetigungVersandService {
         // Bei Leads kennen wir keine formale Anrede (Herr/Frau) — wir bleiben
         // mit "Hallo {Vorname Nachname}" bewusst informell, das passt zur
         // Handwerker-Tonalitaet und vermeidet falsch geratene Anreden.
-        ctx.put("ANREDE", voll.isEmpty() ? "Hallo" : "Hallo " + escape(voll));
-        ctx.put("KUNDENNAME", escape(voll));
-        ctx.put("VORNAME", escape(safe(vorname)));
-        ctx.put("NACHNAME", escape(safe(nachname)));
-        ctx.put("BAUVORHABEN", escape(safe(anfrage.getBauvorhaben())));
-        ctx.put("NACHRICHT", escape(safe(nachricht)));
+        // Klartext – EmailTextTemplateService maskiert die Werte beim Einsetzen in den HTML-Body.
+        ctx.put("ANREDE", voll.isEmpty() ? "Hallo" : "Hallo " + voll);
+        ctx.put("KUNDENNAME", voll);
+        ctx.put("VORNAME", safe(vorname));
+        ctx.put("NACHNAME", safe(nachname));
+        ctx.put("BAUVORHABEN", safe(anfrage.getBauvorhaben()));
+        ctx.put("NACHRICHT", safe(nachricht));
         ctx.put("ANFRAGE_DATUM", anfrage.getAnlegedatum() != null
                 ? anfrage.getAnlegedatum().format(DATUM_DE)
                 : "");
         ctx.put("ANFRAGENUMMER", anfrage.getId() != null ? anfrage.getId().toString() : "");
         return ctx;
-    }
-
-    /**
-     * HTML-escape gegen XSS — die Werte landen 1:1 im HTML-Body, der per
-     * Mailclient gerendert wird. Ein boeswilliger Lead koennte sonst per
-     * NACHRICHT-Feld Skript-Inhalte einschleusen, die der Empfaenger (der
-     * Handwerker, der seine Anfragenmails sichtet) zu sehen bekommt.
-     */
-    private static String escape(String value) {
-        return value == null ? "" : HtmlUtils.htmlEscape(value);
     }
 
     private static String safe(String value) {

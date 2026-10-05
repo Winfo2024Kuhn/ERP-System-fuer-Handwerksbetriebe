@@ -26,6 +26,13 @@ public class EmailTextTemplateService {
     private static final Logger log = LoggerFactory.getLogger(EmailTextTemplateService.class);
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{\\s*([A-Z0-9_]+)\\s*\\}\\}");
 
+    /**
+     * Platzhalter, deren Wert bereits fertiges, abgesichertes HTML ist (z. B. der
+     * Bewertungslink als {@code <a>}). Alle anderen Werte sind Klartext und werden im
+     * HTML-Body maskiert.
+     */
+    private static final java.util.Set<String> HTML_PLATZHALTER = java.util.Set.of("REVIEW_LINK");
+
     private final EmailTextTemplateRepository repository;
     private final FirmeninformationService firmeninformationService;
 
@@ -81,9 +88,9 @@ public class EmailTextTemplateService {
         return findByDokumentTyp(dokumentTyp)
                 .filter(EmailTextTemplate::isAktiv)
                 .map(template -> new EmailService.EmailContent(
-                        replacePlaceholders(template.getSubjectTemplate(), mergedContext),
+                        replacePlaceholders(template.getSubjectTemplate(), mergedContext, false),
                         EmailButtonHtml.entferneButtonsOhneZiel(
-                                replacePlaceholders(template.getHtmlBody(), mergedContext))))
+                                replacePlaceholders(template.getHtmlBody(), mergedContext, true))))
                 .orElse(null);
     }
 
@@ -132,7 +139,12 @@ public class EmailTextTemplateService {
         return value == null ? "" : value;
     }
 
-    private String replacePlaceholders(String input, Map<String, String> context) {
+    /**
+     * Setzt die Platzhalter ein. Im HTML-Body werden Klartext-Werte maskiert, damit
+     * Kundennamen, Bauvorhaben oder Freitext aus dem Anfrage-Formular kein Markup in die
+     * Mail schmuggeln. Der Betreff ist Klartext und bleibt unverändert.
+     */
+    private String replacePlaceholders(String input, Map<String, String> context, boolean html) {
         if (input == null || input.isEmpty()) {
             return input;
         }
@@ -141,7 +153,12 @@ public class EmailTextTemplateService {
         while (matcher.find()) {
             String token = matcher.group(1);
             String value = context != null ? context.getOrDefault(token, "") : "";
-            matcher.appendReplacement(out, Matcher.quoteReplacement(value == null ? "" : value));
+            if (value == null) {
+                value = "";
+            } else if (html && !HTML_PLATZHALTER.contains(token)) {
+                value = org.springframework.web.util.HtmlUtils.htmlEscape(value, "UTF-8");
+            }
+            matcher.appendReplacement(out, Matcher.quoteReplacement(value));
         }
         matcher.appendTail(out);
         return out.toString();

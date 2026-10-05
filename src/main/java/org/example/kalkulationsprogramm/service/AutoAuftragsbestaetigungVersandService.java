@@ -1066,7 +1066,7 @@ public class AutoAuftragsbestaetigungVersandService
                 ctx.getOrDefault("PROJEKTNUMMER", ""),
                 ctx.getOrDefault("DOKUMENTNUMMER", ab.getDokumentNummer()),
                 ctx.getOrDefault("BETRAG", ""),
-                "Bauschlosserei Kuhn");
+                "");
     }
 
     /**

@@ -95,7 +95,8 @@ public final class EmailHtmlSanitizer {
         if (maxParagraphs <= 0) {
             return "";
         }
-        String decoded = org.jsoup.parser.Parser.unescapeEntities(html, false);
+        // inAttribute=true: Alt-Entitäten ohne Semikolon (&para, &not …) in URLs bleiben stehen.
+        String decoded = org.jsoup.parser.Parser.unescapeEntities(html, true);
         String sanitized = sanitizePreviewHtml(decoded);
         if (sanitized == null) {
             return null;
@@ -136,13 +137,10 @@ public final class EmailHtmlSanitizer {
         s = s.replaceAll("(?i)<br\\s*/?>", "\n");
         s = BLOCK_CLOSING_TAG_PATTERN.matcher(s).replaceAll("\n\n");
         s = s.replaceAll("(?is)<[^>]+>", "");
-        s = s.replace("&nbsp;", " ")
-                .replace("&amp;", "&")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&quot;", "\"")
-                .replace("&#39;", "'")
-                .replace("&apos;", "'");
+        // Entitäten in einem Durchgang entpacken – sequentielles replace() würde "&amp;lt;"
+        // doppelt zu "<" auflösen (CLAUDE.md: Entity-Unescaping nur Single-Pass).
+        // inAttribute=true: Alt-Entitäten ohne Semikolon in URLs ("?a=1&para=2") bleiben stehen.
+        s = org.jsoup.parser.Parser.unescapeEntities(s, true).replace('\u00A0', ' ');
         s = s.replaceAll("[ \t]+\n", "\n");
         s = s.replaceAll("(?m)^[ \t]+", "");
         s = s.replaceAll("\n{3,}", "\n\n");

@@ -183,4 +183,38 @@ class EmailTextTemplateServiceTest {
 
         assertThat(result.htmlBody()).contains("Musterbank");
     }
+
+    @Test
+    void klartextWerteWerdenImBodyMaskiertImBetreffNicht() {
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage(
+                        "Anfrage {{BAUVORHABEN}}",
+                        "<p>{{ANREDE}},</p><p>{{NACHRICHT}}</p><p>{{BAUVORHABEN}}</p>")));
+
+        EmailService.EmailContent result = service.render("RECHNUNG", Map.of(
+                "ANREDE", "Hallo Jürgen Müller",
+                "NACHRICHT", "<script>alert(1)</script>",
+                "BAUVORHABEN", "Carport \"Süd\" & Garage"));
+
+        assertThat(result.subject()).isEqualTo("Anfrage Carport \"Süd\" & Garage");
+        assertThat(result.htmlBody())
+                .doesNotContain("<script>")
+                .contains("&lt;script&gt;alert(1)&lt;/script&gt;")
+                .contains("Carport &quot;Süd&quot; &amp; Garage")
+                // Umlaute bleiben lesbar – maskiert werden nur die HTML-Sonderzeichen.
+                .contains("Hallo Jürgen Müller");
+    }
+
+    @Test
+    void fertigerBewertungsLinkBleibtHtml() {
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("S", "<p>{{REVIEW_LINK}}</p>")));
+
+        EmailService.EmailContent result = service.render("RECHNUNG",
+                Map.of("REVIEW_LINK", "<a href=\"https://example.com/b\">Jetzt Bewertung abgeben</a>"));
+
+        assertThat(result.htmlBody()).contains("<a href=\"https://example.com/b\">Jetzt Bewertung abgeben</a>");
+    }
 }

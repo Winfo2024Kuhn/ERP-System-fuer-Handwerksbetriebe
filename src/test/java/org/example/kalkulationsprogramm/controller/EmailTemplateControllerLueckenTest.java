@@ -77,7 +77,7 @@ class EmailTemplateControllerLueckenTest {
     }
 
     @Test
-    @DisplayName("Bewertungs-Link: gesetzt -> sicherer Anker, Anfuehrungszeichen werden maskiert; leer/null -> kein Link")
+    @DisplayName("Bewertungs-Link: gesetzt -> sicherer Anker, Sonderzeichen werden kodiert; leer/null -> kein Link")
     void bewertungsLink() throws Exception {
         FirmeninformationDto dto = new FirmeninformationDto();
         dto.setGoogleBewertungsLink("  https://example.com/r?x=\"><script>alert(1)</script>  ");
@@ -90,7 +90,8 @@ class EmailTemplateControllerLueckenTest {
         ArgumentCaptor<Map<String, String>> cap = ArgumentCaptor.forClass(Map.class);
         verify(vorlagen).render(anyString(), cap.capture());
         String link = cap.getValue().get("REVIEW_LINK");
-        assertTrue(link.startsWith("<a href=\"https://example.com/r?x=%22><script>"), link);
+        assertTrue(link.startsWith("<a href=\"https://example.com/r?x=%22%3E%3Cscript%3E"), link);
+        assertFalse(link.contains("<script>"));
         assertTrue(link.contains("rel=\"noopener noreferrer\""));
         assertTrue(link.contains("Jetzt Bewertung abgeben"));
         // Das Anfuehrungszeichen kann das href-Attribut nicht mehr beenden.
@@ -102,6 +103,37 @@ class EmailTemplateControllerLueckenTest {
         sende("{\"dokumentTyp\":\"RECHNUNG\"}").andExpect(status().isOk());
         verify(vorlagen).render(anyString(), cap.capture());
         assertEquals("", cap.getValue().get("REVIEW_LINK"));
+    }
+
+    @Test
+    @DisplayName("Bewertungs-Link: javascript:-Adresse ergibt keinen Link")
+    void bewertungsLinkNurHttp() throws Exception {
+        FirmeninformationDto dto = new FirmeninformationDto();
+        dto.setGoogleBewertungsLink("javascript:alert(1)");
+        when(firma.getFirmeninformation()).thenReturn(dto);
+        when(vorlagen.render(anyString(), any())).thenReturn(new EmailService.EmailContent("s", "b"));
+
+        sende("{\"dokumentTyp\":\"RECHNUNG\"}").andExpect(status().isOk());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> cap = ArgumentCaptor.forClass(Map.class);
+        verify(vorlagen).render(anyString(), cap.capture());
+        assertEquals("", cap.getValue().get("REVIEW_LINK"));
+    }
+
+    @Test
+    @DisplayName("Fallback-Rechnung nutzt Bankverbindung aus den Firmendaten")
+    void fallbackRechnungMitFirmendaten() throws Exception {
+        when(firma.getFirmeninformation()).thenReturn(new FirmeninformationDto());
+        when(firma.firmenangabenFuerEmail()).thenReturn(new EmailService.Firmenangaben(
+                "Musterbank", "DE00 1234 5678 9012 3456 78", null, null));
+        when(vorlagen.render(anyString(), any())).thenReturn(null);
+
+        sende("{\"dokumentTyp\":\"RECHNUNG\",\"kundenName\":\"<b>Max</b>\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("IBAN: DE00 1234 5678 9012 3456 78")))
+                .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("&lt;b&gt;Max&lt;/b&gt;")));
+        verify(firma).firmenangabenFuerEmail();
     }
 
     @Test

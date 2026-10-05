@@ -74,6 +74,8 @@ public class EmailTextTemplateController {
             Map.of("token", "{{FAELLIGKEITSDATUM}}", "label", "Fälligkeitsdatum"),
             Map.of("token", "{{BETRAG}}", "label", "Betrag (formatiert)"),
             Map.of("token", "{{BENUTZER}}", "label", "Sachbearbeiter / Benutzer"),
+            // Einziger Platzhalter mit fertigem HTML (<a>-Link). Alle anderen Werte maskiert
+            // EmailTextTemplateService im Body – neue HTML-Platzhalter dort in HTML_PLATZHALTER eintragen.
             Map.of("token", "{{REVIEW_LINK}}", "label", "Google-Bewertungs-Link"),
             // Bankverbindung der Firma (aus den Firmeneinstellungen).
             // Wird vom EmailTextTemplateService automatisch in jeden Render-

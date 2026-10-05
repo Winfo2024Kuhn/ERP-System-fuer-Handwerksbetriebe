@@ -11,12 +11,10 @@ import java.util.Properties;
 
 import jakarta.activation.DataHandler;
 import jakarta.mail.Authenticator;
-import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
 import jakarta.mail.PasswordAuthentication;
 import jakarta.mail.Session;
-import jakarta.mail.Store;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
@@ -148,7 +146,7 @@ public class EmailService {
 
     /**
      * Anzeigename des Absenders, der im Posteingang des Empfaengers statt der
-     * nackten Adresse erscheint ("Bauschlosserei Kuhn" statt
+     * nackten Adresse erscheint ("Musterbetrieb GmbH" statt
      * "rechnungen@..."). {@code null} oder leer = nur die Adresse, wie bisher.
      */
     private String absenderAnzeigename;
@@ -231,143 +229,6 @@ public class EmailService {
             sentCopyHandler.archiviereKopie(message);
         } catch (Exception e) {
             log.warn("[EmailService] Sent-Kopie konnte nicht abgelegt werden: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * Sends an email with optional CC and file attachment.
-     *
-     * @param recipient          email recipient
-     * @param cc                 optional CC address; may be {@code null} or blank
-     * @param fromAddress        sender address
-     * @param subject            mail subject
-     * @param htmlBody           HTML body, interpreted as
-     *                           {@code text/html; charset=utf-8}
-     * @param attachmentFilePath optional path to a file that should be attached;
-     *                           may be {@code null}
-     * @param attachmentFileName optional filename to use for the attachment; may be
-     *                           {@code null}
-     */
-    public void sendEmail(String recipient,
-            String cc,
-            String fromAddress,
-            String subject,
-            String htmlBody,
-            String attachmentFilePath,
-            String attachmentFileName) {
-        Properties props = new Properties();
-        props.put("mail.smtp.host", host);
-        props.put("mail.smtp.port", String.valueOf(port));
-        props.put("mail.smtp.auth", "true");
-
-        // Dies sind die korrekten Einstellungen für eine sichere Verbindung über Port
-        // 465 (SSL/TLS)
-        props.put("mail.smtp.ssl.enable", "true");
-        props.put("mail.smtp.socketFactory.port", String.valueOf(port));
-        props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
-
-        Session session = Session.getInstance(props, new Authenticator() {
-            @Override
-            protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(username, password);
-            }
-        });
-
-        try {
-            MimeMessage message = new MimeMessage(session);
-            message.setFrom(baueAbsender(fromAddress));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
-            if (cc != null && !cc.isBlank()) {
-                message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
-            }
-            message.setSubject(subject, StandardCharsets.UTF_8.name());
-
-            MimeMultipart mixed = new MimeMultipart("mixed");
-
-            // related-Container an mixed anhängen
-            MimeBodyPart relatedHolder = new MimeBodyPart();
-            MimeMultipart related = new MimeMultipart("related");
-            relatedHolder.setContent(related);
-            mixed.addBodyPart(relatedHolder);
-
-            // HTML in den related-Container
-            MimeBodyPart htmlPart = new MimeBodyPart();
-            htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-            related.addBodyPart(htmlPart);
-
-            // Inline-Logo nur anhängen, wenn im HTML ein cid:Firmenlogo vorkommt
-            if (htmlBody != null && htmlBody.contains("cid:Firmenlogo")) {
-                try (InputStream is = EmailService.class.getResourceAsStream("/static/firmenlogo.png")) {
-                    if (is == null) {
-                        throw new IOException("Logo /static/firmenlogo.png nicht im Klassenpfad gefunden.");
-                    }
-                    MimeBodyPart logoPart = new MimeBodyPart();
-                    logoPart.setDataHandler(new DataHandler(new ByteArrayDataSource(is, "image/png")));
-                    logoPart.setFileName("image001.png");
-                    logoPart.setDisposition(MimeBodyPart.INLINE);
-                    logoPart.setHeader("Content-ID", "<Firmenlogo>"); // passt zu src="cid:Firmenlogo"
-                    related.addBodyPart(logoPart);
-                }
-            }
-
-            if (attachmentFilePath != null && !attachmentFilePath.isBlank()) {
-                MimeBodyPart attachmentPart = new MimeBodyPart();
-                attachmentPart.attachFile(new File(attachmentFilePath));
-                if (attachmentFileName != null && !attachmentFileName.isBlank()) {
-                    attachmentPart.setFileName(attachmentFileName);
-                }
-                mixed.addBodyPart(attachmentPart);
-            }
-
-            message.setContent(mixed);
-            markiereAlsErpMail(message);
-            Transport.send(message);
-
-            // Kopie in den IMAP-"Gesendet"-Ordner, sofern ein Handler gesetzt ist.
-            // Frueher erzeugte das Duplikate im EmailCenter — dagegen schuetzt
-            // heute die Deduplizierung ueber die Message-ID beim Import, nicht
-            // der ERP_ORIGIN_HEADER (der ist nur Diagnose).
-            archiviereKopieStill(message);
-
-            try {
-                Store store = session.getStore("imaps");
-                store.connect("secureimap.t-online.de", 993, username, password);
-
-                String filename = attachmentFileName != null ? attachmentFileName.toLowerCase() : "";
-                if (filename.contains("rechnung")) {
-                    Folder ausgangsrechnungen = store.getFolder("INBOX.Archives (2).Ausgangsrechnungen");
-                    ausgangsrechnungen.open(Folder.READ_WRITE);
-                    ausgangsrechnungen.appendMessages(new Message[] { message });
-                    ausgangsrechnungen.close(false);
-                    System.out.println("Email-Kopie im 'Ausgangsrechnungen' Ordner gespeichert.");
-                } else if (filename.contains("auftragsbestaetigung") || filename.contains("auftragsbestätigung")) {
-                    Folder ausgangsabs = store.getFolder("INBOX.Archives (2).Ausgangs Ab's");
-                    ausgangsabs.open(Folder.READ_WRITE);
-                    ausgangsabs.appendMessages(new Message[] { message });
-                    ausgangsabs.close(false);
-                    System.out.println("Email-Kopie im 'Ausgangs Ab's' Ordner gespeichert.");
-                } else if (filename.contains("anfrage")) {
-                    Folder ausgangsanfragen = store.getFolder("INBOX.Archives (2).Ausgangsanfragen");
-                    ausgangsanfragen.open(Folder.READ_WRITE);
-                    ausgangsanfragen.appendMessages(new Message[] { message });
-                    ausgangsanfragen.close(false);
-                    System.out.println("Email-Kopie im 'Ausgangsanfragen' Ordner gespeichert.");
-                } else if (filename.contains("zeichnung") || filename.contains("entwurf")) {
-                    Folder ausgangszeichnungen = store.getFolder("INBOX.Archives (2).Ausgangszeichnungen");
-                    ausgangszeichnungen.open(Folder.READ_WRITE);
-                    ausgangszeichnungen.appendMessages(new Message[] { message });
-                    ausgangszeichnungen.close(false);
-                    System.out.println("Email-Kopie im 'Ausgangszeichnungen' Ordner gespeichert.");
-                }
-
-                store.close();
-            } catch (MessagingException me) {
-                System.err.println("Konnte E-Mail nicht im Archive-Ordner speichern: " + me.getMessage());
-            }
-            System.out.println("Email sent to " + recipient);
-        } catch (MessagingException | IOException e) {
-            System.err.println("Failed to send email: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 
@@ -689,8 +550,77 @@ public class EmailService {
     }
 
     /**
+     * Bankverbindung und Bewertungslink des Betriebs aus den Firmendaten
+     * (Firma → Firmeninformationen). Jedes Feld darf fehlen – dann entfällt der
+     * jeweilige Abschnitt der Mail. Bewusst kein fest hinterlegter Betrieb: Das
+     * Programm ist Open Source und läuft bei vielen Handwerksbetrieben.
+     */
+    public record Firmenangaben(String bankName, String iban, String bic, String bewertungsLink) {
+        /** Für Aufrufer ohne Firmendaten – die Mail kommt dann ohne Bankblock und Bewertungslink. */
+        public static Firmenangaben keine() {
+            return new Firmenangaben(null, null, null, null);
+        }
+    }
+
+    private static final DateTimeFormatter DATUM = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+
+    /**
+     * Maskiert Text für den HTML-Body. Kundennamen, Bauvorhaben usw. stammen aus
+     * Eingaben und dürfen kein Markup in die Mail schmuggeln.
+     */
+    static String html(String text) {
+        if (text == null) return "";
+        StringBuilder sb = new StringBuilder(text.length());
+        for (char c : text.toCharArray()) {
+            switch (c) {
+                case '&' -> sb.append("&amp;");
+                case '<' -> sb.append("&lt;");
+                case '>' -> sb.append("&gt;");
+                case '"' -> sb.append("&quot;");
+                case '\'' -> sb.append("&#39;");
+                default -> sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean vorhanden(String text) {
+        return text != null && !text.isBlank();
+    }
+
+    private static String datum(LocalDate datum) {
+        return datum == null ? null : datum.format(DATUM);
+    }
+
+    /** Hervorgehobene Zeile "Bezeichnung: Wert"; ohne Wert entfällt die Zeile. */
+    private static void zeile(StringBuilder body, String bezeichnung, String wert) {
+        if (!vorhanden(wert)) return;
+        body.append("<b>").append(bezeichnung).append(":</b> <span style=\"color:#C00000\">")
+                .append(html(wert)).append("</span><br>");
+    }
+
+    private static void anrede(StringBuilder body, String anredeGeehrte, String kundenName) {
+        body.append(html(vorhanden(anredeGeehrte) ? anredeGeehrte : "Sehr geehrte Damen und Herren"));
+        if (vorhanden(kundenName)) {
+            body.append(" ").append(html(kundenName));
+        }
+        body.append(",<br><br>");
+    }
+
+    /** Link zur Bewertungsseite – nur http(s), damit kein {@code javascript:} in die Mail gelangt. */
+    private static String bewertungsLink(Firmenangaben firma) {
+        String url = firma.bewertungsLink();
+        if (!vorhanden(url) || !url.trim().toLowerCase(Locale.ROOT).matches("^https?://\\S+$")) {
+            return "";
+        }
+        return "Wir würden uns sehr über eine Bewertung freuen: <a href=\"" + html(url.trim())
+                + "\" target=\"_blank\" rel=\"noopener noreferrer\">Jetzt Bewertung abgeben</a><br><br>";
+    }
+
+    /**
      * Builds a subject and HTML body based on an invoice file name and
-     * additional information.
+     * additional information. Bankverbindung und Bewertungslink kommen aus
+     * {@code firma}; fehlende Datumswerte lassen die jeweilige Zeile weg.
      */
     public static EmailContent buildInvoiceEmail(String invoiceFilePath,
             String anredeGeehrte,
@@ -701,20 +631,18 @@ public class EmailService {
             LocalDate rechnungsdatum,
             LocalDate faelligkeitsdatum,
             String betrag,
-            String benutzer) {
-        InvoiceType type = detectInvoiceType(invoiceFilePath);
-        String subject = type.getDisplayName() + ": (BV: " + bauvorhaben + ") Rechnungsnummer: " + rechnungsnummer;
+            String benutzer,
+            Firmenangaben firma) {
+        Firmenangaben angaben = firma != null ? firma : Firmenangaben.keine();
+        InvoiceType type = detectInvoiceType(invoiceFilePath != null ? invoiceFilePath : "rechnung");
+        String subject = type.getDisplayName() + ": (BV: " + nullZuLeer(bauvorhaben) + ") Rechnungsnummer: "
+                + nullZuLeer(rechnungsnummer);
 
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-        String rechnungsdatumStr = rechnungsdatum.format(fmt);
-        String faelligkeitsdatumStr = faelligkeitsdatum.format(fmt);
+        String rechnungsdatumStr = datum(rechnungsdatum);
+        String faelligkeitsdatumStr = datum(faelligkeitsdatum);
 
         StringBuilder body = new StringBuilder();
-        body.append(anredeGeehrte);
-        if (kundenName != null && !kundenName.isBlank()) {
-            body.append(" ").append(kundenName);
-        }
-        body.append(",<br><br>");
+        anrede(body, anredeGeehrte, kundenName);
 
         switch (type) {
             case TEILRECHNUNG ->
@@ -723,45 +651,58 @@ public class EmailService {
             case SCHLUSSRECHNUNG ->
                 body.append(
                         "anbei sende ich Ihnen die Schlussrechnung für unsere erbrachten Leistungen. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>")
-                        .append("Wir würden uns sehr über eine Bewertung freuen: ")
-                        .append("<a href='https://www.google.com/search?sca_esv=492959cb0fa9f70d&rlz=1C1PNBB_enDE1053DE1084&tbm=lcl&sxsrf=ADLYWILf4Roj9xg6afAhB21yr68i1Xzf9g:1730210619766&q=Bauschlosserei+Thomas+Kuhn+Rezensionen&rflfq=1&num=20&stick=H4sIAAAAAAAAAONgkxIxNDQ3MbE0MzS0NDQxNjA3sgDCDYyMrxjVnBJLi5MzcvKLi1OLUjMVQjLycxOLFbxLM_IUglKrUvOKM_PzUvMWsRKpEABCza3ubQAAAA&rldimm=11744961191430728282&hl=de-DE&sa=X&ved=2ahUKEwj1ooLr4LOJAxWwhv0HHd8_LCAQ9fQKegQIShAF&biw=1920&bih=1065&dpr=1#lkt=LocalPoiReviews'>Jetzt Bewertung abgeben</a><br><br>");
-            case MAHNUNG ->
-                body.append("leider haben wir festgestellt, dass die Rechnung mit der Nummer ")
-                        .append(rechnungsnummer).append(" für das Bauvorhaben ").append(bauvorhaben)
-                        .append(" noch nicht beglichen wurde.<br><br>")
-                        .append("Der Betrag in Höhe von ").append(betrag).append(" war am ")
-                        .append(faelligkeitsdatumStr).append(" fällig.<br><br>")
+                        .append(bewertungsLink(angaben));
+            case MAHNUNG -> {
+                body.append("leider haben wir festgestellt, dass die Rechnung");
+                if (vorhanden(rechnungsnummer)) body.append(" mit der Nummer ").append(html(rechnungsnummer));
+                if (vorhanden(bauvorhaben)) body.append(" für das Bauvorhaben ").append(html(bauvorhaben));
+                body.append(" noch nicht beglichen wurde.<br><br>");
+                if (vorhanden(betrag)) {
+                    body.append("Der Betrag in Höhe von ").append(html(betrag));
+                } else {
+                    body.append("Der Rechnungsbetrag");
+                }
+                body.append(faelligkeitsdatumStr != null ? " war am " + faelligkeitsdatumStr + " fällig.<br><br>"
+                        : " ist bereits fällig.<br><br>")
                         .append("Bitte überweisen Sie den ausstehenden Betrag umgehend, um zusätzliche Mahngebühren zu vermeiden.<br><br>");
+            }
             case ABSCHLAGSRECHNUNG ->
                 body.append(
-                        "anbei sende ich Ihnen eine Abschlagsrechnung gemäß unserem Anfrage. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>");
+                        "anbei sende ich Ihnen eine Abschlagsrechnung gemäß unserem Angebot. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>");
             case RECHNUNG ->
                 body.append(
                         "anbei sende ich Ihnen die Rechnung für unsere erbrachten Leistungen. Die detaillierte Rechnung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>");
         }
 
-        body.append("<b>Bauvorhaben:</b> <span style=\"color:#C00000\">")
-                .append(bauvorhaben).append("</span><br>")
-                .append("<b>Projektnummer:</b> <span style=\"color:#C00000\">")
-                .append(projektnummer).append("</span><br>")
-                .append("<b>Rechnungsnummer:</b> <span style=\"color:#C00000\">")
-                .append(rechnungsnummer).append("</span><br>")
-                .append("<b>Rechnungsdatum:</b> <span style=\"color:#C00000\">")
-                .append(rechnungsdatumStr).append("</span><br>")
-                .append("<b>Fälligkeitsdatum:</b> <span style=\"color:#C00000\">")
-                .append(faelligkeitsdatumStr).append("</span><br>")
-                .append("<b>Gesamtbetrag:</b> <span style=\"color:#C00000\">")
-                .append(betrag).append("</span><br><br>")
-                .append("Zahlungsinformationen:<br>")
-                .append("Bank: Sparkasse Mainfranken<br>")
-                .append("IBAN: DE 68 790 500 00 0010 1114 58<br>")
-                .append("BIC/SWIFT: BYLADEM1SWU<br><br>")
-                .append("Bitte überweisen Sie den Gesamtbetrag bis spätestens <span style=\"color:#C00000\">")
-                .append(faelligkeitsdatumStr)
-                .append("</span> auf das oben genannte Konto. Bei Fragen oder Unklarheiten stehe ich Ihnen gerne zur Verfügung.<br>")
+        zeile(body, "Bauvorhaben", bauvorhaben);
+        zeile(body, "Projektnummer", projektnummer);
+        zeile(body, "Rechnungsnummer", rechnungsnummer);
+        zeile(body, "Rechnungsdatum", rechnungsdatumStr);
+        zeile(body, "Fälligkeitsdatum", faelligkeitsdatumStr);
+        zeile(body, "Gesamtbetrag", betrag);
+        body.append("<br>");
+
+        boolean mitKonto = vorhanden(angaben.iban());
+        if (mitKonto) {
+            body.append("Zahlungsinformationen:<br>");
+            if (vorhanden(angaben.bankName())) body.append("Bank: ").append(html(angaben.bankName())).append("<br>");
+            body.append("IBAN: ").append(html(angaben.iban())).append("<br>");
+            if (vorhanden(angaben.bic())) body.append("BIC/SWIFT: ").append(html(angaben.bic())).append("<br>");
+            body.append("<br>");
+        }
+        body.append("Bitte überweisen Sie den Gesamtbetrag");
+        if (faelligkeitsdatumStr != null) {
+            body.append(" bis spätestens <span style=\"color:#C00000\">").append(faelligkeitsdatumStr).append("</span>");
+        }
+        body.append(mitKonto ? " auf das oben genannte Konto." : ".")
+                .append(" Bei Fragen oder Unklarheiten stehe ich Ihnen gerne zur Verfügung.<br>")
                 .append("<b>Bitte geben Sie im Verwendungszweck die Projektnummer und die Rechnungsnummer an.</b><br><br>");
 
         return new EmailContent(subject, body.toString());
+    }
+
+    private static String nullZuLeer(String text) {
+        return text == null ? "" : text;
     }
 
     public static EmailContent buildInvoiceEmailWithTypeHints(String invoiceFilePath,
@@ -774,6 +715,7 @@ public class EmailService {
             LocalDate faelligkeitsdatum,
             String betrag,
             String benutzer,
+            Firmenangaben firma,
             String... typeHints) {
         String overrideToken = resolveInvoiceTypeToken(typeHints);
         String detectionSeed = overrideToken != null ? overrideToken : invoiceFilePath;
@@ -790,7 +732,8 @@ public class EmailService {
                 rechnungsdatum,
                 faelligkeitsdatum,
                 betrag,
-                benutzer);
+                benutzer,
+                firma);
     }
 
     private static String resolveInvoiceTypeToken(String... typeHints) {
@@ -832,25 +775,16 @@ public class EmailService {
             String auftragsnummer,
             String betrag,
             String benutzer) {
-        String subject = "Auftragsbestätigung: (BV: " + bauvorhaben + ") Auftragsnummer: " + auftragsnummer;
+        String subject = "Auftragsbestätigung: (BV: " + nullZuLeer(bauvorhaben) + ") Auftragsnummer: "
+                + nullZuLeer(auftragsnummer);
 
         StringBuilder body = new StringBuilder();
-        body.append(anredeGeehrte);
-        if (kundenName != null && !kundenName.isBlank()) {
-            body.append(" ").append(kundenName);
-        }
-        body.append(",<br><br>")
-                .append("anbei sende ich Ihnen die Auftragsbestätigung. Die detaillierte Auftragsbestätigung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>")
-                .append("<b>Bauvorhaben:</b> <span style=\"color:#C00000\">")
-                .append(bauvorhaben).append("</span><br>")
-                .append("<b>Projektnummer:</b> <span style=\"color:#C00000\">")
-                .append(projektnummer).append("</span><br>")
-                .append("<b>Auftragsnummer:</b> <span style=\"color:#C00000\">")
-                .append(auftragsnummer).append("</span><br>");
-        if (betrag != null && !betrag.isBlank()) {
-            body.append("<b>Auftragssumme:</b> <span style=\"color:#C00000\">")
-                    .append(betrag).append("</span><br>");
-        }
+        anrede(body, anredeGeehrte, kundenName);
+        body.append("anbei sende ich Ihnen die Auftragsbestätigung. Die detaillierte Auftragsbestätigung finden Sie als PDF-Datei im Anhang dieser E-Mail.<br><br>");
+        zeile(body, "Bauvorhaben", bauvorhaben);
+        zeile(body, "Projektnummer", projektnummer);
+        zeile(body, "Auftragsnummer", auftragsnummer);
+        zeile(body, "Auftragssumme", betrag);
         // Signatur wird dynamisch hinzugefügt
 
         return new EmailContent(subject, body.toString());
@@ -889,21 +823,16 @@ public class EmailService {
             String anfragesnummer,
             String benutzer,
             String position) {
-        String subject = "Anfrage: (BV: " + bauvorhaben + ") Anfragesnummer: " + anfragesnummer;
+        String subject = "Anfrage: (BV: " + nullZuLeer(bauvorhaben) + ") Anfragesnummer: " + nullZuLeer(anfragesnummer);
         StringBuilder body = new StringBuilder();
-        body.append(anredeGeehrte);
-        if (kundenName != null && !kundenName.isBlank()) {
-            body.append(" ").append(kundenName);
-        }
-        body.append(",<br><br>")
-                .append("Im Anhang finden Sie das besprochene Anfrage.<br>")
+        anrede(body, anredeGeehrte, kundenName);
+        body.append("Im Anhang finden Sie das besprochene Angebot.<br>")
                 .append("Bei Rückfragen können Sie sich gerne telefonisch oder per E-Mail bei uns melden.<br><br>")
                 .append("Bei Auftragserteilung wird von uns eine 3D Zeichnung mit genauen Maßen erstellt.<br>")
-                .append("Nach Freigabe der Zeichnung gehen wir in die Produktion.<br><br>")
-                .append("<b>Bauvorhaben:</b> <span style=\"color:#C00000\">")
-                .append(bauvorhaben).append("</span><br>")
-                .append("<b>Anfragesnummer:</b> <span style=\"color:#C00000\">")
-                .append(anfragesnummer).append("</span><br><br>");
+                .append("Nach Freigabe der Zeichnung gehen wir in die Produktion.<br><br>");
+        zeile(body, "Bauvorhaben", bauvorhaben);
+        zeile(body, "Anfragesnummer", anfragesnummer);
+        body.append("<br>");
 
         return new EmailContent(subject, body.toString());
     }
@@ -912,33 +841,19 @@ public class EmailService {
      * Builds a standard email for sending technical drawings to the customer.
      */
     public static EmailContent buildDrawingEmail(String anredeGeehrte, String benutzer, String bauvorhaben) {
-        String subject = "Kundenzeichnung BV:(" + bauvorhaben + " )";
+        String subject = "Kundenzeichnung BV:(" + nullZuLeer(bauvorhaben) + " )";
         StringBuilder body = new StringBuilder();
-        body.append(anredeGeehrte).append(",<br><br>")
+        body.append(html(vorhanden(anredeGeehrte) ? anredeGeehrte : "Sehr geehrte Damen und Herren")).append(",<br><br>")
                 .append("anbei finden Sie die PDF mit dem ersten Entwurf Ihres Bauprojekts.<br>")
                 .append("Bitte nehmen Sie sich etwas Zeit, um das Design sorgfältig zu überprüfen.<br>")
                 .append("Sollten Sie weitere Änderungswünsche haben oder Fragen auftauchen, stehe ich Ihnen gerne zur Verfügung.<br>")
-                .append("Wir möchten Sie darauf hinweisen, dass größere Zeichnungsänderungen, wie beispielsweise eine Änderung der Machart, die gravierend vom Anfragestext abweicht, aufgrund des damit verbundenen Zeitaufwands zusätzliche Kosten verursachen können.<br>")
+                .append("Wir möchten Sie darauf hinweisen, dass größere Zeichnungsänderungen, wie beispielsweise eine Änderung der Machart, die gravierend vom Angebotstext abweicht, aufgrund des damit verbundenen Zeitaufwands zusätzliche Kosten verursachen können.<br>")
                 .append("Wir bitten um Ihr Verständnis dafür.<br>")
-                .append("Falls dies im Anfrage so vereinbart war, wird nach Abschluss der Planung eine Abschlagsrechnung erstellt.<br>")
+                .append("Falls dies im Angebot so vereinbart war, wird nach Abschluss der Planung eine Abschlagsrechnung erstellt.<br>")
                 .append("Bei Fragen oder weiteren Anliegen stehe ich Ihnen jederzeit zur Verfügung.<br>")
                 .append("Vielen Dank für Ihre Zusammenarbeit und Ihr Verständnis.<br><br>");
 
         return new EmailContent(subject, body.toString());
-    }
-
-    public static String getEmailBody(String benutzer) {
-        StringBuilder signature = new StringBuilder();
-        return signature.append("<br><br>")
-                .append("Mit freundlichen Grüßen,<br><br>")
-                .append(benutzer + "<br>")
-                .append("Bauschlosserei Kuhn<br>Friedenstr. 17<br>97259 Greußenheim<br>")
-                .append("Tel.: 09369-23 23<br><br>")
-                .append("<a href=\"mailto:bauschlosserei-kuhn@t-online.de\">Email</a><br>")
-                .append("<a href=\"https://www.instagram.com/bauschlossereikuhn/\">Instagram</a><br>")
-                .append("<a href=\"https://bauschlosserei-kuhn.de/\">Website</a><br><br>")
-                .append("<a href=\"https://bauschlosserei-kuhn.de/\"><img src=\"/firmenlogo.png\" width=\"250\" height=\"120\"></a>")
-                .toString();
     }
 
 }
