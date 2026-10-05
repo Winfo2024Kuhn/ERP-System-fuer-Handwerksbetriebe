@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.domain.EmailTextTemplate;
 import org.example.kalkulationsprogramm.dto.Email.EmailTextTemplateDto;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.EmailTextTemplateRepository;
+import org.example.kalkulationsprogramm.util.EmailButtonHtml;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -81,14 +82,18 @@ public class EmailTextTemplateService {
                 .filter(EmailTextTemplate::isAktiv)
                 .map(template -> new EmailService.EmailContent(
                         replacePlaceholders(template.getSubjectTemplate(), mergedContext),
-                        replacePlaceholders(template.getHtmlBody(), mergedContext)))
+                        EmailButtonHtml.entferneButtonsOhneZiel(
+                                replacePlaceholders(template.getHtmlBody(), mergedContext))))
                 .orElse(null);
     }
 
     /**
-     * Reichert den Caller-Kontext um Firmen-weite Platzhalter (BANK, IBAN, BIC)
-     * aus den Firmeneinstellungen an. Caller-Werte gewinnen, damit explizite
-     * Overrides in Tests oder Sonderfaellen weiter funktionieren.
+     * Reichert den Caller-Kontext um Firmen-weite Platzhalter (BANK, IBAN, BIC,
+     * REVIEW_URL) aus den Firmeneinstellungen an. REVIEW_URL ist die reine
+     * Adresse des Google-Bewertungs-Links und steht im href von Buttons; ohne
+     * hinterlegten Link bleibt sie leer und der Button faellt beim Rendern weg.
+     * Caller-Werte gewinnen, damit explizite Overrides in Tests oder
+     * Sonderfaellen weiter funktionieren.
      * <p>
      * Performance-Anmerkung: Wir laden die Firmeninformation pro render-Aufruf
      * neu. Bewusste Entscheidung, weil (a) die Mengen klein sind (typisch
@@ -111,9 +116,10 @@ public class EmailTextTemplateService {
                 merged.put("BANK", nullToEmpty(firma.getBankName()));
                 merged.put("IBAN", nullToEmpty(firma.getIban()));
                 merged.put("BIC", nullToEmpty(firma.getBic()));
+                merged.put("REVIEW_URL", EmailButtonHtml.alsSichereAdresse(firma.getGoogleBewertungsLink()));
             }
         } catch (RuntimeException ex) {
-            log.warn("Bank-Platzhalter (BANK/IBAN/BIC) konnten nicht aus den Firmenstammdaten geladen werden – sie bleiben in der E-Mail leer: {}",
+            log.warn("Firmen-Platzhalter (BANK/IBAN/BIC/REVIEW_URL) konnten nicht aus den Firmenstammdaten geladen werden – sie bleiben in der E-Mail leer: {}",
                     ex.getMessage());
         }
         if (context != null) {

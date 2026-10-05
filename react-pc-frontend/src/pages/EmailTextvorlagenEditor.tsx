@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import DOMPurify from 'dompurify';
 import {
   Check,
   Copy,
@@ -22,6 +23,7 @@ import { cn } from '../lib/utils';
 import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { useToast } from '../components/ui/toast';
+import { ersetzeAdressPlatzhalterFuerVorschau } from '../features/email/emailButton';
 
 type Kategorie = 'DOKUMENT' | 'MAHNWESEN' | 'WEBSITE' | 'SYSTEM';
 
@@ -117,12 +119,16 @@ function highlightPlaceholder(token: string) {
 
 function renderPreview(html: string, useSampleData: boolean) {
   if (!html) return '';
-  return html.replace(/\{\{\s*([A-Z0-9_]+)\s*\}\}/g, (match, key: string) => {
+  const ersetzt = ersetzeAdressPlatzhalterFuerVorschau(html).replace(/\{\{\s*([A-Z0-9_]+)\s*\}\}/g, (match, key: string) => {
     if (useSampleData && SAMPLE_CONTEXT[key] !== undefined) {
       return SAMPLE_CONTEXT[key];
     }
     return highlightPlaceholder(match);
   });
+  // DOMPurify behaelt Tabellen, bgcolor, style und data-*-Attribute (Button-
+  // Darstellung) und entfernt target - ein Klick in der Vorschau oeffnet so
+  // keinen neuen Tab mit der ERP-Seite.
+  return DOMPurify.sanitize(ersetzt);
 }
 
 function stripHtml(html: string) {
@@ -408,6 +414,7 @@ function TemplateEditorPanel({
             <TiptapEditor
               value={template.htmlBody}
               onChange={(html) => onChange({ ...template, htmlBody: html })}
+              emailButtons
               onEditorReady={(editor) => {
                 editorRef.current = editor;
               }}
@@ -415,7 +422,8 @@ function TemplateEditorPanel({
           </div>
           <p className="text-xs text-slate-400">
             Tipp: Klicken Sie auf einen Platzhalter-Button, um ihn an der Cursor-Position
-            einzufügen.
+            einzufügen. Über „Button“ in der Werkzeugleiste fügen Sie einen auffälligen
+            Link-Button ein, z. B. zur Google-Bewertung.
           </p>
         </div>
 

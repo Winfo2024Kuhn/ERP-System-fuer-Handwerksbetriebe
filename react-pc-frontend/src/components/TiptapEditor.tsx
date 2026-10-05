@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
@@ -9,6 +9,8 @@ import Color from '@tiptap/extension-color';
 import Underline from '@tiptap/extension-underline';
 import { ZahlungszielChip } from './document-editor/zahlungszielChipExtension';
 import { aenderungsArtVon, setzeInhaltVonAussen, type TiptapAenderungsArt } from './tiptapVerlauf';
+import { EmailButton, type EmailButtonAttribute } from '../features/email/emailButtonExtension';
+import { EmailButtonDialog } from '../features/email/EmailButtonDialog';
 import {
     AlignCenter,
     AlignJustify,
@@ -20,6 +22,7 @@ import {
     Italic,
     List,
     ListOrdered,
+    MousePointerClick,
     Type,
     Underline as UnderlineIcon,
     X,
@@ -45,6 +48,17 @@ interface TiptapEditorProps {
      * konstant, ein Wechsel zur Laufzeit ist nicht vorgesehen.
      */
     verlaufsModus?: boolean;
+    /**
+     * Standard false. true = Toolbar bietet "Button" an (klickbarer Link-Button
+     * fuer E-Mail-Vorlagen). Wie verlaufsModus nur beim Erzeugen ausgewertet.
+     */
+    emailButtons?: boolean;
+}
+
+/** Offener Button-Dialog: `pos` null = neu einfügen, sonst vorhandenen Button ändern. */
+interface ButtonDialogZustand {
+    pos: number | null;
+    vorhanden: EmailButtonAttribute | null;
 }
 
 export interface TiptapEditorRef {
@@ -501,7 +515,7 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
     );
 };
 
-export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hideToolbar = false, compactMode = false, readOnly = false, onFocus, onEditorReady, verlaufsModus = false }) => {
+export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hideToolbar = false, compactMode = false, readOnly = false, onFocus, onEditorReady, verlaufsModus = false, emailButtons = false }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorContainerRef = useRef<HTMLDivElement>(null);
     /** Tracks the value the editor was initialized with so the first sync can be skipped
@@ -509,6 +523,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
      *  inline styles such as color, text-align, etc.; font-size/-family are dropped on purpose)  */
     const editorInitValueRef = useRef(value);
     const editorReadyRef = useRef(false);
+    const [buttonDialog, setButtonDialog] = useState<ButtonDialogZustand | null>(null);
 
     const editor = useEditor({
         extensions: [
@@ -543,6 +558,11 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                 allowBase64: true,
             }),
             ZahlungszielChip,
+            ...(emailButtons
+                ? [EmailButton.configure({
+                    onBearbeiten: (vorhanden, pos) => setButtonDialog({ pos, vorhanden }),
+                })]
+                : []),
         ],
         content: value,
         editable: !readOnly,
@@ -664,6 +684,22 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
 
         e.target.value = '';
     }, [editor]);
+
+    const uebernehmeButton = (attribute: EmailButtonAttribute) => {
+        if (!editor || !buttonDialog) return;
+        if (buttonDialog.pos === null) {
+            editor.chain().focus().insertContent({ type: 'emailButton', attrs: attribute }).run();
+        } else {
+            const pos = buttonDialog.pos;
+            editor.chain().focus().command(({ tr }) => {
+                // Der Button kann zwischen Öffnen und Übernehmen verschoben worden sein.
+                if (tr.doc.nodeAt(pos)?.type.name !== 'emailButton') return false;
+                tr.setNodeMarkup(pos, undefined, attribute);
+                return true;
+            }).run();
+        }
+        setButtonDialog(null);
+    };
 
     if (!editor) {
         return <div className="min-h-[260px] border border-slate-200 rounded-lg p-3 bg-white animate-pulse" />;
@@ -825,6 +861,14 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                         onChange={handleFileChange}
                         multiple
                     />
+                    {emailButtons && (
+                        <ToolbarButton
+                            onClick={() => setButtonDialog({ pos: null, vorhanden: null })}
+                            title="Button mit Link einfügen, z. B. zur Google-Bewertung"
+                        >
+                            <MousePointerClick className="w-4 h-4" /> Button
+                        </ToolbarButton>
+                    )}
 
                     <span className="w-px h-6 bg-rose-200 mx-1" />
 
@@ -836,6 +880,15 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                         <X className="w-4 h-4" /> Reset
                     </ToolbarButton>
                 </div>
+            )}
+
+            {emailButtons && (
+                <EmailButtonDialog
+                    offen={buttonDialog !== null}
+                    vorhanden={buttonDialog?.vorhanden ?? null}
+                    onSchliessen={() => setButtonDialog(null)}
+                    onUebernehmen={uebernehmeButton}
+                />
             )}
 
             {/* Hint only when toolbar is visible */}

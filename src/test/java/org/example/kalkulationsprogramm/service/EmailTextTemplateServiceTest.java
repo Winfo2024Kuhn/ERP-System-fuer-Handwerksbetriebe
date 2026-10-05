@@ -100,6 +100,51 @@ class EmailTextTemplateServiceTest {
         assertThat(result.htmlBody()).isEqualTo("<p>Bank: , IBAN: </p>");
     }
 
+    private static final String BEWERTUNGS_BUTTON =
+            "<table data-email-button=\"\" role=\"presentation\"><tbody><tr><td bgcolor=\"#500010\">"
+                    + "<a href=\"{{REVIEW_URL}}\">Jetzt Bewertung abgeben</a></td></tr></tbody></table>";
+
+    @Test
+    void bewertungsButtonBekommtGoogleLinkAusFirmendaten() {
+        firma.setGoogleBewertungsLink("https://g.page/r/beispiel/review");
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("Danke", "<p>Danke!</p>" + BEWERTUNGS_BUTTON)));
+
+        EmailService.EmailContent result = service.render("RECHNUNG", Map.of());
+
+        assertThat(result.htmlBody())
+                .contains("href=\"https://g.page/r/beispiel/review\"")
+                .contains("Jetzt Bewertung abgeben")
+                .doesNotContain("{{REVIEW_URL}}");
+    }
+
+    @Test
+    void bewertungsButtonFaelltOhneHinterlegtenLinkWeg() {
+        // Ohne Google-Link wuerde der Button ins Leere fuehren – dann lieber gar keiner.
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("Danke", "<p>Danke!</p>" + BEWERTUNGS_BUTTON)));
+
+        EmailService.EmailContent result = service.render("RECHNUNG", Map.of());
+
+        assertThat(result.htmlBody()).isEqualTo("<p>Danke!</p>");
+    }
+
+    @Test
+    void bewertungsLinkMitAnfuehrungszeichenSprengtDasAttributNicht() {
+        firma.setGoogleBewertungsLink("https://g.page/r/x\"onmouseover=\"alert(1)");
+        given(firmeninformationService.getFirmeninformation()).willReturn(firma);
+        given(repository.findByDokumentTyp("RECHNUNG"))
+                .willReturn(Optional.of(aktiveVorlage("Danke", BEWERTUNGS_BUTTON)));
+
+        EmailService.EmailContent result = service.render("RECHNUNG", Map.of());
+
+        assertThat(result.htmlBody())
+                .contains("href=\"https://g.page/r/x%22onmouseover=%22alert(1)\"")
+                .doesNotContain("onmouseover=\"");
+    }
+
     @Test
     void firmenstammdatenFehlerBlocktVersandNicht() {
         // FirmeninformationService kann z. B. in eng gemockten Tests werfen –
