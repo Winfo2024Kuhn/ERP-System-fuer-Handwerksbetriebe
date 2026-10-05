@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller.advice;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.example.kalkulationsprogramm.dto.ApiError;
+import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
 import org.example.kalkulationsprogramm.exception.MietabrechnungValidationException;
 import org.example.kalkulationsprogramm.util.ConstraintErrorDetail;
 import org.example.kalkulationsprogramm.util.ConstraintMessageResolver;
@@ -142,6 +143,19 @@ public class RestExceptionHandler {
                 ex.getDetail()
         );
         return ResponseEntity.status(ex.getStatus()).body(body);
+    }
+
+    /** Firmenstammdaten unvollständig (z. B. E-Rechnung): 422 mit lesbarer Meldung statt 500. */
+    @ExceptionHandler(FirmenstammdatenUnvollstaendigException.class)
+    public ResponseEntity<ApiError> handleFirmenstammdatenUnvollstaendig(FirmenstammdatenUnvollstaendigException ex) {
+        ApiError body = new ApiError(
+                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                ex.getMessage(),
+                null,
+                List.of(),
+                null
+        );
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
     }
 
     private static ApiError toApiError(ConstraintErrorDetail detail) {

@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.example.kalkulationsprogramm.domain.Firmeninformation;
+import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -34,8 +36,11 @@ public class KiHilfeService {
     public record ChatResult(String reply, List<SourceLink> sources) {}
     public record SourceLink(String title, String url) {}
 
+    /** Begrenzt den Firmennamen im System-Prompt. */
+    private static final int MAX_BETRIEBSNAME_LAENGE = 120;
+
     private static final String BASE_SYSTEM_PROMPT = """
-            Du bist der KI-Assistent für das Kalkulationsprogramm der Bauschlosserei Kuhn.
+            Du bist der KI-Assistent für {{BETRIEB}}.
             Du hilfst Mitarbeitern bei Fragen zur Bedienung und Navigation des Programms,
             sowie bei allgemeinen Fachfragen (Normen, Vorschriften, Wetter, etc.).
             Antworte immer auf Deutsch, freundlich und präzise.
@@ -217,6 +222,7 @@ public class KiHilfeService {
     private final CodebaseIndexService codebaseIndexService;
     private final LocalRagService localRagService;
     private final SystemSettingsService systemSettingsService;
+    private final FirmeninformationRepository firmeninformationRepository;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
             .build();
@@ -238,9 +244,10 @@ public class KiHilfeService {
     /**
      * Build system prompt with RAG context (if available) or full codebase fallback.
      */
-    private String buildSystemPrompt(String ragContext) {
+    String buildSystemPrompt(String ragContext) {
+        String basisPrompt = BASE_SYSTEM_PROMPT.replace("{{BETRIEB}}", betriebsBezeichnung());
         if (ragContext != null && !ragContext.isBlank()) {
-            return BASE_SYSTEM_PROMPT +
+            return basisPrompt +
                     "\n\n## Relevanter Quellcode (per Vektor-Suche gefunden)\n" +
                     "Die folgenden Code-Abschnitte wurden automatisch als relevant fuer die aktuelle Frage identifiziert. " +
                     "Abschnitte mit '>>> AKTUELLE SEITE DES BENUTZERS <<<' zeigen den EXAKTEN Quellcode der Seite, " +
@@ -253,9 +260,9 @@ public class KiHilfeService {
         // Fallback: full codebase index
         String index = codebaseIndexService.getIndex();
         if (index == null || index.isEmpty()) {
-            return BASE_SYSTEM_PROMPT;
+            return basisPrompt;
         }
-        return BASE_SYSTEM_PROMPT +
+        return basisPrompt +
                 "\n\n## Frontend-Quellcode & Dokumentation (Read-Only Wissensbasis)\n" +
                 "Im Folgenden findest du den KOMPLETTEN Frontend-Quellcode des Kalkulationsprogramms: " +
                 "Alle React-Seiten (Pages), UI-Komponenten, Navigation (App.tsx Routing), " +
@@ -264,6 +271,18 @@ public class KiHilfeService {
                 "zurechtfinden, welche Funktionen auf welcher Seite verfügbar sind, " +
                 "und wie Workflows Schritt für Schritt ablaufen.\n\n" +
                 index;
+    }
+
+    /** Betriebsname aus den Firmendaten; neutraler Fallback, solange keiner hinterlegt ist. */
+    private String betriebsBezeichnung() {
+        String name = firmeninformationRepository.findFirmeninformation()
+                .map(Firmeninformation::getFirmenname)
+                .map(n -> n.replaceAll("[\\p{Cntrl}\\p{Z}]+", " ").trim())
+                .map(n -> n.length() > MAX_BETRIEBSNAME_LAENGE ? n.substring(0, MAX_BETRIEBSNAME_LAENGE) : n)
+                .orElse("");
+        return name.isEmpty()
+                ? "das Kalkulationsprogramm deines Handwerksbetriebs"
+                : "das Kalkulationsprogramm des Betriebs " + name;
     }
 
     /**

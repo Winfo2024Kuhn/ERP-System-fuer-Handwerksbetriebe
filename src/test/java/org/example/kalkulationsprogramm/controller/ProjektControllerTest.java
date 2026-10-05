@@ -393,4 +393,39 @@ class ProjektControllerTest {
                         .andExpect(jsonPath("$[0].berechneterBetrag").value(200.00))
                         .andExpect(jsonPath("$[0].gesamtbetrag").value(200.00));
         }
+
+        @Test
+        void erzeugeZugferd_ohneVollstaendigeFirmendaten_liefert422MitLesbarerMeldung() throws Exception {
+                when(zugferdErstellService.erzeuge(org.mockito.ArgumentMatchers.anyString(),
+                                org.mockito.ArgumentMatchers.any()))
+                                .thenThrow(new org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException(
+                                                "die E-Rechnung", List.of("Straße", "Ort")));
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .multipart("/api/projekte/1/zugferd")
+                                .file(new org.springframework.mock.web.MockMultipartFile(
+                                                "datei", "rechnung.pdf", "application/pdf", new byte[] { 1, 2, 3 }))
+                                .file(new org.springframework.mock.web.MockMultipartFile(
+                                                "zugferdDaten", "", "application/json",
+                                                "{\"kundenName\":\"Max Mustermann\"}".getBytes())))
+                                .andExpect(status().isUnprocessableEntity())
+                                .andExpect(jsonPath("$.message").value(
+                                                org.hamcrest.Matchers.containsString("Straße, Ort")));
+        }
+
+        @Test
+        void erzeugeZugferd_beiAnderemFehler_liefert400() throws Exception {
+                when(zugferdErstellService.erzeuge(org.mockito.ArgumentMatchers.anyString(),
+                                org.mockito.ArgumentMatchers.any()))
+                                .thenThrow(new RuntimeException("ZUGFeRD Erstellung fehlgeschlagen"));
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .multipart("/api/projekte/1/zugferd")
+                                .file(new org.springframework.mock.web.MockMultipartFile(
+                                                "datei", "rechnung.pdf", "application/pdf", new byte[] { 1, 2, 3 }))
+                                .file(new org.springframework.mock.web.MockMultipartFile(
+                                                "zugferdDaten", "", "application/json",
+                                                "{\"kundenName\":\"Max Mustermann\"}".getBytes())))
+                                .andExpect(status().isBadRequest());
+        }
 }

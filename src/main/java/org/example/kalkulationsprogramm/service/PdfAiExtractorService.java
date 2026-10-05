@@ -43,9 +43,9 @@ import java.util.Optional;
 public class PdfAiExtractorService {
 
     private static final String SYSTEM_PROMPT_INVOICE = """
-            Du bist ein präziser Dokumentenanalysator für Geschäftsdokumente der Firma Thomas Kuhn Bauschlosserei.
+            Du bist ein präziser Dokumentenanalysator für Geschäftsdokumente eines Handwerksbetriebs.
 
-            DOKUMENTFORMAT-ERKENNUNG (Thomas Kuhn Rechnungen):
+            DOKUMENTFORMAT-ERKENNUNG (Rechnungen aus diesem Programm):
             - Rechnungsnummer steht als "Rechnung YYYY/MM/NNNNN" (z.B. "Rechnung 2025/07/00004")
             - Datum steht bei "Datum:" (z.g. "Datum: 09.07.2025")
             - Fälligkeitsdatum steht bei "Zahlbar bis spätestens DD.MM.YYYY"
@@ -76,7 +76,7 @@ public class PdfAiExtractorService {
             """;
 
     private static final String SYSTEM_PROMPT_OFFER = """
-            Du bist ein präziser Dokumentenanalysator für Angebote und Auftragsbestätigungen der Firma Thomas Kuhn Bauschlosserei.
+            Du bist ein präziser Dokumentenanalysator für Angebote und Auftragsbestätigungen eines Handwerksbetriebs.
 
             !!! KRITISCHE PRÜFUNG: DOKUMENT-GÜLTIGKEIT !!!
             Prüfe das Dokument EXTREM SORGFÄLTIG auf Wasserzeichen oder großflächige Texte wie "Abschrift", "Kopie", "Entwurf" oder "Duplikat".

@@ -19,7 +19,10 @@ import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
+import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.http.ResponseEntity;
 
 import java.util.Arrays;
@@ -175,5 +178,55 @@ class AnfrageControllerTest {
         controller.listeSeite(null, null, null, null, null, null, false, "pending", "offen", "webseite", "alt", 0, 12);
 
         verify(anfrageService).sucheSeiteGefiltert(null, null, null, null, null, false, filter, 0, 12);
+    }
+
+    @Test
+    void erzeugeZugferdReichtFehlendeFirmendatenDurch() {
+        ZugferdErstellService zugferdErstellService = mock(ZugferdErstellService.class);
+        AnfrageController controller = new AnfrageController(
+                mock(AnfrageService.class),
+                mock(AusgangsGeschaeftsDokumentService.class),
+                mock(DateiSpeicherService.class),
+                zugferdErstellService,
+                mock(ZugferdExtractorService.class),
+                mock(PdfAiExtractorService.class),
+                mock(KundeRepository.class),
+                mock(AnfrageNotizRepository.class),
+                mock(AnfrageNotizBildRepository.class),
+                mock(MitarbeiterRepository.class),
+                mock(FrontendUserProfileService.class),
+                mock(DokumentFreigabeService.class));
+        when(zugferdErstellService.erzeuge(anyString(), any()))
+                .thenThrow(new FirmenstammdatenUnvollstaendigException("die E-Rechnung", List.of("Ort")));
+        MockMultipartFile pdf = new MockMultipartFile("datei", "a.pdf", "application/pdf", new byte[] { 1 });
+
+        assertThrows(FirmenstammdatenUnvollstaendigException.class,
+                () -> controller.erzeugeZugferd(1L, pdf, new ZugferdDaten()));
+    }
+
+    @Test
+    void erzeugeZugferdMeldetAndereFehlerMitText() {
+        ZugferdErstellService zugferdErstellService = mock(ZugferdErstellService.class);
+        AnfrageController controller = new AnfrageController(
+                mock(AnfrageService.class),
+                mock(AusgangsGeschaeftsDokumentService.class),
+                mock(DateiSpeicherService.class),
+                zugferdErstellService,
+                mock(ZugferdExtractorService.class),
+                mock(PdfAiExtractorService.class),
+                mock(KundeRepository.class),
+                mock(AnfrageNotizRepository.class),
+                mock(AnfrageNotizBildRepository.class),
+                mock(MitarbeiterRepository.class),
+                mock(FrontendUserProfileService.class),
+                mock(DokumentFreigabeService.class));
+        when(zugferdErstellService.erzeuge(anyString(), any()))
+                .thenThrow(new RuntimeException("ZUGFeRD Erstellung fehlgeschlagen"));
+        MockMultipartFile pdf = new MockMultipartFile("datei", "a.pdf", "application/pdf", new byte[] { 1 });
+
+        ResponseEntity<?> response = controller.erzeugeZugferd(1L, pdf, new ZugferdDaten());
+
+        assertEquals(400, response.getStatusCode().value());
+        assertEquals(java.util.Map.of("message", "Die E-Rechnung konnte nicht erstellt werden."), response.getBody());
     }
 }

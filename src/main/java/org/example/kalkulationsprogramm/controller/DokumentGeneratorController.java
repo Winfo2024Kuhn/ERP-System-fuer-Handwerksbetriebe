@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
 import org.example.kalkulationsprogramm.service.RechnungPdfService;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.FormBlockDto;
@@ -19,6 +20,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -376,6 +378,17 @@ public class DokumentGeneratorController {
     }
 
     /**
+     * GET /api/dokument-generator/zugferd-pruefung
+     * Prüft vor dem Buchen, ob die Firmendaten für eine E-Rechnung reichen. 204 = ok,
+     * sonst 422 mit lesbarer Meldung (RestExceptionHandler).
+     */
+    @GetMapping("/zugferd-pruefung")
+    public ResponseEntity<Void> pruefeZugferdVoraussetzungen() {
+        zugferdErstellService.pruefeVerkaeuferdaten();
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * POST /api/dokument-generator/zugferd-pdf
      * Generiert ein ZUGFeRD-PDF (PDF mit eingebetteten maschinenlesbaren Rechnungsdaten).
      */
@@ -451,6 +464,9 @@ public class DokumentGeneratorController {
             // MwSt. 19% für Brutto
             BigDecimal brutto = betrag.multiply(new BigDecimal("1.19")).setScale(2, java.math.RoundingMode.HALF_UP);
             daten.setBetrag(brutto);
+            // Netto und Satz mitgeben, damit die E-Rechnung nicht aus dem Brutto zurückrechnen muss
+            daten.setBetragNetto(betrag.setScale(2, java.math.RoundingMode.HALF_UP));
+            daten.setMwstSatz(new BigDecimal("19"));
 
             // Fälligkeitsdatum: 14 Tage nach Rechnungsdatum
             LocalDate rDatum = parseDate(request.kopfdaten().rechnungsDatum());
@@ -474,6 +490,9 @@ public class DokumentGeneratorController {
             log.info("ZUGFeRD-PDF {} erfolgreich generiert ({} bytes)", filename, zugferdBytes.length);
             return new ResponseEntity<>(zugferdBytes, headers, HttpStatus.OK);
 
+        } catch (FirmenstammdatenUnvollstaendigException e) {
+            // Fehlende Firmendaten: sprechende 422-Antwort über den RestExceptionHandler
+            throw e;
         } catch (Exception e) {
             log.error("Fehler bei ZUGFeRD-PDF-Generierung", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

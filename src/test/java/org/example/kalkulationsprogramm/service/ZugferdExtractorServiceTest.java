@@ -146,7 +146,16 @@ class ZugferdExtractorServiceTest {
             daten.setGeschaeftsdokumentart("Rechnung");
             // KEIN Fälligkeitsdatum -> im XML fehlt DueDateDateTime (bereits bezahlt)
 
-            return new ZugferdErstellService().erzeuge(erzeugeBasisPdf().toString(), daten);
+            var firma = new org.example.kalkulationsprogramm.dto.FirmeninformationDto();
+            firma.setFirmenname("Musterbetrieb GmbH");
+            firma.setStrasse("Musterstraße 1");
+            firma.setPlz("12345");
+            firma.setOrt("Musterstadt");
+            firma.setUstIdNr("DE123456789");
+            var firmaService = org.mockito.Mockito.mock(FirmeninformationService.class);
+            org.mockito.Mockito.when(firmaService.getFirmeninformation()).thenReturn(firma);
+
+            return new ZugferdErstellService(firmaService).erzeuge(erzeugeBasisPdf().toString(), daten);
         }
 
         /**
@@ -189,7 +198,7 @@ class ZugferdExtractorServiceTest {
                             .load(erzeugeBasisPdf().toString())) {
 
                 org.mustangproject.TradeParty seller = new org.mustangproject.TradeParty();
-                seller.setName("Bauschlosserei Kuhn");
+                seller.setName("Musterbetrieb GmbH");
                 org.mustangproject.TradeParty buyer = new org.mustangproject.TradeParty();
                 buyer.setName("Max Mustermann");
 

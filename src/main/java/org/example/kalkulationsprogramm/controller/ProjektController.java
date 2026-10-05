@@ -41,6 +41,7 @@ import org.example.kalkulationsprogramm.dto.Projekt.UmsatzStatistikDto;
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieErfassenDto;
 import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
@@ -85,10 +86,12 @@ import org.springframework.web.multipart.MultipartFile;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/api/projekte")
 @AllArgsConstructor
+@Slf4j
 @Validated
 public class ProjektController {
     private static final int MAX_PAGE_SIZE = 50;
@@ -463,21 +466,39 @@ public class ProjektController {
             @PathVariable Long projektID,
             @RequestPart("datei") MultipartFile pdf,
             @RequestPart("zugferdDaten") ZugferdDaten daten) {
+        Path original = null;
+        Path zugferdPfad = null;
         try {
-            Path original = Files.createTempFile("zugferd-original-", ".pdf.html");
+            original = Files.createTempFile("zugferd-original-", ".pdf.html");
             Files.copy(pdf.getInputStream(), original, StandardCopyOption.REPLACE_EXISTING);
 
-            Path zugferdPfad = zugferdErstellService.erzeuge(original.toString(), daten);
-            Files.deleteIfExists(original);
+            zugferdPfad = zugferdErstellService.erzeuge(original.toString(), daten);
 
             ProjektGeschaeftsdokument dokument = dateiSpeicherService
                     .speichereZugferdDatei(zugferdPfad, pdf.getOriginalFilename(), projektID, daten);
             ProjektDokumentResponseDto dto = mappeDokumentZuDto(dokument);
 
-            Files.deleteIfExists(zugferdPfad);
             return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+        } catch (FirmenstammdatenUnvollstaendigException e) {
+            // Fehlende Firmendaten: sprechende 422-Antwort über den RestExceptionHandler
+            throw e;
         } catch (Exception e) {
+            log.warn("ZUGFeRD-Erstellung für Projekt {} fehlgeschlagen", projektID, e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } finally {
+            loescheTempDatei(original);
+            loescheTempDatei(zugferdPfad);
+        }
+    }
+
+    private static void loescheTempDatei(Path datei) {
+        if (datei == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(datei);
+        } catch (java.io.IOException ignored) {
+            // Temp-Aufräumen darf die Antwort nicht kippen
         }
     }
 

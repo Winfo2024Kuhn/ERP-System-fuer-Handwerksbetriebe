@@ -137,6 +137,7 @@ import '@fontsource/open-sans/latin-700.css';
 import '@fontsource/open-sans/latin-700-italic.css';
 import '@fontsource/montserrat/latin-600.css';
 import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
+import { fehlermeldungAusAntwort, pruefeFirmendatenFuerERechnung } from './eRechnungPruefung';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
@@ -2759,7 +2760,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(request)
             });
-            if (!response.ok) throw new Error('PDF-Generierung fehlgeschlagen');
+            if (!response.ok) throw new Error(await fehlermeldungAusAntwort(response, 'PDF-Generierung fehlgeschlagen'));
 
             const blob = await response.blob();
 
@@ -2811,6 +2812,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         if (!dokument?.id) return;
 
         try {
+            // E-Rechnung: Firmendaten VOR dem Buchen prüfen, sonst bliebe die Rechnung
+            // gebucht und gesperrt, ohne dass ein PDF entsteht.
+            if (format === 'zugferd') await pruefeFirmendatenFuerERechnung();
             // Beim Export gilt: Versanddatum = heute. Dadurch passt das
             // Zahlungsziel (Rechnungsdatum + N Tage), egal wie lange der User
             // am Dokument gearbeitet hat. Gilt für ALLE Dokumenttypen
@@ -2836,7 +2840,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(request)
             });
-            if (!response.ok) throw new Error('PDF-Generierung fehlgeschlagen');
+            if (!response.ok) throw new Error(await fehlermeldungAusAntwort(response, 'PDF-Generierung fehlgeschlagen'));
 
             const blob = await response.blob();
 
@@ -2912,6 +2916,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         const isDraft = draftSendMode;
         setEmailLoading(true);
         try {
+            if (format === 'zugferd') await pruefeFirmendatenFuerERechnung();
             // Beim echten Mail-Versand (kein Entwurf) Versanddatum auf heute
             // setzen, damit Rechnungsdatum + Zahlungsziel ab tatsächlichem
             // Versandtag laufen. Im Entwurfs-Modus bleibt das Datum stehen,
@@ -2947,7 +2952,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(request)
             });
-            if (!response.ok) throw new Error('PDF-Generierung fehlgeschlagen');
+            if (!response.ok) throw new Error(await fehlermeldungAusAntwort(response, 'PDF-Generierung fehlgeschlagen'));
 
             const blob = await response.blob();
 

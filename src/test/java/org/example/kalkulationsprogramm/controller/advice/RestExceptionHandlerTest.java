@@ -1,6 +1,8 @@
 package org.example.kalkulationsprogramm.controller.advice;
 
 import jakarta.persistence.OptimisticLockException;
+import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -55,6 +57,11 @@ class RestExceptionHandlerTest {
             // Oberklasse -- der Handler muss also auch diesen Fall abdecken.
             throw new JpaOptimisticLockingFailureException(
                     new OptimisticLockException("Zeile wurde von einer anderen Transaktion geaendert."));
+        }
+
+        @GetMapping("/test/firmendaten")
+        public String firmendaten() {
+            throw new FirmenstammdatenUnvollstaendigException("die E-Rechnung", List.of("Straße", "Ort"));
         }
 
         @GetMapping("/test/data-integrity")
@@ -128,5 +135,14 @@ class RestExceptionHandlerTest {
         mockMvc.perform(get("/test/data-integrity"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("Constraint violation"));
+    }
+
+    @Test
+    void unvollstaendigeFirmenstammdaten_liefernMit422EineLesbareMeldung() throws Exception {
+        mockMvc.perform(get("/test/firmendaten"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.status").value(422))
+                .andExpect(jsonPath("$.message").value(
+                        "Für die E-Rechnung fehlen Angaben zu Ihrem Betrieb: Straße, Ort. Bitte unter „Firma“ ergänzen."));
     }
 }

@@ -323,7 +323,6 @@ public class RechnungPdfService {
                 renderFormBlocks(cb, data.formBlocks(), 1, totalPages, 595f, 842f, data.kopfdaten(), totalPagesBaseFontHolder, totalPagesFontSizeHolder);
             } else {
                 renderBriefkopf(cb, data.kopfdaten(), data.layout());
-                renderFooter(cb, data.layout());
             }
 
             // ===== Content aufbauen =====
@@ -2358,10 +2357,6 @@ public class RechnungPdfService {
         ColumnText adresse = new ColumnText(cb);
         adresse.setSimpleColumn(50, 680, 300, 780);
 
-        Paragraph absender = new Paragraph("Kuhn Gerüstbau GmbH • Musterstraße 1 • 12345 Musterstadt", FONT_SMALL);
-        absender.setSpacingAfter(3f);
-        adresse.addElement(absender);
-
         Paragraph kunde = new Paragraph(kopf.kundenName() + "\n" + kopf.kundenAdresse(), FONT_NORMAL);
         adresse.addElement(kunde);
         adresse.go();
@@ -2389,24 +2384,6 @@ public class RechnungPdfService {
         Paragraph betreffText = new Paragraph(kopf.betreff(), PdfSchriften.betreff(PdfSchriften.BETREFF_GROESSE, PdfSchriften.TEXTFARBE));
         betreff.addElement(betreffText);
         betreff.go();
-    }
-
-    private void renderFooter(PdfContentByte cb, LayoutDto layout) throws DocumentException {
-        // Fußzeile mit Bankverbindung etc.
-        ColumnText footer = new ColumnText(cb);
-        footer.setSimpleColumn(50, 30, 550, 100);
-
-        Paragraph footerText = new Paragraph();
-        footerText.setAlignment(Element.ALIGN_CENTER);
-        footerText.add(new Chunk("Kuhn Gerüstbau GmbH | Musterstraße 1, 12345 Musterstadt\n", FONT_SMALL));
-        footerText.add(
-                new Chunk("Bankverbindung: Sparkasse Musterstadt | IBAN: DE12 3456 7890 1234 5678 90 | BIC: ABCDEFGH\n",
-                        FONT_SMALL));
-        footerText.add(new Chunk(
-                "Geschäftsführer: Max Kuhn | Amtsgericht Musterstadt HRB 12345 | USt-IdNr.: DE123456789", FONT_SMALL));
-
-        footer.addElement(footerText);
-        footer.go();
     }
 
     private void renderFolgeSeitenKopf(PdfContentByte cb, String rechnungsnummer, int currentPage, PdfTemplate totalPages,

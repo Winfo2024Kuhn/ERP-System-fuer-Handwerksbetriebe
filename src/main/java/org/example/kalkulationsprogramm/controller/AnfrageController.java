@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
@@ -19,6 +20,7 @@ import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
@@ -45,6 +47,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/anfragen")
+@Slf4j
 @RequiredArgsConstructor
 public class AnfrageController {
     private final AnfrageService anfrageService;
@@ -177,23 +180,40 @@ public class AnfrageController {
     public ResponseEntity<?> erzeugeZugferd(@PathVariable Long anfrageID,
             @RequestPart("datei") MultipartFile pdf,
             @RequestPart("zugferdDaten") ZugferdDaten daten) {
+        Path original = null;
+        Path zugferdPfad = null;
         try {
-            Path original = Files.createTempFile("zugferd-original-", ".pdf.html");
+            original = Files.createTempFile("zugferd-original-", ".pdf.html");
             Files.copy(pdf.getInputStream(), original, StandardCopyOption.REPLACE_EXISTING);
 
-            Path zugferdPfad = zugferdErstellService.erzeuge(original.toString(), daten);
-            Files.deleteIfExists(original);
+            zugferdPfad = zugferdErstellService.erzeuge(original.toString(), daten);
 
             AnfrageGeschaeftsdokument dokument = dateiSpeicherService
                     .speichereAnfragesZugferdDatei(zugferdPfad, pdf.getOriginalFilename(), anfrageID, daten);
             AnfrageDokumentResponseDto dto = mappeDokumentZuDto(dokument);
 
-            Files.deleteIfExists(zugferdPfad);
             return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+        } catch (FirmenstammdatenUnvollstaendigException e) {
+            // Fehlende Firmendaten: sprechende 422-Antwort über den RestExceptionHandler
+            throw e;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("ZUGFeRD-Erstellung für Anfrage {} fehlgeschlagen", anfrageID, e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(java.util.Map.of("message", e.getMessage() != null ? e.getMessage() : "Unbekannter Fehler"));
+                    .body(java.util.Map.of("message", "Die E-Rechnung konnte nicht erstellt werden."));
+        } finally {
+            loescheTempDatei(original);
+            loescheTempDatei(zugferdPfad);
+        }
+    }
+
+    private static void loescheTempDatei(Path datei) {
+        if (datei == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(datei);
+        } catch (java.io.IOException ignored) {
+            // Temp-Aufräumen darf die Antwort nicht kippen
         }
     }
 
