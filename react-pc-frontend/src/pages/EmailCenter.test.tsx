@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -483,6 +483,84 @@ describe('EmailCenter', () => {
         });
     });
 
+    describe('Verläufe in der Liste und Allen antworten', () => {
+        const anfrage = {
+            id: 16, type: 'EMAIL', direction: 'IN' as const, subject: 'Anfrage Terrasse',
+            fromAddress: 'max@example.com', body: 'Ich hätte gerne ein Angebot.',
+            sentAt: '2026-09-16T09:00:00', isRead: false, zuordnungTyp: 'KEINE', attachments: [],
+            threadRootId: 16, replyCount: 2,
+        };
+        // Hängt an unserer Antwort (id 99, liegt in "Gesendet") – der Parent ist im Posteingang nicht geladen.
+        const nachfrage = {
+            id: 17, type: 'EMAIL', direction: 'IN' as const, subject: 'Re: Anfrage Terrasse',
+            fromAddress: 'max@example.com', recipient: 'handwerk@example.com, erika@example.com',
+            cc: 'architekt@example.org', body: 'Wie gewünscht die Bilder.',
+            sentAt: '2026-09-17T09:00:00', isRead: false, zuordnungTyp: 'KEINE', attachments: [],
+            parentEmailId: 99, threadRootId: 16, replyCount: 2,
+        };
+        const threadOf = (focusedEmailId: number) => ({
+            rootEmailId: 16, focusedEmailId,
+            emails: [anfrage, nachfrage].map(e => ({ ...e, htmlBody: `<p>${e.body}</p>` })),
+        });
+
+        function setup() {
+            const mock = mockFetchResponses({
+                '/api/emails/inbox': [nachfrage, anfrage],
+                '/api/emails/16': anfrage, '/api/emails/17': nachfrage,
+                '/api/emails/16/thread': threadOf(16), '/api/emails/17/thread': threadOf(17),
+                '/api/emails/from-addresses': ['handwerk@example.com'],
+            });
+            vi.stubGlobal('fetch', mock);
+            return mock;
+        }
+
+        it('zeigt einen Verlauf als eine Zeile, auch wenn die verbindende Antwort in "Gesendet" liegt', async () => {
+            setup();
+            renderEmailCenter();
+            expect(await screen.findByText('Re: Anfrage Terrasse')).toBeInTheDocument();
+            expect(screen.queryByText('Anfrage Terrasse')).not.toBeInTheDocument();
+            expect(screen.getAllByText('3 Nachrichten')).toHaveLength(1);
+        });
+
+        it('markiert beim Öffnen alle ungelesenen Nachrichten des Verlaufs als gelesen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = setup();
+            renderEmailCenter();
+            await user.click(await screen.findByText('Re: Anfrage Terrasse'));
+            await waitFor(() => {
+                expect(mock).toHaveBeenCalledWith('/api/emails/16/mark-read', { method: 'POST' });
+                expect(mock).toHaveBeenCalledWith('/api/emails/17/mark-read', { method: 'POST' });
+            });
+        });
+
+        it('legt beim Löschen einer Zeile den ganzen Verlauf in den Papierkorb', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const mock = setup();
+            renderEmailCenter();
+            await user.click(await screen.findByText('Re: Anfrage Terrasse'));
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await user.click(await screen.findByText('In Papierkorb'));
+            await waitFor(() => {
+                expect(mock).toHaveBeenCalledWith('/api/emails/16', { method: 'DELETE' });
+                expect(mock).toHaveBeenCalledWith('/api/emails/17', { method: 'DELETE' });
+            });
+            expect(screen.queryByText('Re: Anfrage Terrasse')).not.toBeInTheDocument();
+        });
+
+        it('belegt bei "Allen antworten" An und CC ohne eigene Adresse vor', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            setup();
+            renderEmailCenter();
+            await user.click(await screen.findByText('Re: Anfrage Terrasse'));
+            const header = await screen.findByTestId('email-detail-header');
+            await user.click(within(header).getByRole('button', { name: /Allen antworten/i }));
+            await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
+            expect(screen.getByDisplayValue('max@example.com, erika@example.com')).toBeInTheDocument();
+            expect(screen.getByDisplayValue('architekt@example.org')).toBeInTheDocument();
+            expect(screen.queryByDisplayValue(/handwerk@example\.com/)).not.toBeInTheDocument();
+        });
+    });
+
     describe('Thread-Kundenempfänger und Antwort-Logik', () => {
         it('setzt beim Antworten auf eine Ausgangsmail den Kunden als Zieladresse, nicht die eigene Adresse', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
@@ -692,6 +770,9 @@ describe('EmailCenter', () => {
 
             // Eigene Adresse darf keinesfalls im Empfängerfeld stehen!
             expect(screen.queryByDisplayValue('bauschlosserei-kuhn@t-online.de')).not.toBeInTheDocument();
+
+            // Ohne ermittelbaren Empfänger muss das An-Feld eintragbar sein (sonst Sackgasse)
+            expect(screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben')).not.toHaveAttribute('readonly');
 
             // Zitatkopf ohne unvollständiges "an :"
             expect(screen.getByText(/schrieben Sie:/i)).toBeInTheDocument();

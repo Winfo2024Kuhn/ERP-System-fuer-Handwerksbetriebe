@@ -20,6 +20,8 @@ public class UnifiedEmailDto {
     private String senderDomain;
     private String recipient;
     private String cc;
+    /** Reply-To-Kopfzeile des Absenders; Antworten gehen dorthin statt an fromAddress. */
+    private String replyToAddress;
 
     // Inhalt
     private String subject;
@@ -60,7 +62,12 @@ public class UnifiedEmailDto {
     // Thread-Informationen
     /** ID der übergeordneten E-Mail; null für Thread-Wurzeln (Root-Emails). */
     private Long parentEmailId;
-    /** Anzahl direkter Antworten auf diese E-Mail. 0 = keine Antworten vorhanden. */
+    /**
+     * Wurzel des gesamten Verlaufs. Die Liste fasst danach zusammen – auch wenn
+     * Zwischenglieder (z. B. die eigene Antwort im Ordner "Gesendet") nicht geladen sind.
+     */
+    private Long threadRootId;
+    /** Anzahl weiterer Nachrichten im gesamten Verlauf (Verlaufsgröße - 1). 0 = Einzelmail. */
     private int replyCount;
     /**
      * Jüngster sentAt-Wert über alle E-Mails im gesamten Thread (Root + Kinder/Kindeskinder).

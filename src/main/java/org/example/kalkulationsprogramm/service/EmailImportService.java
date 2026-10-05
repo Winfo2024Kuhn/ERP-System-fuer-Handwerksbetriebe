@@ -8,9 +8,11 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 
 import org.example.email.EmailService;
@@ -23,6 +25,8 @@ import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.dto.Email.RebuildEmailThreadsResultDto;
+import org.example.kalkulationsprogramm.util.EmailThreadTeilnehmer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
@@ -708,6 +712,7 @@ public class EmailImportService {
         List<Email> candidates = emailRepository.findRecentBefore(
                 email.getSentAt(),
                 PageRequest.of(0, subjectFallbackLookback));
+        Set<String> eigeneAdressen = null;
         Email best = null;
         for (Email candidate : candidates) {
             if (candidate.getSubject() == null || candidate.getSentAt() == null) {
@@ -717,6 +722,12 @@ public class EmailImportService {
                 continue;
             }
             if (!normalized.equals(normalizeSubject(candidate.getSubject()))) {
+                continue;
+            }
+            if (eigeneAdressen == null) {
+                eigeneAdressen = eigeneAdressen();
+            }
+            if (!EmailThreadTeilnehmer.gehoertZumGespraech(email, candidate, eigeneAdressen)) {
                 continue;
             }
             if (best == null || candidate.getSentAt().isAfter(best.getSentAt())) {
@@ -1056,18 +1067,46 @@ public class EmailImportService {
     }
 
     /**
-     * Backfill: Verknüpft bestehende Emails nachträglich mit ihren Parent-Emails.
-     * Basiert auf Subject-Pattern-Matching (AW:/RE:/FWD:) für Emails ohne Parent.
-     * Erbt auch die Zuordnung (Projekt/Anfrage/Lieferant) vom Parent.
-     * 
+     * Backfill beim Serverstart: Verknüpft bestehende Emails ohne Parent nachträglich mit
+     * ihrer Original-Mail. Basiert auf Subject-Pattern-Matching (AW:/RE:/FWD:) plus
+     * Teilnehmer-Prüfung und erbt die Zuordnung (Projekt/Anfrage/Lieferant) vom Parent.
+     * Löst bewusst keine bestehenden Verknüpfungen – das geht nur über
+     * {@link #bereinigeThreadVerknuepfungen(boolean)} (Admin-Endpunkt).
+     *
      * @return Anzahl der verknüpften Emails
      */
     @Transactional
     public int backfillParentEmails() {
         log.info("[Backfill] Starte Parent-Email Backfill...");
-        int updated = 0;
+        RebuildEmailThreadsResultDto ergebnis = fuehreThreadBackfillAus(false, true);
+        log.info("[Backfill] {} Emails mit Parent verknüpft", ergebnis.getRelinked());
+        return ergebnis.getRelinked();
+    }
 
+    /**
+     * Admin-Bereinigung: löst offensichtliche Fehlverknüpfungen aus reinem Betreff-Vergleich
+     * (siehe {@link EmailThreadTeilnehmer#darfGeloestWerden}) und verknüpft danach neu.
+     *
+     * @param probelauf {@code true}: nur zählen, nichts speichern
+     */
+    @Transactional
+    public RebuildEmailThreadsResultDto bereinigeThreadVerknuepfungen(boolean probelauf) {
+        RebuildEmailThreadsResultDto ergebnis = fuehreThreadBackfillAus(true, !probelauf);
+        log.info("[Backfill] Thread-Bereinigung{}: {} Mails geprüft, {} Verknüpfungen gelöst, {} neu verknüpft",
+                probelauf ? " (Probelauf)" : "", ergebnis.getProcessed(), ergebnis.getCleared(), ergebnis.getRelinked());
+        return ergebnis;
+    }
+
+    /**
+     * Plant alle Änderungen zuerst (Mail → neuer Parent bzw. {@code null}) und wendet sie
+     * nur bei {@code anwenden} an. So liefert ein Probelauf exakt dieselben Zahlen wie der
+     * echte Lauf, ohne eine Entity anzufassen.
+     */
+    private RebuildEmailThreadsResultDto fuehreThreadBackfillAus(boolean falscheLoesen, boolean anwenden) {
         List<Email> allEmails = emailRepository.findAll();
+        Set<String> eigeneAdressen = eigeneAdressen();
+        Map<Email, Email> plan = new java.util.IdentityHashMap<>();
+        int geloest = falscheLoesen ? planeLoesungFalscherVerknuepfungen(allEmails, eigeneAdressen, plan) : 0;
 
         // Index nach normalisiertem Subject (ohne AW:/RE:/FWD: Prefix).
         // Mails mit leerem Normalisat (z. B. Subject "RE:" allein) NICHT in den
@@ -1082,77 +1121,102 @@ public class EmailImportService {
             byNormalizedSubject.computeIfAbsent(normalized, k -> new ArrayList<>()).add(email);
         }
 
+        int verknuepft = 0;
         for (Email email : allEmails) {
-            if (email.getParentEmail() != null) {
-                continue; // Hat schon Parent
-            }
-
-            String subject = email.getSubject();
-            if (subject == null)
-                continue;
-
-            // Ist dies eine Antwort/Weiterleitung?
-            if (!isReplyOrForward(subject)) {
+            Email aktuellerParent = plan.containsKey(email) ? plan.get(email) : email.getParentEmail();
+            if (aktuellerParent != null || email.getSubject() == null || !isReplyOrForward(email.getSubject())) {
                 continue;
             }
-
-            String normalized = normalizeSubject(subject);
-            if (normalized.isBlank()) {
-                continue;
-            }
-            List<Email> candidates = byNormalizedSubject.get(normalized);
-
+            String normalized = normalizeSubject(email.getSubject());
+            List<Email> candidates = normalized.isBlank() ? null : byNormalizedSubject.get(normalized);
             if (candidates == null || candidates.size() < 2) {
                 continue;
             }
 
-            // Finde die beste Parent-Kandidaten (älter als diese Email)
+            // Bevorzuge die neuste passende Email vor dieser
             Email bestParent = null;
             for (Email candidate : candidates) {
-                if (candidate.getId().equals(email.getId())) {
-                    continue; // Nicht sich selbst
+                if (candidate == email || candidate.getId().equals(email.getId())) {
+                    continue;
                 }
                 if (candidate.getSentAt() != null && email.getSentAt() != null
-                        && candidate.getSentAt().isBefore(email.getSentAt())) {
-                    // Bevorzuge die neuste Email vor dieser
-                    if (bestParent == null || candidate.getSentAt().isAfter(bestParent.getSentAt())) {
-                        bestParent = candidate;
-                    }
+                        && candidate.getSentAt().isBefore(email.getSentAt())
+                        && EmailThreadTeilnehmer.gehoertZumGespraech(email, candidate, eigeneAdressen)
+                        && (bestParent == null || candidate.getSentAt().isAfter(bestParent.getSentAt()))) {
+                    bestParent = candidate;
                 }
             }
-
             if (bestParent != null) {
-                email.setParentEmail(bestParent);
-
-                // Zuordnung übernehmen falls diese Email noch keine hat
-                if (email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
-                    if (bestParent.getProjekt() != null) {
-                        email.assignToProjekt(bestParent.getProjekt());
-                    } else if (bestParent.getAnfrage() != null) {
-                        email.assignToAnfrage(bestParent.getAnfrage());
-                    } else if (bestParent.getLieferant() != null) {
-                        email.assignToLieferant(bestParent.getLieferant());
-                    }
-                }
-
-                emailRepository.save(email);
-                updated++;
+                plan.put(email, bestParent);
+                verknuepft++;
             }
         }
 
-        log.info("[Backfill] {} Emails mit Parent verknüpft", updated);
-        return updated;
+        if (anwenden) {
+            plan.forEach(this::setzeParent);
+        }
+        return new RebuildEmailThreadsResultDto(allEmails.size(), verknuepft, geloest);
+    }
+
+    private int planeLoesungFalscherVerknuepfungen(List<Email> emails, Set<String> eigeneAdressen, Map<Email, Email> plan) {
+        int geloest = 0;
+        for (Email email : emails) {
+            Email parent = email.getParentEmail();
+            if (parent == null) {
+                continue;
+            }
+            String betreff = normalizeSubject(email.getSubject());
+            if (betreff.isBlank() || !betreff.equals(normalizeSubject(parent.getSubject()))) {
+                continue;
+            }
+            if (EmailThreadTeilnehmer.darfGeloestWerden(email, parent, eigeneAdressen)) {
+                plan.put(email, null);
+                geloest++;
+            }
+        }
+        return geloest;
+    }
+
+    /**
+     * Setzt (oder löst bei {@code null}) den Parent. Beim Verknüpfen wird die Zuordnung
+     * übernommen, falls die Mail noch keine hat; beim Lösen bleibt sie unangetastet – die hat
+     * der Nutzer womöglich bewusst gesetzt.
+     */
+    private void setzeParent(Email email, Email neuerParent) {
+        Email alterParent = email.getParentEmail();
+        if (alterParent != null && alterParent.getReplies() != null) {
+            alterParent.getReplies().remove(email);
+        }
+        email.setParentEmail(neuerParent);
+        if (neuerParent != null && email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
+            if (neuerParent.getProjekt() != null) {
+                email.assignToProjekt(neuerParent.getProjekt());
+            } else if (neuerParent.getAnfrage() != null) {
+                email.assignToAnfrage(neuerParent.getAnfrage());
+            } else if (neuerParent.getLieferant() != null) {
+                email.assignToLieferant(neuerParent.getLieferant());
+            }
+        }
+        emailRepository.save(email);
+    }
+
+    /** Eigene Adressen: Absender gesendeter Mails sowie die Postfach-Logins. */
+    Set<String> eigeneAdressen() {
+        Set<String> eigene = new HashSet<>(emailRepository.findDistinctFromAddressesByDirection(EmailDirection.OUT));
+        eigene.addAll(EmailThreadTeilnehmer.adressen(
+                systemSettingsService.getImapUsername(), systemSettingsService.getSmtpUsername()));
+        eigene.remove(null);
+        return eigene;
     }
 
     /**
      * Erkennungs-Pattern für Reply-/Forward-Prefixe (case-insensitive).
-     * Erfordert mindestens ein Whitespace nach dem Doppelpunkt — schliesst
-     * exotische Subjects wie {@code "WG:Foo"} (ohne Space) aus, ohne echten
-     * Mailclients in die Quere zu kommen (Outlook/Gmail/t-online setzen
-     * immer ein Space). Wird in {@link #isReplyOrForward(String)} verwendet.
+     * Das Leerzeichen nach dem Doppelpunkt ist optional – manche Clients schreiben
+     * {@code "AW:Angebot"}. Falsche Treffer fängt die Teilnehmer-Prüfung
+     * ({@link EmailThreadTeilnehmer}) ab. Wird in {@link #isReplyOrForward(String)} verwendet.
      */
     private static final String REPLY_FWD_DETECT_REGEX =
-            "(?i)(aw|re|fwd|fw|wg|antw|antwort):\\s+";
+            "(?i)(aw|re|fwd|fw|wg|antw|antwort):\\s*+(?=\\S)";
 
     /**
      * Strip-Pattern für die Normalisierung: lockerer als das Detect-Pattern,

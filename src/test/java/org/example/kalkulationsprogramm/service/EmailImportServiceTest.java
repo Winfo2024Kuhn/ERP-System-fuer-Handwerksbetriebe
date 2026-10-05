@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -39,6 +40,7 @@ class EmailImportServiceTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private EmailBlacklistRepository emailBlacklistRepository;
     @Mock private BounceErkennungService bounceErkennungService;
+    @Mock private SystemSettingsService systemSettingsService;
 
     @InjectMocks
     private EmailImportService service;
@@ -771,6 +773,9 @@ class EmailImportServiceTest {
             assertThat(service.isReplyOrForward("AW: Transfer")).isTrue();
             assertThat(service.isReplyOrForward("Fwd: Transfer")).isTrue();
             assertThat(service.isReplyOrForward("WG: Transfer")).isTrue();
+            // Manche Clients lassen das Leerzeichen weg ("AW:Angebot").
+            assertThat(service.isReplyOrForward("AW:Angebot AG-2026/06/00003")).isTrue();
+            assertThat(service.isReplyOrForward("AW:")).isFalse();
         }
 
         @Test
@@ -826,13 +831,12 @@ class EmailImportServiceTest {
         }
 
         @Test
-        void erkenntKeinReplyOhneSpaceNachDoppelpunkt() {
-            // Mailclients setzen IMMER ein Space nach "RE:" — exotische
-            // Subjects wie "WG:Foo" oder "FW:Bar" werden bewusst NICHT als
-            // Reply klassifiziert, um false-positives bei seltenen
-            // Abkuerzungen zu vermeiden.
-            assertThat(service.isReplyOrForward("WG:Foo")).isFalse();
-            assertThat(service.isReplyOrForward("FW:Bar")).isFalse();
+        void erkenntReplyAuchOhneSpaceNachDoppelpunkt() {
+            // Im echten Postfach kam "AW:Angebot …" vor und blieb unverknüpft.
+            // Falsche Treffer verhindert inzwischen die Teilnehmer-Prüfung.
+            assertThat(service.isReplyOrForward("WG:Foo")).isTrue();
+            assertThat(service.isReplyOrForward("FW:Bar")).isTrue();
+            assertThat(service.isReplyOrForward("Termin: Montag")).isFalse();
         }
 
         @Test
@@ -942,6 +946,102 @@ class EmailImportServiceTest {
             Email parent = service.findParentBySubject(reply);
 
             assertThat(parent).isNull();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Teilnehmer-Prüfung beim Betreff-Threading und Backfill-Bereinigung
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class TeilnehmerPruefung {
+
+        private final LocalDateTime start = LocalDateTime.of(2026, 9, 1, 8, 0);
+
+        @BeforeEach
+        void setup() {
+            ReflectionTestUtils.setField(service, "subjectFallbackLookback", 500);
+            when(emailRepository.findDistinctFromAddressesByDirection(EmailDirection.OUT))
+                    .thenReturn(List.of("info@musterbetrieb.example"));
+        }
+
+        private Email mail(long id, EmailDirection richtung, String von, String an, String betreff, int stunden) {
+            Email e = new Email();
+            e.setId(id);
+            e.setDirection(richtung);
+            e.setFromAddress(von);
+            e.setRecipient(an);
+            e.setSubject(betreff);
+            e.setSentAt(start.plusHours(stunden));
+            e.setReplies(new ArrayList<>());
+            return e;
+        }
+
+        @Test
+        void importVerknuepftNichtMitDerAntwortEinesAnderenLieferanten() {
+            Email anfrage = mail(1, EmailDirection.OUT, "info@musterbetrieb.example",
+                    "angebot@lieferant-a.example, verkauf@lieferant-b.example", "Bitte um Angebot", 0);
+            Email antwortA = mail(2, EmailDirection.IN, "angebot@lieferant-a.example", "info@musterbetrieb.example", "AW: Bitte um Angebot", 1);
+            Email antwortB = mail(3, EmailDirection.IN, "verkauf@lieferant-b.example", "info@musterbetrieb.example", "AW: Bitte um Angebot", 2);
+            when(emailRepository.findRecentBefore(any(LocalDateTime.class), any(Pageable.class)))
+                    .thenReturn(List.of(antwortA, anfrage));
+
+            assertThat(service.findParentBySubject(antwortB)).isSameAs(anfrage);
+        }
+
+        @Test
+        void backfillLoestFalscheVerknuepfungUndHaengtAnDasOriginal() {
+            Email anfrage = mail(1, EmailDirection.OUT, "info@musterbetrieb.example",
+                    "angebot@lieferant-a.example, verkauf@lieferant-b.example", "Bitte um Angebot", 0);
+            Email antwortA = mail(2, EmailDirection.IN, "angebot@lieferant-a.example", "info@musterbetrieb.example", "AW: Bitte um Angebot", 1);
+            Email antwortB = mail(3, EmailDirection.IN, "verkauf@lieferant-b.example", "info@musterbetrieb.example", "AW: Bitte um Angebot", 2);
+            antwortA.setParentEmail(anfrage);
+            anfrage.getReplies().add(antwortA);
+            antwortB.setParentEmail(antwortA); // Altlast aus reinem Betreff-Vergleich
+            antwortA.getReplies().add(antwortB);
+            when(emailRepository.findAll()).thenReturn(List.of(anfrage, antwortA, antwortB));
+
+            // Der Start-Backfill löst nie etwas.
+            assertThat(service.backfillParentEmails()).isZero();
+            assertThat(antwortB.getParentEmail()).isSameAs(antwortA);
+
+            // Probelauf zählt, ändert aber nichts.
+            var probe = service.bereinigeThreadVerknuepfungen(true);
+            assertThat(probe.getCleared()).isEqualTo(1);
+            assertThat(probe.getRelinked()).isEqualTo(1);
+            assertThat(probe.getProcessed()).isEqualTo(3);
+            assertThat(antwortB.getParentEmail()).isSameAs(antwortA);
+            verify(emailRepository, never()).save(any());
+
+            var ergebnis = service.bereinigeThreadVerknuepfungen(false);
+
+            assertThat(ergebnis.getCleared()).isEqualTo(1);
+            assertThat(antwortB.getParentEmail()).isSameAs(anfrage);
+            assertThat(antwortA.getParentEmail()).isSameAs(anfrage);
+            assertThat(antwortA.getReplies()).doesNotContain(antwortB);
+            // Idempotent: zweiter Lauf ändert nichts mehr.
+            var zweiter = service.bereinigeThreadVerknuepfungen(false);
+            assertThat(zweiter.getCleared()).isZero();
+            assertThat(zweiter.getRelinked()).isZero();
+        }
+
+        @Test
+        void backfillLaesstVerknuepfungenMitAnderemBetreffUnangetastet() {
+            // Kam per In-Reply-To – der Betreff wurde geändert, die Verknüpfung ist echt.
+            Email original = mail(1, EmailDirection.IN, "max@example.com", "info@musterbetrieb.example", "Protokoll Nr. 33", 0);
+            Email folge = mail(2, EmailDirection.IN, "erika@example.org", "info@musterbetrieb.example", "Protokoll Nr. 34", 5);
+            folge.setParentEmail(original);
+            when(emailRepository.findAll()).thenReturn(List.of(original, folge));
+
+            service.bereinigeThreadVerknuepfungen(false);
+
+            assertThat(folge.getParentEmail()).isSameAs(original);
+        }
+
+        @Test
+        void eigeneAdressenUmfassenPostfachLogins() {
+            when(systemSettingsService.getImapUsername()).thenReturn("Postfach@Musterbetrieb.example");
+            assertThat(service.eigeneAdressen()).contains("info@musterbetrieb.example", "postfach@musterbetrieb.example");
         }
     }
 }

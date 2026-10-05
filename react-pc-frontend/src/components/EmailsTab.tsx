@@ -2,7 +2,8 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
 import { klartextGrund } from '../lib/zustellGrund';
-import { extractDisplayName, formatRecipient } from '../lib/emailAddress';
+import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
+import { buildReplyAddressing } from '../features/email/emailCenterModel';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { EmailComposeModal } from './EmailComposeModal';
@@ -22,6 +23,10 @@ export interface GenericEmail {
     from?: string;
     fromAddress?: string;
     to?: string;
+    /** Felder aus /api/emails/{id} (UnifiedEmailDto) */
+    recipient?: string;
+    cc?: string;
+    replyToAddress?: string;
     bodyHtml?: string;
     bodyPreview?: string;
     body?: string;
@@ -229,7 +234,8 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
         if (!fullEmail) {
             fullEmail = {
                 id: entry.id, subject: entry.subject, fromAddress: entry.fromAddress,
-                to: entry.recipient, bodyHtml: entry.htmlBody, body: entry.snippet,
+                to: entry.recipient, recipient: entry.recipient, cc: entry.cc, replyToAddress: entry.replyToAddress,
+                bodyHtml: entry.htmlBody, body: entry.snippet,
                 direction: entry.direction, sentAt: entry.sentAt,
             };
         }
@@ -361,7 +367,16 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     const replyInitialRecipient = useMemo(() => {
         if (!replyToEmail) return '';
-        return formatRecipient(replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender || '');
+        const fromAddress = replyToEmail.fromAddress || replyToEmail.from || replyToEmail.sender || '';
+        // Auf eine eigene gesendete Mail antworten heißt: an deren Empfänger, nie an uns selbst.
+        const ownSender = replyToEmail.direction === 'OUT' ? extractEmailAddress(fromAddress).toLowerCase() : '';
+        return buildReplyAddressing({
+            direction: replyToEmail.direction ?? 'IN',
+            fromAddress,
+            replyToAddress: replyToEmail.replyToAddress,
+            recipient: replyToEmail.recipient || replyToEmail.to || replyToEmail.recipients?.join(', '),
+            cc: replyToEmail.cc,
+        }, 'reply', address => !!ownSender && address === ownSender).to;
     }, [replyToEmail]);
 
     const replyInitialSubject = useMemo(() => {
@@ -371,7 +386,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     return (
         <div className="space-y-4">
-            {/* ─── Thread Detail View (replaces EmailDetailModal) ── */}
+            {/* ─── Thread Detail View ── */}
             {selectedEmailId && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                     <div className="bg-white rounded-2xl shadow-2xl w-[75vw] max-w-5xl h-[90vh] flex flex-col overflow-hidden">

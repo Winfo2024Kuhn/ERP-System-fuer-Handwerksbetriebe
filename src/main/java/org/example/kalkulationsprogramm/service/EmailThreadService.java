@@ -121,6 +121,71 @@ public class EmailThreadService {
         return max;
     }
 
+    /** Kennzahlen eines Verlaufs für die Listenansicht. */
+    public record ThreadKennzahlen(Long rootId, int anzahl, LocalDateTime letzteAktivitaet) {
+    }
+
+    /**
+     * Wurzel, Größe und jüngste Aktivität des Verlaufs, zu dem {@code email} gehört.
+     * Alle Mitglieder eines Verlaufs liefern dieselben Werte – die Liste kann damit
+     * zuverlässig zu einer Zeile zusammenfassen und überall dieselbe Anzahl zeigen.
+     */
+    public ThreadKennzahlen kennzahlenFuer(Email email) {
+        boolean noParent = email.getParentEmail() == null;
+        boolean noReplies = email.getReplies() == null || email.getReplies().isEmpty();
+        if (noParent && noReplies) {
+            return new ThreadKennzahlen(email.getId(), 1, email.getSentAt());
+        }
+        Email root = findRoot(email);
+        List<Email> thread = collectThread(root);
+        LocalDateTime letzte = thread.stream().map(Email::getSentAt).filter(java.util.Objects::nonNull)
+                .max(LocalDateTime::compareTo).orElse(email.getSentAt());
+        return new ThreadKennzahlen(root.getId(), thread.size(), letzte);
+    }
+
+    /**
+     * Empfänger einer Antwort: die im Formular gewählten Adressen; ohne Angabe die
+     * Reply-To-Adresse der beantworteten Mail, sonst deren Absender.
+     *
+     * @return Komma-getrennte Liste oder {@code null}, wenn kein Empfänger ermittelbar ist
+     */
+    public static String antwortEmpfaenger(List<String> gewaehlt, Email beantwortet) {
+        String empfaenger = verbindeAdressen(gewaehlt);
+        if (empfaenger != null) return empfaenger;
+        if (beantwortet.getReplyToAddress() != null && !beantwortet.getReplyToAddress().isBlank()) {
+            return beantwortet.getReplyToAddress().strip();
+        }
+        String absender = beantwortet.getFromAddress();
+        return absender == null || absender.isBlank() ? null : absender.strip();
+    }
+
+    /** Leere Einträge verwerfen, Rest mit Komma verbinden; {@code null}, wenn nichts übrig bleibt. */
+    public static String verbindeAdressen(List<String> adressen) {
+        if (adressen == null) return null;
+        String joined = adressen.stream()
+                .filter(a -> a != null && !a.isBlank())
+                .map(String::strip)
+                .collect(Collectors.joining(", "));
+        return joined.isEmpty() ? null : joined;
+    }
+
+    /**
+     * Bezug für eine Antwort auf {@code beantwortet}: In-Reply-To ist deren Message-ID,
+     * References die Kette der Vorgänger (älteste zuerst, höchstens 20 Glieder).
+     */
+    public org.example.email.EmailService.AntwortBezug antwortBezugFuer(Email beantwortet) {
+        java.util.LinkedList<String> kette = new java.util.LinkedList<>();
+        Set<Email> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Email current = beantwortet.getParentEmail();
+                current != null && visited.add(current) && kette.size() < 19;
+                current = current.getParentEmail()) {
+            if (current.getMessageId() != null && !current.getMessageId().isBlank()) {
+                kette.addFirst(current.getMessageId());
+            }
+        }
+        return new org.example.email.EmailService.AntwortBezug(beantwortet.getMessageId(), kette);
+    }
+
     /**
      * Liefert {@code max(sentAt)} ueber den Teilbaum, der bei {@code email} wurzelt (mit Cycle-Schutz).
      * Nutzt Identitaets-Vergleich, damit auch nicht-persistierte E-Mails (id == null) korrekt behandelt werden.
@@ -221,6 +286,8 @@ public class EmailThreadService {
         dto.setSubject(email.getSubject());
         dto.setFromAddress(email.getFromAddress());
         dto.setRecipient(email.getRecipient());
+        dto.setCc(email.getCc());
+        dto.setReplyToAddress(email.getReplyToAddress());
         dto.setSentAt(email.getSentAt() != null ? email.getSentAt().format(ISO_FORMATTER) : null);
         dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
         boolean fwd = isForwardedEmail(email);

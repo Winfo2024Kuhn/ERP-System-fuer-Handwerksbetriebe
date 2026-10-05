@@ -92,6 +92,8 @@ export interface EmailComposeFormProps {
     /** Customer ID for saving new email addresses */
     kundeId?: number;
     initialRecipient?: string;
+    /** CC-Empfänger, z. B. bei "Allen antworten" */
+    initialCc?: string[];
     initialSubject?: string;
     initialBody?: string;
     /** Zitat-Block für Antworten – wird NACH der Signatur eingefügt (richtige Reihenfolge: Text → Signatur → Zitat) */
@@ -198,6 +200,7 @@ export function EmailComposeForm({
     anfrage,
     kundeId,
     initialRecipient = '',
+    initialCc,
     initialSubject = '',
     initialBody = '',
     replyQuote,
@@ -328,8 +331,8 @@ export function EmailComposeForm({
     const [error, setError] = useState<string | null>(null);
 
     // CC State
-    const [ccRecipients, setCcRecipients] = useState<string[]>([]);
-    const [showCc, setShowCc] = useState(false);
+    const [ccRecipients, setCcRecipients] = useState<string[]>(() => initialCc?.filter(c => c.trim()) ?? []);
+    const [showCc, setShowCc] = useState(() => (initialCc?.some(c => c.trim()) ?? false));
 
     // Dokumente
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
@@ -939,7 +942,7 @@ export function EmailComposeForm({
                 formData.append('attachments', uf.file);
             });
 
-            // Bei Antworten den Reply-Endpoint nutzen (setzt parentEmail + In-Reply-To Header)
+            // Bei Antworten den Reply-Endpoint nutzen (setzt parentEmail sowie In-Reply-To/References)
             const apiUrl = replyEmailId
                 ? `/api/emails/${replyEmailId}/reply`
                 : '/api/emails/send';
@@ -1125,7 +1128,9 @@ export function EmailComposeForm({
                                     onChange={handleRecipientChange}
                                     suggestions={availableEmails}
                                     placeholder="Name, Firma oder E-Mail eingeben"
-                                    readOnly={!!replyEmailId}
+                                    // Antwort-Empfänger stehen fest. Ist keiner ermittelbar (z. B. Antwort
+                                    // auf eine Mail an uns selbst), muss er eintragbar sein.
+                                    readOnly={!!replyEmailId && !!initialRecipient.trim()}
                                 />
                             </div>
 

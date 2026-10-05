@@ -99,6 +99,14 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
 
+    @org.junit.jupiter.api.BeforeEach
+    void threadKennzahlenWieEinzelmail() {
+        given(emailThreadService.kennzahlenFuer(any())).willAnswer(invocation -> {
+            Email email = invocation.getArgument(0);
+            return new EmailThreadService.ThreadKennzahlen(email.getId(), 1, email.getSentAt());
+        });
+    }
+
     private Email createTestEmail(Long id, String subject, String from) {
         Email email = new Email();
         email.setId(id);
@@ -145,7 +153,7 @@ class UnifiedEmailControllerTest {
         prepareDraftSend();
         storedDraft(7L);
         given(emailRepository.findById(7L)).willReturn(Optional.of(createTestEmail(7L, "Original", "test@example.com")));
-        org.mockito.Mockito.doReturn("reply-message").when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        org.mockito.Mockito.doReturn("reply-message").when(unifiedEmailController).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any(), any());
         mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart())).andExpect(status().isOk());
         mockMvc.perform(get("/api/emails/drafts/42")).andExpect(status().isNotFound());
     }
@@ -171,7 +179,7 @@ class UnifiedEmailControllerTest {
         storedDraft(8L);
         given(emailRepository.findById(7L)).willReturn(Optional.of(createTestEmail(7L, "Original", "test@example.com")));
         mockMvc.perform(multipart("/api/emails/7/reply").file(draftSendPart())).andExpect(status().isBadRequest());
-        verify(unifiedEmailController, org.mockito.Mockito.never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        verify(unifiedEmailController, org.mockito.Mockito.never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any(), any());
         verify(emailDraftRepository, org.mockito.Mockito.never()).delete(any());
     }
 
@@ -469,6 +477,40 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(get("/api/emails/inbox"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].subject").value("Hallo"));
+        }
+
+        @Test
+        @DisplayName("Liste liefert Thread-Wurzel, Verlaufsgröße und Vorschau ohne zitierten Verlauf")
+        void inboxLiefertThreadWurzelUndBereinigteVorschau() throws Exception {
+            Email email = createTestEmail(17L, "Re: Anfrage", "max@example.com");
+            email.setCc("erika@example.com");
+            email.setBody("Wie gewünscht die Bilder.\nMfG Max\nAm Do., 17. Sept. 2026 um 10:00 Uhr schrieb info@example.com:\n> Altes Angebot "
+                    + "x".repeat(300));
+            given(emailRepository.findUnassigned()).willReturn(Collections.emptyList());
+            given(emailRepository.findInboxFiltered()).willReturn(List.of(email));
+            given(emailThreadService.kennzahlenFuer(email)).willReturn(
+                    new EmailThreadService.ThreadKennzahlen(16L, 3, LocalDateTime.of(2026, 9, 17, 10, 0)));
+
+            mockMvc.perform(get("/api/emails/inbox"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].threadRootId").value(16))
+                    .andExpect(jsonPath("$[0].replyCount").value(2))
+                    .andExpect(jsonPath("$[0].cc").value("erika@example.com"))
+                    .andExpect(jsonPath("$[0].body").value("Wie gewünscht die Bilder. MfG Max"));
+        }
+
+        @Test
+        @DisplayName("Liste zeigt bei reinen HTML-Mails eine Vorschau aus dem HTML")
+        void inboxVorschauAusHtml() throws Exception {
+            Email email = createTestEmail(18L, "Nur HTML", "max@example.com");
+            email.setHtmlBody("<p>Neuer Text</p><hr><div><b>Von:</b> a@example.com<br><b>Gesendet:</b> heute<br>"
+                    + "<b>An:</b> b@example.com<br><b>Betreff:</b> x</div><p>Alter Text</p>");
+            given(emailRepository.findUnassigned()).willReturn(Collections.emptyList());
+            given(emailRepository.findInboxFiltered()).willReturn(List.of(email));
+
+            mockMvc.perform(get("/api/emails/inbox"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].body").value("Neuer Text"));
         }
     }
 
@@ -1189,6 +1231,108 @@ class UnifiedEmailControllerTest {
             Email saved = emailCaptor.getValue();
             org.junit.jupiter.api.Assertions.assertNotNull(saved.getAttachments());
             org.junit.jupiter.api.Assertions.assertEquals("application/octet-stream", saved.getAttachments().get(0).getMimeType());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ANTWORTEN MIT CC / REPLY-TO / ANTWORT-BEZUG
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("POST /api/emails/{id}/reply – Empfänger, CC und Verlaufsbezug")
+    class ReplyMitCc {
+
+        private final org.example.email.EmailService.AntwortBezug bezug =
+                new org.example.email.EmailService.AntwortBezug("<original@example.com>", List.of("<root@example.com>"));
+
+        private Email original() {
+            Email original = createTestEmail(7L, "Angebot", "max@example.com");
+            original.setMessageId("<original@example.com>");
+            return original;
+        }
+
+        private MockMultipartFile dto(String recipients, String cc) {
+            return new MockMultipartFile("dto", "", "application/json", ("{\"sender\":\"absender@example.com\","
+                    + "\"recipients\":" + recipients + ",\"cc\":" + cc + ",\"subject\":\"AW: Angebot\",\"body\":\"<p>Danke</p>\"}")
+                    .getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Test
+        @DisplayName("versendet und speichert CC, alle An-Empfänger und setzt In-Reply-To/References")
+        void replyVersendetCcUndAntwortBezug() throws Exception {
+            prepareDraftSend();
+            Email original = original();
+            given(emailRepository.findById(7L)).willReturn(Optional.of(original));
+            given(emailThreadService.antwortBezugFuer(original)).willReturn(bezug);
+            org.mockito.Mockito.doReturn("<antwort@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/7/reply")
+                            .file(dto("[\"\\\"Max Mustermann\\\" <max@example.com>, erika@example.com\"]",
+                                    "[\"architekt@example.org\", \" \"]")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.cc").value("architekt@example.org"));
+
+            verify(unifiedEmailController).sendeSmtpMail(any(),
+                    org.mockito.ArgumentMatchers.eq("\"Max Mustermann\" <max@example.com>, erika@example.com"),
+                    org.mockito.ArgumentMatchers.eq("architekt@example.org"),
+                    org.mockito.ArgumentMatchers.eq("absender@example.com"),
+                    org.mockito.ArgumentMatchers.eq("AW: Angebot"), any(), any(),
+                    org.mockito.ArgumentMatchers.eq(bezug));
+            org.mockito.ArgumentCaptor<Email> saved = org.mockito.ArgumentCaptor.forClass(Email.class);
+            verify(emailRepository, org.mockito.Mockito.atLeastOnce()).save(saved.capture());
+            Email antwort = saved.getAllValues().stream().filter(e -> e.getParentEmail() == original).findFirst().orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals("architekt@example.org", antwort.getCc());
+            org.junit.jupiter.api.Assertions.assertEquals("<antwort@example.com>", antwort.getMessageId());
+            verify(emailLieferantVerknuepfungService).verknuepfeAusEmpfaenger(antwort,
+                    "\"Max Mustermann\" <max@example.com>, erika@example.com", "architekt@example.org");
+        }
+
+        @Test
+        @DisplayName("ohne Empfänger geht die Antwort an Reply-To statt an den Absender")
+        void replyOhneEmpfaengerNutztReplyTo() throws Exception {
+            prepareDraftSend();
+            Email original = original();
+            original.setReplyToAddress("auftraege@example.com");
+            given(emailRepository.findById(7L)).willReturn(Optional.of(original));
+            org.mockito.Mockito.doReturn("<antwort@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/7/reply").file(dto("[]", "[]")))
+                    .andExpect(status().isOk());
+
+            verify(unifiedEmailController).sendeSmtpMail(any(),
+                    org.mockito.ArgumentMatchers.eq("auftraege@example.com"), isNull(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Detailansicht liefert Reply-To und CC")
+        void detailLiefertReplyToUndCc() throws Exception {
+            Email original = original();
+            original.setReplyToAddress("auftraege@example.com");
+            original.setCc("erika@example.com");
+            given(emailRepository.findById(7L)).willReturn(Optional.of(original));
+
+            mockMvc.perform(get("/api/emails/7"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.replyToAddress").value("auftraege@example.com"))
+                    .andExpect(jsonPath("$.cc").value("erika@example.com"))
+                    .andExpect(jsonPath("$.threadRootId").value(7));
+        }
+
+        @Test
+        @DisplayName("freier Versand speichert CC an der gesendeten Mail")
+        void sendSpeichertCc() throws Exception {
+            prepareDraftSend();
+            org.mockito.Mockito.doReturn("<neu@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto("[\"kunde@example.com\"]", "[\"erika@example.com\"]")))
+                    .andExpect(status().isOk());
+
+            org.mockito.ArgumentCaptor<Email> saved = org.mockito.ArgumentCaptor.forClass(Email.class);
+            verify(emailRepository).saveAndFlush(saved.capture());
+            org.junit.jupiter.api.Assertions.assertEquals("erika@example.com", saved.getValue().getCc());
         }
     }
 }

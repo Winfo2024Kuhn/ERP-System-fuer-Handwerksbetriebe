@@ -20,6 +20,11 @@ import org.springframework.core.annotation.Order;
  * Verbesserungen an der Subject-Normalisierung (z. B. Erkennung von
  * "[Ticket#…] RE: …") für bestehende E-Mails wirksam werden.
  *
+ * <p>Neue Verknüpfungen entstehen nur bei gemeinsamem externem Teilnehmer
+ * ({@code EmailThreadTeilnehmer}). Bestehende Verknüpfungen löst dieser Lauf nie – das
+ * Bereinigen alter Fehlverknüpfungen ist eine bewusste Admin-Aktion
+ * ({@code POST /api/emails/admin/rebuild-threads}, standardmäßig als Probelauf).
+ *
  * <p>Idempotent: E-Mails, die bereits einen {@code parentEmail} haben,
  * werden übersprungen. Lässt sich beliebig oft neu starten ohne Schaden.
  *

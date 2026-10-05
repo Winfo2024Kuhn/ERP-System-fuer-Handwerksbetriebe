@@ -7,9 +7,11 @@ interface EmailContentFrameProps {
     className?: string;
     /** Im Thread-Modus: zitierte Inhalte (blockquote, Outlook-Divs etc.) einklappen */
     hideQuotes?: boolean;
+    /** Weiterleitung: der weitergeleitete Inhalt ist kein alter Verlauf und bleibt sichtbar. */
+    keepForwardedContent?: boolean;
 }
 
-export const EmailContentFrame: React.FC<EmailContentFrameProps> = ({ html, className, hideQuotes = false }) => {
+export const EmailContentFrame: React.FC<EmailContentFrameProps> = ({ html, className, hideQuotes = false, keepForwardedContent = false }) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const cleanupRef = useRef<(() => void) | null>(null);
     const [height, setHeight] = useState<number>(0);
@@ -35,7 +37,7 @@ export const EmailContentFrame: React.FC<EmailContentFrameProps> = ({ html, clas
 
         // Zitate einklappen (vor Höhenberechnung, damit korrekte Höhe)
         if (hideQuotes) {
-            collapseThreadQuotes(iframe.contentWindow.document, updateHeight);
+            collapseThreadQuotes(iframe.contentWindow.document, updateHeight, { keepForwardedContent });
         }
 
         updateHeight();

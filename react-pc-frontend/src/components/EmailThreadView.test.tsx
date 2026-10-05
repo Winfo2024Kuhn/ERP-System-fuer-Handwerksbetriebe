@@ -333,3 +333,22 @@ describe('EmailThreadView', () => {
         expect(bubbles.length).toBe(0);
     });
 });
+
+describe('EmailThreadView – Allen antworten und CC', () => {
+    it('bietet "Allen antworten" nur an, wenn es mehr Empfänger erreicht, und übergibt den Modus', () => {
+        const onReply = vi.fn();
+        const thread = makeThread();
+        thread.emails[1] = { ...thread.emails[1], cc: 'erika@example.com' };
+        render(<EmailThreadView thread={thread} onReply={onReply}
+            canReplyAll={entry => !!entry.cc} />);
+        fireEvent.click(screen.getByRole('button', { name: /Allen antworten/i }));
+        expect(onReply).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }), 'replyAll');
+        fireEvent.click(screen.getByRole('button', { name: /^Antworten$/i }));
+        expect(onReply).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2 }), 'reply');
+    });
+
+    it('blendet "Allen antworten" ohne weitere Empfänger aus', () => {
+        render(<EmailThreadView thread={makeThread()} onReply={vi.fn()} canReplyAll={() => false} />);
+        expect(screen.queryByRole('button', { name: /Allen antworten/i })).not.toBeInTheDocument();
+    });
+});

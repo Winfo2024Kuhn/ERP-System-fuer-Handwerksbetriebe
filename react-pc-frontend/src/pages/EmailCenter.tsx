@@ -4,7 +4,10 @@ import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
 import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
 import { AssignModal } from '../features/email/EmailAssignmentDialog';
 import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
-import { getSenderName, getDisplayName, isImageAttachment, type EmailItem, type FolderType } from '../features/email/emailCenterModel';
+import {
+    buildForwardSubject, buildReplyAddressing, buildReplySubject, getSenderName, getDisplayName, groupEmailThreads,
+    hasFurtherRecipients, isImageAttachment, type EmailItem, type EmailThreadRow, type FolderType, type ReplyMode,
+} from '../features/email/emailCenterModel';
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
@@ -48,7 +51,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
-import { extractDisplayName, extractEmailAddress, formatRecipient, formatRecipientList, escapeHtml, parseRecipientList } from '../lib/emailAddress';
+import { extractDisplayName, extractEmailAddress, escapeHtml, parseRecipientList } from '../lib/emailAddress';
 import { refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
@@ -297,6 +300,7 @@ export default function EmailCenter() {
     const [replyToEmail, setReplyToEmail] = useState<EmailItem | null>(null);
     /** ID der Email, auf die geantwortet wird (für Thread-Verknüpfung im Backend) */
     const [replyToEmailId, setReplyToEmailId] = useState<number | undefined>(undefined);
+    const [replyMode, setReplyMode] = useState<ReplyMode>('reply');
 
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [folderCounts, setFolderCounts] = useState({
@@ -357,7 +361,7 @@ export default function EmailCenter() {
         setIsComposing(true);
     };
 
-    const handleReply = async (email: EmailItem, replyId?: number) => {
+    const handleReply = async (email: EmailItem, replyId?: number, mode: ReplyMode = 'reply') => {
         if (!await persistComposer()) return;
         setComposerVersion(value => value + 1);
         // List DTO has truncated body/no htmlBody – fetch full email for quote
@@ -369,17 +373,13 @@ export default function EmailCenter() {
             } catch { /* use truncated version as fallback */ }
         }
 
-        const isReplyToOut = fullEmail.direction === 'OUT' || isOwnEmail(fullEmail.fromAddress);
-        if (isReplyToOut) {
-            const parsed = parseRecipientList(fullEmail.recipient);
-            const external = parsed.filter(p => !isOwnEmail(p.email));
-            if (external.length === 0) {
-                toast.info('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.');
-            }
+        if (!buildReplyAddressing(fullEmail, mode, isOwnEmail).to) {
+            toast.info('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.');
         }
 
         setReplyToEmail(fullEmail);
         setReplyToEmailId(replyId ?? email.id);
+        setReplyMode(mode);
         setForwardEmail(null);
         setActiveDraftId(undefined);
         setActiveDraft(null);
@@ -875,17 +875,29 @@ export default function EmailCenter() {
                 .then(r => { if (r.ok) return r.json(); throw new Error(); })
                 .then((full: EmailItem) => setSelectedEmail(prev => prev?.id === id ? full : prev))
                 .catch(() => { /* keep list version as fallback */ });
-            // Mark as read if not already read
-            if (!email.isRead) {
-                fetch(`/api/emails/${id}/mark-read`, { method: 'POST' })
-                    .then(() => {
-                        // Update local state
-                        setEmails(prev => prev.map(e => e.id === id ? { ...e, isRead: true } : e));
-                        // Refresh stats + Glocke (entfernt diese E-Mail aus dem Notification-Center)
-                        loadStats();
-                        refreshNotifications();
-                    })
-                    .catch(err => console.error('Failed to mark as read:', err));
+            // Der ganze Verlauf ist jetzt sichtbar – alle ungelesenen Nachrichten darin als gelesen markieren.
+            const unreadIds = isGlobalSearch
+                ? (email.isRead ? [] : [id])
+                : (threadRowByEmailId.get(id)?.members ?? [email]).filter(member => !member.isRead).map(member => member.id);
+            if (unreadIds.length > 0) {
+                // allSettled: Was auf dem Server gelesen ist, wird auch lokal gelesen – auch wenn
+                // einzelne Aufrufe scheitern.
+                void Promise.allSettled(unreadIds.map(unreadId => fetch(`/api/emails/${unreadId}/mark-read`, { method: 'POST' })
+                    .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return unreadId; })))
+                    .then(results => {
+                        const marked = new Set(results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []));
+                        if (marked.size > 0) {
+                            setEmails(prev => prev.map(e => marked.has(e.id) ? { ...e, isRead: true } : e));
+                            setGlobalSearchResults(prev => prev.map(e => marked.has(e.id) ? { ...e, isRead: true } : e));
+                            // Refresh stats + Glocke (entfernt diese E-Mails aus dem Notification-Center)
+                            loadStats();
+                            refreshNotifications();
+                        }
+                        if (marked.size < results.length) {
+                            console.error('Failed to mark as read:', results.filter(result => result.status === 'rejected'));
+                            toast.error('E-Mail konnte nicht als gelesen markiert werden.');
+                        }
+                    });
             }
         } else {
             if (selectedEmail?.id === id) setSelectedEmail(null);
@@ -898,12 +910,9 @@ export default function EmailCenter() {
             e.stopPropagation();
         }
 
-        const idsToDelete = new Set<number>();
-        if (email) {
-            idsToDelete.add(email.id);
-        } else {
-            selectedIds.forEach(id => idsToDelete.add(id));
-        }
+        // Eine Listenzeile steht für den ganzen Verlauf im Ordner – sonst rückte nach dem
+        // Löschen die nächstältere Nachricht desselben Verlaufs in die Liste nach.
+        const idsToDelete = new Set<number>(expandToThreadMembers(email ? [email.id] : Array.from(selectedIds)));
 
         if (idsToDelete.size === 0) return;
 
@@ -950,7 +959,15 @@ export default function EmailCenter() {
     };
 
     const handleAssign = async (type: 'projekt' | 'anfrage', targetId: number) => {
-        const idsToAssign = selectedIds.size > 1 ? Array.from(selectedIds) : (selectedEmail ? [selectedEmail.id] : []);
+        // Eine Listenzeile steht für den ganzen Verlauf – er landet beim Projekt/bei der Anfrage.
+        // Bewusst anders zugeordnete Mitglieder (z. B. Lieferanten-Rechnung im Kunden-Verlauf) bleiben, wo sie sind.
+        const chosenIds = selectedIds.size > 1 ? Array.from(selectedIds) : (selectedEmail ? [selectedEmail.id] : []);
+        const chosen = new Set(chosenIds);
+        const idsToAssign = expandToThreadMembers(chosenIds).filter(id => {
+            if (chosen.has(id)) return true;
+            const typ = threadRowByEmailId.get(id)?.members.find(member => member.id === id)?.zuordnungTyp;
+            return !typ || typ === 'KEINE';
+        });
         if (idsToAssign.length === 0) return;
 
         for (const emailId of idsToAssign) {
@@ -1124,11 +1141,11 @@ export default function EmailCenter() {
         MOVE_TARGETS.find(m => m.id === t)?.label ?? t;
 
     const handleMoveToFolder = async (target: MoveTarget, emailIds?: number[]) => {
-        const ids = emailIds && emailIds.length > 0
+        const ids = expandToThreadMembers(emailIds && emailIds.length > 0
             ? emailIds
             : (selectedIds.size > 0
                 ? Array.from(selectedIds)
-                : (selectedEmail ? [selectedEmail.id] : []));
+                : (selectedEmail ? [selectedEmail.id] : [])));
         if (ids.length === 0) return;
         if (target === activeFolder) return;
 
@@ -1369,133 +1386,86 @@ export default function EmailCenter() {
         return () => observer.disconnect();
     }, [isGlobalSearch, loadMoreEmails, loadMoreSearch, hasMore, searchHasMore, emails.length, globalSearchResults.length]);
 
-    // Filter emails by search
-    // Bei Ordner-Ansicht eine Zeile pro Thread anzeigen (Wurzel). Die Wurzel ist
-    // entweder die E-Mail ohne parentEmailId ODER die alteste E-Mail im Thread,
-    // deren Parent nicht im geladenen Set ist (z.B. Lieferant-Ordner zeigt nur
-    // direction=IN; die OUT-Wurzel liegt ausserhalb).
-    // Sortierung und Ungelesen-Filter basieren auf Thread-Aggregaten, damit
-    // neue eingehende Antworten den Thread nach oben holen und in "Ungelesen" auftauchen.
-    // Thread-Kunden-Gegenstelle ermitteln: Pro Thread den externen Kunden/Partner finden,
-    // damit auch bei Folgenachrichten/Selbst-Antworten der Thread immer den Kunden zeigt.
+    // Eine Zeile pro Verlauf (wie Gmail): Die jüngste geladene Nachricht steht stellvertretend
+    // in der Liste; Sortierung und "Ungelesen" richten sich nach dem ganzen Verlauf, damit neue
+    // Antworten den Verlauf nach oben holen. Bei der globalen Suche werden alle Treffer einzeln
+    // gezeigt (der Nutzer sucht gezielt nach einer bestimmten Nachricht).
+    const threadRows = useMemo(() => groupEmailThreads(emails), [emails]);
+    const threadRowByEmailId = useMemo(() => {
+        const byId = new Map<number, EmailThreadRow>();
+        for (const row of threadRows) for (const member of row.members) byId.set(member.id, row);
+        return byId;
+    }, [threadRows]);
+
+    /** Alle geladenen Nachrichten der Verläufe zu den gewählten Listenzeilen. */
+    const expandToThreadMembers = (ids: number[]): number[] => {
+        if (isGlobalSearch) return ids;
+        const expanded = new Set<number>();
+        for (const id of ids) {
+            const members = threadRowByEmailId.get(id)?.members;
+            if (members) members.forEach(member => expanded.add(member.id));
+            else expanded.add(id);
+        }
+        return Array.from(expanded);
+    };
+
+    // Gegenstelle pro Verlauf: der externe Kunde/Partner – auch wenn die jüngste Nachricht
+    // eine eigene Folgenachricht oder Selbst-Antwort ist.
     const threadCounterparts = useMemo(() => {
-        const byId = new Map<number, EmailItem>();
-        for (const e of emails) byId.set(e.id, e);
-
-        const findVisibleRootId = (start: EmailItem): number => {
-            let cur = start;
-            const seen = new Set<number>();
-            while (cur.parentEmailId && !seen.has(cur.id)) {
-                seen.add(cur.id);
-                const parent = byId.get(cur.parentEmailId);
-                if (!parent) break;
-                cur = parent;
-            }
-            return cur.id;
-        };
-
         const counterparts = new Map<number, string>();
-        for (const e of emails) {
-            const rootId = findVisibleRootId(e);
-            if (!counterparts.has(rootId)) {
+        for (const row of threadRows) {
+            for (const e of row.members) {
+                let name: string | undefined;
                 if (e.kundeName) {
-                    counterparts.set(rootId, e.kundeName);
+                    name = e.kundeName;
                 } else if (e.lieferantName) {
-                    counterparts.set(rootId, e.lieferantName);
+                    name = e.lieferantName;
                 } else if (e.direction === 'IN' && e.fromAddress && !isOwnEmail(e.fromAddress)) {
-                    counterparts.set(rootId, extractDisplayName(e.fromAddress));
+                    name = extractDisplayName(e.fromAddress);
                 } else if (e.direction === 'OUT' && e.recipient && !isOwnEmail(e.recipient)) {
-                    const parsed = parseRecipientList(e.recipient);
-                    const external = parsed.filter(p => !isOwnEmail(p.email));
-                    if (external.length > 0) {
-                        counterparts.set(rootId, external[0].displayName);
-                    } else {
-                        counterparts.set(rootId, extractDisplayName(e.recipient));
-                    }
+                    const external = parseRecipientList(e.recipient).filter(p => !isOwnEmail(p.email));
+                    name = external.length > 0 ? external[0].displayName : extractDisplayName(e.recipient);
+                }
+                if (name) {
+                    counterparts.set(row.email.id, name);
+                    break;
                 }
             }
         }
         return counterparts;
-    }, [emails, isOwnEmail]);
+    }, [threadRows, isOwnEmail]);
 
     const filteredEmails = useMemo(() => {
-        const byId = new Map<number, EmailItem>();
-        for (const e of emails) byId.set(e.id, e);
-
-        // Wandert via parentEmailId nach oben, solange der Parent im geladenen Set ist.
-        const findVisibleRootId = (start: EmailItem): number => {
-            let cur = start;
-            const seen = new Set<number>();
-            while (cur.parentEmailId && !seen.has(cur.id)) {
-                seen.add(cur.id);
-                const parent = byId.get(cur.parentEmailId);
-                if (!parent) break;
-                cur = parent;
-            }
-            return cur.id;
-        };
-
-        // Aggregat pro sichtbarer Thread-Wurzel: jungste Aktivitaet + irgendeine ungelesene Mail.
-        // Bevorzugt das Backend-berechnete threadLastActivityAt (deckt Ordner ab, in denen
-        // nicht alle Thread-Mitglieder geladen sind, z.B. "Gesendet").
-        // rootIdByEmail cached findVisibleRootId-Ergebnisse, damit der Walk pro Mail nur einmal laeuft.
-        const rootIdByEmail = new Map<number, number>();
-        const threadAggregates = new Map<number, { latestSentAt: number; anyUnread: boolean }>();
-        const toMs = (iso?: string) => (iso ? new Date(iso).getTime() : 0);
-        for (const e of emails) {
-            const rootId = findVisibleRootId(e);
-            rootIdByEmail.set(e.id, rootId);
-            const ownTs = toMs(e.sentAt);
-            const backendThreadTs = toMs(e.threadLastActivityAt);
-            const ts = Math.max(ownTs, backendThreadTs);
-            const isUnread = !e.isRead;
-            const agg = threadAggregates.get(rootId);
-            if (!agg) {
-                threadAggregates.set(rootId, { latestSentAt: ts, anyUnread: isUnread });
-            } else {
-                if (ts > agg.latestSentAt) agg.latestSentAt = ts;
-                if (isUnread) agg.anyUnread = true;
-            }
-        }
-
-
-
-        const isVisibleRoot = (e: EmailItem) => rootIdByEmail.get(e.id) === e.id;
-
-        let base: EmailItem[];
         if (isGlobalSearch) {
-            base = globalSearchResults;
-        } else if (!searchQuery.trim()) {
-            base = emails.filter(isVisibleRoot);
-        } else {
-            const q = searchQuery.toLowerCase();
-            base = emails.filter(e =>
-                isVisibleRoot(e) && (
-                    e.subject?.toLowerCase().includes(q) ||
-                    e.fromAddress?.toLowerCase().includes(q) ||
-                    e.recipient?.toLowerCase().includes(q) ||
-                    e.body?.toLowerCase().includes(q) ||
-                    getDisplayName(e).toLowerCase().includes(q)
-                )
-            );
-        }
-        // Filter nach Lese-Status (Gesendet/Entwurfe haben kein sinnvolles Read-Konzept).
-        // Ein Thread gilt als ungelesen, sobald mindestens eine seiner E-Mails ungelesen ist.
-        if (readFilter !== 'all' && activeFolder !== 'sent') {
-            base = base.filter(e => {
-                const agg = threadAggregates.get(e.id);
-                const anyUnread = agg ? agg.anyUnread : !e.isRead;
-                return readFilter === 'unread' ? anyUnread : !anyUnread;
+            return [...globalSearchResults].sort((a, b) => {
+                const aTs = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+                const bTs = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+                return sortOrder === 'desc' ? bTs - aTs : aTs - bTs;
             });
         }
-        // Sortierung nach jungster Aktivitat im Thread (statt root.sentAt),
-        // damit neue Antworten den Thread nach oben holen.
-        return [...base].sort((a, b) => {
-            const aTs = threadAggregates.get(a.id)?.latestSentAt ?? (a.sentAt ? new Date(a.sentAt).getTime() : 0);
-            const bTs = threadAggregates.get(b.id)?.latestSentAt ?? (b.sentAt ? new Date(b.sentAt).getTime() : 0);
-            return sortOrder === 'desc' ? bTs - aTs : aTs - bTs;
-        });
-    }, [emails, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder]);
+        const q = searchQuery.trim().toLowerCase();
+        const matches = (e: EmailItem) => !q || (
+            e.subject?.toLowerCase().includes(q) ||
+            e.fromAddress?.toLowerCase().includes(q) ||
+            e.recipient?.toLowerCase().includes(q) ||
+            e.body?.toLowerCase().includes(q) ||
+            getDisplayName(e).toLowerCase().includes(q)
+        );
+        let rows = threadRows.filter(row => row.members.some(matches));
+        // Gesendet/Entwürfe haben kein sinnvolles Lese-Konzept.
+        // Ein Verlauf gilt als ungelesen, sobald eine seiner Nachrichten ungelesen ist.
+        if (readFilter !== 'all' && activeFolder !== 'sent') {
+            rows = rows.filter(row => readFilter === 'unread' ? row.anyUnread : !row.anyUnread);
+        }
+        return rows
+            .sort((a, b) => sortOrder === 'desc' ? b.latestActivity - a.latestActivity : a.latestActivity - b.latestActivity)
+            .map(row => row.email);
+    }, [threadRows, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder]);
+
+    /** Fett/markiert, solange irgendeine Nachricht des Verlaufs ungelesen ist. */
+    const isRowUnread = (email: EmailItem) => isGlobalSearch
+        ? !email.isRead
+        : (threadRowByEmailId.get(email.id)?.anyUnread ?? !email.isRead);
 
     const filteredDrafts = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
@@ -1554,15 +1524,14 @@ export default function EmailCenter() {
 
         if (isComposing) {
             let initialRecipient = activeDraft?.recipient || '';
+            let initialCc: string[] | undefined;
             let initialSubject = activeDraft?.subject || '';
             let replyQuote: string | undefined;
             const initialBody: string | undefined = activeDraft?.body;
 
             if (forwardEmail) {
                 // Forward mode – empty recipient, Fwd: prefix, original body as quote
-                initialSubject = forwardEmail.subject?.startsWith('Fwd:') || forwardEmail.subject?.startsWith('WG:')
-                    ? forwardEmail.subject
-                    : `Fwd: ${forwardEmail.subject || ''}`;
+                initialSubject = buildForwardSubject(forwardEmail.subject);
 
                 const senderName = getSenderName(forwardEmail);
                 const date = new Date(forwardEmail.sentAt || '').toLocaleDateString('de-DE', {
@@ -1591,36 +1560,11 @@ export default function EmailCenter() {
                 </div>`;
             } else if (replyToEmail) {
                 const isReplyToOut = replyToEmail.direction === 'OUT' || isOwnEmail(replyToEmail.fromAddress);
-
-                // Wenn auf eine Ausgangsnachricht geantwortet wird (Folgenachricht / etwas vergessen):
-                // Empfänger MUSS der externe Kunde sein, niemals die eigene Firmenadresse!
-                if (isReplyToOut) {
-                    const parsed = parseRecipientList(replyToEmail.recipient);
-                    const external = parsed.filter(p => !isOwnEmail(p.email));
-
-                    if (external.length === 1) {
-                        const r = external[0];
-                        const customerName = replyToEmail.kundeName || (r.displayName !== r.email ? r.displayName : undefined);
-                        initialRecipient = formatRecipient(r.raw, customerName) || r.raw;
-                    } else if (external.length > 1) {
-                        // Bei Rundmails jeden Empfänger einzeln formatieren – keinen pauschalen Kundennamen anwenden!
-                        initialRecipient = external.map(r => {
-                            const nameOverride = r.displayName !== r.email ? r.displayName : undefined;
-                            return formatRecipient(r.raw, nameOverride) || r.raw;
-                        }).join(', ');
-                    } else {
-                        // Alle Empfänger waren eigene Adressen – niemals an sich selbst antworten!
-                        // Empfängerfeld zur bewussten Auswahl freilassen und Hinweis anzeigen.
-                        // Alle Empfänger waren eigene Adressen – niemals an sich selbst antworten!
-                        // Empfängerfeld zur bewussten Auswahl freilassen.
-                        initialRecipient = '';
-                    }
-                } else {
-                    const senderName = getSenderName(replyToEmail);
-                    initialRecipient = formatRecipientList(replyToEmail.fromAddress, senderName) || senderName;
-                }
-
-                initialSubject = replyToEmail.subject?.startsWith('Re:') ? replyToEmail.subject : `Re: ${replyToEmail.subject || ''}`;
+                // Empfänger nie die eigene Firmenadresse; bei "Allen antworten" auch An/CC der Mail.
+                const addressing = buildReplyAddressing(replyToEmail, replyMode, isOwnEmail);
+                initialRecipient = addressing.to;
+                initialCc = addressing.cc;
+                initialSubject = buildReplySubject(replyToEmail.subject);
 
                 // Zitat aufbauen
                 const date = new Date(replyToEmail.sentAt || '').toLocaleDateString('de-DE', {
@@ -1653,11 +1597,12 @@ export default function EmailCenter() {
                 <EmailComposeForm
                     // Neu mounten, wenn ein anderer Entwurf/eine andere Antwort geöffnet wird –
                     // sonst bleiben Empfänger, Betreff und Zuordnung des vorherigen stehen.
-                    key={`${composerVersion}-${activeDraftId ?? replyToEmailId ?? 'neu'}`}
+                    key={`${composerVersion}-${activeDraftId ?? replyToEmailId ?? 'neu'}-${replyMode}`}
                     onBeforeLeave={registerBeforeLeave}
                     onClose={handleComposeClose}
                     onSuccess={handleComposeSuccess}
                     initialRecipient={initialRecipient}
+                    initialCc={initialCc}
                     initialSubject={initialSubject}
                     initialBody={initialBody}
                     replyQuote={replyQuote}
@@ -1820,6 +1765,8 @@ export default function EmailCenter() {
                         email={selectedEmail}
                         folder={activeFolder}
                         onReply={() => handleReply(selectedEmail)}
+                        onReplyAll={hasFurtherRecipients(selectedEmail, isOwnEmail)
+                            ? () => handleReply(selectedEmail, undefined, 'replyAll') : undefined}
                         onForward={() => handleForward(selectedEmail)}
                         onAssign={() => setShowAssignModal(true)}
                         onStar={() => handleToggleStar(selectedEmail.id)}
@@ -1846,14 +1793,19 @@ export default function EmailCenter() {
                         <EmailThreadView
                             thread={thread}
                             onPreview={(url, type, name) => setPreviewAttachment({ url, type, name })}
-                            onReply={(entry) => {
+                            canReplyAll={(entry) => hasFurtherRecipients(entry, isOwnEmail)}
+                            onReply={(entry, mode) => {
                                 // Thread-Eintrag → replyToEmail (mit Kontext aus selectedEmail)
+                                const sameSender = extractEmailAddress(entry.fromAddress).toLowerCase()
+                                    === extractEmailAddress(selectedEmail.fromAddress).toLowerCase();
                                 const replyItem: EmailItem = {
                                     id: entry.id,
                                     type: selectedEmail.type,
                                     subject: entry.subject ?? selectedEmail.subject,
                                     fromAddress: entry.fromAddress ?? selectedEmail.fromAddress,
                                     recipient: entry.recipient ?? selectedEmail.recipient,
+                                    cc: entry.cc,
+                                    replyToAddress: entry.replyToAddress,
                                     sentAt: entry.sentAt ?? selectedEmail.sentAt,
                                     body: entry.snippet,
                                     htmlBody: entry.htmlBody ?? undefined,
@@ -1862,9 +1814,11 @@ export default function EmailCenter() {
                                     anfrageId: selectedEmail.anfrageId,
                                     lieferantId: selectedEmail.lieferantId,
                                     kundeId: selectedEmail.kundeId,
-                                    kundeName: selectedEmail.kundeName,
+                                    // Der Kundenname gehört nur zum Absender der gewählten Mail – nicht
+                                    // zu einem Lieferanten, der im selben Verlauf geschrieben hat.
+                                    kundeName: sameSender ? selectedEmail.kundeName : undefined,
                                 };
-                                handleReply(replyItem, entry.id);
+                                handleReply(replyItem, entry.id, mode);
                             }}
                             onOpenDraft={(entry) => {
                                 if (entry.draftId) {
@@ -2155,7 +2109,7 @@ export default function EmailCenter() {
                                         "px-4 py-3 cursor-pointer transition-all duration-150 border-l-[3px]",
                                         selectedIds.has(email.id)
                                             ? "bg-rose-50/80 border-l-rose-500"
-                                            : email.isRead
+                                            : !isRowUnread(email)
                                                 ? "bg-white border-l-transparent hover:bg-slate-50"
                                                 : "bg-white border-l-rose-400 hover:bg-rose-50/30"
                                     )}
@@ -2163,7 +2117,7 @@ export default function EmailCenter() {
                                     <div className="flex items-start justify-between gap-2 mb-1">
                                         <p className={cn(
                                             "text-sm truncate",
-                                            !email.isRead ? "font-bold text-slate-900" : "font-medium text-slate-700"
+                                            isRowUnread(email) ? "font-bold text-slate-900" : "font-medium text-slate-700"
                                         )}>
                                             {threadCounterparts.get(email.id) || getDisplayName(email)}
                                         </p>
@@ -2185,7 +2139,7 @@ export default function EmailCenter() {
                                     </div>
                                     <p className={cn(
                                         "text-sm mb-1 truncate",
-                                        !email.isRead ? "font-semibold text-slate-800" : "text-slate-600"
+                                        isRowUnread(email) ? "font-semibold text-slate-800" : "text-slate-600"
                                     )}>
                                         {email.subject || '(Kein Betreff)'}
                                     </p>

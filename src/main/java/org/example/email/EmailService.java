@@ -73,6 +73,57 @@ public class EmailService {
     public static final String ERP_ORIGIN_WERT = "kalkulationsprogramm";
 
     /**
+     * Bezug einer Antwort auf die beantwortete Mail (RFC 5322, Abschnitt 3.6.4).
+     *
+     * @param inReplyTo  Message-ID der beantworteten Mail
+     * @param references Message-IDs des bisherigen Verlaufs, aelteste zuerst
+     */
+    public record AntwortBezug(String inReplyTo, java.util.List<String> references) {
+        /**
+         * Gueltige Message-ID: spitze Klammern, druckbares ASCII ohne Leerraum. Schuetzt vor
+         * Header-Injection (CR/LF aus der Datenbank) und verwirft die beim Import erfundenen
+         * Ersatz-IDs ({@code <no-msgid-…>}), die beim Empfaenger keine Mail bezeichnen.
+         */
+        private static final java.util.regex.Pattern MESSAGE_ID =
+                java.util.regex.Pattern.compile("^<[\\x21-\\x3B\\x3D\\x3F-\\x7E]{1,996}>$");
+
+        static boolean istGueltig(String id) {
+            return id != null && MESSAGE_ID.matcher(id.trim()).matches() && !id.trim().startsWith("<no-msgid-");
+        }
+
+        /** Leerer Bezug, wenn die beantwortete Mail keine (gueltige) Message-ID hat. */
+        public boolean istLeer() {
+            return !istGueltig(inReplyTo);
+        }
+
+        void schreibeIn(MimeMessage message) throws MessagingException {
+            if (istLeer()) return;
+            message.setHeader("In-Reply-To", inReplyTo.trim());
+            java.util.LinkedHashSet<String> kette = new java.util.LinkedHashSet<>();
+            if (references != null) {
+                references.stream().filter(AntwortBezug::istGueltig).map(String::trim).forEach(kette::add);
+            }
+            kette.add(inReplyTo.trim());
+            // Lange Ketten normgerecht umbrechen (RFC 5322: höchstens 998 Zeichen pro Zeile).
+            message.setHeader("References", jakarta.mail.internet.MimeUtility.fold(12, String.join(" ", kette)));
+        }
+    }
+
+    /**
+     * Empfaengerlisten aus dem Formular duerfen auch mit Semikolon getrennt sein
+     * (Outlook-Gewohnheit). Jakarta Mail akzeptiert nur Kommas.
+     */
+    static InternetAddress[] parseAdressliste(String liste) throws jakarta.mail.internet.AddressException {
+        StringBuilder normalisiert = new StringBuilder(liste.length());
+        boolean inAnfuehrung = false;
+        for (char zeichen : liste.toCharArray()) {
+            if (zeichen == '"') inAnfuehrung = !inAnfuehrung;
+            normalisiert.append(zeichen == ';' && !inAnfuehrung ? ',' : zeichen);
+        }
+        return InternetAddress.parse(normalisiert.toString());
+    }
+
+    /**
      * Wird nach erfolgreichem SMTP-Versand mit der tatsaechlich versendeten
      * Nachricht aufgerufen. Dient dazu, eine Kopie im IMAP-"Gesendet"-Ordner
      * abzulegen — ein vom ERP unabhaengiger Nachweis beim Provider, der fuer
@@ -502,6 +553,23 @@ public class EmailService {
             String htmlBody,
             java.util.Map<String, java.io.File> inlineCidToFile,
             java.util.List<Attachment> attachments) throws MessagingException, IOException {
+        return sendEmailWithMultipleAttachments(recipient, cc, fromAddress, subject, htmlBody,
+                inlineCidToFile, attachments, null);
+    }
+
+    /**
+     * Wie {@link #sendEmailWithMultipleAttachments(String, String, String, String, String, java.util.Map, java.util.List)},
+     * setzt aber bei Antworten {@code In-Reply-To} und {@code References}. Ohne diese
+     * Kopfzeilen ordnet das Mailprogramm des Empfaengers die Antwort keinem Verlauf zu.
+     */
+    public String sendEmailWithMultipleAttachments(String recipient,
+            String cc,
+            String fromAddress,
+            String subject,
+            String htmlBody,
+            java.util.Map<String, java.io.File> inlineCidToFile,
+            java.util.List<Attachment> attachments,
+            AntwortBezug antwortBezug) throws MessagingException, IOException {
         Properties props = new Properties();
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", String.valueOf(port));
@@ -519,11 +587,14 @@ public class EmailService {
 
         MimeMessage message = new MimeMessage(session);
         message.setFrom(baueAbsender(fromAddress));
-        message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
+        message.setRecipients(Message.RecipientType.TO, parseAdressliste(recipient));
         if (cc != null && !cc.isBlank()) {
-            message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
+            message.setRecipients(Message.RecipientType.CC, parseAdressliste(cc));
         }
         message.setSubject(subject, StandardCharsets.UTF_8.name());
+        if (antwortBezug != null) {
+            antwortBezug.schreibeIn(message);
+        }
 
         MimeMultipart mixed = new MimeMultipart("mixed");
         MimeBodyPart relatedHolder = new MimeBodyPart();

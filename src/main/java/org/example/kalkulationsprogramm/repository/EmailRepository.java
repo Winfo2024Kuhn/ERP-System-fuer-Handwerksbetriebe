@@ -349,6 +349,14 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
           + " AND e.subject IS NOT NULL ORDER BY e.sentAt DESC, e.id DESC")
   List<Email> findRecentBefore(@Param("before") LocalDateTime before, Pageable pageable);
 
+  /**
+   * Alle Absender-Adressen gesendeter Mails – das sind unsere eigenen Adressen inkl.
+   * Aliasse. Grundlage für die Teilnehmer-Prüfung beim Betreff-Threading.
+   */
+  @Query("SELECT DISTINCT LOWER(e.fromAddress) FROM Email e WHERE e.direction = :direction"
+          + " AND e.fromAddress IS NOT NULL")
+  List<String> findDistinctFromAddressesByDirection(@Param("direction") EmailDirection direction);
+
   long countByDirection(EmailDirection direction);
 
   long countByDirectionAndIsReadFalse(EmailDirection direction);

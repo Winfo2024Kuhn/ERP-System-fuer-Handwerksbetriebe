@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MoreHorizontal, Reply, Forward, Star, Trash2, FolderPlus, FolderInput, Download,
+import { MoreHorizontal, Reply, ReplyAll, Forward, Star, Trash2, FolderPlus, FolderInput, Download,
     Inbox, Newspaper, ShieldAlert, ShieldCheck, ShieldX, CheckCircle2, RotateCcw } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -14,6 +14,8 @@ type Action = () => void | Promise<void>;
 type MoveTarget = 'inbox' | 'trash' | 'spam' | 'newsletter';
 interface Props {
     email: EmailItem; folder: FolderType; onReply: Action; onForward: Action; onAssign: Action;
+    /** Nur gesetzt, wenn "Allen antworten" mehr Empfänger erreicht als "Antworten". */
+    onReplyAll?: Action;
     onStar: Action; onDelete: Action; onMove: (target: MoveTarget) => void | Promise<void>;
     onSpam: Action; onNotSpam: Action; onBlock: Action; onNotNewsletter: Action; onConfirmNewsletter: Action;
 }
@@ -26,7 +28,7 @@ const moveTargets = [
 ] as const;
 
 /** Häufige Aktionen bleiben sichtbar; weitere Aktionen öffnen ein Portal mit Tastatursteuerung. */
-export function EmailDetailHeader({ email, folder, onReply, onForward, onAssign, onStar, onDelete,
+export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForward, onAssign, onStar, onDelete,
     onMove, onSpam, onNotSpam, onBlock, onNotNewsletter, onConfirmNewsletter }: Props) {
     const [busy, setBusy] = useState(false);
     const toast = useToast();
@@ -50,6 +52,10 @@ export function EmailDetailHeader({ email, folder, onReply, onForward, onAssign,
                 {folder !== 'trash' && <Button variant="outline" size="sm" onClick={() => void run(onReply)}
                     disabled={busy} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 h-8 rounded-lg border-slate-200 text-slate-700 gap-1.5">
                     <Reply className="h-4 w-4" />Antworten
+                </Button>}
+                {folder !== 'trash' && onReplyAll && <Button variant="outline" size="sm" onClick={() => void run(onReplyAll)}
+                    disabled={busy} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 h-8 rounded-lg border-slate-200 text-slate-700 gap-1.5">
+                    <ReplyAll className="h-4 w-4" />Allen antworten
                 </Button>}
                 <Button variant="ghost" size="sm" onClick={() => void run(onStar)} disabled={busy}
                     title={email.isStarred ? 'Markierung entfernen' : 'Markieren'} aria-label={email.isStarred ? 'Markierung entfernen' : 'Markieren'}

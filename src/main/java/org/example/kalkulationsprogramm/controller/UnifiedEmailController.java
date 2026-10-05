@@ -113,6 +113,19 @@ public class UnifiedEmailController {
             String subject,
             String htmlBody,
             List<org.example.email.EmailService.Attachment> attachments) throws Exception {
+        return sendeSmtpMail(emailService, recipient, cc, sender, subject, htmlBody, attachments, null);
+    }
+
+    /** Versand mit Bezug auf die beantwortete Mail (In-Reply-To/References). */
+    String sendeSmtpMail(
+            org.example.email.EmailService emailService,
+            String recipient,
+            String cc,
+            String sender,
+            String subject,
+            String htmlBody,
+            List<org.example.email.EmailService.Attachment> attachments,
+            org.example.email.EmailService.AntwortBezug antwortBezug) throws Exception {
         return emailService.sendEmailWithMultipleAttachments(
                 recipient,
                 cc,
@@ -120,7 +133,8 @@ public class UnifiedEmailController {
                 subject,
                 htmlBody,
                 Map.of(),
-                attachments);
+                attachments,
+                antwortBezug);
     }
 
     @GetMapping("/from-addresses")
@@ -1398,6 +1412,18 @@ public class UnifiedEmailController {
     }
 
     /**
+     * Admin: Verläufe bereinigen – löst offensichtliche Fehlverknüpfungen aus reinem
+     * Betreff-Vergleich (Antworten verschiedener Firmen ohne gemeinsamen Teilnehmer) und
+     * verknüpft danach neu. Standardmäßig nur Probelauf; erst {@code probelauf=false}
+     * speichert. Nur für die Rolle ADMIN freigegeben (SecurityConfig, /api/emails/admin/**).
+     */
+    @PostMapping("/admin/rebuild-threads")
+    public ResponseEntity<org.example.kalkulationsprogramm.dto.Email.RebuildEmailThreadsResultDto> rebuildThreads(
+            @RequestParam(value = "probelauf", defaultValue = "true") boolean probelauf) {
+        return ResponseEntity.ok(emailImportService.bereinigeThreadVerknuepfungen(probelauf));
+    }
+
+    /**
      * Rückwirkender Steuerberater-Scan (Lohnabrechnungen, BWAs).
      */
     @PostMapping("/scan-steuerberater")
@@ -1634,6 +1660,7 @@ public class UnifiedEmailController {
             email.setMessageId(messageId);
             email.setFromAddress(sender);
             email.setRecipient(recipient);
+            email.setCc(cc);
             email.setSubject(dto.getSubject());
             email.setBody(org.example.kalkulationsprogramm.util.EmailHtmlSanitizer.htmlToPlainText(htmlBody));
             email.setHtmlBody(htmlBody);
@@ -1798,9 +1825,11 @@ public class UnifiedEmailController {
             }
 
             String htmlBody = dto.getBody() != null ? dto.getBody() : "";
-            String recipient = dto.getRecipients() != null && !dto.getRecipients().isEmpty()
-                    ? dto.getRecipients().get(0)
-                    : parentEmail.getFromAddress();
+            String recipient = EmailThreadService.antwortEmpfaenger(dto.getRecipients(), parentEmail);
+            if (recipient == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Bitte mindestens einen Empfänger angeben."));
+            }
+            String cc = EmailThreadService.verbindeAdressen(dto.getCc());
             String sender;
             try {
                 sender = resolveSenderAddress(dto.getSender(), dto.getFrontendUserId());
@@ -1823,11 +1852,12 @@ public class UnifiedEmailController {
             String messageId = sendeSmtpMail(
                     emailService,
                     recipient,
-                    null, // cc
+                    cc,
                     sender,
                     dto.getSubject(),
                     htmlBody,
-                    attachmentsForEmail);
+                    attachmentsForEmail,
+                    emailThreadService.antwortBezugFuer(parentEmail));
 
             // A lost browser response must never leave an already-sent draft behind.
             emailDraftService.deleteAfterSuccessfulSend(dto.getDraftId());
@@ -1837,6 +1867,7 @@ public class UnifiedEmailController {
             email.setMessageId(messageId);
             email.setFromAddress(sender);
             email.setRecipient(recipient);
+            email.setCc(cc);
             email.setSubject(dto.getSubject());
             email.setBody(org.example.kalkulationsprogramm.util.EmailHtmlSanitizer.htmlToPlainText(htmlBody));
             email.setHtmlBody(htmlBody);
@@ -1868,8 +1899,7 @@ public class UnifiedEmailController {
             // Antworten wir in einem Thread dem Kunden, gehört die Mail nicht auf die
             // Karte des Lieferanten, den wir vorher im selben Thread angeschrieben haben.
             // Empfänger ist ein Lieferant? Dann zusätzlich dort einhängen.
-            // Antworten versenden kein CC, deshalb hier nur das To-Feld.
-            emailLieferantVerknuepfungService.verknuepfeAusEmpfaenger(email, recipient);
+            emailLieferantVerknuepfungService.verknuepfeAusEmpfaenger(email, recipient, cc);
 
             emailRepository.save(email);
 
@@ -1929,12 +1959,14 @@ public class UnifiedEmailController {
         dto.setRecipient(email.getRecipient());
         dto.setSubject(email.getSubject());
 
-        // Trim body for preview (list only needs ~200 chars)
-        String body = email.getBody();
-        if (body != null && body.length() > 200) {
-            body = body.substring(0, 200);
+        dto.setCc(email.getCc());
+        // Vorschau: erst den zitierten Verlauf entfernen, dann kürzen – sonst bleibt
+        // ein halber Zitatkopf ("Am Do., 17. Sept. 20…") in der Liste stehen.
+        String klartext = email.getBody();
+        if ((klartext == null || klartext.isBlank()) && email.getHtmlBody() != null) {
+            klartext = org.example.kalkulationsprogramm.util.EmailHtmlSanitizer.htmlToPlainText(email.getHtmlBody());
         }
-        dto.setBody(body);
+        dto.setBody(org.example.kalkulationsprogramm.util.EmailVorschauText.vorschau(klartext, LIST_PREVIEW_LENGTH));
         // htmlBody deliberately omitted for list performance
 
         dto.setSentAt(email.getSentAt());
@@ -1963,11 +1995,7 @@ public class UnifiedEmailController {
         dto.setFolder(computeFolder(email));
 
         // Thread
-        if (email.getParentEmail() != null) {
-            dto.setParentEmailId(email.getParentEmail().getId());
-        }
-        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
-        dto.setThreadLastActivityAt(emailThreadService.computeThreadLastActivityAt(email));
+        applyThreadInfo(email, dto);
 
         // Zustellstatus: betrifft besonders den Funnel-Pfad — dort tippen Kunden
         // ihre Adresse selbst, entsprechend haeufig sind Vertipper.
@@ -2001,6 +2029,7 @@ public class UnifiedEmailController {
         dto.setSenderDomain(email.getSenderDomain());
         dto.setRecipient(email.getRecipient());
         dto.setCc(email.getCc());
+        dto.setReplyToAddress(email.getReplyToAddress());
         dto.setSubject(email.getSubject());
         dto.setBody(email.getBody());
         dto.setSentAt(email.getSentAt());
@@ -2030,11 +2059,7 @@ public class UnifiedEmailController {
         dto.setFolder(computeFolder(email));
 
         // Thread-Informationen
-        if (email.getParentEmail() != null) {
-            dto.setParentEmailId(email.getParentEmail().getId());
-        }
-        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
-        dto.setThreadLastActivityAt(emailThreadService.computeThreadLastActivityAt(email));
+        applyThreadInfo(email, dto);
 
         // Zustellstatus: betrifft besonders den Funnel-Pfad — dort tippen Kunden
         // ihre Adresse selbst, entsprechend haeufig sind Vertipper.
@@ -2076,6 +2101,17 @@ public class UnifiedEmailController {
         return dto;
     }
 
+    /** Thread-Felder für Liste und Detail: alle Mitglieder eines Verlaufs liefern dieselben Werte. */
+    private void applyThreadInfo(Email email, UnifiedEmailDto dto) {
+        if (email.getParentEmail() != null) {
+            dto.setParentEmailId(email.getParentEmail().getId());
+        }
+        EmailThreadService.ThreadKennzahlen kennzahlen = emailThreadService.kennzahlenFuer(email);
+        dto.setThreadRootId(kennzahlen.rootId());
+        dto.setReplyCount(Math.max(0, kennzahlen.anzahl() - 1));
+        dto.setThreadLastActivityAt(kennzahlen.letzteAktivitaet());
+    }
+
     private String computeFolder(Email email) {
         if (email.getDeletedAt() != null) return "trash";
         if (email.isSpam()) return "spam";
@@ -2093,30 +2129,6 @@ public class UnifiedEmailController {
         if (email.isPotentialInquiry()) return "inquiries";
         return "inbox";
     }
-
-    /** Zählt rekursiv alle Nachfolger-Emails (Kinder, Kindeskinder, …). */
-    private int countAllReplies(Email email) {
-        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
-        int count = email.getReplies().size();
-        for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
-            count += countAllReplies(reply);
-        }
-        return count;
-    }
-
-    /** Zählt alle Vorfahren (Eltern, Großeltern, …) bis zur Thread-Wurzel. */
-    private int countAncestors(Email email) {
-        int count = 0;
-        java.util.Set<Long> visited = new java.util.HashSet<>();
-        Email current = email.getParentEmail();
-        while (current != null && !visited.contains(current.getId())) {
-            visited.add(current.getId());
-            count++;
-            current = current.getParentEmail();
-        }
-        return count;
-    }
-
 
     /**
      * Loest die Absender-Adresse fuer einen ausgehenden E-Mail-Versand auf.
@@ -2210,6 +2222,8 @@ public class UnifiedEmailController {
      * praktisch ausgeschlossen.
      */
     private static final int EMAIL_HEADER_MAX_LEN = 4096;
+    /** Länge der Vorschau in der Mail-Liste (Zeichen, ohne zitierten Verlauf). */
+    private static final int LIST_PREVIEW_LENGTH = 200;
 
     /**
      * Extrahiert die erste E-Mail-Adresse aus einem rohen Header-Wert

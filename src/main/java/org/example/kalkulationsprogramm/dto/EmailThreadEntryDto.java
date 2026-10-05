@@ -15,6 +15,9 @@ public class EmailThreadEntryDto {
     private String subject;
     private String fromAddress;
     private String recipient;
+    private String cc;
+    /** Reply-To-Kopfzeile des Absenders; Antworten gehen dorthin statt an fromAddress. */
+    private String replyToAddress;
     private String sentAt;          // ISO-8601 String, z.B. "2026-03-10T09:14:00"
     private String direction;       // "IN" oder "OUT"
     private String snippet;         // erste ~120 Zeichen des body für kollabierte Ansicht

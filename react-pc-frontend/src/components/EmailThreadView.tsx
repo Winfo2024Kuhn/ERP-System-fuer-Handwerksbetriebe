@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Paperclip, File, ChevronDown, ChevronUp, Reply, FileEdit, Trash2 } from 'lucide-react';
+import { AlertTriangle, Paperclip, File, ChevronDown, ChevronUp, Reply, ReplyAll, FileEdit, Trash2 } from 'lucide-react';
 import { klartextGrund } from '../lib/zustellGrund';
 import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { cn } from '../lib/utils';
 import { getThreadPreview } from '../features/email/threadQuotes';
+import type { ReplyMode } from '../features/email/emailCenterModel';
 import { EmailContentFrame } from './EmailContentFrame';
 import { EmailRecipientDropdown } from './EmailRecipientDropdown';
 
@@ -25,6 +26,9 @@ export interface EmailThreadEntry {
     subject?: string;
     fromAddress?: string;
     recipient?: string;
+    cc?: string;
+    /** Reply-To-Kopfzeile: Antworten gehen dorthin statt an fromAddress. */
+    replyToAddress?: string;
     sentAt?: string;
     direction: 'IN' | 'OUT';
     forwarded?: boolean;
@@ -231,14 +235,17 @@ interface BubbleProps {
     showSenderName: boolean;
     isLast: boolean;
     onPreview?: (url: string, type: 'image' | 'pdf', name: string) => void;
-    onReply?: (entry: EmailThreadEntry) => void;
+    onReply?: (entry: EmailThreadEntry, mode: ReplyMode) => void;
+    /** Ob "Allen antworten" weitere Empfänger erreicht als "Antworten". */
+    canReplyAll?: (entry: EmailThreadEntry) => boolean;
 }
 
-function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPreview, onReply }: BubbleProps) {
+function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPreview, onReply, canReplyAll }: BubbleProps) {
     const [expanded, setExpanded] = useState(isFocused);
     const bubbleRef = useRef<HTMLDivElement>(null);
     const isOut = entry.direction === 'OUT';
-    const preview = useMemo(() => getThreadPreview(entry.htmlBody || entry.snippet || ''), [entry.htmlBody, entry.snippet]);
+    const preview = useMemo(() => getThreadPreview(entry.htmlBody || entry.snippet || '', { keepForwardedContent: entry.forwarded }),
+        [entry.htmlBody, entry.snippet, entry.forwarded]);
 
     useEffect(() => {
         if (isFocused && bubbleRef.current) {
@@ -308,7 +315,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                             ) : (
                                 <p><span className="text-slate-400">Von:</span> {fromName}{fromEmail && fromEmail !== fromName && ` <${fromEmail}>`}</p>
                             )}
-                            <EmailRecipientDropdown recipients={entry.recipient} />
+                            <EmailRecipientDropdown recipients={entry.recipient} cc={entry.cc} />
                         </div>
                     </div>
 
@@ -339,6 +346,7 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
                         html={entry.htmlBody || entry.snippet || '<p style="color:#94a3b8;font-style:italic">Kein Inhalt</p>'}
                         className="bg-white"
                         hideQuotes
+                        keepForwardedContent={entry.forwarded}
                     />
                 </div>
 
@@ -364,15 +372,27 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
 
                 {/* Antworten-Button */}
                 {onReply && (
-                    <div className="px-5 pb-3 flex justify-end">
+                    <div className="px-5 pb-3 flex justify-end gap-4">
                         <button
-                            onClick={() => onReply(entry)}
+                            type="button"
+                            onClick={() => onReply(entry, 'reply')}
                             className="inline-flex items-center gap-1.5 text-xs font-medium
                                        text-slate-500 hover:text-rose-600 transition-colors"
                         >
                             <Reply className="w-3.5 h-3.5" />
                             Antworten
                         </button>
+                        {canReplyAll?.(entry) && (
+                            <button
+                                type="button"
+                                onClick={() => onReply(entry, 'replyAll')}
+                                className="inline-flex items-center gap-1.5 text-xs font-medium
+                                           text-slate-500 hover:text-rose-600 transition-colors"
+                            >
+                                <ReplyAll className="w-3.5 h-3.5" />
+                                Allen antworten
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -544,12 +564,13 @@ interface EmailThreadViewProps {
     thread: EmailThread;
     loading?: boolean;
     onPreview?: (url: string, type: 'image' | 'pdf', name: string) => void;
-    onReply?: (entry: EmailThreadEntry) => void;
+    onReply?: (entry: EmailThreadEntry, mode: ReplyMode) => void;
+    canReplyAll?: (entry: EmailThreadEntry) => boolean;
     onOpenDraft?: (entry: EmailThreadEntry) => void;
     onDeleteDraft?: (draftId: number) => void;
 }
 
-export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDraft, onDeleteDraft }: EmailThreadViewProps) {
+export function EmailThreadView({ thread, loading, onPreview, onReply, canReplyAll, onOpenDraft, onDeleteDraft }: EmailThreadViewProps) {
     // Thread-übergreifende Anhang-Dedup über originalFilename:sizeBytes.
     // Greift NUR bei kleinen Bildern (Signatur-Logos, die in jeder Nachricht
     // erneut mitkommen). Dokumente und große Bilder bleiben in jeder Nachricht
@@ -604,6 +625,7 @@ export function EmailThreadView({ thread, loading, onPreview, onReply, onOpenDra
                             isLast={isLast}
                             onPreview={onPreview}
                             onReply={onReply}
+                            canReplyAll={canReplyAll}
                         />
                     </React.Fragment>
                 );

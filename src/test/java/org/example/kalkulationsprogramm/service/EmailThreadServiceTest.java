@@ -249,4 +249,91 @@ class EmailThreadServiceTest {
         assertThat(result.getEmails().get(0).getSnippet()).endsWith("…");
         assertThat(result.getEmails().get(0).getSnippet().length()).isEqualTo(121);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Kennzahlen für die Liste und Antwort-Bezug für den Versand
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    void kennzahlen_sindFuerAlleMitgliederGleich_auchBeiVerzweigung() {
+        Email root = makeEmail(1, "Anfrage", null);
+        Email antwort = makeEmail(2, "Re: Anfrage", root);
+        Email nachfrage = makeEmail(3, "Re: Anfrage", antwort);
+        Email zweigAntwort = makeEmail(4, "Re: Anfrage", root);
+        root.getReplies().addAll(List.of(antwort, zweigAntwort));
+        antwort.getReplies().add(nachfrage);
+
+        for (Email mitglied : List.of(root, antwort, nachfrage, zweigAntwort)) {
+            EmailThreadService.ThreadKennzahlen k = service.kennzahlenFuer(mitglied);
+            assertThat(k.rootId()).isEqualTo(1L);
+            assertThat(k.anzahl()).isEqualTo(4);
+            assertThat(k.letzteAktivitaet()).isEqualTo(zweigAntwort.getSentAt());
+        }
+    }
+
+    @Test
+    void kennzahlen_einzelneMail() {
+        Email einzeln = makeEmail(7, "Hallo", null);
+        assertThat(service.kennzahlenFuer(einzeln))
+                .isEqualTo(new EmailThreadService.ThreadKennzahlen(7L, 1, einzeln.getSentAt()));
+    }
+
+    @Test
+    void antwortBezug_inReplyToUndReferencesAeltesteZuerst() {
+        Email root = makeEmail(1, "Anfrage", null);
+        root.setMessageId("<a@example.com>");
+        Email ohneId = makeEmail(2, "Re: Anfrage", root);
+        Email beantwortet = makeEmail(3, "Re: Anfrage", ohneId);
+        beantwortet.setMessageId("<c@example.com>");
+
+        var bezug = service.antwortBezugFuer(beantwortet);
+
+        assertThat(bezug.inReplyTo()).isEqualTo("<c@example.com>");
+        assertThat(bezug.references()).containsExactly("<a@example.com>");
+        assertThat(bezug.istLeer()).isFalse();
+    }
+
+    @Test
+    void antwortBezug_ohneMessageIdIstLeerUndZyklusSicher() {
+        Email a = makeEmail(1, "x", null);
+        Email b = makeEmail(2, "x", a);
+        a.setParentEmail(b);
+        var bezug = service.antwortBezugFuer(a);
+        assertThat(bezug.istLeer()).isTrue();
+        assertThat(bezug.references()).isEmpty();
+    }
+
+    @Test
+    void threadEintrag_enthaeltCcUndReplyTo() {
+        Email email = makeEmail(5, "Termin", null);
+        email.setCc("erika@example.com");
+        email.setReplyToAddress("auftraege@example.com");
+        when(emailRepository.findById(5L)).thenReturn(java.util.Optional.of(email));
+
+        var entry = service.loadThreadFor(5L).getEmails().getFirst();
+
+        assertThat(entry.getCc()).isEqualTo("erika@example.com");
+        assertThat(entry.getReplyToAddress()).isEqualTo("auftraege@example.com");
+    }
+
+    @Test
+    void antwortEmpfaenger_gewaehltVorReplyToVorAbsender() {
+        Email original = makeEmail(1, "x", null);
+        original.setFromAddress("noreply@formular.example");
+        assertThat(EmailThreadService.antwortEmpfaenger(List.of(" max@example.com ", ""), original)).isEqualTo("max@example.com");
+        assertThat(EmailThreadService.antwortEmpfaenger(List.of(), original)).isEqualTo("noreply@formular.example");
+        original.setReplyToAddress("kunde@example.com");
+        assertThat(EmailThreadService.antwortEmpfaenger(null, original)).isEqualTo("kunde@example.com");
+        original.setReplyToAddress(" ");
+        original.setFromAddress(null);
+        assertThat(EmailThreadService.antwortEmpfaenger(null, original)).isNull();
+    }
+
+    @Test
+    void verbindeAdressen_verwirftLeere() {
+        assertThat(EmailThreadService.verbindeAdressen(null)).isNull();
+        assertThat(EmailThreadService.verbindeAdressen(List.of(" ", ""))).isNull();
+        assertThat(EmailThreadService.verbindeAdressen(java.util.Arrays.asList(" a@example.com ", null, "b@example.com")))
+                .isEqualTo("a@example.com, b@example.com");
+    }
 }
