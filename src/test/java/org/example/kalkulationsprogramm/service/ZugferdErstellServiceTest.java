@@ -181,6 +181,31 @@ class ZugferdErstellServiceTest {
     }
 
     @Nested
+    class Steuersatz {
+
+        @Test
+        void prozentBleibtUnveraendert() {
+            assertThat(ZugferdErstellService.alsProzent(new BigDecimal("7"))).isEqualByComparingTo("7");
+        }
+
+        @Test
+        void anteilWirdZuProzent() {
+            assertThat(ZugferdErstellService.alsProzent(new BigDecimal("0.07"))).isEqualByComparingTo("7");
+        }
+
+        @Test
+        void nullUndEinsBleibenProzent() {
+            assertThat(ZugferdErstellService.alsProzent(BigDecimal.ZERO)).isEqualByComparingTo("0");
+            assertThat(ZugferdErstellService.alsProzent(BigDecimal.ONE)).isEqualByComparingTo("1");
+        }
+
+        @Test
+        void ohneAngabeGiltRegelsatz() {
+            assertThat(ZugferdErstellService.alsProzent(null)).isEqualByComparingTo("19");
+        }
+    }
+
+    @Nested
     class Erzeugen {
 
         @Test
@@ -314,6 +339,21 @@ class ZugferdErstellServiceTest {
 
             assertThat(xml).containsPattern("<ram:TaxBasisTotalAmount>100\\.00<")
                     .containsPattern("<ram:GrandTotalAmount>107\\.00<");
+        }
+
+        @Test
+        void steuersatzAlsAnteilWirdAlsProzentGelesen(@TempDir Path dir) throws Exception {
+            ZugferdDaten daten = new ZugferdDaten();
+            daten.setRechnungsnummer("RE-2025-003");
+            daten.setKundenName("Max Mustermann");
+            daten.setMwstSatz(new BigDecimal("0.19"));
+            daten.setBetrag(new BigDecimal("119.00"));
+
+            String xml = erzeugeUndLiesXml(dir, daten);
+
+            assertThat(xml).containsPattern("<ram:RateApplicablePercent>19(\\.0+)?<")
+                    .containsPattern("<ram:TaxBasisTotalAmount>100\\.00<")
+                    .containsPattern("<ram:GrandTotalAmount>119\\.00<");
         }
 
         /** Basis-PDF mit Text (Seite braucht /Resources, sonst scheitert Mustangs A3-Exporter). */

@@ -78,7 +78,7 @@ public class ZugferdErstellService {
                 invoice.setSender(seller);
                 invoice.setRecipient(buyer);
 
-                BigDecimal mwstSatz = daten.getMwstSatz() != null ? daten.getMwstSatz() : STANDARD_MWST_SATZ;
+                BigDecimal mwstSatz = alsProzent(daten.getMwstSatz());
 
                 Product product = new Product();
                 product.setName(dokumentart);
@@ -178,6 +178,21 @@ public class ZugferdErstellService {
         BigDecimal brutto = daten.getBetrag() != null ? daten.getBetrag() : BigDecimal.ZERO;
         BigDecimal faktor = BigDecimal.ONE.add(mwstSatz.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP));
         return brutto.divide(faktor, 2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Steuersatz in Prozent (19). Im Programm kommt der Satz auch als Anteil vor (0.19, z. B. aus
+     * dem ZUGFeRD-Extractor) – Werte zwischen 0 und 1 werden deshalb als Anteil gelesen, statt eine
+     * Rechnung mit 0,19 % USt zu erzeugen. Ohne Angabe gilt der Regelsatz.
+     */
+    static BigDecimal alsProzent(BigDecimal satz) {
+        if (satz == null) {
+            return STANDARD_MWST_SATZ;
+        }
+        if (satz.signum() > 0 && satz.compareTo(BigDecimal.ONE) < 0) {
+            return satz.multiply(new BigDecimal("100")).stripTrailingZeros();
+        }
+        return satz;
     }
 
     private static boolean istLeer(String wert) {

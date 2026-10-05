@@ -16,6 +16,7 @@ public class ZugferdDaten {
     private String rechnungsnummer;
     private LocalDate rechnungsdatum;
     private LocalDate faelligkeitsdatum;
+    /** Bruttobetrag (Gesamtsumme inkl. USt). Für die E-Rechnung zählt {@link #betragNetto}, falls gesetzt. */
     private BigDecimal betrag;
     private String anrede;
     private String kundennummer;
@@ -36,7 +37,12 @@ public class ZugferdDaten {
     private String mahnstufe;
 
     // Erweiterte Felder für Zahlungskonditionen
+    /** Nettobetrag. Fehlt er, rechnet die E-Rechnung ihn aus {@link #betrag} und {@link #mwstSatz} zurück. */
     private BigDecimal betragNetto;
+    /**
+     * Steuersatz. Der Extractor liefert ihn als Anteil (0.19), der Dokument-Editor in Prozent (19);
+     * {@code ZugferdErstellService} versteht beides.
+     */
     private BigDecimal mwstSatz;
     private Boolean bereitsGezahlt = false; // true wenn laut XML schon bezahlt (z.B. Amazon, Vorauskasse)
     private Integer skontoTage;
