@@ -51,7 +51,7 @@ class EmailKiClassificationServiceTest {
         testEmail.setId(100L);
         testEmail.setSubject("Montage Geländer nächste Woche");
         testEmail.setFromAddress("test@example.com");
-        testEmail.setBody("Hallo Herr Kuhn, können wir die Montage der Balkongeländer nächste Woche Mittwoch einplanen? Bitte um Rückmeldung. MfG Max Mustermann");
+        testEmail.setBody("Hallo Frau Musterfrau, können wir die Montage der Balkongeländer nächste Woche Mittwoch einplanen? Bitte um Rückmeldung. MfG Max Mustermann");
         testEmail.setSentAt(LocalDateTime.of(2026, 3, 15, 10, 30));
         testEmail.setDirection(EmailDirection.IN);
 
@@ -242,7 +242,7 @@ class EmailKiClassificationServiceTest {
         Email verlaufEmail = new Email();
         verlaufEmail.setDirection(EmailDirection.OUT);
         verlaufEmail.setSentAt(LocalDateTime.of(2026, 3, 10, 14, 0));
-        verlaufEmail.setFromAddress("bauschlosserei-kuhn@t-online.de");
+        verlaufEmail.setFromAddress("info@musterbetrieb.example");
         verlaufEmail.setSubject("Angebot Balkongeländer");
         verlaufEmail.setBody("Sehr geehrter Herr Mustermann, anbei unser Angebot für die Balkongeländer.");
 

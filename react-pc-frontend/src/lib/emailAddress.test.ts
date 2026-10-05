@@ -238,14 +238,14 @@ describe('formatRecipientList', () => {
     });
     it('behält bei Rundmails alle Empfänger und vertauscht/verliert keine Namen', () => {
         const input = '"Anna" <anna@example.com>, "Ben" <ben@example.com>';
-        const formatted = formatRecipientList(input, 'Schlotz Architekten');
+        const formatted = formatRecipientList(input, 'Muster Architekten');
         // Bei mehreren Empfängern darf der pauschale Kundenname NICHT auf alle angewendet werden
         expect(formatted).toBe('"Anna" <anna@example.com>, "Ben" <ben@example.com>');
     });
 
     it('wendet den hinterlegten Kundennamen nur bei genau einem Empfänger an', () => {
-        const formatted = formatRecipientList('kunde@schlotz-architekten.de', 'Schlotz Architekten');
-        expect(formatted).toBe('"Schlotz Architekten" <kunde@schlotz-architekten.de>');
+        const formatted = formatRecipientList('kunde@architekt-muster.example', 'Muster Architekten');
+        expect(formatted).toBe('"Muster Architekten" <kunde@architekt-muster.example>');
     });
 
     it('formatiert reine Adresslisten ohne Namen sauber', () => {

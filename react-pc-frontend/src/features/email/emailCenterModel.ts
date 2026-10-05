@@ -78,7 +78,11 @@ export const getSenderName = (email: EmailItem) => {
 
 export const getRecipientName = (email: EmailItem) => extractDisplayName(email.recipient);
 
-export const getDisplayName = (email: EmailItem) => {
+/**
+ * Anzeigename einer Mail in der Liste. `isOwnAddress` erkennt die eigenen Absender
+ * (aus /api/emails/from-addresses); ohne sie gilt keine Adresse als eigene.
+ */
+export const getDisplayName = (email: EmailItem, isOwnAddress: (address: string) => boolean = () => false) => {
     if (email.kundeName) return email.kundeName;
     if (email.lieferantName) return email.lieferantName;
     if (email.projektName) return email.projektName;
@@ -94,9 +98,7 @@ export const getDisplayName = (email: EmailItem) => {
 
     // Bei eingehenden E-Mails: Wenn fromAddress eine eigene Firmenadresse ist (z.B. versehentliche Selbst-Antwort),
     // lieber den Kunden-Empfänger anzeigen
-    const fromClean = extractEmailAddress(email.fromAddress).toLowerCase();
-    const isFromSelf = fromClean.includes('bauschlosserei') || fromClean.includes('t-online.de') || fromClean.includes('kuhn');
-    if (isFromSelf && email.recipient) {
+    if (isOwnAddress(extractEmailAddress(email.fromAddress).toLowerCase()) && email.recipient) {
         const recip = getRecipientName(email);
         if (recip && recip !== 'Unbekannt') return recip;
     }

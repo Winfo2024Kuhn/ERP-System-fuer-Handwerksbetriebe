@@ -47,39 +47,39 @@ class ArtikelMatchingServiceTest {
     @Test
     void findetLieferantNachDomainUndSpeichertNeueAdresse() {
         Lieferanten l = new Lieferanten();
-        l.setLieferantenname("Reinhard Stahl");
-        l.getKundenEmails().add("info@reinhard-stahl.de");
+        l.setLieferantenname("Beispiel Stahl");
+        l.getKundenEmails().add("info@beispiel-stahl.example");
         lieferantenRepository.save(l);
 
-        Lieferanten found = artikelMatchingService.findeLieferantFuerEmail("benny.boettcher@reinhard-stahl.de")
+        Lieferanten found = artikelMatchingService.findeLieferantFuerEmail("max.mustermann@beispiel-stahl.example")
                 .orElse(null);
         assertThat(found).isNotNull();
         assertThat(found.getId()).isEqualTo(l.getId());
 
-        artikelMatchingService.merkeLieferantenEmail(l, "benny.boettcher@reinhard-stahl.de");
+        artikelMatchingService.merkeLieferantenEmail(l, "max.mustermann@beispiel-stahl.example");
         Lieferanten reloaded = lieferantenRepository.findById(l.getId()).orElseThrow();
-        assertThat(reloaded.getKundenEmails()).contains("info@reinhard-stahl.de", "benny.boettcher@reinhard-stahl.de");
+        assertThat(reloaded.getKundenEmails()).contains("info@beispiel-stahl.example", "max.mustermann@beispiel-stahl.example");
     }
 
     @Test
     void findetLieferantAuchBeiWhitespaceInAdresse() {
         Lieferanten l = new Lieferanten();
-        l.setLieferantenname("Reinhard Stahl");
-        l.getKundenEmails().add(" info@reinhard-stahl.de ");
+        l.setLieferantenname("Beispiel Stahl");
+        l.getKundenEmails().add(" info@beispiel-stahl.example ");
         lieferantenRepository.save(l);
 
-        assertThat(artikelMatchingService.findeLieferantFuerEmail("user@reinhard-stahl.de")).isPresent();
+        assertThat(artikelMatchingService.findeLieferantFuerEmail("user@beispiel-stahl.example")).isPresent();
     }
 
     @Test
     void merkeLieferantenEmailTrimmtAdresse() {
         Lieferanten l = new Lieferanten();
-        l.setLieferantenname("Reinhard Stahl");
+        l.setLieferantenname("Beispiel Stahl");
         lieferantenRepository.save(l);
 
-        artikelMatchingService.merkeLieferantenEmail(l, " new@reinhard-stahl.de ");
+        artikelMatchingService.merkeLieferantenEmail(l, " new@beispiel-stahl.example ");
         Lieferanten reloaded = lieferantenRepository.findById(l.getId()).orElseThrow();
-        assertThat(reloaded.getKundenEmails()).containsExactly("new@reinhard-stahl.de");
+        assertThat(reloaded.getKundenEmails()).containsExactly("new@beispiel-stahl.example");
     }
 
     @Test

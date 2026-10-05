@@ -15,7 +15,7 @@ export interface ParsedEmailRecipient {
 
 /**
  * Zerlegt eine Liste von Empfängern (komma- oder semikolongetrennt) und beachtet
- * Anführungszeichen in Anzeigenamen wie "Zech, Philipp" <p@zech.de> sowie
+ * Anführungszeichen in Anzeigenamen wie "Mustermann, Max" <max@example.com> sowie
  * Namen mit Apostroph ("O'Connor" <o@example.com>).
  */
 export function parseRecipientList(input?: string): ParsedEmailRecipient[] {

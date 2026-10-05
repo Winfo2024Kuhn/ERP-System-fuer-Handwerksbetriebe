@@ -28,11 +28,11 @@ describe("EmailRecipientDropdown", () => {
         });
 
         it("parst Namen in Anführungszeichen mit Kommas", () => {
-            const list = parseRecipientList('"Kiesel, IBC" <ibc@kiesel.de>, info@tfm.de');
+            const list = parseRecipientList('"Muster, Ingenieurbüro" <ibc@kies-muster.example>, info@boden-muster.example');
             expect(list).toHaveLength(2);
-            expect(list[0].displayName).toBe("Kiesel, IBC");
-            expect(list[0].email).toBe("ibc@kiesel.de");
-            expect(list[1].email).toBe("info@tfm.de");
+            expect(list[0].displayName).toBe("Muster, Ingenieurbüro");
+            expect(list[0].email).toBe("ibc@kies-muster.example");
+            expect(list[1].email).toBe("info@boden-muster.example");
         });
 
         it('parst Namen mit Apostroph ("O\'Connor" <o@example.com>) korrekt', () => {

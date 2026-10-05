@@ -66,7 +66,7 @@ class AutoAuftragsbestaetigungVersandServicePreview {
                 .parsePositionenJsonZuContentBlocks(ab.getPositionenJson()));
         contentBlocks.add(demoText(AutoAuftragsbestaetigungVersandService.aufloesePlatzhalter(
                 "<p>Zahlungsziel: {{ZAHLUNGSZIEL_TAGE}} Tage netto (fällig bis {{ZAHLUNGSZIEL}}).</p>"
-                        + "<p>Mit freundlichen Grüßen<br>Bauschlosserei Kuhn</p>",
+                        + "<p>Mit freundlichen Grüßen<br>Musterbetrieb GmbH</p>",
                 ctx)));
 
         KopfdatenDto kopfdaten = new KopfdatenDto(

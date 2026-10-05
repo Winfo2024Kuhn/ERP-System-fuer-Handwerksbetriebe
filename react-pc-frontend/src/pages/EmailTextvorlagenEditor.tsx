@@ -84,7 +84,7 @@ const SAMPLE_CONTEXT: Record<string, string> = {
   RECHNUNGSDATUM: '01.05.2026',
   FAELLIGKEITSDATUM: '15.05.2026',
   BETRAG: '1.234,56 €',
-  BENUTZER: 'Thomas Kuhn',
+  BENUTZER: 'Erika Musterfrau',
   REVIEW_LINK: '<em>(Bewertungs-Link)</em>',
   BANK: 'Musterbank',
   IBAN: 'DE89 3704 0044 0532 0130 00',

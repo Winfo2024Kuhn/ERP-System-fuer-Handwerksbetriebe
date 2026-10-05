@@ -6,20 +6,20 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 const RUNDMAIL_EMPFAENGER = [
-    'info@schmitt-eisingen.de',
-    'mennig.elektro@t-online.de',
-    'p.feineis@keller-kiesel.de',
-    'IBC.Kiesel@t-online.de',
-    'info@siedler-Bedachungen.de',
-    'p.geier@geier-malerundstuck.de',
-    'fschredinger@krines-online.de',
-    'info@tfm-bodensysteme.de',
-    'info.gpbau.de@gmail.com',
-    'bauschlosserei-kuhn@t-online.de',
-    'info@melchior-natursteinhandel.de',
-    'p.botzem@holzbotzem.de',
-    'philipp@zech-privat.de',
-    'karlthomasbach@web.de'
+    'info@schlosser-muster.example',
+    'elektro.muster@example.com',
+    'p.muster@kies-muster.example',
+    'ingenieurbuero.muster@example.com',
+    'info@bedachungen-muster.example',
+    'p.muster@maler-muster.example',
+    'f.muster@fliesen-muster.example',
+    'info@boden-muster.example',
+    'bau.muster@example.com',
+    'info@musterbetrieb.example',
+    'info@naturstein-muster.example',
+    'p.muster@holz-muster.example',
+    'max.mustermann@example.org',
+    'erika.musterfrau@example.net'
 ].join(', ');
 
 const MOCK_EMAILS = [
@@ -27,16 +27,16 @@ const MOCK_EMAILS = [
         id: 101,
         type: 'EMAIL',
         direction: 'IN',
-        subject: 'BV Zech Hangleiten 1 - Protokoll Nr. 40',
-        sender: 'Architekturbüro Schlotz',
-        fromAddress: 'info@schlotz-architekten.de',
+        subject: 'BV Mustermann Musterweg 1 - Protokoll Nr. 40',
+        sender: 'Architekturbüro Muster',
+        fromAddress: 'info@architekt-muster.example',
         recipient: RUNDMAIL_EMPFAENGER,
         body: 'Sehr geehrte Damen und Herren, anbei das Protokoll.',
         htmlBody: '<p>Sehr geehrte Damen und Herren, anbei das Protokoll.</p>',
         sentAt: '2026-09-11T15:52:00',
         isRead: false,
         zuordnungTyp: 'PROJEKT',
-        projektName: 'Neubau Hangleiten 1',
+        projektName: 'Neubau Musterweg 1',
         attachments: []
     },
     {
@@ -44,15 +44,15 @@ const MOCK_EMAILS = [
         type: 'EMAIL',
         direction: 'OUT',
         subject: 'Re: Rückfrage Geländer Maße',
-        sender: 'Bauschlosserei Kuhn',
-        fromAddress: 'bauschlosserei-kuhn@t-online.de',
-        recipient: 'kunde@schlotz-architekten.de',
+        sender: 'Musterbetrieb GmbH',
+        fromAddress: 'info@musterbetrieb.example',
+        recipient: 'kunde@architekt-muster.example',
         body: 'Hier sind die Maße für das Geländer.',
         htmlBody: '<p>Hier sind die Maße für das Geländer.</p>',
         sentAt: '2026-09-11T16:00:00',
         isRead: true,
         zuordnungTyp: 'KEINE',
-        kundeName: 'Schlotz Architekten',
+        kundeName: 'Muster Architekten',
         attachments: []
     },
     {
@@ -60,8 +60,8 @@ const MOCK_EMAILS = [
         type: 'EMAIL',
         direction: 'OUT',
         subject: 'Rundmail Projekt-Update',
-        sender: 'Bauschlosserei Kuhn',
-        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+        sender: 'Musterbetrieb GmbH',
+        fromAddress: 'info@musterbetrieb.example',
         recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
         body: 'Hallo zusammen, hier ist das Update.',
         htmlBody: '<p>Hallo zusammen, hier ist das Update.</p>',
@@ -75,9 +75,9 @@ const MOCK_EMAILS = [
         type: 'EMAIL',
         direction: 'OUT',
         subject: 'Eigene Notiz ohne externen Empfaenger',
-        sender: 'Bauschlosserei Kuhn',
-        fromAddress: 'bauschlosserei-kuhn@t-online.de',
-        recipient: 'bauschlosserei-kuhn@t-online.de',
+        sender: 'Musterbetrieb GmbH',
+        fromAddress: 'info@musterbetrieb.example',
+        recipient: 'info@musterbetrieb.example',
         body: 'Nur an mich selbst geschickt.',
         htmlBody: '<p>Nur an mich selbst geschickt.</p>',
         sentAt: '2026-09-11T16:15:00',
@@ -115,7 +115,7 @@ async function stubEmailApi(page: Page) {
             return json(route, MOCK_STATS);
         }
         if (url.includes('/api/emails/from-addresses')) {
-            return json(route, ['bauschlosserei-kuhn@t-online.de']);
+            return json(route, ['info@musterbetrieb.example']);
         }
         if (url.includes('/api/emails/101/thread')) {
             return json(route, {
@@ -123,8 +123,8 @@ async function stubEmailApi(page: Page) {
                 focusedEmailId: 101,
                 emails: [{
                     id: 101,
-                    subject: 'BV Zech Hangleiten 1 - Protokoll Nr. 40',
-                    fromAddress: 'info@schlotz-architekten.de',
+                    subject: 'BV Mustermann Musterweg 1 - Protokoll Nr. 40',
+                    fromAddress: 'info@architekt-muster.example',
                     recipient: RUNDMAIL_EMPFAENGER,
                     sentAt: '2026-09-11T15:52:00',
                     direction: 'IN',
@@ -141,8 +141,8 @@ async function stubEmailApi(page: Page) {
                 emails: [{
                     id: 102,
                     subject: 'Re: Rückfrage Geländer Maße',
-                    fromAddress: 'bauschlosserei-kuhn@t-online.de',
-                    recipient: 'kunde@schlotz-architekten.de',
+                    fromAddress: 'info@musterbetrieb.example',
+                    recipient: 'kunde@architekt-muster.example',
                     sentAt: '2026-09-11T16:00:00',
                     direction: 'OUT',
                     snippet: 'Hier sind die Maße für das Geländer.',
@@ -164,7 +164,7 @@ async function stubEmailApi(page: Page) {
                 emails: [{
                     id: 103,
                     subject: 'Rundmail Projekt-Update',
-                    fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                    fromAddress: 'info@musterbetrieb.example',
                     recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
                     sentAt: '2026-09-11T16:10:00',
                     direction: 'OUT',
@@ -184,8 +184,8 @@ async function stubEmailApi(page: Page) {
                 emails: [{
                     id: 104,
                     subject: 'Eigene Notiz ohne externen Empfaenger',
-                    fromAddress: 'bauschlosserei-kuhn@t-online.de',
-                    recipient: 'bauschlosserei-kuhn@t-online.de',
+                    fromAddress: 'info@musterbetrieb.example',
+                    recipient: 'info@musterbetrieb.example',
                     sentAt: '2026-09-11T16:15:00',
                     direction: 'OUT',
                     snippet: 'Nur an mich selbst geschickt.',
@@ -212,7 +212,7 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
 
         // Warten bis E-Mail-Center geladen ist
         await expect(page.getByRole('heading', { name: 'E-Mail Center' })).toBeVisible();
-        await expect(page.getByText('BV Zech Hangleiten 1 - Protokoll Nr. 40')).toBeVisible();
+        await expect(page.getByText('BV Mustermann Musterweg 1 - Protokoll Nr. 40')).toBeVisible();
 
         // Splitter 1 und Splitter 2 müssen vorhanden sein
         const sidebarSplitter = page.getByTitle('Ordnerspalte verschieben');
@@ -255,11 +255,11 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
         await page.goto('/emails/inbox');
 
         // Rundmail anklicken
-        await page.getByText('BV Zech Hangleiten 1 - Protokoll Nr. 40').click();
+        await page.getByText('BV Mustermann Musterweg 1 - Protokoll Nr. 40').click();
 
         // Erst die ersten beiden Empfaenger und das "+12 weitere"-Badge muessen sichtbar sein
-        await expect(page.getByText('info@schmitt-eisingen.de').first()).toBeVisible();
-        await expect(page.getByText('mennig.elektro@t-online.de').first()).toBeVisible();
+        await expect(page.getByText('info@schlosser-muster.example').first()).toBeVisible();
+        await expect(page.getByText('elektro.muster@example.com').first()).toBeVisible();
         const badge = page.getByText('+12 weitere').first();
         await expect(badge).toBeVisible();
 
@@ -268,7 +268,7 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
 
         // Alle 14 Empfaenger muessen im Popover stehen
         await expect(page.getByText('Alle Empfänger (14)').first()).toBeVisible();
-        await expect(page.getByText('karlthomasbach@web.de').first()).toBeVisible();
+        await expect(page.getByText('erika.musterfrau@example.net').first()).toBeVisible();
         await expect(page.getByTitle('Alle E-Mail-Adressen in die Zwischenablage kopieren').first()).toBeVisible();
 
         // Schließen per Escape-Taste
@@ -290,11 +290,11 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
 
         // Compose-Formular oeffnet sich: Empfaenger muss der Kunde sein!
         await expect(page.getByText('E-Mail senden')).toBeVisible();
-        const recipientInput = page.locator('input[value*="kunde@schlotz-architekten.de"]');
+        const recipientInput = page.locator('input[value*="kunde@architekt-muster.example"]');
         await expect(recipientInput).toBeVisible();
 
         // Eigene Firmenadresse darf NICHT im Empfaenger stehen
-        const ownRecipientInput = page.locator('input[value*="bauschlosserei-kuhn@t-online.de"]');
+        const ownRecipientInput = page.locator('input[value*="info@musterbetrieb.example"]');
         await expect(ownRecipientInput).not.toBeVisible();
     });
     test('4. Antworten auf Ausgangs-Rundmail behaelt alle Empfaenger und maskiert spitze Klammern im Zitat', async ({ page }) => {
@@ -326,7 +326,7 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
         await page.goto('/emails/inbox');
 
         // Rundmail öffnen
-        await page.getByText('BV Zech Hangleiten 1 - Protokoll Nr. 40').click();
+        await page.getByText('BV Mustermann Musterweg 1 - Protokoll Nr. 40').click();
         const badge = page.getByText('+12 weitere').first();
         await badge.click();
 
@@ -351,7 +351,7 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
         await expect(page.getByText('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.')).toBeVisible();
 
         // Empfängerfeld darf die eigene Adresse NICHT enthalten
-        const ownRecipientInput = page.locator('input[value*="bauschlosserei-kuhn@t-online.de"]');
+        const ownRecipientInput = page.locator('input[value*="info@musterbetrieb.example"]');
         await expect(ownRecipientInput).not.toBeVisible();
     });
 

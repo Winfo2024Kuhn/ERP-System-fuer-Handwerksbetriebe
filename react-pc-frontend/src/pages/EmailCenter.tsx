@@ -160,8 +160,7 @@ export default function EmailCenter() {
         if (!addr) return false;
         const clean = extractEmailAddress(addr).toLowerCase();
         if (!clean) return false;
-        if (ownAddresses.some(own => own.toLowerCase() === clean)) return true;
-        return clean.includes('bauschlosserei-kuhn') || clean.startsWith('info-bauschlosserei');
+        return ownAddresses.some(own => own.toLowerCase() === clean);
     }, [ownAddresses]);
 
     const { ref: mailLayoutRef, width: availableWidth } = useEmailPaneWidth();
@@ -1449,7 +1448,7 @@ export default function EmailCenter() {
             e.fromAddress?.toLowerCase().includes(q) ||
             e.recipient?.toLowerCase().includes(q) ||
             e.body?.toLowerCase().includes(q) ||
-            getDisplayName(e).toLowerCase().includes(q)
+            getDisplayName(e, isOwnEmail).toLowerCase().includes(q)
         );
         let rows = threadRows.filter(row => row.members.some(matches));
         // Gesendet/Entwürfe haben kein sinnvolles Lese-Konzept.
@@ -1460,7 +1459,7 @@ export default function EmailCenter() {
         return rows
             .sort((a, b) => sortOrder === 'desc' ? b.latestActivity - a.latestActivity : a.latestActivity - b.latestActivity)
             .map(row => row.email);
-    }, [threadRows, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder]);
+    }, [threadRows, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder, isOwnEmail]);
 
     /** Fett/markiert, solange irgendeine Nachricht des Verlaufs ungelesen ist. */
     const isRowUnread = (email: EmailItem) => isGlobalSearch
@@ -2119,7 +2118,7 @@ export default function EmailCenter() {
                                             "text-sm truncate",
                                             isRowUnread(email) ? "font-bold text-slate-900" : "font-medium text-slate-700"
                                         )}>
-                                            {threadCounterparts.get(email.id) || getDisplayName(email)}
+                                            {threadCounterparts.get(email.id) || getDisplayName(email, isOwnEmail)}
                                         </p>
                                         <div className="flex items-center gap-1 shrink-0">
                                             <button

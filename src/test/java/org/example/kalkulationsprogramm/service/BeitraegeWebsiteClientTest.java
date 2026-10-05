@@ -34,7 +34,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class BeitraegeWebsiteClientTest {
 
-    private static final String BASE_URL = "https://bauschlosserei-kuhn.de";
+    private static final String BASE_URL = "https://musterbetrieb.example";
     private static final String API_TOKEN = "test-token-123";
 
     private HttpClient mockHttpClient;
@@ -461,7 +461,7 @@ class BeitraegeWebsiteClientTest {
 
     @Test
     void httpWebsiteUrl_wirdAbgelehntOhneHttpAufruf() throws Exception {
-        mitWebsiteUrl("http://bauschlosserei-kuhn.de");
+        mitWebsiteUrl("http://musterbetrieb.example");
 
         assertThatThrownBy(() -> client.listeAlle())
                 .isInstanceOf(BeitraegeWebsiteException.class)
@@ -498,7 +498,7 @@ class BeitraegeWebsiteClientTest {
 
     @Test
     void websiteUrlOhneSchema_fuehrtZuBeitraegeWebsiteExceptionStattExceptionDurchbruch() throws Exception {
-        mitWebsiteUrl("www.bauschlosserei-kuhn.de");
+        mitWebsiteUrl("www.musterbetrieb.example");
 
         assertThatThrownBy(() -> client.listeAlle())
                 .isInstanceOf(BeitraegeWebsiteException.class);
@@ -548,7 +548,7 @@ class BeitraegeWebsiteClientTest {
 
     @Test
     void propertyStichtDieFirmendaten() throws Exception {
-        mitBaseUrlProperty("https://kuhn-web.tail7cd296.ts.net");
+        mitBaseUrlProperty("https://erp-web.tailnet.example");
         stelleAntwortBereit(200, "{\"posts\":[]}");
 
         client.listeAlle();
@@ -556,7 +556,7 @@ class BeitraegeWebsiteClientTest {
         ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
         verify(mockHttpClient).send(anfrage.capture(), any());
         assertThat(anfrage.getValue().uri().toString())
-                .isEqualTo("https://kuhn-web.tail7cd296.ts.net/api/internal/beitraege/");
+                .isEqualTo("https://erp-web.tailnet.example/api/internal/beitraege/");
         // Die Firmendaten duerfen gar nicht erst abgefragt werden.
         verify(mockFirmeninformationService, never()).getFirmeninformation();
     }
@@ -576,7 +576,7 @@ class BeitraegeWebsiteClientTest {
 
     @Test
     void auchDiePropertyMussHttpsSein() {
-        mitBaseUrlProperty("http://kuhn-web.tail7cd296.ts.net");
+        mitBaseUrlProperty("http://erp-web.tailnet.example");
 
         assertThatThrownBy(() -> client.listeAlle())
                 .isInstanceOf(BeitraegeWebsiteException.class)
@@ -585,7 +585,7 @@ class BeitraegeWebsiteClientTest {
 
     @Test
     void abschliessenderSlashInDerPropertyErzeugtKeinenDoppeltenSlash() throws Exception {
-        mitBaseUrlProperty("https://kuhn-web.tail7cd296.ts.net/");
+        mitBaseUrlProperty("https://erp-web.tailnet.example/");
         stelleAntwortBereit(200, "{\"posts\":[]}");
 
         client.listeAlle();

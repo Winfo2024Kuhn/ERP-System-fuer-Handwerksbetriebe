@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildForwardSubject, buildReplyAddressing, buildReplySubject, groupEmailThreads, hasFurtherRecipients,
+    buildForwardSubject, buildReplyAddressing, buildReplySubject, getDisplayName, groupEmailThreads, hasFurtherRecipients,
     type EmailItem,
 } from './emailCenterModel';
 
@@ -113,5 +113,28 @@ describe('reply and forward subjects', () => {
         expect(buildForwardSubject('WG: Rechnung')).toBe('WG: Rechnung');
         expect(buildForwardSubject('FW: Rechnung')).toBe('FW: Rechnung');
         expect(buildForwardSubject('Rechnung')).toBe('Fwd: Rechnung');
+    });
+});
+
+describe('getDisplayName', () => {
+    const selbstAntwort = mail(1, {
+        fromAddress: 'Musterbetrieb GmbH <info@musterbetrieb.example>',
+        recipient: 'Max Mustermann <max.mustermann@example.com>',
+    });
+
+    it('zeigt bei Mails von einem eigenen Absender den Empfänger', () => {
+        expect(getDisplayName(selbstAntwort, isOwn)).toBe('Max Mustermann');
+    });
+
+    it('zeigt den Absender, wenn er kein eigener Absender ist', () => {
+        const fremd = mail(2, {
+            fromAddress: 'Erika Musterfrau <erika.musterfrau@t-online.de>',
+            recipient: 'info@musterbetrieb.example',
+        });
+        expect(getDisplayName(fremd, isOwn)).toBe('Erika Musterfrau');
+    });
+
+    it('hält ohne bekannte eigene Absender keine Adresse für eigene', () => {
+        expect(getDisplayName(selbstAntwort)).toBe('Musterbetrieb GmbH');
     });
 });

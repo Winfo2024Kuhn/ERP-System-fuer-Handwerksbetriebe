@@ -54,7 +54,7 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
         '/api/emails/spam': [],
         '/api/emails/newsletter': [],
         '/api/emails/tax-advisors': [],
-        '/api/emails/from-addresses': ['bauschlosserei-kuhn@t-online.de'],
+        '/api/emails/from-addresses': ['info@musterbetrieb.example'],
         ...overrides
     };
 
@@ -229,7 +229,7 @@ describe('EmailCenter', () => {
         it('ruft /api/projekte/suche auf bei Projekt-Suche', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             const projektResults = [
-                { id: 10, bauvorhaben: 'BV Riedel Höchberg', kunde: 'Riedel GmbH', auftragsnummer: '2026-003', abgeschlossen: false }
+                { id: 10, bauvorhaben: 'BV Muster Musterstadt', kunde: 'Muster GmbH', auftragsnummer: '2026-003', abgeschlossen: false }
             ];
             fetchMock = mockFetchResponses({
                 '/api/emails/1/possible-assignments': { projekte: [], anfragen: [] },
@@ -257,7 +257,7 @@ describe('EmailCenter', () => {
 
             // Type in manual search
             const searchInput = screen.getByPlaceholderText('Projekt suchen...');
-            await user.type(searchInput, 'riedel');
+            await user.type(searchInput, 'muster');
 
             // Advance debounce timer
             await act(async () => { vi.advanceTimersByTime(400); });
@@ -265,14 +265,14 @@ describe('EmailCenter', () => {
             // Should call correct endpoint
             await waitFor(() => {
                 expect(global.fetch).toHaveBeenCalledWith(
-                    expect.stringContaining('/api/projekte/suche?q=riedel')
+                    expect.stringContaining('/api/projekte/suche?q=muster')
                 );
             });
 
             // Should show result
             await waitFor(() => {
-                expect(screen.getByText('BV Riedel Höchberg')).toBeInTheDocument();
-                expect(screen.getByText('Riedel GmbH')).toBeInTheDocument();
+                expect(screen.getByText('BV Muster Musterstadt')).toBeInTheDocument();
+                expect(screen.getByText('Muster GmbH')).toBeInTheDocument();
             });
         });
 
@@ -569,9 +569,9 @@ describe('EmailCenter', () => {
                 type: 'EMAIL',
                 direction: 'OUT' as const,
                 subject: 'Angebot Metallgeländer',
-                sender: 'Bauschlosserei Kuhn',
-                fromAddress: 'bauschlosserei-kuhn@t-online.de',
-                recipient: 'kunde@schlotz-architekten.de',
+                sender: 'Musterbetrieb GmbH',
+                fromAddress: 'info@musterbetrieb.example',
+                recipient: 'kunde@architekt-muster.example',
                 body: 'Hier ist das Angebot.',
                 sentAt: new Date().toISOString(),
                 isRead: true,
@@ -588,8 +588,8 @@ describe('EmailCenter', () => {
                     emails: [{
                         id: 42,
                         subject: 'Angebot Metallgeländer',
-                        fromAddress: 'bauschlosserei-kuhn@t-online.de',
-                        recipient: 'kunde@schlotz-architekten.de',
+                        fromAddress: 'info@musterbetrieb.example',
+                        recipient: 'kunde@architekt-muster.example',
                         direction: 'OUT',
                         sentAt: new Date().toISOString(),
                         attachments: []
@@ -610,7 +610,7 @@ describe('EmailCenter', () => {
 
             // Compose-Formular öffnet sich: Empfängerfeld muss den Kunden enthalten und NICHT die eigene Adresse!
             await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
-            expect(screen.getByDisplayValue('kunde@schlotz-architekten.de')).toBeInTheDocument();
+            expect(screen.getByDisplayValue('kunde@architekt-muster.example')).toBeInTheDocument();
         });
         it('behält beim Antworten auf eine Rundmail alle Empfänger mit ihren jeweiligen Namen', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
@@ -619,14 +619,14 @@ describe('EmailCenter', () => {
                 type: 'EMAIL',
                 direction: 'OUT' as const,
                 subject: 'Rundmail Protokoll',
-                sender: 'Bauschlosserei Kuhn',
-                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                sender: 'Musterbetrieb GmbH',
+                fromAddress: 'info@musterbetrieb.example',
                 recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
                 body: 'Anbei das Protokoll.',
                 sentAt: new Date().toISOString(),
                 isRead: true,
                 zuordnungTyp: 'KEINE',
-                kundeName: 'Schlotz Architekten',
+                kundeName: 'Muster Architekten',
                 attachments: []
             };
 
@@ -639,7 +639,7 @@ describe('EmailCenter', () => {
                     emails: [{
                         id: 43,
                         subject: 'Rundmail Protokoll',
-                        fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                        fromAddress: 'info@musterbetrieb.example',
                         recipient: '"Anna" <anna@example.com>, "Ben" <ben@example.com>',
                         direction: 'OUT',
                         sentAt: new Date().toISOString(),
@@ -670,8 +670,8 @@ describe('EmailCenter', () => {
                 type: 'EMAIL',
                 direction: 'OUT' as const,
                 subject: 'Re: Sichtbarer Zitatkopf',
-                sender: 'Bauschlosserei Kuhn',
-                fromAddress: 'bauschlosserei-kuhn@t-online.de',
+                sender: 'Musterbetrieb GmbH',
+                fromAddress: 'info@musterbetrieb.example',
                 recipient: '"Anna" <anna@example.com>',
                 body: 'Klarer Textkörper',
                 sentAt: '2026-09-11T16:00:00',
@@ -733,9 +733,9 @@ describe('EmailCenter', () => {
                 type: 'EMAIL',
                 direction: 'OUT' as const,
                 subject: 'Selbst gesendete Notiz',
-                sender: 'Bauschlosserei Kuhn',
-                fromAddress: 'bauschlosserei-kuhn@t-online.de',
-                recipient: 'bauschlosserei-kuhn@t-online.de',
+                sender: 'Musterbetrieb GmbH',
+                fromAddress: 'info@musterbetrieb.example',
+                recipient: 'info@musterbetrieb.example',
                 body: 'Nur eine interne Notiz an mich selbst.',
                 sentAt: '2026-09-11T16:00:00',
                 isRead: true,
@@ -751,7 +751,7 @@ describe('EmailCenter', () => {
                     focusedEmailId: 45,
                     emails: [selfSentEmail]
                 },
-                '/api/emails/from-addresses': ['bauschlosserei-kuhn@t-online.de']
+                '/api/emails/from-addresses': ['info@musterbetrieb.example']
             }));
 
             renderEmailCenter('sent');
@@ -769,7 +769,7 @@ describe('EmailCenter', () => {
             expect(await screen.findByText('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.')).toBeInTheDocument();
 
             // Eigene Adresse darf keinesfalls im Empfängerfeld stehen!
-            expect(screen.queryByDisplayValue('bauschlosserei-kuhn@t-online.de')).not.toBeInTheDocument();
+            expect(screen.queryByDisplayValue('info@musterbetrieb.example')).not.toBeInTheDocument();
 
             // Ohne ermittelbaren Empfänger muss das An-Feld eintragbar sein (sonst Sackgasse)
             expect(screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben')).not.toHaveAttribute('readonly');

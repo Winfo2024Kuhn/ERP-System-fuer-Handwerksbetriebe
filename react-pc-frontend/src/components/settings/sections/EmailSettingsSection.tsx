@@ -467,7 +467,7 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
                     <Label htmlFor="mailFromName">Angezeigter Name</Label>
                     <Input
                         id="mailFromName"
-                        placeholder="z.B. Bauschlosserei Kuhn"
+                        placeholder="z.B. Musterbetrieb GmbH"
                         value={mailFromName}
                         onChange={(e) => setMailFromName(e.target.value)}
                         className="sm:max-w-md"
@@ -663,7 +663,7 @@ export function EmailSettingsSection({ onSaved }: { onSaved?: () => void }) {
                                 <Label htmlFor="dokumentMailName">Angezeigter Name</Label>
                                 <Input
                                     id="dokumentMailName"
-                                    placeholder="z.B. Bauschlosserei Kuhn"
+                                    placeholder="z.B. Musterbetrieb GmbH"
                                     value={dokumentMail.fromName}
                                     onChange={(e) =>
                                         setDokumentMail((prev) => ({ ...prev, fromName: e.target.value }))
