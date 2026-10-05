@@ -46,6 +46,7 @@ services:
       APP_ADMIN_USER: ${APP_ADMIN_USER:-}
       APP_ADMIN_PASS: ${APP_ADMIN_PASS:-}
       WEBSITE_BEITRAEGE_API_TOKEN: ${WEBSITE_BEITRAEGE_API_TOKEN:-}
+      FREIGABE_PUBLIC_BASE_URL: ${FREIGABE_PUBLIC_BASE_URL:-}
     volumes:
       - app_uploads:/app/uploads
       - app_logs:/app/logs

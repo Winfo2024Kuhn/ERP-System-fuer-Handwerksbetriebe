@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRep
 import org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -66,6 +67,70 @@ class DokumentFreigabeServiceTest {
 
     @InjectMocks
     private DokumentFreigabeService service;
+
+    @BeforeEach
+    void setUp() {
+        // @Value-injiziert und ohne Default → für Tests via Reflection setzen.
+        ReflectionTestUtils.setField(service, "publicBaseUrl", "https://freigabe.musterbetrieb.example/");
+    }
+
+    // ============== Öffentliche Adresse der Freigabe-Seite ==============
+
+    @Test
+    void buildPublicUrl_setztAdresseOhneDoppeltenSchraegstrichZusammen() {
+        DokumentFreigabe freigabe = new DokumentFreigabe();
+        freigabe.setUuid("abc-123");
+
+        assertThat(service.buildPublicUrl(freigabe))
+                .isEqualTo("https://freigabe.musterbetrieb.example/freigabe/abc-123");
+    }
+
+    @Test
+    void ohneOeffentlicheAdresse_kommtKeinFreigabeBlockUndKeinToken() {
+        ReflectionTestUtils.setField(service, "publicBaseUrl", "  ");
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(43L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setDokumentNummer("ANG-2026/06/00003");
+        when(ausgangsGeschaeftsDokumentRepository.findById(43L)).thenReturn(Optional.of(angebot));
+
+        Optional<String> block = service.erstelleFreigabeBlockFuerDokument(
+                43L, false, "max@mustermann.example", "angebot.pdf");
+
+        assertThat(service.istOeffentlicheAdresseGesetzt()).isFalse();
+        assertThat(block).isEmpty();
+        // Die Prüfung kommt vor dem Widerruf alter Links: sonst wären die alten
+        // Links zurückgezogen, ohne dass ein neuer verschickt wird.
+        verify(repository, org.mockito.Mockito.never()).findByQuelle(any(), any());
+        verify(repository, org.mockito.Mockito.never()).save(any(DokumentFreigabe.class));
+    }
+
+    @Test
+    void ohneOeffentlicheAdresse_kommtBeiBereitsAngenommenemAngebotWeiterDerHinweis() {
+        ReflectionTestUtils.setField(service, "publicBaseUrl", "");
+        AusgangsGeschaeftsDokument angenommen = new AusgangsGeschaeftsDokument();
+        angenommen.setId(57L);
+        angenommen.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angenommen.setDokumentNummer("ANG-2026/06/00004");
+        angenommen.setDigitalAngenommen(true);
+        when(ausgangsGeschaeftsDokumentRepository.findById(57L)).thenReturn(Optional.of(angenommen));
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(57L))).thenReturn(List.of());
+
+        Optional<String> block = service.erstelleFreigabeBlockFuerDokument(
+                57L, false, "max@mustermann.example", "angebot.pdf");
+
+        assertThat(block).isPresent();
+        assertThat(block.get()).contains("bereits angenommen").doesNotContain("/freigabe/");
+    }
+
+    @Test
+    void ohneOeffentlicheAdresse_wirdKeinLinkGebaut() {
+        ReflectionTestUtils.setField(service, "publicBaseUrl", null);
+
+        assertThatThrownBy(() -> service.buildPublicUrl(new DokumentFreigabe()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("freigabe.public-base-url");
+    }
 
     /**
      * Regression: Filter "Angebot angenommen" zeigte 0 Treffer, weil der Service

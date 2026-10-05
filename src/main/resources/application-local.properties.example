@@ -51,3 +51,9 @@ spring.datasource.password=DEIN_DB_PASSWORT
 # Nur noetig, wenn sie von der Website in den Firmendaten abweicht - dort steht
 # die oeffentliche Adresse, die auch auf Belegexporte gedruckt wird.
 #website.beitraege.base-url=https://deine-firmen-website.de
+
+# ========== Digitale Annahme von Angeboten (Freigabe-Links) ==========
+# Oeffentliche Adresse, unter der Kunden Angebote und Auftragsbestaetigungen
+# digital annehmen (Freigabe-Seite, z.B. auf der Firmen-Website). Ohne Eintrag
+# gehen diese Mails ohne Annahme-Link raus; beim Start steht dann ein Hinweis im Log.
+#freigabe.public-base-url=https://deine-firmen-website.de

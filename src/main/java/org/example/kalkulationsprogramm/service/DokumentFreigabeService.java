@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Anfrage;
@@ -100,8 +101,41 @@ public class DokumentFreigabeService
     @Value("${freigabe.hash.salt:CHANGE_ME_LOCAL_ONLY}")
     private String hashSalt;
 
-    @Value("${freigabe.public-base-url:https://bauschlosserei-kuhn.de}")
+    /**
+     * Öffentliche Adresse der Freigabe-Seite (z. B. die eigene Website), auf der Kunden
+     * Angebote und Auftragsbestätigungen digital annehmen. Bewusst ohne Default: Jeder
+     * Betrieb hat seine eigene Adresse. Ohne Eintrag gehen Mails ohne Annahme-Link raus.
+     */
+    @Value("${freigabe.public-base-url:}")
     private String publicBaseUrl;
+
+    @PostConstruct
+    void meldeFehlendeOeffentlicheAdresse()
+    {
+        if (!istOeffentlicheAdresseGesetzt())
+        {
+            log.warn("freigabe.public-base-url ist nicht gesetzt - Angebote und Auftragsbestätigungen "
+                    + "werden ohne Link zur digitalen Annahme verschickt.");
+        }
+    }
+
+    /** {@code true}, wenn eine öffentliche Adresse für Freigabe-Links eingetragen ist. */
+    public boolean istOeffentlicheAdresseGesetzt()
+    {
+        return publicBaseUrl != null && !publicBaseUrl.isBlank();
+    }
+
+    /**
+     * Freigabe-Token ohne öffentliche Adresse wären tote Links. Die Aufrufer fangen die
+     * Ausnahme ab und verschicken die Mail ohne Annahme-Block.
+     */
+    private void pruefeOeffentlicheAdresse()
+    {
+        if (!istOeffentlicheAdresseGesetzt())
+        {
+            throw new IllegalStateException("freigabe.public-base-url ist nicht gesetzt");
+        }
+    }
 
     /**
      * Erzeugt einen Freigabe-Token für ein Anfrage-Geschäftsdokument
@@ -120,6 +154,7 @@ public class DokumentFreigabeService
     @Transactional
     public DokumentFreigabe erstelleFuerAnfrage(AnfrageGeschaeftsdokument dokument, String kundeName, String kundeEmail, int gueltigkeitTage)
     {
+        pruefeOeffentlicheAdresse();
         revokeAltePendingFreigaben(FreigabeQuellTyp.ANFRAGE, dokument.getId());
         DokumentFreigabe freigabe = baseFreigabe(gueltigkeitTage);
         freigabe.setQuellTyp(FreigabeQuellTyp.ANFRAGE);
@@ -151,6 +186,7 @@ public class DokumentFreigabeService
     @Transactional
     public DokumentFreigabe erstelleFuerProjekt(ProjektGeschaeftsdokument dokument, String kundeName, String kundeEmail, int gueltigkeitTage)
     {
+        pruefeOeffentlicheAdresse();
         revokeAltePendingFreigaben(FreigabeQuellTyp.PROJEKT, dokument.getId());
         DokumentFreigabe freigabe = baseFreigabe(gueltigkeitTage);
         freigabe.setQuellTyp(FreigabeQuellTyp.PROJEKT);
@@ -171,7 +207,8 @@ public class DokumentFreigabeService
      */
     public String buildPublicUrl(DokumentFreigabe freigabe)
     {
-        String base = publicBaseUrl == null ? "" : publicBaseUrl.replaceAll("/+$", "");
+        pruefeOeffentlicheAdresse();
+        String base = publicBaseUrl.strip().replaceAll("/+$", "");
         return base + "/freigabe/" + freigabe.getUuid();
     }
 
@@ -352,6 +389,7 @@ public class DokumentFreigabeService
     @Transactional
     public DokumentFreigabe erstelleFuerAusgangsGeschaeftsDokument(AusgangsGeschaeftsDokument dok, String kundeEmail, String pdfDateiname, int gueltigkeitTage)
     {
+        pruefeOeffentlicheAdresse();
         // Ein angenommenes Dokument darf keinen zweiten Annahme-Token mehr bekommen:
         // sonst könnte derselbe Vorgang ein zweites Mal angenommen werden (anderer
         // Unterzeichner, andere IP, andere Alternativ-Auswahl), während die bereits
