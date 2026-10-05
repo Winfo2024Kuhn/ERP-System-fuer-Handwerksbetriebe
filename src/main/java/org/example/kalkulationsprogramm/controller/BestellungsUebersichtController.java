@@ -2,12 +2,16 @@ package org.example.kalkulationsprogramm.controller;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.BelegService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentAbgleich;
+import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,12 +28,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Controller für die Bestellungs-Übersicht mit Dokumenten-Ketten.
  * Gruppiert Lieferanten-Dokumente nach Status:
  * - Offene Anfragen (nur Anfrage, keine Folgedokumente)
- * - Laufende Bestellungen (AB vorhanden, keine Rechnung)
+ * - Laufende Bestellungen (AB oder Lieferschein vorhanden, keine Rechnung)
  * - Abgeschlossen (Rechnung vorhanden, noch nicht zugeordnet)
  * - Zugeordnet (Rechnung vorhanden und Projekten zugeordnet)
  */
@@ -49,6 +54,12 @@ public class BestellungsUebersichtController {
     private final BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
     private final BelegService belegService;
     private final org.example.kalkulationsprogramm.service.BelegAuditService belegAuditService;
+    private final RechnungsVorschlagService rechnungsVorschlagService;
+
+    /** Höchstzahl Dokumente einer Kette für die Vorschlagssuche. */
+    private static final int MAX_KETTEN_DOKUMENTE = 50;
+    /** Das Fenster „Rechnung suchen“ zeigt höchstens so viele Rechnungen (beste zuerst). */
+    private static final int MAX_VORSCHLAEGE = 200;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -61,6 +72,116 @@ public class BestellungsUebersichtController {
      */
     @GetMapping
     public ResponseEntity<BestellungsUebersichtDto> getUebersicht() {
+        Uebersicht uebersicht = ladeUebersicht();
+        BestellungsUebersichtDto dto = uebersicht.dto();
+        var speicher = rechnungsVorschlagService.neuerSpeicher();
+        // Jede laufende Bestellung bekommt die wahrscheinlichste offene Rechnung als Vorschlag
+        List<DokumentenKette> laufendMitVorschlag = dto.laufendeBestellungen().stream()
+                .map(kette -> kette.mitVorschlag(besterVorschlag(kette, uebersicht, speicher)))
+                .toList();
+        return ResponseEntity.ok(new BestellungsUebersichtDto(
+                dto.offeneAnfragen(), laufendMitVorschlag, dto.abgeschlossen(), dto.zugeordnet(), dto.ausgeblendet()));
+    }
+
+    /**
+     * Alle offenen Rechnungen, bewertet gegen die Dokumente einer Bestellung –
+     * beste zuerst. Für das Fenster „Rechnung suchen“.
+     *
+     * @param dokumentIds die Dokumente der Bestellungs-Kette (AB, Lieferschein, …)
+     */
+    @GetMapping("/rechnung-vorschlaege")
+    public ResponseEntity<List<RechnungsVorschlagDto>> getRechnungsVorschlaege(
+            @RequestParam("dokumentIds") List<Long> dokumentIds) {
+        if (dokumentIds == null || dokumentIds.isEmpty() || dokumentIds.size() > MAX_KETTEN_DOKUMENTE
+                || dokumentIds.stream().anyMatch(id -> id == null || id <= 0)) {
+            return ResponseEntity.badRequest().build();
+        }
+        Uebersicht uebersicht = ladeUebersicht();
+        List<LieferantDokument> bestellDokumente = dokumentIds.stream()
+                .map(uebersicht.aktiveDokumente()::get)
+                .filter(Objects::nonNull)
+                .filter(RechnungsVorschlagService::istBestellDokument)
+                .toList();
+        if (bestellDokumente.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        var vorschlaege = rechnungsVorschlagService.bewerte(
+                bestellDokumente, uebersicht.offeneRechnungen(), rechnungsVorschlagService.neuerSpeicher());
+        int anzahl = Math.min(vorschlaege.size(), MAX_VORSCHLAEGE);
+        List<RechnungsVorschlagDto> liste = new ArrayList<>(anzahl);
+        for (int i = 0; i < anzahl; i++) {
+            int quote = vorschlaege.get(i).trefferquote();
+            // Gleichstand mit dem Nachbarn: dann ist der Vorschlag nicht eindeutig
+            boolean gleichauf = (i > 0 && vorschlaege.get(i - 1).trefferquote() == quote)
+                    || (i + 1 < vorschlaege.size() && vorschlaege.get(i + 1).trefferquote() == quote);
+            liste.add(toVorschlagDto(vorschlaege.get(i), !gleichauf));
+        }
+        return ResponseEntity.ok(liste);
+    }
+
+    /**
+     * Hängt eine Rechnung an eine laufende Bestellung. Danach rutscht die Kette
+     * nach „Rechnung zuordnen“ bzw. „Erledigt“.
+     */
+    @PostMapping("/rechnung-verknuepfen")
+    public ResponseEntity<?> rechnungVerknuepfen(@Valid @RequestBody RechnungVerknuepfenRequest request,
+            Authentication auth) {
+        Long benutzerId = auth != null && auth.getPrincipal() instanceof FrontendUserPrincipal principal
+                ? principal.getId() : null;
+        try {
+            rechnungsVorschlagService.verknuepfe(request.bestellDokumentId(), request.rechnungDokumentId(), benutzerId);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    private RechnungsVorschlagDto besterVorschlag(DokumentenKette kette, Uebersicht uebersicht,
+            LieferantDokumentAbgleich.Merkmalspeicher speicher) {
+        List<LieferantDokument> bestellDokumente = kette.dokumente().stream()
+                .map(ref -> uebersicht.aktiveDokumente().get(ref.id))
+                .filter(Objects::nonNull)
+                .toList();
+        // Auf der Karte nur Rechnungen desselben Lieferanten: hält die Übersicht schnell,
+        // auch wenn sich über die Jahre viele Rechnungen ansammeln. Fremde Lieferanten
+        // zeigt das Fenster „Rechnung suchen“.
+        List<LieferantDokument> kandidaten = kette.lieferantId() == null ? List.of()
+                : uebersicht.offeneRechnungen().stream()
+                        .filter(r -> r.getLieferant() != null && kette.lieferantId().equals(r.getLieferant().getId()))
+                        .toList();
+        return rechnungsVorschlagService.besterVorschlag(bestellDokumente, kandidaten, speicher)
+                .map(b -> toVorschlagDto(b.vorschlag(), b.eindeutig()))
+                .orElse(null);
+    }
+
+    private RechnungsVorschlagDto toVorschlagDto(RechnungsVorschlagService.Vorschlag v, boolean eindeutig) {
+        LieferantDokument bestellung = v.bestellDokument();
+        var bestellDaten = bestellung.getGeschaeftsdaten();
+        return new RechnungsVorschlagDto(
+                toDokumentRef(v.rechnung()),
+                v.rechnung().getLieferant() != null ? v.rechnung().getLieferant().getLieferantenname() : null,
+                bestellung.getId(),
+                bestellung.getTyp(),
+                bestellDaten != null ? bestellDaten.getDokumentNummer() : null,
+                v.trefferquote(),
+                v.einschaetzung().sicher(),
+                eindeutig,
+                v.einschaetzung().gruende());
+    }
+
+    /**
+     * Die gruppierten Ketten plus das, was die Rechnungs-Vorschläge brauchen.
+     *
+     * @param aktiveDokumente alle eingeblendeten Dokumente nach ID
+     * @param offeneRechnungen Rechnungen, die an keiner AB und keinem Lieferschein hängen
+     */
+    private record Uebersicht(BestellungsUebersichtDto dto, Map<Long, LieferantDokument> aktiveDokumente,
+            List<LieferantDokument> offeneRechnungen) {
+    }
+
+    private Uebersicht ladeUebersicht() {
         // Alle Dokumente laden und nach ausgeblendet splitten
         List<LieferantDokument> alleDokumente = dokumentRepository.findAll();
         List<LieferantDokument> aktiveDokumente = new ArrayList<>();
@@ -98,6 +219,8 @@ public class BestellungsUebersichtController {
                     .anyMatch(d -> d.typ == LieferantDokumentTyp.RECHNUNG);
             boolean hatAB = kette.dokumente.stream()
                     .anyMatch(d -> d.typ == LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            boolean hatLieferschein = kette.dokumente.stream()
+                    .anyMatch(d -> d.typ == LieferantDokumentTyp.LIEFERSCHEIN);
             boolean hatNurAnfrage = kette.dokumente.stream()
                     .allMatch(d -> d.typ == LieferantDokumentTyp.ANGEBOT);
 
@@ -112,7 +235,9 @@ public class BestellungsUebersichtController {
                 } else {
                     abgeschlossen.add(kette);
                 }
-            } else if (hatAB) {
+            } else if (hatAB || hatLieferschein) {
+                // Ware ist bestellt oder schon geliefert, die Rechnung fehlt noch.
+                // Einzelne Lieferscheine ohne AB fielen früher durch alle Raster.
                 laufendeBestellungen.add(kette);
             } else if (hatNurAnfrage) {
                 offeneAnfragen.add(kette);
@@ -122,20 +247,8 @@ public class BestellungsUebersichtController {
         // Ausgeblendete Ketten separat aufbauen, ohne weitere Status-Aufteilung
         List<DokumentenKette> ausgeblendet = buildKetten(ausgeblendeteDokumente);
 
-        // Nach Datum sortieren (neueste zuerst)
-        Comparator<DokumentenKette> byDate = (a, b) -> {
-            LocalDate dateA = a.dokumente.stream()
-                    .map(d -> d.dokumentDatum)
-                    .filter(Objects::nonNull)
-                    .max(LocalDate::compareTo)
-                    .orElse(LocalDate.MIN);
-            LocalDate dateB = b.dokumente.stream()
-                    .map(d -> d.dokumentDatum)
-                    .filter(Objects::nonNull)
-                    .max(LocalDate::compareTo)
-                    .orElse(LocalDate.MIN);
-            return dateB.compareTo(dateA);
-        };
+        // Nach Datum sortieren (neueste zuerst); ohne Belegdatum zählt der Eingang
+        Comparator<DokumentenKette> byDate = (a, b) -> neuestesDatum(b).compareTo(neuestesDatum(a));
 
         offeneAnfragen.sort(byDate);
         laufendeBestellungen.sort(byDate);
@@ -143,8 +256,25 @@ public class BestellungsUebersichtController {
         zugeordnet.sort(byDate);
         ausgeblendet.sort(byDate);
 
-        return ResponseEntity.ok(new BestellungsUebersichtDto(
-                offeneAnfragen, laufendeBestellungen, abgeschlossen, zugeordnet, ausgeblendet));
+        Map<Long, LieferantDokument> aktiveNachId = new HashMap<>();
+        aktiveDokumente.forEach(d -> aktiveNachId.put(d.getId(), d));
+        // Auch schon Projekten zugeordnete Rechnungen kommen infrage: Genau dort steckt
+        // meist die Verknüpfung, die beim Import nicht geklappt hat.
+        List<LieferantDokument> offeneRechnungen = Stream.concat(abgeschlossen.stream(), zugeordnet.stream())
+                .filter(k -> k.dokumente().stream().noneMatch(d -> d.typ == LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG
+                        || d.typ == LieferantDokumentTyp.LIEFERSCHEIN))
+                .flatMap(k -> k.dokumente().stream())
+                .filter(d -> d.typ == LieferantDokumentTyp.RECHNUNG)
+                .map(d -> aktiveNachId.get(d.id))
+                .filter(Objects::nonNull)
+                // Auch eine ausgeblendete AB zählt: Sonst schlüge die Liste Rechnungen vor,
+                // deren Zuordnung immer scheitert.
+                .filter(r -> !RechnungsVorschlagService.haengtAnBestellung(r))
+                .toList();
+
+        return new Uebersicht(new BestellungsUebersichtDto(
+                offeneAnfragen, laufendeBestellungen, abgeschlossen, zugeordnet, ausgeblendet),
+                aktiveNachId, offeneRechnungen);
     }
 
     /**
@@ -1058,15 +1188,31 @@ public class BestellungsUebersichtController {
         return ketten;
     }
 
+    private static LocalDate neuestesDatum(DokumentenKette kette) {
+        return kette.dokumente().stream()
+                .map(d -> d.dokumentDatum != null ? d.dokumentDatum : d.eingangsDatum)
+                .filter(Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .orElse(LocalDate.MIN);
+    }
+
     private void collectKettenIds(LieferantDokument dok, Map<Long, LieferantDokument> dokMap, Set<Long> collected) {
         if (dok == null || collected.contains(dok.getId()))
             return;
         collected.add(dok.getId());
 
-        // Verknüpfte Dokumente durchlaufen
+        // Verknüpfungen in beide Richtungen durchlaufen: Gespeichert wird nur
+        // Nachfolger -> Vorgänger (Rechnung -> AB). Ohne die Rückrichtung bildete eine
+        // AB, die vor ihrer Rechnung an der Reihe war, eine eigene Kette ohne Rechnung
+        // und blieb dauerhaft bei den laufenden Bestellungen stehen.
         if (dok.getVerknuepfteDokumente() != null) {
             for (LieferantDokument verknuepft : dok.getVerknuepfteDokumente()) {
                 collectKettenIds(verknuepft, dokMap, collected);
+            }
+        }
+        if (dok.getVerknuepftVon() != null) {
+            for (LieferantDokument nachfolger : dok.getVerknuepftVon()) {
+                collectKettenIds(nachfolger, dokMap, collected);
             }
         }
     }
@@ -1088,6 +1234,7 @@ public class BestellungsUebersichtController {
         ref.id = d.getId();
         ref.typ = d.getTyp();
         ref.dateiname = d.getEffektiverDateiname();
+        ref.eingangsDatum = d.getUploadDatum() != null ? d.getUploadDatum().toLocalDate() : null;
 
         if (d.getGeschaeftsdaten() != null) {
             var gd = d.getGeschaeftsdaten();
@@ -1138,7 +1285,40 @@ public class BestellungsUebersichtController {
             String id,
             Long lieferantId,
             String lieferantName,
-            List<DokumentRef> dokumente) {
+            List<DokumentRef> dokumente,
+            /** Nur bei laufenden Bestellungen: die wahrscheinlichste offene Rechnung. */
+            RechnungsVorschlagDto rechnungsVorschlag) {
+
+        public DokumentenKette(String id, Long lieferantId, String lieferantName, List<DokumentRef> dokumente) {
+            this(id, lieferantId, lieferantName, dokumente, null);
+        }
+
+        DokumentenKette mitVorschlag(RechnungsVorschlagDto vorschlag) {
+            return new DokumentenKette(id, lieferantId, lieferantName, dokumente, vorschlag);
+        }
+    }
+
+    /**
+     * @param rechnung          die vorgeschlagene Rechnung
+     * @param bestellDokumentId an dieses Dokument der Bestellung wird sie gehängt
+     * @param trefferquote      0–100 %
+     * @param eindeutig         {@code false}, wenn eine zweite Rechnung genauso gut passt
+     */
+    public record RechnungsVorschlagDto(
+            DokumentRef rechnung,
+            String lieferantName,
+            Long bestellDokumentId,
+            LieferantDokumentTyp bestellDokumentTyp,
+            String bestellDokumentNummer,
+            int trefferquote,
+            boolean sicher,
+            boolean eindeutig,
+            List<String> gruende) {
+    }
+
+    public record RechnungVerknuepfenRequest(
+            @NotNull @Positive Long bestellDokumentId,
+            @NotNull @Positive Long rechnungDokumentId) {
     }
 
     public static class DokumentRef {
@@ -1149,6 +1329,8 @@ public class BestellungsUebersichtController {
         public Double betragBrutto;
         public Double betragNetto;
         public LocalDate liefertermin;
+        /** Wann das Dokument ins System kam – Ersatz, wenn kein Belegdatum erkannt wurde. */
+        public LocalDate eingangsDatum;
         public String dateiname;
         public String pdfUrl;
     }

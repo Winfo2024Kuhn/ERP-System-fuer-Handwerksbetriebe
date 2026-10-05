@@ -261,6 +261,130 @@ public class LieferantDokumentAbgleich {
         return new Ergebnis(List.of(), beste.dokument());
     }
 
+    // ------------------------------------------------------- Einschätzung
+
+    /** Ab dieser Trefferquote gilt ein Paar als sicher – der Import hätte es selbst verknüpft. */
+    public static final int QUOTE_SICHER = 95;
+    /** Höchste Quote für reine Hinweise: Ohne Nummernbezug bleibt ein Rest Unsicherheit. */
+    static final int QUOTE_HINWEIS_MAX = 94;
+    static final int ABZUG_ANDERER_LIEFERANT = 25;
+    /** Quote bei Nummernbezug – noch sicherer als eine gleiche Bestellnummer. */
+    static final int QUOTE_NUMMERNBEZUG = 97;
+    /** Je so viele Hinweispunkte steigt ein sicherer Treffer um einen Prozentpunkt. */
+    static final int HINWEISPUNKTE_JE_PROZENT_SICHER = 20;
+    /** Hinweis-Quote = Sockel + Punkte × Faktor (gedeckelt bei {@link #QUOTE_HINWEIS_MAX}). */
+    static final int QUOTE_HINWEIS_SOCKEL = 45;
+    static final double QUOTE_HINWEIS_FAKTOR = 0.6;
+    /** Nur zeitliche Nähe ohne weiteres Merkmal – reicht für die Sortierung, nicht für die Karte. */
+    static final int QUOTE_NUR_ZEITNAH = 25;
+    static final int QUOTE_NUR_ZEITLICH_PASSEND = 15;
+    static final int QUOTE_OHNE_DATUM = 10;
+    static final int TAGE_ZEITNAH = 45;
+
+    /**
+     * Einschätzung für die Oberfläche: wie wahrscheinlich ein Vorgänger zum
+     * Nachfolger gehört, mit den Gründen in Klartext.
+     *
+     * @param trefferquote 0–100 %
+     * @param sicher       ein Nummernbezug oder eine trennscharfe Bestellnummer
+     * @param gruende      kurze, verständliche Begründungen („Gleiche Bestellnummer“)
+     */
+    public record Einschaetzung(int trefferquote, boolean sicher, List<String> gruende) {
+    }
+
+    /**
+     * Schätzt ein, wie gut ein Vorgänger (z. B. AB oder Lieferschein) zu einem
+     * Nachfolger (z. B. Rechnung) passt. Nutzt dieselben Merkmale und Punkte wie
+     * {@link #findeVorgaenger}, liefert aber für jedes Paar eine Quote statt einer
+     * Ja/Nein-Entscheidung – auch für Paare, die der Import bewusst nicht verknüpft
+     * hat (Gleichstand, fehlendes Datum, anderer Lieferant).
+     *
+     * @param bestellnummerTrennscharf ob die gemeinsame Bestellnummer unter den
+     *                                 Kandidaten selten genug ist, um sicher zu zählen
+     */
+    public Einschaetzung schaetzeEin(LieferantDokument nachfolger, LieferantDokument vorgaenger,
+            boolean bestellnummerTrennscharf, Merkmalspeicher speicher) {
+        if (nachfolger == null || vorgaenger == null
+                || nachfolger.getGeschaeftsdaten() == null || vorgaenger.getGeschaeftsdaten() == null) {
+            return new Einschaetzung(0, false, List.of());
+        }
+        Merkmale ich = merkmale(nachfolger.getTyp(), nachfolger.getGeschaeftsdaten(), speicher);
+        Merkmale vor = merkmale(vorgaenger.getTyp(), vorgaenger.getGeschaeftsdaten(), speicher);
+        List<String> gruende = new ArrayList<>();
+
+        boolean gleicherLieferant = nachfolger.getLieferant() != null && vorgaenger.getLieferant() != null
+                && nachfolger.getLieferant().getId() != null
+                && nachfolger.getLieferant().getId().equals(vorgaenger.getLieferant().getId());
+        if (gleicherLieferant) {
+            gruende.add("Gleicher Lieferant");
+        } else {
+            gruende.add("Anderer Lieferant");
+        }
+
+        int sicherePunkte = sicherePunkte(ich, vor, bestellnummerTrennscharf);
+        boolean gleicheBestellnummer = ich.bestellnummer() != null && ich.bestellnummer().equals(vor.bestellnummer());
+        if (sicherePunkte >= PUNKTE_NUMMERNBEZUG) {
+            gruende.add("Belegnummer wird genannt");
+        } else if (sicherePunkte >= SCHWELLE_SICHER) {
+            gruende.add("Gleiche Bestellnummer");
+        } else if (gleicheBestellnummer) {
+            gruende.add("Gleiche Bestellnummer (bei mehreren Belegen)");
+        }
+
+        boolean datumPasst = datumPasst(ich, vor);
+        int hinweisPunkte = hinweisPunkte(ich, vor);
+        if (datumPasst) {
+            if (kommissionPasst(ich.kommission(), vor.kommission())) {
+                gruende.add("Gleiche Kommission");
+            }
+            if (betragPasst(ich, vor)) {
+                gruende.add("Gleicher Betrag");
+            }
+            int artikel = artikelPunkte(ich.artikel(), vor.artikel());
+            if (artikel >= PUNKTE_ARTIKEL) {
+                gruende.add("Gleiche Artikelnummern");
+            } else if (artikel > 0) {
+                gruende.add("Gleiche Artikelnummer");
+            }
+            if (sicherePunkte < SCHWELLE_SICHER && gleicheBestellnummer) {
+                // Nicht trennscharf, aber immer noch ein Hinweis
+                hinweisPunkte += PUNKTE_KOMMISSION;
+            }
+        }
+        if (ich.datum() != null && vor.datum() != null) {
+            long tage = java.time.temporal.ChronoUnit.DAYS.between(vor.datum(), ich.datum());
+            if (!datumPasst) {
+                gruende.add("Datum passt nicht zur Bestellung");
+            } else if (tage >= 0) {
+                gruende.add(tage == 0 ? "Am selben Tag" : tage == 1 ? "1 Tag danach" : tage + " Tage danach");
+            }
+        } else {
+            gruende.add("Datum fehlt");
+        }
+
+        int quote;
+        boolean sicher = sicherePunkte >= SCHWELLE_SICHER;
+        if (sicher) {
+            quote = Math.min(100, (sicherePunkte >= PUNKTE_NUMMERNBEZUG ? QUOTE_NUMMERNBEZUG : QUOTE_SICHER)
+                    + hinweisPunkte / HINWEISPUNKTE_JE_PROZENT_SICHER);
+        } else if (hinweisPunkte > 0) {
+            // Ohne Datum fehlt die zeitliche Grenze – der Import verlangt dann doppelt so viel.
+            int punkte = ich.datum() != null && vor.datum() != null ? hinweisPunkte : hinweisPunkte / 2;
+            quote = Math.min(QUOTE_HINWEIS_MAX, QUOTE_HINWEIS_SOCKEL + (int) (punkte * QUOTE_HINWEIS_FAKTOR));
+        } else if (datumPasst && ich.datum() != null && vor.datum() != null) {
+            // Nur zeitliche Nähe: kein Beleg, aber für die Sortierung hilfreich
+            long tage = java.time.temporal.ChronoUnit.DAYS.between(vor.datum(), ich.datum());
+            quote = tage >= 0 && tage <= TAGE_ZEITNAH ? QUOTE_NUR_ZEITNAH : QUOTE_NUR_ZEITLICH_PASSEND;
+        } else {
+            quote = datumPasst ? QUOTE_OHNE_DATUM : 0;
+        }
+        if (!gleicherLieferant) {
+            quote = Math.max(0, quote - ABZUG_ANDERER_LIEFERANT);
+            sicher = sicher && quote >= QUOTE_SICHER;
+        }
+        return new Einschaetzung(quote, sicher, List.copyOf(gruende));
+    }
+
     /**
      * Liegt der Kandidat zeitlich vor dem Dokument? Maßgeblich ist das Belegdatum,
      * bei gleichem oder fehlendem Datum die Reihenfolge des Eingangs (ID).

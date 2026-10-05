@@ -1,13 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { RefreshCw, FileText, ChevronRight, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase, EyeOff, Eye, Archive } from 'lucide-react';
+import { Input } from '../components/ui/input';
+import { RefreshCw, FileText, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase, EyeOff, Eye, Archive, Search, ChevronDown, ChevronRight, FileSearch, Check, Sparkles } from 'lucide-react';
 import { ProjectSelectModal } from '../components/ProjectSelectModal';
 import { KostenstelleSelectModal } from '../components/KostenstelleSelectModal';
 import { useToast } from '../components/ui/toast';
 import { ZuordnungModal as BelegZuordnungModal } from '../components/ZuordnungModal';
+import { useConfirm } from '../components/ui/confirm-dialog';
+import { RechnungSuchenDialog } from '../features/bestellungen/RechnungSuchenDialog';
+import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter } from '../features/bestellungen/bestellungenListe';
+import { TREFFER_KLASSEN, brauchtRueckfrage, formatiereQuote, rechnungVerknuepfen, rueckfrageText, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
 
 // ========== Types ==========
 interface DokumentRef {
@@ -18,6 +23,8 @@ interface DokumentRef {
     betragBrutto: number | null;
     betragNetto: number | null;
     liefertermin: string | null;
+    /** Eingang im System – Ersatz, wenn kein Belegdatum erkannt wurde. */
+    eingangsDatum?: string | null;
     dateiname: string;
     pdfUrl: string | null;
 }
@@ -27,7 +34,11 @@ interface DokumentenKette {
     lieferantId: number | null;
     lieferantName: string | null;
     dokumente: DokumentRef[];
+    /** Nur bei „Bestellt“ gefüllt: die wahrscheinlichste Rechnung (ab 40 %). */
+    rechnungsVorschlag?: RechnungsVorschlag | null;
 }
+
+type TabKey = 'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet' | 'ausgeblendet';
 
 interface BestellungsUebersicht {
     offeneAnfragen: DokumentenKette[];
@@ -99,102 +110,198 @@ const TYP_LABELS: Record<DokumentRef['typ'], string> = {
 };
 
 // ========== Ketten-Komponente ==========
+const FORTSCHRITT_SCHRITTE = ['Angebot', 'Bestellt', 'Geliefert', 'Rechnung'];
+
+function Fortschritt({ stufe }: { stufe: number }) {
+    return (
+        <ol className="grid grid-cols-4 gap-1.5" aria-label={`Fortschritt: ${stufe} von 4 Schritten`}>
+            {FORTSCHRITT_SCHRITTE.map((name, idx) => {
+                const erreicht = idx < stufe;
+                return (
+                    <li key={name} className="min-w-0">
+                        <div className={`h-1.5 rounded-full ${erreicht ? 'bg-rose-500' : 'bg-slate-200'}`} />
+                        <span className={`mt-1 block text-[11px] truncate ${erreicht ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
+                            {name}
+                            <span className="sr-only">{erreicht ? ' (erreicht)' : ' (offen)'}</span>
+                        </span>
+                    </li>
+                );
+            })}
+        </ol>
+    );
+}
+
 interface KetteCardProps {
     kette: DokumentenKette;
+    heute: Date;
     onOpenPdf: (url: string, title: string) => void;
     showZuordnenButton?: boolean;
     onZuordnen?: (kette: DokumentenKette) => void;
     onAusblenden?: (kette: DokumentenKette) => void;
     onEinblenden?: (kette: DokumentenKette) => void;
+    /** Nur im Tab „Bestellt“: Rechnung suchen und Vorschlag übernehmen. */
+    onRechnungSuchen?: (kette: DokumentenKette) => void;
+    onVorschlagUebernehmen?: (kette: DokumentenKette) => void;
+    uebernehmenBusy?: boolean;
+    /** Lange ohne Rechnung: bernsteinfarbener Hinweis. */
+    ohneRechnungHinweis?: boolean;
     busy?: boolean;
 }
 
-function KetteCard({ kette, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, busy }: KetteCardProps) {
-    const rechnung = kette.dokumente.find(d => d.typ === 'RECHNUNG');
+function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, onRechnungSuchen, onVorschlagUebernehmen, uebernehmenBusy, ohneRechnungHinweis, busy }: KetteCardProps) {
+    const betrag = kettenBetrag(kette);
+    const alter = formatiereAlter(letzteBewegung(kette), heute);
+    const vorschlag = onVorschlagUebernehmen ? kette.rechnungsVorschlag : null;
 
     return (
-        <Card className="p-4 hover:shadow-md transition-shadow">
-            {/* Header mit Lieferant */}
-            <div className="flex items-center justify-between mb-3">
-                <div>
-                    <span className="text-sm font-semibold text-slate-900">
+        <Card className={`p-4 flex flex-col gap-3 hover:shadow-md transition-shadow ${ohneRechnungHinweis ? 'border-amber-300' : ''}`}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-900 truncate">
                         {kette.lieferantName || 'Unbekannter Lieferant'}
-                    </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                        <Clock className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+                        Letzte Bewegung {alter}
+                    </p>
                 </div>
-                {rechnung?.betragBrutto && (
-                    <span className="text-sm font-medium text-slate-600">
-                        {formatEuro(rechnung.betragBrutto)} €
-                    </span>
+                {betrag && (
+                    <div className="text-right flex-shrink-0">
+                        <div className="text-sm font-semibold text-slate-900 tabular-nums">{formatEuro(betrag.betrag)} €</div>
+                        <div className="text-[11px] text-slate-400">laut {TYP_LABELS[betrag.typ]}</div>
+                    </div>
                 )}
             </div>
 
-            {/* Dokumenten-Kette horizontal */}
-            <div className="flex items-center gap-2 flex-wrap mb-3">
-                {kette.dokumente.map((dok, idx) => (
-                    <div key={dok.id} className="flex items-center">
-                        {idx > 0 && <ChevronRight className="w-4 h-4 text-slate-300 mx-1" />}
-                        <button
-                            onClick={() => dok.pdfUrl && onOpenPdf(dok.pdfUrl, dok.dokumentNummer || dok.dateiname)}
-                            disabled={!dok.pdfUrl}
-                            className="flex flex-col items-start p-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors min-w-[100px] text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <span className="text-xs font-medium text-slate-500 uppercase">
-                                {TYP_LABELS[dok.typ]}
+            {ohneRechnungHinweis && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+                    Seit {alter.replace(/^vor /, '')} keine Rechnung
+                </p>
+            )}
+
+            <Fortschritt stufe={fortschrittsStufe(kette)} />
+
+            {/* Dokumente als Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+                {kette.dokumente.map(dok => (
+                    <button
+                        key={dok.id}
+                        type="button"
+                        onClick={() => dok.pdfUrl && onOpenPdf(dok.pdfUrl, dok.dokumentNummer || dok.dateiname)}
+                        disabled={!dok.pdfUrl}
+                        title={dok.pdfUrl ? 'Vorschau öffnen' : 'Keine Vorschau vorhanden'}
+                        className="flex flex-col items-start px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                    >
+                        <span className="text-[11px] font-medium text-slate-500 uppercase">{TYP_LABELS[dok.typ]}</span>
+                        <span className="text-sm font-semibold text-slate-800 truncate max-w-[140px]">{dok.dokumentNummer || '–'}</span>
+                        <span className="text-[11px] text-slate-500 tabular-nums">{formatDate(dok.dokumentDatum ?? dok.eingangsDatum ?? null)}</span>
+                        {dok.typ === 'AUFTRAGSBESTAETIGUNG' && dok.liefertermin && (
+                            <span className="text-[11px] text-rose-600 mt-0.5 flex items-center gap-1">
+                                <Clock className="w-3 h-3" aria-hidden="true" />
+                                {formatDate(dok.liefertermin)}
                             </span>
-                            <span className="text-sm font-semibold text-slate-800 truncate max-w-[120px]">
-                                {dok.dokumentNummer || '–'}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                                {formatDate(dok.dokumentDatum)}
-                            </span>
-                            {dok.typ === 'AUFTRAGSBESTAETIGUNG' && dok.liefertermin && (
-                                <span className="text-xs text-rose-600 mt-1 flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {formatDate(dok.liefertermin)}
-                                </span>
-                            )}
-                        </button>
-                    </div>
+                        )}
+                    </button>
                 ))}
             </div>
 
-            {/* Zuordnen-Button */}
-            {showZuordnenButton && onZuordnen && (
-                <Button
-                    onClick={() => onZuordnen(kette)}
-                    size="sm"
-                    variant="outline"
-                    className="w-full text-slate-600 border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-                >
-                    <FolderOpen className="w-4 h-4 mr-2" />
-                    Projekten zuordnen
-                </Button>
+            {/* Wahrscheinliche Rechnung */}
+            {vorschlag && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-1.5" aria-label="Vorschlag für die Rechnung">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="text-sm text-slate-700 min-w-0 flex items-center gap-1.5 flex-wrap">
+                            <Sparkles className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" aria-hidden="true" />
+                            <span>Wahrscheinlich: Rechnung</span>
+                            {vorschlag.rechnung.pdfUrl ? (
+                                <button
+                                    type="button"
+                                    onClick={() => onOpenPdf(vorschlag.rechnung.pdfUrl as string, vorschlag.rechnung.dokumentNummer || vorschlag.rechnung.dateiname)}
+                                    className="font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-800 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                >
+                                    {vorschlag.rechnung.dokumentNummer || vorschlag.rechnung.dateiname}
+                                </button>
+                            ) : (
+                                <span className="font-semibold">{vorschlag.rechnung.dokumentNummer || vorschlag.rechnung.dateiname}</span>
+                            )}
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border tabular-nums ${TREFFER_KLASSEN[trefferStufe(vorschlag.trefferquote)]}`}>
+                                {formatiereQuote(vorschlag.trefferquote)}
+                            </span>
+                        </div>
+                        <div className="flex gap-2">
+                            {vorschlag.rechnung.pdfUrl && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => onOpenPdf(vorschlag.rechnung.pdfUrl as string, vorschlag.rechnung.dokumentNummer || vorschlag.rechnung.dateiname)}
+                                    aria-label={`Vorschau Rechnung ${vorschlag.rechnung.dokumentNummer ?? vorschlag.rechnung.dateiname}`}
+                                >
+                                    <Eye className="w-4 h-4" aria-hidden="true" />
+                                    Vorschau
+                                </Button>
+                            )}
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => onVorschlagUebernehmen?.(kette)}
+                                disabled={uebernehmenBusy}
+                                aria-label={`Rechnung ${vorschlag.rechnung.dokumentNummer ?? vorschlag.rechnung.dateiname} übernehmen`}
+                            >
+                                {uebernehmenBusy
+                                    ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
+                                    : <Check className="w-4 h-4" aria-hidden="true" />}
+                                Übernehmen
+                            </Button>
+                        </div>
+                    </div>
+                    {vorschlag.gruende.length > 0 && (
+                        <p className="text-[11px] text-slate-500">{vorschlag.gruende.join(' · ')}</p>
+                    )}
+                    {!vorschlag.eindeutig && (
+                        <p className="text-[11px] text-amber-700 flex items-start gap-1">
+                            <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                            Weitere Rechnung gleich wahrscheinlich – bitte über „Rechnung suchen“ prüfen.
+                        </p>
+                    )}
+                </div>
             )}
 
-            {/* Ausblenden / Einblenden */}
-            {onAusblenden && (
-                <Button
-                    onClick={() => onAusblenden(kette)}
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy}
-                    className="w-full text-slate-500 hover:text-rose-700 hover:bg-rose-50 mt-2"
-                >
-                    <EyeOff className="w-4 h-4 mr-2" />
-                    Ausblenden
-                </Button>
-            )}
-            {onEinblenden && (
-                <Button
-                    onClick={() => onEinblenden(kette)}
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    className="w-full text-rose-700 border-rose-300 hover:bg-rose-50 mt-2"
-                >
-                    <Eye className="w-4 h-4 mr-2" />
-                    Wieder einblenden
-                </Button>
+            {/* Fußzeile: Aktionen */}
+            {(showZuordnenButton || onRechnungSuchen || onAusblenden || onEinblenden) && (
+                <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex gap-2 flex-wrap">
+                        {showZuordnenButton && onZuordnen && (
+                            <Button onClick={() => onZuordnen(kette)} size="sm" variant="outline">
+                                <FolderOpen className="w-4 h-4" aria-hidden="true" />
+                                Projekten zuordnen
+                            </Button>
+                        )}
+                        {onRechnungSuchen && (
+                            <Button onClick={() => onRechnungSuchen(kette)} size="sm" variant="outline">
+                                <FileSearch className="w-4 h-4" aria-hidden="true" />
+                                Rechnung suchen
+                            </Button>
+                        )}
+                        {onEinblenden && (
+                            <Button onClick={() => onEinblenden(kette)} size="sm" variant="outline" disabled={busy}>
+                                <Eye className="w-4 h-4" aria-hidden="true" />
+                                Wieder einblenden
+                            </Button>
+                        )}
+                    </div>
+                    {onAusblenden && (
+                        <Button
+                            onClick={() => onAusblenden(kette)}
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy}
+                            className="text-slate-500 hover:text-rose-700 hover:bg-rose-50 ml-auto"
+                        >
+                            <EyeOff className="w-4 h-4" aria-hidden="true" />
+                            Ausblenden
+                        </Button>
+                    )}
+                </div>
             )}
         </Card>
     );
@@ -207,19 +314,31 @@ interface TabButtonProps {
     icon: React.ReactNode;
     label: string;
     count: number;
+    /** Hervorgehoben (rose), wenn dort Arbeit wartet. */
+    attention?: boolean;
 }
 
-function TabButton({ active, onClick, icon, label, count }: TabButtonProps) {
+function TabButton({ active, onClick, icon, label, count, attention }: TabButtonProps) {
     return (
         <button
+            type="button"
+            role="tab"
+            aria-selected={active}
             onClick={onClick}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap flex items-center gap-2 ${active
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition whitespace-nowrap flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-inset ${active
                 ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
                 : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                 }`}
         >
             {icon}
-            {label} ({count})
+            {label}
+            <span
+                className={`min-w-[1.5rem] px-1.5 py-0.5 rounded-full text-xs font-semibold tabular-nums text-center ${attention && count > 0
+                    ? 'bg-rose-600 text-white'
+                    : 'bg-slate-100 text-slate-600'}`}
+            >
+                {count}
+            </span>
         </button>
     );
 }
@@ -756,7 +875,14 @@ function ZuordnungModal({ kette, onClose, onSuccess }: ZuordnungModalProps) {
 // ========== Hauptkomponente ==========
 export default function BestellungenUebersicht() {
     const toast = useToast();
-    const [tab, setTab] = useState<'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet' | 'ausgeblendet'>('laufend');
+    const confirm = useConfirm();
+    const [tab, setTab] = useState<TabKey>('laufend');
+    const [heute] = useState(() => new Date());
+    const [suche, setSucheText] = useState('');
+    // null = automatisch (bei Suche mit Treffern aufgeklappt), sonst Wahl des Nutzers
+    const [aelterManuell, setAelterManuell] = useState<boolean | null>(null);
+    const [rechnungSuchenKette, setRechnungSuchenKette] = useState<DokumentenKette | null>(null);
+    const [uebernehmenKetteId, setUebernehmenKetteId] = useState<string | null>(null);
     const [data, setData] = useState<BestellungsUebersicht | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -819,19 +945,30 @@ export default function BestellungenUebersicht() {
 
     const [bulkBusy, setBulkBusy] = useState(false);
 
-    const alleZugeordnetAusblenden = useCallback(async () => {
-        if (!data || data.zugeordnet.length === 0) return;
-        const ketten = data.zugeordnet;
-        if (!window.confirm(`Möchten Sie wirklich alle ${ketten.length} zugeordneten Bestellungen ausblenden?`)) {
-            return;
-        }
+    const setSuche = (text: string) => {
+        setSucheText(text);
+        setAelterManuell(null);
+    };
+
+    /** Blendet viele Ketten auf einmal aus (Bestätigung, sofortige Anzeige, Chunks à 500 IDs). */
+    const kettenAusblenden = useCallback(async (ketten: DokumentenKette[], frage: string, erfolg: string) => {
+        if (ketten.length === 0) return;
+        const ok = await confirm({
+            title: 'Wirklich ausblenden?',
+            message: frage,
+            confirmLabel: 'Ausblenden',
+            variant: 'warning',
+        });
+        if (!ok) return;
 
         setBulkBusy(true);
-
-        // Optimistic Update: Zugeordnete sofort in Ausgeblendet verschieben
+        const ids = new Set(ketten.map(k => k.id));
+        // Optimistic Update: Ketten sofort in „Ausgeblendet“ verschieben
         setData(prev => prev ? {
-            ...prev,
-            zugeordnet: [],
+            offeneAnfragen: prev.offeneAnfragen.filter(k => !ids.has(k.id)),
+            laufendeBestellungen: prev.laufendeBestellungen.filter(k => !ids.has(k.id)),
+            abgeschlossen: prev.abgeschlossen.filter(k => !ids.has(k.id)),
+            zugeordnet: prev.zugeordnet.filter(k => !ids.has(k.id)),
             ausgeblendet: [...ketten, ...prev.ausgeblendet],
         } : prev);
 
@@ -849,14 +986,38 @@ export default function BestellungenUebersicht() {
                 if (!res.ok) throw new Error('Fehler');
             }
             await loadData(true);
-            toast.success(`${ketten.length} Bestellungen ausgeblendet`);
+            toast.success(erfolg);
         } catch {
-            toast.error('Aktion fehlgeschlagen');
+            toast.error('Ausblenden fehlgeschlagen. Der aktuelle Stand wird neu geladen.');
             await loadData(true);
         } finally {
             setBulkBusy(false);
         }
-    }, [data, loadData, toast]);
+    }, [confirm, loadData, toast]);
+
+    const vorschlagUebernehmen = useCallback(async (kette: DokumentenKette) => {
+        const vorschlag = kette.rechnungsVorschlag;
+        if (!vorschlag) return;
+        if (brauchtRueckfrage(vorschlag)) {
+            const ok = await confirm({
+                title: 'Rechnung wirklich zuordnen?',
+                message: rueckfrageText(vorschlag),
+                confirmLabel: 'Zuordnen',
+                variant: 'warning',
+            });
+            if (!ok) return;
+        }
+        setUebernehmenKetteId(kette.id);
+        try {
+            await rechnungVerknuepfen(vorschlag.bestellDokumentId, vorschlag.rechnung.id);
+            toast.success(vorschlag.rechnung.dokumentNummer ? `Rechnung ${vorschlag.rechnung.dokumentNummer} zugeordnet.` : 'Rechnung zugeordnet.');
+            await loadData(true);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Rechnung konnte nicht zugeordnet werden.');
+        } finally {
+            setUebernehmenKetteId(null);
+        }
+    }, [confirm, loadData, toast]);
 
     const setKetteAusgeblendet = useCallback(async (kette: DokumentenKette, ausblenden: boolean) => {
         setBusyKetteId(kette.id);
@@ -898,15 +1059,61 @@ export default function BestellungenUebersicht() {
         }
     }, [loadData, toast]);
 
-    const currentList = tab === 'offen'
-        ? data?.offeneAnfragen
-        : tab === 'laufend'
-            ? data?.laufendeBestellungen
-            : tab === 'abgeschlossen'
-                ? data?.abgeschlossen
-                : tab === 'zugeordnet'
-                    ? data?.zugeordnet
-                    : data?.ausgeblendet;
+    // Suche wirkt auf alle Tabs gleichzeitig
+    const sucheAktiv = suche.trim() !== '';
+    const gefiltert = useMemo(() => {
+        const filter = (liste: DokumentenKette[] | undefined) => (liste ?? []).filter(k => passtZurSuche(k, suche));
+        return {
+            offen: filter(data?.offeneAnfragen),
+            laufend: filter(data?.laufendeBestellungen),
+            abgeschlossen: filter(data?.abgeschlossen),
+            zugeordnet: filter(data?.zugeordnet),
+            ausgeblendet: filter(data?.ausgeblendet),
+        } satisfies Record<TabKey, DokumentenKette[]>;
+    }, [data, suche]);
+
+    const offeneTeile = useMemo(() => teileNachAlter(gefiltert.offen, heute), [gefiltert.offen, heute]);
+    const laufendeTeile = useMemo(() => teileNachAlter(gefiltert.laufend, heute), [gefiltert.laufend, heute]);
+
+    const tabs: { key: TabKey; label: string; icon: React.ReactNode; erklaerung: string; leer: string; zaehler: number; attention?: boolean }[] = [
+        { key: 'offen', label: 'Angebote', icon: <AlertCircle className="w-4 h-4" />, zaehler: offeneTeile.aktuell.length,
+            erklaerung: 'Angebote von Lieferanten, zu denen noch keine Bestellung kam.', leer: 'Keine offenen Angebote vorhanden.' },
+        { key: 'laufend', label: 'Bestellt', icon: <Package className="w-4 h-4" />, zaehler: gefiltert.laufend.length,
+            erklaerung: 'Bestellt oder geliefert – die Rechnung fehlt noch.', leer: 'Keine laufenden Bestellungen vorhanden.' },
+        { key: 'abgeschlossen', label: 'Rechnung zuordnen', icon: <CheckCircle className="w-4 h-4" />, zaehler: gefiltert.abgeschlossen.length, attention: true,
+            erklaerung: 'Die Rechnung ist da – ordne die Kosten jetzt einem Projekt oder einer Kostenstelle zu.', leer: 'Keine Bestellungen zum Zuordnen.' },
+        { key: 'zugeordnet', label: 'Erledigt', icon: <FolderOpen className="w-4 h-4" />, zaehler: gefiltert.zugeordnet.length,
+            erklaerung: 'Bestellungen, deren Kosten schon zugeordnet sind.', leer: 'Noch keine Bestellungen zugeordnet.' },
+        { key: 'ausgeblendet', label: 'Ausgeblendet', icon: <Archive className="w-4 h-4" />, zaehler: gefiltert.ausgeblendet.length,
+            erklaerung: 'Ausgeblendete Einträge. Sie lassen sich jederzeit wieder einblenden.', leer: 'Keine ausgeblendeten Einträge.' },
+    ];
+    const aktiverTab = tabs.find(t => t.key === tab) ?? tabs[0];
+    const currentList = gefiltert[tab];
+    const trefferWoanders = tabs.filter(t => t.key !== tab && gefiltert[t.key].length > 0);
+    const aelterAufgeklappt = aelterManuell ?? (sucheAktiv && offeneTeile.aelter.length > 0);
+
+    const renderKarte = (kette: DokumentenKette, optionen: { ohneRechnungHinweis?: boolean } = {}) => {
+        const istAusgeblendetTab = tab === 'ausgeblendet';
+        const istBestellt = tab === 'laufend';
+        return (
+            <KetteCard
+                key={kette.id}
+                kette={kette}
+                heute={heute}
+                onOpenPdf={handleOpenPdf}
+                showZuordnenButton={tab === 'abgeschlossen'}
+                onZuordnen={setZuordnungKette}
+                onAusblenden={istAusgeblendetTab ? undefined : (k) => setKetteAusgeblendet(k, true)}
+                onEinblenden={istAusgeblendetTab ? (k) => setKetteAusgeblendet(k, false) : undefined}
+                onRechnungSuchen={istBestellt ? setRechnungSuchenKette : undefined}
+                onVorschlagUebernehmen={istBestellt ? vorschlagUebernehmen : undefined}
+                uebernehmenBusy={uebernehmenKetteId === kette.id}
+                ohneRechnungHinweis={optionen.ohneRechnungHinweis}
+                busy={busyKetteId === kette.id}
+            />
+        );
+    };
+    const kartenGitter = 'grid gap-4 md:grid-cols-2 xl:grid-cols-3';
 
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
@@ -920,7 +1127,7 @@ export default function BestellungenUebersicht() {
                         BESTELLUNGEN
                     </h1>
                     <p className="text-slate-500 mt-1">
-                        Übersicht aller Lieferanten-Dokumente nach Bestellstatus
+                        Angefragt, bestellt, geliefert – und was noch abgerechnet werden muss. Alles an einem Ort.
                     </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -943,110 +1150,193 @@ export default function BestellungenUebersicht() {
                         size="sm"
                         className="gap-2"
                     >
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'motion-safe:animate-spin' : ''}`} />
                         Aktualisieren
                     </Button>
                 </div>
             </div>
 
-            {/* Tabs - Projekt-Stil */}
-            <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
-                <TabButton
-                    active={tab === 'offen'}
-                    onClick={() => setTab('offen')}
-                    icon={<AlertCircle className="w-4 h-4" />}
-                    label="Offene Anfragen"
-                    count={data?.offeneAnfragen.length || 0}
+            {/* Suche */}
+            <div className="relative max-w-xl">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                <Input
+                    type="text"
+                    value={suche}
+                    onChange={e => setSuche(e.target.value)}
+                    placeholder="Lieferant, Nummer, Betrag oder Datum suchen …"
+                    aria-label="Bestellungen durchsuchen"
+                    className="h-10 pl-9 pr-10 bg-white rounded-lg border-slate-300"
                 />
-                <TabButton
-                    active={tab === 'laufend'}
-                    onClick={() => setTab('laufend')}
-                    icon={<Package className="w-4 h-4" />}
-                    label="Laufende Bestellungen"
-                    count={data?.laufendeBestellungen.length || 0}
-                />
-                <TabButton
-                    active={tab === 'abgeschlossen'}
-                    onClick={() => setTab('abgeschlossen')}
-                    icon={<CheckCircle className="w-4 h-4" />}
-                    label="Abgeschlossen"
-                    count={data?.abgeschlossen.length || 0}
-                />
-                <TabButton
-                    active={tab === 'zugeordnet'}
-                    onClick={() => setTab('zugeordnet')}
-                    icon={<FolderOpen className="w-4 h-4" />}
-                    label="Zugeordnet"
-                    count={data?.zugeordnet.length || 0}
-                />
-                <TabButton
-                    active={tab === 'ausgeblendet'}
-                    onClick={() => setTab('ausgeblendet')}
-                    icon={<Archive className="w-4 h-4" />}
-                    label="Ausgeblendet"
-                    count={data?.ausgeblendet.length || 0}
-                />
+                {suche && (
+                    <button
+                        type="button"
+                        onClick={() => setSuche('')}
+                        aria-label="Suche löschen"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-slate-400 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                )}
+            </div>
+
+            {/* Tabs */}
+            <div>
+                <div role="tablist" aria-label="Bestellstatus" className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+                    {tabs.map(t => (
+                        <TabButton
+                            key={t.key}
+                            active={tab === t.key}
+                            onClick={() => setTab(t.key)}
+                            icon={t.icon}
+                            label={t.label}
+                            count={t.zaehler}
+                            attention={t.attention}
+                        />
+                    ))}
+                </div>
+                <p className="text-sm text-slate-500 mt-3">{aktiverTab.erklaerung}</p>
             </div>
 
             {/* Content */}
             {loading ? (
-                <div className="flex items-center justify-center py-12">
-                    <RefreshCw className="w-8 h-8 animate-spin text-slate-400" />
+                <div className={kartenGitter} role="status" aria-label="Bestellungen werden geladen">
+                    {[0, 1, 2].map(i => (
+                        <Card key={i} className="p-4 space-y-3 motion-safe:animate-pulse">
+                            <div className="h-4 w-1/2 rounded bg-slate-200" />
+                            <div className="h-1.5 w-full rounded bg-slate-100" />
+                            <div className="h-12 w-2/3 rounded bg-slate-100" />
+                        </Card>
+                    ))}
                 </div>
             ) : error ? (
                 <Card className="p-6 text-center text-red-600">
                     <AlertCircle className="w-8 h-8 mx-auto mb-2" />
                     {error}
                 </Card>
-            ) : !currentList || currentList.length === 0 ? (
+            ) : (tab === 'offen' ? gefiltert.offen.length === 0 : currentList.length === 0) ? (
                 <Card className="p-12 text-center text-slate-500 border-dashed">
                     <FileText className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                    <p className="text-lg font-medium">Keine Einträge</p>
-                    <p className="text-sm mt-1">
-                        {tab === 'offen' && 'Keine offenen Anfragen vorhanden.'}
-                        {tab === 'laufend' && 'Keine laufenden Bestellungen vorhanden.'}
-                        {tab === 'abgeschlossen' && 'Keine abgeschlossenen Bestellungen zum Zuordnen.'}
-                        {tab === 'zugeordnet' && 'Noch keine Bestellungen Projekten zugeordnet.'}
-                        {tab === 'ausgeblendet' && 'Keine ausgeblendeten Einträge.'}
-                    </p>
+                    {sucheAktiv ? (
+                        <>
+                            <p className="text-lg font-medium">Keine Treffer in „{aktiverTab.label}“</p>
+                            {trefferWoanders.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                    <p className="text-sm">Zu „{suche.trim()}“ gibt es Treffer in:</p>
+                                    <div className="flex flex-wrap justify-center gap-2">
+                                        {trefferWoanders.map(t => (
+                                            <Button key={t.key} size="sm" variant="outline" onClick={() => setTab(t.key)}>
+                                                {t.label} ({gefiltert[t.key].length})
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-sm mt-1">Auch in den anderen Reitern gibt es nichts dazu.</p>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <p className="text-lg font-medium">Keine Einträge</p>
+                            <p className="text-sm mt-1">{aktiverTab.leer}</p>
+                        </>
+                    )}
                 </Card>
             ) : (
                 <div className="space-y-4">
-                    {tab === 'zugeordnet' && currentList.length > 0 && (
+                    {tab === 'zugeordnet' && (
                         <div className="flex justify-end">
                             <Button
-                                onClick={alleZugeordnetAusblenden}
+                                onClick={() => void kettenAusblenden(
+                                    currentList,
+                                    `Wirklich alle ${currentList.length} erledigten Bestellungen ausblenden? Sie stehen danach unter „Ausgeblendet“.`,
+                                    `${currentList.length} Bestellungen ausgeblendet`,
+                                )}
                                 disabled={bulkBusy}
                                 variant="outline"
                                 size="sm"
                                 className="text-slate-600 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
                             >
                                 {bulkBusy ? (
-                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                    <RefreshCw className="w-4 h-4 motion-safe:animate-spin" />
                                 ) : (
-                                    <EyeOff className="w-4 h-4 mr-2" />
+                                    <EyeOff className="w-4 h-4" />
                                 )}
                                 Alle ausblenden ({currentList.length})
                             </Button>
                         </div>
                     )}
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {(() => {
-                            const istAusgeblendetTab = tab === 'ausgeblendet';
-                            return currentList.map(kette => (
-                                <KetteCard
-                                    key={kette.id}
-                                    kette={kette}
-                                    onOpenPdf={handleOpenPdf}
-                                    showZuordnenButton={tab === 'abgeschlossen'}
-                                    onZuordnen={setZuordnungKette}
-                                    onAusblenden={istAusgeblendetTab ? undefined : (k) => setKetteAusgeblendet(k, true)}
-                                    onEinblenden={istAusgeblendetTab ? (k) => setKetteAusgeblendet(k, false) : undefined}
-                                    busy={busyKetteId === kette.id}
-                                />
-                            ));
-                        })()}
-                    </div>
+
+                    {tab === 'offen' && (
+                        <>
+                            {offeneTeile.aktuell.length > 0 ? (
+                                <div className={kartenGitter}>{offeneTeile.aktuell.map(k => renderKarte(k))}</div>
+                            ) : (
+                                <p className="text-sm text-slate-500">Keine neueren Angebote{sucheAktiv ? ' zur Suche' : ''}.</p>
+                            )}
+                            {offeneTeile.aelter.length > 0 && (
+                                <section aria-label="Ältere Angebote" className="rounded-lg border border-slate-200 bg-white">
+                                    <div className="flex items-center justify-between gap-3 p-2 pr-3">
+                                        <button
+                                            type="button"
+                                            aria-expanded={aelterAufgeklappt}
+                                            aria-controls="aeltere-angebote"
+                                            onClick={() => setAelterManuell(!aelterAufgeklappt)}
+                                            className="flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-slate-700 rounded hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                        >
+                                            {aelterAufgeklappt ? <ChevronDown className="w-4 h-4" aria-hidden="true" /> : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
+                                            Ältere Angebote ohne Bestellung ({offeneTeile.aelter.length})
+                                        </button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={bulkBusy}
+                                            onClick={() => void kettenAusblenden(
+                                                offeneTeile.aelter,
+                                                `Wirklich ${offeneTeile.aelter.length} ältere Angebote ausblenden? Sie stehen danach unter „Ausgeblendet“.`,
+                                                `${offeneTeile.aelter.length} ältere Angebote ausgeblendet`,
+                                            )}
+                                        >
+                                            {bulkBusy ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" /> : <EyeOff className="w-4 h-4" />}
+                                            Alle ausblenden
+                                        </Button>
+                                    </div>
+                                    {aelterAufgeklappt && (
+                                        <div id="aeltere-angebote" className={`${kartenGitter} p-4 pt-2 border-t border-slate-100`}>
+                                            {offeneTeile.aelter.map(k => renderKarte(k))}
+                                        </div>
+                                    )}
+                                </section>
+                            )}
+                        </>
+                    )}
+
+                    {tab === 'laufend' && (
+                        <>
+                            {laufendeTeile.aelter.length > 0 && (
+                                <section aria-label="Seit über 2 Monaten keine Rechnung" className="space-y-3">
+                                    <h2 className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+                                        <AlertCircle className="w-4 h-4" aria-hidden="true" />
+                                        Seit über 2 Monaten keine Rechnung ({laufendeTeile.aelter.length})
+                                    </h2>
+                                    <div className={kartenGitter}>
+                                        {laufendeTeile.aelter.map(k => renderKarte(k, { ohneRechnungHinweis: true }))}
+                                    </div>
+                                </section>
+                            )}
+                            {laufendeTeile.aktuell.length > 0 && (
+                                <section aria-label="Aktuelle Bestellungen" className="space-y-3">
+                                    {laufendeTeile.aelter.length > 0 && (
+                                        <h2 className="text-sm font-semibold text-slate-700">Aktuell ({laufendeTeile.aktuell.length})</h2>
+                                    )}
+                                    <div className={kartenGitter}>{laufendeTeile.aktuell.map(k => renderKarte(k))}</div>
+                                </section>
+                            )}
+                        </>
+                    )}
+
+                    {tab !== 'offen' && tab !== 'laufend' && (
+                        <div className={kartenGitter}>{currentList.map(k => renderKarte(k))}</div>
+                    )}
                 </div>
             )}
 
@@ -1081,6 +1371,17 @@ export default function BestellungenUebersicht() {
                     onSuccess={() => {
                         setSelectedBeleg(null);
                         void loadOffeneBelege();
+                        void loadData(true);
+                    }}
+                />
+            )}
+
+            {rechnungSuchenKette && (
+                <RechnungSuchenDialog
+                    kette={rechnungSuchenKette}
+                    onClose={() => setRechnungSuchenKette(null)}
+                    onVerknuepft={() => {
+                        setRechnungSuchenKette(null);
                         void loadData(true);
                     }}
                 />

@@ -406,7 +406,10 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
     const rahmen: Rahmen[] = await page.evaluate(() => {
         const selektor = 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="alert"], [role="status"]';
         const ergebnis: Rahmen[] = [];
-        const dialog = document.querySelector('[role="dialog"]');
+        // Bei gestapelten Dialogen (z. B. Vorschau über einem Suchfenster) zählt nur
+        // der oberste – Portale hängen in Öffnungsreihenfolge am body, also der letzte.
+        const alleDialoge = Array.from(document.querySelectorAll('[role="dialog"]'));
+        const dialog = alleDialoge[alleDialoge.length - 1] ?? null;
 
         const istFestPositioniert = (el: HTMLElement): boolean => {
             for (let k: HTMLElement | null = el; k != null && k !== document.body; k = k.parentElement) {
@@ -466,6 +469,8 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             const fest = istFestPositioniert(el);
             // Hintergrund hinter einem Dialog ist absichtlich verdeckt -- ausser er ist fest positioniert.
             if (dialog && !dialog.contains(el) && !fest) continue;
+            // Darunterliegende Dialoge sind vom obersten verdeckt, auch wenn sie fest positioniert sind.
+            if (dialog && !dialog.contains(el) && el.closest('[role="dialog"]')) continue;
             if (el === dialog) continue;
             const rolle = el.getAttribute('role');
             const toastRoot = el.closest('[data-pc-toasts]');
