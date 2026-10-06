@@ -128,16 +128,23 @@ class LieferantDokumentAbgleichTest {
         }
 
         @Test
-        void bestellnummerAufVielenDokumentenIstNichtTrennscharf() {
+        void bestellnummerUeberMonateVerstreutIstNichtTrennscharf() {
+            // Früher entschied die Anzahl (mehr als 3 Belege = Kundennummer). Das brach
+            // Teillieferungen mit 4 Lieferscheinen. Jetzt entscheidet die Streuung: Eine
+            // Kundennummer steht über Monate verteilt auf den Belegen.
             LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 31));
             rechnung.getGeschaeftsdaten().setBestellnummer("KD-12345");
             LieferantDokument[] lieferscheine = new LieferantDokument[4];
             for (int i = 0; i < lieferscheine.length; i++) {
-                lieferscheine[i] = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-" + i, LocalDate.of(2026, 5, 1 + i));
+                lieferscheine[i] = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-" + i, LocalDate.of(2026, 1 + i, 1));
                 lieferscheine[i].getGeschaeftsdaten().setBestellnummer("KD-12345");
             }
+            LieferantDokument alteRechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-0", LocalDate.of(2025, 11, 3));
+            alteRechnung.getGeschaeftsdaten().setBestellnummer("KD-12345");
+            List<LieferantDokument> kandidaten = new java.util.ArrayList<>(List.of(lieferscheine));
+            kandidaten.add(alteRechnung);
 
-            assertThat(vorgaenger(rechnung, lieferscheine)).isEmpty();
+            assertThat(abgleich.findeVorgaenger(rechnung, rechnung.getGeschaeftsdaten(), kandidaten).sicher()).isEmpty();
         }
 
         @Test
@@ -148,6 +155,301 @@ class LieferantDokumentAbgleichTest {
             ab.getGeschaeftsdaten().setBestellnummer("telefonisch");
 
             assertThat(vorgaenger(ab, angebot)).isEmpty();
+        }
+    }
+
+    /**
+     * Typische Nummernmuster von Lieferanten – alle Nummern erfunden.
+     */
+    @Nested
+    class GemeinsameNummern {
+
+        private List<LieferantDokument> sicher(LieferantDokument rechnung, List<LieferantDokument> kandidaten) {
+            return abgleich.findeVorgaenger(rechnung, rechnung.getGeschaeftsdaten(), kandidaten).sicher();
+        }
+
+        @Test
+        void muster1_teillieferungenMitBestellUndAuftragsnummerAlleVerknuepft() {
+            List<LieferantDokument> lieferscheine = new java.util.ArrayList<>();
+            int[] tage = { 2, 4, 6, 9 };
+            for (int i = 0; i < tage.length; i++) {
+                LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-90000" + i, LocalDate.of(2026, 3, tage[i]));
+                ls.getGeschaeftsdaten().setBestellnummer("47711111");
+                ls.getGeschaeftsdaten().setReferenzNummer("2299000001");
+                lieferscheine.add(ls);
+            }
+            LieferantDokument fremd = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-900099", LocalDate.of(2026, 3, 5));
+            fremd.getGeschaeftsdaten().setBestellnummer("Lager");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-5550001", LocalDate.of(2026, 3, 31));
+            rechnung.getGeschaeftsdaten().setBestellnummer("47711111");
+            rechnung.getGeschaeftsdaten().setReferenzNummer("2299000001");
+            List<LieferantDokument> kandidaten = new java.util.ArrayList<>(lieferscheine);
+            kandidaten.add(fremd);
+
+            assertThat(sicher(rechnung, kandidaten)).containsExactlyInAnyOrderElementsOf(lieferscheine);
+        }
+
+        @Test
+        void muster2_abUndLieferscheinMitZweiTeilrechnungen() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "RL 12 - 98700001/1", LocalDate.of(2026, 8, 1));
+            ab.getGeschaeftsdaten().setBestellnummer("telef. vom 30.07.2026");
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "RL 12 - 98700001/01", LocalDate.of(2026, 8, 10));
+            LieferantDokument andereAb = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "RL 12 - 98700777/1", LocalDate.of(2026, 8, 2));
+            LieferantDokument teil1 = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 8, 15));
+            teil1.getGeschaeftsdaten().setReferenzNummer("98700001");
+            LieferantDokument teil2 = dokument(LieferantDokumentTyp.RECHNUNG, "RE-2", LocalDate.of(2026, 9, 20));
+            teil2.getGeschaeftsdaten().setReferenzNummer("98700001");
+            List<LieferantDokument> alle = List.of(ab, ls, andereAb, teil1, teil2);
+
+            assertThat(sicher(teil1, alle)).containsExactlyInAnyOrder(ab, ls);
+            assertThat(sicher(teil2, alle)).containsExactlyInAnyOrder(ab, ls);
+        }
+
+        @Test
+        void muster3_rechnungNenntLieferscheinKundennummerZaehltNicht() {
+            List<LieferantDokument> alle = new java.util.ArrayList<>();
+            for (int monat = 1; monat <= 7; monat += 2) {
+                LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "AU-99000" + monat, LocalDate.of(2026, monat, 12));
+                ls.getGeschaeftsdaten().setReferenzNummer("9900123");
+                alle.add(ls);
+            }
+            LieferantDokument gemeint = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "AU-990017", LocalDate.of(2026, 7, 20));
+            gemeint.getGeschaeftsdaten().setReferenzNummer("9900123");
+            alle.add(gemeint);
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-80001", LocalDate.of(2026, 7, 28));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("AU-990017");
+            rechnung.getGeschaeftsdaten().setAiRawJson("{\"weitereReferenzen\":[\"Kd-Nr. 9900123\"]}");
+
+            assertThat(sicher(rechnung, alle)).containsExactly(gemeint);
+        }
+
+        @Test
+        void kundennummerUeberMonateAllein_keinTreffer() {
+            LieferantDokument ls1 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 1, 12));
+            LieferantDokument ls2 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-2", LocalDate.of(2026, 4, 2));
+            LieferantDokument ls3 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-3", LocalDate.of(2026, 7, 2));
+            for (LieferantDokument ls : List.of(ls1, ls2, ls3)) {
+                ls.getGeschaeftsdaten().setReferenzNummer("9900123");
+            }
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 7, 10));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("Kunde 9900123");
+
+            LieferantDokumentAbgleich.Ergebnis ergebnis = abgleich(rechnung, ls1, ls2, ls3);
+            assertThat(ergebnis.sicher()).isEmpty();
+            assertThat(ergebnis.hinweis()).isNull();
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+                "99-2-01234, 99201234",
+                "99-01234, 9901234",
+                "0099-01234, LS 9901234"
+        })
+        void muster4_ziffernkernDesGanzenFeldes(String lieferscheinReferenz, String rechnungsBestellnummer) {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "L-1", LocalDate.of(2026, 5, 5));
+            ls.getGeschaeftsdaten().setReferenzNummer(lieferscheinReferenz);
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "R-1", LocalDate.of(2026, 5, 20));
+            rechnung.getGeschaeftsdaten().setBestellnummer(rechnungsBestellnummer);
+
+            assertThat(sicher(rechnung, List.of(ls))).containsExactly(ls);
+        }
+
+        @Test
+        void datumsFreitextIstKeineNummer() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 8, 6));
+            ab.getGeschaeftsdaten().setBestellnummer("telef. vom 05.08.2026");
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 8, 8));
+            ls.getGeschaeftsdaten().setReferenzNummer("2026-08-05");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 8, 20));
+            rechnung.getGeschaeftsdaten().setBestellnummer("telef. vom 05.08.2026");
+            rechnung.getGeschaeftsdaten().setReferenzNummer("Lieferung 5.8.26");
+
+            LieferantDokumentAbgleich.Ergebnis ergebnis = abgleich(rechnung, ab, ls);
+            assertThat(ergebnis.sicher()).isEmpty();
+            assertThat(ergebnis.hinweis()).isNull();
+            assertThat(LieferantDokumentAbgleich.ohneDatum("vom 05.08.2026")).doesNotContain("2026");
+            assertThat(LieferantDokumentAbgleich.ohneDatum("99-2-01234")).isEqualTo("99-2-01234");
+        }
+
+        @Test
+        void zweiBestellungenMitGleicherKundennummer_keineKreuzverknuepfung() {
+            // Junger Lieferant: Die Kundennummer steht erst auf zwei Lieferscheinen in
+            // 30 Tagen – noch nicht verstreut. Die genauere Bestellnummer entscheidet.
+            LieferantDokument lsA = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-A", LocalDate.of(2026, 3, 1));
+            lsA.getGeschaeftsdaten().setReferenzNummer("Kd 9900123");
+            lsA.getGeschaeftsdaten().setBestellnummer("BE 55500011");
+            LieferantDokument lsB = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-B", LocalDate.of(2026, 3, 31));
+            lsB.getGeschaeftsdaten().setReferenzNummer("Kd 9900123");
+            lsB.getGeschaeftsdaten().setBestellnummer("BE 55500022");
+            LieferantDokument rechnungA = dokument(LieferantDokumentTyp.RECHNUNG, "RE-A", LocalDate.of(2026, 4, 10));
+            rechnungA.getGeschaeftsdaten().setReferenzNummer("Kd 9900123");
+            rechnungA.getGeschaeftsdaten().setBestellnummer("55500011");
+            LieferantDokument rechnungB = dokument(LieferantDokumentTyp.RECHNUNG, "RE-B", LocalDate.of(2026, 4, 30));
+            rechnungB.getGeschaeftsdaten().setReferenzNummer("Kd 9900123");
+            rechnungB.getGeschaeftsdaten().setBestellnummer("55500022");
+            List<LieferantDokument> alle = List.of(lsA, lsB, rechnungA, rechnungB);
+
+            assertThat(sicher(rechnungA, alle)).containsExactly(lsA);
+            assertThat(sicher(rechnungB, alle)).containsExactly(lsB);
+        }
+
+        @Test
+        void rechnungNenntLieferschein_abDerselbenBestellungBleibtDran_andererLieferscheinFaelltWeg() {
+            // Teilrechnung: nennt Lieferschein 1 ausdrücklich. Die AB teilt nur die Auftragsnummer,
+            // ist aber keine Konkurrenz zum Lieferschein. Lieferschein 2 gehört zur zweiten Teilrechnung.
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "RL 12 - 98700555/1", LocalDate.of(2026, 4, 8));
+            LieferantDokument ls1 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "98700555/01", LocalDate.of(2026, 4, 9));
+            LieferantDokument ls2 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "98700555/03", LocalDate.of(2026, 4, 14));
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-80555", LocalDate.of(2026, 4, 16));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("98700555/01");
+
+            assertThat(sicher(rechnung, List.of(ab, ls1, ls2))).containsExactlyInAnyOrder(ab, ls1);
+        }
+
+        @Test
+        void nurDieKundennummerGemeinsam_bleibtBeiEinemLieferscheinVerknuepft() {
+            // Ohne genauere Nummer gibt es keinen Maßstab – ein einzelner Treffer bleibt.
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-A", LocalDate.of(2026, 3, 1));
+            ls.getGeschaeftsdaten().setReferenzNummer("Kd 9900123");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-A", LocalDate.of(2026, 3, 10));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("Kd 9900123");
+
+            assertThat(sicher(rechnung, List.of(ls))).containsExactly(ls);
+        }
+
+        @Test
+        void kurzerFreitextInDerBestellnummerVerbindetKeineFremdenAuftraege() {
+            // Zwei ABs und zwei Rechnungen tragen "Mail vom 7.5" – das ist keine Bestellnummer.
+            // Jede Rechnung nennt nur ihre eigene AB.
+            LieferantDokument ab1 = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "24-01111", LocalDate.of(2024, 5, 7));
+            ab1.getGeschaeftsdaten().setBestellnummer("Mail vom 7.5");
+            LieferantDokument ab2 = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "24-02222", LocalDate.of(2024, 5, 8));
+            ab2.getGeschaeftsdaten().setBestellnummer("Mail vom 7.5");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "2409999", LocalDate.of(2024, 5, 24));
+            rechnung.getGeschaeftsdaten().setBestellnummer("Mail vom 7.5");
+            rechnung.getGeschaeftsdaten().setReferenzNummer("24-02222");
+
+            assertThat(sicher(rechnung, List.of(ab1, ab2))).containsExactly(ab2);
+            assertThat(LieferantDokumentAbgleich.ohneFreitext("MAILVOM75")).isNull();
+            assertThat(LieferantDokumentAbgleich.ohneFreitext("B44")).isEqualTo("B44");
+            assertThat(LieferantDokumentAbgleich.ohneFreitext("DE990321")).isEqualTo("DE990321");
+        }
+
+        @Test
+        void gleichAufgebauteKreiseVerschiedenerBelegartenTreffenSichNicht() {
+            // Lieferschein nennt seine AB, die Rechnung unsere Bestellung: Gleicher Ziffernkern,
+            // aber verschiedene Vorsilben – kein Bezug.
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 4, 1));
+            ls.getGeschaeftsdaten().setReferenzNummer("AB-2026-00123");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 20));
+            rechnung.getGeschaeftsdaten().setBestellnummer("BE-2026-00123");
+
+            assertThat(sicher(rechnung, List.of(ls))).isEmpty();
+            // Ohne Vorsilbe auf einer Seite zählt der Kern
+            rechnung.getGeschaeftsdaten().setBestellnummer("2026-00123");
+            assertThat(sicher(rechnung, List.of(ls))).containsExactly(ls);
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+                "2026-04-20, true",   // 10 Tage vor dem Lieferschein
+                "2026-04-19, false",  // 11 Tage davor
+                "2026-09-27, true",   // 150 Tage danach
+                "2026-09-28, false"   // 151 Tage danach
+        })
+        void rechnungsdatumMussZurLieferungPassen(LocalDate rechnungsdatum, boolean erwartet) {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 4, 30));
+            ls.getGeschaeftsdaten().setBestellnummer("BE 77700001");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", rechnungsdatum);
+            rechnung.getGeschaeftsdaten().setBestellnummer("77700001");
+
+            assertThat(sicher(rechnung, List.of(ls))).hasSize(erwartet ? 1 : 0);
+        }
+
+        @Test
+        void ohneDatumKeinNummernTreffer() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", null);
+            ls.getGeschaeftsdaten().setBestellnummer("77700001");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 1));
+            rechnung.getGeschaeftsdaten().setBestellnummer("77700001");
+
+            assertThat(sicher(rechnung, List.of(ls))).isEmpty();
+        }
+
+        @Test
+        void kurzeBestellnummerBehaeltDieAlteRegel() {
+            // "B-44" hat keine 5-stellige Nummer – hier gilt weiter: höchstens 3 Belege.
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 5, 2));
+            ls.getGeschaeftsdaten().setBestellnummer("B-44");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 31));
+            rechnung.getGeschaeftsdaten().setBestellnummer("B 44");
+
+            assertThat(sicher(rechnung, List.of(ls))).containsExactly(ls);
+        }
+
+        @Test
+        void sehrLangeFelderOhneBacktracking() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 5, 2));
+            ls.getGeschaeftsdaten().setReferenzNummer("1-".repeat(20_000) + "x");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 31));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("12.12.".repeat(5_000));
+
+            long start = System.nanoTime();
+            assertThat(sicher(rechnung, List.of(ls))).isEmpty();
+            assertThat(System.nanoTime() - start).isLessThan(2_000_000_000L);
+        }
+    }
+
+    @Nested
+    class RechnungNurSicher {
+
+        @Test
+        void hinweisAllein_keineAutomatischeVerknuepfung() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 9, 10));
+            ab.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("1190.00"));
+            ab.getGeschaeftsdaten().setAiRawJson("{\"kommission\":\"BV Mustermann Treppe\"}");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 9, 14));
+            rechnung.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("1190.00"));
+            rechnung.getGeschaeftsdaten().setAiRawJson("{\"kommission\":\"BV Mustermann Treppe\"}");
+
+            LieferantDokumentAbgleich.Ergebnis ergebnis = abgleich(rechnung, ab);
+            assertThat(ergebnis.sicher()).isEmpty();
+            assertThat(ergebnis.hinweis()).isNull();
+
+            // Als Vorschlag bleibt das Paar sichtbar
+            var einschaetzung = abgleich.schaetzeEin(rechnung, ab, false, null, abgleich.neuerSpeicher());
+            assertThat(einschaetzung.trefferquote()).isGreaterThanOrEqualTo(RechnungsVorschlagService.MIN_QUOTE_KARTE);
+            assertThat(einschaetzung.sicher()).isFalse();
+        }
+
+        @Test
+        void gesperrtesPaarWirdNieVerknuepft() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-4711", LocalDate.of(2026, 5, 2));
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 31));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("LS-4711");
+
+            var speicher = abgleich.neuerSpeicher();
+            speicher.sperre(rechnung.getId(), ls.getId());
+            assertThat(abgleich.findeVorgaenger(rechnung, rechnung.getGeschaeftsdaten(), List.of(ls), speicher).sicher())
+                    .isEmpty();
+
+            // Auch in Gegenrichtung gespeichert gilt die Sperre
+            var umgekehrt = abgleich.neuerSpeicher();
+            umgekehrt.sperre(ls.getId(), rechnung.getId());
+            assertThat(abgleich.findeVorgaenger(rechnung, rechnung.getGeschaeftsdaten(), List.of(ls), umgekehrt).sicher())
+                    .isEmpty();
+            // Ohne Sperre: sicher
+            assertThat(abgleich(rechnung, ls).sicher()).containsExactly(ls);
+        }
+
+        @Test
+        void andereTypenBehaltenHinweisTreffer() {
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 9, 10));
+            rechnung.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("119.00"));
+            LieferantDokument gutschrift = dokument(LieferantDokumentTyp.GUTSCHRIFT, "GS-1", LocalDate.of(2026, 9, 14));
+            gutschrift.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("-119.00"));
+
+            assertThat(abgleich(gutschrift, rechnung).hinweis()).isSameAs(rechnung);
         }
     }
 
@@ -288,8 +590,10 @@ class LieferantDokumentAbgleichTest {
                 "ANGEBOT, AUFTRAGSBESTAETIGUNG, 2025-03-01, false",  // über ein Jahr alt
                 "ANGEBOT, AUFTRAGSBESTAETIGUNG, 2026-04-10, true",   // leicht nachdatiert
                 "ANGEBOT, AUFTRAGSBESTAETIGUNG, 2026-05-01, false",  // deutlich nach der AB
-                "AUFTRAGSBESTAETIGUNG, RECHNUNG, 2026-01-15, true",
-                "AUFTRAGSBESTAETIGUNG, RECHNUNG, 2025-10-01, false"
+                // Früher mit RECHNUNG; Rechnungen hängen aber nur noch an sicheren Treffern
+                // (siehe RechnungNurSicher). Das Zeitfenster gilt gleich für Lieferscheine.
+                "AUFTRAGSBESTAETIGUNG, LIEFERSCHEIN, 2026-01-15, true",
+                "AUFTRAGSBESTAETIGUNG, LIEFERSCHEIN, 2025-10-01, false"
         })
         void betragZaehltNurImPassendenZeitfenster(LieferantDokumentTyp vorgaengerTyp,
                 LieferantDokumentTyp typ, LocalDate vorgaengerDatum, boolean erwartet) {

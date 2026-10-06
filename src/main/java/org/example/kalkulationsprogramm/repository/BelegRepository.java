@@ -30,7 +30,8 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            + "  AND (b.belegKategorie <> org.example.kalkulationsprogramm.domain.BelegKategorie.KASSE_AUSGABE OR sk.id IS NULL OR sk.nummer <> '4120') "
            + "  AND b.kostenstelle IS NULL "
            + "  AND NOT EXISTS (SELECT a.id FROM BelegKostenstellenAnteil a WHERE a.beleg = b) "
-           + "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b) "
+           + "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
+           + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN) "
            + "ORDER BY b.belegDatum DESC, b.uploadDatum DESC")
     List<Beleg> findNichtEmailImportierteOhneKostenstellenZuordnung();
 
@@ -40,7 +41,8 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            + "WHERE b.kostenstelle.id = :kostenstelleId "
            + "  AND b.status <> org.example.kalkulationsprogramm.domain.BelegStatus.VERWORFEN "
            + "  AND NOT EXISTS (SELECT a.id FROM BelegKostenstellenAnteil a WHERE a.beleg = b) "
-           + "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b) "
+           + "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
+           + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN) "
            + "ORDER BY b.belegDatum DESC, b.uploadDatum DESC")
     List<Beleg> findDirektZugeordneteByKostenstelleOhneSplits(@Param("kostenstelleId") Long kostenstelleId);
 
@@ -94,7 +96,8 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            "  AND ks.istFixkosten = true " +
            "  AND b.belegDatum BETWEEN :von AND :bis " +
            "  AND b.betragBrutto IS NOT NULL " +
-           "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b)")
+           "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
+           + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN)")
     List<Beleg> findValidierteFixkostenBelegeImZeitraum(@Param("von") LocalDate von,
                                                        @Param("bis") LocalDate bis);
 

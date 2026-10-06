@@ -53,6 +53,8 @@ public class LieferantDokumentService {
         private final EmailAttachmentRepository emailAttachmentRepository;
         @Lazy
         private final GeminiDokumentAnalyseService geminiService;
+        @Lazy
+        private final BelegZuordnungService belegZuordnungService;
         private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
         private final LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
 
@@ -283,7 +285,7 @@ public class LieferantDokumentService {
                                 vorauskasseAutoAssigner.applyIfApplicable(dokument);
                                 // Wie beim E-Mail-Import: Vorgänger und Nachfolger in der
                                 // Dokumentenkette (Angebot ↔ AB ↔ Lieferschein ↔ Rechnung) suchen.
-                                geminiService.performRelink(dokument);
+                                belegZuordnungService.ordneEin(dokument);
                         } else {
                                 log.warn("Analyse ergab keine Ergebnisse für Dokument {}", dokument.getId());
                         }
@@ -294,6 +296,171 @@ public class LieferantDokumentService {
                 }
 
                 return toDto(dokument);
+        }
+
+        /** Größte erlaubte Papierrechnung – wie beim Belegscanner. */
+        static final long MAX_RECHNUNG_BYTES = 25L * 1024 * 1024;
+        private static final Set<String> RECHNUNG_ENDUNGEN = Set.of(".pdf", ".jpg", ".jpeg", ".png");
+        private static final Set<String> RECHNUNG_MIME_TYPEN = Set.of("application/pdf", "image/jpeg", "image/png");
+
+        /**
+         * Papierrechnung zu einer Bestellung: legt für den Lieferanten des
+         * Bestelldokuments eine Rechnung an, hängt sie sofort an das Bestelldokument
+         * und liest sie danach im Hintergrund aus (ZUGFeRD/XML/KI). Das Auslesen
+         * ordnet sie zusätzlich weiteren passenden Lieferscheinen zu.
+         *
+         * @param bestellDokumentId Auftragsbestätigung oder Lieferschein
+         * @param hochgeladenVon    wer hochlädt, darf fehlen
+         * @return die neue Rechnung (noch ohne Geschäftsdaten)
+         * @throws java.util.NoSuchElementException wenn das Bestelldokument fehlt
+         * @throws IllegalArgumentException         bei falscher Datei oder falschem Dokumenttyp
+         */
+        @Transactional
+        public LieferantDokument rechnungZuBestellungHochladen(Long bestellDokumentId, MultipartFile datei,
+                        Mitarbeiter hochgeladenVon) throws IOException {
+                LieferantDokument bestellung = dokumentRepository.findById(bestellDokumentId).orElseThrow();
+                if (!RechnungsVorschlagService.istBestellDokument(bestellung)) {
+                        throw new BelegAbgelehntException(
+                                        "Eine Rechnung lässt sich nur an eine Auftragsbestätigung oder einen Lieferschein hängen.");
+                }
+                Lieferanten lieferant = bestellung.getLieferant();
+                if (lieferant == null || lieferant.getId() == null) {
+                        throw new BelegAbgelehntException("Die Bestellung hat keinen Lieferanten.");
+                }
+                String originalFilename = pruefeRechnungsdatei(datei);
+
+                Path lieferantDir = Path.of(uploadPath, "lieferanten", lieferant.getId().toString())
+                                .toAbsolutePath().normalize();
+                Files.createDirectories(lieferantDir);
+                String storedFilename = UUID.randomUUID() + "_" + originalFilename;
+                Path targetPath = lieferantDir.resolve(storedFilename).normalize();
+                if (!targetPath.startsWith(lieferantDir)) {
+                        throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
+                }
+                try (var eingabe = datei.getInputStream()) {
+                        Files.copy(eingabe, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+                try {
+                        LieferantDokument rechnung = legeRechnungAn(bestellung, lieferant, originalFilename,
+                                        storedFilename, hochgeladenVon);
+                        // Rollt die Transaktion später noch zurück, darf keine verwaiste Datei bleiben.
+                        loescheDateiBeiRollback(targetPath);
+                        belegZuordnungService.analysiereUndOrdneEinNachCommit(rechnung.getId());
+                        // Nur IDs (DSGVO)
+                        log.info("[Bestellübersicht] Rechnung {} zu Bestelldokument {} hochgeladen",
+                                        rechnung.getId(), bestellDokumentId);
+                        return rechnung;
+                } catch (RuntimeException e) {
+                        loescheDateiStill(targetPath);
+                        throw e;
+                }
+        }
+
+        private LieferantDokument legeRechnungAn(LieferantDokument bestellung, Lieferanten lieferant,
+                        String originalFilename, String storedFilename, Mitarbeiter hochgeladenVon) {
+                LieferantDokument rechnung = new LieferantDokument();
+                rechnung.setLieferant(lieferant);
+                rechnung.setTyp(LieferantDokumentTyp.RECHNUNG);
+                rechnung.setOriginalDateiname(originalFilename);
+                rechnung.setGespeicherterDateiname(storedFilename);
+                rechnung.setUploadDatum(LocalDateTime.now());
+                rechnung.setUploadedBy(hochgeladenVon);
+                // Sofort an die Bestellung: Der Nutzer hat sie von der Karte aus hochgeladen.
+                rechnung.getVerknuepfteDokumente().add(bestellung);
+                bestellung.getVerknuepftVon().add(rechnung);
+                return dokumentRepository.saveAndFlush(rechnung);
+        }
+
+        private static void loescheDateiBeiRollback(Path datei) {
+                if (!org.springframework.transaction.support.TransactionSynchronizationManager
+                                .isSynchronizationActive()) {
+                        return;
+                }
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                                new org.springframework.transaction.support.TransactionSynchronization() {
+                                        @Override
+                                        public void afterCompletion(int status) {
+                                                if (status == STATUS_ROLLED_BACK) {
+                                                        loescheDateiStill(datei);
+                                                }
+                                        }
+                                });
+        }
+
+        private static void loescheDateiStill(Path datei) {
+                try {
+                        Files.deleteIfExists(datei);
+                } catch (IOException e) {
+                        log.warn("[Bestellübersicht] Hochgeladene Datei konnte nicht entfernt werden: {}",
+                                        e.getClass().getSimpleName());
+                }
+        }
+
+        /**
+         * Prüft Größe und Art der Datei und liefert einen bereinigten Dateinamen.
+         * Erlaubt sind nur PDF, JPG und PNG – Dateiendung UND Inhaltstyp.
+         */
+        static String pruefeRechnungsdatei(MultipartFile datei) {
+                if (datei == null || datei.isEmpty()) {
+                        throw new BelegAbgelehntException("Datei fehlt.");
+                }
+                if (datei.getSize() > MAX_RECHNUNG_BYTES) {
+                        throw new BelegAbgelehntException("Datei zu groß (höchstens 25 MB).");
+                }
+                String roh = datei.getOriginalFilename();
+                if (roh == null || roh.isBlank() || roh.length() > 255) {
+                        throw new BelegAbgelehntException("Ungültiger Dateiname.");
+                }
+                String name;
+                try {
+                        Path nurName = Path.of(roh.replace('\\', '/')).getFileName();
+                        if (nurName == null) {
+                                // "/" oder "\\" – kein Dateiname übrig
+                                throw new BelegAbgelehntException("Ungültiger Dateiname.");
+                        }
+                        name = nurName.toString().replaceAll("[\\\\/:*?\"<>|]", "_");
+                } catch (java.nio.file.InvalidPathException e) {
+                        throw new BelegAbgelehntException("Ungültiger Dateiname.");
+                }
+                String klein = name.toLowerCase(java.util.Locale.ROOT);
+                int punkt = klein.lastIndexOf('.');
+                String endung = punkt >= 0 ? klein.substring(punkt) : "";
+                String mime = datei.getContentType() != null
+                                ? datei.getContentType().toLowerCase(java.util.Locale.ROOT) : "";
+                if (name.isBlank() || name.startsWith(".") || !RECHNUNG_ENDUNGEN.contains(endung)
+                                || !RECHNUNG_MIME_TYPEN.contains(mime)) {
+                        throw new BelegAbgelehntException("Nur PDF, JPG oder PNG erlaubt.");
+                }
+                if (!inhaltPasstZurEndung(datei, endung)) {
+                        // Endung und Typ lassen sich fälschen – der Dateianfang nicht so leicht.
+                        throw new BelegAbgelehntException("Nur PDF, JPG oder PNG erlaubt.");
+                }
+                return name;
+        }
+
+        /** Prüft die ersten Bytes: %PDF, JPEG FF D8 FF, PNG 89 50 4E 47. */
+        private static boolean inhaltPasstZurEndung(MultipartFile datei, String endung) {
+                byte[] anfang = new byte[4];
+                int gelesen;
+                try (var eingabe = datei.getInputStream()) {
+                        gelesen = eingabe.readNBytes(anfang, 0, anfang.length);
+                } catch (IOException e) {
+                        return false;
+                }
+                int[] erwartet = switch (endung) {
+                        case ".pdf" -> new int[] { 0x25, 0x50, 0x44, 0x46 };
+                        case ".png" -> new int[] { 0x89, 0x50, 0x4E, 0x47 };
+                        default -> new int[] { 0xFF, 0xD8, 0xFF };
+                };
+                if (gelesen < erwartet.length) {
+                        return false;
+                }
+                for (int i = 0; i < erwartet.length; i++) {
+                        if ((anfang[i] & 0xFF) != erwartet[i]) {
+                                return false;
+                        }
+                }
+                return true;
         }
 
         /**

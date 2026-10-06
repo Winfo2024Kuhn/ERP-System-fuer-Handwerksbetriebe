@@ -81,6 +81,12 @@ class BelegKiAnalyseServiceTest {
         // sonst NPE in Paths.get(null, ...) bzw. NPE bei JSON-Serialisierung.
         setField("uploadPath", "uploads");
         setField("objectMapper", objectMapper);
+        // Echte zentrale Zuordnung mit den Mocks: So prüfen die Tests weiter, was
+        // beim Scannen tatsächlich gespeichert wird.
+        setField("zuordnungService", new BelegZuordnungService(geminiService, lieferantDokumentRepository,
+                lieferantGeschaeftsdokumentRepository, belegRepository, objectMapper,
+                org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class),
+                Runnable::run));
     }
 
     private void setField(String name, Object value) throws Exception {

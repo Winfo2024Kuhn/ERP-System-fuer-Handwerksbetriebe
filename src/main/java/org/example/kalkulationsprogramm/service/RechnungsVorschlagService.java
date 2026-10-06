@@ -1,21 +1,21 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.time.LocalDate;
-import java.util.ArrayDeque;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +29,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Bewertet wird mit {@link LieferantDokumentAbgleich#schaetzeEin}, also mit
  * denselben Merkmalen wie beim Mail-Import. Sichere Paare verknüpft der Import
  * bereits selbst; hier landen die Fälle, die er bewusst offen gelassen hat.
+ *
+ * <p>Außerdem: Rechnungen von Hand anhängen und Dokumente abhängen.
  */
 @Slf4j
 @Service
@@ -38,11 +40,9 @@ public class RechnungsVorschlagService {
     /** Darunter ist ein Vorschlag nur geraten und erscheint nicht auf der Karte. */
     public static final int MIN_QUOTE_KARTE = 40;
 
-    /** Fehlermeldung, wenn die Rechnung schon an einer AB oder einem Lieferschein hängt. */
-    public static final String SCHON_ZUGEORDNET = "Rechnung gehört schon zu einer anderen Bestellung.";
-
     private final LieferantDokumentAbgleich abgleich;
     private final LieferantDokumentRepository dokumentRepository;
+    private final LieferantDokumentVerknuepfungSperreRepository sperreRepository;
 
     /**
      * @param rechnung              die vorgeschlagene Rechnung
@@ -68,12 +68,25 @@ public class RechnungsVorschlagService {
         return abgleich.neuerSpeicher();
     }
 
-    /**
-     * Bewertet alle Rechnungen gegen die Dokumente einer Bestellung, beste zuerst.
-     * Je Rechnung zählt das Bestelldokument, zu dem sie am besten passt.
-     */
+    /** Wie {@link #bewerte(Collection, Collection, Collection, LieferantDokumentAbgleich.Merkmalspeicher)}; Umfeld = Rechnungen + Bestelldokumente. */
     public List<Vorschlag> bewerte(Collection<LieferantDokument> bestellDokumente,
             Collection<LieferantDokument> rechnungen, LieferantDokumentAbgleich.Merkmalspeicher speicher) {
+        return bewerte(bestellDokumente, rechnungen, null, speicher);
+    }
+
+    /**
+     * Bewertet alle Rechnungen gegen die Dokumente einer Bestellung, beste zuerst
+     * (bei gleicher Quote die zeitlich nächste). Je Rechnung zählt das
+     * Bestelldokument, zu dem sie am besten passt.
+     *
+     * @param umfeld Belege des Lieferanten, an denen sich zeigt, ob eine gemeinsame
+     *               Nummer trennscharf ist (Kundennummer über Monate). Dieselbe
+     *               Sammlung für viele Aufrufe wiederverwenden – sie wird im
+     *               Speicher gemerkt. {@code null} = Rechnungen + Bestelldokumente.
+     */
+    public List<Vorschlag> bewerte(Collection<LieferantDokument> bestellDokumente,
+            Collection<LieferantDokument> rechnungen, Collection<LieferantDokument> umfeld,
+            LieferantDokumentAbgleich.Merkmalspeicher speicher) {
         List<LieferantDokument> bestellungen = bestellDokumente.stream()
                 .filter(RechnungsVorschlagService::istBestellDokument)
                 .filter(d -> d.getGeschaeftsdaten() != null)
@@ -82,6 +95,13 @@ public class RechnungsVorschlagService {
             return List.of();
         }
         Map<String, Integer> rechnungenJeBestellnummer = zaehleBestellnummern(rechnungen);
+        Collection<LieferantDokument> vergleich = umfeld;
+        if (vergleich == null) {
+            List<LieferantDokument> beide = new ArrayList<>(rechnungen);
+            beide.addAll(bestellungen);
+            vergleich = beide;
+        }
+        LieferantDokumentAbgleich.Streuung streuung = abgleich.streuung(vergleich, speicher);
 
         List<Vorschlag> vorschlaege = new ArrayList<>();
         for (LieferantDokument rechnung : rechnungen) {
@@ -92,7 +112,7 @@ public class RechnungsVorschlagService {
             Vorschlag bester = null;
             for (LieferantDokument bestellung : bestellungen) {
                 var einschaetzung = abgleich.schaetzeEin(rechnung, bestellung,
-                        trennscharf(bestellung, rechnungenJeBestellnummer), speicher);
+                        trennscharf(bestellung, rechnungenJeBestellnummer), streuung, speicher);
                 if (bester == null || einschaetzung.trefferquote() > bester.trefferquote()) {
                     bester = new Vorschlag(rechnung, bestellung, einschaetzung);
                 }
@@ -102,17 +122,24 @@ public class RechnungsVorschlagService {
             }
         }
         vorschlaege.sort(Comparator.comparingInt(Vorschlag::trefferquote).reversed()
-                .thenComparing(v -> datum(v.rechnung()), Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(RechnungsVorschlagService::tageAbstand, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(v -> v.rechnung().getId(), Comparator.nullsLast(Comparator.naturalOrder())));
         return vorschlaege;
+    }
+
+    /** Wie {@link #besterVorschlag(Collection, Collection, Collection, LieferantDokumentAbgleich.Merkmalspeicher)} ohne eigenes Umfeld. */
+    public Optional<BesterVorschlag> besterVorschlag(Collection<LieferantDokument> bestellDokumente,
+            Collection<LieferantDokument> rechnungen, LieferantDokumentAbgleich.Merkmalspeicher speicher) {
+        return besterVorschlag(bestellDokumente, rechnungen, null, speicher);
     }
 
     /**
      * Der beste Vorschlag für die Karte – nur ab {@link #MIN_QUOTE_KARTE}.
      */
     public Optional<BesterVorschlag> besterVorschlag(Collection<LieferantDokument> bestellDokumente,
-            Collection<LieferantDokument> rechnungen, LieferantDokumentAbgleich.Merkmalspeicher speicher) {
-        List<Vorschlag> alle = bewerte(bestellDokumente, rechnungen, speicher);
+            Collection<LieferantDokument> rechnungen, Collection<LieferantDokument> umfeld,
+            LieferantDokumentAbgleich.Merkmalspeicher speicher) {
+        List<Vorschlag> alle = bewerte(bestellDokumente, rechnungen, umfeld, speicher);
         if (alle.isEmpty() || alle.get(0).trefferquote() < MIN_QUOTE_KARTE) {
             return Optional.empty();
         }
@@ -124,34 +151,34 @@ public class RechnungsVorschlagService {
      * Hängt die Rechnung an das Bestelldokument – in derselben Richtung wie der
      * Import (Nachfolger → Vorgänger).
      *
+     * <p>Eine Rechnung darf an mehreren Bestelldokumenten hängen (Teillieferungen:
+     * eine Rechnung, mehrere Lieferscheine) und ein Bestelldokument an mehreren
+     * Rechnungen (Teilrechnungen). Auch ausgeblendete Dokumente lassen sich
+     * zuordnen – bezahlte Rechnungen sind meist ausgeblendet.
+     *
      * <p>Ein anderer Lieferant ist bewusst erlaubt: Die KI erkennt den Lieferanten
      * nicht immer richtig, und genau solche Rechnungen bleiben sonst liegen.
      *
+     * <p>Wurde das Paar früher von Hand gelöst, ist die Sperre damit aufgehoben.
+     *
      * @param benutzerId wer zuordnet – nur fürs Protokoll, darf fehlen
      * @throws java.util.NoSuchElementException wenn eines der Dokumente fehlt
-     * @throws IllegalArgumentException         bei falschen Dokumenttypen, ausgeblendeten
-     *                                          Dokumenten oder einer schon zugeordneten Rechnung
+     * @throws IllegalArgumentException         bei falschen Dokumenttypen
      */
     @Transactional
     public void verknuepfe(Long bestellDokumentId, Long rechnungId, Long benutzerId) {
         if (bestellDokumentId == null || rechnungId == null || bestellDokumentId.equals(rechnungId)) {
-            throw new IllegalArgumentException("Bestellung und Rechnung müssen verschiedene Dokumente sein.");
+            throw new BelegAbgelehntException("Bestellung und Rechnung müssen verschiedene Dokumente sein.");
         }
         LieferantDokument bestellung = dokumentRepository.findById(bestellDokumentId).orElseThrow();
         LieferantDokument rechnung = dokumentRepository.findById(rechnungId).orElseThrow();
         if (!istBestellDokument(bestellung)) {
-            throw new IllegalArgumentException("Nur eine Auftragsbestätigung oder ein Lieferschein kann eine Rechnung bekommen.");
+            throw new BelegAbgelehntException("Nur eine Auftragsbestätigung oder ein Lieferschein kann eine Rechnung bekommen.");
         }
         if (rechnung.getTyp() != LieferantDokumentTyp.RECHNUNG) {
-            throw new IllegalArgumentException("Das gewählte Dokument ist keine Rechnung.");
+            throw new BelegAbgelehntException("Das gewählte Dokument ist keine Rechnung.");
         }
-        if (bestellung.isAusgeblendet() || rechnung.isAusgeblendet()) {
-            throw new IllegalArgumentException("Ausgeblendete Dokumente lassen sich nicht zuordnen.");
-        }
-        if (haengtAnBestellung(rechnung, bestellung)) {
-            // Eine zweite Verknüpfung verschmölze zwei Bestellungen dauerhaft zu einer Kette.
-            throw new IllegalArgumentException(SCHON_ZUGEORDNET);
-        }
+        sperreRepository.loeschePaar(rechnungId, bestellDokumentId);
         rechnung.getVerknuepfteDokumente().add(bestellung);
         bestellung.getVerknuepftVon().add(rechnung);
         dokumentRepository.save(rechnung);
@@ -161,31 +188,71 @@ public class RechnungsVorschlagService {
     }
 
     /**
-     * Hängt in der Kette der Rechnung (beide Richtungen, auch über ausgeblendete
-     * Dokumente) schon eine AB oder ein Lieferschein?
+     * Löst alle Verknüpfungen eines Dokuments (zu Vorgängern und Nachfolgern) und
+     * sperrt jedes gelöste Paar, damit der automatische Abgleich es nicht wieder
+     * verknüpft.
+     *
+     * @param benutzerId wer abhängt – nur fürs Protokoll, darf fehlen
+     * @return Anzahl gelöster Verknüpfungen
+     * @throws java.util.NoSuchElementException wenn das Dokument fehlt
      */
-    public static boolean haengtAnBestellung(LieferantDokument rechnung) {
-        return haengtAnBestellung(rechnung, null);
+    @Transactional
+    public int haengeAb(Long dokumentId, Long benutzerId) {
+        if (dokumentId == null) {
+            throw new BelegAbgelehntException("Dokument fehlt.");
+        }
+        LieferantDokument dokument = dokumentRepository.findById(dokumentId).orElseThrow();
+        LocalDateTime jetzt = LocalDateTime.now();
+        List<LieferantDokumentVerknuepfungSperre> sperren = new ArrayList<>();
+
+        for (LieferantDokument vorgaenger : new ArrayList<>(dokument.getVerknuepfteDokumente())) {
+            dokument.getVerknuepfteDokumente().remove(vorgaenger);
+            vorgaenger.getVerknuepftVon().remove(dokument);
+            sperren.add(new LieferantDokumentVerknuepfungSperre(dokument.getId(), vorgaenger.getId(), jetzt));
+        }
+        for (LieferantDokument nachfolger : new ArrayList<>(dokument.getVerknuepftVon())) {
+            // Die Verknüpfung gehört dem Nachfolger – nur dort entfernen wirkt in der Datenbank.
+            nachfolger.getVerknuepfteDokumente().remove(dokument);
+            dokument.getVerknuepftVon().remove(nachfolger);
+            dokumentRepository.save(nachfolger);
+            sperren.add(new LieferantDokumentVerknuepfungSperre(nachfolger.getId(), dokument.getId(), jetzt));
+        }
+        dokumentRepository.save(dokument);
+        sperreRepository.saveAll(sperren);
+        // Nur IDs (DSGVO)
+        log.info("[Bestellübersicht] Dokument {} abgehängt: {} Verknüpfungen gelöst (Benutzer {})",
+                dokumentId, sperren.size(), benutzerId);
+        return sperren.size();
     }
 
-    /** Wie {@link #haengtAnBestellung(LieferantDokument)}, das Ziel selbst zählt nicht. */
-    private static boolean haengtAnBestellung(LieferantDokument rechnung, LieferantDokument ziel) {
-        Set<LieferantDokument> besucht = Collections.newSetFromMap(new IdentityHashMap<>());
-        ArrayDeque<LieferantDokument> offen = new ArrayDeque<>();
-        offen.add(rechnung);
-        while (!offen.isEmpty()) {
-            LieferantDokument aktuell = offen.poll();
-            // Das Ziel und seine Kette zählen nicht – erneutes Verknüpfen bleibt harmlos
-            if (aktuell == ziel || !besucht.add(aktuell)) {
-                continue;
-            }
-            if (istBestellDokument(aktuell)) {
-                return true;
-            }
-            offen.addAll(aktuell.getVerknuepfteDokumente());
-            offen.addAll(aktuell.getVerknuepftVon());
+    /**
+     * Zu welchem Bestelldokument eine Rechnung schon gehört – für den Hinweis im
+     * Fenster „Rechnung suchen“, z. B. „Lieferschein LS-4711“.
+     *
+     * @return {@code null}, wenn sie an keiner AB und keinem Lieferschein hängt
+     */
+    public static String gehoertSchonZu(LieferantDokument rechnung) {
+        if (rechnung == null) {
+            return null;
         }
-        return false;
+        return rechnung.getVerknuepfteDokumente().stream()
+                .filter(RechnungsVorschlagService::istBestellDokument)
+                .min(Comparator.comparing(LieferantDokument::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(RechnungsVorschlagService::bezeichnung)
+                .orElse(null);
+    }
+
+    private static String bezeichnung(LieferantDokument d) {
+        String art = d.getTyp() == LieferantDokumentTyp.LIEFERSCHEIN ? "Lieferschein" : "Auftragsbestätigung";
+        String nummer = d.getGeschaeftsdaten() != null ? d.getGeschaeftsdaten().getDokumentNummer() : null;
+        return nummer != null && !nummer.isBlank() ? art + " " + nummer.trim() : art;
+    }
+
+    /** Tage zwischen Rechnung und Bestelldokument – kleiner ist näher. */
+    private static Long tageAbstand(Vorschlag v) {
+        LocalDate a = datum(v.rechnung());
+        LocalDate b = datum(v.bestellDokument());
+        return a == null || b == null ? null : Math.abs(ChronoUnit.DAYS.between(b, a));
     }
 
     public static boolean istBestellDokument(LieferantDokument d) {

@@ -49,6 +49,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock private SystemSettingsService systemSettingsService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository sperreRepository;
 
     private GeminiDokumentAnalyseService service;
 
@@ -62,7 +63,8 @@ class GeminiDokumentAnalyseServiceTest {
                 lieferantGeschaeftsdokumentRepository,
                 systemSettingsService,
                 eventPublisher,
-                new LieferantDokumentAbgleich(new ObjectMapper())
+                new LieferantDokumentAbgleich(new ObjectMapper()),
+                sperreRepository
         );
     }
 
@@ -991,7 +993,8 @@ class GeminiDokumentAnalyseServiceTest {
                     lieferantGeschaeftsdokumentRepository,
                     systemSettingsService,
                     eventPublisher,
-                    new LieferantDokumentAbgleich(new ObjectMapper()));
+                    new LieferantDokumentAbgleich(new ObjectMapper()),
+                    sperreRepository);
 
             httpClientMock = mock(HttpClient.class);
             setField(serviceMitEchtemMapper, "httpClient", httpClientMock);
@@ -1358,6 +1361,46 @@ class GeminiDokumentAnalyseServiceTest {
         assertThat(service.relinkAlleDokumente()).isEqualTo(1);
         // Nur das Angebot desselben Lieferanten, nie über Lieferanten hinweg
         assertThat(abB.getVerknuepfteDokumente()).containsExactly(angebotB);
+    }
+
+    @Test
+    void vonHandGeloestesPaarWirdNichtWiederVerknuepft() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+        LieferantDokument ls = relinkDokument(9L, lieferant, LieferantDokumentTyp.LIEFERSCHEIN, "LS-4711", LocalDate.of(2026, 5, 2));
+        LieferantDokument rechnung = relinkDokument(10L, lieferant, LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 20));
+        rechnung.getGeschaeftsdaten().setReferenzNummer("LS-4711");
+        when(sperreRepository.findByLieferantId(1L)).thenReturn(java.util.List.of(
+                new org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre(10L, 9L,
+                        java.time.LocalDateTime.of(2026, 6, 1, 8, 0))));
+
+        // Beide Richtungen: neue Rechnung sucht Lieferschein, neuer Lieferschein sucht Rechnung
+        service.performRelink(rechnung, java.util.List.of(ls, rechnung));
+        service.performRelink(ls, java.util.List.of(ls, rechnung));
+        assertThat(rechnung.getVerknuepfteDokumente()).isEmpty();
+
+        // Backfill aller Lieferanten beachtet die Sperre ebenso
+        when(dokumentRepository.findAll()).thenReturn(java.util.List.of(ls, rechnung));
+        when(sperreRepository.findAll()).thenReturn(java.util.List.of(
+                new org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre(9L, 10L,
+                        java.time.LocalDateTime.of(2026, 6, 1, 8, 0))));
+        assertThat(service.relinkAlleDokumente()).isZero();
+        assertThat(rechnung.getVerknuepfteDokumente()).isEmpty();
+    }
+
+    @Test
+    void rechnungHaengtNichtMehrAnReinenHinweisen() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setId(1L);
+        LieferantDokument ab = relinkDokument(9L, lieferant, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 5, 2));
+        ab.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("595.00"));
+        LieferantDokument rechnung = relinkDokument(10L, lieferant, LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 20));
+        rechnung.getGeschaeftsdaten().setBetragBrutto(new BigDecimal("595.00"));
+
+        service.performRelink(rechnung, java.util.List.of(ab, rechnung));
+        service.performRelink(ab, java.util.List.of(ab, rechnung));
+
+        assertThat(rechnung.getVerknuepfteDokumente()).isEmpty();
     }
 
     // --- Helper methods to invoke private methods via reflection ---

@@ -46,6 +46,7 @@ public class EmailAttachmentProcessingService {
     private final GeminiDokumentAnalyseService geminiAnalyseService;
     private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     private final LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
+    private final BelegZuordnungService belegZuordnungService;
 
     // Self-injection für transactional proxy calls auf eigene Methoden
     // Setter-Injection um zirkuläre Abhängigkeit zu vermeiden
@@ -452,9 +453,9 @@ public class EmailAttachmentProcessingService {
         // 4. Speichern (Kaskadiert zu Geschaeftsdaten)
         dokument = lieferantDokumentRepository.save(dokument);
 
-        // Relink Logic (nachträgliche Verknüpfung)
+        // Beleg ist da -> passende Bestellung suchen (Vorgänger und Nachfolger)
         if (geschaeftsdaten != null) {
-            geminiAnalyseService.performRelink(dokument);
+            belegZuordnungService.ordneEin(dokument);
         }
 
         // Auto-Zuweisung der Standard-Kostenstelle (falls beim Lieferanten hinterlegt)

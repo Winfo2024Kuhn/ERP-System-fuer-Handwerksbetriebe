@@ -51,6 +51,8 @@ class LieferantDokumentServiceTest {
     @Mock
     private GeminiDokumentAnalyseService geminiService;
     @Mock
+    private BelegZuordnungService belegZuordnungService;
+    @Mock
     private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     @Mock
     private LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
@@ -553,8 +555,175 @@ class LieferantDokumentServiceTest {
         service.uploadDokument(7L, datei, request, 5L, false);
 
         org.mockito.ArgumentCaptor<LieferantDokument> gespeichert = org.mockito.ArgumentCaptor.forClass(LieferantDokument.class);
-        verify(geminiService).performRelink(gespeichert.capture());
+        verify(belegZuordnungService).ordneEin(gespeichert.capture());
         assertThat(gespeichert.getValue().getGeschaeftsdaten().getAiRawJson()).isEqualTo(kiAntwort);
         assertThat(gespeichert.getValue().getGeschaeftsdaten().getDokumentNummer()).isEqualTo("AN-4711");
+    }
+
+    @Nested
+    @DisplayName("Rechnung zu einer Bestellung hochladen")
+    class RechnungHochladen {
+
+        private LieferantDokument lieferschein() {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(4L);
+            lieferant.setLieferantenname("Muster GmbH");
+            LieferantDokument ls = new LieferantDokument();
+            ls.setId(10L);
+            ls.setTyp(LieferantDokumentTyp.LIEFERSCHEIN);
+            ls.setLieferant(lieferant);
+            return ls;
+        }
+
+        /** Datei mit passendem Dateianfang zur Endung (PDF/PNG/JPEG), Rest Nullen. */
+        private org.springframework.mock.web.MockMultipartFile datei(String name, String typ, int groesse) {
+            byte[] inhalt = new byte[groesse];
+            String klein = name.toLowerCase();
+            byte[] kopf = klein.endsWith(".pdf") ? new byte[] { '%', 'P', 'D', 'F' }
+                    : klein.endsWith(".png") ? new byte[] { (byte) 0x89, 'P', 'N', 'G' }
+                    : new byte[] { (byte) 0xFF, (byte) 0xD8, (byte) 0xFF };
+            System.arraycopy(kopf, 0, inhalt, 0, Math.min(kopf.length, groesse));
+            return new org.springframework.mock.web.MockMultipartFile("datei", name, typ, inhalt);
+        }
+
+        @Test
+        void legtRechnungAnHaengtSieAnUndStoesstAnalyseAn(@TempDir Path uploadRoot) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+            LieferantDokument ls = lieferschein();
+            given(dokumentRepository.findById(10L)).willReturn(Optional.of(ls));
+            given(dokumentRepository.saveAndFlush(any(LieferantDokument.class))).willAnswer(inv -> {
+                LieferantDokument d = inv.getArgument(0);
+                d.setId(77L);
+                return d;
+            });
+
+            LieferantDokument rechnung = service.rechnungZuBestellungHochladen(10L,
+                    datei("../../etc/Rechnung Mai.pdf", "application/pdf", 10), null);
+
+            assertThat(rechnung.getTyp()).isEqualTo(LieferantDokumentTyp.RECHNUNG);
+            assertThat(rechnung.getLieferant()).isSameAs(ls.getLieferant());
+            assertThat(rechnung.getVerknuepfteDokumente()).containsExactly(ls);
+            assertThat(ls.getVerknuepftVon()).containsExactly(rechnung);
+            // Pfadanteile sind weg, die Datei liegt im Ordner des Lieferanten
+            assertThat(rechnung.getOriginalDateiname()).isEqualTo("Rechnung Mai.pdf");
+            Path gespeichert = uploadRoot.resolve("lieferanten").resolve("4").resolve(rechnung.getGespeicherterDateiname());
+            assertThat(Files.exists(gespeichert)).isTrue();
+            verify(belegZuordnungService).analysiereUndOrdneEinNachCommit(77L);
+        }
+
+        @Test
+        void lehntGefaehrlicheOderZuGrosseDateienAb() {
+            for (var falsch : List.of(
+                    datei("schad.exe", "application/octet-stream", 10),
+                    datei("rechnung.pdf", "text/html", 10),
+                    datei("rechnung.js", "application/pdf", 10),
+                    datei(".pdf", "application/pdf", 10),
+                    datei("rechnung.pdf", "application/pdf", 0),
+                    datei("x".repeat(300) + ".pdf", "application/pdf", 10))) {
+                assertThatThrownBy(() -> LieferantDokumentService.pruefeRechnungsdatei(falsch))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+            var riesig = org.mockito.Mockito.mock(org.springframework.web.multipart.MultipartFile.class);
+            given(riesig.getSize()).willReturn(LieferantDokumentService.MAX_RECHNUNG_BYTES + 1);
+            assertThatThrownBy(() -> LieferantDokumentService.pruefeRechnungsdatei(riesig))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> LieferantDokumentService.pruefeRechnungsdatei(null))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThat(LieferantDokumentService.pruefeRechnungsdatei(datei("..\\..\\scan.PNG", "image/png", 5)))
+                    .isEqualTo("scan.PNG");
+            assertThat(LieferantDokumentService.pruefeRechnungsdatei(datei("a<script>.jpg", "image/jpeg", 5)))
+                    .isEqualTo("a_script_.jpg");
+        }
+
+        @Test
+        void nurSchraegstrichAlsDateiname() {
+            for (String name : List.of("/", "\\", "//")) {
+                assertThatThrownBy(() -> LieferantDokumentService.pruefeRechnungsdatei(
+                        new org.springframework.mock.web.MockMultipartFile("datei", name, "application/pdf",
+                                "%PDF-1.7".getBytes())))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+        }
+
+        @Test
+        void dateianfangMussZurEndungPassen() {
+            var getarnt = new org.springframework.mock.web.MockMultipartFile("datei", "rechnung.pdf",
+                    "application/pdf", "MZ\u0090\u0000 ausfuehrbar".getBytes());
+            var pngAlsJpg = datei("bild.png", "image/jpeg", 10);
+            var zuKurz = new org.springframework.mock.web.MockMultipartFile("datei", "a.pdf", "application/pdf",
+                    new byte[] { '%', 'P' });
+
+            assertThatThrownBy(() -> LieferantDokumentService.pruefeRechnungsdatei(getarnt))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> LieferantDokumentService.pruefeRechnungsdatei(
+                    new org.springframework.mock.web.MockMultipartFile("datei", "bild.jpg", "image/jpeg",
+                            pngAlsJpg.getBytes())))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> LieferantDokumentService.pruefeRechnungsdatei(zuKurz))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThat(LieferantDokumentService.pruefeRechnungsdatei(datei("bild.png", "image/png", 10)))
+                    .isEqualTo("bild.png");
+            assertThat(LieferantDokumentService.pruefeRechnungsdatei(datei("foto.JPEG", "image/jpeg", 10)))
+                    .isEqualTo("foto.JPEG");
+        }
+
+        @Test
+        void fehlerNachDemSchreibenLoeschtDieDatei(@TempDir Path uploadRoot) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+            given(dokumentRepository.findById(10L)).willReturn(Optional.of(lieferschein()));
+            given(dokumentRepository.saveAndFlush(any(LieferantDokument.class)))
+                    .willThrow(new IllegalStateException("DB weg"));
+
+            assertThatThrownBy(() -> service.rechnungZuBestellungHochladen(10L,
+                    datei("rechnung.pdf", "application/pdf", 10), null))
+                    .isInstanceOf(IllegalStateException.class);
+
+            try (var dateien = Files.list(uploadRoot.resolve("lieferanten").resolve("4"))) {
+                assertThat(dateien).isEmpty();
+            }
+            verify(belegZuordnungService, never()).analysiereUndOrdneEinNachCommit(any());
+        }
+
+        @Test
+        void rollbackDerTransaktionLoeschtDieDatei(@TempDir Path uploadRoot) throws IOException {
+            ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+            given(dokumentRepository.findById(10L)).willReturn(Optional.of(lieferschein()));
+            given(dokumentRepository.saveAndFlush(any(LieferantDokument.class))).willAnswer(inv -> {
+                LieferantDokument d = inv.getArgument(0);
+                d.setId(78L);
+                return d;
+            });
+            org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+            try {
+                LieferantDokument rechnung = service.rechnungZuBestellungHochladen(10L,
+                        datei("rechnung.pdf", "application/pdf", 10), null);
+                Path gespeichert = uploadRoot.resolve("lieferanten").resolve("4")
+                        .resolve(rechnung.getGespeicherterDateiname());
+                assertThat(Files.exists(gespeichert)).isTrue();
+
+                org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(sync -> sync.afterCompletion(
+                                org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+
+                assertThat(Files.exists(gespeichert)).isFalse();
+            } finally {
+                org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+
+        @Test
+        void nurAnAbOderLieferschein() {
+            LieferantDokument angebot = lieferschein();
+            angebot.setTyp(LieferantDokumentTyp.ANGEBOT);
+            given(dokumentRepository.findById(10L)).willReturn(Optional.of(angebot));
+            given(dokumentRepository.findById(Long.MAX_VALUE)).willReturn(Optional.empty());
+            var pdf = datei("rechnung.pdf", "application/pdf", 10);
+
+            assertThatThrownBy(() -> service.rechnungZuBestellungHochladen(10L, pdf, null))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> service.rechnungZuBestellungHochladen(Long.MAX_VALUE, pdf, null))
+                    .isInstanceOf(java.util.NoSuchElementException.class);
+            verify(dokumentRepository, never()).saveAndFlush(any());
+        }
     }
 }

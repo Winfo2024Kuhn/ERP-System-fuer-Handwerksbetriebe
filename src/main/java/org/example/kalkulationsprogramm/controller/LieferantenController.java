@@ -90,6 +90,7 @@ public class LieferantenController {
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     private final org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;
+    private final org.example.kalkulationsprogramm.service.BelegZuordnungService belegZuordnungService;
     private final LieferantNotizRepository notizRepository;
 
     // New dependencies for Email Sending
@@ -790,12 +791,8 @@ public class LieferantenController {
             dokument.setGeschaeftsdaten(geschaeftsdaten);
             dokument = lieferantDokumentRepository.save(dokument);
 
-            // 4. Automatische Verknüpfung versuchen
-            try {
-                geminiService.performRelink(dokument);
-            } catch (Exception e) {
-                // Log but don't fail
-            }
+            // 4. Beleg ist da -> passende Bestellung suchen (Fehler werden dort nur protokolliert)
+            belegZuordnungService.ordneEin(dokument);
 
             // 5. Auto-Zuweisung der Standard-Kostenstelle (falls beim Lieferanten hinterlegt)
             try {

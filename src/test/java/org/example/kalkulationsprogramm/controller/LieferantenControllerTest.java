@@ -79,6 +79,8 @@ class LieferantenControllerTest {
   @MockBean
   private LieferantDokumentService lieferantDokumentService;
   @MockBean
+  private org.example.kalkulationsprogramm.service.BelegZuordnungService belegZuordnungService;
+  @MockBean
   private MitarbeiterRepository mitarbeiterRepository;
   @MockBean
   private LieferantArtikelpreisService lieferantArtikelpreisService;

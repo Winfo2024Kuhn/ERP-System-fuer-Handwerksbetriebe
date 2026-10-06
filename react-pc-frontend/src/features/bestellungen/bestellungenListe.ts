@@ -116,11 +116,19 @@ export function fortschrittsStufe(kette: Kette): number {
 
 const BETRAG_VORRANG: KettenDokumentTyp[] = ['RECHNUNG', 'AUFTRAGSBESTAETIGUNG', 'ANGEBOT', 'LIEFERSCHEIN', 'GUTSCHRIFT'];
 
-/** Der aussagekräftigste Bruttobetrag der Kette: Rechnung vor AB vor Angebot. */
-export function kettenBetrag(kette: Kette): { betrag: number; typ: KettenDokumentTyp } | null {
+/**
+ * Der aussagekräftigste Bruttobetrag der Kette: Rechnung vor AB vor Angebot.
+ * Mehrere Rechnungen (Teilrechnungen) werden zusammengezählt; `anzahl` sagt, wie viele.
+ */
+export function kettenBetrag(kette: Kette): { betrag: number; typ: KettenDokumentTyp; anzahl: number } | null {
     for (const typ of BETRAG_VORRANG) {
-        const dok = kette.dokumente.find(d => d.typ === typ && d.betragBrutto != null && Number.isFinite(d.betragBrutto));
-        if (dok && dok.betragBrutto != null) return { betrag: dok.betragBrutto, typ };
+        const betraege = kette.dokumente
+            .filter(d => d.typ === typ && d.betragBrutto != null && Number.isFinite(d.betragBrutto))
+            .map(d => d.betragBrutto as number);
+        if (betraege.length === 0) continue;
+        if (typ !== 'RECHNUNG') return { betrag: betraege[0], typ, anzahl: 1 };
+        const summe = Math.round(betraege.reduce((a, b) => a + b, 0) * 100) / 100;
+        return { betrag: summe, typ, anzahl: betraege.length };
     }
     return null;
 }

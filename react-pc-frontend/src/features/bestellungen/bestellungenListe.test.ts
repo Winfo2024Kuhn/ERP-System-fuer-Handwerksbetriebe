@@ -114,9 +114,18 @@ describe('kettenBetrag', () => {
             dok({ typ: 'ANGEBOT', betragBrutto: 100 }),
             dok({ typ: 'AUFTRAGSBESTAETIGUNG', betragBrutto: 200 }),
         ]);
-        expect(kettenBetrag(k)).toEqual({ betrag: 200, typ: 'AUFTRAGSBESTAETIGUNG' });
+        expect(kettenBetrag(k)).toEqual({ betrag: 200, typ: 'AUFTRAGSBESTAETIGUNG', anzahl: 1 });
         k.dokumente.push(dok({ typ: 'RECHNUNG', betragBrutto: 300 }));
-        expect(kettenBetrag(k)).toEqual({ betrag: 300, typ: 'RECHNUNG' });
+        expect(kettenBetrag(k)).toEqual({ betrag: 300, typ: 'RECHNUNG', anzahl: 1 });
+    });
+    it('zählt Teilrechnungen zusammen', () => {
+        const k = kette([
+            dok({ typ: 'AUFTRAGSBESTAETIGUNG', betragBrutto: 1600 }),
+            dok({ typ: 'RECHNUNG', betragBrutto: 1517.64 }),
+            dok({ typ: 'RECHNUNG', betragBrutto: 109.25 }),
+            dok({ typ: 'RECHNUNG', betragBrutto: null }),
+        ]);
+        expect(kettenBetrag(k)).toEqual({ betrag: 1626.89, typ: 'RECHNUNG', anzahl: 2 });
     });
     it('überspringt fehlende und ungültige Beträge', () => {
         const k = kette([
@@ -124,7 +133,7 @@ describe('kettenBetrag', () => {
             dok({ typ: 'AUFTRAGSBESTAETIGUNG', betragBrutto: Number.NaN }),
             dok({ typ: 'ANGEBOT', betragBrutto: 50 }),
         ]);
-        expect(kettenBetrag(k)).toEqual({ betrag: 50, typ: 'ANGEBOT' });
+        expect(kettenBetrag(k)).toEqual({ betrag: 50, typ: 'ANGEBOT', anzahl: 1 });
         expect(kettenBetrag(kette([dok({ typ: 'SONSTIG', betragBrutto: 5 })]))).toBeNull();
     });
 });

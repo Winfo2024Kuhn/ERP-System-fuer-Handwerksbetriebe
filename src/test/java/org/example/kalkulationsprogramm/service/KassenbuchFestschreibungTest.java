@@ -62,6 +62,7 @@ class KassenbuchFestschreibungTest {
     @Mock private SachkontoRepository sachkontoRepository;
     @Mock private KostenstelleRepository kostenstelleRepository;
     @Mock private BelegKiAnalyseService kiAnalyseService;
+    @Mock private BelegZuordnungService zuordnungService;
     @Mock private LieferantDokumentRepository lieferantDokumentRepository;
     @Mock private FrontendUserProfileRepository frontendUserProfileRepository;
     @Mock private BelegSplitService belegSplitService;

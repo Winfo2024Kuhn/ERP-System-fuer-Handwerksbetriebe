@@ -78,6 +78,7 @@ public class BelegService {
     private final SachkontoRepository sachkontoRepository;
     private final KostenstelleRepository kostenstelleRepository;
     private final BelegKiAnalyseService kiAnalyseService;
+    private final BelegZuordnungService zuordnungService;
     private final LieferantDokumentRepository lieferantDokumentRepository;
     private final FrontendUserProfileRepository frontendUserProfileRepository;
     private final BelegSplitService belegSplitService;
@@ -443,6 +444,14 @@ public class BelegService {
                     beleg.getLieferant() != null ? beleg.getLieferant().getId() : null,
                     l != null ? l.getId() : null);
             beleg.setLieferant(l);
+            // Lieferant erst hier gesetzt? Dann entsteht jetzt das Lieferanten-Dokument
+            // (Rechnung, Gutschrift, Lieferschein) und findet seine Bestellung. Erst nach
+            // dem Speichern und in eigener Transaktion – ein Fehler dort macht das
+            // Speichern im Prüf-Dialog nicht rückgängig. Doppelt angelegt wird nichts.
+            if (l != null && beleg.getDokumentTyp() != null
+                    && BelegZuordnungService.SCANNER_TYPEN.contains(beleg.getDokumentTyp())) {
+                zuordnungService.uebernehmeScannerBelegNachCommit(beleg.getId());
+            }
         }
         if (req.getSachkontoId() != null) {
             Sachkonto sk = sachkontoRepository.findById(req.getSachkontoId()).orElse(null);

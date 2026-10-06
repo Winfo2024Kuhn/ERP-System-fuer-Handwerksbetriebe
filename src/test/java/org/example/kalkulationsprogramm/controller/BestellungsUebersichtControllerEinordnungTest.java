@@ -7,6 +7,8 @@ import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
+import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentAbgleich;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +40,10 @@ class BestellungsUebersichtControllerEinordnungTest {
     private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     @Mock
     private LieferantDokumentProjektAnteilRepository projektAnteilRepository;
+    @Mock
+    private LieferantDokumentVerknuepfungSperreRepository sperreRepository;
+    @Mock
+    private LieferantDokumentService lieferantDokumentService;
 
     private BestellungsUebersichtController controller;
     private Lieferanten lieferant;
@@ -47,7 +53,9 @@ class BestellungsUebersichtControllerEinordnungTest {
         controller = new BestellungsUebersichtController(
                 dokumentRepository, geschaeftsdokumentRepository, null, null, projektAnteilRepository,
                 null, null, null, null, null, null,
-                new RechnungsVorschlagService(new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository));
+                new RechnungsVorschlagService(new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository,
+                        sperreRepository),
+                lieferantDokumentService);
         lieferant = new Lieferanten();
         lieferant.setId(1L);
         lieferant.setLieferantenname("Max Mustermann GmbH");
@@ -194,7 +202,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         r2.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 6)));
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, r1, r2));
 
-        var antwort = controller.getRechnungsVorschlaege(List.of(1L));
+        var antwort = controller.getRechnungsVorschlaege(List.of(1L), false);
 
         assertThat(antwort.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(antwort.getBody()).extracting(v -> v.rechnung().id).containsExactlyInAnyOrder(2L, 3L);
@@ -212,7 +220,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         }
         when(dokumentRepository.findAll()).thenReturn(alle);
 
-        var liste = controller.getRechnungsVorschlaege(List.of(1L)).getBody();
+        var liste = controller.getRechnungsVorschlaege(List.of(1L), false).getBody();
 
         assertThat(liste).hasSize(200);
         // alle gleich gut (nur zeitlich nah) -> keiner ist eindeutig
@@ -237,39 +245,307 @@ class BestellungsUebersichtControllerEinordnungTest {
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
-        // Im Fenster „Rechnung suchen“ taucht die fremde Rechnung trotzdem auf
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L)).getBody())
+        // Im Fenster „Rechnung suchen“ erst mit „alle Lieferanten“
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false).getBody()).isEmpty();
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), true).getBody())
                 .extracting(v -> v.rechnung().id).containsExactly(2L);
     }
 
     @Test
-    void rechnungMitAusgeblendeterAbWirdNichtVorgeschlagen() {
+    void schonZugeordneteUndAusgeblendeteRechnungWirdMitHinweisVorgeschlagen() {
+        // Früher fehlte eine Rechnung, die schon an einer (auch ausgeblendeten) AB hing.
+        // Bei Teilrechnungen/Teillieferungen gehört sie aber zu mehreren Bestellungen.
         LieferantDokument ab = dokument(1L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
         ab.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 1)));
-        LieferantDokument versteckteAb = dokument(2L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
-        versteckteAb.setAusgeblendet(true);
+        LieferantDokument andereAb = dokument(2L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        andereAb.setAusgeblendet(true);
+        andereAb.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 5, 20)));
+        andereAb.getGeschaeftsdaten().setDokumentNummer("AB-4711");
         LieferantDokument rechnung = dokument(3L, LieferantDokumentTyp.RECHNUNG);
+        rechnung.setAusgeblendet(true);
         rechnung.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 5)));
-        rechnung.setVerknuepfteDokumente(new HashSet<>(List.of(versteckteAb)));
-        when(dokumentRepository.findAll()).thenReturn(List.of(ab, versteckteAb, rechnung));
+        verknuepfe(rechnung, andereAb);
+        when(dokumentRepository.findAll()).thenReturn(List.of(ab, andereAb, rechnung));
 
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L)).getBody()).isEmpty();
+        var liste = controller.getRechnungsVorschlaege(List.of(1L), false).getBody();
+
+        assertThat(liste).hasSize(1);
+        assertThat(liste.get(0).rechnung().id).isEqualTo(3L);
+        assertThat(liste.get(0).rechnung().ausgeblendet).isTrue();
+        assertThat(liste.get(0).gehoertSchonZu()).isEqualTo("Auftragsbestätigung AB-4711");
+    }
+
+    @Test
+    void rechnungenDieserKetteFehlenImFenster() {
+        LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
+        ls.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 1)));
+        LieferantDokument schonDran = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        schonDran.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 5)));
+        schonDran.setVerknuepfteDokumente(new HashSet<>(List.of(ls)));
+        ls.setVerknuepftVon(new HashSet<>(List.of(schonDran)));
+        LieferantDokument andere = dokument(3L, LieferantDokumentTyp.RECHNUNG);
+        andere.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 6)));
+        when(dokumentRepository.findAll()).thenReturn(List.of(ls, schonDran, andere));
+
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false).getBody())
+                .extracting(v -> v.rechnung().id).containsExactly(3L);
+    }
+
+    @Test
+    void ausgeblendeteRechnungMachtKetteErledigt() {
+        // Bezahlte Rechnungen werden ausgeblendet – ihr Lieferschein stand früher
+        // trotzdem ewig unter „Rechnung fehlt“.
+        LieferantDokument lieferschein = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument rechnung = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        rechnung.setAusgeblendet(true);
+        verknuepfe(rechnung, lieferschein);
+        when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein, rechnung));
+
+        var dto = controller.getUebersicht().getBody();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.laufendeBestellungen()).isEmpty();
+        assertThat(dto.ausgeblendet()).hasSize(1);
+        var kette = dto.ausgeblendet().get(0);
+        assertThat(kette.dokumente()).extracting(d -> d.id, d -> d.ausgeblendet)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(1L, false),
+                        org.assertj.core.groups.Tuple.tuple(2L, true));
+    }
+
+    @Test
+    void eingeblendeteUnzugeordneteRechnungHatVorrang() {
+        LieferantDokument ab = dokument(1L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        LieferantDokument bezahlt = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        bezahlt.setAusgeblendet(true);
+        verknuepfe(bezahlt, ab);
+        LieferantDokument teilrechnung = dokument(3L, LieferantDokumentTyp.RECHNUNG);
+        verknuepfe(teilrechnung, ab);
+        when(dokumentRepository.findAll()).thenReturn(List.of(ab, bezahlt, teilrechnung));
+
+        var dto = controller.getUebersicht().getBody();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.abgeschlossen()).hasSize(1);
+        assertThat(dto.abgeschlossen().get(0).dokumente()).hasSize(3);
+        assertThat(dto.ausgeblendet()).isEmpty();
+    }
+
+    @Test
+    void zugeordneteRechnungUndAllesAusgeblendet() {
+        LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument rechnung = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        verknuepfe(rechnung, ls);
+        var anteil = new org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil();
+        anteil.setDokument(rechnung);
+        when(projektAnteilRepository.findAll()).thenReturn(List.of(anteil));
+        LieferantDokument versteckteAnfrage = dokument(3L, LieferantDokumentTyp.ANGEBOT);
+        versteckteAnfrage.setAusgeblendet(true);
+        LieferantDokument halbVersteckt = dokument(4L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        halbVersteckt.setAusgeblendet(true);
+        LieferantDokument sichtbarerLs = dokument(5L, LieferantDokumentTyp.LIEFERSCHEIN);
+        verknuepfe(sichtbarerLs, halbVersteckt);
+        when(dokumentRepository.findAll()).thenReturn(List.of(ls, rechnung, versteckteAnfrage, halbVersteckt, sichtbarerLs));
+
+        var dto = controller.getUebersicht().getBody();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.zugeordnet()).hasSize(1);
+        assertThat(dto.ausgeblendet()).extracting(k -> k.dokumente().get(0).id).containsExactly(3L);
+        // Nur die AB ist ausgeblendet, der Lieferschein nicht -> weiter laufend
+        assertThat(dto.laufendeBestellungen()).hasSize(1);
+        assertThat(dto.laufendeBestellungen().get(0).dokumente()).hasSize(2);
+    }
+
+    @Test
+    void verbindungenJedeKanteEinmal() {
+        LieferantDokument ls1 = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument ls2 = dokument(2L, LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument rechnung = dokument(3L, LieferantDokumentTyp.RECHNUNG);
+        LieferantDokument gutschrift = dokument(4L, LieferantDokumentTyp.GUTSCHRIFT);
+        verknuepfe(rechnung, ls1);
+        verknuepfe(rechnung, ls2);
+        // Doppelt gespeichert (beide Richtungen) zählt nur einmal
+        verknuepfe(ls2, rechnung);
+        verknuepfe(gutschrift, rechnung);
+        when(dokumentRepository.findAll()).thenReturn(List.of(ls1, ls2, rechnung, gutschrift));
+
+        var dto = controller.getUebersicht().getBody();
+
+        assertThat(dto).isNotNull();
+        var kette = dto.abgeschlossen().get(0);
+        assertThat(kette.dokumente()).hasSize(4);
+        assertThat(kette.verbindungen()).hasSize(3)
+                .contains(new BestellungsUebersichtController.Verbindung(3L, 1L),
+                        new BestellungsUebersichtController.Verbindung(4L, 3L));
+        assertThat(kette.verbindungen()).filteredOn(v -> v.vonId() + v.zuId() == 5L).hasSize(1);
+    }
+
+    @Test
+    void kartenVorschlagAuchAusAusgeblendetenRechnungen() {
+        LieferantDokument ab = dokument(1L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 1)));
+        ab.getGeschaeftsdaten().setDokumentNummer("AB-77001");
+        LieferantDokument bezahlt = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        bezahlt.setAusgeblendet(true);
+        bezahlt.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 20)));
+        bezahlt.getGeschaeftsdaten().setReferenzNummer("AB 77001");
+        // Ohne Verknüpfung steht die AB laufend, die bezahlte Rechnung allein erledigt
+        when(dokumentRepository.findAll()).thenReturn(List.of(ab, bezahlt));
+
+        var dto = controller.getUebersicht().getBody();
+
+        assertThat(dto).isNotNull();
+        var vorschlag = dto.laufendeBestellungen().get(0).rechnungsVorschlag();
+        assertThat(vorschlag).isNotNull();
+        assertThat(vorschlag.rechnung().id).isEqualTo(2L);
+        assertThat(vorschlag.rechnung().ausgeblendet).isTrue();
+        assertThat(vorschlag.gehoertSchonZu()).isNull();
+    }
+
+    @Test
+    void kartenVorschlagNurAusDemZeitfenster() {
+        LieferantDokument ab = dokument(1L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        ab.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 1)));
+        ab.getGeschaeftsdaten().setDokumentNummer("AB-77001");
+        LieferantDokument vielSpaeter = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        vielSpaeter.setAusgeblendet(true);
+        vielSpaeter.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2027, 6, 1)));
+        vielSpaeter.getGeschaeftsdaten().setReferenzNummer("AB 77001");
+        when(dokumentRepository.findAll()).thenReturn(List.of(ab, vielSpaeter));
+
+        var dto = controller.getUebersicht().getBody();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
+        // Im Fenster „Rechnung suchen“ gilt die Grenze nicht – dort wird im Browser gesucht
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false).getBody())
+                .extracting(v -> v.rechnung().id).containsExactly(2L);
+    }
+
+    @Test
+    void kartenFensterGrenzen() {
+        LieferantDokument rechnung = dokument(9L, LieferantDokumentTyp.RECHNUNG);
+        List<LocalDate> bestellung = List.of(LocalDate.of(2026, 6, 1));
+        rechnung.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 5, 2)));
+        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isTrue();
+        rechnung.getGeschaeftsdaten().setDokumentDatum(LocalDate.of(2026, 5, 1));
+        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isFalse();
+        rechnung.getGeschaeftsdaten().setDokumentDatum(LocalDate.of(2026, 11, 28));
+        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isTrue();
+        rechnung.getGeschaeftsdaten().setDokumentDatum(LocalDate.of(2026, 11, 29));
+        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isFalse();
+        // Ohne Datum bleibt sie im Rennen
+        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, List.of())).isTrue();
+        rechnung.getGeschaeftsdaten().setDokumentDatum(null);
+        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isTrue();
+    }
+
+    @Test
+    void sehrLangeKetteOhneStackueberlauf() {
+        List<LieferantDokument> alle = new java.util.ArrayList<>();
+        LieferantDokument vorher = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
+        alle.add(vorher);
+        for (long id = 2; id <= 20_000; id++) {
+            LieferantDokument ls = dokument(id, LieferantDokumentTyp.LIEFERSCHEIN);
+            verknuepfe(ls, vorher);
+            alle.add(ls);
+            vorher = ls;
+        }
+        when(dokumentRepository.findAll()).thenReturn(alle);
+
+        var dto = controller.getUebersicht().getBody();
+
+        assertThat(dto.laufendeBestellungen()).hasSize(1);
+        assertThat(dto.laufendeBestellungen().get(0).dokumente()).hasSize(20_000);
+    }
+
+    @Test
+    void abhaengenLoestUndSperrt() {
+        LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument rechnung = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        rechnung.getVerknuepfteDokumente().add(ls);
+        ls.getVerknuepftVon().add(rechnung);
+        when(dokumentRepository.findById(2L)).thenReturn(java.util.Optional.of(rechnung));
+        when(dokumentRepository.findById(Long.MAX_VALUE)).thenReturn(java.util.Optional.empty());
+
+        var antwort = controller.abhaengen(new BestellungsUebersichtController.AbhaengenRequest(2L), null);
+
+        assertThat(antwort.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(antwort.getBody()).isEqualTo(java.util.Map.of("geloest", 1));
+        assertThat(rechnung.getVerknuepfteDokumente()).isEmpty();
+        org.mockito.Mockito.verify(sperreRepository).saveAll(org.mockito.ArgumentMatchers.anyList());
+        assertThat(controller.abhaengen(new BestellungsUebersichtController.AbhaengenRequest(Long.MAX_VALUE), null)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(controller.abhaengen(new BestellungsUebersichtController.AbhaengenRequest(0L), null)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.abhaengen(new BestellungsUebersichtController.AbhaengenRequest(-1L), null)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.abhaengen(new BestellungsUebersichtController.AbhaengenRequest(null), null)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void rechnungHochladenGibtDieNeueRechnungZurueck() throws Exception {
+        var datei = new org.springframework.mock.web.MockMultipartFile(
+                "datei", "rechnung.pdf", "application/pdf", new byte[] { 1, 2, 3 });
+        LieferantDokument neu = dokument(9L, LieferantDokumentTyp.RECHNUNG);
+        neu.setOriginalDateiname("rechnung.pdf");
+        neu.setGespeicherterDateiname("x_rechnung.pdf");
+        when(lieferantDokumentService.rechnungZuBestellungHochladen(1L, datei, null)).thenReturn(neu);
+
+        var antwort = controller.rechnungHochladen(datei, 1L, null);
+
+        assertThat(antwort.getStatusCode()).isEqualTo(HttpStatus.OK);
+        var ref = (BestellungsUebersichtController.DokumentRef) antwort.getBody();
+        assertThat(ref.id).isEqualTo(9L);
+        assertThat(ref.typ).isEqualTo(LieferantDokumentTyp.RECHNUNG);
+        assertThat(ref.pdfUrl).isEqualTo("/api/lieferanten/1/dokumente/9/download");
+    }
+
+    @Test
+    void rechnungHochladenFehlerfaelle() throws Exception {
+        var datei = new org.springframework.mock.web.MockMultipartFile(
+                "datei", "../../etc/passwd.exe", "application/octet-stream", new byte[] { 1 });
+        when(lieferantDokumentService.rechnungZuBestellungHochladen(1L, datei, null))
+                .thenThrow(new org.example.kalkulationsprogramm.service.BelegAbgelehntException("Nur PDF, JPG oder PNG erlaubt."));
+        when(lieferantDokumentService.rechnungZuBestellungHochladen(3L, datei, null))
+                .thenThrow(new IllegalArgumentException("interne Meldung mit Details"));
+        when(lieferantDokumentService.rechnungZuBestellungHochladen(Long.MAX_VALUE, datei, null))
+                .thenThrow(new java.util.NoSuchElementException());
+        when(lieferantDokumentService.rechnungZuBestellungHochladen(2L, datei, null))
+                .thenThrow(new java.io.IOException("Platte voll"));
+
+        var abgelehnt = controller.rechnungHochladen(datei, 1L, null);
+        assertThat(abgelehnt.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(abgelehnt.getBody()).isEqualTo(java.util.Map.of("message", "Nur PDF, JPG oder PNG erlaubt."));
+        // Fremde Meldungen gehen nie nach außen
+        var intern = controller.rechnungHochladen(datei, 3L, null);
+        assertThat(intern.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(intern.getBody().toString()).doesNotContain("interne").contains("konnte nicht angelegt werden");
+        assertThat(controller.rechnungHochladen(datei, Long.MAX_VALUE, null).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+        var fehler = controller.rechnungHochladen(datei, 2L, null);
+        assertThat(fehler.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        // Keine technische Meldung nach außen
+        assertThat(fehler.getBody().toString()).doesNotContain("Platte");
+        assertThat(controller.rechnungHochladen(datei, 0L, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.rechnungHochladen(datei, -5L, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
     void rechnungVorschlaegeLehntUngueltigeIdsAb() {
-        assertThat(controller.getRechnungsVorschlaege(List.of()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.getRechnungsVorschlaege(List.of(-1L)).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.getRechnungsVorschlaege(List.of(0L)).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(List.of(), false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(List.of(-1L), false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(List.of(0L), false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         List<Long> zuViele = java.util.stream.LongStream.rangeClosed(1, 51).boxed().toList();
-        assertThat(controller.getRechnungsVorschlaege(zuViele).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(zuViele, false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
     void rechnungVorschlaegeOhneBestelldokument() {
         when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.ANGEBOT)));
 
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L, Long.MAX_VALUE)).getStatusCode())
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L, Long.MAX_VALUE), false).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
@@ -301,6 +577,12 @@ class BestellungsUebersichtControllerEinordnungTest {
         d.setTyp(typ);
         d.setUploadDatum(LocalDateTime.of(2026, 9, 1, 8, 0));
         return d;
+    }
+
+    /** Wie JPA: beide Seiten der Verknüpfung (Nachfolger -> Vorgänger). */
+    private static void verknuepfe(LieferantDokument nachfolger, LieferantDokument vorgaenger) {
+        nachfolger.getVerknuepfteDokumente().add(vorgaenger);
+        vorgaenger.getVerknuepftVon().add(nachfolger);
     }
 
     private LieferantGeschaeftsdokument geschaeftsdaten(LocalDate datum) {

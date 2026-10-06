@@ -38,6 +38,7 @@ class EmailAttachmentProcessingServiceTest {
     @Mock private GeminiDokumentAnalyseService geminiAnalyseService;
     @Mock private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     @Mock private LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
+    @Mock private BelegZuordnungService belegZuordnungService;
 
     @TempDir
     Path tempDir;
@@ -49,7 +50,7 @@ class EmailAttachmentProcessingServiceTest {
         service = new EmailAttachmentProcessingService(
                 emailRepository, emailAttachmentRepository, lieferantDokumentRepository,
                 lieferantenRepository, lieferantGeschaeftsdokumentRepository, geminiAnalyseService,
-                standardKostenstelleAutoAssigner, vorauskasseAutoAssigner);
+                standardKostenstelleAutoAssigner, vorauskasseAutoAssigner, belegZuordnungService);
         ReflectionTestUtils.setField(service, "attachmentDir", tempDir.toString());
     }
 
@@ -408,8 +409,8 @@ class EmailAttachmentProcessingServiceTest {
             assertThat(saved.getGeschaeftsdaten()).isNotNull();
             assertThat(saved.getGeschaeftsdaten().getDokumentNummer()).isEqualTo("RE-2025-100");
 
-            // Verify relink was also called
-            verify(geminiAnalyseService).performRelink(saved);
+            // Beleg wird über die zentrale Zuordnung in seine Kette einsortiert
+            verify(belegZuordnungService).ordneEin(saved);
         }
     }
 

@@ -7,15 +7,16 @@ import { useConfirm } from '../../components/ui/confirm-dialog';
 import { PdfCanvasViewer } from '../../components/ui/PdfCanvasViewer';
 import { useToast } from '../../components/ui/toast';
 import { TYP_LABELS } from './bestellungenListe';
+import { juengstesBestellDokument } from './kettenGraph';
+import { RechnungHochladenKnopf } from './RechnungHochladenKnopf';
 import {
     MIN_QUOTE_VORAUSWAHL,
     TREFFER_KLASSEN,
-    brauchtRueckfrage,
     formatiereQuote,
     ladeRechnungsVorschlaege,
     passtZurRechnungsSuche,
     rechnungVerknuepfen,
-    rueckfrageText,
+    rueckfrage,
     trefferStufe,
     type RechnungsDokument,
     type RechnungsVorschlag,
@@ -66,6 +67,22 @@ function PdfSpalte({ titel, kopf, children }: { titel: string; kopf?: React.Reac
     );
 }
 
+/** 0 % ist kein Treffer – dann keine Quote zeigen, damit nichts nach Vorschlag aussieht. */
+function QuoteMarke({ quote }: { quote: number }) {
+    if (quote <= 0) return null;
+    return (
+        <span className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border tabular-nums ${TREFFER_KLASSEN[trefferStufe(quote)]}`}>
+            {formatiereQuote(quote)}
+        </span>
+    );
+}
+
+function anzahlText(anzahl: number, lieferant: string | null, alleLieferanten: boolean): string {
+    const rechnungen = anzahl === 1 ? 'Rechnung' : 'Rechnungen';
+    if (alleLieferanten) return `${anzahl} ${rechnungen} von allen Lieferanten`;
+    return `${anzahl} ${rechnungen} von ${lieferant ?? 'diesem Lieferanten'}`;
+}
+
 function ListeSkeleton() {
     return (
         <div className="p-3 space-y-2" role="status" aria-label="Rechnungen werden geladen">
@@ -92,6 +109,9 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
     const [speichert, setSpeichert] = useState(false);
     /** Rechnung im großen Vorschaufenster */
     const [vorschau, setVorschau] = useState<RechnungsVorschlag | null>(null);
+    /** Standard: nur derselbe Lieferant. Auf Wunsch alle Lieferanten. */
+    const [alleLieferanten, setAlleLieferanten] = useState(false);
+    const zielDokument = useMemo(() => juengstesBestellDokument(kette.dokumente), [kette.dokumente]);
 
     const eigeneDokumente = useMemo(() => kette.dokumente.filter(d => d.pdfUrl), [kette.dokumente]);
     const eigenes = eigeneDokumente.find(d => d.id === eigenesDokId) ?? eigeneDokumente[0] ?? null;
@@ -99,7 +119,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
     useEffect(() => {
         let abgebrochen = false;
         const ids = kette.dokumente.map(d => d.id);
-        ladeRechnungsVorschlaege(ids)
+        ladeRechnungsVorschlaege(ids, { alleLieferanten })
             .then(liste => {
                 if (abgebrochen) return;
                 setVorschlaege(liste);
@@ -113,13 +133,20 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                 toast.error(err instanceof Error ? err.message : 'Rechnungen konnten nicht geladen werden.');
             });
         return () => { abgebrochen = true; };
-    }, [kette.dokumente, ladeVersuch, toast]);
+    }, [kette.dokumente, ladeVersuch, alleLieferanten, toast]);
 
     const neuLaden = useCallback(() => {
         setVorschlaege(null);
         setFehler(false);
         setLadeVersuch(v => v + 1);
     }, []);
+
+    const lieferantenUmschalten = (alle: boolean) => {
+        setVorschlaege(null);
+        setFehler(false);
+        setGewaehltId(null);
+        setAlleLieferanten(alle);
+    };
 
     const sichtbar = useMemo(
         () => (vorschlaege ?? []).filter(v => passtZurRechnungsSuche(v, suche)),
@@ -129,15 +156,8 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
 
     const verknuepfen = async (vorschlag: RechnungsVorschlag | null = gewaehlt) => {
         if (!vorschlag || speichert) return;
-        if (brauchtRueckfrage(vorschlag)) {
-            const ok = await confirm({
-                title: 'Rechnung wirklich zuordnen?',
-                message: rueckfrageText(vorschlag),
-                confirmLabel: 'Zuordnen',
-                variant: 'warning',
-            });
-            if (!ok) return;
-        }
+        const frage = rueckfrage(vorschlag);
+        if (frage && !(await confirm(frage))) return;
         setSpeichert(true);
         try {
             await rechnungVerknuepfen(vorschlag.bestellDokumentId, vorschlag.rechnung.id);
@@ -224,11 +244,23 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                 </button>
                             )}
                         </div>
-                        {vorschlaege && (
-                            <p className="text-xs text-slate-500 px-1" aria-live="polite">
-                                {sichtbar.length} von {vorschlaege.length} offenen Rechnungen
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-1">
+                            <p className="text-xs text-slate-500" aria-live="polite">
+                                {vorschlaege ? anzahlText(sichtbar.length, kette.lieferantName, alleLieferanten) : '\u00a0'}
                             </p>
-                        )}
+                            {/* Im Leerzustand übernimmt der große Knopf darunter */}
+                            {vorschlaege && (vorschlaege.length > 0 || alleLieferanten) && (
+                                <button
+                                    type="button"
+                                    onClick={() => lieferantenUmschalten(!alleLieferanten)}
+                                    className="text-xs font-medium text-rose-700 hover:text-rose-800 hover:underline underline-offset-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                >
+                                    {alleLieferanten
+                                        ? `Nur ${kette.lieferantName ?? 'diesen Lieferanten'} zeigen`
+                                        : 'Auch bei anderen Lieferanten suchen'}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto">
@@ -243,9 +275,30 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                             </div>
                         )}
                         {vorschlaege && vorschlaege.length === 0 && (
-                            <div className="p-6 text-center text-sm text-slate-500">
-                                <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" aria-hidden="true" />
-                                Keine offenen Rechnungen gefunden.
+                            <div className="p-6 text-center text-sm text-slate-500 space-y-3">
+                                <FileText className="w-10 h-10 mx-auto text-slate-300" aria-hidden="true" />
+                                <p className="font-medium text-slate-800">
+                                    {alleLieferanten
+                                        ? 'Es ist noch keine Rechnung da, die passen könnte.'
+                                        : `Von ${kette.lieferantName ?? 'diesem Lieferanten'} ist noch keine Rechnung da.`}
+                                </p>
+                                <p>
+                                    {alleLieferanten
+                                        ? 'Liegt die Rechnung auf Papier oder als Datei vor, einfach hier hochladen.'
+                                        : 'Vielleicht kam sie per Post oder unter einem anderen Lieferantennamen. Lade sie hoch oder such bei den anderen Lieferanten.'}
+                                </p>
+                                <div className="flex flex-wrap justify-center gap-2">
+                                    <RechnungHochladenKnopf
+                                        bestellDokumentId={zielDokument?.id ?? null}
+                                        onHochgeladen={() => onVerknuepft()}
+                                    />
+                                    {!alleLieferanten && (
+                                        <Button size="sm" variant="outline" onClick={() => lieferantenUmschalten(true)}>
+                                            <Search className="w-4 h-4" aria-hidden="true" />
+                                            Bei anderen Lieferanten suchen
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                         )}
                         {vorschlaege && vorschlaege.length > 0 && sichtbar.length === 0 && (
@@ -271,13 +324,25 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                                     <span className="text-sm font-semibold text-slate-900 truncate">
                                                         {v.rechnung.dokumentNummer ?? v.rechnung.dateiname}
                                                     </span>
-                                                    <span className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border tabular-nums ${TREFFER_KLASSEN[trefferStufe(v.trefferquote)]}`}>
-                                                        {formatiereQuote(v.trefferquote)}
-                                                    </span>
+                                                    <QuoteMarke quote={v.trefferquote} />
                                                 </div>
                                                 <div className="mt-0.5 text-xs text-slate-500 truncate">
                                                     {v.lieferantName ?? 'Lieferant unbekannt'}
                                                 </div>
+                                                {(v.gehoertSchonZu || v.rechnung.ausgeblendet) && (
+                                                    <div className="mt-1.5 flex flex-wrap gap-1">
+                                                        {v.gehoertSchonZu && (
+                                                            <span className="text-[11px] leading-tight px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-800">
+                                                                Gehört schon zu {v.gehoertSchonZu} – Teillieferung
+                                                            </span>
+                                                        )}
+                                                        {v.rechnung.ausgeblendet && (
+                                                            <span className="text-[11px] leading-tight px-1.5 py-0.5 rounded border border-slate-200 bg-slate-100 text-slate-500">
+                                                                ausgeblendet
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
                                                 <div className="mt-1 flex items-center justify-between text-xs text-slate-600">
                                                     <span className="tabular-nums">{formatDatum(v.rechnung.dokumentDatum ?? v.rechnung.eingangsDatum)}</span>
                                                     <span className="font-medium tabular-nums">{formatEuro(v.rechnung.betragBrutto)}</span>
@@ -291,7 +356,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                                         ))}
                                                     </ul>
                                                 )}
-                                                {!v.eindeutig && (
+                                                {!v.eindeutig && v.trefferquote > 0 && (
                                                     <p className="mt-2 text-[11px] text-amber-700">
                                                         Eine weitere Rechnung passt gleich gut.
                                                     </p>
@@ -376,9 +441,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                             <span className="tabular-nums">{formatDatum(vorschau.rechnung.dokumentDatum ?? vorschau.rechnung.eingangsDatum)}</span>
                             <span aria-hidden="true">·</span>
                             <span className="tabular-nums">{formatEuro(vorschau.rechnung.betragBrutto)}</span>
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border tabular-nums ${TREFFER_KLASSEN[trefferStufe(vorschau.trefferquote)]}`}>
-                                {formatiereQuote(vorschau.trefferquote)}
-                            </span>
+                            <QuoteMarke quote={vorschau.trefferquote} />
                         </DialogDescription>
                     </div>
                     <div className="flex-1 min-h-0 bg-slate-50">

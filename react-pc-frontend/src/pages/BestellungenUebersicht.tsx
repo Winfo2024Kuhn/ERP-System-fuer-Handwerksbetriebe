@@ -4,7 +4,7 @@ import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { RefreshCw, FileText, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase, EyeOff, Eye, Archive, Search, ChevronDown, ChevronRight, FileSearch, Check, Sparkles } from 'lucide-react';
+import { RefreshCw, FileText, Package, Clock, CheckCircle, AlertCircle, X, Download, FolderOpen, Plus, Trash2, Percent, Euro, Save, Briefcase, EyeOff, Eye, Archive, Search, ChevronDown, ChevronRight, Check, Sparkles } from 'lucide-react';
 import { ProjectSelectModal } from '../components/ProjectSelectModal';
 import { KostenstelleSelectModal } from '../components/KostenstelleSelectModal';
 import { useToast } from '../components/ui/toast';
@@ -12,7 +12,9 @@ import { ZuordnungModal as BelegZuordnungModal } from '../components/ZuordnungMo
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { RechnungSuchenDialog } from '../features/bestellungen/RechnungSuchenDialog';
 import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter } from '../features/bestellungen/bestellungenListe';
-import { TREFFER_KLASSEN, brauchtRueckfrage, formatiereQuote, rechnungVerknuepfen, rueckfrageText, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
+import { TREFFER_KLASSEN, formatiereQuote, rechnungVerknuepfen, rueckfrage, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
+import { KettenGabel } from '../features/bestellungen/KettenGabel';
+import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen/kettenGraph';
 
 // ========== Types ==========
 interface DokumentRef {
@@ -27,6 +29,8 @@ interface DokumentRef {
     eingangsDatum?: string | null;
     dateiname: string;
     pdfUrl: string | null;
+    /** Ausgeblendete Belege bleiben in der Kette, werden aber gedämpft gezeigt. */
+    ausgeblendet?: boolean;
 }
 
 interface DokumentenKette {
@@ -34,6 +38,8 @@ interface DokumentenKette {
     lieferantId: number | null;
     lieferantName: string | null;
     dokumente: DokumentRef[];
+    /** Kanten innerhalb der Kette (Nachfolger → Vorgänger), z. B. Rechnung → Lieferschein. */
+    verbindungen?: KettenVerbindung[];
     /** Nur bei „Bestellt“ gefüllt: die wahrscheinlichste Rechnung (ab 40 %). */
     rechnungsVorschlag?: RechnungsVorschlag | null;
 }
@@ -139,8 +145,10 @@ interface KetteCardProps {
     onZuordnen?: (kette: DokumentenKette) => void;
     onAusblenden?: (kette: DokumentenKette) => void;
     onEinblenden?: (kette: DokumentenKette) => void;
-    /** Nur im Tab „Bestellt“: Rechnung suchen und Vorschlag übernehmen. */
+    /** Rechnung suchen am offenen Ende der Gabel (nicht bei Angeboten und Ausgeblendetem). */
     onRechnungSuchen?: (kette: DokumentenKette) => void;
+    /** Nach Abhängen oder Hochladen: Seite neu laden. */
+    onGeaendert: () => void;
     onVorschlagUebernehmen?: (kette: DokumentenKette) => void;
     uebernehmenBusy?: boolean;
     /** Lange ohne Rechnung: bernsteinfarbener Hinweis. */
@@ -148,13 +156,16 @@ interface KetteCardProps {
     busy?: boolean;
 }
 
-function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, onRechnungSuchen, onVorschlagUebernehmen, uebernehmenBusy, ohneRechnungHinweis, busy }: KetteCardProps) {
+function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, onRechnungSuchen, onGeaendert, onVorschlagUebernehmen, uebernehmenBusy, ohneRechnungHinweis, busy }: KetteCardProps) {
     const betrag = kettenBetrag(kette);
     const alter = formatiereAlter(letzteBewegung(kette), heute);
     const vorschlag = onVorschlagUebernehmen ? kette.rechnungsVorschlag : null;
+    // Bestellt oder geliefert, aber noch keine Rechnung: offenes Ende in der Gabel
+    const offenesEnde = !kette.dokumente.some(d => istRechnungsTyp(d.typ))
+        && kette.dokumente.some(d => d.typ === 'AUFTRAGSBESTAETIGUNG' || d.typ === 'LIEFERSCHEIN');
 
     return (
-        <Card className={`p-4 flex flex-col gap-3 hover:shadow-md transition-shadow ${ohneRechnungHinweis ? 'border-amber-300' : ''}`}>
+        <Card className={`p-4 mb-4 break-inside-avoid flex flex-col gap-3 hover:shadow-md transition-shadow ${ohneRechnungHinweis ? 'border-amber-300' : ''}`}>
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-slate-900 truncate">
@@ -168,7 +179,9 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
                 {betrag && (
                     <div className="text-right flex-shrink-0">
                         <div className="text-sm font-semibold text-slate-900 tabular-nums">{formatEuro(betrag.betrag)} €</div>
-                        <div className="text-[11px] text-slate-400">laut {TYP_LABELS[betrag.typ]}</div>
+                        <div className="text-[11px] text-slate-400">
+                            {betrag.anzahl > 1 ? `laut ${betrag.anzahl} Rechnungen` : `laut ${TYP_LABELS[betrag.typ]}`}
+                        </div>
                     </div>
                 )}
             </div>
@@ -182,29 +195,15 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
 
             <Fortschritt stufe={fortschrittsStufe(kette)} />
 
-            {/* Dokumente als Chips */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-                {kette.dokumente.map(dok => (
-                    <button
-                        key={dok.id}
-                        type="button"
-                        onClick={() => dok.pdfUrl && onOpenPdf(dok.pdfUrl, dok.dokumentNummer || dok.dateiname)}
-                        disabled={!dok.pdfUrl}
-                        title={dok.pdfUrl ? 'Vorschau öffnen' : 'Keine Vorschau vorhanden'}
-                        className="flex flex-col items-start px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                    >
-                        <span className="text-[11px] font-medium text-slate-500 uppercase">{TYP_LABELS[dok.typ]}</span>
-                        <span className="text-sm font-semibold text-slate-800 truncate max-w-[140px]">{dok.dokumentNummer || '–'}</span>
-                        <span className="text-[11px] text-slate-500 tabular-nums">{formatDate(dok.dokumentDatum ?? dok.eingangsDatum ?? null)}</span>
-                        {dok.typ === 'AUFTRAGSBESTAETIGUNG' && dok.liefertermin && (
-                            <span className="text-[11px] text-rose-600 mt-0.5 flex items-center gap-1">
-                                <Clock className="w-3 h-3" aria-hidden="true" />
-                                {formatDate(dok.liefertermin)}
-                            </span>
-                        )}
-                    </button>
-                ))}
-            </div>
+            {/* Belege als Gabel wie bei git */}
+            <KettenGabel
+                dokumente={kette.dokumente}
+                verbindungen={kette.verbindungen}
+                onOpenPdf={onOpenPdf}
+                offenesEnde={offenesEnde}
+                onRechnungSuchen={onRechnungSuchen ? () => onRechnungSuchen(kette) : undefined}
+                onGeaendert={onGeaendert}
+            />
 
             {/* Wahrscheinliche Rechnung */}
             {vorschlag && (
@@ -260,26 +259,20 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
                     {!vorschlag.eindeutig && (
                         <p className="text-[11px] text-amber-700 flex items-start gap-1">
                             <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" aria-hidden="true" />
-                            Weitere Rechnung gleich wahrscheinlich – bitte über „Rechnung suchen“ prüfen.
+                            Weitere Rechnung gleich wahrscheinlich – bitte über „Suchen“ prüfen.
                         </p>
                     )}
                 </div>
             )}
 
             {/* Fußzeile: Aktionen */}
-            {(showZuordnenButton || onRechnungSuchen || onAusblenden || onEinblenden) && (
-                <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+            {(showZuordnenButton || onAusblenden || onEinblenden) && (
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex gap-2 flex-wrap">
                         {showZuordnenButton && onZuordnen && (
                             <Button onClick={() => onZuordnen(kette)} size="sm" variant="outline">
                                 <FolderOpen className="w-4 h-4" aria-hidden="true" />
                                 Projekten zuordnen
-                            </Button>
-                        )}
-                        {onRechnungSuchen && (
-                            <Button onClick={() => onRechnungSuchen(kette)} size="sm" variant="outline">
-                                <FileSearch className="w-4 h-4" aria-hidden="true" />
-                                Rechnung suchen
                             </Button>
                         )}
                         {onEinblenden && (
@@ -938,6 +931,8 @@ export default function BestellungenUebersicht() {
         void loadOffeneBelege();
     }, [loadData, loadOffeneBelege]);
 
+    const neuLadenNachAenderung = useCallback(() => { void loadData(true); }, [loadData]);
+
     const handleOpenPdf = (url: string, title: string) => {
         setPreviewUrl(url);
         setPreviewTitle(title);
@@ -998,15 +993,8 @@ export default function BestellungenUebersicht() {
     const vorschlagUebernehmen = useCallback(async (kette: DokumentenKette) => {
         const vorschlag = kette.rechnungsVorschlag;
         if (!vorschlag) return;
-        if (brauchtRueckfrage(vorschlag)) {
-            const ok = await confirm({
-                title: 'Rechnung wirklich zuordnen?',
-                message: rueckfrageText(vorschlag),
-                confirmLabel: 'Zuordnen',
-                variant: 'warning',
-            });
-            if (!ok) return;
-        }
+        const frage = rueckfrage(vorschlag);
+        if (frage && !(await confirm(frage))) return;
         setUebernehmenKetteId(kette.id);
         try {
             await rechnungVerknuepfen(vorschlag.bestellDokumentId, vorschlag.rechnung.id);
@@ -1105,7 +1093,9 @@ export default function BestellungenUebersicht() {
                 onZuordnen={setZuordnungKette}
                 onAusblenden={istAusgeblendetTab ? undefined : (k) => setKetteAusgeblendet(k, true)}
                 onEinblenden={istAusgeblendetTab ? (k) => setKetteAusgeblendet(k, false) : undefined}
-                onRechnungSuchen={istBestellt ? setRechnungSuchenKette : undefined}
+                // Rechnung suchen/hochladen: bei laufenden Bestellungen und bei Teillieferungen ohne Rechnung
+                onRechnungSuchen={tab !== 'offen' && !istAusgeblendetTab ? setRechnungSuchenKette : undefined}
+                onGeaendert={neuLadenNachAenderung}
                 onVorschlagUebernehmen={istBestellt ? vorschlagUebernehmen : undefined}
                 uebernehmenBusy={uebernehmenKetteId === kette.id}
                 ohneRechnungHinweis={optionen.ohneRechnungHinweis}
@@ -1113,7 +1103,8 @@ export default function BestellungenUebersicht() {
             />
         );
     };
-    const kartenGitter = 'grid gap-4 md:grid-cols-2 xl:grid-cols-3';
+    // Mauerwerk: Karten unterschiedlicher Höhe ohne Lücken (Tastatur-Reihenfolge spaltenweise)
+    const kartenGitter = 'columns-1 md:columns-2 xl:columns-3 gap-4';
 
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
@@ -1201,7 +1192,7 @@ export default function BestellungenUebersicht() {
             {loading ? (
                 <div className={kartenGitter} role="status" aria-label="Bestellungen werden geladen">
                     {[0, 1, 2].map(i => (
-                        <Card key={i} className="p-4 space-y-3 motion-safe:animate-pulse">
+                        <Card key={i} className="p-4 mb-4 break-inside-avoid space-y-3 motion-safe:animate-pulse">
                             <div className="h-4 w-1/2 rounded bg-slate-200" />
                             <div className="h-1.5 w-full rounded bg-slate-100" />
                             <div className="h-12 w-2/3 rounded bg-slate-100" />

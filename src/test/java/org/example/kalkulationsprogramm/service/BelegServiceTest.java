@@ -40,6 +40,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit-Tests fuer den BelegService — Kernlogik der Buchhaltungs-Belegerfassung.
@@ -55,6 +58,7 @@ class BelegServiceTest {
     @Mock private AbteilungDokumentBerechtigungRepository berechtigungRepository;
     @Mock private SachkontoRepository sachkontoRepository;
     @Mock private BelegKiAnalyseService kiAnalyseService;
+    @Mock private BelegZuordnungService zuordnungService;
     @Mock private LieferantDokumentRepository lieferantDokumentRepository;
     @Mock private FrontendUserProfileRepository frontendUserProfileRepository;
     @Mock private KasseSaldoService kasseSaldoService;
@@ -520,6 +524,51 @@ class BelegServiceTest {
     }
 
     // Suppress unused warnings — used in some scenarios for thoroughness
+    // ===================== Lieferant im Pruef-Dialog =====================
+
+    @Test
+    void lieferantSpaeterGesetzt_legtLieferantenDokumentNachDemSpeichernAn() {
+        org.example.kalkulationsprogramm.domain.Beleg beleg = new org.example.kalkulationsprogramm.domain.Beleg();
+        beleg.setId(11L);
+        beleg.setDokumentTyp(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN);
+        org.example.kalkulationsprogramm.domain.Lieferanten lieferant = new org.example.kalkulationsprogramm.domain.Lieferanten();
+        lieferant.setId(5L);
+        lieferant.setLieferantenname("Muster GmbH");
+        when(belegRepository.findById(11L)).thenReturn(java.util.Optional.of(beleg));
+        when(lieferantenRepository.findById(5L)).thenReturn(java.util.Optional.of(lieferant));
+        var req = new org.example.kalkulationsprogramm.dto.BelegDto.UpdateRequest();
+        req.setLieferantId(5L);
+
+        service.updateBeleg(11L, req, null);
+
+        assertThat(beleg.getLieferant()).isSameAs(lieferant);
+        verify(zuordnungService).uebernehmeScannerBelegNachCommit(11L);
+    }
+
+    @Test
+    void lieferantGesetztAberKeinBestellbeleg_legtNichtsAn() {
+        org.example.kalkulationsprogramm.domain.Beleg beleg = new org.example.kalkulationsprogramm.domain.Beleg();
+        beleg.setId(12L);
+        beleg.setDokumentTyp(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.SONSTIG);
+        org.example.kalkulationsprogramm.domain.Lieferanten lieferant = new org.example.kalkulationsprogramm.domain.Lieferanten();
+        lieferant.setId(5L);
+        when(belegRepository.findById(12L)).thenReturn(java.util.Optional.of(beleg));
+        when(lieferantenRepository.findById(5L)).thenReturn(java.util.Optional.of(lieferant));
+        var req = new org.example.kalkulationsprogramm.dto.BelegDto.UpdateRequest();
+        req.setLieferantId(5L);
+
+        service.updateBeleg(12L, req, null);
+
+        // Ohne erkannte Belegart oder ohne Lieferant: nichts anlegen
+        beleg.setDokumentTyp(null);
+        service.updateBeleg(12L, req, null);
+        when(lieferantenRepository.findById(6L)).thenReturn(java.util.Optional.empty());
+        beleg.setDokumentTyp(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
+        req.setLieferantId(6L);
+        service.updateBeleg(12L, req, null);
+        verify(zuordnungService, never()).uebernehmeScannerBelegNachCommit(any());
+    }
+
     @SuppressWarnings("unused")
     private void unused() {
         lenient().when(belegRepository.findById(any())).thenReturn(java.util.Optional.empty());

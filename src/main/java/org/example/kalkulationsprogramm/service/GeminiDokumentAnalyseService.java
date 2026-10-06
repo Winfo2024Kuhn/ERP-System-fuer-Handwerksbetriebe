@@ -14,22 +14,26 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.UntdidCodeliste;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.hibernate.Hibernate;
@@ -67,6 +71,7 @@ public class GeminiDokumentAnalyseService {
     private final SystemSettingsService systemSettingsService;
     private final ApplicationEventPublisher eventPublisher;
     private final LieferantDokumentAbgleich dokumentAbgleich;
+    private final LieferantDokumentVerknuepfungSperreRepository sperreRepository;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -1863,7 +1868,34 @@ public class GeminiDokumentAnalyseService {
      * Rechnung ← Gutschrift). Entschieden wird im {@link LieferantDokumentAbgleich}.
      */
     private void automatischeVerknuepfung(LieferantDokument dokument, LieferantGeschaeftsdokument geschaeftsdaten) {
-        automatischeVerknuepfung(dokument, geschaeftsdaten, null, dokumentAbgleich.neuerSpeicher());
+        if (dokument.getLieferant() == null) {
+            log.warn("[Verknüpfung] Dokument {} hat keinen Lieferanten!", dokument.getId());
+            return;
+        }
+        Long lieferantId = dokument.getLieferant().getId();
+        // Alle Dokumente des Lieferanten, nicht nur die Vorgänger-Typen: Erst über alle
+        // Belege zeigt sich, ob eine gemeinsame Nummer trennscharf ist (Kundennummer).
+        automatischeVerknuepfung(dokument, geschaeftsdaten,
+                dokumentRepository.findByLieferantIdOrderByUploadDatumDesc(lieferantId),
+                speicherMitSperren(sperreRepository.findByLieferantId(lieferantId)));
+    }
+
+    /**
+     * Neuer Merkmal-Speicher, der die von Hand gelösten Paare kennt – der
+     * Abgleich verknüpft sie dann nicht wieder.
+     */
+    private LieferantDokumentAbgleich.Merkmalspeicher speicherMitSperren(
+            Collection<LieferantDokumentVerknuepfungSperre> sperren) {
+        LieferantDokumentAbgleich.Merkmalspeicher speicher = dokumentAbgleich.neuerSpeicher();
+        if (sperren != null) {
+            sperren.forEach(s -> speicher.sperre(s.getDokumentId(), s.getVerknuepftId()));
+        }
+        return speicher;
+    }
+
+    private LieferantDokumentAbgleich.Merkmalspeicher speicherFuerLieferant(LieferantDokument dokument) {
+        Long lieferantId = dokument.getLieferant() != null ? dokument.getLieferant().getId() : null;
+        return speicherMitSperren(lieferantId != null ? sperreRepository.findByLieferantId(lieferantId) : List.of());
     }
 
     private void automatischeVerknuepfung(LieferantDokument dokument, LieferantGeschaeftsdokument geschaeftsdaten,
@@ -1916,17 +1948,16 @@ public class GeminiDokumentAnalyseService {
         if (dokument.getLieferant() == null || dokument.getGeschaeftsdaten() == null) {
             return;
         }
-        LieferantDokumentAbgleich.Merkmalspeicher speicher = dokumentAbgleich.neuerSpeicher();
+        LieferantDokumentAbgleich.Merkmalspeicher speicher = speicherFuerLieferant(dokument);
 
         // 1. Vorgänger dieses Dokuments (z. B. Rechnung -> AB)
         automatischeVerknuepfung(dokument, dokument.getGeschaeftsdaten(), alleDokumente, speicher);
 
         // 2. Nachfolger, zu denen dieses Dokument als Vorgänger gehört. Typischer Fall:
-        // Das Angebot kommt erst nach der Auftragsbestätigung ins Postfach.
+        // Das Angebot kommt erst nach der Auftragsbestätigung ins Postfach. Alle
+        // Dokumente als Kandidaten: Der Abgleich filtert die Typen selbst, braucht aber
+        // alle Belege, um Kundennummern von Auftragsnummern zu unterscheiden.
         LieferantDokumentTyp meinTyp = dokument.getTyp();
-        List<LieferantDokument> gleicherTyp = alleDokumente.stream()
-                .filter(d -> d.getTyp() == meinTyp)
-                .toList();
         for (LieferantDokument anderes : alleDokumente) {
             if (anderes == dokument || anderes.getGeschaeftsdaten() == null
                     || (anderes.getId() != null && anderes.getId().equals(dokument.getId()))
@@ -1935,7 +1966,7 @@ public class GeminiDokumentAnalyseService {
                 continue;
             }
             var ergebnis = dokumentAbgleich.findeVorgaenger(
-                    anderes, anderes.getGeschaeftsdaten(), gleicherTyp, speicher);
+                    anderes, anderes.getGeschaeftsdaten(), alleDokumente, speicher);
             boolean passt = ergebnis.sicher().contains(dokument)
                     || (ergebnis.hinweis() == dokument && !hatVorgaengerVomTyp(anderes, meinTyp));
             if (passt) {
@@ -1955,7 +1986,21 @@ public class GeminiDokumentAnalyseService {
      * @return Anzahl neu entstandener Verknüpfungen
      */
     public int verknuepfeDokumenteNeu(List<LieferantDokument> dokumente) {
-        LieferantDokumentAbgleich.Merkmalspeicher speicher = dokumentAbgleich.neuerSpeicher();
+        Set<Long> lieferanten = dokumente.stream()
+                .filter(d -> d.getLieferant() != null && d.getLieferant().getId() != null)
+                .map(d -> d.getLieferant().getId())
+                .collect(java.util.stream.Collectors.toSet());
+        List<LieferantDokumentVerknuepfungSperre> sperren = new ArrayList<>();
+        lieferanten.forEach(id -> sperren.addAll(sperreRepository.findByLieferantId(id)));
+        return verknuepfeDokumenteNeu(dokumente, sperren);
+    }
+
+    /**
+     * Wie {@link #verknuepfeDokumenteNeu(List)}, mit bereits geladenen Sperren.
+     */
+    int verknuepfeDokumenteNeu(List<LieferantDokument> dokumente,
+            Collection<LieferantDokumentVerknuepfungSperre> sperren) {
+        LieferantDokumentAbgleich.Merkmalspeicher speicher = speicherMitSperren(sperren);
         // In Kettenreihenfolge und je Typ vom ältesten zum neuesten: So hängen
         // Angebots-Fassungen schon aneinander, wenn die AB ihr Angebot sucht.
         List<LieferantDokument> reihenfolge = dokumente.stream()
@@ -2590,7 +2635,9 @@ public class GeminiDokumentAnalyseService {
         Map<Long, List<LieferantDokument>> jeLieferant = dokumentRepository.findAll().stream()
                 .filter(d -> d.getLieferant() != null && d.getLieferant().getId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(d -> d.getLieferant().getId()));
-        int neu = jeLieferant.values().stream().mapToInt(this::verknuepfeDokumenteNeu).sum();
+        // Sperren einmal für alle laden – es sind wenige, von Hand gelöste Paare.
+        List<LieferantDokumentVerknuepfungSperre> sperren = sperreRepository.findAll();
+        int neu = jeLieferant.values().stream().mapToInt(d -> verknuepfeDokumenteNeu(d, sperren)).sum();
         log.info("[Backfill] Fertig: {} neue Verknüpfungen bei {} Lieferanten.", neu, jeLieferant.size());
         return neu;
     }

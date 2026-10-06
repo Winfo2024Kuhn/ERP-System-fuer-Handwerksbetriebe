@@ -22,7 +22,8 @@ public interface BelegKostenstellenAnteilRepository extends JpaRepository<BelegK
             + "LEFT JOIN FETCH a.zugeordnetVon "
             + "WHERE ks.id = :kostenstelleId "
             + "AND b.status <> org.example.kalkulationsprogramm.domain.BelegStatus.VERWORFEN "
-            + "AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b) "
+            + "AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
+           + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN) "
             + "ORDER BY b.belegDatum DESC, b.uploadDatum DESC, a.id DESC")
     List<BelegKostenstellenAnteil> findByKostenstelleIdEager(@Param("kostenstelleId") Long kostenstelleId);
 
@@ -92,7 +93,8 @@ public interface BelegKostenstellenAnteilRepository extends JpaRepository<BelegK
             // Gleicher Ausschluss wie in BelegRepository#findValidierteFixkostenBelegeImZeitraum:
             // Belege mit Lieferanten-Dokument laufen schon ueber
             // LieferantDokumentProjektAnteil in die Gemeinkosten.
-            + "AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b) "
+            + "AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
+           + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN) "
             + "AND ("
             + "  ((a.streckungJahre IS NULL OR a.streckungJahre <= 1) "
             + "   AND (a.streckungStartJahr IS NULL OR a.streckungStartJahr = :jahr))"

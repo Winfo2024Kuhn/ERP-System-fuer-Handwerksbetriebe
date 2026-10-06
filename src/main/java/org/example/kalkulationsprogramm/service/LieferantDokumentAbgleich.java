@@ -2,15 +2,20 @@ package org.example.kalkulationsprogramm.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
@@ -36,13 +41,24 @@ import lombok.extern.slf4j.Slf4j;
  * <ul>
  *   <li><b>Sicher</b> (immer verknüpfen): Ein Dokument nennt die Nummer des
  *       anderen (in beide Richtungen), oder beide tragen dieselbe
- *       Bestellnummer.</li>
+ *       Bestellnummer. Für Rechnung → AB/Lieferschein zählt zusätzlich jede
+ *       gemeinsame Nummer (Ziffernfolge ab 5 Stellen), wenn sie trennscharf ist:
+ *       nicht über Monate verstreut (sonst ist es meist die Kundennummer) und
+ *       das Rechnungsdatum passt zur Lieferung. So hängen auch Teillieferungen
+ *       (1 Rechnung, n Lieferscheine) und Teilrechnungen (n Rechnungen, 1 AB)
+ *       zusammen.</li>
  *   <li><b>Hinweis</b>: gleiche Kommission/Bauvorhaben, gleicher Betrag,
  *       gleiche Artikelnummern. Zählt nur, wenn das Datum zur Kette passt;
  *       fehlt ein Datum, braucht es mindestens zwei Merkmale. Geliefert wird
  *       höchstens ein Kandidat – und nur, wenn er eindeutig vorne liegt. Der
- *       Aufrufer hängt ihn nur an, wenn noch kein Vorgänger dieses Typs da ist.</li>
+ *       Aufrufer hängt ihn nur an, wenn noch kein Vorgänger dieses Typs da ist.
+ *       Rechnungen bekommen keinen Hinweis-Treffer mehr: Eine falsch
+ *       angehängte Rechnung lässt eine Bestellung als erledigt erscheinen.
+ *       Solche Paare zeigt die Bestellübersicht nur als Vorschlag.</li>
  * </ul>
+ *
+ * <p>Von Hand gelöste Paare (siehe {@link Merkmalspeicher#sperre}) verknüpft
+ * der Abgleich nie wieder.
  *
  * <p>Ein geändertes Angebot (Revision) hängt am ursprünglichen Angebot – so
  * landen beide in derselben Kette. Weil das ältere Angebot stets der Vorgänger
@@ -92,6 +108,24 @@ public class LieferantDokumentAbgleich {
 
     /** Ziffernkern-Vergleich erst ab dieser Länge, sonst zu viele Zufallstreffer. */
     private static final int MIN_ZIFFERN_KERN = 5;
+
+    /**
+     * Kommt eine gemeinsame Nummer bei diesem Lieferanten über mehr Tage verteilt
+     * vor, ist sie nicht trennscharf – meist die Kundennummer.
+     */
+    static final int TAGE_STREUUNG_MAX = 120;
+    /** Die Rechnung darf so viele Tage vor dem Lieferschein/der AB liegen (Vorkasse, Rückdatierung). */
+    static final int TAGE_RECHNUNG_VORHER = 10;
+    /** … und so viele Tage danach (Sammelrechnungen, Teilrechnungen). */
+    static final int TAGE_RECHNUNG_NACHHER = 150;
+
+    /**
+     * Datumsangaben in Nummernfeldern ("telef. vom 05.08.2026", "2026-08-05").
+     * Begrenzte Quantifizierer und Ziffern-Grenzen: "99-2-01234" ist kein Datum.
+     */
+    private static final Pattern DATUM = Pattern.compile(
+            "(?<!\\d)(?:\\d{1,2}[./-]\\d{1,2}[./-](?:\\d{4}|\\d{2})|\\d{4}-\\d{1,2}-\\d{1,2})(?!\\d)");
+    private static final Pattern ZIFFERNFOLGE = Pattern.compile("\\d++");
     private static final int MIN_KOMMISSION_LAENGE = 4;
     /** Teilstring-Treffer erst ab dieser Länge, sonst treffen sich "lager" und "lagerhalle". */
     private static final int MIN_KOMMISSION_TEILSTRING = 8;
@@ -153,6 +187,122 @@ public class LieferantDokumentAbgleich {
      */
     public static final class Merkmalspeicher {
         private final Map<LieferantGeschaeftsdokument, Merkmale> werte = new IdentityHashMap<>();
+        private final Map<Collection<LieferantDokument>, Streuung> streuungen = new IdentityHashMap<>();
+        private final Set<String> gesperrt = new HashSet<>();
+
+        /**
+         * Merkt ein von Hand gelöstes Paar vor: Der Abgleich verknüpft es in diesem
+         * Lauf nicht – egal in welcher Richtung.
+         */
+        public void sperre(Long dokumentId, Long verknuepftId) {
+            if (dokumentId != null && verknuepftId != null) {
+                gesperrt.add(dokumentId + ":" + verknuepftId);
+                gesperrt.add(verknuepftId + ":" + dokumentId);
+            }
+        }
+
+        boolean istGesperrt(Long a, Long b) {
+            return a != null && b != null && !gesperrt.isEmpty() && gesperrt.contains(a + ":" + b);
+        }
+    }
+
+    /**
+     * Über welchen Zeitraum jede Nummer bei einem Lieferanten vorkommt. Eine
+     * Kundennummer steht auf allen Belegen eines Jahres, eine Auftragsnummer nur
+     * auf den Belegen einer Bestellung.
+     *
+     * <p>Rechnungen (mit Gutschriften) und die übrigen Belege zählen getrennt:
+     * Zwischen Lieferschein und Rechnung dürfen bis zu
+     * {@link #TAGE_RECHNUNG_NACHHER} Tage liegen – das allein ist keine Streuung.
+     * Gestreut ist eine Nummer erst, wenn die Lieferscheine/ABs untereinander oder
+     * die Rechnungen untereinander weit auseinanderliegen.
+     */
+    public static final class Streuung {
+        static final Streuung LEER = new Streuung(Map.of(), Map.of());
+
+        private final Map<String, LocalDate[]> spannen;
+        /** Wie viele ABs/Lieferscheine des Lieferanten die Nummer tragen. */
+        private final Map<String, Integer> bestellHaeufigkeit;
+
+        private Streuung(Map<String, LocalDate[]> spannen, Map<String, Integer> bestellHaeufigkeit) {
+            this.spannen = spannen;
+            this.bestellHaeufigkeit = bestellHaeufigkeit;
+        }
+
+        /** Auf wie vielen ABs/Lieferscheinen die Nummer steht – mindestens 1. */
+        int haeufigkeit(String nummer) {
+            return Math.max(1, bestellHaeufigkeit.getOrDefault(nummer, 0));
+        }
+
+        /**
+         * Größte Spanne der Nummer – getrennt bei den Rechnungen (inklusive
+         * {@code rechnungsDatum}) und den übrigen Belegen (inklusive {@code bestellDatum}).
+         */
+        long tage(String nummer, LocalDate rechnungsDatum, LocalDate bestellDatum) {
+            return Math.max(spanne(schluessel(true, nummer), rechnungsDatum),
+                    spanne(schluessel(false, nummer), bestellDatum));
+        }
+
+        private long spanne(String schluessel, LocalDate datum) {
+            LocalDate[] spanne = spannen.get(schluessel);
+            if (spanne == null) {
+                return 0;
+            }
+            LocalDate min = spanne[0].isBefore(datum) ? spanne[0] : datum;
+            LocalDate max = spanne[1].isAfter(datum) ? spanne[1] : datum;
+            return ChronoUnit.DAYS.between(min, max);
+        }
+
+        static String schluessel(boolean rechnung, String nummer) {
+            return (rechnung ? "R:" : "B:") + nummer;
+        }
+
+        static boolean zaehltAlsRechnung(LieferantDokumentTyp typ) {
+            return typ == LieferantDokumentTyp.RECHNUNG || typ == LieferantDokumentTyp.GUTSCHRIFT;
+        }
+    }
+
+    /**
+     * Streuung der Nummern über die gegebenen Dokumente (desselben Lieferanten).
+     * Wird je Sammlung im Speicher gemerkt – die Sammlung darf sich während des
+     * Laufs nicht ändern.
+     */
+    public Streuung streuung(Collection<LieferantDokument> dokumente, Merkmalspeicher speicher) {
+        if (dokumente == null || dokumente.isEmpty()) {
+            return Streuung.LEER;
+        }
+        Streuung vorhanden = speicher.streuungen.get(dokumente);
+        if (vorhanden != null) {
+            return vorhanden;
+        }
+        Map<String, LocalDate[]> spannen = new HashMap<>();
+        Map<String, Integer> bestellHaeufigkeit = new HashMap<>();
+        for (LieferantDokument d : dokumente) {
+            if (d == null || d.getGeschaeftsdaten() == null) {
+                continue;
+            }
+            Merkmale m = merkmale(d.getTyp(), d.getGeschaeftsdaten(), speicher);
+            if (istBestellDokument(m.typ())) {
+                m.tokens().keySet().forEach(n -> bestellHaeufigkeit.merge(n, 1, Integer::sum));
+            }
+            if (m.datum() == null) {
+                continue;
+            }
+            boolean rechnung = Streuung.zaehltAlsRechnung(m.typ());
+            for (String nummer : m.tokens().keySet()) {
+                LocalDate[] spanne = spannen.computeIfAbsent(Streuung.schluessel(rechnung, nummer),
+                        n -> new LocalDate[] { m.datum(), m.datum() });
+                if (m.datum().isBefore(spanne[0])) {
+                    spanne[0] = m.datum();
+                }
+                if (m.datum().isAfter(spanne[1])) {
+                    spanne[1] = m.datum();
+                }
+            }
+        }
+        Streuung streuung = new Streuung(spannen, bestellHaeufigkeit);
+        speicher.streuungen.put(dokumente, streuung);
+        return streuung;
     }
 
     public Merkmalspeicher neuerSpeicher() {
@@ -186,11 +336,13 @@ public class LieferantDokumentAbgleich {
         }
 
         Merkmale ich = merkmale(dokument.getTyp(), geschaeftsdaten, speicher);
+        Streuung streuung = streuung(kandidaten, speicher);
         List<Kandidat> bewertbar = new ArrayList<>();
         for (LieferantDokument kandidat : kandidaten) {
             if (kandidat == null || kandidat == dokument || !typen.contains(kandidat.getTyp())
                     || kandidat.getGeschaeftsdaten() == null
-                    || (kandidat.getId() != null && kandidat.getId().equals(dokument.getId()))) {
+                    || (kandidat.getId() != null && kandidat.getId().equals(dokument.getId()))
+                    || speicher.istGesperrt(dokument.getId(), kandidat.getId())) {
                 continue;
             }
             Merkmale merkmale = merkmale(kandidat.getTyp(), kandidat.getGeschaeftsdaten(), speicher);
@@ -205,17 +357,28 @@ public class LieferantDokumentAbgleich {
                 : bewertbar.stream().filter(k -> ich.bestellnummer().equals(k.merkmale().bestellnummer())).count();
         boolean bestellnummerTrennscharf = gleicheBestellnummer > 0
                 && gleicheBestellnummer <= MAX_DOKUMENTE_JE_BESTELLNUMMER;
+        // Eine Rechnung hängt nur an sicheren Treffern: Eine falsch angehängte Rechnung
+        // ließe eine offene Bestellung als erledigt erscheinen.
+        boolean nurSicher = dokument.getTyp() == LieferantDokumentTyp.RECHNUNG;
 
         List<LieferantDokument> sicher = new ArrayList<>();
+        List<SichererTreffer> nummernTreffer = new ArrayList<>();
         List<Bewertung> hinweise = new ArrayList<>();
         for (Kandidat k : bewertbar) {
             boolean revision = k.merkmale().typ() == ich.typ();
             // Eine Bestellnummer tragen Angebote nicht – für Revisionen zählt sie nicht.
-            int sicherePunkte = sicherePunkte(ich, k.merkmale(), bestellnummerTrennscharf && !revision);
-            if (sicherePunkte >= SCHWELLE_SICHER) {
+            Sicherheit sicherheit = sicherheit(ich, k.merkmale(), bestellnummerTrennscharf && !revision, streuung);
+            if (sicherheit.punkte() >= SCHWELLE_SICHER) {
                 sicher.add(k.dokument());
+                if (istRechnungZuBestellung(ich, k.merkmale())) {
+                    nummernTreffer.add(new SichererTreffer(k.dokument(), sicherheit.ueberGemeinsameNummer(),
+                            spezifitaet(ich, k.merkmale(), streuung)));
+                }
                 log.debug("[Abgleich] Sicherer Treffer: Dokument {} -> {} ({} Punkte)",
-                        dokument.getId(), k.dokument().getId(), sicherePunkte);
+                        dokument.getId(), k.dokument().getId(), sicherheit.punkte());
+                continue;
+            }
+            if (nurSicher) {
                 continue;
             }
             int hinweisPunkte = hinweisPunkte(ich, k.merkmale());
@@ -232,6 +395,7 @@ public class LieferantDokumentAbgleich {
         }
 
         if (!sicher.isEmpty()) {
+            sicher.removeAll(unspezifischeTreffer(nummernTreffer));
             return new Ergebnis(List.copyOf(sicher), null);
         }
         if (hinweise.isEmpty()) {
@@ -301,9 +465,12 @@ public class LieferantDokumentAbgleich {
      *
      * @param bestellnummerTrennscharf ob die gemeinsame Bestellnummer unter den
      *                                 Kandidaten selten genug ist, um sicher zu zählen
+     *                                 (nur für Bestellnummern ohne 5-stellige Nummer)
+     * @param streuung                 Streuung der Nummern beim Lieferanten, siehe
+     *                                 {@link #streuung}; {@code null} = nur dieses Paar
      */
     public Einschaetzung schaetzeEin(LieferantDokument nachfolger, LieferantDokument vorgaenger,
-            boolean bestellnummerTrennscharf, Merkmalspeicher speicher) {
+            boolean bestellnummerTrennscharf, Streuung streuung, Merkmalspeicher speicher) {
         if (nachfolger == null || vorgaenger == null
                 || nachfolger.getGeschaeftsdaten() == null || vorgaenger.getGeschaeftsdaten() == null) {
             return new Einschaetzung(0, false, List.of());
@@ -321,12 +488,12 @@ public class LieferantDokumentAbgleich {
             gruende.add("Anderer Lieferant");
         }
 
-        int sicherePunkte = sicherePunkte(ich, vor, bestellnummerTrennscharf);
+        Sicherheit sicherheit = sicherheit(ich, vor, bestellnummerTrennscharf,
+                streuung != null ? streuung : Streuung.LEER);
+        int sicherePunkte = sicherheit.punkte();
         boolean gleicheBestellnummer = ich.bestellnummer() != null && ich.bestellnummer().equals(vor.bestellnummer());
-        if (sicherePunkte >= PUNKTE_NUMMERNBEZUG) {
-            gruende.add("Belegnummer wird genannt");
-        } else if (sicherePunkte >= SCHWELLE_SICHER) {
-            gruende.add("Gleiche Bestellnummer");
+        if (sicherePunkte >= SCHWELLE_SICHER) {
+            gruende.add(sicherheit.grund());
         } else if (gleicheBestellnummer) {
             gruende.add("Gleiche Bestellnummer (bei mehreren Belegen)");
         }
@@ -352,7 +519,7 @@ public class LieferantDokumentAbgleich {
             }
         }
         if (ich.datum() != null && vor.datum() != null) {
-            long tage = java.time.temporal.ChronoUnit.DAYS.between(vor.datum(), ich.datum());
+            long tage = ChronoUnit.DAYS.between(vor.datum(), ich.datum());
             if (!datumPasst) {
                 gruende.add("Datum passt nicht zur Bestellung");
             } else if (tage >= 0) {
@@ -373,7 +540,7 @@ public class LieferantDokumentAbgleich {
             quote = Math.min(QUOTE_HINWEIS_MAX, QUOTE_HINWEIS_SOCKEL + (int) (punkte * QUOTE_HINWEIS_FAKTOR));
         } else if (datumPasst && ich.datum() != null && vor.datum() != null) {
             // Nur zeitliche Nähe: kein Beleg, aber für die Sortierung hilfreich
-            long tage = java.time.temporal.ChronoUnit.DAYS.between(vor.datum(), ich.datum());
+            long tage = ChronoUnit.DAYS.between(vor.datum(), ich.datum());
             quote = tage >= 0 && tage <= TAGE_ZEITNAH ? QUOTE_NUR_ZEITNAH : QUOTE_NUR_ZEITLICH_PASSEND;
         } else {
             quote = datumPasst ? QUOTE_OHNE_DATUM : 0;
@@ -448,22 +615,157 @@ public class LieferantDokumentAbgleich {
 
     // ------------------------------------------------------------------ Punkte
 
-    private int sicherePunkte(Merkmale ich, Merkmale vorgaenger, boolean bestellnummerTrennscharf) {
+    static final String GRUND_BELEGNUMMER = "Belegnummer wird genannt";
+    static final String GRUND_BESTELLNUMMER = "Gleiche Bestellnummer";
+
+    /**
+     * @param punkte {@link #PUNKTE_NUMMERNBEZUG}, {@link #PUNKTE_GLEICHE_BESTELLNUMMER} oder 0
+     * @param grund  Begründung in Klartext, nur bei Punkten gesetzt
+     */
+    private record Sicherheit(int punkte, String grund, boolean ueberGemeinsameNummer) {
+        static final Sicherheit KEINE = new Sicherheit(0, null, false);
+
+        Sicherheit(int punkte, String grund) {
+            this(punkte, grund, false);
+        }
+    }
+
+    /**
+     * @param ueberGemeinsameNummer nur über eine gemeinsame Nummer gefunden (nicht über die Belegnummer)
+     * @param spezifitaet           auf wie vielen ABs/Lieferscheinen die genaueste gemeinsame Nummer
+     *                              steht; {@code null}, wenn es keine gemeinsame Nummer gibt
+     */
+    private record SichererTreffer(LieferantDokument dokument, boolean ueberGemeinsameNummer, Integer spezifitaet) {
+    }
+
+    /**
+     * „Die genauere Nummer gewinnt“: Trifft eine Rechnung Lieferschein A über die
+     * Auftragsnummer (steht nur auf A) und Lieferschein B nur über die Kundennummer
+     * (steht auf A und B), gehört sie zu A. Bei jungen Lieferanten ist eine
+     * Kundennummer noch nicht über Monate verstreut – ohne diese Regel hinge die
+     * Rechnung an fremden Bestellungen. Teillieferungen bleiben zusammen: Dort tragen
+     * alle Lieferscheine dieselben Nummern und sind gleich genau.
+     *
+     * <p>Treffer über die Belegnummer werden nie aussortiert, setzen aber den Maßstab.
+     * Verglichen wird je Belegart: AB und Lieferschein derselben Bestellung sind keine
+     * Konkurrenten – nennt die Rechnung den Lieferschein ausdrücklich, bleibt die AB dran.
+     */
+    private static List<LieferantDokument> unspezifischeTreffer(List<SichererTreffer> treffer) {
+        Map<LieferantDokumentTyp, Integer> genauesteJeTyp = new java.util.EnumMap<>(LieferantDokumentTyp.class);
+        for (SichererTreffer t : treffer) {
+            if (t.spezifitaet() != null) {
+                genauesteJeTyp.merge(t.dokument().getTyp(), t.spezifitaet(), Math::min);
+            }
+        }
+        return treffer.stream()
+                .filter(t -> t.ueberGemeinsameNummer() && t.spezifitaet() != null
+                        && t.spezifitaet() > genauesteJeTyp.get(t.dokument().getTyp()))
+                .map(SichererTreffer::dokument)
+                .toList();
+    }
+
+    /** Häufigkeit der genauesten trennscharfen Nummer, die beide Belege tragen. */
+    private static Integer spezifitaet(Merkmale rechnung, Merkmale vorgaenger, Streuung streuung) {
+        if (!datumImRechnungsfenster(rechnung, vorgaenger)) {
+            return null;
+        }
+        Integer beste = null;
+        for (Map.Entry<String, NummernToken> eintrag : rechnung.tokens().entrySet()) {
+            if (trennscharf(eintrag, vorgaenger, rechnung, streuung)) {
+                int haeufigkeit = streuung.haeufigkeit(eintrag.getKey());
+                beste = beste == null ? haeufigkeit : Math.min(beste, haeufigkeit);
+            }
+        }
+        return beste;
+    }
+
+    private static boolean istBestellDokument(LieferantDokumentTyp typ) {
+        return typ == LieferantDokumentTyp.LIEFERSCHEIN || typ == LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG;
+    }
+
+    private Sicherheit sicherheit(Merkmale ich, Merkmale vorgaenger, boolean bestellnummerTrennscharf,
+            Streuung streuung) {
         if (nenntNummerExakt(ich, vorgaenger.nummer()) || nenntNummerExakt(vorgaenger, ich.nummer())) {
-            return PUNKTE_NUMMERNBEZUG;
+            return new Sicherheit(PUNKTE_NUMMERNBEZUG, GRUND_BELEGNUMMER);
         }
         // Der Ziffernkern ist unschärfer (gleich aufgebaute Nummernkreise verschiedener
         // Firmen) – deshalb nur für ausdrücklich genannte Belegnummern und nur, wenn
         // das Datum zur Kette passt.
         if (datumPasst(ich, vorgaenger) && (nenntZiffernkern(ich.referenzen(), vorgaenger.nummer())
                 || nenntZiffernkern(vorgaenger.referenzen(), ich.nummer()))) {
-            return PUNKTE_NUMMERNBEZUG;
+            return new Sicherheit(PUNKTE_NUMMERNBEZUG, GRUND_BELEGNUMMER);
+        }
+        if (istRechnungZuBestellung(ich, vorgaenger)) {
+            String grund = gemeinsameNummer(ich, vorgaenger, streuung);
+            if (grund != null) {
+                return new Sicherheit(PUNKTE_GLEICHE_BESTELLNUMMER, grund, true);
+            }
+            // Bestellnummern mit echter Nummer entscheidet allein die Streuung –
+            // die feste Höchstzahl je Bestellnummer bräche sonst Teillieferungen.
+            if (ich.bestellnummerMitNummer()) {
+                return Sicherheit.KEINE;
+            }
         }
         if (bestellnummerTrennscharf && ich.bestellnummer() != null
                 && ich.bestellnummer().equals(vorgaenger.bestellnummer())) {
-            return PUNKTE_GLEICHE_BESTELLNUMMER;
+            return new Sicherheit(PUNKTE_GLEICHE_BESTELLNUMMER, GRUND_BESTELLNUMMER);
         }
-        return 0;
+        return Sicherheit.KEINE;
+    }
+
+    private static boolean istRechnungZuBestellung(Merkmale ich, Merkmale vorgaenger) {
+        return ich.typ() == LieferantDokumentTyp.RECHNUNG
+                && (vorgaenger.typ() == LieferantDokumentTyp.LIEFERSCHEIN
+                        || vorgaenger.typ() == LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+    }
+
+    /**
+     * Sucht eine Nummer, die Rechnung und Lieferschein/AB gemeinsam tragen und die
+     * trennscharf ist: Das Rechnungsdatum passt zur Lieferung, und die Nummer ist
+     * beim Lieferanten nicht über Monate verstreut.
+     *
+     * @return Begründung oder {@code null}
+     */
+    private static String gemeinsameNummer(Merkmale rechnung, Merkmale vorgaenger, Streuung streuung) {
+        if (!datumImRechnungsfenster(rechnung, vorgaenger)) {
+            return null;
+        }
+        for (Map.Entry<String, NummernToken> eintrag : rechnung.tokens().entrySet()) {
+            if (trennscharf(eintrag, vorgaenger, rechnung, streuung)) {
+                return grund(eintrag.getKey(), eintrag.getValue(), vorgaenger.tokens().get(eintrag.getKey()),
+                        vorgaenger.typ());
+            }
+        }
+        return null;
+    }
+
+    /** Rechnung zwischen 10 Tage vor und 150 Tage nach dem Lieferschein/der AB. */
+    private static boolean datumImRechnungsfenster(Merkmale rechnung, Merkmale vorgaenger) {
+        if (rechnung.datum() == null || vorgaenger.datum() == null || rechnung.tokens().isEmpty()) {
+            return false;
+        }
+        long abstand = ChronoUnit.DAYS.between(vorgaenger.datum(), rechnung.datum());
+        return abstand >= -TAGE_RECHNUNG_VORHER && abstand <= TAGE_RECHNUNG_NACHHER;
+    }
+
+    /** Die Nummer steht auf beiden Belegen und ist beim Lieferanten nicht über Monate verstreut. */
+    private static boolean trennscharf(Map.Entry<String, NummernToken> eintrag, Merkmale vorgaenger,
+            Merkmale rechnung, Streuung streuung) {
+        NummernToken andere = vorgaenger.tokens().get(eintrag.getKey());
+        return andere != null && eintrag.getValue().passtZu(andere)
+                && streuung.tage(eintrag.getKey(), rechnung.datum(), vorgaenger.datum()) <= TAGE_STREUUNG_MAX;
+    }
+
+    private static String grund(String nummer, NummernToken rechnung, NummernToken vorgaenger,
+            LieferantDokumentTyp vorgaengerTyp) {
+        if (rechnung.felder().contains(Feld.BESTELLNUMMER) && vorgaenger.felder().contains(Feld.BESTELLNUMMER)) {
+            return GRUND_BESTELLNUMMER + " " + nummer;
+        }
+        if (vorgaenger.felder().contains(Feld.BELEGNUMMER)) {
+            return (vorgaengerTyp == LieferantDokumentTyp.LIEFERSCHEIN ? "Rechnung nennt Lieferschein "
+                    : "Rechnung nennt Auftragsbestätigung ") + nummer;
+        }
+        return "Gleiche Auftragsnummer " + nummer;
     }
 
     private int hinweisPunkte(Merkmale ich, Merkmale vorgaenger) {
@@ -579,10 +881,18 @@ public class LieferantDokumentAbgleich {
 
     private Merkmale merkmale(LieferantDokumentTyp typ, LieferantGeschaeftsdokument gd) {
         String nummer = normalisiereNummer(gd.getDokumentNummer());
-        String bestellnummer = normalisiereNummer(gd.getBestellnummer());
+        // "telef. vom 05.08.2026" und "Mail vom 7.5" sind keine Bestellnummern
+        String bestellnummer = ohneFreitext(normalisiereNummer(ohneDatum(gd.getBestellnummer())));
 
         Set<String> referenzen = new HashSet<>();
         fuegeNummerHinzu(referenzen, gd.getReferenzNummer());
+
+        Map<String, NummernToken> tokens = new TreeMap<>();
+        sammleNummern(gd.getDokumentNummer(), Feld.BELEGNUMMER, tokens);
+        sammleNummern(gd.getBestellnummer(), Feld.BESTELLNUMMER, tokens);
+        sammleNummern(gd.getReferenzNummer(), Feld.REFERENZ, tokens);
+        boolean bestellnummerMitNummer = tokens.values().stream()
+                .anyMatch(t -> t.felder().contains(Feld.BESTELLNUMMER));
 
         String kommission = null;
         Set<String> artikel = new HashSet<>();
@@ -590,10 +900,15 @@ public class LieferantDokumentAbgleich {
         if (json != null) {
             JsonNode weitere = json.get("weitereReferenzen");
             if (weitere != null && weitere.isArray()) {
-                weitere.forEach(r -> fuegeNummerHinzu(referenzen, r.isTextual() ? r.asText() : null));
+                weitere.forEach(r -> {
+                    String wert = r.isTextual() ? r.asText() : null;
+                    fuegeNummerHinzu(referenzen, wert);
+                    sammleNummern(wert, Feld.REFERENZ, tokens);
+                });
             } else if (weitere != null && weitere.isTextual()) {
                 for (String teil : weitere.asText().split("[,;]")) {
                     fuegeNummerHinzu(referenzen, teil);
+                    sammleNummern(teil, Feld.REFERENZ, tokens);
                 }
             }
             kommission = normalisiereKommission(text(json, "kommission"));
@@ -612,7 +927,83 @@ public class LieferantDokumentAbgleich {
         }
 
         return new Merkmale(typ, nummer, zerlegeNummer(gd.getDokumentNummer()), referenzen, bestellnummer,
-                kommission, gd.getDokumentDatum(), gd.getBetragNetto(), gd.getBetragBrutto(), artikel);
+                kommission, gd.getDokumentDatum(), gd.getBetragNetto(), gd.getBetragBrutto(), artikel,
+                tokens, bestellnummerMitNummer);
+    }
+
+    /** Woher eine Nummer stammt – nur für die Begründung. */
+    private enum Feld {
+        BELEGNUMMER, BESTELLNUMMER, REFERENZ
+    }
+
+    /**
+     * Eine Nummer (Ziffern ohne führende Nullen) mit den Buchstaben ihres Feldes.
+     * Der Ziffernkern eines ganzen Feldes trägt die Buchstaben mit ("AB" für
+     * "AB-2026-00123"), damit gleich aufgebaute Nummernkreise verschiedener
+     * Belegarten nicht zusammenfallen. Eine einzelne Ziffernfolge hat keine.
+     */
+    private record NummernToken(Set<String> vorsilben, Set<Feld> felder) {
+
+        boolean passtZu(NummernToken andere) {
+            if (vorsilben.contains("") || andere.vorsilben.contains("")) {
+                return true;
+            }
+            return vorsilben.stream().anyMatch(andere.vorsilben::contains);
+        }
+    }
+
+    /**
+     * Zerlegt ein Nummernfeld: (a) jede Ziffernfolge ab 5 Stellen, (b) der
+     * Ziffernkern des ganzen Feldes ("99-2-01234" → 99201234). Datumsangaben
+     * zählen nicht.
+     */
+    private static void sammleNummern(String feld, Feld art, Map<String, NummernToken> ziel) {
+        if (feld == null || feld.isBlank()) {
+            return;
+        }
+        String text = ohneDatum(feld);
+        Matcher folge = ZIFFERNFOLGE.matcher(text);
+        while (folge.find()) {
+            String ziffern = ohneFuehrendeNullen(folge.group());
+            if (ziffern.length() >= MIN_ZIFFERN_KERN) {
+                merkeNummer(ziel, ziffern, "", art);
+            }
+        }
+        if (text.length() <= MAX_NUMMER_LAENGE) {
+            String kern = ohneFuehrendeNullen(text.replaceAll("[^0-9]", ""));
+            if (kern.length() >= MIN_ZIFFERN_KERN) {
+                merkeNummer(ziel, kern, text.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT), art);
+            }
+        }
+    }
+
+    private static void merkeNummer(Map<String, NummernToken> ziel, String ziffern, String vorsilbe, Feld art) {
+        NummernToken token = ziel.computeIfAbsent(ziffern,
+                z -> new NummernToken(new HashSet<>(), EnumSet.noneOf(Feld.class)));
+        token.vorsilben().add(vorsilbe);
+        token.felder().add(art);
+    }
+
+    private static String ohneFuehrendeNullen(String ziffern) {
+        return ziffern.replaceFirst("^0++", "");
+    }
+
+    /**
+     * Freitext wie "MAILVOM75" (aus "Mail vom 7.5") ist keine Bestellnummer:
+     * Eine echte Nummer hat mindestens so viele Ziffern wie Buchstaben. Bewusst
+     * fallen damit auch Mischtexte wie "BV Halle 3" weg – sie sind eher Kommission
+     * als Bestellnummer und verbanden sonst fremde Aufträge.
+     */
+    static String ohneFreitext(String normalisiert) {
+        if (normalisiert == null) {
+            return null;
+        }
+        long ziffern = normalisiert.chars().filter(Character::isDigit).count();
+        return ziffern * 2 >= normalisiert.length() ? normalisiert : null;
+    }
+
+    static String ohneDatum(String text) {
+        return text == null ? null : DATUM.matcher(text).replaceAll(" ");
     }
 
     /** Belegnummer ohne Revisions-Endung: "AN-4711-2" und "AN-4711" ergeben "AN4711". */
@@ -703,10 +1094,14 @@ public class LieferantDokumentAbgleich {
     private record Nummernstamm(String stamm, boolean ohneEndung, boolean revisionsWort) {
     }
 
+    /**
+     * @param tokens                 alle Nummern des Dokuments, sortiert (Begründungen bleiben stabil)
+     * @param bestellnummerMitNummer die Bestellnummer enthält eine Nummer ab 5 Stellen
+     */
     private record Merkmale(LieferantDokumentTyp typ, String nummer, Nummernstamm nummernstamm,
             Set<String> referenzen,
             String bestellnummer, String kommission, LocalDate datum, BigDecimal netto, BigDecimal brutto,
-            Set<String> artikel) {
+            Set<String> artikel, Map<String, NummernToken> tokens, boolean bestellnummerMitNummer) {
     }
 
     private record Kandidat(LieferantDokument dokument, Merkmale merkmale) {

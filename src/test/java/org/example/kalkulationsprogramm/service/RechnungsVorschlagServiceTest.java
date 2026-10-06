@@ -17,7 +17,9 @@ import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,8 @@ class RechnungsVorschlagServiceTest {
 
     @Mock
     private LieferantDokumentRepository dokumentRepository;
+    @Mock
+    private LieferantDokumentVerknuepfungSperreRepository sperreRepository;
 
     private RechnungsVorschlagService service;
     private Lieferanten lieferant;
@@ -40,7 +44,8 @@ class RechnungsVorschlagServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RechnungsVorschlagService(new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository);
+        service = new RechnungsVorschlagService(new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository,
+                sperreRepository);
         lieferant = lieferant(1L, "Max Mustermann GmbH");
         andererLieferant = lieferant(2L, "Erika Musterfrau KG");
     }
@@ -76,12 +81,15 @@ class RechnungsVorschlagServiceTest {
         }
 
         @Test
-        void bestellnummerBeiZuVielenRechnungenNurHinweis() {
+        void kundennummerUeberMonateIstNurHinweis() {
+            // Früher: mehr als 3 Belege mit derselben Nummer = nicht trennscharf. Jetzt
+            // entscheidet die Streuung – eine Kundennummer steht über Monate verteilt auf
+            // allen Rechnungen. (Dicht beieinander wären es Teilrechnungen, siehe unten.)
             LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 4, 1));
             ab.getGeschaeftsdaten().setBestellnummer("KD-12345");
             List<LieferantDokument> rechnungen = new java.util.ArrayList<>();
             for (int i = 0; i < 4; i++) {
-                LieferantDokument r = dokument(LieferantDokumentTyp.RECHNUNG, "RE-" + i, LocalDate.of(2026, 4, 10 + i));
+                LieferantDokument r = dokument(LieferantDokumentTyp.RECHNUNG, "RE-" + i, LocalDate.of(2026, 1 + 2 * i, 10));
                 r.getGeschaeftsdaten().setBestellnummer("KD-12345");
                 rechnungen.add(r);
             }
@@ -93,6 +101,38 @@ class RechnungsVorschlagServiceTest {
                 assertThat(v.trefferquote()).isLessThan(LieferantDokumentAbgleich.QUOTE_SICHER);
                 assertThat(v.einschaetzung().gruende()).contains("Gleiche Bestellnummer (bei mehreren Belegen)");
             });
+        }
+
+        @Test
+        void teilrechnungenMitGleicherNummerSindSicher() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 4, 1));
+            ab.getGeschaeftsdaten().setBestellnummer("BE 47711111");
+            List<LieferantDokument> rechnungen = new java.util.ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                LieferantDokument r = dokument(LieferantDokumentTyp.RECHNUNG, "RE-" + i, LocalDate.of(2026, 4, 10 + i));
+                r.getGeschaeftsdaten().setBestellnummer("47711111");
+                rechnungen.add(r);
+            }
+
+            var vorschlaege = service.bewerte(List.of(ab), rechnungen, service.neuerSpeicher());
+
+            assertThat(vorschlaege).hasSize(4).allSatisfy(v -> {
+                assertThat(v.einschaetzung().sicher()).isTrue();
+                assertThat(v.trefferquote()).isGreaterThanOrEqualTo(LieferantDokumentAbgleich.QUOTE_SICHER);
+                assertThat(v.einschaetzung().gruende()).contains("Gleiche Bestellnummer 47711111");
+            });
+        }
+
+        @Test
+        void gemeinsameAuftragsnummerBekommtVerstaendlichenGrund() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "RL 12 - 98700017/1", LocalDate.of(2026, 8, 3));
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-77", LocalDate.of(2026, 8, 20));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("98700017");
+
+            var vorschlag = service.bewerte(List.of(ab), List.of(rechnung), service.neuerSpeicher()).get(0);
+
+            assertThat(vorschlag.einschaetzung().sicher()).isTrue();
+            assertThat(vorschlag.einschaetzung().gruende()).contains("Rechnung nennt Auftragsbestätigung 98700017");
         }
 
         @Test
@@ -172,6 +212,18 @@ class RechnungsVorschlagServiceTest {
         }
 
         @Test
+        void beiGleicherQuoteZuerstDieZeitlichNaechste() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 4, 1));
+            LieferantDokument spaet = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 30));
+            LieferantDokument nah = dokument(LieferantDokumentTyp.RECHNUNG, "RE-2", LocalDate.of(2026, 4, 4));
+
+            var vorschlaege = service.bewerte(List.of(ab), List.of(spaet, nah), service.neuerSpeicher());
+
+            assertThat(vorschlaege.get(0).trefferquote()).isEqualTo(vorschlaege.get(1).trefferquote());
+            assertThat(vorschlaege).extracting(RechnungsVorschlagService.Vorschlag::rechnung).containsExactly(nah, spaet);
+        }
+
+        @Test
         void ohneBestelldokumentKeineVorschlaege() {
             LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 4, 1));
             LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 2));
@@ -240,6 +292,8 @@ class RechnungsVorschlagServiceTest {
             assertThat(rechnung.getVerknuepfteDokumente()).containsExactly(ab);
             assertThat(ab.getVerknuepftVon()).containsExactly(rechnung);
             verify(dokumentRepository).save(rechnung);
+            // Eine früher von Hand gelöste Verbindung gilt damit wieder
+            verify(sperreRepository).loeschePaar(rechnung.getId(), ab.getId());
         }
 
         @Test
@@ -265,34 +319,34 @@ class RechnungsVorschlagServiceTest {
         }
 
         @Test
-        void lehntSchonZugeordneteRechnungAb() {
-            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 4, 1));
-            LieferantDokument andereAb = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-2", LocalDate.of(2026, 4, 2));
+        void teillieferungenEineRechnungAnZweiLieferscheinen() {
+            // Früher abgelehnt ("gehört schon zu einer anderen Bestellung"). Eine Rechnung
+            // über mehrere Teillieferungen gehört aber zu jedem Lieferschein.
+            LieferantDokument ls1 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 4, 1));
+            LieferantDokument ls2 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-2", LocalDate.of(2026, 4, 2));
             LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
-            rechnung.getVerknuepfteDokumente().add(andereAb);
-            when(dokumentRepository.findById(ab.getId())).thenReturn(Optional.of(ab));
+            rechnung.getVerknuepfteDokumente().add(ls1);
+            when(dokumentRepository.findById(ls2.getId())).thenReturn(Optional.of(ls2));
             when(dokumentRepository.findById(rechnung.getId())).thenReturn(Optional.of(rechnung));
 
-            assertThatThrownBy(() -> service.verknuepfe(ab.getId(), rechnung.getId(), 7L))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage(RechnungsVorschlagService.SCHON_ZUGEORDNET);
-            verify(dokumentRepository, never()).save(any());
+            service.verknuepfe(ls2.getId(), rechnung.getId(), 7L);
+
+            assertThat(rechnung.getVerknuepfteDokumente()).containsExactlyInAnyOrder(ls1, ls2);
         }
 
         @Test
-        void erkenntBestellungAuchUeberUmwegInDerKette() {
-            // Rechnung -> Angebot <- Lieferschein: Der Lieferschein gehört schon zur Kette.
+        void teilrechnungenZweiRechnungenAnEinerAb() {
             LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 4, 1));
-            LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 3, 1));
-            LieferantDokument lieferschein = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 3, 20));
-            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
-            rechnung.getVerknuepfteDokumente().add(angebot);
-            angebot.getVerknuepftVon().add(lieferschein);
+            LieferantDokument r1 = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
+            LieferantDokument r2 = dokument(LieferantDokumentTyp.RECHNUNG, "RE-2", LocalDate.of(2026, 5, 5));
+            r1.getVerknuepfteDokumente().add(ab);
+            ab.getVerknuepftVon().add(r1);
             when(dokumentRepository.findById(ab.getId())).thenReturn(Optional.of(ab));
-            when(dokumentRepository.findById(rechnung.getId())).thenReturn(Optional.of(rechnung));
+            when(dokumentRepository.findById(r2.getId())).thenReturn(Optional.of(r2));
 
-            assertThatThrownBy(() -> service.verknuepfe(ab.getId(), rechnung.getId(), 7L))
-                    .hasMessage(RechnungsVorschlagService.SCHON_ZUGEORDNET);
+            service.verknuepfe(ab.getId(), r2.getId(), 7L);
+
+            assertThat(ab.getVerknuepftVon()).containsExactlyInAnyOrder(r1, r2);
         }
 
         @Test
@@ -309,15 +363,18 @@ class RechnungsVorschlagServiceTest {
         }
 
         @Test
-        void lehntAusgeblendeteDokumenteAb() {
+        void ausgeblendeteRechnungLaesstSichZuordnen() {
+            // Früher abgelehnt. Bezahlte Rechnungen sind fast immer ausgeblendet – genau
+            // die fehlen dem Lieferschein.
             LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 4, 1));
             LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
             rechnung.setAusgeblendet(true);
             when(dokumentRepository.findById(ab.getId())).thenReturn(Optional.of(ab));
             when(dokumentRepository.findById(rechnung.getId())).thenReturn(Optional.of(rechnung));
 
-            assertThatThrownBy(() -> service.verknuepfe(ab.getId(), rechnung.getId(), 7L))
-                    .isInstanceOf(IllegalArgumentException.class);
+            service.verknuepfe(ab.getId(), rechnung.getId(), 7L);
+
+            assertThat(rechnung.getVerknuepfteDokumente()).containsExactly(ab);
         }
 
         @Test
@@ -338,6 +395,79 @@ class RechnungsVorschlagServiceTest {
             when(dokumentRepository.findById(Long.MAX_VALUE)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.verknuepfe(Long.MAX_VALUE, 1L, 7L)).isInstanceOf(NoSuchElementException.class);
+        }
+    }
+
+    @Nested
+    class Abhaengen {
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void loestAlleVerknuepfungenUndSperrtJedesPaar() {
+            LieferantDokument ls1 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 4, 1));
+            LieferantDokument ls2 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-2", LocalDate.of(2026, 4, 2));
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
+            LieferantDokument gutschrift = dokument(LieferantDokumentTyp.GUTSCHRIFT, "GS-1", LocalDate.of(2026, 4, 9));
+            rechnung.getVerknuepfteDokumente().addAll(List.of(ls1, ls2));
+            ls1.getVerknuepftVon().add(rechnung);
+            ls2.getVerknuepftVon().add(rechnung);
+            gutschrift.getVerknuepfteDokumente().add(rechnung);
+            rechnung.getVerknuepftVon().add(gutschrift);
+            when(dokumentRepository.findById(rechnung.getId())).thenReturn(Optional.of(rechnung));
+
+            int geloest = service.haengeAb(rechnung.getId(), 7L);
+
+            assertThat(geloest).isEqualTo(3);
+            assertThat(rechnung.getVerknuepfteDokumente()).isEmpty();
+            assertThat(rechnung.getVerknuepftVon()).isEmpty();
+            assertThat(ls1.getVerknuepftVon()).isEmpty();
+            // Die Rückrichtung gehört der Gutschrift – nur dort wirkt das Entfernen
+            assertThat(gutschrift.getVerknuepfteDokumente()).isEmpty();
+            verify(dokumentRepository).save(gutschrift);
+            verify(dokumentRepository).save(rechnung);
+            org.mockito.ArgumentCaptor<List<LieferantDokumentVerknuepfungSperre>> sperren =
+                    org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(sperreRepository).saveAll(sperren.capture());
+            assertThat(sperren.getValue())
+                    .extracting(LieferantDokumentVerknuepfungSperre::getDokumentId,
+                            LieferantDokumentVerknuepfungSperre::getVerknuepftId)
+                    .containsExactlyInAnyOrder(
+                            org.assertj.core.groups.Tuple.tuple(rechnung.getId(), ls1.getId()),
+                            org.assertj.core.groups.Tuple.tuple(rechnung.getId(), ls2.getId()),
+                            org.assertj.core.groups.Tuple.tuple(gutschrift.getId(), rechnung.getId()));
+        }
+
+        @Test
+        void ohneVerknuepfungNichtsZuLoesen() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-1", LocalDate.of(2026, 4, 1));
+            when(dokumentRepository.findById(ls.getId())).thenReturn(Optional.of(ls));
+
+            assertThat(service.haengeAb(ls.getId(), null)).isZero();
+        }
+
+        @Test
+        void unbekanntesOderFehlendesDokument() {
+            when(dokumentRepository.findById(Long.MAX_VALUE)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.haengeAb(Long.MAX_VALUE, 7L)).isInstanceOf(NoSuchElementException.class);
+            assertThatThrownBy(() -> service.haengeAb(null, 7L)).isInstanceOf(IllegalArgumentException.class);
+            verify(sperreRepository, never()).saveAll(any());
+        }
+
+        @Test
+        void gehoertSchonZuNenntDasErsteBestelldokument() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-8155", LocalDate.of(2026, 4, 1));
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, null, LocalDate.of(2026, 4, 2));
+            LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 3, 1));
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
+            rechnung.getVerknuepfteDokumente().addAll(List.of(angebot, ab, ls));
+
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung)).isEqualTo("Lieferschein LS-8155");
+            rechnung.getVerknuepfteDokumente().remove(ls);
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung)).isEqualTo("Auftragsbestätigung");
+            rechnung.getVerknuepfteDokumente().clear();
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung)).isNull();
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(null)).isNull();
         }
     }
 

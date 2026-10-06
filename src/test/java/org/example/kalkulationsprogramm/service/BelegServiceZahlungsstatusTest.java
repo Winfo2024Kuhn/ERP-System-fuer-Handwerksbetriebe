@@ -34,7 +34,7 @@ class BelegServiceZahlungsstatusTest {
         service = new BelegService(belegRepository, mock(LieferantenRepository.class),
                 mock(MitarbeiterRepository.class), mock(AbteilungDokumentBerechtigungRepository.class),
                 sachkontoRepository, kostenstelleRepository,
-                mock(BelegKiAnalyseService.class), dokumentRepository, mock(FrontendUserProfileRepository.class),
+                mock(BelegKiAnalyseService.class), mock(BelegZuordnungService.class), dokumentRepository, mock(FrontendUserProfileRepository.class),
                 mock(BelegSplitService.class), mock(BelegPositionRepository.class), mock(KasseSaldoService.class),
                 mock(BelegKostenstellenAnteilRepository.class), auditService, mock(KassenbuchSchreibschutz.class),
                 mock(KassenbuchMonatsabschlussRepository.class),

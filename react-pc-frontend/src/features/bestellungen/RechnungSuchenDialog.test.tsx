@@ -106,11 +106,79 @@ describe('RechnungSuchenDialog', () => {
         expect(screen.getByRole('list', { name: 'Rechnungen' })).toBeInTheDocument();
     });
 
-    it('zeigt einen eigenen Leerzustand', async () => {
-        antworte({ ok: true, body: [] });
+    it('zeigt einen ehrlichen Leerzustand mit Hochladen und Suche bei anderen Lieferanten', async () => {
+        const mock = antworte({ ok: true, body: [] }, { ok: true, body: [vorschlag(2, 'RE-200', 30, { gruende: ['Anderer Lieferant'] })] });
         zeige();
-        expect(await screen.findByText('Keine offenen Rechnungen gefunden.')).toBeInTheDocument();
+        expect(await screen.findByText('Von Erika Musterfrau KG ist noch keine Rechnung da.')).toBeInTheDocument();
+        expect(screen.getByText('0 Rechnungen von Erika Musterfrau KG')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Diese Rechnung gehört dazu' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: /Rechnung hochladen/ })).toBeEnabled();
+        expect(String(mock.mock.calls[0][0])).toContain('alleLieferanten=false');
+
+        await userEvent.click(screen.getByRole('button', { name: 'Bei anderen Lieferanten suchen' }));
+        await screen.findByRole('button', { name: /^RE-200/ });
+        expect(String(mock.mock.calls[1][0])).toContain('alleLieferanten=true');
+        expect(screen.getByText('1 Rechnung von allen Lieferanten')).toBeInTheDocument();
+        expect(screen.getByText('Anderer Lieferant')).toBeInTheDocument();
+    });
+
+    it('lädt über den Link mit allen Lieferanten und wieder zurück', async () => {
+        const mock = antworte(
+            { ok: true, body: [vorschlag(1, 'RE-100', 82)] },
+            { ok: true, body: [vorschlag(1, 'RE-100', 82), vorschlag(2, 'RE-200', 45)] },
+            { ok: true, body: [vorschlag(1, 'RE-100', 82)] },
+        );
+        zeige();
+        await screen.findByRole('button', { name: /^RE-100/ });
+        expect(screen.getByText('1 Rechnung von Erika Musterfrau KG')).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Auch bei anderen Lieferanten suchen' }));
+        await screen.findByRole('button', { name: /^RE-200/ });
+        expect(String(mock.mock.calls[1][0])).toContain('alleLieferanten=true');
+        expect(screen.getByText('2 Rechnungen von allen Lieferanten')).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Nur Erika Musterfrau KG zeigen' }));
+        await waitFor(() => expect(screen.queryByRole('button', { name: /^RE-200/ })).not.toBeInTheDocument());
+        expect(String(mock.mock.calls[2][0])).toContain('alleLieferanten=false');
+    });
+
+    it('zeigt Tags für ausgeblendete und schon zugeordnete Rechnungen und fragt nach Teillieferung', async () => {
+        const schonZugeordnet = vorschlag(1, 'RE-100', 82, { gehoertSchonZu: 'Lieferschein LS-9' });
+        schonZugeordnet.rechnung.ausgeblendet = true;
+        const mock = antworte({ ok: true, body: [schonZugeordnet] }, { ok: true, body: { success: true } });
+        const { onVerknuepft } = zeige();
+        await screen.findByRole('button', { name: /^RE-100/ });
+        expect(screen.getByText('Gehört schon zu Lieferschein LS-9 – Teillieferung')).toBeInTheDocument();
+        expect(screen.getByText('ausgeblendet')).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Diese Rechnung gehört dazu' }));
+        const frage = await screen.findByRole('dialog', { name: 'Rechnung gehört schon zu einer Bestellung' });
+        expect(within(frage).getByText(/Ist das eine Teillieferung\? Dann wird beides zu einer Bestellung zusammengefasst\./)).toBeInTheDocument();
+        await userEvent.click(within(frage).getByRole('button', { name: 'Zusammenfassen' }));
+        await waitFor(() => expect(onVerknuepft).toHaveBeenCalled());
+        expect(JSON.parse((mock.mock.calls[1][1] as RequestInit).body as string)).toEqual({ bestellDokumentId: 10, rechnungDokumentId: 1 });
+    });
+
+    it('hebt Vorschläge mit 0 % nicht hervor und wählt sie nicht vor', async () => {
+        antworte({ ok: true, body: [vorschlag(1, 'RE-100', 0, { eindeutig: false }), vorschlag(2, 'RE-200', 0, { eindeutig: false })] });
+        zeige();
+        await screen.findByRole('button', { name: /^RE-100/ });
+        expect(screen.queryByText('0 %')).not.toBeInTheDocument();
+        expect(screen.queryByText('Eine weitere Rechnung passt gleich gut.')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^RE-100/ })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByText('Noch keine Rechnung gewählt.')).toBeInTheDocument();
+    });
+
+    it('lädt im Leerzustand eine Rechnung für das jüngste Bestelldokument hoch', async () => {
+        const mock = antworte({ ok: true, body: [] }, { ok: true, body: { id: 77, typ: 'RECHNUNG' } });
+        const { onVerknuepft } = zeige();
+        await screen.findByText('Von Erika Musterfrau KG ist noch keine Rechnung da.');
+        const datei = new File(['%PDF'], 'rechnung.pdf', { type: 'application/pdf' });
+        await userEvent.upload(screen.getByTestId('rechnung-datei'), datei);
+        await waitFor(() => expect(onVerknuepft).toHaveBeenCalled());
+        const [url, init] = mock.mock.calls[1];
+        expect(url).toBe('/api/bestellungen-uebersicht/rechnung-hochladen');
+        expect(((init as RequestInit).body as FormData).get('bestellDokumentId')).toBe('11');
     });
 
     it('zeigt Fehler als Toast, bietet Wiederholen an', async () => {
@@ -200,7 +268,7 @@ describe('RechnungSuchenDialog', () => {
     it('schließt über Abbrechen', async () => {
         antworte({ ok: true, body: [] });
         const { onClose } = zeige();
-        await screen.findByText('Keine offenen Rechnungen gefunden.');
+        await screen.findByText('Von Erika Musterfrau KG ist noch keine Rechnung da.');
         await userEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
         expect(onClose).toHaveBeenCalled();
     });
