@@ -17,6 +17,7 @@ import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.dto.Bestellung.Verbindung;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
@@ -50,7 +51,7 @@ import jakarta.persistence.EntityManager;
 @DataJpaTest
 @Import({ GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, RechnungsVorschlagService.class,
         BelegZuordnungService.class, BelegKiAnalyseService.class, SystemSettingsService.class,
-        BestellungsUebersichtController.class,
+        BestellungsUebersichtController.class, BestellungsUebersichtService.class,
         RechnungLieferscheinZuordnungIntegrationTest.Konfiguration.class })
 class RechnungLieferscheinZuordnungIntegrationTest {
 
@@ -264,7 +265,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         var kette = dto.ausgeblendet().get(0);
         assertThat(kette.dokumente()).extracting(d -> d.id).containsExactlyInAnyOrder(ls.getId(), rechnung.getId());
         assertThat(kette.verbindungen())
-                .containsExactly(new BestellungsUebersichtController.Verbindung(rechnung.getId(), ls.getId()));
+                .containsExactly(new Verbindung(rechnung.getId(), ls.getId()));
     }
 
     @Test
@@ -283,8 +284,8 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         assertThat(dto.abgeschlossen()).hasSize(1);
         assertThat(dto.ausgeblendet()).isEmpty();
         assertThat(dto.abgeschlossen().get(0).verbindungen()).containsExactlyInAnyOrder(
-                new BestellungsUebersichtController.Verbindung(bezahlt.getId(), ab.getId()),
-                new BestellungsUebersichtController.Verbindung(offen.getId(), ab.getId()));
+                new Verbindung(bezahlt.getId(), ab.getId()),
+                new Verbindung(offen.getId(), ab.getId()));
     }
 
     // ---------------------------------------------------------------- VerknuepfenUndAbhaengen

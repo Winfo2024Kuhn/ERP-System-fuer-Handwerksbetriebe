@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.dto.Bestellung.DokumentenKette;
+import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -13,15 +15,14 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Regressionstest für den NPE in {@link BestellungsUebersichtController#buildKetten(List)},
+ * Regressionstest für den NPE in {@link BestellungsUebersichtService#buildKetten(List)},
  * der auftrat, wenn ein verknüpftes Dokument nicht in der gefilterten Eingabeliste
  * enthalten war (z. B. weil es ausgeblendet ist) und die HashSet-Iteration zufällig
  * dessen ID zuerst lieferte → {@code dokMap.get(id)} → null → NPE.
  */
 class BestellungsUebersichtControllerBuildKettenTest {
 
-    private final BestellungsUebersichtController controller = new BestellungsUebersichtController(
-            null, null, null, null, null, null, null, null, null, null, null, null, null);
+    private final BestellungsUebersichtService service = new BestellungsUebersichtService(null, null, null, null);
 
     @Test
     void crashtNichtWennVerknuepftesDokumentNichtInEingabeliste() {
@@ -38,11 +39,11 @@ class BestellungsUebersichtControllerBuildKettenTest {
         verknuepft.add(anfrage);
         rechnung.setVerknuepfteDokumente(verknuepft);
 
-        List<BestellungsUebersichtController.DokumentenKette> ketten =
-                controller.buildKetten(List.of(rechnung));
+        List<DokumentenKette> ketten =
+                service.buildKetten(List.of(rechnung));
 
         assertThat(ketten).hasSize(1);
-        BestellungsUebersichtController.DokumentenKette kette = ketten.get(0);
+        DokumentenKette kette = ketten.get(0);
         assertThat(kette.lieferantId()).isEqualTo(1L);
         assertThat(kette.lieferantName()).isEqualTo("Max Mustermann GmbH");
         assertThat(kette.dokumente()).hasSize(1);
@@ -51,7 +52,7 @@ class BestellungsUebersichtControllerBuildKettenTest {
 
     @Test
     void liefertLeereListeWennEingabeleer() {
-        assertThat(controller.buildKetten(List.of())).isEmpty();
+        assertThat(service.buildKetten(List.of())).isEmpty();
     }
 
     @Test
@@ -66,8 +67,8 @@ class BestellungsUebersichtControllerBuildKettenTest {
         rechnung.setVerknuepfteDokumente(new HashSet<>(List.of(anfrage)));
         anfrage.setVerknuepfteDokumente(new HashSet<>(List.of(rechnung)));
 
-        List<BestellungsUebersichtController.DokumentenKette> ketten =
-                controller.buildKetten(List.of(anfrage, rechnung));
+        List<DokumentenKette> ketten =
+                service.buildKetten(List.of(anfrage, rechnung));
 
         assertThat(ketten).hasSize(1);
         assertThat(ketten.get(0).dokumente()).hasSize(2);

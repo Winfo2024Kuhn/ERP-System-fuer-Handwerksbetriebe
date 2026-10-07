@@ -4,10 +4,13 @@ import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.dto.Bestellung.DokumentRef;
+import org.example.kalkulationsprogramm.dto.Bestellung.Verbindung;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
+import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentAbgleich;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
@@ -50,12 +53,15 @@ class BestellungsUebersichtControllerEinordnungTest {
 
     @BeforeEach
     void setUp() {
+        RechnungsVorschlagService vorschlagService = new RechnungsVorschlagService(
+                new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository);
         controller = new BestellungsUebersichtController(
                 dokumentRepository, geschaeftsdokumentRepository, null, null, projektAnteilRepository,
                 null, null, null, null, null, null,
-                new RechnungsVorschlagService(new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository,
-                        sperreRepository),
-                lieferantDokumentService);
+                vorschlagService,
+                lieferantDokumentService,
+                new BestellungsUebersichtService(dokumentRepository, geschaeftsdokumentRepository,
+                        projektAnteilRepository, vorschlagService));
         lieferant = new Lieferanten();
         lieferant.setId(1L);
         lieferant.setLieferantenname("Max Mustermann GmbH");
@@ -375,8 +381,8 @@ class BestellungsUebersichtControllerEinordnungTest {
         var kette = dto.abgeschlossen().get(0);
         assertThat(kette.dokumente()).hasSize(4);
         assertThat(kette.verbindungen()).hasSize(3)
-                .contains(new BestellungsUebersichtController.Verbindung(3L, 1L),
-                        new BestellungsUebersichtController.Verbindung(4L, 3L));
+                .contains(new Verbindung(3L, 1L),
+                        new Verbindung(4L, 3L));
         assertThat(kette.verbindungen()).filteredOn(v -> v.vonId() + v.zuId() == 5L).hasSize(1);
     }
 
@@ -427,17 +433,17 @@ class BestellungsUebersichtControllerEinordnungTest {
         LieferantDokument rechnung = dokument(9L, LieferantDokumentTyp.RECHNUNG);
         List<LocalDate> bestellung = List.of(LocalDate.of(2026, 6, 1));
         rechnung.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 5, 2)));
-        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isTrue();
+        assertThat(BestellungsUebersichtService.imKartenFenster(rechnung, bestellung)).isTrue();
         rechnung.getGeschaeftsdaten().setDokumentDatum(LocalDate.of(2026, 5, 1));
-        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isFalse();
+        assertThat(BestellungsUebersichtService.imKartenFenster(rechnung, bestellung)).isFalse();
         rechnung.getGeschaeftsdaten().setDokumentDatum(LocalDate.of(2026, 11, 28));
-        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isTrue();
+        assertThat(BestellungsUebersichtService.imKartenFenster(rechnung, bestellung)).isTrue();
         rechnung.getGeschaeftsdaten().setDokumentDatum(LocalDate.of(2026, 11, 29));
-        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isFalse();
+        assertThat(BestellungsUebersichtService.imKartenFenster(rechnung, bestellung)).isFalse();
         // Ohne Datum bleibt sie im Rennen
-        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, List.of())).isTrue();
+        assertThat(BestellungsUebersichtService.imKartenFenster(rechnung, List.of())).isTrue();
         rechnung.getGeschaeftsdaten().setDokumentDatum(null);
-        assertThat(BestellungsUebersichtController.imKartenFenster(rechnung, bestellung)).isTrue();
+        assertThat(BestellungsUebersichtService.imKartenFenster(rechnung, bestellung)).isTrue();
     }
 
     @Test
@@ -496,7 +502,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         var antwort = controller.rechnungHochladen(datei, 1L, null);
 
         assertThat(antwort.getStatusCode()).isEqualTo(HttpStatus.OK);
-        var ref = (BestellungsUebersichtController.DokumentRef) antwort.getBody();
+        var ref = (DokumentRef) antwort.getBody();
         assertThat(ref.id).isEqualTo(9L);
         assertThat(ref.typ).isEqualTo(LieferantDokumentTyp.RECHNUNG);
         assertThat(ref.pdfUrl).isEqualTo("/api/lieferanten/1/dokumente/9/download");

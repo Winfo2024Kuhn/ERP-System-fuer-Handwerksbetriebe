@@ -28,6 +28,7 @@ import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.service.BelegAuditService;
 import org.example.kalkulationsprogramm.service.BelegService;
+import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
 import org.junit.jupiter.api.DisplayName;
@@ -73,6 +74,7 @@ class BestellungsUebersichtSecurityTest {
     @MockBean private BelegAuditService belegAuditService;
     @MockBean private RechnungsVorschlagService rechnungsVorschlagService;
     @MockBean private LieferantDokumentService lieferantDokumentService;
+    @MockBean private BestellungsUebersichtService bestellungsUebersichtService;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
 
     private static final String ABHAENGEN = "/api/bestellungen-uebersicht/abhaengen";
