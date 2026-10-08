@@ -31,42 +31,9 @@ public class AbteilungBerechtigungController {
      */
     @GetMapping("/berechtigungen")
     public ResponseEntity<List<AbteilungBerechtigungDto.Response>> getAllBerechtigungen() {
-        List<Abteilung> abteilungen = abteilungRepository.findAll();
-        List<AbteilungBerechtigungDto.Response> result = new ArrayList<>();
-
-        for (Abteilung abt : abteilungen) {
-            List<AbteilungDokumentBerechtigung> berechtigungen = berechtigungRepository.findByAbteilungId(abt.getId());
-            Map<LieferantDokumentTyp, AbteilungDokumentBerechtigung> map = berechtigungen.stream()
-                .filter(b -> b.getDokumentTyp() != null)
-                .collect(Collectors.toMap(
-                    AbteilungDokumentBerechtigung::getDokumentTyp, 
-                    Function.identity(), 
-                (oldVal, newVal) -> oldVal
-                ));
-
-            List<AbteilungBerechtigungDto.TypBerechtigung> typBerechtigungen = new ArrayList<>();
-            for (LieferantDokumentTyp typ : LieferantDokumentTyp.values()) {
-                AbteilungDokumentBerechtigung b = map.get(typ);
-                typBerechtigungen.add(AbteilungBerechtigungDto.TypBerechtigung.builder()
-                    .typ(typ)
-                    .darfSehen(b != null && Boolean.TRUE.equals(b.getDarfSehen()))
-                    .darfScannen(b != null && Boolean.TRUE.equals(b.getDarfScannen()))
-                    .build());
-            }
-
-            result.add(AbteilungBerechtigungDto.Response.builder()
-                .abteilungId(abt.getId())
-                .abteilungName(abt.getName())
-                .darfMonatAbschliessen(Boolean.TRUE.equals(abt.getDarfMonatAbschliessen()))
-                .darfTelefonSehen(Boolean.TRUE.equals(abt.getDarfTelefonSehen()))
-                .berechtigungen(typBerechtigungen)
-                .darfRechnungenGenehmigen(Boolean.TRUE.equals(abt.getDarfRechnungenGenehmigen()))
-                .darfRechnungenSehen(Boolean.TRUE.equals(abt.getDarfRechnungenSehen()))
-                .darfFreigabeAnnahmePushen(Boolean.TRUE.equals(abt.getDarfFreigabeAnnahmePushen()))
-                .build());
-        }
-
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(abteilungRepository.findAll().stream()
+            .map(this::baueAntwort)
+            .toList());
     }
 
     /**
@@ -74,17 +41,23 @@ public class AbteilungBerechtigungController {
      */
     @GetMapping("/{id}/berechtigungen")
     public ResponseEntity<AbteilungBerechtigungDto.Response> getBerechtigungen(@PathVariable Long id) {
-        Abteilung abteilung = abteilungRepository.findById(id).orElse(null);
-        if (abteilung == null) {
-            return ResponseEntity.notFound().build();
-        }
+        return abteilungRepository.findById(id)
+            .map(abteilung -> ResponseEntity.ok(baueAntwort(abteilung)))
+            .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 
-        List<AbteilungDokumentBerechtigung> berechtigungen = berechtigungRepository.findByAbteilungId(id);
-        Map<LieferantDokumentTyp, AbteilungDokumentBerechtigung> map = berechtigungen.stream()
+    /**
+     * Eine gemeinsame Antwort für Liste und Einzelabruf. Vorher baute jeder Abruf
+     * sie selbst – der Liste fehlte dadurch das Push-Häkchen für Webseiten-Anfragen,
+     * und es stand nach jedem Neuladen auf „aus“, obwohl es gespeichert war.
+     */
+    private AbteilungBerechtigungDto.Response baueAntwort(Abteilung abteilung) {
+        Map<LieferantDokumentTyp, AbteilungDokumentBerechtigung> map = berechtigungRepository
+            .findByAbteilungId(abteilung.getId()).stream()
             .filter(b -> b.getDokumentTyp() != null)
             .collect(Collectors.toMap(
-                AbteilungDokumentBerechtigung::getDokumentTyp, 
-                Function.identity(), 
+                AbteilungDokumentBerechtigung::getDokumentTyp,
+                Function.identity(),
                 (oldVal, newVal) -> oldVal
             ));
 
@@ -98,7 +71,7 @@ public class AbteilungBerechtigungController {
                 .build());
         }
 
-        return ResponseEntity.ok(AbteilungBerechtigungDto.Response.builder()
+        return AbteilungBerechtigungDto.Response.builder()
             .abteilungId(abteilung.getId())
             .abteilungName(abteilung.getName())
             .darfMonatAbschliessen(Boolean.TRUE.equals(abteilung.getDarfMonatAbschliessen()))
@@ -108,7 +81,7 @@ public class AbteilungBerechtigungController {
             .darfRechnungenSehen(Boolean.TRUE.equals(abteilung.getDarfRechnungenSehen()))
             .darfFreigabeAnnahmePushen(Boolean.TRUE.equals(abteilung.getDarfFreigabeAnnahmePushen()))
             .darfWebseitenAnfragenPushen(Boolean.TRUE.equals(abteilung.getDarfWebseitenAnfragenPushen()))
-            .build());
+            .build();
     }
 
     /**
