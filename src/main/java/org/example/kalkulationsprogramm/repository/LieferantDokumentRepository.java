@@ -22,6 +22,9 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
                         + "ORDER BY d.uploadDatum DESC")
         List<LieferantDokument> findByLieferantIdOrderByUploadDatumDesc(@Param("lieferantId") Long lieferantId);
 
+        @Query("SELECT COUNT(d) FROM LieferantDokument d WHERE d.lieferant.id = :lieferantId")
+        long zaehleByLieferantId(@Param("lieferantId") Long lieferantId);
+
         @Query("SELECT d FROM LieferantDokument d "
                         + "LEFT JOIN FETCH d.geschaeftsdaten "
                         + "LEFT JOIN FETCH d.uploadedBy "

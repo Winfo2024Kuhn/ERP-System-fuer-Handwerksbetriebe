@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.LieferantNotiz;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
+import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
@@ -43,6 +44,15 @@ public class LieferantenDetailService {
 
     @Transactional(readOnly = true)
     public LieferantDetailDto loadDetails(Long id) {
+        return loadDetails(id, true);
+    }
+
+    /**
+     * @param mitDokumenten false = nur die Anzahl der Dokumente liefern; die Liste holt
+     *                      die Oberfläche beim Öffnen des Reiters über {@code /dokumente} nach.
+     */
+    @Transactional(readOnly = true)
+    public LieferantDetailDto loadDetails(Long id, boolean mitDokumenten) {
         Lieferanten lieferant = lieferantenRepository.findById(id)
                 .orElse(null);
         if (lieferant == null) {
@@ -80,8 +90,13 @@ public class LieferantenDetailService {
         // Also populate emails field for unified EmailsTab in frontend
         dto.setEmails(emails.stream().map(this::toProjektEmailDto).toList());
 
-        // Lade Dokumente
-        dto.setDokumente(lieferantDokumentService.getDokumenteByLieferant(id, null));
+        if (mitDokumenten) {
+            List<LieferantDokumentDto.Response> dokumente = lieferantDokumentService.getDokumenteByLieferant(id, null);
+            dto.setDokumente(dokumente);
+            dto.setDokumenteAnzahl((long) dokumente.size());
+        } else {
+            dto.setDokumenteAnzahl(lieferantDokumentService.zaehleDokumente(id));
+        }
 
         // Lade Notizen
         dto.setNotizen(notizRepository.findByLieferantIdOrderByErstelltAmDesc(id)

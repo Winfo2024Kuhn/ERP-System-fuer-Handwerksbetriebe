@@ -236,7 +236,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     <FileText className="w-4 h-4" />
                     Dokumente
                     <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                        {lieferant.dokumente?.length || 0}
+                        {lieferant.dokumenteAnzahl ?? lieferant.dokumente?.length ?? 0}
                     </span>
                 </button>
                 <button
@@ -506,7 +506,7 @@ export default function LieferantenEditor() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch(`/api/lieferanten/${lieferantId}`);
+                const res = await fetch(`/api/lieferanten/${lieferantId}?mitDokumenten=false`);
                 if (!res.ok) throw new Error('Fehler beim Laden der Details');
                 const data: LieferantDetail = await res.json();
                 setSelectedLieferant(data);
@@ -607,7 +607,7 @@ export default function LieferantenEditor() {
     const aktualisiereDetail = async (id: string | number) => {
         try {
             setLoading(true);
-            const res = await fetch(`/api/lieferanten/${id}`);
+            const res = await fetch(`/api/lieferanten/${id}?mitDokumenten=false`);
             if (!res.ok) throw new Error("Fehler beim Laden der Details");
             setSelectedLieferant(await res.json() as LieferantDetail);
         } catch (err) {
@@ -636,7 +636,7 @@ export default function LieferantenEditor() {
         };
         try {
             setLoading(true);
-            const res = await fetch(`/api/lieferanten/${lieferant.id}`);
+            const res = await fetch(`/api/lieferanten/${lieferant.id}?mitDokumenten=false`);
             if (!res.ok) throw new Error("Fehler beim Laden der Details");
             const data: LieferantDetail = await res.json();
 

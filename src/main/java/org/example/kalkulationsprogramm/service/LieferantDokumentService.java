@@ -166,6 +166,11 @@ public class LieferantDokumentService {
                 return toDto(dok);
         }
 
+        @Transactional(readOnly = true)
+        public long zaehleDokumente(Long lieferantId) {
+                return dokumentRepository.zaehleByLieferantId(lieferantId);
+        }
+
         /**
          * Lädt alle Dokumente eines Lieferanten (ohne Berechtigungsfilter).
          * Für Frontend-Nutzung wenn kein Token vorhanden.

@@ -9,6 +9,8 @@ interface EmailEntityDocumentPickerProps {
     selectedIds: Set<number>;
     loadingIds: Set<number>;
     onToggle: (document: ProjektDokument) => void;
+    /** Bilder und PDFs aus den Bautagebuch-Notizen; erscheinen als eigener Ordner. */
+    bautagebuchDocuments?: ProjektDokument[];
 }
 
 export function EmailEntityDocumentPicker({
@@ -17,8 +19,9 @@ export function EmailEntityDocumentPicker({
     selectedIds,
     loadingIds,
     onToggle,
+    bautagebuchDocuments = [],
 }: EmailEntityDocumentPickerProps) {
-    const [expandedGroups, setExpandedGroups] = useState<Set<DokumentGruppe>>(new Set());
+    const [expandedGroups, setExpandedGroups] = useState<Set<DokumentGruppe | 'BAUTAGEBUCH'>>(new Set());
     const groupedDocuments = useMemo(() => {
         const groups = new Map<DokumentGruppe, ProjektDokument[]>();
         DOKUMENT_GRUPPEN.forEach(({ value }) => groups.set(value, []));
@@ -29,7 +32,7 @@ export function EmailEntityDocumentPicker({
         return groups;
     }, [documents]);
 
-    const toggleGroup = (group: DokumentGruppe) => {
+    const toggleGroup = (group: DokumentGruppe | 'BAUTAGEBUCH') => {
         setExpandedGroups(previous => {
             const next = new Set(previous);
             if (next.has(group)) next.delete(group);
@@ -53,8 +56,12 @@ export function EmailEntityDocumentPicker({
 
     return (
         <div className="space-y-2">
-            {DOKUMENT_GRUPPEN.map(({ value, label }) => {
-                const groupDocuments = groupedDocuments.get(value) || [];
+            {[
+                ...DOKUMENT_GRUPPEN.map(({ value, label }) => ({ value: value as DokumentGruppe | 'BAUTAGEBUCH', label, groupDocuments: groupedDocuments.get(value) || [] })),
+                ...(bautagebuchDocuments.length > 0
+                    ? [{ value: 'BAUTAGEBUCH' as const, label: 'Bautagebuch', groupDocuments: bautagebuchDocuments }]
+                    : []),
+            ].map(({ value, label, groupDocuments }) => {
                 const expanded = expandedGroups.has(value);
                 return (
                     <div key={value} className="overflow-hidden rounded-xl border border-slate-200 bg-white">

@@ -139,6 +139,27 @@ class LieferantenControllerTest {
   }
 
   @Test
+  @DisplayName("Details ohne Dokumente: mitDokumenten=false laedt nur die Anzahl")
+  void getByIdOhneDokumente() throws Exception {
+    LieferantDetailDto detail = new LieferantDetailDto();
+    detail.setDokumenteAnzahl(7L);
+    when(lieferantenDetailService.loadDetails(5L, false)).thenReturn(detail);
+
+    mockMvc.perform(get("/api/lieferanten/5").param("mitDokumenten", "false"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.dokumenteAnzahl").value(7));
+  }
+
+  @Test
+  @DisplayName("Details ohne Dokumente: unbekannte ID liefert 404")
+  void getByIdOhneDokumenteUnbekannt() throws Exception {
+    when(lieferantenDetailService.loadDetails(99L, false)).thenReturn(null);
+
+    mockMvc.perform(get("/api/lieferanten/99").param("mitDokumenten", "false"))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
   void updatesLieferant() throws Exception {
     Lieferanten entity = new Lieferanten();
     entity.setId(5L);

@@ -251,6 +251,7 @@ export interface LieferantDetail extends Lieferant {
   statistik?: LieferantStatistik;
   kommunikation?: Kommunikation[];
   dokumente?: LieferantDokument[];
+  dokumenteAnzahl?: number; // Zahl für den Reiter; die Liste lädt der Reiter selbst nach
   emails?: ProjektEmail[]; // Unified email structure for EmailsTab
   notizen?: LieferantNotiz[];
 }

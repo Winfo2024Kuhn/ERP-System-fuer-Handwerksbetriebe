@@ -256,8 +256,9 @@ public class LieferantenController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<LieferantDetailDto> getById(@PathVariable Long id) {
-        LieferantDetailDto detail = lieferantenDetailService.loadDetails(id);
+    public ResponseEntity<LieferantDetailDto> getById(@PathVariable Long id,
+            @RequestParam(value = "mitDokumenten", defaultValue = "true") boolean mitDokumenten) {
+        LieferantDetailDto detail = lieferantenDetailService.loadDetails(id, mitDokumenten);
         if (detail == null) {
             return ResponseEntity.notFound().build();
         }

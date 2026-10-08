@@ -346,6 +346,8 @@ export function EmailComposeForm({
         return '';
     }, [imagePreview]);
     const [entityDokumente, setEntityDokumente] = useState<ProjektDokument[]>([]);
+    /** Bilder und PDFs aus dem Bautagebuch; Kennungen negativ, damit sie nicht mit Datei-IDs kollidieren. */
+    const [bautagebuchDokumente, setBautagebuchDokumente] = useState<ProjektDokument[]>([]);
     const [loadingEntityDokumente, setLoadingEntityDokumente] = useState(false);
     const [showEntityDokumente, setShowEntityDokumente] = useState(false);
     const [loadingEntityDokumentIds, setLoadingEntityDokumentIds] = useState<Set<number>>(new Set());
@@ -605,6 +607,7 @@ export function EmailComposeForm({
     const loadEntityDokumente = useCallback(async () => {
         if (!entityId) {
             setEntityDokumente([]);
+            setBautagebuchDokumente([]);
             return;
         }
         setLoadingEntityDokumente(true);
@@ -615,6 +618,25 @@ export function EmailComposeForm({
             const res = await fetch(apiUrl);
             if (!res.ok) throw new Error('Dateien konnten nicht geladen werden');
             setEntityDokumente(await res.json());
+            // Bautagebuch ist eine Zugabe: scheitert es, bleiben die normalen Dateien nutzbar.
+            try {
+                const notizRes = await fetch(`${apiUrl.replace(/\/dokumente$/, '')}/notizen`);
+                if (notizRes.ok) {
+                    const notizen: { bilder?: { id: number; url: string; originalDateiname: string; erstelltAm?: string }[] }[] = await notizRes.json();
+                    setBautagebuchDokumente(notizen.flatMap(notiz => (notiz.bilder ?? []).map(bild => ({
+                        id: -bild.id,
+                        originalDateiname: bild.originalDateiname,
+                        url: bild.url,
+                        dokumentGruppe: 'DIVERSE_DOKUMENTE' as const,
+                        uploadDatum: bild.erstelltAm,
+                    }))));
+                } else {
+                    setBautagebuchDokumente([]);
+                }
+            } catch (notizErr) {
+                console.error('Bautagebuch-Dateien konnten nicht geladen werden:', notizErr);
+                setBautagebuchDokumente([]);
+            }
         } catch (err) {
             console.error('Projekt-/Anfrage-Dateien konnten nicht geladen werden:', err);
             setError('Projekt-/Anfrage-Dateien konnten nicht geladen werden.');
@@ -1424,6 +1446,7 @@ export function EmailComposeForm({
                                                 selectedIds={selectedEntityDokumentIds}
                                                 loadingIds={loadingEntityDokumentIds}
                                                 onToggle={handleEntityDokumentToggle}
+                                                bautagebuchDocuments={bautagebuchDokumente}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-3">
