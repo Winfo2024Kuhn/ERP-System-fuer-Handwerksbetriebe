@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package, Wallet } from "lucide-react";
+import { Loader2, Plus, RefreshCw, X, Mail, Phone, MapPin, Building2, User, ArrowLeft, Edit2, ChevronLeft, ChevronRight, FileText, StickyNote, AlertTriangle, Package, Wallet } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { cn } from "../lib/utils";
 import { extractEmailAddress, infoAdresseZuDomain } from "../lib/emailAddress";
-import type { Lieferant, LieferantDetail } from "../types";
+import type { Lieferant, LieferantDetail, LieferantNotiz, LieferantStatistik, ProjektEmail } from "../types";
 import { EmailsTab } from "../components/EmailsTab";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import LieferantDokumenteTab from "../components/LieferantDokumenteTab";
@@ -54,19 +54,77 @@ function istGueltigerTab(value: string | null): value is LieferantTab {
     return value !== null && LIEFERANT_TABS.some((tab) => tab === value);
 }
 
+/**
+ * Holt nach dem Öffnen der Detailseite Kennzahlen, E-Mail-Verlauf und Notizen parallel
+ * nach. Die Seite selbst steht dann schon mit den Stammdaten da; `undefined` heißt
+ * „lädt noch“, damit die Reiter einen Ladezustand statt einer leeren Liste zeigen.
+ */
+function useLieferantNachladen(lieferantId: number | string, ladeVersion: number) {
+    const toast = useToast();
+    const [statistik, setStatistik] = useState<LieferantStatistik | null | undefined>(undefined);
+    const [emails, setEmails] = useState<ProjektEmail[] | undefined>(undefined);
+    const [notizen, setNotizen] = useState<LieferantNotiz[] | undefined>(undefined);
+
+    useEffect(() => {
+        let abgebrochen = false;
+        setStatistik(undefined);
+        setEmails(undefined);
+        setNotizen(undefined);
+        const lade = async <T,>(pfad: string, fehlertext: string, setzen: (wert: T) => void, ersatz: T) => {
+            try {
+                const res = await fetch(`/api/lieferanten/${lieferantId}/${pfad}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const daten = await res.json() as T;
+                if (!abgebrochen) setzen(daten);
+            } catch (err) {
+                console.error(fehlertext, err);
+                if (!abgebrochen) {
+                    setzen(ersatz);
+                    toast.error(fehlertext);
+                }
+            }
+        };
+        void lade<LieferantStatistik | null>('statistik', 'Kennzahlen des Lieferanten konnten nicht geladen werden.', setStatistik, null);
+        void lade<ProjektEmail[]>('email-verlauf', 'E-Mail-Verlauf konnte nicht geladen werden.', setEmails, []);
+        void lade<LieferantNotiz[]>('notizen', 'Notizen konnten nicht geladen werden.', setNotizen, []);
+        return () => { abgebrochen = true; };
+        // toast ist stabil; neu laden bei anderem Lieferanten oder nach dem Speichern.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lieferantId, ladeVersion]);
+
+    return { statistik, emails, notizen, setNotizen };
+}
+
+/** Platzhalter für eine Kennzahl, solange sie noch lädt. */
+const KennzahlLaedt = () => (
+    <span className="mt-1 block h-6 w-16 rounded bg-slate-200/80 motion-safe:animate-pulse" aria-label="Wird geladen" />
+);
+
+const ReiterLaedt = ({ text }: { text: string }) => (
+    <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-sm text-slate-500">
+        <Loader2 className="h-4 w-4 motion-safe:animate-spin text-rose-600" />
+        {text}
+    </div>
+);
+
 interface LieferantDetailViewProps {
     lieferant: LieferantDetail;
+    /** Wird nach dem Speichern hochgezählt, damit Kennzahlen und Verlauf neu geladen werden. */
+    ladeVersion: number;
     activeTab: LieferantTab;
     onTabChange: (tab: LieferantTab) => void;
     onBack: () => void;
     onEdit: () => void;
 }
 
-const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, activeTab: angefragterTab, onTabChange, onBack, onEdit }) => {
+const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ladeVersion, activeTab: angefragterTab, onTabChange, onBack, onEdit }) => {
     const initials = lieferant.lieferantenname?.slice(0, 2).toUpperCase() || "??";
     // Reiter "Anrufe" nur mit dem Abteilungs-Recht "Anrufe & Anrufbeantworter";
     // ohne Recht fällt ein ?tab=anrufe auf den E-Mail-Verlauf zurück.
     const darfTelefon = useTelefonBerechtigung() === true;
+    const nachgeladen = useLieferantNachladen(lieferant.id, ladeVersion);
+    const statistik = nachgeladen.statistik ?? lieferant.statistik;
+    const statistikLaedt = nachgeladen.statistik === undefined && !lieferant.statistik;
     const anrufAnzahl = useKontaktAnrufAnzahl('LIEFERANT', Number(lieferant.id) || null, darfTelefon);
     const activeTab: LieferantTab = angefragterTab === 'anrufe' && !darfTelefon ? 'emails' : angefragterTab;
 
@@ -155,19 +213,19 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                 <div className="flex flex-wrap gap-4 shrink-0" data-testid="lieferant-kennzahlen">
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 min-w-[7rem]">
                         <p className="text-xs text-slate-500 uppercase tracking-wide">Gesamtkosten</p>
-                        <p className="text-lg font-semibold text-slate-900">{formatCurrency(lieferant.statistik?.gesamtKosten)}</p>
+                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-slate-900">{formatCurrency(statistik?.gesamtKosten)}</p>}
                     </div>
                     <div className="bg-purple-50 p-3 rounded-xl border border-purple-100 min-w-[7rem]">
                         <p className="text-xs text-purple-600 uppercase tracking-wide">Bestellungen</p>
-                        <p className="text-lg font-semibold text-purple-900">{lieferant.statistik?.bestellungAnzahl || 0}</p>
+                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-purple-900">{statistik?.bestellungAnzahl || 0}</p>}
                     </div>
                     <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 min-w-[7rem]">
                         <p className="text-xs text-blue-600 uppercase tracking-wide">Artikel</p>
-                        <p className="text-lg font-semibold text-blue-900">{lieferant.statistik?.artikelAnzahl || 0}</p>
+                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-blue-900">{statistik?.artikelAnzahl || 0}</p>}
                     </div>
                     <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[7rem]">
                         <p className="text-xs text-emerald-600 uppercase tracking-wide">Lieferzeit Ø</p>
-                        <p className="text-lg font-semibold text-emerald-900">{lieferant.statistik?.lieferzeit || lieferant.lieferzeit || 0} Tage</p>
+                        {statistikLaedt ? <KennzahlLaedt /> : <p className="text-lg font-semibold text-emerald-900">{statistik?.lieferzeit || lieferant.lieferzeit || 0} Tage</p>}
                     </div>
                 </div>
 
@@ -200,7 +258,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     <Mail className="w-4 h-4" />
                     E-Mail-Verlauf
                     <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                        {lieferant.kommunikation?.length || 0}
+                        {lieferant.emailAnzahl ?? nachgeladen.emails?.length ?? 0}
                     </span>
                 </button>
                 {darfTelefon && (
@@ -253,7 +311,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                     <StickyNote className="w-4 h-4" />
                     Notizen
                     <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                        {lieferant.notizen?.length || 0}
+                        {nachgeladen.notizen?.length ?? lieferant.notizenAnzahl ?? 0}
                     </span>
                 </button>
 
@@ -277,14 +335,19 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
             <div className="flex-1 min-h-0 relative">
                 {activeTab === 'emails' && (
                     <div className="absolute inset-0 overflow-y-auto pr-2">
-                        <EmailsTab
-                            emails={lieferant.emails || []}
+                        {nachgeladen.emails !== undefined && (lieferant.emailAnzahl ?? 0) > nachgeladen.emails.length && (
+                            <p className="mb-3 text-xs text-slate-500">
+                                Hier stehen die neuesten {nachgeladen.emails.length} von {lieferant.emailAnzahl} E-Mails.
+                            </p>
+                        )}
+                        {nachgeladen.emails === undefined ? <ReiterLaedt text="E-Mails werden geladen…" /> : <EmailsTab
+                            emails={nachgeladen.emails}
                             lieferantId={lieferant.id as number}
                             entityName={lieferant.lieferantenname}
                             kundenEmail={lieferant.kundenEmails?.[0]}
                             showComposeButton={false}
                             showReplyButton={false}
-                        />
+                        />}
                     </div>
                 )}
                 {activeTab === 'anrufe' && lieferant.id && (
@@ -303,10 +366,11 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, ac
                 )}
                 {activeTab === 'notizen' && (
                     <div className="absolute inset-0 overflow-y-auto pr-2">
-                        <LieferantNotizenTab
+                        {nachgeladen.notizen === undefined ? <ReiterLaedt text="Notizen werden geladen…" /> : <LieferantNotizenTab
                             lieferantId={lieferant.id as number}
-                            notizen={lieferant.notizen || []}
-                        />
+                            notizen={nachgeladen.notizen}
+                            onNotizenChange={nachgeladen.setNotizen}
+                        />}
                     </div>
                 )}
 
@@ -464,6 +528,7 @@ export default function LieferantenEditor() {
 
     const [editingLieferant, setEditingLieferant] = useState<Lieferant | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [ladeVersion, setLadeVersion] = useState(0);
 
     // Welcher Reiter offen ist, steht in der Adresszeile. Ein unbekannter oder
     // fehlender Wert fällt auf den E-Mail-Verlauf zurück — eine kaputte URL
@@ -506,7 +571,7 @@ export default function LieferantenEditor() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch(`/api/lieferanten/${lieferantId}?mitDokumenten=false`);
+                const res = await fetch(`/api/lieferanten/${lieferantId}?nurStammdaten=true`);
                 if (!res.ok) throw new Error('Fehler beim Laden der Details');
                 const data: LieferantDetail = await res.json();
                 setSelectedLieferant(data);
@@ -607,7 +672,7 @@ export default function LieferantenEditor() {
     const aktualisiereDetail = async (id: string | number) => {
         try {
             setLoading(true);
-            const res = await fetch(`/api/lieferanten/${id}?mitDokumenten=false`);
+            const res = await fetch(`/api/lieferanten/${id}?nurStammdaten=true`);
             if (!res.ok) throw new Error("Fehler beim Laden der Details");
             setSelectedLieferant(await res.json() as LieferantDetail);
         } catch (err) {
@@ -636,7 +701,7 @@ export default function LieferantenEditor() {
         };
         try {
             setLoading(true);
-            const res = await fetch(`/api/lieferanten/${lieferant.id}?mitDokumenten=false`);
+            const res = await fetch(`/api/lieferanten/${lieferant.id}?nurStammdaten=true`);
             if (!res.ok) throw new Error("Fehler beim Laden der Details");
             const data: LieferantDetail = await res.json();
 
@@ -675,6 +740,7 @@ export default function LieferantenEditor() {
                 // gerade offene Reiter aus der Adresszeile und der Nutzer stünde
                 // nach dem Speichern unvermittelt wieder im E-Mail-Verlauf.
                 await aktualisiereDetail(data.id);
+                setLadeVersion(v => v + 1);
             } else {
                 loadLieferanten();
             }
@@ -727,6 +793,7 @@ export default function LieferantenEditor() {
             >
                 <LieferantDetailView
                     lieferant={selectedLieferant}
+                    ladeVersion={ladeVersion}
                     activeTab={activeTab}
                     onTabChange={wechsleTab}
                     onBack={zurueckZurListe}

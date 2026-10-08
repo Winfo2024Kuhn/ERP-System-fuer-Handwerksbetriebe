@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantRolle;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.mapper.LieferantMapper;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -139,23 +140,52 @@ class LieferantenControllerTest {
   }
 
   @Test
-  @DisplayName("Details ohne Dokumente: mitDokumenten=false laedt nur die Anzahl")
-  void getByIdOhneDokumente() throws Exception {
+  @DisplayName("Details mit nurStammdaten=true laden nur Stammdaten und Zaehler")
+  void getByIdNurStammdaten() throws Exception {
     LieferantDetailDto detail = new LieferantDetailDto();
     detail.setDokumenteAnzahl(7L);
-    when(lieferantenDetailService.loadDetails(5L, false)).thenReturn(detail);
+    when(lieferantenDetailService.loadStammdaten(5L)).thenReturn(detail);
 
-    mockMvc.perform(get("/api/lieferanten/5").param("mitDokumenten", "false"))
+    mockMvc.perform(get("/api/lieferanten/5").param("nurStammdaten", "true"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.dokumenteAnzahl").value(7));
   }
 
   @Test
-  @DisplayName("Details ohne Dokumente: unbekannte ID liefert 404")
-  void getByIdOhneDokumenteUnbekannt() throws Exception {
-    when(lieferantenDetailService.loadDetails(99L, false)).thenReturn(null);
+  @DisplayName("Details mit nurStammdaten=true: unbekannte ID liefert 404")
+  void getByIdNurStammdatenUnbekannt() throws Exception {
+    when(lieferantenDetailService.loadStammdaten(99L)).thenReturn(null);
 
-    mockMvc.perform(get("/api/lieferanten/99").param("mitDokumenten", "false"))
+    mockMvc.perform(get("/api/lieferanten/99").param("nurStammdaten", "true"))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Statistik: liefert Kennzahlen bzw. 404")
+  void getStatistik() throws Exception {
+    LieferantStatistikDto statistik = new LieferantStatistikDto();
+    statistik.setArtikelAnzahl(42);
+    when(lieferantenDetailService.loadStatistik(5L)).thenReturn(statistik);
+    when(lieferantenDetailService.loadStatistik(99L)).thenReturn(null);
+
+    mockMvc.perform(get("/api/lieferanten/5/statistik"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.artikelAnzahl").value(42));
+    mockMvc.perform(get("/api/lieferanten/99/statistik"))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("E-Mail-Verlauf: liefert Liste bzw. 404")
+  void getEmailVerlauf() throws Exception {
+    when(lieferantenRepository.existsById(5L)).thenReturn(true);
+    when(lieferantenRepository.existsById(99L)).thenReturn(false);
+    when(lieferantenDetailService.loadEmailVerlauf(5L)).thenReturn(List.of());
+
+    mockMvc.perform(get("/api/lieferanten/5/email-verlauf"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isArray());
+    mockMvc.perform(get("/api/lieferanten/99/email-verlauf"))
         .andExpect(status().isNotFound());
   }
 

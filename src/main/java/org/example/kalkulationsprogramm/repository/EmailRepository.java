@@ -85,6 +85,9 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   // ID-based methods for better performance/flexibility
   List<Email> findByLieferantIdOrderBySentAtDesc(Long lieferantId);
 
+  /** Nur die neuesten E-Mails eines Lieferanten – Größe über {@code PageRequest.of(0, n)}. */
+  List<Email> findByLieferantIdOrderBySentAtDesc(Long lieferantId, org.springframework.data.domain.Pageable seite);
+
   /**
    * Findet alle Emails eines Lieferanten mit vorgeladenen Attachments.
    * Wichtig für asynchrone Kontexte (z.B. EmailBackfillEventListener) um

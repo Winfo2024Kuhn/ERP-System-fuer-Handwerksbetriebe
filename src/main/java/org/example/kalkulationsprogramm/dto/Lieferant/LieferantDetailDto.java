@@ -38,6 +38,9 @@ public class LieferantDetailDto {
     private List<LieferantDokumentDto.Response> dokumente;
     /** Anzahl der Dokumente, auch wenn die Liste selbst (noch) nicht mitgeladen wurde. */
     private Long dokumenteAnzahl;
+    /** Zähler für die Reiter, damit sie stimmen, bevor die Listen nachgeladen sind. */
+    private Long emailAnzahl;
+    private Long notizenAnzahl;
     private List<ProjektEmailDto> emails; // Unified email structure for EmailsTab
     private List<LieferantNotizDto> notizen;
 }

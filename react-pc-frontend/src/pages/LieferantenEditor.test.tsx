@@ -222,7 +222,7 @@ const DUMMY_DETAIL = {
 function mockDetailApi() {
     return vi.fn((url: string) => {
         const antwort = (body: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
-        if (typeof url === 'string' && /^\/api\/lieferanten\/\d+$/.test(url)) {
+        if (typeof url === 'string' && /^\/api\/lieferanten\/\d+(\?|$)/.test(url)) {
             return antwort(DUMMY_DETAIL);
         }
         if (typeof url === 'string' && url.startsWith('/api/lieferanten?')) {
@@ -287,6 +287,31 @@ describe('LieferantenEditor – Reiter in der Adresszeile', () => {
 
         const offenerReiter = await screen.findByRole('tab', { selected: true });
         expect(offenerReiter).toHaveTextContent(/Dokumente/);
+    });
+
+    it('öffnet die Seite mit Stammdaten und lädt den E-Mail-Verlauf erst danach', async () => {
+        let emailsFreigeben: (body: unknown) => void = () => {};
+        const basis = mockDetailApi();
+        fetchMock = vi.fn((url: string) => {
+            if (url === '/api/lieferanten/7/email-verlauf') {
+                return new Promise(resolve => {
+                    emailsFreigeben = (body) => resolve({ ok: true, json: () => Promise.resolve(body) });
+                });
+            }
+            return basis(url);
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        renderMitAdresse(['/lieferanten?lieferantId=7&tab=emails']);
+
+        expect(await screen.findByText('E-Mails werden geladen…')).toBeInTheDocument();
+        const aufrufe = fetchMock.mock.calls.map((aufruf: unknown[]) => aufruf[0]);
+        expect(aufrufe).toContain('/api/lieferanten/7?nurStammdaten=true');
+        expect(aufrufe).toContain('/api/lieferanten/7/statistik');
+        expect(aufrufe).toContain('/api/lieferanten/7/notizen');
+
+        await act(async () => emailsFreigeben([]));
+        await waitFor(() => expect(screen.queryByText('E-Mails werden geladen…')).not.toBeInTheDocument());
     });
 
     it('fällt bei unbekanntem Reiter auf den E-Mail-Verlauf zurück', async () => {

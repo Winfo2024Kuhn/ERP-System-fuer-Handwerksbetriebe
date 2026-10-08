@@ -15,7 +15,16 @@ import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.eq;
+import org.springframework.data.domain.Pageable;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.Mockito.verify;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -33,13 +42,15 @@ class LieferantenDetailServiceTest {
     @Mock private LieferantDokumentService lieferantDokumentService;
     @Mock private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     @Mock private LieferantNotizRepository notizRepository;
+    @Mock private LieferantenArtikelPreiseRepository artikelpreisRepository;
 
     private LieferantenDetailService service;
 
     @BeforeEach
     void setUp() {
         service = new LieferantenDetailService(lieferantenRepository, emailRepository,
-                artikelpreisMapper, lieferantDokumentService, geschaeftsdokumentRepository, notizRepository);
+                artikelpreisMapper, lieferantDokumentService, geschaeftsdokumentRepository, notizRepository,
+                artikelpreisRepository);
     }
 
     private Lieferanten erstelleLieferant(Long id) {
@@ -68,6 +79,86 @@ class LieferantenDetailServiceTest {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // Schlankes Laden für die Detailseite
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class NachladenFuerDetailseite {
+
+        @Test
+        void stammdatenLadenKeineListenSondernNurZaehler() {
+            Lieferanten lieferant = erstelleLieferant(1L);
+            when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(lieferant));
+            when(emailRepository.countByLieferantId(1L)).thenReturn(12L);
+            when(lieferantDokumentService.zaehleDokumente(1L)).thenReturn(3L);
+            when(notizRepository.countByLieferantId(1L)).thenReturn(2L);
+
+            LieferantDetailDto result = service.loadStammdaten(1L);
+
+            assertThat(result.getLieferantenname()).isEqualTo("Test Lieferant GmbH");
+            assertThat(result.getEmailAnzahl()).isEqualTo(12L);
+            assertThat(result.getDokumenteAnzahl()).isEqualTo(3L);
+            assertThat(result.getNotizenAnzahl()).isEqualTo(2L);
+            assertThat(result.getEmails()).isNull();
+            assertThat(result.getArtikelpreise()).isNull();
+            assertThat(result.getDokumente()).isNull();
+            assertThat(result.getNotizen()).isNull();
+            verify(emailRepository, never()).findByLieferantIdOrderBySentAtDesc(anyLong(), any(Pageable.class));
+            verify(lieferantDokumentService, never()).getDokumenteByLieferant(anyLong(), any());
+            verify(artikelpreisMapper, never()).toDtoList(any());
+        }
+
+        @Test
+        void stammdatenGebenNullFuerUnbekanntenLieferanten() {
+            when(lieferantenRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThat(service.loadStammdaten(99L)).isNull();
+        }
+
+        @Test
+        void statistikZaehltArtikelPerAbfrage() {
+            Lieferanten lieferant = erstelleLieferant(1L);
+            when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(lieferant));
+            when(artikelpreisRepository.zaehleArtikelVonLieferant(1L)).thenReturn(1500L);
+            when(emailRepository.countByLieferantId(1L)).thenReturn(4L);
+
+            LieferantStatistikDto result = service.loadStatistik(1L);
+
+            assertThat(result.getArtikelAnzahl()).isEqualTo(1500);
+            assertThat(result.getEmailAnzahl()).isEqualTo(4L);
+        }
+
+        @Test
+        void statistikGibtNullFuerUnbekanntenLieferanten() {
+            when(lieferantenRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThat(service.loadStatistik(99L)).isNull();
+        }
+
+        @Test
+        void emailVerlaufLiefertEmailsImReiterFormat() {
+            when(emailRepository.findByLieferantIdOrderBySentAtDesc(eq(1L), any(Pageable.class)))
+                    .thenReturn(List.of(erstelleEmail(10L, "Lieferschein 4711")));
+
+            List<ProjektEmailDto> result = service.loadEmailVerlauf(1L);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getSubject()).isEqualTo("Lieferschein 4711");
+        }
+
+        @Test
+        void emailVerlaufHoltNurDieNeuesten50() {
+            ArgumentCaptor<Pageable> seite = ArgumentCaptor.forClass(Pageable.class);
+            when(emailRepository.findByLieferantIdOrderBySentAtDesc(eq(1L), seite.capture())).thenReturn(List.of());
+
+            service.loadEmailVerlauf(1L);
+
+            assertThat(seite.getValue().getPageNumber()).isZero();
+            assertThat(seite.getValue().getPageSize()).isEqualTo(50);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // loadDetails
     // ═══════════════════════════════════════════════════════════════
 
@@ -87,7 +178,7 @@ class LieferantenDetailServiceTest {
         void mapptGrunddatenKorrekt() {
             Lieferanten lieferant = erstelleLieferant(1L);
             when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(lieferant));
-            when(emailRepository.findByLieferantIdOrderBySentAtDesc(1L)).thenReturn(List.of());
+            when(emailRepository.findByLieferantIdOrderBySentAtDesc(eq(1L), any(Pageable.class))).thenReturn(List.of());
             when(lieferantDokumentService.getDokumenteByLieferant(1L, null)).thenReturn(List.of());
             when(notizRepository.findByLieferantIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
 
@@ -108,7 +199,7 @@ class LieferantenDetailServiceTest {
             parentEmail.getReplies().add(replyEmail);
 
             when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(lieferant));
-            when(emailRepository.findByLieferantIdOrderBySentAtDesc(1L))
+            when(emailRepository.findByLieferantIdOrderBySentAtDesc(eq(1L), any(Pageable.class)))
                     .thenReturn(List.of(parentEmail, replyEmail));
             when(lieferantDokumentService.getDokumenteByLieferant(1L, null)).thenReturn(List.of());
             when(notizRepository.findByLieferantIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
@@ -138,7 +229,7 @@ class LieferantenDetailServiceTest {
             Email email = erstelleEmail(100L, "Einzelne Email");
 
             when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(lieferant));
-            when(emailRepository.findByLieferantIdOrderBySentAtDesc(1L)).thenReturn(List.of(email));
+            when(emailRepository.findByLieferantIdOrderBySentAtDesc(eq(1L), any(Pageable.class))).thenReturn(List.of(email));
             when(lieferantDokumentService.getDokumenteByLieferant(1L, null)).thenReturn(List.of());
             when(notizRepository.findByLieferantIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
 
@@ -161,7 +252,7 @@ class LieferantenDetailServiceTest {
             email.getAttachments().add(att);
 
             when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(lieferant));
-            when(emailRepository.findByLieferantIdOrderBySentAtDesc(1L)).thenReturn(List.of(email));
+            when(emailRepository.findByLieferantIdOrderBySentAtDesc(eq(1L), any(Pageable.class))).thenReturn(List.of(email));
             when(lieferantDokumentService.getDokumenteByLieferant(1L, null)).thenReturn(List.of());
             when(notizRepository.findByLieferantIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
 
@@ -180,7 +271,7 @@ class LieferantenDetailServiceTest {
             email.setDirection(EmailDirection.OUT);
 
             when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(lieferant));
-            when(emailRepository.findByLieferantIdOrderBySentAtDesc(1L)).thenReturn(List.of(email));
+            when(emailRepository.findByLieferantIdOrderBySentAtDesc(eq(1L), any(Pageable.class))).thenReturn(List.of(email));
             when(lieferantDokumentService.getDokumenteByLieferant(1L, null)).thenReturn(List.of());
             when(notizRepository.findByLieferantIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
 

@@ -2,15 +2,16 @@ package org.example.kalkulationsprogramm.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
-import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.LieferantNotiz;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
+import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 public class LieferantenDetailService {
 
     private static final int EMAIL_LIMIT_DEFAULT = 50;
+    private static final int EMAIL_LIMIT_MAX = 200;
 
     private final LieferantenRepository lieferantenRepository;
     private final org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
@@ -41,23 +43,65 @@ public class LieferantenDetailService {
     private final LieferantDokumentService lieferantDokumentService;
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final LieferantNotizRepository notizRepository;
+    private final LieferantenArtikelPreiseRepository artikelpreisRepository;
 
+    /** Alles auf einmal – für Aufrufer, die den kompletten Lieferanten brauchen (z. B. Bestellungen). */
     @Transactional(readOnly = true)
     public LieferantDetailDto loadDetails(Long id) {
-        return loadDetails(id, true);
-    }
-
-    /**
-     * @param mitDokumenten false = nur die Anzahl der Dokumente liefern; die Liste holt
-     *                      die Oberfläche beim Öffnen des Reiters über {@code /dokumente} nach.
-     */
-    @Transactional(readOnly = true)
-    public LieferantDetailDto loadDetails(Long id, boolean mitDokumenten) {
-        Lieferanten lieferant = lieferantenRepository.findById(id)
-                .orElse(null);
+        Lieferanten lieferant = lieferantenRepository.findById(id).orElse(null);
         if (lieferant == null) {
             return null;
         }
+        LieferantDetailDto dto = baueStammdaten(lieferant);
+        dto.setArtikelpreise(artikelpreisMapper.toDtoList(lieferant.getArtikelpreise()));
+        dto.setStatistik(buildStatistik(lieferant));
+
+        List<org.example.kalkulationsprogramm.domain.Email> emails = loadEmailsEntities(id, EMAIL_LIMIT_DEFAULT);
+        dto.setKommunikation(emails.stream().map(e -> toKommunikation(e, id)).toList());
+        dto.setEmails(emails.stream().map(this::toProjektEmailDto).toList());
+        dto.setEmailAnzahl(emailRepository.countByLieferantId(id));
+
+        List<LieferantDokumentDto.Response> dokumente = lieferantDokumentService.getDokumenteByLieferant(id, null);
+        dto.setDokumente(dokumente);
+        dto.setDokumenteAnzahl((long) dokumente.size());
+
+        dto.setNotizen(notizRepository.findByLieferantIdOrderByErstelltAmDesc(id)
+                .stream().map(this::toNotizDto).toList());
+        dto.setNotizenAnzahl((long) dto.getNotizen().size());
+        return dto;
+    }
+
+    /**
+     * Nur Stammdaten und Zähler für die Reiter. Die Detailseite zeigt das sofort an und
+     * holt Kennzahlen, E-Mail-Verlauf, Notizen und Dokumente danach einzeln nach – ein
+     * Lieferant wie ein Großhändler hat sonst tausende Artikelpreise und E-Mails im Gepäck.
+     */
+    @Transactional(readOnly = true)
+    public LieferantDetailDto loadStammdaten(Long id) {
+        Lieferanten lieferant = lieferantenRepository.findById(id).orElse(null);
+        if (lieferant == null) {
+            return null;
+        }
+        LieferantDetailDto dto = baueStammdaten(lieferant);
+        dto.setEmailAnzahl(emailRepository.countByLieferantId(id));
+        dto.setDokumenteAnzahl(lieferantDokumentService.zaehleDokumente(id));
+        dto.setNotizenAnzahl(notizRepository.countByLieferantId(id));
+        return dto;
+    }
+
+    /** Kennzahlen für den Kopf der Detailseite; {@code null}, wenn es den Lieferanten nicht gibt. */
+    @Transactional(readOnly = true)
+    public LieferantStatistikDto loadStatistik(Long id) {
+        return lieferantenRepository.findById(id).map(this::buildStatistik).orElse(null);
+    }
+
+    /** E-Mail-Verlauf im Format des gemeinsamen E-Mail-Reiters. */
+    @Transactional(readOnly = true)
+    public List<ProjektEmailDto> loadEmailVerlauf(Long id) {
+        return loadEmailsEntities(id, EMAIL_LIMIT_DEFAULT).stream().map(this::toProjektEmailDto).toList();
+    }
+
+    private LieferantDetailDto baueStammdaten(Lieferanten lieferant) {
         LieferantDetailDto dto = new LieferantDetailDto();
         dto.setId(lieferant.getId());
         dto.setLieferantenname(lieferant.getLieferantenname());
@@ -79,29 +123,6 @@ public class LieferantenDetailService {
             dto.setStandardKostenstelleId(lieferant.getStandardKostenstelle().getId());
             dto.setStandardKostenstelleName(lieferant.getStandardKostenstelle().getBezeichnung());
         }
-
-        dto.setArtikelpreise(artikelpreisMapper.toDtoList(lieferant.getArtikelpreise()));
-        dto.setStatistik(buildStatistik(lieferant));
-
-        // Map Emails to Kommunikation (Unified Email)
-        List<org.example.kalkulationsprogramm.domain.Email> emails = loadEmailsEntities(id, EMAIL_LIMIT_DEFAULT);
-        dto.setKommunikation(emails.stream().map(e -> toKommunikation(e, id)).toList());
-
-        // Also populate emails field for unified EmailsTab in frontend
-        dto.setEmails(emails.stream().map(this::toProjektEmailDto).toList());
-
-        if (mitDokumenten) {
-            List<LieferantDokumentDto.Response> dokumente = lieferantDokumentService.getDokumenteByLieferant(id, null);
-            dto.setDokumente(dokumente);
-            dto.setDokumenteAnzahl((long) dokumente.size());
-        } else {
-            dto.setDokumenteAnzahl(lieferantDokumentService.zaehleDokumente(id));
-        }
-
-        // Lade Notizen
-        dto.setNotizen(notizRepository.findByLieferantIdOrderByErstelltAmDesc(id)
-                .stream().map(this::toNotizDto).toList());
-
         return dto;
     }
 
@@ -156,22 +177,15 @@ public class LieferantenDetailService {
 
     @Transactional(readOnly = true)
     public List<LieferantEmailDto> loadEmails(Long lieferantId, int limit, String query) {
-        // This method returned old DTOs, but maybe we can adapt or remove it if not
-        // used elsewhere?
-        // It is used by Controller. So we map entities to old DTO if needed or update
-        // Controller.
-        // Let's implement it mapping Email -> LieferantEmailDto for compatibility
-        var entities = loadEmailsEntities(lieferantId, limit);
-        // Filter by query if needed? Repository search would be better.
-        // For now simple list
+        // Der Suchbegriff wird (wie bisher) noch nicht ausgewertet. Obergrenze, damit
+        // ein großes limit nicht wieder den kompletten Verlauf lädt.
+        var entities = loadEmailsEntities(lieferantId, Math.min(limit, EMAIL_LIMIT_MAX));
         return entities.stream().map(this::toEmailDto).toList();
     }
 
     private List<org.example.kalkulationsprogramm.domain.Email> loadEmailsEntities(Long lieferantId, int limit) {
-        // Need to add findByLieferantId to EmailRepository or use existing methods
-        // Assuming findByLieferantIdDesc or similar
-        // For now: placeholder query logic using existing repo if possible
-        return emailRepository.findByLieferantIdOrderBySentAtDesc(lieferantId);
+        return emailRepository.findByLieferantIdOrderBySentAtDesc(lieferantId,
+                PageRequest.of(0, Math.max(limit, 1)));
     }
 
     private LieferantEmailDto toEmailDto(org.example.kalkulationsprogramm.domain.Email email) {
@@ -249,14 +263,7 @@ public class LieferantenDetailService {
 
     private LieferantStatistikDto buildStatistik(Lieferanten lieferant) {
         LieferantStatistikDto statistik = new LieferantStatistikDto();
-        statistik.setArtikelAnzahl(
-                (int) Objects.requireNonNullElse(lieferant.getArtikelpreise(), List.<LieferantenArtikelPreise>of())
-                        .stream()
-                        .map(LieferantenArtikelPreise::getArtikel)
-                        .filter(Objects::nonNull)
-                        .map(a -> a.getId() != null ? a.getId() : -1L)
-                        .distinct()
-                        .count());
+        statistik.setArtikelAnzahl((int) artikelpreisRepository.zaehleArtikelVonLieferant(lieferant.getId()));
         long emailCount = emailRepository.countByLieferantId(lieferant.getId());
         statistik.setEmailAnzahl(emailCount);
         // last email sent at?

@@ -25,6 +25,7 @@ import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisPageD
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisUpdateRequest;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantCreateRequestDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantListItemDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
@@ -255,14 +256,38 @@ public class LieferantenController {
         return ResponseEntity.ok(detail);
     }
 
+    /**
+     * @param nurStammdaten true = ohne Listen, nur Stammdaten und Zähler. So öffnet die
+     *                      Detailseite sofort; den Rest holt sie über die Unter-Endpunkte nach.
+     */
     @GetMapping("/{id}")
     public ResponseEntity<LieferantDetailDto> getById(@PathVariable Long id,
-            @RequestParam(value = "mitDokumenten", defaultValue = "true") boolean mitDokumenten) {
-        LieferantDetailDto detail = lieferantenDetailService.loadDetails(id, mitDokumenten);
+            @RequestParam(value = "nurStammdaten", defaultValue = "false") boolean nurStammdaten) {
+        LieferantDetailDto detail = nurStammdaten
+                ? lieferantenDetailService.loadStammdaten(id)
+                : lieferantenDetailService.loadDetails(id);
         if (detail == null) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(detail);
+    }
+
+    @GetMapping("/{id}/statistik")
+    public ResponseEntity<LieferantStatistikDto> getStatistik(@PathVariable Long id) {
+        LieferantStatistikDto statistik = lieferantenDetailService.loadStatistik(id);
+        if (statistik == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(statistik);
+    }
+
+    // Voll qualifiziert: Der Controller importiert bereits das gleichnamige dto.Projekt.ProjektEmailDto.
+    @GetMapping("/{id}/email-verlauf")
+    public ResponseEntity<List<org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto>> getEmailVerlauf(@PathVariable Long id) {
+        if (!lieferantenRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(lieferantenDetailService.loadEmailVerlauf(id));
     }
 
     @GetMapping("/{id}/artikelpreise")

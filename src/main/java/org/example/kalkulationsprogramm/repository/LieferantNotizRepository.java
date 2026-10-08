@@ -11,6 +11,8 @@ public interface LieferantNotizRepository extends JpaRepository<LieferantNotiz, 
 
     List<LieferantNotiz> findByLieferantIdOrderByErstelltAmDesc(Long lieferantId);
 
+    long countByLieferantId(Long lieferantId);
+
     List<LieferantNotiz> findByLieferantIdAndTextContainingIgnoreCaseOrderByErstelltAmDesc(
             Long lieferantId, String query);
 }
