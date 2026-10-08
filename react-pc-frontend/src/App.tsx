@@ -36,7 +36,6 @@ import ZeiterfassungFeiertage from './pages/ZeiterfassungFeiertage';
 import ZeiterfassungSteuerberater from './pages/ZeiterfassungSteuerberater';
 import Urlaubsantraege from './pages/Urlaubsantraege';
 import Langzeitkrankmeldungen from './pages/Langzeitkrankmeldungen';
-import AbteilungBerechtigungenEditor from './pages/AbteilungBerechtigungenEditor';
 import TerminKalender from './pages/TerminKalender';
 import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
 import BelegeKasseEditor from './pages/BelegeKasseEditor';
@@ -112,7 +111,8 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/feiertage" element={<ErrorBoundary><ZeiterfassungFeiertage /></ErrorBoundary>} />
                 <Route path="/urlaubsantraege" element={<ErrorBoundary><Urlaubsantraege /></ErrorBoundary>} />
                 <Route path="/langzeitkrankmeldungen" element={<ErrorBoundary><Langzeitkrankmeldungen /></ErrorBoundary>} />
-                <Route path="/abteilung-berechtigungen" element={<RequireAdmin><ErrorBoundary><AbteilungBerechtigungenEditor /></ErrorBoundary></RequireAdmin>} />
+                {/* Die Rechte sind in die Einstellungen umgezogen; alte Links und Lesezeichen landen im Reiter. */}
+                <Route path="/abteilung-berechtigungen" element={<Navigate to="/einstellungen#berechtigungen" replace />} />
                 <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
                 <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />
 

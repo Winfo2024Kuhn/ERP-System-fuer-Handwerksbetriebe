@@ -74,7 +74,7 @@ async function stub(page: Page, options: { allowed?: boolean; error?: boolean; c
 
 test('Recht speichern, Glockenlink, Abschluss und Wiederöffnung mit Verlauf', async ({ page }, info) => {
     const writes = await stub(page, { allowed: false });
-    await page.goto('/abteilung-berechtigungen');
+    await page.goto('/einstellungen#berechtigungen');
     const checkbox = page.getByRole('checkbox', { name: /Monate abschließen und wieder öffnen/ });
     await checkbox.check();
     await page.getByRole('button', { name: 'Speichern', exact: true }).click();

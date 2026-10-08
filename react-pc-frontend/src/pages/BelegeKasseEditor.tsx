@@ -328,7 +328,7 @@ export default function BelegeKasseEditor() {
                     <p className="font-medium text-amber-900">Keine Berechtigung für Belege</p>
                     <p className="text-sm mt-2 text-amber-800 max-w-md mx-auto">
                         Dein Account hat keine Sicht-Berechtigung für Belege (Typ <code className="font-mono">BELEG</code>).
-                        Lass dich unter <strong>Administration → Lieferanten-Dokumentenrechte</strong> für die Abteilung
+                        Lass dich unter <strong>Einstellungen → Berechtigungen</strong> für die Abteilung
                         Buchhaltung freischalten — oder prüfe, ob dein Frontend-Login mit einem Mitarbeiter-Datensatz
                         (gleiche E-Mail) verknüpft ist.
                     </p>

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, Check, FolderOpen, Mail, Phone, Smartphone } from 'lucide-react';
+import { Brain, Check, FolderOpen, Mail, Phone, Shield, Smartphone } from 'lucide-react';
 import { EmailSettingsSection } from './sections/EmailSettingsSection';
 import { DateiOrdnerSection } from './sections/DateiOrdnerSection';
 import { KiSettingsSection } from './sections/KiSettingsSection';
 import { ZeiterfassungSection } from './sections/ZeiterfassungSection';
 import { TelefonSettingsSection } from './sections/TelefonSettingsSection';
+import { BerechtigungenSection } from './sections/BerechtigungenSection';
 
 /**
  * Die System-Einstellungen als Reiter statt als eine endlose Rolle.
@@ -20,7 +21,7 @@ import { TelefonSettingsSection } from './sections/TelefonSettingsSection';
  * mehr an.</p>
  */
 
-type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung' | 'telefon';
+type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung' | 'telefon' | 'berechtigungen';
 
 interface TabDefinition {
     id: TabId;
@@ -34,6 +35,7 @@ const TABS: TabDefinition[] = [
     { id: 'ki', label: 'KI-Funktionen', icon: <Brain className="w-4 h-4" /> },
     { id: 'zeiterfassung', label: 'Zeiterfassung', icon: <Smartphone className="w-4 h-4" /> },
     { id: 'telefon', label: 'Telefon', icon: <Phone className="w-4 h-4" /> },
+    { id: 'berechtigungen', label: 'Berechtigungen', icon: <Shield className="w-4 h-4" /> },
 ];
 
 /** Welche Bereiche sind fertig eingerichtet — für die Häkchen an den Reitern. */
@@ -202,6 +204,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 {activeTab === 'ki' && <KiSettingsSection onSaved={handleSaved} />}
                 {activeTab === 'zeiterfassung' && <ZeiterfassungSection />}
                 {activeTab === 'telefon' && <TelefonSettingsSection onSaved={handleSaved} />}
+                {activeTab === 'berechtigungen' && <BerechtigungenSection />}
             </div>
         </div>
     );

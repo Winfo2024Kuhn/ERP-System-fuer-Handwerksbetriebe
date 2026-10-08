@@ -5,7 +5,8 @@ import { SystemSetupConfigurator } from '../components/settings/SystemSetupConfi
  * Seite „System-Einstellungen".
  *
  * <p>Der gesamte Inhalt steckt in {@link SystemSetupConfigurator} und ist dort
- * in Reiter aufgeteilt (E-Mail, Dateien, KI-Funktionen, Zeiterfassung). Diese
+ * in Reiter aufgeteilt (E-Mail, Dateien, KI-Funktionen, Zeiterfassung, Telefon,
+ * Berechtigungen). Diese
  * Seite setzt nur noch den Rahmen — dieselbe Komponente trägt auch die
  * Ersteinrichtung nach der ersten Anmeldung.</p>
  */
@@ -14,7 +15,7 @@ export default function EinstellungenEditor() {
         <PageLayout
             ribbonCategory="Administration"
             title="System-Einstellungen"
-            subtitle="E-Mail, Dateiablage, KI-Funktionen, Zeiterfassung und Telefon einrichten"
+            subtitle="E-Mail, Dateiablage, KI-Funktionen, Zeiterfassung, Telefon und Berechtigungen einrichten"
         >
             <SystemSetupConfigurator />
         </PageLayout>

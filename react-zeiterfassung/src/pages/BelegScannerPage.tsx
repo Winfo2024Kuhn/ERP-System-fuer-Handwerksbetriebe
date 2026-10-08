@@ -467,7 +467,7 @@ export default function BelegScannerPage() {
                     <p className="font-medium text-slate-700">Keine Berechtigung</p>
                     <p className="text-sm mt-2 max-w-xs">
                         Der Beleg-Scanner ist nur für Mitarbeiter der Buchhaltung verfügbar.
-                        Berechtigungen werden unter Administration → Lieferanten-Dokumentenrechte vergeben.
+                        Berechtigungen werden am Computer unter Einstellungen → Berechtigungen vergeben.
                     </p>
                 </div>
             </div>

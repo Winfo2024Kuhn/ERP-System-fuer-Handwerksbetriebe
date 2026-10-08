@@ -11,7 +11,7 @@ import { designPruefung, keinTextGekuerzt } from './hilfen/design';
  *     Ueberlauf des Container-Elements (die fuenf Kategorie-Knoepfe passen bei
  *     1440px nicht nebeneinander, 38px fehlen), niemand sieht den Scrollbalken.
  *   - Menuepunkt-Beschriftungen (Zeile 400, "max-w-[4.5rem] truncate") kuerzen
- *     "Dokumentenrechte" und "Mietabrechnung" unabhaengig von der
+ *     "Mietabrechnung" (frueher auch "Dokumentenrechte") unabhaengig von der
  *     Fenstergroesse -- betrifft also auch pc-monitor (1920).
  *   - Der Anzeigename (Zeile 299, "line-clamp-1", keine Hoechstbreite) laesst
  *     bei einem langen Namen die Kategorie-Leiste zusaetzlich nach links
@@ -19,8 +19,8 @@ import { designPruefung, keinTextGekuerzt } from './hilfen/design';
  *
  * Alle drei Befunde werden mit einem langen Nutzernamen provoziert
  * (Friederike Beispiel-Musterfrau, Fantasiename -- DSGVO) und admin: true,
- * weil "Dokumentenrechte" an ADMIN_ONLY_PATHS haengt (RibbonNav.tsx Zeile 174)
- * und ohne Admin-Rechte gar nicht sichtbar waere.
+ * damit auch die Admin-Menuepunkte (ADMIN_ONLY_PATHS in RibbonNav.tsx) sichtbar
+ * sind. "Dokumentenrechte" ist inzwischen ein Reiter der Einstellungen.
  *
  * /api wird vollstaendig gestubbt (kein Backend, keine echten Personendaten).
  * Landeseite ist /projekte (siehe Task 2 fuer dieselben Stub-Routen) -- Task 8
@@ -228,15 +228,12 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await designPruefung(page, testInfo, 'menueleiste-kategorien');
     });
 
-    test('Kategorie "Vorlagen & Stammdaten": "Dokumentenrechte" steht vollstaendig da', async ({ page }, testInfo) => {
+    test('alte Adresse der Dokumentenrechte fuehrt in den Reiter "Berechtigungen" der Einstellungen', async ({ page }) => {
         await oeffneProjekteMitMenueleiste(page);
 
-        await page.getByRole('button', { name: 'Vorlagen & Stammdaten', exact: true }).click();
-        const dokumentenrechte = page.getByRole('link', { name: 'Dokumentenrechte' });
-        await expect(dokumentenrechte).toBeVisible();
-        await keinTextGekuerzt(page);
-
-        await designPruefung(page, testInfo, 'menueleiste-dokumentenrechte');
+        await page.goto('/abteilung-berechtigungen');
+        await expect(page).toHaveURL(/\/einstellungen#berechtigungen$/);
+        await expect(page.getByRole('tab', { name: /Berechtigungen/ })).toHaveAttribute('aria-selected', 'true');
     });
 
     test('Kategorie "Finanzen & Controlling": "Mietabrechnung" steht vollstaendig da', async ({ page }, testInfo) => {

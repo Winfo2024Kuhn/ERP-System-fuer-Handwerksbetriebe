@@ -5,7 +5,7 @@ import {
     Briefcase, Clock, Mail, Package, MoreHorizontal,
     X, FileText, User, Truck, ShoppingCart, FileCheck,
     BarChart3, Euro, Home, Layers, List, Calendar,
-    CalendarDays, Plane, Shield, FileJson, ChevronRight, Stethoscope,
+    CalendarDays, Plane, FileJson, ChevronRight, Stethoscope,
     Phone, Voicemail
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
@@ -87,12 +87,11 @@ const MORE_SECTIONS: NavSection[] = [
         items: [
             { name: 'Feiertage', href: '/feiertage', icon: CalendarDays },
             { name: 'Benutzer', href: '/benutzer', icon: User },
-            { name: 'Dokumentenrechte', href: '/abteilung-berechtigungen', icon: Shield },
         ]
     },
 ];
 
-const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer']);
+const ADMIN_ONLY_PATHS = new Set(['/firma', '/einstellungen', '/benutzer']);
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
 const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 

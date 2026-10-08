@@ -75,7 +75,7 @@ public class LocalRagService {
             Map.entry("/miete", List.of("MietabrechnungEditor")),
             Map.entry("/benutzer", List.of("BenutzerEditor")),
             Map.entry("/firma", List.of("FirmaEditor")),
-            Map.entry("/abteilung-berechtigungen", List.of("AbteilungBerechtigungenEditor")),
+            Map.entry("/einstellungen", List.of("EinstellungenEditor", "SystemSetupConfigurator", "BerechtigungenSection")),
             Map.entry("/zeitbuchungen", List.of("ZeiterfassungKalender")),
             Map.entry("/auswertung", List.of("ZeiterfassungAuswertung")),
             Map.entry("/steuerberater", List.of("ZeiterfassungSteuerberater")),

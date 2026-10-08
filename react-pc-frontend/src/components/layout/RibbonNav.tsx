@@ -5,7 +5,7 @@ import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
-    Calendar, CalendarDays, Plane, Shield, Receipt, Wallet, Stethoscope,
+    Calendar, CalendarDays, Plane, Receipt, Wallet, Stethoscope,
     Phone, Voicemail
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -63,7 +63,6 @@ const NAVIGATION: NavCategory[] = [
             {
                 label: 'Administration',
                 items: [
-                    { name: 'Dokumentenrechte', href: '/abteilung-berechtigungen', icon: Shield },
                     { name: 'Firma', href: '/firma', icon: Building2 },
                     { name: 'Einstellungen', href: '/einstellungen', icon: Settings },
                 ]
@@ -182,7 +181,7 @@ const NAVIGATION: NavCategory[] = [
     }
 ];
 
-const ADMIN_ONLY_PATHS = new Set(['/abteilung-berechtigungen', '/firma', '/einstellungen', '/benutzer', '/website']);
+const ADMIN_ONLY_PATHS = new Set(['/firma', '/einstellungen', '/benutzer', '/website']);
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
 const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 
