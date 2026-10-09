@@ -215,7 +215,7 @@ class BestellungsUebersichtControllerEinordnungTest {
     }
 
     @Test
-    void rechnungVorschlaegeListetAlleOffenenRechnungen() {
+    void kettenVorschlaegeListetAlleOffenenRechnungen() {
         LieferantDokument ab = dokument(1L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
         ab.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 1)));
         LieferantDokument r1 = dokument(2L, LieferantDokumentTyp.RECHNUNG);
@@ -224,29 +224,10 @@ class BestellungsUebersichtControllerEinordnungTest {
         r2.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 6)));
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, r1, r2));
 
-        var antwort = controller.getRechnungsVorschlaege(List.of(1L), false, null, null);
+        var antwort = controller.getKettenVorschlaege(List.of(1L), false, null, null, null);
 
         assertThat(antwort.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(antwort.getBody()).extracting(v -> v.rechnung().id).containsExactlyInAnyOrder(2L, 3L);
-    }
-
-    @Test
-    void rechnungVorschlaegeMarkiertGleichstandUndBegrenztDieListe() {
-        LieferantDokument ab = dokument(1L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
-        ab.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 1)));
-        List<LieferantDokument> alle = new java.util.ArrayList<>(List.of(ab));
-        for (long id = 2; id <= 251; id++) {
-            LieferantDokument r = dokument(id, LieferantDokumentTyp.RECHNUNG);
-            r.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 5)));
-            alle.add(r);
-        }
-        when(dokumentRepository.findAll()).thenReturn(alle);
-
-        var liste = controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody();
-
-        assertThat(liste).hasSize(200);
-        // alle gleich gut (nur zeitlich nah) -> keiner ist eindeutig
-        assertThat(liste).allSatisfy(v -> assertThat(v.eindeutig()).isFalse());
+        assertThat(antwort.getBody()).extracting(v -> v.dokument().id).containsExactlyInAnyOrder(2L, 3L);
     }
 
     @Test
@@ -267,10 +248,10 @@ class BestellungsUebersichtControllerEinordnungTest {
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
-        // Im Fenster „Rechnung suchen“ erst mit „alle Lieferanten“
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody()).isEmpty();
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), true, null, null).getBody())
-                .extracting(v -> v.rechnung().id).containsExactly(2L);
+        // Im Fenster „Dokument zur Kette hinzufügen“ erst mit „alle Lieferanten“
+        assertThat(controller.getKettenVorschlaege(List.of(1L), false, null, null, null).getBody()).isEmpty();
+        assertThat(controller.getKettenVorschlaege(List.of(1L), true, null, null, null).getBody())
+                .extracting(v -> v.dokument().id).containsExactly(2L);
     }
 
     @Test
@@ -289,16 +270,16 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(rechnung, andereAb);
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, andereAb, rechnung));
 
-        var liste = controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody();
+        var liste = controller.getKettenVorschlaege(List.of(1L), false, null, null, null).getBody();
 
         assertThat(liste).hasSize(1);
-        assertThat(liste.get(0).rechnung().id).isEqualTo(3L);
-        assertThat(liste.get(0).rechnung().ausgeblendet).isTrue();
+        assertThat(liste.get(0).dokument().id).isEqualTo(3L);
+        assertThat(liste.get(0).dokument().ausgeblendet).isTrue();
         assertThat(liste.get(0).gehoertSchonZu()).isEqualTo("Auftragsbestätigung AB-4711");
     }
 
     @Test
-    void rechnungenDieserKetteFehlenImFenster() {
+    void dokumenteDieserKetteFehlenImFenster() {
         LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
         ls.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 1)));
         LieferantDokument schonDran = dokument(2L, LieferantDokumentTyp.RECHNUNG);
@@ -309,8 +290,8 @@ class BestellungsUebersichtControllerEinordnungTest {
         andere.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 6)));
         when(dokumentRepository.findAll()).thenReturn(List.of(ls, schonDran, andere));
 
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody())
-                .extracting(v -> v.rechnung().id).containsExactly(3L);
+        assertThat(controller.getKettenVorschlaege(List.of(1L), false, null, null, null).getBody())
+                .extracting(v -> v.dokument().id).containsExactly(3L);
     }
 
     @Test
@@ -431,7 +412,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         ab.getGeschaeftsdaten().setDokumentNummer("AB-77001");
         LieferantDokument vielSpaeter = dokument(2L, LieferantDokumentTyp.RECHNUNG);
         vielSpaeter.setAusgeblendet(true);
-        vielSpaeter.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2027, 6, 1)));
+        vielSpaeter.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2027, 3, 1)));
         vielSpaeter.getGeschaeftsdaten().setReferenzNummer("AB 77001");
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, vielSpaeter));
 
@@ -439,9 +420,9 @@ class BestellungsUebersichtControllerEinordnungTest {
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
-        // Im Fenster „Rechnung suchen“ gilt die Grenze nicht – dort wird im Browser gesucht
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody())
-                .extracting(v -> v.rechnung().id).containsExactly(2L);
+        // Das Fenster „Dokument zur Kette hinzufügen“ reicht ein Jahr weit
+        assertThat(controller.getKettenVorschlaege(List.of(1L), false, null, null, null).getBody())
+                .extracting(v -> v.dokument().id).containsExactly(2L);
     }
 
     @Test
@@ -555,19 +536,20 @@ class BestellungsUebersichtControllerEinordnungTest {
     }
 
     @Test
-    void rechnungVorschlaegeLehntUngueltigeIdsAb() {
-        assertThat(controller.getRechnungsVorschlaege(List.of(), false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.getRechnungsVorschlaege(List.of(-1L), false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.getRechnungsVorschlaege(List.of(0L), false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    void kettenVorschlaegeLehntUngueltigeIdsAb() {
+        assertThat(controller.getKettenVorschlaege(List.of(), false, null, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getKettenVorschlaege(List.of(-1L), false, null, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getKettenVorschlaege(List.of(0L), false, null, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         List<Long> zuViele = java.util.stream.LongStream.rangeClosed(1, 51).boxed().toList();
-        assertThat(controller.getRechnungsVorschlaege(zuViele, false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getKettenVorschlaege(zuViele, false, null, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
-    void rechnungVorschlaegeOhneBestelldokument() {
+    void kettenVorschlaegeOhneBekanntesDokument() {
+        // Es gibt Dokumente, aber nicht das angefragte
         when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.ANGEBOT)));
 
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L, Long.MAX_VALUE), false, null, null).getStatusCode())
+        assertThat(controller.getKettenVorschlaege(List.of(Long.MAX_VALUE), false, null, null, null).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
@@ -625,7 +607,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         when(zugriffService.sichtbareTypen(any(), any())).thenReturn(Optional.empty());
 
         assertThat(controller.getUebersicht("unbekannt", null).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getStatusCode())
+        assertThat(controller.getKettenVorschlaege(List.of(1L), false, null, null, null).getStatusCode())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
         verifyNoInteractions(dokumentRepository);
     }
@@ -647,11 +629,11 @@ class BestellungsUebersichtControllerEinordnungTest {
     }
 
     @Test
-    void rechnungsvorschlaegeFuerNichtSichtbaresDokumentGeben404() {
+    void kettenVorschlaegeFuerNichtSichtbaresDokumentGeben404() {
         sichtbar(LieferantDokumentTyp.RECHNUNG);
         when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN)));
 
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getStatusCode())
+        assertThat(controller.getKettenVorschlaege(List.of(1L), false, null, null, null).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
 

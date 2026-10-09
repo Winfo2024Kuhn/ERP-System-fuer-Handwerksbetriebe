@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungsUebersichtDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.KettenVorschlagDto;
-import org.example.kalkulationsprogramm.dto.Bestellung.RechnungsVorschlagDto;
 import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.BelegAbgelehntException;
 import org.example.kalkulationsprogramm.service.BelegService;
@@ -78,37 +77,6 @@ public class BestellungsUebersichtController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         return ResponseEntity.ok(bestellungsUebersichtService.ladeUebersicht(sichtbareTypen.get()));
-    }
-
-    /**
-     * Rechnungen, bewertet gegen die Dokumente einer Bestellung – beste zuerst,
-     * bei gleicher Quote die zeitlich nächste. Für das Fenster „Rechnung suchen“.
-     *
-     * <p>Kandidaten sind alle Rechnungen desselben Lieferanten, auch ausgeblendete,
-     * bezahlte und schon anderswo verknüpfte (Teillieferungen, Teilrechnungen).
-     * Rechnungen, die schon in dieser Kette hängen, fehlen.
-     *
-     * @param dokumentIds     die Dokumente der Bestellungs-Kette (AB, Lieferschein, …)
-     * @param alleLieferanten auch Rechnungen anderer Lieferanten (KI hat den
-     *                        Lieferanten falsch erkannt)
-     */
-    @GetMapping("/rechnung-vorschlaege")
-    public ResponseEntity<List<RechnungsVorschlagDto>> getRechnungsVorschlaege(
-            @RequestParam("dokumentIds") List<Long> dokumentIds,
-            @RequestParam(value = "alleLieferanten", defaultValue = "false") boolean alleLieferanten,
-            @RequestParam(value = "token", required = false) String token,
-            Authentication auth) {
-        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
-        if (sichtbareTypen.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        if (dokumentIds == null || dokumentIds.isEmpty() || dokumentIds.size() > MAX_KETTEN_DOKUMENTE
-                || dokumentIds.stream().anyMatch(id -> id == null || id <= 0)) {
-            return ResponseEntity.badRequest().build();
-        }
-        return bestellungsUebersichtService.rechnungsVorschlaege(dokumentIds, alleLieferanten, sichtbareTypen.get())
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /**

@@ -3,10 +3,8 @@ package org.example.kalkulationsprogramm.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,7 +49,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  *
  * <p>Die eigentliche Bewertung (Trefferquote) liegt im {@link RechnungsVorschlagService}
  * und ist hier gemockt – geprüft wird nur, welche Rechnungen der Service ihm vorlegt
- * und was er aus den Ergebnissen macht. Alle Namen und Nummern sind erfunden.
+ * und was er aus den Ergebnissen macht. Die Suche „Dokument zur Kette hinzufügen“
+ * ({@code KettenVorschlaege}) läuft dagegen mit dem echten {@link KettenVorschlagService}.
+ * Alle Namen und Nummern sind erfunden.
  */
 @ExtendWith(MockitoExtension.class)
 class BestellungsUebersichtServiceTest {
@@ -115,30 +115,6 @@ class BestellungsUebersichtServiceTest {
             assertThat(dto.abgeschlossen()).isEmpty();
             assertThat(dto.zugeordnet()).isEmpty();
             assertThat(dto.ausgeblendet()).isEmpty();
-        }
-
-        @Test
-        void rechnungsvorschlaegeKennenKeineNichtSichtbarenRechnungen() {
-            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
-            LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
-            when(dokumentRepository.findAll()).thenReturn(List.of(ls, re));
-            when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
-                    .thenReturn(List.of());
-
-            service.rechnungsVorschlaege(List.of(1L), true, EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN));
-
-            verify(rechnungsVorschlagService).bewerte(anyCollection(), kandidatenCaptor.capture(), any(), any());
-            assertThat(kandidatenCaptor.getValue()).isEmpty();
-        }
-
-        @Test
-        void rechnungsvorschlaegeFuerNichtSichtbaresBestelldokumentSindLeer() {
-            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
-            when(dokumentRepository.findAll()).thenReturn(List.of(ls));
-
-            assertThat(service.rechnungsVorschlaege(List.of(1L), false, EnumSet.of(LieferantDokumentTyp.RECHNUNG)))
-                    .isEmpty();
-            verify(rechnungsVorschlagService, never()).bewerte(anyCollection(), anyCollection(), any(), any());
         }
     }
 
@@ -328,89 +304,6 @@ class BestellungsUebersichtServiceTest {
     }
 
     @Nested
-    class RechnungSuchen {
-
-        @Test
-        void ohneBestelldokumentIstDasErgebnisLeer() {
-            LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
-            when(dokumentRepository.findAll()).thenReturn(List.of(re));
-
-            assertThat(service.rechnungsVorschlaege(List.of(2L, 99L), false, ALLE_TYPEN)).isEmpty();
-            verify(rechnungsVorschlagService, never()).bewerte(anyCollection(), anyCollection(), any(), any());
-        }
-
-        @Test
-        void kandidatenSindRechnungenDesLieferantenOhneDieDerKette() {
-            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
-            LieferantDokument schonDran = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
-            verknuepfe(schonDran, ls);
-            LieferantDokument frei = dokument(3L, LieferantDokumentTyp.RECHNUNG, LocalDate.of(2020, 1, 1));
-            frei.setAusgeblendet(true);
-            LieferantDokument fremd = dokument(4L, LieferantDokumentTyp.RECHNUNG, null);
-            fremd.setLieferant(andererLieferant);
-            when(dokumentRepository.findAll()).thenReturn(List.of(ls, schonDran, frei, fremd));
-            when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
-                    .thenReturn(List.of());
-
-            assertThat(service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN)).contains(List.of());
-            service.rechnungsVorschlaege(List.of(1L), true, ALLE_TYPEN);
-
-            verify(rechnungsVorschlagService, times(2)).bewerte(anyCollection(), kandidatenCaptor.capture(),
-                    any(), any());
-            // Auch alte und ausgeblendete Rechnungen – hier gilt kein Zeitfenster
-            assertThat(kandidatenCaptor.getAllValues().get(0)).containsExactly(frei);
-            assertThat(kandidatenCaptor.getAllValues().get(1)).containsExactlyInAnyOrder(frei, fremd);
-        }
-
-        @Test
-        void ohneLieferantGibtEsKeinUmfeldUndKeineKandidaten() {
-            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
-            ls.setLieferant(null);
-            LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
-            when(dokumentRepository.findAll()).thenReturn(List.of(ls, re));
-            when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
-                    .thenReturn(List.of());
-
-            assertThat(service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN)).contains(List.of());
-
-            verify(rechnungsVorschlagService).bewerte(anyCollection(), kandidatenCaptor.capture(),
-                    isNull(), any());
-            assertThat(kandidatenCaptor.getValue()).isEmpty();
-        }
-
-        @Test
-        void gleichstandMitDemNachbarnIstNichtEindeutig() {
-            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
-            LieferantDokument a = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
-            LieferantDokument b = dokument(3L, LieferantDokumentTyp.RECHNUNG, null);
-            LieferantDokument c = dokument(4L, LieferantDokumentTyp.RECHNUNG, null);
-            when(dokumentRepository.findAll()).thenReturn(List.of(ls, a, b, c));
-            when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
-                    .thenReturn(List.of(vorschlag(a, ls, 90), vorschlag(b, ls, 70), vorschlag(c, ls, 70)));
-
-            List<RechnungsVorschlagDto> liste = service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN).orElseThrow();
-
-            assertThat(liste).extracting(RechnungsVorschlagDto::eindeutig).containsExactly(true, false, false);
-            assertThat(liste).extracting(v -> v.rechnung().id).containsExactly(2L, 3L, 4L);
-        }
-
-        @Test
-        void zeigtHoechstensDieMaximaleAnzahl() {
-            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
-            LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
-            when(dokumentRepository.findAll()).thenReturn(List.of(ls, re));
-            List<RechnungsVorschlagService.Vorschlag> viele = new ArrayList<>();
-            for (int i = 0; i < BestellungsUebersichtService.MAX_VORSCHLAEGE + 5; i++) {
-                viele.add(vorschlag(re, ls, 50));
-            }
-            when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any())).thenReturn(viele);
-
-            assertThat(service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN).orElseThrow())
-                    .hasSize(BestellungsUebersichtService.MAX_VORSCHLAEGE);
-        }
-    }
-
-    @Nested
     class Kartenfenster {
 
         private final List<LocalDate> bestellung = List.of(LocalDate.of(2026, 3, 1));
@@ -538,6 +431,7 @@ class BestellungsUebersichtServiceTest {
             assertThat(liste.get(0).kettenDokumentId()).isEqualTo(2L);
             assertThat(liste.get(0).kettenDokumentNummer()).isEqualTo("90445744/01");
             assertThat(liste.get(0).sicher()).isTrue();
+            assertThat(liste.get(0).eindeutig()).isTrue();
             assertThat(liste.get(0).lieferantName()).isEqualTo("Max Mustermann GmbH");
         }
 
@@ -615,6 +509,53 @@ class BestellungsUebersichtServiceTest {
             assertThat(service.kettenVorschlaege(List.of(1L), false, null, EnumSet.of(LieferantDokumentTyp.RECHNUNG)))
                     .isEmpty();
         }
+
+        @Test
+        void unbekannteIdsGebenKeinErgebnis() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls));
+
+            assertThat(service.kettenVorschlaege(List.of(98L, 99L), false, null, ALLE_TYPEN)).isEmpty();
+        }
+
+        @Test
+        void ohneLieferantGibtEsNurMitAlleLieferantenKandidaten() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            ls.setLieferant(null);
+            LieferantDokument zeugnis = dokument(2L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, zeugnis));
+
+            assertThat(service.kettenVorschlaege(List.of(1L), false, null, ALLE_TYPEN).orElseThrow()).isEmpty();
+            assertThat(service.kettenVorschlaege(List.of(1L), true, null, ALLE_TYPEN).orElseThrow())
+                    .extracting(v -> v.dokument().id).containsExactly(2L);
+        }
+
+        @Test
+        void gleichstandMitDemNachbarnIstNichtEindeutig() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            LieferantDokument a = dokument(2L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung);
+            LieferantDokument b = dokument(3L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, a, b));
+
+            var liste = service.kettenVorschlaege(List.of(1L), false, null, ALLE_TYPEN).orElseThrow();
+
+            assertThat(liste).hasSize(2);
+            assertThat(liste).extracting(v -> v.trefferquote()).containsOnly(liste.get(0).trefferquote());
+            assertThat(liste).extracting(v -> v.eindeutig()).containsOnly(false);
+        }
+
+        @Test
+        void zeigtHoechstensDieMaximaleAnzahl() {
+            List<LieferantDokument> alle = new ArrayList<>();
+            alle.add(dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung));
+            for (int i = 0; i < BestellungsUebersichtService.MAX_VORSCHLAEGE + 5; i++) {
+                alle.add(dokument(10L + i, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung));
+            }
+            when(dokumentRepository.findAll()).thenReturn(alle);
+
+            assertThat(service.kettenVorschlaege(List.of(1L), false, null, ALLE_TYPEN).orElseThrow())
+                    .hasSize(BestellungsUebersichtService.MAX_VORSCHLAEGE);
+        }
     }
 
     private static Lieferanten lieferant(long id, String name) {
@@ -643,11 +584,5 @@ class BestellungsUebersichtServiceTest {
     private static void verknuepfe(LieferantDokument nachfolger, LieferantDokument vorgaenger) {
         nachfolger.getVerknuepfteDokumente().add(vorgaenger);
         vorgaenger.getVerknuepftVon().add(nachfolger);
-    }
-
-    private static RechnungsVorschlagService.Vorschlag vorschlag(LieferantDokument rechnung,
-            LieferantDokument bestellung, int quote) {
-        return new RechnungsVorschlagService.Vorschlag(rechnung, bestellung,
-                new LieferantDokumentAbgleich.Einschaetzung(quote, false, List.of()));
     }
 }
