@@ -32,7 +32,7 @@
     "@tiptap/starter-kit": "^3.13.0",
     "chart.js": "^4.5.1",
     "clsx": "^2.1.1",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.16",
     "lucide-react": "^0.555.0",
     "react": "^19.2.0",
     "react-chartjs-2": "^5.3.1",
@@ -64,5 +64,8 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.3.6",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "postcss-selector-parser": "^7.1.6"
   }
 }
