@@ -7,6 +7,7 @@ export type KettenDokumentTyp =
     | 'ANGEBOT'
     | 'AUFTRAGSBESTAETIGUNG'
     | 'LIEFERSCHEIN'
+    | 'WERKSTOFFZEUGNIS'
     | 'RECHNUNG'
     | 'GUTSCHRIFT'
     | 'SONSTIG';
@@ -33,6 +34,7 @@ export const TYP_LABELS: Record<KettenDokumentTyp, string> = {
     ANGEBOT: 'Angebot',
     AUFTRAGSBESTAETIGUNG: 'AB',
     LIEFERSCHEIN: 'Lieferschein',
+    WERKSTOFFZEUGNIS: 'Werkstoffzeugnis',
     RECHNUNG: 'Rechnung',
     GUTSCHRIFT: 'Gutschrift',
     SONSTIG: 'Sonstiges',
@@ -109,7 +111,10 @@ const STUFE: Partial<Record<KettenDokumentTyp, number>> = {
     GUTSCHRIFT: 4,
 };
 
-/** Wie weit die Bestellung ist: 1 Angebot, 2 bestellt, 3 geliefert, 4 Rechnung da (0 = unklar). */
+/**
+ * Wie weit die Bestellung ist: 1 Angebot, 2 bestellt, 3 geliefert, 4 Rechnung da (0 = unklar).
+ * Ein Werkstoffzeugnis bringt die Bestellung nicht weiter – es zählt weder als Lieferung noch als Rechnung.
+ */
 export function fortschrittsStufe(kette: Kette): number {
     return kette.dokumente.reduce((max, dok) => Math.max(max, STUFE[dok.typ] ?? 0), 0);
 }

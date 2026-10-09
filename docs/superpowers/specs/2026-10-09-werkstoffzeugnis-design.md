@@ -63,13 +63,16 @@ Die Spalten-Collation `utf8mb4_unicode_ci` macht `LIKE` ohnehin groß/klein-unab
   (Regel bisher nur Rechnung → AB/LS, gilt nun auch Zeugnis → LS/AB),
   **gleiche Charge** (≥ 5 Zeichen, normalisiert) auf LS- und Zeugnis-Position.
 - **Hinweis (Scoring)**, Schwelle **60** (ohne jedes Datum: 80):
-  - Kommission 40 (vorhanden), Positionen bis 70 (vorhanden; Werkstoff+Abmessung fließen
-    in den Vergleichstext), **neu** gleicher Werkstoff *und* gleiche Abmessung 30.
+  - Kommission 40 (vorhanden), Positionen bis 70 (vorhanden, unverändert), **neu** gleicher
+    Werkstoff *und* gleiche Abmessung in einer Position 30 (Werkstoff ohne Lieferzustand
+    hinter „+“). Werkstoff/Abmessung bewusst NICHT im Wortvergleich: Die Jaccard-Ähnlichkeit
+    würde durch einseitige Wörter sinken.
   - **Zeitabstand**: kleinerer Abstand von Zeugnisdatum *oder* Eingangsdatum
     (`uploadDatum`) zum LS-/AB-Datum. ≤ 3 Tage +30, ≤ 14 +20, ≤ 30 +10,
     > 60 Tage → kein Hinweis-Treffer. Nähe allein erreicht die Schwelle nie.
   - Bestehende Schutzregeln: nur eindeutig führender Kandidat, Hinweis füllt nur Lücke,
     Sperren von Hand gelöster Paare gelten.
+  - Hinweis-Treffer nur zum Lieferschein; an die AB hängt ein Zeugnis nur über einen sicheren Bezug.
 - Abgrenzung (Tests): Zeugnis zählt nie als Rechnung/„erledigt“, nicht in offenen Posten,
   Rechnungsvorschlägen, Beleg-Auto-Eingangsrechnung, Betragsvorzeichen.
 
@@ -85,8 +88,10 @@ Die Spalten-Collation `utf8mb4_unicode_ci` macht `LIKE` ohnehin groß/klein-unab
 - **API-Vertrag**
   - `GET /api/lieferanten/{id}/dokumente/positionssuche?q=…&token=…`
     → `[{ "dokumentId": 1, "trefferText": "Flachstahl 50x5 · S235JR · Charge 123456", "weitereTreffer": 2 }]`.
-    Rechte wie `GET /{id}/dokumente` (mit Token: nur sichtbare Typen). Unbekannter Lieferant → 404.
-  - `GET /api/dokumentuebersicht/eingang?search=…` findet zusätzlich Positionstreffer sowie
+    Nur mit Anmeldung (gültiger Token → nur sichtbare Typen; angemeldete PC-Sitzung → alle Typen
+    wie `GET /{id}/dokumente`), sonst 401. Unbekannter Lieferant → 404.
+  - `GET /api/dokumentuebersicht/eingang?search=…` findet zusätzlich Positionstreffer (mit denselben
+    Jahr/Monat-, Typ- und Lieferantenfiltern wie die Liste) sowie
     Referenz-, Bestellnummer und Kommission. Jedes Element bekommt
     `positionsTreffer: string | null` und `weitereTreffer: number`.
   - Positionen-DTO (`/api/bestellungen-uebersicht/positionen/{gdId}`) liefert zusätzlich

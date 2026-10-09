@@ -167,6 +167,7 @@ const DOKUMENT_TYP_LABELS: Record<string, string> = {
     RECHNUNG: 'Rechnung',
     GUTSCHRIFT: 'Gutschrift',
     LIEFERSCHEIN: 'Lieferschein',
+    WERKSTOFFZEUGNIS: 'Werkstoffzeugnis',
     ANGEBOT: 'Angebot',
     AUFTRAGSBESTAETIGUNG: 'Auftragsbestätigung',
     MAHNUNG: 'Mahnung',

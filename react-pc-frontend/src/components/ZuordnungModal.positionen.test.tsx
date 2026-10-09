@@ -194,6 +194,15 @@ describe('ZuordnungModal – Aufteilung nach Positionen', () => {
         expect(modusKnopf()).toBeNull();
     });
 
+    it('bietet den Modus bei einem Werkstoffzeugnis nicht an – es hat keine Preise', async () => {
+        richteEin({ positionen: uebersicht({ dokumentTyp: 'WERKSTOFFZEUGNIS', auslesbar: true }) });
+        render(<ZuordnungModal {...props} />);
+
+        await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/positionen/1'))).toBe(true));
+        await waitFor(() => expect(screen.getByText('Verteilungsmodus:')).toBeInTheDocument());
+        expect(modusKnopf()).toBeNull();
+    });
+
     it('lädt die Positionen und zeigt Ware mit Auswahl, Nebenkosten ohne', async () => {
         richteEin({ positionen: uebersicht(), zuordnungen: ZWEI_PROJEKTE });
         render(<ZuordnungModal {...props} />);

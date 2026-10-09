@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     baueAufteilung,
+    nachPositionenAufteilbar,
     offeneWarenpositionen,
     zuweisungenAusPositionen,
     type DokumentPosition,
@@ -26,7 +27,7 @@ export interface PositionsAufteilung {
     /** Positionen des Dokuments; `null` solange nicht geladen oder bei Fehler. */
     uebersicht: PositionsUebersicht | null;
     positionen: DokumentPosition[];
-    /** Modus „Nach Positionen“ ist sinnvoll: Positionen da oder auslesbar. */
+    /** Modus „Nach Positionen“ ist sinnvoll: Positionen da oder auslesbar, kein Werkstoffzeugnis. */
     verfuegbar: boolean;
     laden: () => Promise<PositionsUebersicht | null>;
 
@@ -187,7 +188,8 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
         if (!res.ok) throw new Error(await fehlertext(res, 'Die Aufteilung konnte nicht gespeichert werden.'));
     }, [geschaeftsdokumentId, aufteilung]);
 
-    const verfuegbar = uebersicht != null && (uebersicht.auslesbar || positionen.length > 0);
+    // Werkstoffzeugnisse haben keine Preise – dort gibt es den Modus nicht
+    const verfuegbar = nachPositionenAufteilbar(uebersicht);
 
     return {
         uebersicht,

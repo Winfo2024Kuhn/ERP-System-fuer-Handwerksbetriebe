@@ -45,11 +45,13 @@ public class LieferantDokumentPositionService {
             LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG,
             LieferantDokumentTyp.LIEFERSCHEIN,
             LieferantDokumentTyp.RECHNUNG,
-            LieferantDokumentTyp.GUTSCHRIFT);
+            LieferantDokumentTyp.GUTSCHRIFT,
+            LieferantDokumentTyp.WERKSTOFFZEUGNIS);
 
     static final int MAX_BEZEICHNUNG = 500;
     static final int MAX_ARTIKELNUMMER = 64;
     static final int MAX_EINHEIT = 20;
+    static final int MAX_ZEUGNISFELD = 100;
     /** Schutz gegen ausufernde KI-Antworten. */
     static final int MAX_POSITIONEN = 2000;
 
@@ -101,6 +103,9 @@ public class LieferantDokumentPositionService {
             p.setEinzelpreis(passend(a.einzelpreis(), 15, 4));
             p.setPreiseinheit(kuerze(a.preiseinheit(), MAX_EINHEIT));
             p.setGesamtpreisNetto(passend(a.gesamtpreisNetto(), 15, 2));
+            p.setWerkstoff(kuerze(a.werkstoff(), MAX_ZEUGNISFELD));
+            p.setCharge(kuerze(a.charge(), MAX_ZEUGNISFELD));
+            p.setAbmessung(kuerze(a.abmessung(), MAX_ZEUGNISFELD));
             neu.add(p);
         }
         positionRepository.saveAll(neu);
@@ -143,7 +148,8 @@ public class LieferantDokumentPositionService {
             }
             ergebnis.add(new AusgelesenePosition(art, artikelnummer, bezeichnung,
                     betrag(pos.get("menge")), text(pos, "mengeneinheit"),
-                    betrag(pos.get("einzelpreis")), text(pos, "preiseinheit"), gesamt));
+                    betrag(pos.get("einzelpreis")), text(pos, "preiseinheit"), gesamt,
+                    text(pos, "werkstoff"), text(pos, "charge"), text(pos, "abmessung")));
         }
         return ergebnis;
     }
@@ -208,6 +214,9 @@ public class LieferantDokumentPositionService {
             o.put("einzelpreis", p.einzelpreis());
             o.put("preiseinheit", p.preiseinheit());
             o.put("gesamtpreisNetto", p.gesamtpreisNetto());
+            o.put("werkstoff", p.werkstoff());
+            o.put("charge", p.charge());
+            o.put("abmessung", p.abmessung());
         }
         return liste;
     }

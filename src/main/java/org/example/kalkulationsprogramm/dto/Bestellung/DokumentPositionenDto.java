@@ -32,7 +32,10 @@ public final class DokumentPositionenDto {
             Long projektId,
             String projektName,
             Long kostenstelleId,
-            String kostenstelleName) {
+            String kostenstelleName,
+            String werkstoff,
+            String charge,
+            String abmessung) {
     }
 
     /**

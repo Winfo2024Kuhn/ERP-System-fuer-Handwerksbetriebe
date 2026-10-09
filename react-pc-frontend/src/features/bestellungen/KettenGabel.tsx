@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Clock, File, FileCheck, FileSearch, FileText, Receipt, RefreshCw, Truck, Unlink, type LucideIcon } from 'lucide-react';
+import { Clock, File, FileBadge, FileCheck, FileSearch, FileText, Receipt, RefreshCw, Truck, Unlink, type LucideIcon } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useConfirm } from '../../components/ui/confirm-dialog';
 import { useToast } from '../../components/ui/toast';
@@ -43,6 +43,7 @@ const GABEL_ICONS: Record<KettenDokumentTyp, LucideIcon> = {
     ANGEBOT: FileText,
     AUFTRAGSBESTAETIGUNG: FileCheck,
     LIEFERSCHEIN: Truck,
+    WERKSTOFFZEUGNIS: FileBadge,
     RECHNUNG: Receipt,
     GUTSCHRIFT: Receipt,
     SONSTIG: File,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baueKettenGraph, gruppiereNachRechnung, istRechnungsTyp, juengstesBestellDokument, linearerGraph, type GraphDokument, type KettenGruppierung } from './kettenGraph';
+import { GABEL_LABELS, baueKettenGraph, gruppiereNachRechnung, istBegleitTyp, istRechnungsTyp, juengstesBestellDokument, linearerGraph, type GraphDokument, type KettenGruppierung } from './kettenGraph';
 
 function dok(id: number, typ: GraphDokument['typ'], datum: string | null, extra: Partial<GraphDokument> = {}): GraphDokument {
     return { id, typ, dokumentDatum: datum, ...extra };
@@ -188,6 +188,12 @@ describe('juengstesBestellDokument', () => {
 
     it('liefert null ohne Bestelldokument', () => {
         expect(juengstesBestellDokument([RE, dok(12, 'SONSTIG', null)])).toBeNull();
+        expect(juengstesBestellDokument([RE, dok(13, 'WERKSTOFFZEUGNIS', '2026-09-01')])).toBeNull();
+    });
+
+    it('hängt eine Rechnung nie an ein Werkstoffzeugnis, auch wenn es jünger ist', () => {
+        const zeugnis = dok(14, 'WERKSTOFFZEUGNIS', '2026-08-12');
+        expect(juengstesBestellDokument([AB, LS, zeugnis])?.id).toBe(LS.id);
     });
 });
 
@@ -196,6 +202,48 @@ describe('istRechnungsTyp', () => {
         expect(istRechnungsTyp('RECHNUNG')).toBe(true);
         expect(istRechnungsTyp('GUTSCHRIFT')).toBe(true);
         expect(istRechnungsTyp('LIEFERSCHEIN')).toBe(false);
+        expect(istRechnungsTyp('WERKSTOFFZEUGNIS')).toBe(false);
+    });
+});
+
+describe('Werkstoffzeugnis in der Kette', () => {
+    const ZEUGNIS = dok(5, 'WERKSTOFFZEUGNIS', '2026-08-11');
+
+    it('ist ein Begleitpapier mit eigener Beschriftung', () => {
+        expect(istBegleitTyp('WERKSTOFFZEUGNIS')).toBe(true);
+        expect(istBegleitTyp('LIEFERSCHEIN')).toBe(false);
+        expect(GABEL_LABELS.WERKSTOFFZEUGNIS).toBe('Werkstoffzeugnis');
+    });
+
+    it('steht direkt nach dem Lieferschein und vor Sonstigem und der Rechnung', () => {
+        const sonstig = dok(6, 'SONSTIG', '2026-08-01');
+        const graph = baueKettenGraph([RE, sonstig, ZEUGNIS, LS, AB], [{ vonId: 3, zuId: 2 }, { vonId: 2, zuId: 1 }, { vonId: 5, zuId: 2 }]);
+        expect(graph.zeilen.map(z => z.dokument?.id)).toEqual([1, 2, 5, 6, 3]);
+        expect(graph.zeilen.find(z => z.dokument?.id === 5)?.istRechnung).toBe(false);
+    });
+
+    it('lose Rechnung hängt am Lieferschein, nicht am Zeugnis darüber', () => {
+        const graph = baueKettenGraph([AB, LS, ZEUGNIS, RE], [{ vonId: 2, zuId: 1 }, { vonId: 5, zuId: 2 }]);
+        // Zeilen: AB 0, LS 1, Zeugnis 2, Rechnung 3
+        expect(graph.kanten.some(k => k.vonZeile === 1 && k.zuZeile === 3)).toBe(true);
+        expect(graph.kanten.some(k => k.vonZeile === 2 && k.zuZeile === 3)).toBe(false);
+    });
+
+    it('lose Rechnung hängt ersatzweise am Zeugnis, wenn sonst nichts davor steht', () => {
+        const graph = baueKettenGraph([ZEUGNIS, RE], []);
+        expect(kurz(graph)).toEqual([[0, 1, 0]]);
+    });
+
+    it('offenes Ende: der Lieferschein bleibt offen, das Zeugnis führt nicht zur fehlenden Rechnung', () => {
+        const graph = baueKettenGraph([AB, LS, ZEUGNIS], [{ vonId: 2, zuId: 1 }, { vonId: 5, zuId: 2 }], { offenesEnde: true });
+        // Zeilen: AB 0, LS 1, Zeugnis 2, offen 3
+        const gestrichelt = graph.kanten.filter(k => k.gestrichelt);
+        expect(gestrichelt.map(k => [k.vonZeile, k.zuZeile])).toEqual([[1, 3]]);
+    });
+
+    it('offenes Ende nur mit Zeugnis: fällt auf das letzte Dokument zurück', () => {
+        const graph = baueKettenGraph([ZEUGNIS], [], { offenesEnde: true });
+        expect(graph.kanten.filter(k => k.gestrichelt).map(k => [k.vonZeile, k.zuZeile])).toEqual([[0, 1]]);
     });
 });
 

@@ -87,6 +87,7 @@ public class LieferantenController {
     private final LieferantenDetailService lieferantenDetailService;
     private final LieferantArtikelpreisService artikelpreisService;
     private final LieferantDokumentService dokumentService;
+    private final org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
     private final org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     private final org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
@@ -646,6 +647,30 @@ public class LieferantenController {
         // Ohne Token: Alle Dokumente des Lieferanten laden
         var dokumente = dokumentService.getDokumenteByLieferant(id, typ);
         return ResponseEntity.ok(dokumente);
+    }
+
+    /**
+     * Sucht Dokumente des Lieferanten über ihre Positionen (Material, Werkstoff,
+     * Charge, Abmessung, Artikelnummer). Nur mit Anmeldung: gültiger Token (dann
+     * nur die für den Mitarbeiter sichtbaren Dokumenttypen) oder angemeldete
+     * PC-Sitzung (dann wie {@link #listDokumente} ohne Token alle Typen).
+     */
+    @GetMapping("/{id}/dokumente/positionssuche")
+    public ResponseEntity<List<org.example.kalkulationsprogramm.dto.PositionsTrefferDto>> suchePositionen(
+            @PathVariable Long id,
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "token", required = false) String token,
+            org.springframework.security.core.Authentication auth) {
+        var mitarbeiter = mitarbeiterByToken(token);
+        if (mitarbeiter == null && !(auth != null && auth.isAuthenticated()
+                && auth.getPrincipal() instanceof org.example.kalkulationsprogramm.config.FrontendUserPrincipal)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!lieferantenRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(dokumentSucheService.sucheBeiLieferant(id, q,
+                mitarbeiter != null ? mitarbeiter.getId() : null));
     }
 
     /**

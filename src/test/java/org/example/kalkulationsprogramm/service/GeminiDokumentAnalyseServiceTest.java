@@ -80,6 +80,8 @@ class GeminiDokumentAnalyseServiceTest {
             "ANGEBOT (Kopie), ANGEBOT",
             "auftragsbestaetigung (kopie), AUFTRAGSBESTAETIGUNG",
             "LIEFERSCHEIN (Kopie), LIEFERSCHEIN",
+            "WERKSTOFFZEUGNIS, WERKSTOFFZEUGNIS",
+            "Werkstoffzeugnis (Kopie), WERKSTOFFZEUGNIS",
             "RECHNUNG, RECHNUNG",
             "RECHNUNG (Kopie), null",
             "GUTSCHRIFT (Kopie), null",

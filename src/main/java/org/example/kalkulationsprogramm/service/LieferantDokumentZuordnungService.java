@@ -497,7 +497,8 @@ public class LieferantDokumentZuordnungService {
                 p.getProjekt() != null ? p.getProjekt().getId() : null,
                 p.getProjekt() != null ? p.getProjekt().getBauvorhaben() : null,
                 p.getKostenstelle() != null ? p.getKostenstelle().getId() : null,
-                p.getKostenstelle() != null ? p.getKostenstelle().getBezeichnung() : null);
+                p.getKostenstelle() != null ? p.getKostenstelle().getBezeichnung() : null,
+                p.getWerkstoff(), p.getCharge(), p.getAbmessung());
     }
 
     private static DokumentPositionenDto.ZielBetrag alsDto(PositionsAufteilung.ZielBetrag zb) {

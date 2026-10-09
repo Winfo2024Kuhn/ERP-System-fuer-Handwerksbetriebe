@@ -13,6 +13,7 @@ import {
     Edit2,
     Euro,
     File,
+    FileBadge,
     FileText,
     FolderOpen,
     Hammer,
@@ -2218,6 +2219,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                 NACHTRAGSANGEBOT: { label: 'Nachtrag', color: 'text-slate-700', bg: 'bg-slate-100', border: 'border-slate-300' },
                                                                 AUFTRAGSBESTAETIGUNG: { label: 'AB', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
                                                                 LIEFERSCHEIN: { label: 'Lieferschein', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+                                                                WERKSTOFFZEUGNIS: { label: 'Werkstoffzeugnis', color: 'text-slate-700', bg: 'bg-slate-100', border: 'border-slate-300' },
                                                                 RECHNUNG: { label: 'Rechnung', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
                                                                 GUTSCHRIFT: { label: 'Gutschrift', color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200' },
                                                                 SONSTIG: { label: 'Sonstiges', color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' },
@@ -2231,7 +2233,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                         className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${cfg.bg} ${cfg.color} ${cfg.border} hover:opacity-80 transition-opacity`}
                                                                         title={kd.dokumentNummer ? `${cfg.label} ${kd.dokumentNummer}` : cfg.label}
                                                                     >
-                                                                        <File className="w-3 h-3" />
+                                                                        {kd.typ === 'WERKSTOFFZEUGNIS' ? <FileBadge className="w-3 h-3" aria-hidden="true" /> : <File className="w-3 h-3" />}
                                                                         <span className="font-medium">{cfg.label}</span>
                                                                         {kd.dokumentNummer && <span className="opacity-70">#{kd.dokumentNummer}</span>}
                                                                         {kd.betragNetto != null && (

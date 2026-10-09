@@ -8,7 +8,7 @@ import { useToast } from '../components/ui/toast';
 import { ZuordnungModal as BelegZuordnungModal } from '../components/ZuordnungModal';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { RechnungSuchenDialog } from '../features/bestellungen/RechnungSuchenDialog';
-import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter } from '../features/bestellungen/bestellungenListe';
+import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter, type KettenDokumentTyp } from '../features/bestellungen/bestellungenListe';
 import { TREFFER_KLASSEN, formatiereQuote, rechnungVerknuepfen, rueckfrage, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
 import { KettenGabel } from '../features/bestellungen/KettenGabel';
 import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen/kettenGraph';
@@ -16,7 +16,7 @@ import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen
 // ========== Types ==========
 interface DokumentRef {
     id: number;
-    typ: 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
+    typ: KettenDokumentTyp;
     dokumentNummer: string | null;
     dokumentDatum: string | null;
     betragBrutto: number | null;
@@ -81,6 +81,7 @@ const TYP_LABELS: Record<DokumentRef['typ'], string> = {
     ANGEBOT: 'Angebot',
     AUFTRAGSBESTAETIGUNG: 'AB',
     LIEFERSCHEIN: 'Lieferschein',
+    WERKSTOFFZEUGNIS: 'Werkstoffzeugnis',
     RECHNUNG: 'Rechnung',
     GUTSCHRIFT: 'Gutschrift',
     SONSTIG: 'Sonstiges',
