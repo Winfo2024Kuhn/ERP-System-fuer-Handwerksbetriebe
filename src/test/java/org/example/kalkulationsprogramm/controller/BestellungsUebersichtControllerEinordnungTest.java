@@ -78,6 +78,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         lenient().when(geschaeftsdokumentRepository.findAll()).thenReturn(List.of());
         lenient().when(zugriffService.sichtbareTypen(any(), any()))
                 .thenReturn(Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)));
+        lenient().when(zugriffService.istSichtbar(any(), any())).thenReturn(true);
     }
 
     @Test

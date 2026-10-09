@@ -893,6 +893,9 @@ public class LieferantenController {
         if (sichtbareTypen.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        if (verknuepfteIds == null || verknuepfteIds.contains(null)) {
+            return ResponseEntity.badRequest().build();
+        }
         var typen = sichtbareTypen.get();
         var quelle = lieferantDokumentRepository.findById(dokumentId).orElse(null);
         if (quelle == null || !typen.contains(quelle.getTyp()) || quelle.getLieferant() == null

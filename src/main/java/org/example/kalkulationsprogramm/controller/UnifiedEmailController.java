@@ -1120,7 +1120,13 @@ public class UnifiedEmailController {
     // ═══════════════════════════════════════════════════════════════
 
     @GetMapping("/{emailId}/attachments/download-all")
-    public ResponseEntity<byte[]> downloadAllAttachments(@PathVariable Long emailId) {
+    public ResponseEntity<byte[]> downloadAllAttachments(@PathVariable Long emailId,
+            org.springframework.security.core.Authentication authentication) {
+        // Wie beim Einzel-Download: Anhänge gesperrter Lieferanten-Dokumenttypen kommen nicht ins ZIP.
+        var sichtbareTypen = lieferantDokumentZugriffService.sichtbareTypen(null, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
         Email email = emailRepository.findById(emailId).orElse(null);
         if (email == null) {
             return ResponseEntity.notFound().build();
@@ -1128,6 +1134,8 @@ public class UnifiedEmailController {
         if (email.getAttachments() == null || email.getAttachments().isEmpty()) {
             return ResponseEntity.noContent().build();
         }
+        boolean gesperrtesUebersprungen = false;
+        int imZip = 0;
 
         try {
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -1137,6 +1145,10 @@ public class UnifiedEmailController {
             for (EmailAttachment att : email.getAttachments()) {
                 // Skip inline images
                 if (Boolean.TRUE.equals(att.getInlineAttachment())) continue;
+                if (!lieferantDokumentZugriffService.istAnhangSichtbar(att.getId(), sichtbareTypen.get())) {
+                    gesperrtesUebersprungen = true;
+                    continue;
+                }
 
                 java.nio.file.Path path = baseDir.resolve(att.getStoredFilename()).normalize();
                 if (!path.startsWith(baseDir)) {
@@ -1160,6 +1172,11 @@ public class UnifiedEmailController {
                 zos.putNextEntry(new java.util.zip.ZipEntry(filename));
                 java.nio.file.Files.copy(path, zos);
                 zos.closeEntry();
+                imZip++;
+            }
+            if (imZip == 0 && gesperrtesUebersprungen) {
+                // Es gäbe nur Anhänge, die dieser Aufrufer nicht sehen darf: wie "keine Anhänge".
+                return ResponseEntity.noContent().build();
             }
             zos.finish();
             zos.close();

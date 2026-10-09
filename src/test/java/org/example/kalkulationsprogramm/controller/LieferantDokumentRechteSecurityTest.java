@@ -868,4 +868,14 @@ class LieferantDokumentRechteSecurityTest {
                 .andExpect(jsonPath("$.verknuepfteDokumente.length()").value(1))
                 .andExpect(jsonPath("$.verknuepfteDokumente[0].id").value(2));
     }
+
+    @Test
+    @DisplayName("Verknüpfen: null-Element im Body -> 400 statt 500")
+    void verknuepfenNullElementGibt400() throws Exception {
+        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.ADMIN))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[null]"))
+                .andExpect(status().isBadRequest());
+
+        verify(dokumentService, never()).addVerknuepfungen(anyLong(), any());
+    }
 }
