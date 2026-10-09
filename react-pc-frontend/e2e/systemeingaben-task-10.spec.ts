@@ -1,6 +1,7 @@
 import { test, expect } from './hilfen/test';
 import { designPruefung, uebergaengeAusklingenLassen } from './hilfen/design';
 test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', async ({ page }, info) => {
+    await page.clock.install({ time: new Date('2026-10-09T09:00:00Z') });
     const writes: {
         path: string;
         body: Record<string, unknown>;
@@ -81,6 +82,9 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     await designPruefung(page, info, 'task10-beleg', { primaerAktion: save });
     await save.click();
     await expect.poll(() => writes[0]?.body.betragBrutto).toBe(12.5);
+    // Kassenmeldungen bleiben während Layout-, Fokus- und Schließen-Prüfungen
+    // stabil. Sonst kann ihr Ablauf zwischen dem Zählen und dem Klick liegen.
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
     await page.getByRole('button', { name: 'Kassenbuch', exact: true }).click();
     await page.getByRole('button', { name: 'Neue Buchung', exact: true }).click();
     await page.getByRole('button', { name: /Eigenes Geld eingelegt/ }).click();

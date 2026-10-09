@@ -10,7 +10,7 @@ import { JahresvergleichCharts } from '../features/monatsabschluss/Jahresverglei
 import { api } from '../features/monatsabschluss/api';
 import type { Filter, AuswahlStand, Referenz, Uebersicht, Einzelergebnis, Verlauf, Kennzahlen, Zeile, Jahresvergleich } from '../features/monatsabschluss/types';
 const monate = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
-const felder: [keyof Kennzahlen, string][] = [['istStunden', 'Arbeit'], ['urlaubStunden', 'Urlaub'], ['krankheitStunden', 'Krankheit'], ['zeitausgleichStunden', 'Zeit\u00ADausgleich'], ['sonstigeAbwesenheitStunden', 'Sonstige'], ['feiertagsStunden', 'Feiertage'], ['korrekturStunden', 'Korrektur'], ['gesamtIst', 'Gesamt'], ['sollStunden', 'Soll'], ['differenz', 'Differenz']];
+const felder: [keyof Kennzahlen, string][] = [['istStunden', 'Arbeit'], ['urlaubStunden', 'Urlaub'], ['krankheitStunden', 'Krank\u00ADheit'], ['zeitausgleichStunden', 'Zeit\u00ADausgleich'], ['sonstigeAbwesenheitStunden', 'Sonstige'], ['feiertagsStunden', 'Feiertage'], ['korrekturStunden', 'Korrektur'], ['gesamtIst', 'Gesamt'], ['sollStunden', 'Soll'], ['differenz', 'Differenz']];
 const bestandteile = new Set<keyof Kennzahlen>(['istStunden', 'urlaubStunden', 'krankheitStunden', 'zeitausgleichStunden', 'sonstigeAbwesenheitStunden', 'feiertagsStunden', 'korrekturStunden']);
 const zahl = (value: number) => value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const key = (r: Referenz) => `${r.mitarbeiterId}/${r.jahr}/${r.monat}`;
