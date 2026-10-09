@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui/toast';
 import { ConfirmProvider } from '../../components/ui/confirm-dialog';
 import { KettenLinie, type KettenLinieProps } from './KettenLinie';
-import type { KettenLinienDokument } from './kettenLinie';
+import type { KettenLinienDokument } from './kettenLinieLogik';
 import { vergissDokumentPositionen } from './dokumentPositionen';
 
 function dok(id: number, typ: KettenLinienDokument['typ'], nummer: string, datum: string | null, extra: Partial<KettenLinienDokument> = {}): KettenLinienDokument {

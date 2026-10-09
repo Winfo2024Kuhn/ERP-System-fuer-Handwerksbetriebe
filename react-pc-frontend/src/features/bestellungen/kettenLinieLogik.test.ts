@@ -8,7 +8,7 @@ import {
     ordneKettenLinie,
     verbundeneIds,
     type LinienDokument,
-} from './kettenLinie';
+} from './kettenLinieLogik';
 
 function dok(id: number, typ: LinienDokument['typ'], datum: string | null, extra: Partial<LinienDokument> = {}): LinienDokument {
     return { id, typ, dokumentDatum: datum, ...extra };

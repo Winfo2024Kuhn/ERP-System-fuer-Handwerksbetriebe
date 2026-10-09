@@ -68,7 +68,7 @@ import { AnfrageSearchModal } from '../components/AnfrageSearchModal';
 import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
 import { artikelBezeichnung } from '../components/artikel/artikelBezeichnung';
 import { KettenLinie } from '../features/bestellungen/KettenLinie';
-import { alsKettenTyp, type KettenLinienDokument, type KettenVerbindung } from '../features/bestellungen/kettenLinie';
+import { alsKettenTyp, type KettenLinienDokument, type KettenVerbindung } from '../features/bestellungen/kettenLinieLogik';
 
 interface Supplier {
     id: number;

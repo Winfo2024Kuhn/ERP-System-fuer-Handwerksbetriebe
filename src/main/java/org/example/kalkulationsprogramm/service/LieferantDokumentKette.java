@@ -103,7 +103,7 @@ public final class LieferantDokumentKette {
         return verbindungen;
     }
 
-    /** Ablauf-Stufe wie in der Linie im Frontend ({@code kettenLinie.ts}). */
+    /** Ablauf-Stufe wie in der Linie im Frontend ({@code kettenLinieLogik.ts}). */
     private static int stufe(LieferantDokumentTyp typ) {
         return switch (typ) {
             case ANGEBOT -> 0;

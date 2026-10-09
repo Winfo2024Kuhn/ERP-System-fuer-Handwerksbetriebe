@@ -18,7 +18,7 @@ import { positionsSucheAktiv, trefferNachDokument, vereinigeTreffer, type Positi
 import { DokumentSuchenDialog } from "../features/bestellungen/DokumentSuchenDialog";
 import { istVorschlagsTyp, lieferantDokumentAlsBeleg } from "../features/bestellungen/kettenVorschlag";
 import { KettenLinie } from "../features/bestellungen/KettenLinie";
-import { alsKettenTyp, ordneKettenLinie, type KettenLinienDokument, type KettenVerbindung } from "../features/bestellungen/kettenLinie";
+import { alsKettenTyp, ordneKettenLinie, type KettenLinienDokument, type KettenVerbindung } from "../features/bestellungen/kettenLinieLogik";
 
 // Typ-Konfiguration mit Farben
 // icon: nur wo die Farbe allein nicht reicht (Werkstoffzeugnis ist neutral wie Sonstiges, aber mit Zeugnis-Symbol)

@@ -12,7 +12,7 @@ import type { VorschlagsTyp } from '../features/bestellungen/kettenVorschlag';
 import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter, type KettenDokumentTyp } from '../features/bestellungen/bestellungenListe';
 import { TREFFER_KLASSEN, formatiereQuote, rechnungVerknuepfen, rueckfrage, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
 import { KettenLinie } from '../features/bestellungen/KettenLinie';
-import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen/kettenLinie';
+import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen/kettenLinieLogik';
 
 // ========== Types ==========
 interface DokumentRef {

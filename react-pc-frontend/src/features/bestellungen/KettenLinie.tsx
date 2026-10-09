@@ -12,7 +12,7 @@ import {
     verbundeneIds,
     type KettenLinienDokument,
     type KettenVerbindung,
-} from './kettenLinie';
+} from './kettenLinieLogik';
 import { DokumentPositionenListe, PositionenKnopf } from './DokumentPositionenAufklappen';
 import { kannPositionenHaben } from './dokumentPositionen';
 import { RechnungHochladenKnopf } from './RechnungHochladenKnopf';
