@@ -1359,6 +1359,166 @@ class GeminiDokumentAnalyseServiceTest {
         }
 
         @Test
+        @org.junit.jupiter.api.DisplayName("KI-Ergebnis wird vor dem Speichern an sein Dokument gehaengt (@MapsId)")
+        void kiErgebnisKenntSeinDokument() throws Exception {
+            LieferantDokument dokument = musterDokument(610L);
+            stelleKiAntwortBereit(dokument, """
+                    {"dokumentTyp":"RECHNUNG","dokumentNummer":"RE-2026-0610","confidence":0.9}""");
+
+            serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            ArgumentCaptor<LieferantGeschaeftsdokument> gespeichert =
+                    ArgumentCaptor.forClass(LieferantGeschaeftsdokument.class);
+            verify(lieferantGeschaeftsdokumentRepository).saveAndFlush(gespeichert.capture());
+            assertThat(gespeichert.getValue().getDokument()).isSameAs(dokument);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Erneute KI-Analyse aktualisiert vorhandene Geschaeftsdaten statt neue anzulegen")
+        void erneuteKiAnalyseAktualisiertVorhandeneGeschaeftsdaten() throws Exception {
+            LieferantDokument zeugnis = musterDokument(611L);
+            zeugnis.setTyp(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+            LieferantGeschaeftsdokument vorhanden = new LieferantGeschaeftsdokument();
+            vorhanden.setId(611L);
+            vorhanden.setDokument(zeugnis);
+            vorhanden.setBezahlt(true);
+            vorhanden.setManuellePruefungErforderlich(true);
+            zeugnis.setGeschaeftsdaten(vorhanden);
+            stelleKiAntwortBereit(zeugnis, """
+                    {"dokumentTyp":"WERKSTOFFZEUGNIS","dokumentNummer":"ZND-0611","confidence":0.9,
+                     "artikelPositionen":[{"bezeichnung":"Flachstahl","werkstoff":"S235JR","charge":"123456"}]}""");
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(zeugnis);
+
+            assertThat(result).isSameAs(vorhanden);
+            assertThat(vorhanden.getDokumentNummer()).isEqualTo("ZND-0611");
+            assertThat(vorhanden.getManuellePruefungErforderlich()).isFalse();
+            assertThat(vorhanden.getBezahlt()).isTrue();
+            verify(lieferantGeschaeftsdokumentRepository).saveAndFlush(org.mockito.ArgumentMatchers.same(vorhanden));
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(vorhanden),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.WERKSTOFFZEUGNIS),
+                    org.mockito.ArgumentMatchers.argThat(positionen -> positionen != null && positionen.size() == 1));
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("bindeAnDokument: fehlende KI-Werte ueberschreiben vorhandene nicht, Pruefmarke folgt dem Ergebnis")
+        void bindeAnDokumentBehaeltVorhandeneWerte() {
+            LieferantDokument dokument = musterDokument(612L);
+            LieferantGeschaeftsdokument vorhanden = vorhandeneDaten(dokument);
+            vorhanden.setDokumentNummer("ALT-1");
+            vorhanden.setBetragBrutto(new BigDecimal("50.00"));
+            vorhanden.setManuellePruefungErforderlich(true);
+            LieferantGeschaeftsdokument neu = new LieferantGeschaeftsdokument();
+            neu.setDokumentNummer("NEU-1");
+            neu.setAusgelesenePositionen(List.of());
+
+            LieferantGeschaeftsdokument result = GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+
+            assertThat(result).isSameAs(vorhanden);
+            assertThat(result.getDokumentNummer()).isEqualTo("NEU-1");
+            assertThat(result.getBetragBrutto()).isEqualByComparingTo("50.00");
+            // Vollstaendig erkannt: die alte Pruefmarke entfaellt
+            assertThat(result.getManuellePruefungErforderlich()).isFalse();
+            assertThat(result.getAusgelesenePositionen()).isEmpty();
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("bindeAnDokument: Zahlungs-, Freigabe- und Pruefstand bleiben bei Reanalyse erhalten")
+        void bindeAnDokumentBehaeltZahlungsUndFreigabestand() {
+            LieferantDokument dokument = musterDokument(613L);
+            LieferantGeschaeftsdokument vorhanden = vorhandeneDaten(dokument);
+            vorhanden.setBereitsGezahlt(true);
+            vorhanden.setBezahlt(true);
+            vorhanden.setBezahltAm(LocalDate.of(2026, 3, 20));
+            vorhanden.setTatsaechlichGezahlt(new BigDecimal("116.62"));
+            vorhanden.setMitSkonto(true);
+            vorhanden.setGenehmigt(true);
+            vorhanden.setLagerbestellung(true);
+            vorhanden.setVerifiziert(true);
+            LieferantGeschaeftsdokument neu = new LieferantGeschaeftsdokument();
+            neu.setDokumentNummer("RE-2026-0613");
+
+            GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+
+            assertThat(vorhanden.getBereitsGezahlt()).isTrue();
+            assertThat(vorhanden.getBezahlt()).isTrue();
+            assertThat(vorhanden.getBezahltAm()).isEqualTo(LocalDate.of(2026, 3, 20));
+            assertThat(vorhanden.getTatsaechlichGezahlt()).isEqualByComparingTo("116.62");
+            assertThat(vorhanden.getMitSkonto()).isTrue();
+            assertThat(vorhanden.getGenehmigt()).isTrue();
+            assertThat(vorhanden.getLagerbestellung()).isTrue();
+            assertThat(vorhanden.getVerifiziert()).isTrue();
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("bindeAnDokument: KI erkennt Zahlung -> bereits gezahlt wird gesetzt")
+        void bindeAnDokumentUebernimmtErkannteZahlung() {
+            LieferantDokument dokument = musterDokument(614L);
+            LieferantGeschaeftsdokument vorhanden = vorhandeneDaten(dokument);
+            LieferantGeschaeftsdokument neu = new LieferantGeschaeftsdokument();
+            neu.setBereitsGezahlt(true);
+
+            GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+
+            assertThat(vorhanden.getBereitsGezahlt()).isTrue();
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(strings = {"AI_FAILED", "AI_PARSE_FAILED", "AI_ERROR"})
+        @org.junit.jupiter.api.DisplayName("bindeAnDokument: fehlgeschlagene KI laesst den Bestand unveraendert")
+        void bindeAnDokumentIgnoriertKiFehlschlag(String fehlerQuelle) {
+            LieferantDokument dokument = musterDokument(615L);
+            LieferantGeschaeftsdokument vorhanden = vorhandeneDaten(dokument);
+            vorhanden.setDokumentNummer("RE-2026-0615");
+            vorhanden.setDatenquelle("AI");
+            vorhanden.setAiRawJson("{\"dokumentNummer\":\"RE-2026-0615\"}");
+            LieferantGeschaeftsdokument neu = new LieferantGeschaeftsdokument();
+            neu.setDatenquelle(fehlerQuelle);
+            neu.setManuellePruefungErforderlich(true);
+            neu.setAiRawJson("{kaputt");
+            neu.setAusgelesenePositionen(List.of());
+
+            LieferantGeschaeftsdokument result = GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+
+            assertThat(result).isSameAs(vorhanden);
+            assertThat(result.getDatenquelle()).isEqualTo("AI");
+            assertThat(result.getManuellePruefungErforderlich()).isFalse();
+            assertThat(result.getAiRawJson()).isEqualTo("{\"dokumentNummer\":\"RE-2026-0615\"}");
+            assertThat(result.getAusgelesenePositionen()).isNull();
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Reanalyse: KI ersetzt vorhandene ZUGFeRD-Daten und -Positionen nicht")
+        void kiErsetztStrukturierteDatenNicht() throws Exception {
+            LieferantDokument dokument = musterDokument(616L);
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantGeschaeftsdokument vorhanden = vorhandeneDaten(dokument);
+            vorhanden.setId(616L);
+            vorhanden.setDokumentNummer("RE-2026-0616");
+            vorhanden.setBetragBrutto(new BigDecimal("119.00"));
+            vorhanden.setDatenquelle("ZUGFERD");
+            stelleKiAntwortBereit(dokument, """
+                    {"dokumentTyp":"RECHNUNG","dokumentNummer":"FALSCH-1","betragBrutto":1.00,"confidence":0.5,
+                     "artikelPositionen":[{"bezeichnung":"Flachstahl","menge":1}]}""");
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            assertThat(result).isSameAs(vorhanden);
+            assertThat(vorhanden.getDokumentNummer()).isEqualTo("RE-2026-0616");
+            assertThat(vorhanden.getBetragBrutto()).isEqualByComparingTo("119.00");
+            assertThat(vorhanden.getDatenquelle()).isEqualTo("ZUGFERD");
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(vorhanden), any(),
+                    org.mockito.ArgumentMatchers.isNull());
+        }
+
+        private LieferantGeschaeftsdokument vorhandeneDaten(LieferantDokument dokument) {
+            LieferantGeschaeftsdokument vorhanden = new LieferantGeschaeftsdokument();
+            vorhanden.setDokument(dokument);
+            dokument.setGeschaeftsdaten(vorhanden);
+            return vorhanden;
+        }
+
+        @Test
         @org.junit.jupiter.api.DisplayName("Duplikat: gleicher Typ oder offener Typ darf zusammengefuehrt werden")
         void gleicherBelegTyp() {
             LieferantDokument rechnung = musterDokument(609L);

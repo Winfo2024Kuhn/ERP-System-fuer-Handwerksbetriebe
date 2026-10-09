@@ -1209,6 +1209,14 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
+            // Nur ein KI-Ergebnis kennt sein Dokument noch nicht (ZUGFeRD/XML- und
+            // Duplikat-Zweig setzen es); @MapsId braucht es für die ID.
+            if (geschaeftsdaten.getDokument() == null) {
+                geschaeftsdaten = bindeAnDokument(freshDokument, geschaeftsdaten);
+                // Wurde das KI-Ergebnis verworfen, bleiben die bestehenden Positionen.
+                ausgelesenePositionen = geschaeftsdaten.getAusgelesenePositionen();
+            }
+
             // Erkannter Belegtyp hat Vorrang vor der bloßen Nummernheuristik.
             // Einen bereits festgelegten fachlichen Typ bei Reanalyse beibehalten.
             if (freshDokument.getTyp() == null || freshDokument.getTyp() == LieferantDokumentTyp.SONSTIG) {
@@ -1228,8 +1236,7 @@ public class GeminiDokumentAnalyseService {
 
             // WICHTIG: Bei @MapsId funktioniert Cascade NICHT von Parent zu Child!
             // Das Child (geschaeftsdaten) muss ZUERST explizit gespeichert werden.
-            // geschaeftsdaten.dokument wurde bereits gesetzt (in
-            // parseJsonToGeschaeftsdaten)
+            // geschaeftsdaten.dokument ist gesetzt (ZUGFeRD/XML-Zweig oder bindeAnDokument).
             LieferantGeschaeftsdokument savedGeschaeftsdaten = lieferantGeschaeftsdokumentRepository
                     .saveAndFlush(geschaeftsdaten);
             log.debug("LieferantGeschaeftsdokument gespeichert mit ID: {}", savedGeschaeftsdaten.getId());
@@ -1257,6 +1264,68 @@ public class GeminiDokumentAnalyseService {
         } catch (Exception e) {
             log.error("Fehler bei Dokumentanalyse für Dokument {}", dokument.getId(), e);
             return null;
+        }
+    }
+
+    /**
+     * Hängt ein frisches KI-Ergebnis an sein Dokument. Hat das Dokument schon
+     * Geschäftsdaten (erneute Analyse), werden diese aktualisiert statt ein zweites
+     * Objekt mit derselben ID anzulegen:
+     * <ul>
+     * <li>Datenfelder, die die KI diesmal nicht liefert, behalten ihren alten Wert.</li>
+     * <li>Zahlungs- und Freigabestand bleibt; „bereits gezahlt“ kann die KI nur setzen,
+     * nie zurücknehmen. {@code verifiziert} bleibt (die KI verifiziert nie).</li>
+     * <li>Die Prüfmarke folgt dem neuen Ergebnis: vollständig erkannt → keine Prüfung.</li>
+     * <li>Ein fehlgeschlagener KI-Aufruf und Daten aus ZUGFeRD/XML lassen den Bestand
+     * samt Positionen unverändert.</li>
+     * </ul>
+     */
+    static LieferantGeschaeftsdokument bindeAnDokument(LieferantDokument dokument, LieferantGeschaeftsdokument neu) {
+        LieferantGeschaeftsdokument bestehendes = dokument.getGeschaeftsdaten();
+        if (bestehendes == null) {
+            neu.setDokument(dokument);
+            return neu;
+        }
+        if (istKiFehlschlag(neu) || istStrukturiert(bestehendes)) {
+            // Der erkannte Typ hilft trotzdem bei einem noch offenen Dokumenttyp.
+            bestehendes.setDetectedTyp(neu.getDetectedTyp());
+            bestehendes.setAusgelesenePositionen(null);
+            return bestehendes;
+        }
+        uebernimmWennGesetzt(neu.getDokumentNummer(), bestehendes::setDokumentNummer);
+        uebernimmWennGesetzt(neu.getDokumentDatum(), bestehendes::setDokumentDatum);
+        uebernimmWennGesetzt(neu.getBetragNetto(), bestehendes::setBetragNetto);
+        uebernimmWennGesetzt(neu.getBetragBrutto(), bestehendes::setBetragBrutto);
+        uebernimmWennGesetzt(neu.getMwstSatz(), bestehendes::setMwstSatz);
+        uebernimmWennGesetzt(neu.getLiefertermin(), bestehendes::setLiefertermin);
+        uebernimmWennGesetzt(neu.getBestellnummer(), bestehendes::setBestellnummer);
+        uebernimmWennGesetzt(neu.getReferenzNummer(), bestehendes::setReferenzNummer);
+        uebernimmWennGesetzt(neu.getZahlungsziel(), bestehendes::setZahlungsziel);
+        if (Boolean.TRUE.equals(neu.getBereitsGezahlt())) {
+            bestehendes.setBereitsGezahlt(true);
+        }
+        uebernimmWennGesetzt(neu.getZahlungsart(), bestehendes::setZahlungsart);
+        uebernimmWennGesetzt(neu.getSkontoTage(), bestehendes::setSkontoTage);
+        uebernimmWennGesetzt(neu.getSkontoProzent(), bestehendes::setSkontoProzent);
+        uebernimmWennGesetzt(neu.getNettoTage(), bestehendes::setNettoTage);
+        uebernimmWennGesetzt(neu.getAiRawJson(), bestehendes::setAiRawJson);
+        uebernimmWennGesetzt(neu.getAiConfidence(), bestehendes::setAiConfidence);
+        uebernimmWennGesetzt(neu.getAnalysiertAm(), bestehendes::setAnalysiertAm);
+        uebernimmWennGesetzt(neu.getDatenquelle(), bestehendes::setDatenquelle);
+        uebernimmWennGesetzt(neu.getManuellePruefungErforderlich(), bestehendes::setManuellePruefungErforderlich);
+        bestehendes.setDetectedTyp(neu.getDetectedTyp());
+        bestehendes.setAusgelesenePositionen(neu.getAusgelesenePositionen());
+        return bestehendes;
+    }
+
+    private static boolean istKiFehlschlag(LieferantGeschaeftsdokument gd) {
+        String quelle = gd.getDatenquelle();
+        return "AI_FAILED".equals(quelle) || "AI_PARSE_FAILED".equals(quelle) || "AI_ERROR".equals(quelle);
+    }
+
+    private static <T> void uebernimmWennGesetzt(T wert, java.util.function.Consumer<T> setter) {
+        if (wert != null) {
+            setter.accept(wert);
         }
     }
 
