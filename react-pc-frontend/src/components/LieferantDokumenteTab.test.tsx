@@ -299,3 +299,52 @@ describe('LieferantDokumenteTab – Dokument einer Kette zuordnen', () => {
         expect(aufrufe('/ketten-verknuepfen')).toHaveLength(0);
     });
 });
+
+describe('LieferantDokumenteTab – Kette als gerade Linie', () => {
+    beforeEach(() => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(antwort([]))) as unknown as typeof fetch;
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    function mitDatum(id: number, typ: LieferantDokumentTyp, nummer: string, datum: string | undefined, verknuepft: Array<[number, LieferantDokumentTyp]>, extra: Partial<LieferantDokument> = {}): LieferantDokument {
+        const basis = dokument(id, typ, nummer);
+        return {
+            ...basis,
+            geschaeftsdaten: { ...basis.geschaeftsdaten, dokumentDatum: datum },
+            verknuepfteDokumente: verknuepft.map(([refId, refTyp]) => ({ id: refId, typ: refTyp })),
+            ...extra,
+        };
+    }
+
+    it('zeigt alle Belege untereinander, das Zeugnis unter seinem Lieferschein, und öffnet per Klick die Details', async () => {
+        const ab = mitDatum(10, 'AUFTRAGSBESTAETIGUNG', 'AB-55', '2026-03-14', []);
+        const ls1 = mitDatum(11, 'LIEFERSCHEIN', 'LS-1', '2026-03-20', [[10, 'AUFTRAGSBESTAETIGUNG']], { uploadedByName: 'Max Mustermann' });
+        const ls2 = mitDatum(12, 'LIEFERSCHEIN', 'LS-2', '2026-03-27', [[10, 'AUFTRAGSBESTAETIGUNG']]);
+        // Zeugnis ohne Datum, Verknüpfung nur vom Zeugnis zum Lieferschein
+        const zeugnis = mitDatum(13, 'WERKSTOFFZEUGNIS', '4107891', undefined, [[11, 'LIEFERSCHEIN']]);
+        const re = mitDatum(14, 'RECHNUNG', 'R-900', '2026-04-02', [[12, 'LIEFERSCHEIN']], {
+            geschaeftsdaten: { dokumentNummer: 'R-900', dokumentDatum: '2026-04-02', betragBrutto: 1250, referenzNummer: 'REF-77' },
+        });
+        rendere([re, zeugnis, ls2, ab, ls1]);
+
+        const liste = screen.getByRole('list', { name: 'Belege der Kette R-900' });
+        expect(within(liste).getAllByRole('listitem').map(z => z.textContent)).toEqual([
+            expect.stringContaining('AB-55'),
+            expect.stringContaining('LS-1'),
+            expect.stringContaining('4107891'),
+            expect.stringContaining('LS-2'),
+            expect.stringContaining('R-900'),
+        ]);
+        // Keine waagrechten Kästen mehr, eine Linie mit fünf Punkten
+        expect(liste.querySelectorAll('[data-punkt]')).toHaveLength(5);
+        // Zeugnis ohne Belegdatum: Eingangsdatum mit Hinweis
+        expect(within(liste).getByText('Eingang')).toBeInTheDocument();
+        // Zusatzzeile mit Referenz und Erfasser
+        expect(within(liste).getByText('Ref: REF-77')).toBeInTheDocument();
+        expect(within(liste).getByText('Max Mustermann')).toBeInTheDocument();
+
+        await userEvent.click(within(liste).getByRole('button', { name: /^Lieferschein LS-2/ }));
+        expect(await screen.findByRole('dialog', { name: 'Dokument bearbeiten' })).toBeInTheDocument();
+    });
+});

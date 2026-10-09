@@ -119,9 +119,9 @@ public class DokumentUebersichtController {
         List<LieferantGeschaeftsdokument> dokumente;
         if (year != null && month != null) {
             YearMonth ym = YearMonth.of(year, month);
-            dokumente = lieferantGdRepo.findAllByDatumBetween(ym.atDay(1), ym.atEndOfMonth());
+            dokumente = lieferantGdRepo.findAllByDatumOderEingangBetween(ym.atDay(1), ym.atEndOfMonth());
         } else if (year != null) {
-            dokumente = lieferantGdRepo.findAllByDatumBetween(
+            dokumente = lieferantGdRepo.findAllByDatumOderEingangBetween(
                     LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31));
         } else {
             dokumente = lieferantGdRepo.findAllSortedByDatum();
@@ -180,7 +180,7 @@ public class DokumentUebersichtController {
         }
 
         dokumente.sort(Comparator.comparing(
-                LieferantGeschaeftsdokument::getDokumentDatum,
+                DokumentUebersichtController::datumFuerListe,
                 Comparator.nullsLast(Comparator.reverseOrder())));
 
         Map<Long, PositionsTrefferDto> trefferJeDokument = positionsTreffer;
@@ -229,6 +229,20 @@ public class DokumentUebersichtController {
         return dto;
     }
 
+    /** Dokumentdatum, ersatzweise das Eingangsdatum (Upload) – so wie der Jahres-/Monatsfilter. */
+    private static LocalDate datumFuerListe(LieferantGeschaeftsdokument gd) {
+        if (gd.getDokumentDatum() != null) {
+            return gd.getDokumentDatum();
+        }
+        return eingangsDatum(gd);
+    }
+
+    private static LocalDate eingangsDatum(LieferantGeschaeftsdokument gd) {
+        return gd.getDokument() != null && gd.getDokument().getUploadDatum() != null
+                ? gd.getDokument().getUploadDatum().toLocalDate()
+                : null;
+    }
+
     /** Zeitraum zu Jahr/Monat wie bei der Liste; {@code [null, null]} = ohne Grenze. */
     private static LocalDate[] zeitraum(Integer year, Integer month) {
         if (year != null && month != null) {
@@ -251,6 +265,7 @@ public class DokumentUebersichtController {
         dto.setId(gd.getId());
         dto.setDokumentNummer(gd.getDokumentNummer());
         dto.setDokumentDatum(gd.getDokumentDatum());
+        dto.setEingangsDatum(eingangsDatum(gd));
         dto.setBetragNetto(gd.getBetragNetto() != null ? gd.getBetragNetto().doubleValue() : null);
         dto.setBetragBrutto(gd.getBetragBrutto() != null ? gd.getBetragBrutto().doubleValue() : null);
         dto.setBezahlt(Boolean.TRUE.equals(gd.getBezahlt()));
@@ -306,6 +321,8 @@ public class DokumentUebersichtController {
         private String dokumentNummer;
         private String typ;
         private LocalDate dokumentDatum;
+        /** Eingang (Upload) – die Liste zeigt es, wenn kein Dokumentdatum erkannt wurde. */
+        private LocalDate eingangsDatum;
         private Double betragNetto;
         private Double betragBrutto;
         private boolean bezahlt;

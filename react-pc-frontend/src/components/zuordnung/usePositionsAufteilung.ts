@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { vergissDokumentPositionen } from '../../features/bestellungen/dokumentPositionen';
 import {
     baueAufteilung,
     nachPositionenAufteilbar,
@@ -97,6 +98,8 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
         try {
             const res = await fetch(`${BASIS}/${geschaeftsdokumentId}/auslesen`, { method: 'POST' });
             if (!res.ok) throw new Error(await fehlertext(res, 'Die Positionen konnten nicht ausgelesen werden.'));
+            // Aufgeklappte Positionslisten (Kette, Dokumentübersicht) neu laden
+            vergissDokumentPositionen(geschaeftsdokumentId);
             return uebernehmen(await res.json(), vorbelegung);
         } catch (err) {
             const meldung = err instanceof Error && err.message && err.message !== 'Failed to fetch'
@@ -186,6 +189,7 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
             body: JSON.stringify({ positionen: aufteilung, ziele }),
         });
         if (!res.ok) throw new Error(await fehlertext(res, 'Die Aufteilung konnte nicht gespeichert werden.'));
+        vergissDokumentPositionen(geschaeftsdokumentId);
     }, [geschaeftsdokumentId, aufteilung]);
 
     // Werkstoffzeugnisse haben keine Preise – dort gibt es den Modus nicht

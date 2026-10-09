@@ -7,7 +7,7 @@ import { useConfirm } from '../../components/ui/confirm-dialog';
 import { PdfCanvasViewer } from '../../components/ui/PdfCanvasViewer';
 import { useToast } from '../../components/ui/toast';
 import { TYP_LABELS } from './bestellungenListe';
-import { juengstesBestellDokument } from './kettenGraph';
+import { juengstesBestellDokument } from './kettenLinie';
 import { RechnungHochladenKnopf } from './RechnungHochladenKnopf';
 import { MIN_QUOTE_VORAUSWAHL, TREFFER_KLASSEN, formatiereQuote, trefferStufe } from './rechnungsVorschlag';
 import {

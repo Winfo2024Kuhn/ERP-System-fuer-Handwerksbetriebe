@@ -1155,6 +1155,10 @@ public class GeminiDokumentAnalyseService {
                         lieferantId, geschaeftsdaten.getDokumentNummer());
                 var existingOpt = existingList.stream()
                         .filter(gd -> !gd.getId().equals(freshDokument.getId()))
+                        // Nur denselben Beleg zusammenführen: ein Werkstoffzeugnis, dessen
+                        // Nummer zufällig einem Lieferschein gleicht, darf dessen Daten und
+                        // Positionen nicht überschreiben.
+                        .filter(gd -> gleicherBelegTyp(freshDokument, gd))
                         .findFirst();
                 if (existingOpt.isPresent()) {
                     LieferantGeschaeftsdokument bestehendes = existingOpt.get();
@@ -1254,6 +1258,20 @@ public class GeminiDokumentAnalyseService {
             log.error("Fehler bei Dokumentanalyse für Dokument {}", dokument.getId(), e);
             return null;
         }
+    }
+
+    /**
+     * Darf {@code dokument} die Geschäftsdaten {@code bestehendes} (gleiche Nummer) mitbenutzen?
+     * Ja, solange der Typ noch offen ist (PDF+XML-Paar derselben Rechnung, Typ wird erst
+     * erkannt) oder beide Dokumente denselben Typ haben.
+     */
+    static boolean gleicherBelegTyp(LieferantDokument dokument, LieferantGeschaeftsdokument bestehendes) {
+        LieferantDokumentTyp eigenerTyp = dokument.getTyp();
+        if (eigenerTyp == null || eigenerTyp == LieferantDokumentTyp.SONSTIG) {
+            return true;
+        }
+        LieferantDokument anderes = bestehendes.getDokument();
+        return anderes == null || anderes.getTyp() == null || anderes.getTyp() == eigenerTyp;
     }
 
     private static boolean istStrukturiert(LieferantGeschaeftsdokument gd) {

@@ -494,6 +494,52 @@ class ProjektControllerTest {
         }
 
         @Test
+        void eingangsrechnungen_dokumentenketteEnthaeltAuchDokumenteUeberUmwege() throws Exception {
+                // Rechnung -> AB <- Lieferschein <- Werkstoffzeugnis: Zeugnis und Lieferschein
+                // hängen nicht direkt an der Rechnung und fehlten früher in der Projektkette.
+                var rechnungAnteil = anteilMitTyp(1L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
+                var rechnung = rechnungAnteil.getDokument();
+                var ab = anteilMitTyp(7L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG).getDokument();
+                var lieferschein = anteilMitTyp(5L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN).getDokument();
+                var zeugnis = anteilMitTyp(8L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.WERKSTOFFZEUGNIS).getDokument();
+                rechnung.getVerknuepfteDokumente().add(ab);
+                ab.getVerknuepftVon().addAll(List.of(rechnung, lieferschein));
+                lieferschein.getVerknuepfteDokumente().add(ab);
+                lieferschein.getVerknuepftVon().add(zeugnis);
+                zeugnis.getVerknuepfteDokumente().add(lieferschein);
+                zeugnis.setUploadDatum(java.time.LocalDateTime.of(2026, 9, 22, 8, 30));
+                zeugnis.setAusgeblendet(true);
+                when(lieferantDokumentProjektAnteilRepository.findByProjektIdEager(99L)).thenReturn(List.of(rechnungAnteil));
+                when(lieferantDokumentProjektAnteilRepository.findByDokumentIdEager(1L)).thenReturn(List.of(rechnungAnteil));
+
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$[0].dokumentenKette.length()").value(4))
+                                .andExpect(jsonPath("$[0].dokumentenKette[0].typ").value("AUFTRAGSBESTAETIGUNG"))
+                                .andExpect(jsonPath("$[0].dokumentenKette[1].typ").value("LIEFERSCHEIN"))
+                                .andExpect(jsonPath("$[0].dokumentenKette[2].typ").value("WERKSTOFFZEUGNIS"))
+                                .andExpect(jsonPath("$[0].dokumentenKette[2].eingangsDatum").value("2026-09-22"))
+                                .andExpect(jsonPath("$[0].dokumentenKette[2].ausgeblendet").value(true))
+                                .andExpect(jsonPath("$[0].dokumentenKette[3].typ").value("RECHNUNG"))
+                                .andExpect(jsonPath("$[0].dokumentenKetteVerbindungen.length()").value(3))
+                                .andExpect(jsonPath("$[0].dokumentenKetteVerbindungen[?(@.vonId==8 && @.zuId==5)]").isNotEmpty())
+                                .andExpect(jsonPath("$[0].dokumentenKetteVerbindungen[?(@.vonId==5 && @.zuId==7)]").isNotEmpty())
+                                .andExpect(jsonPath("$[0].dokumentenKetteVerbindungen[?(@.vonId==1 && @.zuId==7)]").isNotEmpty());
+        }
+
+        @Test
+        void eingangsrechnungen_ohneKetteLeereListen() throws Exception {
+                var rechnung = anteilMitTyp(1L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
+                when(lieferantDokumentProjektAnteilRepository.findByProjektIdEager(99L)).thenReturn(List.of(rechnung));
+                when(lieferantDokumentProjektAnteilRepository.findByDokumentIdEager(1L)).thenReturn(List.of(rechnung));
+
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$[0].dokumentenKette").isEmpty())
+                                .andExpect(jsonPath("$[0].dokumentenKetteVerbindungen").isEmpty());
+        }
+
+        @Test
         void erzeugeZugferd_ohneVollstaendigeFirmendaten_liefert422MitLesbarerMeldung() throws Exception {
                 when(zugferdErstellService.erzeuge(org.mockito.ArgumentMatchers.anyString(),
                                 org.mockito.ArgumentMatchers.any()))

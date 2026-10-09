@@ -29,6 +29,7 @@ import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ProjektNotizBild;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektUpdateDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelMengeDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.Verbindung;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfassenDto;
 import org.example.kalkulationsprogramm.dto.Projekt.LieferantPerformanceDto;
@@ -55,6 +56,7 @@ import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentKette;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
 import org.example.kalkulationsprogramm.service.ProjektListenPdfService;
@@ -721,46 +723,14 @@ public class ProjektController {
                     return ad;
                 }).collect(java.util.stream.Collectors.toList());
 
-                // Dokumentenkette (verknüpfte Dokumente)
+                // Dokumentenkette: alle Dokumente, die über Verknüpfungen zusammenhängen – auch
+                // über Umwege (Zeugnis am Lieferschein, weitere Lieferscheine an der AB). Nicht
+                // sichtbare Typen geben keine Metadaten preis.
+                List<LieferantDokument> kette = LieferantDokumentKette.sichtbar(dok, sichtbar);
                 dto.dokumentenKette = new java.util.ArrayList<>();
-                Set<LieferantDokument> verknuepft = dok.getVerknuepfteDokumente();
-                Set<LieferantDokument> verknuepftVon = dok.getVerknuepftVon();
-                Set<LieferantDokument> alleVerknuepft = new java.util.HashSet<>();
-                if (verknuepft != null) alleVerknuepft.addAll(verknuepft);
-                if (verknuepftVon != null) alleVerknuepft.addAll(verknuepftVon);
-                // Also add the document itself to the chain
-                alleVerknuepft.add(dok);
-                // Verknüpfte Dokumente nicht sichtbarer Typen geben keine Metadaten preis
-                alleVerknuepft.removeIf(d -> !sichtbar.contains(d.getTyp()));
-                
-                if (alleVerknuepft.size() > 1) {
-                    // Sort chain by type order
-                    List<LieferantDokument> sortedChain = new java.util.ArrayList<>(alleVerknuepft);
-                    sortedChain.sort((a, b) -> {
-                        int orderA = getTypOrder(a.getTyp());
-                        int orderB = getTypOrder(b.getTyp());
-                        return Integer.compare(orderA, orderB);
-                    });
-                    for (LieferantDokument chainDoc : sortedChain) {
-                        DokumentKetteRefDto ref = new DokumentKetteRefDto();
-                        ref.id = chainDoc.getId();
-                        ref.typ = chainDoc.getTyp().name();
-                        if (chainDoc.getGeschaeftsdaten() != null) {
-                            ref.dokumentNummer = chainDoc.getGeschaeftsdaten().getDokumentNummer();
-                            ref.dokumentDatum = chainDoc.getGeschaeftsdaten().getDokumentDatum();
-                            ref.betragNetto = chainDoc.getGeschaeftsdaten().getBetragNetto();
-                        }
-                        // PDF URL
-                        if (chainDoc.getAttachment() != null && chainDoc.getAttachment().getEmail() != null && chainDoc.getLieferant() != null) {
-                            var att = chainDoc.getAttachment();
-                            ref.pdfUrl = "/api/lieferanten/" + chainDoc.getLieferant().getId() +
-                                    "/emails/" + att.getEmail().getId() +
-                                    "/attachments/" + att.getId();
-                        } else {
-                            ref.pdfUrl = "/api/lieferant-dokumente/" + chainDoc.getId() + "/download";
-                        }
-                        dto.dokumentenKette.add(ref);
-                    }
+                if (kette.size() > 1) {
+                    kette.forEach(chainDoc -> dto.dokumentenKette.add(toKetteRef(chainDoc)));
+                    dto.dokumentenKetteVerbindungen = LieferantDokumentKette.verbindungen(kette);
                 }
             }
             // Add to map - Key is GeschaeftsdokumentId (usually same as DocumentId)
@@ -772,18 +742,28 @@ public class ProjektController {
         return ResponseEntity.ok(new java.util.ArrayList<>(dtoMap.values()));
     }
 
-    private int getTypOrder(LieferantDokumentTyp typ) {
-        if (typ == null) return 99;
-        return switch (typ) {
-            case ANGEBOT -> 1;
-            case AUFTRAGSBESTAETIGUNG -> 2;
-            case LIEFERSCHEIN -> 3;
-            case WERKSTOFFZEUGNIS -> 4;
-            case RECHNUNG -> 5;
-            case GUTSCHRIFT -> 6;
-            case SONSTIG -> 7;
-            case BELEG -> 8; // Buchhaltungs-Belege erscheinen nicht in der Projektkette
-        };
+    private static DokumentKetteRefDto toKetteRef(LieferantDokument chainDoc) {
+        DokumentKetteRefDto ref = new DokumentKetteRefDto();
+        ref.id = chainDoc.getId();
+        ref.typ = chainDoc.getTyp().name();
+        ref.dateiname = chainDoc.getEffektiverDateiname();
+        ref.eingangsDatum = chainDoc.getUploadDatum() != null ? chainDoc.getUploadDatum().toLocalDate() : null;
+        ref.ausgeblendet = chainDoc.isAusgeblendet();
+        if (chainDoc.getGeschaeftsdaten() != null) {
+            ref.dokumentNummer = chainDoc.getGeschaeftsdaten().getDokumentNummer();
+            ref.dokumentDatum = chainDoc.getGeschaeftsdaten().getDokumentDatum();
+            ref.betragNetto = chainDoc.getGeschaeftsdaten().getBetragNetto();
+            ref.betragBrutto = chainDoc.getGeschaeftsdaten().getBetragBrutto();
+        }
+        if (chainDoc.getAttachment() != null && chainDoc.getAttachment().getEmail() != null && chainDoc.getLieferant() != null) {
+            var att = chainDoc.getAttachment();
+            ref.pdfUrl = "/api/lieferanten/" + chainDoc.getLieferant().getId() +
+                    "/emails/" + att.getEmail().getId() +
+                    "/attachments/" + att.getId();
+        } else {
+            ref.pdfUrl = "/api/lieferant-dokumente/" + chainDoc.getId() + "/download";
+        }
+        return ref;
     }
 
     public static class EingangsrechnungDto {
@@ -804,8 +784,10 @@ public class ProjektController {
         public LocalDateTime zugeordnetAm;
         // Alle Zuordnungen dieses Dokuments (Projektanteile + Kostenstellen)
         public List<AnteilDto> alleZuordnungen;
-        // Dokumentenkette
+        // Dokumentenkette (ganze Kette, leer wenn nur die Rechnung selbst)
         public List<DokumentKetteRefDto> dokumentenKette;
+        // Verknüpfungen innerhalb der Kette (von = Nachfolger, zu = Vorgänger)
+        public List<Verbindung> dokumentenKetteVerbindungen = new java.util.ArrayList<>();
     }
 
     public static class AnteilDto {
@@ -827,6 +809,10 @@ public class ProjektController {
         public String dokumentNummer;
         public LocalDate dokumentDatum;
         public BigDecimal betragNetto;
+        public BigDecimal betragBrutto;
+        public LocalDate eingangsDatum;
+        public String dateiname;
+        public boolean ausgeblendet;
         public String pdfUrl;
     }
 

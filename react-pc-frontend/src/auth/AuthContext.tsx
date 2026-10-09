@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { vergissDokumentPositionen } from '../features/bestellungen/dokumentPositionen';
 
 export interface AuthUser {
     id: number;
@@ -146,6 +147,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
             setUser(null);
             syncFrontendUserSelection(null);
+            // Gemerkte Artikelpositionen gehören zur Sitzung des abgemeldeten Benutzers
+            vergissDokumentPositionen();
         }
     }, []);
 

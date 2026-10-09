@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.time.LocalDate;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -450,27 +449,10 @@ public class BestellungsUebersichtService {
      * Nachfolger (z. B. Rechnung), zu = Vorgänger (z. B. Lieferschein).
      */
     private static List<Verbindung> verbindungen(List<DokumentRef> refs, Map<Long, LieferantDokument> dokMap) {
-        Set<Long> ids = refs.stream().map(r -> r.id).collect(Collectors.toSet());
-        Set<String> gesehen = new HashSet<>();
-        List<Verbindung> verbindungen = new ArrayList<>();
-        for (DokumentRef ref : refs) {
-            LieferantDokument d = dokMap.get(ref.id);
-            if (d == null || d.getVerknuepfteDokumente() == null) {
-                continue;
-            }
-            for (LieferantDokument vorgaenger : d.getVerknuepfteDokumente()) {
-                Long zu = vorgaenger.getId();
-                if (zu == null || zu.equals(d.getId()) || !ids.contains(zu)) {
-                    continue;
-                }
-                String kante = Math.min(d.getId(), zu) + ":" + Math.max(d.getId(), zu);
-                if (gesehen.add(kante)) {
-                    verbindungen.add(new Verbindung(d.getId(), zu));
-                }
-            }
-        }
-        verbindungen.sort(Comparator.comparing(Verbindung::vonId).thenComparing(Verbindung::zuId));
-        return verbindungen;
+        return LieferantDokumentKette.verbindungen(refs.stream()
+                .map(r -> dokMap.get(r.id))
+                .filter(Objects::nonNull)
+                .toList());
     }
 
     private static LocalDate neuestesDatum(DokumentenKette kette) {
@@ -482,27 +464,7 @@ public class BestellungsUebersichtService {
     }
 
     private static void collectKettenIds(LieferantDokument start, Set<Long> collected) {
-        // Iterativ statt rekursiv: lange Ketten (viele Teillieferungen) sprengen sonst den Stack.
-        // Verknüpfungen in beide Richtungen durchlaufen: Gespeichert wird nur
-        // Nachfolger -> Vorgänger (Rechnung -> AB). Ohne die Rückrichtung bildete eine
-        // AB, die vor ihrer Rechnung an der Reihe war, eine eigene Kette ohne Rechnung
-        // und blieb dauerhaft bei den laufenden Bestellungen stehen.
-        ArrayDeque<LieferantDokument> offen = new ArrayDeque<>();
-        if (start != null) {
-            offen.push(start);
-        }
-        while (!offen.isEmpty()) {
-            LieferantDokument dok = offen.pop();
-            if (!collected.add(dok.getId())) {
-                continue;
-            }
-            if (dok.getVerknuepfteDokumente() != null) {
-                dok.getVerknuepfteDokumente().stream().filter(Objects::nonNull).forEach(offen::push);
-            }
-            if (dok.getVerknuepftVon() != null) {
-                dok.getVerknuepftVon().stream().filter(Objects::nonNull).forEach(offen::push);
-            }
-        }
+        LieferantDokumentKette.sammle(start).forEach(d -> collected.add(d.getId()));
     }
 
     private static int getTypReihenfolge(LieferantDokumentTyp typ) {

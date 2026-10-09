@@ -1331,6 +1331,57 @@ class GeminiDokumentAnalyseServiceTest {
                     org.mockito.ArgumentMatchers.isNull());
         }
 
+        @Test
+        @org.junit.jupiter.api.DisplayName("Duplikat: Zeugnis mit Nummer eines Lieferscheins ueberschreibt dessen Daten nicht")
+        void zeugnisMitNummerEinesLieferscheinsBleibtEigenstaendig() throws Exception {
+            LieferantDokument zeugnis = musterDokument(608L);
+            zeugnis.setTyp(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+            LieferantDokument lieferschein = musterDokument(701L);
+            lieferschein.setTyp(LieferantDokumentTyp.LIEFERSCHEIN);
+            LieferantGeschaeftsdokument lieferscheinDaten = new LieferantGeschaeftsdokument();
+            lieferscheinDaten.setId(701L);
+            lieferscheinDaten.setDokument(lieferschein);
+            lieferscheinDaten.setDokumentNummer("4107891");
+            when(lieferantGeschaeftsdokumentRepository.findByLieferantIdAndDokumentNummer(1L, "4107891"))
+                    .thenReturn(List.of(lieferscheinDaten));
+            stelleKiAntwortBereit(zeugnis, """
+                    {"dokumentTyp":"WERKSTOFFZEUGNIS","dokumentNummer":"4107891","confidence":0.9,
+                     "artikelPositionen":[{"bezeichnung":"Flachstahl","werkstoff":"S235JR","charge":"123456"}]}""");
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(zeugnis);
+
+            assertThat(result).isNotSameAs(lieferscheinDaten);
+            assertThat(zeugnis.getTyp()).isEqualTo(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+            verify(positionService, org.mockito.Mockito.never())
+                    .ersetzePositionen(org.mockito.ArgumentMatchers.same(lieferscheinDaten), any(), any());
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(result),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.WERKSTOFFZEUGNIS), any());
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Duplikat: gleicher Typ oder offener Typ darf zusammengefuehrt werden")
+        void gleicherBelegTyp() {
+            LieferantDokument rechnung = musterDokument(609L);
+            rechnung.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantDokument andereRechnung = musterDokument(702L);
+            andereRechnung.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantDokument lieferschein = musterDokument(703L);
+            lieferschein.setTyp(LieferantDokumentTyp.LIEFERSCHEIN);
+            LieferantGeschaeftsdokument gleich = new LieferantGeschaeftsdokument();
+            gleich.setDokument(andereRechnung);
+            LieferantGeschaeftsdokument anders = new LieferantGeschaeftsdokument();
+            anders.setDokument(lieferschein);
+            LieferantGeschaeftsdokument ohneDokument = new LieferantGeschaeftsdokument();
+
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, gleich)).isTrue();
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, anders)).isFalse();
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, ohneDokument)).isTrue();
+            rechnung.setTyp(LieferantDokumentTyp.SONSTIG);
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, anders)).isTrue();
+            rechnung.setTyp(null);
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, anders)).isTrue();
+        }
+
         private HttpResponse<String> antwort(String text, String finishReason) throws Exception {
             ObjectMapper baumapper = new ObjectMapper();
             var envelope = baumapper.createObjectNode();

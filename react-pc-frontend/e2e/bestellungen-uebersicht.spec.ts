@@ -5,7 +5,7 @@ import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
 /**
  * Bestellungen: Suche über alle Reiter, ältere Angebote eingeklappt, alte
  * Bestellungen oben in Bernstein, Rechnungs-Vorschlag mit „Übernehmen“, die
- * Belege als Gabel (Teillieferungen, Abhängen, Rechnung hochladen) und der
+ * Belege als gerade Linie wie git-Commits (Teillieferungen, Abhängen, Rechnung hochladen) und der
  * Dialog „Rechnung suchen“ / „Dokument zur Kette hinzufügen“ (alle
  * Dokumentarten, Filter-Chips). „Heute“ ist fest auf den 05.10.2026 gesetzt.
  * Nur Fantasienamen (DSGVO), /api vollständig gestubbt.
@@ -66,7 +66,8 @@ const ZEUGNIS = dok(910, 'WERKSTOFFZEUGNIS', 'WZ-31', '2026-09-26');
 /**
  * Mehrere Rechnungen: Angebot, zwei ABs, drei Lieferscheine, zwei Rechnungen.
  * Rechnung 1 deckt Lieferschein /01, Rechnung 2 deckt beide ABs, /03 und /01;
- * Lieferschein /05 ist noch nicht abgerechnet. → eine kleine Gabel je Rechnung.
+ * Lieferschein /05 ist noch nicht abgerechnet. Werkstoffzeugnis ohne Belegdatum am
+ * Lieferschein /01. → alles auf einer Linie, das Zeugnis direkt unter /01.
  */
 const JE_RECHNUNG = kette('z2', 'Muster Stahlhandel GmbH', [
     dok(60, 'ANGEBOT', 'AN-7000123', '2026-04-08', 1582.78),
@@ -77,10 +78,11 @@ const JE_RECHNUNG = kette('z2', 'Muster Stahlhandel GmbH', [
     dok(65, 'LIEFERSCHEIN', '7000123/05', '2026-04-22'),
     dok(66, 'RECHNUNG', '8000777', '2026-04-16', 1517.64),
     dok(67, 'RECHNUNG', '8000778', '2026-04-20', 99),
-], null, [[61, 60], [62, 60], [63, 61], [64, 62], [65, 62], [66, 64], [67, 61], [67, 62], [67, 63], [67, 64]]
+    { ...dok(68, 'WERKSTOFFZEUGNIS', '4107891', '2026-04-15'), dokumentDatum: null },
+], null, [[61, 60], [62, 60], [63, 61], [64, 62], [65, 62], [66, 64], [67, 61], [67, 62], [67, 63], [67, 64], [68, 64]]
     .map(([vonId, zuId]) => ({ vonId, zuId })));
 
-/** Eine Rechnung über fünf Teillieferungen auf zwei ABs – ohne Grenze fünf und mehr Spuren. */
+/** Eine Rechnung über fünf Teillieferungen auf zwei ABs – früher fünf Spuren, jetzt eine gerade Linie. */
 const VIELE_SPUREN = kette('z3', 'Beispiel Holz KG', [
     dok(70, 'ANGEBOT', 'AN-7000124', '2026-04-08'),
     { ...dok(71, 'AUFTRAGSBESTAETIGUNG', 'RL 99 - 7000124/01', '2026-04-08', 1604.68), liefertermin: '2026-04-14' },
@@ -116,7 +118,21 @@ function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-interface Mitschrift { posts: { pfad: string; body: unknown }[]; vorschlagAnfragen: URLSearchParams[]; hochgeladen: string[] }
+interface Mitschrift { posts: { pfad: string; body: unknown }[]; vorschlagAnfragen: URLSearchParams[]; hochgeladen: string[]; positionenAnfragen: number[] }
+
+function position(id: number, bezeichnung: string, extra: Record<string, unknown> = {}) {
+    return {
+        id, positionNr: id, positionsArt: 'WARE', externeArtikelnummer: `ART-${id}`, bezeichnung, menge: 6, mengeneinheit: 'Stk',
+        einzelpreis: 12.5, preiseinheit: null, gesamtpreisNetto: 75, projektId: null, projektName: null, kostenstelleId: null, kostenstelleName: null,
+        werkstoff: null, charge: null, abmessung: null, ...extra,
+    };
+}
+
+/** Artikelpositionen je Dokument-ID (Rechnung 8000777 und das Zeugnis 4107891). */
+const POSITIONEN: Record<number, unknown[]> = {
+    66: [position(1, 'Flachstahl 50x5 S235JR'), position(2, 'Rundrohr 33,7x2,6')],
+    68: [position(3, 'Flachstahl', { externeArtikelnummer: null, einzelpreis: null, gesamtpreisNetto: null, werkstoff: 'S235JR', charge: '123456', abmessung: '50 x 5' })],
+};
 
 interface StubOptionen {
     verknuepfenFehler?: string;
@@ -139,6 +155,11 @@ async function stubApi(page: Page, mitschrift: Mitschrift, optionen: StubOptione
         }
         if (pfad === '/api/bestellungen-uebersicht' && request.method() === 'GET') return json(route, UEBERSICHT);
         if (pfad === '/api/bestellungen-uebersicht/belege-offen') return json(route, []);
+        const positionen = /^\/api\/bestellungen-uebersicht\/positionen\/(\d+)$/.exec(pfad);
+        if (positionen) {
+            mitschrift.positionenAnfragen.push(Number(positionen[1]));
+            return POSITIONEN[Number(positionen[1])] ? json(route, { positionen: POSITIONEN[Number(positionen[1])] }) : json(route, {}, 404);
+        }
         if (pfad === '/api/bestellungen-uebersicht/ketten-vorschlaege') {
             mitschrift.vorschlagAnfragen.push(url.searchParams);
             const typ = url.searchParams.get('typ');
@@ -177,7 +198,7 @@ async function stubApi(page: Page, mitschrift: Mitschrift, optionen: StubOptione
     });
 }
 
-function neu(): Mitschrift { return { posts: [], vorschlagAnfragen: [], hochgeladen: [] }; }
+function neu(): Mitschrift { return { posts: [], vorschlagAnfragen: [], hochgeladen: [], positionenAnfragen: [] }; }
 
 async function oeffne(page: Page) {
     await page.goto('/bestellungen');
@@ -381,7 +402,7 @@ test.describe('Bestellungen – Übersicht', () => {
         expect(mitschrift.posts[0].body).toEqual({ kettenDokumentId: 11, dokumentId: 902 });
     });
 
-    test('Gabel: Teillieferungen münden in die Rechnung, Zeile öffnet das Dokument, Abhängen fragt nach', async ({ page }, testInfo) => {
+    test('Linie: Teillieferungen stehen über der Rechnung, Zeile öffnet das Dokument, Abhängen fragt nach', async ({ page }, testInfo) => {
         const mitschrift = neu();
         await stubApi(page, mitschrift);
         await oeffne(page);
@@ -393,7 +414,7 @@ test.describe('Bestellungen – Übersicht', () => {
         // Rechnung unten, die AB oben
         await expect(belege.getByRole('listitem').first()).toContainText('Auftragsbestätigung');
         await expect(belege.getByRole('listitem').last()).toContainText('RE-88');
-        await designPruefung(page, testInfo, 'bestellungen-gabel', { ganzeSeite: true });
+        await designPruefung(page, testInfo, 'bestellungen-linie', { ganzeSeite: true });
 
         await belege.getByRole('button', { name: /^Lieferschein LS-3 \d/ }).click();
         await expect(page.getByRole('heading', { level: 3, name: 'LS-3' })).toBeVisible();
@@ -403,7 +424,7 @@ test.describe('Bestellungen – Übersicht', () => {
         await belege.getByRole('button', { name: 'Lieferschein LS-3 von der Bestellung abhängen' }).click();
         const frage = page.getByRole('dialog', { name: 'Beleg abhängen?' });
         await expect(frage).toContainText('nicht mehr automatisch zugeordnet');
-        await designPruefung(page, testInfo, 'bestellungen-gabel-abhaengen');
+        await designPruefung(page, testInfo, 'bestellungen-linie-abhaengen');
         await frage.getByRole('button', { name: 'Abhängen' }).click();
         await expect.poll(() => mitschrift.posts.length).toBe(1);
         expect(mitschrift.posts[0]).toEqual({ pfad: '/api/bestellungen-uebersicht/abhaengen', body: { dokumentId: 43 } });
@@ -514,7 +535,7 @@ test.describe('Bestellungen – Übersicht', () => {
         await expect(page.getByRole('button', { name: 'Dokument hinzufügen' })).toHaveCount(0);
     });
 
-    test('Gabel mit vielen Spuren bleibt schmal; Betrag und Abhängen überlappen nie', async ({ page }, testInfo) => {
+    test('Lange Kette bleibt eine gerade Linie; Betrag und Abhängen überlappen nie', async ({ page }, testInfo) => {
         await stubApi(page, neu());
         await oeffne(page);
         await page.getByRole('tab', { name: /^Erledigt/ }).click();
@@ -522,49 +543,70 @@ test.describe('Bestellungen – Übersicht', () => {
         const karte = page.locator('div.break-inside-avoid').filter({ has: page.getByRole('heading', { level: 3, name: 'Beispiel Holz KG' }) });
         const belege = karte.getByRole('list', { name: 'Belege der Bestellung' });
         await expect(belege.getByRole('listitem')).toHaveCount(9);
-        expect(Number(await karte.getByTestId('ketten-graph').getAttribute('width'))).toBeLessThanOrEqual(56);
+        await alleAufEinerLinie(belege, 9);
         await betragVorAbhaengen(karte);
         await expect(belege.getByTitle('RL 99 - 7000124/01')).toBeVisible();
         await karte.scrollIntoViewIfNeeded();
-        await designPruefung(page, testInfo, 'bestellungen-gabel-viele-spuren', { ganzeSeite: true });
+        await designPruefung(page, testInfo, 'bestellungen-linie-lang', { ganzeSeite: true });
     });
 
-    test('Mehrere Rechnungen: oben die Bestellung, je Rechnung ein Kasten, offene Lieferscheine am Ende', async ({ page }, testInfo) => {
+    test('Mehrere Rechnungen: alles auf einer Linie, Zeugnis unter seinem Lieferschein, keine Kästen', async ({ page }, testInfo) => {
         const mitschrift = neu();
         await stubApi(page, mitschrift);
         await oeffne(page);
         await page.getByRole('tab', { name: /^Erledigt/ }).click();
 
         const karte = page.locator('div.break-inside-avoid').filter({ has: page.getByRole('heading', { level: 3, name: 'Muster Stahlhandel GmbH' }) });
-        await expect(karte.getByRole('list', { name: 'Bestellung' }).getByRole('listitem')).toHaveCount(3);
-
-        const kasten1 = karte.getByRole('list', { name: 'Belege zu Rechnung 8000777' });
-        await expect(kasten1.getByRole('listitem')).toHaveCount(2);
-        await expect(kasten1.getByText('auch oben')).toHaveCount(0);
-
-        const kasten2 = karte.getByRole('list', { name: 'Belege zu Rechnung 8000778' });
-        await expect(kasten2.getByRole('listitem')).toHaveCount(3);
-        await expect(kasten2.getByRole('listitem').nth(1)).toContainText('7000123/01');
-        await expect(kasten2.getByRole('listitem').nth(1).getByText('auch oben')).toBeVisible();
-        await expect(kasten2.getByRole('listitem').last()).toContainText('8000778');
-
-        const offen = karte.getByRole('list', { name: 'Lieferscheine ohne Rechnung' });
-        await expect(offen.getByText('Rechnung fehlt noch')).toBeVisible();
-        await expect(offen.getByRole('button', { name: 'Rechnung hochladen' })).toBeEnabled();
+        // Eine einzige Linie je Karte – keine Kästen je Rechnung mehr
+        await expect(karte.getByTestId('ketten-linie')).toHaveCount(1);
+        await expect(karte.getByRole('list', { name: /^Belege zu Rechnung/ })).toHaveCount(0);
+        const belege = karte.getByRole('list', { name: 'Belege der Bestellung' });
+        const zeilen = belege.getByRole('listitem');
+        await expect(zeilen).toHaveCount(9);
+        const erwartet = ['AN-7000123', '7000123/1', '7000123/2', '7000123/03', '7000123/01', '4107891', '7000123/05', '8000777', '8000778'];
+        for (const [i, nummer] of erwartet.entries()) await expect(zeilen.nth(i)).toContainText(nummer);
+        // Zeugnis ohne Belegdatum: Eingangsdatum mit Hinweis
+        await expect(zeilen.nth(5).getByText('Eingang', { exact: true })).toBeVisible();
+        await expect(karte.getByText('auch oben')).toHaveCount(0);
+        await alleAufEinerLinie(belege, 9);
         await betragVorAbhaengen(karte);
         await karte.scrollIntoViewIfNeeded();
-        await designPruefung(page, testInfo, 'bestellungen-gabel-je-rechnung', { ganzeSeite: true });
+        await designPruefung(page, testInfo, 'bestellungen-linie-mehrere-rechnungen', { ganzeSeite: true });
 
-        // Wiederholung öffnet dasselbe Dokument
-        await kasten2.getByRole('button', { name: /^Lieferschein 7000123\/01 \d/ }).click();
-        await expect(page.getByRole('heading', { level: 3, name: '7000123/01' })).toBeVisible();
+        await belege.getByRole('button', { name: /^Werkstoffzeugnis 4107891 \d/ }).click();
+        await expect(page.getByRole('heading', { level: 3, name: '4107891' })).toBeVisible();
         await page.keyboard.press('Escape');
+        await expect(page.getByRole('heading', { level: 3, name: '4107891' })).toHaveCount(0);
 
-        // Suchen im offenen Kasten öffnet den Dialog zu dieser Bestellung
-        await offen.getByRole('button', { name: 'Suchen', exact: true }).click();
-        await expect(page.getByRole('dialog', { name: /Rechnung suchen – Muster Stahlhandel GmbH/ })).toBeVisible();
+        // Artikelpositionen aufklappen: lädt erst jetzt, öffnet kein PDF, Linie läuft daneben weiter
+        expect(mitschrift.positionenAnfragen).toEqual([]);
+        await belege.getByRole('button', { name: 'Positionen von Werkstoffzeugnis 4107891 anzeigen' }).click();
+        await belege.getByRole('button', { name: 'Positionen von Rechnung 8000777 anzeigen' }).click();
+        const tabellen = belege.getByRole('table', { name: 'Artikelpositionen' });
+        await expect(tabellen).toHaveCount(2);
+        await expect(zeilen.nth(5).getByText('Werkstoff S235JR · Charge 123456 · Abmessung 50 x 5')).toBeVisible();
+        await expect(zeilen.nth(7).getByRole('table')).toContainText('Rundrohr 33,7x2,6');
+        await expect(page.getByRole('heading', { level: 3, name: '4107891' })).toHaveCount(0);
+        await alleAufEinerLinie(belege, 9);
+        await karte.scrollIntoViewIfNeeded();
+        await designPruefung(page, testInfo, 'bestellungen-linie-positionen', { ganzeSeite: true });
+
+        // Zu- und wieder aufklappen lädt nicht neu
+        await belege.getByRole('button', { name: 'Positionen von Rechnung 8000777 ausblenden' }).click();
+        await expect(tabellen).toHaveCount(1);
+        await belege.getByRole('button', { name: 'Positionen von Rechnung 8000777 anzeigen' }).click();
+        await expect(tabellen).toHaveCount(2);
+        expect([...mitschrift.positionenAnfragen].sort()).toEqual([66, 68]);
     });
 });
+
+/** Alle Punkte liegen auf derselben senkrechten Linie (gleiche Mitte von links). */
+async function alleAufEinerLinie(liste: Locator, anzahl: number) {
+    const mitten = await liste.locator('[data-punkt]').evaluateAll(punkte =>
+        punkte.map(p => { const r = p.getBoundingClientRect(); return Math.round(r.left + r.width / 2); }));
+    expect(mitten).toHaveLength(anzahl);
+    expect(new Set(mitten).size).toBe(1);
+}
 
 /** Einträge der Vorschlagsliste im Suchdialog. */
 function eintraege(dialog: Locator) {

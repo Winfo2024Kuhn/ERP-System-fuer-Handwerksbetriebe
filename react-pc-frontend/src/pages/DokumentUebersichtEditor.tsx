@@ -9,6 +9,8 @@ import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPre
 import { KundeSearchModal, type KundeSearchItem } from '../components/KundeSearchModal';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from '../components/LieferantSearchModal';
 import { PositionsTrefferZeile } from '../components/PositionsTrefferZeile';
+import { DokumentPositionenListe, PositionenKnopf } from '../features/bestellungen/DokumentPositionenAufklappen';
+import { kannPositionenHaben } from '../features/bestellungen/dokumentPositionen';
 
 type AusgangsTyp =
     | 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'RECHNUNG' | 'TEILRECHNUNG'
@@ -39,6 +41,8 @@ interface EingangsDokumentDto {
     dokumentNummer: string | null;
     typ: string | null;
     dokumentDatum: string | null;
+    /** Upload ins System – Ersatz, wenn kein Dokumentdatum erkannt wurde (z. B. Werkstoffzeugnisse). */
+    eingangsDatum?: string | null;
     betragNetto: number | null;
     betragBrutto: number | null;
     bezahlt: boolean;
@@ -674,6 +678,14 @@ interface EingangsTabelleProps {
 }
 
 function EingangsTabelle({ loading, daten, suchbegriff, onPreview }: EingangsTabelleProps) {
+    // Zeilen mit aufgeklappten Artikelpositionen – mehrere dürfen gleichzeitig offen sein
+    const [aufgeklappt, setAufgeklappt] = useState<ReadonlySet<number>>(() => new Set());
+    const umschalten = (id: number) => setAufgeklappt(vorher => {
+        const neu = new Set(vorher);
+        if (!neu.delete(id)) neu.add(id);
+        return neu;
+    });
+
     if (loading) {
         return (
             <Card className="p-8 text-center text-slate-500 border-0 shadow-sm rounded-xl">
@@ -721,15 +733,31 @@ function EingangsTabelle({ loading, daten, suchbegriff, onPreview }: EingangsTab
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {daten.map((d) => (
+                        {daten.map((d) => {
+                            const aufklappbar = d.dokumentId != null && kannPositionenHaben(d.typ);
+                            const offen = aufklappbar && aufgeklappt.has(d.id);
+                            const bereichId = `eingang-positionen-${d.id}`;
+                            const name = [d.typ ? formatLieferantTyp(d.typ) : 'Dokument', d.dokumentNummer].filter(Boolean).join(' ');
+                            return (
                             <Fragment key={d.id}>
                             <tr
                                 className="bg-white hover:bg-rose-50/40 transition-colors cursor-pointer"
                                 onDoubleClick={() => d.pdfUrl && onPreview(d)}
                             >
                                 <td className="px-4 py-3">
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
-                                        {d.typ ? formatLieferantTyp(d.typ) : '–'}
+                                    <span className="flex items-center gap-1">
+                                        {aufklappbar ? (
+                                            <PositionenKnopf
+                                                offen={offen}
+                                                onUmschalten={() => umschalten(d.id)}
+                                                dokumentName={name}
+                                                bereichId={bereichId}
+                                                className="-ml-2"
+                                            />
+                                        ) : <span className="w-7 -ml-2 flex-shrink-0" aria-hidden="true" />}
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
+                                            {d.typ ? formatLieferantTyp(d.typ) : '–'}
+                                        </span>
                                     </span>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-slate-900 font-medium">
@@ -739,7 +767,12 @@ function EingangsTabelle({ loading, daten, suchbegriff, onPreview }: EingangsTab
                                     {d.dokumentNummer || '–'}
                                 </td>
                                 <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                                    {formatDate(d.dokumentDatum)}
+                                    {d.dokumentDatum || !d.eingangsDatum ? formatDate(d.dokumentDatum) : (
+                                        <span title="Kein Dokumentdatum erkannt – Eingangsdatum">
+                                            {formatDate(d.eingangsDatum)}
+                                            <span className="ml-1 text-xs text-slate-400">Eingang</span>
+                                        </span>
+                                    )}
                                 </td>
                                 <td className="px-4 py-3 text-right text-sm text-slate-600 whitespace-nowrap">
                                     {d.betragNetto != null ? `${formatEuro(d.betragNetto)} €` : '–'}
@@ -775,8 +808,21 @@ function EingangsTabelle({ loading, daten, suchbegriff, onPreview }: EingangsTab
                                     </td>
                                 </tr>
                             )}
+                            {offen && d.dokumentId != null && (
+                                <tr className="bg-slate-50/60 !border-t-0">
+                                    <td colSpan={7} className="px-4 pb-3 pt-1">
+                                        <DokumentPositionenListe
+                                            id={bereichId}
+                                            dokumentId={d.dokumentId}
+                                            suchbegriff={suchbegriff}
+                                            className="ml-8 rounded-md border border-slate-200 bg-white px-3 py-1.5"
+                                        />
+                                    </td>
+                                </tr>
+                            )}
                             </Fragment>
-                        ))}
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
