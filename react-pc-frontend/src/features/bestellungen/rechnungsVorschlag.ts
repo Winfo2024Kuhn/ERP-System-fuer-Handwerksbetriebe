@@ -2,11 +2,11 @@
  * Rechnungs-Vorschläge der Bestellübersicht: Typen, Aufrufe der API und kleine
  * reine Hilfen (Farbe der Trefferquote, Suche in der Vorschlagsliste).
  */
-import { passtZurSuche } from './bestellungenListe';
+import { passtZurSuche, type KettenDokumentTyp } from './bestellungenListe';
 
 export interface RechnungsDokument {
     id: number;
-    typ: 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
+    typ: KettenDokumentTyp;
     dokumentNummer: string | null;
     dokumentDatum: string | null;
     eingangsDatum?: string | null;

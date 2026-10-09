@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
@@ -8,6 +8,7 @@ import { RefreshCw, FileText, ArrowUpRight, Building2, Search, Edit3, Lock, Ban,
 import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
 import { KundeSearchModal, type KundeSearchItem } from '../components/KundeSearchModal';
 import { LieferantSearchModal, type LieferantSuchErgebnis } from '../components/LieferantSearchModal';
+import { PositionsTrefferZeile } from '../components/PositionsTrefferZeile';
 
 type AusgangsTyp =
     | 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'RECHNUNG' | 'TEILRECHNUNG'
@@ -43,6 +44,10 @@ interface EingangsDokumentDto {
     bezahlt: boolean;
     originalDateiname: string | null;
     pdfUrl: string | null;
+    /** Getroffene Position bei der Suche, z. B. „Flachstahl 50x5 · S235JR · Charge 123456“. */
+    positionsTreffer?: string | null;
+    /** Wie viele Positionen außerdem passen. */
+    weitereTreffer?: number;
 }
 
 const AUSGANGS_TYP_LABEL: Record<AusgangsTyp, string> = {
@@ -117,10 +122,10 @@ const EINGANGS_TYP_OPTIONS = [
     { value: 'RECHNUNG', label: 'Rechnung' },
     { value: 'GUTSCHRIFT', label: 'Gutschrift' },
     { value: 'LIEFERSCHEIN', label: 'Lieferschein' },
+    { value: 'WERKSTOFFZEUGNIS', label: 'Werkstoffzeugnis' },
     { value: 'AUFTRAGSBESTAETIGUNG', label: 'Auftragsbestätigung' },
     { value: 'ANGEBOT', label: 'Angebot' },
-    { value: 'BESTELLUNG', label: 'Bestellung' },
-    { value: 'SONSTIGES', label: 'Sonstiges' },
+    { value: 'SONSTIG', label: 'Sonstiges' },
 ];
 
 export default function DokumentUebersichtEditor() {
@@ -144,17 +149,21 @@ export default function DokumentUebersichtEditor() {
 
     const [ausgang, setAusgang] = useState<AusgangsDokumentDto[]>([]);
     const [eingang, setEingang] = useState<EingangsDokumentDto[]>([]);
+    /** Suchbegriff, zu dem die geladenen Eingangs-Dokumente gehören – für die Hervorhebung der Trefferzeile. */
+    const [eingangSuche, setEingangSuche] = useState('');
     const [loading, setLoading] = useState(true);
 
     const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
 
     const loadData = useCallback(async () => {
         setLoading(true);
+        // Suchbegriff beim Start der Anfrage merken – die Hervorhebung gehört zu genau dieser Antwort
+        const angefragteSuche = searchQuery;
         try {
             const baseParams = new URLSearchParams();
             if (selectedYear) baseParams.append('year', selectedYear);
             if (selectedMonth) baseParams.append('month', selectedMonth);
-            if (searchQuery) baseParams.append('search', searchQuery);
+            if (angefragteSuche) baseParams.append('search', angefragteSuche);
             if (filterDokumentNummer) baseParams.append('dokumentNummer', filterDokumentNummer);
             if (filterBetragMin) baseParams.append('betragMin', filterBetragMin);
             if (filterBetragMax) baseParams.append('betragMax', filterBetragMax);
@@ -173,7 +182,10 @@ export default function DokumentUebersichtEditor() {
             ]);
 
             if (ausgangRes.ok) setAusgang(await ausgangRes.json());
-            if (eingangRes.ok) setEingang(await eingangRes.json());
+            if (eingangRes.ok) {
+                setEingang(await eingangRes.json());
+                setEingangSuche(angefragteSuche);
+            }
         } catch (err) {
             console.error('Fehler beim Laden:', err);
         } finally {
@@ -257,7 +269,7 @@ export default function DokumentUebersichtEditor() {
                         <Input
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Volltext: Betreff, Typ, Kunde, Lieferant..."
+                            placeholder="Volltext: Betreff, Kunde, Lieferant, Material, Charge …"
                             className="pl-9 w-full"
                         />
                     </div>
@@ -461,6 +473,7 @@ export default function DokumentUebersichtEditor() {
                 <EingangsTabelle
                     loading={loading}
                     daten={eingang}
+                    suchbegriff={eingangSuche}
                     onPreview={(d) => {
                         if (d.pdfUrl) {
                             setPreviewDoc({
@@ -655,10 +668,12 @@ function AusgangsTabelle({ loading, daten, onOpen, onMahnVorschau }: AusgangsTab
 interface EingangsTabelleProps {
     loading: boolean;
     daten: EingangsDokumentDto[];
+    /** Für die Hervorhebung in der Trefferzeile unter einem Dokument. */
+    suchbegriff: string;
     onPreview: (doc: EingangsDokumentDto) => void;
 }
 
-function EingangsTabelle({ loading, daten, onPreview }: EingangsTabelleProps) {
+function EingangsTabelle({ loading, daten, suchbegriff, onPreview }: EingangsTabelleProps) {
     if (loading) {
         return (
             <Card className="p-8 text-center text-slate-500 border-0 shadow-sm rounded-xl">
@@ -707,8 +722,8 @@ function EingangsTabelle({ loading, daten, onPreview }: EingangsTabelleProps) {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {daten.map((d) => (
+                            <Fragment key={d.id}>
                             <tr
-                                key={d.id}
                                 className="bg-white hover:bg-rose-50/40 transition-colors cursor-pointer"
                                 onDoubleClick={() => d.pdfUrl && onPreview(d)}
                             >
@@ -748,6 +763,19 @@ function EingangsTabelle({ loading, daten, onPreview }: EingangsTabelleProps) {
                                     )}
                                 </td>
                             </tr>
+                            {d.positionsTreffer && (
+                                <tr className="bg-white !border-t-0">
+                                    <td />
+                                    <td colSpan={6} className="px-4 pb-2.5 pt-0">
+                                        <PositionsTrefferZeile
+                                            trefferText={d.positionsTreffer}
+                                            weitereTreffer={d.weitereTreffer}
+                                            suchbegriff={suchbegriff}
+                                        />
+                                    </td>
+                                </tr>
+                            )}
+                            </Fragment>
                         ))}
                     </tbody>
                 </table>
@@ -761,10 +789,10 @@ function formatLieferantTyp(typ: string): string {
         RECHNUNG: 'Rechnung',
         GUTSCHRIFT: 'Gutschrift',
         LIEFERSCHEIN: 'Lieferschein',
+        WERKSTOFFZEUGNIS: 'Werkstoffzeugnis',
         AUFTRAGSBESTAETIGUNG: 'Auftragsbestätigung',
         ANGEBOT: 'Angebot',
-        BESTELLUNG: 'Bestellung',
-        SONSTIGES: 'Sonstiges',
+        SONSTIG: 'Sonstiges',
     };
     return map[typ] ?? typ;
 }

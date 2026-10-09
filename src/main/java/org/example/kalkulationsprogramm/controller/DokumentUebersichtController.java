@@ -3,15 +3,20 @@ package org.example.kalkulationsprogramm.controller;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.dto.PositionsTrefferDto;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.service.LieferantDokumentSucheService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,6 +38,7 @@ public class DokumentUebersichtController {
 
     private final AusgangsGeschaeftsDokumentRepository ausgangsRepo;
     private final LieferantGeschaeftsdokumentRepository lieferantGdRepo;
+    private final LieferantDokumentSucheService dokumentSucheService;
 
     @GetMapping("/ausgang")
     public ResponseEntity<List<AusgangsDokumentUebersichtDto>> getAusgang(
@@ -110,9 +116,19 @@ public class DokumentUebersichtController {
             dokumente = lieferantGdRepo.findAllSortedByDatum();
         }
 
+        // Positionen (Material, Werkstoff, Charge …) werden in der Datenbank gesucht –
+        // mit denselben Jahr/Monat-, Typ- und Lieferantenfiltern wie die Liste.
+        Map<Long, PositionsTrefferDto> positionsTreffer = Map.of();
         if (search != null && !search.isBlank()) {
-            String q = search.toLowerCase();
-            dokumente = dokumente.stream().filter(d -> matchesEingangSearch(d, q)).collect(Collectors.toList());
+            String q = search.toLowerCase(Locale.ROOT);
+            LocalDate[] zeitraum = zeitraum(year, month);
+            Map<Long, PositionsTrefferDto> treffer = dokumentSucheService.suchePositionen(search, lieferantId,
+                    typ != null ? EnumSet.of(typ) : EnumSet.allOf(LieferantDokumentTyp.class),
+                    zeitraum[0], zeitraum[1]);
+            positionsTreffer = treffer;
+            dokumente = dokumente.stream()
+                    .filter(d -> dokumentSucheService.passtZurEingangssuche(d, q) || treffer.containsKey(d.getId()))
+                    .collect(Collectors.toList());
         }
         if (dokumentNummer != null && !dokumentNummer.isBlank()) {
             String q = dokumentNummer.toLowerCase();
@@ -147,7 +163,10 @@ public class DokumentUebersichtController {
                 LieferantGeschaeftsdokument::getDokumentDatum,
                 Comparator.nullsLast(Comparator.reverseOrder())));
 
-        return ResponseEntity.ok(dokumente.stream().map(this::toEingangsDto).collect(Collectors.toList()));
+        Map<Long, PositionsTrefferDto> trefferJeDokument = positionsTreffer;
+        return ResponseEntity.ok(dokumente.stream()
+                .map(d -> toEingangsDto(d, trefferJeDokument.get(d.getId())))
+                .collect(Collectors.toList()));
     }
 
     // --- Search helpers ---
@@ -164,18 +183,6 @@ public class DokumentUebersichtController {
         return false;
     }
 
-    private boolean matchesEingangSearch(LieferantGeschaeftsdokument gd, String q) {
-        if (gd.getDokumentNummer() != null && gd.getDokumentNummer().toLowerCase().contains(q)) return true;
-        if (gd.getBetragBrutto() != null && gd.getBetragBrutto().toPlainString().contains(q)) return true;
-        if (gd.getDokument() != null) {
-            if (gd.getDokument().getTyp() != null
-                    && gd.getDokument().getTyp().name().toLowerCase().contains(q)) return true;
-            if (gd.getDokument().getLieferant() != null
-                    && gd.getDokument().getLieferant().getLieferantenname() != null
-                    && gd.getDokument().getLieferant().getLieferantenname().toLowerCase().contains(q)) return true;
-        }
-        return false;
-    }
 
     // --- DTO Mapper ---
 
@@ -202,8 +209,25 @@ public class DokumentUebersichtController {
         return dto;
     }
 
-    private EingangsDokumentUebersichtDto toEingangsDto(LieferantGeschaeftsdokument gd) {
+    /** Zeitraum zu Jahr/Monat wie bei der Liste; {@code [null, null]} = ohne Grenze. */
+    private static LocalDate[] zeitraum(Integer year, Integer month) {
+        if (year != null && month != null) {
+            YearMonth ym = YearMonth.of(year, month);
+            return new LocalDate[] { ym.atDay(1), ym.atEndOfMonth() };
+        }
+        if (year != null) {
+            return new LocalDate[] { LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31) };
+        }
+        return new LocalDate[] { null, null };
+    }
+
+    private EingangsDokumentUebersichtDto toEingangsDto(LieferantGeschaeftsdokument gd,
+            PositionsTrefferDto positionsTreffer) {
         EingangsDokumentUebersichtDto dto = new EingangsDokumentUebersichtDto();
+        if (positionsTreffer != null) {
+            dto.setPositionsTreffer(positionsTreffer.trefferText());
+            dto.setWeitereTreffer(positionsTreffer.weitereTreffer());
+        }
         dto.setId(gd.getId());
         dto.setDokumentNummer(gd.getDokumentNummer());
         dto.setDokumentDatum(gd.getDokumentDatum());
@@ -267,5 +291,9 @@ public class DokumentUebersichtController {
         private boolean bezahlt;
         private String originalDateiname;
         private String pdfUrl;
+        /** Passende Position bei einer Suche, z. B. „Flachstahl 50x5 · Charge 123456“. */
+        private String positionsTreffer;
+        /** Weitere passende Positionen desselben Dokuments. */
+        private int weitereTreffer;
     }
 }

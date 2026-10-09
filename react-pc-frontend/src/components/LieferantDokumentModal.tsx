@@ -13,6 +13,7 @@ import { BearbeitenLeiste } from "./lock/BearbeitenLeiste";
 import { useKonfliktMeldung } from "./lock/useKonfliktMeldung";
 import { useIdleTimer } from "../hooks/useIdleTimer";
 import { useToast } from "./ui/toast";
+import { ZeugnisPositionen } from "./ZeugnisPositionen";
 
 interface LieferantDokumentModalProps {
     isOpen: boolean;
@@ -26,6 +27,7 @@ const DOK_TYP_OPTIONS = [
     { value: "ANGEBOT", label: "Angebot" },
     { value: "AUFTRAGSBESTAETIGUNG", label: "Auftragsbestätigung" },
     { value: "LIEFERSCHEIN", label: "Lieferschein" },
+    { value: "WERKSTOFFZEUGNIS", label: "Werkstoffzeugnis" },
     { value: "RECHNUNG", label: "Rechnung" },
     { value: "GUTSCHRIFT", label: "Gutschrift" },
     { value: "SONSTIG", label: "Sonstiges" },
@@ -220,11 +222,15 @@ export default function LieferantDokumentModal({
     const isRechnung = formData.typ === "RECHNUNG" || formData.typ === "GUTSCHRIFT";
     const isAB = formData.typ === "AUFTRAGSBESTAETIGUNG";
     const isLieferschein = formData.typ === "LIEFERSCHEIN";
+    // Werkstoffzeugnis: keine Beträge, dafür die ausgelesenen Erzeugnisse
+    const isZeugnis = formData.typ === "WERKSTOFFZEUGNIS";
 
     // Zeige Liefertermin für AB und Lieferschein
     const showLiefertermin = isAB || isLieferschein;
-    // Zeige Beträge für alle außer Lieferschein
-    const showBetraege = !isLieferschein;
+    // Zeige Beträge für alle außer Lieferschein und Werkstoffzeugnis
+    const showBetraege = !isLieferschein && !isZeugnis;
+    // Positionen gibt es nur für ein schon als Zeugnis gespeichertes Dokument
+    const showZeugnisPositionen = dokument.typ === "WERKSTOFFZEUGNIS";
     // Zeige Zahlungsbedingungen für Rechnungen und Gutschriften
     const showZahlungsbedingungen = isRechnung;
 
@@ -724,6 +730,9 @@ export default function LieferantDokumentModal({
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Werkstoffzeugnis: Erzeugnisse mit Werkstoff, Charge, Abmessung */}
+                                {showZeugnisPositionen && <ZeugnisPositionen dokumentId={dokument.id} />}
 
                                 {/* Warnung: Kein Projekt */}
                                 {dokument.projektAnteile.length === 0 && (

@@ -23,6 +23,12 @@ export interface DokumentPosition {
     projektName: string | null;
     kostenstelleId: number | null;
     kostenstelleName: string | null;
+    /** Werkstoff, z. B. „S235JR“ – vor allem bei Werkstoffzeugnissen. */
+    werkstoff?: string | null;
+    /** Charge bzw. Schmelze */
+    charge?: string | null;
+    /** Abmessung, z. B. „50 x 5“ */
+    abmessung?: string | null;
 }
 
 export interface PositionsUebersicht {
@@ -100,6 +106,19 @@ export function zielAusSchluessel(schluessel: ZielSchluessel): { projektId?: num
     if (!treffer) return {};
     const id = Number(treffer[2]);
     return treffer[1] === 'p' ? { projektId: id } : { kostenstelleId: id };
+}
+
+/** Dokumente ohne Preise – eine Aufteilung nach Positionen ergäbe keine Beträge (Sackgasse im Dialog). */
+const TYPEN_OHNE_PREISE: ReadonlySet<string> = new Set(['WERKSTOFFZEUGNIS']);
+
+/**
+ * Lässt sich das Dokument nach Positionen aufteilen? Nur mit geladener Übersicht,
+ * wenn Positionen da oder auslesbar sind – und nie bei Werkstoffzeugnissen.
+ */
+export function nachPositionenAufteilbar(uebersicht: Pick<PositionsUebersicht, 'dokumentTyp' | 'auslesbar' | 'positionen'> | null | undefined): boolean {
+    if (!uebersicht) return false;
+    if (uebersicht.dokumentTyp != null && TYPEN_OHNE_PREISE.has(uebersicht.dokumentTyp)) return false;
+    return uebersicht.auslesbar || (uebersicht.positionen?.length ?? 0) > 0;
 }
 
 export function istWare(position: DokumentPosition): boolean {

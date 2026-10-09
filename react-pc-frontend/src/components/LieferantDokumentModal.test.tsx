@@ -484,4 +484,52 @@ describe('LieferantDokumentModal', () => {
             );
         });
     });
+
+    describe('Werkstoffzeugnis', () => {
+        const ZEUGNIS: LieferantDokument = {
+            ...DUMMY_DOKUMENT,
+            typ: 'WERKSTOFFZEUGNIS',
+            geschaeftsdaten: { dokumentNummer: 'WZ-2026-7', dokumentDatum: '2026-08-02' },
+        };
+
+        it('zeigt die Erzeugnisse als Tabelle und blendet die Beträge aus', async () => {
+            const basis = buildFetchMock();
+            const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+                if (url === `/api/bestellungen-uebersicht/positionen/${DOKUMENT_ID}`) {
+                    return Promise.resolve(new Response(JSON.stringify({
+                        geschaeftsdokumentId: DOKUMENT_ID,
+                        positionen: [{
+                            id: 1, positionNr: 1, positionsArt: 'WARE', externeArtikelnummer: null,
+                            bezeichnung: 'Flachstahl 50x5', menge: 12, mengeneinheit: 'Stück', einzelpreis: null,
+                            preiseinheit: null, gesamtpreisNetto: null, projektId: null, projektName: null,
+                            kostenstelleId: null, kostenstelleName: null,
+                            werkstoff: 'S235JR', charge: '123456', abmessung: '50 x 5',
+                        }],
+                    }), { status: 200 }));
+                }
+                return basis(url, options);
+            });
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal({ dokument: ZEUGNIS });
+
+            expect(await screen.findByText('Flachstahl 50x5')).toBeInTheDocument();
+            expect(screen.getByText('Inhalt des Werkstoffzeugnisses')).toBeInTheDocument();
+            expect(screen.getByText('S235JR')).toBeInTheDocument();
+            expect(screen.getByText('123456')).toBeInTheDocument();
+            expect(screen.getByText('12 Stück')).toBeInTheDocument();
+            expect(screen.queryByText('Beträge')).toBeNull();
+        });
+
+        it('lädt bei anderen Dokumenttypen keine Zeugnis-Positionen', async () => {
+            const fetchMock = buildFetchMock();
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderModal();
+
+            await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+            expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/bestellungen-uebersicht/positionen/'))).toBe(false);
+            expect(screen.getByText('Beträge')).toBeInTheDocument();
+        });
+    });
 });

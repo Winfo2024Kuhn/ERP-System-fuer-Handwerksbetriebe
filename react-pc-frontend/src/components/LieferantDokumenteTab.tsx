@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2, Trash2 } from "lucide-react";
+import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2, Trash2, Euro, CalendarDays, FileBadge, type LucideIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
@@ -12,12 +12,17 @@ import { LieferantDokumentImportModal } from "./LieferantDokumentImportModal";
 import { ZuordnungModal } from "./ZuordnungModal";
 import { prependUniqueById } from "../lib/optimisticUploads";
 import { useAuth } from "../auth/AuthContext";
+import { PositionsTrefferZeile } from "./PositionsTrefferZeile";
+import { useToast } from "./ui/toast";
+import { positionsSucheAktiv, trefferNachDokument, vereinigeTreffer, type PositionsTreffer } from "../lib/positionsTreffer";
 
 // Typ-Konfiguration mit Farben
-const DOK_TYP_CONFIG: Record<string, { label: string; color: string; bgColor: string; borderColor: string }> = {
+// icon: nur wo die Farbe allein nicht reicht (Werkstoffzeugnis ist neutral wie Sonstiges, aber mit Zeugnis-Symbol)
+const DOK_TYP_CONFIG: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon?: LucideIcon }> = {
     ANGEBOT: { label: 'Angebot', color: 'text-blue-700', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
     AUFTRAGSBESTAETIGUNG: { label: 'AB', color: 'text-purple-700', bgColor: 'bg-purple-50', borderColor: 'border-purple-200' },
     LIEFERSCHEIN: { label: 'Lieferschein', color: 'text-amber-700', bgColor: 'bg-amber-50', borderColor: 'border-amber-200' },
+    WERKSTOFFZEUGNIS: { label: 'Werkstoffzeugnis', color: 'text-slate-700', bgColor: 'bg-slate-100', borderColor: 'border-slate-300', icon: FileBadge },
     RECHNUNG: { label: 'Rechnung', color: 'text-rose-700', bgColor: 'bg-rose-50', borderColor: 'border-rose-200' },
     GUTSCHRIFT: { label: 'Gutschrift', color: 'text-green-700', bgColor: 'bg-green-50', borderColor: 'border-green-200' },
     SONSTIG: { label: 'Sonstiges', color: 'text-slate-700', bgColor: 'bg-slate-50', borderColor: 'border-slate-200' },
@@ -28,7 +33,15 @@ const DEFAULT_CONFIG = { label: 'Dokument', color: 'text-slate-700', bgColor: 'b
 
 const getConfig = (typ: string) => DOK_TYP_CONFIG[typ] || DEFAULT_CONFIG;
 
-const TYP_REIHENFOLGE: LieferantDokumentTyp[] = ['ANGEBOT', 'AUFTRAGSBESTAETIGUNG', 'LIEFERSCHEIN', 'RECHNUNG', 'GUTSCHRIFT', 'SONSTIG'];
+const TYP_REIHENFOLGE: LieferantDokumentTyp[] = ['ANGEBOT', 'AUFTRAGSBESTAETIGUNG', 'LIEFERSCHEIN', 'WERKSTOFFZEUGNIS', 'RECHNUNG', 'GUTSCHRIFT', 'SONSTIG'];
+
+/** So lange wartet die Positionssuche nach dem letzten Tastendruck. */
+const POSITIONSSUCHE_VERZOEGERUNG_MS = 300;
+
+const KEINE_POSITIONSTREFFER: ReadonlyMap<number, PositionsTreffer> = new Map();
+
+/** Einmal je geöffnetem Reiter, wenn die Positionssuche nicht geht (Fehler, Netz weg, 401). */
+export const POSITIONSSUCHE_FEHLER_TEXT = "Suche in Positionen gerade nicht möglich – Treffer nur nach Nummer und Betrag.";
 
 interface LieferantDokumenteTabProps {
     lieferantId: number | string;
@@ -43,6 +56,9 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
     const [loading, setLoading] = useState(!initialDokumente);
     const [searchQuery, setSearchQuery] = useState("");
     const [filterTyp, setFilterTyp] = useState<string>("");
+    // Treffer der Positionssuche im Backend – gehören immer zu genau einem Suchbegriff
+    const [positionsErgebnis, setPositionsErgebnis] = useState<{ suche: string; treffer: ReadonlyMap<number, PositionsTreffer> } | null>(null);
+    const suche = searchQuery.trim();
     // Sortier-State
     type SortField = 'datum' | 'betrag' | 'typ' | 'nummer';
     type SortDirection = 'asc' | 'desc';
@@ -109,12 +125,47 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
         }
     }, [lieferantId]);
 
-    // Intelligente Suche über alle relevanten Felder
-    const filteredDokumente = useMemo(() => {
-        return dokumente.filter(dok => {
-            // Typ-Filter
-            if (filterTyp && dok.typ !== filterTyp) return false;
+    const toast = useToast();
+    // Fehler der Positionssuche nur einmal melden – sonst käme bei jedem Tastendruck ein neuer Toast
+    const positionsFehlerGemeldet = useRef(false);
 
+    // Positionssuche (Material, Charge, Abmessung …): ab 2 Zeichen, 300 ms nach dem
+    // letzten Tastendruck. Eine noch laufende Anfrage wird abgebrochen (das ist kein
+    // Fehler). Schlägt sie fehl, bleiben die Treffer aus dem Browser stehen, und ein
+    // dezenter Hinweis sagt einmal, dass gerade nur nach Nummer und Betrag gesucht wird.
+    useEffect(() => {
+        if (!positionsSucheAktiv(suche)) return;
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => {
+            const url = `/api/lieferanten/${encodeURIComponent(String(lieferantId))}/dokumente/positionssuche?q=${encodeURIComponent(suche)}`;
+            fetch(url, { signal: controller.signal })
+                .then(res => (res.ok ? res.json() : Promise.reject(new Error(`Positionssuche: ${res.status}`))))
+                .then(daten => {
+                    if (!controller.signal.aborted) setPositionsErgebnis({ suche, treffer: trefferNachDokument(daten) });
+                })
+                .catch(() => {
+                    if (controller.signal.aborted || positionsFehlerGemeldet.current) return;
+                    positionsFehlerGemeldet.current = true;
+                    toast.warning(POSITIONSSUCHE_FEHLER_TEXT);
+                });
+        }, POSITIONSSUCHE_VERZOEGERUNG_MS);
+        return () => {
+            window.clearTimeout(timer);
+            controller.abort();
+        };
+        // toast ist bei jedem Render ein neues Objekt – die Suche hängt nur an Begriff und Lieferant
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [suche, lieferantId]);
+
+    // Nur Treffer zum aktuellen Suchbegriff zählen – alte Antworten bleiben außen vor
+    const positionsTreffer = positionsSucheAktiv(suche) && positionsErgebnis?.suche === suche
+        ? positionsErgebnis.treffer
+        : KEINE_POSITIONSTREFFER;
+
+    // Intelligente Suche über alle relevanten Felder – vereinigt mit den Positionstreffern
+    const filteredDokumente = useMemo(() => {
+        const passendeTypen = filterTyp ? dokumente.filter(dok => dok.typ === filterTyp) : dokumente;
+        return vereinigeTreffer(passendeTypen, dok => {
             // Intelligente Suche über viele Felder
             if (searchQuery) {
                 const q = searchQuery.toLowerCase().trim();
@@ -144,8 +195,8 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
             }
 
             return true;
-        });
-    }, [dokumente, filterTyp, searchQuery]);
+        }, positionsTreffer);
+    }, [dokumente, filterTyp, searchQuery, positionsTreffer]);
 
     // Berechne Anzahl aktiver Filter
     const activeFilterCount = useMemo(() => {
@@ -318,7 +369,8 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <Input
-                                placeholder="Suche nach Nummer, Referenz, Betrag, Datum..."
+                                placeholder="Nummer, Material, Charge, Kommission …"
+                                aria-label="Dokumente durchsuchen"
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
                                 className="pl-10 pr-10 bg-white border-slate-200 focus:border-rose-300 focus:ring-rose-200"
@@ -341,28 +393,30 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                                 { value: "ANGEBOT", label: "Angebote" },
                                 { value: "AUFTRAGSBESTAETIGUNG", label: "Auftragsbestätigungen" },
                                 { value: "LIEFERSCHEIN", label: "Lieferscheine" },
+                                { value: "WERKSTOFFZEUGNIS", label: "Werkstoffzeugnisse" },
                                 { value: "RECHNUNG", label: "Rechnungen" },
                                 { value: "GUTSCHRIFT", label: "Gutschriften" },
                             ]}
                             className="w-full sm:w-52"
+                            aria-label="Dokumenttyp"
                         />
                     </div>
 
                     {/* Search Hints */}
                     {!searchQuery && (
                         <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                            <span className="bg-white/60 px-2 py-0.5 rounded border border-slate-200">
-                                📄 Dokumentnummer
-                            </span>
-                            <span className="bg-white/60 px-2 py-0.5 rounded border border-slate-200">
-                                🔗 Referenznummer
-                            </span>
-                            <span className="bg-white/60 px-2 py-0.5 rounded border border-slate-200">
-                                💰 Betrag (z.B. 952,00)
-                            </span>
-                            <span className="bg-white/60 px-2 py-0.5 rounded border border-slate-200">
-                                📅 Datum (z.B. 25.9.2025)
-                            </span>
+                            {[
+                                { icon: FileText, text: "Dokumentnummer" },
+                                { icon: Link2, text: "Referenznummer" },
+                                { icon: FileBadge, text: "Material, Charge (z.B. S235JR)" },
+                                { icon: Euro, text: "Betrag (z.B. 952,00)" },
+                                { icon: CalendarDays, text: "Datum (z.B. 25.9.2025)" },
+                            ].map(({ icon: Icon, text }) => (
+                                <span key={text} className="inline-flex items-center gap-1 bg-white/60 px-2 py-0.5 rounded border border-slate-200">
+                                    <Icon className="w-3 h-3 text-slate-400" aria-hidden="true" />
+                                    {text}
+                                </span>
+                            ))}
                         </div>
                     )}
 
@@ -421,6 +475,8 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                             onSelect={handleDokumentSelect}
                             onNavigate={navigate}
                             onBearbeiten={(dok) => setZuordnungDokument(dok)}
+                            positionsTreffer={positionsTreffer}
+                            suchbegriff={suche}
                         />
                     ))}
                 </div>
@@ -438,11 +494,11 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                         <div className="flex items-center gap-1 flex-wrap">
                             <span className="text-xs text-slate-400 mr-1">Sortieren:</span>
                             {[
-                                { field: 'nummer' as SortField, label: 'Nr.', icon: '📄' },
-                                { field: 'datum' as SortField, label: 'Datum', icon: '📅' },
-                                { field: 'betrag' as SortField, label: 'Betrag', icon: '💰' },
-                                { field: 'typ' as SortField, label: 'Typ', icon: '🏷' },
-                            ].map(({ field, label, icon }) => {
+                                { field: 'nummer' as SortField, label: 'Nr.' },
+                                { field: 'datum' as SortField, label: 'Datum' },
+                                { field: 'betrag' as SortField, label: 'Betrag' },
+                                { field: 'typ' as SortField, label: 'Typ' },
+                            ].map(({ field, label }) => {
                                 const isActive = sortField === field;
                                 const SortIcon = isActive
                                     ? (sortDirection === 'asc' ? ArrowUp : ArrowDown)
@@ -458,7 +514,6 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                                                 : "bg-slate-100 text-slate-500 hover:bg-slate-200 border border-transparent"
                                         )}
                                     >
-                                        <span>{icon}</span>
                                         {label}
                                         <SortIcon className="w-3 h-3" />
                                     </button>
@@ -477,6 +532,8 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                                 onNavigate={navigate}
                                 onBearbeiten={() => setZuordnungDokument(dok)}
                                 onDelete={isAdmin ? () => handleLoescheDokument(dok) : undefined}
+                                treffer={positionsTreffer.get(dok.id)}
+                                suchbegriff={suche}
                             />
                         ))}
                     </div>
@@ -552,9 +609,16 @@ interface DokumentenKetteProps {
     onSelect: (dok: LieferantDokument) => void;
     onNavigate: (path: string) => void;
     onBearbeiten: (dok: LieferantDokument) => void;
+    /** Treffer der Positionssuche je Dokument-ID */
+    positionsTreffer: ReadonlyMap<number, PositionsTreffer>;
+    suchbegriff: string;
 }
 
-function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten }: DokumentenKetteProps) {
+function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, positionsTreffer, suchbegriff }: DokumentenKetteProps) {
+    const trefferInKette = kette.dokumente
+        .map(dok => ({ dok, treffer: positionsTreffer.get(dok.id) }))
+        .filter((eintrag): eintrag is { dok: LieferantDokument; treffer: PositionsTreffer } => eintrag.treffer !== undefined);
+
     // Collect all unique project allocations across chain documents
     const allAnteile = useMemo(() => {
         const seen = new Set<string>();
@@ -600,14 +664,19 @@ function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNaviga
                                     config.bgColor, config.borderColor
                                 )}
                             >
-                                <span className={cn("text-xs font-semibold uppercase", config.color)}>
+                                <span className={cn("inline-flex items-center gap-1 text-xs font-semibold uppercase", config.color)}>
+                                    {config.icon && <config.icon className="w-3.5 h-3.5" aria-hidden="true" />}
                                     {config.label}
                                 </span>
-                                <span className="text-sm font-medium text-slate-900 mt-1 truncate max-w-[90px]">
+                                <span
+                                    className="text-sm font-medium text-slate-900 mt-1 truncate max-w-[90px]"
+                                    title={dok.geschaeftsdaten?.dokumentNummer}
+                                    data-kuerzung-erlaubt=""
+                                >
                                     {dok.geschaeftsdaten?.dokumentNummer || "-"}
                                 </span>
                                 {dok.geschaeftsdaten?.referenzNummer && (
-                                    <span className="text-xs text-slate-500 mt-0.5 truncate max-w-[90px]" title={dok.geschaeftsdaten.referenzNummer}>
+                                    <span className="text-xs text-slate-500 mt-0.5 truncate max-w-[90px]" title={dok.geschaeftsdaten.referenzNummer} data-kuerzung-erlaubt="">
                                         Ref: {dok.geschaeftsdaten.referenzNummer}
                                     </span>
                                 )}
@@ -630,6 +699,26 @@ function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNaviga
                     );
                 })}
             </div>
+
+            {/* Treffer der Positionssuche: welches Dokument der Kette welche Position enthält */}
+            {trefferInKette.length > 0 && (
+                <div className="mt-2 space-y-1">
+                    {trefferInKette.map(({ dok, treffer }) => (
+                        <div key={dok.id} className="flex items-start gap-2 min-w-0">
+                            <span className={cn("shrink-0 text-[11px] font-semibold uppercase leading-5", getConfig(dok.typ).color)}>
+                                {getConfig(dok.typ).label}
+                                {dok.geschaeftsdaten?.dokumentNummer ? ` ${dok.geschaeftsdaten.dokumentNummer}` : ""}
+                            </span>
+                            <PositionsTrefferZeile
+                                trefferText={treffer.trefferText}
+                                weitereTreffer={treffer.weitereTreffer}
+                                suchbegriff={suchbegriff}
+                                className="leading-5"
+                            />
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Zuordnungen: Projekte und Kostenstellen */}
             {allAnteile.length > 0 && (
@@ -698,9 +787,12 @@ interface DokumentCardProps {
     onNavigate: (path: string) => void;
     onBearbeiten: () => void;
     onDelete?: () => void;
+    /** Getroffene Position, wenn die Positionssuche dieses Dokument gefunden hat */
+    treffer?: PositionsTreffer;
+    suchbegriff: string;
 }
 
-function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, onDelete }: DokumentCardProps) {
+function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, onDelete, treffer, suchbegriff }: DokumentCardProps) {
     const config = getConfig(dokument.typ);
     const hasProject = dokument.projektAnteile.length > 0;
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
@@ -709,7 +801,8 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNaviga
         <Card className={cn("p-4 relative group hover:shadow-md transition-shadow", config.bgColor, "border", config.borderColor)}>
             {/* Typ Badge */}
             <div className="flex items-center justify-between mb-2">
-                <span className={cn("text-xs font-semibold uppercase px-2 py-0.5 rounded-full", config.color, "bg-white/80")}>
+                <span className={cn("inline-flex items-center gap-1 text-xs font-semibold uppercase px-2 py-0.5 rounded-full", config.color, "bg-white/80")}>
+                    {config.icon && <config.icon className="w-3.5 h-3.5" aria-hidden="true" />}
                     {config.label}
                 </span>
                 <div className="flex items-center gap-1">
@@ -742,6 +835,14 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNaviga
                 </h4>
                 <p className="text-xs text-slate-500 truncate">{dokument.originalDateiname}</p>
             </button>
+            {treffer && (
+                <PositionsTrefferZeile
+                    trefferText={treffer.trefferText}
+                    weitereTreffer={treffer.weitereTreffer}
+                    suchbegriff={suchbegriff}
+                    className="mt-2"
+                />
+            )}
 
             {/* Details */}
             <div className="mt-3 space-y-1 text-sm">

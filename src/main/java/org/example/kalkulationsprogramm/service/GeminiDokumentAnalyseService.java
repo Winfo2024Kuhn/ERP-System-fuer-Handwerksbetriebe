@@ -159,22 +159,33 @@ public class GeminiDokumentAnalyseService {
                - Hat negativen Betrag oder "Gutschrift" im Titel
                - Keine Zahlungsaufforderung, sondern Guthaben
 
-            6. SONSTIG (KEIN GESCHÄFTSDOKUMENT):
+            6. WERKSTOFFZEUGNIS (Materialnachweis zu einer Lieferung):
+               - Titel enthält: "Abnahmeprüfzeugnis", "Werkszeugnis", "Werkstoffzeugnis",
+                 "Prüfbescheinigung", "Inspection Certificate", "Mill Test Certificate",
+                 "Materialzertifikat", "Abnahmezeugnis"
+               - Nennt meist EN 10204 bzw. DIN 50049 und den Typ "2.2", "3.1" oder "3.2"
+               - Enthält Erzeugnis, Abmessung, Werkstoff/Güte (z. B. S235JR, S355J2, 1.4301),
+                 Charge/Schmelze und oft chemische Analyse oder Festigkeitswerte
+               - Hat KEINE Beträge und keine Zahlungsaufforderung
+               - NICHT gemeint: Firmen-Zertifikate ohne Lieferbezug (ISO 9001, EN 1090,
+                 Schweißfachbetrieb, Umweltzertifikat) – die sind SONSTIG
+
+            7. SONSTIG (KEIN GESCHÄFTSDOKUMENT):
                - Kataloge, Produktinformationen, Werbematerial
                - Newsletter, Rundschreiben, Infoschreiben
                - Allgemeine Korrespondenz ohne Geschäftsvorgang
-               - Technische Datenblätter, Zertifikate
+               - Technische Datenblätter, Firmen-Zertifikate (ISO 9001, EN 1090 …)
                - Zusammenstellungen, Abrechnungsübersichten ("E-ZUSAMMENSTELLUNG",
                  "Rechnungsübersicht", "Rechnungszusammenstellung") – auch wenn sie
                  Beträge, Zahlungsziele oder Bankdaten enthalten!
-               - ALLES was NICHT Angebot/AB/Lieferschein/Rechnung/Gutschrift ist
+               - ALLES was NICHT Angebot/AB/Lieferschein/Rechnung/Gutschrift/Werkstoffzeugnis ist
                - WICHTIG: Wenn du dir nicht sicher bist ob es ein Geschäftsdokument ist,
                  dann wähle SONSTIG und setze confidence auf 0.0!
 
             EXTRAHIERE die folgenden Informationen als JSON:
 
             {
-                "dokumentTyp": "ANGEBOT|AUFTRAGSBESTAETIGUNG|LIEFERSCHEIN|RECHNUNG|GUTSCHRIFT|SONSTIG (ggf. mit Vermerk ' (Kopie)')",
+                "dokumentTyp": "ANGEBOT|AUFTRAGSBESTAETIGUNG|LIEFERSCHEIN|RECHNUNG|GUTSCHRIFT|WERKSTOFFZEUGNIS|SONSTIG (ggf. mit Vermerk ' (Kopie)')",
                 "istGeschaeftsdokument": true/false,
                 "dokumentNummer": "Die Dokumentnummer (exakt wie im Dokument) oder null",
                 "dokumentDatum": "YYYY-MM-DD oder null",
@@ -184,7 +195,7 @@ public class GeminiDokumentAnalyseService {
                 "liefertermin": "YYYY-MM-DD oder null",
                 "zahlungsziel": "YYYY-MM-DD (berechnetes Fälligkeitsdatum) oder null",
                 "bestellnummer": "Unsere Bestellnummer ('Ihre Bestellung', 'Ihre Bestell-Nr.', 'Ihr Auftrag Nr.') oder null. Bei ANGEBOT fast immer null. NICHT die Kundennummer!",
-                "referenzNummer": "Nummer die auf ein VORHERIGES Dokument verweist. PRIORITÄT je nach Dokumenttyp: Bei AB→Angebots-Nr. suchen. Bei RECHNUNG/LIEFERSCHEIN→Auftrags-Nr./AB-Nr. suchen. Bei GUTSCHRIFT→Rechnungs-Nr. suchen. Suche nach: 'Ihr Angebot', 'unser Angebot', 'gemäß Angebot', 'Angebots-Nr.', 'Auftrags-Nr.', 'AB-Nr.', 'Ihre Bestellung', 'Rechnungs-Nr.'",
+                "referenzNummer": "Nummer die auf ein VORHERIGES Dokument verweist. PRIORITÄT je nach Dokumenttyp: Bei AB→Angebots-Nr. suchen. Bei RECHNUNG/LIEFERSCHEIN→Auftrags-Nr./AB-Nr. suchen. Bei WERKSTOFFZEUGNIS→Lieferschein-Nr., sonst Auftrags-Nr. Bei GUTSCHRIFT→Rechnungs-Nr. suchen. Suche nach: 'Ihr Angebot', 'unser Angebot', 'gemäß Angebot', 'Angebots-Nr.', 'Auftrags-Nr.', 'AB-Nr.', 'Ihre Bestellung', 'Rechnungs-Nr.'",
                 "weitereReferenzen": ["ALLE weiteren im Dokument genannten Nummern anderer Geschäftsdokumente: Angebots-Nr., Auftrags-/AB-Nr., Lieferschein-Nr., Rechnungs-Nr., Vorgangs-Nr. NICHT die eigene dokumentNummer, NICHT Kundennummer, Artikelnummer, Telefon, IBAN oder Steuernummer. Leeres Array wenn keine."],
                 "kommission": "Kommission / Bauvorhaben / Projekt / Objekt / 'Ihr Zeichen' falls angegeben (z.B. 'BV Mustermann, Hauptstr. 5'), sonst null",
                 "bereitsGezahlt": true/false,
@@ -209,16 +220,27 @@ public class GeminiDokumentAnalyseService {
             ARTIKELPOSITIONEN EXTRAKTION – ZWEI SCHRITTE:
             SCHRITT 1: Bestimme ZUERST den dokumentTyp (siehe oben).
             SCHRITT 2: NUR wenn dokumentTyp ANGEBOT, AUFTRAGSBESTAETIGUNG, LIEFERSCHEIN,
-              RECHNUNG oder GUTSCHRIFT ist, lies die Positionen aus. Bei SONSTIG (Formulare,
-              Kataloge, Preislisten, Infoschreiben, Zeugnisse, Zusammenstellungen) ist
-              artikelPositionen IMMER ein leeres Array [] – dort KEINE Positionen auslesen.
+              RECHNUNG, GUTSCHRIFT oder WERKSTOFFZEUGNIS ist, lies die Positionen aus. Bei SONSTIG
+              (Formulare, Kataloge, Preislisten, Infoschreiben, Firmen-Zertifikate,
+              Zusammenstellungen) ist artikelPositionen IMMER ein leeres Array [] – dort KEINE
+              Positionen auslesen.
 
             - Extrahiere ALLE Positionen (jede Tabellenzeile mit Artikel oder Betrag),
               AUCH solche ohne Artikelnummer (Fracht, Zuschläge, Arbeitsleistung, Freitext-Artikel).
             - Jede Position: {"positionNr": 1, "positionsArt": "WARE|NEBENKOSTEN|RABATT",
               "externeArtikelnummer": "..." oder null, "bezeichnung": "Artikeltext",
               "menge": 12.5, "mengeneinheit": "...", "einzelpreis": 12.34,
-              "preiseinheit": "...", "gesamtpreisNetto": 154.25}
+              "preiseinheit": "...", "gesamtpreisNetto": 154.25,
+              "werkstoff": "..." oder null, "charge": "..." oder null, "abmessung": "..." oder null}
+            - werkstoff, charge, abmessung bei JEDEM Dokumenttyp ausfüllen, wenn sie zur Position
+              aufgedruckt sind (auch auf Lieferscheinen/Rechnungen), sonst null:
+              werkstoff = Werkstoff/Güte ("S235JR+AR", "S355J2+N", "1.4301", "EN AW-6060 T66"),
+              charge = Charge, Schmelze, Heat No. oder Los-Nr. exakt wie gedruckt,
+              abmessung = Maße ("50x5", "60,3x2,9", "IPE 200", "2000x1000x3").
+            - WERKSTOFFZEUGNIS: Jede Erzeugnis-Zeile (je Charge) ist eine Position.
+              bezeichnung = Erzeugnis mit Maß (z. B. "Flachstahl 50x5"), menge/mengeneinheit wie
+              gedruckt (Stück, kg, t, m), einzelpreis/preiseinheit/gesamtpreisNetto = null,
+              positionsArt = WARE. Prüfwerte (Streckgrenze, Analyse) NICHT als Position aufnehmen.
             - positionsArt NEBENKOSTEN: Fracht, Versand, Porto, Verpackung, Palette, Maut,
               Energie-, Legierungs-, Material-, Mindermengen- oder Kleinmengenzuschlag.
             - positionsArt RABATT: Rabatt-, Abzugs- oder Bonuszeilen; gesamtpreisNetto NEGATIV.
@@ -317,12 +339,18 @@ public class GeminiDokumentAnalyseService {
                 - NICHT "VORAUSKASSE"
             12. IMMER nach Skonto-Bedingungen suchen! Diese stehen oft klein gedruckt am Dokumentende.
             13. Wenn zahlungsziel nicht als Datum lesbar, aber nettoTage erkannt: berechne zahlungsziel selbst!
-            14. Wenn das Dokument kein Angebot/AB/Lieferschein/Rechnung/Gutschrift ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
+            14. Wenn das Dokument kein Angebot/AB/Lieferschein/Rechnung/Gutschrift/Werkstoffzeugnis ist --> dokumentTyp="SONSTIG", istGeschaeftsdokument=false
+                WERKSTOFFZEUGNIS ist ein Geschäftsdokument (istGeschaeftsdokument=true) OHNE Beträge:
+                dokumentNummer = Zeugnis-/Bescheinigungs-Nr., betragNetto/betragBrutto/mwstSatz = null,
+                zahlungsziel/skonto/zahlungsart = null.
             15. REFERENZNUMMER EXTRAKTION (SEHR WICHTIG für Dokumenten-Verknüpfung!):
                 - Bei AUFTRAGSBESTAETIGUNG: Suche nach "Ihr Angebot", "unser Angebot", "gemäß Angebot", "Angebots-Nr.", "Bezug: Angebot" → das ist die Angebotsnummer
                 - Bei LIEFERSCHEIN: Suche nach "Auftrags-Nr.", "AB-Nr.", "Ihre Bestellung" → das ist die AB-Nummer
                 - Bei RECHNUNG: Suche nach "Auftrags-Nr.", "AB-Nr." (PRIORITÄT!) oder "Lieferschein-Nr." → verweist auf AB oder Lieferschein
                 - Bei GUTSCHRIFT: Suche nach "Rechnungs-Nr.", "zu Rechnung" → verweist auf die Original-Rechnung
+                - Bei WERKSTOFFZEUGNIS: Suche nach "Lieferschein-Nr.", "Lieferschein", "Delivery Note" (PRIORITÄT!),
+                  sonst "Auftrags-Nr.", "Kommissions-Nr.", "Ihre Bestellung" → verweist auf Lieferschein bzw. AB.
+                  Die übrigen dieser Nummern in "weitereReferenzen", die Bestellnummer in "bestellnummer".
                 - Bei ANGEBOT: Ist es ein geändertes Angebot ("ersetzt Angebot", "Änderung zu Angebot",
                   "Revision", "Nachtragsangebot zu"), dann die Nummer des ursprünglichen Angebots als
                   referenzNummer eintragen.
@@ -1836,6 +1864,7 @@ public class GeminiDokumentAnalyseService {
      * Pflichtfelder je Typ:
      * - RECHNUNG: Dokumentnummer + (BetragBrutto ODER BetragNetto)
      * - LIEFERSCHEIN: Dokumentnummer
+     * - WERKSTOFFZEUGNIS: Dokumentnummer (Zeugnisse tragen keine Beträge)
      * - ANGEBOT: Dokumentnummer + (BetragBrutto ODER BetragNetto)
      * - AUFTRAGSBESTAETIGUNG: Dokumentnummer
      * - GUTSCHRIFT: Dokumentnummer + (BetragBrutto ODER BetragNetto)
@@ -1873,9 +1902,10 @@ public class GeminiDokumentAnalyseService {
                 return true;
 
             case LIEFERSCHEIN:
-                // Lieferschein: Nur Dokumentnummer erforderlich (keine Beträge)
+            case WERKSTOFFZEUGNIS:
+                // Lieferschein und Werkstoffzeugnis: Nur Dokumentnummer (keine Beträge)
                 if (!hatDokumentNummer) {
-                    log.debug("[Validierung] LIEFERSCHEIN: Dokumentnummer fehlt");
+                    log.debug("[Validierung] {}: Dokumentnummer fehlt", typ);
                     return false;
                 }
                 return true;
@@ -2619,8 +2649,9 @@ public class GeminiDokumentAnalyseService {
 
     /**
      * Dokumenttyp aus der KI-Antwort. Kopien, Entwürfe und Abschriften meldet die
-     * KI mit dem Vermerk " (Kopie)". Angebot, AB und Lieferschein bekommen trotzdem
-     * ihren Typ – sie gehören in die Dokumentenkette. Rechnungs- und
+     * KI mit dem Vermerk " (Kopie)". Angebot, AB, Lieferschein und Werkstoffzeugnis
+     * bekommen trotzdem ihren Typ – sie gehören in die Dokumentenkette, und Zeugnisse
+     * tragen den Vermerk „Kopie“ fast immer. Rechnungs- und
      * Gutschrift-Kopien bleiben ohne Typ, damit keine Kopie in den offenen Posten
      * landet.
      */

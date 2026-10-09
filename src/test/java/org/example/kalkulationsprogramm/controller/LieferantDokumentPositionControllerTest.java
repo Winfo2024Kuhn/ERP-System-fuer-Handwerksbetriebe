@@ -75,7 +75,7 @@ class LieferantDokumentPositionControllerTest {
                 new BigDecimal("119"), new BigDecimal("100"), BigDecimal.ZERO, false, false,
                 List.of(new DokumentPositionenDto.Position(1L, 1, "WARE", "MAT-001", "Flachstahl 50x5",
                         BigDecimal.TEN, "m", new BigDecimal("10"), "€/m", new BigDecimal("100"),
-                        null, null, null, null)));
+                        null, null, null, null, null, null, null)));
     }
 
     @Nested

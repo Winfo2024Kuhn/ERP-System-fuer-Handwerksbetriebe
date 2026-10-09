@@ -115,7 +115,7 @@ export interface LieferantStatistik {
 }
 
 // ==================== Lieferant Dokumente ====================
-export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'RECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
+export type LieferantDokumentTyp = 'ANGEBOT' | 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN' | 'WERKSTOFFZEUGNIS' | 'RECHNUNG' | 'GUTSCHRIFT' | 'SONSTIG';
 
 export interface LieferantGeschaeftsdaten {
   dokumentNummer?: string;
@@ -190,6 +190,7 @@ export const LIEFERANT_DOKUMENT_TYPEN: { value: LieferantDokumentTyp; label: str
   { value: 'ANGEBOT', label: 'Angebot', color: 'blue' },
   { value: 'AUFTRAGSBESTAETIGUNG', label: 'Auftragsbestätigung', color: 'purple' },
   { value: 'LIEFERSCHEIN', label: 'Lieferschein', color: 'amber' },
+  { value: 'WERKSTOFFZEUGNIS', label: 'Werkstoffzeugnis', color: 'slate' },
   { value: 'RECHNUNG', label: 'Rechnung', color: 'rose' },
 ];
 
