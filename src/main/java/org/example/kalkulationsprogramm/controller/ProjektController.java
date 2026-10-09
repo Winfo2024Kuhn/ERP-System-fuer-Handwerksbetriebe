@@ -109,6 +109,7 @@ public class ProjektController {
     private final LieferantenRepository lieferantenRepository;
     private final LieferantDokumentProjektAnteilRepository lieferantDokumentProjektAnteilRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
+    private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
     private final ProjektNotizRepository projektNotizRepository;
     private final ProjektNotizBildRepository projektNotizBildRepository;
     private final ProjektRepository projektRepository;
@@ -614,10 +615,22 @@ public class ProjektController {
      */
     @GetMapping("/{projektID}/eingangsrechnungen")
     @Transactional(readOnly = true)
-    public ResponseEntity<List<EingangsrechnungDto>> listeEingangsrechnungen(@PathVariable Long projektID) {
+    public ResponseEntity<List<EingangsrechnungDto>> listeEingangsrechnungen(@PathVariable Long projektID,
+            @RequestParam(value = "token", required = false) String token,
+            org.springframework.security.core.Authentication authentication) {
+        // Der Pfad liegt in der offenen Zeiterfassungs-Chain: ohne Token/Session gibt es nichts.
+        // Sonst nur Dokumenttypen, die der Aufrufer laut Abteilungsrechten sehen darf (Admin: alle).
+        var sichtbareTypen = lieferantDokumentZugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        Set<LieferantDokumentTyp> sichtbar = sichtbareTypen.get();
+
         // 1. Hole Anteile mit eager-loaded Dokument + Geschäftsdaten + Lieferant
         List<LieferantDokumentProjektAnteil> anteile = lieferantDokumentProjektAnteilRepository
-                .findByProjektIdEager(projektID);
+                .findByProjektIdEager(projektID).stream()
+                .filter(a -> a.getDokument() != null && sichtbar.contains(a.getDokument().getTyp()))
+                .toList();
         
         Map<Long, EingangsrechnungDto> dtoMap = new HashMap<>();
 
@@ -717,6 +730,8 @@ public class ProjektController {
                 if (verknuepftVon != null) alleVerknuepft.addAll(verknuepftVon);
                 // Also add the document itself to the chain
                 alleVerknuepft.add(dok);
+                // Verknüpfte Dokumente nicht sichtbarer Typen geben keine Metadaten preis
+                alleVerknuepft.removeIf(d -> !sichtbar.contains(d.getTyp()));
                 
                 if (alleVerknuepft.size() > 1) {
                     // Sort chain by type order

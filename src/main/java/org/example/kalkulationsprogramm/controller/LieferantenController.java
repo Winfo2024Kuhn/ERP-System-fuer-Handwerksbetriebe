@@ -281,21 +281,38 @@ public class LieferantenController {
     }
 
     @GetMapping("/{id}/statistik")
-    public ResponseEntity<LieferantStatistikDto> getStatistik(@PathVariable Long id) {
+    public ResponseEntity<LieferantStatistikDto> getStatistik(@PathVariable Long id,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
+        // Kennzahlen aus Rechnungen/Auftragsbestätigungen nur für Aufrufer, die diese Typen sehen dürfen.
+        var sichtbareTypen = dokumentZugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         LieferantStatistikDto statistik = lieferantenDetailService.loadStatistik(id);
         if (statistik == null) {
             return ResponseEntity.notFound().build();
         }
+        dokumentZugriffService.beschraenkeStatistik(statistik, sichtbareTypen.get());
         return ResponseEntity.ok(statistik);
     }
 
     // Voll qualifiziert: Der Controller importiert bereits das gleichnamige dto.Projekt.ProjektEmailDto.
     @GetMapping("/{id}/email-verlauf")
-    public ResponseEntity<List<org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto>> getEmailVerlauf(@PathVariable Long id) {
+    public ResponseEntity<List<org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto>> getEmailVerlauf(@PathVariable Long id,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
+        // Anhänge (z. B. Rechnung per Mail) nur für Aufrufer, die den Dokumenttyp sehen dürfen.
+        var sichtbareTypen = dokumentZugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         if (!lieferantenRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(lieferantenDetailService.loadEmailVerlauf(id));
+        var emails = lieferantenDetailService.loadEmailVerlauf(id);
+        dokumentZugriffService.beschraenkeEmailVerlauf(emails, sichtbareTypen.get());
+        return ResponseEntity.ok(emails);
     }
 
     @GetMapping("/{id}/artikelpreise")
@@ -894,7 +911,9 @@ public class LieferantenController {
         if (!StringUtils.hasText(token)) {
             return null;
         }
-        return mitarbeiterRepository.findByLoginToken(token).orElse(null);
+        // Nur aktive Mitarbeiter: deaktivierte verlieren mit altem Token sofort den Zugriff
+        // (wie BelegService.findByToken und die Zeiterfassung).
+        return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
     }
 
     /**

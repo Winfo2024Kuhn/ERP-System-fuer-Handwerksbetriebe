@@ -76,6 +76,7 @@ class BestellungsUebersichtSecurityTest {
     @MockBean private LieferantDokumentService lieferantDokumentService;
     @MockBean private BestellungsUebersichtService bestellungsUebersichtService;
     @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService zuordnungService;
+    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService zugriffService;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
 
     private static final String ABHAENGEN = "/api/bestellungen-uebersicht/abhaengen";

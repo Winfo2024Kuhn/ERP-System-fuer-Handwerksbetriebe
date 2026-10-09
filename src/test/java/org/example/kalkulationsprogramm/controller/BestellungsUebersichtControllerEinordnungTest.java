@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfung
 import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentAbgleich;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
@@ -24,11 +25,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -47,6 +52,8 @@ class BestellungsUebersichtControllerEinordnungTest {
     private LieferantDokumentVerknuepfungSperreRepository sperreRepository;
     @Mock
     private LieferantDokumentService lieferantDokumentService;
+    @Mock
+    private LieferantDokumentZugriffService zugriffService;
 
     private BestellungsUebersichtController controller;
     private Lieferanten lieferant;
@@ -62,12 +69,15 @@ class BestellungsUebersichtControllerEinordnungTest {
                 lieferantDokumentService,
                 new BestellungsUebersichtService(dokumentRepository, geschaeftsdokumentRepository,
                         projektAnteilRepository, vorschlagService),
-                null);
+                null,
+                zugriffService);
         lieferant = new Lieferanten();
         lieferant.setId(1L);
         lieferant.setLieferantenname("Max Mustermann GmbH");
         lenient().when(projektAnteilRepository.findAll()).thenReturn(List.of());
         lenient().when(geschaeftsdokumentRepository.findAll()).thenReturn(List.of());
+        lenient().when(zugriffService.sichtbareTypen(any(), any()))
+                .thenReturn(Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)));
     }
 
     @Test
@@ -75,7 +85,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         LieferantDokument lieferschein = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
         when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).hasSize(1);
@@ -90,7 +100,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         angebot.setVerknuepfteDokumente(new HashSet<>(List.of(lieferschein)));
         when(dokumentRepository.findAll()).thenReturn(List.of(angebot, lieferschein));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).hasSize(1);
@@ -105,7 +115,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         lieferschein.setVerknuepfteDokumente(new HashSet<>(List.of(rechnung)));
         when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein, rechnung));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.abgeschlossen()).hasSize(1);
@@ -116,7 +126,7 @@ class BestellungsUebersichtControllerEinordnungTest {
     void nurAngebotBleibtOffeneAnfrage() {
         when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.ANGEBOT)));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.offeneAnfragen()).hasSize(1);
@@ -131,7 +141,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         neu.setUploadDatum(LocalDateTime.of(2026, 9, 1, 9, 0));
         when(dokumentRepository.findAll()).thenReturn(List.of(alt, neu));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.offeneAnfragen()).hasSize(2);
@@ -150,7 +160,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         frueherEingegangen.setUploadDatum(LocalDateTime.of(2026, 9, 1, 9, 0));
         when(dokumentRepository.findAll()).thenReturn(List.of(spaetEingegangen, frueherEingegangen));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.offeneAnfragen().get(0).dokumente().get(0).id).isEqualTo(2L);
@@ -166,7 +176,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         // AB zuerst – genau diese Reihenfolge erzeugte früher eine zweite Kette ohne Rechnung
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, rechnung));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -185,7 +195,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         rechnung.getGeschaeftsdaten().setReferenzNummer("AB 77001");
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, rechnung));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         var vorschlag = dto.laufendeBestellungen().get(0).rechnungsVorschlag();
@@ -209,7 +219,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         r2.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 6)));
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, r1, r2));
 
-        var antwort = controller.getRechnungsVorschlaege(List.of(1L), false);
+        var antwort = controller.getRechnungsVorschlaege(List.of(1L), false, null, null);
 
         assertThat(antwort.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(antwort.getBody()).extracting(v -> v.rechnung().id).containsExactlyInAnyOrder(2L, 3L);
@@ -227,7 +237,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         }
         when(dokumentRepository.findAll()).thenReturn(alle);
 
-        var liste = controller.getRechnungsVorschlaege(List.of(1L), false).getBody();
+        var liste = controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody();
 
         assertThat(liste).hasSize(200);
         // alle gleich gut (nur zeitlich nah) -> keiner ist eindeutig
@@ -248,13 +258,13 @@ class BestellungsUebersichtControllerEinordnungTest {
         fremd.getGeschaeftsdaten().setReferenzNummer("AB-77001");
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, fremd));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
         // Im Fenster „Rechnung suchen“ erst mit „alle Lieferanten“
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false).getBody()).isEmpty();
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), true).getBody())
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody()).isEmpty();
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), true, null, null).getBody())
                 .extracting(v -> v.rechnung().id).containsExactly(2L);
     }
 
@@ -274,7 +284,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(rechnung, andereAb);
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, andereAb, rechnung));
 
-        var liste = controller.getRechnungsVorschlaege(List.of(1L), false).getBody();
+        var liste = controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody();
 
         assertThat(liste).hasSize(1);
         assertThat(liste.get(0).rechnung().id).isEqualTo(3L);
@@ -294,7 +304,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         andere.setGeschaeftsdaten(geschaeftsdaten(LocalDate.of(2026, 6, 6)));
         when(dokumentRepository.findAll()).thenReturn(List.of(ls, schonDran, andere));
 
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false).getBody())
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody())
                 .extracting(v -> v.rechnung().id).containsExactly(3L);
     }
 
@@ -308,7 +318,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(rechnung, lieferschein);
         when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein, rechnung));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -329,7 +339,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(teilrechnung, ab);
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, bezahlt, teilrechnung));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.abgeschlossen()).hasSize(1);
@@ -353,7 +363,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(sichtbarerLs, halbVersteckt);
         when(dokumentRepository.findAll()).thenReturn(List.of(ls, rechnung, versteckteAnfrage, halbVersteckt, sichtbarerLs));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.zugeordnet()).hasSize(1);
@@ -376,7 +386,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(gutschrift, rechnung);
         when(dokumentRepository.findAll()).thenReturn(List.of(ls1, ls2, rechnung, gutschrift));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         var kette = dto.abgeschlossen().get(0);
@@ -399,7 +409,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         // Ohne Verknüpfung steht die AB laufend, die bezahlte Rechnung allein erledigt
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, bezahlt));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         var vorschlag = dto.laufendeBestellungen().get(0).rechnungsVorschlag();
@@ -420,12 +430,12 @@ class BestellungsUebersichtControllerEinordnungTest {
         vielSpaeter.getGeschaeftsdaten().setReferenzNummer("AB 77001");
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, vielSpaeter));
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
         // Im Fenster „Rechnung suchen“ gilt die Grenze nicht – dort wird im Browser gesucht
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false).getBody())
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getBody())
                 .extracting(v -> v.rechnung().id).containsExactly(2L);
     }
 
@@ -460,7 +470,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         }
         when(dokumentRepository.findAll()).thenReturn(alle);
 
-        var dto = controller.getUebersicht().getBody();
+        var dto = controller.getUebersicht(null, null).getBody();
 
         assertThat(dto.laufendeBestellungen()).hasSize(1);
         assertThat(dto.laufendeBestellungen().get(0).dokumente()).hasSize(20_000);
@@ -541,18 +551,18 @@ class BestellungsUebersichtControllerEinordnungTest {
 
     @Test
     void rechnungVorschlaegeLehntUngueltigeIdsAb() {
-        assertThat(controller.getRechnungsVorschlaege(List.of(), false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.getRechnungsVorschlaege(List.of(-1L), false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.getRechnungsVorschlaege(List.of(0L), false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(List.of(), false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(List.of(-1L), false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(List.of(0L), false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         List<Long> zuViele = java.util.stream.LongStream.rangeClosed(1, 51).boxed().toList();
-        assertThat(controller.getRechnungsVorschlaege(zuViele, false).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.getRechnungsVorschlaege(zuViele, false, null, null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
     void rechnungVorschlaegeOhneBestelldokument() {
         when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.ANGEBOT)));
 
-        assertThat(controller.getRechnungsVorschlaege(List.of(1L, Long.MAX_VALUE), false).getStatusCode())
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L, Long.MAX_VALUE), false, null, null).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
@@ -596,5 +606,93 @@ class BestellungsUebersichtControllerEinordnungTest {
         LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
         gd.setDokumentDatum(datum);
         return gd;
+    }
+
+    // ------------------------------------------------------------ Dokumentrechte
+
+    private void sichtbar(LieferantDokumentTyp... typen) {
+        lenient().when(zugriffService.sichtbareTypen(any(), any())).thenReturn(Optional.of(
+                typen.length == 0 ? EnumSet.noneOf(LieferantDokumentTyp.class) : EnumSet.copyOf(List.of(typen))));
+    }
+
+    @Test
+    void uebersichtOhneAnmeldungGibt401() {
+        when(zugriffService.sichtbareTypen(any(), any())).thenReturn(Optional.empty());
+
+        assertThat(controller.getUebersicht("unbekannt", null).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        verifyNoInteractions(dokumentRepository);
+    }
+
+    @Test
+    void uebersichtZeigtNurSichtbareDokumenttypen() {
+        sichtbar(LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument lieferschein = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument rechnung = dokument(2L, LieferantDokumentTyp.RECHNUNG);
+        verknuepfe(rechnung, lieferschein);
+        when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein, rechnung));
+
+        var dto = controller.getUebersicht(null, null).getBody();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.abgeschlossen()).isEmpty();
+        assertThat(dto.laufendeBestellungen()).hasSize(1);
+        assertThat(dto.laufendeBestellungen().get(0).dokumente()).extracting(ref -> ref.id).containsExactly(1L);
+    }
+
+    @Test
+    void rechnungsvorschlaegeFuerNichtSichtbaresDokumentGeben404() {
+        sichtbar(LieferantDokumentTyp.RECHNUNG);
+        when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN)));
+
+        assertThat(controller.getRechnungsVorschlaege(List.of(1L), false, null, null).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void geschaeftsdatenEinesNichtSichtbarenTypsGeben404UndWerdenNichtGeaendert() {
+        sichtbar(LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantGeschaeftsdokument gd = geschaeftsdaten(LocalDate.of(2026, 9, 1));
+        gd.setId(5L);
+        gd.setDokumentNummer("RE-1");
+        gd.setDokument(dokument(5L, LieferantDokumentTyp.RECHNUNG));
+        when(geschaeftsdokumentRepository.findById(5L)).thenReturn(java.util.Optional.of(gd));
+        var aenderung = new BestellungsUebersichtController.GeschaeftsdatenDto();
+        aenderung.dokumentNummer = "RE-GEAENDERT";
+
+        assertThat(controller.getGeschaeftsdaten(5L, null, null).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(controller.updateGeschaeftsdaten(5L, aenderung, null, null).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+
+        assertThat(gd.getDokumentNummer()).isEqualTo("RE-1");
+        org.mockito.Mockito.verify(geschaeftsdokumentRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void geschaeftsdatenEinesSichtbarenTypsWerdenGeliefert() {
+        sichtbar(LieferantDokumentTyp.RECHNUNG);
+        LieferantGeschaeftsdokument gd = geschaeftsdaten(LocalDate.of(2026, 9, 1));
+        gd.setId(5L);
+        gd.setDokumentNummer("RE-1");
+        gd.setDokument(dokument(5L, LieferantDokumentTyp.RECHNUNG));
+        when(geschaeftsdokumentRepository.findById(5L)).thenReturn(java.util.Optional.of(gd));
+
+        var antwort = controller.getGeschaeftsdaten(5L, null, null);
+
+        assertThat(antwort.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(antwort.getBody().dokumentNummer).isEqualTo("RE-1");
+    }
+
+    @Test
+    void zuordnungenEinesNichtSichtbarenTypsSindLeer() {
+        sichtbar(LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantGeschaeftsdokument gd = geschaeftsdaten(LocalDate.of(2026, 9, 1));
+        gd.setId(5L);
+        gd.setDokument(dokument(5L, LieferantDokumentTyp.RECHNUNG));
+        when(geschaeftsdokumentRepository.findById(5L)).thenReturn(java.util.Optional.of(gd));
+
+        assertThat(controller.getZuordnungen(5L, null, null).getBody()).isEmpty();
+        org.mockito.Mockito.verifyNoInteractions(projektAnteilRepository);
     }
 }

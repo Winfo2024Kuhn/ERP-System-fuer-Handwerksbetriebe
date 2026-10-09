@@ -17,6 +17,7 @@ import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -90,6 +91,9 @@ class LieferantDokumentControllerTest {
     @MockBean
     private DatensatzLockService dokumentLockService;
 
+    @MockBean
+    private LieferantDokumentZugriffService zugriffService;
+
     /**
      * MockMvc-Tests laufen mit `addFilters = false`, daher wird der
      * `Authentication`-Parameter im Controller nicht aus dem SecurityContext
@@ -108,6 +112,11 @@ class LieferantDokumentControllerTest {
     @BeforeEach
     void mockLockHeld() {
         given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(true);
+        // Die Rechte-Logik selbst prüft LieferantDokumentRechteSecurityTest; hier darf der Aufrufer alles sehen.
+        given(zugriffService.sichtbareTypen(any(), any()))
+                .willReturn(Optional.of(java.util.EnumSet.allOf(LieferantDokumentTyp.class)));
+        given(zugriffService.beschraenkeDokument(any(), any()))
+                .willAnswer(aufruf -> Optional.ofNullable(aufruf.getArgument(0)));
     }
 
     @AfterEach
@@ -184,6 +193,7 @@ class LieferantDokumentControllerTest {
         @DisplayName("Lock-Pruefung fragt SperrbarerTyp.EINGANG mit Dokument- und User-ID ab")
         void lockPruefungNutztSperrbarerTypEingang() throws Exception {
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(1L);
             LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
             gd.setId(1L);
@@ -221,6 +231,7 @@ class LieferantDokumentControllerTest {
         @DisplayName("SQL Injection in Dokumentnummer wird als String gespeichert")
         void sqlInjectionInDokumentnummer() throws Exception {
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(1L);
             LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
             gd.setId(1L);
@@ -303,6 +314,7 @@ class LieferantDokumentControllerTest {
         @DisplayName("Re-Analyse erfolgreich")
         void reanalyseErfolgreich() throws Exception {
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(1L);
             given(dokumentRepository.findById(1L)).willReturn(Optional.of(dokument));
 
@@ -368,6 +380,7 @@ class LieferantDokumentControllerTest {
         @DisplayName("Dokument ohne Datei gibt 404")
         void dokumentOhneDateiGibt404() throws Exception {
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(1L);
             // No gespeicherterDateiname and no attachment → resolveDokumentPath returns null
             given(dokumentRepository.findById(1L)).willReturn(Optional.of(dokument));
@@ -393,6 +406,7 @@ class LieferantDokumentControllerTest {
             ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
 
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(5L);
             dokument.setOriginalDateiname("scan.pdf");
             dokument.setGespeicherterDateiname("belege/scan.pdf");
@@ -424,6 +438,7 @@ class LieferantDokumentControllerTest {
             ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
 
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(6L);
             dokument.setGespeicherterDateiname("../secret.txt");
             given(dokumentRepository.findById(6L)).willReturn(Optional.of(dokument));
@@ -449,6 +464,7 @@ class LieferantDokumentControllerTest {
             ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
 
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(7L);
             dokument.setOriginalDateiname("bild.svg");
             dokument.setGespeicherterDateiname("belege/bild.svg");
@@ -473,6 +489,7 @@ class LieferantDokumentControllerTest {
             ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
 
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(8L);
             dokument.setOriginalDateiname("rechnung.pdf");
             dokument.setGespeicherterDateiname("belege/rechnung.pdf");
@@ -510,6 +527,7 @@ class LieferantDokumentControllerTest {
             anhang.setMimeType("application/pdf");
 
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(10L);
             dokument.setAttachment(anhang);
             given(dokumentRepository.findById(10L)).willReturn(Optional.of(dokument));
@@ -541,6 +559,7 @@ class LieferantDokumentControllerTest {
             anhang.setMimeType("image/svg+xml");
 
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(11L);
             dokument.setAttachment(anhang);
             given(dokumentRepository.findById(11L)).willReturn(Optional.of(dokument));
@@ -571,6 +590,7 @@ class LieferantDokumentControllerTest {
             ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
 
             LieferantDokument dokument = new LieferantDokument();
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(9L);
             dokument.setOriginalDateiname("a\";x=\"b.pdf");
             dokument.setGespeicherterDateiname("belege/scan.pdf");

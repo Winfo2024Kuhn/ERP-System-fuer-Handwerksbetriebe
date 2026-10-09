@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
@@ -12,12 +13,14 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAntei
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,6 +41,7 @@ class BestellungsUebersichtControllerBelegZuordnungTest {
     private BelegRepository belegRepository;
     private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
     private BelegService belegService;
+    private LieferantDokumentZugriffService zugriffService;
     private BestellungsUebersichtController controller;
 
     @BeforeEach
@@ -48,6 +52,9 @@ class BestellungsUebersichtControllerBelegZuordnungTest {
         belegRepository = mock(BelegRepository.class);
         belegKostenstellenAnteilRepository = mock(BelegKostenstellenAnteilRepository.class);
         belegService = mock(BelegService.class);
+        zugriffService = mock(LieferantDokumentZugriffService.class);
+        when(zugriffService.sichtbareTypen(any(), any()))
+                .thenReturn(Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)));
         controller = new BestellungsUebersichtController(
                 dokumentRepository,
                 mock(LieferantGeschaeftsdokumentRepository.class),
@@ -62,7 +69,8 @@ class BestellungsUebersichtControllerBelegZuordnungTest {
                 mock(org.example.kalkulationsprogramm.service.RechnungsVorschlagService.class),
                 mock(org.example.kalkulationsprogramm.service.LieferantDokumentService.class),
                 mock(org.example.kalkulationsprogramm.service.BestellungsUebersichtService.class),
-                mock(org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService.class));
+                mock(org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService.class),
+                zugriffService);
     }
 
     @Test

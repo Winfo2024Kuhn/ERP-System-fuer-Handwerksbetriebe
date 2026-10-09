@@ -8,7 +8,9 @@ import static org.mockito.Mockito.doReturn;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 
 import org.example.kalkulationsprogramm.config.LieferantDokumentAbgleichBackfillRunner;
 import org.example.kalkulationsprogramm.controller.BestellungsUebersichtController;
@@ -90,6 +92,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
     @MockBean private BelegSplitService belegSplitService;
     @MockBean private BelegAuditService belegAuditService;
     @MockBean private BelegService belegService;
+    @MockBean private LieferantDokumentZugriffService zugriffService;
     @MockBean private LieferantDokumentService lieferantDokumentService;
 
     private Lieferanten lieferant;
@@ -99,6 +102,9 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         lieferant = new Lieferanten();
         lieferant.setLieferantenname("Muster GmbH");
         lieferant = lieferantenRepository.saveAndFlush(lieferant);
+        // Angemeldeter Nutzer mit Zugriff auf alle Dokumenttypen (z. B. Admin)
+        doReturn(Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)))
+                .when(zugriffService).sichtbareTypen(any(), any());
     }
 
     private LieferantDokument dokument(LieferantDokumentTyp typ, String nummer, LocalDate datum) {
@@ -259,7 +265,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         rechnung.setAusgeblendet(true);
         speichern();
 
-        var dto = uebersichtController.getUebersicht().getBody();
+        var dto = uebersichtController.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -280,7 +286,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         offen.getVerknuepfteDokumente().add(ab);
         speichern();
 
-        var dto = uebersichtController.getUebersicht().getBody();
+        var dto = uebersichtController.getUebersicht(null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.abgeschlossen()).hasSize(1);
@@ -299,13 +305,13 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 31));
         rechnung.getVerknuepfteDokumente().add(ls1);
         speichern();
-        assertThat(uebersichtController.getUebersicht().getBody().laufendeBestellungen()).hasSize(1);
+        assertThat(uebersichtController.getUebersicht(null, null).getBody().laufendeBestellungen()).hasSize(1);
         speichern();
 
         vorschlagService.verknuepfe(ls2.getId(), rechnung.getId(), null);
         speichern();
 
-        var dto = uebersichtController.getUebersicht().getBody();
+        var dto = uebersichtController.getUebersicht(null, null).getBody();
         assertThat(dto.laufendeBestellungen()).isEmpty();
         assertThat(dto.abgeschlossen()).hasSize(1);
         assertThat(dto.abgeschlossen().get(0).dokumente()).hasSize(3);

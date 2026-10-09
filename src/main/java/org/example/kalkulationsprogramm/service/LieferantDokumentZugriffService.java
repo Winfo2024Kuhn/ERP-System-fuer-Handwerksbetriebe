@@ -1,16 +1,24 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantAttachmentViewDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantKommunikationDto;
+import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
+import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
+import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailFileDto;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 
@@ -57,11 +65,15 @@ public class LieferantDokumentZugriffService {
     }
 
     /**
-     * Beschränkt die Dokumente einer Lieferanten-Detailantwort auf die sichtbaren Typen.
-     * Wer nicht zuzuordnen ist, bekommt keine Dokumente — die Stammdaten bleiben unberührt.
+     * Beschränkt eine Lieferanten-Detailantwort auf die sichtbaren Dokumenttypen: Dokumente,
+     * E-Mail-Anhänge (Rechnung per Mail) und Kennzahlen aus Dokumenten. Wer nicht zuzuordnen
+     * ist, bekommt nichts davon — die Stammdaten bleiben unberührt.
      */
     public void beschraenkeDokumente(LieferantDetailDto detail, String token, Authentication auth) {
         Set<LieferantDokumentTyp> sichtbar = sichtbareTypen(token, auth).orElseGet(this::keine);
+        beschraenkeStatistik(detail.getStatistik(), sichtbar);
+        beschraenkeKommunikation(detail.getKommunikation(), sichtbar);
+        beschraenkeEmailVerlauf(detail.getEmails(), sichtbar);
         List<LieferantDokumentDto.Response> dokumente = detail.getDokumente();
         if (dokumente == null) {
             // nurStammdaten: nur der Zähler für den Reiter ist gefüllt, aber ungefiltert.
@@ -79,16 +91,89 @@ public class LieferantDokumentZugriffService {
     public List<LieferantDokumentDto.Response> beschraenkeDokumente(
             List<LieferantDokumentDto.Response> dokumente, Set<LieferantDokumentTyp> sichtbar) {
         return dokumente.stream()
-                .filter(d -> d.getTyp() != null && sichtbar.contains(d.getTyp()))
-                .map(d -> {
-                    if (d.getVerknuepfteDokumente() != null) {
-                        d.setVerknuepfteDokumente(d.getVerknuepfteDokumente().stream()
-                                .filter(ref -> ref.getTyp() != null && sichtbar.contains(ref.getTyp()))
-                                .toList());
-                    }
-                    return d;
-                })
+                .map(d -> beschraenkeDokument(d, sichtbar))
+                .flatMap(Optional::stream)
                 .toList();
+    }
+
+    /**
+     * Einzelnes Dokument: leer, wenn der Typ nicht sichtbar ist (Controller antwortet dann 404,
+     * damit die Existenz nicht verraten wird). Sonst mit gefilterten Verknüpfungen.
+     */
+    public Optional<LieferantDokumentDto.Response> beschraenkeDokument(
+            LieferantDokumentDto.Response dokument, Set<LieferantDokumentTyp> sichtbar) {
+        if (dokument == null || dokument.getTyp() == null || !sichtbar.contains(dokument.getTyp())) {
+            return Optional.empty();
+        }
+        if (dokument.getVerknuepfteDokumente() != null) {
+            dokument.setVerknuepfteDokumente(dokument.getVerknuepfteDokumente().stream()
+                    .filter(ref -> ref.getTyp() != null && sichtbar.contains(ref.getTyp()))
+                    .toList());
+        }
+        return Optional.of(dokument);
+    }
+
+    /**
+     * Blendet Kennzahlen aus, die aus nicht sichtbaren Dokumenttypen stammen:
+     * Gesamtkosten (Rechnungen) sowie Bestellungen und Lieferzeit (Auftragsbestätigungen).
+     */
+    public void beschraenkeStatistik(LieferantStatistikDto statistik, Set<LieferantDokumentTyp> sichtbar) {
+        if (statistik == null) {
+            return;
+        }
+        if (!sichtbar.contains(LieferantDokumentTyp.RECHNUNG)) {
+            statistik.setGesamtKosten(null);
+        }
+        if (!sichtbar.contains(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG)) {
+            statistik.setBestellungAnzahl(0);
+            statistik.setLieferzeit(null);
+        }
+    }
+
+    /** E-Mail-Verlauf: Anhänge, die als Dokument eines nicht sichtbaren Typs abgelegt sind, entfallen. */
+    public void beschraenkeEmailVerlauf(List<ProjektEmailDto> emails, Set<LieferantDokumentTyp> sichtbar) {
+        if (emails == null) {
+            return;
+        }
+        Set<Long> gesperrt = gesperrteAnhaenge(emails.stream()
+                .filter(e -> e.getAttachments() != null)
+                .flatMap(e -> e.getAttachments().stream())
+                .map(ProjektEmailFileDto::getId)
+                .collect(Collectors.toSet()), sichtbar);
+        if (gesperrt.isEmpty()) {
+            return;
+        }
+        emails.stream().filter(e -> e.getAttachments() != null).forEach(e -> e.setAttachments(
+                e.getAttachments().stream().filter(a -> !gesperrt.contains(a.getId())).toList()));
+    }
+
+    /** Kommunikation der Detailantwort: wie {@link #beschraenkeEmailVerlauf}. */
+    public void beschraenkeKommunikation(List<LieferantKommunikationDto> kommunikation,
+            Set<LieferantDokumentTyp> sichtbar) {
+        if (kommunikation == null) {
+            return;
+        }
+        Set<Long> gesperrt = gesperrteAnhaenge(kommunikation.stream()
+                .filter(k -> k.getAttachments() != null)
+                .flatMap(k -> k.getAttachments().stream())
+                .map(LieferantAttachmentViewDto::getId)
+                .collect(Collectors.toSet()), sichtbar);
+        if (gesperrt.isEmpty()) {
+            return;
+        }
+        kommunikation.stream().filter(k -> k.getAttachments() != null).forEach(k -> k.setAttachments(
+                k.getAttachments().stream().filter(a -> !gesperrt.contains(a.getId())).toList()));
+    }
+
+    /** Anhänge, die als Dokument eines nicht sichtbaren Typs abgelegt sind. */
+    private Set<Long> gesperrteAnhaenge(Collection<Long> anhangIds, Set<LieferantDokumentTyp> sichtbar) {
+        Set<Long> ids = anhangIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+        EnumSet<LieferantDokumentTyp> gesperrteTypen = EnumSet.allOf(LieferantDokumentTyp.class);
+        gesperrteTypen.removeAll(sichtbar);
+        if (ids.isEmpty() || gesperrteTypen.isEmpty()) {
+            return Set.of();
+        }
+        return dokumentService.findAnhangIdsMitTyp(ids, gesperrteTypen);
     }
 
     private Set<LieferantDokumentTyp> typenVon(Mitarbeiter mitarbeiter) {

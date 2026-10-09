@@ -799,4 +799,20 @@ class LieferantDokumentServiceTest {
 
         assertThat(service.zaehleDokumente(7L, Set.of(LieferantDokumentTyp.RECHNUNG))).isEqualTo(3L);
     }
+
+    @Test
+    void findAnhangIdsMitTypOhneAnhaengeOderTypenFragtNichtNachDerDatenbank() {
+        assertThat(service.findAnhangIdsMitTyp(Set.of(), Set.of(LieferantDokumentTyp.RECHNUNG))).isEmpty();
+        assertThat(service.findAnhangIdsMitTyp(Set.of(1L), Set.of())).isEmpty();
+        org.mockito.Mockito.verifyNoInteractions(dokumentRepository);
+    }
+
+    @Test
+    void findAnhangIdsMitTypGibtTrefferAlsMengeZurueck() {
+        given(dokumentRepository.findAnhangIdsMitDokumentTyp(Set.of(1L, 2L), Set.of(LieferantDokumentTyp.RECHNUNG)))
+                .willReturn(List.of(2L));
+
+        assertThat(service.findAnhangIdsMitTyp(Set.of(1L, 2L), Set.of(LieferantDokumentTyp.RECHNUNG)))
+                .containsExactly(2L);
+    }
 }

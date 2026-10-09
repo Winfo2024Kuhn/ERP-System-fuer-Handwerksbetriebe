@@ -15,12 +15,14 @@ import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
 import org.example.kalkulationsprogramm.service.ProjektListenPdfService;
 import org.example.kalkulationsprogramm.service.StuecklistePdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -102,6 +104,18 @@ class ProjektControllerTest {
 
         @MockBean
         private DokumentFreigabeService dokumentFreigabeService;
+
+        @MockBean
+        private LieferantDokumentZugriffService lieferantDokumentZugriffService;
+
+        @BeforeEach
+        void alleDokumenttypenSichtbar() {
+                // Die Typ-Rechte prüfen die Tests "eingangsrechnungen_..." unten; sonst darf der Aufrufer alles sehen.
+                when(lieferantDokumentZugriffService.sichtbareTypen(org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any()))
+                                .thenReturn(java.util.Optional.of(
+                                                java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
+        }
 
         @Test
         void getAlleProjekte_returnsPagedResponse() throws Exception {
@@ -333,6 +347,7 @@ class ProjektControllerTest {
                 org.example.kalkulationsprogramm.domain.LieferantDokument dok =
                         new org.example.kalkulationsprogramm.domain.LieferantDokument();
                 dok.setId(1L);
+                dok.setTyp(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
                 dok.setUploadDatum(java.time.LocalDateTime.of(2026, 4, 2, 0, 0));
                 dok.setGeschaeftsdaten(gd);
 
@@ -369,6 +384,7 @@ class ProjektControllerTest {
                 org.example.kalkulationsprogramm.domain.LieferantDokument dok =
                         new org.example.kalkulationsprogramm.domain.LieferantDokument();
                 dok.setId(2L);
+                dok.setTyp(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
                 dok.setUploadDatum(java.time.LocalDateTime.of(2026, 4, 2, 0, 0));
                 dok.setGeschaeftsdaten(gd);
                 // Verknüpftes Dokument (Lieferschein) – keine Geschäftsdaten nötig
@@ -392,6 +408,89 @@ class ProjektControllerTest {
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$[0].berechneterBetrag").value(200.00))
                         .andExpect(jsonPath("$[0].gesamtbetrag").value(200.00));
+        }
+
+        // --- Dokumentrechte: /eingangsrechnungen liegt in der offenen Zeiterfassungs-Chain ---
+
+        private org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil anteilMitTyp(long id,
+                        org.example.kalkulationsprogramm.domain.LieferantDokumentTyp typ) {
+                var gd = new org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument();
+                gd.setId(id);
+                gd.setBetragNetto(new java.math.BigDecimal("100.00"));
+                gd.setDokumentNummer("NR-" + id);
+                var dok = new org.example.kalkulationsprogramm.domain.LieferantDokument();
+                dok.setId(id);
+                dok.setTyp(typ);
+                dok.setGeschaeftsdaten(gd);
+                dok.setVerknuepfteDokumente(new java.util.HashSet<>());
+                dok.setVerknuepftVon(new java.util.HashSet<>());
+                var anteil = new org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil();
+                anteil.setId(id);
+                anteil.setProzent(100);
+                anteil.setDokument(dok);
+                return anteil;
+        }
+
+        @Test
+        void eingangsrechnungen_ohneAnmeldungGibt401UndLaedtNichts() throws Exception {
+                when(lieferantDokumentZugriffService.sichtbareTypen(org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Optional.empty());
+
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen").param("token", "unbekannt"))
+                                .andExpect(status().isUnauthorized());
+
+                org.mockito.Mockito.verifyNoInteractions(lieferantDokumentProjektAnteilRepository);
+        }
+
+        @Test
+        void eingangsrechnungen_zeigtNurSichtbareDokumenttypen() throws Exception {
+                var rechnung = anteilMitTyp(1L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
+                var gutschrift = anteilMitTyp(2L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.GUTSCHRIFT);
+                when(lieferantDokumentZugriffService.sichtbareTypen(org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Optional.of(java.util.EnumSet
+                                                .of(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG)));
+                when(lieferantDokumentProjektAnteilRepository.findByProjektIdEager(99L))
+                                .thenReturn(List.of(rechnung, gutschrift));
+                when(lieferantDokumentProjektAnteilRepository.findByDokumentIdEager(1L)).thenReturn(List.of(rechnung));
+
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.length()").value(1))
+                                .andExpect(jsonPath("$[0].dokumentNummer").value("NR-1"));
+        }
+
+        @Test
+        void eingangsrechnungen_ohneSichtbareTypenLeereListe() throws Exception {
+                when(lieferantDokumentZugriffService.sichtbareTypen(org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Optional.of(java.util.EnumSet
+                                                .noneOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
+                when(lieferantDokumentProjektAnteilRepository.findByProjektIdEager(99L)).thenReturn(List.of(
+                                anteilMitTyp(1L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG)));
+
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$").isEmpty());
+        }
+
+        @Test
+        void eingangsrechnungen_dokumentenketteVerschweigtNichtSichtbareTypen() throws Exception {
+                var rechnung = anteilMitTyp(1L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
+                var lieferschein = anteilMitTyp(5L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN)
+                                .getDokument();
+                var angebot = anteilMitTyp(6L, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.ANGEBOT)
+                                .getDokument();
+                rechnung.getDokument().setVerknuepfteDokumente(new java.util.HashSet<>(List.of(lieferschein, angebot)));
+                when(lieferantDokumentZugriffService.sichtbareTypen(org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Optional.of(java.util.EnumSet.of(
+                                                org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG,
+                                                org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN)));
+                when(lieferantDokumentProjektAnteilRepository.findByProjektIdEager(99L)).thenReturn(List.of(rechnung));
+                when(lieferantDokumentProjektAnteilRepository.findByDokumentIdEager(1L)).thenReturn(List.of(rechnung));
+
+                mockMvc.perform(get("/api/projekte/99/eingangsrechnungen"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$[0].dokumentenKette.length()").value(2))
+                                .andExpect(jsonPath("$[0].dokumentenKette[?(@.typ=='ANGEBOT')]").isEmpty());
         }
 
         @Test
