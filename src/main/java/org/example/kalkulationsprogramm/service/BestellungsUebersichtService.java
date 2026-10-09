@@ -94,55 +94,6 @@ public class BestellungsUebersichtService {
     }
 
     /**
-     * Rechnungen, bewertet gegen die Dokumente einer Bestellung – beste zuerst,
-     * bei gleicher Quote die zeitlich nächste. Für das Fenster „Rechnung suchen“.
-     *
-     * <p>Kandidaten sind alle Rechnungen desselben Lieferanten, auch ausgeblendete,
-     * bezahlte und schon anderswo verknüpfte (Teillieferungen, Teilrechnungen).
-     * Rechnungen, die schon in dieser Kette hängen, fehlen.
-     *
-     * @param dokumentIds     die Dokumente der Bestellungs-Kette (AB, Lieferschein, …)
-     * @param alleLieferanten auch Rechnungen anderer Lieferanten (KI hat den
-     *                        Lieferanten falsch erkannt)
-     * @param sichtbareTypen  Dokumenttypen, die der Aufrufer sehen darf (andere gelten als nicht vorhanden)
-     * @return leer, wenn keine der IDs zu einer sichtbaren AB oder einem Lieferschein gehört
-     */
-    public Optional<List<RechnungsVorschlagDto>> rechnungsVorschlaege(List<Long> dokumentIds,
-            boolean alleLieferanten, Set<LieferantDokumentTyp> sichtbareTypen) {
-        Dokumentbestand bestand = ladeDokumente(sichtbareTypen);
-        List<LieferantDokument> bestellDokumente = dokumentIds.stream()
-                .map(bestand.nachId()::get)
-                .filter(Objects::nonNull)
-                .filter(RechnungsVorschlagService::istBestellDokument)
-                .toList();
-        if (bestellDokumente.isEmpty()) {
-            return Optional.empty();
-        }
-        Set<Long> kettenIds = new HashSet<>();
-        bestellDokumente.forEach(d -> collectKettenIds(d, kettenIds));
-        Long lieferantId = bestellDokumente.stream()
-                .map(d -> d.getLieferant() != null ? d.getLieferant().getId() : null)
-                .filter(Objects::nonNull)
-                .findFirst().orElse(null);
-        List<LieferantDokument> kandidaten = (alleLieferanten ? bestand.rechnungen() : bestand.rechnungenVon(lieferantId))
-                .stream()
-                .filter(r -> !kettenIds.contains(r.getId()))
-                .toList();
-        var vorschlaege = rechnungsVorschlagService.bewerte(bestellDokumente, kandidaten,
-                lieferantId != null ? bestand.dokumenteVon(lieferantId) : null, rechnungsVorschlagService.neuerSpeicher());
-        int anzahl = Math.min(vorschlaege.size(), MAX_VORSCHLAEGE);
-        List<RechnungsVorschlagDto> liste = new ArrayList<>(anzahl);
-        for (int i = 0; i < anzahl; i++) {
-            int quote = vorschlaege.get(i).trefferquote();
-            // Gleichstand mit dem Nachbarn: dann ist der Vorschlag nicht eindeutig
-            boolean gleichauf = (i > 0 && vorschlaege.get(i - 1).trefferquote() == quote)
-                    || (i + 1 < vorschlaege.size() && vorschlaege.get(i + 1).trefferquote() == quote);
-            liste.add(toVorschlagDto(vorschlaege.get(i), !gleichauf, bestand.sichtbar()));
-        }
-        return Optional.of(liste);
-    }
-
-    /**
      * Dokumente aller Arten, bewertet gegen eine Kette – beste zuerst. Für das
      * Fenster „Dokument zur Kette hinzufügen“ (Werkstoffzeugnis, Lieferschein,
      * Rechnung … nachträglich zuordnen).
@@ -253,7 +204,7 @@ public class BestellungsUebersichtService {
                 .filter(Objects::nonNull)
                 .toList();
         // Auf der Karte nur Rechnungen desselben Lieferanten (auch ausgeblendete): hält
-        // die Übersicht schnell. Fremde Lieferanten zeigt das Fenster „Rechnung suchen“.
+        // die Übersicht schnell. Fremde Lieferanten zeigt das Fenster „Dokument zur Kette hinzufügen“.
         if (kette.lieferantId() == null) {
             return null;
         }
@@ -311,11 +262,10 @@ public class BestellungsUebersichtService {
      * @param nachId              alle Dokumente nach ID (auch ausgeblendete)
      * @param dokumenteJeLieferant alle Dokumente je Lieferant – das Umfeld, an dem
      *                             sich Kundennummern von Auftragsnummern unterscheiden
-     * @param rechnungen           alle Rechnungen
      * @param sichtbar             Dokumenttypen, die der Aufrufer sehen darf
      */
     private record Dokumentbestand(List<LieferantDokument> alle, Map<Long, LieferantDokument> nachId,
-            Map<Long, List<LieferantDokument>> dokumenteJeLieferant, List<LieferantDokument> rechnungen,
+            Map<Long, List<LieferantDokument>> dokumenteJeLieferant,
             Set<LieferantDokumentTyp> sichtbar) {
 
         List<LieferantDokument> dokumenteVon(Long lieferantId) {
@@ -335,17 +285,13 @@ public class BestellungsUebersichtService {
                 .toList();
         Map<Long, LieferantDokument> nachId = new HashMap<>();
         Map<Long, List<LieferantDokument>> jeLieferant = new HashMap<>();
-        List<LieferantDokument> rechnungen = new ArrayList<>();
         for (LieferantDokument d : alle) {
             nachId.put(d.getId(), d);
             if (d.getLieferant() != null && d.getLieferant().getId() != null) {
                 jeLieferant.computeIfAbsent(d.getLieferant().getId(), k -> new ArrayList<>()).add(d);
             }
-            if (d.getTyp() == LieferantDokumentTyp.RECHNUNG) {
-                rechnungen.add(d);
-            }
         }
-        return new Dokumentbestand(alle, nachId, jeLieferant, rechnungen, sichtbareTypen);
+        return new Dokumentbestand(alle, nachId, jeLieferant, sichtbareTypen);
     }
 
     /** Die Ketten des Bestands, nach Status gruppiert und neueste zuerst – noch ohne Vorschläge. */

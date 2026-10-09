@@ -228,7 +228,7 @@ public class RechnungsVorschlagService {
 
     /**
      * Zu welchem Bestelldokument eine Rechnung schon gehört – für den Hinweis im
-     * Fenster „Rechnung suchen“, z. B. „Lieferschein LS-4711“.
+     * Kartenvorschlag der Bestellübersicht, z. B. „Lieferschein LS-4711“.
      *
      * @param sichtbareTypen Dokumenttypen, die der Aufrufer sehen darf – andere bleiben ungenannt
      * @return {@code null}, wenn sie an keiner sichtbaren AB und keinem sichtbaren Lieferschein hängt
