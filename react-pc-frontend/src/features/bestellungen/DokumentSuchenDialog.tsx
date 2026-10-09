@@ -30,6 +30,12 @@ interface DokumentSuchenDialogProps {
     kette: SuchKette;
     /** Vorgewählte Dokumentart, z. B. RECHNUNG vom „Suchen“ am offenen Ende. Ohne: alle Arten. */
     startTyp?: VorschlagsTyp | null;
+    /**
+     * Ein einzelnes Dokument sucht seine Bestellung (Lieferanten → Dokumente, „Zu Kette
+     * zuordnen“). Dann heißt das Fenster „Passende Bestellung suchen“ – aus Sicht des
+     * Nutzers hängt er *dieses* Dokument an, nicht etwas an eine Kette.
+     */
+    einzeldokument?: boolean;
     onClose: () => void;
     /** Dokument wurde zugeordnet oder hochgeladen – die Seite lädt dann neu. */
     onVerknuepft: () => void;
@@ -150,7 +156,7 @@ function TypFilter({ typ, onWahl }: { typ: VorschlagsTyp | null; onWahl: (typ: V
  * hängt das gewählte mit einem Klick an. Links die Kette, in der Mitte die
  * Vorschläge (Trefferquote, Gründe), rechts das gewählte Dokument.
  */
-export function DokumentSuchenDialog({ kette, startTyp = null, onClose, onVerknuepft }: DokumentSuchenDialogProps) {
+export function DokumentSuchenDialog({ kette, startTyp = null, einzeldokument = false, onClose, onVerknuepft }: DokumentSuchenDialogProps) {
     const toast = useToast();
     const confirm = useConfirm();
     const [vorschlaege, setVorschlaege] = useState<KettenVorschlag[] | null>(null);
@@ -225,7 +231,9 @@ export function DokumentSuchenDialog({ kette, startTyp = null, onClose, onVerknu
         setSpeichert(true);
         try {
             await inKetteVerknuepfen(vorschlag.kettenDokumentId, vorschlag.dokument.id);
-            toast.success(`${dokumentBezeichnung(vorschlag.dokument)} zur Kette hinzugefügt.`);
+            toast.success(einzeldokument
+                ? `Zugeordnet zu ${dokumentBezeichnung(vorschlag.dokument)}.`
+                : `${dokumentBezeichnung(vorschlag.dokument)} zur Kette hinzugefügt.`);
             setVorschau(null);
             onVerknuepft();
         } catch (err) {
@@ -238,7 +246,7 @@ export function DokumentSuchenDialog({ kette, startTyp = null, onClose, onVerknu
     const laden = vorschlaege === null && !fehler;
     const nurRechnungen = typ === 'RECHNUNG';
     const leer = leerText(typ, kette.lieferantName, alleLieferanten);
-    const titel = nurRechnungen ? 'Rechnung suchen' : 'Dokument zur Kette hinzufügen';
+    const titel = einzeldokument ? 'Passende Bestellung suchen' : nurRechnungen ? 'Rechnung suchen' : 'Dokument zur Kette hinzufügen';
 
     return (
         <Dialog
@@ -256,14 +264,16 @@ export function DokumentSuchenDialog({ kette, startTyp = null, onClose, onVerknu
                         {titel}{kette.lieferantName ? ` – ${kette.lieferantName}` : ''}
                     </DialogTitle>
                     <DialogDescription>
-                        Links die Kette, rechts das gewählte Dokument. Passt es, genügt ein Klick auf „Gehört dazu“.
+                        {einzeldokument
+                            ? 'Links dieses Dokument, rechts der gewählte Vorschlag. Passt er, genügt ein Klick auf „Gehört dazu“.'
+                            : 'Links die Kette, rechts das gewählte Dokument. Passt es, genügt ein Klick auf „Gehört dazu“.'}
                     </DialogDescription>
                 </div>
             </div>
 
             <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr)_minmax(320px,26rem)_minmax(0,1fr)] divide-x divide-slate-200">
                 <PdfSpalte
-                    titel="Kette"
+                    titel={einzeldokument ? 'Dieses Dokument' : 'Kette'}
                     kopf={eigeneDokumente.length > 1 ? (
                         <div className="flex gap-1" role="tablist" aria-label="Dokument der Kette">
                             {eigeneDokumente.map(d => (
@@ -285,7 +295,7 @@ export function DokumentSuchenDialog({ kette, startTyp = null, onClose, onVerknu
                 >
                     {eigenes?.pdfUrl
                         ? <PdfCanvasViewer key={eigenes.pdfUrl} url={eigenes.pdfUrl} className="h-full" />
-                        : <PdfLeer text="Zu dieser Kette gibt es keine Vorschau." />}
+                        : <PdfLeer text={einzeldokument ? 'Zu diesem Dokument gibt es keine Vorschau.' : 'Zu dieser Kette gibt es keine Vorschau.'} />}
                 </PdfSpalte>
 
                 <section aria-label="Vorschläge" className="flex flex-col min-h-0 bg-white">

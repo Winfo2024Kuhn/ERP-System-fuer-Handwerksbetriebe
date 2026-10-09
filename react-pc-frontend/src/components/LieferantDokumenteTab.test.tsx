@@ -270,7 +270,9 @@ describe('LieferantDokumenteTab – Dokument einer Kette zuordnen', () => {
     it('ordnet ein Einzeldokument zu und lädt die Dokumente neu', async () => {
         rendere();
         await userEvent.click(screen.getByRole('button', { name: 'Werkstoffzeugnis WZ-2002 zu Kette zuordnen' }));
-        const dialog = await screen.findByRole('dialog', { name: /Dokument zur Kette hinzufügen – Musterstahl GmbH/ });
+        // Aus Sicht des Nutzers sucht dieses Dokument seine Bestellung
+        const dialog = await screen.findByRole('dialog', { name: /Passende Bestellung suchen – Musterstahl GmbH/ });
+        expect(within(dialog).getByRole('region', { name: 'Dieses Dokument' })).toBeInTheDocument();
         await within(dialog).findByText('Belegnummer wird genannt');
         expect(aufrufe('/ketten-vorschlaege')[0][0]).toBe('/api/bestellungen-uebersicht/ketten-vorschlaege?dokumentIds=2&alleLieferanten=false');
         // Vorschau des eigenen Dokuments über den Download des Lieferanten
@@ -279,7 +281,7 @@ describe('LieferantDokumenteTab – Dokument einer Kette zuordnen', () => {
         await userEvent.click(within(dialog).getByRole('button', { name: 'Werkstoffzeugnis WZ-2002 gehört dazu' }));
         await waitFor(() => expect(aufrufe('/ketten-verknuepfen')).toHaveLength(1));
         expect(JSON.parse((aufrufe('/ketten-verknuepfen')[0][1] as RequestInit).body as string)).toEqual({ kettenDokumentId: 1, dokumentId: 2 });
-        await waitFor(() => expect(screen.queryByRole('dialog', { name: /Dokument zur Kette hinzufügen/ })).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: /Passende Bestellung suchen/ })).not.toBeInTheDocument());
         await waitFor(() => expect(aufrufe(`/api/lieferanten/${LIEFERANT_ID}/dokumente`).length).toBeGreaterThan(0));
     });
 

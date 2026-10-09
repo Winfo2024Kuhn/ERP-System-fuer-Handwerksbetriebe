@@ -98,8 +98,9 @@ test.describe('Lieferant – Dokument einer Kette zuordnen', () => {
         await designPruefung(page, testInfo, 'lieferant-dokumente-zu-kette');
 
         await zuordnen.click();
-        const dialog = page.getByRole('dialog', { name: /Dokument zur Kette hinzufügen – Musterstahl GmbH/ });
+        const dialog = page.getByRole('dialog', { name: /Passende Bestellung suchen – Musterstahl GmbH/ });
         await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole('region', { name: 'Dieses Dokument' })).toBeVisible();
         await expect(dialog.getByText('Belegnummer wird genannt')).toBeVisible();
         await expect(dialog.getByText('88 %').first()).toBeVisible();
         expect(mitschrift.vorschlagAnfragen[0].getAll('dokumentIds')).toEqual(['3']);

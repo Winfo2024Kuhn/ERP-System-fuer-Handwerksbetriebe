@@ -99,6 +99,26 @@ describe('DokumentSuchenDialog', () => {
         expect(await screen.findByText('Werkstoffzeugnis WZ-100 zur Kette hinzugefügt.')).toBeInTheDocument();
     });
 
+    it('heißt für ein Einzeldokument „Passende Bestellung suchen“', async () => {
+        antworte({ ok: true, body: [vorschlag(1, 'LIEFERSCHEIN', 'LS-100', 85)] }, { ok: true, body: { success: true } });
+        const onVerknuepft = vi.fn();
+        render(
+            <ToastProvider>
+                <ConfirmProvider>
+                    <DokumentSuchenDialog kette={kette} einzeldokument onClose={vi.fn()} onVerknuepft={onVerknuepft} />
+                </ConfirmProvider>
+            </ToastProvider>,
+        );
+        expect(screen.getByRole('heading', { name: 'Passende Bestellung suchen – Erika Musterfrau KG' })).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Dieses Dokument' })).toBeInTheDocument();
+        expect(screen.getByText(/Links dieses Dokument, rechts der gewählte Vorschlag/)).toBeInTheDocument();
+
+        await screen.findByRole('button', { name: /LS-100/, pressed: true });
+        await userEvent.click(screen.getByRole('button', { name: 'Gehört dazu' }));
+        await waitFor(() => expect(onVerknuepft).toHaveBeenCalled());
+        expect(await screen.findByText('Zugeordnet zu Lieferschein LS-100.')).toBeInTheDocument();
+    });
+
     it('startet mit Rechnungs-Filter als „Rechnung suchen“ und lädt beim Chip-Wechsel neu', async () => {
         antworte(
             { ok: true, body: [vorschlag(2, 'RECHNUNG', 'RE-200', 82)] },

@@ -85,10 +85,10 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
     const [zuordnungDokument, setZuordnungDokument] = useState<LieferantDokument | null>(null);
 
     // Dokument nachträglich einer Kette zuordnen: Kette oder einzelnes Dokument, zu dem gesucht wird
-    const [kettenSuche, setKettenSuche] = useState<LieferantDokument[] | null>(null);
+    const [kettenSuche, setKettenSuche] = useState<{ dokumente: LieferantDokument[]; einzeldokument: boolean } | null>(null);
     const suchKette = useMemo(() => kettenSuche && {
         lieferantName: lieferantName ?? null,
-        dokumente: kettenSuche.map(dok => lieferantDokumentAlsBeleg(dok, lieferantId)),
+        dokumente: kettenSuche.dokumente.map(dok => lieferantDokumentAlsBeleg(dok, lieferantId)),
     }, [kettenSuche, lieferantName, lieferantId]);
 
     // Handler für Dokument-Klick
@@ -484,7 +484,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                             onSelect={handleDokumentSelect}
                             onNavigate={navigate}
                             onBearbeiten={(dok) => setZuordnungDokument(dok)}
-                            onDokumentHinzufuegen={() => setKettenSuche(kette.dokumente)}
+                            onDokumentHinzufuegen={() => setKettenSuche({ dokumente: kette.dokumente, einzeldokument: false })}
                             positionsTreffer={positionsTreffer}
                             suchbegriff={suche}
                         />
@@ -541,7 +541,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                                 onSelect={() => handleDokumentSelect(dok)}
                                 onNavigate={navigate}
                                 onBearbeiten={() => setZuordnungDokument(dok)}
-                                onZuKetteZuordnen={istVorschlagsTyp(dok.typ) ? () => setKettenSuche([dok]) : undefined}
+                                onZuKetteZuordnen={istVorschlagsTyp(dok.typ) ? () => setKettenSuche({ dokumente: [dok], einzeldokument: true }) : undefined}
                                 onDelete={isAdmin ? () => handleLoescheDokument(dok) : undefined}
                                 treffer={positionsTreffer.get(dok.id)}
                                 suchbegriff={suche}
@@ -598,6 +598,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
             {suchKette && (
                 <DokumentSuchenDialog
                     kette={suchKette}
+                    einzeldokument={kettenSuche?.einzeldokument ?? false}
                     onClose={() => setKettenSuche(null)}
                     onVerknuepft={() => {
                         setKettenSuche(null);
