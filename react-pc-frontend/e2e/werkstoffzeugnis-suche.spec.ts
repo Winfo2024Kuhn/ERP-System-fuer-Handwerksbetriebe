@@ -210,7 +210,7 @@ test.describe('Werkstoffzeugnis – Lieferanten-Dokumente', () => {
     test('Zeugnis öffnen zeigt Erzeugnisse mit Werkstoff, Charge und Abmessung', async ({ page }, testInfo) => {
         await stubApi(page);
         await page.goto(`/lieferanten?lieferantId=${LIEFERANT_ID}&tab=dokumente`);
-        await page.getByRole('button', { name: /WZ-2026-80/ }).click();
+        await page.getByRole('button', { name: /^WZ-2026-80/ }).click();
         const dialog = page.getByRole('dialog', { name: 'Dokument bearbeiten' });
         await expect(dialog).toBeVisible();
 
@@ -229,7 +229,7 @@ test.describe('Werkstoffzeugnis – Dokumentübersicht Eingang', () => {
         const mitschrift = await stubApi(page);
         await page.goto('/dokumentuebersicht');
         await page.getByRole('button', { name: /^Eingang/ }).click();
-        await expect(page.getByRole('cell', { name: 'WZ-2026-80' })).toBeVisible();
+        await expect(page.getByRole('cell', { name: 'WZ-2026-80', exact: true })).toBeVisible();
         await expect(page.getByRole('cell', { name: 'Werkstoffzeugnis' })).toBeVisible();
 
         await page.getByPlaceholder(/Volltext/).fill('Flachstahl');
@@ -246,7 +246,7 @@ test.describe('Werkstoffzeugnis – Dokumentübersicht Eingang', () => {
         const mitschrift = await stubApi(page);
         await page.goto('/dokumentuebersicht');
         await page.getByRole('button', { name: /^Eingang/ }).click();
-        await expect(page.getByRole('cell', { name: 'WZ-2026-80' })).toBeVisible();
+        await expect(page.getByRole('cell', { name: 'WZ-2026-80', exact: true })).toBeVisible();
 
         const artFilter = page.getByRole('combobox').filter({ hasText: 'Alle Arten' });
         await artFilter.click();
@@ -259,7 +259,7 @@ test.describe('Werkstoffzeugnis – Dokumentübersicht Eingang', () => {
         await page.getByRole('combobox').filter({ hasText: 'Sonstiges' }).click();
         await page.getByRole('listbox').getByRole('option', { name: 'Werkstoffzeugnis' }).click();
         await expect.poll(() => mitschrift.eingang.at(-1)?.get('typ')).toBe('WERKSTOFFZEUGNIS');
-        await expect(page.getByRole('cell', { name: 'RE-2026-900' })).toHaveCount(0);
-        await expect(page.getByRole('cell', { name: 'WZ-2026-80' })).toBeVisible();
+        await expect(page.getByRole('cell', { name: 'RE-2026-900', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('cell', { name: 'WZ-2026-80', exact: true })).toBeVisible();
     });
 });

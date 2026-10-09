@@ -24,8 +24,8 @@ public interface LieferantDokumentPositionRepository extends JpaRepository<Liefe
      *
      * @param lieferantId {@code null} = alle Lieferanten
      * @param typen       nur Dokumente dieser Typen (Rechte, Typfilter)
-     * @param von         Belegdatum ab (inklusive); {@code null} = ohne Grenze
-     * @param bis         Belegdatum bis (inklusive); {@code null} = ohne Grenze
+     * @param von         Belegdatum ab (inklusive), ohne Belegdatum das Eingangsdatum; {@code null} = ohne Grenze
+     * @param bis         Belegdatum bis (inklusive), ohne Belegdatum das Eingangsdatum; {@code null} = ohne Grenze
      */
     @Query("SELECT new org.example.kalkulationsprogramm.dto.PositionsSuchtreffer("
             + "d.id, p.positionNr, p.bezeichnung, p.werkstoff, p.charge, p.abmessung, p.menge, p.mengeneinheit) "
@@ -34,8 +34,8 @@ public interface LieferantDokumentPositionRepository extends JpaRepository<Liefe
             + "JOIN gd.dokument d "
             + "WHERE d.typ IN :typen "
             + "AND (:lieferantId IS NULL OR d.lieferant.id = :lieferantId) "
-            + "AND (:von IS NULL OR gd.dokumentDatum >= :von) "
-            + "AND (:bis IS NULL OR gd.dokumentDatum <= :bis) "
+            + "AND (:von IS NULL OR COALESCE(gd.dokumentDatum, CAST(d.uploadDatum AS LocalDate)) >= :von) "
+            + "AND (:bis IS NULL OR COALESCE(gd.dokumentDatum, CAST(d.uploadDatum AS LocalDate)) <= :bis) "
             + "AND p.suchtext LIKE :wort1 ESCAPE '!' "
             + "AND (:wort2 IS NULL OR p.suchtext LIKE :wort2 ESCAPE '!') "
             + "AND (:wort3 IS NULL OR p.suchtext LIKE :wort3 ESCAPE '!') "
@@ -67,4 +67,7 @@ public interface LieferantDokumentPositionRepository extends JpaRepository<Liefe
     @Query("UPDATE LieferantDokumentPosition p SET p.projekt = null, p.kostenstelle = null "
             + "WHERE p.geschaeftsdokument.id = :geschaeftsdokumentId")
     int entferneZuordnungen(@Param("geschaeftsdokumentId") Long geschaeftsdokumentId);
+
+    /** Anzahl der Positionen eines Dokuments. */
+    long countByGeschaeftsdokumentId(Long geschaeftsdokumentId);
 }

@@ -36,7 +36,18 @@ const uebersicht = {
         rechnungsVorschlag: null,
     }],
     abgeschlossen: [],
-    zugeordnet: [],
+    zugeordnet: [{
+        id: 'k3', lieferantId: 3, lieferantName: 'Stahlhandel Beispiel GmbH',
+        dokumente: [
+            dok(13, 'RECHNUNG', 'R-901', vorTagen(3), { betragBrutto: 50 }),
+            dok(12, 'RECHNUNG', 'R-900', vorTagen(5), { betragBrutto: 1250 }),
+            dok(11, 'WERKSTOFFZEUGNIS', '4107891', null, { eingangsDatum: vorTagen(8) }),
+            dok(10, 'LIEFERSCHEIN', 'LS-20', vorTagen(6)),
+            dok(9, 'LIEFERSCHEIN', 'LS-10', vorTagen(8)),
+            dok(8, 'AUFTRAGSBESTAETIGUNG', 'AB-55', vorTagen(12)),
+        ],
+        verbindungen: [{ vonId: 9, zuId: 8 }, { vonId: 10, zuId: 8 }, { vonId: 11, zuId: 9 }, { vonId: 12, zuId: 9 }, { vonId: 13, zuId: 10 }],
+    }],
     ausgeblendet: [{
         id: 'k2', lieferantId: 2, lieferantName: 'Erika Musterfrau KG',
         dokumente: [
@@ -69,14 +80,14 @@ function zeige() {
     );
 }
 
-describe('BestellungenUebersicht – Gabel', () => {
+describe('BestellungenUebersicht – Kette als Linie', () => {
     beforeEach(() => {
         kettenVorschlaege = [];
         vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => antwortFuer(String(url))));
     });
     afterEach(() => vi.unstubAllGlobals());
 
-    it('zeigt laufende Bestellungen als Gabel mit offenem Ende und Suche', async () => {
+    it('zeigt laufende Bestellungen als Linie mit offenem Ende und Suche', async () => {
         zeige();
         const liste = await screen.findByRole('list', { name: 'Belege der Bestellung' });
         expect(within(liste).getAllByRole('listitem')).toHaveLength(4);
@@ -144,5 +155,24 @@ describe('BestellungenUebersicht – Gabel', () => {
         await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(c => String(c[0]) === '/api/bestellungen-uebersicht/abhaengen')).toBe(true));
         // danach wird still neu geladen
         await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(c => String(c[0]) === '/api/bestellungen-uebersicht')).toHaveLength(2));
+    });
+
+    it('zeigt mehrere Rechnungen auf einer Linie ohne Kästen, das Zeugnis unter seinem Lieferschein', async () => {
+        zeige();
+        await screen.findByRole('list', { name: 'Belege der Bestellung' });
+        await userEvent.click(screen.getByRole('tab', { name: /Erledigt/ }));
+        const karte = await screen.findByText('Stahlhandel Beispiel GmbH');
+        const listen = within(karte.closest('div.p-4') as HTMLElement).getAllByRole('list', { name: 'Belege der Bestellung' });
+        expect(listen).toHaveLength(1);
+        expect(within(listen[0]).getAllByRole('listitem').map(z => z.textContent)).toEqual([
+            expect.stringContaining('AB-55'),
+            expect.stringContaining('LS-10'),
+            expect.stringContaining('4107891'),
+            expect.stringContaining('LS-20'),
+            expect.stringContaining('R-900'),
+            expect.stringContaining('R-901'),
+        ]);
+        expect(within(listen[0]).queryByText('Rechnung fehlt noch')).not.toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: /Rechnung R-90/ })).not.toBeInTheDocument();
     });
 });

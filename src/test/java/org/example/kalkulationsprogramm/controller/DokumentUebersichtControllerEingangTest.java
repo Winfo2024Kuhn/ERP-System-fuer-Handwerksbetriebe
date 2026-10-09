@@ -94,7 +94,7 @@ class DokumentUebersichtControllerEingangTest {
     @DisplayName("Kopfdaten-Treffer ohne Positionstreffer; Jahr, Monat und Typ gehen an die Positionssuche")
     void kopfdatenUndFilter() throws Exception {
         LieferantGeschaeftsdokument zeugnis = gd(1, LieferantDokumentTyp.WERKSTOFFZEUGNIS, "Z-1");
-        when(lieferantGdRepo.findAllByDatumBetween(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+        when(lieferantGdRepo.findAllByDatumOderEingangBetween(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
                 .thenReturn(new ArrayList<>(List.of(zeugnis, gd(2, LieferantDokumentTyp.LIEFERSCHEIN, "LS-2"))));
         when(sucheService.passtZurEingangssuche(zeugnis, "880011")).thenReturn(true);
         when(sucheService.suchePositionen(eq("880011"), isNull(), eq(EnumSet.of(LieferantDokumentTyp.WERKSTOFFZEUGNIS)),
@@ -116,6 +116,26 @@ class DokumentUebersichtControllerEingangTest {
         mockMvc.perform(get("/api/dokumentuebersicht/eingang").param("typ", "WERKSTOFFZEUGNIS"))
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].dokumentNummer").value("Z-1"));
+    }
+
+    @Test
+    @DisplayName("Ohne Dokumentdatum zählt das Eingangsdatum – für Anzeige und Sortierung")
+    void ohneDokumentdatumZaehltEingang() throws Exception {
+        LieferantGeschaeftsdokument mitDatum = gd(2, LieferantDokumentTyp.WERKSTOFFZEUGNIS, "Z-2");
+        LieferantGeschaeftsdokument ohneDatum = gd(1, LieferantDokumentTyp.WERKSTOFFZEUGNIS, null);
+        ohneDatum.setDokumentDatum(null);
+        ohneDatum.getDokument().setUploadDatum(java.time.LocalDateTime.of(2026, 9, 20, 10, 0));
+        when(lieferantGdRepo.findAllByDatumOderEingangBetween(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)))
+                .thenReturn(new ArrayList<>(List.of(mitDatum, ohneDatum)));
+
+        mockMvc.perform(get("/api/dokumentuebersicht/eingang").param("year", "2026").param("typ", "WERKSTOFFZEUGNIS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                // 20.09. (Eingang) ist jünger als 02.09. (Dokumentdatum) und steht deshalb oben
+                .andExpect(jsonPath("$[0].id").value(1))
+                .andExpect(jsonPath("$[0].dokumentDatum").doesNotExist())
+                .andExpect(jsonPath("$[0].eingangsDatum").value("2026-09-20"))
+                .andExpect(jsonPath("$[1].dokumentNummer").value("Z-2"));
     }
 
     @Test

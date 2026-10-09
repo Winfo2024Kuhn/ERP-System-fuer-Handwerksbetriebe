@@ -106,11 +106,16 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
         /**
          * Findet alle LieferantGeschaeftsdokumente in einem Datumsbereich – ohne Typ-Filter,
          * für die Dokumentübersicht (umfasst auch Auftragsbestätigungen, Lieferscheine etc.).
+         * Ohne erkanntes Dokumentdatum zählt das Eingangsdatum (Upload) – sonst fielen
+         * z. B. Werkstoffzeugnisse ohne Datum aus jedem Jahres- und Monatsfilter.
          */
         @Query("SELECT gd FROM LieferantGeschaeftsdokument gd " +
-                        "WHERE gd.dokumentDatum BETWEEN :startDate AND :endDate " +
+                        "JOIN FETCH gd.dokument d " +
+                        "LEFT JOIN FETCH d.lieferant " +
+                        "WHERE COALESCE(gd.dokumentDatum, CAST(d.uploadDatum AS LocalDate)) " +
+                        "BETWEEN :startDate AND :endDate " +
                         "ORDER BY gd.dokumentDatum DESC")
-        List<LieferantGeschaeftsdokument> findAllByDatumBetween(
+        List<LieferantGeschaeftsdokument> findAllByDatumOderEingangBetween(
                         @Param("startDate") java.time.LocalDate startDate,
                         @Param("endDate") java.time.LocalDate endDate);
 

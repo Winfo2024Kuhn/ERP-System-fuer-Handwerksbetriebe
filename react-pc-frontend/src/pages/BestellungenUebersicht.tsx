@@ -11,8 +11,8 @@ import { DokumentSuchenDialog } from '../features/bestellungen/DokumentSuchenDia
 import type { VorschlagsTyp } from '../features/bestellungen/kettenVorschlag';
 import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter, type KettenDokumentTyp } from '../features/bestellungen/bestellungenListe';
 import { TREFFER_KLASSEN, formatiereQuote, rechnungVerknuepfen, rueckfrage, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
-import { KettenGabel } from '../features/bestellungen/KettenGabel';
-import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen/kettenGraph';
+import { KettenLinie } from '../features/bestellungen/KettenLinie';
+import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen/kettenLinie';
 
 // ========== Types ==========
 interface DokumentRef {
@@ -118,7 +118,7 @@ interface KetteCardProps {
     onZuordnen?: (kette: DokumentenKette) => void;
     onAusblenden?: (kette: DokumentenKette) => void;
     onEinblenden?: (kette: DokumentenKette) => void;
-    /** Rechnung suchen am offenen Ende der Gabel (nicht bei Angeboten und Ausgeblendetem). */
+    /** Rechnung suchen am offenen Ende der Kette (nicht bei Angeboten und Ausgeblendetem). */
     onRechnungSuchen?: (kette: DokumentenKette) => void;
     /** „Dokument hinzufügen“ in der Fußzeile: beliebige Dokumentart nachträglich zuordnen. */
     onDokumentHinzufuegen?: (kette: DokumentenKette) => void;
@@ -135,7 +135,7 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
     const betrag = kettenBetrag(kette);
     const alter = formatiereAlter(letzteBewegung(kette), heute);
     const vorschlag = onVorschlagUebernehmen ? kette.rechnungsVorschlag : null;
-    // Bestellt oder geliefert, aber noch keine Rechnung: offenes Ende in der Gabel
+    // Bestellt oder geliefert, aber noch keine Rechnung: offenes Ende in der Kette
     const offenesEnde = !kette.dokumente.some(d => istRechnungsTyp(d.typ))
         && kette.dokumente.some(d => d.typ === 'AUFTRAGSBESTAETIGUNG' || d.typ === 'LIEFERSCHEIN');
 
@@ -170,14 +170,16 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
 
             <Fortschritt stufe={fortschrittsStufe(kette)} />
 
-            {/* Belege als Gabel wie bei git */}
-            <KettenGabel
+            {/* Belege als gerade Linie wie git-Commits auf einem Branch */}
+            <KettenLinie
                 dokumente={kette.dokumente}
                 verbindungen={kette.verbindungen}
                 onOpenPdf={onOpenPdf}
                 offenesEnde={offenesEnde}
                 onRechnungSuchen={onRechnungSuchen ? () => onRechnungSuchen(kette) : undefined}
+                abhaengbar
                 onGeaendert={onGeaendert}
+                listenName="Belege der Bestellung"
             />
 
             {/* Wahrscheinliche Rechnung */}

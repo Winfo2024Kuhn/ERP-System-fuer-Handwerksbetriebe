@@ -130,4 +130,22 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
                         "WHERE d.attachment IS NULL " +
                         "AND LOWER(d.gespeicherterDateiname) LIKE '%.xml'")
         List<LieferantDokument> findMitXmlAnzeigedatei();
+
+        /**
+         * Dokumente eines Typs, denen noch Daten fehlen: keine Geschäftsdaten, keine
+         * Dokumentnummer oder keine einzige Position. Basis für das Nachlesen von
+         * Werkstoffzeugnissen, die von Hand von „Sonstiges“ umgestellt wurden.
+         */
+        @Query("SELECT d.id FROM LieferantDokument d " +
+                        "LEFT JOIN d.geschaeftsdaten gd " +
+                        "WHERE d.typ = :typ " +
+                        "AND (gd IS NULL OR gd.dokumentNummer IS NULL OR TRIM(gd.dokumentNummer) = '' " +
+                        "OR NOT EXISTS (SELECT p.id FROM LieferantDokumentPosition p WHERE p.geschaeftsdokument = gd)) " +
+                        "ORDER BY d.id")
+        List<Long> findIdsOhneVollstaendigeDaten(@Param("typ") LieferantDokumentTyp typ);
+
+        /** Anzahl der Dokumente (0 oder 1) mit dieser ID, die mit mindestens einem anderen Dokument verknüpft sind. */
+        @Query("SELECT COUNT(d) FROM LieferantDokument d WHERE d.id = :id " +
+                        "AND (d.verknuepfteDokumente IS NOT EMPTY OR d.verknuepftVon IS NOT EMPTY)")
+        long zaehleMitVerknuepfung(@Param("id") Long id);
 }

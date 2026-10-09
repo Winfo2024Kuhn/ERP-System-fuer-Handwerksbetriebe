@@ -13,7 +13,6 @@ import {
     Edit2,
     Euro,
     File,
-    FileBadge,
     FileText,
     FolderOpen,
     Hammer,
@@ -68,6 +67,8 @@ import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDra
 import { AnfrageSearchModal } from '../components/AnfrageSearchModal';
 import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
 import { artikelBezeichnung } from '../components/artikel/artikelBezeichnung';
+import { KettenLinie } from '../features/bestellungen/KettenLinie';
+import { alsKettenTyp, type KettenLinienDokument, type KettenVerbindung } from '../features/bestellungen/kettenLinie';
 
 interface Supplier {
     id: number;
@@ -349,13 +350,19 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         zugeordnetVonName?: string;
         zugeordnetAm?: string;
     }
+    /** Ein Beleg der ganzen Lieferanten-Kette zur Eingangsrechnung (alle über Verknüpfungen erreichbaren). */
     interface DokumentKetteRef {
         id: number;
         typ: string;
-        dokumentNummer?: string;
-        dokumentDatum?: string;
-        betragNetto?: number;
-        pdfUrl?: string;
+        dokumentNummer?: string | null;
+        dokumentDatum?: string | null;
+        betragNetto?: number | null;
+        betragBrutto?: number | null;
+        /** Eingang im System – Ersatz, wenn kein Belegdatum erkannt wurde. */
+        eingangsDatum?: string | null;
+        dateiname?: string | null;
+        ausgeblendet?: boolean;
+        pdfUrl?: string | null;
     }
     interface Eingangsrechnung {
         id: number;
@@ -375,6 +382,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         zugeordnetAm?: string;
         alleZuordnungen?: EingangsrechnungAnteil[];
         dokumentenKette?: DokumentKetteRef[];
+        /** Verknüpfungen innerhalb der Kette (von = Nachfolger, zu = Vorgänger). */
+        dokumentenKetteVerbindungen?: KettenVerbindung[];
     }
     const [eingangsrechnungen, setEingangsrechnungen] = useState<Eingangsrechnung[]>([]);
 
@@ -2197,10 +2206,22 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         {eingangsrechnungen.length > 0 ? (
                             <div className="space-y-4">
                                 {eingangsrechnungen.map((er) => {
-                                    const ketteItems: DokumentKetteRef[] = er.dokumentenKette && er.dokumentenKette.length > 0
-                                        ? er.dokumentenKette
+                                    // Ganze Kette als Linie; ohne Kette nur die Rechnung selbst. Betrag netto wie im Projekt.
+                                    const ketteItems: KettenLinienDokument[] = er.dokumentenKette && er.dokumentenKette.length > 0
+                                        ? er.dokumentenKette.map(kd => ({
+                                            id: kd.id,
+                                            typ: alsKettenTyp(kd.typ),
+                                            dokumentNummer: kd.dokumentNummer ?? null,
+                                            dokumentDatum: kd.dokumentDatum ?? null,
+                                            eingangsDatum: kd.eingangsDatum ?? null,
+                                            betragBrutto: kd.betragBrutto ?? null,
+                                            betragNetto: kd.betragNetto ?? null,
+                                            dateiname: kd.dateiname ?? null,
+                                            ausgeblendet: kd.ausgeblendet === true,
+                                            pdfUrl: kd.pdfUrl ?? null,
+                                        }))
                                         : er.pdfUrl
-                                            ? [{ id: er.dokumentId ?? er.id, typ: 'RECHNUNG', dokumentNummer: er.dokumentNummer ?? null, dokumentDatum: er.dokumentDatum ?? null, betragNetto: er.gesamtbetrag ?? null, pdfUrl: er.pdfUrl }]
+                                            ? [{ id: er.dokumentId ?? er.id, typ: 'RECHNUNG', dokumentNummer: er.dokumentNummer ?? null, dokumentDatum: er.dokumentDatum ?? null, betragBrutto: null, betragNetto: er.gesamtbetrag ?? null, dateiname: er.dateiname ?? null, pdfUrl: er.pdfUrl }]
                                             : [];
                                     const hasKette = ketteItems.length > 0;
                                     const alleZuordnungen = er.alleZuordnungen || [];
@@ -2211,39 +2232,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             {/* Dokumentenkette */}
                                             {hasKette && (
                                                 <div className="px-4 pt-3 pb-2 bg-slate-50 border-b border-slate-100">
-                                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Dokumentenkette</p>
-                                                    <div className="flex items-center gap-1 flex-wrap">
-                                                        {ketteItems.map((kd, idx) => {
-                                                            const typConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
-                                                                ANGEBOT: { label: 'Angebot', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
-                                                                NACHTRAGSANGEBOT: { label: 'Nachtrag', color: 'text-slate-700', bg: 'bg-slate-100', border: 'border-slate-300' },
-                                                                AUFTRAGSBESTAETIGUNG: { label: 'AB', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
-                                                                LIEFERSCHEIN: { label: 'Lieferschein', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
-                                                                WERKSTOFFZEUGNIS: { label: 'Werkstoffzeugnis', color: 'text-slate-700', bg: 'bg-slate-100', border: 'border-slate-300' },
-                                                                RECHNUNG: { label: 'Rechnung', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
-                                                                GUTSCHRIFT: { label: 'Gutschrift', color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200' },
-                                                                SONSTIG: { label: 'Sonstiges', color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' },
-                                                            };
-                                                            const cfg = typConfig[kd.typ] || { label: kd.typ, color: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200' };
-                                                            return (
-                                                                <React.Fragment key={kd.id}>
-                                                                    {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />}
-                                                                    <button
-                                                                        onClick={() => kd.pdfUrl && setPdfPreviewDoc({ url: kd.pdfUrl, title: kd.dokumentNummer || cfg.label })}
-                                                                        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${cfg.bg} ${cfg.color} ${cfg.border} hover:opacity-80 transition-opacity`}
-                                                                        title={kd.dokumentNummer ? `${cfg.label} ${kd.dokumentNummer}` : cfg.label}
-                                                                    >
-                                                                        {kd.typ === 'WERKSTOFFZEUGNIS' ? <FileBadge className="w-3 h-3" aria-hidden="true" /> : <File className="w-3 h-3" />}
-                                                                        <span className="font-medium">{cfg.label}</span>
-                                                                        {kd.dokumentNummer && <span className="opacity-70">#{kd.dokumentNummer}</span>}
-                                                                        {kd.betragNetto != null && (
-                                                                            <span className="opacity-70">{formatCurrency(kd.betragNetto)}</span>
-                                                                        )}
-                                                                    </button>
-                                                                </React.Fragment>
-                                                            );
-                                                        })}
-                                                    </div>
+                                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Dokumentenkette</p>
+                                                    <KettenLinie
+                                                        dokumente={ketteItems}
+                                                        verbindungen={er.dokumentenKetteVerbindungen}
+                                                        betrag="netto"
+                                                        onOpenPdf={(url, title) => setPdfPreviewDoc({ url, title })}
+                                                        listenName={`Dokumentenkette zu Rechnung ${er.dokumentNummer || er.dateiname || ''}`.trim()}
+                                                    />
                                                 </div>
                                             )}
                                             

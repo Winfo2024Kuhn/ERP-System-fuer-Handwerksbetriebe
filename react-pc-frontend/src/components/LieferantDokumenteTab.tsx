@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2, Trash2, Euro, CalendarDays, FileBadge, FilePlus2, type LucideIcon } from "lucide-react";
+import { Search, FileText, Link2, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2, Trash2, Euro, CalendarDays, FileBadge, FilePlus2, type LucideIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
@@ -17,6 +17,8 @@ import { useToast } from "./ui/toast";
 import { positionsSucheAktiv, trefferNachDokument, vereinigeTreffer, type PositionsTreffer } from "../lib/positionsTreffer";
 import { DokumentSuchenDialog } from "../features/bestellungen/DokumentSuchenDialog";
 import { istVorschlagsTyp, lieferantDokumentAlsBeleg } from "../features/bestellungen/kettenVorschlag";
+import { KettenLinie } from "../features/bestellungen/KettenLinie";
+import { alsKettenTyp, ordneKettenLinie, type KettenLinienDokument, type KettenVerbindung } from "../features/bestellungen/kettenLinie";
 
 // Typ-Konfiguration mit Farben
 // icon: nur wo die Farbe allein nicht reicht (Werkstoffzeugnis ist neutral wie Sonstiges, aber mit Zeugnis-Symbol)
@@ -36,6 +38,30 @@ const DEFAULT_CONFIG = { label: 'Dokument', color: 'text-slate-700', bgColor: 'b
 const getConfig = (typ: string) => DOK_TYP_CONFIG[typ] || DEFAULT_CONFIG;
 
 const TYP_REIHENFOLGE: LieferantDokumentTyp[] = ['ANGEBOT', 'AUFTRAGSBESTAETIGUNG', 'LIEFERSCHEIN', 'WERKSTOFFZEUGNIS', 'RECHNUNG', 'GUTSCHRIFT', 'SONSTIG'];
+
+/** Lieferanten-Dokument in der gemeinsamen Form für die Ketten-Linie. */
+function alsLinienDokument(dok: LieferantDokument): KettenLinienDokument {
+    const daten = dok.geschaeftsdaten;
+    return {
+        id: dok.id,
+        typ: alsKettenTyp(dok.typ),
+        dokumentNummer: daten?.dokumentNummer ?? null,
+        dokumentDatum: daten?.dokumentDatum ?? null,
+        eingangsDatum: dok.uploadDatum ?? null,
+        betragBrutto: daten?.betragBrutto ?? null,
+        liefertermin: daten?.liefertermin ?? null,
+        dateiname: dok.originalDateiname,
+        pdfUrl: dok.url ?? null,
+    };
+}
+
+/** Verknüpfungen innerhalb der Kette: von = Dokument, zu = verknüpftes Dokument. */
+function kettenVerbindungen(dokumente: LieferantDokument[]): KettenVerbindung[] {
+    const ids = new Set(dokumente.map(d => d.id));
+    return dokumente.flatMap(dok => dok.verknuepfteDokumente
+        .filter(ref => ids.has(ref.id))
+        .map(ref => ({ vonId: dok.id, zuId: ref.id })));
+}
 
 /** So lange wartet die Positionssuche nach dem letzten Tastendruck. */
 const POSITIONSSUCHE_VERZOEGERUNG_MS = 300;
@@ -268,16 +294,11 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
             }
         });
 
-        // Sortiere Dokumente in Ketten nach Typ-Reihenfolge und Datum
-        const sortedKetten: LieferantDokumentenKette[] = chains.map((docs, idx) => {
-            docs.sort((a, b) => {
-                const diff = TYP_REIHENFOLGE.indexOf(a.typ) - TYP_REIHENFOLGE.indexOf(b.typ);
-                if (diff !== 0) return diff;
-                // Bei gleichem Typ nach Datum sortieren
-                const dateA = a.geschaeftsdaten?.dokumentDatum || "";
-                const dateB = b.geschaeftsdaten?.dokumentDatum || "";
-                return dateA.localeCompare(dateB);
-            });
+        // Dokumente der Kette wie auf der Linie: Ablauf-Stufe, Datum, Zeugnis unter seinem Lieferschein
+        const sortedKetten: LieferantDokumentenKette[] = chains.map((unsortiert, idx) => {
+            const nachId = new Map(unsortiert.map(d => [d.id, d] as const));
+            const docs = ordneKettenLinie(unsortiert.map(alsLinienDokument), kettenVerbindungen(unsortiert))
+                .flatMap(linie => nachId.get(linie.id) ?? []);
             return {
                 id: `kette-${idx}`,
                 dokumente: docs,
@@ -479,7 +500,6 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                         <DokumentenKette
                             key={kette.id}
                             kette={kette}
-                            formatDate={formatDate}
                             formatCurrency={formatCurrency}
                             onSelect={handleDokumentSelect}
                             onNavigate={navigate}
@@ -628,7 +648,6 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
 // Dokumentenkette Komponente
 interface DokumentenKetteProps {
     kette: LieferantDokumentenKette;
-    formatDate: (d?: string) => string;
     formatCurrency: (v?: number) => string;
     onSelect: (dok: LieferantDokument) => void;
     onNavigate: (path: string) => void;
@@ -640,10 +659,14 @@ interface DokumentenKetteProps {
     suchbegriff: string;
 }
 
-function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, onDokumentHinzufuegen, positionsTreffer, suchbegriff }: DokumentenKetteProps) {
+function DokumentenKette({ kette, formatCurrency, onSelect, onNavigate, onBearbeiten, onDokumentHinzufuegen, positionsTreffer, suchbegriff }: DokumentenKetteProps) {
     const trefferInKette = kette.dokumente
         .map(dok => ({ dok, treffer: positionsTreffer.get(dok.id) }))
         .filter((eintrag): eintrag is { dok: LieferantDokument; treffer: PositionsTreffer } => eintrag.treffer !== undefined);
+
+    const nachId = useMemo(() => new Map(kette.dokumente.map(dok => [dok.id, dok] as const)), [kette.dokumente]);
+    const linienDokumente = useMemo(() => kette.dokumente.map(alsLinienDokument), [kette.dokumente]);
+    const verbindungen = useMemo(() => kettenVerbindungen(kette.dokumente), [kette.dokumente]);
 
     // Collect all unique project allocations across chain documents
     const allAnteile = useMemo(() => {
@@ -674,57 +697,35 @@ function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNaviga
                     </span>
                 )}
             </div>
-            <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                {kette.dokumente.map((dok, idx) => {
-                    const config = getConfig(dok.typ);
+            {/* Belege als gerade Linie wie git-Commits auf einem Branch; Klick öffnet die Details */}
+            <KettenLinie
+                dokumente={linienDokumente}
+                verbindungen={verbindungen}
+                onZeileKlick={linie => {
+                    const dok = nachId.get(linie.id);
+                    if (dok) onSelect(dok);
+                }}
+                zeilenZusatz={linie => {
+                    const dok = nachId.get(linie.id);
+                    const referenz = dok?.geschaeftsdaten?.referenzNummer;
+                    if (!referenz && !dok?.uploadedByName) return null;
                     return (
-                        <div key={dok.id} className="flex items-center gap-2">
-                            {idx > 0 && (
-                                <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                        <span className="flex items-center gap-2 min-w-0">
+                            {referenz && (
+                                <span className="truncate" title={referenz} data-kuerzung-erlaubt="">Ref: {referenz}</span>
                             )}
-                            <button
-                                onClick={() => onSelect(dok)}
-                                title={`Dokument ${dok.geschaeftsdaten?.dokumentNummer || dok.originalDateiname} öffnen`}
-                                className={cn(
-                                    "flex flex-col items-center p-3 rounded-lg border-2 min-w-[100px] transition-all hover:shadow-md",
-                                    config.bgColor, config.borderColor
-                                )}
-                            >
-                                <span className={cn("inline-flex items-center gap-1 text-xs font-semibold uppercase", config.color)}>
-                                    {config.icon && <config.icon className="w-3.5 h-3.5" aria-hidden="true" />}
-                                    {config.label}
+                            {dok?.uploadedByName && (
+                                <span className="inline-flex items-center gap-1 min-w-0">
+                                    <User className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+                                    <span className="truncate" data-kuerzung-erlaubt="">{dok.uploadedByName}</span>
                                 </span>
-                                <span
-                                    className="text-sm font-medium text-slate-900 mt-1 truncate max-w-[90px]"
-                                    title={dok.geschaeftsdaten?.dokumentNummer}
-                                    data-kuerzung-erlaubt=""
-                                >
-                                    {dok.geschaeftsdaten?.dokumentNummer || "-"}
-                                </span>
-                                {dok.geschaeftsdaten?.referenzNummer && (
-                                    <span className="text-xs text-slate-500 mt-0.5 truncate max-w-[90px]" title={dok.geschaeftsdaten.referenzNummer} data-kuerzung-erlaubt="">
-                                        Ref: {dok.geschaeftsdaten.referenzNummer}
-                                    </span>
-                                )}
-                                <span className="text-xs text-slate-500 mt-0.5">
-                                    {formatDate(dok.geschaeftsdaten?.dokumentDatum)}
-                                </span>
-                                {dok.geschaeftsdaten?.betragBrutto && (
-                                    <span className="text-xs font-medium text-slate-700 mt-1">
-                                        {formatCurrency(dok.geschaeftsdaten.betragBrutto)}
-                                    </span>
-                                )}
-                                {dok.uploadedByName && (
-                                    <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400">
-                                        <User className="w-3 h-3" />
-                                        <span className="truncate max-w-[80px]">{dok.uploadedByName}</span>
-                                    </div>
-                                )}
-                            </button>
-                        </div>
+                            )}
+                        </span>
                     );
-                })}
-            </div>
+                }}
+                suchbegriff={suchbegriff}
+                listenName={`Belege der Kette ${kette.hauptDokumentNummer || kette.id}`}
+            />
 
             {/* Treffer der Positionssuche: welches Dokument der Kette welche Position enthält */}
             {trefferInKette.length > 0 && (

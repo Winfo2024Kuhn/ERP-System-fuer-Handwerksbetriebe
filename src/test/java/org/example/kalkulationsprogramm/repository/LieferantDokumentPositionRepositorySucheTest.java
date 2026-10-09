@@ -117,6 +117,19 @@ class LieferantDokumentPositionRepositorySucheTest {
     }
 
     @Test
+    void ohneBelegdatumZaehltDasEingangsdatum() {
+        LieferantDokument ohneDatum = dokument(lieferant, LieferantDokumentTyp.WERKSTOFFZEUGNIS, null);
+        ohneDatum.setUploadDatum(LocalDateTime.of(2026, 8, 14, 9, 0));
+        position(ohneDatum, 1, "Vierkantrohr", "S235JRH", "445566", "40x40x3");
+        em.flush();
+        em.clear();
+
+        assertThat(suche(lieferant.getId(), ALLE, "445566", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31)))
+                .extracting(PositionsSuchtreffer::dokumentId).containsExactly(ohneDatum.getId());
+        assertThat(suche(lieferant.getId(), ALLE, "445566", LocalDate.of(2026, 9, 1), null)).isEmpty();
+    }
+
+    @Test
     void suchtextWirdBeimSpeichernGebildet() {
         LieferantDokumentPosition p = repository.findByGeschaeftsdokumentId(zeugnis.getId()).get(0);
         assertThat(p.getSuchtext()).isEqualTo("flachstahl s235jr+ar 123456 50x5");

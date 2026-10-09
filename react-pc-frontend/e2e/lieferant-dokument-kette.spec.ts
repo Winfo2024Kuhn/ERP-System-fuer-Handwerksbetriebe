@@ -5,16 +5,17 @@ import { designPruefung } from './hilfen/design';
 /**
  * Lieferant → Reiter „Dokumente“: Ein Werkstoffzeugnis, das nicht automatisch
  * an seinen Lieferschein gehängt wurde, lässt sich über „Zu Kette zuordnen“
- * nachträglich zuordnen; an jeder Kette gibt es „Dokument hinzufügen“.
+ * nachträglich zuordnen; an jeder Kette gibt es „Dokument hinzufügen“. Die
+ * Belege einer Kette stehen als gerade Linie untereinander (wie git-Commits).
  * /api vollständig gestubbt, nur Fantasienamen (DSGVO).
  */
 
 const LIEFERANT_ID = 7;
 
-function dokument(id: number, typ: string, nummer: string, verknuepft: { id: number; typ: string }[] = []) {
+function dokument(id: number, typ: string, nummer: string, verknuepft: { id: number; typ: string }[] = [], dokumentDatum: string | null = '2026-09-20', betragBrutto?: number) {
     return {
         id, typ, originalDateiname: `${nummer}.pdf`, uploadDatum: '2026-09-20T10:00:00',
-        geschaeftsdaten: { dokumentNummer: nummer, dokumentDatum: '2026-09-20' },
+        geschaeftsdaten: { dokumentNummer: nummer, dokumentDatum: dokumentDatum ?? undefined, betragBrutto },
         projektAnteile: [], verknuepfteDokumente: verknuepft,
     };
 }
@@ -41,7 +42,7 @@ function json(route: Route, body: unknown, status = 200) {
 
 interface Mitschrift { vorschlagAnfragen: URLSearchParams[]; posts: unknown[]; neuGeladen: number }
 
-async function stubApi(page: Page, mitschrift: Mitschrift) {
+async function stubApi(page: Page, mitschrift: Mitschrift, dokumente: unknown[] = LIEFERANT.dokumente) {
     await page.route('**/api/**', route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -53,9 +54,9 @@ async function stubApi(page: Page, mitschrift: Mitschrift) {
         if (/\/dokumente\/\d+\/download$/.test(pfad)) return route.fulfill({ status: 200, contentType: 'application/pdf', body: MINI_PDF });
         if (pfad === `/api/lieferanten/${LIEFERANT_ID}/dokumente`) {
             mitschrift.neuGeladen++;
-            return json(route, LIEFERANT.dokumente);
+            return json(route, dokumente);
         }
-        if (pfad === `/api/lieferanten/${LIEFERANT_ID}`) return json(route, LIEFERANT);
+        if (pfad === `/api/lieferanten/${LIEFERANT_ID}`) return json(route, { ...LIEFERANT, dokumente });
         if (pfad === '/api/lieferanten') return json(route, { lieferanten: [], gesamt: 0 });
         if (pfad === '/api/bestellungen-uebersicht/ketten-vorschlaege') {
             mitschrift.vorschlagAnfragen.push(url.searchParams);
@@ -126,5 +127,34 @@ test.describe('Lieferant – Dokument einer Kette zuordnen', () => {
         await dialog.getByRole('button', { name: 'Gehört dazu', exact: true }).click();
         await expect.poll(() => mitschrift.posts.length).toBe(1);
         expect(mitschrift.posts[0]).toEqual({ kettenDokumentId: 2, dokumentId: 3 });
+    });
+
+    test('Kette als gerade Linie: Zeugnis unter seinem Lieferschein, Klick öffnet die Details', async ({ page }, testInfo) => {
+        // Stahlhandel-Beispiel: AB, zwei Lieferscheine, Zeugnis (ohne Datum) zum ersten Lieferschein, Rechnung
+        const kette = [
+            dokument(30, 'RECHNUNG', 'R-900', [{ id: 22, typ: 'LIEFERSCHEIN' }], '2026-04-02', 1250),
+            dokument(23, 'WERKSTOFFZEUGNIS', '4107891', [{ id: 21, typ: 'LIEFERSCHEIN' }], null),
+            dokument(22, 'LIEFERSCHEIN', 'LS-2', [{ id: 20, typ: 'AUFTRAGSBESTAETIGUNG' }], '2026-03-27'),
+            dokument(21, 'LIEFERSCHEIN', 'LS-1', [{ id: 20, typ: 'AUFTRAGSBESTAETIGUNG' }], '2026-03-20'),
+            dokument(20, 'AUFTRAGSBESTAETIGUNG', 'AB-55', [], '2026-03-14', 1250),
+        ];
+        await stubApi(page, { vorschlagAnfragen: [], posts: [], neuGeladen: 0 }, kette);
+        await oeffne(page);
+
+        const linie = page.getByRole('list', { name: 'Belege der Kette R-900' });
+        const zeilen = linie.getByRole('listitem');
+        await expect(zeilen).toHaveCount(5);
+        for (const [i, nummer] of ['AB-55', 'LS-1', '4107891', 'LS-2', 'R-900'].entries()) await expect(zeilen.nth(i)).toContainText(nummer);
+        await expect(zeilen.nth(2).getByText('Eingang', { exact: true })).toBeVisible();
+        // Alle Punkte auf derselben senkrechten Linie
+        const mitten = await linie.locator('[data-punkt]').evaluateAll(punkte =>
+            punkte.map(p => { const r = p.getBoundingClientRect(); return Math.round(r.left + r.width / 2); }));
+        expect(mitten).toHaveLength(5);
+        expect(new Set(mitten).size).toBe(1);
+        await linie.scrollIntoViewIfNeeded();
+        await designPruefung(page, testInfo, 'lieferant-dokumente-kette-linie');
+
+        await linie.getByRole('button', { name: /^Lieferschein LS-2/ }).click();
+        await expect(page.getByRole('dialog', { name: 'Dokument bearbeiten' })).toBeVisible();
     });
 });
