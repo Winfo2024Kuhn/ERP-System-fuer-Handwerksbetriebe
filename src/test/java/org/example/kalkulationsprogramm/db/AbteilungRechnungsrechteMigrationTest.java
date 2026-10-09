@@ -16,12 +16,12 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Fuehrt die echte INSERT-Anweisung aus V406 auf isoliertem H2 (MySQL-Modus) aus.
+ * Fuehrt die echten UPDATE- und INSERT-Anweisungen aus V406 auf isoliertem H2 (MySQL-Modus) aus.
  * Die MySQL-eigene {@code SET @var = IF(...); PREPARE ... FROM @s; EXECUTE ...}-Steuerung
  * (inkl. information_schema-Existenzpruefung) versteht H2 nicht -- deshalb wird die
  * eigentliche Anweisung per Regex aus ihrem String-Literal gezogen (Muster:
  * KasseBelegeMigrationTest). Geprueft werden die Daten-Semantik (welche Abteilungen,
- * welche Typen, welche Flags, nichts ueberschreiben, Alt-Name EINGANGSRECHNUNG, idempotent).
+ * welche Typen, welche Flags, Freischalten vorhandener Zeilen, Alt-Name EINGANGSRECHNUNG, idempotent).
  * Der information_schema-Guard (@spalten_ok/@typ_ok) ist reines MySQL und hier nicht abgedeckt.
  */
 class AbteilungRechnungsrechteMigrationTest {
@@ -29,18 +29,15 @@ class AbteilungRechnungsrechteMigrationTest {
     private static final String MIGRATION = "V406__abteilungen_rechnungsrechte_seed.sql";
 
     @Test
-    void seedLegtNurFehlendeRechnungsrechteAnUndIstIdempotent() throws Exception {
+    void seedLegtFehlendeRechnungsrechteAnUndIstIdempotent() throws Exception {
         try (Connection c = neueDatenbank()) {
-            // 1 = nur Sehen-Flag, 2 = nur Genehmigen-Flag, 3 = beide, 4 = kein Flag,
-            // 5 = Sehen-Flag + bereits abweichende Zeile fuer RECHNUNG (darf nicht ueberschrieben werden)
+            // 1 = nur Sehen-Flag, 2 = nur Genehmigen-Flag, 3 = beide, 4 = kein Flag
             abteilung(c, 1, "Buchhaltung Test", true, false);
             abteilung(c, 2, "Buero Test", false, true);
             abteilung(c, 3, "Geschaeftsfuehrung Test", true, true);
             abteilung(c, 4, "Werkstatt Test", false, false);
-            abteilung(c, 5, "Einkauf Test", true, false);
-            berechtigung(c, 5, "RECHNUNG", false, true);
-            // Fremde Typen bleiben ebenfalls unberuehrt.
-            berechtigung(c, 1, "BELEG", true, true);
+            // Fremder Typ bleibt unberuehrt.
+            berechtigung(c, 1, "BELEG", false, true);
 
             seedAusfuehren(c, 2); // zweiter Lauf: Idempotenz
 
@@ -49,60 +46,111 @@ class AbteilungRechnungsrechteMigrationTest {
                 assertZeile(c, abteilungId, "GUTSCHRIFT", true, false);
             }
             assertThat(anzahlJeAbteilung(c, 4)).as("Abteilung ohne Rechnungs-Flag bekommt nichts").isZero();
+            assertZeile(c, 1, "BELEG", false, true);
 
-            // Abteilung 5: vorhandene RECHNUNG-Zeile unveraendert (darf_sehen=FALSE, darf_scannen=TRUE),
-            // GUTSCHRIFT wird ergaenzt.
-            assertZeile(c, 5, "RECHNUNG", false, true);
-            assertZeile(c, 5, "GUTSCHRIFT", true, false);
-
-            // Fremder Eintrag unveraendert
-            assertZeile(c, 1, "BELEG", true, true);
-
-            // Genau eine Zeile je (Abteilung, Typ) trotz zwei Laeufen:
-            // 1: RECHNUNG+GUTSCHRIFT+BELEG, 2: 2, 3: 2, 5: 2  -> 9
-            assertThat(gesamtAnzahl(c)).isEqualTo(9);
+            // 1: RECHNUNG+GUTSCHRIFT+BELEG, 2: 2, 3: 2 -> 7
+            assertThat(gesamtAnzahl(c)).isEqualTo(7);
         }
     }
 
     /**
-     * Dokumentiert das beschriebene Verhalten: Hat die Admin-Oberflaeche beim Speichern fuer eine
-     * Abteilung bereits RECHNUNG-/GUTSCHRIFT-Zeilen mit darf_sehen=FALSE angelegt, bleiben diese
-     * unveraendert -- die Abteilung sieht Offene Posten & Co. weiter nicht, bis ein Admin den Haken setzt.
+     * Vorhandene Zeilen mit darf_sehen=FALSE (z. B. aus dem Speichern der Berechtigungen-Seite) werden bei
+     * Abteilungen mit Rechnungs-Flag auf TRUE gesetzt; darf_scannen bleibt, fehlende Typen werden ergaenzt.
      */
     @Test
-    void vorhandeneZeilenMitDarfSehenFalseAusOberflaechenSpeichernBleibenFalse() throws Exception {
+    void vorhandeneZeilenMitDarfSehenFalseWerdenFreigeschaltet() throws Exception {
         try (Connection c = neueDatenbank()) {
-            abteilung(c, 1, "Buchhaltung Test", true, true);
-            berechtigung(c, 1, "RECHNUNG", false, false);
-            berechtigung(c, 1, "GUTSCHRIFT", false, false);
-            berechtigung(c, 1, "BELEG", false, false);
+            abteilung(c, 1, "Einkauf Test", true, false);
+            berechtigung(c, 1, "RECHNUNG", false, true);
+
+            abteilung(c, 2, "Buchhaltung Test", false, true);
+            berechtigung(c, 2, "RECHNUNG", false, false);
+            berechtigung(c, 2, "GUTSCHRIFT", false, true);
+            berechtigung(c, 2, "BELEG", false, false);
 
             seedAusfuehren(c, 2);
 
-            assertZeile(c, 1, "RECHNUNG", false, false);
-            assertZeile(c, 1, "GUTSCHRIFT", false, false);
-            assertZeile(c, 1, "BELEG", false, false);
-            assertThat(gesamtAnzahl(c)).isEqualTo(3);
+            assertZeile(c, 1, "RECHNUNG", true, true);   // scannen bleibt TRUE
+            assertZeile(c, 1, "GUTSCHRIFT", true, false); // ergaenzt
+            assertZeile(c, 2, "RECHNUNG", true, false);
+            assertZeile(c, 2, "GUTSCHRIFT", true, true);
+            assertZeile(c, 2, "BELEG", false, false);     // fremder Typ unberuehrt
+            assertThat(gesamtAnzahl(c)).isEqualTo(5);
         }
     }
 
     /**
-     * Alt-Name EINGANGSRECHNUNG wird vom Code als RECHNUNG gelesen. Existiert er, darf keine zweite
-     * RECHNUNG-Zeile entstehen -- GUTSCHRIFT wird dagegen normal ergaenzt.
+     * Alt-Name EINGANGSRECHNUNG wird vom Code als RECHNUNG gelesen: Die Zeile wird freigeschaltet, es entsteht
+     * keine zweite RECHNUNG-Zeile; GUTSCHRIFT wird ergaenzt.
      */
     @Test
-    void altNameEingangsrechnungZaehltAlsVorhandeneRechnungszeile() throws Exception {
+    void altNameEingangsrechnungWirdFreigeschaltetOhneZweiteRechnungszeile() throws Exception {
         try (Connection c = neueDatenbank()) {
             abteilung(c, 1, "Buchhaltung Test", true, false);
-            berechtigung(c, 1, "EINGANGSRECHNUNG", false, false);
+            berechtigung(c, 1, "EINGANGSRECHNUNG", false, true);
 
             seedAusfuehren(c, 2);
 
-            assertZeile(c, 1, "EINGANGSRECHNUNG", false, false);
+            assertZeile(c, 1, "EINGANGSRECHNUNG", true, true);
             assertThat(zeilen(c, 1, "RECHNUNG")).as("keine zweite RECHNUNG-Zeile").isZero();
             assertZeile(c, 1, "GUTSCHRIFT", true, false);
             assertThat(gesamtAnzahl(c)).isEqualTo(2);
         }
+    }
+
+    /** Abteilungen ohne Rechnungs-Flag und fremde Dokumenttypen bleiben unveraendert (auch bei darf_sehen=FALSE). */
+    @Test
+    void abteilungOhneFlagUndFremdeTypenBleibenUnveraendert() throws Exception {
+        try (Connection c = neueDatenbank()) {
+            abteilung(c, 1, "Werkstatt Test", false, false);
+            berechtigung(c, 1, "RECHNUNG", false, false);
+            berechtigung(c, 1, "GUTSCHRIFT", false, true);
+            berechtigung(c, 1, "EINGANGSRECHNUNG", false, false);
+
+            abteilung(c, 2, "Buchhaltung Test", true, true);
+            berechtigung(c, 2, "BELEG", false, false);
+            berechtigung(c, 2, "LIEFERSCHEIN", false, true);
+
+            seedAusfuehren(c, 2);
+
+            assertZeile(c, 1, "RECHNUNG", false, false);
+            assertZeile(c, 1, "GUTSCHRIFT", false, true);
+            assertZeile(c, 1, "EINGANGSRECHNUNG", false, false);
+            assertZeile(c, 2, "BELEG", false, false);
+            assertZeile(c, 2, "LIEFERSCHEIN", false, true);
+            assertZeile(c, 2, "RECHNUNG", true, false);
+            assertZeile(c, 2, "GUTSCHRIFT", true, false);
+            assertThat(gesamtAnzahl(c)).isEqualTo(7);
+        }
+    }
+
+    /** Der zweite Lauf aendert nichts mehr (nach dem ersten Lauf identischer Datenbestand). */
+    @Test
+    void zweiterLaufAendertNichts() throws Exception {
+        try (Connection c = neueDatenbank()) {
+            abteilung(c, 1, "Buchhaltung Test", true, false);
+            berechtigung(c, 1, "RECHNUNG", false, true);
+            berechtigung(c, 1, "BELEG", false, false);
+
+            seedAusfuehren(c, 1);
+            String nachErstemLauf = snapshot(c);
+            seedAusfuehren(c, 1);
+
+            assertThat(snapshot(c)).isEqualTo(nachErstemLauf);
+        }
+    }
+
+    private String snapshot(Connection c) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (PreparedStatement ps = c.prepareStatement("SELECT abteilung_id, dokument_typ, darf_sehen, darf_scannen "
+                + "FROM abteilung_dokument_berechtigung ORDER BY abteilung_id, dokument_typ");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                sb.append(rs.getLong(1)).append('|').append(rs.getString(2)).append('|')
+                        .append(rs.getBoolean(3)).append('|').append(rs.getBoolean(4)).append('\n');
+            }
+        }
+        return sb.toString();
     }
 
     /** Eindeutig benannte In-Memory-DB (ohne DB_CLOSE_DELAY): verschwindet mit dem Schliessen der Verbindung. */
@@ -145,10 +193,12 @@ class AbteilungRechnungsrechteMigrationTest {
     }
 
     private void seedAusfuehren(Connection c, int laeufe) throws Exception {
-        String insert = seedInsert();
+        List<String> statements = seedStatements(); // Reihenfolge wie in der Migration: UPDATE, dann INSERT
         try (Statement s = c.createStatement()) {
             for (int lauf = 0; lauf < laeufe; lauf++) {
-                s.execute(insert);
+                for (String statement : statements) {
+                    s.execute(statement);
+                }
             }
         }
     }
@@ -193,20 +243,23 @@ class AbteilungRechnungsrechteMigrationTest {
         }
     }
 
-    /** Zieht die INSERT-Anweisung aus dem String-Literal des PREPARE-Musters. */
-    private String seedInsert() throws Exception {
+    /** Zieht UPDATE und INSERT (in Dateireihenfolge) aus den String-Literalen der PREPARE-Muster. */
+    private List<String> seedStatements() throws Exception {
         String sql;
         try (var stream = getClass().getResourceAsStream("/db/migration/" + MIGRATION)) {
             assertThat(stream).as("Migration %s existiert", MIGRATION).isNotNull();
             sql = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replaceAll("(?m)^--.*$", "");
         }
-        var matcher = Pattern.compile("'(INSERT INTO abteilung_dokument_berechtigung(?:[^']|'')*)'", Pattern.DOTALL)
+        var matcher = Pattern.compile(
+                "'((?:UPDATE|INSERT INTO) abteilung_dokument_berechtigung(?:[^']|'')*)'", Pattern.DOTALL)
                 .matcher(sql);
         List<String> statements = new ArrayList<>();
         while (matcher.find()) {
             statements.add(matcher.group(1).replace("''", "'"));
         }
-        assertThat(statements).as("genau eine INSERT-Anweisung in V406").hasSize(1);
-        return statements.get(0);
+        assertThat(statements).as("genau ein UPDATE und ein INSERT in V406").hasSize(2);
+        assertThat(statements.get(0)).startsWith("UPDATE");
+        assertThat(statements.get(1)).startsWith("INSERT");
+        return statements;
     }
 }
