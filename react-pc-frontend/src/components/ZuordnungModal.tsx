@@ -1,10 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { PdfCanvasViewer } from './ui/PdfCanvasViewer';
 import { Button } from './ui/button';
-import { RefreshCw, FileText, X, Download, Plus, Trash2, Percent, Euro, Save, Briefcase, Package } from 'lucide-react';
-import { ProjectSelectModal } from './ProjectSelectModal';
+import { RefreshCw, FileText, X, Download, Plus, Trash2, Percent, Euro, Save, Briefcase, Package, ListChecks } from 'lucide-react';
+import { ProjektSearchModal } from './ProjektSearchModal';
 import { KostenstelleSelectModal } from './KostenstelleSelectModal';
 import { useToast } from './ui/toast';
+import { PositionsAufteilung, type AufteilungsZiel } from './zuordnung/PositionsAufteilung';
+import { usePositionsAufteilung } from './zuordnung/usePositionsAufteilung';
+import { zieleAusPositionen, zielSchluessel } from './zuordnung/positionen';
+import { PositionsZielZeile } from './zuordnung/PositionsZielZeile';
+import { freierFarbIndex, zielFarbe } from './zuordnung/zielFarben';
 
 // ========== Types ==========
 interface GeschaeftsdatenDto {
@@ -30,6 +35,8 @@ interface ProjektAnteil {
     beschreibung: string;
     // Über wie viele Jahre die Kosten verteilt werden (nur Kostenstellen). 1 = keine Aufteilung.
     streckungJahre?: number;
+    // Fest vergebene Kennfarbe im Modus „Nach Positionen“ (siehe zuordnung/zielFarben.ts).
+    farbIndex?: number;
 }
 
 // ========== Helpers ==========
@@ -58,14 +65,18 @@ export interface ZuordnungModalProps {
 
 export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, lieferantName, pdfUrl, previewMimeType, onClose, onSuccess }: ZuordnungModalProps) {
     const toast = useToast();
+    const titelId = useId();
     const isBelegZuordnung = belegId != null;
     const [geschaeftsdaten, setGeschaeftsdaten] = useState<GeschaeftsdatenDto | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [modus, setModus] = useState<'prozent' | 'absolut'>('prozent');
+    const [modus, setModus] = useState<'prozent' | 'absolut' | 'positionen'>('prozent');
     const [anteile, setAnteile] = useState<ProjektAnteil[]>([]);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [showKostenstelleModal, setShowKostenstelleModal] = useState(false);
+    // Aufteilung nach Positionen – nur für Lieferanten-Dokumente, nicht für Kassenbelege.
+    const positionsAufteilung = usePositionsAufteilung(isBelegZuordnung ? null : geschaeftsdokumentId, modus === 'positionen');
+    const nachPositionen = modus === 'positionen';
 
     // Geschäftsdaten + bestehende Zuordnungen laden
     useEffect(() => {
@@ -81,11 +92,19 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
         const zuordnungUrl = isBelegZuordnung
             ? `/api/bestellungen-uebersicht/beleg-zuordnungen/${targetId}`
             : `/api/bestellungen-uebersicht/zuordnungen/${targetId}`;
+        const positionenLaden = isBelegZuordnung
+            ? Promise.resolve(null)
+            : positionsAufteilung.laden().catch(err => {
+                toast.error(err instanceof Error && err.message !== 'Failed to fetch' ? err.message : 'Positionen konnten nicht geladen werden.');
+                return null;
+            });
         Promise.all([
             fetch(datenUrl),
             fetch(zuordnungUrl),
+            positionenLaden,
         ])
-            .then(async ([gdRes, zuordRes]) => {
+            .then(async ([gdRes, zuordRes, positionsUebersicht]) => {
+                let geladeneAnteile: ProjektAnteil[] = [];
                 let nettoFuerBerechnung = 0;
                 if (gdRes.ok) {
                     const gd = await gdRes.json();
@@ -98,7 +117,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                     if (enthaeltAbsoluteZuordnung) {
                         setModus('absolut');
                     }
-                    setAnteile(zuordnungen.map((z: { projektId?: number; projektName?: string; kostenstelleId?: number; kostenstelleName?: string; betrag?: number; prozentanteil?: number | null; beschreibung?: string; streckungJahre?: number }) => {
+                    geladeneAnteile = zuordnungen.map((z: { projektId?: number; projektName?: string; kostenstelleId?: number; kostenstelleName?: string; betrag?: number; prozentanteil?: number | null; beschreibung?: string; streckungJahre?: number }) => {
                         const hatProzent = z.prozentanteil != null;
                         const pct: number | null = hatProzent
                             ? (z.prozentanteil ?? 0)
@@ -117,8 +136,20 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                             beschreibung: z.beschreibung || '',
                             streckungJahre: z.streckungJahre && z.streckungJahre > 1 ? z.streckungJahre : 1,
                         };
-                    }));
+                    });
                 }
+                // Gespeicherte Aufteilung nach Positionen: direkt im Positionsmodus starten
+                // und jedes Ziel der Positionen auch als Ziel in der Liste zeigen.
+                if (positionsUebersicht?.nachPositionenAufgeteilt) {
+                    setModus('positionen');
+                    const vorhanden = new Set(geladeneAnteile.map(a => zielSchluessel(a)));
+                    for (const ziel of zieleAusPositionen(positionsUebersicht.positionen)) {
+                        if (vorhanden.has(zielSchluessel(ziel))) continue;
+                        geladeneAnteile.push({ ...ziel, betrag: 0, prozentanteil: null, beschreibung: '', streckungJahre: ziel.kostenstelleId != null ? 1 : undefined });
+                    }
+                }
+                // Kennfarben in Listenreihenfolge fest vergeben
+                setAnteile(geladeneAnteile.map((a, idx) => ({ ...a, farbIndex: idx })));
             })
             .catch(() => toast.error('Fehler beim Laden der Zuordnungsdaten'))
             .finally(() => setLoading(false));
@@ -137,7 +168,9 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
             return;
         }
         const defaultAnteil = anteile.length === 0 ? 100 : 0;
+        if (nachPositionen && anteile.length === 0) positionsAufteilung.weiseOffeneZu(zielSchluessel({ projektId: p.id }));
         setAnteile([...anteile, {
+            farbIndex: freierFarbIndex(anteile.map(a => a.farbIndex)),
             projektId: p.id,
             projektName: p.bauvorhaben,
             prozentanteil: defaultAnteil,
@@ -154,7 +187,9 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
             return;
         }
         const defaultAnteil = anteile.length === 0 ? 100 : 0;
+        if (nachPositionen && anteile.length === 0) positionsAufteilung.weiseOffeneZu(zielSchluessel({ kostenstelleId: k.id }));
         setAnteile([...anteile, {
+            farbIndex: freierFarbIndex(anteile.map(a => a.farbIndex)),
             kostenstelleId: k.id,
             kostenstelleName: k.bezeichnung,
             prozentanteil: defaultAnteil,
@@ -198,8 +233,50 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
 
     // Entfernen
     const removeAnteil = (idx: number) => {
+        const entfernt = anteile[idx];
+        if (entfernt) positionsAufteilung.entferneZiel(zielSchluessel(entfernt));
         setAnteile(prev => prev.filter((_, i) => i !== idx));
     };
+
+    // Moduswechsel; bei genau einem Ziel bekommen im Positionsmodus alle offenen Positionen dieses Ziel.
+    const wechsleModus = (neu: 'prozent' | 'absolut' | 'positionen') => {
+        if (neu === 'positionen' && anteile.length === 1 && Object.keys(positionsAufteilung.zuweisungen).length === 0) {
+            positionsAufteilung.weiseOffeneZu(zielSchluessel(anteile[0]));
+        }
+        setModus(neu);
+    };
+
+    // Ziele für die Positionsauswahl (in Reihenfolge der Liste)
+    const aufteilungsZiele: AufteilungsZiel[] = anteile.map((a, idx) => ({
+        schluessel: zielSchluessel(a),
+        name: a.projektName || a.kostenstelleName || '–',
+        art: a.projektId != null ? 'projekt' : 'kostenstelle',
+        farbe: zielFarbe(a.farbIndex ?? idx),
+    }));
+    const vorschauJeZiel = new Map((positionsAufteilung.vorschau?.ziele ?? []).map(z => [zielSchluessel(z), z]));
+    const positionenJeZiel = new Map<string, number>();
+    for (const ziel of Object.values(positionsAufteilung.zuweisungen)) {
+        positionenJeZiel.set(ziel, (positionenJeZiel.get(ziel) ?? 0) + 1);
+    }
+
+    // Zielkarten im Positionsmodus – zugleich Ablageflächen fürs Ziehen
+    const zielKarten = nachPositionen ? anteile.map((a, idx) => (
+        <PositionsZielZeile
+            key={zielSchluessel(a)}
+            schluessel={zielSchluessel(a)}
+            name={a.projektName || a.kostenstelleName || '–'}
+            istKostenstelle={a.kostenstelleId != null}
+            farbe={zielFarbe(a.farbIndex ?? idx)}
+            anzahlPositionen={positionenJeZiel.get(zielSchluessel(a)) ?? 0}
+            vorschau={vorschauJeZiel.get(zielSchluessel(a))}
+            beschreibung={a.beschreibung}
+            streckungJahre={a.streckungJahre ?? 1}
+            rechnungsJahr={rechnungsJahr}
+            onBeschreibung={wert => updateAnteil(idx, 'beschreibung', wert)}
+            onStreckung={jahre => updateAnteil(idx, 'streckungJahre', jahre)}
+            onEntfernen={() => removeAnteil(idx)}
+        />
+    )) : null;
 
     // Berechne Summen – letzten Eintrag mit effektiv berechnetem Wert (nicht gespeichertem) addieren
     const sumBetrag = anteile.reduce((s, a, idx) => {
@@ -213,8 +290,30 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
     const rest = Number((betragNetto - sumBetrag).toFixed(2));
 
     // Speichern - mit berechneten Werten für den letzten Eintrag
+    const speichernNachPositionen = async () => {
+        setSaving(true);
+        try {
+            await positionsAufteilung.speichern(anteile.map(a => ({
+                projektId: a.projektId,
+                kostenstelleId: a.kostenstelleId,
+                beschreibung: a.beschreibung,
+                streckungJahre: a.kostenstelleId != null ? (a.streckungJahre && a.streckungJahre > 1 ? a.streckungJahre : 1) : undefined,
+            })));
+            onSuccess();
+            onClose();
+        } catch (err) {
+            toast.error(err instanceof Error && err.message !== 'Failed to fetch' ? err.message : 'Die Aufteilung konnte nicht gespeichert werden.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const speichern = async () => {
         if (anteile.length === 0) return;
+        if (nachPositionen) {
+            await speichernNachPositionen();
+            return;
+        }
         const targetId = isBelegZuordnung ? belegId : geschaeftsdokumentId;
         if (targetId == null) {
             toast.error('Zuordnungsziel fehlt');
@@ -274,11 +373,28 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
     // ESC Handler
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
+            if (e.key !== 'Escape') return;
+            // Offene Auswahlfenster zuerst schließen, nicht gleich den ganzen Dialog.
+            if (showProjectModal) setShowProjectModal(false);
+            else if (showKostenstelleModal) setShowKostenstelleModal(false);
+            else onClose();
         };
         window.addEventListener('keydown', handleEsc);
         return () => window.removeEventListener('keydown', handleEsc);
-    }, [onClose]);
+    }, [onClose, showProjectModal, showKostenstelleModal]);
+
+    // Warum Speichern (noch) nicht geht – steht im Tooltip und im Positionsmodus auch links im Fuß.
+    const speichernGesperrtGrund = (() => {
+        if (anteile.length === 0) return isBelegZuordnung ? 'Erst eine Kostenstelle hinzufügen.' : 'Erst ein Projekt oder eine Kostenstelle hinzufügen.';
+        if (!nachPositionen) return null;
+        if (positionsAufteilung.positionen.length === 0) return 'Erst die Positionen auslesen.';
+        const offen = positionsAufteilung.anzahlOffen;
+        if (offen > 0) return `Noch ${offen} ${offen === 1 ? 'Position' : 'Positionen'} nicht zugeordnet.`;
+        if (positionsAufteilung.vorschauFehler) return 'Die Aufteilung konnte nicht berechnet werden.';
+        if (positionsAufteilung.vorschau?.hinweis && !positionsAufteilung.vorschauLaeuft) return positionsAufteilung.vorschau.hinweis;
+        if (!positionsAufteilung.speicherbar) return 'Die Aufteilung wird berechnet …';
+        return null;
+    })();
 
     // Display values: prefer loaded geschaeftsdaten, fallback to props
     const displayDokNr = geschaeftsdaten?.dokumentNummer || dokumentNummer || '–';
@@ -288,16 +404,16 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="relative bg-white rounded-xl shadow-2xl w-full h-full mx-10 max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-labelledby={titelId} className="relative bg-white rounded-xl shadow-2xl w-full h-full mx-10 max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-rose-50">
                     <div>
-                        <h3 className="text-lg font-semibold text-slate-900">
+                        <h3 id={titelId} className="text-lg font-semibold text-slate-900">
                             {isBelegZuordnung ? 'Beleg' : 'Rechnung'} {displayDokNr}
                         </h3>
                         <p className="text-sm text-slate-500">{displayLieferant}</p>
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-rose-100 transition">
+                    <button onClick={onClose} aria-label="Schließen" className="p-2 rounded-lg hover:bg-rose-100 transition">
                         <X className="w-5 h-5 text-slate-500" />
                     </button>
                 </div>
@@ -305,7 +421,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                 {/* Content - Split Layout */}
                 <div className="flex-1 overflow-hidden flex">
                     {/* Left: PDF Preview */}
-                    <div className="w-1/2 border-r border-slate-200 bg-slate-100 flex flex-col">
+                    <div className={`${nachPositionen ? 'w-1/3' : 'w-1/2'} border-r border-slate-200 bg-slate-100 flex flex-col`}>
                         <div className="px-4 py-2 bg-slate-200 border-b border-slate-300 flex items-center justify-between">
                             <span className="text-sm font-medium text-slate-700">PDF-Vorschau</span>
                             {displayPdfUrl && (
@@ -336,7 +452,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                     </div>
 
                     {/* Right: Assignment Form */}
-                    <div className="w-1/2 overflow-auto p-6 space-y-6">
+                    <div className={`${nachPositionen ? 'w-2/3 space-y-4' : 'w-1/2 space-y-6'} overflow-auto p-6`}>
                         {loading ? (
                             <div className="flex items-center justify-center py-12">
                                 <RefreshCw className="w-8 h-8 animate-spin text-slate-400" />
@@ -345,8 +461,9 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                             <>
                                 {/* Metadaten */}
                                 <div className="bg-slate-50 rounded-xl p-4">
-                                    <h4 className="text-sm font-semibold text-slate-700 mb-3">Rechnungsdaten</h4>
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <h4 className={`text-sm font-semibold text-slate-700 ${nachPositionen ? 'mb-2' : 'mb-3'}`}>Rechnungsdaten</h4>
+                                    {/* Im Positionsmodus einzeilig, damit mehr Platz für Ziele und Positionen bleibt */}
+                                    <div className={`grid ${nachPositionen ? 'grid-cols-4' : 'grid-cols-2'} gap-4 text-sm`}>
                                         <div>
                                             <span className="text-slate-500">Rechnungsnr.:</span>
                                             <p className="font-medium">{geschaeftsdaten?.dokumentNummer || '–'}</p>
@@ -371,19 +488,29 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                                     <span className="text-sm font-medium text-slate-700">Verteilungsmodus:</span>
                                     <div className="flex bg-slate-100 rounded-lg p-1">
                                         <button
-                                            onClick={() => setModus('prozent')}
+                                            onClick={() => wechsleModus('prozent')}
                                             className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition ${modus === 'prozent' ? 'bg-white shadow text-rose-600' : 'text-slate-500'}`}
                                         >
                                             <Percent className="w-4 h-4" />
                                             Prozentual
                                         </button>
                                         <button
-                                            onClick={() => setModus('absolut')}
+                                            onClick={() => wechsleModus('absolut')}
                                             className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition ${modus === 'absolut' ? 'bg-white shadow text-rose-600' : 'text-slate-500'}`}
                                         >
                                             <Euro className="w-4 h-4" />
                                             Absolut
                                         </button>
+                                        {!isBelegZuordnung && positionsAufteilung.verfuegbar && (
+                                            <button
+                                                onClick={() => wechsleModus('positionen')}
+                                                title="Jede Position der Rechnung einem Projekt zuordnen – die Beträge rechnet das Programm aus."
+                                                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition ${nachPositionen ? 'bg-white shadow text-rose-600' : 'text-slate-500'}`}
+                                            >
+                                                <ListChecks className="w-4 h-4" />
+                                                Nach Positionen
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
@@ -410,13 +537,12 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                                     </Button>
                                 </div>
 
-                                {/* ProjectSelectModal */}
-                                {showProjectModal && (
-                                    <ProjectSelectModal
-                                        onSelect={addProjekt}
-                                        onClose={() => setShowProjectModal(false)}
-                                    />
-                                )}
+                                {/* Projektsuche – alle Projekte, auch beendete: Lieferanten-Rechnungen kommen oft nach Abschluss */}
+                                <ProjektSearchModal
+                                    isOpen={showProjectModal}
+                                    onSelect={addProjekt}
+                                    onClose={() => setShowProjectModal(false)}
+                                />
 
                                 {/* KostenstelleSelectModal */}
                                 {showKostenstelleModal && (
@@ -426,8 +552,8 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                                     />
                                 )}
 
-                                {/* Zuordnungsliste */}
-                                {anteile.length === 0 ? (
+                                {/* Zuordnungsliste – im Positionsmodus stehen die Ziele in der Positionsaufteilung */}
+                                {nachPositionen ? null : anteile.length === 0 ? (
                                     <div className="text-center py-8 text-slate-400 border-2 border-dashed rounded-xl">
                                         <Plus className="w-8 h-8 mx-auto mb-2" />
                                         <p>Klicken Sie oben, um {isBelegZuordnung ? 'Kostenstellen' : 'Projekte oder Kostenstellen'} zuzuordnen</p>
@@ -460,7 +586,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        <button onClick={() => removeAnteil(idx)} className="text-slate-400 hover:text-red-500">
+                                                        <button onClick={() => removeAnteil(idx)} aria-label={`${a.projektName || a.kostenstelleName} entfernen`} title="Entfernen" className="text-slate-400 hover:text-red-500">
                                                             <Trash2 className="w-4 h-4" />
                                                         </button>
                                                     </div>
@@ -528,8 +654,18 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                                     </div>
                                 )}
 
+                                {/* Aufteilung nach Positionen */}
+                                {nachPositionen && (
+                                    <PositionsAufteilung
+                                        aufteilung={positionsAufteilung}
+                                        ziele={aufteilungsZiele}
+                                        zielKarten={zielKarten}
+                                        onProjektHinzufuegen={() => setShowProjectModal(true)}
+                                    />
+                                )}
+
                                 {/* Zusammenfassung */}
-                                {anteile.length > 0 && (
+                                {!nachPositionen && anteile.length > 0 && (
                                     <div className={`rounded-xl p-4 ${Math.abs(rest) < 0.01 ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
                                         <div className="flex justify-between text-sm">
                                             <span>Zugeordnet:</span>
@@ -553,16 +689,21 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                 </div>
 
                 {/* Footer */}
-                <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+                    {nachPositionen && speichernGesperrtGrund && (
+                        <p className="mr-auto text-sm text-amber-700">{speichernGesperrtGrund}</p>
+                    )}
                     <Button variant="outline" onClick={onClose}>Abbrechen</Button>
-                    <Button
-                        onClick={speichern}
-                        disabled={saving || anteile.length === 0}
-                        className="bg-rose-600 hover:bg-rose-700 text-white"
-                    >
-                        {saving ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                        Zuordnen & Abschließen
-                    </Button>
+                    <span title={speichernGesperrtGrund ?? undefined}>
+                        <Button
+                            onClick={speichern}
+                            disabled={saving || speichernGesperrtGrund != null}
+                            className="bg-rose-600 hover:bg-rose-700 text-white"
+                        >
+                            {saving ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                            Zuordnen & Abschließen
+                        </Button>
+                    </span>
                 </div>
             </div>
         </div>

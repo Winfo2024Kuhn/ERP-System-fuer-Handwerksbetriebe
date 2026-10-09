@@ -21,4 +21,5 @@ public class ZugferdArtikelPosition {
     private String mengeneinheit; // UnitCode (kg, Stk, etc.)
     private BigDecimal einzelpreis; // ChargeAmount / NetPriceProductTradePrice
     private String preiseinheit; // BasisQuantity Unit (t, 100 kg, kg)
+    private BigDecimal gesamtpreisNetto; // LineTotalAmount / LineExtensionAmount
 }

@@ -15,8 +15,8 @@ import org.example.kalkulationsprogramm.service.BelegAbgelehntException;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -27,9 +27,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -47,8 +44,6 @@ public class BestellungsUebersichtController {
 
     private final LieferantDokumentRepository dokumentRepository;
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
-    private final ProjektRepository projektRepository;
-    private final ProjektDokumentRepository projektDokumentRepository;
     private final LieferantDokumentProjektAnteilRepository projektAnteilRepository;
     private final KostenstelleRepository kostenstelleRepository;
     private final FrontendUserProfileRepository frontendUserProfileRepository;
@@ -59,15 +54,11 @@ public class BestellungsUebersichtController {
     private final RechnungsVorschlagService rechnungsVorschlagService;
     private final LieferantDokumentService lieferantDokumentService;
     private final BestellungsUebersichtService bestellungsUebersichtService;
+    private final LieferantDokumentZuordnungService zuordnungService;
 
     /** Höchstzahl Dokumente einer Kette für die Vorschlagssuche. */
     private static final int MAX_KETTEN_DOKUMENTE = 50;
 
-    @Value("${file.upload-dir}")
-    private String uploadDir;
-
-    @Value("${file.mail-attachment-dir}")
-    private String attachmentDir;
 
     /**
      * Gibt alle Dokumenten-Ketten gruppiert nach Status zurück.
@@ -430,7 +421,7 @@ public class BestellungsUebersichtController {
                 }
                 betragSumme = betragSumme.add(anteil.betrag);
             }
-            Integer streckungJahre = normalisiereStreckungJahre(anteil.streckungJahre);
+            Integer streckungJahre = LieferantDokumentZuordnungService.normalisiereStreckungJahre(anteil.streckungJahre);
             if (streckungJahre == null) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Streckung darf höchstens 20 Jahre betragen"));
             }
@@ -505,202 +496,30 @@ public class BestellungsUebersichtController {
      * - Kopiert das PDF auch als ProjektDokument in die Gruppe EINGANGSRECHNUNGEN
      */
     @PostMapping("/zuordnen")
-    @Transactional
     public ResponseEntity<?> zuordnenZuProjekten(
             @RequestBody ZuordnungRequest request,
             @RequestParam(value = "token", required = false) String token,
             Authentication auth) {
-        // Geschäftsdokument laden
-        var gd = geschaeftsdokumentRepository.findById(request.geschaeftsdokumentId).orElse(null);
-        if (gd == null) {
+        if (request == null || request.geschaeftsdokumentId == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
         }
-
-        // LieferantDokument für die Materialkosten-Zuordnung
-        LieferantDokument lieferantDokument = gd.getDokument();
-        if (lieferantDokument == null) {
-             return ResponseEntity.badRequest().body(Map.of("error", "Kein Basis-Dokument vorhanden"));
-        }
-
-        // Frontend-User laden (wer ordnet zu?)
-        FrontendUserProfile zugeordnetVon = resolveZugeordnetVon(belegService.findCaller(token, auth), auth);
-
-        BigDecimal absolutSumme = BigDecimal.ZERO;
-        BigDecimal prozentSumme = BigDecimal.ZERO;
-        BigDecimal maximalbetrag = gd.getBetragBrutto() != null ? gd.getBetragBrutto() : gd.getBetragNetto();
-        for (ProjektAnteil anteil : request.projektAnteile) {
-            if (anteil.prozentanteil != null && anteil.betrag != null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Nur Prozent oder Betrag angeben"));
-            }
-            if (anteil.prozentanteil != null) {
-                if (anteil.prozentanteil.compareTo(BigDecimal.ZERO) < 0
-                        || anteil.prozentanteil.compareTo(BigDecimal.valueOf(100)) > 0) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Prozent muss zwischen 0 und 100 liegen"));
-                }
-                prozentSumme = prozentSumme.add(anteil.prozentanteil);
-            } else if (anteil.betrag != null) {
-                if (anteil.betrag.compareTo(BigDecimal.ZERO) <= 0) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Betrag muss groesser als 0 sein"));
-                }
-                absolutSumme = absolutSumme.add(anteil.betrag);
-            }
-        }
-        if (prozentSumme.compareTo(BigDecimal.valueOf(100)) > 0) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Summe der Prozent-Anteile darf 100% nicht ueberschreiten"));
-        }
-        if (maximalbetrag != null && absolutSumme.compareTo(maximalbetrag) > 0) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Summe der Betraege darf den Rechnungsbetrag nicht ueberschreiten"));
-        }
-
-        // Lösche alte LieferantDokumentProjektAnteil für dieses Dokument
-        List<LieferantDokumentProjektAnteil> alteAnteile = projektAnteilRepository.findByDokumentId(lieferantDokument.getId());
-        projektAnteilRepository.deleteAll(alteAnteile);
-
-        // Neue Zuordnungen erstellen
-        List<LieferantDokumentProjektAnteil> neueProjektAnteile = new ArrayList<>();
-        
-        for (ProjektAnteil anteil : request.projektAnteile) {
-            // Validierung: Entweder Projekt oder Kostenstelle
-            Projekt projekt = null;
-            Kostenstelle kostenstelle = null;
-
-            if (anteil.projektId != null) {
-                projekt = projektRepository.findById(anteil.projektId).orElse(null);
-                if (projekt == null) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Projekt nicht gefunden: " + anteil.projektId));
-                }
-            } else if (anteil.kostenstelleId != null) {
-                kostenstelle = kostenstelleRepository.findById(anteil.kostenstelleId).orElse(null);
-                if (kostenstelle == null) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Kostenstelle nicht gefunden: " + anteil.kostenstelleId));
-                }
-            } else {
-                // Skip invalid entries
-                continue;
-            }
-
-            // LieferantDokumentProjektAnteil für Materialkosten/Nachkalkulation und Anzeige
-            LieferantDokumentProjektAnteil projektAnteil = new LieferantDokumentProjektAnteil();
-            projektAnteil.setDokument(lieferantDokument);
-            projektAnteil.setProjekt(projekt);
-            projektAnteil.setKostenstelle(kostenstelle);
-            // Speichere Prozent als BigDecimal im "prozent"-Integer Feld? 
-            // Nein, Anteil-Entity hat Integer für Prozent und BigDecimal für Absolut.
-            // Der Request hat BigDecimal für beides.
-            if (anteil.prozentanteil != null) {
-                projektAnteil.setProzent(anteil.prozentanteil.intValue());
-            } else {
-                projektAnteil.setAbsoluterBetrag(anteil.betrag);
-            }
-            projektAnteil.setBeschreibung(anteil.beschreibung);
-
-            // Kostenstreckung nur für Kostenstellen (periodische Gemeinkosten, z.B.
-            // Zertifizierung alle 3 Jahre). Projekt-Anteile bleiben einmalig.
-            if (kostenstelle != null) {
-                Integer streckungJahre = normalisiereStreckungJahre(anteil.streckungJahre);
-                if (streckungJahre == null) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Streckung darf höchstens 20 Jahre betragen"));
-                }
-                projektAnteil.setStreckungJahre(streckungJahre);
-                projektAnteil.setStreckungStartJahr(gd.getDokumentDatum() != null
-                        ? gd.getDokumentDatum().getYear()
-                        : LocalDate.now().getYear());
-            }
-            
-            // Betrag berechnen: Kostenstellen-Anteile werden netto verrechnet
-            // (Vorsteuerabzug landet beim Finanzamt, nicht im Gemeinkostentopf).
-            // berechneAnteil(netto, brutto) entscheidet anhand der gesetzten
-            // Zuordnung — Projekt-Anteile bleiben brutto.
-            if (gd.getBetragNetto() != null || gd.getBetragBrutto() != null) {
-                projektAnteil.berechneAnteil(gd.getBetragNetto(), gd.getBetragBrutto());
-            }
-            neueProjektAnteile.add(projektAnteil);
-            projektAnteil.setZugeordnetVon(zugeordnetVon);
-            
-            // PDF als ProjektDokument in EINGANGSRECHNUNGEN-Gruppe speichern (Nur bei Projektzuordnung)
-            if (projekt != null) {
-                copyPdfToProject(gd, projekt);
-            }
-        }
-
-        projektAnteilRepository.saveAll(neueProjektAnteile);
-
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Erfolgreich " + neueProjektAnteile.size() + " Zuordnung(en) gespeichert",
-                "zuordnungen", neueProjektAnteile.size()));
-    }
-
-    /**
-     * Kopiert das PDF des Geschäftsdokuments als ProjektDokument in die EINGANGSRECHNUNGEN-Gruppe.
-     */
-    private void copyPdfToProject(LieferantGeschaeftsdokument gd, Projekt projekt) {
-        if (gd.getDokument() == null || gd.getDokument().getAttachment() == null) {
-            return;
-        }
-        
-
-        var attachment = gd.getDokument().getAttachment();
-        var email = attachment.getEmail();
-        if (email == null || email.getLieferant() == null) {
-            return;
-        }
-        
-        Long lieferantId = email.getLieferant().getId();
-
-        String storedFilename = attachment.getStoredFilename();
-        String originalFilename = attachment.getOriginalFilename();
-        
-        // Quellpfad (Mail-Attachment)
-        Path sourcePath = Path.of(attachmentDir).toAbsolutePath().normalize()
-                .resolve("email")
-                .resolve(String.valueOf(lieferantId))
-                .resolve(storedFilename);
-        
-        if (!Files.exists(sourcePath)) {
-            return;
-        }
-        
-        // Erzeuge eindeutigen gespeicherten Dateinamen für Projekt
-        String lieferantName = email.getLieferant().getLieferantenname();
-        String dokumentNummer = gd.getDokumentNummer() != null ? gd.getDokumentNummer() : "unbekannt";
-        String gespeicherterName = "ER_%s_%s_%d.pdf".formatted(
-                sanitizeFilename(lieferantName != null ? lieferantName : ""),
-                sanitizeFilename(dokumentNummer),
-                System.currentTimeMillis());
-        
-        // Zielpfad (Projekt-Uploads)
-        Path projektDir = Path.of(uploadDir).toAbsolutePath().normalize()
-                .resolve(String.valueOf(projekt.getId()));
-        Path targetPath = projektDir.resolve(gespeicherterName);
-        
+        FrontendUserProfile zugeordnetVon = zuordnungService.zugeordnetVon(belegService.findCaller(token, auth), auth);
+        List<LieferantDokumentZuordnungService.Anteil> anteile = request.projektAnteile == null ? List.of()
+                : request.projektAnteile.stream()
+                        .filter(Objects::nonNull)
+                        .map(a -> new LieferantDokumentZuordnungService.Anteil(a.projektId, a.kostenstelleId,
+                                a.betrag, a.prozentanteil, a.beschreibung, a.streckungJahre))
+                        .toList();
         try {
-            Files.createDirectories(projektDir);
-            Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            
-            // ProjektDokument erstellen
-            ProjektDokument dok = new ProjektDokument();
-            dok.setProjekt(projekt);
-            dok.setOriginalDateiname(originalFilename != null ? originalFilename : storedFilename);
-            dok.setGespeicherterDateiname(gespeicherterName);
-            dok.setDateityp("application/pdf");
-            dok.setDateigroesse(Files.size(targetPath));
-            dok.setUploadDatum(LocalDate.now());
-            dok.setDokumentGruppe(DokumentGruppe.EINGANGSRECHNUNGEN);
-            dok.setLieferant(email.getLieferant());
-            
-            projektDokumentRepository.save(dok);
-        } catch (IOException e) {
-            // Fehler beim Kopieren protokollieren, aber nicht abbrechen
-            System.err.println("Fehler beim Kopieren des PDFs: " + e.getMessage());
+            int anzahl = zuordnungService.speichereAnteile(request.geschaeftsdokumentId, anteile, zugeordnetVon);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Erfolgreich " + anzahl + " Zuordnung(en) gespeichert",
+                    "zuordnungen", anzahl));
+        } catch (NoSuchElementException | IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
-    
-    private String sanitizeFilename(String name) {
-        if (name == null) return "";
-        return name.replaceAll("[^a-zA-Z0-9äöüÄÖÜß_-]", "_").replaceAll("_{2,}", "_");
-    }
-
 
     /**
      * Markiert eine Rechnung als Lagerbestellung (keine Projektzuordnung nötig).
@@ -726,23 +545,12 @@ public class BestellungsUebersichtController {
      * Die Rechnung wird wieder als "Abgeschlossen" angezeigt.
      */
     @DeleteMapping("/zuordnung/{dokId}")
-    @Transactional
     public ResponseEntity<?> hebeZuordnungAuf(@PathVariable Long dokId) {
-        var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
-        if (gd == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
+        try {
+            zuordnungService.hebeZuordnungAuf(dokId);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
-
-        // Lösche alle LieferantDokumentProjektAnteil
-        if (gd.getDokument() != null) {
-            List<LieferantDokumentProjektAnteil> anteile = projektAnteilRepository.findByDokumentId(gd.getDokument().getId());
-            projektAnteilRepository.deleteAll(anteile);
-        }
-
-        // Optional: Lagerbestellung-Flag zurücksetzen
-        gd.setLagerbestellung(false);
-        geschaeftsdokumentRepository.save(gd);
-
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "Zuordnung aufgehoben - Rechnung wieder in 'Abgeschlossen'"));
@@ -1007,29 +815,7 @@ public class BestellungsUebersichtController {
     }
 
     private FrontendUserProfile resolveZugeordnetVon(Mitarbeiter caller, Authentication auth) {
-        if (auth != null && auth.getPrincipal() instanceof FrontendUserPrincipal principal && principal.getId() != null) {
-            FrontendUserProfile sessionProfile = frontendUserProfileRepository.findById(principal.getId()).orElse(null);
-            if (sessionProfile != null && sessionProfile.isActive()) {
-                if (caller == null || sessionProfile.getMitarbeiter() == null
-                        || Objects.equals(sessionProfile.getMitarbeiter().getId(), caller.getId())) {
-                    return sessionProfile;
-                }
-            }
-        }
-        if (caller != null && caller.getId() != null) {
-            return frontendUserProfileRepository.findByMitarbeiterIdAndActiveTrue(caller.getId()).orElse(null);
-        }
-        return null;
-    }
-
-    /**
-     * Normalisiert die Streckungs-Jahre einer Kostenstellen-Zuordnung: null/&lt;1 wird zu 1
-     * (keine Streckung). Gibt {@code null} zurück, wenn der Wert die zulässige Obergrenze
-     * (20 Jahre) überschreitet — der Aufrufer antwortet dann mit Bad Request.
-     */
-    private static Integer normalisiereStreckungJahre(Integer streckungJahre) {
-        int wert = (streckungJahre != null && streckungJahre >= 1) ? streckungJahre : 1;
-        return wert > 20 ? null : wert;
+        return zuordnungService.zugeordnetVon(caller, auth);
     }
 
     private record VorbereiteteBelegZuordnung(

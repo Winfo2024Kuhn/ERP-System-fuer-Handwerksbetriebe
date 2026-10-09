@@ -12,8 +12,6 @@ import org.example.kalkulationsprogramm.repository.KostenstelleRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import org.example.kalkulationsprogramm.repository.ProjektDokumentRepository;
-import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,8 +50,6 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
         controller = new BestellungsUebersichtController(
                 mock(LieferantDokumentRepository.class),
                 mock(LieferantGeschaeftsdokumentRepository.class),
-                mock(ProjektRepository.class),
-                mock(ProjektDokumentRepository.class),
                 projektAnteilRepository,
                 kostenstelleRepository,
                 mock(FrontendUserProfileRepository.class),
@@ -64,7 +60,8 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
                 mock(org.example.kalkulationsprogramm.service.BelegAuditService.class),
                 mock(org.example.kalkulationsprogramm.service.RechnungsVorschlagService.class),
                 mock(org.example.kalkulationsprogramm.service.LieferantDokumentService.class),
-                mock(org.example.kalkulationsprogramm.service.BestellungsUebersichtService.class));
+                mock(org.example.kalkulationsprogramm.service.BestellungsUebersichtService.class),
+                mock(org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService.class));
     }
 
     @Test

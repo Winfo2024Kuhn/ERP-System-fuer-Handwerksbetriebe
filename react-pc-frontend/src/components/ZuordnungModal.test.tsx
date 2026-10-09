@@ -8,8 +8,8 @@ vi.mock('./ui/PdfCanvasViewer', () => ({
 vi.mock('./ui/toast', () => ({
     useToast: () => ({ error: vi.fn() }),
 }));
-vi.mock('./ProjectSelectModal', () => ({
-    ProjectSelectModal: () => null,
+vi.mock('./ProjektSearchModal', () => ({
+    ProjektSearchModal: () => null,
 }));
 vi.mock('./KostenstelleSelectModal', () => ({
     KostenstelleSelectModal: () => null,

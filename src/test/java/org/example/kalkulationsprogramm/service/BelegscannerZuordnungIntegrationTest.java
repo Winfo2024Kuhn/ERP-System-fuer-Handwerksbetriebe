@@ -53,6 +53,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import({ BelegService.class, BelegKiAnalyseService.class, BelegZuordnungService.class,
         GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, SystemSettingsService.class,
+        LieferantDokumentPositionService.class, LieferantDokumentPositionLeser.class,
         BelegscannerZuordnungIntegrationTest.Konfiguration.class })
 class BelegscannerZuordnungIntegrationTest {
 

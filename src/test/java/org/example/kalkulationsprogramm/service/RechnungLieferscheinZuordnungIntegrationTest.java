@@ -52,6 +52,8 @@ import jakarta.persistence.EntityManager;
 @Import({ GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, RechnungsVorschlagService.class,
         BelegZuordnungService.class, BelegKiAnalyseService.class, SystemSettingsService.class,
         BestellungsUebersichtController.class, BestellungsUebersichtService.class,
+        LieferantDokumentPositionService.class, LieferantDokumentPositionLeser.class,
+        LieferantDokumentZuordnungService.class,
         RechnungLieferscheinZuordnungIntegrationTest.Konfiguration.class })
 class RechnungLieferscheinZuordnungIntegrationTest {
 

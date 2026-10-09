@@ -20,10 +20,12 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.example.kalkulationsprogramm.domain.AusgelesenePosition;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre;
@@ -36,11 +38,13 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.service.LieferantDokumentPositionLeser.KiAntwort;
 import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -72,6 +76,9 @@ public class GeminiDokumentAnalyseService {
     private final ApplicationEventPublisher eventPublisher;
     private final LieferantDokumentAbgleich dokumentAbgleich;
     private final LieferantDokumentVerknuepfungSperreRepository sperreRepository;
+    private final LieferantDokumentPositionService positionService;
+    private final LieferantDokumentPositionLeser positionLeser;
+    private final TransactionTemplate transactionTemplate;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -97,6 +104,10 @@ public class GeminiDokumentAnalyseService {
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
+
+    /** Ausgabelimit je Gemini-Aufruf; Flash-Modelle erlauben bis 65.536. */
+    @Value("${ai.gemini.dokument-analyse.max-output-tokens:65536}")
+    private int maxOutputTokens = 65536;
 
     private static final String SYSTEM_PROMPT_DOKUMENT_ANALYSE = """
             Du bist ein Experte für die Analyse von deutschen Geschäftsdokumenten.
@@ -192,12 +203,35 @@ public class GeminiDokumentAnalyseService {
             WICHTIG FÜR NICHT-GESCHÄFTSDOKUMENTE:
             - Wenn dokumentTyp = "SONSTIG", dann setze istGeschaeftsdokument = false
             - Wenn dokumentTyp = "SONSTIG", dann sind alle anderen Felder (dokumentNummer, betrag etc.) = null
+              und artikelPositionen = []
             - confidence sollte bei SONSTIG = 0.0 sein, da keine relevanten Daten extrahiert werden
 
-            ARTIKELPOSITIONEN EXTRAKTION (WICHTIG für Rechnungen):
-            - Extrahiere ALLE Positionen mit Artikelnummer/Materialnummer
-            - Jede Position: {"externeArtikelnummer": "...", "einzelpreis": 12.34,
-              "preiseinheit": "...", "mengeneinheit": "..."}
+            ARTIKELPOSITIONEN EXTRAKTION – ZWEI SCHRITTE:
+            SCHRITT 1: Bestimme ZUERST den dokumentTyp (siehe oben).
+            SCHRITT 2: NUR wenn dokumentTyp ANGEBOT, AUFTRAGSBESTAETIGUNG, LIEFERSCHEIN,
+              RECHNUNG oder GUTSCHRIFT ist, lies die Positionen aus. Bei SONSTIG (Formulare,
+              Kataloge, Preislisten, Infoschreiben, Zeugnisse, Zusammenstellungen) ist
+              artikelPositionen IMMER ein leeres Array [] – dort KEINE Positionen auslesen.
+
+            - Extrahiere ALLE Positionen (jede Tabellenzeile mit Artikel oder Betrag),
+              AUCH solche ohne Artikelnummer (Fracht, Zuschläge, Arbeitsleistung, Freitext-Artikel).
+            - Jede Position: {"positionNr": 1, "positionsArt": "WARE|NEBENKOSTEN|RABATT",
+              "externeArtikelnummer": "..." oder null, "bezeichnung": "Artikeltext",
+              "menge": 12.5, "mengeneinheit": "...", "einzelpreis": 12.34,
+              "preiseinheit": "...", "gesamtpreisNetto": 154.25}
+            - positionsArt NEBENKOSTEN: Fracht, Versand, Porto, Verpackung, Palette, Maut,
+              Energie-, Legierungs-, Material-, Mindermengen- oder Kleinmengenzuschlag.
+            - positionsArt RABATT: Rabatt-, Abzugs- oder Bonuszeilen; gesamtpreisNetto NEGATIV.
+            - Alles andere ist WARE.
+            - bezeichnung: kurzer, vollständiger Artikeltext (z. B. "Flachstahl 50x5 S235JR").
+            - gesamtpreisNetto ist die Zeilensumme netto. KEINE Summenzeilen (Zwischensumme,
+              Nettobetrag, MwSt, Gesamtbetrag) als Position aufnehmen.
+            - Auf Lieferscheinen fehlen Preise oft: dann einzelpreis/gesamtpreisNetto = null.
+            - AUFGESCHLÜSSELTE POSITIONEN: Wird eine Position auf Folgeseiten in Bestandteile
+              mit Einzelpreisen zerlegt (Ausstattung, Zubehör, Optionen) und endet mit einer
+              "Positionssumme", dann NUR die Hauptposition mit der Positionssumme aufnehmen –
+              die Bestandteile NICHT als eigene Positionen. Die Summe aller Positionen muss
+              zum Nettobetrag des Dokuments passen.
             - Die externe Artikelnummer ist oft eine Materialnummer wie "12345" oder "MAT-001"
             - einzelpreis ist der Preis EINER Preiseinheit, NICHT die Positionssumme
             - Die Preiseinheit ist entscheidend: "€/t" = pro Tonne, "€/100kg" = pro 100kg,
@@ -1070,6 +1104,9 @@ public class GeminiDokumentAnalyseService {
                 log.warn("Konnte keine Metadaten extrahieren für Dokument {}", freshDokument.getId());
                 return null;
             }
+            // Vor dem Duplikat-Check sichern: dort kann geschaeftsdaten durch das
+            // bestehende Geschaeftsdokument ersetzt werden (transientes Feld ginge verloren).
+            var ausgelesenePositionen = geschaeftsdaten.getAusgelesenePositionen();
 
             // Duplikat-Check: Wenn Dokumentnummer existiert, WIEDERVERWENDEN statt löschen
             // Bei PDF+XML-Paar sollen beide Dokumente die gleichen Geschäftsdaten
@@ -1118,6 +1155,13 @@ public class GeminiDokumentAnalyseService {
                         log.info("Geschäftsdaten aktualisiert mit ZUGFeRD/XML-Daten");
                     }
 
+                    // ZUGFeRD/XML-Positionen sind verlässlicher als die der KI: eine
+                    // KI-Analyse ersetzt sie nicht.
+                    boolean neueDatenVonKi = geschaeftsdaten.getAiRawJson() != null;
+                    if (neueDatenVonKi && istStrukturiert(bestehendes)) {
+                        ausgelesenePositionen = null;
+                    }
+
                     // Das aktuelle Dokument referenziert die bestehenden Geschäftsdaten
                     geschaeftsdaten = bestehendes;
                 }
@@ -1153,6 +1197,10 @@ public class GeminiDokumentAnalyseService {
             freshDokument.setGeschaeftsdaten(savedGeschaeftsdaten);
             dokumentRepository.saveAndFlush(freshDokument);
 
+            // Positionen erst jetzt: sie brauchen die ID der Geschaeftsdaten (@MapsId)
+            // und den endgueltigen Typ. Formulare/SONSTIG bekommen keine.
+            positionService.ersetzePositionen(savedGeschaeftsdaten, freshDokument.getTyp(), ausgelesenePositionen);
+
             log.info("Dokument {} erfolgreich analysiert: {} (Quelle: {}, Confidence: {})",
                     freshDokument.getId(),
                     geschaeftsdaten.getDokumentNummer(),
@@ -1168,6 +1216,10 @@ public class GeminiDokumentAnalyseService {
             log.error("Fehler bei Dokumentanalyse für Dokument {}", dokument.getId(), e);
             return null;
         }
+    }
+
+    private static boolean istStrukturiert(LieferantGeschaeftsdokument gd) {
+        return "ZUGFERD".equals(gd.getDatenquelle()) || "XML".equals(gd.getDatenquelle());
     }
 
     /**
@@ -1277,6 +1329,7 @@ public class GeminiDokumentAnalyseService {
                         ausgewiesenerTyp(zugferd.getTypeCode()), gd.getDokumentDatum(),
                         gd.getDokumentNummer());
             }
+            gd.setAusgelesenePositionen(LieferantDokumentPositionService.ausZugferd(zugferd.getArtikelPositionen()));
 
             return gd;
 
@@ -1404,11 +1457,13 @@ public class GeminiDokumentAnalyseService {
             // TypeCode als Rechnung vor - auch ein Lieferschein (270) oder eine
             // Auftragsbestaetigung (231), also genau das, was die Typpruefung in
             // preisQuelleFuer aussperren soll.
+            var xmlPositionen = zugferdExtractorService.extractLineItems(xmlContent);
             if (dokument != null) {
-                verarbeiteStrukturiertePositionen(zugferdExtractorService.extractLineItems(xmlContent),
+                verarbeiteStrukturiertePositionen(xmlPositionen,
                         dokument.getLieferant(), ausgewiesenerTyp(typeCode), gd.getDokumentDatum(),
                         gd.getDokumentNummer());
             }
+            gd.setAusgelesenePositionen(LieferantDokumentPositionService.ausZugferd(xmlPositionen));
 
             return gd;
 
@@ -1542,7 +1597,10 @@ public class GeminiDokumentAnalyseService {
             // mimeType ist bereits übergeben
 
             // Erster Versuch mit Standard-Model (Retry-Logik ist in rufGeminiApi eingebaut)
-            String jsonResponse = rufGeminiApi(bytes, mimeType, false);
+            KiAntwort ersteAntwort = rufGeminiApiMitStatus(bytes, mimeType, false, false);
+            String jsonResponse = ersteAntwort != null ? ersteAntwort.text() : null;
+            // true, sobald die verwendete Antwort ohne Positionen angefordert wurde
+            boolean ohnePositionen = false;
             if (jsonResponse == null) {
                 log.warn(
                         "[KI-Analyse] Keine API-Antwort für Dokument {} - erstelle leeres Geschäftsdokument zur manuellen Prüfung",
@@ -1557,11 +1615,12 @@ public class GeminiDokumentAnalyseService {
                 return emptyResult;
             }
 
-            // Prüfe ob JSON abgeschnitten wurde (häufig bei vielen Artikelpositionen)
-            boolean jsonTruncated = isJsonTruncated(jsonResponse);
+            // Prüfe ob JSON abgeschnitten wurde (häufig bei vielen Artikelpositionen).
+            // Gemini meldet das selbst (MAX_TOKENS); die Klammerprüfung bleibt als Rückfall.
+            boolean jsonTruncated = ersteAntwort.abgeschnitten() || isJsonTruncated(jsonResponse);
             if (jsonTruncated) {
                 log.warn(
-                        "[KI-Analyse] JSON-Antwort wurde abgeschnitten für Dokument {}. Retry ohne Artikelpositionen...",
+                        "[KI-Analyse] JSON-Antwort wurde abgeschnitten für Dokument {}. Kopfdaten ohne Positionen, Positionen seitenweise...",
                         docIdForLog);
                 // Retry mit Flag um Artikelpositionen zu überspringen
                 jsonResponse = rufGeminiApi(bytes, mimeType, false, true); // skipArtikelPositionen=true
@@ -1569,6 +1628,7 @@ public class GeminiDokumentAnalyseService {
                     log.warn("[KI-Analyse] Auch vereinfachte Anfrage abgeschnitten - versuche Pro-Model...");
                     jsonResponse = rufGeminiApi(bytes, mimeType, true, true); // Pro-Model + skipArtikelPositionen
                 }
+                ohnePositionen = true;
             }
 
             LieferantGeschaeftsdokument result = mapJsonToData(jsonResponse);
@@ -1580,6 +1640,7 @@ public class GeminiDokumentAnalyseService {
                             "[KI-Analyse] JSON nach wie vor abgeschnitten - versuche nochmal mit Pro-Model ohne Artikel...");
                     jsonResponse = rufGeminiApi(bytes, mimeType, true, true);
                     result = jsonResponse != null ? mapJsonToData(jsonResponse) : null;
+                    ohnePositionen = true;
                 } else {
                     // isJsonTruncated() kann false-negative liefern wenn Gemini bei Token-Limit
                     // eine schließende } anhängt, der JSON-Inhalt aber intern unvollständig ist.
@@ -1587,9 +1648,10 @@ public class GeminiDokumentAnalyseService {
                     log.warn(
                             "[KI-Analyse] JSON-Parsing fehlgeschlagen für Dokument {} trotz scheinbar vollständiger Antwort - Pro-Model Fallback...",
                             docIdForLog);
-                    String proResponse = rufGeminiApi(bytes, mimeType, true);
-                    if (proResponse != null) {
-                        result = mapJsonToData(proResponse);
+                    KiAntwort proAntwort = rufGeminiApiMitStatus(bytes, mimeType, true, false);
+                    if (proAntwort != null && !proAntwort.abgeschnitten()) {
+                        result = mapJsonToData(proAntwort.text());
+                        ohnePositionen = false;
                     }
                 }
 
@@ -1616,8 +1678,9 @@ public class GeminiDokumentAnalyseService {
                         "[KI-Analyse] Datenvalidierung fehlgeschlagen für Dokument {} (Typ unbekannt). Versuche mit Pro-Model...",
                         docIdForLog);
 
-                // Retry mit Pro-Model
-                jsonResponse = rufGeminiApi(bytes, mimeType, true);
+                // Retry mit Pro-Model; eine abgeschnittene Antwort hätte eine halbe Positionsliste
+                KiAntwort proAntwort = rufGeminiApiMitStatus(bytes, mimeType, true, false);
+                jsonResponse = proAntwort != null && !proAntwort.abgeschnitten() ? proAntwort.text() : null;
                 if (jsonResponse != null) {
                     LieferantGeschaeftsdokument retryResult = mapJsonToData(jsonResponse);
                     if (retryResult != null && validiereGeschaeftsdaten(retryResult, null)) {
@@ -1628,6 +1691,7 @@ public class GeminiDokumentAnalyseService {
                     // Pro-Model hat auch nicht alle Daten - benutze das bessere Ergebnis
                     if (retryResult != null) {
                         result = retryResult;
+                        ohnePositionen = false;
                     }
                 }
 
@@ -1640,6 +1704,9 @@ public class GeminiDokumentAnalyseService {
                 result.setManuellePruefungErforderlich(false);
             }
 
+            if (ohnePositionen) {
+                ergaenzePositionenSeitenweise(result, bytes, mimeType, docIdForLog);
+            }
             return result;
 
         } catch (Exception e) {
@@ -1650,6 +1717,115 @@ public class GeminiDokumentAnalyseService {
             errorResult.setDatenquelle("AI_ERROR");
             errorResult.setAnalysiertAm(java.time.LocalDateTime.now());
             return errorResult;
+        }
+    }
+
+    /**
+     * Die Kopfdaten kamen ohne Positionen (Antwort war zu lang). Statt sie ganz
+     * wegzulassen, liest der {@link LieferantDokumentPositionLeser} sie
+     * seitenweise nach und schreibt sie in die KI-Antwort – dort liest sie auch
+     * die Preisübernahme. Gelingt das nicht vollständig, bleibt es bei "nicht
+     * ausgelesen" ({@code null}); eine halbe Liste wird nie gespeichert.
+     */
+    private void ergaenzePositionenSeitenweise(LieferantGeschaeftsdokument gd, byte[] bytes, String mimeType,
+            Long docIdForLog) {
+        gd.setAusgelesenePositionen(null);
+        if (!LieferantDokumentPositionService.hatPositionen(gd.getDetectedTyp())) {
+            return;
+        }
+        List<AusgelesenePosition> positionen =
+                positionLeser.leseSeitenweise(bytes, mimeType, this::rufNurPositionen);
+        if (positionen == null) {
+            log.warn("[KI-Analyse] Positionen für Dokument {} nicht vollständig lesbar – später nachlesbar",
+                    docIdForLog);
+            return;
+        }
+        String mitPositionen = LieferantDokumentPositionService.mitPositionen(gd.getAiRawJson(), positionen,
+                objectMapper);
+        if (mitPositionen != null) {
+            gd.setAiRawJson(mitPositionen);
+        }
+        gd.setAusgelesenePositionen(positionen);
+        log.info("[KI-Analyse] Dokument {}: {} Positionen seitenweise gelesen", docIdForLog, positionen.size());
+    }
+
+    /** Dokumente, deren Positionen gerade nachgelesen werden – je Dokument nur ein Lauf. */
+    private final java.util.Set<Long> positionenInArbeit = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Liest die Positionen eines Dokuments nachträglich per KI – für ältere
+     * Dokumente oder wenn die Analyse sie nicht vollständig liefern konnte.
+     * Kopfdaten (Nummer, Beträge, Typ) bleiben unverändert.
+     *
+     * <p>Die KI-Aufrufe laufen bewusst <b>außerhalb</b> einer Transaktion: Sie
+     * können bei langen Belegen Minuten dauern und hielten sonst so lange eine
+     * Datenbankverbindung. Nur das Laden der Datei und das Speichern sind kurze
+     * Transaktionen.
+     *
+     * @return Anzahl gespeicherter Positionen
+     * @throws java.util.NoSuchElementException wenn das Dokument fehlt
+     * @throws IllegalArgumentException wenn das Dokument keine Positionen haben kann
+     * @throws PositionenNichtLesbarException wenn Datei oder KI-Antwort nicht verfügbar
+     *                                  sind oder schon ein Lauf für das Dokument läuft
+     */
+    public int positionenNachlesen(Long dokumentId) {
+        if (!positionenInArbeit.add(dokumentId)) {
+            throw new PositionenNichtLesbarException("Die Positionen werden gerade schon ausgelesen");
+        }
+        try {
+            NachleseVorlage vorlage = transactionTemplate.execute(status -> ladeNachleseVorlage(dokumentId));
+            List<AusgelesenePosition> positionen =
+                    positionLeser.lese(vorlage.bytes(), vorlage.mimeType(), this::rufNurPositionen);
+            if (positionen == null) {
+                throw new PositionenNichtLesbarException("Die KI konnte die Positionen nicht vollständig lesen");
+            }
+            Integer anzahl = transactionTemplate.execute(status -> speichereNachgelesenePositionen(dokumentId, positionen));
+            return anzahl != null ? anzahl : 0;
+        } finally {
+            positionenInArbeit.remove(dokumentId);
+        }
+    }
+
+    private record NachleseVorlage(byte[] bytes, String mimeType) {
+    }
+
+    private NachleseVorlage ladeNachleseVorlage(Long dokumentId) {
+        LieferantDokument dokument = dokumentRepository.findById(dokumentId)
+                .orElseThrow(() -> new NoSuchElementException("Dokument nicht gefunden"));
+        pruefeNachlesbar(dokument);
+        Path dateiPfad = getDateiPfad(dokument);
+        if (dateiPfad == null) {
+            throw new PositionenNichtLesbarException("Datei zum Dokument nicht gefunden");
+        }
+        try {
+            return new NachleseVorlage(Files.readAllBytes(validiereAnalyseDateiPfad(dateiPfad, false)),
+                    getMimeType(dokument));
+        } catch (java.io.IOException | IllegalArgumentException | SecurityException e) {
+            // Keine Details nach außen: die Meldungen nennen den Serverpfad.
+            throw new PositionenNichtLesbarException("Datei zum Dokument nicht lesbar");
+        }
+    }
+
+    private int speichereNachgelesenePositionen(Long dokumentId, List<AusgelesenePosition> positionen) {
+        LieferantDokument dokument = dokumentRepository.findById(dokumentId)
+                .orElseThrow(() -> new NoSuchElementException("Dokument nicht gefunden"));
+        pruefeNachlesbar(dokument); // könnte sich während des KI-Laufs geändert haben
+        LieferantGeschaeftsdokument gd = dokument.getGeschaeftsdaten();
+        String mitPositionen = LieferantDokumentPositionService.mitPositionen(gd.getAiRawJson(), positionen,
+                objectMapper);
+        if (mitPositionen != null) {
+            gd.setAiRawJson(mitPositionen);
+            lieferantGeschaeftsdokumentRepository.save(gd);
+        }
+        return positionService.ersetzePositionen(gd, dokument.getTyp(), positionen);
+    }
+
+    private static void pruefeNachlesbar(LieferantDokument dokument) {
+        if (dokument.getGeschaeftsdaten() == null) {
+            throw new IllegalArgumentException("Dokument ist noch nicht analysiert");
+        }
+        if (!LieferantDokumentPositionService.hatPositionen(dokument.getTyp())) {
+            throw new IllegalArgumentException("Für diesen Dokumenttyp werden keine Positionen ausgelesen");
         }
     }
 
@@ -1796,7 +1972,8 @@ public class GeminiDokumentAnalyseService {
 
     private String leseXmlDateiSicher(Path dateiPfad, boolean tempDateienErlaubt) throws java.io.IOException {
         Path sichererPfad = validiereAnalyseDateiPfad(dateiPfad, tempDateienErlaubt);
-        return Files.readString(sichererPfad, StandardCharsets.UTF_8);
+        // Zeichensatz aus BOM bzw. XML-Deklaration – XRechnungen kommen auch als ISO-8859-1.
+        return ZugferdExtractorService.dekodiereXml(Files.readAllBytes(sichererPfad));
     }
 
     private Path validiereAnalyseDateiPfad(Path dateiPfad, boolean tempDateienErlaubt) {
@@ -2080,6 +2257,34 @@ public class GeminiDokumentAnalyseService {
 
     private String rufGeminiApi(byte[] dokumentBytes, String mimeType, boolean useProModel,
             boolean skipArtikelPositionen) {
+        KiAntwort antwort = rufGeminiApiMitStatus(dokumentBytes, mimeType, useProModel, skipArtikelPositionen);
+        return antwort != null ? antwort.text() : null;
+    }
+
+    private KiAntwort rufGeminiApiMitStatus(byte[] dokumentBytes, String mimeType, boolean useProModel,
+            boolean skipArtikelPositionen) {
+        // Bei skipArtikelPositionen: Kürzere Anfrage um Tokenlimit zu vermeiden
+        String userText = skipArtikelPositionen
+                ? "Analysiere dieses Dokument. WICHTIG: Gib artikelPositionen als leeres Array [] zurück um die Antwort kurz zu halten."
+                : "Analysiere dieses Dokument.";
+        return rufGemini(dokumentBytes, mimeType, SYSTEM_PROMPT_DOKUMENT_ANALYSE, userText, useProModel);
+    }
+
+    /**
+     * Nur-Positionen-Aufruf für den {@link LieferantDokumentPositionLeser}: der
+     * Prompt kommt als System-Anweisung, das Standardmodell liest.
+     */
+    private KiAntwort rufNurPositionen(byte[] dokumentBytes, String mimeType, String prompt) {
+        return rufGemini(dokumentBytes, mimeType, prompt, "Lies alle Positionen dieses Dokuments aus.", false);
+    }
+
+    /**
+     * Ein Gemini-Aufruf mit Dokument, System-Anweisung und Nutzertext. Meldet
+     * über {@link KiAntwort#abgeschnitten()}, ob die Antwort am Ausgabelimit
+     * endete ({@code finishReason = MAX_TOKENS}).
+     */
+    private KiAntwort rufGemini(byte[] dokumentBytes, String mimeType, String systemPrompt, String userText,
+            boolean useProModel) {
         API_LOCK.lock();
         try {
             // Ensure minimum delay between API calls to prevent rate limiting
@@ -2110,7 +2315,7 @@ public class GeminiDokumentAnalyseService {
             // System Prompt
             ObjectNode systemInstruction = objectMapper.createObjectNode();
             ArrayNode sysParts = objectMapper.createArrayNode();
-            sysParts.add(objectMapper.createObjectNode().put("text", SYSTEM_PROMPT_DOKUMENT_ANALYSE));
+            sysParts.add(objectMapper.createObjectNode().put("text", systemPrompt));
             systemInstruction.set("parts", sysParts);
             requestBody.set("systemInstruction", systemInstruction);
 
@@ -2126,10 +2331,6 @@ public class GeminiDokumentAnalyseService {
             dataPart.set("inlineData", inlineData);
             parts.add(dataPart);
 
-            // Bei skipArtikelPositionen: Kürzere Anfrage um Tokenlimit zu vermeiden
-            String userText = skipArtikelPositionen
-                    ? "Analysiere dieses Dokument. WICHTIG: Gib artikelPositionen als leeres Array [] zurück um die Antwort kurz zu halten."
-                    : "Analysiere dieses Dokument.";
             parts.add(objectMapper.createObjectNode().put("text", userText));
 
             userMsg.set("parts", parts);
@@ -2140,7 +2341,8 @@ public class GeminiDokumentAnalyseService {
             ObjectNode config = objectMapper.createObjectNode();
             config.put("temperature", 0.0);
             config.put("responseMimeType", "application/json");
-            config.put("maxOutputTokens", 16384); // Erhöht für PDFs mit vielen Artikelpositionen
+            // Lange Rechnungen haben hunderte Positionen – 16k reichten dafür nicht.
+            config.put("maxOutputTokens", maxOutputTokens);
             requestBody.set("generationConfig", config);
 
             // Send with RETRY logic
@@ -2189,13 +2391,17 @@ public class GeminiDokumentAnalyseService {
                             return null;
                         }
 
-                        String result = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+                        String result = candidates.get(0).path("content").path("parts").path(0).path("text").asText();
+                        boolean abgeschnitten = "MAX_TOKENS".equals(candidates.get(0).path("finishReason").asText());
+                        if (abgeschnitten) {
+                            log.warn("[Gemini API] Antwort am Ausgabelimit ({} Tokens) abgeschnitten (Model: {})",
+                                    maxOutputTokens, modelToUse);
+                        }
 
-                        // Log die KI-Antwort (gekürzt) für Debugging
-                        String logPreview = result.length() > 500 ? result.substring(0, 500) + "..." : result;
-                        log.info("[Gemini API] Dokumentanalyse erfolgreich (Attempt {}, Model: {}). Antwort: {}",
-                                attempt + 1, modelToUse, logPreview);
-                        return result;
+                        // Nur Länge und Model loggen: die Antwort enthält Geschäftsdaten (DSGVO).
+                        log.info("[Gemini API] Dokumentanalyse erfolgreich (Attempt {}, Model: {}, {} Zeichen)",
+                                attempt + 1, modelToUse, result.length());
+                        return new KiAntwort(result, abgeschnitten);
                     }
 
                     // Rate Limiting (429) oder Server-Fehler (5xx) - Retry mit Backoff
@@ -2287,11 +2493,11 @@ public class GeminiDokumentAnalyseService {
             // Dokumenttyp aus KI-Response
             if (json.has("dokumentTyp") && !json.get("dokumentTyp").isNull()) {
                 String typString = json.get("dokumentTyp").asText().toUpperCase();
-                try {
-                    LieferantDokumentTyp typ = LieferantDokumentTyp.valueOf(typString);
+                LieferantDokumentTyp typ = typAusKiAntwort(typString);
+                if (typ != null) {
                     gd.setDetectedTyp(typ);
                     log.info("KI erkannte Dokumenttyp: {}", typ);
-                } catch (IllegalArgumentException e) {
+                } else {
                     log.debug("Unbekannter Dokumenttyp von KI: {}", typString);
                 }
             }
@@ -2400,15 +2606,42 @@ public class GeminiDokumentAnalyseService {
                 gd.setAiConfidence(json.get("confidence").asDouble());
             }
 
-            // Die Artikelpositionen bleiben hier unangetastet: diese Methode kennt nur
-            // die KI-Antwort, nicht den Lieferanten. Die Preisuebernahme passiert in
-            // analysiereDokument(), sobald beides vorliegt.
+            // Positionen fuer die Speicherung mitgeben. Die Preisuebernahme passiert
+            // in analysiereDokument(), sobald auch der Lieferant vorliegt.
+            gd.setAusgelesenePositionen(LieferantDokumentPositionService.ausKiAntwort(json));
             return gd;
 
         } catch (Exception e) {
             log.error("Fehler beim Parsen der KI-Response: {}", jsonString, e);
             return null;
         }
+    }
+
+    /**
+     * Dokumenttyp aus der KI-Antwort. Kopien, Entwürfe und Abschriften meldet die
+     * KI mit dem Vermerk " (Kopie)". Angebot, AB und Lieferschein bekommen trotzdem
+     * ihren Typ – sie gehören in die Dokumentenkette. Rechnungs- und
+     * Gutschrift-Kopien bleiben ohne Typ, damit keine Kopie in den offenen Posten
+     * landet.
+     */
+    static LieferantDokumentTyp typAusKiAntwort(String typString) {
+        if (typString == null || typString.isBlank()) {
+            return null;
+        }
+        String roh = typString.trim().toUpperCase(java.util.Locale.ROOT);
+        boolean kopie = roh.endsWith("(KOPIE)");
+        String basis = kopie ? roh.substring(0, roh.length() - "(KOPIE)".length()).trim() : roh;
+        LieferantDokumentTyp typ;
+        try {
+            typ = LieferantDokumentTyp.valueOf(basis);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (kopie && (typ == LieferantDokumentTyp.RECHNUNG || typ == LieferantDokumentTyp.GUTSCHRIFT
+                || typ == LieferantDokumentTyp.SONSTIG)) {
+            return null;
+        }
+        return typ;
     }
 
     private LieferantDokumentTyp erkenneTypAusNummer(String nummer) {

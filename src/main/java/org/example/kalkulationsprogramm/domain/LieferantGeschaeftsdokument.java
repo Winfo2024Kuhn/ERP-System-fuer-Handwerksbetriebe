@@ -117,4 +117,12 @@ public class LieferantGeschaeftsdokument {
     // service
     @Transient
     private LieferantDokumentTyp detectedTyp;
+
+    /**
+     * Transportiert die ausgelesenen Positionen von der Analyse bis zum
+     * Speichern. {@code null} = nicht ausgelesen (bestehende Positionen
+     * bleiben), leere Liste = das Dokument hat keine Positionen.
+     */
+    @Transient
+    private java.util.List<AusgelesenePosition> ausgelesenePositionen;
 }

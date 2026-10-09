@@ -8,6 +8,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +51,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private SystemSettingsService systemSettingsService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository sperreRepository;
+    @Mock private LieferantDokumentPositionService positionService;
 
     private GeminiDokumentAnalyseService service;
 
@@ -64,8 +66,29 @@ class GeminiDokumentAnalyseServiceTest {
                 systemSettingsService,
                 eventPublisher,
                 new LieferantDokumentAbgleich(new ObjectMapper()),
-                sperreRepository
+                sperreRepository,
+                positionService,
+                new LieferantDokumentPositionLeser(new ObjectMapper()),
+                new org.springframework.transaction.support.TransactionTemplate(
+                        mock(org.springframework.transaction.PlatformTransactionManager.class))
         );
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(nullValues = "null", value = {
+            "ANGEBOT, ANGEBOT",
+            "ANGEBOT (Kopie), ANGEBOT",
+            "auftragsbestaetigung (kopie), AUFTRAGSBESTAETIGUNG",
+            "LIEFERSCHEIN (Kopie), LIEFERSCHEIN",
+            "RECHNUNG, RECHNUNG",
+            "RECHNUNG (Kopie), null",
+            "GUTSCHRIFT (Kopie), null",
+            "SONSTIG (Kopie), null",
+            "QUITTUNG, null",
+            "null, null"
+    })
+    void typAusKiAntwortBeiKopien(String roh, LieferantDokumentTyp erwartet) {
+        assertThat(GeminiDokumentAnalyseService.typAusKiAntwort(roh)).isEqualTo(erwartet);
     }
 
     @Nested
@@ -994,7 +1017,11 @@ class GeminiDokumentAnalyseServiceTest {
                     systemSettingsService,
                     eventPublisher,
                     new LieferantDokumentAbgleich(new ObjectMapper()),
-                    sperreRepository);
+                    sperreRepository,
+                    positionService,
+                    new LieferantDokumentPositionLeser(new ObjectMapper()),
+                    new org.springframework.transaction.support.TransactionTemplate(
+                            mock(org.springframework.transaction.PlatformTransactionManager.class)));
 
             httpClientMock = mock(HttpClient.class);
             setField(serviceMitEchtemMapper, "httpClient", httpClientMock);
@@ -1138,6 +1165,183 @@ class GeminiDokumentAnalyseServiceTest {
             assertThat(gespeichert.getValue().getBetragBrutto()).isEqualByComparingTo("-119.00");
         }
 
+        private LieferantDokument musterDokument(long id) {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(1L);
+            lieferant.setLieferantenname("Musterlieferant GmbH");
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(id);
+            dokument.setLieferant(lieferant);
+            dokument.setOriginalDateiname(DATEINAME);
+            dokument.setGespeicherterDateiname(DATEINAME);
+            return dokument;
+        }
+
+        @SuppressWarnings("unchecked")
+        @Test
+        @org.junit.jupiter.api.DisplayName("Rechnung: alle Positionen werden nach dem Speichern abgelegt")
+        void rechnungSpeichertPositionen() throws Exception {
+            LieferantDokument dokument = musterDokument(601L);
+            stelleKiAntwortBereit(dokument, """
+                    {"dokumentTyp":"RECHNUNG","dokumentNummer":"RE-2026-0901","dokumentDatum":"2026-09-01",
+                     "betragNetto":145.00,"betragBrutto":172.55,"confidence":0.95,
+                     "artikelPositionen":[
+                       {"positionNr":1,"positionsArt":"WARE","externeArtikelnummer":"MUSTER-001",
+                        "bezeichnung":"Flachstahl 50x5","menge":10,"gesamtpreisNetto":100.00},
+                       {"positionNr":2,"positionsArt":"NEBENKOSTEN","bezeichnung":"Fracht","gesamtpreisNetto":45.00}]}
+                    """);
+
+            serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            ArgumentCaptor<List<org.example.kalkulationsprogramm.domain.AusgelesenePosition>> captor =
+                    ArgumentCaptor.forClass(List.class);
+            verify(positionService).ersetzePositionen(any(LieferantGeschaeftsdokument.class),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.RECHNUNG), captor.capture());
+            assertThat(captor.getValue()).hasSize(2);
+            assertThat(captor.getValue().get(1).positionsArt())
+                    .isEqualTo(org.example.kalkulationsprogramm.domain.PositionsArt.NEBENKOSTEN);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Formular (SONSTIG): keine Geschaeftsdaten, keine Positionen")
+        void formularOhnePositionen() throws Exception {
+            LieferantDokument dokument = musterDokument(602L);
+            stelleKiAntwortBereit(dokument, """
+                    {"dokumentTyp":"SONSTIG","istGeschaeftsdokument":false,"artikelPositionen":[]}""");
+
+            serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            // null = "nicht ausgelesen": es wird nichts gespeichert
+            verify(positionService).ersetzePositionen(any(), any(), org.mockito.ArgumentMatchers.isNull());
+        }
+
+        @SuppressWarnings("unchecked")
+        @Test
+        @org.junit.jupiter.api.DisplayName("Antwort am Ausgabelimit: Kopfdaten ohne Positionen, Positionen seitenweise")
+        void abgeschnitteneAntwortLiestPositionenSeitenweise() throws Exception {
+            LieferantDokument dokument = musterDokument(603L);
+            // Echte zweiseitige PDF, damit sich das Dokument aufteilen laesst
+            try (var pdf = new org.apache.pdfbox.pdmodel.PDDocument()) {
+                pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+                pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+                pdf.save(tempUploadRoot.resolve("attachments").resolve(DATEINAME).toFile());
+            }
+            stelleRepositoriesBereit(dokument);
+            String kopf = """
+                    {"dokumentTyp":"RECHNUNG","dokumentNummer":"RE-2026-0902","dokumentDatum":"2026-09-02",
+                     "betragNetto":250.00,"betragBrutto":297.50,"confidence":0.9,"artikelPositionen":[]}""";
+            String positionen = """
+                    {"artikelPositionen":[{"bezeichnung":"Flachstahl 50x5","gesamtpreisNetto":100},
+                     {"bezeichnung":"Rundrohr 42,4x2","gesamtpreisNetto":150}]}""";
+            HttpResponse<String> abgeschnitten = antwort("{\"dokumentTyp\":\"RECHNUNG\",\"artikelPos", "MAX_TOKENS");
+            HttpResponse<String> kopfAntwort = antwort(kopf, "STOP");
+            HttpResponse<String> positionsAntwort = antwort(positionen, "STOP");
+            when(httpClientMock.<String>send(any(HttpRequest.class), any()))
+                    .thenReturn(abgeschnitten, kopfAntwort, positionsAntwort);
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            ArgumentCaptor<List<org.example.kalkulationsprogramm.domain.AusgelesenePosition>> captor =
+                    ArgumentCaptor.forClass(List.class);
+            verify(positionService).ersetzePositionen(any(LieferantGeschaeftsdokument.class),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.RECHNUNG), captor.capture());
+            assertThat(captor.getValue()).extracting(org.example.kalkulationsprogramm.domain.AusgelesenePosition::bezeichnung)
+                    .containsExactly("Flachstahl 50x5", "Rundrohr 42,4x2");
+            // Positionen stehen auch in der KI-Antwort – dort liest sie der Dokumentenabgleich
+            assertThat(result.getAiRawJson()).contains("Rundrohr 42,4x2");
+            assertThat(result.getDokumentNummer()).isEqualTo("RE-2026-0902");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Positionen nachlesen: speichert und ergaenzt die KI-Antwort")
+        void positionenNachlesen() throws Exception {
+            LieferantDokument dokument = musterDokument(604L);
+            dokument.setTyp(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setId(604L);
+            gd.setAiRawJson("{\"dokumentNummer\":\"AB-1\",\"artikelPositionen\":[]}");
+            dokument.setGeschaeftsdaten(gd);
+            when(dokumentRepository.findById(604L)).thenReturn(Optional.of(dokument));
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            HttpResponse<String> positionen = antwort(
+                    "{\"artikelPositionen\":[{\"bezeichnung\":\"Glasklemme V2A\",\"menge\":16}]}", "STOP");
+            when(httpClientMock.<String>send(any(HttpRequest.class), any())).thenReturn(positionen);
+            when(positionService.ersetzePositionen(any(), any(), any())).thenReturn(1);
+
+            int anzahl = serviceMitEchtemMapper.positionenNachlesen(604L);
+
+            assertThat(anzahl).isEqualTo(1);
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(gd),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG), any());
+            assertThat(gd.getAiRawJson()).contains("Glasklemme V2A").contains("AB-1");
+            verify(lieferantGeschaeftsdokumentRepository).save(gd);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Positionen nachlesen: nicht fuer Formulare, nicht ohne Dokument")
+        void positionenNachlesenAbgelehnt() {
+            LieferantDokument formular = musterDokument(605L);
+            formular.setTyp(LieferantDokumentTyp.SONSTIG);
+            formular.setGeschaeftsdaten(new LieferantGeschaeftsdokument());
+            when(dokumentRepository.findById(605L)).thenReturn(Optional.of(formular));
+            when(dokumentRepository.findById(999L)).thenReturn(Optional.empty());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> serviceMitEchtemMapper.positionenNachlesen(605L))
+                    .isInstanceOf(IllegalArgumentException.class);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> serviceMitEchtemMapper.positionenNachlesen(999L))
+                    .isInstanceOf(java.util.NoSuchElementException.class);
+            verifyNoInteractions(positionService);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Positionen nachlesen: Datei-Fehler verraten keinen Serverpfad")
+        void positionenNachlesenOhneServerpfadImFehler() throws Exception {
+            LieferantDokument dokument = musterDokument(606L);
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+            dokument.setGeschaeftsdaten(new LieferantGeschaeftsdokument());
+            dokument.setGespeicherterDateiname("gibt-es-nicht.pdf");
+            when(dokumentRepository.findById(606L)).thenReturn(Optional.of(dokument));
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> serviceMitEchtemMapper.positionenNachlesen(606L))
+                    .isInstanceOf(PositionenNichtLesbarException.class)
+                    .hasMessageNotContaining(tempUploadRoot.toString());
+            verifyNoInteractions(positionService, httpClientMock);
+        }
+
+        @SuppressWarnings("unchecked")
+        @Test
+        @org.junit.jupiter.api.DisplayName("Duplikat: KI-Analyse ersetzt keine ZUGFeRD-Positionen")
+        void kiErsetztKeineStrukturiertenPositionen() throws Exception {
+            LieferantDokument dokument = musterDokument(607L);
+            LieferantGeschaeftsdokument ausXml = new LieferantGeschaeftsdokument();
+            ausXml.setId(700L);
+            ausXml.setDokumentNummer("RE-2026-0903");
+            ausXml.setDatenquelle("XML");
+            when(lieferantGeschaeftsdokumentRepository.findByLieferantIdAndDokumentNummer(1L, "RE-2026-0903"))
+                    .thenReturn(List.of(ausXml));
+            stelleKiAntwortBereit(dokument, """
+                    {"dokumentTyp":"RECHNUNG","dokumentNummer":"RE-2026-0903","betragNetto":10,"betragBrutto":11.9,
+                     "confidence":0.9,"artikelPositionen":[{"bezeichnung":"Flachstahl","gesamtpreisNetto":10}]}""");
+
+            serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(ausXml), any(),
+                    org.mockito.ArgumentMatchers.isNull());
+        }
+
+        private HttpResponse<String> antwort(String text, String finishReason) throws Exception {
+            ObjectMapper baumapper = new ObjectMapper();
+            var envelope = baumapper.createObjectNode();
+            var kandidat = envelope.putArray("candidates").addObject();
+            kandidat.putObject("content").putArray("parts").addObject().put("text", text);
+            kandidat.put("finishReason", finishReason);
+            @SuppressWarnings("unchecked")
+            HttpResponse<String> response = mock(HttpResponse.class);
+            when(response.statusCode()).thenReturn(200);
+            when(response.body()).thenReturn(baumapper.writeValueAsString(envelope));
+            return response;
+        }
+
         /**
          * Stellt Repository- und API-Antworten so bereit, dass
          * {@code analysiereDokument()} den KI-Zweig durchlaeuft: kein
@@ -1145,12 +1349,7 @@ class GeminiDokumentAnalyseServiceTest {
          * {@code analyseJson}.
          */
         private void stelleKiAntwortBereit(LieferantDokument dokument, String analyseJson) throws Exception {
-            when(dokumentRepository.findById(dokument.getId())).thenReturn(Optional.of(dokument));
-            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
-            when(dokumentRepository.saveAndFlush(any(LieferantDokument.class)))
-                    .thenAnswer(inv -> inv.getArgument(0));
-            when(lieferantGeschaeftsdokumentRepository.saveAndFlush(any(LieferantGeschaeftsdokument.class)))
-                    .thenAnswer(inv -> inv.getArgument(0));
+            stelleRepositoriesBereit(dokument);
 
             String antwortEnvelope = baueGeminiAntwortEnvelope(analyseJson);
             @SuppressWarnings("unchecked")
@@ -1158,6 +1357,15 @@ class GeminiDokumentAnalyseServiceTest {
             when(httpResponse.statusCode()).thenReturn(200);
             when(httpResponse.body()).thenReturn(antwortEnvelope);
             when(httpClientMock.<String>send(any(HttpRequest.class), any())).thenReturn(httpResponse);
+        }
+
+        private void stelleRepositoriesBereit(LieferantDokument dokument) {
+            when(dokumentRepository.findById(dokument.getId())).thenReturn(Optional.of(dokument));
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            when(dokumentRepository.saveAndFlush(any(LieferantDokument.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(lieferantGeschaeftsdokumentRepository.saveAndFlush(any(LieferantGeschaeftsdokument.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
         }
 
         /**

@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -85,7 +86,7 @@ public class ZugferdExtractorService {
             try {
                 byte[] xmlBytes = zugFeRDImporter.getRawXML();
                 if (xmlBytes != null) {
-                    rawXml = new String(xmlBytes, java.nio.charset.StandardCharsets.UTF_8);
+                    rawXml = dekodiereXml(xmlBytes);
                 }
             } catch (Exception e) {
                 log.debug("Konnte Raw-XML nicht auslesen: {}", e.getMessage());
@@ -280,12 +281,109 @@ public class ZugferdExtractorService {
         };
     }
 
-    private String restoreUmlauts(String input) {
-        if (input == null) {
+    /** UTF-8-Byte-Folge, als ISO-8859-1 gelesen: "Ã¼" statt "ü", "â€" statt "€". */
+    /**
+     * Typische Spuren von UTF-8, das als ISO-8859-1/Windows-1252 gelesen wurde:
+     * "Ã" + Folgezeichen (ä ö ü ß …), "Â" + Folgezeichen (° § ² …), "â€" (€ „ “ –).
+     * Bewusst eng: "Ø½" (Gewinderohr Ø½ Zoll) ist echter Text.
+     */
+    private static final Pattern ZEICHENSALAT = Pattern.compile("[\\u00C2\\u00C3][\\u0080-\\u00BF\\u0152\\u0153\\u0160\\u0161\\u0178\\u017D\\u017E\\u0192\\u02C6\\u02DC\\u2013-\\u203A\\u20AC\\u2122]|\\u00E2\\u20AC");
+    private static final Pattern XML_ENCODING = Pattern.compile(
+            "encoding\\s*+=\\s*+[\"']([A-Za-z0-9._-]{1,40})[\"']");
+    private static final Pattern XML_ENTITY = Pattern.compile(
+            "&(#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6}|amp|lt|gt|quot|apos);");
+
+    /**
+     * Repariert Text, der als UTF-8 geschrieben, aber als ISO-8859-1 gelesen wurde
+     * ("PrÃ¼fung" → "Prüfung"). Bereits korrekter Text bleibt unverändert: Früher
+     * wurde jeder Text umgewandelt – aus einem richtigen "ü" wurde dabei "�".
+     */
+    static String restoreUmlauts(String input) {
+        if (input == null || !ZEICHENSALAT.matcher(input).find()) {
+            return input;
+        }
+        // Falsch gelesen wurde entweder als ISO-8859-1 ("Ã" + Steuerzeichen) oder als
+        // Windows-1252 ("ÃŸ" für "ß"). Zurückwandeln geht nur, wenn jedes Zeichen in
+        // den jeweiligen Zeichensatz passt – sonst war der Text nicht so entstanden.
+        for (java.nio.charset.Charset falsch : List.of(java.nio.charset.StandardCharsets.ISO_8859_1,
+                java.nio.charset.Charset.forName("windows-1252"))) {
+            if (!falsch.newEncoder().canEncode(input)) {
+                continue;
+            }
+            String repariert = new String(input.getBytes(falsch), java.nio.charset.StandardCharsets.UTF_8);
+            if (repariert.indexOf('\uFFFD') < 0) {
+                return repariert;
+            }
+        }
+        return input;
+    }
+
+    /**
+     * Dekodiert die Rohbytes einer Rechnungs-XML nach ihrer eigenen Angabe: BOM
+     * oder {@code encoding="..."} in der XML-Deklaration, sonst UTF-8 (Standard
+     * für XML und für ZUGFeRD/XRechnung vorgeschrieben).
+     */
+    static String dekodiereXml(byte[] bytes) {
+        if (bytes == null) {
             return null;
         }
-        return new String(input.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1),
-                java.nio.charset.StandardCharsets.UTF_8);
+        if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF) {
+            return new String(bytes, 3, bytes.length - 3, java.nio.charset.StandardCharsets.UTF_8);
+        }
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF) {
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_16);
+        }
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE) {
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_16);
+        }
+        String kopf = new String(bytes, 0, Math.min(bytes.length, 200), java.nio.charset.StandardCharsets.US_ASCII);
+        java.nio.charset.Charset zeichensatz = java.nio.charset.StandardCharsets.UTF_8;
+        if (kopf.startsWith("<?xml")) {
+            int ende = kopf.indexOf("?>");
+            Matcher m = XML_ENCODING.matcher(ende > 0 ? kopf.substring(0, ende) : kopf);
+            if (m.find()) {
+                try {
+                    zeichensatz = java.nio.charset.Charset.forName(m.group(1));
+                } catch (Exception e) {
+                    log.debug("Unbekannter XML-Zeichensatz '{}', nutze UTF-8", m.group(1));
+                }
+            }
+        }
+        return new String(bytes, zeichensatz);
+    }
+
+    /**
+     * Text aus einem XML-Element: Entities in einem Durchgang entschlüsseln
+     * ({@code &amp;}, {@code &#252;} …) und Zeichensalat reparieren.
+     */
+    static String xmlText(String roh) {
+        if (roh == null) {
+            return null;
+        }
+        Matcher m = XML_ENTITY.matcher(roh);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            String e = m.group(1);
+            String ersatz = switch (e) {
+                case "amp" -> "&";
+                case "lt" -> "<";
+                case "gt" -> ">";
+                case "quot" -> "\"";
+                case "apos" -> "'";
+                default -> {
+                    int code = e.charAt(1) == 'x' || e.charAt(1) == 'X'
+                            ? Integer.parseInt(e.substring(2), 16)
+                            : Integer.parseInt(e.substring(1));
+                    // Steuerzeichen (außer Tab/Zeilenumbruch) haben in einem Artikeltext nichts verloren
+                    boolean steuerzeichen = code < 0x20 && code != '\t' && code != '\n' && code != '\r';
+                    yield !Character.isValidCodePoint(code) ? m.group()
+                            : steuerzeichen ? "" : new String(Character.toChars(code));
+                }
+            };
+            m.appendReplacement(sb, Matcher.quoteReplacement(ersatz));
+        }
+        m.appendTail(sb);
+        return restoreUmlauts(sb.toString().trim());
     }
 
     /**
@@ -341,7 +439,7 @@ public class ZugferdExtractorService {
 
                 // Produktbezeichnung
                 String name = extractFromXml(itemXml, "Name>([^<]+)</");
-                pos.setBezeichnung(restoreUmlauts(name));
+                pos.setBezeichnung(xmlText(name));
 
                 // Menge (BilledQuantity)
                 String mengeStr = extractFromXml(itemXml,
@@ -387,7 +485,11 @@ public class ZugferdExtractorService {
                                 ? new String[] { "NetPriceProductTradePrice>.*?BasisQuantity[^>]*unitCode=\"([^\"]+)\"" }
                                 : new String[] { "BasisQuantity[^>]*unitCode=\"([^\"]+)\"" }));
 
-                uebernimmWennArtikelnummerVorhanden(positionen, pos);
+                // Positionssumme (netto) fuer die Aufteilung auf Projekte
+                pos.setGesamtpreisNetto(betragOderNull(extractFromXml(itemXml,
+                        "LineTotalAmount[^>]*>(-?[0-9.,]+)</")));
+
+                uebernimmWennErkennbar(positionen, pos);
             } catch (Exception e) {
                 log.debug("Fehler beim Parsen einer CII-Position: {}", e.getMessage());
             }
@@ -419,7 +521,7 @@ public class ZugferdExtractorService {
                         "BuyersItemIdentification>.*?ID[^>]*>([^<]+)</",
                         "StandardItemIdentification>.*?ID[^>]*>([^<]+)</"));
 
-                pos.setBezeichnung(restoreUmlauts(extractFromXml(itemXml, "Name>([^<]+)</")));
+                pos.setBezeichnung(xmlText(extractFromXml(itemXml, "Name>([^<]+)</")));
 
                 String mengeStr = extractFromXml(itemXml,
                         "InvoicedQuantity[^>]*>([0-9.,]+)</",
@@ -449,7 +551,11 @@ public class ZugferdExtractorService {
                         extractFromXml(itemXml, "BaseQuantity[^>]*>([0-9.,]+)</"),
                         extractFromXml(itemXml, "BaseQuantity[^>]*unitCode=\"([^\"]+)\""));
 
-                uebernimmWennArtikelnummerVorhanden(positionen, pos);
+                // LineExtensionAmount ist die Positionssumme (netto)
+                pos.setGesamtpreisNetto(betragOderNull(extractFromXml(itemXml,
+                        "LineExtensionAmount[^>]*>(-?[0-9.,]+)</")));
+
+                uebernimmWennErkennbar(positionen, pos);
             } catch (Exception e) {
                 log.debug("Fehler beim Parsen einer UBL-Position: {}", e.getMessage());
             }
@@ -467,10 +573,29 @@ public class ZugferdExtractorService {
         }
     }
 
-    private void uebernimmWennArtikelnummerVorhanden(
+    private static BigDecimal betragOderNull(String roh) {
+        // Ein Belegbetrag hat nie mehr als ein paar Dutzend Zeichen
+        if (roh == null || roh.length() > 40) {
+            return null;
+        }
+        try {
+            return new BigDecimal(roh.replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Nimmt jede Position mit Artikelnummer oder Bezeichnung auf. Positionen ohne
+     * Artikelnummer (Fracht, Zuschlaege, Freitext) braucht die Projektaufteilung;
+     * die Preisuebernahme ueberspringt sie selbst.
+     */
+    private void uebernimmWennErkennbar(
             java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen,
             org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition pos) {
-        if (pos.getExterneArtikelnummer() == null || pos.getExterneArtikelnummer().isBlank()) {
+        boolean ohneNummer = pos.getExterneArtikelnummer() == null || pos.getExterneArtikelnummer().isBlank();
+        boolean ohneBezeichnung = pos.getBezeichnung() == null || pos.getBezeichnung().isBlank();
+        if (ohneNummer && ohneBezeichnung) {
             return;
         }
         positionen.add(pos);

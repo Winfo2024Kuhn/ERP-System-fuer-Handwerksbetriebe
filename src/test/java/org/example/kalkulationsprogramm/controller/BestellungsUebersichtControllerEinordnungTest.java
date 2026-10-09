@@ -56,12 +56,13 @@ class BestellungsUebersichtControllerEinordnungTest {
         RechnungsVorschlagService vorschlagService = new RechnungsVorschlagService(
                 new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository);
         controller = new BestellungsUebersichtController(
-                dokumentRepository, geschaeftsdokumentRepository, null, null, projektAnteilRepository,
+                dokumentRepository, geschaeftsdokumentRepository, projektAnteilRepository,
                 null, null, null, null, null, null,
                 vorschlagService,
                 lieferantDokumentService,
                 new BestellungsUebersichtService(dokumentRepository, geschaeftsdokumentRepository,
-                        projektAnteilRepository, vorschlagService));
+                        projektAnteilRepository, vorschlagService),
+                null);
         lieferant = new Lieferanten();
         lieferant.setId(1L);
         lieferant.setLieferantenname("Max Mustermann GmbH");

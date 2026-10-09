@@ -55,6 +55,8 @@ interface Rahmen {
     fest: boolean;
     /** Hat einen Vorfahren mit position: sticky (z.B. RibbonNav) -- siehe keineUeberschneidungen. */
     sticky: boolean;
+    /** Liegt im obersten Dialog -- sticky Leisten darin ueberdecken den Dialog-Inhalt beim Scrollen gewollt. */
+    imDialog: boolean;
     /** Only the explicitly marked, fixed PC notification layer may float over app controls. */
     toastLayer: boolean;
     toastAncestors: number[];
@@ -487,6 +489,7 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
                 beschreibung: `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${rolle ? '[' + rolle + ']' : ''} "${(el.textContent ?? '').trim().slice(0, 30)}"`,
                 x: sichtbar.x, y: sichtbar.y, breite: sichtbar.breite, hoehe: sichtbar.hoehe, fest,
                 sticky: istSticky(el),
+                imDialog: !!dialog && dialog.contains(el),
             });
         }
         return ergebnis;
@@ -511,7 +514,12 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             // ist immer beabsichtigt -- siehe Funktions-Kommentar. Zwei
             // sticky Leisten uebereinander oder eine sticky Leiste gegen ein
             // fest positioniertes Element (Toast) bleiben dagegen scharf.
-            if (a.sticky !== b.sticky && !a.fest && !b.fest) continue;
+            // Dasselbe gilt fuer eine sticky Leiste INNERHALB des obersten
+            // Dialogs (z.B. Werkzeugleiste ueber einer langen Positionsliste):
+            // der Dialog ist fest positioniert, also waeren sonst alle seine
+            // Elemente "fest" und die Ausnahme griffe nie. Fest positionierte
+            // Elemente ausserhalb des Dialogs (Toasts) bleiben scharf.
+            if (a.sticky !== b.sticky && ((!a.fest && !b.fest) || (a.imDialog && b.imDialog))) continue;
             const enthalten =
                 (a.x >= b.x && a.y >= b.y && a.x + a.breite <= b.x + b.breite && a.y + a.hoehe <= b.y + b.hoehe) ||
                 (b.x >= a.x && b.y >= a.y && b.x + b.breite <= a.x + a.breite && b.y + b.hoehe <= a.y + a.hoehe);

@@ -558,6 +558,97 @@ class LieferantDokumentAbgleichTest {
             assertThat(vorgaenger(ab, angebot)).containsExactly(angebot);
         }
 
+        private static final String POSITIONEN_GELAENDER = """
+                {"artikelPositionen":[
+                  {"bezeichnung":"Flachstahl 50x5 S235JR","menge":10},
+                  {"bezeichnung":"Rundrohr 42,4x2 verzinkt","menge":4},
+                  {"bezeichnung":"Handlaufhalter Edelstahl V2A","menge":12},
+                  {"positionsArt":"NEBENKOSTEN","bezeichnung":"Fracht","gesamtpreisNetto":45}]}""";
+
+        @Test
+        void angebotUeberGleicheBezeichnungenOhneNummern() {
+            LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 2, 1));
+            angebot.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+            LieferantDokument anderesAngebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-2", LocalDate.of(2026, 2, 3));
+            anderesAngebot.getGeschaeftsdaten().setAiRawJson("""
+                    {"artikelPositionen":[{"bezeichnung":"Trapezblech 35/207 RAL 7016","menge":30},
+                    {"bezeichnung":"Dichtband Butyl selbstklebend","menge":5}]}""");
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 2, 20));
+            // In der AB ist eine Position dazugekommen
+            ab.getGeschaeftsdaten().setAiRawJson("""
+                    {"artikelPositionen":[
+                      {"bezeichnung":"FLACHSTAHL 50X5 S235JR","menge":10},
+                      {"bezeichnung":"Rundrohr 42,4x2 verzinkt","menge":4},
+                      {"bezeichnung":"Handlaufhalter Edelstahl V2A","menge":12},
+                      {"bezeichnung":"Endkappe Rundrohr 42,4","menge":2}]}""");
+
+            assertThat(vorgaenger(ab, angebot, anderesAngebot)).containsExactly(angebot);
+        }
+
+        @Test
+        void gleicheFrachtAlleinVerknuepftNicht() {
+            LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 2, 1));
+            angebot.getGeschaeftsdaten().setAiRawJson("""
+                    {"artikelPositionen":[{"positionsArt":"NEBENKOSTEN","bezeichnung":"Frachtkosten Spedition"}]}""");
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 2, 5));
+            ab.getGeschaeftsdaten().setAiRawJson("""
+                    {"artikelPositionen":[{"positionsArt":"NEBENKOSTEN","bezeichnung":"Frachtkosten Spedition"}]}""");
+
+            assertThat(vorgaenger(ab, angebot)).isEmpty();
+        }
+
+        @Test
+        void einschaetzungNenntGleichePositionen() {
+            LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 2, 1));
+            angebot.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 2, 10));
+            ab.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+            var lieferant = new org.example.kalkulationsprogramm.domain.Lieferanten();
+            lieferant.setId(7L);
+            angebot.setLieferant(lieferant);
+            ab.setLieferant(lieferant);
+
+            var einschaetzung = abgleich.schaetzeEin(ab, angebot, false, null, abgleich.neuerSpeicher());
+
+            assertThat(einschaetzung.gruende()).contains("3 von 3 Positionen gleich", "Gleiche Mengen");
+            assertThat(einschaetzung.sicher()).isFalse();
+            assertThat(einschaetzung.trefferquote()).isBetween(80, LieferantDokumentAbgleich.QUOTE_HINWEIS_MAX);
+        }
+
+        @Test
+        void zeitnaheBelegeSchlagenSpaete() {
+            // Gleiche Positionen in zwei Angeboten – das zeitlich nähere gewinnt.
+            LieferantDokument altesAngebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2025, 11, 1));
+            altesAngebot.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+            LieferantDokument neuesAngebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-7", LocalDate.of(2026, 2, 12));
+            neuesAngebot.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 2, 20));
+            ab.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+
+            assertThat(vorgaenger(ab, altesAngebot, neuesAngebot)).containsExactly(neuesAngebot);
+        }
+
+        @Test
+        void gleichePositionslisteMachtAusZweiAngebotenKeineRevision() {
+            // Dieselbe Stahlliste für zwei Kunden – ohne gemeinsamen Nummernstamm keine Revision
+            LieferantDokument erstes = dokument(LieferantDokumentTyp.ANGEBOT, "AN-4711", LocalDate.of(2026, 2, 1));
+            erstes.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+            LieferantDokument zweites = dokument(LieferantDokumentTyp.ANGEBOT, "AN-5822", LocalDate.of(2026, 2, 10));
+            zweites.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+
+            assertThat(vorgaenger(zweites, erstes)).isEmpty();
+        }
+
+        @Test
+        void ohneDatumReichenPositionenAlleinNicht() {
+            LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", null);
+            angebot.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 2, 20));
+            ab.getGeschaeftsdaten().setAiRawJson(POSITIONEN_GELAENDER);
+
+            assertThat(vorgaenger(ab, angebot)).isEmpty();
+        }
+
         @Test
         void kommissionUndBetragSchlagenNurBetrag() {
             LieferantDokument passend = dokument(LieferantDokumentTyp.ANGEBOT, "AN-1", LocalDate.of(2026, 2, 1));

@@ -17,6 +17,61 @@ class ZugferdExtractorServiceTest {
     }
 
     @Nested
+    class Zeichensatz {
+
+        @Test
+        void zeichensalatWirdRepariert() {
+            assertThat(ZugferdExtractorService.restoreUmlauts("PrÃ¼fbescheinigung GrÃ¶ÃŸe"))
+                    .isEqualTo("Prüfbescheinigung Größe");
+        }
+
+        @Test
+        void korrekterTextBleibtUnveraendert() {
+            assertThat(ZugferdExtractorService.restoreUmlauts("Prüfbescheinigung")).isEqualTo("Prüfbescheinigung");
+            assertThat(ZugferdExtractorService.restoreUmlauts("Preis 12 € Ãœbergröße")).isEqualTo("Preis 12 € Ãœbergröße");
+            assertThat(ZugferdExtractorService.restoreUmlauts("Stahl S235JR")).isEqualTo("Stahl S235JR");
+            assertThat(ZugferdExtractorService.restoreUmlauts(null)).isNull();
+            // Echter Text, der nur zufällig wie eine UTF-8-Folge aussieht
+            assertThat(ZugferdExtractorService.restoreUmlauts("Gewinderohr Ø½ Zoll")).isEqualTo("Gewinderohr Ø½ Zoll");
+        }
+
+        @Test
+        void steuerzeichenEntitiesFallenWeg() {
+            assertThat(ZugferdExtractorService.xmlText("Blech&#0;&#7; 2mm&#10;")).isEqualTo("Blech 2mm");
+            assertThat(ZugferdExtractorService.xmlText("Preis &#x20AC; &#99999999;")).isEqualTo("Preis € &#99999999;");
+        }
+
+        @Test
+        void xmlNachEigenerZeichensatzangabe() {
+            byte[] latin1 = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><Name>Prüfung</Name>"
+                    .getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+            byte[] utf8 = "<?xml version='1.0' encoding='UTF-8'?><Name>Prüfung</Name>"
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] ohneAngabe = "<Name>Prüfung</Name>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+            assertThat(ZugferdExtractorService.dekodiereXml(latin1)).contains("Prüfung");
+            assertThat(ZugferdExtractorService.dekodiereXml(utf8)).contains("Prüfung");
+            assertThat(ZugferdExtractorService.dekodiereXml(ohneAngabe)).contains("Prüfung");
+        }
+
+        @Test
+        void xmlMitBomUndUnbekanntemZeichensatz() {
+            byte[] inhalt = "<Name>Prüfung</Name>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] mitBom = new byte[inhalt.length + 3];
+            mitBom[0] = (byte) 0xEF;
+            mitBom[1] = (byte) 0xBB;
+            mitBom[2] = (byte) 0xBF;
+            System.arraycopy(inhalt, 0, mitBom, 3, inhalt.length);
+            byte[] unbekannt = "<?xml version=\"1.0\" encoding=\"GIBTSNICHT-1\"?><Name>Prüfung</Name>"
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+            assertThat(ZugferdExtractorService.dekodiereXml(mitBom)).isEqualTo("<Name>Prüfung</Name>");
+            assertThat(ZugferdExtractorService.dekodiereXml(unbekannt)).contains("Prüfung");
+            assertThat(ZugferdExtractorService.dekodiereXml(null)).isNull();
+        }
+    }
+
+    @Nested
     class GeschaeftsdokumentartErkennung {
 
         @Test
@@ -369,11 +424,84 @@ class ZugferdExtractorServiceTest {
         }
 
         @Test
-        void ueberspringtPositionenOhneArtikelnummer() {
+        void liestPositionenOhneArtikelnummerMitSumme() {
+            // Fracht & Co. braucht die Projektaufteilung; die Preisübernahme
+            // überspringt Positionen ohne Artikelnummer selbst.
             String xml = """
                     <Invoice>
                       <cac:InvoiceLine>
+                        <cbc:LineExtensionAmount currencyID="EUR">19.90</cbc:LineExtensionAmount>
                         <cac:Item><cbc:Name>Frachtpauschale</cbc:Name></cac:Item>
+                        <cac:Price><cbc:PriceAmount>19.90</cbc:PriceAmount></cac:Price>
+                      </cac:InvoiceLine>
+                    </Invoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getExterneArtikelnummer()).isNull();
+            assertThat(positionen.getFirst().getBezeichnung()).isEqualTo("Frachtpauschale");
+            assertThat(positionen.getFirst().getGesamtpreisNetto()).isEqualByComparingTo("19.90");
+        }
+
+        @Test
+        void liestCiiPositionssumme() {
+            String xml = """
+                    <rsm:CrossIndustryInvoice>
+                      <ram:IncludedSupplyChainTradeLineItem>
+                        <ram:SpecifiedTradeProduct><ram:Name>Flachstahl 50x5</ram:Name></ram:SpecifiedTradeProduct>
+                        <ram:SpecifiedLineTradeSettlement>
+                          <ram:SpecifiedTradeSettlementLineMonetarySummation>
+                            <ram:LineTotalAmount>248.00</ram:LineTotalAmount>
+                          </ram:SpecifiedTradeSettlementLineMonetarySummation>
+                        </ram:SpecifiedLineTradeSettlement>
+                      </ram:IncludedSupplyChainTradeLineItem>
+                    </rsm:CrossIndustryInvoice>
+                    """;
+
+            var positionen = service.extractLineItems(xml);
+
+            assertThat(positionen).hasSize(1);
+            assertThat(positionen.getFirst().getGesamtpreisNetto()).isEqualByComparingTo("248.00");
+        }
+
+        @Test
+        void korrekteUmlauteBleibenErhalten() {
+            // Früher wurde jeder Text "repariert" – aus "ü" wurde dabei "�".
+            String xml = """
+                    <rsm:CrossIndustryInvoice>
+                      <ram:IncludedSupplyChainTradeLineItem>
+                        <ram:SpecifiedTradeProduct><ram:SellerAssignedID>WZ</ram:SellerAssignedID>
+                          <ram:Name>Prüfbescheinigung entsprechend Werkszeugnis</ram:Name></ram:SpecifiedTradeProduct>
+                      </ram:IncludedSupplyChainTradeLineItem>
+                    </rsm:CrossIndustryInvoice>
+                    """;
+
+            assertThat(service.extractLineItems(xml).getFirst().getBezeichnung())
+                    .isEqualTo("Prüfbescheinigung entsprechend Werkszeugnis");
+        }
+
+        @Test
+        void entitiesWerdenEntschluesselt() {
+            String xml = """
+                    <Invoice>
+                      <cac:InvoiceLine>
+                        <cac:Item><cbc:Name>Schrauben &amp; Muttern f&#252;r Gel&#xE4;nder &amp;lt;M8&amp;gt;</cbc:Name></cac:Item>
+                      </cac:InvoiceLine>
+                    </Invoice>
+                    """;
+
+            // Einmal entschlüsselt: aus "&amp;lt;" wird "&lt;", nicht "<"
+            assertThat(service.extractLineItems(xml).getFirst().getBezeichnung())
+                    .isEqualTo("Schrauben & Muttern für Geländer &lt;M8&gt;");
+        }
+
+        @Test
+        void ueberspringtPositionenOhneNummerUndBezeichnung() {
+            String xml = """
+                    <Invoice>
+                      <cac:InvoiceLine>
                         <cac:Price><cbc:PriceAmount>19.90</cbc:PriceAmount></cac:Price>
                       </cac:InvoiceLine>
                     </Invoice>

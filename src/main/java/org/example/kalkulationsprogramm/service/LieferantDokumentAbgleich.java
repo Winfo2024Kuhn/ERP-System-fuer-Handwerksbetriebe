@@ -48,7 +48,9 @@ import lombok.extern.slf4j.Slf4j;
  *       (1 Rechnung, n Lieferscheine) und Teilrechnungen (n Rechnungen, 1 AB)
  *       zusammen.</li>
  *   <li><b>Hinweis</b>: gleiche Kommission/Bauvorhaben, gleicher Betrag,
- *       gleiche Artikelnummern. Zählt nur, wenn das Datum zur Kette passt;
+ *       gleiche Positionen (Artikelnummer oder Bezeichnung, mit Menge und
+ *       zeitlicher Nähe, siehe {@link PositionsVergleich}; allein höchstens
+ *       {@link #MAX_POSITIONSPUNKTE} Punkte). Zählt nur, wenn das Datum zur Kette passt;
  *       fehlt ein Datum, braucht es mindestens zwei Merkmale. Geliefert wird
  *       höchstens ein Kandidat – und nur, wenn er eindeutig vorne liegt. Der
  *       Aufrufer hängt ihn nur an, wenn noch kein Vorgänger dieses Typs da ist.
@@ -64,7 +66,7 @@ import lombok.extern.slf4j.Slf4j;
  * landen beide in derselben Kette. Weil das ältere Angebot stets der Vorgänger
  * ist, entsteht keine Verknüpfung in beide Richtungen.
  *
- * <p>Kommission, weitere Referenzen und Artikelnummern liest der Abgleich aus
+ * <p>Kommission, weitere Referenzen und Positionen liest der Abgleich aus
  * der gespeicherten KI-Antwort. So profitieren auch bereits analysierte
  * Dokumente beim Neu-Verknüpfen, ohne dass die KI noch einmal laufen muss.
  */
@@ -81,6 +83,19 @@ public class LieferantDokumentAbgleich {
     static final int PUNKTE_BETRAG = 40;
     static final int PUNKTE_ARTIKEL = 40;
     static final int PUNKTE_EINZELARTIKEL = 20;
+    /** Viele gleiche Positionen (siehe {@link PositionsVergleich.Ergebnis#stark()}). */
+    static final int PUNKTE_POSITIONEN_STARK = 60;
+    /** Die gleichen Positionen haben überwiegend auch die gleiche Menge. */
+    static final int PUNKTE_GLEICHE_MENGEN = 20;
+    /** Gleiche Positionen und die Belege liegen zeitlich dicht beieinander. */
+    static final int PUNKTE_POSITIONEN_ZEITNAH = 10;
+    static final int TAGE_POSITIONEN_ZEITNAH = 30;
+    /**
+     * Obergrenze für Positionen allein – bewusst unter {@link #SCHWELLE_REVISION} und
+     * {@link #SCHWELLE_HINWEIS_OHNE_DATUM}: Zwei Angebote mit derselben Stahlliste sind
+     * noch keine Revision, und ohne Datum braucht es weiter ein zweites Merkmal.
+     */
+    static final int MAX_POSITIONSPUNKTE = 70;
     static final int SCHWELLE_HINWEIS = 40;
     /** Ohne Datum fehlt die zeitliche Grenze – dann reicht ein einzelnes Merkmal nicht. */
     static final int SCHWELLE_HINWEIS_OHNE_DATUM = 80;
@@ -499,7 +514,8 @@ public class LieferantDokumentAbgleich {
         }
 
         boolean datumPasst = datumPasst(ich, vor);
-        int hinweisPunkte = hinweisPunkte(ich, vor);
+        PositionsVergleich.Ergebnis positionen = PositionsVergleich.vergleiche(ich.positionen(), vor.positionen());
+        int hinweisPunkte = hinweisPunkte(ich, vor, positionen);
         if (datumPasst) {
             if (kommissionPasst(ich.kommission(), vor.kommission())) {
                 gruende.add("Gleiche Kommission");
@@ -507,11 +523,13 @@ public class LieferantDokumentAbgleich {
             if (betragPasst(ich, vor)) {
                 gruende.add("Gleicher Betrag");
             }
-            int artikel = artikelPunkte(ich.artikel(), vor.artikel());
-            if (artikel >= PUNKTE_ARTIKEL) {
-                gruende.add("Gleiche Artikelnummern");
-            } else if (artikel > 0) {
-                gruende.add("Gleiche Artikelnummer");
+            if (positionen.passt()) {
+                gruende.add(positionen.gleich() == 1 && positionen.kleinere() == 1
+                        ? "Gleiche Position"
+                        : positionen.gleich() + " von " + positionen.kleinere() + " Positionen gleich");
+                if (positionen.mengenPassen()) {
+                    gruende.add("Gleiche Mengen");
+                }
             }
             if (sicherePunkte < SCHWELLE_SICHER && gleicheBestellnummer) {
                 // Nicht trennscharf, aber immer noch ein Hinweis
@@ -769,6 +787,10 @@ public class LieferantDokumentAbgleich {
     }
 
     private int hinweisPunkte(Merkmale ich, Merkmale vorgaenger) {
+        return hinweisPunkte(ich, vorgaenger, PositionsVergleich.vergleiche(ich.positionen(), vorgaenger.positionen()));
+    }
+
+    private int hinweisPunkte(Merkmale ich, Merkmale vorgaenger, PositionsVergleich.Ergebnis positionen) {
         if (!datumPasst(ich, vorgaenger)) {
             return 0;
         }
@@ -779,7 +801,7 @@ public class LieferantDokumentAbgleich {
         if (betragPasst(ich, vorgaenger)) {
             punkte += PUNKTE_BETRAG;
         }
-        punkte += artikelPunkte(ich.artikel(), vorgaenger.artikel());
+        punkte += positionsPunkte(ich, vorgaenger, positionen);
         return punkte;
     }
 
@@ -839,20 +861,31 @@ public class LieferantDokumentAbgleich {
         return kurz.length() >= MIN_KOMMISSION_TEILSTRING && lang.contains(kurz);
     }
 
-    private static int artikelPunkte(Set<String> a, Set<String> b) {
-        if (a.isEmpty() || b.isEmpty()) {
+    /**
+     * Punkte für gleiche Positionen (Artikelnummer oder Bezeichnung). Weggefallene
+     * oder neue Positionen schaden nicht, solange der Großteil des kleineren
+     * Belegs im anderen wiederkehrt. Gleiche Mengen und zeitliche Nähe geben
+     * Zuschläge – zusammen ergibt das höchstens einen Hinweis, nie einen
+     * sicheren Treffer (der braucht eine Nummer).
+     */
+    private static int positionsPunkte(Merkmale ich, Merkmale vorgaenger, PositionsVergleich.Ergebnis ergebnis) {
+        if (!ergebnis.passt()) {
             return 0;
         }
-        Set<String> gemeinsam = new HashSet<>(a);
-        gemeinsam.retainAll(b);
-        if (gemeinsam.isEmpty()) {
-            return 0;
+        int punkte = ergebnis.stark() ? PUNKTE_POSITIONEN_STARK
+                : ergebnis.gleich() >= 2 ? PUNKTE_ARTIKEL
+                : PUNKTE_EINZELARTIKEL;
+        if (ergebnis.mengenPassen()) {
+            punkte += PUNKTE_GLEICHE_MENGEN;
         }
-        double anteil = (double) gemeinsam.size() / Math.min(a.size(), b.size());
-        if (anteil < 0.6) {
-            return 0;
+        // Gedeckelt wird vor dem Zeitbonus – sonst lägen ein naher und ein ferner
+        // Beleg mit gleicher Liste gleichauf.
+        punkte = Math.min(punkte, MAX_POSITIONSPUNKTE - PUNKTE_POSITIONEN_ZEITNAH);
+        if (ich.datum() != null && vorgaenger.datum() != null
+                && Math.abs(ChronoUnit.DAYS.between(vorgaenger.datum(), ich.datum())) <= TAGE_POSITIONEN_ZEITNAH) {
+            punkte += PUNKTE_POSITIONEN_ZEITNAH;
         }
-        return gemeinsam.size() >= 2 ? PUNKTE_ARTIKEL : PUNKTE_EINZELARTIKEL;
+        return punkte;
     }
 
     /**
@@ -895,7 +928,7 @@ public class LieferantDokumentAbgleich {
                 .anyMatch(t -> t.felder().contains(Feld.BESTELLNUMMER));
 
         String kommission = null;
-        Set<String> artikel = new HashSet<>();
+        List<PositionsVergleich.Merkmal> positionen = List.of();
         JsonNode json = leseKiAntwort(gd.getAiRawJson());
         if (json != null) {
             JsonNode weitere = json.get("weitereReferenzen");
@@ -912,22 +945,14 @@ public class LieferantDokumentAbgleich {
                 }
             }
             kommission = normalisiereKommission(text(json, "kommission"));
-            JsonNode positionen = json.get("artikelPositionen");
-            if (positionen != null && positionen.isArray()) {
-                positionen.forEach(p -> {
-                    String artikelnummer = normalisiereNummer(text(p, "externeArtikelnummer"));
-                    if (artikelnummer != null && artikelnummer.length() >= 3) {
-                        artikel.add(artikelnummer);
-                    }
-                });
-            }
+            positionen = PositionsVergleich.merkmale(LieferantDokumentPositionService.ausKiAntwort(json));
         }
         if (nummer != null) {
             referenzen.remove(nummer);
         }
 
         return new Merkmale(typ, nummer, zerlegeNummer(gd.getDokumentNummer()), referenzen, bestellnummer,
-                kommission, gd.getDokumentDatum(), gd.getBetragNetto(), gd.getBetragBrutto(), artikel,
+                kommission, gd.getDokumentDatum(), gd.getBetragNetto(), gd.getBetragBrutto(), positionen,
                 tokens, bestellnummerMitNummer);
     }
 
@@ -1101,7 +1126,8 @@ public class LieferantDokumentAbgleich {
     private record Merkmale(LieferantDokumentTyp typ, String nummer, Nummernstamm nummernstamm,
             Set<String> referenzen,
             String bestellnummer, String kommission, LocalDate datum, BigDecimal netto, BigDecimal brutto,
-            Set<String> artikel, Map<String, NummernToken> tokens, boolean bestellnummerMitNummer) {
+            List<PositionsVergleich.Merkmal> positionen, Map<String, NummernToken> tokens,
+            boolean bestellnummerMitNummer) {
     }
 
     private record Kandidat(LieferantDokument dokument, Merkmale merkmale) {
