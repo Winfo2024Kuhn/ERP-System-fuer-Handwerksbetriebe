@@ -52,7 +52,10 @@ public class LieferantDokumentPositionLeser {
              "mengeneinheit": "Stück|kg|m|t|... oder null",
              "einzelpreis": 12.34 oder null,
              "preiseinheit": "€/Stück|€/kg|€/100kg|€/t|€/m ... oder null",
-             "gesamtpreisNetto": 154.25 oder null}
+             "gesamtpreisNetto": 154.25 oder null,
+             "werkstoff": "Werkstoff/Güte, z. B. 'S235JR+AR', '1.4301' – nur wenn aufgedruckt, sonst null",
+             "charge": "Charge/Schmelze/Heat No. exakt wie gedruckt – nur wenn aufgedruckt, sonst null",
+             "abmessung": "Maße, z. B. '50x5', '60,3x2,9', 'IPE 200' – nur wenn aufgedruckt, sonst null"}
 
             Regeln:
             - JEDE Zeile mit Betrag oder Artikel ist eine Position, auch ohne Artikelnummer.
@@ -69,6 +72,9 @@ public class LieferantDokumentPositionLeser {
             - Ist auf diesen Seiten nur eine solche Aufschlüsselung zu sehen (ohne eigene
               Positionsnummer in der Positionsübersicht), dann {"artikelPositionen": []}.
             - Zahlen als Dezimalzahl mit Punkt, ohne Währungszeichen. Fehlende Werte = null.
+            - Werkstoffzeugnis (Abnahmeprüfzeugnis 3.1/3.2, Werkszeugnis): jede Erzeugnis-Zeile
+              je Charge ist eine Position (bezeichnung z. B. "Flachstahl 50x5", Preise null,
+              positionsArt WARE). Prüfwerte und chemische Analyse sind KEINE Positionen.
             - Wenn das Dokument keine Positionen hat: {"artikelPositionen": []}
             """;
 

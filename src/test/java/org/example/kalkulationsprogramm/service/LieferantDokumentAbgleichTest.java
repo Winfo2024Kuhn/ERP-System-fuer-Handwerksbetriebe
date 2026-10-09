@@ -868,4 +868,244 @@ class LieferantDokumentAbgleichTest {
             assertThat(LieferantDokumentAbgleich.normalisiereKommission("BV")).isNull();
         }
     }
+
+    @Nested
+    class Werkstoffzeugnis {
+
+        private static final LocalDate LIEFERUNG = LocalDate.of(2026, 9, 1);
+
+        private LieferantDokument lieferschein(String nummer, LocalDate datum, String positionen) {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, nummer, datum);
+            ls.getGeschaeftsdaten().setAiRawJson(positionen);
+            return ls;
+        }
+
+        private LieferantDokument zeugnis(LocalDate datum, String json) {
+            LieferantDokument z = dokument(LieferantDokumentTyp.WERKSTOFFZEUGNIS, "3.1-77001", datum);
+            z.getGeschaeftsdaten().setAiRawJson(json);
+            return z;
+        }
+
+        private static String position(String bezeichnung, String werkstoff, String abmessung, String charge) {
+            return "{\"bezeichnung\":\"" + bezeichnung + "\",\"werkstoff\":" + text(werkstoff)
+                    + ",\"abmessung\":" + text(abmessung) + ",\"charge\":" + text(charge) + "}";
+        }
+
+        private static String text(String wert) {
+            return wert == null ? "null" : "\"" + wert + "\"";
+        }
+
+        private static String json(String kommission, String... positionen) {
+            return "{\"kommission\":" + text(kommission) + ",\"artikelPositionen\":["
+                    + String.join(",", positionen) + "]}";
+        }
+
+        @Test
+        void typen() {
+            assertThat(LieferantDokumentAbgleich.vorgaengerTypen(LieferantDokumentTyp.WERKSTOFFZEUGNIS))
+                    .containsExactly(LieferantDokumentTyp.LIEFERSCHEIN, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            assertThat(LieferantDokumentAbgleich.kettenRang(LieferantDokumentTyp.WERKSTOFFZEUGNIS))
+                    .isGreaterThan(LieferantDokumentAbgleich.kettenRang(LieferantDokumentTyp.LIEFERSCHEIN))
+                    .isLessThan(LieferantDokumentAbgleich.kettenRang(LieferantDokumentTyp.RECHNUNG));
+            // Ein Zeugnis ist nie Vorgänger einer Rechnung – es zählt nicht als „geliefert/erledigt“.
+            assertThat(LieferantDokumentAbgleich.vorgaengerTypen(LieferantDokumentTyp.RECHNUNG))
+                    .doesNotContain(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+        }
+
+        @Test
+        void zeugnisNenntLieferscheinnummer() {
+            LieferantDokument ls = lieferschein("LS-880011", LIEFERUNG, null);
+            LieferantDokument z = zeugnis(LIEFERUNG.minusDays(150), null);
+            z.getGeschaeftsdaten().setReferenzNummer("LS 880011");
+
+            assertThat(abgleich(z, ls).sicher()).containsExactly(ls);
+        }
+
+        @Test
+        void ohneLieferscheinHaengtZeugnisAnDerAb() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-445566", LIEFERUNG);
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(3), null);
+            z.getGeschaeftsdaten().setReferenzNummer("AB-445566");
+
+            assertThat(abgleich(z, ab).sicher()).containsExactly(ab);
+        }
+
+        @Test
+        void gleicheChargeIstSicher() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG,
+                    json(null, position("FL 50x5", "S235JR", "50x5", "123456")));
+            LieferantDokument anderer = lieferschein("LS-2", LIEFERUNG,
+                    json(null, position("FL 50x5", "S235JR", "50x5", "999999")));
+            LieferantDokument z = zeugnis(LIEFERUNG.minusDays(200),
+                    json(null, position("Flachstahl", "S235JR+AR", "50x5", "12 34 56")));
+
+            LieferantDokumentAbgleich.Ergebnis ergebnis = abgleich(z, ls, anderer);
+            assertThat(ergebnis.sicher()).containsExactly(ls);
+            assertThat(abgleich.schaetzeEin(z, ls, false, null, abgleich.neuerSpeicher()).gruende())
+                    .contains("Gleiche Charge 123456");
+        }
+
+        @Test
+        void kurzeChargeVerknuepftNicht() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG, json(null, position("Rohr", null, null, "A1")));
+            LieferantDokument z = zeugnis(LIEFERUNG, json(null, position("Rohr", null, null, "A1")));
+
+            assertThat(abgleich(z, ls).sicher()).isEmpty();
+        }
+
+        @Test
+        void sichererLieferscheinVerdraengtDieAb() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LIEFERUNG.minusDays(5));
+            ab.getGeschaeftsdaten().setReferenzNummer("Auftrag 7765432");
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG, null);
+            ls.getGeschaeftsdaten().setReferenzNummer("Auftrag 7765432");
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(1), "{\"weitereReferenzen\":[\"7765432\"]}");
+
+            assertThat(abgleich(z, ab, ls).sicher()).containsExactly(ls);
+        }
+
+        @Test
+        void gleicheChargeAufMehrerenLieferungenHaengtAnAllen() {
+            // Dieselbe Schmelze in zwei Lieferungen: Das Zeugnis gilt für beide – gewollt.
+            String charge = json(null, position("FL 50x5", "S235JR", "50x5", "123456"));
+            LieferantDokument ls1 = lieferschein("LS-1", LIEFERUNG, charge);
+            LieferantDokument ls2 = lieferschein("LS-2", LIEFERUNG.plusDays(90), charge);
+            LieferantDokument z = zeugnis(LIEFERUNG, json(null, position("Flachstahl", "S235JR", "50x5", "123456")));
+
+            assertThat(abgleich(z, ls1, ls2).sicher()).containsExactlyInAnyOrder(ls1, ls2);
+        }
+
+        @Test
+        void anDerAbNurSicherNichtPerHinweis() {
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LIEFERUNG);
+            ab.getGeschaeftsdaten().setAiRawJson(json("BV Mustermann Hauptstr. 5",
+                    position("FL 50x5", "S235JR", "50x5", null)));
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(1),
+                    json("BV Mustermann Hauptstr. 5", position("Flachstahl", "S235JR", "50x5", null)));
+
+            assertThat(vorgaenger(z, ab)).isEmpty();
+        }
+
+        @Test
+        void gemeinsameAuftragsnummerIstSicher() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG, null);
+            ls.getGeschaeftsdaten().setReferenzNummer("Auftrag 7765432");
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(1), "{\"weitereReferenzen\":[\"7765432\"]}");
+
+            assertThat(abgleich(z, ls).sicher()).containsExactly(ls);
+        }
+
+        @Test
+        void gleichesMaterialUndZeitnahIstHinweis() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG,
+                    json(null, position("FL 50x5 S235JR", "S235JR", "50 x 5", null)));
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(2),
+                    json(null, position("Flachstahl", "S235JR+AR", "50x5", null)));
+
+            LieferantDokumentAbgleich.Ergebnis ergebnis = abgleich(z, ls);
+            assertThat(ergebnis.sicher()).isEmpty();
+            assertThat(ergebnis.hinweis()).isEqualTo(ls);
+            assertThat(abgleich.schaetzeEin(z, ls, false, null, abgleich.neuerSpeicher()).gruende())
+                    .contains("Gleicher Werkstoff und gleiche Abmessung", "2 Tage Abstand");
+        }
+
+        @Test
+        void kommissionUndZehnTageIstHinweis() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG, json("BV Mustermann Hauptstr. 5"));
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(10), json("BV Mustermann Hauptstr. 5"));
+
+            assertThat(abgleich(z, ls).hinweis()).isEqualTo(ls);
+        }
+
+        @Test
+        void kommissionAllein45TageReichtNicht() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG, json("BV Mustermann Hauptstr. 5"));
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(45), json("BV Mustermann Hauptstr. 5"));
+
+            assertThat(vorgaenger(z, ls)).isEmpty();
+        }
+
+        @Test
+        void naeheAlleinReichtNie() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG,
+                    json(null, position("Rundrohr", "S355J2", "60,3x2,9", null)));
+            LieferantDokument z = zeugnis(LIEFERUNG,
+                    json(null, position("Flachstahl", "S235JR", "50x5", null)));
+
+            assertThat(vorgaenger(z, ls)).isEmpty();
+        }
+
+        @Test
+        void mehrAls60TageKeinHinweis() {
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG,
+                    json("BV Mustermann Hauptstr. 5", position("FL 50x5", "S235JR", "50x5", null)));
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(61),
+                    json("BV Mustermann Hauptstr. 5", position("Flachstahl", "S235JR", "50x5", null)));
+
+            assertThat(vorgaenger(z, ls)).isEmpty();
+        }
+
+        @Test
+        void eingangsdatumZaehltWennZeugnisdatumAltIst() {
+            // Werkszeugnis vom Walzwerk, Monate alt – aber zwei Tage nach der Lieferung eingegangen.
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG,
+                    json(null, position("FL 50x5", "S235JR", "50x5", null)));
+            LieferantDokument z = zeugnis(LIEFERUNG.minusDays(180),
+                    json(null, position("Flachstahl", "S235JR", "50x5", null)));
+            z.setUploadDatum(LIEFERUNG.plusDays(2).atTime(9, 30));
+
+            assertThat(abgleich(z, ls).hinweis()).isEqualTo(ls);
+        }
+
+        @Test
+        void gleichstandVerknuepftNichts() {
+            String material = json(null, position("FL 50x5", "S235JR", "50x5", null));
+            LieferantDokument ls1 = lieferschein("LS-1", LIEFERUNG, material);
+            LieferantDokument ls2 = lieferschein("LS-2", LIEFERUNG, material);
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(1),
+                    json(null, position("Flachstahl", "S235JR", "50x5", null)));
+
+            assertThat(vorgaenger(z, ls1, ls2)).isEmpty();
+        }
+
+        @Test
+        void naeherLiegenderLieferscheinGewinnt() {
+            String material = json(null, position("FL 50x5", "S235JR", "50x5", null));
+            LieferantDokument nah = lieferschein("LS-1", LIEFERUNG, material);
+            LieferantDokument fern = lieferschein("LS-2", LIEFERUNG.minusDays(20), material);
+            LieferantDokument z = zeugnis(LIEFERUNG.plusDays(1),
+                    json(null, position("Flachstahl", "S235JR", "50x5", null)));
+
+            assertThat(abgleich(z, nah, fern).hinweis()).isEqualTo(nah);
+        }
+
+        @Test
+        void ohneDatumGiltStrengereSchwelle() {
+            LieferantDokument ls = lieferschein("LS-1", null,
+                    json(null, position("FL 50x5", "S235JR", "50x5", null)));
+            LieferantDokument z = zeugnis(null, json(null, position("Flachstahl", "S235JR", "50x5", null)));
+
+            assertThat(vorgaenger(z, ls)).isEmpty();
+        }
+
+        @ParameterizedTest
+        @CsvSource({ "0,30", "3,30", "4,20", "14,20", "15,10", "30,10", "31,0", "60,0" })
+        void zeitpunkte(long tage, int punkte) {
+            assertThat(LieferantDokumentAbgleich.zeugnisZeitPunkte(tage)).isEqualTo(punkte);
+        }
+
+        @Test
+        void zeugnisVerzerrtDieStreuungNicht() {
+            // Ein uraltes Zeugnis mit derselben Auftragsnummer darf die Nummer nicht
+            // „gestreut“ wirken lassen – sonst verlöre die Rechnung ihren Lieferschein.
+            LieferantDokument ls = lieferschein("LS-1", LIEFERUNG, null);
+            ls.getGeschaeftsdaten().setReferenzNummer("Auftrag 7765432");
+            LieferantDokument altesZeugnis = zeugnis(LIEFERUNG.minusDays(400),
+                    "{\"weitereReferenzen\":[\"7765432\"]}");
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LIEFERUNG.plusDays(5));
+            rechnung.getGeschaeftsdaten().setReferenzNummer("Auftrag 7765432");
+
+            assertThat(abgleich(rechnung, ls, altesZeugnis).sicher()).containsExactly(ls);
+        }
+    }
 }

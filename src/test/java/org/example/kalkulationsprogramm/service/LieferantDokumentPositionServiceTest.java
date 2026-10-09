@@ -87,7 +87,8 @@ class LieferantDokumentPositionServiceTest {
 
         @ParameterizedTest
         @EnumSource(value = LieferantDokumentTyp.class,
-                names = { "ANGEBOT", "AUFTRAGSBESTAETIGUNG", "LIEFERSCHEIN", "RECHNUNG", "GUTSCHRIFT" })
+                names = { "ANGEBOT", "AUFTRAGSBESTAETIGUNG", "LIEFERSCHEIN", "RECHNUNG", "GUTSCHRIFT",
+                        "WERKSTOFFZEUGNIS" })
         void geschaeftsdokumenteHabenPositionen(LieferantDokumentTyp typ) {
             assertThat(LieferantDokumentPositionService.hatPositionen(typ)).isTrue();
         }
@@ -182,6 +183,45 @@ class LieferantDokumentPositionServiceTest {
         assertThat(positionen.get(0).gesamtpreisNetto()).isEqualByComparingTo("48.00");
         assertThat(positionen.get(1).positionsArt()).isEqualTo(PositionsArt.RABATT);
         assertThat(LieferantDokumentPositionService.ausZugferd(null)).isNull();
+    }
+
+    @Nested
+    class Werkstoffzeugnis {
+
+        @SuppressWarnings("unchecked")
+        @Test
+        void speichertWerkstoffChargeUndAbmessung() {
+            var zeile = new AusgelesenePosition(PositionsArt.WARE, null, "Flachstahl", new BigDecimal("12"),
+                    "Stück", null, null, null, "S235JR+AR", "123456", "c".repeat(150));
+
+            assertThat(service.ersetzePositionen(gd(), LieferantDokumentTyp.WERKSTOFFZEUGNIS, List.of(zeile)))
+                    .isEqualTo(1);
+
+            ArgumentCaptor<List<LieferantDokumentPosition>> captor = ArgumentCaptor.forClass(List.class);
+            verify(repository).saveAll(captor.capture());
+            LieferantDokumentPosition p = captor.getValue().getFirst();
+            assertThat(p.getWerkstoff()).isEqualTo("S235JR+AR");
+            assertThat(p.getCharge()).isEqualTo("123456");
+            assertThat(p.getAbmessung()).hasSize(LieferantDokumentPositionService.MAX_ZEUGNISFELD);
+        }
+
+        @Test
+        void liestZeugnisfelderAusKiAntwortUndSchreibtSieZurueck() throws Exception {
+            var json = mapper.readTree("{\"artikelPositionen\":[{\"bezeichnung\":\"Flachstahl 50x5\","
+                    + "\"menge\":12,\"mengeneinheit\":\"Stück\",\"werkstoff\":\"S235JR\","
+                    + "\"charge\":\"123456\",\"abmessung\":\"50x5\"}]}");
+
+            var positionen = LieferantDokumentPositionService.ausKiAntwort(json);
+            assertThat(positionen).singleElement().satisfies(p -> {
+                assertThat(p.werkstoff()).isEqualTo("S235JR");
+                assertThat(p.charge()).isEqualTo("123456");
+                assertThat(p.abmessung()).isEqualTo("50x5");
+            });
+
+            String zurueck = LieferantDokumentPositionService.mitPositionen("{}", positionen, mapper);
+            assertThat(LieferantDokumentPositionService.ausKiAntwort(mapper.readTree(zurueck)))
+                    .isEqualTo(positionen);
+        }
     }
 
     @Test

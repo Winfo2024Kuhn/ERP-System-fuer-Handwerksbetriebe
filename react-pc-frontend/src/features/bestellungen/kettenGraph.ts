@@ -60,6 +60,7 @@ export const GABEL_LABELS: Record<KettenDokumentTyp, string> = {
     ANGEBOT: 'Angebot',
     AUFTRAGSBESTAETIGUNG: 'Auftragsbestätigung',
     LIEFERSCHEIN: 'Lieferschein',
+    WERKSTOFFZEUGNIS: 'Werkstoffzeugnis',
     RECHNUNG: 'Rechnung',
     GUTSCHRIFT: 'Gutschrift',
     SONSTIG: 'Sonstiges',
@@ -67,14 +68,24 @@ export const GABEL_LABELS: Record<KettenDokumentTyp, string> = {
 
 const RECHNUNGS_TYPEN: ReadonlySet<KettenDokumentTyp> = new Set(['RECHNUNG', 'GUTSCHRIFT']);
 
+/** Begleitpapiere gehören zur Lieferung, sind aber selbst keine Bestellstufe (keine Rechnung hängt an ihnen). */
+const BEGLEIT_TYPEN: ReadonlySet<KettenDokumentTyp> = new Set(['WERKSTOFFZEUGNIS']);
+
 const BESTELL_STUFE: Partial<Record<KettenDokumentTyp, number>> = {
     ANGEBOT: 1,
     AUFTRAGSBESTAETIGUNG: 2,
     LIEFERSCHEIN: 3,
+    // Zeugnis direkt nach dem Lieferschein, vor Sonstigem
+    WERKSTOFFZEUGNIS: 4,
 };
 
 export function istRechnungsTyp(typ: KettenDokumentTyp): boolean {
     return RECHNUNGS_TYPEN.has(typ);
+}
+
+/** Werkstoffzeugnis & Co.: hängt am Lieferschein, zählt nie als Rechnung oder als Bestelldokument. */
+export function istBegleitTyp(typ: KettenDokumentTyp): boolean {
+    return BEGLEIT_TYPEN.has(typ);
 }
 
 function datumWert(dok: GraphDokument): number {
@@ -84,13 +95,13 @@ function datumWert(dok: GraphDokument): number {
 
 /** Bestelldokumente nach Stufe (Angebot, AB, Lieferschein), dann Rechnungen; jeweils nach Datum. */
 function sortiere<D extends GraphDokument>(dokumente: D[]): D[] {
-    const rang = (d: D) => (istRechnungsTyp(d.typ) ? 10 : BESTELL_STUFE[d.typ] ?? 4);
+    const rang = (d: D) => (istRechnungsTyp(d.typ) ? 10 : BESTELL_STUFE[d.typ] ?? 5);
     return [...dokumente].sort((a, b) => rang(a) - rang(b) || datumWert(a) - datumWert(b) || a.id - b.id);
 }
 
 /** Das jüngste Bestelldokument – daran wird eine hochgeladene Rechnung gehängt. */
 export function juengstesBestellDokument<D extends GraphDokument>(dokumente: D[]): D | null {
-    const bestellung = dokumente.filter(d => !istRechnungsTyp(d.typ) && d.typ !== 'SONSTIG');
+    const bestellung = dokumente.filter(d => !istRechnungsTyp(d.typ) && !istBegleitTyp(d.typ) && d.typ !== 'SONSTIG');
     if (bestellung.length === 0) return null;
     const sichtbar = bestellung.filter(d => !d.ausgeblendet);
     const auswahl = sichtbar.length > 0 ? sichtbar : bestellung;
@@ -173,7 +184,10 @@ export function baueKettenGraph<D extends GraphDokument>(
         if (hatKante.has(i) || sortiert.length < 2) return;
         let partner = i === 0 ? 1 : i - 1;
         if (i > 0 && istRechnungsTyp(d.typ)) {
-            const bestellung = sortiert.slice(0, i).map(x => istRechnungsTyp(x.typ)).lastIndexOf(false);
+            // Lieber an Lieferschein/AB als an ein Werkstoffzeugnis – sonst an das letzte Nicht-Rechnungs-Dokument
+            const davor = sortiert.slice(0, i);
+            const bestelldokument = davor.map(x => !istRechnungsTyp(x.typ) && !istBegleitTyp(x.typ)).lastIndexOf(true);
+            const bestellung = bestelldokument >= 0 ? bestelldokument : davor.map(x => istRechnungsTyp(x.typ)).lastIndexOf(false);
             if (bestellung >= 0) partner = bestellung;
         }
         kanten.push([Math.min(i, partner), Math.max(i, partner)]);
@@ -195,10 +209,11 @@ export function baueKettenGraph<D extends GraphDokument>(
     if (optionen.offenesEnde && sortiert.length > 0) {
         const offenIndex = sortiert.length;
         zeilen.push({ art: 'offen', dokument: null, spur: 0, istRechnung: false, hatVerbindung: false });
-        const hatNachfolger = new Set(reduziert.map(([oben]) => oben));
+        // Ein Werkstoffzeugnis unter dem Lieferschein ersetzt keine Rechnung: der Lieferschein bleibt offen
+        const hatNachfolger = new Set(reduziert.filter(([, unten]) => !istBegleitTyp(sortiert[unten].typ)).map(([oben]) => oben));
         const enden = sortiert
             .map((d, i) => ({ d, i }))
-            .filter(({ d, i }) => !hatNachfolger.has(i) && !istRechnungsTyp(d.typ))
+            .filter(({ d, i }) => !hatNachfolger.has(i) && !istRechnungsTyp(d.typ) && !istBegleitTyp(d.typ))
             .map(({ i }) => i);
         (enden.length > 0 ? enden : [sortiert.length - 1]).forEach(i => {
             reduziert.push([i, offenIndex]);

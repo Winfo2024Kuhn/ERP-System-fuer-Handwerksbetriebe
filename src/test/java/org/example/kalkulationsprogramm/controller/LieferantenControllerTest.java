@@ -44,6 +44,8 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -107,6 +109,8 @@ class LieferantenControllerTest {
   private org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
   @MockBean
   private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
+  @MockBean
+  private org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
 
   @Autowired
   private LieferantenController controller;
@@ -491,6 +495,98 @@ class LieferantenControllerTest {
           .doesNotContain("streng vertraulich");
     } finally {
       Files.deleteIfExists(geheim);
+    }
+  }
+
+  @org.junit.jupiter.api.Nested
+  @DisplayName("Positionssuche in den Dokumenten eines Lieferanten")
+  class Positionssuche {
+
+    private org.springframework.security.authentication.UsernamePasswordAuthenticationToken angemeldet() {
+      var principal = new org.example.kalkulationsprogramm.config.FrontendUserPrincipal(
+          70L, "max.mustermann@example.com", "Max Mustermann", "", true, java.util.Set.of());
+      return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+          principal, null, principal.getAuthorities());
+    }
+
+    @Test
+    @DisplayName("Ohne Anmeldung (keine Sitzung, kein/ungültiger Token): 401")
+    void ohneAnmeldung401() throws Exception {
+      when(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).thenReturn(Optional.empty());
+
+      mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", "Flachstahl"))
+          .andExpect(status().isUnauthorized());
+      mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", "Flachstahl")
+              .param("token", "ungueltig"))
+          .andExpect(status().isUnauthorized());
+      verifyNoInteractions(dokumentSucheService);
+    }
+
+    @Test
+    @DisplayName("Angemeldete Sitzung ohne Token: Treffer mit Trefferzeile, alle Typen")
+    void liefertTreffer() throws Exception {
+      when(lieferantenRepository.existsById(5L)).thenReturn(true);
+      when(dokumentSucheService.suchePositionen(eq("Flachstahl"), eq(5L), any(), any(), any())).thenReturn(java.util.Map.of(11L,
+          new org.example.kalkulationsprogramm.dto.PositionsTrefferDto(11L,
+              "Flachstahl 50x5 · S235JR · Charge 123456", 2)));
+
+      mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", "Flachstahl")
+              .principal(angemeldet()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$[0].dokumentId").value(11))
+          .andExpect(jsonPath("$[0].trefferText").value("Flachstahl 50x5 · S235JR · Charge 123456"))
+          .andExpect(jsonPath("$[0].weitereTreffer").value(2));
+    }
+
+    @Test
+    @DisplayName("Mit Token: Suche mit den Rechten des Mitarbeiters")
+    void mitTokenRechteDesMitarbeiters() throws Exception {
+      when(lieferantenRepository.existsById(5L)).thenReturn(true);
+      var typen = java.util.EnumSet.of(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN);
+      when(lieferantDokumentZugriffService.sichtbareTypen(eq("tok"), any())).thenReturn(Optional.of(typen));
+      when(dokumentSucheService.suchePositionen("123456", 5L, typen, null, null)).thenReturn(java.util.Map.of());
+
+      mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", "123456").param("token", "tok"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$").isEmpty());
+      verify(dokumentSucheService).suchePositionen("123456", 5L, typen, null, null);
+    }
+
+    @Test
+    @DisplayName("Unbekannter Lieferant (auch 0, negativ, Long.MAX_VALUE) liefert 404")
+    void unbekannterLieferant() throws Exception {
+      for (String id : List.of("0", "-1", String.valueOf(Long.MAX_VALUE))) {
+        mockMvc.perform(get("/api/lieferanten/" + id + "/dokumente/positionssuche").param("q", "Flachstahl")
+                .principal(angemeldet()))
+            .andExpect(status().isNotFound());
+      }
+      verifyNoInteractions(dokumentSucheService);
+    }
+
+    @Test
+    @DisplayName("SQL-Injection, XSS und Überlänge werden als normaler Suchtext durchgereicht")
+    void boeseEingabenSindNurText() throws Exception {
+      when(lieferantenRepository.existsById(5L)).thenReturn(true);
+      when(dokumentSucheService.suchePositionen(org.mockito.ArgumentMatchers.anyString(), eq(5L),
+          any(), any(), any())).thenReturn(java.util.Map.of());
+
+      for (String q : List.of("'; DROP TABLE x; --", "<script>alert(1)</script>", "a".repeat(10_001))) {
+        mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", q).principal(angemeldet()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isEmpty());
+      }
+    }
+
+    @Test
+    @DisplayName("Ohne Suchbegriff: 200 mit leerer Liste")
+    void ohneSuchbegriff() throws Exception {
+      when(lieferantenRepository.existsById(5L)).thenReturn(true);
+      when(dokumentSucheService.suchePositionen(org.mockito.ArgumentMatchers.isNull(), eq(5L),
+          any(), any(), any())).thenReturn(java.util.Map.of());
+
+      mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").principal(angemeldet()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$").isEmpty());
     }
   }
 }

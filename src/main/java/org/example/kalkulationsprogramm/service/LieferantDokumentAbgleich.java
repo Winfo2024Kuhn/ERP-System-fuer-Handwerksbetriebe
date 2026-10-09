@@ -18,9 +18,11 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.example.kalkulationsprogramm.domain.AusgelesenePosition;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.PositionsSuchtext;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -58,6 +60,13 @@ import lombok.extern.slf4j.Slf4j;
  *       angehängte Rechnung lässt eine Bestellung als erledigt erscheinen.
  *       Solche Paare zeigt die Bestellübersicht nur als Vorschlag.</li>
  * </ul>
+ *
+ * <p><b>Werkstoffzeugnisse</b> hängen am Lieferschein (oder an der AB, solange
+ * kein Lieferschein da ist). Sicher sind sie zusätzlich über eine gleiche
+ * Charge. Als Hinweis zählt vor allem der zeitliche Abstand: Maßgeblich ist der
+ * kleinere Abstand von Zeugnisdatum oder Eingangsdatum zum Lieferschein – das
+ * Datum auf dem Zeugnis ist oft das Prüfdatum im Werk und Monate alt, der
+ * Eingang liegt dagegen dicht an der Lieferung. Nähe allein verknüpft nie.
  *
  * <p>Von Hand gelöste Paare (siehe {@link Merkmalspeicher#sperre}) verknüpft
  * der Abgleich nie wieder.
@@ -105,6 +114,20 @@ public class LieferantDokumentAbgleich {
      */
     static final int SCHWELLE_REVISION = 80;
     static final int PUNKTE_NUMMERNSTAMM = 40;
+
+    /** Werkstoffzeugnis: gleicher Werkstoff und gleiche Abmessung in einer Position. */
+    static final int PUNKTE_WERKSTOFF_ABMESSUNG = 30;
+    /** Werkstoffzeugnis: Punkte für den Abstand zum Lieferschein (nur mit inhaltlichem Treffer). */
+    static final int PUNKTE_ZEUGNIS_BIS_3_TAGE = 30;
+    static final int PUNKTE_ZEUGNIS_BIS_14_TAGE = 20;
+    static final int PUNKTE_ZEUGNIS_BIS_30_TAGE = 10;
+    /**
+     * Werkstoffzeugnis: Schwelle für einen Hinweis-Treffer. Die Kommission allein (40)
+     * reicht nicht – auf einem Bauvorhaben gibt es meist mehrere Lieferscheine.
+     */
+    static final int SCHWELLE_ZEUGNIS = 60;
+    /** Weiter als so viele Tage vom Lieferschein entfernt gibt es für ein Zeugnis keinen Hinweis. */
+    static final int TAGE_ZEUGNIS_MAX = 60;
 
     /**
      * Revisions-Endung einer Belegnummer: "AN-4711-2", "AN 4711 Rev. 3",
@@ -158,6 +181,9 @@ public class LieferantDokumentAbgleich {
             case RECHNUNG -> List.of(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, LieferantDokumentTyp.LIEFERSCHEIN);
             case GUTSCHRIFT -> List.of(LieferantDokumentTyp.RECHNUNG);
             case LIEFERSCHEIN -> List.of(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            // Zeugnis -> Lieferschein; AB nur, solange der Lieferschein noch fehlt
+            case WERKSTOFFZEUGNIS -> List.of(LieferantDokumentTyp.LIEFERSCHEIN,
+                    LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
             case AUFTRAGSBESTAETIGUNG -> List.of(LieferantDokumentTyp.ANGEBOT);
             // Geändertes Angebot -> ursprüngliches Angebot
             case ANGEBOT -> List.of(LieferantDokumentTyp.ANGEBOT);
@@ -177,9 +203,10 @@ public class LieferantDokumentAbgleich {
             case ANGEBOT -> 0;
             case AUFTRAGSBESTAETIGUNG -> 1;
             case LIEFERSCHEIN -> 2;
-            case RECHNUNG -> 3;
-            case GUTSCHRIFT -> 4;
-            default -> 5;
+            case WERKSTOFFZEUGNIS -> 3;
+            case RECHNUNG -> 4;
+            case GUTSCHRIFT -> 5;
+            default -> 6;
         };
     }
 
@@ -297,6 +324,11 @@ public class LieferantDokumentAbgleich {
                 continue;
             }
             Merkmale m = merkmale(d.getTyp(), d.getGeschaeftsdaten(), speicher);
+            // Zeugnisse sind keine Bestellbelege; ihr Datum (Prüfdatum im Werk) würde
+            // die Spannen nur verzerren.
+            if (m.typ() == LieferantDokumentTyp.WERKSTOFFZEUGNIS) {
+                continue;
+            }
             if (istBestellDokument(m.typ())) {
                 m.tokens().keySet().forEach(n -> bestellHaeufigkeit.merge(n, 1, Integer::sum));
             }
@@ -350,7 +382,7 @@ public class LieferantDokumentAbgleich {
             return Ergebnis.LEER;
         }
 
-        Merkmale ich = merkmale(dokument.getTyp(), geschaeftsdaten, speicher);
+        Merkmale ich = mitEingang(merkmale(dokument.getTyp(), geschaeftsdaten, speicher), dokument);
         Streuung streuung = streuung(kandidaten, speicher);
         List<Kandidat> bewertbar = new ArrayList<>();
         for (LieferantDokument kandidat : kandidaten) {
@@ -385,7 +417,7 @@ public class LieferantDokumentAbgleich {
             Sicherheit sicherheit = sicherheit(ich, k.merkmale(), bestellnummerTrennscharf && !revision, streuung);
             if (sicherheit.punkte() >= SCHWELLE_SICHER) {
                 sicher.add(k.dokument());
-                if (istRechnungZuBestellung(ich, k.merkmale())) {
+                if (nutztGemeinsameNummer(ich, k.merkmale())) {
                     nummernTreffer.add(new SichererTreffer(k.dokument(), sicherheit.ueberGemeinsameNummer(),
                             spezifitaet(ich, k.merkmale(), streuung)));
                 }
@@ -396,14 +428,16 @@ public class LieferantDokumentAbgleich {
             if (nurSicher) {
                 continue;
             }
+            // Ein Zeugnis hängt per Hinweis nur am Lieferschein – an der AB nur über
+            // einen sicheren Bezug (z. B. die genannte Auftragsnummer).
+            if (istZeugnis(ich) && k.merkmale().typ() != LieferantDokumentTyp.LIEFERSCHEIN) {
+                continue;
+            }
             int hinweisPunkte = hinweisPunkte(ich, k.merkmale());
             if (revision && gleicherNummernstamm(ich, k.merkmale())) {
                 hinweisPunkte += PUNKTE_NUMMERNSTAMM;
             }
-            int schwelle = revision ? SCHWELLE_REVISION
-                    : ich.datum() != null && k.merkmale().datum() != null
-                            ? SCHWELLE_HINWEIS
-                            : SCHWELLE_HINWEIS_OHNE_DATUM;
+            int schwelle = schwelle(ich, k.merkmale(), revision);
             if (hinweisPunkte >= schwelle) {
                 hinweise.add(new Bewertung(k.dokument(), hinweisPunkte));
             }
@@ -411,6 +445,11 @@ public class LieferantDokumentAbgleich {
 
         if (!sicher.isEmpty()) {
             sicher.removeAll(unspezifischeTreffer(nummernTreffer));
+            // Ein Zeugnis gehört zur Lieferung: Steht der Lieferschein sicher fest,
+            // hängt es nicht zusätzlich an der AB derselben Bestellung.
+            if (istZeugnis(ich) && sicher.stream().anyMatch(d -> d.getTyp() == LieferantDokumentTyp.LIEFERSCHEIN)) {
+                sicher.removeIf(d -> d.getTyp() == LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            }
             return new Ergebnis(List.copyOf(sicher), null);
         }
         if (hinweise.isEmpty()) {
@@ -490,7 +529,8 @@ public class LieferantDokumentAbgleich {
                 || nachfolger.getGeschaeftsdaten() == null || vorgaenger.getGeschaeftsdaten() == null) {
             return new Einschaetzung(0, false, List.of());
         }
-        Merkmale ich = merkmale(nachfolger.getTyp(), nachfolger.getGeschaeftsdaten(), speicher);
+        Merkmale ich = mitEingang(merkmale(nachfolger.getTyp(), nachfolger.getGeschaeftsdaten(), speicher),
+                nachfolger);
         Merkmale vor = merkmale(vorgaenger.getTyp(), vorgaenger.getGeschaeftsdaten(), speicher);
         List<String> gruende = new ArrayList<>();
 
@@ -531,12 +571,20 @@ public class LieferantDokumentAbgleich {
                     gruende.add("Gleiche Mengen");
                 }
             }
+            if (istZeugnis(ich) && gleicherWerkstoffUndMass(ich, vor)) {
+                gruende.add("Gleicher Werkstoff und gleiche Abmessung");
+            }
             if (sicherePunkte < SCHWELLE_SICHER && gleicheBestellnummer) {
                 // Nicht trennscharf, aber immer noch ein Hinweis
                 hinweisPunkte += PUNKTE_KOMMISSION;
             }
         }
-        if (ich.datum() != null && vor.datum() != null) {
+        Long zeugnisAbstand = istZeugnis(ich) ? zeugnisAbstand(ich, vor) : null;
+        if (zeugnisAbstand != null) {
+            gruende.add(!datumPasst ? "Liegt zeitlich zu weit auseinander"
+                    : zeugnisAbstand == 0 ? "Am selben Tag"
+                    : zeugnisAbstand == 1 ? "1 Tag Abstand" : zeugnisAbstand + " Tage Abstand");
+        } else if (ich.datum() != null && vor.datum() != null) {
             long tage = ChronoUnit.DAYS.between(vor.datum(), ich.datum());
             if (!datumPasst) {
                 gruende.add("Datum passt nicht zur Bestellung");
@@ -554,7 +602,7 @@ public class LieferantDokumentAbgleich {
                     + hinweisPunkte / HINWEISPUNKTE_JE_PROZENT_SICHER);
         } else if (hinweisPunkte > 0) {
             // Ohne Datum fehlt die zeitliche Grenze – der Import verlangt dann doppelt so viel.
-            int punkte = ich.datum() != null && vor.datum() != null ? hinweisPunkte : hinweisPunkte / 2;
+            int punkte = hatDatum(ich, vor) ? hinweisPunkte : hinweisPunkte / 2;
             quote = Math.min(QUOTE_HINWEIS_MAX, QUOTE_HINWEIS_SOCKEL + (int) (punkte * QUOTE_HINWEIS_FAKTOR));
         } else if (datumPasst && ich.datum() != null && vor.datum() != null) {
             // Nur zeitliche Nähe: kein Beleg, aber für die Sortierung hilfreich
@@ -713,7 +761,13 @@ public class LieferantDokumentAbgleich {
                 || nenntZiffernkern(vorgaenger.referenzen(), ich.nummer()))) {
             return new Sicherheit(PUNKTE_NUMMERNBEZUG, GRUND_BELEGNUMMER);
         }
-        if (istRechnungZuBestellung(ich, vorgaenger)) {
+        if (istZeugnisZuBestellung(ich, vorgaenger)) {
+            String charge = gemeinsameCharge(ich, vorgaenger);
+            if (charge != null) {
+                return new Sicherheit(PUNKTE_NUMMERNBEZUG, "Gleiche Charge " + charge);
+            }
+        }
+        if (nutztGemeinsameNummer(ich, vorgaenger)) {
             String grund = gemeinsameNummer(ich, vorgaenger, streuung);
             if (grund != null) {
                 return new Sicherheit(PUNKTE_GLEICHE_BESTELLNUMMER, grund, true);
@@ -731,10 +785,75 @@ public class LieferantDokumentAbgleich {
         return Sicherheit.KEINE;
     }
 
-    private static boolean istRechnungZuBestellung(Merkmale ich, Merkmale vorgaenger) {
-        return ich.typ() == LieferantDokumentTyp.RECHNUNG
-                && (vorgaenger.typ() == LieferantDokumentTyp.LIEFERSCHEIN
-                        || vorgaenger.typ() == LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+    /**
+     * Rechnung bzw. Werkstoffzeugnis zu Lieferschein/AB: Hier zählt auch eine
+     * gemeinsame trennscharfe Nummer (meist die Auftragsnummer) als sicher.
+     */
+    private static boolean nutztGemeinsameNummer(Merkmale ich, Merkmale vorgaenger) {
+        return (ich.typ() == LieferantDokumentTyp.RECHNUNG || istZeugnis(ich))
+                && istBestellDokument(vorgaenger.typ());
+    }
+
+    private static boolean istZeugnisZuBestellung(Merkmale ich, Merkmale vorgaenger) {
+        return istZeugnis(ich) && istBestellDokument(vorgaenger.typ());
+    }
+
+    private static boolean istZeugnis(Merkmale m) {
+        return m.typ() == LieferantDokumentTyp.WERKSTOFFZEUGNIS;
+    }
+
+    /** Eine Charge, die auf beiden Belegen steht – oder {@code null}. */
+    private static String gemeinsameCharge(Merkmale a, Merkmale b) {
+        return a.chargen().stream().filter(b.chargen()::contains).sorted().findFirst().orElse(null);
+    }
+
+    private static boolean gleicherWerkstoffUndMass(Merkmale a, Merkmale b) {
+        return a.werkstoffMasse().stream().anyMatch(b.werkstoffMasse()::contains);
+    }
+
+    /**
+     * Kleinerer Abstand in Tagen von Zeugnisdatum oder Eingangsdatum zum Datum des
+     * Lieferscheins/der AB; {@code null}, wenn kein Paar von Daten vorliegt.
+     */
+    private static Long zeugnisAbstand(Merkmale zeugnis, Merkmale vorgaenger) {
+        if (vorgaenger.datum() == null) {
+            return null;
+        }
+        Long abstand = null;
+        for (LocalDate datum : new LocalDate[] { zeugnis.datum(), zeugnis.eingang() }) {
+            if (datum != null) {
+                long tage = Math.abs(ChronoUnit.DAYS.between(vorgaenger.datum(), datum));
+                abstand = abstand == null ? tage : Math.min(abstand, tage);
+            }
+        }
+        return abstand;
+    }
+
+    /** Punkte für die zeitliche Nähe eines Zeugnisses zum Lieferschein. */
+    static int zeugnisZeitPunkte(long tage) {
+        if (tage <= 3) {
+            return PUNKTE_ZEUGNIS_BIS_3_TAGE;
+        }
+        if (tage <= 14) {
+            return PUNKTE_ZEUGNIS_BIS_14_TAGE;
+        }
+        return tage <= 30 ? PUNKTE_ZEUGNIS_BIS_30_TAGE : 0;
+    }
+
+    /** Liegen für das Paar Daten vor, mit denen sich der Abstand prüfen lässt? */
+    private static boolean hatDatum(Merkmale ich, Merkmale vorgaenger) {
+        return istZeugnis(ich) ? zeugnisAbstand(ich, vorgaenger) != null
+                : ich.datum() != null && vorgaenger.datum() != null;
+    }
+
+    private static int schwelle(Merkmale ich, Merkmale vorgaenger, boolean revision) {
+        if (revision) {
+            return SCHWELLE_REVISION;
+        }
+        if (!hatDatum(ich, vorgaenger)) {
+            return SCHWELLE_HINWEIS_OHNE_DATUM;
+        }
+        return istZeugnis(ich) ? SCHWELLE_ZEUGNIS : SCHWELLE_HINWEIS;
     }
 
     /**
@@ -751,14 +870,21 @@ public class LieferantDokumentAbgleich {
         for (Map.Entry<String, NummernToken> eintrag : rechnung.tokens().entrySet()) {
             if (trennscharf(eintrag, vorgaenger, rechnung, streuung)) {
                 return grund(eintrag.getKey(), eintrag.getValue(), vorgaenger.tokens().get(eintrag.getKey()),
-                        vorgaenger.typ());
+                        rechnung.typ(), vorgaenger.typ());
             }
         }
         return null;
     }
 
-    /** Rechnung zwischen 10 Tage vor und 150 Tage nach dem Lieferschein/der AB. */
+    /**
+     * Rechnung zwischen 10 Tage vor und 150 Tage nach dem Lieferschein/der AB;
+     * Werkstoffzeugnis höchstens {@link #TAGE_ZEUGNIS_MAX} Tage entfernt.
+     */
     private static boolean datumImRechnungsfenster(Merkmale rechnung, Merkmale vorgaenger) {
+        if (istZeugnis(rechnung)) {
+            Long abstand = zeugnisAbstand(rechnung, vorgaenger);
+            return abstand != null && abstand <= TAGE_ZEUGNIS_MAX && !rechnung.tokens().isEmpty();
+        }
         if (rechnung.datum() == null || vorgaenger.datum() == null || rechnung.tokens().isEmpty()) {
             return false;
         }
@@ -770,18 +896,21 @@ public class LieferantDokumentAbgleich {
     private static boolean trennscharf(Map.Entry<String, NummernToken> eintrag, Merkmale vorgaenger,
             Merkmale rechnung, Streuung streuung) {
         NummernToken andere = vorgaenger.tokens().get(eintrag.getKey());
+        // Ein Zeugnisdatum ist oft das Prüfdatum im Werk – maßgeblich ist dann die Lieferung.
+        LocalDate datum = istZeugnis(rechnung) ? vorgaenger.datum() : rechnung.datum();
         return andere != null && eintrag.getValue().passtZu(andere)
-                && streuung.tage(eintrag.getKey(), rechnung.datum(), vorgaenger.datum()) <= TAGE_STREUUNG_MAX;
+                && streuung.tage(eintrag.getKey(), datum, vorgaenger.datum()) <= TAGE_STREUUNG_MAX;
     }
 
     private static String grund(String nummer, NummernToken rechnung, NummernToken vorgaenger,
-            LieferantDokumentTyp vorgaengerTyp) {
+            LieferantDokumentTyp eigenerTyp, LieferantDokumentTyp vorgaengerTyp) {
         if (rechnung.felder().contains(Feld.BESTELLNUMMER) && vorgaenger.felder().contains(Feld.BESTELLNUMMER)) {
             return GRUND_BESTELLNUMMER + " " + nummer;
         }
         if (vorgaenger.felder().contains(Feld.BELEGNUMMER)) {
-            return (vorgaengerTyp == LieferantDokumentTyp.LIEFERSCHEIN ? "Rechnung nennt Lieferschein "
-                    : "Rechnung nennt Auftragsbestätigung ") + nummer;
+            String wer = eigenerTyp == LieferantDokumentTyp.WERKSTOFFZEUGNIS ? "Zeugnis" : "Rechnung";
+            return wer + (vorgaengerTyp == LieferantDokumentTyp.LIEFERSCHEIN ? " nennt Lieferschein "
+                    : " nennt Auftragsbestätigung ") + nummer;
         }
         return "Gleiche Auftragsnummer " + nummer;
     }
@@ -802,6 +931,16 @@ public class LieferantDokumentAbgleich {
             punkte += PUNKTE_BETRAG;
         }
         punkte += positionsPunkte(ich, vorgaenger, positionen);
+        if (istZeugnis(ich)) {
+            if (gleicherWerkstoffUndMass(ich, vorgaenger)) {
+                punkte += PUNKTE_WERKSTOFF_ABMESSUNG;
+            }
+            // Nähe zählt nur zusammen mit einem inhaltlichen Treffer.
+            Long abstand = zeugnisAbstand(ich, vorgaenger);
+            if (punkte > 0 && abstand != null) {
+                punkte += zeugnisZeitPunkte(abstand);
+            }
+        }
         return punkte;
     }
 
@@ -811,6 +950,10 @@ public class LieferantDokumentAbgleich {
      * Angebot und Bestellung vergehen oft Monate.
      */
     private boolean datumPasst(Merkmale ich, Merkmale vorgaenger) {
+        if (istZeugnis(ich)) {
+            Long abstand = zeugnisAbstand(ich, vorgaenger);
+            return abstand == null || abstand <= TAGE_ZEUGNIS_MAX;
+        }
         if (ich.datum() == null || vorgaenger.datum() == null) {
             return true;
         }
@@ -881,8 +1024,11 @@ public class LieferantDokumentAbgleich {
         // Gedeckelt wird vor dem Zeitbonus – sonst lägen ein naher und ein ferner
         // Beleg mit gleicher Liste gleichauf.
         punkte = Math.min(punkte, MAX_POSITIONSPUNKTE - PUNKTE_POSITIONEN_ZEITNAH);
-        if (ich.datum() != null && vorgaenger.datum() != null
-                && Math.abs(ChronoUnit.DAYS.between(vorgaenger.datum(), ich.datum())) <= TAGE_POSITIONEN_ZEITNAH) {
+        Long abstand = istZeugnis(ich) ? zeugnisAbstand(ich, vorgaenger)
+                : ich.datum() != null && vorgaenger.datum() != null
+                        ? Math.abs(ChronoUnit.DAYS.between(vorgaenger.datum(), ich.datum()))
+                        : null;
+        if (abstand != null && abstand <= TAGE_POSITIONEN_ZEITNAH) {
             punkte += PUNKTE_POSITIONEN_ZEITNAH;
         }
         return punkte;
@@ -929,6 +1075,8 @@ public class LieferantDokumentAbgleich {
 
         String kommission = null;
         List<PositionsVergleich.Merkmal> positionen = List.of();
+        Set<String> chargen = Set.of();
+        Set<String> werkstoffMasse = Set.of();
         JsonNode json = leseKiAntwort(gd.getAiRawJson());
         if (json != null) {
             JsonNode weitere = json.get("weitereReferenzen");
@@ -945,15 +1093,75 @@ public class LieferantDokumentAbgleich {
                 }
             }
             kommission = normalisiereKommission(text(json, "kommission"));
-            positionen = PositionsVergleich.merkmale(LieferantDokumentPositionService.ausKiAntwort(json));
+            List<AusgelesenePosition> ausgelesen = LieferantDokumentPositionService.ausKiAntwort(json);
+            positionen = PositionsVergleich.merkmale(ausgelesen);
+            chargen = chargen(ausgelesen);
+            werkstoffMasse = werkstoffMasse(ausgelesen);
         }
         if (nummer != null) {
             referenzen.remove(nummer);
         }
 
+        LocalDate eingang = gd.getDokument() != null ? eingangsdatum(gd.getDokument()) : null;
         return new Merkmale(typ, nummer, zerlegeNummer(gd.getDokumentNummer()), referenzen, bestellnummer,
                 kommission, gd.getDokumentDatum(), gd.getBetragNetto(), gd.getBetragBrutto(), positionen,
-                tokens, bestellnummerMitNummer);
+                tokens, bestellnummerMitNummer, eingang, chargen, werkstoffMasse);
+    }
+
+    private static LocalDate eingangsdatum(LieferantDokument dokument) {
+        return dokument.getUploadDatum() != null ? dokument.getUploadDatum().toLocalDate() : null;
+    }
+
+    /**
+     * Bei der Erstanalyse hängen die Geschäftsdaten noch nicht am Dokument – das
+     * Eingangsdatum kommt dann vom Dokument selbst.
+     */
+    private static Merkmale mitEingang(Merkmale m, LieferantDokument dokument) {
+        if (m.eingang() != null || dokument == null || eingangsdatum(dokument) == null) {
+            return m;
+        }
+        return new Merkmale(m.typ(), m.nummer(), m.nummernstamm(), m.referenzen(), m.bestellnummer(),
+                m.kommission(), m.datum(), m.netto(), m.brutto(), m.positionen(), m.tokens(),
+                m.bestellnummerMitNummer(), eingangsdatum(dokument), m.chargen(), m.werkstoffMasse());
+    }
+
+    private static Set<String> chargen(List<AusgelesenePosition> positionen) {
+        if (positionen == null) {
+            return Set.of();
+        }
+        Set<String> chargen = new HashSet<>();
+        for (AusgelesenePosition p : positionen) {
+            String charge = p == null ? null : PositionsSuchtext.charge(p.charge());
+            if (charge != null) {
+                chargen.add(charge);
+            }
+        }
+        return chargen;
+    }
+
+    /**
+     * „Werkstoff|Abmessung“ je Position. Der Lieferzustand hinter „+“ zählt nicht
+     * („S235JR+AR“ = „S235JR“), Leerraum auch nicht („50 x 5“ = „50x5“).
+     */
+    private static Set<String> werkstoffMasse(List<AusgelesenePosition> positionen) {
+        if (positionen == null) {
+            return Set.of();
+        }
+        Set<String> ergebnis = new HashSet<>();
+        for (AusgelesenePosition p : positionen) {
+            if (p == null) {
+                continue;
+            }
+            String werkstoff = PositionsSuchtext.normalisiere(p.werkstoff());
+            String mass = PositionsSuchtext.normalisiere(p.abmessung());
+            if (werkstoff == null || mass == null) {
+                continue;
+            }
+            int plus = werkstoff.indexOf('+');
+            String kern = (plus > 0 ? werkstoff.substring(0, plus) : werkstoff).replace(" ", "");
+            ergebnis.add(kern + "|" + mass.replace(" ", ""));
+        }
+        return ergebnis;
     }
 
     /** Woher eine Nummer stammt – nur für die Begründung. */
@@ -1127,7 +1335,7 @@ public class LieferantDokumentAbgleich {
             Set<String> referenzen,
             String bestellnummer, String kommission, LocalDate datum, BigDecimal netto, BigDecimal brutto,
             List<PositionsVergleich.Merkmal> positionen, Map<String, NummernToken> tokens,
-            boolean bestellnummerMitNummer) {
+            boolean bestellnummerMitNummer, LocalDate eingang, Set<String> chargen, Set<String> werkstoffMasse) {
     }
 
     private record Kandidat(LieferantDokument dokument, Merkmale merkmale) {

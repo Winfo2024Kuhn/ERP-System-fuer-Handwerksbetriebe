@@ -9,6 +9,7 @@ import {
     formatMenge,
     formatProzent,
     istWare,
+    nachPositionenAufteilbar,
     offeneWarenpositionen,
     zieleAusPositionen,
     zielAusSchluessel,
@@ -33,6 +34,28 @@ const position = (id: number, art: DokumentPosition['positionsArt'], ziel: Parti
     kostenstelleId: null,
     kostenstelleName: null,
     ...ziel,
+});
+
+describe('positionen – Modus „Nach Positionen“', () => {
+    const uebersicht = (dokumentTyp: string | null, auslesbar: boolean, positionen: DokumentPosition[]) => ({ dokumentTyp, auslesbar, positionen });
+
+    it('ist möglich, wenn Positionen da oder auslesbar sind', () => {
+        expect(nachPositionenAufteilbar(uebersicht('RECHNUNG', true, []))).toBe(true);
+        expect(nachPositionenAufteilbar(uebersicht('RECHNUNG', false, [position(1, 'WARE')]))).toBe(true);
+        expect(nachPositionenAufteilbar(uebersicht(null, true, []))).toBe(true);
+    });
+
+    it('ist ohne Übersicht oder ohne Positionen nicht möglich', () => {
+        expect(nachPositionenAufteilbar(null)).toBe(false);
+        expect(nachPositionenAufteilbar(undefined)).toBe(false);
+        expect(nachPositionenAufteilbar(uebersicht('RECHNUNG', false, []))).toBe(false);
+        expect(nachPositionenAufteilbar({ dokumentTyp: 'RECHNUNG', auslesbar: false, positionen: undefined as unknown as DokumentPosition[] })).toBe(false);
+    });
+
+    it('wird für ein Werkstoffzeugnis nie angeboten – es hat keine Preise', () => {
+        expect(nachPositionenAufteilbar(uebersicht('WERKSTOFFZEUGNIS', true, []))).toBe(false);
+        expect(nachPositionenAufteilbar(uebersicht('WERKSTOFFZEUGNIS', true, [position(1, 'WARE')]))).toBe(false);
+    });
 });
 
 describe('positionen – Ziel-Schlüssel', () => {

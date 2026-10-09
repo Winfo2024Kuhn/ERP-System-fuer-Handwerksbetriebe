@@ -91,6 +91,8 @@ class LieferantDokumentRechteSecurityTest {
     @MockBean
     private LieferantDokumentService dokumentService;
     @MockBean
+    private org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
+    @MockBean
     private LieferantenRepository lieferantenRepository;
     @MockBean
     private LieferantenDetailService lieferantenDetailService;
@@ -342,6 +344,88 @@ class LieferantDokumentRechteSecurityTest {
     void listeUngueltigeIds(long id) throws Exception {
         mockMvc.perform(get("/api/lieferanten/" + id + "/dokumente").with(sessionAls(FrontendUserRole.ADMIN)))
                 .andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = FrontendUserRole.class, names = { "USER", "ADMIN" })
+    @DisplayName("Positionssuche nutzt auch ohne Token die Rechte der PC-Sitzung")
+    void positionssucheNutztSessionRechte(FrontendUserRole rolle) throws Exception {
+        given(lieferantenRepository.existsById(7L)).willReturn(true);
+        given(belegService.findCaller(any(), any())).willReturn(mitarbeiter(5L));
+        mitarbeiterDarfSehen(5L, LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+        Set<LieferantDokumentTyp> erlaubt = rolle == FrontendUserRole.ADMIN
+                ? EnumSet.allOf(LieferantDokumentTyp.class) : EnumSet.of(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+        given(dokumentSucheService.suchePositionen("S235JR", 7L, erlaubt, null, null))
+                .willReturn(java.util.Map.of(9L, new org.example.kalkulationsprogramm.dto.PositionsTrefferDto(
+                        9L, "Flachstahl · S235JR", 0)));
+
+        mockMvc.perform(get("/api/lieferanten/7/dokumente/positionssuche").param("q", "S235JR")
+                        .with(sessionAls(rolle)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].dokumentId").value(9));
+        verify(dokumentSucheService).suchePositionen("S235JR", 7L, erlaubt, null, null);
+    }
+
+    @Test
+    @DisplayName("Positionssuche mit Mobile-Token verwendet dessen Dokumentrechte")
+    void positionssucheNutztMobileRechte() throws Exception {
+        given(lieferantenRepository.existsById(7L)).willReturn(true);
+        given(belegService.findByToken("token-max")).willReturn(mitarbeiter(8L));
+        mitarbeiterDarfSehen(8L, LieferantDokumentTyp.LIEFERSCHEIN);
+
+        mockMvc.perform(get("/api/lieferanten/7/dokumente/positionssuche").param("q", "S235JR")
+                        .param("token", "token-max"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+        verify(dokumentSucheService).suchePositionen("S235JR", 7L,
+                EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN), null, null);
+    }
+
+    @Test
+    @DisplayName("Positionssuche ohne Mitarbeiter-Zuordnung bekommt keine Dokumenttypen")
+    void positionssucheOhneMitarbeiter() throws Exception {
+        given(lieferantenRepository.existsById(7L)).willReturn(true);
+
+        mockMvc.perform(get("/api/lieferanten/7/dokumente/positionssuche").param("q", "S235JR")
+                        .with(sessionAls(FrontendUserRole.USER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+        verify(dokumentSucheService).suchePositionen("S235JR", 7L,
+                EnumSet.noneOf(LieferantDokumentTyp.class), null, null);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "", "ungueltig" })
+    @DisplayName("Anonyme Positionssuche wird vor dem Datenzugriff abgewiesen")
+    void positionssucheAnonym(String token) throws Exception {
+        mockMvc.perform(get("/api/lieferanten/7/dokumente/positionssuche").param("q", "S235JR")
+                        .param("token", token))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(dokumentSucheService, lieferantenRepository);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "", "WERKSTOFFZEUGNIS", "RECHNUNG" })
+    @DisplayName("Eingangssuche schneidet Typfilter mit den Dokumentrechten vor der Positionsabfrage")
+    void eingangssucheBegrenztPositionenAufRechte(String typ) throws Exception {
+        given(belegService.findCaller(any(), any())).willReturn(mitarbeiter(5L));
+        mitarbeiterDarfSehen(5L, LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+        given(lieferantGdRepo.findAllSortedByDatum()).willReturn(new java.util.ArrayList<>(List.of(
+                eingang(1L, LieferantDokumentTyp.WERKSTOFFZEUGNIS), eingang(2L, LieferantDokumentTyp.RECHNUNG))));
+        Set<LieferantDokumentTyp> erlaubt = "RECHNUNG".equals(typ)
+                ? EnumSet.noneOf(LieferantDokumentTyp.class) : EnumSet.of(LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+        given(dokumentSucheService.suchePositionen("S235JR", null, erlaubt, null, null))
+                .willReturn(erlaubt.isEmpty() ? java.util.Map.of() : java.util.Map.of(1L,
+                        new org.example.kalkulationsprogramm.dto.PositionsTrefferDto(1L, "S235JR", 0)));
+        var request = get("/api/dokumentuebersicht/eingang").param("search", "S235JR")
+                .with(sessionAls(FrontendUserRole.USER));
+        if (!typ.isEmpty()) request.param("typ", typ);
+
+        mockMvc.perform(request)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(erlaubt.isEmpty() ? 0 : 1));
+        verify(dokumentSucheService).suchePositionen("S235JR", null, erlaubt, null, null);
     }
 
     // ------------------------------------------------- GET /api/lieferanten/{id} (Detail)

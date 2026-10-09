@@ -100,6 +100,9 @@ describe('fortschrittsStufe', () => {
     it('zählt den weitesten Schritt', () => {
         expect(fortschrittsStufe(kette([]))).toBe(0);
         expect(fortschrittsStufe(kette([dok({ typ: 'SONSTIG' })]))).toBe(0);
+        // Ein Werkstoffzeugnis ist weder Lieferung noch Rechnung
+        expect(fortschrittsStufe(kette([dok({ typ: 'WERKSTOFFZEUGNIS' })]))).toBe(0);
+        expect(fortschrittsStufe(kette([dok({ typ: 'LIEFERSCHEIN' }), dok({ typ: 'WERKSTOFFZEUGNIS' })]))).toBe(3);
         expect(fortschrittsStufe(kette([dok({ typ: 'ANGEBOT' })]))).toBe(1);
         expect(fortschrittsStufe(kette([dok({ typ: 'ANGEBOT' }), dok({ typ: 'AUFTRAGSBESTAETIGUNG' })]))).toBe(2);
         expect(fortschrittsStufe(kette([dok({ typ: 'LIEFERSCHEIN' })]))).toBe(3);
@@ -135,6 +138,7 @@ describe('kettenBetrag', () => {
         ]);
         expect(kettenBetrag(k)).toEqual({ betrag: 50, typ: 'ANGEBOT', anzahl: 1 });
         expect(kettenBetrag(kette([dok({ typ: 'SONSTIG', betragBrutto: 5 })]))).toBeNull();
+        expect(kettenBetrag(kette([dok({ typ: 'WERKSTOFFZEUGNIS', betragBrutto: 5 })]))).toBeNull();
     });
 });
 
@@ -172,6 +176,7 @@ describe('passtZurSuche', () => {
 describe('TYP_LABELS', () => {
     it('hat für jeden Typ eine Beschriftung', () => {
         expect(TYP_LABELS.AUFTRAGSBESTAETIGUNG).toBe('AB');
-        expect(Object.keys(TYP_LABELS)).toHaveLength(6);
+        expect(TYP_LABELS.WERKSTOFFZEUGNIS).toBe('Werkstoffzeugnis');
+        expect(Object.keys(TYP_LABELS)).toHaveLength(7);
     });
 });

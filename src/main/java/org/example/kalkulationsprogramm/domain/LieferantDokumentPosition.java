@@ -12,6 +12,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -20,7 +22,7 @@ import lombok.ToString;
 
 /**
  * Eine Position auf einem Lieferanten-Dokument (Angebot, AB, Lieferschein,
- * Rechnung, Gutschrift).
+ * Rechnung, Gutschrift, Werkstoffzeugnis).
  *
  * <p>Ausgelesen von der KI-Dokumentanalyse oder aus ZUGFeRD/XRechnung. Bei der
  * Projektaufteilung nach Positionen hält {@link #projekt} bzw.
@@ -57,6 +59,22 @@ public class LieferantDokumentPosition {
     @Column(nullable = false, length = 500)
     private String bezeichnung;
 
+    /** Werkstoff/Güte, z. B. „S235JR+AR“ – vor allem auf Werkstoffzeugnissen. */
+    @Column(length = 100)
+    private String werkstoff;
+
+    /** Charge bzw. Schmelze. */
+    @Column(length = 100)
+    private String charge;
+
+    /** Abmessung, z. B. „50x5“, wenn getrennt von der Bezeichnung aufgedruckt. */
+    @Column(length = 100)
+    private String abmessung;
+
+    /** Normalisierter Text für die Positionssuche – siehe {@link PositionsSuchtext}. */
+    @Column(length = PositionsSuchtext.MAX_LAENGE)
+    private String suchtext;
+
     @Column(precision = 15, scale = 3)
     private BigDecimal menge;
 
@@ -80,4 +98,10 @@ public class LieferantDokumentPosition {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "kostenstelle_id")
     private Kostenstelle kostenstelle;
+
+    @PrePersist
+    @PreUpdate
+    void baueSuchtext() {
+        suchtext = PositionsSuchtext.bilde(bezeichnung, externeArtikelnummer, werkstoff, charge, abmessung);
+    }
 }

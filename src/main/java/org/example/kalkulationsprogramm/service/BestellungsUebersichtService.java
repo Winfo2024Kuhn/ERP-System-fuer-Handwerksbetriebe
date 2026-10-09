@@ -443,8 +443,10 @@ public class BestellungsUebersichtService {
             case ANGEBOT -> 0;
             case AUFTRAGSBESTAETIGUNG -> 1;
             case LIEFERSCHEIN -> 2;
-            case RECHNUNG -> 3;
-            case GUTSCHRIFT -> 4;
+            // Das Zeugnis gehört zur Lieferung und steht direkt dahinter.
+            case WERKSTOFFZEUGNIS -> 3;
+            case RECHNUNG -> 4;
+            case GUTSCHRIFT -> 5;
             case SONSTIG -> 99;
             case BELEG -> 100; // gehört nicht zur Bestellkette, wird hier nicht erwartet
         };

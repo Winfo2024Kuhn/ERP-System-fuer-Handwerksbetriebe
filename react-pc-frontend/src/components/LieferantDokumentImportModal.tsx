@@ -53,6 +53,7 @@ const DOKUMENT_TYP_OPTIONS = [
     { value: 'ANGEBOT', label: 'Angebot' },
     { value: 'AUFTRAGSBESTAETIGUNG', label: 'Auftragsbestätigung' },
     { value: 'LIEFERSCHEIN', label: 'Lieferschein' },
+    { value: 'WERKSTOFFZEUGNIS', label: 'Werkstoffzeugnis' },
     { value: 'GUTSCHRIFT', label: 'Gutschrift' },
     { value: 'SONSTIG', label: 'Sonstiges' },
 ];
