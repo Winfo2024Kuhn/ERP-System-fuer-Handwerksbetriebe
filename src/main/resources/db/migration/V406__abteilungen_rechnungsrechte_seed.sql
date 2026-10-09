@@ -37,6 +37,12 @@
 -- es unter Einstellungen -> Berechtigungen wieder abhaken. (Wer das spaeter anders will, muss den
 -- UPDATE-Schritt unten einschraenken oder entfernen.)
 --
+-- Hinweis zu "nur Sehen": In den Offenen Posten sieht eine Abteilung mit NUR dem Flag
+-- darf_rechnungen_sehen weiterhin nur GENEHMIGTE Rechnungen. Das Dokumentrecht (darf_sehen fuer
+-- RECHNUNG/GUTSCHRIFT) unterscheidet nicht nach Genehmigung: In der Lieferanten-Detailansicht,
+-- bei Mail-Anhaengen und im ZIP-Download sehen diese Abteilungen danach ALLE Rechnungsdokumente,
+-- auch noch nicht genehmigte.
+--
 -- WAS NICHT PASSIERT
 -- Es wird nichts geloescht, und darf_scannen wird nie veraendert. Abteilungen ohne eines der
 -- beiden Rechnungs-Flags bekommen nichts und behalten ihre Zeilen unveraendert (auch
