@@ -80,6 +80,8 @@ class LieferantenControllerTest {
   @MockBean
   private LieferantDokumentService lieferantDokumentService;
   @MockBean
+  private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
+  @MockBean
   private org.example.kalkulationsprogramm.service.BelegZuordnungService belegZuordnungService;
   @MockBean
   private MitarbeiterRepository mitarbeiterRepository;
@@ -108,6 +110,13 @@ class LieferantenControllerTest {
 
   @Autowired
   private LieferantenController controller;
+
+  /** Rechte-Logik ist in LieferantDokumentRechteSecurityTest abgedeckt; hier darf jeder alles sehen. */
+  @org.junit.jupiter.api.BeforeEach
+  void alleDokumenttypenSichtbar() {
+    when(lieferantDokumentZugriffService.sichtbareTypen(any(), any()))
+        .thenReturn(Optional.of(java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
+  }
 
   @Test
   @DisplayName("Freitext-Suche nach Telefonnummer liefert 200 und ruft Repository auf")
@@ -285,6 +294,7 @@ class LieferantenControllerTest {
     LieferantDokument dokument = new LieferantDokument();
     dokument.setId(dokumentId);
     dokument.setLieferant(lieferant);
+    dokument.setTyp(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
     return dokument;
   }
 

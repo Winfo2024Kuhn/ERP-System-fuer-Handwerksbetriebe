@@ -12,7 +12,10 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,6 +36,7 @@ public class DokumentUebersichtController {
 
     private final AusgangsGeschaeftsDokumentRepository ausgangsRepo;
     private final LieferantGeschaeftsdokumentRepository lieferantGdRepo;
+    private final LieferantDokumentZugriffService zugriffService;
 
     @GetMapping("/ausgang")
     public ResponseEntity<List<AusgangsDokumentUebersichtDto>> getAusgang(
@@ -97,7 +101,14 @@ public class DokumentUebersichtController {
             @RequestParam(required = false) LieferantDokumentTyp typ,
             @RequestParam(required = false) Long lieferantId,
             @RequestParam(required = false) Double betragMin,
-            @RequestParam(required = false) Double betragMax) {
+            @RequestParam(required = false) Double betragMax,
+            Authentication authentication) {
+
+        // Nur Dokumenttypen, die der Angemeldete laut Abteilungsrechten sehen darf (Admin: alle).
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
 
         List<LieferantGeschaeftsdokument> dokumente;
         if (year != null && month != null) {
@@ -109,6 +120,10 @@ public class DokumentUebersichtController {
         } else {
             dokumente = lieferantGdRepo.findAllSortedByDatum();
         }
+
+        dokumente = dokumente.stream()
+                .filter(d -> d.getDokument() != null && sichtbareTypen.get().contains(d.getDokument().getTyp()))
+                .collect(Collectors.toList());
 
         if (search != null && !search.isBlank()) {
             String q = search.toLowerCase();

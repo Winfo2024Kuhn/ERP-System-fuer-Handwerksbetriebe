@@ -78,6 +78,15 @@ async function stubbeLieferantApi(page: Page, acquireVerhalten: AcquireVerhalten
         if (pfad === '/api/lieferanten') {
             return json(route, { lieferanten: [], gesamt: 0 });
         }
+        // Die Detailseite lädt diese Bereiche separat. Unbeabsichtigte 404
+        // würden zusätzliche Toasts neben der gezielt getesteten Meldung erzeugen.
+        if (pfad === `/api/lieferanten/${LIEFERANT_ID}/statistik`) {
+            return json(route, { gesamtKosten: 0, bestellungAnzahl: 0, artikelAnzahl: 0, lieferzeit: 0 });
+        }
+        if (pfad === `/api/lieferanten/${LIEFERANT_ID}/email-verlauf`
+            || pfad === `/api/lieferanten/${LIEFERANT_ID}/notizen`) {
+            return json(route, []);
+        }
         return route.fulfill({ status: 404, body: '' });
     });
 
@@ -356,7 +365,10 @@ test.describe('Schwebende Meldungen bei offenem Dialog', () => {
 
     test('bei kleiner Fensterhöhe bleiben acht Meldungen begrenzt und verändern den offenen Entwurf nicht', async ({ page }, testInfo) => {
         await page.setViewportSize({ width: page.viewportSize()!.width, height: 540 });
-        await page.clock.install();
+        // install() allein lässt die Uhr weiterlaufen: Unter Last würden die
+        // ersten Toasts verschwinden, während die acht Meldungen aufgebaut werden.
+        await page.clock.install({ time: new Date('2026-01-05T10:00:00Z') });
+        await page.clock.pauseAt(new Date('2026-01-05T10:00:01Z'));
         await stubbeLieferantApi(page, 'frei');
         await page.route(`**/api/lieferant-dokumente/${DOKUMENT_ID}`, route => route.fulfill({ status: 500, body: '' }));
         await oeffneDokumentModal(page);

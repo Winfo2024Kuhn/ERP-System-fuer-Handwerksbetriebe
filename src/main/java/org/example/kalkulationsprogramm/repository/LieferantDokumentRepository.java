@@ -25,6 +25,10 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
         @Query("SELECT COUNT(d) FROM LieferantDokument d WHERE d.lieferant.id = :lieferantId")
         long zaehleByLieferantId(@Param("lieferantId") Long lieferantId);
 
+        @Query("SELECT COUNT(d) FROM LieferantDokument d WHERE d.lieferant.id = :lieferantId AND d.typ IN :typen")
+        long zaehleByLieferantIdAndTypIn(@Param("lieferantId") Long lieferantId,
+                        @Param("typen") List<LieferantDokumentTyp> typen);
+
         @Query("SELECT d FROM LieferantDokument d "
                         + "LEFT JOIN FETCH d.geschaeftsdaten "
                         + "LEFT JOIN FETCH d.uploadedBy "

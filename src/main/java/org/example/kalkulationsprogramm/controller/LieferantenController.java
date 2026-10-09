@@ -49,6 +49,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -87,6 +88,7 @@ public class LieferantenController {
     private final LieferantenDetailService lieferantenDetailService;
     private final LieferantArtikelpreisService artikelpreisService;
     private final LieferantDokumentService dokumentService;
+    private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService dokumentZugriffService;
     private final org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     private final org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
@@ -209,7 +211,8 @@ public class LieferantenController {
     @PutMapping("/{id}")
     @Transactional
     public ResponseEntity<LieferantDetailDto> updateLieferant(@PathVariable Long id,
-            @Valid @RequestBody LieferantUpdateRequestDto request) {
+            @Valid @RequestBody LieferantUpdateRequestDto request,
+            Authentication authentication) {
         Lieferanten lieferant = lieferantenRepository.findById(id).orElse(null);
         if (lieferant == null) {
             return ResponseEntity.notFound().build();
@@ -253,6 +256,7 @@ public class LieferantenController {
         }
 
         LieferantDetailDto detail = lieferantenDetailService.loadDetails(id);
+        dokumentZugriffService.beschraenkeDokumente(detail, null, authentication);
         return ResponseEntity.ok(detail);
     }
 
@@ -262,13 +266,16 @@ public class LieferantenController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<LieferantDetailDto> getById(@PathVariable Long id,
-            @RequestParam(value = "nurStammdaten", defaultValue = "false") boolean nurStammdaten) {
+            @RequestParam(value = "nurStammdaten", defaultValue = "false") boolean nurStammdaten,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
         LieferantDetailDto detail = nurStammdaten
                 ? lieferantenDetailService.loadStammdaten(id)
                 : lieferantenDetailService.loadDetails(id);
         if (detail == null) {
             return ResponseEntity.notFound().build();
         }
+        dokumentZugriffService.beschraenkeDokumente(detail, token, authentication);
         return ResponseEntity.ok(detail);
     }
 
@@ -621,31 +628,25 @@ public class LieferantenController {
     // ==================== DOKUMENT ENDPOINTS ====================
 
     /**
-     * Lädt Dokumente eines Lieferanten.
-     * Token ist optional - wenn nicht vorhanden, werden alle Dokumente geladen.
+     * Lädt die Dokumente eines Lieferanten, beschränkt auf die Dokumenttypen, die der
+     * Aufrufer laut Abteilungsrechten sehen darf. Aufrufer ist ein Mitarbeiter-Token
+     * (Mobile) oder die Session (PC); beides fehlt -> 401.
      */
     @GetMapping("/{id}/dokumente")
     public ResponseEntity<List<LieferantDokumentDto.Response>> listDokumente(
             @PathVariable Long id,
             @RequestParam(value = "typ", required = false) LieferantDokumentTyp typ,
-            @RequestParam(value = "token", required = false) String token) {
-        // Prüfe ob Lieferant existiert
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
+        var sichtbareTypen = dokumentZugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         if (!lieferantenRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
-
-        // Wenn Token vorhanden, filtere nach Berechtigungen
-        if (StringUtils.hasText(token)) {
-            var mitarbeiter = mitarbeiterByToken(token);
-            if (mitarbeiter != null) {
-                var dokumente = dokumentService.getDokumenteFiltered(id, mitarbeiter.getId(), typ);
-                return ResponseEntity.ok(dokumente);
-            }
-        }
-
-        // Ohne Token: Alle Dokumente des Lieferanten laden
-        var dokumente = dokumentService.getDokumenteByLieferant(id, typ);
-        return ResponseEntity.ok(dokumente);
+        var dokumente = dokumentService.getDokumenteFiltered(id, sichtbareTypen.get(), typ);
+        return ResponseEntity.ok(dokumentZugriffService.beschraenkeDokumente(dokumente, sichtbareTypen.get()));
     }
 
     /**
@@ -875,13 +876,22 @@ public class LieferantenController {
 
     /**
      * Download eines Lieferanten-Dokuments (für manuell hochgeladene Dateien).
+     * Wie die Liste nur für Aufrufer, die den Dokumenttyp laut Abteilungsrechten sehen dürfen
+     * (Mobile: {@code ?token=}, PC: Session). Nicht sichtbare Dokumente antworten 404,
+     * damit ihre Existenz nicht verraten wird.
      */
     @GetMapping("/{lieferantId}/dokumente/{dokumentId}/download")
     public ResponseEntity<byte[]> downloadDokument(
             @PathVariable Long lieferantId,
-            @PathVariable Long dokumentId) {
+            @PathVariable Long dokumentId,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
+        var sichtbareTypen = dokumentZugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         var dokument = dokumentService.findById(dokumentId);
-        if (dokument == null) {
+        if (dokument == null || !sichtbareTypen.get().contains(dokument.getTyp())) {
             return ResponseEntity.notFound().build();
         }
         // Das Dokument muss zu genau diesem Lieferanten gehoeren. Ohne die Pruefung
