@@ -1108,4 +1108,101 @@ class LieferantDokumentAbgleichTest {
             assertThat(abgleich(rechnung, ls, altesZeugnis).sicher()).containsExactly(ls);
         }
     }
+
+    /** Lieferanten setzen ein Kürzel vor die Belegnummer ("RL 12 - 90445744/01"). */
+    @Nested
+    class KuerzelVorDerNummer {
+
+        private static final LocalDate LIEFERUNG = LocalDate.of(2026, 9, 23);
+
+        @Test
+        void zeugnisFindetLieferscheinMitKuerzel() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "RL 12 - 90445744/01", LIEFERUNG);
+            LieferantDokument zeugnis = dokument(LieferantDokumentTyp.WERKSTOFFZEUGNIS, null, LIEFERUNG.minusDays(1));
+            zeugnis.getGeschaeftsdaten().setReferenzNummer("90445744/01");
+
+            assertThat(abgleich(zeugnis, ls).sicher()).containsExactly(ls);
+        }
+
+        @Test
+        void referenzMitKuerzelFindetNummerOhneKuerzel() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "90445744/01", LIEFERUNG);
+            LieferantDokument zeugnis = dokument(LieferantDokumentTyp.WERKSTOFFZEUGNIS, null, LIEFERUNG);
+            zeugnis.getGeschaeftsdaten().setReferenzNummer("RL 12- 90445744/01");
+
+            assertThat(abgleich(zeugnis, ls).sicher()).containsExactly(ls);
+        }
+
+        @Test
+        void andereTeillieferungBleibtGetrennt() {
+            LieferantDokument ls1 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "RL 12 - 90445744/01", LIEFERUNG);
+            LieferantDokument ls3 = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "RL 12 - 90445744/03", LIEFERUNG);
+            LieferantDokument zeugnis = dokument(LieferantDokumentTyp.WERKSTOFFZEUGNIS, null, LIEFERUNG);
+            zeugnis.getGeschaeftsdaten().setReferenzNummer("90445744/01");
+
+            assertThat(abgleich(zeugnis, ls1, ls3).sicher()).containsExactly(ls1);
+        }
+
+        @Test
+        void jahreszahlIstKeinKuerzel() {
+            // "RE 2025 12345" und "RE 2026 12345" sind verschiedene Belege.
+            assertThat(LieferantDokumentAbgleich.ohneKuerzel("AB 2025 12345")).isNull();
+            // Zweistellige Jahreszahl: der Rest ist zu kurz für eine eigene Nummer.
+            assertThat(LieferantDokumentAbgleich.ohneKuerzel("RE 25-10023")).isNull();
+            assertThat(LieferantDokumentAbgleich.ohneKuerzel("AB24-12345")).isNull();
+            assertThat(LieferantDokumentAbgleich.ohneKuerzel("AB 12345")).isNull();
+            assertThat(LieferantDokumentAbgleich.ohneKuerzel("17.09.2026 1234567")).isNull();
+            assertThat(LieferantDokumentAbgleich.ohneKuerzel("AG 12 - 90421491")).isEqualTo("90421491");
+            assertThat(LieferantDokumentAbgleich.ohneKuerzel(null)).isNull();
+        }
+
+        @Test
+        void zweistelligesJahrVerbindetKeineFremdenJahre() {
+            LieferantDokument alterLs = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS 25-10023", LIEFERUNG.minusYears(1));
+            LieferantDokument zeugnis = dokument(LieferantDokumentTyp.WERKSTOFFZEUGNIS, null, LIEFERUNG);
+            zeugnis.getGeschaeftsdaten().setReferenzNummer("LS 26-10023");
+
+            assertThat(abgleich(zeugnis, alterLs).sicher()).isEmpty();
+        }
+
+        @Test
+        void ohneKuerzelZaehltNurImZeitfenster() {
+            // Gleiche Nummer ohne Kürzel, aber ein Jahr auseinander: kein sicherer Bezug.
+            LieferantDokument alterLs = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "RL 12 - 90445744/01",
+                    LIEFERUNG.minusYears(1));
+            LieferantDokument zeugnis = dokument(LieferantDokumentTyp.WERKSTOFFZEUGNIS, null, LIEFERUNG);
+            zeugnis.getGeschaeftsdaten().setReferenzNummer("90445744/01");
+
+            assertThat(abgleich(zeugnis, alterLs).sicher()).isEmpty();
+        }
+
+        @Test
+        void bestellnummerMitKuerzelFindetAngebot() {
+            LieferantDokument angebot = dokument(LieferantDokumentTyp.ANGEBOT, "90421491", LocalDate.of(2026, 6, 11));
+            LieferantDokument ab = dokument(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-1", LocalDate.of(2026, 6, 20));
+            ab.getGeschaeftsdaten().setBestellnummer("AG 12 - 90421491");
+
+            assertThat(abgleich(ab, angebot).sicher()).containsExactly(angebot);
+        }
+    }
+
+    @Nested
+    class NummernfeldBereinigen {
+
+        @ParameterizedTest
+        @CsvSource(delimiter = '|', nullValues = "NULL", value = {
+                "RL 12 -  90445744/01 | RL 12 - 90445744/01",
+                "'  90445744/01 '     | 90445744/01",
+                "17.09.2026           | NULL",
+                "KUGR                 | NULL",
+                "tel                  | NULL",
+                "KOM: Musterhalle vom 18.09.2026 | NULL",
+                "NULL                 | NULL",
+                "'   '                | NULL",
+                "Bestellung vom 17.09.2026 telefonisch durch Max Mustermann aufgegeben, Lieferung frei Baustelle | NULL",
+        })
+        void bereinigt(String roh, String erwartet) {
+            assertThat(LieferantDokumentAbgleich.bereinigeNummernfeld(roh)).isEqualTo(erwartet);
+        }
+    }
 }

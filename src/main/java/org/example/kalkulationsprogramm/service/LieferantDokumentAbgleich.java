@@ -164,6 +164,19 @@ public class LieferantDokumentAbgleich {
     private static final Pattern DATUM = Pattern.compile(
             "(?<!\\d)(?:\\d{1,2}[./-]\\d{1,2}[./-](?:\\d{4}|\\d{2})|\\d{4}-\\d{1,2}-\\d{1,2})(?!\\d)");
     private static final Pattern ZIFFERNFOLGE = Pattern.compile("\\d++");
+    /**
+     * Höchstens so viele Ziffern darf ein Kürzel vor der eigentlichen Nummer haben
+     * ("RL 12 - 90445744/01": Belegart + Filiale). Eine Jahreszahl ("RE 2026 12345")
+     * bleibt Teil der Nummer – sonst fielen gleiche laufende Nummern verschiedener
+     * Jahre zusammen.
+     */
+    private static final int MAX_KUERZEL_ZIFFERN = 3;
+    /**
+     * Nach dem Kürzel müssen so viele Ziffern übrig bleiben. Kürzere Reste wie
+     * "10023" aus "RE 25-10023" sind eine laufende Nummer, deren zweistellige
+     * Jahreszahl eben abgeschnitten wurde.
+     */
+    private static final int MIN_ZIFFERN_OHNE_KUERZEL = 7;
     private static final int MIN_KOMMISSION_LAENGE = 4;
     /** Teilstring-Treffer erst ab dieser Länge, sonst treffen sich "lager" und "lagerhalle". */
     private static final int MIN_KOMMISSION_TEILSTRING = 8;
@@ -758,7 +771,9 @@ public class LieferantDokumentAbgleich {
         // Firmen) – deshalb nur für ausdrücklich genannte Belegnummern und nur, wenn
         // das Datum zur Kette passt.
         if (datumPasst(ich, vorgaenger) && (nenntZiffernkern(ich.referenzen(), vorgaenger.nummer())
-                || nenntZiffernkern(vorgaenger.referenzen(), ich.nummer()))) {
+                || nenntZiffernkern(vorgaenger.referenzen(), ich.nummer())
+                || nenntNummerOhneKuerzel(ich, vorgaenger)
+                || nenntNummerOhneKuerzel(vorgaenger, ich))) {
             return new Sicherheit(PUNKTE_NUMMERNBEZUG, GRUND_BELEGNUMMER);
         }
         if (istZeugnisZuBestellung(ich, vorgaenger)) {
@@ -1035,6 +1050,26 @@ public class LieferantDokumentAbgleich {
     }
 
     /**
+     * Nennt das Dokument die Belegnummer des anderen, wenn man auf einer Seite das
+     * Kürzel weglässt ("90445744/01" zu "RL 12 - 90445744/01")? Unschärfer als der
+     * exakte Vergleich – der Aufrufer prüft deshalb vorher das Datum.
+     */
+    private static boolean nenntNummerOhneKuerzel(Merkmale dokument, Merkmale anderes) {
+        if (anderes.nummer() == null) {
+            return false;
+        }
+        Set<String> genannt = new HashSet<>(dokument.referenzen());
+        genannt.addAll(dokument.referenzenOhneKuerzel());
+        if (dokument.bestellnummer() != null) {
+            genannt.add(dokument.bestellnummer());
+        }
+        return (anderes.nummerOhneKuerzel() != null && genannt.contains(anderes.nummerOhneKuerzel()))
+                || dokument.referenzenOhneKuerzel().contains(anderes.nummer())
+                || nenntZiffernkern(dokument.referenzenOhneKuerzel(), anderes.nummer())
+                || nenntZiffernkern(genannt, anderes.nummerOhneKuerzel());
+    }
+
+    /**
      * Nennt das Dokument die Nummer als Referenz? Die eigene Bestellnummer zählt
      * mit ("Ihre Bestellung: Angebot 4711").
      */
@@ -1060,11 +1095,15 @@ public class LieferantDokumentAbgleich {
 
     private Merkmale merkmale(LieferantDokumentTyp typ, LieferantGeschaeftsdokument gd) {
         String nummer = normalisiereNummer(gd.getDokumentNummer());
+        String nummerOhneKuerzel = normalisiereNummer(ohneKuerzel(gd.getDokumentNummer()));
         // "telef. vom 05.08.2026" und "Mail vom 7.5" sind keine Bestellnummern
         String bestellnummer = ohneFreitext(normalisiereNummer(ohneDatum(gd.getBestellnummer())));
 
         Set<String> referenzen = new HashSet<>();
-        fuegeNummerHinzu(referenzen, gd.getReferenzNummer());
+        // Fassungen ohne Kürzel getrennt: Sie zählen nur, wenn das Datum passt.
+        Set<String> referenzenOhneKuerzel = new HashSet<>();
+        fuegeNummerHinzu(referenzen, referenzenOhneKuerzel, gd.getReferenzNummer());
+        fuegeOhneKuerzelHinzu(referenzenOhneKuerzel, gd.getBestellnummer());
 
         Map<String, NummernToken> tokens = new TreeMap<>();
         sammleNummern(gd.getDokumentNummer(), Feld.BELEGNUMMER, tokens);
@@ -1083,12 +1122,12 @@ public class LieferantDokumentAbgleich {
             if (weitere != null && weitere.isArray()) {
                 weitere.forEach(r -> {
                     String wert = r.isTextual() ? r.asText() : null;
-                    fuegeNummerHinzu(referenzen, wert);
+                    fuegeNummerHinzu(referenzen, referenzenOhneKuerzel, wert);
                     sammleNummern(wert, Feld.REFERENZ, tokens);
                 });
             } else if (weitere != null && weitere.isTextual()) {
                 for (String teil : weitere.asText().split("[,;]")) {
-                    fuegeNummerHinzu(referenzen, teil);
+                    fuegeNummerHinzu(referenzen, referenzenOhneKuerzel, teil);
                     sammleNummern(teil, Feld.REFERENZ, tokens);
                 }
             }
@@ -1101,9 +1140,17 @@ public class LieferantDokumentAbgleich {
         if (nummer != null) {
             referenzen.remove(nummer);
         }
+        if (nummer != null) {
+            referenzenOhneKuerzel.remove(nummer);
+        }
+        if (nummerOhneKuerzel != null) {
+            referenzen.remove(nummerOhneKuerzel);
+            referenzenOhneKuerzel.remove(nummerOhneKuerzel);
+        }
 
         LocalDate eingang = gd.getDokument() != null ? eingangsdatum(gd.getDokument()) : null;
-        return new Merkmale(typ, nummer, zerlegeNummer(gd.getDokumentNummer()), referenzen, bestellnummer,
+        return new Merkmale(typ, nummer, nummerOhneKuerzel, zerlegeNummer(gd.getDokumentNummer()), referenzen,
+                referenzenOhneKuerzel, bestellnummer,
                 kommission, gd.getDokumentDatum(), gd.getBetragNetto(), gd.getBetragBrutto(), positionen,
                 tokens, bestellnummerMitNummer, eingang, chargen, werkstoffMasse);
     }
@@ -1120,7 +1167,8 @@ public class LieferantDokumentAbgleich {
         if (m.eingang() != null || dokument == null || eingangsdatum(dokument) == null) {
             return m;
         }
-        return new Merkmale(m.typ(), m.nummer(), m.nummernstamm(), m.referenzen(), m.bestellnummer(),
+        return new Merkmale(m.typ(), m.nummer(), m.nummerOhneKuerzel(), m.nummernstamm(), m.referenzen(),
+                m.referenzenOhneKuerzel(), m.bestellnummer(),
                 m.kommission(), m.datum(), m.netto(), m.brutto(), m.positionen(), m.tokens(),
                 m.bestellnummerMitNummer(), eingangsdatum(dokument), m.chargen(), m.werkstoffMasse());
     }
@@ -1207,6 +1255,14 @@ public class LieferantDokumentAbgleich {
             if (kern.length() >= MIN_ZIFFERN_KERN) {
                 merkeNummer(ziel, kern, text.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT), art);
             }
+            // "RL 12 - 90445744/01": Das Kürzel "12" gehört nicht zum Ziffernkern.
+            String ohneKuerzel = ohneKuerzel(text);
+            if (ohneKuerzel != null) {
+                String kurzKern = ohneFuehrendeNullen(ohneKuerzel.replaceAll("[^0-9]", ""));
+                if (kurzKern.length() >= MIN_ZIFFERN_KERN) {
+                    merkeNummer(ziel, kurzKern, ohneKuerzel.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT), art);
+                }
+            }
         }
     }
 
@@ -1282,11 +1338,71 @@ public class LieferantDokumentAbgleich {
         return wert != null && wert.isTextual() ? wert.asText() : null;
     }
 
-    private static void fuegeNummerHinzu(Set<String> ziel, String roh) {
+    /** Merkt die Nummer – und, falls sie ein Kürzel trägt, getrennt ihre Fassung ohne Kürzel. */
+    private static void fuegeNummerHinzu(Set<String> ziel, Set<String> ohneKuerzelZiel, String roh) {
         String nummer = normalisiereNummer(roh);
         if (nummer != null) {
             ziel.add(nummer);
         }
+        fuegeOhneKuerzelHinzu(ohneKuerzelZiel, roh);
+    }
+
+    private static void fuegeOhneKuerzelHinzu(Set<String> ziel, String roh) {
+        String ohneKuerzel = normalisiereNummer(ohneKuerzel(roh));
+        if (ohneKuerzel != null) {
+            ziel.add(ohneKuerzel);
+        }
+    }
+
+    /**
+     * Schneidet ein Kürzel vor der eigentlichen Nummer ab: "RL 12 - 90445744/01" →
+     * "90445744/01", "AG 12 - 90421491" → "90421491". Die eigentliche Nummer beginnt
+     * mit der ersten Ziffernfolge ab {@link #MIN_ZIFFERN_KERN} Stellen; davor dürfen
+     * höchstens {@link #MAX_KUERZEL_ZIFFERN} Ziffern stehen, danach mindestens
+     * {@link #MIN_ZIFFERN_OHNE_KUERZEL}. Ohne Ziffern im Kürzel
+     * ("AB 4711234") gibt es nichts abzuschneiden – das erledigt schon die
+     * Normalisierung.
+     *
+     * @return die Nummer ohne Kürzel oder {@code null}, wenn es keines gibt
+     */
+    static String ohneKuerzel(String nummer) {
+        if (nummer == null || nummer.length() > MAX_NUMMER_LAENGE) {
+            return null;
+        }
+        String text = ohneDatum(nummer);
+        Matcher folge = ZIFFERNFOLGE.matcher(text);
+        while (folge.find()) {
+            if (folge.group().length() >= MIN_ZIFFERN_KERN) {
+                long kuerzelZiffern = text.substring(0, folge.start()).chars().filter(Character::isDigit).count();
+                String rest = text.substring(folge.start());
+                long restZiffern = rest.chars().filter(Character::isDigit).count();
+                return kuerzelZiffern > 0 && kuerzelZiffern <= MAX_KUERZEL_ZIFFERN
+                        && restZiffern >= MIN_ZIFFERN_OHNE_KUERZEL ? rest : null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Räumt ein Nummernfeld aus der KI-Antwort auf, bevor es gespeichert wird:
+     * Leerraum zusammenziehen ("RL 12 -  904" → "RL 12 - 904"). Werte ohne echte
+     * Nummer verwirft es – ein reines Datum ("17.09.2026" aus "Bestellung vom"),
+     * reiner Text ("KUGR" = Kundenkürzel, "tel", "KOM: Halle vom 18.09.2026") und
+     * Text über {@link #MAX_NUMMER_LAENGE} Zeichen.
+     * Die gedruckte Schreibweise bleibt sonst erhalten, damit man den Beleg wiederfindet.
+     *
+     * @return bereinigter Wert oder {@code null}
+     */
+    public static String bereinigeNummernfeld(String roh) {
+        if (roh == null) {
+            return null;
+        }
+        String wert = roh.replaceAll("\\s++", " ").trim();
+        // Längerer Text ist ein Satz ("Bestellung vom … telefonisch durch …"), keine Nummer.
+        if (wert.isEmpty() || wert.length() > MAX_NUMMER_LAENGE) {
+            return null;
+        }
+        return ohneDatum(wert).chars().anyMatch(Character::isDigit) ? wert : null;
     }
 
     /**
@@ -1329,10 +1445,15 @@ public class LieferantDokumentAbgleich {
 
     /**
      * @param tokens                 alle Nummern des Dokuments, sortiert (Begründungen bleiben stabil)
+     * @param nummerOhneKuerzel      Belegnummer ohne Kürzel davor ("RL 12 - 90445744/01" → "9044574401"),
+     *                               {@code null}, wenn sie keines hat
+     * @param referenzenOhneKuerzel  genannte Nummern (Referenzen, Bestellnummer) ohne Kürzel – nur mit
+     *                               Datumsprüfung verwenden
      * @param bestellnummerMitNummer die Bestellnummer enthält eine Nummer ab 5 Stellen
      */
-    private record Merkmale(LieferantDokumentTyp typ, String nummer, Nummernstamm nummernstamm,
-            Set<String> referenzen,
+    private record Merkmale(LieferantDokumentTyp typ, String nummer, String nummerOhneKuerzel,
+            Nummernstamm nummernstamm,
+            Set<String> referenzen, Set<String> referenzenOhneKuerzel,
             String bestellnummer, String kommission, LocalDate datum, BigDecimal netto, BigDecimal brutto,
             List<PositionsVergleich.Merkmal> positionen, Map<String, NummernToken> tokens,
             boolean bestellnummerMitNummer, LocalDate eingang, Set<String> chargen, Set<String> werkstoffMasse) {

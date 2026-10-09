@@ -51,6 +51,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -163,6 +165,56 @@ class LieferantDokumentControllerTest {
                             .content(body))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id").value(1));
+
+            // Geänderte Nummern sofort für die Dokumentenkette nutzen
+            verify(analyseService).performRelink(dokument);
+        }
+
+        private LieferantDokument rechnungMitNummer(String nummer) {
+            LieferantDokument dokument = new LieferantDokument();
+            dokument.setId(1L);
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setId(1L);
+            gd.setDokumentNummer(nummer);
+            dokument.setGeschaeftsdaten(gd);
+            gd.setDokument(dokument);
+            given(dokumentRepository.findById(1L)).willReturn(Optional.of(dokument));
+            given(geschaeftsdokumentRepository.save(any())).willReturn(gd);
+            given(dokumentRepository.save(any())).willReturn(dokument);
+            LieferantDokumentDto.Response response = new LieferantDokumentDto.Response();
+            response.setId(1L);
+            given(dokumentService.getDokumentById(1L)).willReturn(response);
+            return dokument;
+        }
+
+        @Test
+        @DisplayName("Nur 'bezahlt' geändert: Kette bleibt unangetastet")
+        void ohneKettenAenderungKeinRelink() throws Exception {
+            rechnungMitNummer("RE-001");
+
+            mockMvc.perform(put("/api/lieferant-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"geschaeftsdaten\": {\"dokumentNummer\": \"RE-001\", \"bezahlt\": true}}"))
+                    .andExpect(status().isOk());
+
+            verify(analyseService, never()).performRelink(any());
+        }
+
+        @Test
+        @DisplayName("Fehler beim Neu-Verknüpfen: Korrektur bleibt gespeichert")
+        void relinkFehlerVerwirftKorrekturNicht() throws Exception {
+            LieferantDokument dokument = rechnungMitNummer("RE-001");
+            doThrow(new IllegalStateException("kaputt")).when(analyseService).performRelink(any());
+
+            mockMvc.perform(put("/api/lieferant-dokumente/1")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"geschaeftsdaten\": {\"referenzNummer\": \"90445744/01\"}}"))
+                    .andExpect(status().isOk());
+
+            verify(analyseService).performRelink(dokument);
         }
 
         @Test

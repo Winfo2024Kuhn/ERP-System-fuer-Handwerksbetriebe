@@ -358,6 +358,16 @@ public class GeminiDokumentAnalyseService {
                 - "kommission" IMMER mit ausfüllen, wenn Kommission/Bauvorhaben/Projekt genannt ist –
                   besonders bei ANGEBOT, denn dort fehlt die Bestellnummer noch und die Kommission ist
                   oft der einzige Bezug zur späteren Auftragsbestätigung.
+            16a. NUMMERNFELDER (dokumentNummer, bestellnummer, referenzNummer):
+                - dokumentNummer VOLLSTÄNDIG übernehmen, inklusive Endung nach "/" oder "-"
+                  ("RL 12 - 90445327/02" – NICHT "RL 12 - 90445327"). Die Endung unterscheidet
+                  Teillieferungen derselben Bestellung.
+                - bestellnummer und referenzNummer sind NIE ein Datum: Steht bei "Bestellung vom"
+                  oder "Bestelldatum" nur ein Datum, dann null.
+                - NIE die Kundennummer/Kunden-Nr. (auch Kürzel wie "KUGR") als referenzNummer oder
+                  bestellnummer eintragen.
+                - Freitext wie "tel", "telefonisch" oder "KOM: Bauvorhaben ..." ist keine Nummer:
+                  dann null (eine Kommission gehört in "kommission").
             16. DOKUMENT-GÜLTIGKEIT: Wenn "Abschrift", "Kopie", "Entwurf" oder "Duplikat" irgendwo im Dokument steht, MUSS " (Kopie)" an dokumentTyp angehängt werden.
             17. ABRECHNUNGS-ZUSAMMENSTELLUNG: Wenn der Titel oder die Überschrift des
                 Dokuments "Zusammenstellung" enthält (z.B. "E-ZUSAMMENSTELLUNG",
@@ -920,7 +930,7 @@ public class GeminiDokumentAnalyseService {
 
             // Dokumentnummer
             if (json.has("dokumentNummer") && !json.get("dokumentNummer").isNull()) {
-                builder.dokumentNummer(json.get("dokumentNummer").asText());
+                builder.dokumentNummer(LieferantDokumentAbgleich.bereinigeNummernfeld(json.get("dokumentNummer").asText()));
             }
 
             // Datum
@@ -959,10 +969,10 @@ public class GeminiDokumentAnalyseService {
 
             // Referenzen
             if (json.has("bestellnummer") && !json.get("bestellnummer").isNull()) {
-                builder.bestellnummer(json.get("bestellnummer").asText());
+                builder.bestellnummer(LieferantDokumentAbgleich.bereinigeNummernfeld(json.get("bestellnummer").asText()));
             }
             if (json.has("referenzNummer") && !json.get("referenzNummer").isNull()) {
-                builder.referenzNummer(json.get("referenzNummer").asText());
+                builder.referenzNummer(LieferantDokumentAbgleich.bereinigeNummernfeld(json.get("referenzNummer").asText()));
             }
 
             // Skonto
@@ -2534,7 +2544,7 @@ public class GeminiDokumentAnalyseService {
 
             // Dokumentnummer
             if (json.has("dokumentNummer") && !json.get("dokumentNummer").isNull()) {
-                gd.setDokumentNummer(json.get("dokumentNummer").asText().trim());
+                gd.setDokumentNummer(LieferantDokumentAbgleich.bereinigeNummernfeld(json.get("dokumentNummer").asText()));
             }
 
             // Datum
@@ -2570,10 +2580,10 @@ public class GeminiDokumentAnalyseService {
 
             // Bestellnummer und Referenznummer
             if (json.has("bestellnummer") && !json.get("bestellnummer").isNull()) {
-                gd.setBestellnummer(json.get("bestellnummer").asText().trim());
+                gd.setBestellnummer(LieferantDokumentAbgleich.bereinigeNummernfeld(json.get("bestellnummer").asText()));
             }
             if (json.has("referenzNummer") && !json.get("referenzNummer").isNull()) {
-                gd.setReferenzNummer(json.get("referenzNummer").asText().trim());
+                gd.setReferenzNummer(LieferantDokumentAbgleich.bereinigeNummernfeld(json.get("referenzNummer").asText()));
             }
 
             // Zahlungsziel

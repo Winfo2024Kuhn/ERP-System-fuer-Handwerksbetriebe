@@ -116,6 +116,8 @@ public class LieferantDokumentController {
             return ResponseEntity.notFound().build();
         }
 
+        List<Object> kettenMerkmaleVorher = kettenMerkmale(dokument);
+
         // Dokumenttyp aktualisieren – nie auf einen Typ, den der Aufrufer selbst nicht sehen darf
         if (request.typ != null) {
             try {
@@ -212,10 +214,36 @@ public class LieferantDokumentController {
         geschaeftsdokumentRepository.save(gd);
         dokumentRepository.save(dokument);
 
+        // Von Hand korrigierte Nummern/Typen sofort für die Dokumentenkette nutzen –
+        // sonst hinge ein Zeugnis erst nach dem nächsten "Neu verknüpfen" am Lieferschein.
+        // Neue Verknüpfungen schreibt die Transaktion beim Abschluss mit.
+        if (!kettenMerkmaleVorher.equals(kettenMerkmale(dokument))) {
+            try {
+                analyseService.performRelink(dokument);
+            } catch (RuntimeException e) {
+                // Die Korrektur des Nutzers bleibt gespeichert; "Neu verknüpfen" holt es nach.
+                log.warn("[Relink] Dokument {} nach Bearbeitung nicht neu verknüpft: {}",
+                        dokumentId, e.getClass().getSimpleName());
+            }
+        }
+
         // Als DTO zurückgeben – Verknüpfungen nicht sichtbarer Typen entfallen
         return zugriffService.beschraenkeDokument(dokumentService.getDokumentById(dokumentId), sichtbar)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Felder, nach denen der Abgleich Dokumentenketten bildet. Ändert sich keines
+     * (z. B. nur "bezahlt" angehakt), bleibt die Kette unangetastet.
+     */
+    private static List<Object> kettenMerkmale(LieferantDokument dokument) {
+        LieferantGeschaeftsdokument gd = dokument.getGeschaeftsdaten();
+        return java.util.Arrays.asList(dokument.getTyp(),
+                gd != null ? gd.getDokumentNummer() : null,
+                gd != null ? gd.getBestellnummer() : null,
+                gd != null ? gd.getReferenzNummer() : null,
+                gd != null ? gd.getDokumentDatum() : null);
     }
 
     /**
