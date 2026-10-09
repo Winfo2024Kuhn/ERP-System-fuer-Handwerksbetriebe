@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { AlertCircle, Briefcase, ChevronRight, FileCheck, MapPin, UserRound } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { anfragePfad, projektPfad } from './api';
+import { anfragePfad, projektPfad } from '../../lib/navigationPfade';
 import type { KontaktKurz, UeberblickAnfrage, UeberblickProjekt } from './types';
 import type { UeberblickZustand } from './useKontaktUeberblick';
 

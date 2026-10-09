@@ -33,6 +33,8 @@ export interface EmailItem {
     replies?: EmailItem[];
     zuordnungTyp?: string;
     projektName?: string;
+    /** Auftragsnummer des zugeordneten Projekts, falls vergeben. */
+    projektAuftragsnummer?: string | null;
     anfrageName?: string;
     lieferantName?: string;
     kundeName?: string;

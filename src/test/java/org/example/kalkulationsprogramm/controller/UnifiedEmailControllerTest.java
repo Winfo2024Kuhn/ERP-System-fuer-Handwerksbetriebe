@@ -521,6 +521,103 @@ class UnifiedEmailControllerTest {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // ZUORDNUNGS-INFO (Links im E-Mail-Center)
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Zuordnungs-Info in Liste und Detail")
+    class ZuordnungsInfo {
+
+        private org.example.kalkulationsprogramm.domain.Projekt projekt(String auftragsnummer) {
+            org.example.kalkulationsprogramm.domain.Projekt p = new org.example.kalkulationsprogramm.domain.Projekt();
+            p.setId(41L);
+            p.setBauvorhaben("Garagentor Mustermann");
+            p.setAuftragsnummer(auftragsnummer);
+            return p;
+        }
+
+        @Test
+        @DisplayName("Projekt-Ordner liefert ID, Name und Auftragsnummer des Projekts")
+        void projektOrdnerLiefertAuftragsnummer() throws Exception {
+            Email email = createTestEmail(30L, "Re: Garagentor", "max@example.com");
+            email.setZuordnungTyp(EmailZuordnungTyp.PROJEKT);
+            email.setProjekt(projekt("2026-041"));
+            given(emailRepository.findProjectEmails()).willReturn(List.of(email));
+
+            mockMvc.perform(get("/api/emails/projects"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].zuordnungTyp").value("PROJEKT"))
+                    .andExpect(jsonPath("$[0].projektId").value(41))
+                    .andExpect(jsonPath("$[0].projektName").value("Garagentor Mustermann"))
+                    .andExpect(jsonPath("$[0].projektAuftragsnummer").value("2026-041"));
+        }
+
+        @Test
+        @DisplayName("Anfrage-Ordner liefert ID und Name der Anfrage, aber keine Auftragsnummer")
+        void anfrageOrdnerOhneAuftragsnummer() throws Exception {
+            org.example.kalkulationsprogramm.domain.Anfrage anfrage = new org.example.kalkulationsprogramm.domain.Anfrage();
+            anfrage.setId(12L);
+            anfrage.setBauvorhaben("Geländer Mustermann");
+            Email email = createTestEmail(31L, "Aw: Geländer", "max@example.com");
+            email.setZuordnungTyp(EmailZuordnungTyp.ANFRAGE);
+            email.setAnfrage(anfrage);
+            given(emailRepository.findAnfrageEmails()).willReturn(List.of(email));
+
+            mockMvc.perform(get("/api/emails/offers"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].anfrageId").value(12))
+                    .andExpect(jsonPath("$[0].anfrageName").value("Geländer Mustermann"))
+                    .andExpect(jsonPath("$[0].projektId").doesNotExist())
+                    .andExpect(jsonPath("$[0].projektAuftragsnummer").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("Detail liefert Auftragsnummer und Lieferant")
+        void detailLiefertAuftragsnummerUndLieferant() throws Exception {
+            org.example.kalkulationsprogramm.domain.Lieferanten lieferant = new org.example.kalkulationsprogramm.domain.Lieferanten();
+            lieferant.setId(7L);
+            lieferant.setLieferantenname("Muster Metall GmbH");
+            Email email = createTestEmail(32L, "Lieferung Garagentor", "max@example.com");
+            email.setProjekt(projekt("2026-041"));
+            email.setLieferant(lieferant);
+            given(emailRepository.findById(32L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(get("/api/emails/32"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.projektAuftragsnummer").value("2026-041"))
+                    .andExpect(jsonPath("$.lieferantId").value(7))
+                    .andExpect(jsonPath("$.lieferantName").value("Muster Metall GmbH"));
+        }
+
+        @Test
+        @DisplayName("Projekt ohne Auftragsnummer: Feld bleibt leer, Name kommt trotzdem")
+        void projektOhneAuftragsnummer() throws Exception {
+            Email email = createTestEmail(33L, "Rückfrage", "max@example.com");
+            email.setProjekt(projekt(null));
+            given(emailRepository.findById(33L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(get("/api/emails/33"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.projektName").value("Garagentor Mustermann"))
+                    .andExpect(jsonPath("$.projektAuftragsnummer").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("Ohne Zuordnung bleiben alle Zuordnungsfelder leer")
+        void ohneZuordnungKeineFelder() throws Exception {
+            Email email = createTestEmail(34L, "Hallo", "max@example.com");
+            given(emailRepository.findById(34L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(get("/api/emails/34"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.zuordnungTyp").value("KEINE"))
+                    .andExpect(jsonPath("$.projektId").doesNotExist())
+                    .andExpect(jsonPath("$.anfrageId").doesNotExist())
+                    .andExpect(jsonPath("$.lieferantId").doesNotExist());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // MARK READ
     // ═══════════════════════════════════════════════════════════════
 

@@ -45,6 +45,8 @@ public class UnifiedEmailDto {
     // Zuordnungs-Info
     private Long projektId;
     private String projektName;
+    /** Auftragsnummer des zugeordneten Projekts – für den Link „Projekt 2026-041 · …“ im E-Mail-Center. */
+    private String projektAuftragsnummer;
     private Long anfrageId;
     private String anfrageName;
     private Long lieferantId;

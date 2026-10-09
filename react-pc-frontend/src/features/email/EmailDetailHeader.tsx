@@ -9,6 +9,8 @@ import { EmailRecipientDropdown } from '../../components/EmailRecipientDropdown'
 import { useToast } from '../../components/ui/toast';
 import { cn } from '../../lib/utils';
 import { getSenderName, type EmailItem, type FolderType } from './emailCenterModel';
+import { ermittleEmailZuordnung } from './emailZuordnung';
+import { EmailZuordnungLink } from './EmailZuordnungLink';
 
 type Action = () => void | Promise<void>;
 type MoveTarget = 'inbox' | 'trash' | 'spam' | 'newsletter';
@@ -39,6 +41,7 @@ export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForwar
         catch { toast.error('Die E-Mail-Aktion konnte nicht abgeschlossen werden.'); }
         finally { setBusy(false); }
     };
+    const zuordnung = ermittleEmailZuordnung(email);
     const date = email.sentAt ? new Date(email.sentAt).toLocaleString('de-DE', {
         day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
     }) : '';
@@ -112,5 +115,9 @@ export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForwar
             <time className="shrink-0 text-slate-400" dateTime={email.sentAt}>{date}</time>
         </div>
         <EmailRecipientDropdown recipients={email.recipient} cc={email.cc} className="mt-1 max-w-full" />
+        {zuordnung && <div className="mt-2 flex min-w-0 items-center gap-2 text-xs" data-testid="email-gehoert-zu">
+            <span className="shrink-0 text-slate-500">Gehört zu:</span>
+            <EmailZuordnungLink zuordnung={zuordnung} variante="kopf" />
+        </div>}
     </header>;
 }

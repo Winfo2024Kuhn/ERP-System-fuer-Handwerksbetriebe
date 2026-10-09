@@ -1,6 +1,8 @@
 import { EmailNavigationGuard } from '../features/email/EmailNavigationGuard';
 import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
+import { EmailZuordnungLink } from '../features/email/EmailZuordnungLink';
+import { ermittleEmailZuordnung } from '../features/email/emailZuordnung';
 import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
 import { AssignModal } from '../features/email/EmailAssignmentDialog';
 import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
@@ -2175,12 +2177,7 @@ export default function EmailCenter() {
                                                 {email.spamScore}% Spam
                                             </div>
                                         )}
-                                        {email.zuordnungTyp && email.zuordnungTyp !== 'KEINE' && (
-                                            <div className="flex items-center gap-1 text-xs text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">
-                                                <FolderPlus className="w-3 h-3" />
-                                                {email.zuordnungTyp}
-                                            </div>
-                                        )}
+                                        <EmailZuordnungLink zuordnung={ermittleEmailZuordnung(email)} variante="liste" />
                                         {draftsByEmailId.has(email.id) && (
                                             <button
                                                 onClick={(e) => {

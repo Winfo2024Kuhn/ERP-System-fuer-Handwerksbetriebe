@@ -14,6 +14,7 @@ import type {
     WaehlTelefon,
     ZuordnenZiel,
 } from './types';
+import { lieferantPfad } from '../../lib/navigationPfade';
 
 /**
  * Alle Aufrufe der Telefon-Schnittstelle an einer Stelle.
@@ -58,7 +59,7 @@ function jsonInit(method: string, body?: unknown): RequestInit {
  */
 export function aktenPfad(typ: KontaktTyp, id: number): string | null {
     if (typ === 'KUNDE') return `/kunden?kundeId=${encodeURIComponent(String(id))}`;
-    if (typ === 'LIEFERANT') return `/lieferanten?lieferantId=${encodeURIComponent(String(id))}`;
+    if (typ === 'LIEFERANT') return lieferantPfad(id);
     return null;
 }
 
@@ -67,16 +68,6 @@ const ID_PARAMETER: Record<KontaktTyp, string> = {
     LIEFERANT: 'lieferantId',
     STEUERBERATER: 'steuerberaterId',
 };
-
-/** Pfad in ein Projekt. */
-export function projektPfad(id: number): string {
-    return `/projekte?projektId=${encodeURIComponent(String(id))}`;
-}
-
-/** Pfad in eine Anfrage. */
-export function anfragePfad(id: number): string {
-    return `/anfragen?anfrageId=${encodeURIComponent(String(id))}`;
-}
 
 /** Adresse der Aufnahme – als `<audio src>` und Download-Link nutzbar. */
 export function audioPfad(id: number): string {

@@ -2005,19 +2005,7 @@ public class UnifiedEmailController {
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
         dto.setSpamScore(email.getSpamScore());
 
-        // Zuordnungs-Info
-        if (email.getProjekt() != null) {
-            dto.setProjektId(email.getProjekt().getId());
-            dto.setProjektName(email.getProjekt().getBauvorhaben());
-        }
-        if (email.getAnfrage() != null) {
-            dto.setAnfrageId(email.getAnfrage().getId());
-            dto.setAnfrageName(email.getAnfrage().getBauvorhaben());
-        }
-        if (email.getLieferant() != null) {
-            dto.setLieferantId(email.getLieferant().getId());
-            dto.setLieferantName(email.getLieferant().getLieferantenname());
-        }
+        applyZuordnungsInfo(email, dto);
         // Hinweis: applyKundeLookup() bewusst NICHT in der Liste aufrufen, um N+1 zu vermeiden.
 
         // Compute folder
@@ -2069,19 +2057,7 @@ public class UnifiedEmailController {
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
         dto.setSpamScore(email.getSpamScore());
 
-        // Zuordnungs-Info
-        if (email.getProjekt() != null) {
-            dto.setProjektId(email.getProjekt().getId());
-            dto.setProjektName(email.getProjekt().getBauvorhaben());
-        }
-        if (email.getAnfrage() != null) {
-            dto.setAnfrageId(email.getAnfrage().getId());
-            dto.setAnfrageName(email.getAnfrage().getBauvorhaben());
-        }
-        if (email.getLieferant() != null) {
-            dto.setLieferantId(email.getLieferant().getId());
-            dto.setLieferantName(email.getLieferant().getLieferantenname());
-        }
+        applyZuordnungsInfo(email, dto);
         applyKundeLookup(email, dto);
 
         // Compute folder
@@ -2128,6 +2104,23 @@ public class UnifiedEmailController {
         }
 
         return dto;
+    }
+
+    /** Zuordnung (Projekt, Anfrage, Lieferant) für Liste und Detail – das E-Mail-Center verlinkt darauf. */
+    private void applyZuordnungsInfo(Email email, UnifiedEmailDto dto) {
+        if (email.getProjekt() != null) {
+            dto.setProjektId(email.getProjekt().getId());
+            dto.setProjektName(email.getProjekt().getBauvorhaben());
+            dto.setProjektAuftragsnummer(email.getProjekt().getAuftragsnummer());
+        }
+        if (email.getAnfrage() != null) {
+            dto.setAnfrageId(email.getAnfrage().getId());
+            dto.setAnfrageName(email.getAnfrage().getBauvorhaben());
+        }
+        if (email.getLieferant() != null) {
+            dto.setLieferantId(email.getLieferant().getId());
+            dto.setLieferantName(email.getLieferant().getLieferantenname());
+        }
     }
 
     /** Thread-Felder für Liste und Detail: alle Mitglieder eines Verlaufs liefern dieselben Werte. */

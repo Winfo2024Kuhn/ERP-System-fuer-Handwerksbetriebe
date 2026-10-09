@@ -87,6 +87,7 @@ function renderEmailCenter(folder = 'inbox') {
                     <Routes>
                         <Route path="/emails/:folder" element={<EmailCenter />} />
                         <Route path="/emails/:folder/:emailId" element={<EmailCenter />} />
+                        <Route path="/anfragen" element={<p>Anfragen-Seite</p>} />
                     </Routes>
                 </ToastProvider>
             </ConfirmProvider>
@@ -134,6 +135,26 @@ describe('EmailCenter', () => {
                 expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/emails\/inbox(\?|$)/));
                 expect(fetchMock).toHaveBeenCalledWith('/api/emails/stats');
             });
+        });
+    });
+
+    describe('Zuordnung in der Liste', () => {
+        it('zeigt statt des Enum-Texts einen Link zur Anfrage', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            fetchMock = mockFetchResponses({
+                '/api/emails/inbox': [{
+                    ...mockEmails[0], zuordnungTyp: 'ANFRAGE', anfrageId: 12, anfrageName: 'Garagentor Mustermann',
+                }],
+            });
+            global.fetch = fetchMock as unknown as typeof fetch;
+            renderEmailCenter();
+
+            const link = await screen.findByRole('link', { name: 'Anfrage · Garagentor Mustermann öffnen' });
+            expect(link).toHaveAttribute('href', '/anfragen?anfrageId=12');
+            expect(screen.queryByText('ANFRAGE')).not.toBeInTheDocument();
+
+            await user.click(link);
+            expect(await screen.findByText('Anfragen-Seite')).toBeInTheDocument();
         });
     });
 
