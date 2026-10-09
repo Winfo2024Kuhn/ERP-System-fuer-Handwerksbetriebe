@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -772,5 +773,99 @@ class LieferantDokumentRechteSecurityTest {
         mockMvc.perform(get("/api/lieferanten/berechtigungen").param("token", "token-max"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sichtbareTypen[0]").value("LIEFERSCHEIN"));
+    }
+
+    // ------------------------- POST /api/lieferanten/{lid}/dokumente/{did}/verknuepfen (offene Chain)
+
+    private LieferantDokument dokumentFuerVerknuepfung(long id, LieferantDokumentTyp typ, long lieferantId) {
+        var lieferant = new Lieferanten();
+        lieferant.setId(lieferantId);
+        var dokument = new LieferantDokument();
+        dokument.setId(id);
+        dokument.setTyp(typ);
+        dokument.setLieferant(lieferant);
+        return dokument;
+    }
+
+    private static final String VERKNUEPFEN = "/api/lieferanten/7/dokumente/1/verknuepfen";
+
+    @Test
+    @DisplayName("Verknüpfen: ohne Anmeldung 401 - das Dokument kommt nicht per Leer-Verknüpfung zurück")
+    void verknuepfenAnonymWird401() throws Exception {
+        mockMvc.perform(post(VERKNUEPFEN).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("[]"))
+                .andExpect(status().isUnauthorized());
+
+        verify(dokumentService, never()).addVerknuepfungen(anyLong(), any());
+        verifyNoInteractions(lieferantDokumentRepository);
+    }
+
+    @Test
+    @DisplayName("Verknüpfen: Quelldokument eines nicht sichtbaren Typs -> 404")
+    void verknuepfenQuelleNichtSichtbar() throws Exception {
+        given(belegService.findCaller(any(), any())).willReturn(mitarbeiter(5L));
+        mitarbeiterDarfSehen(5L, LieferantDokumentTyp.LIEFERSCHEIN);
+        given(lieferantDokumentRepository.findById(1L)).willReturn(
+                java.util.Optional.of(dokumentFuerVerknuepfung(1L, LieferantDokumentTyp.RECHNUNG, 7L)));
+
+        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[]"))
+                .andExpect(status().isNotFound());
+
+        verify(dokumentService, never()).addVerknuepfungen(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("Verknüpfen: Zieldokument nicht sichtbar oder unbekannt -> 404, nichts wird verknüpft")
+    void verknuepfenZielNichtSichtbar() throws Exception {
+        given(belegService.findCaller(any(), any())).willReturn(mitarbeiter(5L));
+        mitarbeiterDarfSehen(5L, LieferantDokumentTyp.LIEFERSCHEIN);
+        given(lieferantDokumentRepository.findById(1L)).willReturn(
+                java.util.Optional.of(dokumentFuerVerknuepfung(1L, LieferantDokumentTyp.LIEFERSCHEIN, 7L)));
+        given(lieferantDokumentRepository.findAllById(any())).willReturn(
+                List.of(dokumentFuerVerknuepfung(2L, LieferantDokumentTyp.RECHNUNG, 7L)));
+
+        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[2]"))
+                .andExpect(status().isNotFound());
+        // unbekannte ID (Long.MAX_VALUE): findAllById liefert weniger Treffer als angefragt
+        given(lieferantDokumentRepository.findAllById(any())).willReturn(List.of());
+        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("[" + Long.MAX_VALUE + "]"))
+                .andExpect(status().isNotFound());
+
+        verify(dokumentService, never()).addVerknuepfungen(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("Verknüpfen: Dokument gehört zu einem anderen Lieferanten -> 404")
+    void verknuepfenFalscherLieferant() throws Exception {
+        given(lieferantDokumentRepository.findById(1L)).willReturn(
+                java.util.Optional.of(dokumentFuerVerknuepfung(1L, LieferantDokumentTyp.LIEFERSCHEIN, 99L)));
+
+        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.ADMIN))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[]"))
+                .andExpect(status().isNotFound());
+
+        verify(dokumentService, never()).addVerknuepfungen(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("Verknüpfen: mit Recht klappt es, Antwort ohne Verknüpfungen nicht sichtbarer Typen")
+    void verknuepfenMitRecht() throws Exception {
+        given(belegService.findCaller(any(), any())).willReturn(mitarbeiter(5L));
+        mitarbeiterDarfSehen(5L, LieferantDokumentTyp.LIEFERSCHEIN);
+        given(lieferantDokumentRepository.findById(1L)).willReturn(
+                java.util.Optional.of(dokumentFuerVerknuepfung(1L, LieferantDokumentTyp.LIEFERSCHEIN, 7L)));
+        given(lieferantDokumentRepository.findAllById(any())).willReturn(
+                List.of(dokumentFuerVerknuepfung(3L, LieferantDokumentTyp.LIEFERSCHEIN, 7L)));
+        given(dokumentService.addVerknuepfungen(eq(1L), any())).willReturn(dokumentMitVerknuepfungen());
+
+        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[3]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verknuepfteDokumente.length()").value(1))
+                .andExpect(jsonPath("$.verknuepfteDokumente[0].id").value(2));
     }
 }

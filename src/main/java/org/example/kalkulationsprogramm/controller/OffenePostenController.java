@@ -413,7 +413,8 @@ public class OffenePostenController {
     private Mitarbeiter resolveMitarbeiter(String token, Authentication authentication) {
         // 1. Versuch: Legacy-Token
         if (StringUtils.hasText(token)) {
-            Mitarbeiter m = mitarbeiterRepository.findByLoginToken(token).orElse(null);
+            // Nur aktive Mitarbeiter: deaktivierte verlieren mit altem Token sofort den Zugriff.
+            Mitarbeiter m = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
             if (m != null) return m;
         }
 

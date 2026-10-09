@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
@@ -98,9 +99,14 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
     @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
+    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
 
     @org.junit.jupiter.api.BeforeEach
     void threadKennzahlenWieEinzelmail() {
+        // Anhang-Rechte prüft der Test "Attachment Download Tests" gezielt; sonst darf der Aufrufer alles öffnen.
+        given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.of(
+                java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
+        given(lieferantDokumentZugriffService.istAnhangSichtbar(any(), any())).willReturn(true);
         given(emailThreadService.kennzahlenFuer(any())).willAnswer(invocation -> {
             Email email = invocation.getArgument(0);
             return new EmailThreadService.ThreadKennzahlen(email.getId(), 1, email.getSentAt());
@@ -928,6 +934,34 @@ class UnifiedEmailControllerTest {
     @Nested
     @DisplayName("Attachment Download Tests")
     class AttachmentDownloadTests {
+        @Test
+        @DisplayName("downloadAttachment: Anhang eines gesperrten Dokumenttyps (Rechnung per Mail) -> 404")
+        void downloadAttachment_gesperrterDokumenttypGibt404() throws Exception {
+            Email email = createTestEmail(210L, "Test", "absender@example.com");
+            EmailAttachment att = new EmailAttachment();
+            att.setId(510L);
+            att.setEmail(email);
+            att.setOriginalFilename("rechnung.pdf");
+            att.setStoredFilename("test-gesperrt.pdf");
+            email.setAttachments(List.of(att));
+            given(emailRepository.findById(210L)).willReturn(Optional.of(email));
+            given(lieferantDokumentZugriffService.istAnhangSichtbar(eq(510L), any())).willReturn(false);
+
+            mockMvc.perform(get("/api/emails/210/attachments/510"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("downloadAttachment: ohne Anmeldung -> 401, es wird nichts geladen")
+        void downloadAttachment_ohneAnmeldungGibt401() throws Exception {
+            given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.empty());
+
+            mockMvc.perform(get("/api/emails/210/attachments/510"))
+                    .andExpect(status().isUnauthorized());
+
+            org.mockito.Mockito.verifyNoInteractions(emailRepository);
+        }
+
         @Test
         @DisplayName("downloadAttachment bereinigt CRLF aus MIME-Type")
         void downloadAttachment_bereinigtCrlfAusMimeType() throws Exception {

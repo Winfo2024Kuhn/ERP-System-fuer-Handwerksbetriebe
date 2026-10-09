@@ -317,4 +317,88 @@ class LieferantDokumentEinzelzugriffSecurityTest {
 
         verifyNoInteractions(analyseService);
     }
+
+    @Test
+    @DisplayName("Bearbeiten: Typwechsel auf einen gesperrten Typ -> 403, nichts wird gespeichert")
+    void bearbeitenTypwechselAufGesperrtenTypWird403() throws Exception {
+        benutzerDarfSehen(LieferantDokumentTyp.LIEFERSCHEIN);
+        given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(true);
+        LieferantDokument dokument = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, "ls.pdf");
+
+        mockMvc.perform(put("/api/lieferant-dokumente/1").with(sessionAls(FrontendUserRole.USER)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"typ\":\"RECHNUNG\"}"))
+                .andExpect(status().isForbidden());
+
+        org.assertj.core.api.Assertions.assertThat(dokument.getTyp()).isEqualTo(LieferantDokumentTyp.LIEFERSCHEIN);
+        verify(dokumentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Bearbeiten: mit Recht gespeichert, Antwort ohne Verknüpfungen nicht sichtbarer Typen")
+    void bearbeitenMitRechtFiltertVerknuepfungenInDerAntwort() throws Exception {
+        benutzerDarfSehen(LieferantDokumentTyp.LIEFERSCHEIN);
+        given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(true);
+        dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, "ls.pdf");
+        given(dokumentService.getDokumentById(1L)).willReturn(dto(1L, LieferantDokumentTyp.LIEFERSCHEIN));
+
+        mockMvc.perform(put("/api/lieferant-dokumente/1").with(sessionAls(FrontendUserRole.USER)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"typ\":\"LIEFERSCHEIN\",\"geschaeftsdaten\":{\"dokumentNummer\":\"LS-1\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verknuepfteDokumente.length()").value(1))
+                .andExpect(jsonPath("$.verknuepfteDokumente[0].id").value(100));
+        verify(dokumentRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("Bearbeiten: Admin darf jeden Typ setzen")
+    void bearbeitenAdminDarfTypWechseln() throws Exception {
+        given(dokumentLockService.isHeldBy(any(SperrbarerTyp.class), anyLong(), anyLong())).willReturn(true);
+        LieferantDokument dokument = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, "ls.pdf");
+        given(dokumentService.getDokumentById(1L)).willReturn(dto(1L, LieferantDokumentTyp.RECHNUNG));
+
+        mockMvc.perform(put("/api/lieferant-dokumente/1").with(sessionAls(FrontendUserRole.ADMIN)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"typ\":\"RECHNUNG\"}"))
+                .andExpect(status().isOk());
+
+        org.assertj.core.api.Assertions.assertThat(dokument.getTyp()).isEqualTo(LieferantDokumentTyp.RECHNUNG);
+    }
+
+    @Test
+    @DisplayName("Neu-Analyse: mit Recht analysiert, Antwort ohne Verknüpfungen nicht sichtbarer Typen")
+    void reanalyseMitRechtFiltertVerknuepfungen() throws Exception {
+        benutzerDarfSehen(LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument dokument = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, "ls.pdf");
+        given(analyseService.analysiereDokument(dokument))
+                .willReturn(new org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument());
+        given(dokumentService.getDokumentById(1L)).willReturn(dto(1L, LieferantDokumentTyp.LIEFERSCHEIN));
+
+        mockMvc.perform(post("/api/lieferant-dokumente/1/reanalyze")
+                .with(sessionAls(FrontendUserRole.USER)).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verknuepfteDokumente.length()").value(1));
+    }
+
+    @Test
+    @DisplayName("Neu-Analyse: ändert die Analyse den Typ auf einen gesperrten, kommt kein Dokument zurück")
+    void reanalyseMitTypwechselDurchAnalyseGibt404() throws Exception {
+        benutzerDarfSehen(LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument dokument = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, "ls.pdf");
+        given(analyseService.analysiereDokument(dokument))
+                .willReturn(new org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument());
+        given(dokumentService.getDokumentById(1L)).willReturn(dto(1L, LieferantDokumentTyp.RECHNUNG));
+
+        mockMvc.perform(post("/api/lieferant-dokumente/1/reanalyze")
+                .with(sessionAls(FrontendUserRole.USER)).with(csrf()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Neu-Analyse: ohne Anmeldung 401, die KI wird nicht angefragt")
+    void reanalyseAnonymWird401() throws Exception {
+        mockMvc.perform(post("/api/lieferant-dokumente/1/reanalyze").with(csrf()))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(analyseService);
+    }
 }

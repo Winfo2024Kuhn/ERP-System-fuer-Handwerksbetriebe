@@ -83,6 +83,7 @@ class EmailThreadAdminSecurityTest {
     @MockBean private org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
     @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
+    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
 
     @Test
     @DisplayName("Ohne Anmeldung kein Zugriff")

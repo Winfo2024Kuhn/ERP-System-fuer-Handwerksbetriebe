@@ -884,10 +884,30 @@ public class LieferantenController {
     public ResponseEntity<LieferantDokumentDto.Response> addVerknuepfungen(
             @PathVariable Long lieferantId,
             @PathVariable Long dokumentId,
-            @RequestBody Set<Long> verknuepfteIds) {
+            @RequestBody Set<Long> verknuepfteIds,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
+        // Der Pfad liegt in der offenen Zeiterfassungs-Chain: ohne Token/Session geht nichts, und
+        // Quelle wie Ziele müssen Dokumenttypen sein, die der Aufrufer sehen darf.
+        var sichtbareTypen = dokumentZugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        var typen = sichtbareTypen.get();
+        var quelle = lieferantDokumentRepository.findById(dokumentId).orElse(null);
+        if (quelle == null || !typen.contains(quelle.getTyp()) || quelle.getLieferant() == null
+                || !lieferantId.equals(quelle.getLieferant().getId())) {
+            return ResponseEntity.notFound().build();
+        }
+        var ziele = lieferantDokumentRepository.findAllById(verknuepfteIds);
+        if (ziele.size() != verknuepfteIds.size() || ziele.stream().anyMatch(z -> !typen.contains(z.getTyp()))) {
+            return ResponseEntity.notFound().build();
+        }
         try {
-            var result = dokumentService.addVerknuepfungen(dokumentId, verknuepfteIds);
-            return ResponseEntity.ok(result);
+            return dokumentZugriffService.beschraenkeDokument(
+                    dokumentService.addVerknuepfungen(dokumentId, verknuepfteIds), typen)
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

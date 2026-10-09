@@ -114,6 +114,27 @@ public class LieferantDokumentZugriffService {
     }
 
     /**
+     * Ist das Dokument mit dieser ID für den Aufrufer sichtbar? Unbekannte IDs gelten als
+     * nicht sichtbar, damit schreibende Endpunkte nicht verraten, ob die ID existiert.
+     */
+    public boolean istSichtbar(Long dokumentId, Set<LieferantDokumentTyp> sichtbar) {
+        if (dokumentId == null) {
+            return false;
+        }
+        var dokument = dokumentService.findById(dokumentId);
+        return dokument != null && sichtbar.contains(dokument.getTyp());
+    }
+
+    /**
+     * Darf der Aufrufer diesen E-Mail-Anhang öffnen? Nein, wenn er als Lieferanten-Dokument
+     * eines nicht sichtbaren Typs abgelegt ist (z. B. eine Rechnung, die per Mail kam).
+     * Anhänge ohne Dokument sind frei.
+     */
+    public boolean istAnhangSichtbar(Long anhangId, Set<LieferantDokumentTyp> sichtbar) {
+        return anhangId == null || gesperrteAnhaenge(Set.of(anhangId), sichtbar).isEmpty();
+    }
+
+    /**
      * Blendet Kennzahlen aus, die aus nicht sichtbaren Dokumenttypen stammen:
      * Gesamtkosten (Rechnungen) sowie Bestellungen und Lieferzeit (Auftragsbestätigungen).
      */

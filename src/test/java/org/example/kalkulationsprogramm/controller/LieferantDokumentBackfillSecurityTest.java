@@ -115,4 +115,37 @@ class LieferantDokumentBackfillSecurityTest {
     private static RequestPostProcessor csrf() {
         return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf();
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "/api/lieferant-dokumente/lieferant/7/reanalyze" })
+    @WithMockUser(roles = "USER")
+    @DisplayName("Massen-Neuanalyse eines Lieferanten ist Admin-Sache")
+    void lieferantReanalyseNurAdmin(String pfad) throws Exception {
+        mockMvc.perform(post(pfad).with(csrf()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(analyseService);
+    }
+
+    @org.junit.jupiter.api.Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Duplikat-Liste (alle Dokumenttypen) ist Admin-Sache")
+    void duplikatListeNurAdmin() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("/api/lieferant-dokumente/duplicates"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(geschaeftsdokumentRepository);
+    }
+
+    @org.junit.jupiter.api.Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin darf die Duplikat-Liste abrufen")
+    void adminDarfDuplikatListe() throws Exception {
+        given(geschaeftsdokumentRepository.findAllDuplicates()).willReturn(java.util.List.of());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("/api/lieferant-dokumente/duplicates"))
+                .andExpect(status().isOk());
+    }
 }

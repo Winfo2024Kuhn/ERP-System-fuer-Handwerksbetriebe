@@ -121,7 +121,7 @@ class OffenePostenControllerTest {
         @DisplayName("Abteilung Büro (3) sieht alle offenen Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             given(geschaeftsdokumentRepository.findAllOffeneEingangsrechnungen()).willReturn(List.of(gd));
@@ -137,7 +137,7 @@ class OffenePostenControllerTest {
         @DisplayName("Abteilung Buchhaltung (2) sieht nur genehmigte Rechnungen")
         void buchhaltungSiehtNurGenehmigte() throws Exception {
             Mitarbeiter m = buildMitarbeiter(false, true);
-            given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("bh-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllOffeneGenehmigte()).willReturn(List.of());
 
             mockMvc.perform(get("/api/offene-posten/eingang")
@@ -158,7 +158,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Ungültiger Token bekommt leere Liste")
         void ungueltigerTokenLeereListe() throws Exception {
-            given(mitarbeiterRepository.findByLoginToken("invalid")).willReturn(Optional.empty());
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("invalid")).willReturn(Optional.empty());
 
             mockMvc.perform(get("/api/offene-posten/eingang")
                             .header("X-Auth-Token", "invalid"))
@@ -175,7 +175,7 @@ class OffenePostenControllerTest {
         @DisplayName("Abteilung Büro sieht alle Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllEingangsrechnungen()).willReturn(List.of());
 
             mockMvc.perform(get("/api/offene-posten/eingang/alle")
@@ -192,7 +192,7 @@ class OffenePostenControllerTest {
         @DisplayName("Setzt Rechnung als bezahlt")
         void setztAlsBezahlt() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             given(geschaeftsdokumentRepository.findById(1L)).willReturn(Optional.of(gd));
@@ -221,7 +221,7 @@ class OffenePostenControllerTest {
         @DisplayName("Skonto wird berechnet wenn innerhalb Frist")
         void skontoBerechnung() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             gd.setSkontoTage(30);
@@ -246,7 +246,7 @@ class OffenePostenControllerTest {
         @DisplayName("Büro-Mitarbeiter kann genehmigen")
         void bueroKannGenehmigen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             given(geschaeftsdokumentRepository.findById(1L)).willReturn(Optional.of(gd));
@@ -264,7 +264,7 @@ class OffenePostenControllerTest {
         @DisplayName("Buchhaltung (Abt. 2) darf nicht genehmigen → 403")
         void buchhaltungDarfNichtGenehmigen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(false, true);
-            given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("bh-token")).willReturn(Optional.of(m));
 
             mockMvc.perform(patch("/api/offene-posten/eingang/1/genehmigen")
                             .header("X-Auth-Token", "bh-token")
@@ -286,7 +286,7 @@ class OffenePostenControllerTest {
         @DisplayName("Unbekannte Rechnung gibt 404 (bei berechtigtem Benutzer)")
         void unbekannteRechnungGibt404() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findById(999L)).willReturn(Optional.empty());
 
             mockMvc.perform(patch("/api/offene-posten/eingang/999/genehmigen")
@@ -300,7 +300,7 @@ class OffenePostenControllerTest {
         @DisplayName("SQL Injection im Token wird nicht interpretiert")
         void sqlInjectionImToken() throws Exception {
             String sqlToken = "'; DROP TABLE mitarbeiter; --";
-            given(mitarbeiterRepository.findByLoginToken(sqlToken)).willReturn(Optional.empty());
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue(sqlToken)).willReturn(Optional.empty());
 
             mockMvc.perform(patch("/api/offene-posten/eingang/1/genehmigen")
                             .header("X-Auth-Token", sqlToken)
@@ -319,7 +319,7 @@ class OffenePostenControllerTest {
         void listeEnthaeltNurSichtbareTypen() throws Exception {
             given(zugriffService.sichtbareTypen(any(), any()))
                     .willReturn(Optional.of(EnumSet.of(LieferantDokumentTyp.RECHNUNG)));
-            given(mitarbeiterRepository.findByLoginToken("buero-token"))
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
                     .willReturn(Optional.of(buildMitarbeiter(true, true)));
             LieferantGeschaeftsdokument rechnung = buildGeschaeftsdokument(1L);
             LieferantGeschaeftsdokument gutschrift = buildGeschaeftsdokument(2L);
@@ -341,7 +341,7 @@ class OffenePostenControllerTest {
         void alleListeOhneRechnungsRechtIstLeer() throws Exception {
             given(zugriffService.sichtbareTypen(any(), any()))
                     .willReturn(Optional.of(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN)));
-            given(mitarbeiterRepository.findByLoginToken("buero-token"))
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
                     .willReturn(Optional.of(buildMitarbeiter(true, true)));
             given(geschaeftsdokumentRepository.findAllEingangsrechnungen())
                     .willReturn(List.of(buildGeschaeftsdokument(1L)));
@@ -355,7 +355,7 @@ class OffenePostenControllerTest {
         @DisplayName("Nicht angemeldeter Aufrufer sieht keinen Typ")
         void nichtAngemeldetSiehtNichts() throws Exception {
             given(zugriffService.sichtbareTypen(any(), any())).willReturn(Optional.empty());
-            given(mitarbeiterRepository.findByLoginToken("buero-token"))
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
                     .willReturn(Optional.of(buildMitarbeiter(true, true)));
             given(geschaeftsdokumentRepository.findAllOffeneEingangsrechnungen())
                     .willReturn(List.of(buildGeschaeftsdokument(1L)));
@@ -370,7 +370,7 @@ class OffenePostenControllerTest {
         void schreibenAufNichtSichtbaresDokumentGibt404() throws Exception {
             given(zugriffService.sichtbareTypen(any(), any()))
                     .willReturn(Optional.of(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN)));
-            given(mitarbeiterRepository.findByLoginToken("buero-token"))
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
                     .willReturn(Optional.of(buildMitarbeiter(true, true)));
             given(geschaeftsdokumentRepository.findById(1L)).willReturn(Optional.of(buildGeschaeftsdokument(1L)));
 

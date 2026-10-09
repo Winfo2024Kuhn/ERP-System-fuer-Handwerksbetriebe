@@ -364,4 +364,48 @@ class LieferantDokumentZugriffServiceTest {
         assertThat(detail.getEmails().get(0).getAttachments()).isEmpty();
         assertThat(detail.getStatistik().getGesamtKosten()).isNull();
     }
+
+    @Test
+    @DisplayName("Statistik (Mischfall): nur Rechnungs-Recht -> Gesamtkosten bleiben, Bestellungen/Lieferzeit entfallen")
+    void beschraenkeStatistikMischfall() {
+        var statistik = new LieferantStatistikDto();
+        statistik.setGesamtKosten(10.0);
+        statistik.setBestellungAnzahl(3);
+        statistik.setLieferzeit(7);
+
+        service.beschraenkeStatistik(statistik, EnumSet.of(LieferantDokumentTyp.RECHNUNG));
+
+        assertThat(statistik.getGesamtKosten()).isEqualTo(10.0);
+        assertThat(statistik.getBestellungAnzahl()).isZero();
+        assertThat(statistik.getLieferzeit()).isNull();
+    }
+
+    @Test
+    @DisplayName("Dokument per ID: sichtbar nur bei bekanntem Dokument mit erlaubtem Typ")
+    void istSichtbarPerId() {
+        var rechnung = new org.example.kalkulationsprogramm.domain.LieferantDokument();
+        rechnung.setTyp(LieferantDokumentTyp.RECHNUNG);
+        given(dokumentService.findById(1L)).willReturn(rechnung);
+        given(dokumentService.findById(2L)).willReturn(null);
+
+        assertThat(service.istSichtbar(1L, EnumSet.of(LieferantDokumentTyp.RECHNUNG))).isTrue();
+        assertThat(service.istSichtbar(1L, EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN))).isFalse();
+        assertThat(service.istSichtbar(1L, EnumSet.noneOf(LieferantDokumentTyp.class))).isFalse();
+        assertThat(service.istSichtbar(2L, EnumSet.allOf(LieferantDokumentTyp.class))).isFalse();
+        assertThat(service.istSichtbar(null, EnumSet.allOf(LieferantDokumentTyp.class))).isFalse();
+    }
+
+    @Test
+    @DisplayName("Mail-Anhang per ID: gesperrt, wenn er als Dokument eines nicht sichtbaren Typs abgelegt ist")
+    void istAnhangSichtbarPerId() {
+        given(dokumentService.findAnhangIdsMitTyp(anyCollection(), anySet())).willReturn(Set.of(11L));
+
+        assertThat(service.istAnhangSichtbar(11L, EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN))).isFalse();
+        // Zweiter Anhang: kein Treffer in der Datenbank -> frei
+        given(dokumentService.findAnhangIdsMitTyp(anyCollection(), anySet())).willReturn(Set.of());
+        assertThat(service.istAnhangSichtbar(12L, EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN))).isTrue();
+        // Wer alle Typen sieht oder keinen Anhang meint, löst keine Abfrage aus
+        assertThat(service.istAnhangSichtbar(13L, EnumSet.allOf(LieferantDokumentTyp.class))).isTrue();
+        assertThat(service.istAnhangSichtbar(null, EnumSet.noneOf(LieferantDokumentTyp.class))).isTrue();
+    }
 }

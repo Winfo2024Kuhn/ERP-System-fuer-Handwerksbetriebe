@@ -98,6 +98,7 @@ public class UnifiedEmailController {
     private final org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     private final SteuerberaterKontaktService steuerberaterKontaktService;
     private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
+    private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -146,9 +147,20 @@ public class UnifiedEmailController {
     @GetMapping("/{emailId}/attachments/{attachmentId}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadAttachment(
             @PathVariable Long emailId,
-            @PathVariable Long attachmentId) {
+            @PathVariable Long attachmentId,
+            org.springframework.security.core.Authentication authentication) {
 
         log.info("Requesting attachment: emailId={}, attachmentId={}", emailId, attachmentId);
+
+        // Anhänge, die als Lieferanten-Dokument eines gesperrten Typs abgelegt sind (z. B. Rechnung
+        // per Mail), gibt es für diesen Aufrufer nicht - sonst umgeht der Mail-Weg die Dokumentrechte.
+        var sichtbareTypen = lieferantDokumentZugriffService.sichtbareTypen(null, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!lieferantDokumentZugriffService.istAnhangSichtbar(attachmentId, sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
 
         Email email = emailRepository.findById(emailId).orElse(null);
         if (email == null) {

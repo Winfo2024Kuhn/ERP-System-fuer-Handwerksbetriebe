@@ -117,6 +117,14 @@ public class BestellungsUebersichtController {
     @PostMapping("/rechnung-verknuepfen")
     public ResponseEntity<?> rechnungVerknuepfen(@Valid @RequestBody RechnungVerknuepfenRequest request,
             Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(request.bestellDokumentId(), sichtbareTypen.get())
+                || !zugriffService.istSichtbar(request.rechnungDokumentId(), sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             rechnungsVorschlagService.verknuepfe(request.bestellDokumentId(), request.rechnungDokumentId(),
                     benutzerId(auth));
@@ -139,6 +147,13 @@ public class BestellungsUebersichtController {
         if (request == null || request.dokumentId() == null || request.dokumentId() <= 0) {
             return ResponseEntity.badRequest().body(Map.of("message", "Dokument fehlt."));
         }
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(request.dokumentId(), sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             int geloest = rechnungsVorschlagService.haengeAb(request.dokumentId(), benutzerId(auth));
             return ResponseEntity.ok(Map.of("geloest", geloest));
@@ -159,6 +174,17 @@ public class BestellungsUebersichtController {
             Authentication auth) {
         if (bestellDokumentId == null || bestellDokumentId <= 0) {
             return ResponseEntity.badRequest().body(Map.of("message", "Bestellung fehlt."));
+        }
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(bestellDokumentId, sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
+        // Angelegt wird eine Rechnung - die darf nur, wer Rechnungen auch sehen darf.
+        if (!sichtbareTypen.get().contains(LieferantDokumentTyp.RECHNUNG)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         try {
             LieferantDokument rechnung = lieferantDokumentService.rechnungZuBestellungHochladen(
@@ -201,8 +227,8 @@ public class BestellungsUebersichtController {
      */
     @PostMapping("/ausblenden")
     @Transactional
-    public ResponseEntity<?> ausblenden(@Valid @RequestBody AusblendenRequest request) {
-        return setAusgeblendet(request, true);
+    public ResponseEntity<?> ausblenden(@Valid @RequestBody AusblendenRequest request, Authentication auth) {
+        return setAusgeblendet(request, true, auth);
     }
 
     /**
@@ -210,12 +236,19 @@ public class BestellungsUebersichtController {
      */
     @PostMapping("/einblenden")
     @Transactional
-    public ResponseEntity<?> einblenden(@Valid @RequestBody AusblendenRequest request) {
-        return setAusgeblendet(request, false);
+    public ResponseEntity<?> einblenden(@Valid @RequestBody AusblendenRequest request, Authentication auth) {
+        return setAusgeblendet(request, false, auth);
     }
 
-    private ResponseEntity<?> setAusgeblendet(AusblendenRequest request, boolean wert) {
-        List<LieferantDokument> dokumente = dokumentRepository.findAllById(request.dokumentIds());
+    private ResponseEntity<?> setAusgeblendet(AusblendenRequest request, boolean wert, Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        // Nicht sichtbare Dokumente einer Kette bleiben unberührt (und unerwähnt).
+        List<LieferantDokument> dokumente = dokumentRepository.findAllById(request.dokumentIds()).stream()
+                .filter(d -> sichtbareTypen.get().contains(d.getTyp()))
+                .toList();
         for (LieferantDokument d : dokumente) {
             d.setAusgeblendet(wert);
         }
@@ -530,6 +563,13 @@ public class BestellungsUebersichtController {
         if (request == null || request.geschaeftsdokumentId == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
         }
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(request.geschaeftsdokumentId, sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
         FrontendUserProfile zugeordnetVon = zuordnungService.zugeordnetVon(belegService.findCaller(token, auth), auth);
         List<LieferantDokumentZuordnungService.Anteil> anteile = request.projektAnteile == null ? List.of()
                 : request.projektAnteile.stream()
@@ -553,9 +593,13 @@ public class BestellungsUebersichtController {
      */
     @PostMapping("/lagerbestellung/{dokId}")
     @Transactional
-    public ResponseEntity<?> markiereAlsLagerbestellung(@PathVariable Long dokId) {
+    public ResponseEntity<?> markiereAlsLagerbestellung(@PathVariable Long dokId, Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
-        if (gd == null) {
+        if (gd == null || !istSichtbar(gd, sichtbareTypen.get())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
         }
 
@@ -572,7 +616,14 @@ public class BestellungsUebersichtController {
      * Die Rechnung wird wieder als "Abgeschlossen" angezeigt.
      */
     @DeleteMapping("/zuordnung/{dokId}")
-    public ResponseEntity<?> hebeZuordnungAuf(@PathVariable Long dokId) {
+    public ResponseEntity<?> hebeZuordnungAuf(@PathVariable Long dokId, Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(dokId, sichtbareTypen.get())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
+        }
         try {
             zuordnungService.hebeZuordnungAuf(dokId);
         } catch (NoSuchElementException e) {
