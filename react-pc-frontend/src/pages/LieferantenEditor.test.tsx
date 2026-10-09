@@ -305,10 +305,13 @@ describe('LieferantenEditor – Reiter in der Adresszeile', () => {
         renderMitAdresse(['/lieferanten?lieferantId=7&tab=emails']);
 
         expect(await screen.findByText('E-Mails werden geladen…')).toBeInTheDocument();
-        const aufrufe = fetchMock.mock.calls.map((aufruf: unknown[]) => aufruf[0]);
-        expect(aufrufe).toContain('/api/lieferanten/7?nurStammdaten=true');
-        expect(aufrufe).toContain('/api/lieferanten/7/statistik');
-        expect(aufrufe).toContain('/api/lieferanten/7/notizen');
+        // Der Ladehinweis kann schon vor den nachgelagerten Effekten sichtbar sein.
+        await waitFor(() => {
+            const aufrufe = fetchMock.mock.calls.map((aufruf: unknown[]) => aufruf[0]);
+            expect(aufrufe).toContain('/api/lieferanten/7?nurStammdaten=true');
+            expect(aufrufe).toContain('/api/lieferanten/7/statistik');
+            expect(aufrufe).toContain('/api/lieferanten/7/notizen');
+        });
 
         await act(async () => emailsFreigeben([]));
         await waitFor(() => expect(screen.queryByText('E-Mails werden geladen…')).not.toBeInTheDocument());

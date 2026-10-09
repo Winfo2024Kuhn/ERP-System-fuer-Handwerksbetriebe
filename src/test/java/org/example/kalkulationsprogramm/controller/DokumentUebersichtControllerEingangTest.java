@@ -45,6 +45,14 @@ class DokumentUebersichtControllerEingangTest {
     private LieferantGeschaeftsdokumentRepository lieferantGdRepo;
     @MockBean
     private LieferantDokumentSucheService sucheService;
+    @MockBean
+    private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService zugriffService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void alleDokumenttypenSichtbar() {
+        when(zugriffService.sichtbareTypen(any(), any()))
+                .thenReturn(java.util.Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)));
+    }
 
     private static LieferantGeschaeftsdokument gd(long id, LieferantDokumentTyp typ, String nummer) {
         Lieferanten l = new Lieferanten();

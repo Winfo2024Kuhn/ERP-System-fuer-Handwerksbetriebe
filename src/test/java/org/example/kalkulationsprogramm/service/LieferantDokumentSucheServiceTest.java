@@ -20,7 +20,6 @@ import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
-import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.dto.PositionsSuchtreffer;
 import org.example.kalkulationsprogramm.dto.PositionsTrefferDto;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentPositionRepository;
@@ -39,13 +38,11 @@ class LieferantDokumentSucheServiceTest {
 
     @Mock
     private LieferantDokumentPositionRepository positionRepository;
-    @Mock
-    private LieferantDokumentService dokumentService;
     private LieferantDokumentSucheService service;
 
     @BeforeEach
     void setUp() {
-        service = new LieferantDokumentSucheService(positionRepository, dokumentService, new ObjectMapper());
+        service = new LieferantDokumentSucheService(positionRepository, new ObjectMapper());
     }
 
     private static PositionsSuchtreffer treffer(long dokumentId, int nr, String bezeichnung) {
@@ -140,15 +137,14 @@ class LieferantDokumentSucheServiceTest {
     }
 
     @Test
-    void mitMitarbeiterNurSichtbareTypen() {
-        when(dokumentService.getBerechtigungen(5L)).thenReturn(LieferantDokumentDto.BerechtigungenResponse.builder()
-                .sichtbareTypen(List.of(LieferantDokumentTyp.WERKSTOFFZEUGNIS)).scanbarTypen(List.of()).build());
+    void suchtNurInExplizitErlaubtenTypen() {
         when(positionRepository.suche(anyCollection(), eq(3L), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of(treffer(1, 1, "Flachstahl")));
 
-        List<PositionsTrefferDto> ergebnis = service.sucheBeiLieferant(3L, "Flachstahl", 5L);
+        Map<Long, PositionsTrefferDto> ergebnis = service.suchePositionen("Flachstahl", 3L,
+                EnumSet.of(LieferantDokumentTyp.WERKSTOFFZEUGNIS), null, null);
 
-        assertThat(ergebnis).extracting(PositionsTrefferDto::dokumentId).containsExactly(1L);
+        assertThat(ergebnis.values()).extracting(PositionsTrefferDto::dokumentId).containsExactly(1L);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<LieferantDokumentTyp>> typen = ArgumentCaptor.forClass(Collection.class);
         verify(positionRepository).suche(typen.capture(), eq(3L), any(), any(), any(), any(), any(), any(), any(), any());
@@ -156,16 +152,16 @@ class LieferantDokumentSucheServiceTest {
     }
 
     @Test
-    void ohneMitarbeiterAlleTypen() {
+    void suchtAlleTypenNurBeiExpliziterFreigabe() {
         when(positionRepository.suche(anyCollection(), eq(3L), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of());
 
-        assertThat(service.sucheBeiLieferant(3L, "Flachstahl", null)).isEmpty();
+        assertThat(service.suchePositionen("Flachstahl", 3L,
+                EnumSet.allOf(LieferantDokumentTyp.class), null, null)).isEmpty();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<LieferantDokumentTyp>> typen = ArgumentCaptor.forClass(Collection.class);
         verify(positionRepository).suche(typen.capture(), eq(3L), any(), any(), any(), any(), any(), any(), any(), any());
         assertThat(typen.getValue()).containsExactlyInAnyOrder(LieferantDokumentTyp.values());
-        verifyNoInteractions(dokumentService);
     }
 }
