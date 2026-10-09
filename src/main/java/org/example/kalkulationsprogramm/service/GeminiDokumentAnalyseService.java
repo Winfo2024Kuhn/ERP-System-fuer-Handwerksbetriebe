@@ -1142,75 +1142,35 @@ public class GeminiDokumentAnalyseService {
                 log.warn("Konnte keine Metadaten extrahieren für Dokument {}", freshDokument.getId());
                 return null;
             }
-            // Vor dem Duplikat-Check sichern: dort kann geschaeftsdaten durch das
-            // bestehende Geschaeftsdokument ersetzt werden (transientes Feld ginge verloren).
             var ausgelesenePositionen = geschaeftsdaten.getAusgelesenePositionen();
 
-            // Duplikat-Check: Wenn Dokumentnummer existiert, WIEDERVERWENDEN statt löschen
-            // Bei PDF+XML-Paar sollen beide Dokumente die gleichen Geschäftsdaten
-            // referenzieren
-            if (geschaeftsdaten.getDokumentNummer() != null && !geschaeftsdaten.getDokumentNummer().isBlank()) {
-                Long lieferantId = freshDokument.getLieferant().getId();
-                var existingList = lieferantGeschaeftsdokumentRepository.findByLieferantIdAndDokumentNummer(
-                        lieferantId, geschaeftsdaten.getDokumentNummer());
-                var existingOpt = existingList.stream()
-                        .filter(gd -> !gd.getId().equals(freshDokument.getId()))
-                        // Nur denselben Beleg zusammenführen: ein Werkstoffzeugnis, dessen
-                        // Nummer zufällig einem Lieferschein gleicht, darf dessen Daten und
-                        // Positionen nicht überschreiben.
-                        .filter(gd -> gleicherBelegTyp(freshDokument, gd))
-                        .findFirst();
-                if (existingOpt.isPresent()) {
-                    LieferantGeschaeftsdokument bestehendes = existingOpt.get();
-                    log.info(
-                            "Dokumentnummer {} existiert bereits (ID={}). Aktualisiere statt löschen.",
-                            geschaeftsdaten.getDokumentNummer(), bestehendes.getId());
-
-                    // Aktualisiere das bestehende Geschäftsdokument mit neuen Daten (falls besser)
-                    // ZUGFeRD/XML hat höhere Priorität als KI, daher Daten übernehmen
-                    if (geschaeftsdaten.getAiRawJson() == null) { // Neue Daten kommen von ZUGFeRD/XML
-                        // Nur Felder aktualisieren die im neuen besser sind
-                        if (geschaeftsdaten.getDokumentDatum() != null) {
-                            bestehendes.setDokumentDatum(geschaeftsdaten.getDokumentDatum());
-                        }
-                        if (geschaeftsdaten.getBetragNetto() != null) {
-                            bestehendes.setBetragNetto(geschaeftsdaten.getBetragNetto());
-                        }
-                        if (geschaeftsdaten.getBetragBrutto() != null) {
-                            bestehendes.setBetragBrutto(geschaeftsdaten.getBetragBrutto());
-                        }
-                        if (geschaeftsdaten.getZahlungsziel() != null) {
-                            bestehendes.setZahlungsziel(geschaeftsdaten.getZahlungsziel());
-                        }
-                        if (geschaeftsdaten.getBestellnummer() != null) {
-                            bestehendes.setBestellnummer(geschaeftsdaten.getBestellnummer());
-                        }
-                        if (geschaeftsdaten.getReferenzNummer() != null) {
-                            bestehendes.setReferenzNummer(geschaeftsdaten.getReferenzNummer());
-                        }
-                        if (geschaeftsdaten.getAiConfidence() != null &&
-                                (bestehendes.getAiConfidence() == null ||
-                                        geschaeftsdaten.getAiConfidence()
-                                                .compareTo(bestehendes.getAiConfidence()) > 0)) {
-                            bestehendes.setAiConfidence(geschaeftsdaten.getAiConfidence());
-                        }
-                        log.info("Geschäftsdaten aktualisiert mit ZUGFeRD/XML-Daten");
+            // Gleicher Beleg schon da (z. B. PDF+XML-Paar derselben Rechnung)? Dann die
+            // Daten abgleichen. Jedes Dokument behält dabei seine EIGENEN Geschäftsdaten:
+            // die ID kommt per @MapsId vom Dokument, ein Umhängen auf fremde Daten würde
+            // die eigenen per orphanRemoval löschen.
+            LieferantGeschaeftsdokument partner = findePartnerMitGleicherNummer(freshDokument, geschaeftsdaten);
+            List<AusgelesenePosition> partnerPositionen = null;
+            if (partner != null) {
+                log.info("Dokumentnummer {} gibt es schon (ID={}). Gleiche die Daten ab.",
+                        geschaeftsdaten.getDokumentNummer(), partner.getId());
+                if (istStrukturiert(geschaeftsdaten)) {
+                    // ZUGFeRD/XML ist verlässlicher: der Partner bekommt die besseren Werte
+                    uebernimmKopfdaten(geschaeftsdaten, partner);
+                    if (geschaeftsdaten.getAiConfidence() != null && (partner.getAiConfidence() == null
+                            || geschaeftsdaten.getAiConfidence().compareTo(partner.getAiConfidence()) > 0)) {
+                        partner.setAiConfidence(geschaeftsdaten.getAiConfidence());
                     }
-
-                    // ZUGFeRD/XML-Positionen sind verlässlicher als die der KI: eine
-                    // KI-Analyse ersetzt sie nicht.
-                    boolean neueDatenVonKi = geschaeftsdaten.getAiRawJson() != null;
-                    if (neueDatenVonKi && istStrukturiert(bestehendes)) {
-                        ausgelesenePositionen = null;
+                    if (!istStrukturiert(partner)) {
+                        partnerPositionen = ausgelesenePositionen;
                     }
-
-                    // Das aktuelle Dokument referenziert die bestehenden Geschäftsdaten
-                    geschaeftsdaten = bestehendes;
+                } else if (istStrukturiert(partner)) {
+                    // KI-Ergebnis: die Kopfdaten des strukturierten Partners haben Vorrang
+                    uebernimmKopfdaten(partner, geschaeftsdaten);
                 }
             }
 
-            // Nur ein KI-Ergebnis kennt sein Dokument noch nicht (ZUGFeRD/XML- und
-            // Duplikat-Zweig setzen es); @MapsId braucht es für die ID.
+            // Nur ein KI-Ergebnis kennt sein Dokument noch nicht (der ZUGFeRD/XML-Zweig
+            // setzt es); @MapsId braucht es für die ID.
             if (geschaeftsdaten.getDokument() == null) {
                 geschaeftsdaten = bindeAnDokument(freshDokument, geschaeftsdaten);
                 // Wurde das KI-Ergebnis verworfen, bleiben die bestehenden Positionen.
@@ -1249,6 +1209,9 @@ public class GeminiDokumentAnalyseService {
             // Positionen erst jetzt: sie brauchen die ID der Geschaeftsdaten (@MapsId)
             // und den endgueltigen Typ. Formulare/SONSTIG bekommen keine.
             positionService.ersetzePositionen(savedGeschaeftsdaten, freshDokument.getTyp(), ausgelesenePositionen);
+            if (partner != null && istStrukturiert(geschaeftsdaten)) {
+                speichereVerbessertenPartner(partner, freshDokument.getTyp(), partnerPositionen);
+            }
 
             log.info("Dokument {} erfolgreich analysiert: {} (Quelle: {}, Confidence: {})",
                     freshDokument.getId(),
@@ -1330,13 +1293,73 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
-     * Darf {@code dokument} die Geschäftsdaten {@code bestehendes} (gleiche Nummer) mitbenutzen?
-     * Ja, solange der Typ noch offen ist (PDF+XML-Paar derselben Rechnung, Typ wird erst
-     * erkannt) oder beide Dokumente denselben Typ haben.
+     * Speichert den Partner, der eben die verlässlicheren ZUGFeRD/XML-Kopfdaten bekommen hat.
+     * Die Beträge einer Gutschrift werden dabei wie beim eigenen Dokument zur Minderung.
+     * Seine KI-Positionen werden nur ersetzt, solange noch keine davon einem Projekt oder
+     * einer Kostenstelle zugeordnet ist – eine Aufteilung von Hand geht nie verloren.
      */
-    static boolean gleicherBelegTyp(LieferantDokument dokument, LieferantGeschaeftsdokument bestehendes) {
-        LieferantDokumentTyp eigenerTyp = dokument.getTyp();
-        if (eigenerTyp == null || eigenerTyp == LieferantDokumentTyp.SONSTIG) {
+    private void speichereVerbessertenPartner(LieferantGeschaeftsdokument partner, LieferantDokumentTyp eigenerTyp,
+            List<AusgelesenePosition> positionen) {
+        LieferantDokumentTyp partnerTyp = partner.getDokument() != null ? partner.getDokument().getTyp() : null;
+        LieferantDokumentTyp belegTyp = istOffenerTyp(partnerTyp) ? eigenerTyp : partnerTyp;
+        DokumentBetragsvorzeichen.normalisiereGutschrift(partner, belegTyp);
+        lieferantGeschaeftsdokumentRepository.saveAndFlush(partner);
+        if (positionen == null || !LieferantDokumentPositionService.hatPositionen(partnerTyp)) {
+            return;
+        }
+        boolean aufgeteilt = positionService.findePositionen(partner.getId()).stream()
+                .anyMatch(p -> p.getProjekt() != null || p.getKostenstelle() != null);
+        if (aufgeteilt) {
+            log.info("Positionen von Dokument {} sind schon aufgeteilt und bleiben unverändert.", partner.getId());
+        } else {
+            positionService.ersetzePositionen(partner, partnerTyp, positionen);
+        }
+    }
+
+    private static boolean istOffenerTyp(LieferantDokumentTyp typ) {
+        return typ == null || typ == LieferantDokumentTyp.SONSTIG;
+    }
+
+    /**
+     * Geschäftsdaten eines ANDEREN Dokuments desselben Lieferanten mit gleicher Belegnummer
+     * und passendem Belegtyp (z. B. die XML zur PDF derselben Rechnung), sonst {@code null}.
+     */
+    private LieferantGeschaeftsdokument findePartnerMitGleicherNummer(LieferantDokument dokument,
+            LieferantGeschaeftsdokument neu) {
+        String nummer = neu.getDokumentNummer();
+        if (nummer == null || nummer.isBlank()) {
+            return null;
+        }
+        // Im KI-Zweig steht der Dokumenttyp hier oft noch nicht fest – dann zählt der erkannte.
+        LieferantDokumentTyp eigenerTyp = istOffenerTyp(dokument.getTyp()) ? neu.getDetectedTyp() : dokument.getTyp();
+        return lieferantGeschaeftsdokumentRepository
+                .findByLieferantIdAndDokumentNummer(dokument.getLieferant().getId(), nummer).stream()
+                .filter(gd -> !dokument.getId().equals(gd.getId()))
+                // Nur denselben Beleg abgleichen: ein Werkstoffzeugnis, dessen Nummer
+                // zufällig einem Lieferschein gleicht, darf dessen Daten nicht überschreiben.
+                .filter(gd -> gleicherBelegTyp(eigenerTyp, gd))
+                // Bei mehreren Treffern immer derselbe (der älteste)
+                .min(Comparator.comparing(LieferantGeschaeftsdokument::getId))
+                .orElse(null);
+    }
+
+    /** Überträgt die gesetzten Kopfdaten (Datum, Beträge, Zahlungsziel, Nummern) von {@code quelle} auf {@code ziel}. */
+    private static void uebernimmKopfdaten(LieferantGeschaeftsdokument quelle, LieferantGeschaeftsdokument ziel) {
+        uebernimmWennGesetzt(quelle.getDokumentDatum(), ziel::setDokumentDatum);
+        uebernimmWennGesetzt(quelle.getBetragNetto(), ziel::setBetragNetto);
+        uebernimmWennGesetzt(quelle.getBetragBrutto(), ziel::setBetragBrutto);
+        uebernimmWennGesetzt(quelle.getZahlungsziel(), ziel::setZahlungsziel);
+        uebernimmWennGesetzt(quelle.getBestellnummer(), ziel::setBestellnummer);
+        uebernimmWennGesetzt(quelle.getReferenzNummer(), ziel::setReferenzNummer);
+    }
+
+    /**
+     * Darf ein Dokument vom Typ {@code eigenerTyp} seine Daten mit {@code bestehendes}
+     * (gleiche Nummer) abgleichen? Ja, solange der Typ noch offen ist (PDF+XML-Paar
+     * derselben Rechnung, Typ wird erst erkannt) oder beide Dokumente denselben Typ haben.
+     */
+    static boolean gleicherBelegTyp(LieferantDokumentTyp eigenerTyp, LieferantGeschaeftsdokument bestehendes) {
+        if (istOffenerTyp(eigenerTyp)) {
             return true;
         }
         LieferantDokument anderes = bestehendes.getDokument();

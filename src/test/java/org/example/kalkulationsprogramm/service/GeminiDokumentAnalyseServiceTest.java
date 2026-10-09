@@ -1325,10 +1325,12 @@ class GeminiDokumentAnalyseServiceTest {
                     {"dokumentTyp":"RECHNUNG","dokumentNummer":"RE-2026-0903","betragNetto":10,"betragBrutto":11.9,
                      "confidence":0.9,"artikelPositionen":[{"bezeichnung":"Flachstahl","gesamtpreisNetto":10}]}""");
 
-            serviceMitEchtemMapper.analysiereDokument(dokument);
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(dokument);
 
-            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(ausXml), any(),
-                    org.mockito.ArgumentMatchers.isNull());
+            assertThat(result).isNotSameAs(ausXml);
+            assertThat(result.getDokument()).isSameAs(dokument);
+            verify(positionService, never())
+                    .ersetzePositionen(org.mockito.ArgumentMatchers.same(ausXml), any(), any());
         }
 
         @Test
@@ -1518,6 +1520,166 @@ class GeminiDokumentAnalyseServiceTest {
             return vorhanden;
         }
 
+        /** Geschaeftsdaten eines anderen Dokuments (z. B. XML zum PDF) mit derselben Belegnummer. */
+        private LieferantGeschaeftsdokument partnerDaten(long id, String nummer, String datenquelle) {
+            LieferantDokument partner = musterDokument(id);
+            partner.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantGeschaeftsdokument daten = vorhandeneDaten(partner);
+            daten.setId(id);
+            daten.setDokumentNummer(nummer);
+            daten.setDatenquelle(datenquelle);
+            when(lieferantGeschaeftsdokumentRepository.findByLieferantIdAndDokumentNummer(1L, nummer))
+                    .thenReturn(List.of(daten));
+            return daten;
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("PDF+XML-Paar: KI-Analyse behaelt eigene Geschaeftsdaten und uebernimmt die XML-Kopfdaten")
+        void kiAnalyseMitXmlPartnerBehaeltEigeneGeschaeftsdaten() throws Exception {
+            LieferantDokument pdf = musterDokument(617L);
+            pdf.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantGeschaeftsdokument eigene = vorhandeneDaten(pdf);
+            eigene.setId(617L);
+            eigene.setBezahlt(true);
+            LieferantGeschaeftsdokument ausXml = partnerDaten(717L, "RE-2026-0617", "XML");
+            ausXml.setBetragBrutto(new BigDecimal("238.00"));
+            ausXml.setDokumentDatum(LocalDate.of(2026, 9, 1));
+            stelleKiAntwortBereit(pdf, """
+                    {"dokumentTyp":"RECHNUNG","dokumentNummer":"RE-2026-0617","betragBrutto":230.00,"confidence":0.9,
+                     "artikelPositionen":[{"bezeichnung":"Flachstahl","gesamtpreisNetto":200}]}""");
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(pdf);
+
+            assertThat(result).isSameAs(eigene);
+            assertThat(pdf.getGeschaeftsdaten()).isSameAs(eigene);
+            assertThat(eigene.getBetragBrutto()).isEqualByComparingTo("238.00");
+            assertThat(eigene.getDokumentDatum()).isEqualTo(LocalDate.of(2026, 9, 1));
+            assertThat(eigene.getBezahlt()).isTrue();
+            assertThat(ausXml.getBetragBrutto()).isEqualByComparingTo("238.00");
+            verify(lieferantGeschaeftsdokumentRepository, never()).saveAndFlush(org.mockito.ArgumentMatchers.same(ausXml));
+            verify(positionService, never())
+                    .ersetzePositionen(org.mockito.ArgumentMatchers.same(ausXml), any(), any());
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(eigene),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.RECHNUNG),
+                    org.mockito.ArgumentMatchers.argThat(positionen -> positionen != null && positionen.size() == 1));
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("PDF+XML-Paar: ZUGFeRD-Analyse behaelt eigene Geschaeftsdaten und verbessert die des KI-Partners")
+        void zugferdMitKiPartnerBehaeltEigeneGeschaeftsdaten() throws Exception {
+            LieferantDokument pdf = musterDokument(618L);
+            pdf.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantGeschaeftsdokument eigene = vorhandeneDaten(pdf);
+            eigene.setId(618L);
+            LieferantGeschaeftsdokument ausKi = partnerDaten(718L, "RE-2026-0618", "AI");
+            ausKi.setBetragBrutto(new BigDecimal("100.00"));
+            ausKi.setAiConfidence(0.6);
+            ausKi.setBezahlt(true);
+            stelleZugferdBereit(pdf, zugferdRechnung("RE-2026-0618", "Rechnung"));
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(pdf);
+
+            assertThat(result).isSameAs(eigene);
+            assertThat(pdf.getGeschaeftsdaten()).isSameAs(eigene);
+            assertThat(eigene.getDatenquelle()).isEqualTo("ZUGFERD");
+            assertThat(eigene.getBetragBrutto()).isEqualByComparingTo("119.00");
+            assertThat(ausKi.getBetragBrutto()).isEqualByComparingTo("119.00");
+            assertThat(ausKi.getAiConfidence()).isEqualTo(1.0);
+            assertThat(ausKi.getBezahlt()).isTrue();
+            var reihenfolge = org.mockito.Mockito.inOrder(lieferantGeschaeftsdokumentRepository);
+            reihenfolge.verify(lieferantGeschaeftsdokumentRepository).saveAndFlush(org.mockito.ArgumentMatchers.same(eigene));
+            reihenfolge.verify(lieferantGeschaeftsdokumentRepository).saveAndFlush(org.mockito.ArgumentMatchers.same(ausKi));
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(eigene),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.RECHNUNG),
+                    org.mockito.ArgumentMatchers.argThat(positionen -> positionen != null && positionen.size() == 1));
+            verify(positionService).ersetzePositionen(org.mockito.ArgumentMatchers.same(ausKi),
+                    org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.RECHNUNG),
+                    org.mockito.ArgumentMatchers.argThat(positionen -> positionen != null && positionen.size() == 1));
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.NullSource
+        @org.junit.jupiter.params.provider.EnumSource(value = LieferantDokumentTyp.class, names = "GUTSCHRIFT")
+        @org.junit.jupiter.api.DisplayName("PDF+XML-Gutschrift: der KI-Partner bekommt die ZUGFeRD-Betraege als Minderung")
+        void zugferdGutschriftGibtPartnerNegativeBetraege(LieferantDokumentTyp partnerTyp) throws Exception {
+            LieferantDokument pdf = musterDokument(619L);
+            LieferantGeschaeftsdokument ausKi = partnerDaten(719L, "GS-2026-0619", "AI");
+            ausKi.getDokument().setTyp(partnerTyp);
+            ausKi.setBetragBrutto(new BigDecimal("-100.00"));
+            stelleZugferdBereit(pdf, zugferdRechnung("GS-2026-0619", "Gutschrift"));
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(pdf);
+
+            assertThat(result.getBetragBrutto()).isEqualByComparingTo("-119.00");
+            assertThat(ausKi.getBetragBrutto()).isEqualByComparingTo("-119.00");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("PDF+XML-Paar: Positionen mit Projektaufteilung beim Partner bleiben erhalten")
+        void zugferdErsetztAufgeteiltePartnerPositionenNicht() throws Exception {
+            LieferantDokument pdf = musterDokument(620L);
+            LieferantGeschaeftsdokument ausKi = partnerDaten(720L, "RE-2026-0620", "AI");
+            var aufgeteilt = new org.example.kalkulationsprogramm.domain.LieferantDokumentPosition();
+            aufgeteilt.setProjekt(new org.example.kalkulationsprogramm.domain.Projekt());
+            when(positionService.findePositionen(720L)).thenReturn(List.of(aufgeteilt));
+            stelleZugferdBereit(pdf, zugferdRechnung("RE-2026-0620", "Rechnung"));
+
+            serviceMitEchtemMapper.analysiereDokument(pdf);
+
+            assertThat(ausKi.getBetragBrutto()).isEqualByComparingTo("119.00");
+            verify(positionService, never())
+                    .ersetzePositionen(org.mockito.ArgumentMatchers.same(ausKi), any(), any());
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("PDF+XML-Paar: strukturierter Partner behaelt seine eigenen Positionen")
+        void zugferdErsetztStrukturiertePartnerPositionenNicht() throws Exception {
+            LieferantDokument pdf = musterDokument(621L);
+            LieferantGeschaeftsdokument ausXml = partnerDaten(721L, "RE-2026-0621", "XML");
+            stelleZugferdBereit(pdf, zugferdRechnung("RE-2026-0621", "Rechnung"));
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(pdf);
+
+            assertThat(result).isNotSameAs(ausXml);
+            verify(positionService, never())
+                    .ersetzePositionen(org.mockito.ArgumentMatchers.same(ausXml), any(), any());
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Duplikat: KI-Lieferschein ohne Typ uebernimmt keine Daten einer XML-Rechnung gleicher Nummer")
+        void kiLieferscheinUebernimmtKeineRechnungsdaten() throws Exception {
+            LieferantDokument lieferschein = musterDokument(622L);
+            LieferantGeschaeftsdokument rechnung = partnerDaten(722L, "4711", "XML");
+            rechnung.setBetragBrutto(new BigDecimal("238.00"));
+            stelleKiAntwortBereit(lieferschein, """
+                    {"dokumentTyp":"LIEFERSCHEIN","dokumentNummer":"4711","confidence":0.9}""");
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(lieferschein);
+
+            assertThat(lieferschein.getTyp()).isEqualTo(LieferantDokumentTyp.LIEFERSCHEIN);
+            assertThat(result.getBetragBrutto()).isNull();
+        }
+
+        private ZugferdDaten zugferdRechnung(String nummer, String art) {
+            ZugferdDaten zugferd = new ZugferdDaten();
+            zugferd.setRechnungsnummer(nummer);
+            zugferd.setBetrag(new BigDecimal("119.00"));
+            zugferd.setGeschaeftsdokumentart(art);
+            zugferd.setArtikelPositionen(List.of(new org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition(
+                    "A-1", "Flachstahl", BigDecimal.ONE, "Stk", new BigDecimal("100.00"), null,
+                    new BigDecimal("100.00"))));
+            return zugferd;
+        }
+
+        /** Wie {@link #stelleKiAntwortBereit}, nur mit ZUGFeRD-Treffer statt KI-Aufruf. */
+        private void stelleZugferdBereit(LieferantDokument dokument, ZugferdDaten zugferd) {
+            when(zugferdExtractorService.extract(anyString(), anyString())).thenReturn(zugferd);
+            when(dokumentRepository.findById(dokument.getId())).thenReturn(Optional.of(dokument));
+            when(dokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(lieferantGeschaeftsdokumentRepository.saveAndFlush(any(LieferantGeschaeftsdokument.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+        }
+
         @Test
         @org.junit.jupiter.api.DisplayName("Duplikat: gleicher Typ oder offener Typ darf zusammengefuehrt werden")
         void gleicherBelegTyp() {
@@ -1533,13 +1695,13 @@ class GeminiDokumentAnalyseServiceTest {
             anders.setDokument(lieferschein);
             LieferantGeschaeftsdokument ohneDokument = new LieferantGeschaeftsdokument();
 
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, gleich)).isTrue();
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, anders)).isFalse();
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, ohneDokument)).isTrue();
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), gleich)).isTrue();
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isFalse();
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), ohneDokument)).isTrue();
             rechnung.setTyp(LieferantDokumentTyp.SONSTIG);
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, anders)).isTrue();
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isTrue();
             rechnung.setTyp(null);
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung, anders)).isTrue();
+            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isTrue();
         }
 
         private HttpResponse<String> antwort(String text, String finishReason) throws Exception {
