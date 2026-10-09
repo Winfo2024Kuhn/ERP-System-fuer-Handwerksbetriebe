@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.KostenstellenTyp;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
@@ -13,15 +14,19 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAntei
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -38,6 +43,7 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
     private BelegRepository belegRepository;
     private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
     private BelegService belegService;
+    private LieferantDokumentZugriffService zugriffService;
     private BestellungsUebersichtController controller;
 
     @BeforeEach
@@ -47,6 +53,9 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
         belegRepository = mock(BelegRepository.class);
         belegKostenstellenAnteilRepository = mock(BelegKostenstellenAnteilRepository.class);
         belegService = mock(BelegService.class);
+        zugriffService = mock(LieferantDokumentZugriffService.class);
+        when(zugriffService.sichtbareTypen(any(), any()))
+                .thenReturn(Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)));
         controller = new BestellungsUebersichtController(
                 mock(LieferantDokumentRepository.class),
                 mock(LieferantGeschaeftsdokumentRepository.class),
@@ -61,7 +70,8 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
                 mock(org.example.kalkulationsprogramm.service.RechnungsVorschlagService.class),
                 mock(org.example.kalkulationsprogramm.service.LieferantDokumentService.class),
                 mock(org.example.kalkulationsprogramm.service.BestellungsUebersichtService.class),
-                mock(org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService.class));
+                mock(org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService.class),
+                zugriffService);
     }
 
     @Test
@@ -156,12 +166,42 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
         return ks;
     }
 
+    @Test
+    void auswertungUndZuordnungenIgnorierenNichtSichtbareDokumenttypen() {
+        when(zugriffService.sichtbareTypen(any(), any()))
+                .thenReturn(Optional.of(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN)));
+        Kostenstelle ks = kostenstelle(5L, "Fuhrpark");
+        when(kostenstelleRepository.findByAktivTrueOrderBySortierungAsc()).thenReturn(List.of(ks));
+        when(belegService.findCaller(isNull(), isNull())).thenReturn(null);
+        // anteil(...) legt ein RECHNUNG-Dokument an -> für diesen Aufrufer unsichtbar
+        when(projektAnteilRepository.findByKostenstelleId(5L)).thenReturn(List.of(
+                anteil(ks, LocalDate.of(2026, 3, 10), BigDecimal.valueOf(100))));
+
+        var auswertung = controller.getKostenstellenAuswertung(2026, null, null, null);
+        var zuordnungen = controller.getZuordnungenForKostenstelle(5L, null, null);
+
+        assertThat(auswertung.getBody().get(0).summeDiesesJahr()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(auswertung.getBody().get(0).anzahlDiesesJahr()).isZero();
+        assertThat(zuordnungen.getBody()).isEmpty();
+    }
+
+    @Test
+    void auswertungOhneAnmeldungGibt401() {
+        when(zugriffService.sichtbareTypen(any(), any())).thenReturn(Optional.empty());
+
+        assertThat(controller.getKostenstellenAuswertung(2026, null, null, null).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(controller.getZuordnungenForKostenstelle(5L, null, null).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
     private LieferantDokumentProjektAnteil anteil(Kostenstelle ks, LocalDate datum, BigDecimal betrag) {
         LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
         gd.setDokumentDatum(datum);
 
         LieferantDokument dok = new LieferantDokument();
         dok.setId(1L);
+        dok.setTyp(LieferantDokumentTyp.RECHNUNG);
         dok.setGeschaeftsdaten(gd);
 
         LieferantDokumentProjektAnteil anteil = new LieferantDokumentProjektAnteil();

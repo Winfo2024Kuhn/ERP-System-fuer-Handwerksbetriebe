@@ -225,6 +225,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST,
                         "/api/lieferant-dokumente/relink-all",
                         "/api/lieferant-dokumente/lieferant/*/relink").hasRole("ADMIN")
+                // Duplikat-Liste zeigt Nummern und Lieferanten aller Dokumenttypen; die Massen-Neuanalyse
+                // eines Lieferanten ueberschreibt Geschaeftsdaten aller Typen - beides nur Admin.
+                .requestMatchers(HttpMethod.GET, "/api/lieferant-dokumente/duplicates").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/lieferant-dokumente/lieferant/*/reanalyze").hasRole("ADMIN")
                 // Projekt-Wartungsaktionen schreiben ueber den gesamten Bestand - nur Admin.
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 // Beiträge-Modul pusht direkt in den öffentlichen Website-Auftritt. MVP-mäßig

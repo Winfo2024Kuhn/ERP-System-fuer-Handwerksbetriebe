@@ -2,16 +2,21 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.Abteilung;
+import org.example.kalkulationsprogramm.domain.LieferantDokument;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -65,6 +70,16 @@ class OffenePostenControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
 
+    @MockBean
+    private LieferantDokumentZugriffService zugriffService;
+
+    @BeforeEach
+    void alleTypenSichtbar() {
+        // Die Typ-Rechte selbst prüfen die Tests unten ("Dokumentrechte") und LieferantDokumentZugriffServiceTest.
+        given(zugriffService.sichtbareTypen(any(), any()))
+                .willReturn(Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)));
+    }
+
     private Mitarbeiter buildMitarbeiter(boolean darfGenehmigen, boolean darfSehen) {
         Mitarbeiter m = new Mitarbeiter();
         m.setId(1L);
@@ -78,6 +93,13 @@ class OffenePostenControllerTest {
         return m;
     }
 
+    private LieferantDokument dokument(Long id, LieferantDokumentTyp typ) {
+        LieferantDokument dokument = new LieferantDokument();
+        dokument.setId(id);
+        dokument.setTyp(typ);
+        return dokument;
+    }
+
     private LieferantGeschaeftsdokument buildGeschaeftsdokument(Long id) {
         LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
         gd.setId(id);
@@ -87,6 +109,7 @@ class OffenePostenControllerTest {
         gd.setBetragNetto(new BigDecimal("1000.00"));
         gd.setBezahlt(false);
         gd.setGenehmigt(false);
+        gd.setDokument(dokument(id, LieferantDokumentTyp.RECHNUNG));
         return gd;
     }
 
@@ -98,7 +121,7 @@ class OffenePostenControllerTest {
         @DisplayName("Abteilung Büro (3) sieht alle offenen Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             given(geschaeftsdokumentRepository.findAllOffeneEingangsrechnungen()).willReturn(List.of(gd));
@@ -114,7 +137,7 @@ class OffenePostenControllerTest {
         @DisplayName("Abteilung Buchhaltung (2) sieht nur genehmigte Rechnungen")
         void buchhaltungSiehtNurGenehmigte() throws Exception {
             Mitarbeiter m = buildMitarbeiter(false, true);
-            given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("bh-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllOffeneGenehmigte()).willReturn(List.of());
 
             mockMvc.perform(get("/api/offene-posten/eingang")
@@ -135,7 +158,7 @@ class OffenePostenControllerTest {
         @Test
         @DisplayName("Ungültiger Token bekommt leere Liste")
         void ungueltigerTokenLeereListe() throws Exception {
-            given(mitarbeiterRepository.findByLoginToken("invalid")).willReturn(Optional.empty());
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("invalid")).willReturn(Optional.empty());
 
             mockMvc.perform(get("/api/offene-posten/eingang")
                             .header("X-Auth-Token", "invalid"))
@@ -152,7 +175,7 @@ class OffenePostenControllerTest {
         @DisplayName("Abteilung Büro sieht alle Rechnungen")
         void bueroSiehtAlleRechnungen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findAllEingangsrechnungen()).willReturn(List.of());
 
             mockMvc.perform(get("/api/offene-posten/eingang/alle")
@@ -169,7 +192,7 @@ class OffenePostenControllerTest {
         @DisplayName("Setzt Rechnung als bezahlt")
         void setztAlsBezahlt() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             given(geschaeftsdokumentRepository.findById(1L)).willReturn(Optional.of(gd));
@@ -198,7 +221,7 @@ class OffenePostenControllerTest {
         @DisplayName("Skonto wird berechnet wenn innerhalb Frist")
         void skontoBerechnung() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             gd.setSkontoTage(30);
@@ -223,7 +246,7 @@ class OffenePostenControllerTest {
         @DisplayName("Büro-Mitarbeiter kann genehmigen")
         void bueroKannGenehmigen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
 
             LieferantGeschaeftsdokument gd = buildGeschaeftsdokument(1L);
             given(geschaeftsdokumentRepository.findById(1L)).willReturn(Optional.of(gd));
@@ -241,7 +264,7 @@ class OffenePostenControllerTest {
         @DisplayName("Buchhaltung (Abt. 2) darf nicht genehmigen → 403")
         void buchhaltungDarfNichtGenehmigen() throws Exception {
             Mitarbeiter m = buildMitarbeiter(false, true);
-            given(mitarbeiterRepository.findByLoginToken("bh-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("bh-token")).willReturn(Optional.of(m));
 
             mockMvc.perform(patch("/api/offene-posten/eingang/1/genehmigen")
                             .header("X-Auth-Token", "bh-token")
@@ -263,7 +286,7 @@ class OffenePostenControllerTest {
         @DisplayName("Unbekannte Rechnung gibt 404 (bei berechtigtem Benutzer)")
         void unbekannteRechnungGibt404() throws Exception {
             Mitarbeiter m = buildMitarbeiter(true, true);
-            given(mitarbeiterRepository.findByLoginToken("buero-token")).willReturn(Optional.of(m));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token")).willReturn(Optional.of(m));
             given(geschaeftsdokumentRepository.findById(999L)).willReturn(Optional.empty());
 
             mockMvc.perform(patch("/api/offene-posten/eingang/999/genehmigen")
@@ -277,13 +300,92 @@ class OffenePostenControllerTest {
         @DisplayName("SQL Injection im Token wird nicht interpretiert")
         void sqlInjectionImToken() throws Exception {
             String sqlToken = "'; DROP TABLE mitarbeiter; --";
-            given(mitarbeiterRepository.findByLoginToken(sqlToken)).willReturn(Optional.empty());
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue(sqlToken)).willReturn(Optional.empty());
 
             mockMvc.perform(patch("/api/offene-posten/eingang/1/genehmigen")
                             .header("X-Auth-Token", sqlToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"genehmigt\": true}"))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Dokumentrechte (Typ-Prüfung)")
+    class Dokumentrechte {
+
+        @Test
+        @DisplayName("Offene Posten zeigen nur Dokumenttypen, die der Aufrufer sehen darf")
+        void listeEnthaeltNurSichtbareTypen() throws Exception {
+            given(zugriffService.sichtbareTypen(any(), any()))
+                    .willReturn(Optional.of(EnumSet.of(LieferantDokumentTyp.RECHNUNG)));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
+                    .willReturn(Optional.of(buildMitarbeiter(true, true)));
+            LieferantGeschaeftsdokument rechnung = buildGeschaeftsdokument(1L);
+            LieferantGeschaeftsdokument gutschrift = buildGeschaeftsdokument(2L);
+            gutschrift.setDokument(dokument(2L, LieferantDokumentTyp.GUTSCHRIFT));
+            gutschrift.setDokumentNummer("GU-001");
+            LieferantGeschaeftsdokument ohneDokument = buildGeschaeftsdokument(3L);
+            ohneDokument.setDokument(null);
+            given(geschaeftsdokumentRepository.findAllOffeneEingangsrechnungen())
+                    .willReturn(List.of(rechnung, gutschrift, ohneDokument));
+
+            mockMvc.perform(get("/api/offene-posten/eingang").header("X-Auth-Token", "buero-token"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].dokumentNummer").value("RE-001"));
+        }
+
+        @Test
+        @DisplayName("Alle Eingangsrechnungen: ohne Rechnungs-Recht bleibt die Liste leer")
+        void alleListeOhneRechnungsRechtIstLeer() throws Exception {
+            given(zugriffService.sichtbareTypen(any(), any()))
+                    .willReturn(Optional.of(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN)));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
+                    .willReturn(Optional.of(buildMitarbeiter(true, true)));
+            given(geschaeftsdokumentRepository.findAllEingangsrechnungen())
+                    .willReturn(List.of(buildGeschaeftsdokument(1L)));
+
+            mockMvc.perform(get("/api/offene-posten/eingang/alle").header("X-Auth-Token", "buero-token"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Nicht angemeldeter Aufrufer sieht keinen Typ")
+        void nichtAngemeldetSiehtNichts() throws Exception {
+            given(zugriffService.sichtbareTypen(any(), any())).willReturn(Optional.empty());
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
+                    .willReturn(Optional.of(buildMitarbeiter(true, true)));
+            given(geschaeftsdokumentRepository.findAllOffeneEingangsrechnungen())
+                    .willReturn(List.of(buildGeschaeftsdokument(1L)));
+
+            mockMvc.perform(get("/api/offene-posten/eingang").header("X-Auth-Token", "buero-token"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Bezahlt/Genehmigt auf ein nicht sichtbares Dokument: 404, nichts wird gespeichert")
+        void schreibenAufNichtSichtbaresDokumentGibt404() throws Exception {
+            given(zugriffService.sichtbareTypen(any(), any()))
+                    .willReturn(Optional.of(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN)));
+            given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("buero-token"))
+                    .willReturn(Optional.of(buildMitarbeiter(true, true)));
+            given(geschaeftsdokumentRepository.findById(1L)).willReturn(Optional.of(buildGeschaeftsdokument(1L)));
+
+            mockMvc.perform(put("/api/offene-posten/eingang/1/bezahlt")
+                            .header("X-Auth-Token", "buero-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"bezahlt\": true}"))
+                    .andExpect(status().isNotFound());
+            mockMvc.perform(patch("/api/offene-posten/eingang/1/genehmigen")
+                            .header("X-Auth-Token", "buero-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"genehmigt\": true}"))
+                    .andExpect(status().isNotFound());
+
+            org.mockito.Mockito.verify(geschaeftsdokumentRepository, org.mockito.Mockito.never()).save(any());
         }
     }
 

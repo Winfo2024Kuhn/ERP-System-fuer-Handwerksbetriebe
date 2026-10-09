@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
@@ -98,9 +99,14 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
     @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
+    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
 
     @org.junit.jupiter.api.BeforeEach
     void threadKennzahlenWieEinzelmail() {
+        // Anhang-Rechte prüft der Test "Attachment Download Tests" gezielt; sonst darf der Aufrufer alles öffnen.
+        given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.of(
+                java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
+        given(lieferantDokumentZugriffService.istAnhangSichtbar(any(), any())).willReturn(true);
         given(emailThreadService.kennzahlenFuer(any())).willAnswer(invocation -> {
             Email email = invocation.getArgument(0);
             return new EmailThreadService.ThreadKennzahlen(email.getId(), 1, email.getSentAt());
@@ -928,6 +934,112 @@ class UnifiedEmailControllerTest {
     @Nested
     @DisplayName("Attachment Download Tests")
     class AttachmentDownloadTests {
+        @Test
+        @DisplayName("downloadAttachment: Anhang eines gesperrten Dokumenttyps (Rechnung per Mail) -> 404")
+        void downloadAttachment_gesperrterDokumenttypGibt404() throws Exception {
+            Email email = createTestEmail(210L, "Test", "absender@example.com");
+            EmailAttachment att = new EmailAttachment();
+            att.setId(510L);
+            att.setEmail(email);
+            att.setOriginalFilename("rechnung.pdf");
+            att.setStoredFilename("test-gesperrt.pdf");
+            email.setAttachments(List.of(att));
+            given(emailRepository.findById(210L)).willReturn(Optional.of(email));
+            given(lieferantDokumentZugriffService.istAnhangSichtbar(eq(510L), any())).willReturn(false);
+
+            mockMvc.perform(get("/api/emails/210/attachments/510"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("downloadAttachment: ohne Anmeldung -> 401, es wird nichts geladen")
+        void downloadAttachment_ohneAnmeldungGibt401() throws Exception {
+            given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.empty());
+
+            mockMvc.perform(get("/api/emails/210/attachments/510"))
+                    .andExpect(status().isUnauthorized());
+
+            org.mockito.Mockito.verifyNoInteractions(emailRepository);
+        }
+
+        @Test
+        @DisplayName("download-all: gesperrter Anhang fehlt im ZIP, freier Anhang bleibt")
+        void downloadAll_ueberspringtGesperrteAnhaenge() throws Exception {
+            java.nio.file.Path tempDir = java.nio.file.Path.of("target/test-attachments");
+            java.nio.file.Files.createDirectories(tempDir);
+            java.nio.file.Files.writeString(tempDir.resolve("zip-frei.pdf"), "%PDF-1.4 frei");
+            java.nio.file.Files.writeString(tempDir.resolve("zip-gesperrt.pdf"), "%PDF-1.4 gesperrt");
+            Email email = createTestEmail(220L, "Test", "absender@example.com");
+            EmailAttachment frei = new EmailAttachment();
+            frei.setId(520L);
+            frei.setEmail(email);
+            frei.setOriginalFilename("frei.pdf");
+            frei.setStoredFilename("zip-frei.pdf");
+            EmailAttachment gesperrt = new EmailAttachment();
+            gesperrt.setId(521L);
+            gesperrt.setEmail(email);
+            gesperrt.setOriginalFilename("rechnung.pdf");
+            gesperrt.setStoredFilename("zip-gesperrt.pdf");
+            email.setAttachments(List.of(frei, gesperrt));
+            given(emailRepository.findById(220L)).willReturn(Optional.of(email));
+            given(lieferantDokumentZugriffService.istAnhangSichtbar(eq(521L), any())).willReturn(false);
+
+            byte[] zip = mockMvc.perform(get("/api/emails/220/attachments/download-all"))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsByteArray();
+
+            java.util.List<String> eintraege = new java.util.ArrayList<>();
+            try (var zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zip))) {
+                for (var e = zis.getNextEntry(); e != null; e = zis.getNextEntry()) {
+                    eintraege.add(e.getName());
+                }
+            }
+            org.junit.jupiter.api.Assertions.assertEquals(List.of("frei.pdf"), eintraege);
+        }
+
+        @Test
+        @DisplayName("download-all: nur gesperrte Anhänge -> 204; ohne Anmeldung -> 401")
+        void downloadAll_nurGesperrteOderOhneAnmeldung() throws Exception {
+            Email email = createTestEmail(221L, "Test", "absender@example.com");
+            EmailAttachment gesperrt = new EmailAttachment();
+            gesperrt.setId(522L);
+            gesperrt.setEmail(email);
+            gesperrt.setOriginalFilename("rechnung.pdf");
+            gesperrt.setStoredFilename("zip-gesperrt.pdf");
+            email.setAttachments(List.of(gesperrt));
+            given(emailRepository.findById(221L)).willReturn(Optional.of(email));
+            given(lieferantDokumentZugriffService.istAnhangSichtbar(eq(522L), any())).willReturn(false);
+
+            mockMvc.perform(get("/api/emails/221/attachments/download-all"))
+                    .andExpect(status().isNoContent());
+
+            given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.empty());
+            mockMvc.perform(get("/api/emails/221/attachments/download-all"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("downloadAttachment: freier Anhang wird für Nicht-Admin ausgeliefert")
+        void downloadAttachment_freierAnhangWirdAusgeliefert() throws Exception {
+            java.nio.file.Path tempDir = java.nio.file.Path.of("target/test-attachments");
+            java.nio.file.Files.createDirectories(tempDir);
+            java.nio.file.Files.writeString(tempDir.resolve("test-frei.pdf"), "%PDF-1.4 dummy");
+            Email email = createTestEmail(230L, "Test", "absender@example.com");
+            EmailAttachment att = new EmailAttachment();
+            att.setId(530L);
+            att.setEmail(email);
+            att.setOriginalFilename("foto.pdf");
+            att.setStoredFilename("test-frei.pdf");
+            att.setMimeType("application/pdf");
+            email.setAttachments(List.of(att));
+            given(emailRepository.findById(230L)).willReturn(Optional.of(email));
+            given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.of(
+                    java.util.EnumSet.of(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN)));
+            given(lieferantDokumentZugriffService.istAnhangSichtbar(eq(530L), any())).willReturn(true);
+
+            mockMvc.perform(get("/api/emails/230/attachments/530")).andExpect(status().isOk());
+        }
+
         @Test
         @DisplayName("downloadAttachment bereinigt CRLF aus MIME-Type")
         void downloadAttachment_bereinigtCrlfAusMimeType() throws Exception {

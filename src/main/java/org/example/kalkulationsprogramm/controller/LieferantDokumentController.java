@@ -7,9 +7,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.Email;
@@ -26,6 +28,7 @@ import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -43,6 +46,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
@@ -57,6 +61,7 @@ public class LieferantDokumentController {
     private final LieferantDokumentRepository dokumentRepository;
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final LieferantDokumentService dokumentService;
+    private final LieferantDokumentZugriffService zugriffService;
     private final GeminiDokumentAnalyseService analyseService;
     private final EmailRepository emailRepository;
     private final EmailAttachmentProcessingService emailAttachmentProcessingService;
@@ -104,14 +109,21 @@ public class LieferantDokumentController {
         }
 
         var dokument = dokumentRepository.findById(dokumentId).orElse(null);
-        if (dokument == null) {
+        // Bearbeiten darf nur, wer den Dokumenttyp laut Abteilungsrechten auch sehen darf.
+        Set<LieferantDokumentTyp> sichtbar = zugriffService.sichtbareTypen(null, authentication)
+                .orElseGet(() -> EnumSet.noneOf(LieferantDokumentTyp.class));
+        if (dokument == null || !sichtbar.contains(dokument.getTyp())) {
             return ResponseEntity.notFound().build();
         }
 
-        // Dokumenttyp aktualisieren
+        // Dokumenttyp aktualisieren – nie auf einen Typ, den der Aufrufer selbst nicht sehen darf
         if (request.typ != null) {
             try {
-                dokument.setTyp(LieferantDokumentTyp.valueOf(request.typ));
+                LieferantDokumentTyp neuerTyp = LieferantDokumentTyp.valueOf(request.typ);
+                if (!sichtbar.contains(neuerTyp)) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+                }
+                dokument.setTyp(neuerTyp);
             } catch (IllegalArgumentException ignored) {
                 // Ungültiger Typ - ignorieren
             }
@@ -200,8 +212,10 @@ public class LieferantDokumentController {
         geschaeftsdokumentRepository.save(gd);
         dokumentRepository.save(dokument);
 
-        // Als DTO zurückgeben
-        return ResponseEntity.ok(dokumentService.getDokumentById(dokumentId));
+        // Als DTO zurückgeben – Verknüpfungen nicht sichtbarer Typen entfallen
+        return zugriffService.beschraenkeDokument(dokumentService.getDokumentById(dokumentId), sichtbar)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /**
@@ -300,23 +314,36 @@ public class LieferantDokumentController {
      */
     @GetMapping("/{dokumentId}")
     @Transactional(readOnly = true)
-    public ResponseEntity<LieferantDokumentDto.Response> getDokument(@PathVariable Long dokumentId) {
-        var dto = dokumentService.getDokumentById(dokumentId);
-        if (dto == null) {
-            return ResponseEntity.notFound().build();
+    public ResponseEntity<LieferantDokumentDto.Response> getDokument(@PathVariable Long dokumentId,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
+        // Nur Dokumenttypen, die der Aufrufer laut Abteilungsrechten sehen darf (Admin: alle).
+        // Nicht sichtbare Dokumente antworten 404, damit ihre Existenz nicht verraten wird.
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        return ResponseEntity.ok(dto);
+        return zugriffService
+                .beschraenkeDokument(dokumentService.getDokumentById(dokumentId), sichtbareTypen.get())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /**
      * Re-analysiert ein einzelnes Dokument.
      */
     @PostMapping("/{dokumentId}/reanalyze")
-    public ResponseEntity<LieferantDokumentDto.Response> reanalyzeDokument(@PathVariable Long dokumentId) {
+    public ResponseEntity<LieferantDokumentDto.Response> reanalyzeDokument(@PathVariable Long dokumentId,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
         log.info("Starte Re-Analyse für Dokument {}", dokumentId);
 
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         var dokument = dokumentRepository.findById(dokumentId).orElse(null);
-        if (dokument == null) {
+        if (dokument == null || !sichtbareTypen.get().contains(dokument.getTyp())) {
             return ResponseEntity.notFound().build();
         }
 
@@ -324,11 +351,14 @@ public class LieferantDokumentController {
             var result = analyseService.analysiereDokument(dokument);
             if (result != null) {
                 log.info("Re-Analyse erfolgreich für Dokument {}: {}", dokumentId, result.getDokumentNummer());
-                return ResponseEntity.ok(dokumentService.getDokumentById(dokumentId));
             } else {
                 log.warn("Re-Analyse ohne Ergebnis für Dokument {}", dokumentId);
-                return ResponseEntity.ok(dokumentService.getDokumentById(dokumentId));
             }
+            // Die Analyse kann den Typ ändern; Antwort deshalb erneut gegen die Rechte prüfen
+            return zugriffService.beschraenkeDokument(dokumentService.getDokumentById(dokumentId),
+                    sichtbareTypen.get())
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (Exception e) {
             log.error("Re-Analyse fehlgeschlagen für Dokument {}: {}", dokumentId, e.getMessage());
             return ResponseEntity.internalServerError().build();
@@ -713,9 +743,15 @@ public class LieferantDokumentController {
      * Fallback-Endpoint für die Bestellungsübersicht.
      */
     @GetMapping("/{dokumentId}/download")
-    public ResponseEntity<byte[]> downloadDokument(@PathVariable Long dokumentId) {
+    public ResponseEntity<byte[]> downloadDokument(@PathVariable Long dokumentId,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication authentication) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         LieferantDokument dokument = dokumentRepository.findById(dokumentId).orElse(null);
-        if (dokument == null) {
+        if (dokument == null || !sichtbareTypen.get().contains(dokument.getTyp())) {
             return ResponseEntity.notFound().build();
         }
 

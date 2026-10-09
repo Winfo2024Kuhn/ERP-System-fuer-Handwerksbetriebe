@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -166,6 +167,18 @@ public class LieferantDokumentService {
         @Transactional(readOnly = true)
         public long zaehleDokumente(Long lieferantId) {
                 return dokumentRepository.zaehleByLieferantId(lieferantId);
+        }
+
+        /**
+         * Welche der E-Mail-Anhänge sind als Lieferanten-Dokument eines der übergebenen Typen
+         * abgelegt? Dient dazu, Anhänge nicht sichtbarer Dokumenttypen auszublenden.
+         */
+        @Transactional(readOnly = true)
+        public Set<Long> findAnhangIdsMitTyp(Collection<Long> anhangIds, Set<LieferantDokumentTyp> typen) {
+                if (anhangIds.isEmpty() || typen.isEmpty()) {
+                        return Set.of();
+                }
+                return new HashSet<>(dokumentRepository.findAnhangIdsMitDokumentTyp(anhangIds, typen));
         }
 
         /** Zählt nur Dokumente der übergebenen (sichtbaren) Typen. */

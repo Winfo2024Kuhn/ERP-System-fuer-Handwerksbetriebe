@@ -25,11 +25,13 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.dto.Rechnungsuebersicht.AusgangsrechnungDto;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -66,6 +68,7 @@ public class RechnungsuebersichtController {
     private final LieferantenRepository lieferantenRepository;
     private final GeminiDokumentAnalyseService geminiService;
     private final LieferantDokumentRepository lieferantDokumentRepository;
+    private final LieferantDokumentZugriffService zugriffService;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
@@ -97,7 +100,14 @@ public class RechnungsuebersichtController {
     public ResponseEntity<List<EingangsrechnungDto>> getEingangsrechnungen(
             @RequestParam(required = false) Integer year,
             @RequestParam(required = false) Integer month,
-            @RequestParam(required = false) String search) {
+            @RequestParam(required = false) String search,
+            Authentication authentication) {
+
+        // Nur Dokumenttypen, die der Angemeldete laut Abteilungsrechten sehen darf (Admin: alle).
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
 
         List<LieferantGeschaeftsdokument> rechnungen;
 
@@ -116,6 +126,10 @@ public class RechnungsuebersichtController {
             // All invoices
             rechnungen = lieferantGeschaeftsdokumentRepository.findAllEingangsrechnungen();
         }
+
+        rechnungen = rechnungen.stream()
+                .filter(r -> r.getDokument() != null && sichtbareTypen.get().contains(r.getDokument().getTyp()))
+                .collect(Collectors.toList());
 
         // Apply search filter if present
         if (search != null && !search.isBlank()) {
@@ -162,7 +176,11 @@ public class RechnungsuebersichtController {
      * Akzeptiert separate Listen für Ausgangs- und Eingangsrechnungen.
      */
     @PostMapping("/merge-pdf")
-    public ResponseEntity<?> mergePdfs(@Valid @RequestBody MergePdfRequest request) {
+    public ResponseEntity<?> mergePdfs(@Valid @RequestBody MergePdfRequest request, Authentication authentication) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         log.info("[merge-pdf] Request received: ausgangIds={}, eingangIds={}",
                 request.getAusgangIds(), request.getEingangIds());
         List<RandomAccessReadBuffer> buffers = new ArrayList<>();
@@ -186,7 +204,10 @@ public class RechnungsuebersichtController {
                     var gdOpt = lieferantGeschaeftsdokumentRepository.findById(id);
                     if (gdOpt.isPresent()) {
                         var gd = gdOpt.get();
-                        if (gd.getDokument() != null) {
+                        if (gd.getDokument() != null && !sichtbareTypen.get().contains(gd.getDokument().getTyp())) {
+                            // Nicht sichtbarer Typ: wie "nicht gefunden" behandeln, nichts preisgeben.
+                            log.warn("[merge-pdf] Eingangsrechnung ID={} nicht sichtbar", id);
+                        } else if (gd.getDokument() != null) {
                             Path pdfPath = resolveLieferantDokumentPath(gd.getDokument());
                             log.info("[merge-pdf] Resolved path={}, exists={}", pdfPath,
                                     pdfPath != null && Files.exists(pdfPath));

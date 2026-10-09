@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -22,6 +23,7 @@ class RechnungsuebersichtControllerTest {
     @Mock LieferantenRepository lieferantenRepository;
     @Mock GeminiDokumentAnalyseService geminiService;
     @Mock LieferantDokumentRepository lieferantDokumentRepository;
+    @Mock LieferantDokumentZugriffService zugriffService;
     @org.junit.jupiter.api.io.TempDir java.nio.file.Path uploads;
     RechnungsuebersichtController controller;
 
@@ -29,7 +31,10 @@ class RechnungsuebersichtControllerTest {
     void setUp() {
         controller = new RechnungsuebersichtController(
                 new org.example.kalkulationsprogramm.service.RechnungsuebersichtService(ausgangsRepository, projektDokumentRepository, uploads.toString()),
-                lieferantGeschaeftsdokumentRepository, mitarbeiterRepository, lieferantenRepository, geminiService, lieferantDokumentRepository);
+                lieferantGeschaeftsdokumentRepository, mitarbeiterRepository, lieferantenRepository, geminiService, lieferantDokumentRepository, zugriffService);
+        // Angemeldeter Nutzer mit Zugriff auf alle Dokumenttypen (z. B. Admin)
+        lenient().when(zugriffService.sichtbareTypen(any(), any()))
+                .thenReturn(java.util.Optional.of(java.util.EnumSet.allOf(LieferantDokumentTyp.class)));
     }
 
     @Test
@@ -111,7 +116,7 @@ class RechnungsuebersichtControllerTest {
     void fehlendesAusgangsPdfLiefertFehlerStattEinenUnvollstaendigenExport() {
         when(ausgangsRepository.findById(42L)).thenReturn(java.util.Optional.of(
                 dokument(42, AusgangsGeschaeftsDokumentTyp.STORNO, "ST-42", "2026-09-13", "-119")));
-        var response = controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of()));
+        var response = controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of()), null);
         assertThat(response.getStatusCode().value()).isEqualTo(400);
         verify(projektDokumentRepository, never()).findById(anyLong());
     }
@@ -127,7 +132,7 @@ class RechnungsuebersichtControllerTest {
         }
         when(ausgangsRepository.findById(42L)).thenReturn(java.util.Optional.of(d));
         when(projektDokumentRepository.findGeschaeftsdokumenteByDokumentid("RE-42")).thenReturn(List.of(detail));
-        var result = controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of()));
+        var result = controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of()), null);
         assertThat(result.getStatusCode().value()).isEqualTo(200);
         try (var pdf = org.apache.pdfbox.Loader.loadPDF((byte[]) result.getBody())) {
             assertThat(pdf.getNumberOfPages()).isEqualTo(1);
@@ -141,16 +146,17 @@ class RechnungsuebersichtControllerTest {
         var detail = new ProjektGeschaeftsdokument(); detail.setGespeicherterDateiname("../anderes.pdf");
         when(ausgangsRepository.findById(42L)).thenReturn(java.util.Optional.of(d));
         when(projektDokumentRepository.findGeschaeftsdokumenteByDokumentid("RE-42")).thenReturn(List.of(detail));
-        assertThat(controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of())).getStatusCode().value()).isEqualTo(400);
+        assertThat(controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of()), null).getStatusCode().value()).isEqualTo(400);
     }
 
     @Test
     void eingangBehaeltGutschriftUndNegativenBetragBei() {
         var g = new LieferantGeschaeftsdokument(); g.setId(11L); g.setDokumentNummer("GU-11");
+        var gutschriftDok = new LieferantDokument(); gutschriftDok.setTyp(LieferantDokumentTyp.GUTSCHRIFT); g.setDokument(gutschriftDok);
         g.setDokumentDatum(LocalDate.of(2026, 9, 13)); g.setBetragBrutto(new BigDecimal("-119"));
         when(lieferantGeschaeftsdokumentRepository.findRechnungenByDatumBetween(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
                 .thenReturn(new java.util.ArrayList<>(List.of(g)));
-        var result = controller.getEingangsrechnungen(2026, 9, null).getBody();
+        var result = controller.getEingangsrechnungen(2026, 9, null, null).getBody();
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().betragBrutto).isEqualTo(-119.0);
     }
@@ -170,8 +176,110 @@ class RechnungsuebersichtControllerTest {
             pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage()); pdf.save(uploads.resolve("storno.pdf").toFile());
         }
         when(ausgangsRepository.findById(42L)).thenReturn(java.util.Optional.of(d));
-        var result = controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of()));
+        var result = controller.mergePdfs(new RechnungsuebersichtController.MergePdfRequest(List.of(42L), List.of()), null);
         assertThat(result.getStatusCode().value()).isEqualTo(200);
         verifyNoInteractions(projektDokumentRepository);
+    }
+
+    // ---------------------------------------------------------------- Dokumentrechte (Eingang)
+
+    private LieferantGeschaeftsdokument eingang(long id, LieferantDokumentTyp typ) {
+        var dok = new LieferantDokument();
+        dok.setId(id);
+        dok.setTyp(typ);
+        var gd = new LieferantGeschaeftsdokument();
+        gd.setId(id);
+        gd.setDokumentNummer("NR-" + id);
+        gd.setDokumentDatum(LocalDate.of(2026, 9, 13));
+        gd.setDokument(dok);
+        return gd;
+    }
+
+    private void sichtbar(LieferantDokumentTyp... typen) {
+        when(zugriffService.sichtbareTypen(any(), any())).thenReturn(java.util.Optional.of(
+                typen.length == 0 ? java.util.EnumSet.noneOf(LieferantDokumentTyp.class)
+                        : java.util.EnumSet.copyOf(List.of(typen))));
+    }
+
+    @Test
+    void eingangZeigtNurSichtbareDokumenttypen() {
+        sichtbar(LieferantDokumentTyp.RECHNUNG);
+        var ohneDokument = new LieferantGeschaeftsdokument();
+        ohneDokument.setId(3L);
+        when(lieferantGeschaeftsdokumentRepository.findAllEingangsrechnungen()).thenReturn(new java.util.ArrayList<>(
+                List.of(eingang(1L, LieferantDokumentTyp.RECHNUNG), eingang(2L, LieferantDokumentTyp.GUTSCHRIFT),
+                        ohneDokument)));
+
+        var result = controller.getEingangsrechnungen(null, null, null, null).getBody();
+
+        assertThat(result).extracting(d -> d.id).containsExactly(1L);
+    }
+
+    @Test
+    void eingangOhneSichtbareTypenIstLeer() {
+        sichtbar();
+        when(lieferantGeschaeftsdokumentRepository.findAllEingangsrechnungen())
+                .thenReturn(new java.util.ArrayList<>(List.of(eingang(1L, LieferantDokumentTyp.RECHNUNG))));
+
+        assertThat(controller.getEingangsrechnungen(null, null, null, null).getBody()).isEmpty();
+    }
+
+    @Test
+    void eingangOhneAnmeldungGibt401UndLaedtNichts() {
+        when(zugriffService.sichtbareTypen(any(), any())).thenReturn(java.util.Optional.empty());
+
+        var response = controller.getEingangsrechnungen(2026, 9, "'; DROP TABLE x; --", null);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        verifyNoInteractions(lieferantGeschaeftsdokumentRepository);
+    }
+
+    @Test
+    void mergeUeberspringtNichtSichtbareEingangsrechnungen() throws Exception {
+        sichtbar(LieferantDokumentTyp.RECHNUNG);
+        var erlaubt = eingang(1L, LieferantDokumentTyp.RECHNUNG);
+        var gesperrt = eingang(2L, LieferantDokumentTyp.GUTSCHRIFT);
+        erlaubt.getDokument().setGespeicherterDateiname("erlaubt.pdf");
+        gesperrt.getDokument().setGespeicherterDateiname("gesperrt.pdf");
+        for (String name : List.of("erlaubt.pdf", "gesperrt.pdf")) {
+            try (var pdf = new org.apache.pdfbox.pdmodel.PDDocument()) {
+                pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+                pdf.save(uploads.resolve(name).toFile());
+            }
+        }
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        when(lieferantGeschaeftsdokumentRepository.findById(1L)).thenReturn(java.util.Optional.of(erlaubt));
+        when(lieferantGeschaeftsdokumentRepository.findById(2L)).thenReturn(java.util.Optional.of(gesperrt));
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L, 2L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        try (var pdf = org.apache.pdfbox.Loader.loadPDF((byte[]) result.getBody())) {
+            assertThat(pdf.getNumberOfPages()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void mergeNurMitNichtSichtbarenRechnungenGibt400() {
+        sichtbar(LieferantDokumentTyp.LIEFERSCHEIN);
+        when(lieferantGeschaeftsdokumentRepository.findById(2L))
+                .thenReturn(java.util.Optional.of(eingang(2L, LieferantDokumentTyp.RECHNUNG)));
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(2L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(400);
+    }
+
+    @Test
+    void mergeOhneAnmeldungGibt401() {
+        when(zugriffService.sichtbareTypen(any(), any())).thenReturn(java.util.Optional.empty());
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(401);
+        verifyNoInteractions(lieferantGeschaeftsdokumentRepository);
     }
 }

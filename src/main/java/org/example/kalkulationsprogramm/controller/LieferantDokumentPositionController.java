@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.dto.Bestellung.DokumentPositionenDto;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService;
 import org.example.kalkulationsprogramm.service.PositionenNichtLesbarException;
 import org.springframework.http.HttpStatus;
@@ -41,10 +42,16 @@ public class LieferantDokumentPositionController {
     private final LieferantDokumentZuordnungService zuordnungService;
     private final GeminiDokumentAnalyseService analyseService;
     private final BelegService belegService;
+    private final LieferantDokumentZugriffService zugriffService;
 
     /** Positionen mit ihrem aktuellen Ziel. */
     @GetMapping("/{geschaeftsdokumentId}")
-    public ResponseEntity<?> positionen(@PathVariable @Positive Long geschaeftsdokumentId) {
+    public ResponseEntity<?> positionen(@PathVariable @Positive Long geschaeftsdokumentId,
+            @RequestParam(value = "token", required = false) String token, Authentication auth) {
+        ResponseEntity<?> abgelehnt = zugriffPruefen(geschaeftsdokumentId, token, auth);
+        if (abgelehnt != null) {
+            return abgelehnt;
+        }
         try {
             return ResponseEntity.ok(zuordnungService.positionsUebersicht(geschaeftsdokumentId));
         } catch (NoSuchElementException e) {
@@ -57,7 +64,12 @@ public class LieferantDokumentPositionController {
      * nach Dokument bis zu einer Minute.
      */
     @PostMapping("/{geschaeftsdokumentId}/auslesen")
-    public ResponseEntity<?> auslesen(@PathVariable @Positive Long geschaeftsdokumentId) {
+    public ResponseEntity<?> auslesen(@PathVariable @Positive Long geschaeftsdokumentId,
+            @RequestParam(value = "token", required = false) String token, Authentication auth) {
+        ResponseEntity<?> abgelehnt = zugriffPruefen(geschaeftsdokumentId, token, auth);
+        if (abgelehnt != null) {
+            return abgelehnt;
+        }
         try {
             analyseService.positionenNachlesen(geschaeftsdokumentId);
             return ResponseEntity.ok(zuordnungService.positionsUebersicht(geschaeftsdokumentId));
@@ -73,7 +85,12 @@ public class LieferantDokumentPositionController {
     /** Rechnet die Aufteilung durch, ohne zu speichern. */
     @PostMapping("/{geschaeftsdokumentId}/vorschau")
     public ResponseEntity<?> vorschau(@PathVariable @Positive Long geschaeftsdokumentId,
-            @Valid @RequestBody DokumentPositionenDto.AufteilungRequest request) {
+            @Valid @RequestBody DokumentPositionenDto.AufteilungRequest request,
+            @RequestParam(value = "token", required = false) String token, Authentication auth) {
+        ResponseEntity<?> abgelehnt = zugriffPruefen(geschaeftsdokumentId, token, auth);
+        if (abgelehnt != null) {
+            return abgelehnt;
+        }
         try {
             return ResponseEntity.ok(zuordnungService.vorschau(geschaeftsdokumentId, request.positionen()));
         } catch (NoSuchElementException e) {
@@ -89,6 +106,10 @@ public class LieferantDokumentPositionController {
             @Valid @RequestBody DokumentPositionenDto.AufteilungRequest request,
             @RequestParam(value = "token", required = false) String token,
             Authentication auth) {
+        ResponseEntity<?> abgelehnt = zugriffPruefen(geschaeftsdokumentId, token, auth);
+        if (abgelehnt != null) {
+            return abgelehnt;
+        }
         FrontendUserProfile zugeordnetVon = zuordnungService.zugeordnetVon(belegService.findCaller(token, auth), auth);
         try {
             int anzahl = zuordnungService.speichereNachPositionen(geschaeftsdokumentId, request, zugeordnetVon);
@@ -101,6 +122,21 @@ public class LieferantDokumentPositionController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * 401 ohne Anmeldung, 404 wenn das Dokument unbekannt oder für den Aufrufer nicht sichtbar ist,
+     * sonst {@code null}.
+     */
+    private ResponseEntity<?> zugriffPruefen(Long dokumentId, String token, Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(dokumentId, sichtbareTypen.get())) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Dokument nicht gefunden"));
+        }
+        return null;
     }
 
     private static ResponseEntity<Map<String, String>> nichtGefunden(NoSuchElementException e) {

@@ -14,8 +14,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
@@ -57,6 +59,8 @@ class BestellungsUebersichtServiceTest {
     @Mock private LieferantDokumentProjektAnteilRepository projektAnteilRepository;
     @Mock private RechnungsVorschlagService rechnungsVorschlagService;
 
+    private static final Set<LieferantDokumentTyp> ALLE_TYPEN = EnumSet.allOf(LieferantDokumentTyp.class);
+
     @Captor private ArgumentCaptor<Collection<LieferantDokument>> kandidatenCaptor;
 
     private BestellungsUebersichtService service;
@@ -76,6 +80,65 @@ class BestellungsUebersichtServiceTest {
     }
 
     @Nested
+    class Dokumentrechte {
+
+        @Test
+        void nichtSichtbareTypenTauchenInKettenNichtAuf() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
+            LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
+            verknuepfe(re, ls);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, re));
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN));
+
+            // Ohne Rechnungs-Recht ist die Rechnung weg: die Kette steht als laufende Bestellung da
+            assertThat(dto.abgeschlossen()).isEmpty();
+            assertThat(dto.laufendeBestellungen()).hasSize(1);
+            assertThat(dto.laufendeBestellungen().get(0).dokumente())
+                    .extracting(ref -> ref.id).containsExactly(1L);
+        }
+
+        @Test
+        void ohneSichtbareTypenIstDieUebersichtLeer() {
+            when(dokumentRepository.findAll()).thenReturn(List.of(
+                    dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null),
+                    dokument(2L, LieferantDokumentTyp.RECHNUNG, null)));
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(EnumSet.noneOf(LieferantDokumentTyp.class));
+
+            assertThat(dto.offeneAnfragen()).isEmpty();
+            assertThat(dto.laufendeBestellungen()).isEmpty();
+            assertThat(dto.abgeschlossen()).isEmpty();
+            assertThat(dto.zugeordnet()).isEmpty();
+            assertThat(dto.ausgeblendet()).isEmpty();
+        }
+
+        @Test
+        void rechnungsvorschlaegeKennenKeineNichtSichtbarenRechnungen() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
+            LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, re));
+            when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
+                    .thenReturn(List.of());
+
+            service.rechnungsVorschlaege(List.of(1L), true, EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN));
+
+            verify(rechnungsVorschlagService).bewerte(anyCollection(), kandidatenCaptor.capture(), any(), any());
+            assertThat(kandidatenCaptor.getValue()).isEmpty();
+        }
+
+        @Test
+        void rechnungsvorschlaegeFuerNichtSichtbaresBestelldokumentSindLeer() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls));
+
+            assertThat(service.rechnungsVorschlaege(List.of(1L), false, EnumSet.of(LieferantDokumentTyp.RECHNUNG)))
+                    .isEmpty();
+            verify(rechnungsVorschlagService, never()).bewerte(anyCollection(), anyCollection(), any(), any());
+        }
+    }
+
+    @Nested
     class StatusRegel {
 
         @Test
@@ -85,7 +148,7 @@ class BestellungsUebersichtServiceTest {
             verknuepfe(re, ls);
             when(dokumentRepository.findAll()).thenReturn(List.of(ls, re));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.abgeschlossen()).hasSize(1);
             assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -100,7 +163,7 @@ class BestellungsUebersichtServiceTest {
             when(projektAnteilRepository.findAll()).thenReturn(List.of(anteil));
             when(dokumentRepository.findAll()).thenReturn(List.of(re));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.zugeordnet()).hasSize(1);
             assertThat(dto.abgeschlossen()).isEmpty();
@@ -115,7 +178,7 @@ class BestellungsUebersichtServiceTest {
             when(geschaeftsdokumentRepository.findAll()).thenReturn(List.of(gd));
             when(dokumentRepository.findAll()).thenReturn(List.of(re));
 
-            assertThat(service.ladeUebersicht().zugeordnet()).hasSize(1);
+            assertThat(service.ladeUebersicht(ALLE_TYPEN).zugeordnet()).hasSize(1);
         }
 
         @Test
@@ -126,7 +189,7 @@ class BestellungsUebersichtServiceTest {
             verknuepfe(re, ls);
             when(dokumentRepository.findAll()).thenReturn(List.of(ls, re));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.ausgeblendet()).hasSize(1);
             assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -142,7 +205,7 @@ class BestellungsUebersichtServiceTest {
             verknuepfe(offen, ab);
             when(dokumentRepository.findAll()).thenReturn(List.of(ab, bezahlt, offen));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.abgeschlossen()).hasSize(1);
             assertThat(dto.ausgeblendet()).isEmpty();
@@ -154,7 +217,7 @@ class BestellungsUebersichtServiceTest {
             ls.setAusgeblendet(true);
             when(dokumentRepository.findAll()).thenReturn(List.of(ls));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.ausgeblendet()).hasSize(1);
             assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -164,7 +227,7 @@ class BestellungsUebersichtServiceTest {
         void nurSonstigeDokumenteErscheinenNirgends() {
             when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.SONSTIG, null)));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.offeneAnfragen()).isEmpty();
             assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -179,7 +242,7 @@ class BestellungsUebersichtServiceTest {
             LieferantDokument neu = dokument(2L, LieferantDokumentTyp.ANGEBOT, LocalDate.of(2026, 6, 5));
             when(dokumentRepository.findAll()).thenReturn(List.of(alt, neu));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.offeneAnfragen()).extracting(k -> k.dokumente().get(0).id).containsExactly(2L, 1L);
         }
@@ -193,7 +256,7 @@ class BestellungsUebersichtServiceTest {
             LieferantDokument mittel = dokument(3L, LieferantDokumentTyp.ANGEBOT, LocalDate.of(2026, 5, 1));
             when(dokumentRepository.findAll()).thenReturn(List.of(frueh, spaet, mittel));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.offeneAnfragen()).extracting(k -> k.dokumente().get(0).id).containsExactly(2L, 3L, 1L);
         }
@@ -211,7 +274,7 @@ class BestellungsUebersichtServiceTest {
             fremd.setLieferant(andererLieferant);
             when(dokumentRepository.findAll()).thenReturn(List.of(ls, passend, zuFrueh, fremd));
 
-            service.ladeUebersicht();
+            service.ladeUebersicht(ALLE_TYPEN);
 
             verify(rechnungsVorschlagService).besterVorschlag(anyCollection(), kandidatenCaptor.capture(),
                     anyCollection(), any());
@@ -229,7 +292,7 @@ class BestellungsUebersichtServiceTest {
             when(rechnungsVorschlagService.besterVorschlag(anyCollection(), anyCollection(), anyCollection(), any()))
                     .thenReturn(Optional.of(new RechnungsVorschlagService.BesterVorschlag(vorschlag, false)));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             RechnungsVorschlagDto karte = dto.laufendeBestellungen().get(0).rechnungsVorschlag();
             assertThat(karte.rechnung().id).isEqualTo(2L);
@@ -252,7 +315,7 @@ class BestellungsUebersichtServiceTest {
             ls.setLieferant(null);
             when(dokumentRepository.findAll()).thenReturn(List.of(ls));
 
-            BestellungsUebersichtDto dto = service.ladeUebersicht();
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
 
             assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
             verify(rechnungsVorschlagService, never()).besterVorschlag(anyCollection(), anyCollection(),
@@ -268,7 +331,7 @@ class BestellungsUebersichtServiceTest {
             LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
             when(dokumentRepository.findAll()).thenReturn(List.of(re));
 
-            assertThat(service.rechnungsVorschlaege(List.of(2L, 99L), false)).isEmpty();
+            assertThat(service.rechnungsVorschlaege(List.of(2L, 99L), false, ALLE_TYPEN)).isEmpty();
             verify(rechnungsVorschlagService, never()).bewerte(anyCollection(), anyCollection(), any(), any());
         }
 
@@ -285,8 +348,8 @@ class BestellungsUebersichtServiceTest {
             when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
                     .thenReturn(List.of());
 
-            assertThat(service.rechnungsVorschlaege(List.of(1L), false)).contains(List.of());
-            service.rechnungsVorschlaege(List.of(1L), true);
+            assertThat(service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN)).contains(List.of());
+            service.rechnungsVorschlaege(List.of(1L), true, ALLE_TYPEN);
 
             verify(rechnungsVorschlagService, times(2)).bewerte(anyCollection(), kandidatenCaptor.capture(),
                     any(), any());
@@ -304,7 +367,7 @@ class BestellungsUebersichtServiceTest {
             when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
                     .thenReturn(List.of());
 
-            assertThat(service.rechnungsVorschlaege(List.of(1L), false)).contains(List.of());
+            assertThat(service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN)).contains(List.of());
 
             verify(rechnungsVorschlagService).bewerte(anyCollection(), kandidatenCaptor.capture(),
                     isNull(), any());
@@ -321,7 +384,7 @@ class BestellungsUebersichtServiceTest {
             when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any()))
                     .thenReturn(List.of(vorschlag(a, ls, 90), vorschlag(b, ls, 70), vorschlag(c, ls, 70)));
 
-            List<RechnungsVorschlagDto> liste = service.rechnungsVorschlaege(List.of(1L), false).orElseThrow();
+            List<RechnungsVorschlagDto> liste = service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN).orElseThrow();
 
             assertThat(liste).extracting(RechnungsVorschlagDto::eindeutig).containsExactly(true, false, false);
             assertThat(liste).extracting(v -> v.rechnung().id).containsExactly(2L, 3L, 4L);
@@ -338,7 +401,7 @@ class BestellungsUebersichtServiceTest {
             }
             when(rechnungsVorschlagService.bewerte(anyCollection(), anyCollection(), any(), any())).thenReturn(viele);
 
-            assertThat(service.rechnungsVorschlaege(List.of(1L), false).orElseThrow())
+            assertThat(service.rechnungsVorschlaege(List.of(1L), false, ALLE_TYPEN).orElseThrow())
                     .hasSize(BestellungsUebersichtService.MAX_VORSCHLAEGE);
         }
     }

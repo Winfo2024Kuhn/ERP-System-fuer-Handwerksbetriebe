@@ -12,8 +12,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 import org.example.kalkulationsprogramm.config.CloudflareAccessJwtFilter;
 import org.example.kalkulationsprogramm.config.FrontendUserDetailsService;
@@ -21,7 +23,9 @@ import org.example.kalkulationsprogramm.config.SecurityConfig;
 import org.example.kalkulationsprogramm.dto.Bestellung.DokumentPositionenDto;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -58,12 +62,21 @@ class LieferantDokumentPositionControllerTest {
     @MockBean private LieferantDokumentZuordnungService zuordnungService;
     @MockBean private GeminiDokumentAnalyseService analyseService;
     @MockBean private BelegService belegService;
+    @MockBean private LieferantDokumentZugriffService zugriffService;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
 
     /** @MockBean wird in @Nested-Klassen nicht zurückgesetzt – daher hier von Hand. */
     @AfterEach
     void mocksZuruecksetzen() {
-        org.mockito.Mockito.reset(zuordnungService, analyseService, belegService);
+        org.mockito.Mockito.reset(zuordnungService, analyseService, belegService, zugriffService);
+    }
+
+    /** Standard: angemeldet, alle Dokumenttypen sichtbar. Die Rechte-Fälle stehen in {@code Dokumentrechte}. */
+    @org.junit.jupiter.api.BeforeEach
+    void alleTypenSichtbar() {
+        given(zugriffService.sichtbareTypen(any(), any()))
+                .willReturn(Optional.of(EnumSet.allOf(LieferantDokumentTyp.class)));
+        given(zugriffService.istSichtbar(any(), any())).willReturn(true);
     }
 
     private static RequestPostProcessor csrf() {
@@ -135,6 +148,41 @@ class LieferantDokumentPositionControllerTest {
             mockMvc.perform(get(BASIS + "1'; DROP TABLE lieferant_dokument_position; --"))
                     .andExpect(status().isBadRequest());
             verifyNoInteractions(zuordnungService);
+        }
+    }
+
+    @Nested
+    @WithMockUser
+    class Dokumentrechte {
+
+        @Test
+        @DisplayName("Dokument eines nicht sichtbaren Typs: 404 bei allen vier Endpunkten, nichts wird geladen oder gespeichert")
+        void nichtSichtbaresDokumentGibt404() throws Exception {
+            given(zugriffService.istSichtbar(eq(10L), any())).willReturn(false);
+
+            mockMvc.perform(get(BASIS + "10")).andExpect(status().isNotFound());
+            mockMvc.perform(post(BASIS + "10/auslesen").with(csrf())).andExpect(status().isNotFound());
+            mockMvc.perform(post(BASIS + "10/vorschau").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(GUELTIG)).andExpect(status().isNotFound());
+            mockMvc.perform(post(BASIS + "10/zuordnen").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(GUELTIG)).andExpect(status().isNotFound());
+
+            verifyNoInteractions(zuordnungService, analyseService);
+        }
+
+        @Test
+        @DisplayName("Nicht angemeldet im Sinne der Dokumentrechte: 401 bei allen vier Endpunkten")
+        void ohneZuordnungGibt401() throws Exception {
+            given(zugriffService.sichtbareTypen(any(), any())).willReturn(Optional.empty());
+
+            mockMvc.perform(get(BASIS + "10")).andExpect(status().isUnauthorized());
+            mockMvc.perform(post(BASIS + "10/auslesen").with(csrf())).andExpect(status().isUnauthorized());
+            mockMvc.perform(post(BASIS + "10/vorschau").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(GUELTIG)).andExpect(status().isUnauthorized());
+            mockMvc.perform(post(BASIS + "10/zuordnen").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(GUELTIG)).andExpect(status().isUnauthorized());
+
+            verifyNoInteractions(zuordnungService, analyseService);
         }
     }
 

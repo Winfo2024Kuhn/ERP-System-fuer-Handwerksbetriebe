@@ -215,7 +215,9 @@ public class LieferantReklamationController {
         if (!StringUtils.hasText(token)) {
             return null;
         }
-        return mitarbeiterRepository.findByLoginToken(token).orElse(null);
+        // Nur aktive Mitarbeiter: deaktivierte verlieren mit altem Token sofort den Zugriff
+        // (wie BelegService.findByToken und die Zeiterfassung).
+        return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
     }
 
     @lombok.Data

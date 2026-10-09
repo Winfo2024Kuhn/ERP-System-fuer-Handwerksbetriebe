@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -24,6 +25,20 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
 
         @Query("SELECT COUNT(d) FROM LieferantDokument d WHERE d.lieferant.id = :lieferantId")
         long zaehleByLieferantId(@Param("lieferantId") Long lieferantId);
+
+        /**
+         * IDs der E-Mail-Anhänge, die als Lieferanten-Dokument eines der übergebenen Typen
+         * abgelegt sind (z. B. eine Rechnung, die per Mail kam). Der Bezug besteht je nach
+         * Importweg in einer von zwei Richtungen: {@code LieferantDokument.attachment}
+         * (manuell/verarbeitet) oder {@code EmailAttachment.lieferantDokument} (Mail-Import,
+         * dort bleibt {@code attachment_id} leer) – beide zählen.
+         */
+        @Query("SELECT a.id FROM EmailAttachment a WHERE a.id IN :anhangIds AND ("
+                        + "EXISTS (SELECT 1 FROM LieferantDokument d WHERE d.attachment = a AND d.typ IN :typen) "
+                        + "OR EXISTS (SELECT 1 FROM LieferantDokument d2 WHERE a.lieferantDokument = d2 "
+                        + "AND d2.typ IN :typen))")
+        List<Long> findAnhangIdsMitDokumentTyp(@Param("anhangIds") Collection<Long> anhangIds,
+                        @Param("typen") Collection<LieferantDokumentTyp> typen);
 
         @Query("SELECT COUNT(d) FROM LieferantDokument d WHERE d.lieferant.id = :lieferantId AND d.typ IN :typen")
         long zaehleByLieferantIdAndTypIn(@Param("lieferantId") Long lieferantId,

@@ -70,9 +70,13 @@ public class BestellungsUebersichtService {
     /**
      * Alle Dokumenten-Ketten gruppiert nach Status, neueste zuerst. Jede laufende
      * Bestellung bekommt die wahrscheinlichste Rechnung als Vorschlag.
+     *
+     * @param sichtbareTypen Dokumenttypen, die der Aufrufer laut Abteilungsrechten sehen
+     *                       darf; andere Dokumente tauchen weder in Ketten noch in
+     *                       Vorschlägen auf
      */
-    public BestellungsUebersichtDto ladeUebersicht() {
-        Dokumentbestand bestand = ladeDokumente();
+    public BestellungsUebersichtDto ladeUebersicht(Set<LieferantDokumentTyp> sichtbareTypen) {
+        Dokumentbestand bestand = ladeDokumente(sichtbareTypen);
         BestellungsUebersichtDto dto = gruppiereKetten(bestand);
         var speicher = rechnungsVorschlagService.neuerSpeicher();
         List<DokumentenKette> laufendMitVorschlag = dto.laufendeBestellungen().stream()
@@ -93,11 +97,12 @@ public class BestellungsUebersichtService {
      * @param dokumentIds     die Dokumente der Bestellungs-Kette (AB, Lieferschein, …)
      * @param alleLieferanten auch Rechnungen anderer Lieferanten (KI hat den
      *                        Lieferanten falsch erkannt)
-     * @return leer, wenn keine der IDs zu einer AB oder einem Lieferschein gehört
+     * @param sichtbareTypen  Dokumenttypen, die der Aufrufer sehen darf (andere gelten als nicht vorhanden)
+     * @return leer, wenn keine der IDs zu einer sichtbaren AB oder einem Lieferschein gehört
      */
     public Optional<List<RechnungsVorschlagDto>> rechnungsVorschlaege(List<Long> dokumentIds,
-            boolean alleLieferanten) {
-        Dokumentbestand bestand = ladeDokumente();
+            boolean alleLieferanten, Set<LieferantDokumentTyp> sichtbareTypen) {
+        Dokumentbestand bestand = ladeDokumente(sichtbareTypen);
         List<LieferantDokument> bestellDokumente = dokumentIds.stream()
                 .map(bestand.nachId()::get)
                 .filter(Objects::nonNull)
@@ -210,8 +215,10 @@ public class BestellungsUebersichtService {
         }
     }
 
-    private Dokumentbestand ladeDokumente() {
-        List<LieferantDokument> alle = dokumentRepository.findAll();
+    private Dokumentbestand ladeDokumente(Set<LieferantDokumentTyp> sichtbareTypen) {
+        List<LieferantDokument> alle = dokumentRepository.findAll().stream()
+                .filter(d -> sichtbareTypen.contains(d.getTyp()))
+                .toList();
         Map<Long, LieferantDokument> nachId = new HashMap<>();
         Map<Long, List<LieferantDokument>> jeLieferant = new HashMap<>();
         List<LieferantDokument> rechnungen = new ArrayList<>();

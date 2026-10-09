@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.service.BelegAbgelehntException;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
 import org.springframework.http.HttpStatus;
@@ -55,6 +56,7 @@ public class BestellungsUebersichtController {
     private final LieferantDokumentService lieferantDokumentService;
     private final BestellungsUebersichtService bestellungsUebersichtService;
     private final LieferantDokumentZuordnungService zuordnungService;
+    private final LieferantDokumentZugriffService zugriffService;
 
     /** Höchstzahl Dokumente einer Kette für die Vorschlagssuche. */
     private static final int MAX_KETTEN_DOKUMENTE = 50;
@@ -64,8 +66,15 @@ public class BestellungsUebersichtController {
      * Gibt alle Dokumenten-Ketten gruppiert nach Status zurück.
      */
     @GetMapping
-    public ResponseEntity<BestellungsUebersichtDto> getUebersicht() {
-        return ResponseEntity.ok(bestellungsUebersichtService.ladeUebersicht());
+    public ResponseEntity<BestellungsUebersichtDto> getUebersicht(
+            @RequestParam(value = "token", required = false) String token,
+            Authentication auth) {
+        // Nur Dokumenttypen, die der Angemeldete laut Abteilungsrechten sehen darf (Admin: alle).
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        return ResponseEntity.ok(bestellungsUebersichtService.ladeUebersicht(sichtbareTypen.get()));
     }
 
     /**
@@ -83,12 +92,18 @@ public class BestellungsUebersichtController {
     @GetMapping("/rechnung-vorschlaege")
     public ResponseEntity<List<RechnungsVorschlagDto>> getRechnungsVorschlaege(
             @RequestParam("dokumentIds") List<Long> dokumentIds,
-            @RequestParam(value = "alleLieferanten", defaultValue = "false") boolean alleLieferanten) {
+            @RequestParam(value = "alleLieferanten", defaultValue = "false") boolean alleLieferanten,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         if (dokumentIds == null || dokumentIds.isEmpty() || dokumentIds.size() > MAX_KETTEN_DOKUMENTE
                 || dokumentIds.stream().anyMatch(id -> id == null || id <= 0)) {
             return ResponseEntity.badRequest().build();
         }
-        return bestellungsUebersichtService.rechnungsVorschlaege(dokumentIds, alleLieferanten)
+        return bestellungsUebersichtService.rechnungsVorschlaege(dokumentIds, alleLieferanten, sichtbareTypen.get())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -102,6 +117,14 @@ public class BestellungsUebersichtController {
     @PostMapping("/rechnung-verknuepfen")
     public ResponseEntity<?> rechnungVerknuepfen(@Valid @RequestBody RechnungVerknuepfenRequest request,
             Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(request.bestellDokumentId(), sichtbareTypen.get())
+                || !zugriffService.istSichtbar(request.rechnungDokumentId(), sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             rechnungsVorschlagService.verknuepfe(request.bestellDokumentId(), request.rechnungDokumentId(),
                     benutzerId(auth));
@@ -124,6 +147,13 @@ public class BestellungsUebersichtController {
         if (request == null || request.dokumentId() == null || request.dokumentId() <= 0) {
             return ResponseEntity.badRequest().body(Map.of("message", "Dokument fehlt."));
         }
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(request.dokumentId(), sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             int geloest = rechnungsVorschlagService.haengeAb(request.dokumentId(), benutzerId(auth));
             return ResponseEntity.ok(Map.of("geloest", geloest));
@@ -144,6 +174,17 @@ public class BestellungsUebersichtController {
             Authentication auth) {
         if (bestellDokumentId == null || bestellDokumentId <= 0) {
             return ResponseEntity.badRequest().body(Map.of("message", "Bestellung fehlt."));
+        }
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(bestellDokumentId, sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
+        // Angelegt wird eine Rechnung - die darf nur, wer Rechnungen auch sehen darf.
+        if (!sichtbareTypen.get().contains(LieferantDokumentTyp.RECHNUNG)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         try {
             LieferantDokument rechnung = lieferantDokumentService.rechnungZuBestellungHochladen(
@@ -186,8 +227,8 @@ public class BestellungsUebersichtController {
      */
     @PostMapping("/ausblenden")
     @Transactional
-    public ResponseEntity<?> ausblenden(@Valid @RequestBody AusblendenRequest request) {
-        return setAusgeblendet(request, true);
+    public ResponseEntity<?> ausblenden(@Valid @RequestBody AusblendenRequest request, Authentication auth) {
+        return setAusgeblendet(request, true, auth);
     }
 
     /**
@@ -195,12 +236,19 @@ public class BestellungsUebersichtController {
      */
     @PostMapping("/einblenden")
     @Transactional
-    public ResponseEntity<?> einblenden(@Valid @RequestBody AusblendenRequest request) {
-        return setAusgeblendet(request, false);
+    public ResponseEntity<?> einblenden(@Valid @RequestBody AusblendenRequest request, Authentication auth) {
+        return setAusgeblendet(request, false, auth);
     }
 
-    private ResponseEntity<?> setAusgeblendet(AusblendenRequest request, boolean wert) {
-        List<LieferantDokument> dokumente = dokumentRepository.findAllById(request.dokumentIds());
+    private ResponseEntity<?> setAusgeblendet(AusblendenRequest request, boolean wert, Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        // Nicht sichtbare Dokumente einer Kette bleiben unberührt (und unerwähnt).
+        List<LieferantDokument> dokumente = dokumentRepository.findAllById(request.dokumentIds()).stream()
+                .filter(d -> sichtbareTypen.get().contains(d.getTyp()))
+                .toList();
         for (LieferantDokument d : dokumente) {
             d.setAusgeblendet(wert);
         }
@@ -213,9 +261,15 @@ public class BestellungsUebersichtController {
      * Gibt die Geschäftsdaten eines Dokuments für die Bearbeitung zurück.
      */
     @GetMapping("/geschaeftsdaten/{dokId}")
-    public ResponseEntity<GeschaeftsdatenDto> getGeschaeftsdaten(@PathVariable Long dokId) {
+    public ResponseEntity<GeschaeftsdatenDto> getGeschaeftsdaten(@PathVariable Long dokId,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
-        if (gd == null) {
+        if (gd == null || !istSichtbar(gd, sichtbareTypen.get())) {
             return ResponseEntity.notFound().build();
         }
 
@@ -248,10 +302,16 @@ public class BestellungsUebersichtController {
     @Transactional
     public ResponseEntity<GeschaeftsdatenDto> updateGeschaeftsdaten(
             @PathVariable Long dokId,
-            @RequestBody GeschaeftsdatenDto dto) {
+            @RequestBody GeschaeftsdatenDto dto,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication auth) {
 
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
-        if (gd == null) {
+        if (gd == null || !istSichtbar(gd, sichtbareTypen.get())) {
             return ResponseEntity.notFound().build();
         }
 
@@ -272,7 +332,7 @@ public class BestellungsUebersichtController {
 
         geschaeftsdokumentRepository.save(gd);
 
-        return getGeschaeftsdaten(dokId);
+        return getGeschaeftsdaten(dokId, token, auth);
     }
 
     /**
@@ -503,6 +563,13 @@ public class BestellungsUebersichtController {
         if (request == null || request.geschaeftsdokumentId == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
         }
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(request.geschaeftsdokumentId, sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
         FrontendUserProfile zugeordnetVon = zuordnungService.zugeordnetVon(belegService.findCaller(token, auth), auth);
         List<LieferantDokumentZuordnungService.Anteil> anteile = request.projektAnteile == null ? List.of()
                 : request.projektAnteile.stream()
@@ -526,9 +593,13 @@ public class BestellungsUebersichtController {
      */
     @PostMapping("/lagerbestellung/{dokId}")
     @Transactional
-    public ResponseEntity<?> markiereAlsLagerbestellung(@PathVariable Long dokId) {
+    public ResponseEntity<?> markiereAlsLagerbestellung(@PathVariable Long dokId, Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
-        if (gd == null) {
+        if (gd == null || !istSichtbar(gd, sichtbareTypen.get())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
         }
 
@@ -545,7 +616,14 @@ public class BestellungsUebersichtController {
      * Die Rechnung wird wieder als "Abgeschlossen" angezeigt.
      */
     @DeleteMapping("/zuordnung/{dokId}")
-    public ResponseEntity<?> hebeZuordnungAuf(@PathVariable Long dokId) {
+    public ResponseEntity<?> hebeZuordnungAuf(@PathVariable Long dokId, Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(dokId, sichtbareTypen.get())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Geschäftsdokument nicht gefunden"));
+        }
         try {
             zuordnungService.hebeZuordnungAuf(dokId);
         } catch (NoSuchElementException e) {
@@ -560,9 +638,15 @@ public class BestellungsUebersichtController {
      * Gibt die Zuordnungen für ein Geschäftsdokument zurück.
      */
     @GetMapping("/zuordnungen/{dokId}")
-    public ResponseEntity<List<ZuordnungDto>> getZuordnungen(@PathVariable Long dokId) {
+    public ResponseEntity<List<ZuordnungDto>> getZuordnungen(@PathVariable Long dokId,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         var gd = geschaeftsdokumentRepository.findById(dokId).orElse(null);
-        if (gd == null || gd.getDokument() == null) {
+        if (gd == null || !istSichtbar(gd, sichtbareTypen.get())) {
             return ResponseEntity.ok(Collections.emptyList());
         }
 
@@ -600,7 +684,12 @@ public class BestellungsUebersichtController {
             @RequestParam(value = "token", required = false) String token,
             Authentication auth) {
 
-        List<ZuordnungDto> dtos = ladeZuordnungenForKostenstelle(kostenstelleId, darfBelegeSehen(token, auth));
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        List<ZuordnungDto> dtos = ladeZuordnungenForKostenstelle(kostenstelleId, darfBelegeSehen(token, auth),
+                sichtbareTypen.get());
 
         dtos.sort(Comparator
                 .comparing((ZuordnungDto z) -> z.dokumentDatum, Comparator.nullsLast(Comparator.reverseOrder()))
@@ -614,9 +703,11 @@ public class BestellungsUebersichtController {
      * (Lieferanten-Dokument-Anteile, Beleg-Splits, direkt zugeordnete Belege).
      * Beleg-Quellen nur, wenn der Aufrufer Belege sehen darf.
      */
-    private List<ZuordnungDto> ladeZuordnungenForKostenstelle(Long kostenstelleId, boolean darfBelegeSehen) {
-        // Quelle: LieferantDokumentProjektAnteil (Dokumentenverwaltung)
+    private List<ZuordnungDto> ladeZuordnungenForKostenstelle(Long kostenstelleId, boolean darfBelegeSehen,
+            Set<LieferantDokumentTyp> sichtbareTypen) {
+        // Quelle: LieferantDokumentProjektAnteil (Dokumentenverwaltung), nur sichtbare Dokumenttypen
         List<ZuordnungDto> dtos = projektAnteilRepository.findByKostenstelleId(kostenstelleId).stream()
+                .filter(a -> a.getDokument() != null && sichtbareTypen.contains(a.getDokument().getTyp()))
                 .map(this::toZuordnungDto)
                 .collect(Collectors.toList());
 
@@ -647,6 +738,10 @@ public class BestellungsUebersichtController {
             @RequestParam(value = "token", required = false) String token,
             Authentication auth) {
 
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         boolean darfBelegeSehen = darfBelegeSehen(token, auth);
 
         List<KostenstelleAuswertungDto> result = new ArrayList<>();
@@ -655,7 +750,7 @@ public class BestellungsUebersichtController {
             BigDecimal summeVorjahr = BigDecimal.ZERO;
             long anzahlDiesesJahr = 0;
 
-            for (ZuordnungDto z : ladeZuordnungenForKostenstelle(ks.getId(), darfBelegeSehen)) {
+            for (ZuordnungDto z : ladeZuordnungenForKostenstelle(ks.getId(), darfBelegeSehen, sichtbareTypen.get())) {
                 if (z.dokumentDatum == null || z.betrag == null) {
                     continue;
                 }
@@ -802,6 +897,10 @@ public class BestellungsUebersichtController {
 
     private BigDecimal effektiverBelegBruttoBetrag(Beleg beleg) {
         return beleg.getBuchungsbetragBrutto();
+    }
+
+    private static boolean istSichtbar(LieferantGeschaeftsdokument gd, Set<LieferantDokumentTyp> sichtbareTypen) {
+        return gd.getDokument() != null && sichtbareTypen.contains(gd.getDokument().getTyp());
     }
 
     private boolean darfBelegeSehen(String token, Authentication auth) {

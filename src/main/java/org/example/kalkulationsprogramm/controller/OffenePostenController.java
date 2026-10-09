@@ -4,14 +4,17 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
+import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Projekt;
@@ -26,6 +29,7 @@ import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentServic
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -68,6 +72,7 @@ public class OffenePostenController {
     private final ProjektDokumentRepository projektDokumentRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+    private final LieferantDokumentZugriffService zugriffService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -86,6 +91,7 @@ public class OffenePostenController {
             @RequestHeader(value = "X-Auth-Token", required = false) String token,
             Authentication authentication) {
 
+        Set<LieferantDokumentTyp> sichtbareTypen = sichtbareTypen(token, authentication);
         Mitarbeiter mitarbeiter = resolveMitarbeiter(token, authentication);
         boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
         boolean darfSehen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenSehen);
@@ -101,6 +107,7 @@ public class OffenePostenController {
         }
 
         List<EingangsrechnungDto> dtos = rechnungen.stream()
+                .filter(gd -> istSichtbar(gd, sichtbareTypen))
                 .map(gd -> toDto(gd, darfGenehmigen))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(dtos);
@@ -119,6 +126,7 @@ public class OffenePostenController {
             @RequestHeader(value = "X-Auth-Token", required = false) String token,
             Authentication authentication) {
 
+        Set<LieferantDokumentTyp> sichtbareTypen = sichtbareTypen(token, authentication);
         Mitarbeiter mitarbeiter = resolveMitarbeiter(token, authentication);
         boolean darfGenehmigen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenGenehmigen);
         boolean darfSehen = hatBerechtigung(mitarbeiter, Abteilung::getDarfRechnungenSehen);
@@ -134,6 +142,7 @@ public class OffenePostenController {
         }
 
         List<EingangsrechnungDto> dtos = rechnungen.stream()
+                .filter(gd -> istSichtbar(gd, sichtbareTypen))
                 .map(gd -> toDto(gd, darfGenehmigen))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(dtos);
@@ -151,8 +160,9 @@ public class OffenePostenController {
             @RequestHeader(value = "X-Auth-Token", required = false) String token,
             Authentication authentication) {
 
+        Set<LieferantDokumentTyp> sichtbareTypen = sichtbareTypen(token, authentication);
         LieferantGeschaeftsdokument gd = geschaeftsdokumentRepository.findById(id).orElse(null);
-        if (gd == null) {
+        if (gd == null || !istSichtbar(gd, sichtbareTypen)) {
             return ResponseEntity.notFound().build();
         }
 
@@ -219,8 +229,9 @@ public class OffenePostenController {
             return ResponseEntity.status(403).build(); // Forbidden
         }
 
+        Set<LieferantDokumentTyp> sichtbareTypen = sichtbareTypen(token, authentication);
         LieferantGeschaeftsdokument gd = geschaeftsdokumentRepository.findById(id).orElse(null);
-        if (gd == null) {
+        if (gd == null || !istSichtbar(gd, sichtbareTypen)) {
             return ResponseEntity.notFound().build();
         }
 
@@ -384,6 +395,17 @@ public class OffenePostenController {
 
     // ==================== Hilfsmethoden ====================
 
+    /** Sichtbare Dokumenttypen des Aufrufers; wer nicht zuzuordnen ist, sieht keinen Typ. */
+    private Set<LieferantDokumentTyp> sichtbareTypen(String token, Authentication authentication) {
+        return zugriffService.sichtbareTypen(token, authentication)
+                .orElseGet(() -> EnumSet.noneOf(LieferantDokumentTyp.class));
+    }
+
+    /** Dokumenttyp muss laut Abteilungsrechten des Aufrufers sichtbar sein. */
+    private boolean istSichtbar(LieferantGeschaeftsdokument gd, Set<LieferantDokumentTyp> sichtbareTypen) {
+        return gd.getDokument() != null && sichtbareTypen.contains(gd.getDokument().getTyp());
+    }
+
     /**
      * Löst den Mitarbeiter auf: zuerst über X-Auth-Token (Legacy),
      * dann über die Session-Authentifizierung (FrontendUserProfile → Mitarbeiter).
@@ -391,7 +413,8 @@ public class OffenePostenController {
     private Mitarbeiter resolveMitarbeiter(String token, Authentication authentication) {
         // 1. Versuch: Legacy-Token
         if (StringUtils.hasText(token)) {
-            Mitarbeiter m = mitarbeiterRepository.findByLoginToken(token).orElse(null);
+            // Nur aktive Mitarbeiter: deaktivierte verlieren mit altem Token sofort den Zugriff.
+            Mitarbeiter m = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
             if (m != null) return m;
         }
 

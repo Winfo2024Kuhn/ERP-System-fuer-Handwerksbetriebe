@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -76,7 +77,16 @@ class BestellungsUebersichtSecurityTest {
     @MockBean private LieferantDokumentService lieferantDokumentService;
     @MockBean private BestellungsUebersichtService bestellungsUebersichtService;
     @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService zuordnungService;
+    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService zugriffService;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void alleTypenSichtbar() {
+        // Standard: angemeldet, alle Dokumenttypen sichtbar. Die Rechte-Fälle stehen weiter unten.
+        given(zugriffService.sichtbareTypen(any(), any())).willReturn(java.util.Optional.of(
+                java.util.EnumSet.allOf(LieferantDokumentTyp.class)));
+        given(zugriffService.istSichtbar(any(), any())).willReturn(true);
+    }
 
     private static final String ABHAENGEN = "/api/bestellungen-uebersicht/abhaengen";
     private static final String HOCHLADEN = "/api/bestellungen-uebersicht/rechnung-hochladen";
@@ -161,6 +171,110 @@ class BestellungsUebersichtSecurityTest {
                 .andExpect(jsonPath("$.id").value(77))
                 .andExpect(jsonPath("$.typ").value("RECHNUNG"))
                 .andExpect(jsonPath("$.ausgeblendet").value(false));
+    }
+
+    // ------------------------------------------------------------ Dokumentrechte
+
+    private static final String BASIS = "/api/bestellungen-uebersicht";
+
+    private void nurSichtbar(LieferantDokumentTyp... typen) {
+        given(zugriffService.sichtbareTypen(any(), any())).willReturn(java.util.Optional.of(
+                java.util.EnumSet.copyOf(java.util.List.of(typen))));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Abhängen eines nicht sichtbaren Dokuments: 404, nichts wird gelöst")
+    void abhaengenNichtSichtbar() throws Exception {
+        given(zugriffService.istSichtbar(eq(5L), any())).willReturn(false);
+
+        mockMvc.perform(post(ABHAENGEN).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dokumentId\": 5}"))
+                .andExpect(status().isNotFound());
+        verifyNoInteractions(rechnungsVorschlagService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Rechnung verknüpfen: Bestell- oder Rechnungsdokument nicht sichtbar -> 404")
+    void verknuepfenNichtSichtbar() throws Exception {
+        given(zugriffService.istSichtbar(eq(10L), any())).willReturn(true);
+        given(zugriffService.istSichtbar(eq(20L), any())).willReturn(false);
+
+        mockMvc.perform(post(BASIS + "/rechnung-verknuepfen").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"bestellDokumentId\": 10, \"rechnungDokumentId\": 20}"))
+                .andExpect(status().isNotFound());
+        verifyNoInteractions(rechnungsVorschlagService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Rechnung hochladen: Bestelldokument nicht sichtbar -> 404; ohne Rechnungs-Recht -> 403")
+    void hochladenNichtSichtbar() throws Exception {
+        given(zugriffService.istSichtbar(eq(10L), any())).willReturn(false);
+        mockMvc.perform(multipart(HOCHLADEN).file(pdf).param("bestellDokumentId", "10").with(csrf()))
+                .andExpect(status().isNotFound());
+
+        given(zugriffService.istSichtbar(eq(10L), any())).willReturn(true);
+        nurSichtbar(LieferantDokumentTyp.LIEFERSCHEIN);
+        mockMvc.perform(multipart(HOCHLADEN).file(pdf).param("bestellDokumentId", "10").with(csrf()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(lieferantDokumentService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Ausblenden/Einblenden berührt nur sichtbare Dokumente der Kette")
+    void ausblendenNurSichtbare() throws Exception {
+        nurSichtbar(LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument lieferschein = new LieferantDokument();
+        lieferschein.setId(1L);
+        lieferschein.setTyp(LieferantDokumentTyp.LIEFERSCHEIN);
+        LieferantDokument rechnung = new LieferantDokument();
+        rechnung.setId(2L);
+        rechnung.setTyp(LieferantDokumentTyp.RECHNUNG);
+        given(dokumentRepository.findAllById(any())).willReturn(java.util.List.of(lieferschein, rechnung));
+
+        mockMvc.perform(post(BASIS + "/ausblenden").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dokumentIds\": [1, 2]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.geaendert").value(1));
+
+        org.assertj.core.api.Assertions.assertThat(lieferschein.isAusgeblendet()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(rechnung.isAusgeblendet()).isFalse();
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Zuordnen, Lagerbestellung und Zuordnung aufheben: nicht sichtbares Dokument wird abgewiesen")
+    void zuordnungenNichtSichtbar() throws Exception {
+        given(zugriffService.istSichtbar(any(), any())).willReturn(false);
+        nurSichtbar(LieferantDokumentTyp.LIEFERSCHEIN);
+        given(geschaeftsdokumentRepository.findById(5L)).willReturn(java.util.Optional.of(
+                gdMitTyp(5L, LieferantDokumentTyp.RECHNUNG)));
+
+        mockMvc.perform(post(BASIS + "/zuordnen").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"geschaeftsdokumentId\": 5, \"projektAnteile\": []}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post(BASIS + "/lagerbestellung/5").with(csrf()))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete(BASIS + "/zuordnung/5").with(csrf()))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(zuordnungService);
+        org.mockito.Mockito.verify(geschaeftsdokumentRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    private static org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument gdMitTyp(long id,
+            LieferantDokumentTyp typ) {
+        LieferantDokument dokument = new LieferantDokument();
+        dokument.setId(id);
+        dokument.setTyp(typ);
+        var gd = new org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument();
+        gd.setId(id);
+        gd.setDokument(dokument);
+        return gd;
     }
 
     private static RequestPostProcessor csrf() {

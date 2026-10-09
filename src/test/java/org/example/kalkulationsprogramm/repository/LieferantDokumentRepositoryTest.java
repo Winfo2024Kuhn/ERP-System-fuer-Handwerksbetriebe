@@ -111,4 +111,57 @@ class LieferantDokumentRepositoryTest {
         assertThat(lieferantDokumentRepository.zaehleByLieferantIdAndTypIn(lieferant.getId(),
                 List.of(LieferantDokumentTyp.LIEFERSCHEIN))).isZero();
     }
+
+    @Test
+    void findetAnhaengeGesperrterDokumenttypenInBeidenVerknuepfungsrichtungen() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setLieferantenname("Muster Lieferant GmbH");
+        lieferant = lieferantenRepository.saveAndFlush(lieferant);
+        Email email = new Email();
+        email.setMessageId("msg-rechte@example.com");
+        email.setDirection(EmailDirection.IN);
+        email = emailRepository.saveAndFlush(email);
+
+        // (1) Bezug über LieferantDokument.attachment (RECHNUNG) -> gesperrt
+        EmailAttachment ueberDokument = anhang(email, "rechnung-a.pdf");
+        LieferantDokument rechnungA = neuesDokument(lieferant, "rechnung-a.pdf");
+        rechnungA.setAttachment(ueberDokument);
+        lieferantDokumentRepository.saveAndFlush(rechnungA);
+
+        // (2) Mail-Import: nur Rück-FK EmailAttachment.lieferantDokument (RECHNUNG), attachment_id bleibt leer
+        LieferantDokument rechnungB = lieferantDokumentRepository.saveAndFlush(neuesDokument(lieferant, "rechnung-b.pdf"));
+        EmailAttachment ueberRueckFk = anhang(email, "rechnung-b.pdf");
+        ueberRueckFk.setLieferantDokument(rechnungB);
+        emailAttachmentRepository.saveAndFlush(ueberRueckFk);
+
+        // (3) Lieferschein -> bei gesperrter RECHNUNG nicht betroffen
+        EmailAttachment lieferschein = anhang(email, "ls.pdf");
+        LieferantDokument ls = neuesDokument(lieferant, "ls.pdf");
+        ls.setTyp(LieferantDokumentTyp.LIEFERSCHEIN);
+        ls.setAttachment(lieferschein);
+        lieferantDokumentRepository.saveAndFlush(ls);
+
+        // (4) Anhang ohne jedes Dokument -> nicht betroffen
+        EmailAttachment ohneDokument = anhang(email, "foto.jpg");
+
+        var ids = List.of(ueberDokument.getId(), ueberRueckFk.getId(), lieferschein.getId(), ohneDokument.getId());
+
+        assertThat(lieferantDokumentRepository.findAnhangIdsMitDokumentTyp(ids,
+                List.of(LieferantDokumentTyp.RECHNUNG)))
+                .containsExactlyInAnyOrder(ueberDokument.getId(), ueberRueckFk.getId());
+        assertThat(lieferantDokumentRepository.findAnhangIdsMitDokumentTyp(ids,
+                List.of(LieferantDokumentTyp.LIEFERSCHEIN))).containsExactly(lieferschein.getId());
+        assertThat(lieferantDokumentRepository.findAnhangIdsMitDokumentTyp(ids,
+                List.of(LieferantDokumentTyp.ANGEBOT))).isEmpty();
+        assertThat(lieferantDokumentRepository.findAnhangIdsMitDokumentTyp(List.of(-1L, 0L, Long.MAX_VALUE),
+                List.of(LieferantDokumentTyp.RECHNUNG))).isEmpty();
+    }
+
+    private EmailAttachment anhang(Email email, String dateiname) {
+        EmailAttachment att = new EmailAttachment();
+        att.setEmail(email);
+        att.setOriginalFilename(dateiname);
+        att.setStoredFilename("uuid_" + dateiname);
+        return emailAttachmentRepository.saveAndFlush(att);
+    }
 }
