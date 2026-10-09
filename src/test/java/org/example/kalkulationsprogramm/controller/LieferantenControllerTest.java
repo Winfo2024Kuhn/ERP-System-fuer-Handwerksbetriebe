@@ -90,8 +90,6 @@ class LieferantenControllerTest {
   @MockBean
   private LieferantArtikelpreisService lieferantArtikelpreisService;
   @MockBean
-  private org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
-  @MockBean
   private org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
   @MockBean
   private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
@@ -120,6 +118,16 @@ class LieferantenControllerTest {
   void alleDokumenttypenSichtbar() {
     when(lieferantDokumentZugriffService.sichtbareTypen(any(), any()))
         .thenReturn(Optional.of(java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
+  }
+
+  @Test
+  @DisplayName("Anhänge neu verarbeiten gibt es unter /api/lieferanten nicht mehr – der Pfad ist ohne Login offen")
+  void reprocessAttachmentsLiegtNichtMehrImOffenenPfad() throws Exception {
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+            .post("/api/lieferanten/5/reprocess-attachments"))
+        .andExpect(status().is4xxClientError());
+
+    verify(lieferantenRepository, org.mockito.Mockito.never()).findById(any());
   }
 
   @Test

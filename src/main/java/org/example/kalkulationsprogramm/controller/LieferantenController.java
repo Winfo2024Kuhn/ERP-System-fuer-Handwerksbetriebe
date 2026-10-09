@@ -90,7 +90,6 @@ public class LieferantenController {
     private final LieferantDokumentService dokumentService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService dokumentZugriffService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
-    private final org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     private final org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;
@@ -589,58 +588,6 @@ public class LieferantenController {
             normalized.add(email.trim().toLowerCase(Locale.ROOT));
         }
         return new ArrayList<>(normalized);
-    }
-
-    // ==================== ATTACHMENT REPROCESSING ====================
-
-    /**
-     * Reprocessiert alle Attachments eines Lieferanten.
-     * Setzt aiProcessed Flag zurück und verarbeitet erneut.
-     */
-    @PostMapping("/{id}/reprocess-attachments")
-    // KEIN @Transactional - jeder innere saveAndFlush soll sofort committen
-    public ResponseEntity<Map<String, Object>> reprocessAttachments(@PathVariable Long id) {
-        Lieferanten lieferant = lieferantenRepository.findById(id).orElse(null);
-        if (lieferant == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        // Finde alle Emails des Lieferanten
-        List<org.example.kalkulationsprogramm.domain.Email> emails = emailRepository
-                .findByLieferantIdOrderBySentAtDesc(id);
-
-        int totalAttachments = 0;
-        int processed = 0;
-
-        for (var email : emails) {
-            for (var attachment : email.getAttachments()) {
-                // Nur PDFs verarbeiten - ZUGFeRD-XML ist in PDFs eingebettet
-                if (attachment.getOriginalFilename() != null &&
-                        attachment.getOriginalFilename().toLowerCase().endsWith(".pdf")) {
-                    totalAttachments++;
-
-                    // Flag zurücksetzen
-                    attachment.setAiProcessed(false);
-                    attachment.setAiProcessedAt(null);
-                }
-            }
-        }
-
-        // Trigger Reprocessing via Event
-        if (totalAttachments > 0) {
-            for (var email : emails) {
-                try {
-                    processed += emailAttachmentProcessingService.processLieferantAttachments(email);
-                } catch (Exception e) {
-                    // Log and continue
-                }
-            }
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "lieferantId", id,
-                "totalAttachments", totalAttachments,
-                "processed", processed));
     }
 
     // ==================== DOKUMENT ENDPOINTS ====================

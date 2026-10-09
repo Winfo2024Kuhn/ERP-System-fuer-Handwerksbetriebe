@@ -122,8 +122,6 @@ class LieferantDokumentRechteSecurityTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.LieferantArtikelpreisService artikelpreisService;
     @MockBean
-    private org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean
     private org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     @MockBean
     private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;

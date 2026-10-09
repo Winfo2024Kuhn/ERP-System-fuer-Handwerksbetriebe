@@ -91,6 +91,7 @@ class ZeiterfassungFilterChainMatcherTest {
         assertThat(ohneLoginErreichbar("/api/settings/allgemein")).isFalse();
         assertThat(ohneLoginErreichbar("/api/frontend-users/1")).isFalse();
         assertThat(ohneLoginErreichbar("/api/admin/projekte/wartung")).isFalse();
+        assertThat(ohneLoginErreichbar("/api/admin/lieferanten/1/reprocess-attachments")).isFalse();
         assertThat(ohneLoginErreichbar("/api/auth/me")).isFalse();
         assertThat(ohneLoginErreichbar("/api/mahnwesen/lauf")).isFalse();
         assertThat(ohneLoginErreichbar("/api/emails/admin/backfill")).isFalse();

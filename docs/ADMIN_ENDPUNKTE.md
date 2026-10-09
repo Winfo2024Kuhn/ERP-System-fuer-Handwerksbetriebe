@@ -213,10 +213,11 @@ Eine Mail:
 await fetch('/api/lieferant-dokumente/process-email/{emailId}',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Alle Anhänge eines Lieferanten neu verarbeiten
-Setzt die „schon verarbeitet“-Markierung zurück und verarbeitet neu.
+### Alle Anhänge eines Lieferanten neu verarbeiten (nur Admin)
+Setzt die „schon verarbeitet“-Markierung der PDF-Anhänge zurück und lässt sie
+neu von der KI lesen. Kostet KI-Aufrufe.
 ```js
-await fetch('/api/lieferanten/{lieferantId}/reprocess-attachments',{method:'POST'}).then(r=>r.json())
+await fetch('/api/admin/lieferanten/{lieferantId}/reprocess-attachments',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
 ---
