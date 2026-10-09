@@ -9,29 +9,29 @@ import { useToast } from '../../components/ui/toast';
 import { TYP_LABELS } from './bestellungenListe';
 import { juengstesBestellDokument } from './kettenGraph';
 import { RechnungHochladenKnopf } from './RechnungHochladenKnopf';
+import { MIN_QUOTE_VORAUSWAHL, TREFFER_KLASSEN, formatiereQuote, trefferStufe } from './rechnungsVorschlag';
 import {
-    MIN_QUOTE_VORAUSWAHL,
-    TREFFER_KLASSEN,
-    formatiereQuote,
-    ladeRechnungsVorschlaege,
-    passtZurRechnungsSuche,
-    rechnungVerknuepfen,
-    rueckfrage,
-    trefferStufe,
-    type RechnungsDokument,
-    type RechnungsVorschlag,
-} from './rechnungsVorschlag';
+    VORSCHLAGS_TYPEN,
+    anzahlMitNomen,
+    dokumentBezeichnung,
+    inKetteVerknuepfen,
+    kettenDokumentBezeichnung,
+    kettenRueckfrage,
+    ladeKettenVorschlaege,
+    passtZurKettenSuche,
+    typWoerter,
+    type KettenVorschlag,
+    type SuchKette,
+    type VorschlagsTyp,
+} from './kettenVorschlag';
 
-interface BestellungKette {
-    id: string;
-    lieferantName: string | null;
-    dokumente: RechnungsDokument[];
-}
-
-interface RechnungSuchenDialogProps {
-    kette: BestellungKette;
+interface DokumentSuchenDialogProps {
+    /** Die Kette – aus der Bestellübersicht oder ein einzelnes Lieferanten-Dokument. */
+    kette: SuchKette;
+    /** Vorgewählte Dokumentart, z. B. RECHNUNG vom „Suchen“ am offenen Ende. Ohne: alle Arten. */
+    startTyp?: VorschlagsTyp | null;
     onClose: () => void;
-    /** Rechnung wurde zugeordnet – die Seite lädt dann neu. */
+    /** Dokument wurde zugeordnet oder hochgeladen – die Seite lädt dann neu. */
     onVerknuepft: () => void;
 }
 
@@ -77,15 +77,36 @@ function QuoteMarke({ quote }: { quote: number }) {
     );
 }
 
-function anzahlText(anzahl: number, lieferant: string | null, alleLieferanten: boolean): string {
-    const rechnungen = anzahl === 1 ? 'Rechnung' : 'Rechnungen';
-    if (alleLieferanten) return `${anzahl} ${rechnungen} von allen Lieferanten`;
-    return `${anzahl} ${rechnungen} von ${lieferant ?? 'diesem Lieferanten'}`;
+function anzahlText(anzahl: number, typ: VorschlagsTyp | null, lieferant: string | null, alleLieferanten: boolean): string {
+    const menge = anzahlMitNomen(anzahl, typ);
+    if (alleLieferanten) return `${menge} von allen Lieferanten`;
+    return `${menge} von ${lieferant ?? 'diesem Lieferanten'}`;
+}
+
+function leerText(typ: VorschlagsTyp | null, lieferant: string | null, alleLieferanten: boolean): { titel: string; hilfe: string } {
+    const woerter = typWoerter(typ);
+    const titel = alleLieferanten
+        ? `Es ist noch ${woerter.kein} da, ${woerter.relativ} passen könnte.`
+        : `Von ${lieferant ?? 'diesem Lieferanten'} ist noch ${woerter.kein} da, ${woerter.relativ} passen könnte.`;
+    if (typ === 'RECHNUNG') {
+        return {
+            titel: alleLieferanten ? titel : `Von ${lieferant ?? 'diesem Lieferanten'} ist noch keine Rechnung da.`,
+            hilfe: alleLieferanten
+                ? 'Liegt die Rechnung auf Papier oder als Datei vor, einfach hier hochladen.'
+                : 'Vielleicht kam sie per Post oder unter einem anderen Lieferantennamen. Lade sie hoch oder such bei den anderen Lieferanten.',
+        };
+    }
+    return {
+        titel,
+        hilfe: alleLieferanten
+            ? 'Vielleicht ist es noch nicht im System. Importiere es beim Lieferanten unter „Dokumente“.'
+            : 'Vielleicht kam es unter einem anderen Lieferantennamen. Such bei den anderen Lieferanten.',
+    };
 }
 
 function ListeSkeleton() {
     return (
-        <div className="p-3 space-y-2" role="status" aria-label="Rechnungen werden geladen">
+        <div className="p-3 space-y-2" role="status" aria-label="Vorschläge werden geladen">
             {[0, 1, 2, 3].map(i => (
                 <div key={i} className="rounded-lg border border-slate-200 p-3 space-y-2 motion-safe:animate-pulse">
                     <div className="h-4 w-2/3 rounded bg-slate-200" />
@@ -97,20 +118,53 @@ function ListeSkeleton() {
     );
 }
 
-export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungSuchenDialogProps) {
+function TypFilter({ typ, onWahl }: { typ: VorschlagsTyp | null; onWahl: (typ: VorschlagsTyp | null) => void }) {
+    const chips: { wert: VorschlagsTyp | null; label: string }[] = [
+        { wert: null, label: 'Alle' },
+        ...VORSCHLAGS_TYPEN.map(t => ({ wert: t, label: TYP_LABELS[t] })),
+    ];
+    return (
+        <div role="group" aria-label="Dokumentart" className="flex flex-wrap gap-1.5">
+            {chips.map(chip => {
+                const aktiv = chip.wert === typ;
+                return (
+                    <button
+                        key={chip.label}
+                        type="button"
+                        aria-pressed={aktiv}
+                        onClick={() => onWahl(chip.wert)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1 ${aktiv
+                            ? 'bg-rose-600 border-rose-600 text-white'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300 hover:text-rose-700'}`}
+                    >
+                        {chip.label}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/**
+ * Sucht zu einer Dokumentenkette passende Lieferanten-Dokumente jeder Art und
+ * hängt das gewählte mit einem Klick an. Links die Kette, in der Mitte die
+ * Vorschläge (Trefferquote, Gründe), rechts das gewählte Dokument.
+ */
+export function DokumentSuchenDialog({ kette, startTyp = null, onClose, onVerknuepft }: DokumentSuchenDialogProps) {
     const toast = useToast();
     const confirm = useConfirm();
-    const [vorschlaege, setVorschlaege] = useState<RechnungsVorschlag[] | null>(null);
+    const [vorschlaege, setVorschlaege] = useState<KettenVorschlag[] | null>(null);
     const [fehler, setFehler] = useState(false);
     const [ladeVersuch, setLadeVersuch] = useState(0);
     const [suche, setSuche] = useState('');
     const [gewaehltId, setGewaehltId] = useState<number | null>(null);
     const [eigenesDokId, setEigenesDokId] = useState<number | null>(null);
     const [speichert, setSpeichert] = useState(false);
-    /** Rechnung im großen Vorschaufenster */
-    const [vorschau, setVorschau] = useState<RechnungsVorschlag | null>(null);
+    /** Dokument im großen Vorschaufenster */
+    const [vorschau, setVorschau] = useState<KettenVorschlag | null>(null);
     /** Standard: nur derselbe Lieferant. Auf Wunsch alle Lieferanten. */
     const [alleLieferanten, setAlleLieferanten] = useState(false);
+    const [typ, setTyp] = useState<VorschlagsTyp | null>(startTyp);
     const zielDokument = useMemo(() => juengstesBestellDokument(kette.dokumente), [kette.dokumente]);
 
     const eigeneDokumente = useMemo(() => kette.dokumente.filter(d => d.pdfUrl), [kette.dokumente]);
@@ -119,86 +173,99 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
     useEffect(() => {
         let abgebrochen = false;
         const ids = kette.dokumente.map(d => d.id);
-        ladeRechnungsVorschlaege(ids, { alleLieferanten })
+        ladeKettenVorschlaege(ids, { alleLieferanten, typ })
             .then(liste => {
                 if (abgebrochen) return;
                 setVorschlaege(liste);
                 setFehler(false);
-                // Nur einen brauchbaren Vorschlag vorauswählen – sonst verknüpfte ein Klick eine geratene Rechnung
-                setGewaehltId(liste[0] && liste[0].trefferquote >= MIN_QUOTE_VORAUSWAHL ? liste[0].rechnung.id : null);
+                // Nur einen brauchbaren Vorschlag vorauswählen – sonst hinge ein Klick ein geratenes Dokument an
+                setGewaehltId(liste[0] && liste[0].trefferquote >= MIN_QUOTE_VORAUSWAHL ? liste[0].dokument.id : null);
             })
             .catch(err => {
                 if (abgebrochen) return;
                 setFehler(true);
-                toast.error(err instanceof Error ? err.message : 'Rechnungen konnten nicht geladen werden.');
+                toast.error(err instanceof Error ? err.message : 'Die Vorschläge konnten nicht geladen werden.');
             });
         return () => { abgebrochen = true; };
-    }, [kette.dokumente, ladeVersuch, alleLieferanten, toast]);
+    }, [kette.dokumente, ladeVersuch, alleLieferanten, typ, toast]);
 
-    const neuLaden = useCallback(() => {
-        setVorschlaege(null);
-        setFehler(false);
-        setLadeVersuch(v => v + 1);
-    }, []);
-
-    const lieferantenUmschalten = (alle: boolean) => {
+    /** Liste leeren, damit während des Ladens kein alter Stand stehen bleibt. */
+    const zuruecksetzen = useCallback(() => {
         setVorschlaege(null);
         setFehler(false);
         setGewaehltId(null);
+    }, []);
+
+    const neuLaden = () => {
+        zuruecksetzen();
+        setLadeVersuch(v => v + 1);
+    };
+
+    const lieferantenUmschalten = (alle: boolean) => {
+        zuruecksetzen();
         setAlleLieferanten(alle);
     };
 
+    const typWaehlen = (neu: VorschlagsTyp | null) => {
+        if (neu === typ) return;
+        zuruecksetzen();
+        setTyp(neu);
+    };
+
     const sichtbar = useMemo(
-        () => (vorschlaege ?? []).filter(v => passtZurRechnungsSuche(v, suche)),
+        () => (vorschlaege ?? []).filter(v => passtZurKettenSuche(v, suche)),
         [vorschlaege, suche],
     );
-    const gewaehlt = (vorschlaege ?? []).find(v => v.rechnung.id === gewaehltId) ?? null;
+    const gewaehlt = (vorschlaege ?? []).find(v => v.dokument.id === gewaehltId) ?? null;
 
-    const verknuepfen = async (vorschlag: RechnungsVorschlag | null = gewaehlt) => {
+    const verknuepfen = async (vorschlag: KettenVorschlag | null = gewaehlt) => {
         if (!vorschlag || speichert) return;
-        const frage = rueckfrage(vorschlag);
+        const frage = kettenRueckfrage(vorschlag);
         if (frage && !(await confirm(frage))) return;
         setSpeichert(true);
         try {
-            await rechnungVerknuepfen(vorschlag.bestellDokumentId, vorschlag.rechnung.id);
-            toast.success(vorschlag.rechnung.dokumentNummer ? `Rechnung ${vorschlag.rechnung.dokumentNummer} zugeordnet.` : 'Rechnung zugeordnet.');
+            await inKetteVerknuepfen(vorschlag.kettenDokumentId, vorschlag.dokument.id);
+            toast.success(`${dokumentBezeichnung(vorschlag.dokument)} zur Kette hinzugefügt.`);
             setVorschau(null);
             onVerknuepft();
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Rechnung konnte nicht zugeordnet werden.');
+            toast.error(err instanceof Error ? err.message : 'Das Dokument konnte nicht zugeordnet werden.');
         } finally {
             setSpeichert(false);
         }
     };
 
     const laden = vorschlaege === null && !fehler;
+    const nurRechnungen = typ === 'RECHNUNG';
+    const leer = leerText(typ, kette.lieferantName, alleLieferanten);
+    const titel = nurRechnungen ? 'Rechnung suchen' : 'Dokument zur Kette hinzufügen';
 
     return (
         <Dialog
             open
             onOpenChange={o => { if (!o && !speichert) onClose(); }}
             className="w-[calc(100vw-2cm)] h-[calc(100vh-2cm)] max-w-none p-0 overflow-hidden"
-            aria-labelledby="rechnung-suchen-titel"
+            aria-labelledby="dokument-suchen-titel"
         >
             <div className="px-6 py-4 pr-16 border-b border-slate-200 flex items-center gap-3 flex-shrink-0">
                 <span className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0">
                     <FileSearch className="w-5 h-5" aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
-                    <DialogTitle id="rechnung-suchen-titel" className="text-xl truncate">
-                        Rechnung suchen{kette.lieferantName ? ` – ${kette.lieferantName}` : ''}
+                    <DialogTitle id="dokument-suchen-titel" className="text-xl truncate">
+                        {titel}{kette.lieferantName ? ` – ${kette.lieferantName}` : ''}
                     </DialogTitle>
                     <DialogDescription>
-                        Links die Bestellung, rechts die gewählte Rechnung. Passt sie, genügt ein Klick zum Zuordnen.
+                        Links die Kette, rechts das gewählte Dokument. Passt es, genügt ein Klick auf „Gehört dazu“.
                     </DialogDescription>
                 </div>
             </div>
 
             <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr)_minmax(320px,26rem)_minmax(0,1fr)] divide-x divide-slate-200">
                 <PdfSpalte
-                    titel="Bestellung"
+                    titel="Kette"
                     kopf={eigeneDokumente.length > 1 ? (
-                        <div className="flex gap-1" role="tablist" aria-label="Dokument der Bestellung">
+                        <div className="flex gap-1" role="tablist" aria-label="Dokument der Kette">
                             {eigeneDokumente.map(d => (
                                 <button
                                     key={d.id}
@@ -218,11 +285,12 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                 >
                     {eigenes?.pdfUrl
                         ? <PdfCanvasViewer key={eigenes.pdfUrl} url={eigenes.pdfUrl} className="h-full" />
-                        : <PdfLeer text="Zu dieser Bestellung gibt es keine Vorschau." />}
+                        : <PdfLeer text="Zu dieser Kette gibt es keine Vorschau." />}
                 </PdfSpalte>
 
-                <section aria-label="Gefundene Rechnungen" className="flex flex-col min-h-0 bg-white">
-                    <div className="p-3 border-b border-slate-200 space-y-1">
+                <section aria-label="Vorschläge" className="flex flex-col min-h-0 bg-white">
+                    <div className="p-3 border-b border-slate-200 space-y-2">
+                        <TypFilter typ={typ} onWahl={typWaehlen} />
                         <div className="relative">
                             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
                             <Input
@@ -230,7 +298,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                 value={suche}
                                 onChange={e => setSuche(e.target.value)}
                                 placeholder="Nummer, Lieferant, Betrag oder Datum …"
-                                aria-label="Rechnungen durchsuchen"
+                                aria-label="Vorschläge durchsuchen"
                                 className="h-9 pl-9 pr-9 rounded-lg border-slate-300"
                             />
                             {suche && (
@@ -246,7 +314,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-1">
                             <p className="text-xs text-slate-500" aria-live="polite">
-                                {vorschlaege ? anzahlText(sichtbar.length, kette.lieferantName, alleLieferanten) : '\u00a0'}
+                                {vorschlaege ? anzahlText(sichtbar.length, typ, kette.lieferantName, alleLieferanten) : ' '}
                             </p>
                             {/* Im Leerzustand übernimmt der große Knopf darunter */}
                             {vorschlaege && (vorschlaege.length > 0 || alleLieferanten) && (
@@ -267,7 +335,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                         {laden && <ListeSkeleton />}
                         {fehler && (
                             <div className="p-6 text-center text-sm text-slate-600 space-y-3">
-                                <p className="font-medium text-slate-800">Die Rechnungen konnten nicht geladen werden.</p>
+                                <p className="font-medium text-slate-800">Die Vorschläge konnten nicht geladen werden.</p>
                                 <Button size="sm" variant="outline" onClick={neuLaden}>
                                     <RefreshCw className="w-4 h-4" aria-hidden="true" />
                                     Nochmal versuchen
@@ -277,25 +345,25 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                         {vorschlaege && vorschlaege.length === 0 && (
                             <div className="p-6 text-center text-sm text-slate-500 space-y-3">
                                 <FileText className="w-10 h-10 mx-auto text-slate-300" aria-hidden="true" />
-                                <p className="font-medium text-slate-800">
-                                    {alleLieferanten
-                                        ? 'Es ist noch keine Rechnung da, die passen könnte.'
-                                        : `Von ${kette.lieferantName ?? 'diesem Lieferanten'} ist noch keine Rechnung da.`}
-                                </p>
-                                <p>
-                                    {alleLieferanten
-                                        ? 'Liegt die Rechnung auf Papier oder als Datei vor, einfach hier hochladen.'
-                                        : 'Vielleicht kam sie per Post oder unter einem anderen Lieferantennamen. Lade sie hoch oder such bei den anderen Lieferanten.'}
-                                </p>
+                                <p className="font-medium text-slate-800">{leer.titel}</p>
+                                <p>{leer.hilfe}</p>
                                 <div className="flex flex-wrap justify-center gap-2">
-                                    <RechnungHochladenKnopf
-                                        bestellDokumentId={zielDokument?.id ?? null}
-                                        onHochgeladen={() => onVerknuepft()}
-                                    />
+                                    {/* Hochladen nur bei Rechnungen – dafür gibt es einen festen Weg ins Backend */}
+                                    {nurRechnungen && zielDokument && (
+                                        <RechnungHochladenKnopf
+                                            bestellDokumentId={zielDokument.id}
+                                            onHochgeladen={() => onVerknuepft()}
+                                        />
+                                    )}
                                     {!alleLieferanten && (
                                         <Button size="sm" variant="outline" onClick={() => lieferantenUmschalten(true)}>
                                             <Search className="w-4 h-4" aria-hidden="true" />
                                             Bei anderen Lieferanten suchen
+                                        </Button>
+                                    )}
+                                    {typ !== null && (
+                                        <Button size="sm" variant="outline" onClick={() => typWaehlen(null)}>
+                                            Alle Dokumentarten zeigen
                                         </Button>
                                     )}
                                 </div>
@@ -303,40 +371,49 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                         )}
                         {vorschlaege && vorschlaege.length > 0 && sichtbar.length === 0 && (
                             <div className="p-6 text-center text-sm text-slate-500">
-                                Keine Rechnung passt zu „{suche}“.
+                                Kein Vorschlag passt zu „{suche}“.
                             </div>
                         )}
                         {sichtbar.length > 0 && (
-                            <ul className="p-3 space-y-2" aria-label="Rechnungen">
+                            <ul className="p-3 space-y-2" aria-label="Vorschläge">
                                 {sichtbar.map(v => {
-                                    const aktiv = v.rechnung.id === gewaehltId;
+                                    const aktiv = v.dokument.id === gewaehltId;
+                                    const bezeichnung = dokumentBezeichnung(v.dokument);
                                     return (
-                                        <li key={v.rechnung.id} className={`rounded-lg border transition-colors ${aktiv
+                                        <li key={v.dokument.id} className={`rounded-lg border transition-colors ${aktiv
                                             ? 'border-rose-400 bg-rose-50'
                                             : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
                                             <button
                                                 type="button"
-                                                onClick={() => setGewaehltId(v.rechnung.id)}
+                                                onClick={() => setGewaehltId(v.dokument.id)}
                                                 aria-pressed={aktiv}
                                                 className="w-full text-left rounded-t-lg p-3 pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-inset"
                                             >
                                                 <div className="flex items-start justify-between gap-2">
-                                                    <span className="text-sm font-semibold text-slate-900 truncate">
-                                                        {v.rechnung.dokumentNummer ?? v.rechnung.dateiname}
+                                                    <span className="min-w-0 flex items-center gap-1.5">
+                                                        <span className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                                            {TYP_LABELS[v.dokument.typ]}
+                                                        </span>
+                                                        <span className="text-sm font-semibold text-slate-900 truncate">
+                                                            {v.dokument.dokumentNummer ?? v.dokument.dateiname}
+                                                        </span>
                                                     </span>
                                                     <QuoteMarke quote={v.trefferquote} />
                                                 </div>
                                                 <div className="mt-0.5 text-xs text-slate-500 truncate">
                                                     {v.lieferantName ?? 'Lieferant unbekannt'}
                                                 </div>
-                                                {(v.gehoertSchonZu || v.rechnung.ausgeblendet) && (
+                                                <div className="mt-0.5 text-xs text-slate-600 truncate">
+                                                    passt zu: <span className="font-medium text-slate-700">{kettenDokumentBezeichnung(v)}</span>
+                                                </div>
+                                                {(v.gehoertSchonZu || v.dokument.ausgeblendet) && (
                                                     <div className="mt-1.5 flex flex-wrap gap-1">
                                                         {v.gehoertSchonZu && (
                                                             <span className="text-[11px] leading-tight px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-800">
-                                                                Gehört schon zu {v.gehoertSchonZu} – Teillieferung
+                                                                Hängt schon an {v.gehoertSchonZu}
                                                             </span>
                                                         )}
-                                                        {v.rechnung.ausgeblendet && (
+                                                        {v.dokument.ausgeblendet && (
                                                             <span className="text-[11px] leading-tight px-1.5 py-0.5 rounded border border-slate-200 bg-slate-100 text-slate-500">
                                                                 ausgeblendet
                                                             </span>
@@ -344,8 +421,8 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                                     </div>
                                                 )}
                                                 <div className="mt-1 flex items-center justify-between text-xs text-slate-600">
-                                                    <span className="tabular-nums">{formatDatum(v.rechnung.dokumentDatum ?? v.rechnung.eingangsDatum)}</span>
-                                                    <span className="font-medium tabular-nums">{formatEuro(v.rechnung.betragBrutto)}</span>
+                                                    <span className="tabular-nums">{formatDatum(v.dokument.dokumentDatum ?? v.dokument.eingangsDatum)}</span>
+                                                    <span className="font-medium tabular-nums">{formatEuro(v.dokument.betragBrutto)}</span>
                                                 </div>
                                                 {v.gruende.length > 0 && (
                                                     <ul className="mt-2 flex flex-wrap gap-1" aria-label="Gründe">
@@ -358,7 +435,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                                 )}
                                                 {!v.eindeutig && v.trefferquote > 0 && (
                                                     <p className="mt-2 text-[11px] text-amber-700">
-                                                        Eine weitere Rechnung passt gleich gut.
+                                                        Ein weiteres Dokument passt gleich gut.
                                                     </p>
                                                 )}
                                             </button>
@@ -367,9 +444,9 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => setVorschau(v)}
-                                                    disabled={!v.rechnung.pdfUrl}
-                                                    title={v.rechnung.pdfUrl ? undefined : 'Zu dieser Rechnung gibt es keine Vorschau.'}
-                                                    aria-label={`Vorschau Rechnung ${v.rechnung.dokumentNummer ?? v.rechnung.dateiname}`}
+                                                    disabled={!v.dokument.pdfUrl}
+                                                    title={v.dokument.pdfUrl ? undefined : 'Zu diesem Dokument gibt es keine Vorschau.'}
+                                                    aria-label={`Vorschau ${bezeichnung}`}
                                                 >
                                                     <Eye className="w-4 h-4" aria-hidden="true" />
                                                     Vorschau
@@ -379,10 +456,10 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                                                     variant="outline"
                                                     onClick={() => void verknuepfen(v)}
                                                     disabled={speichert}
-                                                    aria-label={`Rechnung ${v.rechnung.dokumentNummer ?? v.rechnung.dateiname} zuordnen`}
+                                                    aria-label={`${bezeichnung} gehört dazu`}
                                                 >
                                                     <Link2 className="w-4 h-4" aria-hidden="true" />
-                                                    Zuordnen
+                                                    Gehört dazu
                                                 </Button>
                                             </div>
                                         </li>
@@ -393,20 +470,20 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                     </div>
                 </section>
 
-                <PdfSpalte titel={gewaehlt ? `Rechnung ${gewaehlt.rechnung.dokumentNummer ?? ''}`.trim() : 'Rechnung'}>
+                <PdfSpalte titel={gewaehlt ? dokumentBezeichnung(gewaehlt.dokument) : 'Vorschlag'}>
                     {laden
                         ? <div className="h-full p-6 motion-safe:animate-pulse" role="status" aria-label="Vorschau wird geladen"><div className="h-full rounded-lg bg-slate-200/70" /></div>
-                        : gewaehlt?.rechnung.pdfUrl
-                            ? <PdfCanvasViewer key={gewaehlt.rechnung.pdfUrl} url={gewaehlt.rechnung.pdfUrl} className="h-full" />
-                            : <PdfLeer text={gewaehlt ? 'Zu dieser Rechnung gibt es keine Vorschau.' : 'Eine Rechnung in der Liste wählen, um sie hier zu sehen.'} />}
+                        : gewaehlt?.dokument.pdfUrl
+                            ? <PdfCanvasViewer key={gewaehlt.dokument.pdfUrl} url={gewaehlt.dokument.pdfUrl} className="h-full" />
+                            : <PdfLeer text={gewaehlt ? 'Zu diesem Dokument gibt es keine Vorschau.' : 'Ein Dokument in der Liste wählen, um es hier zu sehen.'} />}
                 </PdfSpalte>
             </div>
 
             <div className="px-6 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 bg-white">
                 <p className="text-sm text-slate-500 min-w-0 truncate">
                     {gewaehlt
-                        ? <>Gewählt: <span className="font-medium text-slate-700">{gewaehlt.rechnung.dokumentNummer ?? gewaehlt.rechnung.dateiname}</span> · <span className="tabular-nums">{formatEuro(gewaehlt.rechnung.betragBrutto)}</span></>
-                        : 'Noch keine Rechnung gewählt.'}
+                        ? <>Gewählt: <span className="font-medium text-slate-700">{dokumentBezeichnung(gewaehlt.dokument)}</span> · <span className="tabular-nums">{formatEuro(gewaehlt.dokument.betragBrutto)}</span></>
+                        : 'Noch kein Dokument gewählt.'}
                 </p>
                 <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={onClose} disabled={speichert}>Abbrechen</Button>
@@ -414,38 +491,40 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                         size="sm"
                         onClick={() => void verknuepfen()}
                         disabled={!gewaehlt || speichert}
-                        title={gewaehlt ? undefined : 'Zuerst eine Rechnung aus der Liste wählen.'}
+                        title={gewaehlt ? undefined : 'Zuerst ein Dokument aus der Liste wählen.'}
                     >
                         {speichert
                             ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
                             : <Link2 className="w-4 h-4" aria-hidden="true" />}
-                        Diese Rechnung gehört dazu
+                        Gehört dazu
                     </Button>
                 </div>
             </div>
 
-            {vorschau?.rechnung.pdfUrl && (
+            {vorschau?.dokument.pdfUrl && (
                 <Dialog
                     open
                     onOpenChange={o => { if (!o && !speichert) setVorschau(null); }}
                     className="w-[calc(100vw-3cm)] h-[calc(100vh-3cm)] max-w-none p-0 overflow-hidden"
-                    aria-labelledby="rechnung-vorschau-titel"
+                    aria-labelledby="dokument-vorschau-titel"
                 >
                     <div className="px-6 py-4 pr-16 border-b border-slate-200 flex-shrink-0 min-w-0">
-                        <DialogTitle id="rechnung-vorschau-titel" className="text-xl truncate">
-                            Rechnung {vorschau.rechnung.dokumentNummer ?? vorschau.rechnung.dateiname}
+                        <DialogTitle id="dokument-vorschau-titel" className="text-xl truncate">
+                            {dokumentBezeichnung(vorschau.dokument)}
                         </DialogTitle>
                         <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span>{vorschau.lieferantName ?? 'Lieferant unbekannt'}</span>
                             <span aria-hidden="true">·</span>
-                            <span className="tabular-nums">{formatDatum(vorschau.rechnung.dokumentDatum ?? vorschau.rechnung.eingangsDatum)}</span>
+                            <span className="tabular-nums">{formatDatum(vorschau.dokument.dokumentDatum ?? vorschau.dokument.eingangsDatum)}</span>
                             <span aria-hidden="true">·</span>
-                            <span className="tabular-nums">{formatEuro(vorschau.rechnung.betragBrutto)}</span>
+                            <span className="tabular-nums">{formatEuro(vorschau.dokument.betragBrutto)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>passt zu {kettenDokumentBezeichnung(vorschau)}</span>
                             <QuoteMarke quote={vorschau.trefferquote} />
                         </DialogDescription>
                     </div>
                     <div className="flex-1 min-h-0 bg-slate-50">
-                        <PdfCanvasViewer key={vorschau.rechnung.pdfUrl} url={vorschau.rechnung.pdfUrl} className="h-full" />
+                        <PdfCanvasViewer key={vorschau.dokument.pdfUrl} url={vorschau.dokument.pdfUrl} className="h-full" />
                     </div>
                     <div className="px-6 py-3 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
                         <Button variant="outline" size="sm" onClick={() => setVorschau(null)} disabled={speichert}>Schließen</Button>
@@ -453,7 +532,7 @@ export function RechnungSuchenDialog({ kette, onClose, onVerknuepft }: RechnungS
                             {speichert
                                 ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
                                 : <Link2 className="w-4 h-4" aria-hidden="true" />}
-                            Diese Rechnung gehört dazu
+                            Gehört dazu
                         </Button>
                     </div>
                 </Dialog>

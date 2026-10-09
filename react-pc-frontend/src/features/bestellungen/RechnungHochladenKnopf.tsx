@@ -6,13 +6,13 @@ import {
     RECHNUNGS_DATEI_ACCEPT,
     istErlaubteRechnungsDatei,
     rechnungHochladen,
-    type RechnungsDokument,
+    type KettenBeleg,
 } from './rechnungsVorschlag';
 
 interface RechnungHochladenKnopfProps {
     /** Bestelldokument, an das die neue Rechnung gehängt wird. Ohne: Knopf gesperrt. */
     bestellDokumentId: number | null;
-    onHochgeladen: (rechnung: RechnungsDokument) => void;
+    onHochgeladen: (rechnung: KettenBeleg) => void;
     variant?: ButtonProps['variant'];
     className?: string;
 }

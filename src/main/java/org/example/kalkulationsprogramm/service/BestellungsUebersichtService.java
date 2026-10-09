@@ -19,6 +19,7 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungsUebersichtDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.DokumentRef;
 import org.example.kalkulationsprogramm.dto.Bestellung.DokumentenKette;
+import org.example.kalkulationsprogramm.dto.Bestellung.KettenVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.RechnungsVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.Verbindung;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
@@ -59,13 +60,19 @@ public class BestellungsUebersichtService {
     static final int KARTE_TAGE_VORHER = 30;
     /** … bis so vielen Tagen nach einem Bestelldokument. */
     static final int KARTE_TAGE_NACHHER = 180;
-    /** Das Fenster „Rechnung suchen“ zeigt höchstens so viele Rechnungen (beste zuerst). */
+    /** Die Suchfenster zeigen höchstens so viele Vorschläge (beste zuerst). */
     static final int MAX_VORSCHLAEGE = 200;
+    /**
+     * „Dokument zur Kette hinzufügen“: nur Dokumente bis so viele Tage um ein
+     * Kettenglied (Angebote liegen oft Monate vor der AB).
+     */
+    static final int SUCHE_TAGE = 365;
 
     private final LieferantDokumentRepository dokumentRepository;
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final LieferantDokumentProjektAnteilRepository projektAnteilRepository;
     private final RechnungsVorschlagService rechnungsVorschlagService;
+    private final KettenVorschlagService kettenVorschlagService;
 
     /**
      * Alle Dokumenten-Ketten gruppiert nach Status, neueste zuerst. Jede laufende
@@ -130,9 +137,113 @@ public class BestellungsUebersichtService {
             // Gleichstand mit dem Nachbarn: dann ist der Vorschlag nicht eindeutig
             boolean gleichauf = (i > 0 && vorschlaege.get(i - 1).trefferquote() == quote)
                     || (i + 1 < vorschlaege.size() && vorschlaege.get(i + 1).trefferquote() == quote);
-            liste.add(toVorschlagDto(vorschlaege.get(i), !gleichauf));
+            liste.add(toVorschlagDto(vorschlaege.get(i), !gleichauf, bestand.sichtbar()));
         }
         return Optional.of(liste);
+    }
+
+    /**
+     * Dokumente aller Arten, bewertet gegen eine Kette – beste zuerst. Für das
+     * Fenster „Dokument zur Kette hinzufügen“ (Werkstoffzeugnis, Lieferschein,
+     * Rechnung … nachträglich zuordnen).
+     *
+     * <p>Kandidaten sind alle Dokumente desselben Lieferanten, die sich direkt an ein
+     * Dokument der Kette hängen lassen – auch ausgeblendete und schon anderswo
+     * verknüpfte. Die Kette selbst fehlt.
+     *
+     * @param dokumentIds     Dokumente der Kette; die übrigen Kettenglieder sammelt der Service
+     *                        selbst. Ein einzelnes Dokument ist eine Kette aus einem Glied.
+     * @param alleLieferanten auch Dokumente anderer Lieferanten
+     * @param typ             nur diese Art, {@code null} = alle
+     * @param sichtbareTypen  Dokumenttypen, die der Aufrufer sehen darf
+     * @return leer, wenn keine der IDs zu einem sichtbaren Dokument gehört
+     */
+    public Optional<List<KettenVorschlagDto>> kettenVorschlaege(List<Long> dokumentIds, boolean alleLieferanten,
+            LieferantDokumentTyp typ, Set<LieferantDokumentTyp> sichtbareTypen) {
+        Dokumentbestand bestand = ladeDokumente(sichtbareTypen);
+        List<LieferantDokument> start = dokumentIds.stream()
+                .map(bestand.nachId()::get)
+                .filter(Objects::nonNull)
+                .toList();
+        if (start.isEmpty()) {
+            return Optional.empty();
+        }
+        Set<Long> kettenIds = new HashSet<>();
+        start.forEach(d -> collectKettenIds(d, kettenIds));
+        List<LieferantDokument> kette = kettenIds.stream()
+                .map(bestand.nachId()::get)
+                .filter(Objects::nonNull)
+                .toList();
+        Long lieferantId = start.stream()
+                .map(d -> d.getLieferant() != null ? d.getLieferant().getId() : null)
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+        Set<LieferantDokumentTyp> kettenTypen = kette.stream().map(LieferantDokument::getTyp)
+                .collect(Collectors.toSet());
+        List<LocalDate> kettenDaten = kette.stream()
+                .map(d -> d.getGeschaeftsdaten() != null ? d.getGeschaeftsdaten().getDokumentDatum() : null)
+                .filter(Objects::nonNull)
+                .toList();
+        // Vor dem teuren Bewerten aussieben: nur Arten, die an ein Kettenglied passen,
+        // und nur aus dem Zeitfenster – sonst wüchse die Suche mit jedem Jahr.
+        List<LieferantDokument> kandidaten = (alleLieferanten ? bestand.alle() : bestand.dokumenteVon(lieferantId))
+                .stream()
+                .filter(d -> !kettenIds.contains(d.getId()))
+                .filter(d -> typ == null || d.getTyp() == typ)
+                .filter(d -> passtZuEinerArt(d.getTyp(), kettenTypen))
+                .filter(d -> imSuchFenster(d, kettenDaten))
+                .toList();
+        var vorschlaege = kettenVorschlagService.bewerte(kette, kandidaten,
+                lieferantId != null ? bestand.dokumenteVon(lieferantId) : null, kettenVorschlagService.neuerSpeicher());
+        int anzahl = Math.min(vorschlaege.size(), MAX_VORSCHLAEGE);
+        List<KettenVorschlagDto> liste = new ArrayList<>(anzahl);
+        for (int i = 0; i < anzahl; i++) {
+            int quote = vorschlaege.get(i).trefferquote();
+            boolean gleichauf = (i > 0 && vorschlaege.get(i - 1).trefferquote() == quote)
+                    || (i + 1 < vorschlaege.size() && vorschlaege.get(i + 1).trefferquote() == quote);
+            liste.add(toKettenVorschlagDto(vorschlaege.get(i), !gleichauf, bestand.sichtbar()));
+        }
+        return Optional.of(liste);
+    }
+
+    /** Lässt sich ein Dokument dieser Art direkt an eines der Kettenglieder hängen? */
+    private static boolean passtZuEinerArt(LieferantDokumentTyp typ, Set<LieferantDokumentTyp> kettenTypen) {
+        if (!KettenVorschlagService.KETTEN_TYPEN.contains(typ)) {
+            return false;
+        }
+        List<LieferantDokumentTyp> vorgaenger = LieferantDokumentAbgleich.vorgaengerTypen(typ);
+        return kettenTypen.stream().anyMatch(k -> vorgaenger.contains(k)
+                || LieferantDokumentAbgleich.vorgaengerTypen(k).contains(typ));
+    }
+
+    /**
+     * Dokument liegt höchstens {@link #SUCHE_TAGE} Tage von einem Kettenglied entfernt.
+     * Ohne Datum (Dokument oder Kette) bleibt es im Rennen.
+     */
+    static boolean imSuchFenster(LieferantDokument dokument, List<LocalDate> kettenDaten) {
+        LocalDate datum = dokument.getGeschaeftsdaten() != null ? dokument.getGeschaeftsdaten().getDokumentDatum() : null;
+        if (datum == null || kettenDaten.isEmpty()) {
+            return true;
+        }
+        return kettenDaten.stream().anyMatch(k -> !datum.isBefore(k.minusDays(SUCHE_TAGE))
+                && !datum.isAfter(k.plusDays(SUCHE_TAGE)));
+    }
+
+    private static KettenVorschlagDto toKettenVorschlagDto(KettenVorschlagService.Vorschlag v, boolean eindeutig,
+            Set<LieferantDokumentTyp> sichtbar) {
+        LieferantDokument kettenDokument = v.kettenDokument();
+        var kettenDaten = kettenDokument.getGeschaeftsdaten();
+        return new KettenVorschlagDto(
+                toDokumentRef(v.dokument()),
+                v.dokument().getLieferant() != null ? v.dokument().getLieferant().getLieferantenname() : null,
+                kettenDokument.getId(),
+                kettenDokument.getTyp(),
+                kettenDaten != null ? kettenDaten.getDokumentNummer() : null,
+                v.trefferquote(),
+                v.einschaetzung().sicher(),
+                eindeutig,
+                v.einschaetzung().gruende(),
+                KettenVorschlagService.gehoertSchonZu(v.dokument(), sichtbar));
     }
 
     private RechnungsVorschlagDto besterVorschlag(DokumentenKette kette, Dokumentbestand bestand,
@@ -159,7 +270,7 @@ public class BestellungsUebersichtService {
                 .toList();
         return rechnungsVorschlagService.besterVorschlag(bestellDokumente, kandidaten,
                         bestand.dokumenteVon(kette.lieferantId()), speicher)
-                .map(b -> toVorschlagDto(b.vorschlag(), b.eindeutig()))
+                .map(b -> toVorschlagDto(b.vorschlag(), b.eindeutig(), bestand.sichtbar()))
                 .orElse(null);
     }
 
@@ -177,7 +288,8 @@ public class BestellungsUebersichtService {
                 && !datum.isAfter(b.plusDays(KARTE_TAGE_NACHHER)));
     }
 
-    private static RechnungsVorschlagDto toVorschlagDto(RechnungsVorschlagService.Vorschlag v, boolean eindeutig) {
+    private static RechnungsVorschlagDto toVorschlagDto(RechnungsVorschlagService.Vorschlag v, boolean eindeutig,
+            Set<LieferantDokumentTyp> sichtbar) {
         LieferantDokument bestellung = v.bestellDokument();
         var bestellDaten = bestellung.getGeschaeftsdaten();
         return new RechnungsVorschlagDto(
@@ -190,7 +302,7 @@ public class BestellungsUebersichtService {
                 v.einschaetzung().sicher(),
                 eindeutig,
                 v.einschaetzung().gruende(),
-                RechnungsVorschlagService.gehoertSchonZu(v.rechnung()));
+                RechnungsVorschlagService.gehoertSchonZu(v.rechnung(), sichtbar));
     }
 
     /**
@@ -200,9 +312,11 @@ public class BestellungsUebersichtService {
      * @param dokumenteJeLieferant alle Dokumente je Lieferant – das Umfeld, an dem
      *                             sich Kundennummern von Auftragsnummern unterscheiden
      * @param rechnungen           alle Rechnungen
+     * @param sichtbar             Dokumenttypen, die der Aufrufer sehen darf
      */
     private record Dokumentbestand(List<LieferantDokument> alle, Map<Long, LieferantDokument> nachId,
-            Map<Long, List<LieferantDokument>> dokumenteJeLieferant, List<LieferantDokument> rechnungen) {
+            Map<Long, List<LieferantDokument>> dokumenteJeLieferant, List<LieferantDokument> rechnungen,
+            Set<LieferantDokumentTyp> sichtbar) {
 
         List<LieferantDokument> dokumenteVon(Long lieferantId) {
             return lieferantId == null ? List.of() : dokumenteJeLieferant.getOrDefault(lieferantId, List.of());
@@ -231,7 +345,7 @@ public class BestellungsUebersichtService {
                 rechnungen.add(d);
             }
         }
-        return new Dokumentbestand(alle, nachId, jeLieferant, rechnungen);
+        return new Dokumentbestand(alle, nachId, jeLieferant, rechnungen, sichtbareTypen);
     }
 
     /** Die Ketten des Bestands, nach Status gruppiert und neueste zuerst – noch ohne Vorschläge. */

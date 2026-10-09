@@ -6,7 +6,8 @@ import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
  * Bestellungen: Suche über alle Reiter, ältere Angebote eingeklappt, alte
  * Bestellungen oben in Bernstein, Rechnungs-Vorschlag mit „Übernehmen“, die
  * Belege als Gabel (Teillieferungen, Abhängen, Rechnung hochladen) und der
- * Dialog „Rechnung suchen“. „Heute“ ist fest auf den 05.10.2026 gesetzt.
+ * Dialog „Rechnung suchen“ / „Dokument zur Kette hinzufügen“ (alle
+ * Dokumentarten, Filter-Chips). „Heute“ ist fest auf den 05.10.2026 gesetzt.
  * Nur Fantasienamen (DSGVO), /api vollständig gestubbt.
  */
 
@@ -50,6 +51,17 @@ function vorschlag(rechnung: Dok, quote: number, bestellId: number, eindeutig: b
         gruende: ['Gleicher Lieferant', 'Gleiche Bestellnummer', '19 Tage danach'], gehoertSchonZu,
     };
 }
+
+/** Vorschlag im Suchdialog (Endpoint ketten-vorschlaege) – jede Dokumentart. */
+function kettenVorschlag(dokument: Dok, quote: number, kettenId: number, kettenTyp: string, kettenNummer: string | null,
+    eindeutig: boolean, lieferant: string, gehoertSchonZu: string | null = null) {
+    return {
+        dokument, lieferantName: lieferant, kettenDokumentId: kettenId, kettenDokumentTyp: kettenTyp, kettenDokumentNummer: kettenNummer,
+        trefferquote: quote, sicher: quote >= 70, eindeutig, gruende: ['Gleicher Lieferant', 'Belegnummer wird genannt'], gehoertSchonZu,
+    };
+}
+
+const ZEUGNIS = dok(910, 'WERKSTOFFZEUGNIS', 'WZ-31', '2026-09-26');
 
 /**
  * Mehrere Rechnungen: Angebot, zwei ABs, drei Lieferscheine, zwei Rechnungen.
@@ -127,17 +139,23 @@ async function stubApi(page: Page, mitschrift: Mitschrift, optionen: StubOptione
         }
         if (pfad === '/api/bestellungen-uebersicht' && request.method() === 'GET') return json(route, UEBERSICHT);
         if (pfad === '/api/bestellungen-uebersicht/belege-offen') return json(route, []);
-        if (pfad === '/api/bestellungen-uebersicht/rechnung-vorschlaege') {
+        if (pfad === '/api/bestellungen-uebersicht/ketten-vorschlaege') {
             mitschrift.vorschlagAnfragen.push(url.searchParams);
+            const typ = url.searchParams.get('typ');
             if (optionen.eigenerLieferantOhneRechnung) {
                 if (url.searchParams.get('alleLieferanten') !== 'true') return json(route, []);
-                return json(route, [vorschlag(dok(904, 'RECHNUNG', 'RE-555', '2026-09-29', 900), 35, 11, true, 'Max Mustermann GmbH', 'Lieferschein LS-77')]);
+                return json(route, [kettenVorschlag(dok(904, 'RECHNUNG', 'RE-555', '2026-09-29', 900), 35, 11, 'AUFTRAGSBESTAETIGUNG', 'AB-5', true, 'Max Mustermann GmbH', 'Lieferschein LS-77')]);
             }
-            return json(route, [
-                vorschlag(RECHNUNG_1, 82, 11, true, 'Erika Musterfrau KG'),
-                vorschlag(RECHNUNG_2, 45, 11, false, 'Max Mustermann GmbH'),
-                vorschlag(dok(903, 'RECHNUNG', 'RE-789', '2026-08-01', 20), 12, 11, true, 'Beispiel AG'),
-            ]);
+            const rechnungen = [
+                kettenVorschlag(RECHNUNG_1, 82, 11, 'AUFTRAGSBESTAETIGUNG', 'AB-5', true, 'Erika Musterfrau KG'),
+                kettenVorschlag(RECHNUNG_2, 45, 11, 'AUFTRAGSBESTAETIGUNG', 'AB-5', false, 'Max Mustermann GmbH'),
+                kettenVorschlag(dok(903, 'RECHNUNG', 'RE-789', '2026-08-01', 20), 12, 11, 'AUFTRAGSBESTAETIGUNG', 'AB-5', true, 'Beispiel AG'),
+            ];
+            const zeugnisse = [kettenVorschlag(ZEUGNIS, 91, 13, 'LIEFERSCHEIN', 'LS-9', true, 'Beispiel AG')];
+            if (typ === 'RECHNUNG') return json(route, rechnungen);
+            if (typ === 'WERKSTOFFZEUGNIS') return json(route, zeugnisse);
+            if (typ) return json(route, []);
+            return json(route, [...zeugnisse, ...rechnungen]);
         }
         if (pfad === '/api/bestellungen-uebersicht/rechnung-hochladen') {
             // multipart: nur den Rohtext mitschreiben (enthält bestellDokumentId und Dateiname)
@@ -291,22 +309,24 @@ test.describe('Bestellungen – Übersicht', () => {
 
         const dialog = page.getByRole('dialog');
         await expect(dialog.getByRole('heading', { name: /Rechnung suchen – Erika Musterfrau KG/ })).toBeVisible();
-        await expect(dialog.getByRole('list', { name: 'Rechnungen' }).getByRole('button', { name: /^RE-/ })).toHaveCount(3);
+        await expect(eintraege(dialog)).toHaveCount(3);
         expect(mitschrift.vorschlagAnfragen[0].getAll('dokumentIds')).toEqual(['10', '11']);
+        expect(mitschrift.vorschlagAnfragen[0].get('typ')).toBe('RECHNUNG');
+        await expect(dialog.getByRole('button', { name: 'Rechnung', exact: true })).toHaveAttribute('aria-pressed', 'true');
         // zwei Dokumente in der Bestellung: Reiter zum Umschalten
         await expect(dialog.getByRole('tab')).toHaveCount(2);
         await designPruefung(page, testInfo, 'bestellungen-rechnung-suchen');
 
-        await dialog.getByLabel('Rechnungen durchsuchen').fill('RE-456');
-        await expect(dialog.getByRole('list', { name: 'Rechnungen' }).getByRole('button', { name: /^RE-/ })).toHaveCount(1);
-        await dialog.getByRole('button', { name: /^RE-456/ }).click();
+        await dialog.getByLabel('Vorschläge durchsuchen').fill('RE-456');
+        await expect(eintraege(dialog)).toHaveCount(1);
+        await eintraege(dialog).first().locator('button[aria-pressed]').click();
         await expect(dialog.getByText(/Gewählt:/)).toContainText('RE-456');
 
-        await dialog.getByRole('button', { name: 'Diese Rechnung gehört dazu' }).click();
+        await dialog.getByRole('button', { name: 'Gehört dazu', exact: true }).click();
         // 45 %: unsicher -> eigene Rückfrage
-        await page.getByRole('dialog', { name: 'Rechnung wirklich zuordnen?' }).getByRole('button', { name: 'Zuordnen' }).click();
+        await page.getByRole('dialog', { name: 'Wirklich zur Kette hinzufügen?' }).getByRole('button', { name: 'Hinzufügen' }).click();
         await expect.poll(() => mitschrift.posts.length).toBe(1);
-        expect(mitschrift.posts[0].body).toEqual({ bestellDokumentId: 11, rechnungDokumentId: 902 });
+        expect(mitschrift.posts[0]).toEqual({ pfad: '/api/bestellungen-uebersicht/ketten-verknuepfen', body: { kettenDokumentId: 11, dokumentId: 902 } });
         await expect(page.getByRole('dialog')).toHaveCount(0);
     });
 
@@ -337,10 +357,10 @@ test.describe('Bestellungen – Übersicht', () => {
         await expect(suchen).toBeVisible();
 
         await suchen.getByRole('button', { name: 'Vorschau Rechnung RE-456' }).click();
-        await vorschau.getByRole('button', { name: 'Diese Rechnung gehört dazu' }).click();
-        await page.getByRole('dialog', { name: 'Rechnung wirklich zuordnen?' }).getByRole('button', { name: 'Zuordnen' }).click();
+        await vorschau.getByRole('button', { name: 'Gehört dazu' }).click();
+        await page.getByRole('dialog', { name: 'Wirklich zur Kette hinzufügen?' }).getByRole('button', { name: 'Hinzufügen' }).click();
         await expect.poll(() => mitschrift.posts.length).toBe(1);
-        expect(mitschrift.posts[0].body).toEqual({ bestellDokumentId: 11, rechnungDokumentId: 902 });
+        expect(mitschrift.posts[0].body).toEqual({ kettenDokumentId: 11, dokumentId: 902 });
         await expect(page.getByRole('dialog')).toHaveCount(0);
     });
 
@@ -350,15 +370,15 @@ test.describe('Bestellungen – Übersicht', () => {
         await oeffne(page);
         await page.getByRole('region', { name: 'Aktuelle Bestellungen' }).getByRole('button', { name: 'Suchen', exact: true }).first().click();
 
-        await page.getByRole('dialog').getByRole('button', { name: 'Rechnung RE-456 zuordnen' }).click();
-        const frage = page.getByRole('dialog', { name: 'Rechnung wirklich zuordnen?' });
+        await page.getByRole('dialog').getByRole('button', { name: 'Rechnung RE-456 gehört dazu' }).click();
+        const frage = page.getByRole('dialog', { name: 'Wirklich zur Kette hinzufügen?' });
         // Abbrechen schickt nichts
         await frage.getByRole('button', { name: 'Abbrechen' }).click();
         expect(mitschrift.posts.length).toBe(0);
-        await page.getByRole('dialog', { name: /Rechnung suchen/ }).getByRole('button', { name: 'Rechnung RE-456 zuordnen' }).click();
-        await frage.getByRole('button', { name: 'Zuordnen' }).click();
+        await page.getByRole('dialog', { name: /Rechnung suchen/ }).getByRole('button', { name: 'Rechnung RE-456 gehört dazu' }).click();
+        await frage.getByRole('button', { name: 'Hinzufügen' }).click();
         await expect.poll(() => mitschrift.posts.length).toBe(1);
-        expect(mitschrift.posts[0].body).toEqual({ bestellDokumentId: 11, rechnungDokumentId: 902 });
+        expect(mitschrift.posts[0].body).toEqual({ kettenDokumentId: 11, dokumentId: 902 });
     });
 
     test('Gabel: Teillieferungen münden in die Rechnung, Zeile öffnet das Dokument, Abhängen fragt nach', async ({ page }, testInfo) => {
@@ -426,15 +446,72 @@ test.describe('Bestellungen – Übersicht', () => {
         await expect(dialog.getByText('1 Rechnung von allen Lieferanten')).toBeVisible();
         // Dev-Modus lädt doppelt (StrictMode) – entscheidend ist die letzte Anfrage
         expect(mitschrift.vorschlagAnfragen[mitschrift.vorschlagAnfragen.length - 1].get('alleLieferanten')).toBe('true');
-        await expect(dialog.getByText('Gehört schon zu Lieferschein LS-77 – Teillieferung')).toBeVisible();
+        await expect(dialog.getByText('Hängt schon an Lieferschein LS-77')).toBeVisible();
         await designPruefung(page, testInfo, 'bestellungen-rechnung-suchen-andere');
 
-        await dialog.getByRole('button', { name: 'Rechnung RE-555 zuordnen' }).click();
-        const frage = page.getByRole('dialog', { name: 'Rechnung gehört schon zu einer Bestellung' });
-        await expect(frage).toContainText('Ist das eine Teillieferung?');
+        await dialog.getByRole('button', { name: 'Rechnung RE-555 gehört dazu' }).click();
+        const frage = page.getByRole('dialog', { name: 'Dokument hängt schon an einer anderen Bestellung' });
+        await expect(frage).toContainText('Beide Bestellungen werden dann zusammengefasst.');
         await frage.getByRole('button', { name: 'Zusammenfassen' }).click();
         await expect.poll(() => mitschrift.posts.length).toBe(1);
-        expect(mitschrift.posts[0].body).toEqual({ bestellDokumentId: 11, rechnungDokumentId: 904 });
+        expect(mitschrift.posts[0].body).toEqual({ kettenDokumentId: 11, dokumentId: 904 });
+    });
+
+    test('Dokument hinzufügen: Werkstoffzeugnis oben mit Quote und Gründen, Filter-Chips, ein Klick ordnet zu', async ({ page }, testInfo) => {
+        const mitschrift = neu();
+        await stubApi(page, mitschrift);
+        await oeffne(page);
+
+        // Beispiel AG mit Lieferschein LS-9 (id 13): Knopf in der Fußzeile
+        const karte = page.locator('div.break-inside-avoid').filter({ has: page.getByRole('heading', { level: 3, name: 'Beispiel AG' }) });
+        await karte.getByRole('button', { name: 'Dokument hinzufügen' }).click();
+
+        const dialog = page.getByRole('dialog', { name: /Dokument zur Kette hinzufügen – Beispiel AG/ });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Alle', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(mitschrift.vorschlagAnfragen[0].getAll('dokumentIds')).toEqual(['13']);
+        expect(mitschrift.vorschlagAnfragen[0].get('typ')).toBeNull();
+        await expect(eintraege(dialog)).toHaveCount(4);
+        // Zeugnis oben, vorgewählt, mit Quote, Grund und „passt zu“
+        const erster = eintraege(dialog).first();
+        await expect(erster).toContainText('Werkstoffzeugnis');
+        await expect(erster).toContainText('WZ-31');
+        await expect(erster).toContainText('91 %');
+        await expect(erster).toContainText('Belegnummer wird genannt');
+        await expect(erster).toContainText('passt zu: Lieferschein LS-9');
+        await expect(dialog.getByRole('button', { name: /WZ-31/, pressed: true })).toBeVisible();
+        await designPruefung(page, testInfo, 'bestellungen-dokument-hinzufuegen', { primaerAktion: dialog.getByRole('button', { name: 'Gehört dazu', exact: true }) });
+
+        // Chip „Werkstoffzeugnis“ fragt nur diese Art an
+        await dialog.getByRole('button', { name: 'Werkstoffzeugnis', exact: true }).click();
+        await expect(dialog.getByRole('button', { name: 'Werkstoffzeugnis', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(eintraege(dialog)).toHaveCount(1);
+        expect(mitschrift.vorschlagAnfragen[mitschrift.vorschlagAnfragen.length - 1].get('typ')).toBe('WERKSTOFFZEUGNIS');
+
+        // Gutschrift: nichts da – kein Hochladen, dafür „Alle Dokumentarten zeigen“
+        await dialog.getByRole('button', { name: 'Gutschrift', exact: true }).click();
+        await expect(dialog.getByText('Von Beispiel AG ist noch keine Gutschrift da, die passen könnte.')).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Rechnung hochladen' })).toHaveCount(0);
+        await designPruefung(page, testInfo, 'bestellungen-dokument-hinzufuegen-leer');
+        await dialog.getByRole('button', { name: 'Alle Dokumentarten zeigen' }).click();
+        await expect(eintraege(dialog)).toHaveCount(4);
+
+        await dialog.getByRole('button', { name: 'Werkstoffzeugnis WZ-31 gehört dazu' }).click();
+        await expect.poll(() => mitschrift.posts.length).toBe(1);
+        expect(mitschrift.posts[0]).toEqual({ pfad: '/api/bestellungen-uebersicht/ketten-verknuepfen', body: { kettenDokumentId: 13, dokumentId: 910 } });
+        await expect(page.getByText('Werkstoffzeugnis WZ-31 zur Kette hinzugefügt.')).toBeVisible();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    test('Dokument hinzufügen steht auch bei „Rechnung zuordnen“ und „Erledigt“, nicht bei Angeboten', async ({ page }) => {
+        await stubApi(page, neu());
+        await oeffne(page);
+        await page.getByRole('tab', { name: /^Rechnung zuordnen/ }).click();
+        await expect(page.getByRole('button', { name: 'Dokument hinzufügen' })).toHaveCount(2);
+        await page.getByRole('tab', { name: /^Erledigt/ }).click();
+        await expect(page.getByRole('button', { name: 'Dokument hinzufügen' })).toHaveCount(3);
+        await page.getByRole('tab', { name: /^Angebote/ }).click();
+        await expect(page.getByRole('button', { name: 'Dokument hinzufügen' })).toHaveCount(0);
     });
 
     test('Gabel mit vielen Spuren bleibt schmal; Betrag und Abhängen überlappen nie', async ({ page }, testInfo) => {
@@ -488,6 +565,11 @@ test.describe('Bestellungen – Übersicht', () => {
         await expect(page.getByRole('dialog', { name: /Rechnung suchen – Muster Stahlhandel GmbH/ })).toBeVisible();
     });
 });
+
+/** Einträge der Vorschlagsliste im Suchdialog. */
+function eintraege(dialog: Locator) {
+    return dialog.getByRole('list', { name: 'Vorschläge' }).locator(':scope > li');
+}
 
 /** In jeder Zeile endet der Betrag links vom Abhängen-Knopf. */
 async function betragVorAbhaengen(karte: Locator) {

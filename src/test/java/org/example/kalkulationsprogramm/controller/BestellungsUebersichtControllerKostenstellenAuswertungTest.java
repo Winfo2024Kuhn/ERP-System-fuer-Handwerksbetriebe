@@ -68,6 +68,7 @@ class BestellungsUebersichtControllerKostenstellenAuswertungTest {
                 // Kontierungsaenderungen sind protokollpflichtig; hier nur gemockt.
                 mock(org.example.kalkulationsprogramm.service.BelegAuditService.class),
                 mock(org.example.kalkulationsprogramm.service.RechnungsVorschlagService.class),
+                mock(org.example.kalkulationsprogramm.service.KettenVorschlagService.class),
                 mock(org.example.kalkulationsprogramm.service.LieferantDokumentService.class),
                 mock(org.example.kalkulationsprogramm.service.BestellungsUebersichtService.class),
                 mock(org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService.class),

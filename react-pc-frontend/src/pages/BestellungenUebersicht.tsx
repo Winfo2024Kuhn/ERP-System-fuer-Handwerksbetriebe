@@ -3,11 +3,12 @@ import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { RefreshCw, FileText, Package, Clock, CheckCircle, AlertCircle, X, FolderOpen, EyeOff, Eye, Archive, Search, ChevronDown, ChevronRight, Check, Sparkles } from 'lucide-react';
+import { RefreshCw, FileText, FilePlus2, Package, Clock, CheckCircle, AlertCircle, X, FolderOpen, EyeOff, Eye, Archive, Search, ChevronDown, ChevronRight, Check, Sparkles } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { ZuordnungModal as BelegZuordnungModal } from '../components/ZuordnungModal';
 import { useConfirm } from '../components/ui/confirm-dialog';
-import { RechnungSuchenDialog } from '../features/bestellungen/RechnungSuchenDialog';
+import { DokumentSuchenDialog } from '../features/bestellungen/DokumentSuchenDialog';
+import type { VorschlagsTyp } from '../features/bestellungen/kettenVorschlag';
 import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter, type KettenDokumentTyp } from '../features/bestellungen/bestellungenListe';
 import { TREFFER_KLASSEN, formatiereQuote, rechnungVerknuepfen, rueckfrage, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
 import { KettenGabel } from '../features/bestellungen/KettenGabel';
@@ -119,6 +120,8 @@ interface KetteCardProps {
     onEinblenden?: (kette: DokumentenKette) => void;
     /** Rechnung suchen am offenen Ende der Gabel (nicht bei Angeboten und Ausgeblendetem). */
     onRechnungSuchen?: (kette: DokumentenKette) => void;
+    /** „Dokument hinzufügen“ in der Fußzeile: beliebige Dokumentart nachträglich zuordnen. */
+    onDokumentHinzufuegen?: (kette: DokumentenKette) => void;
     /** Nach Abhängen oder Hochladen: Seite neu laden. */
     onGeaendert: () => void;
     onVorschlagUebernehmen?: (kette: DokumentenKette) => void;
@@ -128,7 +131,7 @@ interface KetteCardProps {
     busy?: boolean;
 }
 
-function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, onRechnungSuchen, onGeaendert, onVorschlagUebernehmen, uebernehmenBusy, ohneRechnungHinweis, busy }: KetteCardProps) {
+function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, onAusblenden, onEinblenden, onRechnungSuchen, onDokumentHinzufuegen, onGeaendert, onVorschlagUebernehmen, uebernehmenBusy, ohneRechnungHinweis, busy }: KetteCardProps) {
     const betrag = kettenBetrag(kette);
     const alter = formatiereAlter(letzteBewegung(kette), heute);
     const vorschlag = onVorschlagUebernehmen ? kette.rechnungsVorschlag : null;
@@ -238,13 +241,24 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
             )}
 
             {/* Fußzeile: Aktionen */}
-            {(showZuordnenButton || onAusblenden || onEinblenden) && (
+            {(showZuordnenButton || onDokumentHinzufuegen || onAusblenden || onEinblenden) && (
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex gap-2 flex-wrap">
                         {showZuordnenButton && onZuordnen && (
                             <Button onClick={() => onZuordnen(kette)} size="sm" variant="outline">
                                 <FolderOpen className="w-4 h-4" aria-hidden="true" />
                                 Projekten zuordnen
+                            </Button>
+                        )}
+                        {onDokumentHinzufuegen && (
+                            <Button
+                                onClick={() => onDokumentHinzufuegen(kette)}
+                                size="sm"
+                                variant="outline"
+                                title="Fehlendes Dokument dieser Bestellung suchen und zuordnen, z. B. ein Werkstoffzeugnis"
+                            >
+                                <FilePlus2 className="w-4 h-4" aria-hidden="true" />
+                                Dokument hinzufügen
                             </Button>
                         )}
                         {onEinblenden && (
@@ -383,7 +397,8 @@ export default function BestellungenUebersicht() {
     const [suche, setSucheText] = useState('');
     // null = automatisch (bei Suche mit Treffern aufgeklappt), sonst Wahl des Nutzers
     const [aelterManuell, setAelterManuell] = useState<boolean | null>(null);
-    const [rechnungSuchenKette, setRechnungSuchenKette] = useState<DokumentenKette | null>(null);
+    /** Offener Suchdialog: Kette und vorgewählte Dokumentart (null = alle). */
+    const [dokumentSuche, setDokumentSuche] = useState<{ kette: DokumentenKette; startTyp: VorschlagsTyp | null } | null>(null);
     const [uebernehmenKetteId, setUebernehmenKetteId] = useState<string | null>(null);
     const [data, setData] = useState<BestellungsUebersicht | null>(null);
     const [loading, setLoading] = useState(true);
@@ -593,6 +608,8 @@ export default function BestellungenUebersicht() {
     const renderKarte = (kette: DokumentenKette, optionen: { ohneRechnungHinweis?: boolean } = {}) => {
         const istAusgeblendetTab = tab === 'ausgeblendet';
         const istBestellt = tab === 'laufend';
+        // Bestellt, Rechnung zuordnen, Erledigt: dort kann noch ein Dokument fehlen
+        const dokumenteErgaenzbar = tab === 'laufend' || tab === 'abgeschlossen' || tab === 'zugeordnet';
         return (
             <KetteCard
                 key={kette.id}
@@ -604,7 +621,8 @@ export default function BestellungenUebersicht() {
                 onAusblenden={istAusgeblendetTab ? undefined : (k) => setKetteAusgeblendet(k, true)}
                 onEinblenden={istAusgeblendetTab ? (k) => setKetteAusgeblendet(k, false) : undefined}
                 // Rechnung suchen/hochladen: bei laufenden Bestellungen und bei Teillieferungen ohne Rechnung
-                onRechnungSuchen={tab !== 'offen' && !istAusgeblendetTab ? setRechnungSuchenKette : undefined}
+                onRechnungSuchen={tab !== 'offen' && !istAusgeblendetTab ? k => setDokumentSuche({ kette: k, startTyp: 'RECHNUNG' }) : undefined}
+                onDokumentHinzufuegen={dokumenteErgaenzbar ? k => setDokumentSuche({ kette: k, startTyp: null }) : undefined}
                 onGeaendert={neuLadenNachAenderung}
                 onVorschlagUebernehmen={istBestellt ? vorschlagUebernehmen : undefined}
                 uebernehmenBusy={uebernehmenKetteId === kette.id}
@@ -877,12 +895,13 @@ export default function BestellungenUebersicht() {
                 />
             )}
 
-            {rechnungSuchenKette && (
-                <RechnungSuchenDialog
-                    kette={rechnungSuchenKette}
-                    onClose={() => setRechnungSuchenKette(null)}
+            {dokumentSuche && (
+                <DokumentSuchenDialog
+                    kette={dokumentSuche.kette}
+                    startTyp={dokumentSuche.startTyp}
+                    onClose={() => setDokumentSuche(null)}
                     onVerknuepft={() => {
-                        setRechnungSuchenKette(null);
+                        setDokumentSuche(null);
                         void loadData(true);
                     }}
                 />

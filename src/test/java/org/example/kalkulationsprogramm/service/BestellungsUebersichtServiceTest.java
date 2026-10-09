@@ -32,8 +32,10 @@ import org.example.kalkulationsprogramm.dto.Bestellung.DokumentenKette;
 import org.example.kalkulationsprogramm.dto.Bestellung.RechnungsVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.Verbindung;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
+import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -58,6 +60,7 @@ class BestellungsUebersichtServiceTest {
     @Mock private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     @Mock private LieferantDokumentProjektAnteilRepository projektAnteilRepository;
     @Mock private RechnungsVorschlagService rechnungsVorschlagService;
+    @Mock private LieferantDokumentVerknuepfungSperreRepository sperreRepository;
 
     private static final Set<LieferantDokumentTyp> ALLE_TYPEN = EnumSet.allOf(LieferantDokumentTyp.class);
 
@@ -70,7 +73,8 @@ class BestellungsUebersichtServiceTest {
     @BeforeEach
     void setUp() {
         service = new BestellungsUebersichtService(dokumentRepository, geschaeftsdokumentRepository,
-                projektAnteilRepository, rechnungsVorschlagService);
+                projektAnteilRepository, rechnungsVorschlagService, new KettenVorschlagService(
+                        new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository));
         lieferant = lieferant(1L, "Max Mustermann GmbH");
         andererLieferant = lieferant(2L, "Erika Musterfrau KG");
         lenient().when(projektAnteilRepository.findAll()).thenReturn(List.of());
@@ -508,6 +512,108 @@ class BestellungsUebersichtServiceTest {
             assertThat(ref.pdfUrl).isEqualTo("/api/lieferant-dokumente/5/download");
             assertThat(ref.eingangsDatum).isNull();
             assertThat(ref.betragBrutto).isNull();
+        }
+    }
+
+    /** „Dokument zur Kette hinzufügen“: Vorschläge aller Arten. */
+    @Nested
+    class KettenVorschlaege {
+
+        private final LocalDate lieferung = LocalDate.of(2026, 9, 23);
+
+        @Test
+        void zeugnisZumLieferscheinStehtVornUndDieKetteFehlt() {
+            LieferantDokument ab = dokument(1L, LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG, lieferung.minusDays(5));
+            LieferantDokument ls = dokument(2L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            ls.getGeschaeftsdaten().setDokumentNummer("90445744/01");
+            verknuepfe(ls, ab);
+            LieferantDokument zeugnis = dokument(3L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung.minusDays(1));
+            zeugnis.getGeschaeftsdaten().setReferenzNummer("90445744/01");
+            LieferantDokument sonstiges = dokument(4L, LieferantDokumentTyp.SONSTIG, lieferung);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ab, ls, zeugnis, sonstiges));
+
+            var liste = service.kettenVorschlaege(List.of(1L), false, null, ALLE_TYPEN).orElseThrow();
+
+            assertThat(liste).extracting(v -> v.dokument().id).containsExactly(3L);
+            assertThat(liste.get(0).kettenDokumentId()).isEqualTo(2L);
+            assertThat(liste.get(0).kettenDokumentNummer()).isEqualTo("90445744/01");
+            assertThat(liste.get(0).sicher()).isTrue();
+            assertThat(liste.get(0).lieferantName()).isEqualTo("Max Mustermann GmbH");
+        }
+
+        @Test
+        void filtertNachArtUndLieferant() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            LieferantDokument zeugnis = dokument(2L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung);
+            LieferantDokument rechnung = dokument(3L, LieferantDokumentTyp.RECHNUNG, lieferung);
+            LieferantDokument fremdeRechnung = dokument(4L, LieferantDokumentTyp.RECHNUNG, lieferung);
+            fremdeRechnung.setLieferant(andererLieferant);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, zeugnis, rechnung, fremdeRechnung));
+
+            assertThat(service.kettenVorschlaege(List.of(1L), false, LieferantDokumentTyp.RECHNUNG, ALLE_TYPEN)
+                    .orElseThrow()).extracting(v -> v.dokument().id).containsExactly(3L);
+            assertThat(service.kettenVorschlaege(List.of(1L), true, LieferantDokumentTyp.RECHNUNG, ALLE_TYPEN)
+                    .orElseThrow()).extracting(v -> v.dokument().id).containsExactlyInAnyOrder(3L, 4L);
+        }
+
+        @Test
+        void einzeldokumentFindetSeineKette() {
+            // Ein Zeugnis ohne Kette: Vorschläge sind die Dokumente, an die es passt.
+            LieferantDokument zeugnis = dokument(1L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung);
+            LieferantDokument ls = dokument(2L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            LieferantDokument angebot = dokument(3L, LieferantDokumentTyp.ANGEBOT, lieferung);
+            when(dokumentRepository.findAll()).thenReturn(List.of(zeugnis, ls, angebot));
+
+            assertThat(service.kettenVorschlaege(List.of(1L), false, null, ALLE_TYPEN).orElseThrow())
+                    .extracting(v -> v.dokument().id).containsExactly(2L);
+        }
+
+        @Test
+        void alleLieferantenZeigtKeineUnsichtbarenArtenUndNenntKeineUnsichtbarenPartner() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            LieferantDokument fremdeRechnung = dokument(2L, LieferantDokumentTyp.RECHNUNG, lieferung);
+            fremdeRechnung.setLieferant(andererLieferant);
+            LieferantDokument fremdesZeugnis = dokument(3L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung);
+            fremdesZeugnis.setLieferant(andererLieferant);
+            LieferantDokument fremderLs = dokument(4L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            fremderLs.setLieferant(andererLieferant);
+            // Das fremde Zeugnis hängt an einer Rechnung, die der Aufrufer nicht sehen darf
+            verknuepfe(fremdesZeugnis, fremderLs);
+            verknuepfe(fremdeRechnung, fremderLs);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, fremdeRechnung, fremdesZeugnis, fremderLs));
+            Set<LieferantDokumentTyp> ohneRechnung = EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN,
+                    LieferantDokumentTyp.WERKSTOFFZEUGNIS);
+
+            var liste = service.kettenVorschlaege(List.of(1L), true, null, ohneRechnung).orElseThrow();
+
+            assertThat(liste).extracting(v -> v.dokument().id).doesNotContain(2L);
+            assertThat(liste).filteredOn(v -> v.dokument().id == 3L).singleElement()
+                    .satisfies(v -> assertThat(v.gehoertSchonZu()).isEqualTo("Lieferschein"));
+        }
+
+        @Test
+        void dokumenteAusserhalbDesZeitfenstersFehlen() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            LieferantDokument alt = dokument(2L, LieferantDokumentTyp.WERKSTOFFZEUGNIS,
+                    lieferung.minusDays(BestellungsUebersichtService.SUCHE_TAGE + 1));
+            LieferantDokument ohneDatum = dokument(3L, LieferantDokumentTyp.WERKSTOFFZEUGNIS, lieferung);
+            ohneDatum.getGeschaeftsdaten().setDokumentDatum(null);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, alt, ohneDatum));
+
+            assertThat(service.kettenVorschlaege(List.of(1L), false, null, ALLE_TYPEN).orElseThrow())
+                    .extracting(v -> v.dokument().id).containsExactly(3L);
+        }
+
+        @Test
+        void nichtSichtbareDokumenteFehlen() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, lieferung);
+            LieferantDokument rechnung = dokument(2L, LieferantDokumentTyp.RECHNUNG, lieferung);
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, rechnung));
+
+            assertThat(service.kettenVorschlaege(List.of(1L), false, null, EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN))
+                    .orElseThrow()).isEmpty();
+            assertThat(service.kettenVorschlaege(List.of(1L), false, null, EnumSet.of(LieferantDokumentTyp.RECHNUNG)))
+                    .isEmpty();
         }
     }
 

@@ -1,10 +1,12 @@
 /**
- * Rechnungs-Vorschläge der Bestellübersicht: Typen, Aufrufe der API und kleine
- * reine Hilfen (Farbe der Trefferquote, Suche in der Vorschlagsliste).
+ * Rechnungs-Vorschlag auf der Karte der Bestellübersicht, Rechnung hochladen,
+ * Beleg abhängen – und gemeinsame Hilfen für Trefferquoten und Fehlermeldungen.
+ * Die Suche nach Dokumenten für eine Kette liegt in `kettenVorschlag.ts`.
  */
-import { passtZurSuche, type KettenDokumentTyp } from './bestellungenListe';
+import type { KettenDokumentTyp } from './bestellungenListe';
 
-export interface RechnungsDokument {
+/** Ein Lieferanten-Dokument, wie es Bestellübersicht und Vorschläge liefern. */
+export interface KettenBeleg {
     id: number;
     typ: KettenDokumentTyp;
     dokumentNummer: string | null;
@@ -20,7 +22,7 @@ export interface RechnungsDokument {
 }
 
 export interface RechnungsVorschlag {
-    rechnung: RechnungsDokument;
+    rechnung: KettenBeleg;
     lieferantName: string | null;
     bestellDokumentId: number;
     bestellDokumentTyp: 'AUFTRAGSBESTAETIGUNG' | 'LIEFERSCHEIN';
@@ -42,13 +44,29 @@ export const MIN_QUOTE_VORAUSWAHL = 40;
 /** Darunter – oder bei Gleichstand – fragt die Oberfläche vor dem Zuordnen nach. */
 export const QUOTE_OHNE_RUECKFRAGE = 70;
 
+/** Was jeder Vorschlag mitbringt, um seine Sicherheit zu beurteilen. */
+export interface Treffer {
+    /** 0 bis 100 */
+    trefferquote: number;
+    /** false = ein anderer Vorschlag passt genauso gut */
+    eindeutig: boolean;
+}
+
+/** Rückfrage-Dialog vor dem Zuordnen (Format von `useConfirm`). */
+export interface Rueckfrage {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    variant: 'warning';
+}
+
 /** Bei unsicheren Vorschlägen vor dem Zuordnen nachfragen. */
-export function brauchtRueckfrage(vorschlag: RechnungsVorschlag): boolean {
+export function brauchtRueckfrage(vorschlag: Treffer): boolean {
     return vorschlag.trefferquote < QUOTE_OHNE_RUECKFRAGE || !vorschlag.eindeutig;
 }
 
 /** Rückfrage vor dem Zuordnen – oder null, wenn ohne Nachfrage zugeordnet werden darf. */
-export function rueckfrage(vorschlag: RechnungsVorschlag): { title: string; message: string; confirmLabel: string; variant: 'warning' } | null {
+export function rueckfrage(vorschlag: RechnungsVorschlag): Rueckfrage | null {
     if (vorschlag.gehoertSchonZu) {
         return {
             title: 'Rechnung gehört schon zu einer Bestellung',
@@ -86,14 +104,8 @@ export function formatiereQuote(quote: number): string {
     return `${Math.round(quote)} %`;
 }
 
-export function passtZurRechnungsSuche(vorschlag: RechnungsVorschlag, suchbegriff: string): boolean {
-    return passtZurSuche(
-        { lieferantName: vorschlag.lieferantName, dokumente: [vorschlag.rechnung] },
-        suchbegriff,
-    );
-}
-
-async function fehlerText(res: Response, standard: string): Promise<string> {
+/** Meldung des Servers (`message` oder `error`) – sonst der Standardtext. */
+export async function antwortFehlerText(res: Response, standard: string): Promise<string> {
     try {
         const body = await res.json() as { message?: unknown; error?: unknown };
         if (typeof body.message === 'string' && body.message.trim()) return body.message;
@@ -104,30 +116,13 @@ async function fehlerText(res: Response, standard: string): Promise<string> {
     return standard;
 }
 
-/**
- * Rechnungen, bewertet gegen die Bestellung (beste zuerst). Standard: nur
- * Rechnungen desselben Lieferanten – auch bezahlte, ausgeblendete und schon zugeordnete.
- */
-export async function ladeRechnungsVorschlaege(
-    dokumentIds: number[],
-    optionen: { alleLieferanten?: boolean } = {},
-): Promise<RechnungsVorschlag[]> {
-    const params = new URLSearchParams();
-    dokumentIds.forEach(id => params.append('dokumentIds', String(id)));
-    params.append('alleLieferanten', String(optionen.alleLieferanten === true));
-    const res = await fetch(`/api/bestellungen-uebersicht/rechnung-vorschlaege?${params.toString()}`);
-    if (!res.ok) throw new Error(await fehlerText(res, 'Rechnungen konnten nicht geladen werden.'));
-    const json: unknown = await res.json();
-    return Array.isArray(json) ? json as RechnungsVorschlag[] : [];
-}
-
 export async function rechnungVerknuepfen(bestellDokumentId: number, rechnungDokumentId: number): Promise<void> {
     const res = await fetch('/api/bestellungen-uebersicht/rechnung-verknuepfen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bestellDokumentId, rechnungDokumentId }),
     });
-    if (!res.ok) throw new Error(await fehlerText(res, 'Rechnung konnte nicht zugeordnet werden.'));
+    if (!res.ok) throw new Error(await antwortFehlerText(res, 'Rechnung konnte nicht zugeordnet werden.'));
 }
 
 /** Löst alle Verknüpfungen eines Belegs; er wird danach nicht mehr automatisch zugeordnet. */
@@ -137,7 +132,7 @@ export async function dokumentAbhaengen(dokumentId: number): Promise<number> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dokumentId }),
     });
-    if (!res.ok) throw new Error(await fehlerText(res, 'Der Beleg konnte nicht abgehängt werden.'));
+    if (!res.ok) throw new Error(await antwortFehlerText(res, 'Der Beleg konnte nicht abgehängt werden.'));
     try {
         const body = await res.json() as { geloest?: unknown };
         return typeof body.geloest === 'number' ? body.geloest : 0;
@@ -159,11 +154,11 @@ export function istErlaubteRechnungsDatei(datei: { name: string; type: string })
 }
 
 /** Lädt eine Rechnung hoch und hängt sie sofort an das Bestelldokument. Das Auslesen läuft im Hintergrund. */
-export async function rechnungHochladen(bestellDokumentId: number, datei: File): Promise<RechnungsDokument> {
+export async function rechnungHochladen(bestellDokumentId: number, datei: File): Promise<KettenBeleg> {
     const formData = new FormData();
     formData.append('datei', datei);
     formData.append('bestellDokumentId', String(bestellDokumentId));
     const res = await fetch('/api/bestellungen-uebersicht/rechnung-hochladen', { method: 'POST', body: formData });
-    if (!res.ok) throw new Error(await fehlerText(res, 'Die Rechnung konnte nicht hochgeladen werden.'));
-    return await res.json() as RechnungsDokument;
+    if (!res.ok) throw new Error(await antwortFehlerText(res, 'Die Rechnung konnte nicht hochgeladen werden.'));
+    return await res.json() as KettenBeleg;
 }

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2, Trash2, Euro, CalendarDays, FileBadge, type LucideIcon } from "lucide-react";
+import { Search, FileText, Link2, ChevronRight, AlertCircle, X, Sparkles, Upload, User, ArrowUpDown, ArrowUp, ArrowDown, Briefcase, Building2, ExternalLink, Edit2, Trash2, Euro, CalendarDays, FileBadge, FilePlus2, type LucideIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
@@ -15,6 +15,8 @@ import { useAuth } from "../auth/AuthContext";
 import { PositionsTrefferZeile } from "./PositionsTrefferZeile";
 import { useToast } from "./ui/toast";
 import { positionsSucheAktiv, trefferNachDokument, vereinigeTreffer, type PositionsTreffer } from "../lib/positionsTreffer";
+import { DokumentSuchenDialog } from "../features/bestellungen/DokumentSuchenDialog";
+import { istVorschlagsTyp, lieferantDokumentAlsBeleg } from "../features/bestellungen/kettenVorschlag";
 
 // Typ-Konfiguration mit Farben
 // icon: nur wo die Farbe allein nicht reicht (Werkstoffzeugnis ist neutral wie Sonstiges, aber mit Zeugnis-Symbol)
@@ -81,6 +83,13 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
 
     // Zuordnung bearbeiten State
     const [zuordnungDokument, setZuordnungDokument] = useState<LieferantDokument | null>(null);
+
+    // Dokument nachträglich einer Kette zuordnen: Kette oder einzelnes Dokument, zu dem gesucht wird
+    const [kettenSuche, setKettenSuche] = useState<LieferantDokument[] | null>(null);
+    const suchKette = useMemo(() => kettenSuche && {
+        lieferantName: lieferantName ?? null,
+        dokumente: kettenSuche.map(dok => lieferantDokumentAlsBeleg(dok, lieferantId)),
+    }, [kettenSuche, lieferantName, lieferantId]);
 
     // Handler für Dokument-Klick
     const handleDokumentSelect = (dok: LieferantDokument) => {
@@ -475,6 +484,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                             onSelect={handleDokumentSelect}
                             onNavigate={navigate}
                             onBearbeiten={(dok) => setZuordnungDokument(dok)}
+                            onDokumentHinzufuegen={() => setKettenSuche(kette.dokumente)}
                             positionsTreffer={positionsTreffer}
                             suchbegriff={suche}
                         />
@@ -531,6 +541,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                                 onSelect={() => handleDokumentSelect(dok)}
                                 onNavigate={navigate}
                                 onBearbeiten={() => setZuordnungDokument(dok)}
+                                onZuKetteZuordnen={istVorschlagsTyp(dok.typ) ? () => setKettenSuche([dok]) : undefined}
                                 onDelete={isAdmin ? () => handleLoescheDokument(dok) : undefined}
                                 treffer={positionsTreffer.get(dok.id)}
                                 suchbegriff={suche}
@@ -583,6 +594,18 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                 }}
             />
 
+            {/* Dokument einer Kette zuordnen */}
+            {suchKette && (
+                <DokumentSuchenDialog
+                    kette={suchKette}
+                    onClose={() => setKettenSuche(null)}
+                    onVerknuepft={() => {
+                        setKettenSuche(null);
+                        void loadDokumente();
+                    }}
+                />
+            )}
+
             {/* Zuordnung bearbeiten Modal */}
             {zuordnungDokument && zuordnungDokument.geschaeftsdaten && (
                 <ZuordnungModal
@@ -609,12 +632,14 @@ interface DokumentenKetteProps {
     onSelect: (dok: LieferantDokument) => void;
     onNavigate: (path: string) => void;
     onBearbeiten: (dok: LieferantDokument) => void;
+    /** Öffnet die Suche nach Dokumenten, die noch zur Kette gehören. */
+    onDokumentHinzufuegen: () => void;
     /** Treffer der Positionssuche je Dokument-ID */
     positionsTreffer: ReadonlyMap<number, PositionsTreffer>;
     suchbegriff: string;
 }
 
-function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, positionsTreffer, suchbegriff }: DokumentenKetteProps) {
+function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, onDokumentHinzufuegen, positionsTreffer, suchbegriff }: DokumentenKetteProps) {
     const trefferInKette = kette.dokumente
         .map(dok => ({ dok, treffer: positionsTreffer.get(dok.id) }))
         .filter((eintrag): eintrag is { dok: LieferantDokument; treffer: PositionsTreffer } => eintrag.treffer !== undefined);
@@ -774,6 +799,19 @@ function DokumentenKette({ kette, formatDate, formatCurrency, onSelect, onNaviga
                     ))}
                 </div>
             )}
+
+            <div className="mt-3 pt-3 border-t border-slate-200/60 flex justify-end">
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onDokumentHinzufuegen}
+                    aria-label={kette.hauptDokumentNummer ? `Dokument zur Kette ${kette.hauptDokumentNummer} hinzufügen` : 'Dokument zur Kette hinzufügen'}
+                    title="Fehlendes Dokument suchen, z. B. ein Werkstoffzeugnis oder die Rechnung"
+                >
+                    <FilePlus2 className="w-4 h-4" aria-hidden="true" />
+                    Dokument hinzufügen
+                </Button>
+            </div>
         </Card>
     );
 }
@@ -786,13 +824,15 @@ interface DokumentCardProps {
     onSelect: () => void;
     onNavigate: (path: string) => void;
     onBearbeiten: () => void;
+    /** „Zu Kette zuordnen“ – fehlt bei Sonstigem, das in keine Kette gehört. */
+    onZuKetteZuordnen?: () => void;
     onDelete?: () => void;
     /** Getroffene Position, wenn die Positionssuche dieses Dokument gefunden hat */
     treffer?: PositionsTreffer;
     suchbegriff: string;
 }
 
-function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, onDelete, treffer, suchbegriff }: DokumentCardProps) {
+function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNavigate, onBearbeiten, onZuKetteZuordnen, onDelete, treffer, suchbegriff }: DokumentCardProps) {
     const config = getConfig(dokument.typ);
     const hasProject = dokument.projektAnteile.length > 0;
     const confidence = dokument.geschaeftsdaten?.aiConfidence;
@@ -954,7 +994,21 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNaviga
                 </div>
             )}
 
-
+            {onZuKetteZuordnen && (
+                <div className="mt-3 pt-2 border-t border-slate-200/60 flex justify-end">
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white"
+                        onClick={(e) => { e.stopPropagation(); onZuKetteZuordnen(); }}
+                        aria-label={`${config.label} ${dokument.geschaeftsdaten?.dokumentNummer || dokument.originalDateiname} zu Kette zuordnen`}
+                        title="Passende Bestellung suchen und dieses Dokument dort anhängen"
+                    >
+                        <Link2 className="w-4 h-4" aria-hidden="true" />
+                        Zu Kette zuordnen
+                    </Button>
+                </div>
+            )}
         </Card>
     );
 }

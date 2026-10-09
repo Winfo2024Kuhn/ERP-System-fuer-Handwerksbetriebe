@@ -9,11 +9,13 @@ import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungsUebersichtDto;
+import org.example.kalkulationsprogramm.dto.Bestellung.KettenVorschlagDto;
 import org.example.kalkulationsprogramm.dto.Bestellung.RechnungsVorschlagDto;
 import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.BelegAbgelehntException;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
+import org.example.kalkulationsprogramm.service.KettenVorschlagService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService;
@@ -53,6 +55,7 @@ public class BestellungsUebersichtController {
     private final BelegService belegService;
     private final org.example.kalkulationsprogramm.service.BelegAuditService belegAuditService;
     private final RechnungsVorschlagService rechnungsVorschlagService;
+    private final KettenVorschlagService kettenVorschlagService;
     private final LieferantDokumentService lieferantDokumentService;
     private final BestellungsUebersichtService bestellungsUebersichtService;
     private final LieferantDokumentZuordnungService zuordnungService;
@@ -133,6 +136,62 @@ public class BestellungsUebersichtController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("message", nutzerMeldung(e,
                     "Die Rechnung konnte nicht zugeordnet werden.")));
+        }
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * Dokumente aller Arten, bewertet gegen eine Kette – beste zuerst. Für das
+     * Fenster „Dokument zur Kette hinzufügen“: So lässt sich ein Werkstoffzeugnis,
+     * Lieferschein oder eine Rechnung nachträglich in eine Kette hängen.
+     *
+     * @param dokumentIds     Dokumente der Kette (eines reicht; auch ein Einzeldokument)
+     * @param alleLieferanten auch Dokumente anderer Lieferanten
+     * @param typ             nur diese Art; leer = alle
+     */
+    @GetMapping("/ketten-vorschlaege")
+    public ResponseEntity<List<KettenVorschlagDto>> getKettenVorschlaege(
+            @RequestParam("dokumentIds") List<Long> dokumentIds,
+            @RequestParam(value = "alleLieferanten", defaultValue = "false") boolean alleLieferanten,
+            @RequestParam(value = "typ", required = false) LieferantDokumentTyp typ,
+            @RequestParam(value = "token", required = false) String token,
+            Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (dokumentIds == null || dokumentIds.isEmpty() || dokumentIds.size() > MAX_KETTEN_DOKUMENTE
+                || dokumentIds.stream().anyMatch(id -> id == null || id <= 0)
+                || (typ != null && !KettenVorschlagService.KETTEN_TYPEN.contains(typ))) {
+            return ResponseEntity.badRequest().build();
+        }
+        return bestellungsUebersichtService.kettenVorschlaege(dokumentIds, alleLieferanten, typ, sichtbareTypen.get())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Hängt ein Dokument beliebiger Art an ein Dokument der Kette. Die Richtung
+     * (wer Vorgänger ist) ergibt sich aus den Dokumentarten.
+     */
+    @PostMapping("/ketten-verknuepfen")
+    public ResponseEntity<?> kettenVerknuepfen(@Valid @RequestBody KettenVerknuepfenRequest request,
+            Authentication auth) {
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, auth);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (!zugriffService.istSichtbar(request.kettenDokumentId(), sichtbareTypen.get())
+                || !zugriffService.istSichtbar(request.dokumentId(), sichtbareTypen.get())) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            kettenVorschlagService.verknuepfe(request.kettenDokumentId(), request.dokumentId(), benutzerId(auth));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", nutzerMeldung(e,
+                    "Das Dokument konnte nicht zugeordnet werden.")));
         }
         return ResponseEntity.ok(Map.of("success", true));
     }
@@ -939,6 +998,11 @@ public class BestellungsUebersichtController {
     }
 
     public record AbhaengenRequest(@NotNull @Positive Long dokumentId) {
+    }
+
+    public record KettenVerknuepfenRequest(
+            @NotNull @Positive Long kettenDokumentId,
+            @NotNull @Positive Long dokumentId) {
     }
 
     public static class GeschaeftsdatenDto {

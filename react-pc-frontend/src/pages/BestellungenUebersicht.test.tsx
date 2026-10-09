@@ -47,10 +47,14 @@ const uebersicht = {
     }],
 };
 
+/** Vorschläge für „Dokument hinzufügen“ – je Test setzbar. */
+let kettenVorschlaege: unknown[] = [];
+
 function antwortFuer(url: string): Response {
     if (url === '/api/bestellungen-uebersicht') return { ok: true, json: async () => uebersicht } as Response;
     if (url.startsWith('/api/bestellungen-uebersicht/belege-offen')) return { ok: true, json: async () => [] } as Response;
-    if (url.startsWith('/api/bestellungen-uebersicht/rechnung-vorschlaege')) return { ok: true, json: async () => [] } as Response;
+    if (url.startsWith('/api/bestellungen-uebersicht/ketten-vorschlaege')) return { ok: true, json: async () => kettenVorschlaege } as Response;
+    if (url === '/api/bestellungen-uebersicht/ketten-verknuepfen') return { ok: true, json: async () => ({ success: true }) } as Response;
     if (url === '/api/bestellungen-uebersicht/abhaengen') return { ok: true, json: async () => ({ geloest: 1 }) } as Response;
     return { ok: false, json: async () => ({}) } as Response;
 }
@@ -66,7 +70,10 @@ function zeige() {
 }
 
 describe('BestellungenUebersicht – Gabel', () => {
-    beforeEach(() => vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => antwortFuer(String(url)))));
+    beforeEach(() => {
+        kettenVorschlaege = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => antwortFuer(String(url))));
+    });
     afterEach(() => vi.unstubAllGlobals());
 
     it('zeigt laufende Bestellungen als Gabel mit offenem Ende und Suche', async () => {
@@ -80,8 +87,41 @@ describe('BestellungenUebersicht – Gabel', () => {
         await userEvent.click(within(liste).getByRole('button', { name: 'Suchen' }));
         expect(await screen.findByRole('dialog', { name: /Rechnung suchen – Max Mustermann GmbH/ })).toBeInTheDocument();
         await screen.findByText('Von Max Mustermann GmbH ist noch keine Rechnung da.');
-        const vorschlagsAufruf = vi.mocked(fetch).mock.calls.map(c => String(c[0])).find(u => u.includes('rechnung-vorschlaege'));
-        expect(vorschlagsAufruf).toContain('dokumentIds=1&dokumentIds=2&dokumentIds=3&alleLieferanten=false');
+        const vorschlagsAufruf = vi.mocked(fetch).mock.calls.map(c => String(c[0])).find(u => u.includes('ketten-vorschlaege'));
+        expect(vorschlagsAufruf).toContain('dokumentIds=1&dokumentIds=2&dokumentIds=3&alleLieferanten=false&typ=RECHNUNG');
+    });
+
+    it('„Dokument hinzufügen“ in der Fußzeile sucht alle Arten und ordnet zu', async () => {
+        kettenVorschlaege = [{
+            dokument: dok(9, 'WERKSTOFFZEUGNIS', 'WZ-9', vorTagen(4)),
+            lieferantName: 'Max Mustermann GmbH', kettenDokumentId: 2, kettenDokumentTyp: 'LIEFERSCHEIN', kettenDokumentNummer: 'LS-1',
+            trefferquote: 90, sicher: true, eindeutig: true, gruende: ['Belegnummer wird genannt'], gehoertSchonZu: null,
+        }];
+        zeige();
+        await screen.findByRole('list', { name: 'Belege der Bestellung' });
+        await userEvent.click(screen.getByRole('button', { name: 'Dokument hinzufügen' }));
+
+        const dialog = await screen.findByRole('dialog', { name: /Dokument zur Kette hinzufügen – Max Mustermann GmbH/ });
+        await within(dialog).findByText('Belegnummer wird genannt');
+        const vorschlagsAufruf = vi.mocked(fetch).mock.calls.map(c => String(c[0])).find(u => u.includes('ketten-vorschlaege'));
+        expect(vorschlagsAufruf).toBe('/api/bestellungen-uebersicht/ketten-vorschlaege?dokumentIds=1&dokumentIds=2&dokumentIds=3&alleLieferanten=false');
+        expect(within(dialog).getByRole('button', { name: 'Alle' })).toHaveAttribute('aria-pressed', 'true');
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Werkstoffzeugnis WZ-9 gehört dazu' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: /Dokument zur Kette hinzufügen/ })).not.toBeInTheDocument());
+        const post = vi.mocked(fetch).mock.calls.find(c => String(c[0]) === '/api/bestellungen-uebersicht/ketten-verknuepfen');
+        expect(JSON.parse((post?.[1] as RequestInit).body as string)).toEqual({ kettenDokumentId: 2, dokumentId: 9 });
+        // danach wird still neu geladen
+        await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(c => String(c[0]) === '/api/bestellungen-uebersicht')).toHaveLength(2));
+    });
+
+    it('zeigt „Dokument hinzufügen“ nicht bei ausgeblendeten Bestellungen', async () => {
+        zeige();
+        await screen.findByRole('list', { name: 'Belege der Bestellung' });
+        expect(screen.getByRole('button', { name: 'Dokument hinzufügen' })).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('tab', { name: /Ausgeblendet/ }));
+        await screen.findByText('Erika Musterfrau KG');
+        expect(screen.queryByRole('button', { name: 'Dokument hinzufügen' })).not.toBeInTheDocument();
     });
 
     it('öffnet einen Beleg per Zeilenklick in der Vorschau', async () => {

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -30,6 +31,7 @@ import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.service.BelegAuditService;
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
+import org.example.kalkulationsprogramm.service.KettenVorschlagService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
 import org.junit.jupiter.api.DisplayName;
@@ -74,6 +76,7 @@ class BestellungsUebersichtSecurityTest {
     @MockBean private BelegService belegService;
     @MockBean private BelegAuditService belegAuditService;
     @MockBean private RechnungsVorschlagService rechnungsVorschlagService;
+    @MockBean private KettenVorschlagService kettenVorschlagService;
     @MockBean private LieferantDokumentService lieferantDokumentService;
     @MockBean private BestellungsUebersichtService bestellungsUebersichtService;
     @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService zuordnungService;
@@ -192,6 +195,98 @@ class BestellungsUebersichtSecurityTest {
                 .content("{\"dokumentId\": 5}"))
                 .andExpect(status().isNotFound());
         verifyNoInteractions(rechnungsVorschlagService);
+    }
+
+    // ------------------------------------------------- Dokument zur Kette hinzufügen
+
+    private static final String KETTE_VERKNUEPFEN = BASIS + "/ketten-verknuepfen";
+    private static final String KETTE_VORSCHLAEGE = BASIS + "/ketten-vorschlaege";
+
+    @Test
+    @DisplayName("Kette verknüpfen ohne Anmeldung: 401")
+    void ketteVerknuepfenOhneLogin() throws Exception {
+        mockMvc.perform(post(KETTE_VERKNUEPFEN).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"kettenDokumentId\": 10, \"dokumentId\": 20}"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(kettenVorschlagService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Kette verknüpfen ohne CSRF-Token: 403")
+    void ketteVerknuepfenOhneCsrf() throws Exception {
+        mockMvc.perform(post(KETTE_VERKNUEPFEN).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"kettenDokumentId\": 10, \"dokumentId\": 20}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(kettenVorschlagService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Kette verknüpfen: sichtbar -> 200, nicht sichtbar -> 404")
+    void ketteVerknuepfenSichtbarkeit() throws Exception {
+        given(zugriffService.istSichtbar(eq(10L), any())).willReturn(true);
+        given(zugriffService.istSichtbar(eq(20L), any())).willReturn(true);
+        mockMvc.perform(post(KETTE_VERKNUEPFEN).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"kettenDokumentId\": 10, \"dokumentId\": 20}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        org.mockito.Mockito.verify(kettenVorschlagService).verknuepfe(eq(10L), eq(20L), any());
+
+        given(zugriffService.istSichtbar(eq(20L), any())).willReturn(false);
+        mockMvc.perform(post(KETTE_VERKNUEPFEN).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"kettenDokumentId\": 10, \"dokumentId\": 20}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Kette verknüpfen: unpassende Arten -> 400 mit verständlicher Meldung; ungültige IDs -> 400")
+    void ketteVerknuepfenAbgelehnt() throws Exception {
+        given(zugriffService.istSichtbar(any(), any())).willReturn(true);
+        org.mockito.Mockito.doThrow(new org.example.kalkulationsprogramm.service.BelegAbgelehntException(
+                "Rechnung und Angebot lassen sich nicht direkt verbinden."))
+                .when(kettenVorschlagService).verknuepfe(eq(10L), eq(20L), any());
+
+        mockMvc.perform(post(KETTE_VERKNUEPFEN).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"kettenDokumentId\": 10, \"dokumentId\": 20}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Rechnung und Angebot lassen sich nicht direkt verbinden."));
+
+        for (String body : new String[] { "{\"kettenDokumentId\": 0, \"dokumentId\": 20}",
+                "{\"kettenDokumentId\": 10, \"dokumentId\": -1}", "{\"kettenDokumentId\": 10}",
+                "{\"kettenDokumentId\": \"'; DROP TABLE x; --\", \"dokumentId\": 20}" }) {
+            mockMvc.perform(post(KETTE_VERKNUEPFEN).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    @DisplayName("Ketten-Vorschläge ohne Anmeldung: 401")
+    void ketteVorschlaegeOhneLogin() throws Exception {
+        mockMvc.perform(get(KETTE_VORSCHLAEGE).param("dokumentIds", "1"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(bestellungsUebersichtService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Ketten-Vorschläge: gültig -> 200, ungültige IDs/Art -> 400, nichts sichtbar -> 404")
+    void ketteVorschlaege() throws Exception {
+        given(bestellungsUebersichtService.kettenVorschlaege(any(), eq(false), eq(LieferantDokumentTyp.WERKSTOFFZEUGNIS), any()))
+                .willReturn(java.util.Optional.of(java.util.List.of()));
+        mockMvc.perform(get(KETTE_VORSCHLAEGE).param("dokumentIds", "1").param("typ", "WERKSTOFFZEUGNIS"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get(KETTE_VORSCHLAEGE).param("dokumentIds", "0")).andExpect(status().isBadRequest());
+        mockMvc.perform(get(KETTE_VORSCHLAEGE).param("dokumentIds", String.valueOf(Long.MAX_VALUE)).param("typ", "SONSTIG"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get(KETTE_VORSCHLAEGE).param("dokumentIds", "1").param("typ", "<script>alert(1)</script>"))
+                .andExpect(status().isBadRequest());
+
+        given(bestellungsUebersichtService.kettenVorschlaege(any(), eq(false), eq(null), any()))
+                .willReturn(java.util.Optional.empty());
+        mockMvc.perform(get(KETTE_VORSCHLAEGE).param("dokumentIds", "99")).andExpect(status().isNotFound());
     }
 
     @Test

@@ -51,7 +51,7 @@ import jakarta.persistence.EntityManager;
  * gemockt. Alle Nummern sind erfunden, der Lieferant ist ein Dummy.
  */
 @DataJpaTest
-@Import({ GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, RechnungsVorschlagService.class,
+@Import({ GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, RechnungsVorschlagService.class, KettenVorschlagService.class,
         BelegZuordnungService.class, BelegKiAnalyseService.class, SystemSettingsService.class,
         BestellungsUebersichtController.class, BestellungsUebersichtService.class,
         LieferantDokumentPositionService.class, LieferantDokumentPositionLeser.class,

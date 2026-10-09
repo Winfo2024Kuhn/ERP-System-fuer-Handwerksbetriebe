@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LieferantDokumenteTab, { POSITIONSSUCHE_FEHLER_TEXT } from './LieferantDokumenteTab';
@@ -7,6 +8,9 @@ import { ConfirmProvider } from './ui/confirm-dialog';
 import type { LieferantDokument, LieferantDokumentTyp } from '../types';
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ isAdmin: false }) }));
+vi.mock('./ui/PdfCanvasViewer', () => ({
+    PdfCanvasViewer: ({ url }: { url: string }) => <div data-testid="pdf">{url}</div>,
+}));
 
 /**
  * Lieferanten-Reiter „Dokumente“: Typ-Filter Werkstoffzeugnis und die
@@ -229,5 +233,67 @@ describe('LieferantDokumenteTab – Werkstoffzeugnis und Positionssuche', () => 
         expect(await screen.findByText(/Dokumentenketten \(1\)/)).toBeInTheDocument();
         expect(await screen.findAllByTestId('positions-treffer')).toHaveLength(2);
         expect(screen.getByText('Werkstoffzeugnis WZ-2002')).toBeInTheDocument();
+    });
+});
+
+describe('LieferantDokumenteTab – Dokument einer Kette zuordnen', () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+    const zeugnisVorschlag = {
+        dokument: {
+            id: 2, typ: 'WERKSTOFFZEUGNIS', dokumentNummer: 'WZ-2002', dokumentDatum: '2026-09-01', betragBrutto: null, betragNetto: null,
+            liefertermin: null, dateiname: 'WZ-2002.pdf', pdfUrl: '/pdf/WZ-2002',
+        },
+        lieferantName: 'Musterstahl GmbH', kettenDokumentId: 1, kettenDokumentTyp: 'LIEFERSCHEIN', kettenDokumentNummer: 'LS-1001',
+        trefferquote: 88, sicher: true, eindeutig: true, gruende: ['Belegnummer wird genannt'], gehoertSchonZu: null,
+    };
+
+    beforeEach(() => {
+        fetchMock = vi.fn((url: string) => {
+            if (url.includes('/ketten-vorschlaege')) return Promise.resolve(antwort([zeugnisVorschlag]));
+            if (url.includes('/ketten-verknuepfen')) return Promise.resolve(antwort({ success: true }));
+            return Promise.resolve(antwort([]));
+        });
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    const aufrufe = (teil: string) => fetchMock.mock.calls.filter(([url]) => String(url).includes(teil));
+
+    it('bietet „Zu Kette zuordnen“ an Einzeldokumenten, nicht bei Sonstigem', () => {
+        rendere([...DOKUMENTE, dokument(4, 'SONSTIG', 'SO-4004')]);
+        expect(screen.getByRole('button', { name: 'Werkstoffzeugnis WZ-2002 zu Kette zuordnen' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Lieferschein LS-1001 zu Kette zuordnen' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /SO-4004 zu Kette zuordnen/ })).not.toBeInTheDocument();
+    });
+
+    it('ordnet ein Einzeldokument zu und lädt die Dokumente neu', async () => {
+        rendere();
+        await userEvent.click(screen.getByRole('button', { name: 'Werkstoffzeugnis WZ-2002 zu Kette zuordnen' }));
+        const dialog = await screen.findByRole('dialog', { name: /Dokument zur Kette hinzufügen – Musterstahl GmbH/ });
+        await within(dialog).findByText('Belegnummer wird genannt');
+        expect(aufrufe('/ketten-vorschlaege')[0][0]).toBe('/api/bestellungen-uebersicht/ketten-vorschlaege?dokumentIds=2&alleLieferanten=false');
+        // Vorschau des eigenen Dokuments über den Download des Lieferanten
+        expect(within(dialog).getAllByTestId('pdf')[0]).toHaveTextContent(`/api/lieferanten/${LIEFERANT_ID}/dokumente/2/download`);
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Werkstoffzeugnis WZ-2002 gehört dazu' }));
+        await waitFor(() => expect(aufrufe('/ketten-verknuepfen')).toHaveLength(1));
+        expect(JSON.parse((aufrufe('/ketten-verknuepfen')[0][1] as RequestInit).body as string)).toEqual({ kettenDokumentId: 1, dokumentId: 2 });
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: /Dokument zur Kette hinzufügen/ })).not.toBeInTheDocument());
+        await waitFor(() => expect(aufrufe(`/api/lieferanten/${LIEFERANT_ID}/dokumente`).length).toBeGreaterThan(0));
+    });
+
+    it('öffnet an einer Dokumentenkette die Suche mit allen Dokumenten der Kette', async () => {
+        const ls = { ...dokument(1, 'LIEFERSCHEIN', 'LS-1001'), verknuepfteDokumente: [{ id: 3, typ: 'RECHNUNG' as const }] };
+        const re = { ...dokument(3, 'RECHNUNG', 'RE-3003'), verknuepfteDokumente: [{ id: 1, typ: 'LIEFERSCHEIN' as const }] };
+        rendere([ls, re, dokument(2, 'WERKSTOFFZEUGNIS', 'WZ-2002')]);
+        await userEvent.click(screen.getByRole('button', { name: 'Dokument zur Kette RE-3003 hinzufügen' }));
+        await screen.findByRole('dialog', { name: /Dokument zur Kette hinzufügen/ });
+        await waitFor(() => expect(aufrufe('/ketten-vorschlaege')).toHaveLength(1));
+        expect(aufrufe('/ketten-vorschlaege')[0][0]).toBe('/api/bestellungen-uebersicht/ketten-vorschlaege?dokumentIds=1&dokumentIds=3&alleLieferanten=false');
+
+        await userEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+        expect(screen.queryByRole('dialog', { name: /Dokument zur Kette hinzufügen/ })).not.toBeInTheDocument();
+        expect(aufrufe('/ketten-verknuepfen')).toHaveLength(0);
     });
 });

@@ -462,12 +462,22 @@ class RechnungsVorschlagServiceTest {
             LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
             rechnung.getVerknuepfteDokumente().addAll(List.of(angebot, ab, ls));
 
-            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung)).isEqualTo("Lieferschein LS-8155");
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung, java.util.EnumSet.allOf(LieferantDokumentTyp.class))).isEqualTo("Lieferschein LS-8155");
             rechnung.getVerknuepfteDokumente().remove(ls);
-            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung)).isEqualTo("Auftragsbestätigung");
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung, java.util.EnumSet.allOf(LieferantDokumentTyp.class))).isEqualTo("Auftragsbestätigung");
             rechnung.getVerknuepfteDokumente().clear();
-            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung)).isNull();
-            assertThat(RechnungsVorschlagService.gehoertSchonZu(null)).isNull();
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung, java.util.EnumSet.allOf(LieferantDokumentTyp.class))).isNull();
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(null, java.util.EnumSet.allOf(LieferantDokumentTyp.class))).isNull();
+        }
+
+        @Test
+        void gehoertSchonZuNenntKeineUnsichtbarenBestelldokumente() {
+            LieferantDokument ls = dokument(LieferantDokumentTyp.LIEFERSCHEIN, "LS-8155", LocalDate.of(2026, 4, 1));
+            LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 4, 5));
+            rechnung.getVerknuepfteDokumente().add(ls);
+
+            assertThat(RechnungsVorschlagService.gehoertSchonZu(rechnung,
+                    java.util.EnumSet.of(LieferantDokumentTyp.RECHNUNG))).isNull();
         }
     }
 

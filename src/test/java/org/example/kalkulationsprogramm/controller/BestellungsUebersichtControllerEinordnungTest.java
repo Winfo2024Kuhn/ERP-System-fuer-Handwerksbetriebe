@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
 import org.example.kalkulationsprogramm.service.BestellungsUebersichtService;
+import org.example.kalkulationsprogramm.service.KettenVorschlagService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentAbgleich;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
@@ -62,13 +63,16 @@ class BestellungsUebersichtControllerEinordnungTest {
     void setUp() {
         RechnungsVorschlagService vorschlagService = new RechnungsVorschlagService(
                 new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository);
+        KettenVorschlagService kettenVorschlagService = new KettenVorschlagService(
+                new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository);
         controller = new BestellungsUebersichtController(
                 dokumentRepository, geschaeftsdokumentRepository, projektAnteilRepository,
                 null, null, null, null, null, null,
                 vorschlagService,
+                kettenVorschlagService,
                 lieferantDokumentService,
                 new BestellungsUebersichtService(dokumentRepository, geschaeftsdokumentRepository,
-                        projektAnteilRepository, vorschlagService),
+                        projektAnteilRepository, vorschlagService, kettenVorschlagService),
                 null,
                 zugriffService);
         lieferant = new Lieferanten();

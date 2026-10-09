@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -229,14 +230,16 @@ public class RechnungsVorschlagService {
      * Zu welchem Bestelldokument eine Rechnung schon gehört – für den Hinweis im
      * Fenster „Rechnung suchen“, z. B. „Lieferschein LS-4711“.
      *
-     * @return {@code null}, wenn sie an keiner AB und keinem Lieferschein hängt
+     * @param sichtbareTypen Dokumenttypen, die der Aufrufer sehen darf – andere bleiben ungenannt
+     * @return {@code null}, wenn sie an keiner sichtbaren AB und keinem sichtbaren Lieferschein hängt
      */
-    public static String gehoertSchonZu(LieferantDokument rechnung) {
-        if (rechnung == null) {
+    public static String gehoertSchonZu(LieferantDokument rechnung, Set<LieferantDokumentTyp> sichtbareTypen) {
+        if (rechnung == null || sichtbareTypen == null) {
             return null;
         }
         return rechnung.getVerknuepfteDokumente().stream()
                 .filter(RechnungsVorschlagService::istBestellDokument)
+                .filter(d -> sichtbareTypen.contains(d.getTyp()))
                 .min(Comparator.comparing(LieferantDokument::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(RechnungsVorschlagService::bezeichnung)
                 .orElse(null);

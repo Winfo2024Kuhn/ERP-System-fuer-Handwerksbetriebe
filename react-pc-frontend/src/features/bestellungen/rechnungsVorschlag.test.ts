@@ -6,9 +6,8 @@ import {
     istErlaubteRechnungsDatei,
     rechnungHochladen,
     rueckfrage,
+    antwortFehlerText,
     formatiereQuote,
-    ladeRechnungsVorschlaege,
-    passtZurRechnungsSuche,
     rechnungVerknuepfen,
     rueckfrageText,
     trefferStufe,
@@ -80,25 +79,17 @@ describe('trefferStufe / formatiereQuote', () => {
     });
 });
 
-describe('passtZurRechnungsSuche', () => {
-    it('sucht in Nummer, Lieferant, Betrag und Datum', () => {
-        expect(passtZurRechnungsSuche(vorschlag, 're-123')).toBe(true);
-        expect(passtZurRechnungsSuche(vorschlag, 'musterfrau')).toBe(true);
-        expect(passtZurRechnungsSuche(vorschlag, '119,00')).toBe(true);
-        expect(passtZurRechnungsSuche(vorschlag, '01.09.2026')).toBe(true);
-        expect(passtZurRechnungsSuche(vorschlag, 'zzz')).toBe(false);
+describe('antwortFehlerText', () => {
+    it('nimmt message, dann error, sonst den Standardtext', async () => {
+        const antwort = (body: unknown) => ({ json: async () => body }) as Response;
+        expect(await antwortFehlerText(antwort({ message: 'Kaputt' }), 'Standard')).toBe('Kaputt');
+        expect(await antwortFehlerText(antwort({ error: 'Datei zu groß' }), 'Standard')).toBe('Datei zu groß');
+        expect(await antwortFehlerText(antwort({ message: ' ', error: '' }), 'Standard')).toBe('Standard');
+        expect(await antwortFehlerText({ json: async () => { throw new Error('leer'); } } as unknown as Response, 'Standard')).toBe('Standard');
     });
 });
 
 describe('API', () => {
-    it('lädt Vorschläge mit kodierten Parametern', async () => {
-        const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [vorschlag] });
-        vi.stubGlobal('fetch', fetchMock);
-        expect(await ladeRechnungsVorschlaege([1, 2])).toEqual([vorschlag]);
-        expect(fetchMock).toHaveBeenCalledWith('/api/bestellungen-uebersicht/rechnung-vorschlaege?dokumentIds=1&dokumentIds=2&alleLieferanten=false');
-        await ladeRechnungsVorschlaege([3], { alleLieferanten: true });
-        expect(fetchMock).toHaveBeenLastCalledWith('/api/bestellungen-uebersicht/rechnung-vorschlaege?dokumentIds=3&alleLieferanten=true');
-    });
     it('nimmt auch eine Fehlermeldung im Feld „error“', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: 'Datei zu groß' }) }));
         await expect(rechnungVerknuepfen(1, 2)).rejects.toThrow('Datei zu groß');
@@ -135,15 +126,7 @@ describe('API', () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({ message: 'Nur PDF' }) }));
         await expect(rechnungHochladen(12, datei)).rejects.toThrow('Nur PDF');
     });
-    it('liefert bei unerwarteter Antwort eine leere Liste', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
-        expect(await ladeRechnungsVorschlaege([1])).toEqual([]);
-    });
-    it('wirft mit Meldung des Backends oder Standardtext', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({ message: 'Ungültige IDs' }) }));
-        await expect(ladeRechnungsVorschlaege([1])).rejects.toThrow('Ungültige IDs');
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => { throw new Error('leer'); } }));
-        await expect(ladeRechnungsVorschlaege([1])).rejects.toThrow('Rechnungen konnten nicht geladen werden.');
+    it('wirft beim Verknüpfen mit Standardtext, wenn der Server nichts sagt', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({ message: '  ' }) }));
         await expect(rechnungVerknuepfen(1, 2)).rejects.toThrow('Rechnung konnte nicht zugeordnet werden.');
     });

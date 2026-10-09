@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class BestellungsUebersichtControllerBuildKettenTest {
 
-    private final BestellungsUebersichtService service = new BestellungsUebersichtService(null, null, null, null);
+    private final BestellungsUebersichtService service = new BestellungsUebersichtService(null, null, null, null, null);
 
     @Test
     void crashtNichtWennVerknuepftesDokumentNichtInEingabeliste() {
