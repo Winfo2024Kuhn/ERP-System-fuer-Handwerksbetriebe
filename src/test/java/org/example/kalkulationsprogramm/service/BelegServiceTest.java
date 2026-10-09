@@ -398,20 +398,27 @@ class BelegServiceTest {
     }
 
     @Test
-    @DisplayName("findCaller: PC-Login ohne Profile-FK faellt auf Email-Match zurueck")
-    void findCaller_ohneProfileFk_emailFallback() {
-        Mitarbeiter m = mitarbeiter(42L, Set.of());
-        m.setEmail("buchhalter@firma.example");
+    @DisplayName("findCaller: ohne Profile-FK gibt es keinen Mitarbeiter - auch nicht ueber gleichlautenden Benutzernamen")
+    void findCaller_ohneProfileFk_keinEmailMapping() {
+        Mitarbeiter kollege = mitarbeiter(42L, Set.of());
+        kollege.setEmail("buchhalter@firma.example");
         FrontendUserProfile profile = new FrontendUserProfile();
         profile.setId(7L);
-        profile.setMitarbeiter(null); // FK noch nicht gesetzt
+        profile.setMitarbeiter(null); // FK nicht gesetzt
         given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
-        given(mitarbeiterRepository.findAktiveMenschen()).willReturn(List.of(m));
-        Authentication auth = pcAuth(7L, "buchhalter@firma.example");
+        // Benutzername absichtlich auf die E-Mail des Kollegen geaendert
+        Authentication auth = pcAuth(7L, "Buchhalter@Firma.Example");
 
-        Mitarbeiter result = service.findCaller(null, auth);
+        assertThat(service.findCaller(null, auth)).isNull();
+        org.mockito.Mockito.verify(mitarbeiterRepository, org.mockito.Mockito.never()).findAktiveMenschen();
+    }
 
-        assertThat(result).isEqualTo(m);
+    @Test
+    @DisplayName("findCaller: unbekanntes Profil ohne Mitarbeiter bleibt null")
+    void findCaller_unbekanntesProfil_null() {
+        given(frontendUserProfileRepository.findById(9L)).willReturn(java.util.Optional.empty());
+
+        assertThat(service.findCaller(null, pcAuth(9L, "irgendwer@firma.example"))).isNull();
     }
 
     @Test
@@ -423,8 +430,6 @@ class BelegServiceTest {
         profile.setId(7L);
         profile.setMitarbeiter(m);
         given(frontendUserProfileRepository.findById(7L)).willReturn(java.util.Optional.of(profile));
-        // Email-Fallback findet ihn ebenfalls nicht
-        given(mitarbeiterRepository.findAktiveMenschen()).willReturn(List.of(m));
         Authentication auth = pcAuth(7L, "x@y.example");
 
         Mitarbeiter result = service.findCaller(null, auth);
@@ -493,7 +498,6 @@ class BelegServiceTest {
         FrontendUserProfile profile = new FrontendUserProfile();
         profile.setMitarbeiter(system);
         given(frontendUserProfileRepository.findById(7L)).willReturn(Optional.of(profile));
-        given(mitarbeiterRepository.findAktiveMenschen()).willReturn(List.of());
         assertThat(service.findCaller(null, pcAuth(7L, "test@example.com"))).isNull();
     }
 

@@ -1272,10 +1272,12 @@ public class BelegService {
      * Zentraler Auth-Mapping fuer Buchhaltungs-Controller. Reihenfolge:
      * 1) Mobile (token im Querystring) -> Mitarbeiter via loginToken.
      * 2) PC (Session-Auth) -> FrontendUserProfile per ID -> verknuepfter Mitarbeiter
-     *    ueber die direkte FK (FrontendUserProfile.mitarbeiter). Das ist der
-     *    eigentliche Verknuepfungspfad; das E-Mail-Mapping ist nur ein Fallback
-     *    fuer Altdaten, bei denen die FK noch nicht gesetzt wurde.
-     * 3) Fallback: Mitarbeiter mit gleicher E-Mail wie der Frontend-Username.
+     *    ueber die direkte FK (FrontendUserProfile.mitarbeiter), nur wenn aktiv und MENSCH.
+     *
+     * <p>Bewusst KEIN Mapping ueber den Benutzernamen: Jeder Benutzer darf seinen Namen selbst
+     * aendern ({@code PUT /api/auth/me/credentials}). Ein E-Mail-Abgleich liesse ihn sich als
+     * Kollege ausgeben und dessen Abteilungsrechte uebernehmen. Ohne FK-Verknuepfung gibt es
+     * keine Rechte - ein Admin verknuepft den Benutzer mit seinem Mitarbeiter.
      *
      * Liefert null wenn niemand sicher zugeordnet werden kann.
      */
@@ -1294,12 +1296,7 @@ public class BelegService {
                 return linked;
             }
         }
-        String username = principal.getUsername();
-        if (username == null || username.isBlank()) return null;
-        return mitarbeiterRepository.findAktiveMenschen().stream()
-                .filter(m -> Boolean.TRUE.equals(m.getAktiv()))
-                .filter(m -> username.equalsIgnoreCase(m.getEmail()))
-                .findFirst().orElse(null);
+        return null;
     }
 
 }
