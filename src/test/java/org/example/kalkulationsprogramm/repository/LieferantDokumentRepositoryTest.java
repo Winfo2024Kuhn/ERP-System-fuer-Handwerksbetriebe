@@ -88,4 +88,27 @@ class LieferantDokumentRepositoryTest {
         doc.setUploadDatum(LocalDateTime.now());
         return doc;
     }
+
+    @Test
+    void zaehltNurSichtbareDokumenttypenDesAngefragtenLieferanten() {
+        Lieferanten lieferant = new Lieferanten();
+        lieferant.setLieferantenname("Muster Lieferant GmbH");
+        lieferant = lieferantenRepository.saveAndFlush(lieferant);
+        Lieferanten andererLieferant = new Lieferanten();
+        andererLieferant.setLieferantenname("Muster Metall GmbH");
+        andererLieferant = lieferantenRepository.saveAndFlush(andererLieferant);
+
+        LieferantDokument rechnung = neuesDokument(lieferant, "rechnung.pdf");
+        LieferantDokument angebot = neuesDokument(lieferant, "angebot.pdf");
+        angebot.setTyp(LieferantDokumentTyp.ANGEBOT);
+        LieferantDokument fremdeRechnung = neuesDokument(andererLieferant, "fremde-rechnung.pdf");
+        lieferantDokumentRepository.saveAllAndFlush(List.of(rechnung, angebot, fremdeRechnung));
+
+        assertThat(lieferantDokumentRepository.zaehleByLieferantIdAndTypIn(lieferant.getId(),
+                List.of(LieferantDokumentTyp.RECHNUNG))).isEqualTo(1);
+        assertThat(lieferantDokumentRepository.zaehleByLieferantIdAndTypIn(lieferant.getId(),
+                List.of(LieferantDokumentTyp.RECHNUNG, LieferantDokumentTyp.ANGEBOT))).isEqualTo(2);
+        assertThat(lieferantDokumentRepository.zaehleByLieferantIdAndTypIn(lieferant.getId(),
+                List.of(LieferantDokumentTyp.LIEFERSCHEIN))).isZero();
+    }
 }

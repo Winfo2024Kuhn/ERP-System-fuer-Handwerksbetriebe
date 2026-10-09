@@ -82,6 +82,8 @@ class LieferantenControllerTest {
   @MockBean
   private LieferantDokumentService lieferantDokumentService;
   @MockBean
+  private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
+  @MockBean
   private org.example.kalkulationsprogramm.service.BelegZuordnungService belegZuordnungService;
   @MockBean
   private MitarbeiterRepository mitarbeiterRepository;
@@ -112,6 +114,13 @@ class LieferantenControllerTest {
 
   @Autowired
   private LieferantenController controller;
+
+  /** Rechte-Logik ist in LieferantDokumentRechteSecurityTest abgedeckt; hier darf jeder alles sehen. */
+  @org.junit.jupiter.api.BeforeEach
+  void alleDokumenttypenSichtbar() {
+    when(lieferantDokumentZugriffService.sichtbareTypen(any(), any()))
+        .thenReturn(Optional.of(java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
+  }
 
   @Test
   @DisplayName("Freitext-Suche nach Telefonnummer liefert 200 und ruft Repository auf")
@@ -289,6 +298,7 @@ class LieferantenControllerTest {
     LieferantDokument dokument = new LieferantDokument();
     dokument.setId(dokumentId);
     dokument.setLieferant(lieferant);
+    dokument.setTyp(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG);
     return dokument;
   }
 
@@ -502,7 +512,7 @@ class LieferantenControllerTest {
     @Test
     @DisplayName("Ohne Anmeldung (keine Sitzung, kein/ungültiger Token): 401")
     void ohneAnmeldung401() throws Exception {
-      when(lieferantenRepository.existsById(5L)).thenReturn(true);
+      when(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).thenReturn(Optional.empty());
 
       mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", "Flachstahl"))
           .andExpect(status().isUnauthorized());
@@ -516,7 +526,7 @@ class LieferantenControllerTest {
     @DisplayName("Angemeldete Sitzung ohne Token: Treffer mit Trefferzeile, alle Typen")
     void liefertTreffer() throws Exception {
       when(lieferantenRepository.existsById(5L)).thenReturn(true);
-      when(dokumentSucheService.sucheBeiLieferant(5L, "Flachstahl", null)).thenReturn(List.of(
+      when(dokumentSucheService.suchePositionen(eq("Flachstahl"), eq(5L), any(), any(), any())).thenReturn(java.util.Map.of(11L,
           new org.example.kalkulationsprogramm.dto.PositionsTrefferDto(11L,
               "Flachstahl 50x5 · S235JR · Charge 123456", 2)));
 
@@ -531,16 +541,15 @@ class LieferantenControllerTest {
     @Test
     @DisplayName("Mit Token: Suche mit den Rechten des Mitarbeiters")
     void mitTokenRechteDesMitarbeiters() throws Exception {
-      org.example.kalkulationsprogramm.domain.Mitarbeiter m = new org.example.kalkulationsprogramm.domain.Mitarbeiter();
-      m.setId(8L);
       when(lieferantenRepository.existsById(5L)).thenReturn(true);
-      when(mitarbeiterRepository.findByLoginToken("tok")).thenReturn(java.util.Optional.of(m));
-      when(dokumentSucheService.sucheBeiLieferant(5L, "123456", 8L)).thenReturn(List.of());
+      var typen = java.util.EnumSet.of(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN);
+      when(lieferantDokumentZugriffService.sichtbareTypen(eq("tok"), any())).thenReturn(Optional.of(typen));
+      when(dokumentSucheService.suchePositionen("123456", 5L, typen, null, null)).thenReturn(java.util.Map.of());
 
       mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", "123456").param("token", "tok"))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$").isEmpty());
-      verify(dokumentSucheService).sucheBeiLieferant(5L, "123456", 8L);
+      verify(dokumentSucheService).suchePositionen("123456", 5L, typen, null, null);
     }
 
     @Test
@@ -558,8 +567,8 @@ class LieferantenControllerTest {
     @DisplayName("SQL-Injection, XSS und Überlänge werden als normaler Suchtext durchgereicht")
     void boeseEingabenSindNurText() throws Exception {
       when(lieferantenRepository.existsById(5L)).thenReturn(true);
-      when(dokumentSucheService.sucheBeiLieferant(org.mockito.ArgumentMatchers.eq(5L),
-          org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.isNull())).thenReturn(List.of());
+      when(dokumentSucheService.suchePositionen(org.mockito.ArgumentMatchers.anyString(), eq(5L),
+          any(), any(), any())).thenReturn(java.util.Map.of());
 
       for (String q : List.of("'; DROP TABLE x; --", "<script>alert(1)</script>", "a".repeat(10_001))) {
         mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").param("q", q).principal(angemeldet()))
@@ -572,7 +581,8 @@ class LieferantenControllerTest {
     @DisplayName("Ohne Suchbegriff: 200 mit leerer Liste")
     void ohneSuchbegriff() throws Exception {
       when(lieferantenRepository.existsById(5L)).thenReturn(true);
-      when(dokumentSucheService.sucheBeiLieferant(5L, null, null)).thenReturn(List.of());
+      when(dokumentSucheService.suchePositionen(org.mockito.ArgumentMatchers.isNull(), eq(5L),
+          any(), any(), any())).thenReturn(java.util.Map.of());
 
       mockMvc.perform(get("/api/lieferanten/5/dokumente/positionssuche").principal(angemeldet()))
           .andExpect(status().isOk())

@@ -118,29 +118,26 @@ public class LieferantDokumentService {
         }
 
         /**
-         * Lädt Dokumente eines Lieferanten, gefiltert nach den Berechtigungen des
-         * Mitarbeiters.
+         * Lädt Dokumente eines Lieferanten, beschränkt auf die übergebenen sichtbaren
+         * Dokumenttypen (siehe {@code LieferantDokumentZugriffService}).
          */
         @Transactional(readOnly = true)
-        public List<LieferantDokumentDto.Response> getDokumenteFiltered(Long lieferantId, Long mitarbeiterId,
-                        LieferantDokumentTyp typFilter) {
-                LieferantDokumentDto.BerechtigungenResponse berechtigungen = getBerechtigungen(mitarbeiterId);
-
-                if (berechtigungen.getSichtbareTypen().isEmpty()) {
+        public List<LieferantDokumentDto.Response> getDokumenteFiltered(Long lieferantId,
+                        Set<LieferantDokumentTyp> sichtbareTypen, LieferantDokumentTyp typFilter) {
+                if (sichtbareTypen.isEmpty()) {
                         return List.of();
                 }
 
                 List<LieferantDokument> dokumente;
                 if (typFilter != null) {
-                        // Prüfe ob dieser Typ sichtbar ist
-                        if (!berechtigungen.getSichtbareTypen().contains(typFilter)) {
+                        if (!sichtbareTypen.contains(typFilter)) {
                                 return List.of();
                         }
                         dokumente = dokumentRepository.findByLieferantIdAndTypOrderByUploadDatumDesc(lieferantId,
                                         typFilter);
                 } else {
                         dokumente = dokumentRepository.findByLieferantIdAndTypIn(lieferantId,
-                                        berechtigungen.getSichtbareTypen());
+                                        List.copyOf(sichtbareTypen));
                 }
 
                 return dokumente.stream().map(this::toDto).collect(Collectors.toList());
@@ -171,9 +168,18 @@ public class LieferantDokumentService {
                 return dokumentRepository.zaehleByLieferantId(lieferantId);
         }
 
+        /** Zählt nur Dokumente der übergebenen (sichtbaren) Typen. */
+        @Transactional(readOnly = true)
+        public long zaehleDokumente(Long lieferantId, Set<LieferantDokumentTyp> sichtbareTypen) {
+                if (sichtbareTypen.isEmpty()) {
+                        return 0;
+                }
+                return dokumentRepository.zaehleByLieferantIdAndTypIn(lieferantId, List.copyOf(sichtbareTypen));
+        }
+
         /**
-         * Lädt alle Dokumente eines Lieferanten (ohne Berechtigungsfilter).
-         * Für Frontend-Nutzung wenn kein Token vorhanden.
+         * Interner Loader für alle Dokumente eines Lieferanten (ohne Berechtigungsfilter).
+         * Vor der Auslieferung muss der Zugriffservice die Antwort auf sichtbare Typen begrenzen.
          */
         @Transactional(readOnly = true)
         public List<LieferantDokumentDto.Response> getDokumenteByLieferant(Long lieferantId,

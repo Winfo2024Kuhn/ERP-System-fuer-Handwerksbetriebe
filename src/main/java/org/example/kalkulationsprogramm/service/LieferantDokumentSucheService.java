@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -47,23 +46,7 @@ public class LieferantDokumentSucheService {
     private static final String TRENNER = " · ";
 
     private final LieferantDokumentPositionRepository positionRepository;
-    private final LieferantDokumentService dokumentService;
     private final ObjectMapper objectMapper;
-
-    /**
-     * Positionstreffer für die Dokumentliste eines Lieferanten. Mit Mitarbeiter
-     * nur in den Dokumenttypen, die er sehen darf – wie
-     * {@link LieferantDokumentService#getDokumenteFiltered}.
-     *
-     * @param mitarbeiterId {@code null} = ohne Rechteprüfung (wie die Dokumentliste ohne Token)
-     */
-    @Transactional(readOnly = true)
-    public List<PositionsTrefferDto> sucheBeiLieferant(Long lieferantId, String eingabe, Long mitarbeiterId) {
-        Collection<LieferantDokumentTyp> typen = mitarbeiterId == null
-                ? EnumSet.allOf(LieferantDokumentTyp.class)
-                : dokumentService.getBerechtigungen(mitarbeiterId).getSichtbareTypen();
-        return new ArrayList<>(suchePositionen(eingabe, lieferantId, typen, null, null).values());
-    }
 
     /**
      * Sucht in den Positionen.

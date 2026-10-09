@@ -726,4 +726,77 @@ class LieferantDokumentServiceTest {
             verify(dokumentRepository, never()).saveAndFlush(any());
         }
     }
+
+    @Nested
+    @DisplayName("getDokumenteFiltered: nur sichtbare Dokumenttypen")
+    class DokumenteFiltered {
+
+        private LieferantDokument dokument(long id, LieferantDokumentTyp typ) {
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(7L);
+            lieferant.setLieferantenname("Muster Lieferant GmbH");
+            LieferantDokument d = new LieferantDokument();
+            d.setId(id);
+            d.setLieferant(lieferant);
+            d.setTyp(typ);
+            d.setOriginalDateiname("dokument_" + id + ".pdf");
+            d.setUploadDatum(LocalDateTime.of(2026, 1, 5, 10, 0));
+            return d;
+        }
+
+        @Test
+        void keineSichtbarenTypen_liefertLeerOhneDatenbankzugriff() {
+            var ergebnis = service.getDokumenteFiltered(7L, java.util.EnumSet.noneOf(LieferantDokumentTyp.class), null);
+
+            assertThat(ergebnis).isEmpty();
+            org.mockito.Mockito.verifyNoInteractions(dokumentRepository);
+        }
+
+        @Test
+        void ohneTypFilter_fragtNurSichtbareTypenAb() {
+            given(dokumentRepository.findByLieferantIdAndTypIn(7L, List.of(LieferantDokumentTyp.RECHNUNG)))
+                    .willReturn(List.of(dokument(1L, LieferantDokumentTyp.RECHNUNG)));
+
+            var ergebnis = service.getDokumenteFiltered(7L,
+                    java.util.EnumSet.of(LieferantDokumentTyp.RECHNUNG), null);
+
+            assertThat(ergebnis).extracting(LieferantDokumentDto.Response::getTyp)
+                    .containsExactly(LieferantDokumentTyp.RECHNUNG);
+        }
+
+        @Test
+        void typFilterAufUnsichtbarenTyp_liefertLeerOhneDatenbankzugriff() {
+            var ergebnis = service.getDokumenteFiltered(7L,
+                    java.util.EnumSet.of(LieferantDokumentTyp.RECHNUNG), LieferantDokumentTyp.ANGEBOT);
+
+            assertThat(ergebnis).isEmpty();
+            org.mockito.Mockito.verifyNoInteractions(dokumentRepository);
+        }
+
+        @Test
+        void typFilterAufSichtbarenTyp_ladetNurDiesenTyp() {
+            given(dokumentRepository.findByLieferantIdAndTypOrderByUploadDatumDesc(7L, LieferantDokumentTyp.LIEFERSCHEIN))
+                    .willReturn(List.of(dokument(2L, LieferantDokumentTyp.LIEFERSCHEIN)));
+
+            var ergebnis = service.getDokumenteFiltered(7L,
+                    java.util.EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN, LieferantDokumentTyp.RECHNUNG),
+                    LieferantDokumentTyp.LIEFERSCHEIN);
+
+            assertThat(ergebnis).hasSize(1);
+        }
+    }
+
+    @Test
+    void zaehleDokumenteOhneRechteLiefertNullOhneDatenbankzugriff() {
+        assertThat(service.zaehleDokumente(7L, Set.of())).isZero();
+        org.mockito.Mockito.verifyNoInteractions(dokumentRepository);
+    }
+
+    @Test
+    void zaehleDokumenteZaehltNurErlaubteTypen() {
+        given(dokumentRepository.zaehleByLieferantIdAndTypIn(7L, List.of(LieferantDokumentTyp.RECHNUNG)))
+                .willReturn(3L);
+
+        assertThat(service.zaehleDokumente(7L, Set.of(LieferantDokumentTyp.RECHNUNG))).isEqualTo(3L);
+    }
 }

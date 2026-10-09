@@ -16,8 +16,11 @@ import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.PositionsTrefferDto;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
+import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
+import org.springframework.http.HttpStatus;
 import org.example.kalkulationsprogramm.service.LieferantDokumentSucheService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -38,6 +41,7 @@ public class DokumentUebersichtController {
 
     private final AusgangsGeschaeftsDokumentRepository ausgangsRepo;
     private final LieferantGeschaeftsdokumentRepository lieferantGdRepo;
+    private final LieferantDokumentZugriffService zugriffService;
     private final LieferantDokumentSucheService dokumentSucheService;
 
     @GetMapping("/ausgang")
@@ -103,7 +107,14 @@ public class DokumentUebersichtController {
             @RequestParam(required = false) LieferantDokumentTyp typ,
             @RequestParam(required = false) Long lieferantId,
             @RequestParam(required = false) Double betragMin,
-            @RequestParam(required = false) Double betragMax) {
+            @RequestParam(required = false) Double betragMax,
+            Authentication authentication) {
+
+        // Nur Dokumenttypen, die der Angemeldete laut Abteilungsrechten sehen darf (Admin: alle).
+        var sichtbareTypen = zugriffService.sichtbareTypen(null, authentication);
+        if (sichtbareTypen.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
 
         List<LieferantGeschaeftsdokument> dokumente;
         if (year != null && month != null) {
@@ -116,14 +127,23 @@ public class DokumentUebersichtController {
             dokumente = lieferantGdRepo.findAllSortedByDatum();
         }
 
+        dokumente = dokumente.stream()
+                .filter(d -> d.getDokument() != null && sichtbareTypen.get().contains(d.getDokument().getTyp()))
+                .collect(Collectors.toList());
+
         // Positionen (Material, Werkstoff, Charge …) werden in der Datenbank gesucht –
         // mit denselben Jahr/Monat-, Typ- und Lieferantenfiltern wie die Liste.
         Map<Long, PositionsTrefferDto> positionsTreffer = Map.of();
         if (search != null && !search.isBlank()) {
             String q = search.toLowerCase(Locale.ROOT);
             LocalDate[] zeitraum = zeitraum(year, month);
+            EnumSet<LieferantDokumentTyp> suchTypen = EnumSet.noneOf(LieferantDokumentTyp.class);
+            suchTypen.addAll(sichtbareTypen.get());
+            if (typ != null) {
+                suchTypen.retainAll(EnumSet.of(typ));
+            }
             Map<Long, PositionsTrefferDto> treffer = dokumentSucheService.suchePositionen(search, lieferantId,
-                    typ != null ? EnumSet.of(typ) : EnumSet.allOf(LieferantDokumentTyp.class),
+                    suchTypen,
                     zeitraum[0], zeitraum[1]);
             positionsTreffer = treffer;
             dokumente = dokumente.stream()
