@@ -1,19 +1,24 @@
 name: Docker-Image fuer Kundenserver
 
-# Baut nach jedem gruenen Push auf main das Docker-Image, prueft, dass es auf
-# dem Datenbankstand der Kunden hochfaehrt (neue Flyway-Migrationen laufen
-# durch, /actuator/health = 200) und legt es erst dann in die GitHub Container
+# Baut nach jedem Push auf main das Docker-Image, prueft, dass es auf dem
+# Datenbankstand der Kunden hochfaehrt (neue Flyway-Migrationen laufen durch,
+# /actuator/health = 200) und legt es erst dann in die GitHub Container
 # Registry. Die Kundenserver holen es sich nachts selbst ab
 # (deployment/docker-server/nachtupdate.sh) - GitHub greift nie auf sie zu.
+#
+# Die Tests laufen vorher im Pull Request ("PR Quality Gate", siehe pr-ci.yml):
+# main nimmt nur PRs an, die gruen und auf dem aktuellen Stand von main sind -
+# was hier ankommt, ist also genau der getestete Stand. Deshalb wartet dieser
+# Workflow nicht auf einen zweiten Testlauf auf main.
+# ACHTUNG: Das haengt am Ruleset (PR-Pflicht + "Branch muss aktuell sein").
+# Wird es gelockert, wieder auf den gruenen Testlauf warten (workflow_run).
 #
 # Tags:
 #   :stable          -> das, was die Kundenserver nachts installieren
 #   :sha-<commit>    -> fester Stand, z.B. um gezielt eine Version einzuspielen
 
 on:
-  workflow_run:
-    workflows: ["PR Quality Checks"]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
 
@@ -26,21 +31,16 @@ concurrency:
 jobs:
   image:
     name: Bauen, Starttest, Veroeffentlichen
-    # Nur wenn alle Tests auf main gruen waren - oder manuell, aber NUR von main.
-    # Sonst koennte ein ungetesteter Feature-Branch als :stable bei allen
-    # Kunden landen.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
+    # NUR von main - auch beim manuellen Start. Sonst koennte ein ungetesteter
+    # Feature-Branch als :stable bei allen Kunden landen.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     timeout-minutes: 45
     env:
-      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      COMMIT: ${{ github.sha }}
     steps:
       - name: Checkout (genau der getestete Commit)
         uses: actions/checkout@v4
@@ -116,8 +116,8 @@ jobs:
           docker tag erp-starttest:latest "$image:sha-${{ steps.name.outputs.kurz }}"
           docker push "$image:sha-${{ steps.name.outputs.kurz }}"
           # :stable nur, wenn dieser Commit noch der Stand von main ist. Ein
-          # "Re-run" eines alten Testlaufs wuerde sonst eine aeltere Version
-          # auf bereits migrierte Kundendatenbanken ausrollen.
+          # "Re-run" eines alten Laufs wuerde sonst eine aeltere Version auf
+          # bereits migrierte Kundendatenbanken ausrollen.
           main_jetzt="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
           if [ "$main_jetzt" != "$COMMIT" ]; then
             echo "::warning::$COMMIT ist nicht mehr der Stand von main ($main_jetzt) - nur :sha-${{ steps.name.outputs.kurz }} veroeffentlicht, :stable unveraendert."

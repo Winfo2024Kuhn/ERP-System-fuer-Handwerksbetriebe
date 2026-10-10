@@ -315,7 +315,8 @@ Nummer**, einmal pro Datenbank. Fehlt ein Zwilling, scheitert der Build
 
 ## Der Starttest in GitHub
 
-`.github/workflows/docker-image.yml` läuft nach jedem grünen Push auf `main`. Es
+`.github/workflows/docker-image.yml` läuft nach jedem Push auf `main` (also nach jedem
+Merge eines PR – getestet wurde vorher im PR, siehe `pr-ci.yml`). Es
 veröffentlicht nur, wenn `starttest.sh` grün ist. Dabei richtet das aktuelle `:stable`
 (also der Kundenstand) eine leere Datenbank ein, darauf startet die neue Version, und
 `/actuator/health` muss 200 liefern. Neue Migrationen laufen dabei einmal echt durch,

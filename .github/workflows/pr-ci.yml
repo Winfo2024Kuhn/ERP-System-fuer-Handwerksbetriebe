@@ -1,10 +1,17 @@
 name: PR Quality Checks
 
+# Laeuft nur im Pull Request, nicht noch einmal nach dem Merge auf main.
+# Das Ruleset fuer main verlangt einen PR, diesen Check ("PR Quality Gate") und
+# dass der Branch vor dem Merge aktuell ist; mit linearer Historie ist der Stand
+# auf main damit genau der, der hier gruen getestet wurde. Ein zweiter Lauf auf
+# main faende nichts Neues, kostete ~25 Minuten bis zum Image und liesse einen
+# wackeligen Test das Image blockieren.
+# ACHTUNG: Wird "Branch muss aktuell sein" oder die PR-Pflicht im Ruleset
+# abgeschaltet, gilt das nicht mehr - dann den push-Ausloeser auf main wieder
+# einbauen (und docker-image.yml wieder auf diesen Lauf warten lassen).
+
 on:
   pull_request:
-    branches:
-      - main
-  push:
     branches:
       - main
   workflow_dispatch:
