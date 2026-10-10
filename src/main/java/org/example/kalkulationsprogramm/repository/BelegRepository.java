@@ -16,7 +16,10 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
 
     List<Beleg> findByStatusOrderByUploadDatumDesc(BelegStatus status);
 
-    List<Beleg> findByStatusAndBelegKategorieOrderByBelegDatumDesc(BelegStatus status, BelegKategorie kategorie);
+    @Query("SELECT b FROM Beleg b WHERE b.status = :status AND b.belegKategorie = :kategorie "
+            + "ORDER BY b.belegDatum DESC NULLS LAST")
+    List<Beleg> findByStatusAndBelegKategorieOrderByBelegDatumDesc(@Param("status") BelegStatus status,
+            @Param("kategorie") BelegKategorie kategorie);
 
     List<Beleg> findAllByOrderByUploadDatumDesc();
 
@@ -32,7 +35,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            + "  AND NOT EXISTS (SELECT a.id FROM BelegKostenstellenAnteil a WHERE a.beleg = b) "
            + "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
            + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN) "
-           + "ORDER BY b.belegDatum DESC, b.uploadDatum DESC")
+           + "ORDER BY b.belegDatum DESC NULLS LAST, b.uploadDatum DESC")
     List<Beleg> findNichtEmailImportierteOhneKostenstellenZuordnung();
 
     @Query("SELECT b FROM Beleg b "
@@ -43,7 +46,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            + "  AND NOT EXISTS (SELECT a.id FROM BelegKostenstellenAnteil a WHERE a.beleg = b) "
            + "  AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
            + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN) "
-           + "ORDER BY b.belegDatum DESC, b.uploadDatum DESC")
+           + "ORDER BY b.belegDatum DESC NULLS LAST, b.uploadDatum DESC")
     List<Beleg> findDirektZugeordneteByKostenstelleOhneSplits(@Param("kostenstelleId") Long kostenstelleId);
 
     /**
@@ -55,7 +58,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
      */
     List<Beleg> findTop20ByUploadedByOrderByUploadDatumDesc(Mitarbeiter uploadedBy);
 
-    @Query("SELECT b FROM Beleg b WHERE b.status = :status AND b.belegKategorie IN :kategorien ORDER BY b.belegDatum DESC, b.uploadDatum DESC")
+    @Query("SELECT b FROM Beleg b WHERE b.status = :status AND b.belegKategorie IN :kategorien ORDER BY b.belegDatum DESC NULLS LAST, b.uploadDatum DESC")
     List<Beleg> findValidierteByKategorien(@Param("status") BelegStatus status,
                                            @Param("kategorien") List<BelegKategorie> kategorien);
 
@@ -109,7 +112,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
     @Query("SELECT b FROM Beleg b LEFT JOIN FETCH b.kostenstelle LEFT JOIN FETCH b.sachkonto " +
            "WHERE b.lieferant.id = :lieferantId " +
            "  AND b.kostenstelle IS NOT NULL " +
-           "ORDER BY b.belegDatum DESC, b.id DESC")
+           "ORDER BY b.belegDatum DESC NULLS LAST, b.id DESC")
     List<Beleg> findAehnlicheBelegeByLieferant(@Param("lieferantId") Long lieferantId,
                                                org.springframework.data.domain.Pageable pageable);
 
@@ -117,7 +120,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            + "WHERE b.lieferant.id = :lieferantId "
            + "  AND b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT "
            + "  AND b.id <> :ausgenommenId "
-           + "ORDER BY b.belegDatum DESC, b.id DESC")
+           + "ORDER BY b.belegDatum DESC NULLS LAST, b.id DESC")
     List<Beleg> findLetzteGepruefteByLieferant(@Param("lieferantId") Long lieferantId,
                                              @Param("ausgenommenId") Long ausgenommenId,
                                              org.springframework.data.domain.Pageable pageable);
@@ -136,7 +139,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
            "  AND (CAST(:von AS LocalDate) IS NULL OR b.belegDatum >= :von) " +
            "  AND (CAST(:bis AS LocalDate) IS NULL OR b.belegDatum <= :bis) " +
-           "ORDER BY b.belegDatum ASC, b.id ASC")
+           "ORDER BY b.belegDatum ASC NULLS FIRST, b.id ASC")
     List<Beleg> findValidierteImZeitraumFuerExport(@Param("von") LocalDate von,
                                                    @Param("bis") LocalDate bis);
 
@@ -157,7 +160,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
            "  AND b.festgeschrieben = false " +
            "  AND b.belegDatum BETWEEN :von AND :bis " +
-           "ORDER BY b.belegDatum ASC, b.id ASC")
+           "ORDER BY b.belegDatum ASC NULLS FIRST, b.id ASC")
     List<Beleg> findFestzuschreibendeImZeitraum(@Param("von") LocalDate von,
                                                 @Param("bis") LocalDate bis);
 
@@ -207,7 +210,7 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            "LEFT JOIN FETCH b.sachkonto " +
            "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
            "  AND b.belegDatum BETWEEN :von AND :bis " +
-           "ORDER BY b.laufendeNummer ASC, b.belegDatum ASC, b.id ASC")
+           "ORDER BY b.laufendeNummer ASC NULLS FIRST, b.belegDatum ASC NULLS FIRST, b.id ASC")
     List<Beleg> findGeprueftImZeitraumNachNummer(@Param("von") LocalDate von,
                                                  @Param("bis") LocalDate bis);
 }

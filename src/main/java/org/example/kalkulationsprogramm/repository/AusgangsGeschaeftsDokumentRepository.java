@@ -139,7 +139,7 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
             "LEFT JOIN d.projekt p LEFT JOIN d.anfrage a LEFT JOIN a.projekt ap " +
             "WHERE (p.id = :projektId OR ap.id = :projektId) " +
             "AND d.rechnungsadresseOverride IS NOT NULL AND TRIM(d.rechnungsadresseOverride) <> '' " +
-            "ORDER BY d.geaendertAm DESC")
+            "ORDER BY d.geaendertAm DESC NULLS LAST")
     List<String> findRechnungsadresseOverridesByProjektId(
             @org.springframework.data.repository.query.Param("projektId") Long projektId);
 
@@ -150,7 +150,7 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
     @Query("SELECT d.rechnungsadresseOverride FROM AusgangsGeschaeftsDokument d " +
             "WHERE d.anfrage.id = :anfrageId " +
             "AND d.rechnungsadresseOverride IS NOT NULL AND TRIM(d.rechnungsadresseOverride) <> '' " +
-            "ORDER BY d.geaendertAm DESC")
+            "ORDER BY d.geaendertAm DESC NULLS LAST")
     List<String> findRechnungsadresseOverridesByAnfrageId(
             @org.springframework.data.repository.query.Param("anfrageId") Long anfrageId);
 

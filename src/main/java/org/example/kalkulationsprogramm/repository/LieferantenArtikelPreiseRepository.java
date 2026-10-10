@@ -71,7 +71,7 @@ public interface LieferantenArtikelPreiseRepository
             SELECT p FROM LieferantenArtikelPreise p
             LEFT JOIN FETCH p.lieferant
             WHERE p.artikel.id = :artikelId AND p.preis IS NOT NULL
-            ORDER BY p.preisAenderungsdatum DESC, p.id DESC
+            ORDER BY p.preisAenderungsdatum DESC NULLS LAST, p.id DESC
             """)
     List<LieferantenArtikelPreise> findeVerlauf(@Param("artikelId") Long artikelId);
 

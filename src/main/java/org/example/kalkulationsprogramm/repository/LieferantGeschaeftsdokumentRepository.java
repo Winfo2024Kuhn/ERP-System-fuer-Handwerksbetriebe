@@ -50,7 +50,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         +
                         "AND gd.bezahlt = false " +
                         "AND (gd.bereitsGezahlt IS NULL OR gd.bereitsGezahlt = false) " +
-                        "ORDER BY gd.zahlungsziel ASC NULLS LAST, gd.dokumentDatum ASC")
+                        "ORDER BY gd.zahlungsziel ASC NULLS LAST, gd.dokumentDatum ASC NULLS FIRST")
         List<LieferantGeschaeftsdokument> findAllOffeneEingangsrechnungen();
 
         /**
@@ -64,7 +64,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "AND gd.bezahlt = false " +
                         "AND (gd.bereitsGezahlt IS NULL OR gd.bereitsGezahlt = false) " +
                         "AND gd.genehmigt = true " +
-                        "ORDER BY gd.zahlungsziel ASC NULLS LAST, gd.dokumentDatum ASC")
+                        "ORDER BY gd.zahlungsziel ASC NULLS LAST, gd.dokumentDatum ASC NULLS FIRST")
         List<LieferantGeschaeftsdokument> findAllOffeneGenehmigte();
 
         /**
@@ -75,7 +75,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "JOIN gd.dokument d " +
                         "WHERE d.typ IN (org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.GUTSCHRIFT) "
                         +
-                        "ORDER BY gd.dokumentDatum DESC")
+                        "ORDER BY gd.dokumentDatum DESC NULLS LAST")
         List<LieferantGeschaeftsdokument> findAllEingangsrechnungen();
 
         /**
@@ -87,7 +87,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "WHERE d.typ IN (org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.RECHNUNG, org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.GUTSCHRIFT) "
                         +
                         "AND gd.genehmigt = true " +
-                        "ORDER BY gd.dokumentDatum DESC")
+                        "ORDER BY gd.dokumentDatum DESC NULLS LAST")
         List<LieferantGeschaeftsdokument> findAllGenehmigte();
 
         /**
@@ -114,7 +114,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "LEFT JOIN FETCH d.lieferant " +
                         "WHERE COALESCE(gd.dokumentDatum, CAST(d.uploadDatum AS LocalDate)) " +
                         "BETWEEN :startDate AND :endDate " +
-                        "ORDER BY gd.dokumentDatum DESC")
+                        "ORDER BY gd.dokumentDatum DESC NULLS LAST")
         List<LieferantGeschaeftsdokument> findAllByDatumOderEingangBetween(
                         @Param("startDate") java.time.LocalDate startDate,
                         @Param("endDate") java.time.LocalDate endDate);
@@ -123,7 +123,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
          * Findet alle LieferantGeschaeftsdokumente – ohne Typ-Filter, für die Dokumentübersicht.
          */
         @Query("SELECT gd FROM LieferantGeschaeftsdokument gd " +
-                        "ORDER BY gd.dokumentDatum DESC")
+                        "ORDER BY gd.dokumentDatum DESC NULLS LAST")
         List<LieferantGeschaeftsdokument> findAllSortedByDatum();
 
         /**

@@ -24,7 +24,7 @@ public interface BelegKostenstellenAnteilRepository extends JpaRepository<BelegK
             + "AND b.status <> org.example.kalkulationsprogramm.domain.BelegStatus.VERWORFEN "
             + "AND NOT EXISTS (SELECT d.id FROM LieferantDokument d WHERE d.beleg = b "
            + "    AND d.typ <> org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.LIEFERSCHEIN) "
-            + "ORDER BY b.belegDatum DESC, b.uploadDatum DESC, a.id DESC")
+            + "ORDER BY b.belegDatum DESC NULLS LAST, b.uploadDatum DESC, a.id DESC")
     List<BelegKostenstellenAnteil> findByKostenstelleIdEager(@Param("kostenstelleId") Long kostenstelleId);
 
     @Modifying

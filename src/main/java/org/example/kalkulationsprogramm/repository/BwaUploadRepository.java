@@ -13,12 +13,17 @@ import java.util.Optional;
 @Repository
 public interface BwaUploadRepository extends JpaRepository<BwaUpload, Long> {
 
-    List<BwaUpload> findByJahrOrderByMonatDesc(Integer jahr);
+    // Als @Query statt abgeleitet: nur so laesst sich festlegen, wohin leere Werte sortieren
+    // (wie MySQL: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
+    @Query("SELECT b FROM BwaUpload b WHERE b.jahr = :jahr ORDER BY b.monat DESC NULLS LAST")
+    List<BwaUpload> findByJahrOrderByMonatDesc(@Param("jahr") Integer jahr);
 
-    List<BwaUpload> findByJahrAndTypOrderByMonatDesc(Integer jahr, BwaTyp typ);
+    @Query("SELECT b FROM BwaUpload b WHERE b.jahr = :jahr AND b.typ = :typ ORDER BY b.monat DESC NULLS LAST")
+    List<BwaUpload> findByJahrAndTypOrderByMonatDesc(@Param("jahr") Integer jahr, @Param("typ") BwaTyp typ);
 
     Optional<BwaUpload> findByJahrAndMonat(Integer jahr, Integer monat);
 
+    @Query("SELECT b FROM BwaUpload b WHERE b.freigegeben = true ORDER BY b.jahr DESC, b.monat DESC NULLS LAST")
     List<BwaUpload> findByFreigegebenTrueOrderByJahrDescMonatDesc();
 
     /**
@@ -34,6 +39,8 @@ public interface BwaUploadRepository extends JpaRepository<BwaUpload, Long> {
     /**
      * Findet alle noch nicht freigegebenen BWAs.
      */
+    @Query("SELECT b FROM BwaUpload b WHERE b.freigegeben = false AND b.analysiert = true "
+            + "ORDER BY b.jahr DESC, b.monat DESC NULLS LAST")
     List<BwaUpload> findByFreigegebenFalseAndAnalysiertTrueOrderByJahrDescMonatDesc();
 
     /**

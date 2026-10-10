@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.repository;
 import org.example.kalkulationsprogramm.domain.ArtikelDokument;
 import org.example.kalkulationsprogramm.domain.ArtikelDokumentTyp;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -10,7 +12,10 @@ import java.util.Optional;
 
 @Repository
 public interface ArtikelDokumentRepository extends JpaRepository<ArtikelDokument, Long> {
-    List<ArtikelDokument> findByArtikelIdOrderBySortierungAscIdAsc(Long artikelId);
+    // Als @Query statt abgeleitet: nur so laesst sich festlegen, wohin leere Werte sortieren
+    // (wie MySQL: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
+    @Query("SELECT d FROM ArtikelDokument d WHERE d.artikel.id = :artikelId ORDER BY d.sortierung ASC NULLS FIRST, d.id ASC")
+    List<ArtikelDokument> findByArtikelIdOrderBySortierungAscIdAsc(@Param("artikelId") Long artikelId);
 
     Optional<ArtikelDokument> findFirstByArtikelIdAndTyp(Long artikelId, ArtikelDokumentTyp typ);
 

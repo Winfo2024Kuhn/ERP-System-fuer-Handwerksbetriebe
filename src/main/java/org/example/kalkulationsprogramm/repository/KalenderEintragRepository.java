@@ -23,7 +23,7 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
                         "LEFT JOIN FETCH k.anfrage " +
                         "LEFT JOIN FETCH k.ersteller " +
                         "WHERE k.datum BETWEEN :von AND :bis " +
-                        "ORDER BY k.datum, k.startZeit")
+                        "ORDER BY k.datum, k.startZeit NULLS FIRST")
         List<KalenderEintrag> findByDatumBetween(@Param("von") LocalDate von, @Param("bis") LocalDate bis);
 
         /**
@@ -43,7 +43,7 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
                         "AND (k.ersteller.id = :mitarbeiterId " +
                         "     OR t.id = :mitarbeiterId " +
                         "     OR (k.ersteller IS NULL AND SIZE(k.teilnehmer) = 0)) " +
-                        "ORDER BY k.datum, k.startZeit")
+                        "ORDER BY k.datum, k.startZeit NULLS FIRST")
         List<KalenderEintrag> findByMitarbeiterAndDatumBetween(
                         @Param("mitarbeiterId") Long mitarbeiterId,
                         @Param("von") LocalDate von,
@@ -66,7 +66,7 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
                         "AND (k.ersteller.id = :mitarbeiterId " +
                         "     OR t.id = :mitarbeiterId " +
                         "     OR (k.ersteller IS NULL AND SIZE(k.teilnehmer) = 0)) " +
-                        "ORDER BY k.startZeit")
+                        "ORDER BY k.startZeit NULLS FIRST")
         List<KalenderEintrag> findByMitarbeiterAndDatum(
                         @Param("mitarbeiterId") Long mitarbeiterId,
                         @Param("datum") LocalDate datum);
